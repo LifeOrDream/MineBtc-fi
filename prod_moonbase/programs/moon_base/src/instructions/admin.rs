@@ -1,0 +1,2114 @@
+use anchor_lang::prelude::*;
+use crate::state::*;
+use crate::events::*;
+
+use crate::errors::ErrorCode;
+
+use anchor_spl::token_interface::{
+    self as token_if,           // gives you CPI helpers such as `token_if::transfer`
+    Mint as Mint2022,
+    TokenAccount as TokenAccount2022,
+};
+use anchor_spl::token_2022::Token2022;          // ← the PROGRAM-ID wrapper (implements Id)
+
+// Import Raydium CP-Swap for CPI calls
+use raydium_cp_swap;
+
+// constants
+pub const MAX_MODULE_CONFIGS: usize = 50; // ≈ 8.2 kB
+
+// Query data structures for external programs
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct TreasuryInfo {
+    pub total_balance: u64,
+    pub pol_reserves: u64,
+    pub rent_exempt_amount: u64,
+    pub available_for_withdrawal: u64,
+    pub loot_percentage: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct GlobalConfigInfo {
+    pub loot_percentage: u8,
+    pub is_game_active: bool,
+    pub base_creation_cost: u64,
+    pub ext_authority: Pubkey,
+    pub ext_fee_collector: Pubkey,
+}
+
+// -------------------------------------------------------------------------------- 
+// ------------ GLOBAL_CONFIG :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
+// -------------------------------------------------------------------------------- 
+
+/// Update the global configuration parameters
+/// Can only be called by the current authority
+pub fn update_config_internal(
+    ctx: Context<UpdateConfigAc>,
+    new_authority: Option<Pubkey>,
+    new_fee_collector: Option<Pubkey>,
+    new_creation_fee_recipient: Option<Pubkey>,
+    new_base_creation_cost: Option<u64>,
+    new_loot_percentage: Option<u8>,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    // Update fields if provided
+    if let Some(authority) = new_authority {
+        global_config.ext_authority = authority;
+        msg!("Updated authority to {}", authority);
+    }
+    
+    // Update SOL claimer if provided
+    if let Some(fee_collector) = new_fee_collector {
+        global_config.ext_fee_collector = fee_collector;
+        msg!("Updated SOL claimer to {}", fee_collector);
+    }
+        
+    // Update creation fee recipient if provided
+    if let Some(creation_fee_recipient) = new_creation_fee_recipient {
+        global_config.creation_fee_recipient = creation_fee_recipient;
+        msg!("Updated creation fee recipient to {}", creation_fee_recipient);
+    }
+    
+    // Update facility creation cost if provided
+    if let Some(cost) = new_base_creation_cost {
+        global_config.base_creation_cost = cost;
+        msg!("Updated facility creation cost to {}", cost);
+    }
+    
+    // Update loot percentage if provided
+    if let Some(loot_percentage) = new_loot_percentage {
+        require!(loot_percentage <= 100, ErrorCode::InvalidParameters);
+        global_config.loot_percentage = loot_percentage;
+        msg!("Updated loot percentage to {}%", loot_percentage);
+    }
+    
+    Ok(())
+}
+
+/// Toggle the PvP game active state
+/// Can only be called by the current authority
+pub fn toggle_game_active_internal(ctx: Context<ToggleGameActive>) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    // Toggle the game active state
+    global_config.is_game_active = !global_config.is_game_active;
+    
+    msg!("PvP game active state toggled to: {}", global_config.is_game_active);
+    
+    Ok(())
+}
+
+/// Add a new faction to the supported factions list (admin only)
+/// Factions cannot be removed once added to maintain data integrity
+pub fn add_faction_internal(ctx: Context<AddFaction>, name: String) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    // Validate faction name length
+    require!(
+        name.len() > 0 && name.len() <= MAX_FACTION_NAME_LENGTH,
+        ErrorCode::InvalidFactionName
+    );
+    
+    // Check if we've reached the maximum number of factions
+    require!(
+        global_config.supported_factions.len() < MAX_FACTIONS,
+        ErrorCode::MaxFactionsReached
+    );
+    
+    // Check if faction name already exists (case-insensitive)
+    let name_lower = name.to_lowercase();
+    for existing_faction in &global_config.supported_factions {
+        require!(
+            existing_faction.to_lowercase() != name_lower,
+            ErrorCode::FactionAlreadyExists
+        );
+    }
+    
+    // Add the faction to the list
+    global_config.supported_factions.push(name.clone());
+    
+    let faction_id = (global_config.supported_factions.len() - 1) as u8;
+    
+    msg!("Added new faction '{}' with ID {}", name, faction_id);
+    
+    emit!(FactionAdded {
+        authority: ctx.accounts.authority.key(),
+        faction_name: name,
+        faction_id,
+        total_factions: global_config.supported_factions.len() as u8,
+    });
+    
+    Ok(())
+}
+ 
+
+/// Add a new expansion configuration (admin only)
+pub fn add_expansion_internal(
+    ctx: Context<AddExpansion>,
+    id: u8,
+    name: String,
+    required_level: u8,
+    cost_sol: u64,
+    new_width: u8,
+    new_height: u8,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    // Validate expansion name length
+    require!(
+        name.len() > 0 && name.len() <= MAX_EXPANSION_NAME_LENGTH,
+        ErrorCode::InvalidExpansionConfiguration
+    );
+    
+    // Check if we've reached the maximum number of expansions
+    require!(
+        global_config.expansions.len() < MAX_EXPANSIONS,
+        ErrorCode::MaxExpansionsReached
+    );
+    
+    // Check if expansion ID already exists
+    for existing_expansion in &global_config.expansions {
+        require!(
+            existing_expansion.id != id,
+            ErrorCode::ExpansionAlreadyExists
+        );
+    }
+    
+    // Validate dimensions
+    require!(
+        new_width >= DEFAULT_MOONBASE_WIDTH && new_height >= DEFAULT_MOONBASE_HEIGHT,
+        ErrorCode::InvalidExpansionConfiguration
+    );
+    require!(
+        new_width <= GRID_WIDTH && new_height <= GRID_HEIGHT,
+        ErrorCode::InvalidExpansionConfiguration
+    );
+    
+    // Create the new expansion
+    let expansion = ExpansionConfig {
+        id,
+        name: name.clone(),
+        required_level,
+        cost_sol,
+        new_width,
+        new_height,
+        is_active: true,
+    };
+    
+    // Add the expansion to the list
+    global_config.expansions.push(expansion);
+    
+    msg!("Added new expansion '{}' (ID: {}) requiring level {} for {} SOL", 
+         name, id, required_level, cost_sol);
+    
+    emit!(ExpansionAdded {
+        authority: ctx.accounts.authority.key(),
+        expansion_id: id,
+        expansion_name: name,
+        required_level,
+        cost_sol,
+        new_width,
+        new_height,
+    });
+    
+    Ok(())
+}
+
+// -------------------------------------------------------------------------------- 
+// -------------------------------------------------------------------------------- 
+// ------------ MOON_DOGE_MINING :: INITIALIZATION & UPDATES ------------
+// -------------------------------------------------------------------------------- 
+// -------------------------------------------------------------------------------- 
+
+
+
+/// Initialize mining by setting the token vault and starting timestamp
+/// Can only be called once when mining_start_timestamp is 0
+pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timestamp: u64, 
+                                    moon_doge_per_slot: u64, pool_state: Pubkey) -> Result<()> {
+    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    
+    // Check mining hasn't been initialized yet
+    require!(
+        moon_doge_mining.mining_start_timestamp == 0,
+        ErrorCode::MiningAlreadyInitialized
+    );
+    
+    let cur_slot = Clock::get()?.slot;
+
+    // ───── persist vault + bump(s) ─────
+    moon_doge_mining.mdoge_token_vault = ctx.accounts.token_vault.key();
+    moon_doge_mining.vault_auth_bump = ctx.bumps.vault_authority;
+
+    // Initialize mining parameters
+    moon_doge_mining.mining_start_timestamp = start_timestamp;
+    moon_doge_mining.moon_doge_per_slot = moon_doge_per_slot;
+    moon_doge_mining.last_slot = cur_slot;
+
+    // Initialize dynamic distribution fields  
+    moon_doge_mining.raydium_pool_state = pool_state;
+    moon_doge_mining.last_rate_update = Clock::get()?.unix_timestamp;
+    moon_doge_mining.current_dist_rate = moon_doge_per_slot;
+    moon_doge_mining.price_history = Vec::with_capacity(8);
+    moon_doge_mining.avg_price_8h = 0;
+    moon_doge_mining.prev_avg_price_8h = 0;
+    moon_doge_mining.sol_for_pol = 0; // Initialize POL tracking
+    moon_doge_mining.slots_for_swap = 9000; // Default: ~2.5 slots/second * 3600 seconds
+    moon_doge_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
+    
+    msg!("Initialized dynamic distribution system with Raydium pool: {}", pool_state);
+
+    // Emit event
+    emit!(MiningTokenVaultSet {
+        authority: ctx.accounts.authority.key(),
+        token_vault: ctx.accounts.token_vault.key(),
+        token_vault_authority: ctx.accounts.vault_authority.key(),
+        mining_start_timestamp: start_timestamp,
+    });
+    
+    msg!("Mining initialized with token vault: {}", 
+         ctx.accounts.token_vault.key());
+    
+    Ok(())
+}
+
+/// Update slots per hour configuration (admin only)
+pub fn update_slots_for_swap_internal(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
+    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    
+    require!(new_slots_for_swap > 0, ErrorCode::InvalidParameters);
+    
+    let old_slots_for_swap = moon_doge_mining.slots_for_swap;
+    moon_doge_mining.slots_for_swap = new_slots_for_swap;
+    
+    msg!("Updated slots per hour from {} to {}", old_slots_for_swap, new_slots_for_swap);
+    
+    emit!(SlotsPerHourUpdated {
+        authority: ctx.accounts.authority.key(),
+        old_slots_for_swap,
+        new_slots_for_swap,
+    });
+    
+    Ok(())
+}
+
+/// Deposit moon doge tokens to the mining vault
+pub fn deposit_moon_doge_tokens_internal(  ctx: Context<DepositTokens>,  amount: u64) -> Result<()> {
+    token_if::transfer_checked(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),      // TOKEN_2022_PROGRAM_ID
+            token_if::TransferChecked {
+                from:      ctx.accounts.depositor_token_account.to_account_info(),
+                mint:      ctx.accounts.token_mint.to_account_info(),
+                to:        ctx.accounts.mdoge_token_vault.to_account_info(),
+                authority: ctx.accounts.depositor.to_account_info(),
+            },
+        ),
+        amount,
+        MDOGE_DECIMALS,     // decimals
+    )?;
+
+    msg!("Deposited {} MDOGE into mining vault", amount);
+    Ok(())
+}
+
+
+// ----------------------------------------------------------------------------------------
+// ------------  LOOT REWARDS --------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Initialize the loot rewards system
+pub fn initialize_loot_rewards_internal(ctx: Context<InitializeLootRewards>) -> Result<()> {
+    let loot_rewards = &mut ctx.accounts.loot_rewards;
+    let _clock = Clock::get()?;
+    
+    // Initialize loot rewards state
+    loot_rewards.total_mdoge_accumulated = 0;
+    loot_rewards.total_sol_accumulated = 0;
+    loot_rewards.total_mdoge_distributed = 0;
+    loot_rewards.total_sol_distributed = 0;
+    loot_rewards.bump = ctx.bumps.loot_rewards;
+    loot_rewards.sol_vault_bump = ctx.bumps.loot_sol_vault;
+    loot_rewards.mdoge_vault_bump = ctx.bumps.loot_mdoge_vault;
+    loot_rewards.mdoge_vault_authority_bump = ctx.bumps.loot_mdoge_vault_authority;
+    
+    emit!(LootRewardsInitialized {
+        loot_rewards_pda: loot_rewards.key(),
+        sol_vault_pda: ctx.accounts.loot_sol_vault.key(),
+        mdoge_vault_pda: ctx.accounts.loot_mdoge_vault.key(),
+    });
+    
+    msg!("🎁 Loot rewards system initialized");
+    msg!("   Loot Rewards PDA: {}", loot_rewards.key());
+    msg!("   SOL Vault: {}", ctx.accounts.loot_sol_vault.key());
+    msg!("   mDOGE Vault: {}", ctx.accounts.loot_mdoge_vault.key());
+    msg!("   mDOGE Vault Authority: {}", ctx.accounts.loot_mdoge_vault_authority.key());
+    
+    Ok(())
+}
+
+/// Initialize level statistics tracking (admin only)
+pub fn initialize_level_stats_internal(ctx: Context<InitializeLevelStats>) -> Result<()> {
+    msg!("🔒 Initializing level statistics tracking");
+    
+    let level_stats = &mut ctx.accounts.level_stats;
+    
+    // Initialize empty tracking for top levels
+    level_stats.tracked_levels = Vec::with_capacity(LevelStats::MAX_TRACKED_LEVELS);
+    level_stats.total_users = 0;
+    level_stats.max_level_achieved = 0;
+    level_stats.min_tracked_level = 0;
+    level_stats.last_update_timestamp = Clock::get()?.unix_timestamp;
+    level_stats.bump = ctx.bumps.level_stats;
+    
+    emit!(LevelStatsInitialized {
+        level_stats_pda: ctx.accounts.level_stats.key(),
+        tracked_levels: LevelStats::MAX_TRACKED_LEVELS as u8,
+    });
+    
+    msg!("✅ Level statistics tracking initialized");
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------------------
+// ------------ INITIALIZATION & UPDATES :: CONFIG-STOREs, MODULEs (stuff which can be installed in a moon-base) CONFIGS --------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Initialize store accounts for config types
+pub fn initialize_config_stores_internal(ctx: Context<InitializeConfigStore>) -> Result<()> {
+    let module_store = &mut ctx.accounts.module_config_store;
+    
+    // Initialize empty config stores with starting IDs
+    module_store.next_id = 1; // IDs start at 1
+    module_store.active_ids = Vec::new();
+    module_store.bump = ctx.bumps.module_config_store;
+    
+    msg!("Initialized config stores for modules");
+    
+    Ok(())
+}
+
+/// Initialize a new module config that users can mint
+pub fn add_module_to_base_internal(
+    ctx: Context<AddModuleToConfigStore>,
+    name: String,
+    image_url: String,
+    module_type: ModuleType,
+    faction_ids: Vec<u8>,
+    min_level: u8,
+    max_per_base: u8,
+    width: u8,
+    height: u8,
+    mint_cost: u64,
+    upgrade_cost: u64,
+    upgrade_level_requirements: Vec<u8>,
+) -> Result<()> {
+    let module_config_store = &mut ctx.accounts.module_config_store;
+    let module_config_account = &mut ctx.accounts.module_config_account;
+    let global_config = &ctx.accounts.global_config;
+    
+    // Validate authority
+    require!(
+        global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    msg!("Adding module: {}", name);
+    msg!("Image URL: {}", image_url);
+    msg!("Module type: {:?}", module_type);
+
+    // Build ModuleStats with placeholder values (will be updated later)
+    let stats: ModuleStats = match module_type {
+        ModuleType::Mining => {
+            ModuleStats::Mining(MiningStats {
+                max_hp: 0,
+                base_hashpower: 0, // Placeholder - must be updated
+                power_consumption: 0,
+            })
+        },
+        ModuleType::Attraction => {
+            ModuleStats::Attraction(AttractionStats {
+                max_hp: 0,
+                base_xp_per_hour: 0, // Placeholder - must be updated
+                power_consumption: 0,
+            })
+        },
+        ModuleType::Attack => {
+            ModuleStats::Attack(AttackStats {
+                max_hp: 0,
+                base_damage: 0, // Placeholder - must be updated
+                base_missiles_per_load: 0, // Placeholder - must be updated
+                reload_time_seconds: 0, // Placeholder - must be updated
+                power_consumption: 0,
+            })
+        },
+        ModuleType::Research => {
+            ModuleStats::Research(ResearchStats {
+                max_hp: 0,
+                cooldown_sec: 0, // Placeholder - must be updated
+                max_reward: 0, // Placeholder - must be updated
+                probability: 0, // Placeholder - must be updated
+                power_consumption: 0,
+            })
+        },
+    };
+
+    msg!("Stats (placeholders): {:?}", stats);
+    msg!("Faction IDs: {:?}", faction_ids);
+    msg!("Min level: {}", min_level);
+    msg!("Max per base: {}", max_per_base);
+    msg!("Width: {}", width);
+    
+    // Validate inputs
+    require!(name.len() <= 32, ErrorCode::InvalidModuleName);
+    require!(image_url.len() <= 64, ErrorCode::InvalidImageUrl);
+    require!(upgrade_level_requirements.len() <= MAX_MODULE_UPGRADES as usize, ErrorCode::InvalidUpgradeConfiguration);
+    require!(max_per_base > 0 && max_per_base <= MAX_MODULES_PER_BASE, ErrorCode::InvalidModuleConfiguration);
+    require!(faction_ids.len() <= MAX_FACTION_IDS_PER_MODULE, ErrorCode::TooManyFactionIds);
+    
+    // Validate that upgrade level requirements are increasing and start at or above min_level
+    let mut prev_level = min_level;
+    for (i, &required_level) in upgrade_level_requirements.iter().enumerate() {
+        require!(
+            required_level >= prev_level,
+            ErrorCode::InvalidUpgradeConfiguration
+        );
+        prev_level = required_level;
+        
+        msg!("Upgrade {} requires moonbase level {}", i + 1, required_level);
+    }
+    
+    // Validate faction IDs exist in global config (if any specified)
+    if !faction_ids.is_empty() {
+        for faction_id in &faction_ids {
+            require!(
+                (*faction_id as usize) < global_config.supported_factions.len(),
+                ErrorCode::InvalidFactionId
+            );
+        }
+    }
+    
+    // Get the next ID and increment it
+    let id = module_config_store.next_id;
+    module_config_store.next_id = module_config_store.next_id.checked_add(1)
+        .ok_or(ErrorCode::IdOverflow)?;
+    
+    // Create the new module config in the individual PDA account
+    module_config_account.data = ModuleConfig {
+        id,
+        name: name.clone(),
+        image_url: image_url.clone(),
+        module_type,
+        stats,
+        faction_ids,
+        min_level,
+        max_per_base,
+        width,
+        height,
+        mint_cost,
+        upgrade_cost,
+        upgrade_level_requirements: upgrade_level_requirements.clone(),
+        is_active: false, // Inactive until stats are properly set
+    };
+    
+    // Set the bump for the individual config account
+    module_config_account.bump = ctx.bumps.module_config_account;
+    
+    // Add ID to active_ids list for enumeration
+    module_config_store.active_ids.push(id);
+    
+    // Log the creation
+    msg!("Initialized new module config: {}, ID: {}, Image: {}", name, id, image_url);
+    msg!("Max upgrades: {}, upgrade levels: {:?}", upgrade_level_requirements.len(), &upgrade_level_requirements);
+    msg!("⚠️ Module is INACTIVE until stats are properly configured");
+    
+    // Emit event
+    emit!(NewModuleConfigCreated {
+        id,
+        name,
+    });
+    
+    Ok(())
+}
+
+/// Update module stats and activate the module
+pub fn update_module_stats_internal(
+    ctx: Context<UpdateModuleStats>,
+    id: u16,
+    max_hp: u32,
+    power_consumption: u16,
+    base_hashpower: u32,
+    base_xp_per_hour: u32,
+    base_damage: u32,
+    base_missiles_per_load: u8,
+    reload_time_seconds: u32,
+    cooldown_sec: u32,
+    max_reward: u64,
+    probability: u16,
+) -> Result<()> {
+    let module_config_account = &mut ctx.accounts.module_config_account;
+    let config = &mut module_config_account.data;
+    
+    // Verify this is the correct config ID
+    require!(config.id == id, ErrorCode::ConfigNotFound);
+
+    msg!("Updating stats for module: {} (ID: {})", config.name, id);
+    msg!("Module type: {:?}", config.module_type);
+
+    // Build new ModuleStats and validate required fields are not 0
+    let new_stats: ModuleStats = match config.module_type {
+        ModuleType::Mining => {
+            require!(base_hashpower > 0, ErrorCode::InvalidModuleConfiguration);
+            msg!("Mining stats - base_hashpower: {}", base_hashpower);
+            ModuleStats::Mining(MiningStats {
+                max_hp,
+                base_hashpower,
+                power_consumption,
+            })
+        },
+        ModuleType::Attraction => {
+            require!(base_xp_per_hour > 0, ErrorCode::InvalidModuleConfiguration);
+            msg!("Attraction stats - base_xp_per_hour: {}", base_xp_per_hour);
+            ModuleStats::Attraction(AttractionStats {
+                max_hp,
+                base_xp_per_hour,
+                power_consumption,
+            })
+        },
+        ModuleType::Attack => {
+            require!(base_damage > 0, ErrorCode::InvalidModuleConfiguration);
+            require!(base_missiles_per_load > 0, ErrorCode::InvalidModuleConfiguration);
+            require!(reload_time_seconds > 0, ErrorCode::InvalidModuleConfiguration);
+            msg!("Attack stats - base_damage: {}, missiles: {}, reload: {}", 
+                 base_damage, base_missiles_per_load, reload_time_seconds);
+            ModuleStats::Attack(AttackStats {
+                max_hp,
+                base_damage,
+                base_missiles_per_load,
+                reload_time_seconds,
+                power_consumption,
+            })
+        },
+        ModuleType::Research => {
+            require!(cooldown_sec > 0, ErrorCode::InvalidModuleConfiguration);
+            require!(max_reward > 0, ErrorCode::InvalidModuleConfiguration);
+            require!(probability > 0, ErrorCode::InvalidModuleConfiguration);
+            msg!("Research stats - cooldown: {}, max_reward: {}, probability: {}", 
+                 cooldown_sec, max_reward, probability);
+            ModuleStats::Research(ResearchStats {
+                max_hp,
+                cooldown_sec,
+                max_reward,
+                probability,
+                power_consumption,
+            })
+        },
+    };
+
+    // Update the stats
+    config.stats = new_stats;
+    
+    // Activate the module now that stats are properly set
+    config.is_active = true;
+    
+    msg!("✅ Module stats updated and module activated");
+    msg!("New stats: {:?}", config.stats);
+    
+    // Emit event
+    emit!(ModuleConfigUpdated {
+        id,
+        name: config.name.clone(),
+    });
+    
+    Ok(())
+}
+ 
+
+
+
+/// Update an existing module config
+pub fn update_module_internal(
+    ctx: Context<UpdateModuleConfig>,
+    id: u16,
+    image_url: Option<String>,
+    faction_ids: Option<Vec<u8>>,
+    max_per_base: Option<u8>,
+    mint_cost: Option<u64>,
+    upgrade_cost: Option<u64>,
+    upgrade_level_requirements: Option<Vec<u8>>,
+    is_active: Option<bool>,
+) -> Result<()> {
+    let module_config_account = &mut ctx.accounts.module_config_account;
+    let config = &mut module_config_account.data;
+    
+    // Verify this is the correct config ID
+    require!(config.id == id, ErrorCode::ConfigNotFound);
+    
+    // Update fields if provided
+    if let Some(new_url) = image_url {
+        config.image_url = new_url.clone();
+        msg!("Updated module image URL to: {}", new_url);
+    }
+
+    if let Some(new_mint_cost) = mint_cost {
+        config.mint_cost = new_mint_cost;
+        msg!("Updated mint cost to: {}", new_mint_cost);
+    }
+    
+    if let Some(new_upgrade_cost) = upgrade_cost {
+        config.upgrade_cost = new_upgrade_cost;
+        msg!("Updated upgrade cost to: {}", new_upgrade_cost);
+    }
+    
+    if let Some(new_is_active) = is_active {
+        config.is_active = new_is_active;
+        msg!("Updated active status to: {}", new_is_active);
+    }
+    
+    // Handle upgrade_level_requirements
+    if let Some(new_upgrade_requirements) = upgrade_level_requirements {
+        // Validate that the number of requirements doesn't exceed max
+        require!(
+            new_upgrade_requirements.len() <= MAX_MODULE_UPGRADES as usize,
+            ErrorCode::InvalidUpgradeConfiguration
+        );
+        
+        // Validate that upgrade level requirements are increasing and start at or above min_level
+        let mut prev_level = config.min_level;
+        for (_i, &required_level) in new_upgrade_requirements.iter().enumerate() {
+            require!(
+                required_level >= prev_level,
+                ErrorCode::InvalidUpgradeConfiguration
+            );
+            prev_level = required_level;
+        }
+        
+        config.upgrade_level_requirements = new_upgrade_requirements.clone();
+        msg!("Updated upgrade level requirements to: {:?} (max upgrades: {})", new_upgrade_requirements, new_upgrade_requirements.len());
+    }
+    
+    if let Some(new_faction_ids) = faction_ids {
+        require!(new_faction_ids.len() <= MAX_FACTION_IDS_PER_MODULE, ErrorCode::TooManyFactionIds);
+        config.faction_ids = new_faction_ids;
+        msg!("Updated faction IDs");
+    }
+    
+    if let Some(new_max_per_base) = max_per_base {
+        require!(new_max_per_base > 0 && new_max_per_base <= MAX_MODULES_PER_BASE, ErrorCode::InvalidModuleConfiguration);
+        config.max_per_base = new_max_per_base;
+        msg!("Updated max per base to: {}", new_max_per_base);
+    }
+    
+    // Emit event
+    emit!(ModuleConfigUpdated {
+        id,
+        name: config.name.clone(),
+    });
+    
+    Ok(())
+}
+ 
+
+// ----------------------------------------------------------------------------------------
+// ------------ WITHDRAW SOL FEES ----------------------------------
+// ----------------------------------------------------------------------------------------
+  
+
+/// Withdraw SOL fees from the treasury (excluding POL reserves)
+/// This function allows the authorized fee_collector to withdraw SOL fees
+/// but respects the sol_for_pol reserve for Protocol Owned Liquidity
+pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
+    let sol_treasury = &ctx.accounts.sol_treasury;
+    let fee_collector = &ctx.accounts.fee_collector;
+    let global_config = &ctx.accounts.global_config;
+
+    msg!("Withdrawing SOL from treasury");
+    msg!("SOL Treasury: {}", sol_treasury.key());
+    msg!("Treasury balance: {}", sol_treasury.lamports());
+    msg!("Fee collector: {}", fee_collector.key());
+ 
+    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
+    let current_balance = sol_treasury.lamports();
+    
+    // Calculate available balance (total - rent)
+    let reserved_amount = rent_exempt_amount;    
+    let available_balance = current_balance.saturating_sub(reserved_amount);
+    
+    // Check if we have enough available balance
+    if available_balance == 0 {
+        msg!("⚠️ No available balance to withdraw. Available: {}", available_balance);
+        msg!("   Total balance: {}, Rent: {}", current_balance, rent_exempt_amount);
+        return Err(ErrorCode::InsufficientTreasuryFunds.into());
+    }
+
+    // Calculate loot rewards amount using configurable percentage
+    let loot_percentage = global_config.loot_percentage as u64;
+    let loot_amount = available_balance.checked_mul(loot_percentage).unwrap().checked_div(100).unwrap();
+    let fee_collector_amount = available_balance.checked_sub(loot_amount).unwrap();
+
+    // Transfer loot rewards to loot SOL vault (required)
+    // Transfer loot amount to loot SOL vault
+    **sol_treasury.try_borrow_mut_lamports()? = current_balance.checked_sub(loot_amount).unwrap();
+    **ctx.accounts.loot_sol_vault.try_borrow_mut_lamports()? += loot_amount;
+
+    // Update loot rewards tracking
+    ctx.accounts.loot_rewards.total_sol_accumulated = ctx.accounts.loot_rewards.total_sol_accumulated.checked_add(loot_amount).unwrap();
+    
+    emit!(LootRewardsAccumulated {
+        mdoge_amount: 0,
+        sol_amount: loot_amount,
+        total_mdoge_accumulated: ctx.accounts.loot_rewards.total_mdoge_accumulated,
+        total_sol_accumulated: ctx.accounts.loot_rewards.total_sol_accumulated,
+    });
+
+    msg!("🎁 Transferred {} SOL to loot rewards vault ({}%)", loot_amount, loot_percentage);
+    
+    // Transfer remaining amount to fee collector
+    let remaining_balance = current_balance.saturating_sub(available_balance);
+    **sol_treasury.try_borrow_mut_lamports()? = remaining_balance;
+    **fee_collector.try_borrow_mut_lamports()? += fee_collector_amount;
+
+    // Emit event
+    emit!(SolFeesWithdrawn {
+        fee_collector: fee_collector.key(),
+        amount: fee_collector_amount,
+        loot_amount,
+    });
+
+    msg!("Withdrew {} lamports from treasury (Available balance now: {})", fee_collector_amount, remaining_balance.saturating_sub(reserved_amount));
+
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------------------
+// ------------ DYNAMIC DISTRIBUTION FUNCTIONS :: ORACLE & RATE UPDATES -----------------
+// ----------------------------------------------------------------------------------------
+ 
+
+/// Update mDOGE distribution rate based on price oracle
+/// This function can be called by anyone every hour
+pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
+    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    // Check if admin override is being used (when lp_token_amount > 0)
+    if lp_token_amount > 0 {
+        // Verify that the authority is provided and matches the global config
+        require!(ctx.accounts.authority.is_some(), ErrorCode::Unauthorized);
+        let authority = ctx.accounts.authority.as_ref().unwrap();
+        require!(
+            ctx.accounts.global_config.ext_authority == authority.key(),
+            ErrorCode::Unauthorized
+        );
+        msg!("🔧 Admin override: Using LP token amount {}", lp_token_amount);
+    } else {
+        msg!("🔄 Using automatic LP calculation");
+    }
+    
+    // Check if at least 1 hour has passed since last update
+    let one_hour = ONE_HR as i64; // seconds, convert to i64 to match timestamp type
+    if current_time < moon_doge_mining.last_rate_update + one_hour {
+        msg!("⏰ Update too early - must wait at least 1 hour between updates");
+        msg!("   Current time: {}, Next update allowed: {}, remaining minutes: {}", current_time, moon_doge_mining.last_rate_update + one_hour, (moon_doge_mining.last_rate_update + one_hour - current_time) / 60);
+        return Ok(());
+    }
+    
+    msg!("🔄 Starting mDOGE distribution rate update");
+    msg!("   Current time: {}", current_time);
+    msg!("   Last update: {}", moon_doge_mining.last_rate_update);
+    msg!("   Current dist rate: {}", moon_doge_mining.current_dist_rate);
+    
+    // Calculate mDOGE for liquidity based on current distribution rate and slots
+    let mdoge_for_liquidity = moon_doge_mining.current_dist_rate.checked_mul(moon_doge_mining.slots_for_swap).ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+    msg!("   Price entry {}/8: Swapping {} mDOGE for SOL", 
+         moon_doge_mining.price_history.len() + 1, mdoge_for_liquidity);
+    
+    // Perform swap via Raydium CPI to get current exchange rate
+    let sol_received = perform_mdoge_to_sol_swap(
+        &ctx.accounts.raydium_program,
+        &ctx.accounts.pool_state,
+        &ctx.accounts.amm_config,
+        &ctx.accounts.authority_pda,
+        &ctx.accounts.raydium_authority,
+        &ctx.accounts.mdoge_vault,
+        &ctx.accounts.sol_vault,
+        &ctx.accounts.mdoge_token_account,
+        &ctx.accounts.sol_token_account,
+        &ctx.accounts.mdoge_mint,
+        &ctx.accounts.sol_mint,
+        &ctx.accounts.observation_state,
+        &ctx.accounts.token_program_2022,
+        &ctx.accounts.token_program,
+        mdoge_for_liquidity,
+        moon_doge_mining.vault_auth_bump,
+    )?;
+    
+    // Calculate current price (SOL per mDOGE) with proper decimal handling
+    // sol_received is in WSOL base units (9 decimals), mdoge_for_liquidity is in mDOGE base units (6 decimals)
+    // 
+    // Formula: Price = (sol_received / 10^9) / (mdoge_for_liquidity / 10^6)
+    // Simplified: Price = (sol_received * 10^6) / (mdoge_for_liquidity * 10^9)
+    // To store with 9-decimal precision: multiply by 10^9
+    // Final: Price = (sol_received * 10^6 * 10^9) / (mdoge_for_liquidity * 10^9) = (sol_received * 10^6) / mdoge_for_liquidity
+    let current_price = if mdoge_for_liquidity > 0 {
+        // Prevent overflow by checking limits
+        if sol_received > crate::state::MAX_SAFE_U64 || mdoge_for_liquidity > crate::state::MAX_SAFE_U64 {
+            msg!("⚠️ Price calculation values too large, using fallback");
+            0
+        } else {
+            // Calculate: (sol_received * 10^9) / mdoge_for_liquidity
+            // This gives us SOL per mDOGE stored with 9-decimal precision
+            (sol_received as u128)
+                .checked_mul(1_000_000_000) // Scale by 10^9 for full precision
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(mdoge_for_liquidity as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .min(u64::MAX as u128) as u64
+        }
+    } else {
+        0
+    };
+    
+    // Calculate human-readable price for logging
+    // Convert back to actual SOL per mDOGE
+    let actual_price = current_price as f64 / 1_000_000_000.0;
+    msg!("   Swap details: {} mDOGE base units → {} WSOL base units", mdoge_for_liquidity, sol_received);
+    msg!("   Human readable: {} mDOGE → {:.9} SOL", mdoge_for_liquidity / 1_000_000, sol_received as f64 / 1_000_000_000.0);
+    msg!("   Current price: {} (9-decimal precision), Actual: {:.9} SOL per mDOGE", 
+         current_price, actual_price);
+    
+    // Add current price to history
+    let price_entry = PriceEntry {
+        timestamp: current_time,
+        price: current_price,
+    };
+    
+    // Add price entry to history
+    moon_doge_mining.price_history.push(price_entry);
+        
+    // ----------------------------------------------------
+    // Check if we have 8 price entries for full processing
+    // ----------------------------------------------------
+    if moon_doge_mining.price_history.len() < 8 {
+        // Not enough price history yet - just accumulate SOL for future POL
+        // The SOL is already in our sol_token_account, so we just track it
+        moon_doge_mining.sol_for_pol = moon_doge_mining.sol_for_pol.checked_add(sol_received).unwrap();
+        
+        msg!("   💰 Accumulated {} WSOL for POL, total reserve: {}, price entries: {}/8", 
+            sol_received, moon_doge_mining.sol_for_pol, moon_doge_mining.price_history.len());
+        msg!("   WSOL remains in token account: {}", ctx.accounts.sol_token_account.key());
+        
+        // Update timestamp
+        moon_doge_mining.last_rate_update = current_time;
+        
+        return Ok(());
+    }
+    
+    // ----------------------------------------------------
+    // We have 8 price entries - do weighted average (recent prices get higher weight)
+    // ----------------------------------------------------
+    // Weights: [1, 2, 3, 4, 5, 6, 7, 8] for positions [0, 1, 2, 3, 4, 5, 6, 7]
+    // Most recent price (index 7) gets weight 8, oldest (index 0) gets weight 1
+    let mut weighted_sum: u128 = 0;
+    let mut total_weights: u128 = 0;
+    
+    for (i, entry) in moon_doge_mining.price_history.iter().enumerate() {
+        let weight = (i + 1) as u128; // Weight from 1 to 8
+        
+        // Prevent overflow in weighted sum calculation
+        let price_contribution = (entry.price as u128)
+            .checked_mul(weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        weighted_sum = weighted_sum
+            .checked_add(price_contribution)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        total_weights = total_weights
+            .checked_add(weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    
+    let new_avg_price = if total_weights > 0 {
+        (weighted_sum / total_weights).min(u64::MAX as u128) as u64
+    } else {
+        0
+    };
+    
+    msg!("   New 8-hour weighted average price: {} (total_weights: {})", new_avg_price, total_weights);
+    msg!("   Previous 8-hour average: {}", moon_doge_mining.avg_price_8h);
+    
+    // Calculate price change percentage with proper bounds checking
+    let price_change_pct = if moon_doge_mining.avg_price_8h > 0 {
+        let old_price = moon_doge_mining.avg_price_8h as i128;
+        let new_price = new_avg_price as i128;
+        
+        let directional_change = if new_price > old_price {
+           1
+        } else if new_price < old_price {
+            -1
+        } else {
+            0 // Exact same price
+        };
+        directional_change
+    } else {
+        0
+    };
+    
+    // Adjust distribution rate based on price movement
+    let old_rate = moon_doge_mining.current_dist_rate;
+    if price_change_pct == 1 {
+        // Price increased - increase distribution by 1%
+        moon_doge_mining.current_dist_rate = moon_doge_mining.current_dist_rate
+            .checked_mul(101)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("   📈 Price increased! Increasing distribution rate by 1%");
+    } else if price_change_pct == -1 {
+        // Price decreased - decrease distribution by 3%
+        moon_doge_mining.current_dist_rate = moon_doge_mining.current_dist_rate
+            .checked_mul(97)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("   📉 Price decreased! Decreasing distribution rate by 3%");
+    } else {
+        msg!("   ➡️ Price unchanged, keeping same distribution rate");
+    }
+    
+    // Calculate amounts for LP addition using UPDATED distribution rate
+    // Get SOL from treasury (accumulated POL + current swap)
+    let total_sol_for_lp = moon_doge_mining.sol_for_pol
+        .checked_add(sol_received)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    msg!("   🏦 Adding liquidity: {} WSOL", total_sol_for_lp);
+    
+    // Note: WSOL is already in our sol_token_account from swaps, no need to withdraw from treasury
+    
+    // Perform actual LP addition and burn
+    perform_lp_addition_and_burn(
+        &ctx.accounts.raydium_program,
+        &ctx.accounts.pool_state,
+        &ctx.accounts.authority_pda,
+        &ctx.accounts.raydium_authority,
+        &ctx.accounts.mdoge_vault,
+        &ctx.accounts.sol_vault,
+        &ctx.accounts.mdoge_token_account,
+        &ctx.accounts.sol_token_account,
+        &ctx.accounts.lp_token_account,
+        &ctx.accounts.lp_mint,
+        &ctx.accounts.mdoge_mint,
+        &ctx.accounts.sol_mint,
+        &ctx.accounts.token_program_2022,
+        &ctx.accounts.token_program,
+        total_sol_for_lp,
+        moon_doge_mining.vault_auth_bump,
+        moon_doge_mining,
+        lp_token_amount, // Pass the LP token amount
+    )?;
+    
+    // Check actual WSOL balance after LP addition to see how much was consumed
+    let wsol_balance_after_lp = {
+        let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
+        let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+        sol_token_data.amount
+    };
+    
+    // Calculate how much SOL was actually consumed for LP
+    let sol_consumed_for_lp = total_sol_for_lp.saturating_sub(wsol_balance_after_lp);
+    
+    // Update POL tracking - subtract only the amount actually used
+    moon_doge_mining.sol_for_pol = wsol_balance_after_lp; // Keep any leftover WSOL for next cycle
+    
+    msg!("   💰 SOL consumption: {} total available, {} consumed for LP, {} remaining", 
+         total_sol_for_lp, sol_consumed_for_lp, moon_doge_mining.sol_for_pol);
+    
+    // Clear price history to restart the 8-hour cycle
+    moon_doge_mining.price_history.clear();
+    
+    // Update state
+    moon_doge_mining.prev_avg_price_8h = moon_doge_mining.avg_price_8h;
+    moon_doge_mining.avg_price_8h = new_avg_price;
+    moon_doge_mining.last_rate_update = current_time;
+    
+    msg!("   🔄 Price history cleared - restarting 8-hour accumulation cycle");
+    msg!("   🎯 Distribution rate updated from {} to {}", old_rate, moon_doge_mining.current_dist_rate);
+    
+    emit!(DistributionRateUpdated {
+        old_rate,
+        new_rate: moon_doge_mining.current_dist_rate,
+        price_change_pct,
+        current_price,
+        avg_price_8h: new_avg_price,
+        sol_received,
+        timestamp: current_time,
+    });
+    
+    Ok(())
+}
+
+/// Helper function to perform mDOGE to SOL swap via Raydium CPI
+fn perform_mdoge_to_sol_swap<'info>(
+    raydium_program: &AccountInfo<'info>,
+    pool_state: &AccountInfo<'info>,
+    amm_config: &AccountInfo<'info>,
+    authority_pda: &AccountInfo<'info>,
+    raydium_authority: &AccountInfo<'info>,
+    mdoge_vault: &AccountInfo<'info>,
+    sol_vault: &AccountInfo<'info>,
+    mdoge_token_account: &AccountInfo<'info>,
+    sol_token_account: &AccountInfo<'info>,
+    mdoge_mint: &AccountInfo<'info>,
+    sol_mint: &AccountInfo<'info>,
+    observation_state: &AccountInfo<'info>,
+    token_program_2022: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    amount_in: u64,
+    vault_auth_bump: u8,
+) -> Result<u64> {
+    use raydium_cp_swap::cpi;
+    
+    msg!("🔄 Performing real Raydium swap: {} mDOGE for WSOL", amount_in);
+    
+    // Get WSOL token balance before swap by deserializing account data
+    let sol_balance_before = {
+        let sol_account_data = sol_token_account.try_borrow_data()?;
+        let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+        sol_token_data.amount
+    }; // Borrow is dropped here
+    
+    // Create signer seeds for vault authority
+    let authority_seeds = &[
+        MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        &[vault_auth_bump],
+    ];
+    let signer_seeds = &[&authority_seeds[..]];
+    
+    // Create CPI context for Raydium swap
+    let cpi_accounts = cpi::accounts::Swap {
+        payer: authority_pda.to_account_info(),         // Our PDA as the payer/signer
+        authority: raydium_authority.to_account_info(), // Raydium's pool authority PDA
+        amm_config: amm_config.to_account_info(),
+        pool_state: pool_state.to_account_info(),
+        input_token_account: mdoge_token_account.to_account_info(),  // Our token account (authority = our PDA)
+        output_token_account: sol_token_account.to_account_info(),   // Our token account (authority = our PDA)
+        input_vault: mdoge_vault.to_account_info(),     // Raydium's mDOGE vault
+        output_vault: sol_vault.to_account_info(),      // Raydium's SOL vault  
+        input_token_program: token_program_2022.to_account_info(),   // Token-2022 for mDOGE
+        output_token_program: token_program.to_account_info(),       // Standard token for SOL
+        input_token_mint: mdoge_mint.to_account_info(),
+        output_token_mint: sol_mint.to_account_info(),
+        observation_state: observation_state.to_account_info(),
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(
+        raydium_program.to_account_info(),
+        cpi_accounts,
+        signer_seeds,
+    );
+    
+    // Accept any amount out since we're just getting current market price
+    let min_amount_out = 0;
+    
+    // Perform the actual swap
+    cpi::swap_base_input(cpi_ctx, amount_in, min_amount_out)?;
+    
+    // Calculate actual WSOL received by checking token account balance again
+    let sol_received = {
+        let sol_account_data_after = sol_token_account.try_borrow_data()?;
+        let sol_token_data_after = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data_after[..])?;
+        let sol_balance_after = sol_token_data_after.amount;
+        sol_balance_after.saturating_sub(sol_balance_before)
+    }; // Borrow is dropped here
+    
+    msg!("✅ Swap completed: received {} WSOL tokens", sol_received);
+    
+    Ok(sol_received)
+}
+
+/// Helper function to add liquidity to Raydium pool and burn LP tokens
+fn perform_lp_addition_and_burn<'info>(
+    raydium_program: &AccountInfo<'info>,
+    pool_state: &AccountInfo<'info>,
+    authority_pda: &AccountInfo<'info>,
+    raydium_authority: &AccountInfo<'info>,
+    mdoge_vault: &AccountInfo<'info>,
+    sol_vault: &AccountInfo<'info>,
+    mdoge_token_account: &AccountInfo<'info>,
+    sol_token_account: &AccountInfo<'info>,
+    lp_token_account: &AccountInfo<'info>,
+    lp_mint: &AccountInfo<'info>,
+    mdoge_mint: &AccountInfo<'info>,
+    sol_mint: &AccountInfo<'info>,
+    token_program_2022: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    sol_amount: u64,
+    vault_auth_bump: u8,
+    moon_doge_mining: &mut Account<MoonDogeMining>,
+    admin_lp_override: u64,
+) -> Result<()> {
+
+    
+    msg!("🏦 Starting LP addition: {} SOL", sol_amount);
+    
+    // Create signer seeds for vault authority
+    let authority_seeds = &[
+        MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        &[vault_auth_bump],
+    ];
+    let signer_seeds = &[&authority_seeds[..]];
+    
+    // Step 1: Get LP token balance before deposit to calculate actual minted amount
+    let lp_balance_before = {
+        use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
+        let lp_account_data = lp_token_account.try_borrow_data()?;
+        let lp_account = TokenAccountInterface::try_deserialize(&mut &lp_account_data[..])?;
+        lp_account.amount
+    };
+    
+    msg!("💰 LP token balance before deposit: {}", lp_balance_before);
+    
+    // Step 2: Use actual Raydium CPI for deposit
+    msg!("🏦 Creating CPI context for Raydium deposit");
+    
+    let cpi_accounts = raydium_cp_swap::cpi::accounts::Deposit {
+        owner: authority_pda.to_account_info(),        // Our vault authority as the owner/signer
+        authority: raydium_authority.to_account_info(), // Raydium's pool authority PDA
+        pool_state: pool_state.to_account_info(),
+        owner_lp_token: lp_token_account.to_account_info(), // LP token account (authority = our PDA)
+        token_0_account: sol_token_account.to_account_info(),   // Our SOL account (authority = our PDA) - token0 is WSOL
+        token_1_account: mdoge_token_account.to_account_info(), // Our mDOGE account (authority = our PDA) - token1 is mDOGE
+        token_0_vault: sol_vault.to_account_info(),      // Raydium's SOL vault - token0 vault
+        token_1_vault: mdoge_vault.to_account_info(),    // Raydium's mDOGE vault - token1 vault
+        token_program: token_program.to_account_info(),  // Standard token program
+        token_program_2022: token_program_2022.to_account_info(), // Token-2022 program
+        vault_0_mint: sol_mint.to_account_info(),        // SOL mint - token0 mint
+        vault_1_mint: mdoge_mint.to_account_info(),      // mDOGE mint - token1 mint
+        lp_mint: lp_mint.to_account_info(),              // Raydium's LP mint
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(
+        raydium_program.to_account_info(),
+        cpi_accounts,
+        signer_seeds, // Use vault authority signer seeds for all operations
+    );
+    
+    // Read token vault balances directly from the token accounts
+    let sol_vault_balance = {
+        let account_data = sol_vault.try_borrow_data()?;
+        let token_account = anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
+        token_account.amount
+    };
+    
+    let mdoge_vault_balance = {
+        let account_data = mdoge_vault.try_borrow_data()?;
+        let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
+        token_account.amount
+    };
+    
+    // Read LP supply from pool state (this is what Raydium uses internally)
+    let lp_supply = {
+        let pool_data = pool_state.try_borrow_data()?;
+        // Skip discriminator (8 bytes) and read the lp_supply field directly
+        // Based on PoolState struct: lp_supply is at offset after all the Pubkeys and small fields
+        // From pool.rs: 10 Pubkeys (320 bytes) + 5 u8s (5 bytes) = 325 bytes from start + discriminator (8) = 333
+        let lp_supply_offset = 8 + 10 * 32 + 5; // discriminator + 10 pubkeys + 5 u8 fields
+        if pool_data.len() >= lp_supply_offset + 8 {
+            u64::from_le_bytes([
+                pool_data[lp_supply_offset],
+                pool_data[lp_supply_offset + 1],
+                pool_data[lp_supply_offset + 2],
+                pool_data[lp_supply_offset + 3],
+                pool_data[lp_supply_offset + 4],
+                pool_data[lp_supply_offset + 5],
+                pool_data[lp_supply_offset + 6],
+                pool_data[lp_supply_offset + 7],
+            ])
+        } else {
+            0 // Fallback if we can't read the data
+        }
+    };
+    
+    msg!("📊 Pool balances - SOL vault: {}, mDOGE vault: {}, LP supply: {}", 
+         sol_vault_balance, mdoge_vault_balance, lp_supply);
+    
+    // Reserve buffer upfront to account for transfer fees and rounding
+    // This ensures our calculations are based on what we can actually use
+    let sol_buffer = sol_amount / 50; // 2% buffer for transfer fees and rounding
+    let available_sol = sol_amount.saturating_sub(sol_buffer);
+    
+    msg!("🛡️ Reserved {} SOL as buffer, available for LP: {} SOL", sol_buffer, available_sol);
+    
+        // Calculate LP tokens and adjusted amounts to maximize token usage
+    let (estimated_lp_amount, adjusted_sol_amount, adjusted_mdoge_amount) = if admin_lp_override > 0 {
+        // Admin override: Calculate required token amounts for the specified LP amount
+        let required_sol = if lp_supply > 0 && sol_vault_balance > 0 {
+            (admin_lp_override as u128 * sol_vault_balance as u128 / lp_supply as u128) as u64
+        } else {
+            available_sol // Fallback to available amount (after buffer)
+        };
+        
+        let required_mdoge = if lp_supply > 0 && mdoge_vault_balance > 0 {
+            (admin_lp_override as u128 * mdoge_vault_balance as u128 / lp_supply as u128) as u64
+        } else {
+            0 // No mDOGE needed if pool is empty
+        };
+        
+        // Use available SOL (already has buffer applied)
+        let final_sol = required_sol.min(available_sol);
+        let final_mdoge = required_mdoge + 100;
+        
+        msg!("🔧 Admin override LP calculation: {} LP tokens (needs {} SOL, {} mDOGE)", 
+             admin_lp_override, final_sol, final_mdoge);
+             
+        (admin_lp_override, final_sol, final_mdoge)
+    } else {
+        // Normal automatic calculation using available SOL (after buffer)
+        let lp_from_sol = (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
+        let required_mdoge = (lp_from_sol as u128 * mdoge_vault_balance as u128 / lp_supply as u128) as u64;
+        msg!("💰 SOL-limited LP calculation: {} LP tokens (needs {} SOL, {} mDOGE)",  
+             lp_from_sol, available_sol, required_mdoge);
+        (lp_from_sol, available_sol, required_mdoge + 100) // Add small buffer for ceiling rounding
+    };
+    
+    msg!("🎯 Final LP token amount: {} for deposits of {} SOL, {} mDOGE", 
+         estimated_lp_amount, adjusted_sol_amount, adjusted_mdoge_amount);
+    
+    // Add small additional buffer to mDOGE for transfer fees (1% burn tax)
+    // SOL already has buffer applied upfront, but mDOGE needs extra for burn tax
+    let max_mdoge_with_buffer = adjusted_mdoge_amount.saturating_add(adjusted_mdoge_amount / 50); // +2% buffer for burn tax
+    
+    msg!("🛡️ Maximum amounts: {} SOL (buffered upfront), {} mDOGE (with burn tax buffer)", 
+         adjusted_sol_amount, max_mdoge_with_buffer);
+    
+    // Perform the actual deposit with calculated LP amount and proper maximums
+    // Parameters: (lp_token_amount, maximum_token_0_amount, maximum_token_1_amount)
+    // token0 = WSOL, token1 = mDOGE
+    // SOL amount is already buffered, mDOGE has burn tax buffer
+    raydium_cp_swap::cpi::deposit(cpi_ctx, estimated_lp_amount, adjusted_sol_amount, max_mdoge_with_buffer)?;
+    
+    // Calculate actual LP tokens minted by checking balance difference
+    let lp_balance_after = {
+        use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
+        let lp_account_data = lp_token_account.try_borrow_data()?;
+        let lp_account = TokenAccountInterface::try_deserialize(&mut &lp_account_data[..])?;
+        lp_account.amount
+    };
+    
+    let lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
+    
+    msg!("💰 LP token balance after deposit: {}", lp_balance_after);
+    msg!("✅ LP tokens minted: {}", lp_tokens_minted);
+    
+    // Step 3: Burn the LP tokens immediately using SPL token burn
+    if lp_tokens_minted > 0 {
+        msg!("🔥 Burning {} LP tokens", lp_tokens_minted);
+        
+        use anchor_spl::token;
+        
+        // Use vault authority to burn LP tokens (same authority that owns the LP token account)
+        let burn_ctx = CpiContext::new_with_signer(
+            token_program.to_account_info(),
+            token::Burn {
+                mint: lp_mint.to_account_info(),
+                from: lp_token_account.to_account_info(),
+                authority: authority_pda.to_account_info(),
+            },
+            signer_seeds, // Use vault authority signer seeds (same as deposit)
+        );
+        
+        token::burn(burn_ctx, lp_tokens_minted)?;
+        
+        // Get actual amounts consumed by checking token account balances before/after
+        let sol_consumed = {
+            let sol_account_data = sol_token_account.try_borrow_data()?;
+            let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+            // Calculate how much SOL was actually consumed (we started with sol_amount, now have this much left)
+            sol_amount.saturating_sub(sol_token_data.amount)
+        };
+            
+        // Update POL stats with actual consumed amounts
+        moon_doge_mining.pol_stats.update_after_lp_operation(
+            lp_tokens_minted,
+            sol_consumed,
+            adjusted_mdoge_amount
+        );
+        
+        msg!("📊 POL Stats Updated:");
+        msg!("   Total LP Burnt: {}", moon_doge_mining.pol_stats.total_lp_burnt);
+        msg!("   Total SOL Added: {}", moon_doge_mining.pol_stats.total_sol_added);
+        msg!("   Total mDOGE Added: {}", moon_doge_mining.pol_stats.total_mdoge_added);
+        msg!("   LP Operations: {}", moon_doge_mining.pol_stats.lp_operations_count);
+        
+        // Emit LP burn tracking event
+        emit!(LpTokensBurned {
+            lp_tokens_burned: lp_tokens_minted,
+            total_lp_burnt: moon_doge_mining.pol_stats.total_lp_burnt,
+            mdoge_amount_added: adjusted_mdoge_amount,
+            sol_amount_added: sol_consumed,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        
+        // Verify burn was successful by checking final balance
+        let lp_balance_final = {
+            use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
+            let lp_account_data = lp_token_account.try_borrow_data()?;
+            let lp_account = TokenAccountInterface::try_deserialize(&mut &lp_account_data[..])?;
+            lp_account.amount
+        };
+        
+        msg!("🔥 LP tokens burned: {} (Total burnt: {})", lp_tokens_minted, moon_doge_mining.pol_stats.total_lp_burnt);
+        msg!("💰 Final LP token balance: {} (should equal initial: {})", lp_balance_final, lp_balance_before);
+        
+        // Ensure all LP tokens were properly burned
+        require_eq!(lp_balance_final, lp_balance_before, ErrorCode::IncompleteTokenBurn);
+    } else {
+        msg!("⚠️ No LP tokens were minted, skipping burn");
+    }
+    msg!("✅ LP addition and burn completed successfully");
+    
+    Ok(())
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────── //
+// ────────────────────────────────────────────────────────────────────────────── //
+// ────────────────────────────────────────────────────────────────────────────── //
+
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = GlobalConfig::LEN,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = MoonDogeMining::LEN,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+
+    /// CHECK: 0-byte PDA that only stores lamports
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+        owner   = crate::ID 
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+
+ 
+
+#[derive(Accounts)]
+pub struct UpdateConfigAc<'info> {
+    #[account(
+        mut, 
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MODULE_CONFIG_STORE_SEED.as_ref()],
+        bump = module_config_store.bump,
+    )]
+    pub module_config_store: Option<Account<'info, ModuleConfigStore>>,
+    
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump,
+    )]
+    pub moon_doge_mining: Option<Account<'info, MoonDogeMining>>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+/// Account struct for adding a new expansion
+#[derive(Accounts)]
+pub struct AddExpansion<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+ 
+
+#[derive(Accounts)]
+pub struct InitializeMining<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+
+    //  Vault authority PDA (0-byte, signer only)
+    #[account(
+        seeds = [MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: signer-only PDA, no data or lamports required
+    pub vault_authority: UncheckedAccount<'info>,
+
+    // ─────────────────── token-2022 vault account ────────────────────
+    #[account(
+        init,
+        payer  = authority,
+        owner  = token_program.key(),
+        seeds  = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        token::mint      = token_mint,
+        token::authority = vault_authority,
+        bump
+    )]
+    pub token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    // Mint created under Token-2022
+    #[account(mut, owner = token_program.key())]
+    pub token_mint: InterfaceAccount<'info, Mint2022>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+
+#[derive(Accounts)]
+pub struct DepositTokens<'info> {
+    #[account(mut)]
+    pub depositor: Signer<'info>,
+    
+    #[account(
+        mut,
+        owner       = token_program.key(),                     // interface account check
+        constraint  = depositor_token_account.owner == depositor.key() @ ErrorCode::Unauthorized,
+        constraint  = depositor_token_account.mint  == mdoge_token_vault.mint @ ErrorCode::InvalidMint
+    )]
+    pub depositor_token_account: InterfaceAccount<'info, TokenAccount2022>,
+
+    // ─── mining token vault ───
+    #[account(
+        mut,
+        seeds  = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        bump,
+        owner  = token_program.key(),
+    )]
+    pub mdoge_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+
+    #[account(
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(owner = token_program.key())]
+    pub token_mint: InterfaceAccount<'info, Mint2022>,
+    
+    pub token_program: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct CreateSystemReferralAccount<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = ReferralRewards::LEN,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), system_program.key().as_ref()],
+        bump,
+    )]
+    pub referrer_rewards: Account<'info, ReferralRewards>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
+#[derive(Accounts)]
+#[instruction(
+    name: String,
+    image_url: String,
+    module_type: ModuleType,
+    faction_ids: Vec<u8>,
+    min_level: u8,
+    max_per_base: u8,
+    width: u8,
+    height: u8,
+    mint_cost: u64,
+    upgrade_cost: u64,
+    upgrade_level_requirements: Vec<u8>,
+)]
+pub struct AddModuleToConfigStore<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MODULE_CONFIG_STORE_SEED.as_ref()],
+        bump = module_config_store.bump,
+    )]
+    pub module_config_store: Account<'info, ModuleConfigStore>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = ModuleConfigAccount::LEN,
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_config_store.next_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+            
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(
+    id: u16,
+    max_hp: u32,
+    power_consumption: u16,
+    base_hashpower: u32,
+    base_xp_per_hour: u32,
+    base_damage: u32,
+    base_missiles_per_load: u8,
+    reload_time_seconds: u32,
+    cooldown_sec: u32,
+    max_reward: u64,
+    probability: u16,
+)]
+pub struct UpdateModuleStats<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [MODULE_CONFIG_SEED.as_ref(), id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+
+ 
+
+#[derive(Accounts)]
+pub struct WithdrawSolFees<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+
+    /// CHECK: safe PDA used as vault authority
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,  // Let Anchor find the correct bump
+        owner = crate::ID  // Use program_id for clarity
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+
+    #[account(mut, signer, address = global_config.ext_fee_collector)]
+    pub fee_collector: Signer<'info>,
+
+    /// CHECK: Loot SOL vault PDA (required)
+    #[account(
+        mut,
+        seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = crate::ID
+    )]
+    pub loot_sol_vault: UncheckedAccount<'info>,
+
+    /// Loot rewards tracking account (required)
+    #[account(
+        mut,
+        seeds = [LOOT_REWARDS_SEED.as_ref()],
+        bump,
+    )]
+    pub loot_rewards: Account<'info, LootRewards>,
+
+    pub system_program: Program<'info, System>,
+}
+ 
+
+
+#[derive(Accounts)]
+pub struct InitializeConfigStore<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = ModuleConfigStore::LEN,
+        seeds = [MODULE_CONFIG_STORE_SEED.as_ref()],
+        bump
+    )]
+    pub module_config_store: Account<'info, ModuleConfigStore>,
+        
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+ 
+
+#[derive(Accounts)]
+pub struct ManageUserElectricity<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_fee_collector == fee_collector.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    /// CHECK: This is the user who owns the moonbase, we only use it for PDA derivation
+    pub user: AccountInfo<'info>,
+    
+    #[account(mut)]
+    pub fee_collector: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+// ----------------------------------------------------------------------------------------
+// ------------ DYNAMIC DISTRIBUTION ACCOUNT STRUCTS ------------------------------------
+// ----------------------------------------------------------------------------------------
+
+ 
+
+#[derive(Accounts)]
+pub struct UpdateMdogeDistPerSlot<'info> {
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    /// GlobalConfig for admin authority verification
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// Authority (optional - only required when lp_token_amount > 0)
+    pub authority: Option<Signer<'info>>,
+    
+    /// CHECK: Raydium CP-Swap program
+    pub raydium_program: UncheckedAccount<'info>,
+    
+    /// CHECK: Raydium pool state
+    #[account(mut)]
+    pub pool_state: UncheckedAccount<'info>,
+    
+    /// CHECK: Raydium AMM config
+    pub amm_config: UncheckedAccount<'info>,
+    
+    /// CHECK: Vault authority PDA (our program's authority for token accounts)
+    #[account(
+        seeds = [MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    pub authority_pda: UncheckedAccount<'info>,
+    
+    /// CHECK: Raydium's pool authority PDA (from Raydium program)
+    pub raydium_authority: UncheckedAccount<'info>,
+    
+    /// CHECK: mDOGE vault in Raydium pool
+    #[account(mut)]
+    pub mdoge_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL vault in Raydium pool
+    #[account(mut)]
+    pub sol_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: mDOGE token account for swapping
+    #[account(mut)]
+    pub mdoge_token_account: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL token account for receiving
+    #[account(mut)]
+    pub sol_token_account: UncheckedAccount<'info>,
+    
+    /// CHECK: mDOGE mint
+    pub mdoge_mint: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL mint (WSOL)
+    pub sol_mint: UncheckedAccount<'info>,
+    
+    /// CHECK: Raydium observation state
+    #[account(mut)]
+    pub observation_state: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL treasury to receive swapped SOL
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+    
+    /// CHECK: LP token account for receiving and burning LP tokens (can be any valid token account)
+    #[account(mut)]
+    pub lp_token_account: UncheckedAccount<'info>,
+        
+    /// CHECK: LP mint from Raydium pool (must be writable for minting)
+    #[account(mut)]
+    pub lp_mint: UncheckedAccount<'info>,
+    
+    /// Token-2022 program for mDOGE
+    pub token_program_2022: Program<'info, Token2022>,
+    
+    /// Standard token program for SOL
+    pub token_program: Program<'info, anchor_spl::token::Token>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateSlotsPerHour<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+/// Account struct for adding a new faction
+#[derive(Accounts)]
+pub struct AddFaction<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
+/// Account struct for initializing loot rewards system
+#[derive(Accounts)]
+pub struct InitializeLootRewards<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = LootRewards::LEN,
+        seeds = [LOOT_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub loot_rewards: Account<'info, LootRewards>,
+    
+    /// CHECK: SOL vault for loot rewards (0-byte PDA)
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = crate::ID
+    )]
+    pub loot_sol_vault: UncheckedAccount<'info>,
+    
+    /// mDOGE vault for loot rewards
+    #[account(
+        init,
+        payer = authority,
+        owner = token_program.key(),
+        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        token::mint = mdoge_mint,
+        token::authority = loot_mdoge_vault_authority,
+        bump
+    )]
+    pub loot_mdoge_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// CHECK: Authority for loot mDOGE vault (0-byte PDA)
+    #[account(
+        seeds = [LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub loot_mdoge_vault_authority: UncheckedAccount<'info>,
+    
+    /// mDOGE mint (Token-2022)
+    #[account(owner = token_program.key())]
+    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+
+
+/// Account struct for initializing level statistics
+#[derive(Accounts)]
+pub struct InitializeLevelStats<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = LevelStats::LEN,
+        seeds = [LEVEL_STATS_SEED.as_ref()],
+        bump
+    )]
+    pub level_stats: Account<'info, LevelStats>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(id: u16)]
+pub struct UpdateModuleConfig<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MODULE_CONFIG_SEED.as_ref(), id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializePvPMatchmaker<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = PvPMatchmaker::LEN,
+        seeds = [PVP_MATCHMAKER_SEED.as_ref()],
+        bump
+    )]
+    pub pvp_matchmaker: Account<'info, PvPMatchmaker>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ToggleGameActive<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+// ----------------------------------------------------------------------------------------
+// ------------ QUERY FUNCTIONS FOR EXTERNAL PROGRAMS ------------
+// ----------------------------------------------------------------------------------------
+
+/// Query treasury information for external programs
+pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
+    let sol_treasury = &ctx.accounts.sol_treasury;
+    let moon_doge_mining = &ctx.accounts.moon_doge_mining;
+    let global_config = &ctx.accounts.global_config;
+
+    let total_balance = sol_treasury.lamports();
+    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
+    let pol_reserves = moon_doge_mining.sol_for_pol;
+    
+    // Calculate available balance (total - POL reserve - rent)
+    let reserved_amount = rent_exempt_amount.checked_add(pol_reserves)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    let available_for_withdrawal = total_balance.saturating_sub(reserved_amount);
+
+    Ok(TreasuryInfo {
+        total_balance,
+        pol_reserves,
+        rent_exempt_amount,
+        available_for_withdrawal,
+        loot_percentage: global_config.loot_percentage,
+    })
+}
+
+/// Query global config information for external programs
+pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
+    let global_config = &ctx.accounts.global_config;
+
+    Ok(GlobalConfigInfo {
+        loot_percentage: global_config.loot_percentage,
+        is_game_active: global_config.is_game_active,
+        base_creation_cost: global_config.base_creation_cost,
+        ext_authority: global_config.ext_authority,
+        ext_fee_collector: global_config.ext_fee_collector,
+    })
+}
+
+// ----------------------------------------------------------------------------------------
+// ------------ QUERY ACCOUNT STRUCTS ------------
+// ----------------------------------------------------------------------------------------
+
+#[derive(Accounts)]
+pub struct QueryTreasuryInfo<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+
+    /// CHECK: SOL treasury PDA
+    #[account(
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+        owner = crate::ID
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct QueryGlobalConfig<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+}
+
