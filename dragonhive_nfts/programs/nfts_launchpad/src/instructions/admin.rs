@@ -229,6 +229,8 @@ pub struct MintGenesisDragonBee<'info> {
     #[account(mut)]
     pub dragonbee_mint: Signer<'info>,
 
+    /// CHECK: This is the pre-created MPL Core collection asset address.
+    /// Verified by equality to the value stored in global_config; not deserialized.
     #[account(
         constraint = collection_mint.key() == global_config.collection_mint @ DragonHiveError::InvalidAccount
     )]

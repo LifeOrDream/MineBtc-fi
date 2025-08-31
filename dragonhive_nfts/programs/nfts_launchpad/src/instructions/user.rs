@@ -92,6 +92,7 @@ pub struct PurchaseDragonBee<'info> {
     #[account(mut)]
     pub dragonbee_mint: Signer<'info>,
 
+    /// CHECK: DragonBee collection mint (MPL Core)
     #[account(
         constraint = collection_mint.key() == global_config.collection_mint @ DragonHiveError::InvalidAccount
     )]
