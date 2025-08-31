@@ -23,5 +23,5 @@ anchor-spl = "0.31.1"
 mpl-core = "0.9.1" 
 mpl-token-metadata = { version = "5.1.0" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
-raydium-cp-swap = { path = "../../../raydium_cp/programs/cp-swap", features = ["cpi"] }
+raydium-cp-swap = { path = "../../../raydium/programs/cp-swap", features = ["cpi"] }
 # spl-token-2022 = { version = "8.0.1", default-features = false, features = ["no-entrypoint"] }

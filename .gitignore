@@ -2,5 +2,7 @@ degenhive/*
 mpl_core/*
 raydium/*
 
+*/target/*
+
 wallet-keypair.json
 setup_scripts/node_modules/*

@@ -1,0 +1,23 @@
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+dragonhive_nfts = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
+
+[programs.devnet]
+dragonhive_nfts = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
+
+[programs.mainnet]
+dragonhive_nfts = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/Desktop/Solana/dogeTech/wallet-keypair.json"
+ 

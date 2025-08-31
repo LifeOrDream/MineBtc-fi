@@ -1,0 +1,26 @@
+[package]
+name = "dragonhive_nfts"
+version = "0.1.0"
+description = "DragonHive NFT Program - Core admin program for DragonBee NFT management, breeding, and DRAGON token operations"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "dragonhive_nfts"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[profile.release]
+overflow-checks = true
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.31.1", features = ["default"] }
+mpl-core = "0.9.1" 
+spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
