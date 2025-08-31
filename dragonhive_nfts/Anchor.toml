@@ -5,14 +5,8 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-dragonhive_nfts = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
-
 [programs.devnet]
-dragonhive_nfts = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
-
-[programs.mainnet]
-dragonhive_nfts = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
+moon_base = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
 
 [registry]
 url = "https://api.apr.dev"
@@ -20,4 +14,7 @@ url = "https://api.apr.dev"
 [provider]
 cluster = "devnet"
 wallet = "~/Desktop/Solana/dogeTech/wallet-keypair.json"
- 
+
+
+[programs.localnet]
+moon_base = "5Tn8VwVzcWK9BTSxJwrxqdFkL2oFEBQh1CVaetUYEdCw"

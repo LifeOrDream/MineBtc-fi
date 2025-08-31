@@ -1,26 +1,27 @@
 [package]
-name = "dragonhive_nfts"
+name = "moon_base"
 version = "0.1.0"
-description = "DragonHive NFT Program - Core admin program for DragonBee NFT management, breeding, and DRAGON token operations"
+description = "Moon Base Facility Management Program for MoonDoge Game"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "dragonhive_nfts"
+name = "moon_base"
 
 [features]
+default = []
+cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-cpi = ["no-entrypoint"]
-default = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
-[profile.release]
-overflow-checks = true
 
 [dependencies]
 anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
-anchor-spl = { version = "0.31.1", features = ["default"] }
+anchor-spl = "0.31.1"
 mpl-core = "0.9.1" 
+mpl-token-metadata = { version = "5.1.0" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
+raydium-cp-swap = { path = "../../../raydium/programs/cp-swap", features = ["cpi"] }
+# spl-token-2022 = { version = "8.0.1", default-features = false, features = ["no-entrypoint"] }
