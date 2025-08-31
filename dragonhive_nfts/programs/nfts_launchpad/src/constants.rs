@@ -102,7 +102,7 @@ pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 
 /// HONEY token constants
 pub const HONEY_DECIMALS: u8 = 9;
-pub const HONEY_TOTAL_SUPPLY: u64 = 100_000_000_000 * 10_u64.pow(HONEY_DECIMALS as u32); // 100B tokens
+pub const HONEY_TOTAL_SUPPLY: u64 = 100_000_000_000_000_000_000; // 100B tokens with 9 decimals
 
 /// Maximum DragonBee supply
 pub const MAX_DRAGONBEE_SUPPLY: u64 = 15_000; // Initial genesis sale
@@ -117,6 +117,11 @@ pub const BREEDING_COOLDOWN_SLOWEST: i64 = 2592000; // 1 month
 /// Power scaling for kill rewards
 pub const MIN_KILL_POWER_THRESHOLD: u32 = 100;
 pub const POWER_SCALING_FACTOR: u64 = 1000; // For calculating kill rewards
+
+/// Breeding success rates
+pub const BREEDING_BASE_SUCCESS_RATE: u16 = 7000; // 70% base success rate
+pub const EVOLUTION_BONUS_RATE: u16 = 500; // 5% bonus per evolution level match
+pub const TYPE_MATCH_BONUS: u16 = 1000; // 10% bonus for same type breeding
 
 // ========================================================================================
 // ================================ SIZE CONSTANTS ======================================= 

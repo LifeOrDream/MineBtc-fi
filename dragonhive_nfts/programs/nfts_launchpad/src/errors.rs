@@ -75,7 +75,7 @@ pub enum DragonHiveError {
     InsufficientSOLBalance,
 
     #[msg("Insufficient HONEY tokens for operation")]
-    InsufficientDragonTokens,
+    InsufficientHoneyTokens,
 
     #[msg("Invalid payment amount")]
     InvalidPaymentAmount,
@@ -250,4 +250,16 @@ pub enum DragonHiveError {
 
     #[msg("Operation not supported")]
     OperationNotSupported,
+
+    // ========================================================================================
+    // =============================== QUEEN AUCTION ERRORS ================================== 
+    // ========================================================================================
+    #[msg("Queen auction manager is not live")]
+    QueenMakerNotLive,
+
+    #[msg("Invalid auction phase")]
+    InvalidAuctionPhase,
+
+    #[msg("Invalid parameters provided")]
+    InvalidParameters,
 }

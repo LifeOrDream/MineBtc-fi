@@ -1,9 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_2022::{Token2022, Mint as Mint2022, TokenAccount as TokenAccount2022},
-    token_interface::{Mint, TokenAccount, TokenInterface},
-};
 
 pub mod constants;
 pub mod errors;

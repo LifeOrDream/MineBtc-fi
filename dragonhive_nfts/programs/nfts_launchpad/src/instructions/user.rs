@@ -1,13 +1,12 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token_2022::{Token2022, Mint as Mint2022, TokenAccount as TokenAccount2022},
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 use mpl_core::{
     ID as MPL_CORE_PROGRAM_ID,
     instructions::{CreateV1CpiBuilder, UpdateV1CpiBuilder, BurnV1CpiBuilder},
-    types::{DataState, PluginAuthorityPair, Plugin, UpdateAuthority},
+    types::{PluginAuthorityPair, Plugin},
 };
 
 use crate::{
@@ -48,7 +47,7 @@ pub fn create_user_profile_handler(ctx: Context<CreateUserProfile>) -> Result<()
     user_profile.total_sol_spent = 0;
     user_profile.total_breeding_fees = 0;
     user_profile.dragonbees_killed = 0;
-    user_profile.dragon_tokens_earned = 0;
+    user_profile.honey_tokens_earned = 0;
     user_profile.created_at = current_time;
     user_profile.last_activity = current_time;
     user_profile.bump = ctx.bumps.user_profile;
@@ -188,15 +187,15 @@ pub fn purchase_dragonbee_handler(ctx: Context<PurchaseDragonBee>) -> Result<()>
         .collection(Some(&ctx.accounts.collection_mint))
         .payer(&ctx.accounts.buyer)
         .authority(Some(&ctx.accounts.buyer))
-        .owner(&ctx.accounts.buyer)
+        .owner(Some(&ctx.accounts.buyer))
         .system_program(&ctx.accounts.system_program)
         .name(nft_name.clone())
         .uri(nft_uri.clone())
         .plugins(vec![
             PluginAuthorityPair {
-                plugin: Plugin::UpdateDelegate {
-                    additional_delegates: vec![crate::ID], // Allow program to update
-                },
+                plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
+                    additional_delegates: vec![crate::ID],
+                }),
                 authority: Some(mpl_core::types::Authority::UpdateAuthority),
             }
         ])
@@ -256,7 +255,7 @@ pub struct EvolveDragonBee<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.as_ref()],
+        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.key().as_ref()],
         bump = dragonbee_metadata.bump,
         constraint = dragonbee_metadata.owner == owner.key() @ DragonHiveError::DragonBeeNotOwnedByUser,
         constraint = !dragonbee_metadata.in_game @ DragonHiveError::DragonBeeInGame
@@ -316,10 +315,10 @@ pub fn evolve_dragonbee_handler(
 
     UpdateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
         .asset(&ctx.accounts.dragonbee_mint)
-        .authority(&ctx.accounts.global_config.to_account_info())
+        .authority(Some(&ctx.accounts.global_config.to_account_info()))
         .system_program(&ctx.accounts.system_program)
-        .new_name(Some(format!("DragonBee {} Lv.{}", dragonbee_mint, dragonbee_metadata.evolution_stage)))
-        .new_uri(Some(new_uri))
+        .new_name(format!("DragonBee {} Lv.{}", dragonbee_mint, dragonbee_metadata.evolution_stage))
+        .new_uri(new_uri)
         .invoke_signed(&[authority_seeds])?;
 
     emit!(DragonBeeEvolved {
@@ -350,7 +349,7 @@ pub struct UpdateDragonBeeStats<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.as_ref()],
+        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.key().as_ref()],
         bump = dragonbee_metadata.bump,
         constraint = dragonbee_metadata.owner == owner.key() @ DragonHiveError::DragonBeeNotOwnedByUser
     )]
@@ -404,9 +403,9 @@ pub fn update_dragonbee_stats_handler(
 
         UpdateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
             .asset(&ctx.accounts.dragonbee_mint)
-            .authority(&ctx.accounts.global_config.to_account_info())
+            .authority(Some(&ctx.accounts.global_config.to_account_info()))
             .system_program(&ctx.accounts.system_program)
-            .new_uri(Some(uri.clone()))
+            .new_uri(uri.clone())
             .invoke_signed(&[authority_seeds])?;
     }
 
@@ -446,7 +445,7 @@ pub struct KillDragonBee<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.as_ref()],
+        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.key().as_ref()],
         bump = dragonbee_metadata.bump,
         constraint = dragonbee_metadata.owner == owner.key() @ DragonHiveError::DragonBeeNotOwnedByUser,
         constraint = !dragonbee_metadata.in_game @ DragonHiveError::DragonBeeInGame,
@@ -534,7 +533,7 @@ pub fn kill_dragonbee_handler(
         .collection(Some(&ctx.accounts.global_config.collection_mint))
         .payer(&ctx.accounts.owner)
         .authority(Some(&ctx.accounts.owner))
-        .system_program(&ctx.accounts.system_program)
+        .system_program(Some(&ctx.accounts.system_program))
         .invoke()?;
 
     // Transfer HONEY tokens as reward

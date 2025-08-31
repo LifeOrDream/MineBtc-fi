@@ -1,14 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_2022::{Token2022, Mint as Mint2022, TokenAccount as TokenAccount2022},
-    token_interface::{Mint, TokenAccount, TokenInterface},
-};
-use mpl_core::{
-    ID as MPL_CORE_PROGRAM_ID,
-    instructions::CreateV1CpiBuilder,
-    types::{DataState, PluginAuthorityPair, Plugin},
-};
+// Token imports removed as they're not used in current breeding functions
+// MPL Core imports removed as they're not used in breeding functions
 
 use crate::{
     constants::*,
@@ -241,7 +233,7 @@ pub fn compete_to_be_queen_handler(
 ) -> Result<()> {
     let queen_auction_manager = &mut ctx.accounts.queen_auction_manager;
     let dragonbee_metadata = &ctx.accounts.dragonbee_metadata;
-    let user_profile = &mut ctx.accounts.user_profile;
+    let _user_profile = &mut ctx.accounts.user_profile;
     let auction_participation = &mut ctx.accounts.auction_participation;
     let leading_dragonbee = &mut ctx.accounts.leading_dragonbee;
     let auction_bid_pool = &mut ctx.accounts.auction_bid_pool;
@@ -288,7 +280,7 @@ pub fn compete_to_be_queen_handler(
         auction_bid_pool.sui_available = 0;
         auction_bid_pool.total_sui_bidded = 0;
         auction_bid_pool.energy_yield = 0;
-        auction_bid_pool.total_dragon_energy = 0;
+        auction_bid_pool.total_honey_energy = 0;
         auction_bid_pool.total_participants = 0;
         auction_bid_pool.bump = ctx.bumps.auction_bid_pool;
     }
@@ -605,7 +597,7 @@ fn check_and_transition_auction_phase(
             auction_start_epoch: queen_auction_manager.auction_start_epoch,
             price_to_be_a_queen: queen_auction_manager.price_to_be_queen,
             cur_epoch: current_epoch,
-            deposits_open_till: current_time + (queen_auction_manager.config.limited_deposit_window * 432000 * 400), // Approximate
+            deposits_open_till: current_time + (queen_auction_manager.config.limited_deposit_window as i64 * 432000 * 400), // Approximate
         });
     }
 

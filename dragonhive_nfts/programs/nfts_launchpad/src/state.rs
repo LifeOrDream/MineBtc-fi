@@ -247,7 +247,7 @@ impl UserProfile {
         8 +                                     // total_sol_spent
         8 +                                     // total_breeding_fees
         4 +                                     // dragonbees_killed
-        8 +                                     // dragon_tokens_earned
+        8 +                                     // honey_tokens_earned
         8 +                                     // created_at
         8 +                                     // last_activity
         1;                                      // bump

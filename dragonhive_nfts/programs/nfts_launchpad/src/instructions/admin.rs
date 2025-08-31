@@ -1,13 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_2022::{Token2022, Mint as Mint2022, TokenAccount as TokenAccount2022},
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 use mpl_core::{
     ID as MPL_CORE_PROGRAM_ID,
     instructions::CreateV1CpiBuilder,
-    types::{DataState, PluginAuthorityPair, Plugin},
+    types::{PluginAuthorityPair, Plugin},
 };
 
 use crate::{
@@ -115,8 +113,8 @@ pub fn initialize_handler(
     global_config.kill_rewards_pool = 0;
     global_config.is_paused = false;
     global_config.config_bump = ctx.bumps.global_config;
-    global_config.vault_bump = ctx.bumps.dragon_vault;
-    global_config.vault_authority_bump = ctx.bumps.dragon_vault_authority;
+    global_config.vault_bump = ctx.bumps.honey_vault;
+    global_config.vault_authority_bump = ctx.bumps.honey_vault_authority;
     global_config.treasury_bump = ctx.bumps.sol_treasury;
 
     // Create the DragonBee collection using MPL Core
@@ -130,9 +128,9 @@ pub fn initialize_handler(
         .uri(collection_uri.clone())
         .plugins(vec![
             PluginAuthorityPair {
-                plugin: Plugin::UpdateDelegate {
+                plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
                     additional_delegates: vec![],
-                },
+                }),
                 authority: Some(mpl_core::types::Authority::UpdateAuthority),
             }
         ])
@@ -299,15 +297,15 @@ pub fn mint_genesis_dragonbee_handler(
         .collection(Some(&ctx.accounts.collection_mint))
         .payer(&ctx.accounts.authority)
         .authority(Some(&ctx.accounts.authority))
-        .owner(&ctx.accounts.authority)
+        .owner(Some(&ctx.accounts.authority))
         .system_program(&ctx.accounts.system_program)
         .name(name.clone())
         .uri(uri.clone())
         .plugins(vec![
             PluginAuthorityPair {
-                plugin: Plugin::UpdateDelegate {
+                plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
                     additional_delegates: vec![ctx.accounts.authority.key()],
-                },
+                }),
                 authority: Some(mpl_core::types::Authority::UpdateAuthority),
             }
         ])
@@ -372,12 +370,14 @@ pub fn deposit_honey_tokens_handler(
 
     // Transfer HONEY tokens to vault
     anchor_spl::token_interface::transfer(
-        anchor_spl::token_interface::Transfer {
-            from: ctx.accounts.depositor_token_account.to_account_info(),
-            to: ctx.accounts.honey_vault.to_account_info(),
-            authority: ctx.accounts.depositor.to_account_info(),
-        },
-        &ctx.accounts.token_program,
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            anchor_spl::token_interface::Transfer {
+                from: ctx.accounts.depositor_token_account.to_account_info(),
+                to: ctx.accounts.honey_vault.to_account_info(),
+                authority: ctx.accounts.depositor.to_account_info(),
+            },
+        ),
         amount,
     )?;
 
@@ -396,4 +396,4 @@ pub fn deposit_honey_tokens_handler(
 // =============================== QUEEN AUCTION MANAGEMENT ============================== 
 // ========================================================================================
 
-/// Admin function to manage queen auction system - moved to breeding.rs
+// Queen auction functions have been moved to breeding.rs
