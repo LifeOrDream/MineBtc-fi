@@ -936,6 +936,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "moon_economy"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "moon_base",
+ "mpl-core",
+ "mpl-token-metadata",
+ "spl-token 8.0.0",
+]
+
+[[package]]
 name = "mpl-core"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

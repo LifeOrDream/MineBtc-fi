@@ -20,17 +20,17 @@ pub mod dragonhive_nfts {
     // ================================ ADMIN FUNCTIONS ======================================
     // ========================================================================================
 
-    /// Initialize the DragonHive NFT program with global configuration
-    /// Creates the main program state, DRAGON token vault, and NFT collection
-    pub fn initialize(
-        ctx: Context<Initialize>,
-        collection_name: String,
-        collection_symbol: String,
-        collection_uri: String,
-        honey_token_mint: Pubkey,
-    ) -> Result<()> {
-        instructions::admin::initialize_handler(ctx, collection_name, collection_symbol, collection_uri, honey_token_mint)
-    }
+    // /// Initialize the DragonHive NFT program with global configuration
+    // /// Creates the main program state, DRAGON token vault, and NFT collection
+    // pub fn initialize(
+    //     ctx: Context<Initialize>,
+    //     collection_name: String,
+    //     collection_symbol: String,
+    //     collection_uri: String,
+    //     honey_token_mint: Pubkey,
+    // ) -> Result<()> {
+    //     instructions::admin::initialize_handler(ctx, collection_name, collection_symbol, collection_uri, honey_token_mint)
+    // }
 
     /// Update global configuration (admin only)
     pub fn update_config(

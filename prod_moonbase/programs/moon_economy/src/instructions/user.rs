@@ -1,0 +1,1499 @@
+use anchor_lang::prelude::*;
+use anchor_lang::system_program::System;
+use anchor_spl::token::{self, Token};
+
+use crate::state::*;
+use crate::errors::ErrorCode;
+use crate::events::*;
+
+use crate::instructions::helper;
+
+use anchor_spl::token_interface;
+use anchor_spl::token_interface::{
+    Mint as Mint2022,
+    TokenAccount as TokenAccount2022,
+};
+use anchor_spl::token_2022::Token2022;
+
+
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+// ---- INITIALIZE A USER'S ELECTRICITY ACCOUNT ------------------------ ------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+ 
+
+/// Initialize a user's electricity account
+pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> Result<()> {
+    msg!("🔒 Initializing electricity account");
+  
+    // Electricity account
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+
+    // Initialize owner if this is a new account
+    if electricity_ac.owner == Pubkey::default() {
+        electricity_ac.owner = ctx.accounts.authority.key();
+        electricity_ac.moondoge_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize );
+        electricity_ac.lp_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize);
+        msg!("👤 Initializing new user electricity account");
+    }
+   
+    msg!("✅ Electricity account initialized");
+    Ok(())
+}
+
+
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+// ---- STAKE MOONDOGE TOKENS :: User gets electricity and SOL rewards ------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+
+/// Stake MoonDoge tokens
+pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration: u64, position_index: u8) -> Result<()> {
+    msg!("🔒 Starting MoonDoge staking - Amount: {}, Lockup: {} days, Position: {}", amount, lockup_duration, position_index);
+    // Validate inputs
+    require!(amount > 0, ErrorCode::InvalidAmount);
+    require!(
+        lockup_duration >= ctx.accounts.global_config.min_lockup_days && 
+        lockup_duration <= ctx.accounts.global_config.max_lockup_days,
+        ErrorCode::InvalidLockupPeriod
+    );
+    
+    // Calculate actual amount after burn tax
+    let burn_amount = amount.checked_mul(BURN_TAX_PERCENTAGE).unwrap().checked_div(M_HUNDRED).unwrap();
+    let actual_amount = amount.checked_sub(burn_amount).unwrap();
+    
+    msg!("🔥 mDoge burn tax: {}% - Amount: {}, Burn: {}, Actual amount: {}", 
+        BURN_TAX_PERCENTAGE, amount, burn_amount, actual_amount);
+    
+    // Global moondoge vault
+    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    msg!("📊 Current vault state - Total locked: {}, Weighted locked: {}", moondoge_vault.mdoge_locked, moondoge_vault.weighted_mdoge_locked);
+
+    // User Position :: Electricity account
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+    let user_position = &mut ctx.accounts.user_position;
+    let current_ts = Clock::get()?.unix_timestamp;
+    
+    // Initialize owner if this is a new account
+    if electricity_ac.owner == Pubkey::default() {
+        electricity_ac.owner = ctx.accounts.authority.key();
+        electricity_ac.moondoge_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize );
+        electricity_ac.lp_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize);
+        msg!("👤 Initializing new user electricity account");
+    }
+
+    // Add position index to user electricity account
+    helper::add_moondoge_position(electricity_ac, position_index)?;
+
+    // Calculate multiplier based on lockup duration
+    let multiplier = helper::calculate_multiplier(
+        lockup_duration,
+        ctx.accounts.global_config.min_lockup_days,
+        ctx.accounts.global_config.max_lockup_days,
+        ctx.accounts.global_config.base_multiplier,
+        ctx.accounts.global_config.max_multiplier,
+    )?;
+    msg!("🔢 Multiplier for {} days lockup: {}", lockup_duration, multiplier);    
+    
+    // Calculate weighted amount for this position
+    let mut weighted_amount = amount.checked_mul(multiplier as u64).unwrap().checked_div(M_HUNDRED).unwrap();
+    msg!("⚖️ Weighted amount: {} (raw amount: {} × multiplier: {})", weighted_amount, amount, multiplier);
+    
+    // Process any pending rewards before updating position
+    if electricity_ac.total_weighted_moondoge > 0 {
+        msg!("💰 Processing pending rewards before position update");
+        msg!("   Previous reward debt: {}", electricity_ac.moondoge_reward_debt);
+                
+        // Calculate reward diff since last update
+        let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
+        msg!("   New accumulated sol per point: {}", moondoge_vault.accumulated_sol_per_point);
+        msg!("   Reward diff: {}", reward_diff);
+
+        // rewards earned = total weighted moondoge * accumulated sol per point - reward debt
+        let new_rewards = (electricity_ac.total_weighted_moondoge as u128)
+            .checked_mul(reward_diff)
+            .unwrap_or(0)
+            .checked_div(PRECISION_FACTOR)
+            .unwrap_or(0) as u64;
+        msg!("   New rewards: {}", new_rewards);
+
+        // add rewards to pending rewards
+        electricity_ac.pending_moondoge_rewards = electricity_ac.pending_moondoge_rewards.checked_add(new_rewards).unwrap();
+        msg!("   Updated pending mDOGE rewards: {}", electricity_ac.pending_moondoge_rewards);
+    }
+    
+    // If position exists, validate and update
+    if user_position.staked_amount > 0 {
+        msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount);
+        // Position should be still locked
+        require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionStillLocked);        
+        // Update existing position
+        let old_weighted_amount = user_position.weighted_amount;        
+        // Update staked amount with actual_amount (post-tax)
+        user_position.staked_amount = user_position.staked_amount.checked_add(actual_amount).ok_or(ErrorCode::ArithmeticOverflow)?;            
+        // Update weighted amount - recalculate the total weighted amount for consistency
+        user_position.weighted_amount = user_position.staked_amount.checked_mul(multiplier as u64).unwrap().checked_div(M_HUNDRED).unwrap();            
+        
+        // Calculate the actual weighted amount difference to add to vault
+        let weighted_amount_diff = user_position.weighted_amount.checked_sub(old_weighted_amount).unwrap();
+        
+        // Update user's total mDoge weighted amount
+        electricity_ac.total_weighted_moondoge = electricity_ac.total_weighted_moondoge.checked_sub(old_weighted_amount).unwrap()
+                                                    .checked_add(user_position.weighted_amount).unwrap();            
+
+        msg!("   New staked amount: {}", user_position.staked_amount);
+        msg!("   New weighted amount: {}", user_position.weighted_amount);
+        msg!("   Weighted amount diff: {}", weighted_amount_diff);
+        msg!("   New total weighted: {}", electricity_ac.total_weighted_moondoge);
+        
+        // Use the actual difference for vault updates and electricity calculations
+        weighted_amount = weighted_amount_diff;
+    } else {
+        msg!("🆕 Creating new position {}", position_index);
+        // Initialize new position
+        user_position.position_index = position_index;
+        user_position.staked_amount = actual_amount; // Use actual_amount (post-tax)
+        user_position.weighted_amount = weighted_amount;
+        user_position.start_timestamp = current_ts;
+        user_position.multiplier = multiplier;
+        user_position.lockup_duration = lockup_duration;
+        
+        // Calculate lockup end timestamp
+        let seconds_to_add = lockup_duration.checked_mul(DAY_IN_SECONDS).unwrap();
+        user_position.lockup_end_timestamp = current_ts.checked_add(seconds_to_add as i64).unwrap();
+
+        msg!("   Lockup end: {} (current: {})", user_position.lockup_end_timestamp, current_ts);
+                
+        // Update user's total mDoge weighted amount
+        electricity_ac.total_weighted_moondoge = electricity_ac.total_weighted_moondoge.checked_add(weighted_amount).unwrap();
+
+        msg!("   Active positions: {}", electricity_ac.active_moondoge_positions);
+        msg!("   Total weighted mDOGE: {}", electricity_ac.total_weighted_moondoge);        
+    }
+    
+    // Update global user state & Global reward debt
+    electricity_ac.total_moondoge_staked = electricity_ac.total_moondoge_staked.checked_add(actual_amount).unwrap();
+    electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
+    
+    msg!("💱 Transferring {} mDOGE tokens from user to vault", amount);
+    msg!("   From: {}", ctx.accounts.user_mdoge_account.key());
+    msg!("   To: {}", ctx.accounts.mdoge_custodian.key());
+
+    // Transfer mDoge tokens from user to moondoge vault
+    // Note: We transfer the full amount including burn tax, as the tax will be applied during transfer
+    let transfer_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        token_interface::TransferChecked {
+            from: ctx.accounts.user_mdoge_account.to_account_info(),
+            to: ctx.accounts.mdoge_custodian.to_account_info(),
+            authority: ctx.accounts.authority.to_account_info(),
+            mint: ctx.accounts.mdoge_mint.to_account_info(),
+        },
+    );
+    token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.mdoge_mint.decimals)?;
+    
+    // Update mDoge vault state with actual_amount (post-tax)
+    moondoge_vault.mdoge_locked = moondoge_vault.mdoge_locked.checked_add(actual_amount).unwrap();        
+    moondoge_vault.weighted_mdoge_locked = moondoge_vault.weighted_mdoge_locked.checked_add(weighted_amount).unwrap();
+
+    msg!("⚡ Calculating electricity earnings");        
+    // Calculate electricity earned
+    let electricity_increase = weighted_amount.checked_mul(moondoge_vault.electricity_per_weighted_moondoge).unwrap();
+    msg!("   Electricity increase: {}", electricity_increase);
+
+    // Update user's position electricity per day and total electricity earned
+    user_position.electricity_per_day += electricity_increase;
+    electricity_ac.electricity_earned = electricity_ac.electricity_earned.checked_add(electricity_increase).unwrap();        
+    msg!("   Position electricity per day: {}", user_position.electricity_per_day);
+    msg!("   Total electricity earned: {}", electricity_ac.electricity_earned);
+    msg!("🔌 Calling MoonBase to update user electricity");
+    
+    // Derive PDA seeds for fee_collector signer
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];    
+
+    // Update CPI accounts structure
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moon_base::cpi::accounts::UpdateUserElectricity {
+        user: ctx.accounts.authority.to_account_info(),
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        authority: ctx.accounts.fee_collector.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+    
+    // Update user electricity
+    moon_base::cpi::update_user_electricity(cpi_ctx, true, electricity_increase)?;
+
+    msg!("✅ MoonDoge staking successful");    
+    emit!(MoonDogeStaked {
+        owner: ctx.accounts.authority.key(),
+        amount: actual_amount, // Use actual_amount (post-tax) in the event
+        lockup_duration,
+        multiplier,
+        weighted_amount,
+        electricity_earned: electricity_increase,
+        position_index,
+    });
+    
+    Ok(())
+}
+
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+// ---- UNSTAKE MOONDOGE TOKENS :: User gets mDOGE back ------------------------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+
+/// Unstake MoonDoge tokens from a position
+pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Result<()> {
+    // Get references to all accounts
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let user_position = &mut ctx.accounts.user_position;
+    let current_ts = Clock::get()?.unix_timestamp;
+    
+    msg!("🔓 Processing unstake for position {}", position_index);
+    
+    // Validate the position exists and has funds
+    require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
+    
+    // Verify position index is in the user's active positions
+    require!(
+        electricity_ac.moondoge_position_indices.contains(&position_index),
+        ErrorCode::PositionNotFound
+    );
+    
+    msg!("📊 Position details - Staked: {}, Weighted: {}, Lockup ends: {}", 
+        user_position.staked_amount, 
+        user_position.weighted_amount,
+        user_position.lockup_end_timestamp);
+    
+    // Process any pending rewards before unstaking
+    if electricity_ac.total_weighted_moondoge > 0 {
+        msg!("💰 Processing pending rewards before unstaking");
+        
+        // Calculate reward diff since last update
+        let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);            
+        msg!("   Reward diff: {}", reward_diff);
+        
+        // Calculate new rewards
+        let new_rewards = (electricity_ac.total_weighted_moondoge as u128).checked_mul(reward_diff).unwrap_or(0).checked_div(PRECISION_FACTOR).unwrap_or(0) as u64;            
+        msg!("   New rewards: {}", new_rewards);
+            
+        // Add to pending rewards
+        electricity_ac.pending_moondoge_rewards = electricity_ac.pending_moondoge_rewards.checked_add(new_rewards).unwrap_or(electricity_ac.pending_moondoge_rewards);            
+        msg!("   Updated pending rewards: {}", electricity_ac.pending_moondoge_rewards);
+    }
+    
+    // Update reward debt to current rate
+    electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
+    
+    // Calculate return amount based on early withdrawal status
+    let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
+    let original_amount = user_position.staked_amount;
+    let mut return_amount = original_amount;
+    
+    // Handle early withdrawal if needed
+    if is_early_withdrawal {
+        msg!("⚠️ Early unstake detected! Current time: {}, Lockup end: {}", current_ts, user_position.lockup_end_timestamp);
+        
+        // Calculate remaining lockup days
+        let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+        let remaining_seconds_pct = (M_HUNDRED as i64) * remaining_seconds / (user_position.lockup_end_timestamp - user_position.start_timestamp) as i64;
+        msg!("   Lockup remaining: {}%", remaining_seconds_pct);
+        
+        // Apply emergency tax for early withdrawal
+        let calc_penalty_pct = (moondoge_vault.emergency_tax as u64).checked_mul(remaining_seconds_pct as u64).unwrap().checked_div(M_HUNDRED).unwrap();
+        msg!("   Emergency tax percentage: {}%", calc_penalty_pct);
+        
+        // Apply penalty to return amount
+        let penalty_amount = original_amount.checked_mul(calc_penalty_pct as u64).unwrap().checked_div(M_HUNDRED).unwrap();
+        return_amount = original_amount.checked_sub(penalty_amount).ok_or(ErrorCode::ArithmeticOverflow)?;            
+        msg!("   Total Staked: {}, Returned: {}, Penalty: {}", original_amount, return_amount, penalty_amount);
+        
+        // Burn penalty tokens by sending to dead address
+        if penalty_amount > 0 {
+            msg!("🔥 Burning {} penalty tokens", penalty_amount);
+            
+            // Get PDA signer seeds for the mdoge_custodian
+            let custodian_authority_seeds = &[
+                MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+                &[ctx.bumps.mdoge_custodian_authority]
+            ];
+            let signer = &[&custodian_authority_seeds[..]];
+            
+            // Use proper Token-2022 burn instruction
+            let burn_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token_interface::Burn {
+                    mint: ctx.accounts.mdoge_mint.to_account_info(),
+                    from: ctx.accounts.mdoge_custodian.to_account_info(),
+                    authority: ctx.accounts.mdoge_custodian_authority.to_account_info(),
+                },
+                signer,
+            );            
+            token_interface::burn(burn_ctx, penalty_amount)?;
+            
+            // Emit emergency withdrawal event
+            emit!(EmergencyWithdrawal {
+                owner: ctx.accounts.authority.key(),
+                position_index,
+                original_amount,
+                penalty_amount,
+                returned_amount: return_amount,
+                penalty_tax_pct: calc_penalty_pct,
+                timestamp: current_ts,
+            });
+        }
+    } else {
+        msg!("✅ Normal unstake - lockup period has ended");
+    }
+    
+    // Update electricity management
+    msg!("⚡ Updating electricity");
+    
+    // Calculate electricity decrease
+    let electricity_decrease = user_position.electricity_per_day;
+    msg!("   Electricity decrease: {}", electricity_decrease);    
+    // Update user's electricity earned
+    electricity_ac.electricity_earned = electricity_ac.electricity_earned.checked_sub(electricity_decrease).unwrap_or(0);    
+    msg!("   Updated electricity earned: {}", electricity_ac.electricity_earned);
+    
+    // Update CPI to decrease electricity in MoonFacility
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];
+    
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moon_base::cpi::accounts::UpdateUserElectricity {
+        user: ctx.accounts.authority.to_account_info(),
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        authority: ctx.accounts.fee_collector.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(
+        cpi_program,
+        cpi_accounts,
+        signer_seeds,
+    );
+    
+    // The second parameter as false indicates we're decreasing electricity
+    moon_base::cpi::update_user_electricity(cpi_ctx, false, electricity_decrease)?;
+    
+    // Update vault totals
+    msg!("📊 Updating vault totals");
+    moondoge_vault.mdoge_locked = moondoge_vault.mdoge_locked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?;        
+    moondoge_vault.weighted_mdoge_locked = moondoge_vault.weighted_mdoge_locked.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
+    msg!("   New vault totals - Locked: {}, Weighted: {}", moondoge_vault.mdoge_locked, moondoge_vault.weighted_mdoge_locked);
+    
+    // Update user global stats
+    msg!("📊 Updating user stats");
+    electricity_ac.total_moondoge_staked = electricity_ac.total_moondoge_staked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?; 
+    electricity_ac.total_weighted_moondoge = electricity_ac.total_weighted_moondoge.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
+    msg!("   New user totals - Staked: {}, Weighted: {}",  electricity_ac.total_moondoge_staked,  electricity_ac.total_weighted_moondoge);
+    
+    // Remove position from user's active positions
+    helper::remove_moondoge_position(electricity_ac, position_index)?;
+    msg!("   Updated active positions: {}", electricity_ac.active_moondoge_positions);
+    
+    // Transfer remaining tokens back to user
+    if return_amount > 0 {
+        msg!("💱 Transferring {} mDOGE tokens to user", return_amount);
+        
+        // Get PDA signer seeds for the mdoge_custodian
+        let custodian_authority_seeds = &[
+            MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[ctx.bumps.mdoge_custodian_authority]
+        ];
+        let signer = &[&custodian_authority_seeds[..]];
+        
+        // Transfer tokens back to user
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            token_interface::TransferChecked {
+                from: ctx.accounts.mdoge_custodian.to_account_info(),
+                to: ctx.accounts.user_mdoge_account.to_account_info(),
+                authority: ctx.accounts.mdoge_custodian_authority.to_account_info(),
+                mint: ctx.accounts.mdoge_mint.to_account_info(),
+            },
+            signer,
+        );
+        
+        token_interface::transfer_checked(transfer_ctx, return_amount, ctx.accounts.mdoge_mint.decimals)?;
+    }
+    
+    // Reset position data
+    user_position.staked_amount = 0;
+    user_position.weighted_amount = 0;
+    user_position.electricity_per_day = 0;
+    
+    emit!(MoonDogeUnstaked {
+        owner: ctx.accounts.authority.key(),
+        position_index,
+        amount: return_amount,
+        weighted_amount: user_position.weighted_amount,
+        early_withdrawal: is_early_withdrawal,
+    });
+    
+    msg!("✅ Unstake completed successfully");
+    Ok(())
+}
+
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+// ---- STAKE LIQUIDITY LP TOKENS :: User gets electricity and SOL rewards ------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+
+/// Stake Liquidity LP tokens
+pub fn stake_lp_tokens(ctx: Context<StakeLpTokens>, amount: u64, lockup_duration: u64, position_index: u8) -> Result<()> {
+    msg!("🔒 Starting LP token staking - Amount: {}, Lockup: {} days, Position: {}", amount, lockup_duration, position_index);
+    // Validate inputs
+    require!(amount > 0, ErrorCode::InvalidAmount);
+    require!(
+        lockup_duration >= ctx.accounts.global_config.min_lockup_days && 
+        lockup_duration <= ctx.accounts.global_config.max_lockup_days,
+        ErrorCode::InvalidLockupPeriod
+    );
+    
+    // Global liquidity vault
+    let liquidity_vault = &mut ctx.accounts.liquidity_vault;
+    msg!("📊 Current vault state - Total locked: {}, Weighted locked: {}",  liquidity_vault.lp_tokens_locked, liquidity_vault.weighted_lp_locked);
+
+    // User Position :: Electricity account
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+    let user_position = &mut ctx.accounts.user_position;
+    let current_ts = Clock::get()?.unix_timestamp;
+    
+    // Initialize owner if this is a new account
+    if electricity_ac.owner == Pubkey::default() {
+        electricity_ac.owner = ctx.accounts.authority.key();
+        electricity_ac.moondoge_position_indices = Vec::with_capacity(MAX_ALLOWED_POSITIONS as usize);
+        electricity_ac.lp_position_indices = Vec::with_capacity(MAX_ALLOWED_POSITIONS as usize);
+        msg!("👤 Initializing new user electricity account");
+    }
+
+    // Add position index to user electricity account
+    helper::add_lp_position(electricity_ac, position_index)?;
+
+    // Calculate multiplier based on lockup duration
+    let multiplier = helper::calculate_multiplier(
+        lockup_duration,
+        ctx.accounts.global_config.min_lockup_days,
+        ctx.accounts.global_config.max_lockup_days,
+        ctx.accounts.global_config.base_multiplier,
+        ctx.accounts.global_config.max_multiplier,
+    )?;
+    msg!("🔢 Multiplier for {} days lockup: {}", lockup_duration, multiplier);    
+    
+    // Calculate weighted amount for this position
+    let mut weighted_amount = amount.checked_mul(multiplier as u64).unwrap().checked_div(M_HUNDRED).unwrap();
+    msg!("⚖️ Weighted amount: {} (raw amount: {} × multiplier: {})", weighted_amount, amount, multiplier);
+    
+    // Process any pending rewards before updating position
+    if electricity_ac.total_weighted_lp > 0 {
+        msg!("💰 Processing pending rewards before position update");
+        msg!("   Previous reward debt: {}", electricity_ac.lp_reward_debt);
+                
+        // Calculate reward diff since last update
+        let reward_diff = liquidity_vault.accumulated_sol_per_point.checked_sub(electricity_ac.lp_reward_debt).unwrap_or(0);
+        msg!("   New accumulated sol per point: {}", liquidity_vault.accumulated_sol_per_point);
+        msg!("   Reward diff: {}", reward_diff);
+
+        // rewards earned = total weighted LP * accumulated sol per point - reward debt
+        let new_rewards = (electricity_ac.total_weighted_lp as u128).checked_mul(reward_diff).unwrap().checked_div(PRECISION_FACTOR).unwrap_or(0) as u64;
+        msg!("   New rewards: {}", new_rewards);
+
+        // add rewards to pending rewards
+        electricity_ac.pending_lp_rewards = electricity_ac.pending_lp_rewards.checked_add(new_rewards).unwrap();
+        msg!("   Updated pending LP rewards: {}", electricity_ac.pending_lp_rewards);
+    }
+    
+    // If position exists, validate and update
+    if user_position.staked_amount > 0 {
+        msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount);
+        // Position should be still locked
+        require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionStillLocked);        
+        // Update existing position
+        let old_weighted_amount = user_position.weighted_amount;        
+        // Update staked amount
+        user_position.staked_amount = user_position.staked_amount.checked_add(amount).ok_or(ErrorCode::ArithmeticOverflow)?;            
+        // Update weighted amount - recalculate the total weighted amount for consistency
+        user_position.weighted_amount = user_position.staked_amount.checked_mul(multiplier as u64).unwrap().checked_div(M_HUNDRED).unwrap();            
+        
+        // Calculate the actual weighted amount difference to add to vault
+        let weighted_amount_diff = user_position.weighted_amount.checked_sub(old_weighted_amount).unwrap();
+        
+        // Update user's total LP weighted amount
+        electricity_ac.total_weighted_lp = electricity_ac.total_weighted_lp.checked_sub(old_weighted_amount).unwrap()
+                                           .checked_add(user_position.weighted_amount).unwrap();            
+
+        msg!("   New staked amount: {}", user_position.staked_amount);
+        msg!("   New weighted amount: {}", user_position.weighted_amount);
+        msg!("   Weighted amount diff: {}", weighted_amount_diff);
+        msg!("   New total weighted: {}", electricity_ac.total_weighted_lp);
+        
+        // Use the actual difference for vault updates and electricity calculations
+        weighted_amount = weighted_amount_diff;
+    } else {
+        msg!("🆕 Creating new position {}", position_index);
+        // Initialize new position
+        user_position.position_index = position_index;
+        user_position.staked_amount = amount;
+        user_position.weighted_amount = weighted_amount;
+        user_position.start_timestamp = current_ts;
+        user_position.multiplier = multiplier;
+        user_position.lockup_duration = lockup_duration;
+        
+        // Calculate lockup end timestamp
+        let seconds_to_add = lockup_duration.checked_mul(DAY_IN_SECONDS).unwrap();
+        user_position.lockup_end_timestamp = current_ts.checked_add(seconds_to_add as i64).unwrap();
+
+        msg!("   Lockup end: {} (current: {})", user_position.lockup_end_timestamp, current_ts);
+                
+        // Update user's total LP weighted amount
+        electricity_ac.total_weighted_lp = electricity_ac.total_weighted_lp.checked_add(weighted_amount).unwrap();
+
+        msg!("   Active positions: {}", electricity_ac.active_lp_positions);
+        msg!("   Total weighted LP: {}", electricity_ac.total_weighted_lp);        
+    }
+    
+    // Update global user state & Global reward debt
+    electricity_ac.total_lp_tokens_staked = electricity_ac.total_lp_tokens_staked.checked_add(amount).unwrap();    
+    electricity_ac.lp_reward_debt = liquidity_vault.accumulated_sol_per_point;
+    
+    msg!("💱 Transferring {} LP tokens from user to vault", amount);
+    msg!("   From: {}", ctx.accounts.user_lp_account.key());
+    msg!("   To: {}", ctx.accounts.liquidity_custodian.key());
+
+    // Transfer LP tokens from user to liquidity vault
+    let transfer_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        token::Transfer {
+            from: ctx.accounts.user_lp_account.to_account_info(),
+            to: ctx.accounts.liquidity_custodian.to_account_info(),
+            authority: ctx.accounts.authority.to_account_info(),
+        },
+    );
+    token::transfer(transfer_ctx, amount)?;
+    
+    // Update LP vault state
+    liquidity_vault.lp_tokens_locked = liquidity_vault.lp_tokens_locked.checked_add(amount).unwrap();        
+    liquidity_vault.weighted_lp_locked = liquidity_vault.weighted_lp_locked.checked_add(weighted_amount).unwrap();
+
+    msg!("⚡ Calculating electricity earnings");        
+    // Calculate electricity earned
+    let electricity_increase = weighted_amount.checked_mul(liquidity_vault.electricity_per_weighted_lp_tokens).unwrap();
+    msg!("   Electricity increase: {}", electricity_increase);
+
+    // Update user's position electricity per day and total electricity earned
+    user_position.electricity_per_day += electricity_increase;
+    electricity_ac.electricity_earned = electricity_ac.electricity_earned.checked_add(electricity_increase).unwrap();        
+    msg!("   Position electricity per day: {}", user_position.electricity_per_day);
+    msg!("   Total electricity earned: {}", electricity_ac.electricity_earned);
+    msg!("🔌 Calling MoonBase to update user electricity");
+    
+    // Derive PDA seeds for fee_collector signer
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];    
+
+    // Update CPI accounts structure
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moon_base::cpi::accounts::UpdateUserElectricity {
+        user: ctx.accounts.authority.to_account_info(),
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        authority: ctx.accounts.fee_collector.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+    
+    // Update user electricity
+    moon_base::cpi::update_user_electricity(cpi_ctx, true, electricity_increase)?;
+
+    msg!("✅ LP token staking successful");    
+    emit!(LiquidityStaked {
+        owner: ctx.accounts.authority.key(),
+        amount,
+        lockup_duration,
+        multiplier,
+        weighted_amount,
+        electricity_earned: electricity_increase,
+        position_index,
+    });
+    
+    Ok(())
+}
+
+/// Unstake Liquidity LP tokens from a position
+pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+    // Get references to all accounts
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+    let liquidity_vault = &mut ctx.accounts.liquidity_vault;
+    let user_position = &mut ctx.accounts.user_position;
+    let current_ts = Clock::get()?.unix_timestamp;
+    
+    msg!("🔓 Processing unstake for position {}", position_index);
+    
+    // Validate the position exists and has funds
+    require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
+    
+    // Verify position index is in the user's active positions
+    require!(
+        electricity_ac.lp_position_indices.contains(&position_index),
+        ErrorCode::PositionNotFound
+    );
+    
+    msg!("📊 Position details - Staked: {}, Weighted: {}, Lockup ends: {}", 
+        user_position.staked_amount, 
+        user_position.weighted_amount,
+        user_position.lockup_end_timestamp);
+    
+    // Process any pending rewards before unstaking
+    if electricity_ac.total_weighted_lp > 0 {
+        msg!("💰 Processing pending rewards before unstaking");
+        
+        // Calculate reward diff since last update
+        let reward_diff = liquidity_vault.accumulated_sol_per_point.checked_sub(electricity_ac.lp_reward_debt).unwrap_or(0);            
+        msg!("   Reward diff: {}", reward_diff);
+        
+        // Calculate new rewards
+        let new_rewards = (electricity_ac.total_weighted_lp as u128)
+            .checked_mul(reward_diff)
+            .unwrap_or(0)
+            .checked_div(PRECISION_FACTOR)
+            .unwrap_or(0) as u64;            
+        msg!("   New rewards: {}", new_rewards);
+            
+        // Add to pending rewards
+        electricity_ac.pending_lp_rewards = electricity_ac.pending_lp_rewards
+            .checked_add(new_rewards)
+            .unwrap_or(electricity_ac.pending_lp_rewards);            
+        msg!("   Updated pending rewards: {}", electricity_ac.pending_lp_rewards);
+    }
+    
+    // Update reward debt to current rate
+    electricity_ac.lp_reward_debt = liquidity_vault.accumulated_sol_per_point;
+    
+    // Calculate return amount based on early withdrawal status
+    let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
+    let original_amount = user_position.staked_amount;
+    let mut return_amount = original_amount;
+    
+    // Handle early withdrawal if needed - fixed 10% penalty
+    if is_early_withdrawal {
+        msg!("⚠️ Early unstake detected! Current time: {}, Lockup end: {}", current_ts, user_position.lockup_end_timestamp);
+       
+        // Calculate remaining lockup days
+        let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+        let remaining_seconds_pct = (M_HUNDRED as i64) * remaining_seconds / (user_position.lockup_end_timestamp - user_position.start_timestamp) as i64;
+        msg!("   Lockup remaining: {}%", remaining_seconds_pct);   
+        
+        // Apply emergency tax for early withdrawal
+        let calc_penalty_pct = (liquidity_vault.emergency_tax as u64).checked_mul(remaining_seconds_pct as u64).unwrap().checked_div(M_HUNDRED).unwrap();
+        msg!("   Emergency tax percentage: {}%", calc_penalty_pct);
+
+        // Apply penalty to return amount
+        let penalty_amount = original_amount.checked_mul(calc_penalty_pct).unwrap().checked_div(M_HUNDRED).unwrap();
+        return_amount = original_amount.checked_sub(penalty_amount).ok_or(ErrorCode::ArithmeticOverflow)?;            
+        msg!("   Total Staked: {}, Returned: {}, Penalty: {}", original_amount, return_amount, penalty_amount);
+        
+        // If early unstake, send penalty tokens to treasury
+        if penalty_amount > 0 {
+            msg!("💸 Sending {} penalty tokens to treasury", penalty_amount);
+            
+            // Get PDA signer seeds for the liquidity vault
+            let custodian_authority_seeds = &[
+                LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+                &[ctx.bumps.liquidity_custodian_authority]
+            ];
+            let signer = &[&custodian_authority_seeds[..]];
+            
+            // Burn penalty tokens from liquidity custodian
+            let burn_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token::Burn {
+                    mint: ctx.accounts.lp_mint.to_account_info(), // Mint of LP token
+                    from: ctx.accounts.liquidity_custodian.to_account_info(), // Token account to burn from
+                    authority: ctx.accounts.liquidity_custodian_authority.to_account_info(), // PDA authority
+                },
+                signer,
+            );
+            token::burn(burn_ctx, penalty_amount)?;
+            
+            // Emit early withdrawal event
+            emit!(EarlyLiquidityUnstakePenalty {
+                owner: ctx.accounts.authority.key(),
+                position_index,
+                penalty_amount,
+                penalty_tax_pct: calc_penalty_pct,
+                return_amount,
+                timestamp: current_ts,
+            });
+        }
+    } else {
+        msg!("✅ Normal unstake - lockup period has ended");
+    }
+    
+    // Update electricity management
+    msg!("⚡ Updating electricity");
+    
+    // Calculate electricity decrease
+    let electricity_decrease = user_position.electricity_per_day;
+    msg!("   Electricity decrease: {}", electricity_decrease);    
+    // Update user's electricity earned
+    electricity_ac.electricity_earned = electricity_ac.electricity_earned.checked_sub(electricity_decrease).unwrap_or(0);
+    
+    // Update CPI to decrease electricity in MoonFacility
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];
+    
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moon_base::cpi::accounts::UpdateUserElectricity {
+        user: ctx.accounts.authority.to_account_info(),
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        authority: ctx.accounts.fee_collector.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(
+        cpi_program,
+        cpi_accounts,
+        signer_seeds,
+    );
+    
+    // The second parameter as false indicates we're decreasing electricity
+    moon_base::cpi::update_user_electricity(cpi_ctx, false, electricity_decrease)?;
+    
+    // Update vault totals
+    msg!("📊 Updating vault totals");
+    liquidity_vault.lp_tokens_locked = liquidity_vault.lp_tokens_locked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?;        
+    liquidity_vault.weighted_lp_locked = liquidity_vault.weighted_lp_locked.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
+    msg!("   New vault totals - Locked: {}, Weighted: {}", liquidity_vault.lp_tokens_locked, liquidity_vault.weighted_lp_locked);
+    
+    // Update user global stats
+    msg!("📊 Updating user stats");
+    electricity_ac.total_lp_tokens_staked = electricity_ac.total_lp_tokens_staked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?; 
+    electricity_ac.total_weighted_lp = electricity_ac.total_weighted_lp.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
+    msg!("   New user totals - Staked: {}, Weighted: {}", electricity_ac.total_lp_tokens_staked, electricity_ac.total_weighted_lp);
+    
+    // Remove position from user's active positions
+    helper::remove_lp_position(electricity_ac, position_index)?;
+    msg!("   Updated active positions: {}", electricity_ac.active_lp_positions);
+    
+    // Transfer remaining tokens back to user
+    if return_amount > 0 {
+        msg!("💱 Transferring {} LP tokens to user", return_amount);
+        
+        // Get PDA signer seeds for the liquidity_custodian
+        let custodian_authority_seeds = &[
+            LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[ctx.bumps.liquidity_custodian_authority]
+        ];
+        let signer = &[&custodian_authority_seeds[..]];
+        
+        // Transfer tokens back to user
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            token::Transfer {
+                from: ctx.accounts.liquidity_custodian.to_account_info(),
+                to: ctx.accounts.user_lp_account.to_account_info(),
+                authority: ctx.accounts.liquidity_custodian_authority.to_account_info(),
+            },
+            signer,
+        );
+        
+        token::transfer(transfer_ctx, return_amount)?;
+    }
+    
+    // Reset position data
+    user_position.staked_amount = 0;
+    user_position.weighted_amount = 0;
+    user_position.electricity_per_day = 0;
+    
+    emit!(LiquidityUnstaked {
+        owner: ctx.accounts.authority.key(),
+        position_index,
+        amount: return_amount,
+        weighted_amount: user_position.weighted_amount,
+        early_withdrawal: is_early_withdrawal,
+    });
+    
+    msg!("✅ Unstake completed successfully");
+    Ok(())
+}
+
+
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- --------- ---------
+// ---- CLAIM SOL REWARDS :: User earns SOL rewards from staking mDoge and LP tokens ------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- --------- ---------
+
+/// Claim SOL rewards from staking mDoge and LP tokens
+pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
+    msg!("🔒 Starting claim SOL rewards");
+
+    // Global moondoge vault
+    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let liquidity_vault = &mut ctx.accounts.liquidity_vault;
+
+    // User Position :: Electricity account
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+      
+    // Process any pending SOL rewards before claim (mDOGE staking)
+    if electricity_ac.total_weighted_moondoge > 0 {
+        msg!("💰 Processing pending mDOGE rewards before claim");
+                
+        // Calculate reward diff since last update
+        let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
+        msg!("   Previous reward debt: {}", electricity_ac.moondoge_reward_debt);
+        msg!("   New accumulated sol per point: {}", moondoge_vault.accumulated_sol_per_point);
+        msg!("   Reward diff: {}", reward_diff);
+
+        // rewards earned = total weighted moondoge * accumulated sol per point - reward debt
+        let new_rewards = (electricity_ac.total_weighted_moondoge as u128)
+            .checked_mul(reward_diff)
+            .unwrap_or(0)
+            .checked_div(PRECISION_FACTOR)
+            .unwrap_or(0) as u64;
+        msg!("   New rewards: {}", new_rewards);
+
+        // add rewards to pending rewards
+        electricity_ac.pending_moondoge_rewards = electricity_ac.pending_moondoge_rewards.checked_add(new_rewards).unwrap();
+        msg!("   Updated pending mDOGE rewards: {}", electricity_ac.pending_moondoge_rewards);
+    }
+
+    // Process any pending rewards before claim (LP staking)
+    if electricity_ac.total_weighted_lp > 0 {
+        msg!("💰 Processing pending LP rewards before claim");
+
+        let reward_diff = liquidity_vault.accumulated_sol_per_point.checked_sub(electricity_ac.lp_reward_debt).unwrap_or(0);
+        msg!("   Previous reward debt: {}", electricity_ac.lp_reward_debt);
+        msg!("   New accumulated sol per point: {}", liquidity_vault.accumulated_sol_per_point);
+        msg!("   Reward diff: {}", reward_diff);
+
+        let new_rewards = (electricity_ac.total_weighted_lp as u128)
+            .checked_mul(reward_diff)
+            .unwrap_or(0)
+            .checked_div(PRECISION_FACTOR)
+            .unwrap_or(0) as u64;            
+        msg!("   New rewards: {}", new_rewards);
+
+        // Add pending LP rewards to total rewards
+        electricity_ac.pending_lp_rewards = electricity_ac.pending_lp_rewards.checked_add(new_rewards).unwrap();
+        msg!("   Updated pending LP rewards: {}", electricity_ac.pending_lp_rewards);
+    }
+
+    // Update reward debt to current rate
+    electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
+    electricity_ac.lp_reward_debt = liquidity_vault.accumulated_sol_per_point;
+    
+    // Transfer pending rewards to user
+    let receiver = &ctx.accounts.authority;
+
+    // Transfer mDOGE staking rewards to user
+    **ctx.accounts.mdoge_sol_vault.try_borrow_mut_lamports()? -= electricity_ac.pending_moondoge_rewards;
+    **receiver.try_borrow_mut_lamports()? += electricity_ac.pending_moondoge_rewards;
+
+    // Transfer LP staking rewards to user
+    **ctx.accounts.liquidity_sol_vault.try_borrow_mut_lamports()? -= electricity_ac.pending_lp_rewards;
+    **receiver.try_borrow_mut_lamports()? += electricity_ac.pending_lp_rewards;
+
+    emit!(SolRewardsClaimed {
+        owner: ctx.accounts.authority.key(),
+        moondoge_rewards: electricity_ac.pending_moondoge_rewards,  
+        lp_rewards: electricity_ac.pending_lp_rewards,
+    });
+
+    // Add pending rewards to total rewards
+    electricity_ac.total_sol_claimed = electricity_ac.total_sol_claimed.checked_add(electricity_ac.pending_moondoge_rewards).unwrap();
+    electricity_ac.total_sol_claimed = electricity_ac.total_sol_claimed.checked_add(electricity_ac.pending_lp_rewards).unwrap();
+
+    // Reset pending rewards to 0
+    electricity_ac.pending_moondoge_rewards = 0;
+    electricity_ac.pending_lp_rewards = 0;
+     
+
+
+    msg!("✅ Claimed SOL rewards");        
+    Ok(())
+}
+
+/// Update user's pending SOL rewards calculation
+/// This function recalculates pending rewards based on current vault state
+pub fn update_pending_rewards(ctx: Context<UpdatePendingRewards>) -> Result<()> {
+    let electricity_ac = &mut ctx.accounts.electricity_ac;
+    let moondoge_vault = &ctx.accounts.moondoge_vault;
+    let liquidity_vault = &ctx.accounts.liquidity_vault;
+    
+    msg!("📊 Updating pending rewards for user: {}", ctx.accounts.authority.key());
+    
+    // Update pending MoonDoge rewards
+    if electricity_ac.total_weighted_moondoge > 0 {
+        let pending_moondoge = (electricity_ac.total_weighted_moondoge as u128 * moondoge_vault.accumulated_sol_per_point / PRECISION_FACTOR as u128) as u64;
+        electricity_ac.pending_moondoge_rewards = pending_moondoge.saturating_sub(electricity_ac.moondoge_reward_debt as u64);
+        msg!("💰 Updated pending MoonDoge rewards: {}", electricity_ac.pending_moondoge_rewards);
+    } else {
+        electricity_ac.pending_moondoge_rewards = 0;
+    }
+    
+    // Update pending LP rewards
+    if electricity_ac.total_weighted_lp > 0 {
+        let pending_lp = (electricity_ac.total_weighted_lp as u128 * liquidity_vault.accumulated_sol_per_point / PRECISION_FACTOR as u128) as u64;
+        electricity_ac.pending_lp_rewards = pending_lp.saturating_sub(electricity_ac.lp_reward_debt as u64);
+        msg!("💰 Updated pending LP rewards: {}", electricity_ac.pending_lp_rewards);
+    } else {
+        electricity_ac.pending_lp_rewards = 0;
+    }
+    
+    msg!("✅ Pending rewards update completed successfully");
+    
+    Ok(())
+}
+
+
+
+
+
+// ----------------------------------------------------------------------------------------
+// ------------ ACCOUNT STRUCTS ----------------------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+// --------- CREATE ELECTRICITY ACCOUNT ---------
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+#[derive(Accounts)]
+pub struct InitializeElectricityAc<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    // User accounts
+    #[account(
+        init,
+        payer = authority,
+        space = UserMoonElectricity::LEN,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+     
+    #[account(mut)]
+    /// CHECK: User instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+
+    /// User who is staking tokens
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// System program for creating accounts
+    pub system_program: Program<'info, System>,    
+}
+
+
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+// --------- STAKE MOONDOGE ---------
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+#[derive(Accounts)]
+#[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
+pub struct StakeMoonDoge<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        bump = moondoge_vault.bump
+    )]
+    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    
+    // User accounts
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = UserMoonElectricity::LEN,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = MoonDogePosition::LEN,
+        seeds = [
+            MDOGE_POSITION_SEED,
+            authority.key().as_ref(),
+            &[position_index]
+        ],
+        bump
+    )]
+    pub user_position: Account<'info, MoonDogePosition>,
+    
+    /// CHECK: mDOGE Mint
+    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+
+    // Token accounts
+    #[account(
+        mut,
+        constraint = user_mdoge_account.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+        constraint = user_mdoge_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_mdoge_account.amount >= amount @ ErrorCode::InsufficientFunds,
+    )]
+    /// User's MoonDoge token account
+    pub user_mdoge_account: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(
+        mut,
+        seeds = [MDOGE_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        bump,
+        constraint = mdoge_custodian.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    /// Token-2022 account that holds staked mDOGE
+    pub mdoge_custodian: InterfaceAccount<'info, TokenAccount2022>,
+        
+    //MoonBase accounts
+    /// MoonBase global configuration
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: Verified in CPI
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: User instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Used for CPI to MoonFacility
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    /// MoonBase program that handles mining operations
+    pub moonbase_program: Program<'info, moon_base::program::MoonBase>,
+    
+    /// User who is staking tokens
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// System program for creating accounts
+    pub system_program: Program<'info, System>,
+    
+    /// Token-2022 program for SPL-22 token operations
+    pub token_program: Program<'info, Token2022>,
+}
+
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+// --------- UNSTAKE MOONDOGE ---------
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+#[derive(Accounts)]
+#[instruction(position_index: u8)]
+pub struct UnstakeMoonDoge<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        bump = moondoge_vault.bump
+    )]
+    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    
+    // User accounts
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    #[account(
+        mut,
+        seeds = [
+            MDOGE_POSITION_SEED,
+            authority.key().as_ref(),
+            &[position_index]
+        ],
+        bump,
+        constraint = user_position.position_index == position_index
+    )]
+    pub user_position: Account<'info, MoonDogePosition>,
+    
+    /// CHECK: mDOGE Mint
+    #[account(mut)]
+    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+
+    // Token accounts
+    #[account(
+        mut,
+        constraint = user_mdoge_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_mdoge_account.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    /// User's MoonDoge token account to receive the unstaked tokens
+    pub user_mdoge_account: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(
+        mut,
+        seeds = [MDOGE_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        bump,
+        constraint = mdoge_custodian.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    /// Token-2022 account that holds staked mDOGE
+    pub mdoge_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(
+        seeds = [MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    /// Authority of the custodian
+    /// CHECK: This is a PDA that acts as the authority for the token account
+    pub mdoge_custodian_authority: UncheckedAccount<'info>,
+    
+    // MoonBase accounts
+    /// MoonBase global configuration
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: Verified in CPI
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: User instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Used for CPI to MoonFacility
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    /// MoonBase program that handles mining operations
+    pub moonbase_program: Program<'info, moon_base::program::MoonBase>,
+    
+    /// User who is unstaking tokens
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// System program for creating accounts
+    pub system_program: Program<'info, System>,
+    
+    /// Token-2022 program for SPL-22 token operations
+    pub token_program: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+#[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
+pub struct StakeLpTokens<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump = liquidity_vault.bump
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    // User accounts
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = UserMoonElectricity::LEN,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = LiquidityPosition::LEN,
+        seeds = [
+            LP_POSITION_SEED,
+            authority.key().as_ref(),
+            &[position_index]
+        ],
+        bump
+    )]
+    pub user_position: Account<'info, LiquidityPosition>,
+    
+    // Token accounts
+    #[account(
+        mut,
+        constraint = user_lp_account.mint == liquidity_vault.lp_token_mint @ ErrorCode::InvalidTokenMint,
+        constraint = user_lp_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_lp_account.amount >= amount @ ErrorCode::InsufficientFunds,
+    )]
+    /// User's LP token account
+    pub user_lp_account: Account<'info, token::TokenAccount>,
+    
+    #[account(
+        mut,
+        seeds = [LIQUIDITY_CUSTODIAN_SEED.as_ref(), liquidity_vault.key().as_ref()],
+        bump,
+        constraint = liquidity_custodian.mint == liquidity_vault.lp_token_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    /// Token account that holds staked LP tokens
+    pub liquidity_custodian: Account<'info, token::TokenAccount>,
+        
+    //MoonBase accounts
+    /// MoonBase global configuration
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: Verified in CPI
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: User instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Used for CPI to MoonFacility
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    /// MoonBase program that handles mining operations
+    pub moonbase_program: Program<'info, moon_base::program::MoonBase>,
+    
+    /// User who is staking tokens
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// System program for creating accounts
+    pub system_program: Program<'info, System>,
+    
+    /// Token program for SPL token operations
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+#[instruction(position_index: u8)]
+pub struct UnstakeLpTokens<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump = liquidity_vault.bump
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    // User accounts
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    #[account(
+        mut,
+        seeds = [
+            LP_POSITION_SEED,
+            authority.key().as_ref(),
+            &[position_index]
+        ],
+        bump,
+        constraint = user_position.position_index == position_index
+    )]
+    pub user_position: Account<'info, LiquidityPosition>,
+    
+    // Token accounts
+    #[account(
+        mut,
+        constraint = user_lp_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_lp_account.mint == liquidity_vault.lp_token_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    /// User's LP token account to receive the unstaked tokens
+    pub user_lp_account: Account<'info, token::TokenAccount>,
+    
+    #[account(
+        mut,
+        seeds = [LIQUIDITY_CUSTODIAN_SEED.as_ref(), liquidity_vault.key().as_ref()],
+        bump,
+        constraint = liquidity_custodian.mint == liquidity_vault.lp_token_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    /// Token account that holds staked LP tokens
+    pub liquidity_custodian: Account<'info, token::TokenAccount>,
+    
+    #[account(
+        seeds = [LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    /// Authority of the custodian
+    /// CHECK: This is a PDA that acts as the authority for the token account
+    pub liquidity_custodian_authority: UncheckedAccount<'info>,
+    
+    /// LP Mint
+    #[account(mut)]
+    pub lp_mint: Account<'info, token::Mint>,
+    
+    // MoonBase accounts
+    /// MoonBase global configuration
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: Verified in CPI
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: User instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Used for CPI to MoonFacility
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    /// MoonBase program that handles mining operations
+    pub moonbase_program: Program<'info, moon_base::program::MoonBase>,
+    
+    /// User who is unstaking tokens
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// System program for creating accounts
+    pub system_program: Program<'info, System>,
+    
+    /// Token program for SPL token operations
+    pub token_program: Program<'info, Token>,
+}
+
+
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+// --------- CLAIM SOL REWARDS ---------
+// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+#[derive(Accounts)]
+pub struct ClaimSolRewards<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        bump 
+    )]
+    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    
+    #[account(
+        mut,
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump 
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    // User accounts
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    #[account(
+        mut,
+        seeds = [MDOGE_SOL_VAULT_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: This is the PDA that custodies SOL for MoonDoge stakers
+    pub mdoge_sol_vault: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_SOL_VAULT_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: This is the PDA that custodies SOL for LP stakers
+    pub liquidity_sol_vault: UncheckedAccount<'info>,
+
+    /// User who is unstaking tokens
+    #[account(mut)]
+    pub authority: Signer<'info>
+}
+
+/// Account struct for updating pending rewards
+#[derive(Accounts)]
+pub struct UpdatePendingRewards<'info> {
+    // Global config and vaults
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        bump 
+    )]
+    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    
+    #[account(
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump 
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    // User accounts
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+
+    /// User requesting the rewards update
+    #[account(mut)]
+    pub authority: Signer<'info>
+}

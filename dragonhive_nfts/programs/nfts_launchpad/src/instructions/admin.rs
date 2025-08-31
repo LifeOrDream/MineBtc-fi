@@ -20,132 +20,132 @@ use crate::{
 // =============================== INITIALIZE PROGRAM ==================================== 
 // ========================================================================================
 
-#[derive(Accounts)]
-#[instruction(
-    collection_name: String,
-    collection_symbol: String,
-    collection_uri: String,
-    honey_token_mint: Pubkey,
-)]
-pub struct Initialize<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = GlobalConfig::LEN,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+// #[derive(Accounts)]
+// #[instruction(
+//     collection_name: String,
+//     collection_symbol: String,
+//     collection_uri: String,
+//     honey_token_mint: Pubkey,
+// )]
+// pub struct Initialize<'info> {
+//     #[account(
+//         init,
+//         payer = authority,
+//         space = GlobalConfig::LEN,
+//         seeds = [GLOBAL_CONFIG_SEED],
+//         bump
+//     )]
+//     pub global_config: Account<'info, GlobalConfig>,
 
-    /// HONEY token vault for storing rewards
-    #[account(
-        init,
-        payer = authority,
-        seeds = [HONEY_VAULT_SEED],
-        bump,
-        token::mint = honey_token_mint,
-        token::authority = honey_vault_authority,
-        token::token_program = token_program
-    )]
-    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+//     /// HONEY token vault for storing rewards
+//     #[account(
+//         init,
+//         payer = authority,
+//         seeds = [HONEY_VAULT_SEED],
+//         bump,
+//         token::mint = honey_token_mint,
+//         token::authority = honey_vault_authority,
+//         token::token_program = token_program
+//     )]
+//     pub honey_vault: InterfaceAccount<'info, TokenAccount>,
 
-    /// HONEY vault authority PDA
-    /// CHECK: PDA will be validated by seeds
-    #[account(
-        seeds = [HONEY_VAULT_AUTHORITY_SEED],
-        bump
-    )]
-    pub honey_vault_authority: UncheckedAccount<'info>,
+//     /// HONEY vault authority PDA
+//     /// CHECK: PDA will be validated by seeds
+//     #[account(
+//         seeds = [HONEY_VAULT_AUTHORITY_SEED],
+//         bump
+//     )]
+//     pub honey_vault_authority: UncheckedAccount<'info>,
 
-    /// SOL treasury for collecting fees
-    /// CHECK: PDA will be validated by seeds
-    #[account(
-        init,
-        payer = authority,
-        space = 0,
-        seeds = [SOL_TREASURY_SEED],
-        bump
-    )]
-    pub sol_treasury: SystemAccount<'info>,
+//     /// SOL treasury for collecting fees
+//     /// CHECK: PDA will be validated by seeds
+//     #[account(
+//         init,
+//         payer = authority,
+//         space = 0,
+//         seeds = [SOL_TREASURY_SEED],
+//         bump
+//     )]
+//     pub sol_treasury: SystemAccount<'info>,
 
-    /// DragonBee collection mint (MPL Core)
-    #[account(mut)]
-    pub collection_mint: Signer<'info>,
+//     /// DragonBee collection mint (MPL Core)
+//     #[account(mut)]
+//     pub collection_mint: Signer<'info>,
 
-    /// DRAGON token mint
-    pub honey_token_mint: InterfaceAccount<'info, Mint>,
+//     /// DRAGON token mint
+//     pub honey_token_mint: InterfaceAccount<'info, Mint>,
 
-    #[account(mut)]
-    pub authority: Signer<'info>,
+//     #[account(mut)]
+//     pub authority: Signer<'info>,
 
-    /// CHECK: MPL Core program
-    #[account(address = MPL_CORE_PROGRAM_ID)]
-    pub mpl_core_program: UncheckedAccount<'info>,
+//     /// CHECK: MPL Core program
+//     #[account(address = MPL_CORE_PROGRAM_ID)]
+//     pub mpl_core_program: UncheckedAccount<'info>,
 
-    pub token_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
-}
+//     pub token_program: Interface<'info, TokenInterface>,
+//     pub system_program: Program<'info, System>,
+// }
 
-pub fn initialize_handler(
-    ctx: Context<Initialize>,
-    collection_name: String,
-    _collection_symbol: String,
-    collection_uri: String,
-    honey_token_mint: Pubkey,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
+// pub fn initialize_handler(
+//     ctx: Context<Initialize>,
+//     collection_name: String,
+//     _collection_symbol: String,
+//     collection_uri: String,
+//     honey_token_mint: Pubkey,
+// ) -> Result<()> {
+//     let global_config = &mut ctx.accounts.global_config;
     
-    // Validate inputs
-    validate_name(&collection_name)?;
-    validate_uri(&collection_uri)?;
+//     // Validate inputs
+//     validate_name(&collection_name)?;
+//     validate_uri(&collection_uri)?;
 
-    // Initialize global configuration
-    global_config.authority = ctx.accounts.authority.key();
-    global_config.treasury = ctx.accounts.sol_treasury.key();
-    global_config.honey_token_mint = honey_token_mint;
-    global_config.honey_vault = ctx.accounts.honey_vault.key();
-    global_config.honey_vault_authority = ctx.accounts.honey_vault_authority.key();
-    global_config.collection_mint = ctx.accounts.collection_mint.key();
-    global_config.total_dragonbees_minted = 0;
-    global_config.nft_price = DRAGONBEE_PRICE;
-    global_config.breeding_fee = BASE_BREEDING_FEE;
-    global_config.total_sol_collected = 0;
-    global_config.kill_rewards_pool = 0;
-    global_config.is_paused = false;
-    global_config.config_bump = ctx.bumps.global_config;
-    global_config.vault_bump = ctx.bumps.honey_vault;
-    global_config.vault_authority_bump = ctx.bumps.honey_vault_authority;
-    global_config.treasury_bump = ctx.bumps.sol_treasury;
+//     // Initialize global configuration
+//     global_config.authority = ctx.accounts.authority.key();
+//     global_config.treasury = ctx.accounts.sol_treasury.key();
+//     global_config.honey_token_mint = honey_token_mint;
+//     global_config.honey_vault = ctx.accounts.honey_vault.key();
+//     global_config.honey_vault_authority = ctx.accounts.honey_vault_authority.key();
+//     global_config.collection_mint = ctx.accounts.collection_mint.key();
+//     global_config.total_dragonbees_minted = 0;
+//     global_config.nft_price = DRAGONBEE_PRICE;
+//     global_config.breeding_fee = BASE_BREEDING_FEE;
+//     global_config.total_sol_collected = 0;
+//     global_config.kill_rewards_pool = 0;
+//     global_config.is_paused = false;
+//     global_config.config_bump = ctx.bumps.global_config;
+//     global_config.vault_bump = ctx.bumps.honey_vault;
+//     global_config.vault_authority_bump = ctx.bumps.honey_vault_authority;
+//     global_config.treasury_bump = ctx.bumps.sol_treasury;
 
-    // Create the DragonBee collection using MPL Core
-    CreateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
-        .asset(&ctx.accounts.collection_mint)
-        .collection(Some(&ctx.accounts.collection_mint))
-        .payer(&ctx.accounts.authority)
-        .authority(Some(&ctx.accounts.authority))
-        .system_program(&ctx.accounts.system_program)
-        .name(collection_name.clone())
-        .uri(collection_uri.clone())
-        .plugins(vec![
-            PluginAuthorityPair {
-                plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
-                    additional_delegates: vec![],
-                }),
-                authority: None,
-            }
-        ])
-        .invoke()?;
+//     // Create the DragonBee collection using MPL Core
+//     CreateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
+//         .asset(&ctx.accounts.collection_mint)
+//         .collection(Some(&ctx.accounts.collection_mint))
+//         .payer(&ctx.accounts.authority)
+//         .authority(Some(&ctx.accounts.authority))
+//         .system_program(&ctx.accounts.system_program)
+//         .name(collection_name.clone())
+//         .uri(collection_uri.clone())
+//         .plugins(vec![
+//             PluginAuthorityPair {
+//                 plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
+//                     additional_delegates: vec![],
+//                 }),
+//                 authority: None,
+//             }
+//         ])
+//         .invoke()?;
 
-    emit!(ProgramInitialized {
-        authority: ctx.accounts.authority.key(),
-        honey_token_mint,
-        collection_mint: ctx.accounts.collection_mint.key(),
-        nft_price: DRAGONBEE_PRICE,
-        breeding_fee: BASE_BREEDING_FEE,
-    });
+//     emit!(ProgramInitialized {
+//         authority: ctx.accounts.authority.key(),
+//         honey_token_mint,
+//         collection_mint: ctx.accounts.collection_mint.key(),
+//         nft_price: DRAGONBEE_PRICE,
+//         breeding_fee: BASE_BREEDING_FEE,
+//     });
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 // ========================================================================================
 // =============================== UPDATE CONFIG ========================================= 

@@ -101,8 +101,8 @@ pub const KILL_POOL_PERCENTAGE: u8 = 10; // 10% of buybacks go to kill pool
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 
 /// HONEY token constants
-pub const HONEY_DECIMALS: u8 = 9;
-pub const HONEY_TOTAL_SUPPLY: u64 = 100_000_000_000_000_000_000; // 100B tokens with 9 decimals
+pub const HONEY_DECIMALS: u8 = 6;
+pub const HONEY_TOTAL_SUPPLY: u64 = 100_000_000_000_000_000; // 100B tokens with 6 decimals
 
 /// Maximum DragonBee supply
 pub const MAX_DRAGONBEE_SUPPLY: u64 = 15_000; // Initial genesis sale
