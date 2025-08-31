@@ -89,7 +89,7 @@ pub struct Initialize<'info> {
 pub fn initialize_handler(
     ctx: Context<Initialize>,
     collection_name: String,
-    collection_symbol: String,
+    _collection_symbol: String,
     collection_uri: String,
     honey_token_mint: Pubkey,
 ) -> Result<()> {
@@ -131,7 +131,7 @@ pub fn initialize_handler(
                 plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
                     additional_delegates: vec![],
                 }),
-                authority: Some(mpl_core::types::Authority::UpdateAuthority),
+                authority: None,
             }
         ])
         .invoke()?;
@@ -306,7 +306,7 @@ pub fn mint_genesis_dragonbee_handler(
                 plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
                     additional_delegates: vec![ctx.accounts.authority.key()],
                 }),
-                authority: Some(mpl_core::types::Authority::UpdateAuthority),
+                authority: None,
             }
         ])
         .invoke()?;

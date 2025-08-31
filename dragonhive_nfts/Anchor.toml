@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-moon_base = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
+nfts_launchpad = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
 
 [registry]
 url = "https://api.apr.dev"
@@ -17,4 +17,7 @@ wallet = "~/Desktop/Solana/dogeTech/wallet-keypair.json"
 
 
 [programs.localnet]
-moon_base = "5Tn8VwVzcWK9BTSxJwrxqdFkL2oFEBQh1CVaetUYEdCw"
+nfts_launchpad = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"
+
+[programs.mainnet]
+nfts_launchpad = "Xic5yxcsGtWRuWcmxN1cK8GQ3ddt3BD3osoBaY1a8j9"

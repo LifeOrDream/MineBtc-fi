@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-// Token imports removed as they're not used in current breeding functions
+use anchor_spl::token_interface::TokenAccount;
 // MPL Core imports removed as they're not used in breeding functions
 
 use crate::{

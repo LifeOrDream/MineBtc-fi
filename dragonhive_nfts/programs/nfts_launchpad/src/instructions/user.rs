@@ -196,7 +196,7 @@ pub fn purchase_dragonbee_handler(ctx: Context<PurchaseDragonBee>) -> Result<()>
                 plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
                     additional_delegates: vec![crate::ID],
                 }),
-                authority: Some(mpl_core::types::Authority::UpdateAuthority),
+                authority: None,
             }
         ])
         .invoke()?;
@@ -489,6 +489,12 @@ pub struct KillDragonBee<'info> {
     #[account(mut)]
     pub dragonbee_mint: UncheckedAccount<'info>,
 
+    /// CHECK: Collection mint account
+    #[account(
+        constraint = collection_mint.key() == global_config.collection_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub collection_mint: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub owner: Signer<'info>,
 
@@ -530,7 +536,7 @@ pub fn kill_dragonbee_handler(
     // Burn the DragonBee NFT using MPL Core
     BurnV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
         .asset(&ctx.accounts.dragonbee_mint)
-        .collection(Some(&ctx.accounts.global_config.collection_mint))
+        .collection(Some(&ctx.accounts.collection_mint))
         .payer(&ctx.accounts.owner)
         .authority(Some(&ctx.accounts.owner))
         .system_program(Some(&ctx.accounts.system_program))

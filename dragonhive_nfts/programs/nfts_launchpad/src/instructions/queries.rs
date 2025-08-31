@@ -157,10 +157,10 @@ pub fn get_global_stats_handler(ctx: Context<GetGlobalStats>) -> Result<GlobalSt
 #[instruction(queen_mint: Pubkey)]
 pub struct GetBreedingAuction<'info> {
     #[account(
-        seeds = [QUEEN_BREEDING_SEED, queen_mint.as_ref()],
+        seeds = [QUEEN_AUCTION_MANAGER_SEED],
         bump = queen_auction.bump
     )]
-    pub queen_auction: Account<'info, QueenBreedingAuction>,
+    pub queen_auction: Account<'info, QueenAuctionManager>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
@@ -184,21 +184,21 @@ pub fn get_breeding_auction_handler(
     queen_mint: Pubkey,
 ) -> Result<BreedingAuctionResponse> {
     let queen_auction = &ctx.accounts.queen_auction;
-    let current_time = get_current_timestamp()?;
+    let _current_time = get_current_timestamp()?;
 
     Ok(BreedingAuctionResponse {
         queen_mint,
-        queen_owner: queen_auction.queen_owner,
-        start_time: queen_auction.start_time,
-        end_time: queen_auction.end_time,
-        highest_bid: queen_auction.highest_bid,
-        highest_bidder: queen_auction.highest_bidder,
-        finalized: queen_auction.finalized,
-        winner: queen_auction.winner,
-        breeding_price: queen_auction.breeding_price,
-        breeding_count: queen_auction.breeding_count,
-        is_active: queen_auction.is_active(current_time),
-        has_ended: queen_auction.has_ended(current_time),
+        queen_owner: Pubkey::default(), // TODO: Get from leading DragonBee
+        start_time: queen_auction.auction_start_epoch as i64,
+        end_time: (queen_auction.auction_start_epoch + queen_auction.config.unlimited_deposit_window) as i64,
+        highest_bid: queen_auction.price_to_be_queen,
+        highest_bidder: Some(Pubkey::default()), // TODO: Get from leading DragonBee
+        finalized: queen_auction.is_cooldown(),
+        winner: Some(Pubkey::default()), // TODO: Get from leading DragonBee
+        breeding_price: queen_auction.price_to_be_queen,
+        breeding_count: 0, // TODO: Track breeding count
+        is_active: queen_auction.are_live && !queen_auction.is_cooldown(),
+        has_ended: queen_auction.is_cooldown(),
     })
 }
 

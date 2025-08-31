@@ -1,12 +1,12 @@
 [package]
-name = "moon_base"
+name = "nfts_launchpad"
 version = "0.1.0"
-description = "Moon Base Facility Management Program for MoonDoge Game"
+description = "DragonHive NFT Launchpad Program for DragonBee NFT management and breeding"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "moon_base"
+name = "nfts_launchpad"
 
 [features]
 default = []
@@ -24,5 +24,4 @@ anchor-spl = "0.31.1"
 mpl-core = "0.9.1" 
 mpl-token-metadata = { version = "5.1.0" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
-raydium-cp-swap = { path = "../../../raydium/programs/cp-swap", features = ["cpi"] }
 # spl-token-2022 = { version = "8.0.1", default-features = false, features = ["no-entrypoint"] }

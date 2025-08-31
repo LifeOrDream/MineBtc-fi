@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use crate::state::{DragonBeeInfoResponse, UserDragonBeesResponse};
 
 pub mod constants;
 pub mod errors;
@@ -61,15 +62,7 @@ pub mod dragonhive_nfts {
         instructions::admin::deposit_honey_tokens_handler(ctx, amount)
     }
 
-    /// Set queen DragonBee for breeding auctions (admin function initially)
-    pub fn set_queen_bee(
-        ctx: Context<SetQueenBee>,
-        dragonbee_mint: Pubkey,
-        breeding_price: u64,
-        auction_duration: i64,
-    ) -> Result<()> {
-        instructions::admin::set_queen_bee_handler(ctx, dragonbee_mint, breeding_price, auction_duration)
-    }
+    // Note: set_queen_bee function moved to breeding module as part of queen auction system
 
     // ========================================================================================
     // ================================= USER FUNCTIONS ======================================
