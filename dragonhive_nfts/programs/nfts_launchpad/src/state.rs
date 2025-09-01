@@ -70,7 +70,7 @@ pub struct HoneyDistributionConfig {
     /// Admin who can update distribution rates
     pub honey_distribution_admin: Pubkey,
     
-    /// Current distribution rate (tokens per epoch/period)
+    /// Current distribution rate (tokens per second)
     pub cur_distribution_rate: u64,
     
     /// Game recipient address

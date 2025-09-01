@@ -781,8 +781,11 @@ pub fn distribute_honey_tokens_handler(
         DragonHiveError::OperationTooEarly
     );
 
-    // Get distribution amount
-    let distribution_amount = global_honey_config.distribution_config.cur_distribution_rate * time_since_last;
+    // Get distribution amount based on time elapsed
+    // cur_distribution_rate is tokens per second, multiply by elapsed seconds
+    let distribution_amount = global_honey_config.distribution_config.cur_distribution_rate
+        .checked_mul(time_since_last as u64)
+        .ok_or(DragonHiveError::ArithmeticOverflow)?;
     require!(distribution_amount > 0, DragonHiveError::InvalidParameters);
     require!(
         distribution_amount <= ctx.accounts.honey_vault.amount,
