@@ -206,6 +206,40 @@ pub struct UserProfileUpdated {
 }
 
 // ========================================================================================
+// =============================== HONEY CONFIG EVENTS ==================================== 
+// ========================================================================================
+
+#[event]
+pub struct HoneyConfigInitialized {
+    pub main_admin: Pubkey,
+    pub ext_authority: Pubkey,
+    pub honey_token_mint: Pubkey,
+    pub honey_vault: Pubkey,
+    pub burn_account: Pubkey,
+    pub staking_rewards_account: Pubkey,
+    pub initial_distribution_rate: u64,
+    pub for_game_percentage: u16,
+}
+
+#[event]
+pub struct HoneyConfigUpdated {
+    pub main_admin: Pubkey,
+    pub new_main_admin: Option<Pubkey>,
+    pub new_ext_authority: Option<Pubkey>,
+    pub is_paused: Option<bool>,
+}
+
+#[event]
+pub struct DistributionConfigUpdated {
+    pub distribution_admin: Pubkey,
+    pub new_distribution_admin: Option<Pubkey>,
+    pub new_distribution_rate: Option<u64>,
+    pub new_game_recipient: Option<Pubkey>,
+    pub new_amm_recipient: Option<Pubkey>,
+    pub new_for_game_percentage: Option<u16>,
+}
+
+// ========================================================================================
 // =============================== ECONOMIC EVENTS ======================================= 
 // ========================================================================================
 
@@ -214,6 +248,35 @@ pub struct HoneyTokensDeposited {
     pub depositor: Pubkey,
     pub amount: u64,
     pub total_vault_balance: u64,
+}
+
+#[event]
+pub struct HoneyTokensAddedToBurn {
+    pub user: Pubkey,
+    pub amount: u64,
+    pub total_burn_balance: u64,
+}
+
+#[event]
+pub struct HoneyTokensBurned {
+    pub caller: Pubkey,
+    pub amount: u64,
+    pub total_burned: u64,
+    pub remaining_burn_balance: u64,
+}
+
+#[event]
+pub struct HoneyTokensAddedToStaking {
+    pub user: Pubkey,
+    pub amount: u64,
+    pub total_staking_rewards: u64,
+}
+
+#[event]
+pub struct StakingRewardsClaimed {
+    pub claimer: Pubkey,
+    pub amount: u64,
+    pub remaining_rewards: u64,
 }
 
 #[event]

@@ -7,11 +7,26 @@
 /// Global configuration PDA seed
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 
+/// Global HONEY configuration PDA seed
+pub const GLOBAL_HONEY_CONFIG_SEED: &[u8] = b"global-honey-config";
+
 /// HONEY token vault PDA seed  
 pub const HONEY_VAULT_SEED: &[u8] = b"honey-vault";
 
 /// HONEY vault authority PDA seed
 pub const HONEY_VAULT_AUTHORITY_SEED: &[u8] = b"honey-vault-authority";
+
+/// HONEY burn account PDA seed
+pub const HONEY_BURN_ACCOUNT_SEED: &[u8] = b"honey-burn-account";
+
+/// HONEY burn account authority PDA seed
+pub const HONEY_BURN_AUTHORITY_SEED: &[u8] = b"honey-burn-authority";
+
+/// Staking rewards account PDA seed
+pub const STAKING_REWARDS_ACCOUNT_SEED: &[u8] = b"staking-rewards-account";
+
+/// Staking rewards account authority PDA seed
+pub const STAKING_REWARDS_AUTHORITY_SEED: &[u8] = b"staking-rewards-authority";
 
 /// DragonBee collection PDA seed
 pub const DRAGONBEE_COLLECTION_SEED: &[u8] = b"dragonbee-collection";
