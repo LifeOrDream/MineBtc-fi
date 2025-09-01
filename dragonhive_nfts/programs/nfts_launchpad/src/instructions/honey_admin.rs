@@ -21,6 +21,7 @@ use crate::{
     honey_distribution_admin: Pubkey,
     game_recipient_address: Pubkey,
     amm_recipient_address: Pubkey,
+    dev_recipient_address: Pubkey,
     staking_rewards_claim_account: Pubkey,
 )]
 pub struct InitializeHoneyConfig<'info> {
@@ -113,15 +114,21 @@ pub fn initialize_honey_config_handler(
     honey_distribution_admin: Pubkey,
     game_recipient_address: Pubkey,
     amm_recipient_address: Pubkey,
+    dev_recipient_address: Pubkey,
     staking_rewards_claim_account: Pubkey,
     initial_distribution_rate: u64,
     for_game_percentage: u16,
+    dev_split_percentage: u16,
+    min_distribution_interval: i64,
 ) -> Result<()> {
     let global_honey_config = &mut ctx.accounts.global_honey_config;
     
     // Validate inputs
     require!(for_game_percentage <= 10000, DragonHiveError::InvalidParameters);
+    require!(dev_split_percentage <= 10000, DragonHiveError::InvalidParameters);
+    require!(for_game_percentage + dev_split_percentage <= 10000, DragonHiveError::InvalidParameters);
     require!(initial_distribution_rate > 0, DragonHiveError::InvalidParameters);
+    require!(min_distribution_interval > 0, DragonHiveError::InvalidParameters);
 
     let current_time = get_current_timestamp()?;
 
@@ -143,7 +150,10 @@ pub fn initialize_honey_config_handler(
         cur_distribution_rate: initial_distribution_rate,
         game_recipient_address,
         amm_recipient_address,
+        dev_recipient_address,
         for_game_percentage,
+        dev_split_percentage,
+        min_distribution_interval,
     };
 
     // Initialize counters
@@ -199,7 +209,10 @@ pub fn update_honey_config_handler(
     new_distribution_admin: Option<Pubkey>,
     new_game_recipient: Option<Pubkey>,
     new_amm_recipient: Option<Pubkey>,
+    new_dev_recipient: Option<Pubkey>,
     new_for_game_percentage: Option<u16>,
+    new_dev_split_percentage: Option<u16>,
+    new_min_distribution_interval: Option<i64>,
     is_paused: Option<bool>,
 ) -> Result<()> {
     let global_honey_config = &mut ctx.accounts.global_honey_config;
@@ -224,9 +237,29 @@ pub fn update_honey_config_handler(
         global_honey_config.distribution_config.amm_recipient_address = new_amm_recipient;
     }
 
+    if let Some(new_dev_recipient) = new_dev_recipient {
+        global_honey_config.distribution_config.dev_recipient_address = new_dev_recipient;
+    }
+
     if let Some(new_for_game_percentage) = new_for_game_percentage {
         require!(new_for_game_percentage <= 10000, DragonHiveError::InvalidParameters);
+        // Validate that game + dev percentages don't exceed 100%
+        let dev_percentage = global_honey_config.distribution_config.dev_split_percentage;
+        require!(new_for_game_percentage + dev_percentage <= 10000, DragonHiveError::InvalidParameters);
         global_honey_config.distribution_config.for_game_percentage = new_for_game_percentage;
+    }
+
+    if let Some(new_dev_split_percentage) = new_dev_split_percentage {
+        require!(new_dev_split_percentage <= 10000, DragonHiveError::InvalidParameters);
+        // Validate that game + dev percentages don't exceed 100%
+        let game_percentage = global_honey_config.distribution_config.for_game_percentage;
+        require!(game_percentage + new_dev_split_percentage <= 10000, DragonHiveError::InvalidParameters);
+        global_honey_config.distribution_config.dev_split_percentage = new_dev_split_percentage;
+    }
+
+    if let Some(new_min_distribution_interval) = new_min_distribution_interval {
+        require!(new_min_distribution_interval > 0, DragonHiveError::InvalidParameters);
+        global_honey_config.distribution_config.min_distribution_interval = new_min_distribution_interval;
     }
 
     if let Some(is_paused) = is_paused {
@@ -273,11 +306,11 @@ pub fn update_distribution_rate_handler(
 
     emit!(DistributionConfigUpdated {
         distribution_admin: ctx.accounts.distribution_admin.key(),
-        new_distribution_admin,
+        new_distribution_admin: None,
         new_distribution_rate,
-        new_game_recipient,
-        new_amm_recipient,
-        new_for_game_percentage,
+        new_game_recipient: None,
+        new_amm_recipient: None,
+        new_for_game_percentage: None,
     });
 
     Ok(())
@@ -665,6 +698,184 @@ pub fn claim_staking_rewards_handler(
         claimer: ctx.accounts.claimer.key(),
         amount,
         remaining_rewards: ctx.accounts.staking_rewards_account.amount.saturating_sub(amount),
+    });
+
+    Ok(())
+}
+
+// ========================================================================================
+// =============================== DISTRIBUTE HONEY TOKENS =============================== 
+// ========================================================================================
+
+#[derive(Accounts)]
+pub struct DistributeHoneyTokens<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_HONEY_CONFIG_SEED],
+        bump = global_honey_config.config_bump,
+        constraint = !global_honey_config.is_paused @ DragonHiveError::ProgramPaused
+    )]
+    pub global_honey_config: Account<'info, GlobalHoneyConfig>,
+
+    #[account(
+        mut,
+        seeds = [HONEY_VAULT_SEED],
+        bump = global_honey_config.vault_bump,
+        constraint = honey_vault.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+
+    /// CHECK: PDA will be validated by seeds
+    #[account(
+        seeds = [HONEY_VAULT_AUTHORITY_SEED],
+        bump = global_honey_config.vault_authority_bump
+    )]
+    pub honey_vault_authority: UncheckedAccount<'info>,
+
+    /// Game recipient token account
+    #[account(
+        mut,
+        constraint = game_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
+        constraint = game_token_account.owner == global_honey_config.distribution_config.game_recipient_address @ DragonHiveError::Unauthorized
+    )]
+    pub game_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// AMM recipient token account
+    #[account(
+        mut,
+        constraint = amm_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
+        constraint = amm_token_account.owner == global_honey_config.distribution_config.amm_recipient_address @ DragonHiveError::Unauthorized
+    )]
+    pub amm_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// Dev recipient token account
+    #[account(
+        mut,
+        constraint = dev_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
+        constraint = dev_token_account.owner == global_honey_config.distribution_config.dev_recipient_address @ DragonHiveError::Unauthorized
+    )]
+    pub dev_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// HONEY token mint
+    #[account(
+        constraint = honey_token_mint.key() == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_token_mint: InterfaceAccount<'info, Mint>,
+
+    /// Anyone can call this function
+    pub caller: Signer<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+pub fn distribute_honey_tokens_handler(
+    ctx: Context<DistributeHoneyTokens>,
+) -> Result<()> {
+    let global_honey_config = &mut ctx.accounts.global_honey_config;
+    let current_time = get_current_timestamp()?;
+
+    // Check if enough time has passed since last distribution
+    let time_since_last = current_time - global_honey_config.last_distribution_time;
+    require!(
+        time_since_last >= global_honey_config.distribution_config.min_distribution_interval,
+        DragonHiveError::OperationTooEarly
+    );
+
+    // Get distribution amount
+    let distribution_amount = global_honey_config.distribution_config.cur_distribution_rate * time_since_last;
+    require!(distribution_amount > 0, DragonHiveError::InvalidParameters);
+    require!(
+        distribution_amount <= ctx.accounts.honey_vault.amount,
+        DragonHiveError::InsufficientHoneyTokens
+    );
+
+    // Calculate splits
+    let game_percentage = global_honey_config.distribution_config.for_game_percentage;
+    let dev_percentage = global_honey_config.distribution_config.dev_split_percentage;
+    let _amm_percentage = 10000 - game_percentage - dev_percentage; // Remaining goes to AMM
+
+    let game_amount = (distribution_amount * game_percentage as u64) / 10000;
+    let dev_amount = (distribution_amount * dev_percentage as u64) / 10000;
+    let amm_amount = distribution_amount - game_amount - dev_amount; // Ensure exact total
+
+    // Get PDA signer seeds for the vault authority
+    let authority_seeds = &[
+        HONEY_VAULT_AUTHORITY_SEED,
+        &[global_honey_config.vault_authority_bump]
+    ];
+    let signer = &[&authority_seeds[..]];
+
+    // Transfer to game recipient
+    if game_amount > 0 {
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.honey_vault.to_account_info(),
+                    to: ctx.accounts.game_token_account.to_account_info(),
+                    authority: ctx.accounts.honey_vault_authority.to_account_info(),
+                    mint: ctx.accounts.honey_token_mint.to_account_info(),
+                },
+                signer,
+            ),
+            game_amount,
+            HONEY_DECIMALS,
+        )?;
+    }
+
+    // Transfer to dev recipient
+    if dev_amount > 0 {
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.honey_vault.to_account_info(),
+                    to: ctx.accounts.dev_token_account.to_account_info(),
+                    authority: ctx.accounts.honey_vault_authority.to_account_info(),
+                    mint: ctx.accounts.honey_token_mint.to_account_info(),
+                },
+                signer,
+            ),
+            dev_amount,
+            HONEY_DECIMALS,
+        )?;
+    }
+
+    // Transfer to AMM recipient
+    if amm_amount > 0 {
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.honey_vault.to_account_info(),
+                    to: ctx.accounts.amm_token_account.to_account_info(),
+                    authority: ctx.accounts.honey_vault_authority.to_account_info(),
+                    mint: ctx.accounts.honey_token_mint.to_account_info(),
+                },
+                signer,
+            ),
+            amm_amount,
+            HONEY_DECIMALS,
+        )?;
+    }
+
+    // Update global stats
+    global_honey_config.total_honey_distributed = global_honey_config.total_honey_distributed
+        .checked_add(distribution_amount)
+        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+    
+    global_honey_config.last_distribution_time = current_time;
+
+    emit!(HoneyTokensDistributed {
+        caller: ctx.accounts.caller.key(),
+        total_distributed: distribution_amount,
+        game_amount,
+        dev_amount,
+        amm_amount,
+        game_recipient: global_honey_config.distribution_config.game_recipient_address,
+        dev_recipient: global_honey_config.distribution_config.dev_recipient_address,
+        amm_recipient: global_honey_config.distribution_config.amm_recipient_address,
+        remaining_vault_balance: ctx.accounts.honey_vault.amount.saturating_sub(distribution_amount),
     });
 
     Ok(())

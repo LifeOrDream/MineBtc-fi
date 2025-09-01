@@ -79,12 +79,21 @@ pub struct HoneyDistributionConfig {
     /// AMM recipient address  
     pub amm_recipient_address: Pubkey,
     
-    /// Percentage for game recipient (remaining goes to AMM)
-    pub for_game_percentage: u16, // 0-10000 (0-100%)
+    /// Dev recipient address
+    pub dev_recipient_address: Pubkey,
+    
+    /// Percentage for game recipient (0-10000, 0-100%)
+    pub for_game_percentage: u16,
+    
+    /// Percentage for dev recipient (0-10000, 0-100%)
+    pub dev_split_percentage: u16,
+    
+    /// Minimum distribution interval in seconds (to prevent spam)
+    pub min_distribution_interval: i64,
 }
 
 impl HoneyDistributionConfig {
-    pub const LEN: usize = 32 + 8 + 32 + 32 + 2; // 5 fields
+    pub const LEN: usize = 32 + 8 + 32 + 32 + 32 + 2 + 2 + 8; // 8 fields
 }
 
 impl GlobalHoneyConfig {

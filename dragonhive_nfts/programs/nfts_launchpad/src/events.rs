@@ -269,7 +269,6 @@ pub struct HoneyTokensBurned {
 pub struct HoneyTokensAddedToStaking {
     pub user: Pubkey,
     pub amount: u64,
-    pub total_staking_rewards: u64,
 }
 
 #[event]
@@ -277,6 +276,19 @@ pub struct StakingRewardsClaimed {
     pub claimer: Pubkey,
     pub amount: u64,
     pub remaining_rewards: u64,
+}
+
+#[event]
+pub struct HoneyTokensDistributed {
+    pub caller: Pubkey,
+    pub total_distributed: u64,
+    pub game_amount: u64,
+    pub dev_amount: u64,
+    pub amm_amount: u64,
+    pub game_recipient: Pubkey,
+    pub dev_recipient: Pubkey,
+    pub amm_recipient: Pubkey,
+    pub remaining_vault_balance: u64,
 }
 
 #[event]

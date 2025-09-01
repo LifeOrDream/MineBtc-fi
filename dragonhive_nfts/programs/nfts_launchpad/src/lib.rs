@@ -64,9 +64,12 @@ pub mod dragonhive_nfts {
         honey_distribution_admin: Pubkey,
         game_recipient_address: Pubkey,
         amm_recipient_address: Pubkey,
+        dev_recipient_address: Pubkey,
         staking_rewards_claim_account: Pubkey,
         initial_distribution_rate: u64,
         for_game_percentage: u16,
+        dev_split_percentage: u16,
+        min_distribution_interval: i64,
     ) -> Result<()> {
         instructions::honey_admin::initialize_honey_config_handler(
             ctx, 
@@ -74,9 +77,12 @@ pub mod dragonhive_nfts {
             honey_distribution_admin, 
             game_recipient_address, 
             amm_recipient_address, 
+            dev_recipient_address,
             staking_rewards_claim_account, 
             initial_distribution_rate, 
-            for_game_percentage
+            for_game_percentage,
+            dev_split_percentage,
+            min_distribution_interval
         )
     }
 
@@ -85,28 +91,36 @@ pub mod dragonhive_nfts {
         ctx: Context<UpdateHoneyConfig>,
         new_main_admin: Option<Pubkey>,
         new_ext_authority: Option<Pubkey>,
-        is_paused: Option<bool>,
-    ) -> Result<()> {
-        instructions::honey_admin::update_honey_config_handler(ctx, new_main_admin, new_ext_authority, is_paused)
-    }
-
-    /// Update distribution configuration (distribution admin only)
-    pub fn update_distribution_config(
-        ctx: Context<UpdateDistributionConfig>,
         new_distribution_admin: Option<Pubkey>,
-        new_distribution_rate: Option<u64>,
         new_game_recipient: Option<Pubkey>,
         new_amm_recipient: Option<Pubkey>,
+        new_dev_recipient: Option<Pubkey>,
         new_for_game_percentage: Option<u16>,
+        new_dev_split_percentage: Option<u16>,
+        new_min_distribution_interval: Option<i64>,
+        is_paused: Option<bool>,
     ) -> Result<()> {
-        instructions::honey_admin::update_distribution_rate_handler(
+        instructions::honey_admin::update_honey_config_handler(
             ctx, 
-            new_distribution_admin, 
-            new_distribution_rate, 
-            new_game_recipient, 
-            new_amm_recipient, 
-            new_for_game_percentage
+            new_main_admin, 
+            new_ext_authority, 
+            new_distribution_admin,
+            new_game_recipient,
+            new_amm_recipient,
+            new_dev_recipient,
+            new_for_game_percentage,
+            new_dev_split_percentage,
+            new_min_distribution_interval,
+            is_paused
         )
+    }
+
+    /// Update distribution rate (distribution admin only)
+    pub fn update_distribution_rate(
+        ctx: Context<UpdateDistributionConfig>,
+        new_distribution_rate: Option<u64>,
+    ) -> Result<()> {
+        instructions::honey_admin::update_distribution_rate_handler(ctx, new_distribution_rate)
     }
 
     /// Deposit HONEY tokens to the main vault (anyone can call)
@@ -147,6 +161,13 @@ pub mod dragonhive_nfts {
         amount: u64,
     ) -> Result<()> {
         instructions::honey_admin::claim_staking_rewards_handler(ctx, amount)
+    }
+
+    /// Distribute HONEY tokens from vault to game, dev, and AMM recipients (anyone can call)
+    pub fn distribute_honey_tokens(
+        ctx: Context<DistributeHoneyTokens>,
+    ) -> Result<()> {
+        instructions::honey_admin::distribute_honey_tokens_handler(ctx)
     }
 
     // ========================================================================================
