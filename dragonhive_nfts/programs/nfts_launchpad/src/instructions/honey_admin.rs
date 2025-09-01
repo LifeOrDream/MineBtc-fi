@@ -154,6 +154,9 @@ pub fn initialize_honey_config_handler(
         for_game_percentage,
         dev_split_percentage,
         min_distribution_interval,
+        claimable_game_amount: 0,
+        claimable_dev_amount: 0,
+        claimable_amm_amount: 0,
     };
 
     // Initialize counters
@@ -732,22 +735,6 @@ pub struct DistributeHoneyTokens<'info> {
     )]
     pub honey_vault_authority: UncheckedAccount<'info>,
 
-    /// Game recipient token account
-    #[account(
-        mut,
-        constraint = game_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
-        constraint = game_token_account.owner == global_honey_config.distribution_config.game_recipient_address @ DragonHiveError::Unauthorized
-    )]
-    pub game_token_account: InterfaceAccount<'info, TokenAccount>,
-
-    /// AMM recipient token account
-    #[account(
-        mut,
-        constraint = amm_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
-        constraint = amm_token_account.owner == global_honey_config.distribution_config.amm_recipient_address @ DragonHiveError::Unauthorized
-    )]
-    pub amm_token_account: InterfaceAccount<'info, TokenAccount>,
-
     /// Dev recipient token account
     #[account(
         mut,
@@ -808,58 +795,42 @@ pub fn distribute_honey_tokens_handler(
     ];
     let signer = &[&authority_seeds[..]];
 
-    // Transfer to game recipient
+    // Accumulate all amounts for later claiming (no immediate transfers)
     if game_amount > 0 {
-        transfer_checked(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                TransferChecked {
-                    from: ctx.accounts.honey_vault.to_account_info(),
-                    to: ctx.accounts.game_token_account.to_account_info(),
-                    authority: ctx.accounts.honey_vault_authority.to_account_info(),
-                    mint: ctx.accounts.honey_token_mint.to_account_info(),
-                },
-                signer,
-            ),
-            game_amount,
-            HONEY_DECIMALS,
-        )?;
+        global_honey_config.distribution_config.claimable_game_amount = global_honey_config
+            .distribution_config
+            .claimable_game_amount
+            .checked_add(game_amount)
+            .ok_or(DragonHiveError::ArithmeticOverflow)?;
+        
+        msg!("🎮 Game amount accumulated: {} (Total claimable: {})", 
+             game_amount, 
+             global_honey_config.distribution_config.claimable_game_amount);
     }
 
-    // Transfer to dev recipient
     if dev_amount > 0 {
-        transfer_checked(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                TransferChecked {
-                    from: ctx.accounts.honey_vault.to_account_info(),
-                    to: ctx.accounts.dev_token_account.to_account_info(),
-                    authority: ctx.accounts.honey_vault_authority.to_account_info(),
-                    mint: ctx.accounts.honey_token_mint.to_account_info(),
-                },
-                signer,
-            ),
-            dev_amount,
-            HONEY_DECIMALS,
-        )?;
+        global_honey_config.distribution_config.claimable_dev_amount = global_honey_config
+            .distribution_config
+            .claimable_dev_amount
+            .checked_add(dev_amount)
+            .ok_or(DragonHiveError::ArithmeticOverflow)?;
+        
+        msg!("👨‍💻 Dev amount accumulated: {} (Total claimable: {})", 
+             dev_amount, 
+             global_honey_config.distribution_config.claimable_dev_amount);
+
     }
 
-    // Transfer to AMM recipient
     if amm_amount > 0 {
-        transfer_checked(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                TransferChecked {
-                    from: ctx.accounts.honey_vault.to_account_info(),
-                    to: ctx.accounts.amm_token_account.to_account_info(),
-                    authority: ctx.accounts.honey_vault_authority.to_account_info(),
-                    mint: ctx.accounts.honey_token_mint.to_account_info(),
-                },
-                signer,
-            ),
-            amm_amount,
-            HONEY_DECIMALS,
-        )?;
+        global_honey_config.distribution_config.claimable_amm_amount = global_honey_config
+            .distribution_config
+            .claimable_amm_amount
+            .checked_add(amm_amount)
+            .ok_or(DragonHiveError::ArithmeticOverflow)?;
+        
+        msg!("🏦 AMM amount accumulated: {} (Total claimable: {})", 
+             amm_amount, 
+             global_honey_config.distribution_config.claimable_amm_amount);
     }
 
     // Update global stats
@@ -878,7 +849,360 @@ pub fn distribute_honey_tokens_handler(
         game_recipient: global_honey_config.distribution_config.game_recipient_address,
         dev_recipient: global_honey_config.distribution_config.dev_recipient_address,
         amm_recipient: global_honey_config.distribution_config.amm_recipient_address,
-        remaining_vault_balance: ctx.accounts.honey_vault.amount.saturating_sub(distribution_amount),
+        remaining_vault_balance: ctx.accounts.honey_vault.amount, // No tokens transferred yet, just accumulated
+    });
+
+    Ok(())
+}
+
+
+// ========================================================================================
+// =============================== CLAIM DEV TOKENS ====================================== 
+// ========================================================================================
+
+#[derive(Accounts)]
+pub struct ClaimDevTokens<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_HONEY_CONFIG_SEED],
+        bump = global_honey_config.config_bump,
+        constraint = !global_honey_config.is_paused @ DragonHiveError::ProgramPaused
+    )]
+    pub global_honey_config: Account<'info, GlobalHoneyConfig>,
+
+    #[account(
+        mut,
+        seeds = [HONEY_VAULT_SEED],
+        bump = global_honey_config.vault_bump,
+        constraint = honey_vault.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+
+    /// CHECK: PDA will be validated by seeds
+    #[account(
+        seeds = [HONEY_VAULT_AUTHORITY_SEED],
+        bump = global_honey_config.vault_authority_bump
+    )]
+    pub honey_vault_authority: UncheckedAccount<'info>,
+
+    /// Dev recipient token account
+    #[account(
+        mut,
+        constraint = dev_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
+        constraint = dev_token_account.owner == dev_recipient.key() @ DragonHiveError::Unauthorized
+    )]
+    pub dev_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// HONEY token mint
+    #[account(
+        constraint = honey_token_mint.key() == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_token_mint: InterfaceAccount<'info, Mint>,
+
+    /// Dev recipient (must be the configured dev address)
+    #[account(
+        constraint = dev_recipient.key() == global_honey_config.distribution_config.dev_recipient_address @ DragonHiveError::Unauthorized
+    )]
+    pub dev_recipient: Signer<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+pub fn claim_dev_tokens_handler(
+    ctx: Context<ClaimDevTokens>,
+    amount: Option<u64>,
+) -> Result<()> {
+    let global_honey_config = &mut ctx.accounts.global_honey_config;
+    
+    // Get amount to claim (all available if not specified)
+    let claimable_amount = global_honey_config.distribution_config.claimable_dev_amount;
+    let claim_amount = amount.unwrap_or(claimable_amount);
+    
+    // Validate claim amount
+    require!(claim_amount > 0, DragonHiveError::InvalidParameters);
+    require!(claim_amount <= claimable_amount, DragonHiveError::InsufficientHoneyTokens);
+    require!(
+        claim_amount <= ctx.accounts.honey_vault.amount,
+        DragonHiveError::InsufficientHoneyTokens
+    );
+
+    msg!("🎯 Dev claiming HONEY tokens");
+    msg!("   Claimable amount: {}", claimable_amount);
+    msg!("   Claiming amount: {}", claim_amount);
+    msg!("   Dev recipient: {}", ctx.accounts.dev_recipient.key());
+
+    // Get PDA signer seeds for the vault authority
+    let authority_seeds = &[
+        HONEY_VAULT_AUTHORITY_SEED,
+        &[global_honey_config.vault_authority_bump]
+    ];
+    let signer = &[&authority_seeds[..]];
+
+    // Transfer HONEY tokens to dev
+    transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.honey_vault.to_account_info(),
+                to: ctx.accounts.dev_token_account.to_account_info(),
+                authority: ctx.accounts.honey_vault_authority.to_account_info(),
+                mint: ctx.accounts.honey_token_mint.to_account_info(),
+            },
+            signer,
+        ),
+        claim_amount,
+        HONEY_DECIMALS,
+    )?;
+
+    // Update claimable amount
+    global_honey_config.distribution_config.claimable_dev_amount = global_honey_config
+        .distribution_config
+        .claimable_dev_amount
+        .checked_sub(claim_amount)
+        .ok_or(DragonHiveError::ArithmeticUnderflow)?;
+
+    msg!("✅ Dev tokens claimed successfully");
+    msg!("   Amount claimed: {}", claim_amount);
+    msg!("   Remaining claimable: {}", global_honey_config.distribution_config.claimable_dev_amount);
+
+    emit!(DevTokensClaimed {
+        dev_recipient: ctx.accounts.dev_recipient.key(),
+        amount_claimed: claim_amount,
+        remaining_claimable: global_honey_config.distribution_config.claimable_dev_amount,
+    });
+
+    Ok(())
+}
+
+// ========================================================================================
+// =============================== CLAIM GAME TOKENS ===================================== 
+// ========================================================================================
+
+#[derive(Accounts)]
+pub struct ClaimGameTokens<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_HONEY_CONFIG_SEED],
+        bump = global_honey_config.config_bump,
+        constraint = !global_honey_config.is_paused @ DragonHiveError::ProgramPaused
+    )]
+    pub global_honey_config: Account<'info, GlobalHoneyConfig>,
+
+    #[account(
+        mut,
+        seeds = [HONEY_VAULT_SEED],
+        bump = global_honey_config.vault_bump,
+        constraint = honey_vault.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+
+    /// CHECK: PDA will be validated by seeds
+    #[account(
+        seeds = [HONEY_VAULT_AUTHORITY_SEED],
+        bump = global_honey_config.vault_authority_bump
+    )]
+    pub honey_vault_authority: UncheckedAccount<'info>,
+
+    /// Game recipient token account
+    #[account(
+        mut,
+        constraint = game_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
+        constraint = game_token_account.owner == game_recipient.key() @ DragonHiveError::Unauthorized
+    )]
+    pub game_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// HONEY token mint
+    #[account(
+        constraint = honey_token_mint.key() == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_token_mint: InterfaceAccount<'info, Mint>,
+
+    /// Game recipient (must be the configured game address)
+    #[account(
+        constraint = game_recipient.key() == global_honey_config.distribution_config.game_recipient_address @ DragonHiveError::Unauthorized
+    )]
+    pub game_recipient: Signer<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+pub fn claim_game_tokens_handler(
+    ctx: Context<ClaimGameTokens>,
+    amount: Option<u64>,
+) -> Result<()> {
+    let global_honey_config = &mut ctx.accounts.global_honey_config;
+    
+    // Get amount to claim (all available if not specified)
+    let claimable_amount = global_honey_config.distribution_config.claimable_game_amount;
+    let claim_amount = amount.unwrap_or(claimable_amount);
+    
+    // Validate claim amount
+    require!(claim_amount > 0, DragonHiveError::InvalidParameters);
+    require!(claim_amount <= claimable_amount, DragonHiveError::InsufficientHoneyTokens);
+    require!(
+        claim_amount <= ctx.accounts.honey_vault.amount,
+        DragonHiveError::InsufficientHoneyTokens
+    );
+
+    msg!("🎮 Game claiming HONEY tokens");
+    msg!("   Claimable amount: {}", claimable_amount);
+    msg!("   Claiming amount: {}", claim_amount);
+
+    // Get PDA signer seeds for the vault authority
+    let authority_seeds = &[
+        HONEY_VAULT_AUTHORITY_SEED,
+        &[global_honey_config.vault_authority_bump]
+    ];
+    let signer = &[&authority_seeds[..]];
+
+    // Transfer HONEY tokens to game
+    transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.honey_vault.to_account_info(),
+                to: ctx.accounts.game_token_account.to_account_info(),
+                authority: ctx.accounts.honey_vault_authority.to_account_info(),
+                mint: ctx.accounts.honey_token_mint.to_account_info(),
+            },
+            signer,
+        ),
+        claim_amount,
+        HONEY_DECIMALS,
+    )?;
+
+    // Update claimable amount
+    global_honey_config.distribution_config.claimable_game_amount = global_honey_config
+        .distribution_config
+        .claimable_game_amount
+        .checked_sub(claim_amount)
+        .ok_or(DragonHiveError::ArithmeticUnderflow)?;
+
+    msg!("✅ Game tokens claimed successfully");
+    msg!("   Amount claimed: {}", claim_amount);
+    msg!("   Remaining claimable: {}", global_honey_config.distribution_config.claimable_game_amount);
+
+    emit!(GameTokensClaimed {
+        game_recipient: ctx.accounts.game_recipient.key(),
+        amount_claimed: claim_amount,
+        remaining_claimable: global_honey_config.distribution_config.claimable_game_amount,
+    });
+
+    Ok(())
+}
+
+// ========================================================================================
+// =============================== CLAIM AMM TOKENS ====================================== 
+// ========================================================================================
+
+#[derive(Accounts)]
+pub struct ClaimAmmTokens<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_HONEY_CONFIG_SEED],
+        bump = global_honey_config.config_bump,
+        constraint = !global_honey_config.is_paused @ DragonHiveError::ProgramPaused
+    )]
+    pub global_honey_config: Account<'info, GlobalHoneyConfig>,
+
+    #[account(
+        mut,
+        seeds = [HONEY_VAULT_SEED],
+        bump = global_honey_config.vault_bump,
+        constraint = honey_vault.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+
+    /// CHECK: PDA will be validated by seeds
+    #[account(
+        seeds = [HONEY_VAULT_AUTHORITY_SEED],
+        bump = global_honey_config.vault_authority_bump
+    )]
+    pub honey_vault_authority: UncheckedAccount<'info>,
+
+    /// AMM recipient token account
+    #[account(
+        mut,
+        constraint = amm_token_account.mint == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
+        constraint = amm_token_account.owner == amm_recipient.key() @ DragonHiveError::Unauthorized
+    )]
+    pub amm_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// HONEY token mint
+    #[account(
+        constraint = honey_token_mint.key() == global_honey_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+    )]
+    pub honey_token_mint: InterfaceAccount<'info, Mint>,
+
+    /// AMM recipient (must be the configured AMM address)
+    #[account(
+        constraint = amm_recipient.key() == global_honey_config.distribution_config.amm_recipient_address @ DragonHiveError::Unauthorized
+    )]
+    pub amm_recipient: Signer<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+pub fn claim_amm_tokens_handler(
+    ctx: Context<ClaimAmmTokens>,
+    amount: Option<u64>,
+) -> Result<()> {
+    let global_honey_config = &mut ctx.accounts.global_honey_config;
+    
+    // Get amount to claim (all available if not specified)
+    let claimable_amount = global_honey_config.distribution_config.claimable_amm_amount;
+    let claim_amount = amount.unwrap_or(claimable_amount);
+    
+    // Validate claim amount
+    require!(claim_amount > 0, DragonHiveError::InvalidParameters);
+    require!(claim_amount <= claimable_amount, DragonHiveError::InsufficientHoneyTokens);
+    require!(
+        claim_amount <= ctx.accounts.honey_vault.amount,
+        DragonHiveError::InsufficientHoneyTokens
+    );
+
+    msg!("🏦 AMM claiming HONEY tokens");
+    msg!("   Claimable amount: {}", claimable_amount);
+    msg!("   Claiming amount: {}", claim_amount);
+
+    // Get PDA signer seeds for the vault authority
+    let authority_seeds = &[
+        HONEY_VAULT_AUTHORITY_SEED,
+        &[global_honey_config.vault_authority_bump]
+    ];
+    let signer = &[&authority_seeds[..]];
+
+    // Transfer HONEY tokens to AMM
+    transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.honey_vault.to_account_info(),
+                to: ctx.accounts.amm_token_account.to_account_info(),
+                authority: ctx.accounts.honey_vault_authority.to_account_info(),
+                mint: ctx.accounts.honey_token_mint.to_account_info(),
+            },
+            signer,
+        ),
+        claim_amount,
+        HONEY_DECIMALS,
+    )?;
+
+    // Update claimable amount
+    global_honey_config.distribution_config.claimable_amm_amount = global_honey_config
+        .distribution_config
+        .claimable_amm_amount
+        .checked_sub(claim_amount)
+        .ok_or(DragonHiveError::ArithmeticUnderflow)?;
+
+    msg!("✅ AMM tokens claimed successfully");
+    msg!("   Amount claimed: {}", claim_amount);
+    msg!("   Remaining claimable: {}", global_honey_config.distribution_config.claimable_amm_amount);
+
+    emit!(AmmTokensClaimed {
+        amm_recipient: ctx.accounts.amm_recipient.key(),
+        amount_claimed: claim_amount,
+        remaining_claimable: global_honey_config.distribution_config.claimable_amm_amount,
     });
 
     Ok(())

@@ -170,6 +170,30 @@ pub mod dragonhive_nfts {
         instructions::honey_admin::distribute_honey_tokens_handler(ctx)
     }
 
+    /// Claim accumulated dev tokens (only dev recipient can call)
+    pub fn claim_dev_tokens(
+        ctx: Context<ClaimDevTokens>,
+        amount: Option<u64>,
+    ) -> Result<()> {
+        instructions::honey_admin::claim_dev_tokens_handler(ctx, amount)
+    }
+
+    /// Claim accumulated game tokens (only game recipient can call)
+    pub fn claim_game_tokens(
+        ctx: Context<ClaimGameTokens>,
+        amount: Option<u64>,
+    ) -> Result<()> {
+        instructions::honey_admin::claim_game_tokens_handler(ctx, amount)
+    }
+
+    /// Claim accumulated AMM tokens (only AMM recipient can call)
+    pub fn claim_amm_tokens(
+        ctx: Context<ClaimAmmTokens>,
+        amount: Option<u64>,
+    ) -> Result<()> {
+        instructions::honey_admin::claim_amm_tokens_handler(ctx, amount)
+    }
+
     // ========================================================================================
     // ================================= USER FUNCTIONS ======================================
     // ========================================================================================

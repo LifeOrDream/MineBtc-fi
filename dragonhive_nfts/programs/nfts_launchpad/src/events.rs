@@ -292,6 +292,27 @@ pub struct HoneyTokensDistributed {
 }
 
 #[event]
+pub struct DevTokensClaimed {
+    pub dev_recipient: Pubkey,
+    pub amount_claimed: u64,
+    pub remaining_claimable: u64,
+}
+
+#[event]
+pub struct GameTokensClaimed {
+    pub game_recipient: Pubkey,
+    pub amount_claimed: u64,
+    pub remaining_claimable: u64,
+}
+
+#[event]
+pub struct AmmTokensClaimed {
+    pub amm_recipient: Pubkey,
+    pub amount_claimed: u64,
+    pub remaining_claimable: u64,
+}
+
+#[event]
 pub struct SOLFeesCollected {
     pub source: String, // "nft_sale", "breeding_fee", "queen_auction"
     pub amount: u64,

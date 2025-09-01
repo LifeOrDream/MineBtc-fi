@@ -90,10 +90,19 @@ pub struct HoneyDistributionConfig {
     
     /// Minimum distribution interval in seconds (to prevent spam)
     pub min_distribution_interval: i64,
+    
+    /// Claimable game amount (accumulated from distributions)
+    pub claimable_game_amount: u64,
+    
+    /// Claimable dev amount (accumulated from distributions)
+    pub claimable_dev_amount: u64,
+    
+    /// Claimable AMM amount (accumulated from distributions)
+    pub claimable_amm_amount: u64,
 }
 
 impl HoneyDistributionConfig {
-    pub const LEN: usize = 32 + 8 + 32 + 32 + 32 + 2 + 2 + 8; // 8 fields
+    pub const LEN: usize = 32 + 8 + 32 + 32 + 32 + 2 + 2 + 8 + 8 + 8 + 8; // 11 fields
 }
 
 impl GlobalHoneyConfig {
