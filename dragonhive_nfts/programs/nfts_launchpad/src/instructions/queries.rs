@@ -109,46 +109,7 @@ pub fn get_user_dragonbees_handler(
     })
 }
 
-// ========================================================================================
-// =============================== GET GLOBAL STATS ====================================== 
-// ========================================================================================
-
-#[derive(Accounts)]
-pub struct GetGlobalStats<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.config_bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize)]
-pub struct GlobalStatsResponse {
-    pub total_dragonbees_minted: u64,
-    pub nft_price: u64,
-    pub breeding_fee: u64,
-    pub total_sol_collected: u64,
-    pub kill_rewards_pool: u64,
-    pub is_paused: bool,
-    pub honey_token_mint: Pubkey,
-    pub collection_mint: Pubkey,
-}
-
-pub fn get_global_stats_handler(ctx: Context<GetGlobalStats>) -> Result<GlobalStatsResponse> {
-    let global_config = &ctx.accounts.global_config;
-
-    Ok(GlobalStatsResponse {
-        total_dragonbees_minted: global_config.total_dragonbees_minted,
-        nft_price: global_config.nft_price,
-        breeding_fee: global_config.breeding_fee,
-        total_sol_collected: global_config.total_sol_collected,
-        kill_rewards_pool: global_config.kill_rewards_pool,
-        is_paused: global_config.is_paused,
-        honey_token_mint: global_config.honey_token_mint,
-        collection_mint: global_config.collection_mint,
-    })
-}
-
+ 
 // ========================================================================================
 // =============================== GET BREEDING AUCTION ================================== 
 // ========================================================================================
@@ -333,46 +294,46 @@ pub struct GetKillRewardEstimate<'info> {
     pub dragonbee_metadata: Account<'info, DragonBeeMetadata>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize)]
-pub struct KillRewardEstimateResponse {
-    pub mint: Pubkey,
-    pub current_power: u32,
-    pub total_kill_pool: u64,
-    pub estimated_reward: u64,
-    pub min_power_required: u32,
-    pub can_kill: bool,
-}
+// #[derive(AnchorSerialize, AnchorDeserialize)]
+// pub struct KillRewardEstimateResponse {
+//     pub mint: Pubkey,
+//     pub current_power: u32,
+//     pub total_kill_pool: u64,
+//     pub estimated_reward: u64,
+//     pub min_power_required: u32,
+//     pub can_kill: bool,
+// }
 
-pub fn get_kill_reward_estimate_handler(
-    ctx: Context<GetKillRewardEstimate>,
-    dragonbee_mint: Pubkey,
-) -> Result<KillRewardEstimateResponse> {
-    let global_config = &ctx.accounts.global_config;
-    let dragonbee_metadata = &ctx.accounts.dragonbee_metadata;
+// pub fn get_kill_reward_estimate_handler(
+//     ctx: Context<GetKillRewardEstimate>,
+//     dragonbee_mint: Pubkey,
+// ) -> Result<KillRewardEstimateResponse> {
+//     let global_config = &ctx.accounts.global_config;
+//     let dragonbee_metadata = &ctx.accounts.dragonbee_metadata;
 
-    let total_kill_pool = global_config.kill_rewards_pool;
-    let current_power = dragonbee_metadata.power;
+//     let total_kill_pool = global_config.kill_rewards_pool;
+//     let current_power = dragonbee_metadata.power;
 
-    // Simplified calculation - in production, calculate actual total active power
-    let total_active_power = 1_000_000u64; // Placeholder
+//     // Simplified calculation - in production, calculate actual total active power
+//     let total_active_power = 1_000_000u64; // Placeholder
 
-    let estimated_reward = if current_power >= MIN_KILL_POWER_THRESHOLD {
-        calculate_kill_reward(current_power, total_active_power, total_kill_pool)
-            .unwrap_or(0)
-    } else {
-        0
-    };
+//     let estimated_reward = if current_power >= MIN_KILL_POWER_THRESHOLD {
+//         calculate_kill_reward(current_power, total_active_power, total_kill_pool)
+//             .unwrap_or(0)
+//     } else {
+//         0
+//     };
 
-    let can_kill = current_power >= MIN_KILL_POWER_THRESHOLD && 
-                   total_kill_pool > 0 && 
-                   !dragonbee_metadata.in_game;
+//     let can_kill = current_power >= MIN_KILL_POWER_THRESHOLD && 
+//                    total_kill_pool > 0 && 
+//                    !dragonbee_metadata.in_game;
 
-    Ok(KillRewardEstimateResponse {
-        mint: dragonbee_mint,
-        current_power,
-        total_kill_pool,
-        estimated_reward,
-        min_power_required: MIN_KILL_POWER_THRESHOLD,
-        can_kill,
-    })
-}
+//     Ok(KillRewardEstimateResponse {
+//         mint: dragonbee_mint,
+//         current_power,
+//         total_kill_pool,
+//         estimated_reward,
+//         min_power_required: MIN_KILL_POWER_THRESHOLD,
+//         can_kill,
+//     })
+// }
