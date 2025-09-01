@@ -21,15 +21,14 @@ pub mod dragonhive_nfts {
     // ========================================================================================
 
     // /// Initialize the DragonHive NFT program with global configuration
-    // /// Creates the main program state, DRAGON token vault, and NFT collection
+    // /// Creates the main program state and NFT collection
     // pub fn initialize(
     //     ctx: Context<Initialize>,
     //     collection_name: String,
     //     collection_symbol: String,
     //     collection_uri: String,
-    //     honey_token_mint: Pubkey,
     // ) -> Result<()> {
-    //     instructions::admin::initialize_handler(ctx, collection_name, collection_symbol, collection_uri, honey_token_mint)
+    //     instructions::admin::initialize_handler(ctx, collection_name, collection_symbol, collection_uri)
     // }
 
     // /// Update global configuration (admin only)
@@ -54,15 +53,122 @@ pub mod dragonhive_nfts {
     //     instructions::admin::mint_genesis_dragonbee_handler(ctx, name, uri, bee_type, initial_genes)
     // }
 
-    // /// Deposit HONEY tokens to the program vault (admin only)
-    // pub fn deposit_honey_tokens(
-    //     ctx: Context<DepositHoneyTokens>,
-    //     amount: u64,
-    // ) -> Result<()> {
-    //     instructions::admin::deposit_honey_tokens_handler(ctx, amount)
-    // }
+    // ========================================================================================
+    // =============================== HONEY MANAGEMENT ====================================== 
+    // ========================================================================================
 
-    // Note: set_queen_bee function moved to breeding module as part of queen auction system
+    /// Initialize the HONEY token management system
+    pub fn initialize_honey_config(
+        ctx: Context<InitializeHoneyConfig>,
+        honey_token_mint: Pubkey,
+        honey_distribution_admin: Pubkey,
+        game_recipient_address: Pubkey,
+        amm_recipient_address: Pubkey,
+        dev_recipient_address: Pubkey,
+        staking_rewards_claim_account: Pubkey,
+        initial_distribution_rate: u64,
+        for_game_percentage: u16,
+        dev_split_percentage: u16,
+        min_distribution_interval: i64,
+    ) -> Result<()> {
+        instructions::honey_admin::initialize_honey_config_handler(
+            ctx, 
+            honey_token_mint, 
+            honey_distribution_admin, 
+            game_recipient_address, 
+            amm_recipient_address, 
+            dev_recipient_address,
+            staking_rewards_claim_account, 
+            initial_distribution_rate, 
+            for_game_percentage,
+            dev_split_percentage,
+            min_distribution_interval
+        )
+    }
+
+    /// Update HONEY configuration (main admin only)
+    pub fn update_honey_config(
+        ctx: Context<UpdateHoneyConfig>,
+        new_main_admin: Option<Pubkey>,
+        new_ext_authority: Option<Pubkey>,
+        new_distribution_admin: Option<Pubkey>,
+        new_game_recipient: Option<Pubkey>,
+        new_amm_recipient: Option<Pubkey>,
+        new_dev_recipient: Option<Pubkey>,
+        new_for_game_percentage: Option<u16>,
+        new_dev_split_percentage: Option<u16>,
+        new_min_distribution_interval: Option<i64>,
+        is_paused: Option<bool>,
+    ) -> Result<()> {
+        instructions::honey_admin::update_honey_config_handler(
+            ctx, 
+            new_main_admin, 
+            new_ext_authority, 
+            new_distribution_admin,
+            new_game_recipient,
+            new_amm_recipient,
+            new_dev_recipient,
+            new_for_game_percentage,
+            new_dev_split_percentage,
+            new_min_distribution_interval,
+            is_paused
+        )
+    }
+
+    /// Update distribution rate (distribution admin only)
+    pub fn update_distribution_rate(
+        ctx: Context<UpdateDistributionConfig>,
+        new_distribution_rate: Option<u64>,
+    ) -> Result<()> {
+        instructions::honey_admin::update_distribution_rate_handler(ctx, new_distribution_rate)
+    }
+
+    /// Deposit HONEY tokens to the main vault (anyone can call)
+    pub fn deposit_honey_tokens(
+        ctx: Context<DepositHoneyTokens>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::honey_admin::deposit_honey_tokens_handler(ctx, amount)
+    }
+
+    /// Add HONEY tokens to burn account (anyone can call)
+    pub fn add_to_burn_account(
+        ctx: Context<AddToBurnAccount>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::honey_admin::add_to_burn_account_handler(ctx, amount)
+    }
+
+    /// Burn HONEY tokens from burn account (anyone can call)
+    pub fn burn_honey_tokens(
+        ctx: Context<BurnHoneyTokens>,
+        amount: Option<u64>,
+    ) -> Result<()> {
+        instructions::honey_admin::burn_honey_tokens_handler(ctx, amount)
+    }
+
+    /// Add HONEY tokens to staking rewards (anyone can call)
+    pub fn add_to_staking_rewards(
+        ctx: Context<AddToStakingRewards>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::honey_admin::add_to_staking_rewards_handler(ctx, amount)
+    }
+
+    /// Claim staking rewards (only authorized claimer can call)
+    pub fn claim_staking_rewards(
+        ctx: Context<ClaimStakingRewards>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::honey_admin::claim_staking_rewards_handler(ctx, amount)
+    }
+
+    /// Distribute HONEY tokens from vault to game, dev, and AMM recipients (anyone can call)
+    pub fn distribute_honey_tokens(
+        ctx: Context<DistributeHoneyTokens>,
+    ) -> Result<()> {
+        instructions::honey_admin::distribute_honey_tokens_handler(ctx)
+    }
 
     // ========================================================================================
     // ================================= USER FUNCTIONS ======================================

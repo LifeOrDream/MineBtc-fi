@@ -5,6 +5,125 @@ use crate::constants::*;
 // =============================== GLOBAL STATE ========================================== 
 // ========================================================================================
 
+/// Global HONEY token configuration and management
+#[account]
+pub struct GlobalHoneyConfig {
+    /// Main admin authority (can update critical settings)
+    pub main_admin: Pubkey,
+    
+    /// External authority (can update main admin related settings)
+    pub ext_authority: Pubkey,
+    
+    /// HONEY token mint address
+    pub honey_token_mint: Pubkey,
+    
+    /// Main HONEY vault (stores 100B tokens for distribution)
+    pub honey_vault: Pubkey,
+    
+    /// HONEY vault authority PDA
+    pub honey_vault_authority: Pubkey,
+    
+    /// Burn account for HONEY tokens
+    pub burn_account: Pubkey,
+    
+    /// Burn account authority PDA
+    pub burn_account_authority: Pubkey,
+    
+    /// Staking rewards account
+    pub staking_rewards_account: Pubkey,
+    
+    /// Staking rewards account authority PDA
+    pub staking_rewards_account_authority: Pubkey,
+    
+    /// Staking rewards claim account (only this address can claim)
+    pub staking_rewards_claim_account: Pubkey,
+    
+    /// Distribution configuration
+    pub distribution_config: HoneyDistributionConfig,
+    
+    /// Total HONEY tokens distributed
+    pub total_honey_distributed: u64,
+    
+    /// Total HONEY tokens burned
+    pub total_honey_burned: u64,
+        
+    /// Last distribution timestamp
+    pub last_distribution_time: i64,
+    
+    /// Whether HONEY operations are paused
+    pub is_paused: bool,
+    
+    /// PDA bump seeds
+    pub config_bump: u8,
+    pub vault_bump: u8,
+    pub vault_authority_bump: u8,
+    pub burn_account_bump: u8,
+    pub burn_authority_bump: u8,
+    pub staking_rewards_bump: u8,
+    pub staking_rewards_authority_bump: u8,
+}
+
+
+/// HONEY token distribution configuration
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct HoneyDistributionConfig {
+    /// Admin who can update distribution rates
+    pub honey_distribution_admin: Pubkey,
+    
+    /// Current distribution rate (tokens per second)
+    pub cur_distribution_rate: u64,
+    
+    /// Game recipient address
+    pub game_recipient_address: Pubkey,
+    
+    /// AMM recipient address  
+    pub amm_recipient_address: Pubkey,
+    
+    /// Dev recipient address
+    pub dev_recipient_address: Pubkey,
+    
+    /// Percentage for game recipient (0-10000, 0-100%)
+    pub for_game_percentage: u16,
+    
+    /// Percentage for dev recipient (0-10000, 0-100%)
+    pub dev_split_percentage: u16,
+    
+    /// Minimum distribution interval in seconds (to prevent spam)
+    pub min_distribution_interval: i64,
+}
+
+impl HoneyDistributionConfig {
+    pub const LEN: usize = 32 + 8 + 32 + 32 + 32 + 2 + 2 + 8; // 8 fields
+}
+
+impl GlobalHoneyConfig {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        32 +  // main_admin
+        32 +  // ext_authority
+        32 +  // honey_token_mint
+        32 +  // honey_vault
+        32 +  // honey_vault_authority
+        32 +  // burn_account
+        32 +  // burn_account_authority
+        32 +  // staking_rewards_account
+        32 +  // staking_rewards_account_authority
+        32 +  // staking_rewards_claim_account
+        HoneyDistributionConfig::LEN + // distribution_config
+        8 +   // total_honey_distributed
+        8 +   // total_honey_burned
+        8 +   // last_distribution_time
+        1 +   // is_paused
+        1 +   // config_bump
+        1 +   // vault_bump
+        1 +   // vault_authority_bump
+        1 +   // burn_account_bump
+        1 +   // burn_authority_bump
+        1 +   // staking_rewards_bump
+        1;    // staking_rewards_authority_bump
+}
+
+
+
 /// Global configuration for the DragonHive NFT program
 #[account]
 pub struct GlobalConfig {
@@ -13,15 +132,6 @@ pub struct GlobalConfig {
     
     /// Treasury account for collecting SOL fees
     pub treasury: Pubkey,
-    
-    /// HONEY token mint address
-    pub honey_token_mint: Pubkey,
-    
-    /// HONEY token vault for rewards and buybacks
-    pub honey_vault: Pubkey,
-    
-    /// HONEY vault authority PDA
-    pub honey_vault_authority: Pubkey,
     
     /// DragonBee collection mint
     pub collection_mint: Pubkey,
@@ -38,36 +148,26 @@ pub struct GlobalConfig {
     /// Total SOL collected from sales
     pub total_sol_collected: u64,
     
-    /// Total HONEY tokens in kill rewards pool
-    pub kill_rewards_pool: u64,
-    
     /// Whether the program is paused
     pub is_paused: bool,
     
     /// PDA bump seeds
     pub config_bump: u8,
-    pub vault_bump: u8,
-    pub vault_authority_bump: u8,
     pub treasury_bump: u8,
 }
+
 
 impl GlobalConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
         32 +  // authority
         32 +  // treasury  
-                32 +  // honey_token_mint
-         32 +  // honey_vault
-         32 +  // honey_vault_authority
         32 +  // collection_mint
         8 +   // total_dragonbees_minted
         8 +   // nft_price
         8 +   // breeding_fee
         8 +   // total_sol_collected
-        8 +   // kill_rewards_pool
         1 +   // is_paused
         1 +   // config_bump
-        1 +   // vault_bump
-        1 +   // vault_authority_bump
         1;    // treasury_bump
 }
 
@@ -227,9 +327,6 @@ pub struct UserProfile {
     /// Number of DragonBees killed for rewards
     pub dragonbees_killed: u32,
     
-    /// Total HONEY tokens earned from kills
-    pub honey_tokens_earned: u64,
-    
     /// Profile creation time
     pub created_at: i64,
     
@@ -247,7 +344,6 @@ impl UserProfile {
         8 +                                     // total_sol_spent
         8 +                                     // total_breeding_fees
         4 +                                     // dragonbees_killed
-        8 +                                     // honey_tokens_earned
         8 +                                     // created_at
         8 +                                     // last_activity
         1;                                      // bump

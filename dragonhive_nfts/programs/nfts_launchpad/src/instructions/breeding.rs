@@ -486,90 +486,90 @@ pub fn add_to_bid_handler(
 // =============================== FINALIZE AUCTION ====================================== 
 // ========================================================================================
 
-#[derive(Accounts)]
-pub struct FinalizeAuction<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.config_bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+// #[derive(Accounts)]
+// pub struct FinalizeAuction<'info> {
+//     #[account(
+//         seeds = [GLOBAL_CONFIG_SEED],
+//         bump = global_config.config_bump
+//     )]
+//     pub global_config: Account<'info, GlobalConfig>,
 
-    #[account(
-        mut,
-        seeds = [QUEEN_AUCTION_MANAGER_SEED],
-        bump = queen_auction_manager.bump,
-        constraint = queen_auction_manager.are_live @ DragonHiveError::ProgramPaused
-    )]
-    pub queen_auction_manager: Account<'info, QueenAuctionManager>,
+//     #[account(
+//         mut,
+//         seeds = [QUEEN_AUCTION_MANAGER_SEED],
+//         bump = queen_auction_manager.bump,
+//         constraint = queen_auction_manager.are_live @ DragonHiveError::ProgramPaused
+//     )]
+//     pub queen_auction_manager: Account<'info, QueenAuctionManager>,
 
-    #[account(
-        mut,
-        seeds = [AUCTION_BID_POOL_SEED, queen_auction_manager.current_auction_epoch.to_le_bytes().as_ref()],
-        bump = auction_bid_pool.bump
-    )]
-    pub auction_bid_pool: Account<'info, AuctionBidPool>,
+//     #[account(
+//         mut,
+//         seeds = [AUCTION_BID_POOL_SEED, queen_auction_manager.current_auction_epoch.to_le_bytes().as_ref()],
+//         bump = auction_bid_pool.bump
+//     )]
+//     pub auction_bid_pool: Account<'info, AuctionBidPool>,
 
-    /// HONEY token vault for distributing energy rewards
-    #[account(
-        mut,
-        seeds = [HONEY_VAULT_SEED],
-        bump = global_config.vault_bump
-    )]
-    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+//     /// HONEY token vault for distributing energy rewards
+//     #[account(
+//         mut,
+//         seeds = [HONEY_VAULT_SEED],
+//         bump = global_config.vault_bump
+//     )]
+//     pub honey_vault: InterfaceAccount<'info, TokenAccount>,
 
-    pub finalizer: Signer<'info>,
-}
+//     pub finalizer: Signer<'info>,
+// }
 
-pub fn finalize_auction_handler(ctx: Context<FinalizeAuction>) -> Result<()> {
-    let queen_auction_manager = &mut ctx.accounts.queen_auction_manager;
-    let auction_bid_pool = &mut ctx.accounts.auction_bid_pool;
+// pub fn finalize_auction_handler(ctx: Context<FinalizeAuction>) -> Result<()> {
+//     let queen_auction_manager = &mut ctx.accounts.queen_auction_manager;
+//     let auction_bid_pool = &mut ctx.accounts.auction_bid_pool;
 
-    let current_slot = Clock::get()?.slot;
-    let current_epoch = current_slot / 432000;
+//     let current_slot = Clock::get()?.slot;
+//     let current_epoch = current_slot / 432000;
 
-    // Check if auction can be finalized
-    let auction_end_epoch = queen_auction_manager.auction_start_epoch
-        .checked_add(queen_auction_manager.config.unlimited_deposit_window)
-        .and_then(|e| e.checked_add(queen_auction_manager.config.limited_deposit_window))
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+//     // Check if auction can be finalized
+//     let auction_end_epoch = queen_auction_manager.auction_start_epoch
+//         .checked_add(queen_auction_manager.config.unlimited_deposit_window)
+//         .and_then(|e| e.checked_add(queen_auction_manager.config.limited_deposit_window))
+//         .ok_or(DragonHiveError::ArithmeticOverflow)?;
 
-    require!(current_epoch >= auction_end_epoch, DragonHiveError::AuctionStillActive);
+//     require!(current_epoch >= auction_end_epoch, DragonHiveError::AuctionStillActive);
 
-    let auction_over_epoch = queen_auction_manager.current_auction_epoch;
+//     let auction_over_epoch = queen_auction_manager.current_auction_epoch;
 
-    // Calculate price increase for next auction
-    let price_increase = queen_auction_manager.price_to_be_queen
-        .checked_mul(queen_auction_manager.config.bid_increase_pct)
-        .and_then(|p| p.checked_div(100))
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+//     // Calculate price increase for next auction
+//     let price_increase = queen_auction_manager.price_to_be_queen
+//         .checked_mul(queen_auction_manager.config.bid_increase_pct)
+//         .and_then(|p| p.checked_div(100))
+//         .ok_or(DragonHiveError::ArithmeticOverflow)?;
 
-    queen_auction_manager.price_to_be_queen = queen_auction_manager.price_to_be_queen
-        .checked_add(price_increase)
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+//     queen_auction_manager.price_to_be_queen = queen_auction_manager.price_to_be_queen
+//         .checked_add(price_increase)
+//         .ok_or(DragonHiveError::ArithmeticOverflow)?;
 
-    // Set next auction start
-    queen_auction_manager.auction_start_epoch = current_epoch
-        .checked_add(queen_auction_manager.config.cooldown_period)
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+//     // Set next auction start
+//     queen_auction_manager.auction_start_epoch = current_epoch
+//         .checked_add(queen_auction_manager.config.cooldown_period)
+//         .ok_or(DragonHiveError::ArithmeticOverflow)?;
     
-    queen_auction_manager.auction_status = AUCTION_PHASE_COOLDOWN;
+//     queen_auction_manager.auction_status = AUCTION_PHASE_COOLDOWN;
 
-    // Finalize bid pool
-    auction_bid_pool.total_honey_energy = auction_bid_pool.energy_yield; // Simplified
+//     // Finalize bid pool
+//     auction_bid_pool.total_honey_energy = auction_bid_pool.energy_yield; // Simplified
 
-    emit!(QueenCompetitionOver {
-        started_at_epoch: auction_over_epoch,
-        next_event_from: queen_auction_manager.auction_start_epoch,
-        hive_burnt_amt: 0, // No HIVE burning in this version
-        total_sui_bidded: auction_bid_pool.total_sui_bidded,
-        energy_from_queens: auction_bid_pool.sui_available,
-        community_energy: auction_bid_pool.energy_yield,
-        becoming_queen_expensive_by: price_increase,
-        price_to_be_a_queen: queen_auction_manager.price_to_be_queen,
-    });
+//     emit!(QueenCompetitionOver {
+//         started_at_epoch: auction_over_epoch,
+//         next_event_from: queen_auction_manager.auction_start_epoch,
+//         hive_burnt_amt: 0, // No HIVE burning in this version
+//         total_sui_bidded: auction_bid_pool.total_sui_bidded,
+//         energy_from_queens: auction_bid_pool.sui_available,
+//         community_energy: auction_bid_pool.energy_yield,
+//         becoming_queen_expensive_by: price_increase,
+//         price_to_be_a_queen: queen_auction_manager.price_to_be_queen,
+//     });
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 // ========================================================================================
 // =============================== HELPER FUNCTIONS =================================== 

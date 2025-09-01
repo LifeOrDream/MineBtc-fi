@@ -331,65 +331,41 @@ pub fn mint_genesis_dragonbee_handler(
 }
 
 // ========================================================================================
-// =============================== DEPOSIT DRAGON TOKENS ================================= 
+// =============================== PAUSE/UNPAUSE PROGRAM ================================= 
 // ========================================================================================
 
 #[derive(Accounts)]
-pub struct DepositHoneyTokens<'info> {
+pub struct PauseProgram<'info> {
     #[account(
+        mut,
         seeds = [GLOBAL_CONFIG_SEED],
         bump = global_config.config_bump,
-        constraint = global_config.authority == depositor.key() @ DragonHiveError::Unauthorized
+        constraint = global_config.authority == authority.key() @ DragonHiveError::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    #[account(
-        mut,
-        seeds = [HONEY_VAULT_SEED],
-        bump = global_config.vault_bump,
-        constraint = honey_vault.mint == global_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
-    )]
-    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
-
-    #[account(
-        mut,
-        constraint = depositor_token_account.mint == global_config.honey_token_mint @ DragonHiveError::InvalidTokenMint,
-        constraint = depositor_token_account.owner == depositor.key() @ DragonHiveError::Unauthorized
-    )]
-    pub depositor_token_account: InterfaceAccount<'info, TokenAccount>,
-
-    #[account(mut)]
-    pub depositor: Signer<'info>,
-
-    pub token_program: Interface<'info, TokenInterface>,
+    pub authority: Signer<'info>,
 }
 
-pub fn deposit_honey_tokens_handler(
-    ctx: Context<DepositHoneyTokens>,
-    amount: u64,
+pub fn pause_program_handler(
+    ctx: Context<PauseProgram>,
+    is_paused: bool,
 ) -> Result<()> {
-    require!(amount > 0, DragonHiveError::InvalidPaymentAmount);
+    let global_config = &mut ctx.accounts.global_config;
+    global_config.is_paused = is_paused;
 
-    // Transfer HONEY tokens to vault
-    anchor_spl::token_interface::transfer(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            anchor_spl::token_interface::Transfer {
-                from: ctx.accounts.depositor_token_account.to_account_info(),
-                to: ctx.accounts.honey_vault.to_account_info(),
-                authority: ctx.accounts.depositor.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
-
-    let vault_balance = ctx.accounts.honey_vault.amount;
-
-    emit!(HoneyTokensDeposited {
-        depositor: ctx.accounts.depositor.key(),
-        amount,
-        total_vault_balance: vault_balance,
-    });
+    if is_paused {
+        emit!(ProgramPaused {
+            authority: ctx.accounts.authority.key(),
+            reason: "Manual pause by authority".to_string(),
+            timestamp: get_current_timestamp()?,
+        });
+    } else {
+        emit!(ProgramUnpaused {
+            authority: ctx.accounts.authority.key(),
+            timestamp: get_current_timestamp()?,
+        });
+    }
 
     Ok(())
 }

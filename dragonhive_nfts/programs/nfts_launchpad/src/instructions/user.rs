@@ -47,7 +47,6 @@ pub fn create_user_profile_handler(ctx: Context<CreateUserProfile>) -> Result<()
     user_profile.total_sol_spent = 0;
     user_profile.total_breeding_fees = 0;
     user_profile.dragonbees_killed = 0;
-    user_profile.honey_tokens_earned = 0;
     user_profile.created_at = current_time;
     user_profile.last_activity = current_time;
     user_profile.bump = ctx.bumps.user_profile;
@@ -219,9 +218,9 @@ pub fn purchase_dragonbee_handler(ctx: Context<PurchaseDragonBee>) -> Result<()>
 
     // Calculate fee distribution
     let (team_portion, buyback_portion, kill_pool_portion) = calculate_fee_distribution(nft_price)?;
-    global_config.kill_rewards_pool = global_config.kill_rewards_pool
-        .checked_add(kill_pool_portion)
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+    // global_config.kill_rewards_pool = global_config.kill_rewards_pool
+    //     .checked_add(kill_pool_portion)
+    //     .ok_or(DragonHiveError::ArithmeticOverflow)?;
 
     emit!(DragonBeePurchased {
         mint: ctx.accounts.dragonbee_mint.key(),
@@ -427,164 +426,161 @@ pub fn update_dragonbee_stats_handler(
 // =============================== KILL DRAGONBEE ======================================== 
 // ========================================================================================
 
-#[derive(Accounts)]
-#[instruction(dragonbee_mint: Pubkey)]
-pub struct KillDragonBee<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.config_bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+// #[derive(Accounts)]
+// #[instruction(dragonbee_mint: Pubkey)]
+// pub struct KillDragonBee<'info> {
+//     #[account(
+//         mut,
+//         seeds = [GLOBAL_CONFIG_SEED],
+//         bump = global_config.config_bump
+//     )]
+//     pub global_config: Account<'info, GlobalConfig>,
 
-    #[account(
-        mut,
-        seeds = [USER_PROFILE_SEED, owner.key().as_ref()],
-        bump = user_profile.bump
-    )]
-    pub user_profile: Account<'info, UserProfile>,
+//     #[account(
+//         mut,
+//         seeds = [USER_PROFILE_SEED, owner.key().as_ref()],
+//         bump = user_profile.bump
+//     )]
+//     pub user_profile: Account<'info, UserProfile>,
 
-    #[account(
-        mut,
-        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.key().as_ref()],
-        bump = dragonbee_metadata.bump,
-        constraint = dragonbee_metadata.owner == owner.key() @ DragonHiveError::DragonBeeNotOwnedByUser,
-        constraint = !dragonbee_metadata.in_game @ DragonHiveError::DragonBeeInGame,
-        close = owner
-    )]
-    pub dragonbee_metadata: Account<'info, DragonBeeMetadata>,
+//     #[account(
+//         mut,
+//         seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.key().as_ref()],
+//         bump = dragonbee_metadata.bump,
+//         constraint = dragonbee_metadata.owner == owner.key() @ DragonHiveError::DragonBeeNotOwnedByUser,
+//         constraint = !dragonbee_metadata.in_game @ DragonHiveError::DragonBeeInGame,
+//         close = owner
+//     )]
+//     pub dragonbee_metadata: Account<'info, DragonBeeMetadata>,
 
-    /// DRAGON token vault
-    #[account(
-        mut,
-        seeds = [HONEY_VAULT_SEED],
-        bump = global_config.vault_bump,
-        constraint = honey_vault.mint == global_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
-    )]
-    pub honey_vault: InterfaceAccount<'info, TokenAccount>,
+//     /// DRAGON token vault
+//     #[account(
+//         mut,
+//         seeds = [HONEY_VAULT_SEED],
+//         bump = global_config.vault_bump,
+//         constraint = honey_vault.mint == global_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+//     )]
+//     pub honey_vault: InterfaceAccount<'info, TokenAccount>,
 
-    /// HONEY vault authority PDA
-    /// CHECK: PDA will be validated by seeds
-    #[account(
-        seeds = [HONEY_VAULT_AUTHORITY_SEED],
-        bump = global_config.vault_authority_bump
-    )]
-    pub honey_vault_authority: UncheckedAccount<'info>,
+//     /// HONEY vault authority PDA
+//     /// CHECK: PDA will be validated by seeds
+//     #[account(
+//         seeds = [HONEY_VAULT_AUTHORITY_SEED],
+//         bump = global_config.vault_authority_bump
+//     )]
+//     pub honey_vault_authority: UncheckedAccount<'info>,
 
-    /// User's HONEY token account
-    #[account(
-        init_if_needed,
-        payer = owner,
-        associated_token::mint = honey_token_mint,
-        associated_token::authority = owner
-    )]
-    pub user_honey_account: InterfaceAccount<'info, TokenAccount>,
+//     /// User's HONEY token account
+//     #[account(
+//         init_if_needed,
+//         payer = owner,
+//         associated_token::mint = honey_token_mint,
+//         associated_token::authority = owner
+//     )]
+//     pub user_honey_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// HONEY token mint
-    #[account(
-        constraint = honey_token_mint.key() == global_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
-    )]
-    pub honey_token_mint: InterfaceAccount<'info, Mint>,
+//     /// HONEY token mint
+//     #[account(
+//         constraint = honey_token_mint.key() == global_config.honey_token_mint @ DragonHiveError::InvalidTokenMint
+//     )]
+//     pub honey_token_mint: InterfaceAccount<'info, Mint>,
 
-    /// CHECK: DragonBee mint account
-    #[account(mut)]
-    pub dragonbee_mint: UncheckedAccount<'info>,
+//     /// CHECK: DragonBee mint account
+//     #[account(mut)]
+//     pub dragonbee_mint: UncheckedAccount<'info>,
 
-    /// CHECK: Collection mint account
-    #[account(
-        constraint = collection_mint.key() == global_config.collection_mint @ DragonHiveError::InvalidTokenMint
-    )]
-    pub collection_mint: UncheckedAccount<'info>,
+//     /// CHECK: Collection mint account
+//     #[account(
+//         constraint = collection_mint.key() == global_config.collection_mint @ DragonHiveError::InvalidTokenMint
+//     )]
+//     pub collection_mint: UncheckedAccount<'info>,
 
-    #[account(mut)]
-    pub owner: Signer<'info>,
+//     #[account(mut)]
+//     pub owner: Signer<'info>,
 
-    /// CHECK: MPL Core program
-    #[account(address = MPL_CORE_PROGRAM_ID)]
-    pub mpl_core_program: UncheckedAccount<'info>,
+//     /// CHECK: MPL Core program
+//     #[account(address = MPL_CORE_PROGRAM_ID)]
+//     pub mpl_core_program: UncheckedAccount<'info>,
 
-    pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
-}
+//     pub token_program: Interface<'info, TokenInterface>,
+//     pub associated_token_program: Program<'info, AssociatedToken>,
+//     pub system_program: Program<'info, System>,
+// }
 
-pub fn kill_dragonbee_handler(
-    ctx: Context<KillDragonBee>,
-    dragonbee_mint: Pubkey,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    let user_profile = &mut ctx.accounts.user_profile;
-    let dragonbee_metadata = &ctx.accounts.dragonbee_metadata;
+// pub fn kill_dragonbee_handler(
+//     ctx: Context<KillDragonBee>,
+//     dragonbee_mint: Pubkey,
+// ) -> Result<()> {
+//     let global_config = &mut ctx.accounts.global_config;
+//     let user_profile = &mut ctx.accounts.user_profile;
+//     let dragonbee_metadata = &ctx.accounts.dragonbee_metadata;
 
-    // Check if program is not paused
-    require!(!global_config.is_paused, DragonHiveError::ProgramPaused);
+//     // Check if program is not paused
+//     require!(!global_config.is_paused, DragonHiveError::ProgramPaused);
 
-    // Check if kill rewards pool has tokens
-    require!(global_config.kill_rewards_pool > 0, DragonHiveError::EmptyKillRewardsPool);
+//     // Check if kill rewards pool has tokens
+//     // require!(global_config.kill_rewards_pool > 0, DragonHiveError::EmptyKillRewardsPool);
 
-    // Calculate total active power (simplified - in production, calculate from all DragonBees)
-    let total_active_power = 1_000_000u64; // Placeholder - should be calculated dynamically
+//     // Calculate total active power (simplified - in production, calculate from all DragonBees)
+//     let total_active_power = 1_000_000u64; // Placeholder - should be calculated dynamically
     
-    // Calculate kill reward
-    let reward_amount = calculate_kill_reward(
-        dragonbee_metadata.power,
-        total_active_power,
-        global_config.kill_rewards_pool,
-    )?;
+//     // Calculate kill reward
+//     let reward_amount = calculate_kill_reward(
+//         dragonbee_metadata.power,
+//         total_active_power,
+//         0 // global_config.kill_rewards_pool,
+//     )?;
 
-    require!(reward_amount > 0, DragonHiveError::InsufficientPowerForKill);
+//     require!(reward_amount > 0, DragonHiveError::InsufficientPowerForKill);
 
-    // Burn the DragonBee NFT using MPL Core
-    BurnV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
-        .asset(&ctx.accounts.dragonbee_mint)
-        .collection(Some(&ctx.accounts.collection_mint))
-        .payer(&ctx.accounts.owner)
-        .authority(Some(&ctx.accounts.owner))
-        .system_program(Some(&ctx.accounts.system_program))
-        .invoke()?;
+//     // Burn the DragonBee NFT using MPL Core
+//     BurnV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
+//         .asset(&ctx.accounts.dragonbee_mint)
+//         .collection(Some(&ctx.accounts.collection_mint))
+//         .payer(&ctx.accounts.owner)
+//         .authority(Some(&ctx.accounts.owner))
+//         .system_program(Some(&ctx.accounts.system_program))
+//         .invoke()?;
 
-    // Transfer HONEY tokens as reward
-    let authority_seeds = &[
-        HONEY_VAULT_AUTHORITY_SEED,
-        &[global_config.vault_authority_bump],
-    ];
+//     // Transfer HONEY tokens as reward
+//     let authority_seeds = &[
+//         HONEY_VAULT_AUTHORITY_SEED,
+//         &[global_config.vault_authority_bump],
+//     ];
 
-    anchor_spl::token_interface::transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            anchor_spl::token_interface::Transfer {
-                from: ctx.accounts.honey_vault.to_account_info(),
-                to: ctx.accounts.user_honey_account.to_account_info(),
-                authority: ctx.accounts.honey_vault_authority.to_account_info(),
-            },
-            &[authority_seeds],
-        ),
-        reward_amount,
-    )?;
+//     anchor_spl::token_interface::transfer(
+//         CpiContext::new_with_signer(
+//             ctx.accounts.token_program.to_account_info(),
+//             anchor_spl::token_interface::Transfer {
+//                 from: ctx.accounts.honey_vault.to_account_info(),
+//                 to: ctx.accounts.user_honey_account.to_account_info(),
+//                 authority: ctx.accounts.honey_vault_authority.to_account_info(),
+//             },
+//             &[authority_seeds],
+//         ),
+//         reward_amount,
+//     )?;
 
-    // Update global stats
-    global_config.kill_rewards_pool = global_config.kill_rewards_pool
-        .checked_sub(reward_amount)
-        .ok_or(DragonHiveError::ArithmeticUnderflow)?;
+//     // Update global stats
+//     // global_config.kill_rewards_pool = global_config.kill_rewards_pool
+//     //     .checked_sub(reward_amount)
+//     //     .ok_or(DragonHiveError::ArithmeticUnderflow)?;
 
-    // Update user profile
-    user_profile.dragonbees.retain(|&x| x != dragonbee_mint);
-    user_profile.dragonbees_killed = user_profile.dragonbees_killed
-        .saturating_add(1);
-    user_profile.honey_tokens_earned = user_profile.honey_tokens_earned
-        .checked_add(reward_amount)
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
+//     // Update user profile
+//     user_profile.dragonbees.retain(|&x| x != dragonbee_mint);
+//     user_profile.dragonbees_killed = user_profile.dragonbees_killed
+//         .saturating_add(1);
 
-    emit!(DragonBeeKilled {
-        mint: dragonbee_mint,
-        owner: ctx.accounts.owner.key(),
-        power: dragonbee_metadata.power,
-        dragon_tokens_earned: reward_amount,
-        remaining_pool: global_config.kill_rewards_pool,
-    });
+//     emit!(DragonBeeKilled {
+//         mint: dragonbee_mint,
+//         owner: ctx.accounts.owner.key(),
+//         power: dragonbee_metadata.power,
+//         dragon_tokens_earned: reward_amount,
+//         remaining_pool: 0 // global_config.kill_rewards_pool,
+//     });
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 // Note: Standard breeding has been replaced with the queen auction system
 // All breeding now happens through the auction mechanism in breeding.rs
