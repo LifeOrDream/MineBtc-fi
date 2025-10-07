@@ -1,155 +1,127 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    token_interface::{Mint, TokenAccount, TokenInterface},
-};
-use mpl_core::{
-    ID as MPL_CORE_PROGRAM_ID,
-    instructions::CreateV1CpiBuilder,
-    types::{PluginAuthorityPair, Plugin},
-};
-
-use crate::{
-    constants::*,
-    errors::DragonHiveError,
-    events::*,
-    state::*,
-    utils::*,
-};
+use crate::{constants::*, errors::NftLaunchpadError, events::*, state::*};
 
 // ========================================================================================
-// =============================== INITIALIZE PROGRAM ==================================== 
+// ================================ ADMIN FUNCTIONS ======================================
 // ========================================================================================
 
-// #[derive(Accounts)]
-// #[instruction(
-//     collection_name: String,
-//     collection_symbol: String,
-//     collection_uri: String,
-//     honey_token_mint: Pubkey,
-// )]
-// pub struct Initialize<'info> {
-//     #[account(
-//         init,
-//         payer = authority,
-//         space = GlobalConfig::LEN,
-//         seeds = [GLOBAL_CONFIG_SEED],
-//         bump
-//     )]
-//     pub global_config: Account<'info, GlobalConfig>,
-
-//     /// HONEY token vault for storing rewards
-//     #[account(
-//         init,
-//         payer = authority,
-//         seeds = [HONEY_VAULT_SEED],
-//         bump,
-//         token::mint = honey_token_mint,
-//         token::authority = honey_vault_authority,
-//         token::token_program = token_program
-//     )]
-//     pub honey_vault: InterfaceAccount<'info, TokenAccount>,
-
-//     /// HONEY vault authority PDA
-//     /// CHECK: PDA will be validated by seeds
-//     #[account(
-//         seeds = [HONEY_VAULT_AUTHORITY_SEED],
-//         bump
-//     )]
-//     pub honey_vault_authority: UncheckedAccount<'info>,
-
-//     /// SOL treasury for collecting fees
-//     /// CHECK: PDA will be validated by seeds
-//     #[account(
-//         init,
-//         payer = authority,
-//         space = 0,
-//         seeds = [SOL_TREASURY_SEED],
-//         bump
-//     )]
-//     pub sol_treasury: SystemAccount<'info>,
-
-//     /// DragonBee collection mint (MPL Core)
-//     #[account(mut)]
-//     pub collection_mint: Signer<'info>,
-
-//     /// DRAGON token mint
-//     pub honey_token_mint: InterfaceAccount<'info, Mint>,
-
-//     #[account(mut)]
-//     pub authority: Signer<'info>,
-
-//     /// CHECK: MPL Core program
-//     #[account(address = MPL_CORE_PROGRAM_ID)]
-//     pub mpl_core_program: UncheckedAccount<'info>,
-
-//     pub token_program: Interface<'info, TokenInterface>,
-//     pub system_program: Program<'info, System>,
-// }
-
-// pub fn initialize_handler(
-//     ctx: Context<Initialize>,
-//     collection_name: String,
-//     _collection_symbol: String,
-//     collection_uri: String,
-//     honey_token_mint: Pubkey,
-// ) -> Result<()> {
-//     let global_config = &mut ctx.accounts.global_config;
+/// Initialize the NFT Launchpad program with collections
+pub fn initialize_handler(
+    ctx: Context<Initialize>,
+    _moondoge_collection_name: String,
+    _moondoge_collection_symbol: String,
+    _moondoge_collection_uri: String,
+    _dragon_egg_collection_name: String,
+    _dragon_egg_collection_symbol: String,
+    _dragon_egg_collection_uri: String,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
     
-//     // Validate inputs
-//     validate_name(&collection_name)?;
-//     validate_uri(&collection_uri)?;
+    // Initialize global config
+    global_config.authority = ctx.accounts.authority.key();
+    global_config.treasury = ctx.accounts.sol_treasury.key();
+    global_config.moondoge_collection = ctx.accounts.moondoge_collection.key();
+    global_config.dragon_egg_collection = ctx.accounts.dragon_egg_collection.key();
+    global_config.total_moondoges_minted = 0;
+    global_config.total_dragon_eggs_minted = 0;
+    global_config.total_sol_collected = 0;
+    global_config.is_paused = false;
+    global_config.config_bump = ctx.bumps.global_config;
+    global_config.treasury_bump = ctx.bumps.sol_treasury;
+    
+    emit!(ProgramInitialized {
+        authority: global_config.authority,
+        moondoge_collection: global_config.moondoge_collection,
+        dragon_egg_collection: global_config.dragon_egg_collection,
+    });
+    
+    msg!("✅ NFT Launchpad initialized");
+    msg!("   MoonDoge Collection: {}", global_config.moondoge_collection);
+    msg!("   Dragon Egg Collection: {}", global_config.dragon_egg_collection);
+    
+    Ok(())
+}
 
-//     // Initialize global configuration
-//     global_config.authority = ctx.accounts.authority.key();
-//     global_config.treasury = ctx.accounts.sol_treasury.key();
-//     global_config.honey_token_mint = honey_token_mint;
-//     global_config.honey_vault = ctx.accounts.honey_vault.key();
-//     global_config.honey_vault_authority = ctx.accounts.honey_vault_authority.key();
-//     global_config.collection_mint = ctx.accounts.collection_mint.key();
-//     global_config.total_dragonbees_minted = 0;
-//     global_config.nft_price = DRAGONBEE_PRICE;
-//     global_config.breeding_fee = BASE_BREEDING_FEE;
-//     global_config.total_sol_collected = 0;
-//     global_config.kill_rewards_pool = 0;
-//     global_config.is_paused = false;
-//     global_config.config_bump = ctx.bumps.global_config;
-//     global_config.vault_bump = ctx.bumps.honey_vault;
-//     global_config.vault_authority_bump = ctx.bumps.honey_vault_authority;
-//     global_config.treasury_bump = ctx.bumps.sol_treasury;
+/// Update global configuration (admin only)
+pub fn update_config_handler(
+    ctx: Context<UpdateConfig>,
+    new_authority: Option<Pubkey>,
+    new_treasury: Option<Pubkey>,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    if let Some(authority) = new_authority {
+        global_config.authority = authority;
+    }
+    
+    if let Some(treasury) = new_treasury {
+        global_config.treasury = treasury;
+    }
+    
+    emit!(ConfigUpdated {
+        authority: global_config.authority,
+        new_authority,
+        new_treasury,
+    });
+    
+    msg!("✅ Configuration updated");
+    
+    Ok(())
+}
 
-//     // Create the DragonBee collection using MPL Core
-//     CreateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
-//         .asset(&ctx.accounts.collection_mint)
-//         .collection(Some(&ctx.accounts.collection_mint))
-//         .payer(&ctx.accounts.authority)
-//         .authority(Some(&ctx.accounts.authority))
-//         .system_program(&ctx.accounts.system_program)
-//         .name(collection_name.clone())
-//         .uri(collection_uri.clone())
-//         .plugins(vec![
-//             PluginAuthorityPair {
-//                 plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
-//                     additional_delegates: vec![],
-//                 }),
-//                 authority: None,
-//             }
-//         ])
-//         .invoke()?;
-
-//     emit!(ProgramInitialized {
-//         authority: ctx.accounts.authority.key(),
-//         honey_token_mint,
-//         collection_mint: ctx.accounts.collection_mint.key(),
-//         nft_price: DRAGONBEE_PRICE,
-//         breeding_fee: BASE_BREEDING_FEE,
-//     });
-
-//     Ok(())
-// }
+/// Pause/unpause the program (admin only)
+pub fn pause_program_handler(
+    ctx: Context<PauseProgram>,
+    is_paused: bool,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    global_config.is_paused = is_paused;
+    
+    msg!("✅ Program {} paused", if is_paused { "is now" } else { "is no longer" });
+    
+    Ok(())
+}
 
 // ========================================================================================
-// =============================== UPDATE CONFIG ========================================= 
+// ================================ ACCOUNT CONTEXTS =====================================
 // ========================================================================================
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = GlobalConfig::LEN,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: MoonDoge collection (Metaplex Core asset)
+    #[account(mut)]
+    pub moondoge_collection: UncheckedAccount<'info>,
+    
+    /// CHECK: Dragon Egg collection (Metaplex Core asset)
+    #[account(mut)]
+    pub dragon_egg_collection: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL treasury PDA (0-byte account for collecting fees)
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [SOL_TREASURY_SEED],
+        bump,
+        owner = crate::ID
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
@@ -157,182 +129,15 @@ pub struct UpdateConfig<'info> {
         mut,
         seeds = [GLOBAL_CONFIG_SEED],
         bump = global_config.config_bump,
-        constraint = global_config.authority == authority.key() @ DragonHiveError::Unauthorized
+        constraint = global_config.authority == authority.key() @ NftLaunchpadError::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
-
-    pub authority: Signer<'info>,
-}
-
-pub fn update_config_handler(
-    ctx: Context<UpdateConfig>,
-    new_authority: Option<Pubkey>,
-    new_treasury: Option<Pubkey>,
-    new_nft_price: Option<u64>,
-    new_breeding_fee: Option<u64>,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-
-    if let Some(new_authority) = new_authority {
-        global_config.authority = new_authority;
-    }
-
-    if let Some(new_treasury) = new_treasury {
-        global_config.treasury = new_treasury;
-    }
-
-    if let Some(new_nft_price) = new_nft_price {
-        require!(new_nft_price > 0, DragonHiveError::InvalidPaymentAmount);
-        global_config.nft_price = new_nft_price;
-    }
-
-    if let Some(new_breeding_fee) = new_breeding_fee {
-        require!(new_breeding_fee > 0, DragonHiveError::InvalidPaymentAmount);
-        global_config.breeding_fee = new_breeding_fee;
-    }
-
-    emit!(ConfigUpdated {
-        authority: ctx.accounts.authority.key(),
-        new_authority,
-        new_treasury,
-        new_nft_price,
-        new_breeding_fee,
-    });
-
-    Ok(())
-}
-
-// ========================================================================================
-// =============================== MINT GENESIS DRAGONBEE =============================== 
-// ========================================================================================
-
-#[derive(Accounts)]
-#[instruction(name: String, uri: String, bee_type: u8, initial_genes: [u8; 32])]
-pub struct MintGenesisDragonBee<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.config_bump,
-        constraint = global_config.authority == authority.key() @ DragonHiveError::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = DragonBeeMetadata::LEN,
-        seeds = [DRAGONBEE_METADATA_SEED, dragonbee_mint.key().as_ref()],
-        bump
-    )]
-    pub dragonbee_metadata: Account<'info, DragonBeeMetadata>,
-
-    #[account(mut)]
-    pub dragonbee_mint: Signer<'info>,
-
-    /// CHECK: This is the pre-created MPL Core collection asset address.
-    /// Verified by equality to the value stored in global_config; not deserialized.
-    #[account(
-        constraint = collection_mint.key() == global_config.collection_mint @ DragonHiveError::InvalidAccount
-    )]
-    pub collection_mint: UncheckedAccount<'info>,
-
+    
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    /// CHECK: MPL Core program
-    #[account(address = MPL_CORE_PROGRAM_ID)]
-    pub mpl_core_program: UncheckedAccount<'info>,
-
+    
     pub system_program: Program<'info, System>,
 }
-
-pub fn mint_genesis_dragonbee_handler(
-    ctx: Context<MintGenesisDragonBee>,
-    name: String,
-    uri: String,
-    bee_type: u8,
-    initial_genes: [u8; 32],
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    let dragonbee_metadata = &mut ctx.accounts.dragonbee_metadata;
-
-    // Validate inputs
-    validate_name(&name)?;
-    validate_uri(&uri)?;
-    validate_bee_type(bee_type)?;
-    validate_genetic_data(&initial_genes)?;
-
-    // Check supply limit
-    require!(
-        global_config.total_dragonbees_minted < MAX_DRAGONBEE_SUPPLY,
-        DragonHiveError::MaxSupplyReached
-    );
-
-    let current_time = get_current_timestamp()?;
-    let initial_power = crate::state::genetics::calculate_power_from_genes(&initial_genes);
-
-    // Initialize DragonBee metadata
-    dragonbee_metadata.mint = ctx.accounts.dragonbee_mint.key();
-    dragonbee_metadata.owner = ctx.accounts.authority.key();
-    dragonbee_metadata.name = name.clone();
-    dragonbee_metadata.uri = uri.clone();
-    dragonbee_metadata.genes = initial_genes;
-    dragonbee_metadata.evolution_stage = EVOLUTION_LARVA;
-    dragonbee_metadata.bee_type = bee_type;
-    dragonbee_metadata.power = initial_power;
-    dragonbee_metadata.generation = 0; // Genesis
-    dragonbee_metadata.parent1 = None;
-    dragonbee_metadata.parent2 = None;
-    dragonbee_metadata.birth_time = current_time;
-    dragonbee_metadata.last_breeding_time = 0;
-    dragonbee_metadata.breeding_count = 0;
-    dragonbee_metadata.cooldown_stage = 0;
-    dragonbee_metadata.is_queen = false;
-    dragonbee_metadata.queen_breeding_price = 0;
-    dragonbee_metadata.game_interactions = 0;
-    dragonbee_metadata.in_game = false;
-    dragonbee_metadata.bump = ctx.bumps.dragonbee_metadata;
-
-    // Create the DragonBee NFT using MPL Core
-    CreateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
-        .asset(&ctx.accounts.dragonbee_mint)
-        .collection(Some(&ctx.accounts.collection_mint))
-        .payer(&ctx.accounts.authority)
-        .authority(Some(&ctx.accounts.authority))
-        .owner(Some(&ctx.accounts.authority))
-        .system_program(&ctx.accounts.system_program)
-        .name(name.clone())
-        .uri(uri.clone())
-        .plugins(vec![
-            PluginAuthorityPair {
-                plugin: Plugin::UpdateDelegate(mpl_core::types::UpdateDelegate {
-                    additional_delegates: vec![ctx.accounts.authority.key()],
-                }),
-                authority: None,
-            }
-        ])
-        .invoke()?;
-
-    // Update global stats
-    global_config.total_dragonbees_minted = global_config.total_dragonbees_minted
-        .checked_add(1)
-        .ok_or(DragonHiveError::ArithmeticOverflow)?;
-
-    emit!(DragonBeeGenesisMinted {
-        mint: ctx.accounts.dragonbee_mint.key(),
-        authority: ctx.accounts.authority.key(),
-        name,
-        bee_type,
-        genes: initial_genes,
-        initial_power,
-    });
-
-    Ok(())
-}
-
-// ========================================================================================
-// =============================== PAUSE/UNPAUSE PROGRAM ================================= 
-// ========================================================================================
 
 #[derive(Accounts)]
 pub struct PauseProgram<'info> {
@@ -340,38 +145,12 @@ pub struct PauseProgram<'info> {
         mut,
         seeds = [GLOBAL_CONFIG_SEED],
         bump = global_config.config_bump,
-        constraint = global_config.authority == authority.key() @ DragonHiveError::Unauthorized
+        constraint = global_config.authority == authority.key() @ NftLaunchpadError::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
-
+    
+    #[account(mut)]
     pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
 }
-
-pub fn pause_program_handler(
-    ctx: Context<PauseProgram>,
-    is_paused: bool,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    global_config.is_paused = is_paused;
-
-    if is_paused {
-        emit!(ProgramPaused {
-            authority: ctx.accounts.authority.key(),
-            reason: "Manual pause by authority".to_string(),
-            timestamp: get_current_timestamp()?,
-        });
-    } else {
-        emit!(ProgramUnpaused {
-            authority: ctx.accounts.authority.key(),
-            timestamp: get_current_timestamp()?,
-        });
-    }
-
-    Ok(())
-}
-
-// ========================================================================================
-// =============================== QUEEN AUCTION MANAGEMENT ============================== 
-// ========================================================================================
-
-// Queen auction functions have been moved to breeding.rs

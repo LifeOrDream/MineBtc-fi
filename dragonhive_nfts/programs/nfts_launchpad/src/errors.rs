@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum DragonHiveError {
+pub enum NftLaunchpadError {
     // ========================================================================================
     // ================================ AUTHORITY ERRORS ===================================== 
     // ========================================================================================
@@ -14,68 +14,47 @@ pub enum DragonHiveError {
     // ========================================================================================
     // ================================= NFT ERRORS ========================================== 
     // ========================================================================================
-    #[msg("DragonBee not found or invalid")]
-    DragonBeeNotFound,
+    #[msg("MoonDoge NFT not found or invalid")]
+    MoonDogeNotFound,
 
-    #[msg("DragonBee is not owned by the user")]
-    DragonBeeNotOwnedByUser,
+    #[msg("Dragon Egg NFT not found or invalid")]
+    DragonEggNotFound,
 
-    #[msg("DragonBee collection is full - maximum supply reached")]
-    MaxSupplyReached,
+    #[msg("MoonDoge collection is full - maximum supply reached")]
+    MaxMoonDogeSupplyReached,
 
-    #[msg("Invalid DragonBee type - must be between 1 and 8")]
-    InvalidDragonBeeType,
+    #[msg("Dragon Egg collection is full - maximum supply reached")]
+    MaxDragonEggSupplyReached,
 
-    #[msg("DragonBee is not ready for evolution")]
-    NotReadyForEvolution,
-
-    #[msg("DragonBee is already at maximum evolution stage")]
-    AlreadyMaxEvolution,
-
-    #[msg("Invalid genetic data provided")]
-    InvalidGeneticData,
+    #[msg("NFT is not owned by the user")]
+    NftNotOwnedByUser,
 
     // ========================================================================================
-    // =============================== BREEDING ERRORS ===================================== 
+    // ============================== ATTACHMENT ERRORS ====================================== 
     // ========================================================================================
-    #[msg("Cannot breed DragonBees of different types")]
-    IncompatibleBreedingTypes,
+    #[msg("MoonDoge is already attached to a moonbase")]
+    DogeAlreadyAttached,
 
-    #[msg("DragonBee is still in breeding cooldown period")]
-    BreedingCooldownActive,
+    #[msg("Dragon Egg is already incubated in a moonbase")]
+    EggAlreadyIncubated,
 
-    #[msg("Breeding failed - insufficient compatibility")]
-    BreedingFailed,
+    #[msg("Moonbase already has a MoonDoge attached (max 1 per moonbase)")]
+    MoonbaseAlreadyHasDoge,
 
-    #[msg("Queen DragonBee is not available for breeding")]
-    QueenNotAvailable,
+    #[msg("Moonbase has reached maximum incubated eggs limit")]
+    MaxEggsReached,
 
-    #[msg("Breeding auction has not ended yet")]
-    AuctionStillActive,
+    #[msg("MoonDoge is not attached to this moonbase")]
+    DogeNotAttached,
 
-    #[msg("Breeding auction has already ended")]
-    AuctionEnded,
-
-    #[msg("Bid amount is too low")]
-    BidTooLow,
-
-    #[msg("Cannot breed with yourself")]
-    SelfBreedingNotAllowed,
-
-    #[msg("Parent DragonBees cannot be the same")]
-    SameParentNotAllowed,
-
-    #[msg("DragonBee has reached maximum breeding limit")]
-    MaxBreedingLimitReached,
+    #[msg("Dragon Egg is not incubated in this moonbase")]
+    EggNotIncubated,
 
     // ========================================================================================
-    // ================================ ECONOMIC ERRORS ====================================== 
+    // =============================== ECONOMIC ERRORS ======================================= 
     // ========================================================================================
     #[msg("Insufficient SOL balance for purchase")]
     InsufficientSOLBalance,
-
-    #[msg("Insufficient HONEY tokens for operation")]
-    InsufficientHoneyTokens,
 
     #[msg("Invalid payment amount")]
     InvalidPaymentAmount,
@@ -83,14 +62,11 @@ pub enum DragonHiveError {
     #[msg("Treasury has insufficient funds")]
     InsufficientTreasuryFunds,
 
-    #[msg("Kill rewards pool is empty")]
-    EmptyKillRewardsPool,
-
-    #[msg("DragonBee power too low for kill rewards")]
-    InsufficientPowerForKill,
+    #[msg("Invalid pricing tier selected")]
+    InvalidPricingTier,
 
     // ========================================================================================
-    // =============================== VALIDATION ERRORS =================================== 
+    // =============================== VALIDATION ERRORS ===================================== 
     // ========================================================================================
     #[msg("Name too long - maximum 32 characters")]
     NameTooLong,
@@ -101,11 +77,11 @@ pub enum DragonHiveError {
     #[msg("Invalid metadata provided")]
     InvalidMetadata,
 
-    #[msg("Power increase exceeds maximum allowed per update")]
-    PowerIncreaseExceedsLimit,
+    #[msg("Power value exceeds maximum allowed")]
+    PowerExceedsLimit,
 
-    #[msg("Rate limit exceeded - too many operations")]
-    RateLimitExceeded,
+    #[msg("Money value exceeds maximum allowed")]
+    MoneyExceedsLimit,
 
     // ========================================================================================
     // ================================ ACCOUNT ERRORS ======================================= 
@@ -119,32 +95,11 @@ pub enum DragonHiveError {
     #[msg("Invalid account provided")]
     InvalidAccount,
 
-    #[msg("Account size mismatch")]
-    AccountSizeMismatch,
-
     #[msg("PDA derivation failed")]
     PDADerivationFailed,
 
     // ========================================================================================
-    // =============================== TOKEN ERRORS ======================================== 
-    // ========================================================================================
-    #[msg("Invalid token mint")]
-    InvalidTokenMint,
-
-    #[msg("Invalid token account")]
-    InvalidTokenAccount,
-
-    #[msg("Token transfer failed")]
-    TokenTransferFailed,
-
-    #[msg("Token mint failed")]
-    TokenMintFailed,
-
-    #[msg("Token burn failed")]
-    TokenBurnFailed,
-
-    // ========================================================================================
-    // =============================== ARITHMETIC ERRORS =================================== 
+    // =============================== ARITHMETIC ERRORS ===================================== 
     // ========================================================================================
     #[msg("Arithmetic overflow occurred")]
     ArithmeticOverflow,
@@ -161,105 +116,30 @@ pub enum DragonHiveError {
     #[msg("Invalid timestamp")]
     InvalidTimestamp,
 
-    #[msg("Operation too early - cooldown period not met")]
-    OperationTooEarly,
-
-    #[msg("Operation expired")]
-    OperationExpired,
+    #[msg("Update too early - must wait for cooldown")]
+    UpdateTooEarly,
 
     // ========================================================================================
-    // =============================== GENETIC ERRORS ====================================== 
-    // ========================================================================================
-    #[msg("Invalid genetic trait value")]
-    InvalidGeneticTrait,
-
-    #[msg("Genetic data corruption detected")]
-    GeneticDataCorrupted,
-
-    #[msg("Evolution requirements not met")]
-    EvolutionRequirementsNotMet,
-
-    #[msg("Trait enhancement failed")]
-    TraitEnhancementFailed,
-
-    // ========================================================================================
-    // =============================== GAME ERRORS ========================================= 
-    // ========================================================================================
-    #[msg("DragonBee is currently in a game and cannot be modified")]
-    DragonBeeInGame,
-
-    #[msg("Invalid game state")]
-    InvalidGameState,
-
-    #[msg("Game interaction failed")]
-    GameInteractionFailed,
-
-    // ========================================================================================
-    // ================================ AUCTION ERRORS ======================================= 
-    // ========================================================================================
-    #[msg("Auction not found")]
-    AuctionNotFound,
-
-    #[msg("Cannot bid on your own auction")]
-    CannotBidOnOwnAuction,
-
-    #[msg("Auction has no bids")]
-    AuctionNoBids,
-
-    #[msg("Not the winning bidder")]
-    NotWinningBidder,
-
-    #[msg("User is already participating with a DragonBee in this auction")]
-    AlreadyParticipatingWithABee,
-
-    #[msg("Position not found for this user")]
-    PositionNotFound,
-
-    #[msg("This is an old position from a previous auction")]
-    OldPosition,
-
-    #[msg("User has already added to position in limited phase")]
-    AlreadyAddedToPosition,
-
-    #[msg("Bid amount exceeds the allowed limit for limited phase")]
-    BidAmountExceedsLimit,
-
-    // ========================================================================================
-    // =============================== COLLECTION ERRORS =================================== 
-    // ========================================================================================
-    #[msg("Collection not found")]
-    CollectionNotFound,
-
-    #[msg("Invalid collection configuration")]
-    InvalidCollectionConfig,
-
-    #[msg("Collection is not mutable")]
-    CollectionNotMutable,
-
-    // ========================================================================================
-    // =============================== PROGRAM ERRORS ====================================== 
+    // =============================== PROGRAM ERRORS ======================================== 
     // ========================================================================================
     #[msg("Program is paused")]
     ProgramPaused,
 
-    #[msg("Feature not implemented yet")]
-    FeatureNotImplemented,
-
     #[msg("Invalid program state")]
     InvalidProgramState,
 
-    #[msg("Operation not supported")]
-    OperationNotSupported,
-
     // ========================================================================================
-    // =============================== QUEEN AUCTION ERRORS ================================== 
+    // ============================== METAPLEX CORE ERRORS =================================== 
     // ========================================================================================
-    #[msg("Queen auction manager is not live")]
-    QueenMakerNotLive,
+    #[msg("Metaplex Core program ID mismatch")]
+    InvalidMplCoreProgram,
 
-    #[msg("Invalid auction phase")]
-    InvalidAuctionPhase,
+    #[msg("Invalid collection provided")]
+    InvalidCollection,
 
-    #[msg("Invalid parameters provided")]
-    InvalidParameters,
+    #[msg("Asset creation failed")]
+    AssetCreationFailed,
+
+    #[msg("Asset transfer failed")]
+    AssetTransferFailed,
 }

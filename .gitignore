@@ -6,3 +6,6 @@ raydium/*
 
 wallet-keypair.json
 setup_scripts/node_modules/*
+
+
+future_scope/*/target/*
