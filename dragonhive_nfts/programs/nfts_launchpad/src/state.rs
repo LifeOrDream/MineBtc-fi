@@ -29,6 +29,12 @@ pub struct GlobalConfig {
     /// Total SOL collected from sales
     pub total_sol_collected: u64,
     
+    /// Available MoonDoge URIs (randomly selected on mint)
+    pub moondoge_uris: Vec<String>,
+    
+    /// Available Dragon Egg URIs (randomly selected on mint)
+    pub dragon_egg_uris: Vec<String>,
+    
     /// Whether the program is paused
     pub is_paused: bool,
     
@@ -46,9 +52,28 @@ impl GlobalConfig {
         8 +   // total_moondoges_minted
         8 +   // total_dragon_eggs_minted
         8 +   // total_sol_collected
+        4 + (10 * (4 + MAX_URI_LENGTH)) +  // moondoge_uris (max 10 URIs)
+        4 + (10 * (4 + MAX_URI_LENGTH)) +  // dragon_egg_uris (max 10 URIs)
         1 +   // is_paused
         1 +   // config_bump
         1;    // treasury_bump
+    
+    /// Select random MoonDoge URI based on slot and index
+    pub fn get_random_moondoge_uri(&self, slot: u64, index: u64) -> Result<String> {
+        require!(!self.moondoge_uris.is_empty(), crate::errors::NftLaunchpadError::InvalidMetadata);
+        
+        let random_index = (slot.wrapping_add(index)) as usize % self.moondoge_uris.len();
+        Ok(self.moondoge_uris[random_index].clone())
+    }
+    
+    /// Select random Dragon Egg URI based on slot, index, and DNA
+    pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {
+        require!(!self.dragon_egg_uris.is_empty(), crate::errors::NftLaunchpadError::InvalidMetadata);
+        
+        let dna_seed = u64::from_le_bytes([dna[0], dna[1], dna[2], dna[3], dna[4], dna[5], dna[6], dna[7]]);
+        let random_index = (slot.wrapping_add(index).wrapping_add(dna_seed)) as usize % self.dragon_egg_uris.len();
+        Ok(self.dragon_egg_uris[random_index].clone())
+    }
 }
 
 // ========================================================================================
@@ -56,13 +81,11 @@ impl GlobalConfig {
 // ========================================================================================
 
 /// MoonDoge NFT metadata (stored separately from Metaplex Core asset)
+/// NOTE: Owner is NOT stored here - always derive from Metaplex Core asset (source of truth)
 #[account]
 pub struct MoonDogeMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
-    
-    /// Current owner
-    pub owner: Pubkey,
     
     /// Money accumulated (increases with mDOGE mining)
     pub money: u64,
@@ -74,7 +97,7 @@ pub struct MoonDogeMetadata {
     pub last_update_ts: i64,
     
     /// Total mDOGE mined while this doge was attached
-    pub total_mdoge_mined: u64,
+    pub total_btc_mined: u64,
     
     /// Creation timestamp
     pub created_at: i64,
@@ -86,11 +109,10 @@ pub struct MoonDogeMetadata {
 impl MoonDogeMetadata {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
-        32 +    // owner
         8 +     // money
         33 +    // attached_moonbase (Option<Pubkey>)
         8 +     // last_update_ts
-        8 +     // total_mdoge_mined
+        8 +     // total_btc_mined
         8 +     // created_at
         1;      // bump
     
@@ -109,13 +131,11 @@ impl MoonDogeMetadata {
 // ========================================================================================
 
 /// Dragon Egg NFT metadata (stored separately from Metaplex Core asset)
+/// NOTE: Owner is NOT stored here - always derive from Metaplex Core asset (source of truth)
 #[account]
 pub struct DragonEggMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
-    
-    /// Current owner
-    pub owner: Pubkey,
     
     /// Current power level
     pub power: u32,
@@ -142,7 +162,6 @@ pub struct DragonEggMetadata {
 impl DragonEggMetadata {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
-        32 +    // owner
         4 +     // power
         32 +    // dna
         33 +    // incubated_moonbase (Option<Pubkey>)

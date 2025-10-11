@@ -25,7 +25,6 @@ pub struct ConfigUpdated {
 #[event]
 pub struct MoonDogeMinted {
     pub mint: Pubkey,
-    pub owner: Pubkey,
     pub name: String,
     pub uri: String,
     pub price_paid: u64,
@@ -49,7 +48,6 @@ pub struct MoonDogeDetached {
 #[event]
 pub struct MoonDogeMoneyUpdated {
     pub doge_mint: Pubkey,
-    pub owner: Pubkey,
     pub old_money: u64,
     pub new_money: u64,
     pub money_increase: u64,
@@ -63,7 +61,6 @@ pub struct MoonDogeMoneyUpdated {
 #[event]
 pub struct DragonEggMinted {
     pub mint: Pubkey,
-    pub owner: Pubkey,
     pub name: String,
     pub uri: String,
     pub dna: [u8; 32],
@@ -91,7 +88,6 @@ pub struct DragonEggRemoved {
 #[event]
 pub struct DragonEggPowerUpdated {
     pub egg_mint: Pubkey,
-    pub owner: Pubkey,
     pub old_power: u32,
     pub new_power: u32,
     pub power_increase: u32,

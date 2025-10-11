@@ -21,7 +21,7 @@ anchor-debug = []
 [dependencies]
 anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
 anchor-spl = "0.31.1"
-mpl-core = "0.9.1" 
+mpl-core = { version = "0.9.1", features = ["cpi"] }
 mpl-token-metadata = { version = "5.1.0" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 # spl-token-2022 = { version = "8.0.1", default-features = false, features = ["no-entrypoint"] }

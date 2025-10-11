@@ -4,6 +4,7 @@ pub mod constants;
 pub mod errors;
 pub mod events;
 pub mod instructions;
+pub mod mpl_core_helpers;
 pub mod state;
 pub mod utils;
 
@@ -44,9 +45,8 @@ pub mod nfts_launchpad {
     pub fn update_config(
         ctx: Context<UpdateConfig>,
         new_authority: Option<Pubkey>,
-        new_treasury: Option<Pubkey>,
     ) -> Result<()> {
-        instructions::admin::update_config_handler(ctx, new_authority, new_treasury)
+        instructions::admin::update_config_handler(ctx, new_authority)
     }
 
     /// Pause/unpause the program (admin only)
@@ -55,6 +55,36 @@ pub mod nfts_launchpad {
         is_paused: bool,
     ) -> Result<()> {
         instructions::admin::pause_program_handler(ctx, is_paused)
+    }
+
+    /// Add MoonDoge URIs to the pool (admin only)
+    pub fn add_moondoge_uris(
+        ctx: Context<UpdateConfig>,
+        uris: Vec<String>,
+    ) -> Result<()> {
+        instructions::admin::add_moondoge_uris_handler(ctx, uris)
+    }
+
+    /// Add Dragon Egg URIs to the pool (admin only)
+    pub fn add_dragon_egg_uris(
+        ctx: Context<UpdateConfig>,
+        uris: Vec<String>,
+    ) -> Result<()> {
+        instructions::admin::add_dragon_egg_uris_handler(ctx, uris)
+    }
+
+    /// Clear all MoonDoge URIs (admin only)
+    pub fn clear_moondoge_uris(
+        ctx: Context<UpdateConfig>,
+    ) -> Result<()> {
+        instructions::admin::clear_moondoge_uris_handler(ctx)
+    }
+
+    /// Clear all Dragon Egg URIs (admin only)
+    pub fn clear_dragon_egg_uris(
+        ctx: Context<UpdateConfig>,
+    ) -> Result<()> {
+        instructions::admin::clear_dragon_egg_uris_handler(ctx)
     }
 
     // ========================================================================================

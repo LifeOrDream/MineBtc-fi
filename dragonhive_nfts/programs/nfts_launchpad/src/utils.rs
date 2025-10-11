@@ -2,6 +2,31 @@ use anchor_lang::prelude::*;
 use crate::{constants::*, errors::NftLaunchpadError};
 
 // ========================================================================================
+// =============================== NFT OWNERSHIP UTILITIES =============================== 
+// ========================================================================================
+
+/// Verify NFT ownership from Metaplex Core asset (source of truth)
+/// Returns the actual owner's pubkey
+pub fn verify_nft_ownership(
+    asset_account: &AccountInfo,
+    expected_owner: &Pubkey,
+) -> Result<()> {
+    let actual_owner = get_nft_owner(asset_account)?;
+    
+    require!(
+        actual_owner == *expected_owner,
+        NftLaunchpadError::NftNotOwnedByUser
+    );
+    
+    Ok(())
+}
+
+/// Get NFT owner from Metaplex Core asset
+pub fn get_nft_owner(asset_account: &AccountInfo) -> Result<Pubkey> {
+    crate::mpl_core_helpers::get_mpl_core_owner(asset_account)
+}
+
+// ========================================================================================
 // =============================== VALIDATION UTILITIES ================================== 
 // ========================================================================================
 

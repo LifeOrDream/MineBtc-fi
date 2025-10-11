@@ -31,18 +31,27 @@ pub fn mint_nfts_for_moonbase_handler(
         
         let index = global_config.total_moondoges_minted;
         let name = generate_moondoge_name(index);
-        let uri = generate_moondoge_uri(index);
+        let uri = global_config.get_random_moondoge_uri(Clock::get()?.slot, index)?;
         
-        // In production: Create Metaplex Core asset via CPI
-        // For now, we'll track in metadata account
+        // Create MoonDoge NFT with MPL Core
+        crate::mpl_core_helpers::create_mpl_core_asset(
+            &ctx.accounts.moondoge_asset.as_ref().unwrap(),
+            Some(&ctx.accounts.moondoge_collection),
+            &ctx.accounts.global_config.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            name.clone(),
+            uri.clone(),
+        )?;
         
         let doge_metadata = &mut ctx.accounts.moondoge_metadata.as_mut().unwrap();
-        doge_metadata.mint = ctx.accounts.moondoge_mint.as_ref().unwrap().key();
-        doge_metadata.owner = ctx.accounts.user.key();
+        doge_metadata.mint = ctx.accounts.moondoge_asset.as_ref().unwrap().key();
         doge_metadata.money = BASE_DOGE_MONEY;
         doge_metadata.attached_moonbase = None;
         doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-        doge_metadata.total_mdoge_mined = 0;
+        doge_metadata.total_btc_mined = 0;
         doge_metadata.created_at = Clock::get()?.unix_timestamp;
         doge_metadata.bump = ctx.bumps.moondoge_metadata.unwrap();
         
@@ -51,7 +60,6 @@ pub fn mint_nfts_for_moonbase_handler(
         
         emit!(MoonDogeMinted {
             mint: doge_metadata.mint,
-            owner: doge_metadata.owner,
             name,
             uri,
             price_paid: 0, // Included in moonbase price
@@ -67,11 +75,23 @@ pub fn mint_nfts_for_moonbase_handler(
             &ctx.accounts.user.key(),
             index,
         );
-        let uri = generate_dragon_egg_uri(index, &dna);
+        let uri = global_config.get_random_dragon_egg_uri(Clock::get()?.slot, index, &dna)?;
+        
+        // Create Dragon Egg NFT with MPL Core
+        crate::mpl_core_helpers::create_mpl_core_asset(
+            &ctx.accounts.dragon_egg_asset.as_ref().unwrap(),
+            Some(&ctx.accounts.dragon_egg_collection),
+            &ctx.accounts.global_config.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            name.clone(),
+            uri.clone(),
+        )?;
         
         let egg_metadata = &mut ctx.accounts.dragon_egg_metadata.as_mut().unwrap();
-        egg_metadata.mint = ctx.accounts.dragon_egg_mint.as_ref().unwrap().key();
-        egg_metadata.owner = ctx.accounts.user.key();
+        egg_metadata.mint = ctx.accounts.dragon_egg_asset.as_ref().unwrap().key();
         egg_metadata.power = BASE_EGG_POWER;
         egg_metadata.dna = dna;
         egg_metadata.incubated_moonbase = None;
@@ -85,7 +105,6 @@ pub fn mint_nfts_for_moonbase_handler(
         
         emit!(DragonEggMinted {
             mint: egg_metadata.mint,
-            owner: egg_metadata.owner,
             name,
             uri,
             dna,
@@ -118,7 +137,7 @@ pub fn mint_nfts_for_moonbase_handler(
     if let Some(egg) = dragon_egg_mint {
         msg!("   Dragon Egg: {}", egg);
     }
-    
+
     Ok(())
 }
 
@@ -152,16 +171,28 @@ pub fn purchase_moondoge_handler(
     
     let index = global_config.total_moondoges_minted;
     let name = generate_moondoge_name(index);
-    let uri = generate_moondoge_uri(index);
+    let uri = global_config.get_random_moondoge_uri(Clock::get()?.slot, index)?;
+    
+    // Create MoonDoge NFT with MPL Core
+    crate::mpl_core_helpers::create_mpl_core_asset(
+        &ctx.accounts.moondoge_asset,
+        Some(&ctx.accounts.moondoge_collection),
+        &ctx.accounts.global_config.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        name.clone(),
+        uri.clone(),
+    )?;
     
     // Initialize metadata
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
-    doge_metadata.mint = ctx.accounts.moondoge_mint.key();
-    doge_metadata.owner = ctx.accounts.user.key();
+    doge_metadata.mint = ctx.accounts.moondoge_asset.key();
     doge_metadata.money = BASE_DOGE_MONEY;
     doge_metadata.attached_moonbase = None;
     doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    doge_metadata.total_mdoge_mined = 0;
+    doge_metadata.total_btc_mined = 0;
     doge_metadata.created_at = Clock::get()?.unix_timestamp;
     doge_metadata.bump = ctx.bumps.moondoge_metadata;
     
@@ -170,7 +201,6 @@ pub fn purchase_moondoge_handler(
     
     emit!(MoonDogeMinted {
         mint: doge_metadata.mint,
-        owner: doge_metadata.owner,
         name,
         uri,
         price_paid: MOONDOGE_PRICE,
@@ -216,12 +246,24 @@ pub fn purchase_dragon_egg_handler(
         &ctx.accounts.user.key(),
         index,
     );
-    let uri = generate_dragon_egg_uri(index, &dna);
+    let uri = global_config.get_random_dragon_egg_uri(Clock::get()?.slot, index, &dna)?;
+    
+    // Create Dragon Egg NFT with MPL Core
+    crate::mpl_core_helpers::create_mpl_core_asset(
+        &ctx.accounts.dragon_egg_asset,
+        Some(&ctx.accounts.dragon_egg_collection),
+        &ctx.accounts.global_config.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        name.clone(),
+        uri.clone(),
+    )?;
     
     // Initialize metadata
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
-    egg_metadata.mint = ctx.accounts.dragon_egg_mint.key();
-    egg_metadata.owner = ctx.accounts.user.key();
+    egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
     egg_metadata.power = BASE_EGG_POWER;
     egg_metadata.dna = dna;
     egg_metadata.incubated_moonbase = None;
@@ -235,14 +277,13 @@ pub fn purchase_dragon_egg_handler(
     
     emit!(DragonEggMinted {
         mint: egg_metadata.mint,
-        owner: egg_metadata.owner,
         name,
         uri,
         dna,
         initial_power: BASE_EGG_POWER,
         price_paid: DRAGON_EGG_PRICE,
     });
-    
+
     emit!(SOLFeesCollected {
         source: "nft_purchase".to_string(),
         amount: DRAGON_EGG_PRICE,
@@ -267,11 +308,10 @@ pub fn attach_moondoge_handler(
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
     let doge_attachment = &mut ctx.accounts.doge_attachment;
     
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.moondoge_asset, &ctx.accounts.user.key())?;
+    
     // Validation
-    require!(
-        doge_metadata.owner == ctx.accounts.user.key(),
-        NftLaunchpadError::NftNotOwnedByUser
-    );
     require!(
         doge_metadata.attached_moonbase.is_none(),
         NftLaunchpadError::DogeAlreadyAttached
@@ -309,10 +349,9 @@ pub fn detach_moondoge_handler(
 ) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
     
-    require!(
-        doge_metadata.owner == ctx.accounts.user.key(),
-        NftLaunchpadError::NftNotOwnedByUser
-    );
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.moondoge_asset, &ctx.accounts.user.key())?;
+    
     require!(
         doge_metadata.attached_moonbase.is_some(),
         NftLaunchpadError::DogeNotAttached
@@ -358,14 +397,13 @@ pub fn update_moondoge_money_handler(
     
     doge_metadata.money = new_money;
     doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    doge_metadata.total_mdoge_mined = doge_metadata.total_mdoge_mined.saturating_add(mdoge_mined);
+    doge_metadata.total_btc_mined = doge_metadata.total_btc_mined.saturating_add(mdoge_mined);
     
     doge_attachment.last_update_ts = Clock::get()?.unix_timestamp;
     doge_attachment.last_mdoge_balance = doge_attachment.last_mdoge_balance.saturating_add(mdoge_mined);
     
     emit!(MoonDogeMoneyUpdated {
         doge_mint: doge_metadata.mint,
-        owner: doge_metadata.owner,
         old_money,
         new_money,
         money_increase,
@@ -389,10 +427,9 @@ pub fn incubate_dragon_egg_handler(
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
     
-    require!(
-        egg_metadata.owner == ctx.accounts.user.key(),
-        NftLaunchpadError::NftNotOwnedByUser
-    );
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.dragon_egg_asset, &ctx.accounts.user.key())?;
+    
     require!(
         egg_metadata.incubated_moonbase.is_none(),
         NftLaunchpadError::EggAlreadyIncubated
@@ -435,10 +472,9 @@ pub fn remove_dragon_egg_handler(
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
     
-    require!(
-        egg_metadata.owner == ctx.accounts.user.key(),
-        NftLaunchpadError::NftNotOwnedByUser
-    );
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.dragon_egg_asset, &ctx.accounts.user.key())?;
+    
     require!(
         egg_metadata.incubated_moonbase.is_some(),
         NftLaunchpadError::EggNotIncubated
@@ -510,7 +546,6 @@ pub fn update_dragon_egg_power_handler(
     
     emit!(DragonEggPowerUpdated {
         egg_mint: egg_metadata.mint,
-        owner: egg_metadata.owner,
         old_power,
         new_power,
         power_increase,
@@ -519,7 +554,7 @@ pub fn update_dragon_egg_power_handler(
     
     msg!("✅ Dragon Egg power updated");
     msg!("   Power: {} -> {} (+{})", old_power, new_power, power_increase);
-    
+
     Ok(())
 }
 
@@ -535,7 +570,7 @@ pub struct MintNftsForMoonbase<'info> {
         bump = global_config.config_bump,
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED],
@@ -544,36 +579,47 @@ pub struct MintNftsForMoonbase<'info> {
     /// CHECK: SOL treasury PDA
     pub sol_treasury: UncheckedAccount<'info>,
     
-    /// CHECK: MoonDoge mint (if applicable)
+    /// CHECK: MoonDoge asset (if applicable)
     #[account(mut)]
-    pub moondoge_mint: Option<UncheckedAccount<'info>>,
+    pub moondoge_asset: Option<UncheckedAccount<'info>>,
+    
+    /// CHECK: MoonDoge collection
+    #[account(mut)]
+    pub moondoge_collection: UncheckedAccount<'info>,
     
     #[account(
         init_if_needed,
         payer = user,
         space = MoonDogeMetadata::LEN,
-        seeds = [MOONDOGE_METADATA_SEED, moondoge_mint.as_ref().unwrap().key().as_ref()],
+        seeds = [MOONDOGE_METADATA_SEED, moondoge_asset.as_ref().unwrap().key().as_ref()],
         bump
     )]
     pub moondoge_metadata: Option<Account<'info, MoonDogeMetadata>>,
     
-    /// CHECK: Dragon Egg mint (if applicable)
+    /// CHECK: Dragon Egg asset (if applicable)
     #[account(mut)]
-    pub dragon_egg_mint: Option<UncheckedAccount<'info>>,
+    pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
+    
+    /// CHECK: Dragon Egg collection
+    #[account(mut)]
+    pub dragon_egg_collection: UncheckedAccount<'info>,
     
     #[account(
         init_if_needed,
         payer = user,
         space = DragonEggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_mint.as_ref().unwrap().key().as_ref()],
+        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_asset.as_ref().unwrap().key().as_ref()],
         bump
     )]
     pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
+    
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -593,15 +639,19 @@ pub struct PurchaseMoonDoge<'info> {
     /// CHECK: SOL treasury PDA
     pub sol_treasury: UncheckedAccount<'info>,
     
-    /// CHECK: MoonDoge mint (Metaplex Core asset)
+    /// CHECK: MoonDoge asset (Metaplex Core NFT)
     #[account(mut)]
-    pub moondoge_mint: UncheckedAccount<'info>,
+    pub moondoge_asset: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonDoge collection
+    #[account(mut)]
+    pub moondoge_collection: UncheckedAccount<'info>,
     
     #[account(
         init,
         payer = user,
         space = MoonDogeMetadata::LEN,
-        seeds = [MOONDOGE_METADATA_SEED, moondoge_mint.key().as_ref()],
+        seeds = [MOONDOGE_METADATA_SEED, moondoge_asset.key().as_ref()],
         bump
     )]
     pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
@@ -610,6 +660,9 @@ pub struct PurchaseMoonDoge<'info> {
     pub user: Signer<'info>,
     
     pub system_program: Program<'info, System>,
+    
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -620,7 +673,7 @@ pub struct PurchaseDragonEgg<'info> {
         bump = global_config.config_bump,
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED],
@@ -629,31 +682,43 @@ pub struct PurchaseDragonEgg<'info> {
     /// CHECK: SOL treasury PDA
     pub sol_treasury: UncheckedAccount<'info>,
     
-    /// CHECK: Dragon Egg mint (Metaplex Core asset)
+    /// CHECK: Dragon Egg asset (Metaplex Core NFT)
     #[account(mut)]
-    pub dragon_egg_mint: UncheckedAccount<'info>,
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+    
+    /// CHECK: Dragon Egg collection
+    #[account(mut)]
+    pub dragon_egg_collection: UncheckedAccount<'info>,
     
     #[account(
         init,
         payer = user,
         space = DragonEggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_mint.key().as_ref()],
+        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_asset.key().as_ref()],
         bump
     )]
     pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
     
     pub system_program: Program<'info, System>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct AttachMoonDoge<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub moondoge_asset: UncheckedAccount<'info>,
+    
     #[account(
         mut,
         seeds = [MOONDOGE_METADATA_SEED, moondoge_metadata.mint.as_ref()],
         bump = moondoge_metadata.bump,
+        constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
     pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
     
@@ -668,16 +733,21 @@ pub struct AttachMoonDoge<'info> {
     
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct DetachMoonDoge<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub moondoge_asset: UncheckedAccount<'info>,
+    
     #[account(
         mut,
         seeds = [MOONDOGE_METADATA_SEED, moondoge_metadata.mint.as_ref()],
         bump = moondoge_metadata.bump,
+        constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
     pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
     
@@ -719,10 +789,15 @@ pub struct UpdateMoonDogeMoney<'info> {
 
 #[derive(Accounts)]
 pub struct IncubateDragonEgg<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+    
     #[account(
         mut,
         seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_metadata.mint.as_ref()],
         bump = dragon_egg_metadata.bump,
+        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
     pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
     
@@ -743,10 +818,15 @@ pub struct IncubateDragonEgg<'info> {
 
 #[derive(Accounts)]
 pub struct RemoveDragonEgg<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+    
     #[account(
         mut,
         seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_metadata.mint.as_ref()],
         bump = dragon_egg_metadata.bump,
+        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
     pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
     
