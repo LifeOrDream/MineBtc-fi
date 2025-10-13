@@ -1,6 +1,6 @@
 degenhive/*
-mpl_core/*
-raydium/*
+mpl_core/*/target/*
+raydium/*/target/*
 
 */target/*
 
