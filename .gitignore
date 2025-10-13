@@ -3,6 +3,7 @@ mpl_core/*/target/*
 raydium/*/target/*
 
 */target/*
+v2/*
 
 wallet-keypair.json
 setup_scripts/node_modules/*
