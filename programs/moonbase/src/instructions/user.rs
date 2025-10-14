@@ -446,6 +446,73 @@ fn process_daily_login_and_xp(user_moonbase: &mut UserMoonBaseInstance, activity
 
 
 
+
+
+
+
+// ------------------------------------------------------------------------------------------
+// -------------- USER :: MINING FUNCTIONS ---------------------------------------------------
+// ------------------------------------------------------------------------------------------
+
+/// Claim MoonDoge tokens that the user has mined
+pub fn claim_mdoge_tokens_internal(
+    ctx: Context<ClaimMoonDoge>,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    let user = &ctx.accounts.user;
+    
+    // Ensure mining has been initialized
+    require!(
+        moon_doge_mining.mining_start_timestamp > 0,
+        ErrorCode::MiningNotInitialized
+    );
+
+    // Process any pending mining rewards
+    helper::process_user_mining(user_moonbase, moon_doge_mining)?;
+
+    // Get vault authority signer seeds
+    let vault_seeds = &[
+        MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        &[moon_doge_mining.vault_auth_bump],
+    ];
+
+    // Get account info before using moon_doge_mining as a mutable reference
+    let mining_account_info = moon_doge_mining.to_account_info();
+    
+    // Claim tokens
+    let claimed_amount = helper::claim_moondoge_tokens(
+        user_moonbase,
+        moon_doge_mining,
+        &ctx.accounts.token_program.to_account_info(),
+        &ctx.accounts.token_vault.to_account_info(),
+        &ctx.accounts.token_mint.to_account_info(),
+        &ctx.accounts.user_token_account.to_account_info(),
+        &mining_account_info,
+        vault_seeds,
+        Some(&ctx.accounts.loot_mdoge_vault.to_account_info()),
+        Some(&mut ctx.accounts.loot_rewards),
+    )?;
+
+    // Process daily login and award XP based on tokens mined
+    let mining_xp = helper::calculate_mining_xp(claimed_amount);
+    process_daily_login_and_xp(
+        user_moonbase,
+        mining_xp,
+        "Mining",
+    )?;
+
+    // Emit event
+    emit!(MoonDogeTokensClaimed {
+        owner: user.key(),
+        amount: claimed_amount,
+    });
+
+    msg!("User {} claimed {} MoonDoge tokens", user.key(), claimed_amount);
+
+    Ok(())
+}
+
 // ------------------------------------------------------------------------------------------
 // -------------- ACCOUNT VALIDATION STRUCTURES ----------------------------------------------
 // ------------------------------------------------------------------------------------------
@@ -614,3 +681,62 @@ pub struct UpdateUserElectricity<'info> {
 }
 
 
+
+ 
+
+#[derive(Accounts)]
+pub struct ClaimMoonDoge<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(mut)]
+    /// CHECK: This is the token vault that holds all the MoonDoge tokens
+    pub token_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: This is the user's token account that will receive MoonDoge tokens
+    pub user_token_account: UncheckedAccount<'info>,
+
+    // Mint created under Token-2022
+    #[account(mut, owner = token_program.key())]
+    pub token_mint: InterfaceAccount<'info, Mint2022>,    
+
+    /// Loot mDOGE vault for distributing loot tokens (10% of mining rewards)
+    #[account(
+        mut,
+        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Loot mDOGE vault for distributing loot tokens
+    pub loot_mdoge_vault: UncheckedAccount<'info>,
+
+    /// Loot rewards tracking account (for mining loot accumulation only)
+    #[account(
+        mut,
+        seeds = [LOOT_REWARDS_SEED.as_ref()],
+        bump = loot_rewards.bump,
+    )]
+    pub loot_rewards: Account<'info, LootRewards>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    
+    /// SPL Token program
+    /// CHECK: We know this is the correct address
+    #[account(address = anchor_spl::token_2022::spl_token_2022::ID)]
+    pub token_program: UncheckedAccount<'info>,
+}

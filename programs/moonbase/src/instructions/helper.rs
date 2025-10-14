@@ -443,6 +443,239 @@ pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)
 }
 
 
-// --------------------------------------- //
-// ========== LEVEL STATISTICS =========== //
-// --------------------------------------- //
+/// Process the mining for a specific user
+/// This function should be called whenever a user's hashpower changes
+pub fn process_user_mining(
+    user_moonbase: &mut UserMoonBaseInstance,
+    moon_doge_mining: &mut MoonDogeMining,
+) -> Result<()> {
+    // First update the global mining state to ensure it's current
+    update_mining_state(moon_doge_mining)?;
+    
+    // If there's no global hashpower, nothing to distribute
+    if moon_doge_mining.total_active_hashpower == 0 {
+        return Ok(());
+    }
+    
+    // Calculate the user's share of global hashpower (as a proportion)
+    // We use u128 for precision in intermediate calculations
+    let user_hashpower = user_moonbase.active_hashpower as u128;
+    let global_hashpower = moon_doge_mining.total_active_hashpower as u128;
+    
+    // If user has no hashpower, nothing to mine
+    if user_hashpower == 0 {
+        return Ok(());
+    }
+    
+    // Calculate tokens mined since last claim
+    let current_slot = Clock::get()?.slot;
+    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.moondoge_claim_index);
+    
+    // User's share as a proportion of total (using 10^12 precision)
+    let precision = 1_000_000_000_000u128;
+    let user_share_precision = user_hashpower.checked_mul(precision).unwrap_or(0) / global_hashpower;
+    
+    // Calculate tokens mined in this period
+    let slots = slots_since_last_claim as u128;
+    let rate = calculate_current_reward_rate(moon_doge_mining) as u128;
+    let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
+        if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
+            total_rewards / precision
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+    
+    // Update the user's claim index to the current slot
+    user_moonbase.moondoge_claim_index = current_slot;
+    
+    // Log the mining activity
+    msg!("User mining processed: {} tokens earned with hashpower {} out of global {}",
+         tokens_mined, user_hashpower, global_hashpower);
+    
+    Ok(())
+}
+
+/// Transfer claimed MoonDoge tokens to the user (with optional loot rewards)
+pub fn claim_moondoge_tokens<'info>(
+    user_moonbase: &mut UserMoonBaseInstance,
+    moon_doge_mining: &mut MoonDogeMining,
+    token_program: &AccountInfo<'info>,
+    token_vault: &AccountInfo<'info>,
+    token_mint: &AccountInfo<'info>,
+    user_token_account: &AccountInfo<'info>,
+    vault_authority: &AccountInfo<'info>,
+    vault_authority_seeds: &[&[u8]],
+    loot_mdoge_vault: Option<&AccountInfo<'info>>,
+    loot_rewards: Option<&mut LootRewards>,
+) -> Result<u64> {
+    // Process mining to ensure up-to-date calculations
+    process_user_mining(user_moonbase, moon_doge_mining)?;
+    
+    // Calculate claimable amount based on hashpower share
+    let user_hashpower = user_moonbase.active_hashpower as u128;
+    let global_hashpower = moon_doge_mining.total_active_hashpower as u128;
+    
+    // If user or global hashpower is zero, nothing to claim
+    if user_hashpower == 0 || global_hashpower == 0 {
+        return Ok(0);
+    }
+    
+    // Calculate the user's share of tokens mined since last claim
+    let precision = 1_000_000_000_000u128;
+    let user_share_precision = user_hashpower.checked_mul(precision).unwrap_or(0) / global_hashpower;
+    
+    let current_slot = Clock::get()?.slot;
+    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.moondoge_claim_index);
+    
+    // Calculate tokens mined in this period
+    let slots = slots_since_last_claim as u128;
+    let rate = calculate_current_reward_rate(moon_doge_mining) as u128;
+    let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
+        if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
+            total_rewards / precision
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+    
+    // Ensure we don't claim more than available
+    let claimable_amount = tokens_mined.min(u64::MAX as u128) as u64;
+    
+    // If there's nothing to claim, return early
+    if claimable_amount == 0 {
+        msg!("No tokens to claim");
+        return Ok(0);
+    }
+    
+    // Calculate loot rewards (10% of claimable amount)
+    let loot_amount = claimable_amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
+    let user_amount = claimable_amount.checked_sub(loot_amount).unwrap();
+    
+    // Transfer tokens from vault to user (90% of claimable amount)
+    let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
+        &anchor_spl::token_2022::spl_token_2022::ID,           // program_id
+        &token_vault.key(),            // source (vault)
+        &token_mint.key(),             // mint            ▲ NEW
+        &user_token_account.key(),     // destination
+        &vault_authority.key(),        // authority
+        &[],                           // signer_pubkeys (vault PDA is a signer later)
+        user_amount,                   // amount (90% of total)
+        MDOGE_DECIMALS,                             // decimals        ▲ NEW
+    )?;
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            token_program.clone(),
+            token_vault.clone(),
+            user_token_account.clone(),
+            vault_authority.clone(),
+        ],
+        &[vault_authority_seeds],
+    )?;
+    
+    // Transfer loot rewards to loot vault (10% of claimable amount)
+    if loot_amount > 0 && loot_mdoge_vault.is_some() {
+        transfer_to_loot_mdoge_vault(
+            token_program,
+            token_vault,
+            loot_mdoge_vault.unwrap(),
+            vault_authority,
+            token_mint,
+            vault_authority_seeds,
+            claimable_amount, // Pass total amount, function will calculate 10%
+        )?;
+        
+        // Update loot rewards tracking
+        if let Some(loot_rewards_account) = loot_rewards {
+            update_loot_rewards_accumulation(loot_rewards_account, claimable_amount, 0)?;
+        }
+    }
+    
+    // Update the user's claim index to the current slot
+    user_moonbase.moondoge_claim_index = current_slot;
+    
+    // Log the claim
+    msg!("Claimed {} MoonDoge tokens", claimable_amount);
+    
+    // Return the amount claimed
+    Ok(claimable_amount)
+}
+
+
+
+// ========== LOOT REWARDS SYSTEM HELPERS ========== //
+
+/// Transfer mDOGE tokens to loot rewards vault (10% of distributions)
+pub fn transfer_to_loot_mdoge_vault<'info>(
+    token_program: &AccountInfo<'info>,
+    from_vault: &AccountInfo<'info>,
+    to_vault: &AccountInfo<'info>,
+    vault_authority: &AccountInfo<'info>,
+    token_mint: &AccountInfo<'info>,
+    vault_authority_seeds: &[&[u8]],
+    amount: u64,
+) -> Result<()> {
+    let loot_amount = amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
+    
+    if loot_amount > 0 {
+        // Transfer mDOGE tokens using Token-2022 instruction directly
+        let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
+            &anchor_spl::token_2022::spl_token_2022::ID,
+            &from_vault.key(),
+            &token_mint.key(),
+            &to_vault.key(),
+            &vault_authority.key(),
+            &[],
+            loot_amount,
+            MDOGE_DECIMALS, // decimals
+        )?;
+        
+        anchor_lang::solana_program::program::invoke_signed(
+            &ix,
+            &[
+                token_program.clone(),
+                from_vault.clone(),
+                to_vault.clone(),
+                vault_authority.clone(),
+                token_mint.clone(),
+            ],
+            &[vault_authority_seeds],
+        )?;
+        
+        msg!("🎁 Transferred {} mDOGE tokens to loot vault ({}% of {})", 
+             loot_amount, LOOT_REWARDS_PERCENTAGE, amount);
+    }
+    
+    Ok(())
+}
+
+
+
+/// Update loot rewards accumulation tracking
+pub fn update_loot_rewards_accumulation(
+    loot_rewards: &mut LootRewards,
+    mdoge_amount: u64,
+    sol_amount: u64,
+) -> Result<()> {
+    let mdoge_loot = mdoge_amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
+    let sol_loot = sol_amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
+    
+    loot_rewards.total_mdoge_accumulated = loot_rewards.total_mdoge_accumulated.checked_add(mdoge_loot).unwrap();
+    loot_rewards.total_sol_accumulated = loot_rewards.total_sol_accumulated.checked_add(sol_loot).unwrap();
+    
+    emit!(LootRewardsAccumulated {
+        mdoge_amount: mdoge_loot,
+        sol_amount: sol_loot,
+        total_mdoge_accumulated: loot_rewards.total_mdoge_accumulated,
+        total_sol_accumulated: loot_rewards.total_sol_accumulated,
+    });
+    
+    msg!("🎁 Loot rewards accumulated: {} mDOGE, {} SOL", mdoge_loot, sol_loot);
+    
+    Ok(())
+}
