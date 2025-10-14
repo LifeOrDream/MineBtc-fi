@@ -54,14 +54,6 @@ pub fn validate_power(power: u32) -> Result<()> {
     Ok(())
 }
 
-/// Validate money value
-pub fn validate_money(money: u64) -> Result<()> {
-    if money > MAX_DOGE_MONEY {
-        return Err(NftLaunchpadError::MoneyExceedsLimit.into());
-    }
-    Ok(())
-}
-
 // ========================================================================================
 // =============================== CALCULATION UTILITIES ================================= 
 // ========================================================================================
@@ -120,12 +112,12 @@ pub fn check_update_cooldown(last_update: i64, current_time: i64) -> Result<bool
 // ========================================================================================
 
 /// Determine pricing tier from amount paid
-pub fn determine_pricing_tier(amount: u64) -> Result<(bool, bool)> {
-    // Returns (includes_doge, includes_egg)
+pub fn determine_pricing_tier(amount: u64) -> Result<(bool,)> {
+    // Returns (includes_egg,)
     match amount {
-        MOONBASE_BASIC_PRICE => Ok((false, false)),
-        MOONBASE_DOGE_PRICE => Ok((true, false)),
-        MOONBASE_FULL_PRICE => Ok((true, true)),
+        MOONBASE_BASIC_PRICE => Ok((false,)),
+        MOONBASE_EGG_PRICE => Ok((true,)),
+        MOONBASE_FULL_PRICE => Ok((true,)),
         _ => Err(NftLaunchpadError::InvalidPricingTier.into()),
     }
 }
@@ -134,7 +126,7 @@ pub fn determine_pricing_tier(amount: u64) -> Result<(bool, bool)> {
 pub fn get_pricing_tier_name(amount: u64) -> &'static str {
     match amount {
         MOONBASE_BASIC_PRICE => "basic",
-        MOONBASE_DOGE_PRICE => "doge",
+        MOONBASE_EGG_PRICE => "egg",
         MOONBASE_FULL_PRICE => "full",
         _ => "unknown",
     }
@@ -144,19 +136,9 @@ pub fn get_pricing_tier_name(amount: u64) -> &'static str {
 // =============================== NFT UTILITIES =========================================
 // ========================================================================================
 
-/// Generate MoonDoge name
-pub fn generate_moondoge_name(index: u64) -> String {
-    format!("MoonDoge #{}", index)
-}
-
 /// Generate Dragon Egg name
 pub fn generate_dragon_egg_name(index: u64) -> String {
     format!("Dragon Egg #{}", index)
-}
-
-/// Generate MoonDoge URI (placeholder - would be actual IPFS/Arweave URI)
-pub fn generate_moondoge_uri(index: u64) -> String {
-    format!("https://arweave.net/moondoge/{}", index)
 }
 
 /// Generate Dragon Egg URI (placeholder - would be actual IPFS/Arweave URI)

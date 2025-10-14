@@ -21,21 +21,15 @@ pub mod nft_launchpad {
     // ================================ ADMIN FUNCTIONS ======================================
     // ========================================================================================
 
-    /// Initialize the NFT Launchpad program with both collections
+    /// Initialize the NFT Launchpad program with Dragon Egg collection
     pub fn initialize(
         ctx: Context<Initialize>,
-        moondoge_collection_name: String,
-        moondoge_collection_symbol: String,
-        moondoge_collection_uri: String,
         dragon_egg_collection_name: String,
         dragon_egg_collection_symbol: String,
         dragon_egg_collection_uri: String,
     ) -> Result<()> {
         instructions::admin::initialize_handler(
             ctx,
-            moondoge_collection_name,
-            moondoge_collection_symbol,
-            moondoge_collection_uri,
             dragon_egg_collection_name,
             dragon_egg_collection_symbol,
             dragon_egg_collection_uri,
@@ -51,27 +45,12 @@ pub mod nft_launchpad {
         instructions::admin::update_config_handler(ctx, new_authority)
     }
 
-    /// Add MoonDoge URIs to the pool (admin only)
-    pub fn add_moondoge_uris(
-        ctx: Context<UpdateConfig>,
-        uris: Vec<String>,
-    ) -> Result<()> {
-        instructions::admin::add_moondoge_uris_handler(ctx, uris)
-    }
-
     /// Add Dragon Egg URIs to the pool (admin only)
     pub fn add_dragon_egg_uris(
         ctx: Context<UpdateConfig>,
         uris: Vec<String>,
     ) -> Result<()> {
         instructions::admin::add_dragon_egg_uris_handler(ctx, uris)
-    }
-
-    /// Clear all MoonDoge URIs (admin only)
-    pub fn clear_moondoge_uris(
-        ctx: Context<UpdateConfig>,
-    ) -> Result<()> {
-        instructions::admin::clear_moondoge_uris_handler(ctx)
     }
 
     /// Clear all Dragon Egg URIs (admin only)
@@ -92,34 +71,6 @@ pub mod nft_launchpad {
         pricing_tier: u64,
     ) -> Result<()> {
         instructions::user::mint_nfts_for_moonbase_handler(ctx, pricing_tier)
-    }
-
-    // ========================================================================================
-    // ======================== MOONDOGE ATTACHMENT ==========================================
-    // ========================================================================================
-
-
-    /// Attach MoonDoge to moonbase (1 per moonbase max)
-    pub fn attach_moondoge(
-        ctx: Context<AttachMoonDoge>,
-    ) -> Result<()> {
-        instructions::user::attach_moondoge_handler(ctx)
-    }
-
-    /// Detach MoonDoge from moonbase
-    pub fn detach_moondoge(
-        ctx: Context<DetachMoonDoge>,
-    ) -> Result<()> {
-        instructions::user::detach_moondoge_handler(ctx)
-    }
-
-
-    /// Update MoonDoge money based on mDOGE mined (called periodically by backend)
-    pub fn update_moondoge_money(
-        ctx: Context<UpdateMoonDogeMoney>,
-        mdoge_mined: u64,
-    ) -> Result<()> {
-        instructions::user::update_moondoge_money_handler(ctx, mdoge_mined)
     }
 
     // ========================================================================================

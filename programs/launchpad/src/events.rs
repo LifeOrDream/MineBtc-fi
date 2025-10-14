@@ -7,7 +7,6 @@ use anchor_lang::prelude::*;
 #[event]
 pub struct ProgramInitialized {
     pub authority: Pubkey,
-    pub moondoge_collection: Pubkey,
     pub dragon_egg_collection: Pubkey,
 }
 
@@ -16,42 +15,6 @@ pub struct ConfigUpdated {
     pub authority: Pubkey,
     pub new_authority: Option<Pubkey>,
     pub new_treasury: Option<Pubkey>,
-}
-
-// ========================================================================================
-// =============================== MOONDOGE NFT EVENTS ===================================
-// ========================================================================================
-
-#[event]
-pub struct MoonDogeMinted {
-    pub mint: Pubkey,
-    pub name: String,
-    pub uri: String,
-    pub price_paid: u64,
-}
-
-#[event]
-pub struct MoonDogeAttached {
-    pub doge_mint: Pubkey,
-    pub moonbase_owner: Pubkey,
-    pub attached_at: i64,
-}
-
-#[event]
-pub struct MoonDogeDetached {
-    pub doge_mint: Pubkey,
-    pub moonbase_owner: Pubkey,
-    pub detached_at: i64,
-    pub final_money: u64,
-}
-
-#[event]
-pub struct MoonDogeMoneyUpdated {
-    pub doge_mint: Pubkey,
-    pub old_money: u64,
-    pub new_money: u64,
-    pub money_increase: u64,
-    pub mdoge_mined: u64,
 }
 
 // ========================================================================================
@@ -101,9 +64,8 @@ pub struct DragonEggPowerUpdated {
 #[event]
 pub struct MoonbaseCreatedWithNfts {
     pub moonbase_owner: Pubkey,
-    pub pricing_tier: String, // "basic", "doge", "full"
+    pub pricing_tier: String, // "basic", "egg", "full"
     pub sol_paid: u64,
-    pub moondoge_minted: Option<Pubkey>,
     pub dragon_egg_minted: Option<Pubkey>,
 }
 

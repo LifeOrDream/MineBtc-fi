@@ -12,16 +12,10 @@ pub enum NftLaunchpadError {
     InvalidAuthority,
 
     // ========================================================================================
-    // ================================= NFT ERRORS ========================================== 
+    // ================================= NFT ERRORS ==========================================
     // ========================================================================================
-    #[msg("MoonDoge NFT not found or invalid")]
-    MoonDogeNotFound,
-
     #[msg("Dragon Egg NFT not found or invalid")]
     DragonEggNotFound,
-
-    #[msg("MoonDoge collection is full - maximum supply reached")]
-    MaxMoonDogeSupplyReached,
 
     #[msg("Dragon Egg collection is full - maximum supply reached")]
     MaxDragonEggSupplyReached,
@@ -30,22 +24,13 @@ pub enum NftLaunchpadError {
     NftNotOwnedByUser,
 
     // ========================================================================================
-    // ============================== ATTACHMENT ERRORS ====================================== 
+    // ============================== ATTACHMENT ERRORS ======================================
     // ========================================================================================
-    #[msg("MoonDoge is already attached to a moonbase")]
-    DogeAlreadyAttached,
-
     #[msg("Dragon Egg is already incubated in a moonbase")]
     EggAlreadyIncubated,
 
-    #[msg("Moonbase already has a MoonDoge attached (max 1 per moonbase)")]
-    MoonbaseAlreadyHasDoge,
-
     #[msg("Moonbase has reached maximum incubated eggs limit")]
     MaxEggsReached,
-
-    #[msg("MoonDoge is not attached to this moonbase")]
-    DogeNotAttached,
 
     #[msg("Dragon Egg is not incubated in this moonbase")]
     EggNotIncubated,
@@ -79,9 +64,6 @@ pub enum NftLaunchpadError {
 
     #[msg("Power value exceeds maximum allowed")]
     PowerExceedsLimit,
-
-    #[msg("Money value exceeds maximum allowed")]
-    MoneyExceedsLimit,
 
     // ========================================================================================
     // ================================ ACCOUNT ERRORS ======================================= 
