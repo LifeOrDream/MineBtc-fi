@@ -35,9 +35,6 @@ pub struct GlobalConfig {
     /// Available Dragon Egg URIs (randomly selected on mint)
     pub dragon_egg_uris: Vec<String>,
     
-    /// Whether the program is paused
-    pub is_paused: bool,
-    
     /// PDA bump seeds
     pub config_bump: u8,
     pub treasury_bump: u8,
@@ -54,7 +51,6 @@ impl GlobalConfig {
         8 +   // total_sol_collected
         4 + (10 * (4 + MAX_URI_LENGTH)) +  // moondoge_uris (max 10 URIs)
         4 + (10 * (4 + MAX_URI_LENGTH)) +  // dragon_egg_uris (max 10 URIs)
-        1 +   // is_paused
         1 +   // config_bump
         1;    // treasury_bump
     
