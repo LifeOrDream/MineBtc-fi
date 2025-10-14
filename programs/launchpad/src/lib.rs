@@ -94,8 +94,59 @@ pub mod nft_launchpad {
         instructions::user::mint_nfts_for_moonbase_handler(ctx, pricing_tier)
     }
 
+    // ========================================================================================
+    // ======================== MOONDOGE ATTACHMENT ==========================================
+    // ========================================================================================
 
 
+    /// Attach MoonDoge to moonbase (1 per moonbase max)
+    pub fn attach_moondoge(
+        ctx: Context<AttachMoonDoge>,
+    ) -> Result<()> {
+        instructions::user::attach_moondoge_handler(ctx)
+    }
 
+    /// Detach MoonDoge from moonbase
+    pub fn detach_moondoge(
+        ctx: Context<DetachMoonDoge>,
+    ) -> Result<()> {
+        instructions::user::detach_moondoge_handler(ctx)
+    }
+
+
+    /// Update MoonDoge money based on mDOGE mined (called periodically by backend)
+    pub fn update_moondoge_money(
+        ctx: Context<UpdateMoonDogeMoney>,
+        mdoge_mined: u64,
+    ) -> Result<()> {
+        instructions::user::update_moondoge_money_handler(ctx, mdoge_mined)
+    }
+
+    // ========================================================================================
+    // ======================== DRAGON EGG INCUBATION ========================================
+    // ========================================================================================
+
+
+    /// Add Dragon Egg to moonbase incubation
+    pub fn incubate_dragon_egg(
+        ctx: Context<IncubateDragonEgg>,
+    ) -> Result<()> {
+        instructions::user::incubate_dragon_egg_handler(ctx)
+    }
+
+    /// Remove Dragon Egg from moonbase incubation
+    pub fn remove_dragon_egg(
+        ctx: Context<RemoveDragonEgg>,
+    ) -> Result<()> {
+        instructions::user::remove_dragon_egg_handler(ctx)
+    }
+
+    /// Update Dragon Egg power based on hashpower (called periodically by backend)
+    pub fn update_dragon_egg_power(
+        ctx: Context<UpdateDragonEggPower>,
+        total_hashpower: u64,
+    ) -> Result<()> {
+        instructions::user::update_dragon_egg_power_handler(ctx, total_hashpower)
+    }
 }
  

@@ -93,21 +93,7 @@ pub fn calculate_egg_power_increase(
     
     Ok(power_increase)
 }
-
-/// Calculate money increase for doge
-pub fn calculate_doge_money_increase(
-    mdoge_mined: u64,
-) -> Result<u64> {
-    // Formula: money_increase = (mdoge_mined * MONEY_RATE_MULTIPLIER) / 1_000_000
-    let money_increase = mdoge_mined
-        .checked_mul(MONEY_RATE_MULTIPLIER)
-        .ok_or(NftLaunchpadError::ArithmeticOverflow)?
-        .checked_div(1_000_000)
-        .ok_or(NftLaunchpadError::DivisionByZero)?;
-    
-    Ok(money_increase)
-}
-
+ 
 // ========================================================================================
 // =============================== TIME UTILITIES ======================================== 
 // ========================================================================================

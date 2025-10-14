@@ -232,13 +232,13 @@ pub struct DogeAttachment {
     
     /// Attached MoonDoge mint
     pub doge_mint: Pubkey,
+
+    /// DBTC mined
+    pub money: u64,
     
     /// Last update timestamp
     pub last_update_ts: i64,
-    
-    /// Last recorded mDOGE balance (for tracking delta)
-    pub last_mdoge_balance: u64,
-    
+        
     /// PDA bump
     pub bump: u8,
 }
@@ -247,8 +247,8 @@ impl DogeAttachment {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // moonbase_owner
         32 +    // doge_mint
+        8 +     // money
         8 +     // last_update_ts
-        8 +     // last_mdoge_balance
         1;      // bump
 }
 

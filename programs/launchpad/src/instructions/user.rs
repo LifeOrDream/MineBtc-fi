@@ -137,6 +137,269 @@ pub fn mint_nfts_for_moonbase_handler(
 }
 
 
+// ========================================================================================
+// ========================== MOONDOGE ATTACHMENT ========================================
+// ========================================================================================
+
+/// Attach MoonDoge to moonbase (1 per moonbase max)
+pub fn attach_moondoge_handler(
+    ctx: Context<AttachMoonDoge>,
+) -> Result<()> {
+    let doge_metadata = &mut ctx.accounts.moondoge_metadata;
+    let doge_attachment = &mut ctx.accounts.doge_attachment;
+    
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.moondoge_asset, &ctx.accounts.user.key())?;
+    
+    // Validation
+    require!(
+        doge_metadata.attached_moonbase.is_none(),
+        NftLaunchpadError::DogeAlreadyAttached
+    );
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    // Initialize attachment state
+    doge_attachment.moonbase_owner = ctx.accounts.user.key();
+    doge_attachment.doge_mint = doge_metadata.mint;
+    doge_attachment.last_update_ts = current_time;
+    doge_attachment.money = 0;
+    doge_attachment.bump = ctx.bumps.doge_attachment;
+    
+    // Update metadata
+    doge_metadata.attached_moonbase = Some(ctx.accounts.user.key());
+    doge_metadata.last_update_ts = current_time;
+    
+    emit!(MoonDogeAttached {
+        doge_mint: doge_metadata.mint,
+        moonbase_owner: ctx.accounts.user.key(),
+        attached_at: current_time,
+    });
+    
+    msg!("✅ MoonDoge attached to moonbase");
+    msg!("   Doge: {}", doge_metadata.mint);
+    msg!("   Moonbase: {}", ctx.accounts.user.key());
+    
+    Ok(())
+}
+
+
+/// Detach MoonDoge from moonbase
+pub fn detach_moondoge_handler(
+    ctx: Context<DetachMoonDoge>,
+) -> Result<()> {
+    let doge_metadata = &mut ctx.accounts.moondoge_metadata;
+    
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.moondoge_asset, &ctx.accounts.user.key())?;
+    
+    require!(
+        doge_metadata.attached_moonbase.is_some(),
+        NftLaunchpadError::DogeNotAttached
+    );
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    let final_money = doge_metadata.money;
+    
+    // Update metadata
+    doge_metadata.attached_moonbase = None;
+    doge_metadata.last_update_ts = current_time;
+    
+    emit!(MoonDogeDetached {
+        doge_mint: doge_metadata.mint,
+        moonbase_owner: ctx.accounts.user.key(),
+        detached_at: current_time,
+        final_money,
+    });
+    
+    msg!("✅ MoonDoge detached from moonbase");
+    msg!("   Doge: {}", doge_metadata.mint);
+    msg!("   Final Money: {}", final_money);
+    
+    Ok(())
+}
+
+
+/// Update MoonDoge money based on mDOGE mined
+pub fn update_moondoge_money_handler(
+    ctx: Context<UpdateMoonDogeMoney>,
+    mdoge_mined: u64,
+) -> Result<()> {
+    let doge_metadata = &mut ctx.accounts.moondoge_metadata;
+    let doge_attachment = &mut ctx.accounts.doge_attachment;
+    
+    require!(
+        doge_metadata.attached_moonbase.is_some(),
+        NftLaunchpadError::DogeNotAttached
+    );
+    
+    let old_money = doge_metadata.money;
+    let new_money = old_money.saturating_add(mdoge_mined).min(MAX_DOGE_MONEY);
+    
+    doge_metadata.money = new_money;
+    doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    doge_metadata.total_btc_mined = doge_metadata.total_btc_mined.saturating_add(mdoge_mined);
+    
+    doge_attachment.last_update_ts = Clock::get()?.unix_timestamp;
+    doge_attachment.money = doge_attachment.money.saturating_add(mdoge_mined);
+    
+    emit!(MoonDogeMoneyUpdated {
+        doge_mint: doge_metadata.mint,
+        old_money,
+        new_money,
+        money_increase: mdoge_mined,
+        mdoge_mined,
+    });
+    
+    msg!("✅ MoonDoge money updated");
+    msg!("   Money: {} -> {} (+{})", old_money, new_money, mdoge_mined);
+    
+    Ok(())
+}
+
+
+// ========================================================================================
+// ========================== DRAGON EGG INCUBATION ======================================
+// ========================================================================================
+
+/// Add Dragon Egg to moonbase incubation
+pub fn incubate_dragon_egg_handler(
+    ctx: Context<IncubateDragonEgg>,
+) -> Result<()> {
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let incubation_state = &mut ctx.accounts.incubation_state;
+    
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.dragon_egg_asset, &ctx.accounts.user.key())?;
+    
+    require!(
+        egg_metadata.incubated_moonbase.is_none(),
+        NftLaunchpadError::EggAlreadyIncubated
+    );
+    require!(
+        incubation_state.incubated_eggs.len() < MAX_EGGS_PER_MOONBASE as usize,
+        NftLaunchpadError::MaxEggsReached
+    );
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    // Add egg to incubation state
+    incubation_state.incubated_eggs.push(egg_metadata.mint);
+    incubation_state.last_update_ts = current_time;
+    
+    // Update egg metadata
+    egg_metadata.incubated_moonbase = Some(ctx.accounts.user.key());
+    egg_metadata.last_update_ts = current_time;
+    
+    let total_eggs = incubation_state.incubated_eggs.len() as u8;
+    
+    emit!(DragonEggIncubated {
+        egg_mint: egg_metadata.mint,
+        moonbase_owner: ctx.accounts.user.key(),
+        incubated_at: current_time,
+        total_eggs_in_moonbase: total_eggs,
+    });
+    
+    msg!("✅ Dragon Egg added to incubation");
+    msg!("   Egg: {}", egg_metadata.mint);
+    msg!("   Total eggs in moonbase: {}", total_eggs);
+    
+    Ok(())
+}
+
+/// Remove Dragon Egg from moonbase incubation
+pub fn remove_dragon_egg_handler(
+    ctx: Context<RemoveDragonEgg>,
+) -> Result<()> {
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let incubation_state = &mut ctx.accounts.incubation_state;
+    
+    // Verify ownership from Metaplex Core asset (source of truth)
+    verify_nft_ownership(&ctx.accounts.dragon_egg_asset, &ctx.accounts.user.key())?;
+    
+    require!(
+        egg_metadata.incubated_moonbase.is_some(),
+        NftLaunchpadError::EggNotIncubated
+    );
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    // Remove egg from incubation state
+    if let Some(pos) = incubation_state.incubated_eggs.iter().position(|&x| x == egg_metadata.mint) {
+        incubation_state.incubated_eggs.remove(pos);
+    }
+    incubation_state.last_update_ts = current_time;
+    
+    // Update egg metadata
+    let final_power = egg_metadata.power;
+    egg_metadata.incubated_moonbase = None;
+    egg_metadata.last_update_ts = current_time;
+    
+    let remaining_eggs = incubation_state.incubated_eggs.len() as u8;
+    
+    emit!(DragonEggRemoved {
+        egg_mint: egg_metadata.mint,
+        moonbase_owner: ctx.accounts.user.key(),
+        removed_at: current_time,
+        final_power,
+        remaining_eggs_in_moonbase: remaining_eggs,
+    });
+    
+    msg!("✅ Dragon Egg removed from incubation");
+    msg!("   Egg: {}", egg_metadata.mint);
+    msg!("   Final Power: {}", final_power);
+    
+    Ok(())
+}
+
+/// Update Dragon Egg power based on hashpower
+pub fn update_dragon_egg_power_handler(
+    ctx: Context<UpdateDragonEggPower>,
+    total_hashpower: u64,
+) -> Result<()> {
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let incubation_state = &mut ctx.accounts.incubation_state;
+    
+    require!(
+        egg_metadata.incubated_moonbase.is_some(),
+        NftLaunchpadError::EggNotIncubated
+    );
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    let time_elapsed = current_time.saturating_sub(egg_metadata.last_update_ts);
+    let total_eggs = incubation_state.incubated_eggs.len() as u8;
+    
+    let old_power = egg_metadata.power;
+    let power_increase = egg_metadata.calculate_power_increase(
+        total_hashpower,
+        total_eggs,
+        time_elapsed,
+    );
+    let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
+    
+    egg_metadata.power = new_power;
+    egg_metadata.last_update_ts = current_time;
+    egg_metadata.total_hashpower_accumulated = egg_metadata.total_hashpower_accumulated
+        .saturating_add(total_hashpower.saturating_div(total_eggs as u64));
+    
+    incubation_state.total_power = incubation_state.total_power
+        .saturating_add(power_increase as u64);
+    incubation_state.last_update_ts = current_time;
+    
+    emit!(DragonEggPowerUpdated {
+        egg_mint: egg_metadata.mint,
+        old_power,
+        new_power,
+        power_increase,
+        hashpower_accumulated: total_hashpower,
+    });
+    
+    msg!("✅ Dragon Egg power updated");
+    msg!("   Power: {} -> {} (+{})", old_power, new_power, power_increase);
+
+    Ok(())
+}
+
 
 // ========================================================================================
 // ================================ ACCOUNT CONTEXTS =====================================
@@ -192,4 +455,163 @@ pub struct MintNftsForMoonbase<'info> {
     
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
+}
+
+
+#[derive(Accounts)]
+pub struct AttachMoonDoge<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub moondoge_asset: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [MOONDOGE_METADATA_SEED, moondoge_metadata.mint.as_ref()],
+        bump = moondoge_metadata.bump,
+        constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
+    )]
+    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = DogeAttachment::LEN,
+        seeds = [DOGE_ATTACHMENT_SEED, user.key().as_ref()],
+        bump
+    )]
+    pub doge_attachment: Account<'info, DogeAttachment>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct DetachMoonDoge<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub moondoge_asset: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [MOONDOGE_METADATA_SEED, moondoge_metadata.mint.as_ref()],
+        bump = moondoge_metadata.bump,
+        constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
+    )]
+    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_ATTACHMENT_SEED, user.key().as_ref()],
+        bump = doge_attachment.bump,
+        close = user
+    )]
+    pub doge_attachment: Account<'info, DogeAttachment>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMoonDogeMoney<'info> {
+    #[account(
+        mut,
+        seeds = [MOONDOGE_METADATA_SEED, moondoge_metadata.mint.as_ref()],
+        bump = moondoge_metadata.bump,
+    )]
+    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_ATTACHMENT_SEED, user.key().as_ref()],
+        bump = doge_attachment.bump,
+    )]
+    pub doge_attachment: Account<'info, DogeAttachment>,
+    
+    /// CHECK: User wallet (used for PDA derivation)
+    pub user: UncheckedAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+#[derive(Accounts)]
+pub struct IncubateDragonEgg<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_metadata.mint.as_ref()],
+        bump = dragon_egg_metadata.bump,
+        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ NftLaunchpadError::InvalidAccount
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+    
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = IncubationState::LEN,
+        seeds = [INCUBATION_STATE_SEED, user.key().as_ref()],
+        bump
+    )]
+    pub incubation_state: Account<'info, IncubationState>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RemoveDragonEgg<'info> {
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via verify_nft_ownership helper
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_metadata.mint.as_ref()],
+        bump = dragon_egg_metadata.bump,
+        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ NftLaunchpadError::InvalidAccount
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+    
+    #[account(
+        mut,
+        seeds = [INCUBATION_STATE_SEED, user.key().as_ref()],
+        bump = incubation_state.bump,
+    )]
+    pub incubation_state: Account<'info, IncubationState>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateDragonEggPower<'info> {
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED, dragon_egg_metadata.mint.as_ref()],
+        bump = dragon_egg_metadata.bump,
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+    
+    #[account(
+        mut,
+        seeds = [INCUBATION_STATE_SEED, user.key().as_ref()],
+        bump = incubation_state.bump,
+    )]
+    pub incubation_state: Account<'info, IncubationState>,
+    
+    /// CHECK: User wallet (used for PDA derivation)
+    pub user: UncheckedAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
 }
