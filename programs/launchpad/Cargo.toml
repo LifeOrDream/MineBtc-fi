@@ -1,12 +1,12 @@
 [package]
-name = "nft-launchpad"
+name = "launchpad"
 version = "0.1.0"
 description = "NFT Launchpad program"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "nft_launchpad"
+name = "launchpad"
 
 [features]
 default = []
