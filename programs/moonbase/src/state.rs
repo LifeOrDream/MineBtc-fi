@@ -34,10 +34,7 @@ pub const XP_BASE: u64 = 120;        // Base XP for level 1
 // Using fixed-point math: 115 = +15% per upgrade step (Power Curve)
 pub const GROWTH_NUM: u64 = 115;
 pub const GROWTH_DEN: u64 = 100;
-
-// Decay curve for cooldowns: 110 = 10% reduction efficiency per level
-pub const DECAY_NUM: u64 = 110;
-pub const DECAY_DEN: u64 = 100;
+ 
 
 // ========== UPGRADE COST SCALING CONSTANTS ========== //
 // Using moderate curve for upgrade costs: 125 = +25% per upgrade level (Cost Curve)
@@ -56,20 +53,6 @@ fn growth_factor(level: u8) -> u64 {
     }
     // Return Q32 fixed-point: (numerator << 32) / denominator
     (num << 32) / den.max(1) // Prevent division by zero
-}
-
-/// Calculate decay factor for cooldown scaling (reload time, research time)
-/// Returns Q32 fixed-point representation of 1/(1.10)^level
-fn decay_factor(level: u8) -> u64 {
-    let mut num: u64 = 1;
-    let mut den: u64 = 1;
-    for _ in 0..level {
-        num = num.saturating_mul(DECAY_NUM);
-        den = den.saturating_mul(DECAY_DEN);
-    }
-    // Return Q32 inverse: (1 << 64) / (numerator/denominator) shifted to Q32
-    let factor = (num << 32) / den.max(1);
-    ((1u128 << 64) / factor as u128) as u64
 }
 
  

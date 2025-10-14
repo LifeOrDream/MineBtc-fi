@@ -332,6 +332,355 @@ Ok(())
 }
 
 
+// ----------------------------------------------------------------------------------------
+// ------------  LOOT REWARDS --------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Initialize the loot rewards system
+pub fn initialize_loot_rewards_internal(ctx: Context<InitializeLootRewards>) -> Result<()> {
+    let loot_rewards = &mut ctx.accounts.loot_rewards;
+    let _clock = Clock::get()?;
+    
+    // Initialize loot rewards state
+    loot_rewards.total_mdoge_accumulated = 0;
+    loot_rewards.total_sol_accumulated = 0;
+    loot_rewards.total_mdoge_distributed = 0;
+    loot_rewards.total_sol_distributed = 0;
+    loot_rewards.bump = ctx.bumps.loot_rewards;
+    loot_rewards.sol_vault_bump = ctx.bumps.loot_sol_vault;
+    loot_rewards.mdoge_vault_bump = ctx.bumps.loot_mdoge_vault;
+    loot_rewards.mdoge_vault_authority_bump = ctx.bumps.loot_mdoge_vault_authority;
+    
+    emit!(LootRewardsInitialized {
+        loot_rewards_pda: loot_rewards.key(),
+        sol_vault_pda: ctx.accounts.loot_sol_vault.key(),
+        mdoge_vault_pda: ctx.accounts.loot_mdoge_vault.key(),
+    });
+    
+    msg!("🎁 Loot rewards system initialized");
+    msg!("   Loot Rewards PDA: {}", loot_rewards.key());
+    msg!("   SOL Vault: {}", ctx.accounts.loot_sol_vault.key());
+    msg!("   mDOGE Vault: {}", ctx.accounts.loot_mdoge_vault.key());
+    msg!("   mDOGE Vault Authority: {}", ctx.accounts.loot_mdoge_vault_authority.key());
+    
+    Ok(())
+}
+
+/// Initialize level statistics tracking (admin only)
+pub fn initialize_level_stats_internal(ctx: Context<InitializeLevelStats>) -> Result<()> {
+    msg!("🔒 Initializing level statistics tracking");
+    
+    let level_stats = &mut ctx.accounts.level_stats;
+    
+    // Initialize empty tracking for top levels
+    level_stats.tracked_levels = Vec::with_capacity(LevelStats::MAX_TRACKED_LEVELS);
+    level_stats.total_users = 0;
+    level_stats.max_level_achieved = 0;
+    level_stats.min_tracked_level = 0;
+    level_stats.last_update_timestamp = Clock::get()?.unix_timestamp;
+    level_stats.bump = ctx.bumps.level_stats;
+    
+    emit!(LevelStatsInitialized {
+        level_stats_pda: ctx.accounts.level_stats.key(),
+        tracked_levels: LevelStats::MAX_TRACKED_LEVELS as u8,
+    });
+    
+    msg!("✅ Level statistics tracking initialized");
+    Ok(())
+}
+
+
+// ----------------------------------------------------------------------------------------
+// ------------ INITIALIZATION & UPDATES :: CONFIG-STOREs, MODULEs (stuff which can be installed in a moon-base) CONFIGS --------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Initialize store accounts for config types
+pub fn initialize_config_stores_internal(ctx: Context<InitializeConfigStore>) -> Result<()> {
+    let module_store = &mut ctx.accounts.module_config_store;
+    
+    // Initialize empty config stores with starting IDs
+    module_store.next_id = 1; // IDs start at 1
+    module_store.active_ids = Vec::new();
+    module_store.bump = ctx.bumps.module_config_store;
+    
+    msg!("Initialized config stores for modules");
+    
+    Ok(())
+}
+
+/// Initialize a new module config that users can mint
+pub fn add_module_to_base_internal(
+    ctx: Context<AddModuleToConfigStore>,
+    name: String,
+    image_url: String,
+    module_type: ModuleType,
+    faction_ids: Vec<u8>,
+    min_level: u8,
+    max_per_base: u8,
+    width: u8,
+    height: u8,
+    mint_cost: u64,
+    upgrade_cost: u64,
+    upgrade_level_requirements: Vec<u8>,
+) -> Result<()> {
+    let module_config_store = &mut ctx.accounts.module_config_store;
+    let module_config_account = &mut ctx.accounts.module_config_account;
+    let global_config = &ctx.accounts.global_config;
+    
+    // Validate authority
+    require!(
+        global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    msg!("Adding module: {}", name);
+    msg!("Image URL: {}", image_url);
+    msg!("Module type: {:?}", module_type);
+
+    // Build ModuleStats with placeholder values (will be updated later)
+    let stats: ModuleStats = match module_type {
+        ModuleType::Mining => {
+            ModuleStats::Mining(MiningStats {
+                max_hp: 0,
+                base_hashpower: 0, // Placeholder - must be updated
+                power_consumption: 0,
+            })
+        },
+        ModuleType::Attraction => {
+            ModuleStats::Attraction(AttractionStats {
+                max_hp: 0,
+                base_xp_per_hour: 0, // Placeholder - must be updated
+                power_consumption: 0,
+            })
+        },
+    };
+
+    msg!("Stats (placeholders): {:?}", stats);
+    msg!("Faction IDs: {:?}", faction_ids);
+    msg!("Min level: {}", min_level);
+    msg!("Max per base: {}", max_per_base);
+    msg!("Width: {}", width);
+    
+    // Validate inputs
+    require!(name.len() <= 32, ErrorCode::InvalidModuleName);
+    require!(image_url.len() <= 64, ErrorCode::InvalidImageUrl);
+    require!(upgrade_level_requirements.len() <= MAX_MODULE_UPGRADES as usize, ErrorCode::InvalidUpgradeConfiguration);
+    require!(max_per_base > 0 && max_per_base <= MAX_MODULES_PER_BASE, ErrorCode::InvalidModuleConfiguration);
+    require!(faction_ids.len() <= MAX_FACTION_IDS_PER_MODULE, ErrorCode::TooManyFactionIds);
+    
+    // Validate that upgrade level requirements are increasing and start at or above min_level
+    let mut prev_level = min_level;
+    for (i, &required_level) in upgrade_level_requirements.iter().enumerate() {
+        require!(
+            required_level >= prev_level,
+            ErrorCode::InvalidUpgradeConfiguration
+        );
+        prev_level = required_level;
+        
+        msg!("Upgrade {} requires moonbase level {}", i + 1, required_level);
+    }
+    
+    // Validate faction IDs exist in global config (if any specified)
+    if !faction_ids.is_empty() {
+        for faction_id in &faction_ids {
+            require!(
+                (*faction_id as usize) < global_config.supported_factions.len(),
+                ErrorCode::InvalidFactionId
+            );
+        }
+    }
+    
+    // Get the next ID and increment it
+    let id = module_config_store.next_id;
+    module_config_store.next_id = module_config_store.next_id.checked_add(1)
+        .ok_or(ErrorCode::IdOverflow)?;
+    
+    // Create the new module config in the individual PDA account
+    module_config_account.data = ModuleConfig {
+        id,
+        name: name.clone(),
+        image_url: image_url.clone(),
+        module_type,
+        stats,
+        faction_ids,
+        min_level,
+        max_per_base,
+        width,
+        height,
+        mint_cost,
+        upgrade_cost,
+        upgrade_level_requirements: upgrade_level_requirements.clone(),
+        is_active: false, // Inactive until stats are properly set
+    };
+    
+    // Set the bump for the individual config account
+    module_config_account.bump = ctx.bumps.module_config_account;
+    
+    // Add ID to active_ids list for enumeration
+    module_config_store.active_ids.push(id);
+    
+    // Log the creation
+    msg!("Initialized new module config: {}, ID: {}, Image: {}", name, id, image_url);
+    msg!("Max upgrades: {}, upgrade levels: {:?}", upgrade_level_requirements.len(), &upgrade_level_requirements);
+    msg!("⚠️ Module is INACTIVE until stats are properly configured");
+    
+    // Emit event
+    emit!(NewModuleConfigCreated {
+        id,
+        name,
+    });
+    
+    Ok(())
+}
+
+/// Update module stats and activate the module
+pub fn update_module_stats_internal(
+    ctx: Context<UpdateModuleStats>,
+    id: u16,
+    max_hp: u32,
+    power_consumption: u16,
+    base_hashpower: u32,
+    base_xp_per_hour: u32,
+    base_damage: u32,
+    base_missiles_per_load: u8,
+    reload_time_seconds: u32,
+    cooldown_sec: u32,
+    max_reward: u64,
+    probability: u16,
+) -> Result<()> {
+    let module_config_account = &mut ctx.accounts.module_config_account;
+    let config = &mut module_config_account.data;
+    
+    // Verify this is the correct config ID
+    require!(config.id == id, ErrorCode::ConfigNotFound);
+
+    msg!("Updating stats for module: {} (ID: {})", config.name, id);
+    msg!("Module type: {:?}", config.module_type);
+
+    // Build new ModuleStats and validate required fields are not 0
+    let new_stats: ModuleStats = match config.module_type {
+        ModuleType::Mining => {
+            require!(base_hashpower > 0, ErrorCode::InvalidModuleConfiguration);
+            msg!("Mining stats - base_hashpower: {}", base_hashpower);
+            ModuleStats::Mining(MiningStats {
+                max_hp,
+                base_hashpower,
+                power_consumption,
+            })
+        },
+        ModuleType::Attraction => {
+            require!(base_xp_per_hour > 0, ErrorCode::InvalidModuleConfiguration);
+            msg!("Attraction stats - base_xp_per_hour: {}", base_xp_per_hour);
+            ModuleStats::Attraction(AttractionStats {
+                max_hp,
+                base_xp_per_hour,
+                power_consumption,
+            })
+        },
+    };
+
+    // Update the stats
+    config.stats = new_stats;
+    
+    // Activate the module now that stats are properly set
+    config.is_active = true;
+    
+    msg!("✅ Module stats updated and module activated");
+    msg!("New stats: {:?}", config.stats);
+    
+    // Emit event
+    emit!(ModuleConfigUpdated {
+        id,
+        name: config.name.clone(),
+    });
+    
+    Ok(())
+}
+ 
+
+// /// Update an existing module config
+// pub fn update_module_internal(
+//     ctx: Context<UpdateModuleConfig>,
+//     id: u16,
+//     image_url: Option<String>,
+//     faction_ids: Option<Vec<u8>>,
+//     max_per_base: Option<u8>,
+//     mint_cost: Option<u64>,
+//     upgrade_cost: Option<u64>,
+//     upgrade_level_requirements: Option<Vec<u8>>,
+//     is_active: Option<bool>,
+// ) -> Result<()> {
+//     let module_config_account = &mut ctx.accounts.module_config_account;
+//     let config = &mut module_config_account.data;
+    
+//     // Verify this is the correct config ID
+//     require!(config.id == id, ErrorCode::ConfigNotFound);
+    
+//     // Update fields if provided
+//     if let Some(new_url) = image_url {
+//         config.image_url = new_url.clone();
+//         msg!("Updated module image URL to: {}", new_url);
+//     }
+
+//     if let Some(new_mint_cost) = mint_cost {
+//         config.mint_cost = new_mint_cost;
+//         msg!("Updated mint cost to: {}", new_mint_cost);
+//     }
+    
+//     if let Some(new_upgrade_cost) = upgrade_cost {
+//         config.upgrade_cost = new_upgrade_cost;
+//         msg!("Updated upgrade cost to: {}", new_upgrade_cost);
+//     }
+    
+//     if let Some(new_is_active) = is_active {
+//         config.is_active = new_is_active;
+//         msg!("Updated active status to: {}", new_is_active);
+//     }
+    
+//     // Handle upgrade_level_requirements
+//     if let Some(new_upgrade_requirements) = upgrade_level_requirements {
+//         // Validate that the number of requirements doesn't exceed max
+//         require!(
+//             new_upgrade_requirements.len() <= MAX_MODULE_UPGRADES as usize,
+//             ErrorCode::InvalidUpgradeConfiguration
+//         );
+        
+//         // Validate that upgrade level requirements are increasing and start at or above min_level
+//         let mut prev_level = config.min_level;
+//         for (_i, &required_level) in new_upgrade_requirements.iter().enumerate() {
+//             require!(
+//                 required_level >= prev_level,
+//                 ErrorCode::InvalidUpgradeConfiguration
+//             );
+//             prev_level = required_level;
+//         }
+        
+//         config.upgrade_level_requirements = new_upgrade_requirements.clone();
+//         msg!("Updated upgrade level requirements to: {:?} (max upgrades: {})", new_upgrade_requirements, new_upgrade_requirements.len());
+//     }
+    
+//     if let Some(new_faction_ids) = faction_ids {
+//         require!(new_faction_ids.len() <= MAX_FACTION_IDS_PER_MODULE, ErrorCode::TooManyFactionIds);
+//         config.faction_ids = new_faction_ids;
+//         msg!("Updated faction IDs");
+//     }
+    
+//     if let Some(new_max_per_base) = max_per_base {
+//         require!(new_max_per_base > 0 && new_max_per_base <= MAX_MODULES_PER_BASE, ErrorCode::InvalidModuleConfiguration);
+//         config.max_per_base = new_max_per_base;
+//         msg!("Updated max per base to: {}", new_max_per_base);
+//     }
+    
+//     // Emit event
+//     emit!(ModuleConfigUpdated {
+//         id,
+//         name: config.name.clone(),
+//     });
+    
+//     Ok(())
+// }
 
 
 // -------------------------------------------------------------------------------- 
@@ -549,6 +898,196 @@ pub struct CreateSystemReferralAccount<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     
+    pub system_program: Program<'info, System>,
+}
+
+
+/// Account struct for initializing loot rewards system
+#[derive(Accounts)]
+pub struct InitializeLootRewards<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = LootRewards::LEN,
+        seeds = [LOOT_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub loot_rewards: Account<'info, LootRewards>,
+    
+    /// CHECK: SOL vault for loot rewards (0-byte PDA)
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = crate::ID
+    )]
+    pub loot_sol_vault: UncheckedAccount<'info>,
+    
+    /// mDOGE vault for loot rewards
+    #[account(
+        init,
+        payer = authority,
+        owner = token_program.key(),
+        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        token::mint = mdoge_mint,
+        token::authority = loot_mdoge_vault_authority,
+        bump
+    )]
+    pub loot_mdoge_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// CHECK: Authority for loot mDOGE vault (0-byte PDA)
+    #[account(
+        seeds = [LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub loot_mdoge_vault_authority: UncheckedAccount<'info>,
+    
+    /// mDOGE mint (Token-2022)
+    #[account(owner = token_program.key())]
+    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+
+
+/// Account struct for initializing level statistics
+#[derive(Accounts)]
+pub struct InitializeLevelStats<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = LevelStats::LEN,
+        seeds = [LEVEL_STATS_SEED.as_ref()],
+        bump
+    )]
+    pub level_stats: Account<'info, LevelStats>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
+#[derive(Accounts)]
+pub struct InitializeConfigStore<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = ModuleConfigStore::LEN,
+        seeds = [MODULE_CONFIG_STORE_SEED.as_ref()],
+        bump
+    )]
+    pub module_config_store: Account<'info, ModuleConfigStore>,
+        
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+ 
+
+
+
+#[derive(Accounts)]
+#[instruction(
+    name: String,
+    image_url: String,
+    module_type: ModuleType,
+    faction_ids: Vec<u8>,
+    min_level: u8,
+    max_per_base: u8,
+    width: u8,
+    height: u8,
+    mint_cost: u64,
+    upgrade_cost: u64,
+    upgrade_level_requirements: Vec<u8>,
+)]
+pub struct AddModuleToConfigStore<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MODULE_CONFIG_STORE_SEED.as_ref()],
+        bump = module_config_store.bump,
+    )]
+    pub module_config_store: Account<'info, ModuleConfigStore>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = ModuleConfigAccount::LEN,
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_config_store.next_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+            
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(
+    id: u16,
+    max_hp: u32,
+    power_consumption: u16,
+    base_hashpower: u32,
+    base_xp_per_hour: u32,
+    base_damage: u32,
+    base_missiles_per_load: u8,
+    reload_time_seconds: u32,
+    cooldown_sec: u32,
+    max_reward: u64,
+    probability: u16,
+)]
+pub struct UpdateModuleStats<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [MODULE_CONFIG_SEED.as_ref(), id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
     pub system_program: Program<'info, System>,
 }
 

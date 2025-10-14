@@ -88,7 +88,97 @@ pub mod moonbase {
     }
 
 
+    // ----------------------------------------------------------------------------------------
+    // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ----------------------------------------------------------------------------------------
+
+   /// Create a new moon base for a user
+   pub fn create_system_referral_account(ctx: Context<CreateSystemReferralAccount>) -> Result<()> {
+        let rewards_acct = &mut ctx.accounts.referrer_rewards;
+        // 1) Set the owner field to the system program key
+        rewards_acct.owner = ctx.accounts.system_program.key();
+        rewards_acct.total_sol_earned = 0;
+        rewards_acct.sol_claimed_for_xp = 0;
+        // 2) Set the bump field to the bump of the account
+        rewards_acct.bump = ctx.bumps.referrer_rewards;
+        rewards_acct.referrals_count = 0;
+
+        Ok(())
+    }    
+
+
+    // ---------------------------------------------------------- 
+    // ------------ LOOT REWARDS (ADMIN) --------------------------------
+    // ---------------------------------------------------------- 
+
+
+    /// Initialize the loot rewards system
+    pub fn initialize_loot_rewards(ctx: Context<InitializeLootRewards>) -> Result<()> {
+        admin::initialize_loot_rewards_internal(ctx)
+    }
+
+    /// Initialize level statistics tracking (admin only)
+    pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
+        admin::initialize_level_stats_internal(ctx)
+    }
     
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ MOONBASE EXPANSION FUNCTIONS :: MANAGE EXPANSIONS & PURCHASE -----------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize config stores for modules and gears
+    /// Can only be called by the authority
+    pub fn initialize_config_stores(ctx: Context<InitializeConfigStore>) -> Result<()> {
+        admin::initialize_config_stores_internal(ctx)
+    }
+    
+    /// Initialize a new module configuration (basic info only)
+    pub fn add_module_to_base(
+        ctx: Context<AddModuleToConfigStore>,
+        name: String,
+        image_url: String,
+        module_type: state::ModuleType,
+        faction_ids: Vec<u8>,
+        min_level: u8,
+        max_per_base: u8,
+        width: u8,
+        height: u8,
+        mint_cost: u64,
+        upgrade_cost: u64,
+        upgrade_level_requirements: Vec<u8>,
+    ) -> Result<()> {
+        admin::add_module_to_base_internal(
+            ctx, name, image_url, module_type, 
+            faction_ids, min_level, max_per_base, width, height,
+            mint_cost, upgrade_cost, upgrade_level_requirements
+        )
+    }
+
+    /// Update module stats (required before module can be used)
+    pub fn update_module_stats(
+        ctx: Context<UpdateModuleStats>,
+        id: u16,
+        max_hp: u32,
+        power_consumption: u16,
+        base_hashpower: u32,
+        base_xp_per_hour: u32,
+        base_damage: u32,
+        base_missiles_per_load: u8,
+        reload_time_seconds: u32,
+        cooldown_sec: u32,
+        max_reward: u64,
+        probability: u16,
+    ) -> Result<()> {
+        admin::update_module_stats_internal(
+            ctx, id, max_hp, power_consumption, base_hashpower, base_xp_per_hour, base_damage,
+            base_missiles_per_load, reload_time_seconds, cooldown_sec,
+            max_reward, probability
+        )
+    }
+
+
+
 }
 
  
