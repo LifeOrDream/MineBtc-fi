@@ -1,3 +1,12 @@
+dragonhive_nfts contracts
+cargo update -p base64ct --precise 1.7.1
+
+
+
+
+
+
+
 # MoonDoge Facility - Solana Game
 
 A Solana-based mining game where players build moon bases, install modules, deploy mining gear, and earn MoonDoge tokens through gameplay.
@@ -47,6 +56,7 @@ The game supports a faction system that allows players to align with different g
 - **Admin Management**: Only program authorities can add new factions to the system
 
 #### Faction Administration
+
 - **Adding Factions**: Use `add_faction` instruction (admin only)
 - **Validation**: Faction names are case-insensitive and must be unique
 - **No Removal**: Factions cannot be removed once added to maintain data integrity
@@ -58,38 +68,41 @@ The game features a comprehensive experience point (XP) and leveling system that
 
 #### **XP Sources and Rewards**
 
-| Action | XP Gained | Frequency |
-|--------|-----------|-----------|
-| Daily login | +10 XP | Daily |
-| Installing a new module | +50 XP | Per install |
-| Upgrading a module | +30 XP | Per upgrade |
-| Locking a mDOGE NFT | +20 XP | Per lock |
-| Mining 1000 mDOGE | +15 XP | Auto-scaled |
-| Referring 1 user | +100 XP | One-time |
+| Action                  | XP Gained | Frequency   |
+| ----------------------- | --------- | ----------- |
+| Daily login             | +10 XP    | Daily       |
+| Installing a new module | +50 XP    | Per install |
+| Upgrading a module      | +30 XP    | Per upgrade |
+| Locking a mDOGE NFT     | +20 XP    | Per lock    |
+| Mining 1000 mDOGE       | +15 XP    | Auto-scaled |
+| Referring 1 user        | +100 XP   | One-time    |
 
 #### **Level Progression**
 
 Players advance through levels using a progressive XP formula:
+
 - **Formula**: `required_xp = 100 + (level² × 20)`
 - **Automatic Level Up**: Players level up automatically when XP threshold is reached
 
 | Level | XP Required | Total XP |
-|-------|-------------|----------|
-| 1 | 100 | 100 |
-| 2 | 180 | 280 |
-| 3 | 360 | 640 |
-| 4 | 580 | 1,220 |
-| 5 | 840 | 2,060 |
+| ----- | ----------- | -------- |
+| 1     | 100         | 100      |
+| 2     | 180         | 280      |
+| 3     | 360         | 640      |
+| 4     | 580         | 1,220    |
+| 5     | 840         | 2,060    |
 
 #### **Player Progression Tracking**
 
 Each player's moonbase tracks:
+
 - **Current Level**: Player's progression level (starts at 0)
 - **Total XP**: Accumulated experience points
 - **Daily Login Streak**: Consecutive daily logins (resets after 48h gap)
 - **Last Login**: Timestamp for daily reward eligibility
 
 Each player's referral rewards account tracks:
+
 - **Referral Count**: Number of users successfully referred
 - **Total SOL Earned**: Accumulated referral rewards
 
@@ -111,6 +124,7 @@ Each player's referral rewards account tracks:
 - **Automatic Processing**: XP and counts updated automatically during moonbase creation
 
 **Example XP Calculations:**
+
 - 1 referral, 0 SOL earned: 100 XP
 - 1 referral, 1 SOL earned: 131 XP (100 base + 31 bonus)
 - 10 referrals, 10 SOL earned: 1,100 XP (1000 base + 100 bonus)
@@ -127,22 +141,26 @@ Each player's referral rewards account tracks:
 The game implements a sophisticated price-responsive token distribution mechanism that replaces traditional halvening:
 
 #### **8-Hour Price Oracle Cycles**
+
 - Every hour, 50% of the hourly mDOGE distribution is swapped for SOL via Raydium
 - Price data is collected and stored for 8-hour rolling averages
 - After 8 hours of data collection, the system processes accumulated liquidity
 
 #### **Rate Adjustments**
+
 - **Price Increase**: Distribution rate increases by 1%
 - **Price Decrease**: Distribution rate decreases by 3%
 - **No Change**: Rate remains constant
 
 #### **Protocol Owned Liquidity (POL)**
+
 - SOL from swaps accumulates over the 8-hour period
 - At cycle completion, accumulated SOL + calculated mDOGE are added to the Raydium LP
 - LP tokens are immediately burned, permanently removing liquidity
 - Creates deflationary pressure while supporting price stability
 
 #### **Configurable Parameters**
+
 - `slots_for_swap`: Configurable timing parameter (default: 9000 slots)
 - Swap percentage: 50% of hourly distribution
 - Price history: 8-hour rolling window
@@ -193,7 +211,7 @@ Deploy the program using the provided script:
 # anchor deploy --provider.cluster devnet
 ```
 
-or 
+or
 
 ```bash
 solana program deploy ./target/deploy/moon_base.so  --program-id ./target/deploy/moon_base-keypair.json --keypair ../wallet-keypair.json  
@@ -207,7 +225,7 @@ Yes, when you make changes to your Solana program and rebuild it, you'll need to
 
 1. Generate New Program ID (if you haven't already):
 
- ```bash
+```bash
    solana-keygen new -o target/deploy/moon_base-keypair.json  --force
 
    solana-keygen new -o target/deploy/moon_economy-keypair.json  --force
@@ -215,7 +233,7 @@ Yes, when you make changes to your Solana program and rebuild it, you'll need to
    # localnet / devnet only
    solana-keygen new -o target/deploy/raydium_cp_swap-keypair.json  --force
    
-   ```
+```
 
 2. Get the Program ID:
 
@@ -227,7 +245,6 @@ Yes, when you make changes to your Solana program and rebuild it, you'll need to
    - In your Anchor.toml
    - In your program's lib.rs:
 
-
 ### Configuration
 
 The program uses several configuration files:
@@ -236,7 +253,7 @@ The program uses several configuration files:
 
 ### Initializing the Moon-base program
 
-To initialize the program, urn the following scropts 
+To initialize the program, urn the following scropts
 
 ```
 cd prod_moonbase/setup_scripts
@@ -245,7 +262,7 @@ node init_testLP_token.js
 node init_moonbase.js
 ```
 
-Start a solana local validator - 
+Start a solana local validator -
 
 ```
 solana-test-validator
@@ -294,17 +311,20 @@ solana-test-validator
 The game features an automated loot rewards system that accumulates tokens and SOL for future distribution:
 
 #### **Automatic Accumulation**
+
 - **mDOGE Loot**: 10% of all mining rewards are automatically transferred to the loot vault
 - **SOL Loot**: 10% of all SOL collections (moonbase creation, module costs, etc.) go to the loot vault
 - **Transparent Tracking**: All accumulations are tracked and logged via events
 
 #### **Loot Vault Infrastructure**
+
 - **Dedicated Vaults**: Separate secure vaults for mDOGE tokens and SOL
 - **PDA Security**: All vaults use Program Derived Addresses for maximum security
 - **Admin Management**: Only program authorities can manage loot distribution
 - **Event Logging**: Comprehensive event system tracks all loot activities
 
 #### **Future Loot Mechanics**
+
 - **Loot Drops**: Foundation for implementing random loot drop events
 - **Special Rewards**: Accumulated tokens can be distributed for achievements, competitions, or special events
 - **Community Events**: Large pool of rewards available for community-driven activities
@@ -314,19 +334,23 @@ The game features an automated loot rewards system that accumulates tokens and S
 The program emits comprehensive events for tracking player progression and system state:
 
 ### XP & Level Events
+
 - **`XpGained`**: Emitted when players earn XP from any action
 - **`LevelUp`**: Emitted when players automatically level up
 - **`DailyLoginReward`**: Emitted for daily login streaks and XP rewards
 
 ### Faction Events
+
 - **`FactionAdded`**: Emitted when admins add new factions
 
 ### Loot Rewards Events
+
 - **`LootRewardsAccumulated`**: Emitted when tokens/SOL are added to loot vaults
 - **`LootRewardsDistributed`**: Emitted when loot rewards are distributed to players
 - **`LootRewardsInitialized`**: Emitted when the loot system is first set up
 
 ### Mining & Gameplay Events
+
 - Standard mining, module, gear, and NFT events
 - Referral system events with XP tracking
 
@@ -346,6 +370,5 @@ The program emits comprehensive events for tracking player progression and syste
 ## Support
 
 For support and inquiries, please open an issue on this repository or contact the development team.
-
 
 anchor upgrade target/deploy/moon_base.so --program-id 3VWMZMjJZm5jjwWUZM1i8JPGYRMVtFuJTc9SUasyDVSB --provider.cluster localnet

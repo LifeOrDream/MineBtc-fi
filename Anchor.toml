@@ -1,0 +1,26 @@
+[workspace]
+members = ["programs/*"]
+
+[toolchain]
+anchor_version = "0.32.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+moonbase = "76bGWqGdzwR13FSd1TDwanK7GFDHcunKh6WGbzAW1PjU"
+mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
+nft-launchpad = "CG6btG2MbTDXR2Ws6Kqn24HG6VqWWFJBrfxAK7NJVyNA"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/Desktop/LifeOrDream Labs/DogeBTC/MineBtc-fi/wallet-keypair.json"
+
+[test]
+startup_wait = 5000
+shutdown_wait = 2000
+upgradeable = false

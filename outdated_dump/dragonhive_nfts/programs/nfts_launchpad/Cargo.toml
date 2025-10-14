@@ -1,0 +1,36 @@
+[package]
+name = "nfts_launchpad"
+version = "0.1.0"
+description = "DragonHive NFT Launchpad Program for DragonBee NFT management and breeding"
+edition = "2021"
+
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "nfts_launchpad"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+
+[patch.crates-io]
+base64ct = "=1.7.1"
+borsh-derive = "=0.10.4"
+
+[dependencies]
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = "0.32.1"
+mpl-core = "0.10.1"
+mpl-token-metadata = { version = "5.1.1" }
+spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
+
+borsh = "0.10.4"
+borsh-derive = "0.10.4"
+solana-program = { version = "2.3.0", features = ["borsh"] }
+
+# spl-token-2022 = { version = "9.0.0", default-features = false, features = ["no-entrypoint"] }
