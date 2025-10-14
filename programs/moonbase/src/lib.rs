@@ -270,20 +270,20 @@ pub mod moonbase {
     // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
     // ----------------------------------------------------------------------------------------
 
-    // /// Buy a module without installing it
-    // pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
-    //     user::buy_module(ctx, config_id)
-    // }
+    /// Buy a module without installing it
+    pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
+        user::buy_module(ctx, config_id)
+    }
     
-    // /// Install/deploy an existing undeployed module
-    // pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
-    //     user::install_module(ctx, module_index, pos_x, pos_y)
-    // }
+    /// Install/deploy an existing undeployed module
+    pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
+        user::install_module(ctx, module_index, pos_x, pos_y)
+    }
 
-    // /// Remove a module instance from the moonbase
-    // pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
-    //     user::remove_module_internal(ctx, module_index)
-    // }
+    /// Remove a module instance from the moonbase
+    pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
+        user::remove_module_internal(ctx, module_index)
+    }
 
     // /// Delete a specific undeployed module permanently
     // pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {

@@ -679,3 +679,334 @@ pub fn update_loot_rewards_accumulation(
     
     Ok(())
 }
+
+
+
+/// Initialize runtime state for a new module instance based on its type
+pub fn initialize_module_runtime_state(module_type: &ModuleType, stats: &ModuleStats) -> ModuleRuntimeState {
+    match (module_type, stats) {
+        (ModuleType::Mining, ModuleStats::Mining(mining_stats)) => {
+            ModuleRuntimeState::Mining {
+                current_hp: mining_stats.max_hp,
+                total_mined: 0,
+            }
+        },
+        (ModuleType::Attraction, ModuleStats::Attraction(attraction_stats)) => {
+            ModuleRuntimeState::Attraction {
+                current_hp: attraction_stats.max_hp,
+                total_xp_generated: 0,
+                last_xp_claim: Clock::get().unwrap().unix_timestamp,
+            }
+        },
+        _ => {
+            // Fallback for mismatched types (shouldn't happen with proper validation)
+            ModuleRuntimeState::Mining {
+                current_hp: 100, // Default HP value
+                total_mined: 0,
+            }
+        }
+    }
+}
+
+// ========== GRID PLACEMENT SYSTEM HELPERS ========== //
+
+/// Check if a module can be placed at the given coordinates
+pub fn can_place_module(
+    user_moonbase: &UserMoonBaseInstance,
+    x: u8,
+    y: u8,
+    width: u8,
+    height: u8,
+) -> Result<bool> {
+    // 1. Bounds check
+    if x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? > GRID_WIDTH {
+        return Ok(false);
+    }
+    if y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? > GRID_HEIGHT {
+        return Ok(false);
+    }
+    
+    // 2. Overlap check
+    for dy in 0..height {
+        for dx in 0..width {
+            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
+            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
+            
+            if is_tile_occupied(user_moonbase, tile_x, tile_y)? {
+                return Ok(false);
+            }
+        }
+    }
+    
+    Ok(true)
+}
+
+/// Check if a specific tile is occupied
+pub fn is_tile_occupied(user_moonbase: &UserMoonBaseInstance, x: u8, y: u8) -> Result<bool> {
+    if x >= GRID_WIDTH || y >= GRID_HEIGHT {
+        return Err(ErrorCode::InvalidTileIndex.into());
+    }
+    
+    let idx = (y as usize) * (GRID_WIDTH as usize) + (x as usize);
+    let byte_idx = idx / 8;
+    let bit_idx = idx % 8;
+    
+    if byte_idx >= BITMAP_SIZE {
+        return Err(ErrorCode::InvalidTileIndex.into());
+    }
+    
+    let is_occupied = (user_moonbase.occupied_bitmap[byte_idx] & (1 << bit_idx)) != 0;
+    Ok(is_occupied)
+}
+
+/// Mark tiles as occupied for a module
+pub fn mark_tiles_occupied(
+    user_moonbase: &mut UserMoonBaseInstance,
+    x: u8,
+    y: u8,
+    width: u8,
+    height: u8,
+) -> Result<()> {
+    // Bounds check
+    require!(
+        x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_WIDTH,
+        ErrorCode::InvalidTileIndex
+    );
+    require!(
+        y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_HEIGHT,
+        ErrorCode::InvalidTileIndex
+    );
+    
+    // Mark all tiles as occupied
+    for dy in 0..height {
+        for dx in 0..width {
+            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
+            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
+            
+            let idx = (tile_y as usize) * (GRID_WIDTH as usize) + (tile_x as usize);
+            let byte_idx = idx / 8;
+            let bit_idx = idx % 8;
+            
+            if byte_idx >= BITMAP_SIZE {
+                return Err(ErrorCode::InvalidTileIndex.into());
+            }
+            
+            user_moonbase.occupied_bitmap[byte_idx] |= 1 << bit_idx;
+        }
+    }
+    
+    msg!("🏗️ Marked tiles occupied: ({}, {}) to ({}, {})", 
+         x, y, x + width - 1, y + height - 1);
+    
+    Ok(())
+}
+
+/// Clear tiles (mark as unoccupied) for a module
+pub fn clear_tiles(
+    user_moonbase: &mut UserMoonBaseInstance,
+    x: u8,
+    y: u8,
+    width: u8,
+    height: u8,
+) -> Result<()> {
+    // Bounds check
+    require!(
+        x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_WIDTH,
+        ErrorCode::InvalidTileIndex
+    );
+    require!(
+        y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_HEIGHT,
+        ErrorCode::InvalidTileIndex
+    );
+    
+    // Clear all tiles
+    for dy in 0..height {
+        for dx in 0..width {
+            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
+            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
+            
+            let idx = (tile_y as usize) * (GRID_WIDTH as usize) + (tile_x as usize);
+            let byte_idx = idx / 8;
+            let bit_idx = idx % 8;
+            
+            if byte_idx >= BITMAP_SIZE {
+                return Err(ErrorCode::InvalidTileIndex.into());
+            }
+            
+            user_moonbase.occupied_bitmap[byte_idx] &= !(1 << bit_idx);
+        }
+    }
+    
+    msg!("🧹 Cleared tiles: ({}, {}) to ({}, {})", 
+         x, y, x + width - 1, y + height - 1);
+    
+    Ok(())
+}
+
+/// Place a module at the given coordinates
+pub fn place_module(
+    user_moonbase: &mut UserMoonBaseInstance,
+    module_instance: &mut ModuleInstance,
+    x: u8,
+    y: u8,
+    width: u8,
+    height: u8,
+) -> Result<()> {
+    // 1. Check if placement is valid
+    require!(
+        can_place_module(user_moonbase, x, y, width, height)?,
+        ErrorCode::TileAlreadyOccupied
+    );
+    
+    // 2. Mark tiles as occupied
+    mark_tiles_occupied(user_moonbase, x, y, width, height)?;
+    
+    // 3. Save coordinates on the module instance
+    module_instance.pos_x = x;
+    module_instance.pos_y = y;
+    module_instance.width = width;
+    module_instance.height = height;
+    
+    msg!("📍 Module placed at ({}, {}) with size {}x{}", x, y, width, height);
+    
+    Ok(())
+}
+
+/// Move a module to new coordinates
+pub fn move_module(
+    user_moonbase: &mut UserMoonBaseInstance,
+    module_instance: &mut ModuleInstance,
+    new_x: u8,
+    new_y: u8,
+) -> Result<()> {
+    // 1. Clear current tiles
+    clear_tiles(
+        user_moonbase,
+        module_instance.pos_x,
+        module_instance.pos_y,
+        module_instance.width,
+        module_instance.height,
+    )?;
+    
+    // 2. Check if new placement is valid
+    require!(
+        can_place_module(user_moonbase, new_x, new_y, module_instance.width, module_instance.height)?,
+        ErrorCode::TileAlreadyOccupied
+    );
+    
+    // 3. Mark new tiles as occupied
+    mark_tiles_occupied(
+        user_moonbase,
+        new_x,
+        new_y,
+        module_instance.width,
+        module_instance.height,
+    )?;
+    
+    // 4. Update coordinates
+    let old_x = module_instance.pos_x;
+    let old_y = module_instance.pos_y;
+    module_instance.pos_x = new_x;
+    module_instance.pos_y = new_y;
+    module_instance.last_updated = Clock::get()?.unix_timestamp;
+    
+    msg!("🚚 Module moved from ({}, {}) to ({}, {})", old_x, old_y, new_x, new_y);
+    
+    Ok(())
+}
+
+/// Remove a module and clear its tiles
+pub fn remove_module(
+    user_moonbase: &mut UserMoonBaseInstance,
+    module_instance: &ModuleInstance,
+) -> Result<()> {
+    // Clear the tiles occupied by this module
+    clear_tiles(
+        user_moonbase,
+        module_instance.pos_x,
+        module_instance.pos_y,
+        module_instance.width,
+        module_instance.height,
+    )?;
+    
+    msg!("🗑️ Module removed from ({}, {}) with size {}x{}", 
+         module_instance.pos_x, module_instance.pos_y, 
+         module_instance.width, module_instance.height);
+    
+    Ok(())
+}
+
+/// Get the total number of occupied tiles
+pub fn get_occupied_tile_count(user_moonbase: &UserMoonBaseInstance) -> u32 {
+    let mut count = 0;
+    for byte in &user_moonbase.occupied_bitmap {
+        count += byte.count_ones();
+    }
+    count
+}
+
+/// Get available tiles count
+pub fn get_available_tile_count(user_moonbase: &UserMoonBaseInstance) -> u32 {
+    TOTAL_TILES as u32 - get_occupied_tile_count(user_moonbase)
+}
+
+
+/// Calculate XP based on SOL spent using sqrt scaling for diminishing returns
+/// Formula: sqrt(lamports) * 500 / 1_000_000_000 (where 1 SOL = 500 XP base)
+/// This gives reasonable XP rewards that scale with investment but with diminishing returns
+pub fn calculate_sol_based_xp(lamports: u64) -> u32 {
+    if lamports == 0 {
+        return 0;
+    }
+    
+    // Use sqrt scaling for diminishing returns
+    let sqrt_lamports = integer_sqrt(lamports);
+    
+    // Calculate XP: 500 XP per SOL (sqrt'ed)
+    // sqrt_lamports is in sqrt(lamports), so we scale by 500 and divide by sqrt(1e9)
+    let xp = sqrt_lamports * 500 / integer_sqrt(1_000_000_000);
+    
+    // Ensure we give at least 1 XP for any non-zero SOL spent
+    xp.max(1)
+}
+
+/// Get the current moonbase dimensions
+pub fn get_current_moonbase_dimensions(user_moonbase: &UserMoonBaseInstance) -> (u8, u8) {
+    (user_moonbase.current_width, user_moonbase.current_height)
+}
+
+/// Get the current usable tile count for a user's moonbase
+pub fn get_current_usable_tiles(user_moonbase: &UserMoonBaseInstance) -> u32 {
+    (user_moonbase.current_width as u32) * (user_moonbase.current_height as u32)
+}
+
+/// Check if a module placement is within the user's current moonbase boundaries
+pub fn can_place_module_in_moonbase(
+    user_moonbase: &UserMoonBaseInstance,
+    x: u8,
+    y: u8,
+    width: u8,
+    height: u8,
+) -> Result<bool> {
+    // 1. Check if within current moonbase bounds (not full grid)
+    if x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_width {
+        return Ok(false);
+    }
+    if y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_height {
+        return Ok(false);
+    }
+    
+    // 2. Check overlap with existing modules
+    for dy in 0..height {
+        for dx in 0..width {
+            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
+            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
+            
+            if is_tile_occupied(user_moonbase, tile_x, tile_y)? {
+                return Ok(false);
+            }
+        }
+    }
+    
+    Ok(true)
+}

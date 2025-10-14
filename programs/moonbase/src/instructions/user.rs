@@ -513,6 +513,492 @@ pub fn claim_mdoge_tokens_internal(
     Ok(())
 }
 
+
+
+ 
+// ----------------------------------------------------------------------------------------
+// -------------- USER :: MODULE MANAGEMENT FUNCTIONS -------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+
+/// Buy a module - purchase and create undeployed ModuleInstance
+pub fn buy_module(
+    ctx: Context<BuyModule>,
+    config_id: u16,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    let current_timestamp = Clock::get()?.unix_timestamp;
+
+    msg!("🛒 Starting module purchase for user {}", user.key());
+    msg!("   Config ID: {}", config_id);
+    
+    // Get the module config from the individual PDA
+    let module_config = &module_config_account.data;
+    
+    // Validate module is active
+    require!(module_config.is_active, ErrorCode::ModuleNotActive);
+    msg!("✅ Module config {} is active", config_id);
+    
+    // Validate user level requirement
+    require!(
+        user_moonbase.level >= module_config.min_level,
+        ErrorCode::UserLevelTooLow
+    );
+    msg!("✅ User level {} meets requirement of {}", user_moonbase.level, module_config.min_level);
+    
+    // Validate faction access (if faction restrictions exist)
+    if !module_config.faction_ids.is_empty() {
+        require!(
+            module_config.faction_ids.contains(&user_moonbase.faction_id),
+            ErrorCode::FactionNotAllowed
+        );
+        msg!("✅ User faction {} is allowed for this module", user_moonbase.faction_id);
+    }
+    
+    // Count existing instances of this module type (available modules = total owned)
+    let total_instances = user_moonbase.available_modules.iter()
+        .find(|entry| entry.config_id == config_id)
+        .map(|entry| entry.count)
+        .unwrap_or(0);
+    
+    // Validate max instances per base
+    require!(
+        total_instances < module_config.max_per_base,
+        ErrorCode::MaxModuleInstancesReached
+    );
+    msg!("✅ Total module instances {} < max {}", total_instances, module_config.max_per_base);
+    
+    // Check if user has enough SOL for the module cost
+    let cost = module_config.mint_cost;
+    msg!("💰 Module cost: {} SOL", cost as f64 / 1e9);
+    
+    // Process the payment, handle referral if applicable
+    let referrer = user_moonbase.referral;
+    
+    // Handle the referral payment
+    let (referral_fee, _) = helper::process_referral_payment(
+        cost,
+        &referrer,
+        &user.key(),
+        &user.to_account_info(),
+        ctx.accounts.referral_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        &mut ctx.accounts.global_config,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+    )?;
+    
+    msg!("💰 Payment processed: {} SOL cost, {} SOL referral fee", 
+         cost as f64 / 1e9, referral_fee as f64 / 1e9);
+    
+    // Update available modules count
+    let found_entry = user_moonbase.available_modules.iter_mut()
+        .find(|entry| entry.config_id == config_id);
+    
+    if let Some(entry) = found_entry {
+        // Increment count for existing entry
+        entry.count += 1;
+    } else {
+        // Create new entry
+        let new_entry = AvailableModuleEntry { 
+            config_id, 
+            count: 1 
+        };
+        user_moonbase.available_modules.push(new_entry);
+    }
+    
+    // Calculate electricity cost based on module type and stats
+    let electricity_cost = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.power_consumption as u32,
+        ModuleStats::Attraction(stats) => stats.power_consumption as u32,
+    };
+    
+    // Initialize runtime state based on module type (at full HP but not deployed)
+    let runtime_state = helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
+    
+    // Create the ModuleInstance (undeployed)
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_index = user_moonbase.modules_count;
+    
+    // Initialize module instance fields (NOT DEPLOYED YET)
+    module_instance.config_id = config_id;
+    module_instance.upgrade_level = 0; // Start at level 0
+    module_instance.index = module_index;
+    module_instance.module_type = module_config.module_type.clone();
+    module_instance.runtime_state = runtime_state;
+    module_instance.pos_x = 0;     // Not placed yet
+    module_instance.pos_y = 0;     // Not placed yet
+    module_instance.width = module_config.width;
+    module_instance.height = module_config.height;
+
+    module_instance.electricity_cost = electricity_cost;
+    module_instance.is_active = false; // NOT DEPLOYED YET
+    module_instance.created_at = current_timestamp;
+    module_instance.last_updated = current_timestamp;
+    module_instance.bump = ctx.bumps.module_instance;
+    
+  
+    // Update user_moonbase counters
+    user_moonbase.modules_count += 1;
+
+    // Process daily login and award XP for purchasing module (based on SOL spent)
+    let purchase_xp = helper::calculate_sol_based_xp(cost);
+    process_daily_login_and_xp(
+        user_moonbase,
+        purchase_xp,
+        &format!("Purchase Module ({} SOL)", cost as f64 / 1e9),
+    )?;
+    
+    // Emit event
+    emit!(ModulePurchased {
+        owner: user.key(),
+        config_id,
+        module_index,
+        cost,
+        referral_fee,
+    });
+    
+    msg!("🎉 Module purchase completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Config ID: {}, Module Index: {}", config_id, module_index);
+    msg!("   Cost: {} SOL, Referral Fee: {} SOL", cost as f64 / 1e9, referral_fee as f64 / 1e9);
+    msg!("   Module created but not deployed (is_active: false)");
+    
+    Ok(())
+}
+
+
+/// Install/deploy an existing undeployed module to specific coordinates
+pub fn install_module(
+    ctx: Context<InstallModule>,
+    module_index: u8,
+    pos_x: u8,
+    pos_y: u8,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("🏗️ Starting module installation for user {}", user.key());
+    msg!("   Module Index: {}, Position: ({}, {})", module_index, pos_x, pos_y);
+    
+    // Validate module is not already deployed
+    require!(!module_instance.is_active, ErrorCode::ModuleAlreadyActive);
+    msg!("✅ Module is undeployed and ready for installation");
+    
+    // Get the module config from the individual PDA
+    let module_config = &module_config_account.data;
+    
+    // Validate config_id matches the module instance
+    require!(
+        module_config.id == module_instance.config_id,
+        ErrorCode::ModuleConfigMismatch
+    );
+    
+    msg!("✅ Installing module at position ({}, {})", pos_x, pos_y);
+    
+    // Calculate electricity cost based on current upgrade level
+    let electricity_cost = module_instance.electricity_cost as u64;
+    
+    msg!("📊 Module electricity requirement: {} units", electricity_cost);
+    
+    // Check electricity availability BEFORE placement
+    if electricity_cost > 0 {
+        let new_used_electricity = user_moonbase.used_electricity
+            .checked_add(electricity_cost)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        require!(
+            new_used_electricity <= user_moonbase.available_electricity,
+            ErrorCode::ElectricityCapacityExceeded
+        );
+        
+        msg!("✅ Electricity check passed: {} + {} = {} <= {}", 
+             user_moonbase.used_electricity, 
+             electricity_cost,
+             new_used_electricity,
+             user_moonbase.available_electricity);
+    }
+    
+    // Check placement within moonbase bounds and no collision
+    require!(
+        helper::can_place_module_in_moonbase(
+            user_moonbase,
+            pos_x,
+            pos_y,
+            module_instance.width,
+            module_instance.height,
+        )?,
+        ErrorCode::PlacementOutsideMoonbaseArea
+    );
+    
+    msg!("✅ Module placement validated at ({}, {}) with size {}x{}", 
+         pos_x, pos_y, module_instance.width, module_instance.height);
+    
+    // Get width and height before the mutable borrow
+    let module_width = module_instance.width;
+    let module_height = module_instance.height;
+    
+    // Place the module on the grid using the placement system
+    helper::place_module(
+        user_moonbase,
+        module_instance,
+        pos_x,
+        pos_y,
+        module_width,
+        module_height,
+    )?;
+    
+    msg!("📍 Module placed successfully on grid");
+    
+    // Update module instance to be deployed
+    module_instance.is_active = true;
+    module_instance.last_updated = Clock::get()?.unix_timestamp;
+    
+    // Update electricity usage
+    if electricity_cost > 0 {
+        user_moonbase.used_electricity = user_moonbase.used_electricity
+            .checked_add(electricity_cost)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("⚡ Updated electricity usage: {} -> {} / {}", 
+             user_moonbase.used_electricity - electricity_cost,
+             user_moonbase.used_electricity,
+             user_moonbase.available_electricity);
+    }
+    
+    // Update total moonbase HP (add module's HP to moonbase) based on current level
+    let module_max_hp = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.max_hp,
+        ModuleStats::Attraction(stats) => stats.max_hp,
+    };
+    
+    user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_add(module_max_hp);
+    msg!("🛡️ Updated moonbase HP: added {} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
+    
+    // Update hashpower if this is a mining module (based on current upgrade level)
+    if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+        let hashpower_increase = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+        let old_hashpower = user_moonbase.active_hashpower;
+        
+        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("⛏️ Updated hashpower: {} -> {} (+{}) at level {}", 
+             old_hashpower, user_moonbase.active_hashpower, hashpower_increase, module_instance.upgrade_level);
+        
+        // Update global hashpower
+        let mining_state = &mut ctx.accounts.moon_doge_mining;
+        let old_global_hashpower = mining_state.total_active_hashpower;
+        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
+             old_global_hashpower, mining_state.total_active_hashpower, hashpower_increase);
+    }
+    
+    // Process daily login and award XP for installing module
+    let installation_xp = 25; // Fixed XP for installation
+    process_daily_login_and_xp(
+        user_moonbase,
+        installation_xp,
+        "Install Module",
+    )?;
+    
+    // Emit event
+    emit!(ModuleInstalled {
+        owner: user.key(),
+        config_id: module_instance.config_id,
+        module_index,
+        pos_x,
+        pos_y,
+    });
+    
+    msg!("🎉 Module installation completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Module Index: {}, Config ID: {}", module_index, module_instance.config_id);
+    msg!("   Position: ({}, {}), Size: {}x{}", pos_x, pos_y, module_instance.width, module_instance.height);
+    msg!("   Upgrade Level: {}, Electricity Used: {} / {}", 
+         module_instance.upgrade_level, user_moonbase.used_electricity, user_moonbase.available_electricity);
+    msg!("   Module is now deployed and active!");
+    
+    Ok(())
+}
+
+/// Delete a specific undeployed module instance permanently
+pub fn delete_module(
+    ctx: Context<DeleteModule>,
+    module_index: u8,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("🗑️ Starting module deletion for user {}", user.key());
+    msg!("   Module Index: {}, Config ID: {}", module_index, module_instance.config_id);
+    
+    // Verify module is undeployed before deletion
+    require!(!module_instance.is_active, ErrorCode::ModuleAlreadyActive);
+    msg!("✅ Module is undeployed and can be deleted");
+    
+    // Get the module config from the individual PDA
+    let module_config = &module_config_account.data;
+    let config_id = module_instance.config_id;
+    
+    // Find the available module entry
+    let available_entry_index = user_moonbase.available_modules.iter()
+        .position(|entry| entry.config_id == config_id)
+        .ok_or(ErrorCode::ModuleInstanceNotFound)?;
+    
+    // Validate there's at least one available module of this type
+    require!(
+        user_moonbase.available_modules[available_entry_index].count > 0,
+        ErrorCode::ModuleInstanceNotFound
+    );
+    
+    msg!("✅ Module deletion validation passed");
+    msg!("   Available modules of this type: {}", user_moonbase.available_modules[available_entry_index].count);
+    
+    // Decrement the available modules count
+    let count = &mut user_moonbase.available_modules[available_entry_index].count;
+    *count -= 1;
+    if *count == 0 {
+        user_moonbase.available_modules.remove(available_entry_index);
+        msg!("🗑️ Removed module config {} from available modules (count reached 0)", config_id);
+    } else {
+        msg!("🗑️ Decremented module config {} count: {} -> {}", config_id, *count + 1, *count);
+    }
+    
+    // Process daily login (no XP for deletion)
+    let (daily_login_xp, _streak) = helper::process_daily_login(user_moonbase)?;
+    if daily_login_xp > 0 {
+        helper::add_xp_simple(user_moonbase, daily_login_xp, "Daily Login")?;
+        msg!("🗓️ Daily login processed: {} XP gained", daily_login_xp);
+    }
+    
+    // Emit event
+    emit!(ModuleDeleted {
+        owner: user.key(),
+        config_id,
+        remaining_count: user_moonbase.available_modules.iter().find(|entry| entry.config_id == config_id).map(|entry| entry.count).unwrap_or(0),
+    });
+    
+    msg!("🎉 Module deletion completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Module Index: {}, Config ID: {}", module_index, config_id);
+    msg!("   Module type: {} permanently deleted", module_config.name);
+    msg!("   ModuleInstance account will be closed and rent returned to user");
+    
+    Ok(())
+} 
+
+
+/// Remove/undeploy a module instance from the moonbase (makes it undeployed but keeps it owned)
+pub fn remove_module_internal(
+    ctx: Context<RemoveModuleInstance>,
+    module_index: u8,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("🗑️ Starting module removal for user {}", user.key());
+    msg!("   Module index: {}, Type: {:?}", module_index, module_instance.module_type);
+    
+    // Get the module config from the individual PDA
+    let module_config = &module_config_account.data;
+    
+    // Verify module is deployed before removal
+    require!(module_instance.is_active, ErrorCode::ModuleNotActive);
+    msg!("✅ Module is deployed and can be removed");
+    
+    // Clear the module's position on the grid
+    helper::remove_module(user_moonbase, module_instance)?;
+    
+    // Set module as undeployed but keep the instance
+    let module_instance = &mut ctx.accounts.module_instance;
+    module_instance.is_active = false;
+    module_instance.pos_x = 0; // Reset position
+    module_instance.pos_y = 0; // Reset position
+    module_instance.last_updated = Clock::get()?.unix_timestamp;
+    
+    // Reduce electricity consumption
+    let electricity_reduction = module_instance.electricity_cost as u64;
+    if electricity_reduction > 0 {
+        user_moonbase.used_electricity = user_moonbase.used_electricity
+            .saturating_sub(electricity_reduction);
+        
+        msg!("⚡ Reduced electricity usage: -{} units (new usage: {} / {})", 
+             electricity_reduction, 
+             user_moonbase.used_electricity, 
+             user_moonbase.available_electricity);
+    }
+    
+    // Update hashpower if this is a mining module
+    if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+        let hashpower_reduction = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+        let old_hashpower = user_moonbase.active_hashpower;
+        
+        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+            .saturating_sub(hashpower_reduction);
+        
+        msg!("⛏️ Reduced hashpower: {} -> {} (-{})", 
+             old_hashpower, user_moonbase.active_hashpower, hashpower_reduction);
+        
+        // Update global hashpower
+        let mining_state = &mut ctx.accounts.moon_doge_mining;
+        let old_global_hashpower = mining_state.total_active_hashpower;
+        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+            .saturating_sub(hashpower_reduction);
+        
+        msg!("🌐 Reduced global hashpower: {} -> {} (-{})", 
+             old_global_hashpower, mining_state.total_active_hashpower, hashpower_reduction);
+    }
+    
+    // Update total moonbase HP (subtract module's HP from moonbase)
+    let module_max_hp = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.max_hp,
+        ModuleStats::Attraction(stats) => stats.max_hp,
+    };
+    
+    user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_sub(module_max_hp);
+    msg!("🛡️ Reduced moonbase HP: -{} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
+    
+    // Emit event
+    emit!(ModuleInstanceRemoved {
+        owner: user.key(),
+        module_index,
+        module_type: module_instance.module_type.clone(),
+        position_x: module_instance.pos_x,
+        position_y: module_instance.pos_y,
+        electricity_freed: electricity_reduction,
+        hashpower_lost: if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+            mining_stats.current_hashpower(module_instance.upgrade_level) as u64
+        } else {
+            0
+        },
+    });
+    
+    msg!("🎉 Module removal completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Module Index: {}", module_index);
+    msg!("   Module is now undeployed but still owned (is_active: false)");
+    msg!("   Can be redeployed later or deleted permanently");
+    
+    Ok(())
+}
+
+
+
+
+
 // ------------------------------------------------------------------------------------------
 // -------------- ACCOUNT VALIDATION STRUCTURES ----------------------------------------------
 // ------------------------------------------------------------------------------------------
@@ -739,4 +1225,192 @@ pub struct ClaimMoonDoge<'info> {
     /// CHECK: We know this is the correct address
     #[account(address = anchor_spl::token_2022::spl_token_2022::ID)]
     pub token_program: UncheckedAccount<'info>,
+}
+
+
+
+#[derive(Accounts)]
+#[instruction(config_id: u16)]
+pub struct BuyModule<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    // Access the specific module config directly via PDA
+    #[account(
+        seeds = [MODULE_CONFIG_SEED.as_ref(), config_id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    // Create the module instance with proper size calculation
+    #[account(
+        init,
+        payer = user,
+        space = ModuleInstance::LEN,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            user_moonbase.modules_count.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: This is the PDA that holds collected SOL fees
+    pub sol_treasury: UncheckedAccount<'info>,
+    
+    #[account(
+        constraint = referral_rewards.owner == user_moonbase.referral @ ErrorCode::InvalidReferralAccount,
+    )]
+    pub referral_rewards: Option<Account<'info, ReferralRewards>>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(module_index: u8)]
+pub struct InstallModule<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            module_index.to_le_bytes().as_ref()
+        ],
+        bump,
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Access the specific module config directly via PDA using the config_id from module_instance
+    #[account(
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
+#[derive(Accounts)]
+#[instruction(module_index: u8)]
+pub struct RemoveModuleInstance<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            module_index.to_le_bytes().as_ref()
+        ],
+        bump,
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Access the specific module config directly via PDA using the config_id from module_instance
+    #[account(
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
+
+#[derive(Accounts)]
+#[instruction(module_index: u8)]
+pub struct DeleteModule<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            module_index.to_le_bytes().as_ref()
+        ],
+        bump,
+        close = user  // Close the module instance account and return lamports to user
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Access the specific module config directly via PDA using the config_id from module_instance
+    #[account(
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
 }
