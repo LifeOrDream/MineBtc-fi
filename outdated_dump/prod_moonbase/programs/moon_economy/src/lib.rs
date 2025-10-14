@@ -67,12 +67,12 @@ pub mod moon_economy {
     // ------------ INITIALIZE VAULTS ------------
     // ----------------------------------------------------------------------------------------
 
-    pub fn initialize_mdoge_vault(
+    pub fn initialize_dbtc_vault(
         ctx: Context<InitializeMdogeVault>,
         moondoge_mint: Pubkey,
         electricity_per_weighted_moondoge: u64,
     ) -> Result<()> {
-        admin::initialize_mdoge_vault(ctx, moondoge_mint, electricity_per_weighted_moondoge)
+        admin::initialize_dbtc_vault(ctx, moondoge_mint, electricity_per_weighted_moondoge)
     }
 
     pub fn initialize_liquidity_vault(

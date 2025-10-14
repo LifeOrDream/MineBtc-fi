@@ -22,7 +22,7 @@ The DogeTech Loot Distribution System has been redesigned as a sophisticated **c
 ### Core Components
 
 1. **Automatic Accumulation** (10% of all rewards)
-   - 10% of mDOGE mining rewards → Loot mDOGE Vault
+   - 10% of DOGE_BTC mining rewards → Loot DOGE_BTC Vault
    - 10% of SOL collections → Loot SOL Vault
    - Continuous, passive funding without manual intervention
 
@@ -136,10 +136,10 @@ fn clamp_payout(vault: u64, want: u64) -> u64 {
 }
 ```
 
-### mDOGE Value Mirroring
+### DOGE_BTC Value Mirroring
 - **Price Oracle**: Uses on-chain 8-hour average price
-- **1:1 Value**: mDOGE payout = SOL payout ÷ current price
-- **Dual Rewards**: Players receive both SOL and equivalent mDOGE
+- **1:1 Value**: DOGE_BTC payout = SOL payout ÷ current price
+- **Dual Rewards**: Players receive both SOL and equivalent DOGE_BTC
 
 ## 🔧 Technical Implementation
 
@@ -159,9 +159,9 @@ fn get_avg_price_in_sol() -> Result<u64>
 #### State Updates
 ```rust
 pub struct LootRewards {
-    pub total_mdoge_accumulated: u64,
+    pub total_dbtc_accumulated: u64,
     pub total_sol_accumulated: u64,
-    pub total_mdoge_distributed: u64,
+    pub total_dbtc_distributed: u64,
     pub total_sol_distributed: u64,
     // PDA bumps for vault security
 }
@@ -169,7 +169,7 @@ pub struct LootRewards {
 
 ### Integration Points
 - **Level-Up Trigger**: Called automatically when user gains XP
-- **Mining Integration**: 10% of mDOGE rewards flow to loot vault
+- **Mining Integration**: 10% of DOGE_BTC rewards flow to loot vault
 - **Fee Integration**: 10% of SOL collections flow to loot vault
 - **Price Oracle**: Reads from MoonDogeMining.avg_price_8h
 

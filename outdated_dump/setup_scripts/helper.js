@@ -35,14 +35,14 @@ import path from 'path';
 
 // PDAs which hold GlobalConfig / MoonDogeMining state
 export const GLOBAL_CONFIG_SEED = "global-config";
-export const doge_btc_MINING_SEED = "moon-doge-mining";
+export const DOGE_BTC_MINING_SEED = "moon-doge-mining";
 
 // PDAs which hold SOL collected by the program
 export const SOL_TREASURY_SEED = "sol-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
-export const MDOGE_VAULT_AUTHORITY_SEED = "mdoge-vault-authority";
-export const MDOGE_VAULT_SEED = "mdoge_vault";
+export const DOGE_BTC_VAULT_AUTHORITY_SEED = "mdoge-vault-authority";
+export const DOGE_BTC_VAULT_SEED = "dbtc_vault";
 
 // PDAs which hold ModuleConfigStore / GearConfigStore state
 export const MODULE_CONFIG_STORE_SEED = "module-config-store";
@@ -56,13 +56,13 @@ export const REFERRAL_REWARDS_SEED = "referral-rewards";
 export const MODULE_INSTANCE_SEED = "module-instance";
 
 // pda which holds the mdoge nft vault state
-export const MDOGE_NFT_VAULT_SEED = "mdoge-nft-vault";
+export const dbtc_NFT_VAULT_SEED = "mdoge-nft-vault";
 
 // PDAs for loot rewards system
 export const LOOT_REWARDS_SEED = "loot-rewards";
 export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
-export const LOOT_MDOGE_VAULT_SEED = "loot-mdoge-vault";
-export const LOOT_MDOGE_VAULT_AUTHORITY_SEED = "loot-mdoge-vault-authority";
+export const LOOT_DOGE_BTC_VAULT_SEED = "loot-mdoge-vault";
+export const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED = "loot-mdoge-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
 
 // PDA for PvP matchmaker
@@ -74,13 +74,13 @@ export const MOON_ECONOMY_GLOBAL_CONFIG_SEED = "global_config";
 export const MOON_ECONOMY_doge_btc_VAULT_SEED = "moondoge_vault";
 export const MOON_ECONOMY_LIQUIDITY_VAULT_SEED = "liquidity_vault";
 
-export const MOON_ECONOMY_MDOGE_SOL_VAULT_SEED = "moondoge-sol-vault";
+export const MOON_ECONOMY_dbtc_SOL_VAULT_SEED = "moondoge-sol-vault";
 export const MOON_ECONOMY_LP_SOL_VAULT_SEED = "lp-sol-vault";
 export const MOON_ECONOMY_GAME_SOL_VAULT_SEED = "game-sol-vault";
 
 
-export const MOON_ECONOMY_MDOGE_CUSTODIAN_SEED = "moondoge-custodian";
-export const MOON_ECONOMY_MDOGE_CUSTODIAN_AUTHORITY_SEED = "moondoge-custodian-authority";
+export const MOON_ECONOMY_dbtc_CUSTODIAN_SEED = "moondoge-custodian";
+export const MOON_ECONOMY_dbtc_CUSTODIAN_AUTHORITY_SEED = "moondoge-custodian-authority";
 
 
 export const MOON_ECONOMY_LIQUIDITY_CUSTODIAN_SEED = "liquidity-custodian";
@@ -90,7 +90,7 @@ export const MOON_ECONOMY_DEV_EARNINGS_SEED = "dev_earnings_collector";
 export const MOON_ECONOMY_FEE_COLLECTOR_SEED = "fee_collector";
 
 export const MOON_ECONOMY_USER_ELECTRICITY_SEED = "user-electricity";
-export const MOON_ECONOMY_MDOGE_POSITION_SEED = "moondoge-position";
+export const MOON_ECONOMY_dbtc_POSITION_SEED = "moondoge-position";
 export const MOON_ECONOMY_LP_POSITION_SEED = "liquidity-position";
 
 // =================== [ RAYDIUM CP-SWAP HELPERS ] ===================
@@ -463,7 +463,7 @@ export async function initializeMoonbaseProgram(connection, program, wallet, wal
             
             // Find PDAs
             const [globalConfigPDA] = PublicKey.findProgramAddressSync(  [Buffer.from(GLOBAL_CONFIG_SEED)],  program.programId);            
-            const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync( [Buffer.from(doge_btc_MINING_SEED)],   program.programId);            
+            const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync( [Buffer.from(DOGE_BTC_MINING_SEED)],   program.programId);            
             const [solTreasuryPDA] = PublicKey.findProgramAddressSync( [Buffer.from(SOL_TREASURY_SEED)],  program.programId);
     
             console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA.toString()}`);
@@ -515,7 +515,7 @@ export async function initializeMoonbaseProgram(connection, program, wallet, wal
       );
       
       const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(doge_btc_MINING_SEED)], 
+        [Buffer.from(DOGE_BTC_MINING_SEED)], 
         program.programId
       );
       
@@ -689,10 +689,10 @@ export async function setupMiningVault(
   try {
     console.log('\x1b[33m%s\x1b[0m', '📡 Initializing mining parameters...');
     console.log('\x1b[36m%s\x1b[0m', `🔑 Moon Doge Mining PDA: ${moonDogeMiningPDA.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Vault: ${vaultPDA.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Vault Authority: ${vaultAuthorityPDA.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Token Mint: ${tokenMint.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Token Program: ${token_program.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Vault: ${vaultPDA.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Vault Authority: ${vaultAuthorityPDA.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Token Mint: ${tokenMint.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Token Program: ${token_program.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `⏰ Start Timestamp: ${start_timestamp}`);
     console.log('\x1b[90m%s\x1b[0m', `💰 Moon Doge Per Slot: ${doge_btc_per_slot.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `🔄 Raydium Pool State: ${raydium_pool_state.toString()}`);
@@ -764,7 +764,7 @@ export async function depositMDOGE(
     
     // Find the moon doge mining PDA
     const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(doge_btc_MINING_SEED)], 
+      [Buffer.from(DOGE_BTC_MINING_SEED)], 
       program.programId
     );
     
@@ -1196,9 +1196,9 @@ export async function mEconomySetupMdogeVault(
   newTokenProgram,
 ) {
   try {
-    console.log('\x1b[33m%s\x1b[0m', '📡 Initializing Moon Economy :: mDOGE Vault...');
-    console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Mint (SPL-2022): ${mDogeMint.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Electricity Per Weighted mDOGE: ${electricity_per_weighted_moondoge.toString()}`);
+    console.log('\x1b[33m%s\x1b[0m', '📡 Initializing Moon Economy :: DOGE_BTC Vault...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Mint (SPL-2022): ${mDogeMint.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Electricity Per Weighted DOGE_BTC: ${electricity_per_weighted_moondoge.toString()}`);
 
     console.log(`DEBUG: Program ID: ${program.programId.toString()}`);
     console.log(`DEBUG: Token-2022 Program ID: ${newTokenProgram.toString()}`);
@@ -1210,15 +1210,15 @@ export async function mEconomySetupMdogeVault(
     console.log(`DEBUG: mdogeMintPubkey = ${mdogeMintPubkey.toString()}`);
     
     const [moondogeVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_doge_btc_VAULT_SEED)],  program.programId );
-    const [mdogeSolVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_MDOGE_SOL_VAULT_SEED)],  program.programId );
-    const [mdogeCustodianAuthorityPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_MDOGE_CUSTODIAN_AUTHORITY_SEED)],  program.programId );
+    const [mdogeSolVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_dbtc_SOL_VAULT_SEED)],  program.programId );
+    const [mdogeCustodianAuthorityPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_dbtc_CUSTODIAN_AUTHORITY_SEED)],  program.programId );
 
     console.log(`DEBUG: PDAs generated for vaults and authorities`);
     console.log(`DEBUG: moondogeVaultPDA = ${moondogeVaultPDA.toString()}`);
     console.log(`DEBUG: mdogeSolVaultPDA = ${mdogeSolVaultPDA.toString()}`);
     console.log(`DEBUG: mdogeCustodianAuthorityPDA = ${mdogeCustodianAuthorityPDA.toString()}`);
  
-    const [mdogeCustodianPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_MDOGE_CUSTODIAN_SEED), moondogeVaultPDA.toBytes()],  program.programId );
+    const [mdogeCustodianPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_dbtc_CUSTODIAN_SEED), moondogeVaultPDA.toBytes()],  program.programId );
     
     console.log(`DEBUG: Generated custodian PDAs`);
     console.log(`DEBUG: mdogeCustodianPDA = ${mdogeCustodianPDA.toString()}`);
@@ -1714,7 +1714,7 @@ export async function stakeMDOGE(
   tokenProgramPDA,
 ) {
   try {
-    console.log('\x1b[33m%s\x1b[0m', '📡 Staking mDOGE...');
+    console.log('\x1b[33m%s\x1b[0m', '📡 Staking DOGE_BTC...');
     
     const amountNumber = new BN(amount);
     const lockupNumber = new BN(lockup_duration);
@@ -1731,7 +1731,7 @@ export async function stakeMDOGE(
     return;
 
     let [userPositionPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(MOON_ECONOMY_MDOGE_POSITION_SEED), wallet.publicKey.toBuffer(), Buffer.from([indexNumber])], 
+      [Buffer.from(MOON_ECONOMY_dbtc_POSITION_SEED), wallet.publicKey.toBuffer(), Buffer.from([indexNumber])], 
       program.programId
     );
     console.log(`userPositionPDA: ${userPositionPDA}`);
@@ -1746,7 +1746,7 @@ export async function stakeMDOGE(
       false, 
       new PublicKey(tokenProgramPDA)
     );
-    console.log('\x1b[36m%s\x1b[0m', `🔑 User mDOGE Account PDA: ${userMdogeAccountPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 User DOGE_BTC Account PDA: ${userMdogeAccountPDA}`);
 
     const tokenAccount = await anchor_spl.getAccount(
       connection, 
@@ -1754,7 +1754,7 @@ export async function stakeMDOGE(
       undefined, 
       tokenProgramPDA
     );
-    console.log(`available mDOGE: ${tokenAccount.amount}`);
+    console.log(`available DOGE_BTC: ${tokenAccount.amount}`);
 
     console.log(`amountNumber: ${amountNumber}`);
     console.log(`lockupNumber: ${lockupNumber}`);
@@ -1802,7 +1802,7 @@ export async function stakeMDOGE(
 
     const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
 
-    console.log('\x1b[32m%s\x1b[0m', `✅ mDOGE staked`);
+    console.log('\x1b[32m%s\x1b[0m', `✅ DOGE_BTC staked`);
     console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
     console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${updateTxid}?cluster=devnet`);
 
@@ -1810,7 +1810,7 @@ export async function stakeMDOGE(
       success: true,
     };
   } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '❌ Error staking mDOGE:', error);
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error staking DOGE_BTC:', error);
     return {
       success: false,
       error: error.toString()
@@ -1840,7 +1840,7 @@ export async function unStakeMDOGE(
   tokenProgramPDA,
 ) {
   try {
-    console.log('\x1b[33m%s\x1b[0m', '📡 Unstaking mDOGE...');    
+    console.log('\x1b[33m%s\x1b[0m', '📡 Unstaking DOGE_BTC...');    
     const indexNumber = Number(index);
 
     let [userElectricityPDA] = PublicKey.findProgramAddressSync(
@@ -1850,7 +1850,7 @@ export async function unStakeMDOGE(
     console.log(`userElectricityPDA: ${userElectricityPDA}`);
 
     let [userPositionPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(MOON_ECONOMY_MDOGE_POSITION_SEED), wallet.publicKey.toBuffer(), Buffer.from([indexNumber])], 
+      [Buffer.from(MOON_ECONOMY_dbtc_POSITION_SEED), wallet.publicKey.toBuffer(), Buffer.from([indexNumber])], 
       program.programId
     );
     console.log(`userPositionPDA: ${userPositionPDA}`);
@@ -1863,7 +1863,7 @@ export async function unStakeMDOGE(
       false, 
       new PublicKey(tokenProgramPDA)
     );
-    console.log('\x1b[36m%s\x1b[0m', `🔑 User mDOGE Account PDA: ${userMdogeAccountPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 User DOGE_BTC Account PDA: ${userMdogeAccountPDA}`);
 
     const tokenAccount = await anchor_spl.getAccount(
       connection, 
@@ -1871,7 +1871,7 @@ export async function unStakeMDOGE(
       undefined, 
       tokenProgramPDA
     );
-    console.log(`available mDOGE: ${tokenAccount.amount}`);
+    console.log(`available DOGE_BTC: ${tokenAccount.amount}`);
  
     // Use the proper BN values in the transaction
     const updateTx = await program.methods.unstakeMoondoge(indexNumber).accounts({
@@ -1896,7 +1896,7 @@ export async function unStakeMDOGE(
 
     const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
 
-    console.log('\x1b[32m%s\x1b[0m', `✅ mDOGE unstaked`);
+    console.log('\x1b[32m%s\x1b[0m', `✅ DOGE_BTC unstaked`);
     console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
     console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${updateTxid}?cluster=devnet`);
 
@@ -1906,13 +1906,13 @@ export async function unStakeMDOGE(
       undefined, 
       tokenProgramPDA
     );
-    console.log(`available mDOGE (after unstake): ${_tokenAccount.amount}`);
+    console.log(`available DOGE_BTC (after unstake): ${_tokenAccount.amount}`);
 
     return {
       success: true,
     };
   } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '❌ Error unstaking mDOGE:', error);
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error unstaking DOGE_BTC:', error);
     return {
       success: false,
       error: error.toString()
@@ -2270,7 +2270,7 @@ export async function debugPDAs(program, networkConfig) {
   );
   
   const [derivedMdogeSolVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from(MOON_ECONOMY_MDOGE_SOL_VAULT_SEED)], 
+    [Buffer.from(MOON_ECONOMY_dbtc_SOL_VAULT_SEED)], 
     program.programId
   );
   
@@ -2391,7 +2391,7 @@ export async function debugPDAs(program, networkConfig) {
   console.log('\x1b[36m%s\x1b[0m', `  - Global Config: "${MOON_ECONOMY_GLOBAL_CONFIG_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge Vault: "${MOON_ECONOMY_doge_btc_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Liquidity Vault: "${MOON_ECONOMY_LIQUIDITY_VAULT_SEED}"`);
-  console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge SOL Vault: "${MOON_ECONOMY_MDOGE_SOL_VAULT_SEED}"`);
+  console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge SOL Vault: "${MOON_ECONOMY_dbtc_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Liquidity SOL Vault: "${MOON_ECONOMY_LP_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Game SOL Vault: "${MOON_ECONOMY_GAME_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Dev Earnings Collector: "${MOON_ECONOMY_DEV_EARNINGS_SEED}"`);
@@ -2824,7 +2824,7 @@ export async function initializeLootRewards(
   try {
     console.log('\x1b[33m%s\x1b[0m', '📡 Initializing loot rewards system...');
     console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Mint: ${mdogeMint}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Mint: ${mdogeMint}`);
 
     // Derive loot rewards PDAs
     const [lootRewardsPDA] = PublicKey.findProgramAddressSync(
@@ -2838,19 +2838,19 @@ export async function initializeLootRewards(
     );
     
     const [lootMdogeVaultPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(LOOT_MDOGE_VAULT_SEED)], 
+      [Buffer.from(LOOT_DOGE_BTC_VAULT_SEED)], 
       program.programId
     );
     
     const [lootMdogeVaultAuthorityPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(LOOT_MDOGE_VAULT_AUTHORITY_SEED)], 
+      [Buffer.from(LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED)], 
       program.programId
     );
 
     console.log('\x1b[36m%s\x1b[0m', `🔑 Loot Rewards PDA: ${lootRewardsPDA}`);
     console.log('\x1b[36m%s\x1b[0m', `🔑 Loot SOL Vault PDA: ${lootSolVaultPDA}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Loot mDOGE Vault PDA: ${lootMdogeVaultPDA}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Loot mDOGE Vault Authority PDA: ${lootMdogeVaultAuthorityPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Loot DOGE_BTC Vault PDA: ${lootMdogeVaultPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Loot DOGE_BTC Vault Authority PDA: ${lootMdogeVaultAuthorityPDA}`);
 
     const initTx = await program.methods.initializeLootRewards()
       .accounts({
@@ -3149,7 +3149,7 @@ export async function updateMdogeDistPerSlot(
   
 ) {
   try {
-    console.log('\x1b[36m%s\x1b[0m', '🔄 Updating mDOGE distribution per slot...');
+    console.log('\x1b[36m%s\x1b[0m', '🔄 Updating DOGE_BTC distribution per slot...');
 
     // Extract pool data from deployment info
     const poolStatePDA = new PublicKey(raydiumPoolData.poolStatePDA);
@@ -3161,15 +3161,15 @@ export async function updateMdogeDistPerSlot(
     // Determine correct vault assignment based on token ordering
     const isMdogeToken0 = raydiumPoolData.isMdogeToken0;
     const token0VaultPDA = new PublicKey(raydiumPoolData.token0VaultPDA); // This is WSOL vault (token0)
-    const token1VaultPDA = new PublicKey(raydiumPoolData.token1VaultPDA); // This is mDOGE vault (token1)
+    const token1VaultPDA = new PublicKey(raydiumPoolData.token1VaultPDA); // This is DOGE_BTC vault (token1)
     
     // Assign vaults based on actual token ordering
     const solVaultPDA = isMdogeToken0 ? token1VaultPDA : token0VaultPDA;   // WSOL vault
-    const mdogeVaultPDA = isMdogeToken0 ? token0VaultPDA : token1VaultPDA; // mDOGE vault
+    const mdogeVaultPDA = isMdogeToken0 ? token0VaultPDA : token1VaultPDA; // DOGE_BTC vault
     
     console.log('\x1b[90m%s\x1b[0m', `   Token ordering: isMdogeToken0=${isMdogeToken0}`);
     console.log('\x1b[90m%s\x1b[0m', `   WSOL vault (solVaultPDA): ${solVaultPDA.toString()}`);
-    console.log('\x1b[90m%s\x1b[0m', `   mDOGE vault (mdogeVaultPDA): ${mdogeVaultPDA.toString()}`);
+    console.log('\x1b[90m%s\x1b[0m', `   DOGE_BTC vault (mdogeVaultPDA): ${mdogeVaultPDA.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `   token0VaultPDA: ${token0VaultPDA.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `   token1VaultPDA: ${token1VaultPDA.toString()}`)
 
@@ -3236,7 +3236,7 @@ export async function updateMdogeDistPerSlot(
     // console.log('\x1b[90m%s\x1b[0m', `   Raydium Pool State: ${poolStatePDA.toString()}`);
     // console.log('\x1b[90m%s\x1b[0m', `   Vault Authority PDA: ${vaultAuthorityPDA.toString()}`);
     // console.log('\x1b[90m%s\x1b[0m', `   AMM Config: ${ammConfigPDA.toString()}`);
-    // console.log('\x1b[90m%s\x1b[0m', `   mDOGE Vault (Token Account): ${mdogeTokenAccount.toString()}`);
+    // console.log('\x1b[90m%s\x1b[0m', `   DOGE_BTC Vault (Token Account): ${mdogeTokenAccount.toString()}`);
     // console.log('\x1b[90m%s\x1b[0m', `   SOL Token Account: ${solTokenAccount.toString()}`);
 
 
@@ -3272,7 +3272,7 @@ export async function updateMdogeDistPerSlot(
         ammConfig: ammConfigPDA,
         authorityPda: vaultAuthorityPDA,
         raydiumAuthority: authorityPDA,
-        mdogeVault: mdogeVaultPDA, // mDOGE vault in Raydium pool
+        mdogeVault: mdogeVaultPDA, // DOGE_BTC vault in Raydium pool
         solVault: solVaultPDA,     // SOL vault in Raydium pool
         mdogeTokenAccount: mdogeTokenAccount,
         solTokenAccount: solTokenAccount,
@@ -3287,7 +3287,7 @@ export async function updateMdogeDistPerSlot(
       })
       .rpc();
 
-    console.log('\x1b[32m%s\x1b[0m', '✅ mDOGE distribution per slot updated successfully!');
+    console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC distribution per slot updated successfully!');
     console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${tx}`);
 
     return {
@@ -3303,7 +3303,7 @@ export async function updateMdogeDistPerSlot(
     };
 
   } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '❌ Failed to update mDOGE distribution per slot:', error);
+    console.error('\x1b[31m%s\x1b[0m', '❌ Failed to update DOGE_BTC distribution per slot:', error);
     return {
       success: false,
       error: error.message

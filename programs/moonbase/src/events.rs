@@ -309,7 +309,7 @@ pub struct SlotsPerHourUpdated {
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
     pub total_lp_burnt: u64,
-    pub mdoge_amount_added: u64,
+    pub dbtc_amount_added: u64,
     pub sol_amount_added: u64,
     pub timestamp: i64,
 }
@@ -356,16 +356,16 @@ pub struct DailyLoginReward {
 
 #[event]
 pub struct LootRewardsAccumulated {
-    pub mdoge_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
-    pub total_mdoge_accumulated: u64,
+    pub total_dbtc_accumulated: u64,
     pub total_sol_accumulated: u64,
 }
 
 #[event]
 pub struct LootRewardsDistributed {
     pub recipient: Pubkey,
-    pub mdoge_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub event_type: String,
 }
@@ -374,14 +374,14 @@ pub struct LootRewardsDistributed {
 pub struct LootRewardsInitialized {
     pub loot_rewards_pda: Pubkey,
     pub sol_vault_pda: Pubkey,
-    pub mdoge_vault_pda: Pubkey,
+    pub dbtc_vault_pda: Pubkey,
 }
 
 #[event]
 pub struct MilestoneLootAwarded {
     pub recipient: Pubkey,
     pub level_achieved: u8,
-    pub mdoge_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub milestone_type: String, // "major", "rare", "legendary"
     pub users_at_level: u32,
@@ -391,7 +391,7 @@ pub struct MilestoneLootAwarded {
 pub struct ProbabilityLootAwarded {
     pub recipient: Pubkey,
     pub level: u8,
-    pub mdoge_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub probability_percentage: u32, // Chance this user had to win
     pub users_at_level: u32,
@@ -550,7 +550,7 @@ pub struct PvPAttackEffects {
     pub defender: Pubkey,
     pub target_module_type: String,
     pub xp_stolen: u32,
-    pub mdoge_stolen: u64,
+    pub dbtc_stolen: u64,
     pub hashpower_leeched: u64,
     pub special_effect: String, // "None", "Double XP", "Magazine Explosion", etc.
     pub ticket_multiplier: f64,

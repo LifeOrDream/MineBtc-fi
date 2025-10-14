@@ -15,15 +15,15 @@
 
 **MoonBase** is a Solana-based game where players:
 - Build and customize their moon base with mining and attraction modules
-- Earn mDOGE tokens through hashpower-based mining
+- Earn DOGE_BTC tokens through hashpower-based mining
 - Gain XP and level up through various activities
-- Win loot rewards (SOL + mDOGE) when leveling up
+- Win loot rewards (SOL + DOGE_BTC) when leveling up
 - Expand their base as they progress
 
 ### Key Concepts
 
-- **Hashpower**: Mining power that generates mDOGE tokens
-- **Electricity**: Resource needed to power modules (obtained by staking mDOGE)
+- **Hashpower**: Mining power that generates DOGE_BTC tokens
+- **Electricity**: Resource needed to power modules (obtained by staking DOGE_BTC)
 - **XP**: Experience points that lead to level-ups
 - **Modules**: Placeable buildings that provide hashpower or XP generation
 - **Grid System**: 20×15 tile grid where modules are placed
@@ -36,10 +36,10 @@
 ```
 1. Create MoonBase (pay SOL) → Start at level 0
 2. Buy & Install Modules → Requires electricity + SOL
-3. Mine mDOGE Tokens → Based on your hashpower share
-4. Claim mDOGE → Convert hashpower into tokens + earn XP
+3. Mine DOGE_BTC Tokens → Based on your hashpower share
+4. Claim DOGE_BTC → Convert hashpower into tokens + earn XP
 5. Gain XP from Activities → Daily login, mining, modules
-6. Level Up → Roll for loot rewards (SOL + mDOGE)
+6. Level Up → Roll for loot rewards (SOL + DOGE_BTC)
 7. Expand Base → Unlock more tile space at higher levels
 8. Upgrade Modules → Increase hashpower/XP generation
 9. Repeat → Grow your empire
@@ -363,9 +363,9 @@ GLOBAL.total_active_hashpower += 15
 
 ---
 
-### 8. `claim_mdoge_tokens`
+### 8. `claim_dbtc_tokens`
 
-**Purpose**: Claim your share of mined mDOGE tokens
+**Purpose**: Claim your share of mined DOGE_BTC tokens
 
 **What Happens**:
 ```rust
@@ -381,37 +381,37 @@ your_share: 10% (1000/10000)
 
 // 3. CALCULATE TOKENS EARNED
 slots_passed: 1000
-reward_rate: 100 mDOGE per slot
-total_mined: 1000 * 100 = 100,000 mDOGE
-your_earnings: 100,000 * 10% = 10,000 mDOGE
+reward_rate: 100 DOGE_BTC per slot
+total_mined: 1000 * 100 = 100,000 DOGE_BTC
+your_earnings: 100,000 * 10% = 10,000 DOGE_BTC
 
 // 4. SPLIT REWARDS (90/10)
-user_amount: 9,000 mDOGE (90%)
-loot_amount: 1,000 mDOGE (10% to loot vault)
+user_amount: 9,000 DOGE_BTC (90%)
+loot_amount: 1,000 DOGE_BTC (10% to loot vault)
 
 // 5. TRANSFER TOKENS
-// Transfer 9,000 mDOGE to your token account
-// Transfer 1,000 mDOGE to loot vault
+// Transfer 9,000 DOGE_BTC to your token account
+// Transfer 1,000 DOGE_BTC to loot vault
 
 // 6. UPDATE LOOT TRACKING
-loot_rewards.total_mdoge_accumulated += 1,000
+loot_rewards.total_dbtc_accumulated += 1,000
 
 // 7. AWARD MINING XP
-// Formula: 15 XP per 1000 mDOGE mined
-// Example: 10,000 mDOGE = 150 XP
+// Formula: 15 XP per 1000 DOGE_BTC mined
+// Example: 10,000 DOGE_BTC = 150 XP
 
 // 8. UPDATE CLAIM INDEX
 user.moondoge_claim_index = current_slot
 ```
 
 **Result**:
-- ✅ mDOGE tokens transferred to you
+- ✅ DOGE_BTC tokens transferred to you
 - ✅ 10% added to loot vault
 - ✅ XP awarded for mining
 - ✅ Claim index updated
 - ✅ Daily login processed
 
-**Mining Rate**: Dynamically adjusted every 8 hours based on mDOGE/SOL price
+**Mining Rate**: Dynamically adjusted every 8 hours based on DOGE_BTC/SOL price
 
 ---
 
@@ -540,19 +540,19 @@ for each level:
         
         // I. DETERMINE CURRENCY
         // Milestone levels: prefer SOL
-        // Regular levels: 50/50 coin flip (SOL vs mDOGE)
+        // Regular levels: 50/50 coin flip (SOL vs DOGE_BTC)
         
         // J. TRANSFER LOOT
         if sol_payout > 0:
             transfer_sol(loot_vault → user)
-        if mdoge_payout > 0:
+        if dbtc_payout > 0:
             transfer_mdoge(loot_vault → user)
         
         // K. UPDATE VAULT BALANCES
         loot.total_sol_accumulated -= sol_payout
-        loot.total_mdoge_accumulated -= mdoge_payout
+        loot.total_dbtc_accumulated -= dbtc_payout
         loot.total_sol_distributed += sol_payout
-        loot.total_mdoge_distributed += mdoge_payout
+        loot.total_dbtc_distributed += dbtc_payout
     
     // L. UPDATE LEVEL STATS (for exclusivity bonuses)
     level_stats.tracked_levels: update counts
@@ -626,8 +626,8 @@ transfer(rewards_account → user, claimable)
 **What Happens**:
 ```rust
 // Called by MoonEconomy program when you:
-// - Stake mDOGE → Increase electricity
-// - Unstake mDOGE → Decrease electricity
+// - Stake DOGE_BTC → Increase electricity
+// - Unstake DOGE_BTC → Decrease electricity
 
 // 1. VALIDATE AUTHORITY
 require!(caller == global_config.ext_fee_collector)
@@ -664,7 +664,7 @@ else:
 
 **XP Sources**:
 1. **Daily Login**: 10-100+ XP (increases with streak)
-2. **Mining**: 15 XP per 1000 mDOGE claimed
+2. **Mining**: 15 XP per 1000 DOGE_BTC claimed
 3. **Module Purchase**: ~50 XP per 0.01 SOL spent
 4. **Module Upgrade**: ~50 XP per 0.01 SOL spent
 5. **Module Installation**: 25 XP (flat)
@@ -725,7 +725,7 @@ Level 20 → 21: 72,377 XP
 ### Module Types
 
 #### 1. **Mining Modules**
-- **Purpose**: Generate hashpower for mDOGE mining
+- **Purpose**: Generate hashpower for DOGE_BTC mining
 - **Stats**:
   - Base Hashpower (scales 1.15x per level)
   - Max HP
@@ -783,8 +783,8 @@ Modules have HP that affects efficiency:
 
 ```
 GLOBAL POOL:
-├─ Total mDOGE: 1,000,000,000 (pre-minted)
-├─ Distribution Rate: 100 mDOGE per slot (adjustable)
+├─ Total DOGE_BTC: 1,000,000,000 (pre-minted)
+├─ Distribution Rate: 100 DOGE_BTC per slot (adjustable)
 └─ Adjustment: Every 8 hours based on price oracle
 
 YOUR SHARE:
@@ -794,16 +794,16 @@ Your Share:           10%
 
 REWARDS PER CLAIM:
 Slots Passed: 1,000
-Total Mined:  1,000 slots × 100 mDOGE = 100,000 mDOGE
-Your Cut:     100,000 × 10% = 10,000 mDOGE
-Loot Cut:     10,000 × 10% = 1,000 mDOGE to vault
-You Get:      9,000 mDOGE
+Total Mined:  1,000 slots × 100 DOGE_BTC = 100,000 DOGE_BTC
+Your Cut:     100,000 × 10% = 10,000 DOGE_BTC
+Loot Cut:     10,000 × 10% = 1,000 DOGE_BTC to vault
+You Get:      9,000 DOGE_BTC
 ```
 
 ### Dynamic Distribution
 
 Every 8 hours, the system:
-1. Fetches mDOGE/SOL price from Raydium pool
+1. Fetches DOGE_BTC/SOL price from Raydium pool
 2. Calculates 8-hour average price
 3. Compares to previous 8-hour average
 4. Adjusts distribution rate:
@@ -818,9 +818,9 @@ REQUIREMENT:
 Each module needs electricity to run
 
 SOURCES:
-- Stake mDOGE in MoonEconomy program
+- Stake DOGE_BTC in MoonEconomy program
 - Receive electricity proportional to stake
-- 1 mDOGE staked = X electricity (configurable)
+- 1 DOGE_BTC staked = X electricity (configurable)
 
 USAGE:
 Mining Module: 100 electricity
@@ -918,40 +918,40 @@ At levels 10, 20, 30, 40, 50...
 
 ### Dual Currency System
 
-Loot can be paid in **SOL**, **mDOGE**, or **both**:
+Loot can be paid in **SOL**, **DOGE_BTC**, or **both**:
 
 ```
 MILESTONE LEVELS (10, 20, 30...):
 Prefer SOL payout
-Fallback to mDOGE if SOL vault low
+Fallback to DOGE_BTC if SOL vault low
 
 REGULAR LEVELS:
-50/50 coin flip between SOL and mDOGE
+50/50 coin flip between SOL and DOGE_BTC
 Award whichever vault has sufficient balance
 
 CONVERSION:
-Uses 8-hour average mDOGE/SOL price
+Uses 8-hour average DOGE_BTC/SOL price
 Example: Want 1 SOL worth
-- If price = 0.001 SOL per mDOGE
-- Award 1000 mDOGE instead
+- If price = 0.001 SOL per DOGE_BTC
+- Award 1000 DOGE_BTC instead
 ```
 
 ### Loot Vault Accumulation
 
 ```
 INPUTS (10% of all distributions):
-1. Mining claims: 10% of claimed mDOGE
+1. Mining claims: 10% of claimed DOGE_BTC
 2. SOL fees: 10% of treasury withdrawals
 3. Total accumulated over time
 
 OUTPUTS (loot payouts):
-1. Level-up rewards (SOL + mDOGE)
+1. Level-up rewards (SOL + DOGE_BTC)
 2. Milestone jackpots
 
 TRACKING:
-total_mdoge_accumulated: 50,000,000
+total_dbtc_accumulated: 50,000,000
 total_sol_accumulated: 100 SOL
-total_mdoge_distributed: 5,000,000
+total_dbtc_distributed: 5,000,000
 total_sol_distributed: 10 SOL
 ```
 
@@ -1060,7 +1060,7 @@ All major actions emit events for frontend/analytics:
    └─> MoonBase created at 10×8
 
 2. update_user_electricity() [by external program]
-   └─> Staked mDOGE → Got electricity
+   └─> Staked DOGE_BTC → Got electricity
 
 3. buy_module(mining_module_id)
    └─> Miner in inventory
@@ -1068,7 +1068,7 @@ All major actions emit events for frontend/analytics:
 4. install_module(0, pos_x, pos_y)
    └─> Miner on grid, generating hashpower
 
-5. claim_mdoge_tokens()
+5. claim_dbtc_tokens()
    └─> Claimed mined tokens + XP
 
 6. claim_level_up_rewards()
@@ -1115,7 +1115,7 @@ A: Yes! If you gain multiple levels, each level-up rolls for loot independently.
 A: You still level up, just don't get loot. Vault refills from 10% of all fees/mining.
 
 **Q: How do I get more electricity?**
-A: Stake mDOGE in the MoonEconomy program (separate contract).
+A: Stake DOGE_BTC in the MoonEconomy program (separate contract).
 
 **Q: Can I have multiple moonbases?**
 A: No, one per wallet. But you can use multiple wallets!
@@ -1189,11 +1189,11 @@ module_config:
 ## Summary
 
 MoonBase is a **complex idle game** with:
-- ✅ **Mining**: Hashpower-based mDOGE token generation
+- ✅ **Mining**: Hashpower-based DOGE_BTC token generation
 - ✅ **Building**: Grid-based module placement system
 - ✅ **Progression**: XP & leveling with daily login streaks
 - ✅ **Gambling**: Casino-style loot rewards on level-up
-- ✅ **Economy**: SOL + mDOGE dual token system
+- ✅ **Economy**: SOL + DOGE_BTC dual token system
 - ✅ **Social**: Referral rewards system
 - ✅ **Strategy**: Module placement, electricity management, upgrade paths
 

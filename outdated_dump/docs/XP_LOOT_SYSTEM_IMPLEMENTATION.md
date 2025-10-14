@@ -14,7 +14,7 @@ The DogeTech moonbase program now features a professional-grade XP and loot syst
 | Install Module | +50 XP | Per module installation |
 | Upgrade Module | +30 XP | Per module upgrade |
 | Lock NFT | +20 XP | 72-hour cooldown to prevent farming |
-| Mining | +15 XP | Per 1,000 mDOGE mined |
+| Mining | +15 XP | Per 1,000 DOGE_BTC mined |
 | Referrals | +100 XP + bonus | Base + √(SOL earned)/1000 bonus |
 
 ### Level Progression Curve
@@ -132,7 +132,7 @@ pub struct ReferralSuccess {
 2. **`create_module_instance()`** - Awards XP with loot potential
 3. **`upgrade_module_internal()`** - Enhanced XP award
 4. **`lock_nft()`** - Anti-spam protection + enhanced XP
-5. **`claim_mdoge_tokens_internal()`** - Mining XP with loot context
+5. **`claim_dbtc_tokens_internal()`** - Mining XP with loot context
 6. **`process_expansion_purchase()`** - Expansion XP rewards
 
 ### Backward Compatibility

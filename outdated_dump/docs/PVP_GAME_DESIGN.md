@@ -7,7 +7,7 @@
 
 ## 1  Vision
 
-MoonDoge PvP transforms passive moon-base building into a **high-stakes, casino-flavoured battle arena**.  Players wager SOL, attack opponents' economic modules, and siphon value (XP, mDOGE, hash-power) while fighting for a **winner-takes-most** prize pot.  Damage persists until repaired, creating long-term rivalry loops.
+MoonDoge PvP transforms passive moon-base building into a **high-stakes, casino-flavoured battle arena**.  Players wager SOL, attack opponents' economic modules, and siphon value (XP, DOGE_BTC, hash-power) while fighting for a **winner-takes-most** prize pot.  Damage persists until repaired, creating long-term rivalry loops.
 
 _Target player:_ **Solana degen / gambler** who enjoys real economic risk and big dopamine spikes.
 
@@ -28,8 +28,8 @@ _Target player:_ **Solana degen / gambler** who enjoys real economic risk and bi
 | Target | Primary Effect | Casino Twist | Economic Impact (persists) |
 |--------|----------------|--------------|---------------------------|
 | **Attraction** | Lose HP → XP/h reduced | 5 % chance to **double stolen XP** | Attacker steals `HP_dmg / max_HP × hourly_XP` immediately. |
-| **Research** | HP loss lengthens cooldown | Rolls the lab's loot table for attacker (mDOGE) | Successful roll deducts reward from defender's lab vault. |
-| **Mining** | HP loss drops defender hash-power | **Hash Leech**: attacker gains 10 % of lost hash-power for match (stacks ≤ 50 %). | Defender earns fewer mDOGE until repaired. |
+| **Research** | HP loss lengthens cooldown | Rolls the lab's loot table for attacker (DOGE_BTC) | Successful roll deducts reward from defender's lab vault. |
+| **Mining** | HP loss drops defender hash-power | **Hash Leech**: attacker gains 10 % of lost hash-power for match (stacks ≤ 50 %). | Defender earns fewer DOGE_BTC until repaired. |
 | **Attack** | HP + missile clip reduced | 2 % chance for **magazine explosion** (+25 % dmg) | Defender's DPS lowered mid-match. |
 | **Defense (future)** | Shield HP reduced | – | Subsequent hits deal +5 % dmg. |
 

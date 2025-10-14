@@ -53,33 +53,33 @@ function generateWebsiteConfig(config, deployment) {
       "rpc_url": config.network?.rpc_url || "http://127.0.0.1:8899",
       "commitment": config.network?.commitment || "confirmed",
  
-      // ========== mDOGE TOKEN ==========
-      "mdoge_mintAddress": deployment.mdoge_mint_address || deployment.mdoge_mint_created?.mint_address,
-      "mdoge_mintAuthority": deployment.mdoge_mint_created?.mint_authority,
-      "mdoge_burnTaxBps": deployment.mdoge_mint_created?.burn_tax_bps || config.token?.burn_tax_bps,
-      "mdoge_maxBurnAmount": deployment.mdoge_mint_created?.max_burn_amount?.toString() || config.token?.max_burn_amount?.toString(),
-      "mdoge_decimals": config.token?.decimals || 6,
+      // ========== DOGE_BTC TOKEN ==========
+      "dbtc_mintAddress": deployment.dbtc_mint_address || deployment.dbtc_mint_created?.mint_address,
+      "dbtc_mintAuthority": deployment.dbtc_mint_created?.mint_authority,
+      "dbtc_burnTaxBps": deployment.dbtc_mint_created?.burn_tax_bps || config.token?.burn_tax_bps,
+      "dbtc_maxBurnAmount": deployment.dbtc_mint_created?.max_burn_amount?.toString() || config.token?.max_burn_amount?.toString(),
+      "dbtc_decimals": config.token?.decimals || 6,
       
       // ========== RAYDIUM POOL ==========
-      "raydium_pool_state": deployment.mdoge_sol_pool_created?.poolStatePDA,
-      "raydium_lp_mint": deployment.mdoge_sol_pool_created?.lpMintPDA,
-      "raydium_token0_vault": deployment.mdoge_sol_pool_created?.token0VaultPDA, // WSOL
-      "raydium_token1_vault": deployment.mdoge_sol_pool_created?.token1VaultPDA, // mDOGE
-      "raydium_authority": deployment.mdoge_sol_pool_created?.authorityPDA,
-      "raydium_observation_state": deployment.mdoge_sol_pool_created?.observationStatePDA,
+      "raydium_pool_state": deployment.dbtc_sol_pool_created?.poolStatePDA,
+      "raydium_lp_mint": deployment.dbtc_sol_pool_created?.lpMintPDA,
+      "raydium_token0_vault": deployment.dbtc_sol_pool_created?.token0VaultPDA, // WSOL
+      "raydium_token1_vault": deployment.dbtc_sol_pool_created?.token1VaultPDA, // DOGE_BTC
+      "raydium_authority": deployment.dbtc_sol_pool_created?.authorityPDA,
+      "raydium_observation_state": deployment.dbtc_sol_pool_created?.observationStatePDA,
       "raydium_amm_config": deployment.raydium_amm_config_created?.amm_config_pda,
-      "is_mdoge_token0": deployment.mdoge_sol_pool_created?.isMdogeToken0 || false,
-      "token0_mint": deployment.mdoge_sol_pool_created?.token0Mint, // WSOL
-      "token1_mint": deployment.mdoge_sol_pool_created?.token1Mint, // mDOGE
+      "is_dbtc_token0": deployment.dbtc_sol_pool_created?.isMdogeToken0 || false,
+      "token0_mint": deployment.dbtc_sol_pool_created?.token0Mint, // WSOL
+      "token1_mint": deployment.dbtc_sol_pool_created?.token1Mint, // DOGE_BTC
       
       // ========== MOON BASE PROGRAM ACCOUNTS ==========
       "globalConfig_pda": deployment.moonbase_program_initialized?.globalConfig_address,
       "moonDogeMining_pda": deployment.moonbase_program_initialized?.moonDogeMining_address,
       "sol_treasury_pda": deployment.moonbase_program_initialized?.solTreasury_address,
       
-      // ========== mDOGE MINING VAULT ==========
-      "mdoge_token_vault": deployment.mining_vault_initialized?.vault_address,
-      "mdoge_vault_authority": deployment.mining_vault_initialized?.vault_authority,
+      // ========== DOGE_BTC MINING VAULT ==========
+      "dbtc_token_vault": deployment.mining_vault_initialized?.vault_address,
+      "dbtc_vault_authority": deployment.mining_vault_initialized?.vault_authority,
       "mining_start_timestamp": deployment.mining_vault_initialized?.start_timestamp,
       "doge_btc_per_slot": deployment.mining_vault_initialized?.doge_btc_per_slot,
       
@@ -95,8 +95,8 @@ function generateWebsiteConfig(config, deployment) {
       // ========== LOOT REWARDS SYSTEM ==========
       "loot_rewards_pda": deployment.loot_rewards_initialized?.loot_rewards_pda,
       "loot_sol_vault": deployment.loot_rewards_initialized?.sol_vault,
-      "loot_mdoge_vault": deployment.loot_rewards_initialized?.mdoge_vault,
-      "loot_mdoge_vault_authority": deployment.loot_rewards_initialized?.loot_mdoge_vault_authority,
+      "loot_dbtc_vault": deployment.loot_rewards_initialized?.dbtc_vault,
+      "loot_dbtc_vault_authority": deployment.loot_rewards_initialized?.loot_dbtc_vault_authority,
       
       // ========== LEVEL STATS ==========
       "level_stats_pda": deployment.level_stats_initialized?.level_stats_pda,
@@ -150,11 +150,11 @@ function generateWebsiteConfig(config, deployment) {
         "moonEconomy_devEarnings_pda": deployment.moonEconomy_program_initialized?.moonEconomy_devEarnings_data_ac,
         "moonEconomy_feeCollector_pda": deployment.moonEconomy_program_initialized?.moonEconomy_feeCollector_data_ac,
         
-        // ========== MOON ECONOMY mDOGE VAULTS ==========
-        "moonEconomy_mdoge_vault": deployment.moonEconomy_mDogeVault_initialized?.moondogeVault,
-        "moonEconomy_mdoge_sol_vault": deployment.moonEconomy_mDogeVault_initialized?.mdogeSolVault,
-        "moonEconomy_mdoge_custodian": deployment.moonEconomy_mDogeVault_initialized?.mdogeCustodian,
-        "moonEconomy_mdoge_custodian_authority": deployment.moonEconomy_mDogeVault_initialized?.mdogeCustodianAuthority,
+        // ========== MOON ECONOMY DOGE_BTC VAULTS ==========
+        "moonEconomy_dbtc_vault": deployment.moonEconomy_mDogeVault_initialized?.moondogeVault,
+        "moonEconomy_dbtc_sol_vault": deployment.moonEconomy_mDogeVault_initialized?.mdogeSolVault,
+        "moonEconomy_dbtc_custodian": deployment.moonEconomy_mDogeVault_initialized?.mdogeCustodian,
+        "moonEconomy_dbtc_custodian_authority": deployment.moonEconomy_mDogeVault_initialized?.mdogeCustodianAuthority,
         
         // ========== MOON ECONOMY LIQUIDITY VAULTS ==========
         "moonEconomy_liquidity_vault": deployment.moonEconomy_liquidityVault_initialized?.liquidityVault,
@@ -236,7 +236,7 @@ function main() {
     console.log(`  🌐 Cluster: ${cluster}`);
     console.log(`  🔗 Moon Base Program: ${websiteConfig[cluster].MOON_BASE_PROGRAM_ID}`);
     console.log(`  🔗 Moon Economy Program: ${websiteConfig[cluster].MOON_ECONOMY_PROGRAM_ID || 'Not deployed'}`);
-    console.log(`  🪙 mDOGE Token: ${websiteConfig[cluster].mdoge_mintAddress}`);
+    console.log(`  🪙 DOGE_BTC Token: ${websiteConfig[cluster].dbtc_mintAddress}`);
     console.log(`  🏊 Raydium Pool: ${websiteConfig[cluster].raydium_pool_state}`);
     console.log(`  💰 Loot Rewards: ${websiteConfig[cluster].loot_rewards_pda}`);
     console.log(`  ⚔️  PvP Matchmaker: ${websiteConfig[cluster].pvp_matchmaker_pda}`);

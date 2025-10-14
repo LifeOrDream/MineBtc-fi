@@ -420,8 +420,8 @@ fn process_auto_daily_login_and_activity_xp<'info>(
     doge_btc_mining: &MoonDogeMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
-    loot_mdoge_vault: &AccountInfo<'info>,
-    loot_mdoge_vault_authority: &AccountInfo<'info>,
+    loot_dbtc_vault: &AccountInfo<'info>,
+    loot_dbtc_vault_authority: &AccountInfo<'info>,
     user_account: &AccountInfo<'info>,
     user_token_account: Option<&AccountInfo<'info>>,
     token_mint: Option<&AccountInfo<'info>>,
@@ -453,8 +453,8 @@ fn process_auto_daily_login_and_activity_xp<'info>(
             level_stats,
             doge_btc_mining,
             loot_sol_vault,
-            loot_mdoge_vault,
-            loot_mdoge_vault_authority,
+            loot_dbtc_vault,
+            loot_dbtc_vault_authority,
             user_account,
             user_token_account,
             token_mint,
@@ -1121,7 +1121,7 @@ pub fn upgrade_module_internal (
 // ------------------------------------------------------------------------------------------
 
 /// Claim MoonDoge tokens that the user has mined
-pub fn claim_mdoge_tokens_internal(
+pub fn claim_dbtc_tokens_internal(
     ctx: Context<ClaimMoonDoge>,
 ) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
@@ -1139,7 +1139,7 @@ pub fn claim_mdoge_tokens_internal(
 
     // Get vault authority signer seeds
     let vault_seeds = &[
-        MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[doge_btc_mining.vault_auth_bump],
     ];
 
@@ -1156,7 +1156,7 @@ pub fn claim_mdoge_tokens_internal(
         &ctx.accounts.user_token_account.to_account_info(),
         &mining_account_info,
         vault_seeds,
-        Some(&ctx.accounts.loot_mdoge_vault.to_account_info()),
+        Some(&ctx.accounts.loot_dbtc_vault.to_account_info()),
         Some(&mut ctx.accounts.loot_rewards),
     )?;
 
@@ -1371,7 +1371,7 @@ pub fn claim_research_rewards_internal(
     msg!("   Base success rate: {:.2}% ({}/10000)", success_probability as f64 / 100.0, success_probability);
     msg!("   HP efficiency: {:.2}%", hp_efficiency * 100.0);
     msg!("   Effective success rate: {:.2}% ({}/10000)", effective_probability as f64 / 100.0, effective_probability);
-    msg!("   Max reward: {} mDOGE", effective_max_reward);
+    msg!("   Max reward: {} DOGE_BTC", effective_max_reward);
     
     // Generate random number for casino roll using clock + user key + module state
     let slot = Clock::get()?.slot;
@@ -1411,7 +1411,7 @@ pub fn claim_research_rewards_internal(
         
         msg!("🎉 RESEARCH SUCCESS!");
         msg!("   Reward percentage: {}%", reward_percentage);
-        msg!("   Reward amount: {} mDOGE", actual_reward);
+        msg!("   Reward amount: {} DOGE_BTC", actual_reward);
         
         (actual_reward, format!("Research Success ({}%)", reward_percentage))
     } else {
@@ -1421,33 +1421,33 @@ pub fn claim_research_rewards_internal(
     
     // Process rewards if successful
     if success && reward_amount > 0 {
-        // mDOGE reward - transfer from main custody vault to user
-        msg!("💎 Transferring {} mDOGE from custody vault to user", reward_amount);
+        // DOGE_BTC reward - transfer from main custody vault to user
+        msg!("💎 Transferring {} DOGE_BTC from custody vault to user", reward_amount);
         
-        // Get vault authority signer seeds for main mDOGE vault
+        // Get vault authority signer seeds for main DOGE_BTC vault
         let vault_seeds = &[
-            MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+            DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
             &[ctx.accounts.doge_btc_mining.vault_auth_bump],
         ];
         let signer_seeds = &[&vault_seeds[..]];
         
-        // Transfer from main mDOGE custody vault to user
+        // Transfer from main DOGE_BTC custody vault to user
         anchor_spl::token_2022::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
                 anchor_spl::token_2022::TransferChecked {
-                    from: ctx.accounts.mdoge_custody_vault.to_account_info(),
-                    mint: ctx.accounts.mdoge_token_mint.to_account_info(),
-                    to: ctx.accounts.user_mdoge_token_account.to_account_info(),
-                    authority: ctx.accounts.mdoge_vault_authority.to_account_info(),
+                    from: ctx.accounts.dbtc_custody_vault.to_account_info(),
+                    mint: ctx.accounts.dbtc_token_mint.to_account_info(),
+                    to: ctx.accounts.user_dbtc_token_account.to_account_info(),
+                    authority: ctx.accounts.dbtc_vault_authority.to_account_info(),
                 },
                 signer_seeds,
             ),
             reward_amount,
-            MDOGE_DECIMALS, // mDOGE decimals
+            DBTC_DECIMALS, // DOGE_BTC decimals
         )?;
         
-        msg!("✅ Successfully transferred {} mDOGE from custody vault", reward_amount);
+        msg!("✅ Successfully transferred {} DOGE_BTC from custody vault", reward_amount);
     }
     
     // Award base XP for conducting research (regardless of success)
@@ -1480,7 +1480,7 @@ pub fn claim_research_rewards_internal(
     msg!("   Module Index: {}", module_index);
     msg!("   Success: {}", success);
     if success {
-        msg!("   Reward: {} mDOGE ({})", reward_amount, reward_description);
+        msg!("   Reward: {} DOGE_BTC ({})", reward_amount, reward_description);
     }
     msg!("   XP Gained: {} (base: {}, bonus: {})", total_xp, base_research_xp, bonus_xp);
     msg!("   Total Research Completed: {}", match &module_instance.runtime_state {
@@ -1624,7 +1624,7 @@ pub struct CreateModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1695,7 +1695,7 @@ pub struct UpdateModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1739,7 +1739,7 @@ pub struct ClaimMoonDoge<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1756,14 +1756,14 @@ pub struct ClaimMoonDoge<'info> {
     #[account(mut, owner = token_program.key())]
     pub token_mint: InterfaceAccount<'info, Mint2022>,    
 
-    /// Loot mDOGE vault for distributing loot tokens (10% of mining rewards)
+    /// Loot DOGE_BTC vault for distributing loot tokens (10% of mining rewards)
     #[account(
         mut,
-        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        seeds = [LOOT_DOGE_BTC_VAULT_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Loot mDOGE vault for distributing loot tokens
-    pub loot_mdoge_vault: UncheckedAccount<'info>,
+    /// CHECK: Loot DOGE_BTC vault for distributing loot tokens
+    pub loot_dbtc_vault: UncheckedAccount<'info>,
 
     /// Loot rewards tracking account (for mining loot accumulation only)
     #[account(
@@ -1796,7 +1796,7 @@ pub struct UpdateUserElectricity<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
     pub mining_state: Account<'info, MoonDogeMining>,
@@ -1944,54 +1944,54 @@ pub struct ClaimResearchRewards<'info> {
     
     /// Moon Doge mining state (for vault authority bump)
     #[account(
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
-    /// Main mDOGE custody vault (where deposits go)
+    /// Main DOGE_BTC custody vault (where deposits go)
     #[account(
         mut,
-        seeds = [MDOGE_VAULT_SEED, doge_btc_mining.key().as_ref()],
+        seeds = [DOGE_BTC_VAULT_SEED, doge_btc_mining.key().as_ref()],
         bump,
     )]
-    /// CHECK: Main mDOGE custody vault
-    pub mdoge_custody_vault: UncheckedAccount<'info>,
+    /// CHECK: Main DOGE_BTC custody vault
+    pub dbtc_custody_vault: UncheckedAccount<'info>,
 
-    /// Main mDOGE vault authority
+    /// Main DOGE_BTC vault authority
     #[account(
-        seeds = [MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Main mDOGE vault authority PDA
-    pub mdoge_vault_authority: UncheckedAccount<'info>,
+    /// CHECK: Main DOGE_BTC vault authority PDA
+    pub dbtc_vault_authority: UncheckedAccount<'info>,
 
-    /// Loot mDOGE vault for XP-based loot transfers
+    /// Loot DOGE_BTC vault for XP-based loot transfers
     #[account(
         mut,
-        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        seeds = [LOOT_DOGE_BTC_VAULT_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Loot mDOGE vault PDA
-    pub loot_mdoge_vault: UncheckedAccount<'info>,
+    /// CHECK: Loot DOGE_BTC vault PDA
+    pub loot_dbtc_vault: UncheckedAccount<'info>,
 
-    /// Loot mDOGE vault authority for XP-based loot transfers
+    /// Loot DOGE_BTC vault authority for XP-based loot transfers
     #[account(
-        seeds = [LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Loot mDOGE vault authority PDA
-    pub loot_mdoge_vault_authority: UncheckedAccount<'info>,
+    /// CHECK: Loot DOGE_BTC vault authority PDA
+    pub loot_dbtc_vault_authority: UncheckedAccount<'info>,
 
-    /// User's mDOGE token account for receiving reward tokens (required for mDOGE rewards)
+    /// User's DOGE_BTC token account for receiving reward tokens (required for DOGE_BTC rewards)
     #[account(mut)]
-    /// CHECK: User's mDOGE token account
-    pub user_mdoge_token_account: UncheckedAccount<'info>,
+    /// CHECK: User's DOGE_BTC token account
+    pub user_dbtc_token_account: UncheckedAccount<'info>,
 
-    /// mDOGE token mint (Token-2022) (required for mDOGE rewards)
-    pub mdoge_token_mint: InterfaceAccount<'info, anchor_spl::token_interface::Mint>,
+    /// DOGE_BTC token mint (Token-2022) (required for DOGE_BTC rewards)
+    pub dbtc_token_mint: InterfaceAccount<'info, anchor_spl::token_interface::Mint>,
 
-    /// SPL Token-2022 program (required for mDOGE rewards)
+    /// SPL Token-2022 program (required for DOGE_BTC rewards)
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
     
     #[account(mut)]
@@ -2082,11 +2082,11 @@ pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Res
         &mut ctx.accounts.level_stats,
         &ctx.accounts.doge_btc_mining,
         &ctx.accounts.loot_sol_vault,
-        &ctx.accounts.loot_mdoge_vault,
-        &ctx.accounts.loot_mdoge_vault_authority,
+        &ctx.accounts.loot_dbtc_vault,
+        &ctx.accounts.loot_dbtc_vault_authority,
         &ctx.accounts.user.to_account_info(),
-        ctx.accounts.user_mdoge_token_account.as_ref().map(|acc| acc.to_account_info()).as_ref(),
-        ctx.accounts.mdoge_token_mint.as_ref().map(|mint| mint.to_account_info()).as_ref(),
+        ctx.accounts.user_dbtc_token_account.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        ctx.accounts.dbtc_token_mint.as_ref().map(|mint| mint.to_account_info()).as_ref(),
         ctx.accounts.token_program_2022.as_ref().map(|prog| prog.to_account_info()).as_ref(),
         &ctx.accounts.system_program,
     )?;
@@ -2128,7 +2128,7 @@ pub struct ClaimLevelUpRewards<'info> {
     pub level_stats: Account<'info, LevelStats>,
     
     #[account(
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -2142,30 +2142,30 @@ pub struct ClaimLevelUpRewards<'info> {
     /// CHECK: Loot SOL vault PDA
     pub loot_sol_vault: UncheckedAccount<'info>,
 
-    /// Loot mDOGE vault for distributing mDOGE loot
+    /// Loot DOGE_BTC vault for distributing DOGE_BTC loot
     #[account(
         mut,
-        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        seeds = [LOOT_DOGE_BTC_VAULT_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Loot mDOGE vault PDA
-    pub loot_mdoge_vault: UncheckedAccount<'info>,
+    /// CHECK: Loot DOGE_BTC vault PDA
+    pub loot_dbtc_vault: UncheckedAccount<'info>,
 
-    /// Loot mDOGE vault authority for signing transfers
+    /// Loot DOGE_BTC vault authority for signing transfers
     #[account(
-        seeds = [LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Loot mDOGE vault authority PDA
-    pub loot_mdoge_vault_authority: UncheckedAccount<'info>,
+    /// CHECK: Loot DOGE_BTC vault authority PDA
+    pub loot_dbtc_vault_authority: UncheckedAccount<'info>,
 
-    /// User's mDOGE token account for receiving loot tokens (optional)
+    /// User's DOGE_BTC token account for receiving loot tokens (optional)
     #[account(mut)]
-    /// CHECK: User's mDOGE token account
-    pub user_mdoge_token_account: Option<UncheckedAccount<'info>>,
+    /// CHECK: User's DOGE_BTC token account
+    pub user_dbtc_token_account: Option<UncheckedAccount<'info>>,
 
-    /// mDOGE token mint (Token-2022) (optional)
-    pub mdoge_token_mint: Option<InterfaceAccount<'info, anchor_spl::token_interface::Mint>>,
+    /// DOGE_BTC token mint (Token-2022) (optional)
+    pub dbtc_token_mint: Option<InterfaceAccount<'info, anchor_spl::token_interface::Mint>>,
 
     /// SPL Token-2022 program (optional)
     pub token_program_2022: Option<Program<'info, anchor_spl::token_2022::Token2022>>,
@@ -2210,7 +2210,7 @@ pub struct RemoveModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -2351,7 +2351,7 @@ pub struct InstallModule<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,

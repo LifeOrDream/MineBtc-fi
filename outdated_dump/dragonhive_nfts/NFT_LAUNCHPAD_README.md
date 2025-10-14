@@ -5,7 +5,7 @@
 The NFT Launchpad program manages two Metaplex Core NFT collections for the MoonBase ecosystem:
 
 1. **MoonDoge NFTs** (Limited: 10,000 supply)
-   - Contains "money" attribute that increases with mDOGE mining
+   - Contains "money" attribute that increases with DOGE_BTC mining
    - 1 per moonbase maximum
    - Can be attached/detached from moonbase
 
@@ -42,10 +42,10 @@ Dragon Egg Collection
 **MoonDogeMetadata** (per NFT):
 - Mint address
 - Owner
-- Money (u64) - increases with mDOGE mining
+- Money (u64) - increases with DOGE_BTC mining
 - Attached moonbase (optional)
 - Last update timestamp
-- Total mDOGE mined
+- Total DOGE_BTC mined
 
 **DragonEggMetadata** (per NFT):
 - Mint address
@@ -66,7 +66,7 @@ Dragon Egg Collection
 - Moonbase owner
 - Attached doge mint
 - Last update timestamp
-- Last mDOGE balance (for tracking delta)
+- Last DOGE_BTC balance (for tracking delta)
 
 ---
 
@@ -185,9 +185,9 @@ Detach MoonDoge from moonbase.
 - `user` (signer)
 
 #### `update_moondoge_money`
-Update MoonDoge money based on mDOGE mined.
+Update MoonDoge money based on DOGE_BTC mined.
 
-**Formula**: `money_increase = (mdoge_mined * MONEY_RATE_MULTIPLIER) / 1,000,000`
+**Formula**: `money_increase = (dbtc_mined * MONEY_RATE_MULTIPLIER) / 1,000,000`
 
 **Accounts**:
 - `moondoge_metadata` (mut)
@@ -271,7 +271,7 @@ if pricing_tier != "basic" {
 
 **Update MoonDoge Money** (periodically, e.g., every hour):
 ```javascript
-// 1. Query moonbase to get mDOGE mined since last update
+// 1. Query moonbase to get DOGE_BTC mined since last update
 const mdogeMined = await getMdogeDelta(moonbaseOwner);
 
 // 2. Call update_moondoge_money
@@ -313,8 +313,8 @@ for (const eggMint of incubationState.incubatedEggs) {
 
 ### MoonDoge Money Accumulation
 
-- **Trigger**: Attached doge accumulates money when moonbase mines mDOGE
-- **Formula**: `money += (mdoge_mined * 0.01%) = mdoge_mined * 100 / 1,000,000`
+- **Trigger**: Attached doge accumulates money when moonbase mines DOGE_BTC
+- **Formula**: `money += (dbtc_mined * 0.01%) = dbtc_mined * 100 / 1,000,000`
 - **Max Money**: `u64::MAX / 1000` (plenty of headroom)
 - **Use Cases**: Future game features, marketplace trading, upgrades
 

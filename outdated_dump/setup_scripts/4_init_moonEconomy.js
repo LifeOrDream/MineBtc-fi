@@ -256,18 +256,18 @@ async function initializeMdogeVault(moonEconomyProgram) {
             console.log('\x1b[35m%s\x1b[0m', '\n================ [ INITIALIZING MOON ECONOMY MDOGE VAULT ] =================');
             
             // Get token addresses from deployment file
-    const mdogeMintKey = deploymentFile.mdoge_mint_address || deploymentFile.mdoge_mdoge_mint_account_created?.mdoge_mintAddress;
+    const mdogeMintKey = deploymentFile.dbtc_mint_address || deploymentFile.dbtc_dbtc_mint_account_created?.dbtc_mintAddress;
     if (!mdogeMintKey) {
         throw new Error('MDOGE token mint address not found in deployment file');
     }
     
-    const MDOGE_TOKEN_MINT = new PublicKey(mdogeMintKey);
-            console.log('\x1b[36m%s\x1b[0m', `🔑 MDOGE Token (SPL-2022): ${MDOGE_TOKEN_MINT.toString()}`);
+    const dbtc_TOKEN_MINT = new PublicKey(mdogeMintKey);
+            console.log('\x1b[36m%s\x1b[0m', `🔑 MDOGE Token (SPL-2022): ${dbtc_TOKEN_MINT.toString()}`);
     console.log('\x1b[36m%s\x1b[0m', `⚡ Electricity per weighted MDOGE: ${ELECTRICITY_PER_WEIGHTED_MDOGE}`);
             
             const result = await mEconomySetupMdogeVault(
         connection, moonEconomyProgram, wallet, walletKeypair,
-        MDOGE_TOKEN_MINT, ELECTRICITY_PER_WEIGHTED_MDOGE, anchor_spl.TOKEN_2022_PROGRAM_ID
+        dbtc_TOKEN_MINT, ELECTRICITY_PER_WEIGHTED_MDOGE, anchor_spl.TOKEN_2022_PROGRAM_ID
             );
 
             if (result.success) {
@@ -295,7 +295,7 @@ async function initializeLiquidityVault(moonEconomyProgram) {
             console.log('\x1b[35m%s\x1b[0m', '\n================ [ INITIALIZING MOON ECONOMY LIQUIDITY VAULT ] =================');
             
     // Get LP token addresses from deployment file
-    const lpMintKey = deploymentFile.mdoge_sol_pool_created?.lpMintPDA;
+    const lpMintKey = deploymentFile.dbtc_sol_pool_created?.lpMintPDA;
     if (!lpMintKey) {
         throw new Error('LP token mint address not found in deployment file');
     }

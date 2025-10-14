@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::errors::ErrorCode;
 
 
-pub const MDOGE_DECIMALS: u8 = 6;
+pub const DBTC_DECIMALS: u8 = 6;
 pub const ONE_HR: u64 = 1; // 3600;
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
@@ -63,14 +63,14 @@ fn growth_factor(level: u8) -> u64 {
 
 // PDAs which hold GlobalConfig / MoonDogeMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
-pub const doge_btc_MINING_SEED: &[u8] = b"moon-doge-mining";
+pub const DOGE_BTC_MINING_SEED: &[u8] = b"moon-doge-mining";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
-pub const MDOGE_VAULT_AUTHORITY_SEED: &[u8] = b"mdoge-vault-authority";
-pub const MDOGE_VAULT_SEED: &[u8] = b"mdoge_vault";
+pub const DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"mdoge-vault-authority";
+pub const DOGE_BTC_VAULT_SEED: &[u8] = b"dbtc_vault";
 
 // PDAs which hold ModuleConfigStore  state
 pub const MODULE_CONFIG_STORE_SEED: &[u8] = b"module-config-store";
@@ -93,13 +93,11 @@ pub const INCUBATION_STATE_SEED: &[u8] = b"incubation-state";
 // PDAs for loot rewards system
 pub const LOOT_REWARDS_SEED: &[u8] = b"loot-rewards";
 pub const LOOT_SOL_VAULT_SEED: &[u8] = b"loot-sol-vault";
-pub const LOOT_MDOGE_VAULT_SEED: &[u8] = b"loot-mdoge-vault";
-pub const LOOT_MDOGE_VAULT_AUTHORITY_SEED: &[u8] = b"loot-mdoge-vault-authority";
+pub const LOOT_DOGE_BTC_VAULT_SEED: &[u8] = b"loot-mdoge-vault";
+pub const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"loot-mdoge-vault-authority";
 pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
 
-// ========== LOOT DISTRIBUTION CONSTANTS ========== //
-
-
+ 
 // ========== MODULE SYSTEM CONSTANTS ========== //
 pub const MAX_MODULE_UPGRADES: u8 = 10; // Maximum upgrade level for any module
 pub const UPGRADE_SCALING_FACTOR: u32 = 115; // 1.15x scaling per upgrade (15% increase)
@@ -227,7 +225,7 @@ impl GlobalConfig {
 pub struct PriceEntry {
     /// Timestamp when this price was recorded
     pub timestamp: i64,
-    /// Price in SOL per mDOGE (scaled by 10^9 for full precision)
+    /// Price in SOL per DOGE_BTC (scaled by 10^9 for full precision)
     /// This matches SOL's decimal precision for accurate price tracking
     pub price: u64,
 }
@@ -243,8 +241,8 @@ pub struct ProtocolOwnedLiquidity {
     pub total_lp_burnt: u64,
     /// Total SOL added to liquidity pool (accumulated)
     pub total_sol_added: u64,
-    /// Total mDOGE added to liquidity pool (accumulated)
-    pub total_mdoge_added: u64,
+    /// Total DOGE_BTC added to liquidity pool (accumulated)
+    pub total_dbtc_added: u64,
     /// Number of LP addition operations performed
     pub lp_operations_count: u32,
 }
@@ -257,12 +255,12 @@ impl ProtocolOwnedLiquidity {
         &mut self,
         lp_tokens_burnt: u64,
         sol_added: u64,
-        mdoge_added: u64
+        dbtc_added: u64
     ) {
         // Update cumulative totals
         self.total_lp_burnt = self.total_lp_burnt.saturating_add(lp_tokens_burnt);
         self.total_sol_added = self.total_sol_added.saturating_add(sol_added);
-        self.total_mdoge_added = self.total_mdoge_added.saturating_add(mdoge_added);
+        self.total_dbtc_added = self.total_dbtc_added.saturating_add(dbtc_added);
         self.lp_operations_count = self.lp_operations_count.saturating_add(1);
     }    
 }
@@ -271,7 +269,7 @@ impl ProtocolOwnedLiquidity {
 #[account]
 pub struct MoonDogeMining {
     /// Token vault that holds all pre-minted tokens
-    pub mdoge_token_vault: Pubkey,         
+    pub dbtc_token_vault: Pubkey,         
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,        
     /// MoonDoge mined per slot (original base rate)
@@ -290,7 +288,7 @@ pub struct MoonDogeMining {
     pub vault_auth_bump: u8,
     
     // ===== DYNAMIC DISTRIBUTION FIELDS =====
-    /// Raydium pool state for mDOGE-SOL trading
+    /// Raydium pool state for DOGE_BTC-SOL trading
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
@@ -311,7 +309,7 @@ pub struct MoonDogeMining {
 }
 
 impl MoonDogeMining {
-    // discriminator + mdoge_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
+    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + avg_price_8h + prev_avg_price_8h + sol_for_pol + slots_for_swap + pol_stats
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 8-hour rolling average
     pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN;
@@ -401,29 +399,29 @@ impl ReferralRewards {
     pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 1 + 2;
 }
 
-/// Loot rewards system that accumulates 10% of mDOGE distributions and SOL collections
+/// Loot rewards system that accumulates 10% of DOGE_BTC distributions and SOL collections
 #[account]
 pub struct LootRewards {
-    /// Total mDOGE tokens accumulated for loot rewards
-    pub total_mdoge_accumulated: u64,
+    /// Total DOGE_BTC tokens accumulated for loot rewards
+    pub total_dbtc_accumulated: u64,
     /// Total SOL accumulated for loot rewards (in lamports)
     pub total_sol_accumulated: u64,
-    /// Total mDOGE tokens distributed as loot rewards
-    pub total_mdoge_distributed: u64,
+    /// Total DOGE_BTC tokens distributed as loot rewards
+    pub total_dbtc_distributed: u64,
     /// Total SOL distributed as loot rewards (in lamports)
     pub total_sol_distributed: u64,
     /// Bump for PDA derivation
     pub bump: u8,
     /// Bump for SOL vault PDA derivation
     pub sol_vault_bump: u8,
-    /// Bump for mDOGE vault PDA derivation
-    pub mdoge_vault_bump: u8,
-    /// Bump for mDOGE vault authority PDA derivation
-    pub mdoge_vault_authority_bump: u8,
+    /// Bump for DOGE_BTC vault PDA derivation
+    pub dbtc_vault_bump: u8,
+    /// Bump for DOGE_BTC vault authority PDA derivation
+    pub dbtc_vault_authority_bump: u8,
 }
 
 impl LootRewards {
-    // discriminator + total_mdoge_accumulated + total_sol_accumulated + total_mdoge_distributed + total_sol_distributed + bump + sol_vault_bump + mdoge_vault_bump + mdoge_vault_authority_bump
+    // discriminator + total_dbtc_accumulated + total_sol_accumulated + total_dbtc_distributed + total_sol_distributed + bump + sol_vault_bump + dbtc_vault_bump + dbtc_vault_authority_bump
     pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1;
 }
 
@@ -470,7 +468,7 @@ impl LevelStats {
 /// Module type enumeration for different gameplay mechanics
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
 pub enum ModuleType {
-    Mining,      // Generates hashpower → mDOGE
+    Mining,      // Generates hashpower → DOGE_BTC
     Attraction,  // Grants passive XP / social score
 }
 

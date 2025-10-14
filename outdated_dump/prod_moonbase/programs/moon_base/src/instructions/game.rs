@@ -459,7 +459,7 @@ pub fn pvp_attack_turn_internal(
     // ========== APPLY SPECIAL EFFECTS BASED ON TARGET TYPE ========== //
     
     let mut xp_stolen = 0u32;
-    let mut mdoge_stolen = 0u64;
+    let mut dbtc_stolen = 0u64;
     let mut hashpower_leeched = 0u64;
     let mut special_effect = "None".to_string();
     
@@ -517,12 +517,12 @@ pub fn pvp_attack_turn_internal(
             let success_chance = 5000; // 50% base chance
             
             if success_roll < success_chance {
-                mdoge_stolen = (actual_damage as u64 * 1000000) as u64; // 1 mDOGE per damage point
-                mdoge_stolen = (mdoge_stolen as f64 * loot_mult) as u64;
+                dbtc_stolen = (actual_damage as u64 * 1000000) as u64; // 1 DOGE_BTC per damage point
+                dbtc_stolen = (dbtc_stolen as f64 * loot_mult) as u64;
                 
                 special_effect = "Research Loot".to_string();
                 
-                msg!("🔬 Research attack: {} mDOGE stolen", mdoge_stolen);
+                msg!("🔬 Research attack: {} DOGE_BTC stolen", dbtc_stolen);
             } else {
                 msg!("🔬 Research attack: loot steal failed");
             }
@@ -542,9 +542,9 @@ pub fn pvp_attack_turn_internal(
         helper::add_xp_simple(&mut ctx.accounts.attacker_moonbase, xp_stolen, "PvP XP Steal")?;
     }
     
-    if mdoge_stolen > 0 {
-        // In full implementation, transfer mDOGE tokens
-        msg!("💎 mDOGE steal would transfer {} tokens", mdoge_stolen);
+    if dbtc_stolen > 0 {
+        // In full implementation, transfer DOGE_BTC tokens
+        msg!("💎 DOGE_BTC steal would transfer {} tokens", dbtc_stolen);
     }
     
     msg!("⚔️ Attack completed successfully");
@@ -639,7 +639,7 @@ pub fn pvp_attack_turn_internal(
         defender: defender_key,
         target_module_type: format!("{:?}", target_module_type),
         xp_stolen,
-        mdoge_stolen,
+        dbtc_stolen,
         hashpower_leeched,
         special_effect,
         ticket_multiplier: xp_mult.max(loot_mult).max(hash_mult),
@@ -673,7 +673,7 @@ pub fn pvp_attack_turn_internal(
             game_id: game_key,
             attacker: attacker_key,
             effect_type: if explosion_effect { "Magazine Explosion".to_string() } else { special_effect_clone },
-            effect_value: if explosion_effect { ATTACK_EXPLOSION_BONUS as u64 } else { xp_stolen.max(mdoge_stolen as u32) as u64 },
+            effect_value: if explosion_effect { ATTACK_EXPLOSION_BONUS as u64 } else { xp_stolen.max(dbtc_stolen as u32) as u64 },
             probability_roll: if explosion_effect { random_seed[4] as u16 } else { random_seed[6] as u16 },
             success_threshold: if explosion_effect { ATTACK_EXPLOSION_CHANCE } else { ATTRACTION_DOUBLE_XP_CHANCE },
         });
@@ -1052,7 +1052,7 @@ pub struct PvPAttack<'info> {
     // Global mining state for hashpower tracking
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1095,7 +1095,7 @@ pub struct PvPAttackSimple<'info> {
 
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,

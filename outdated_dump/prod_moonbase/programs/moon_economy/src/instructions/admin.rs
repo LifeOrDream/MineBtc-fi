@@ -70,31 +70,31 @@ pub fn initialize_global_config(
 
 /// Initialize the global program configuration
 /// This function can only be called once as it creates the program's configuration accounts
-pub fn initialize_mdoge_vault(
+pub fn initialize_dbtc_vault(
     ctx: Context<InitializeMdogeVault>,
-    mdoge_mint: Pubkey,
+    dbtc_mint: Pubkey,
     electricity_per_weighted_moondoge: u64,
 ) -> Result<()> {
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
 
     // Initialize MoonDoge Vault
     moondoge_vault.authority = ctx.accounts.authority.key();
-    moondoge_vault.mdoge_mint = mdoge_mint;
-    moondoge_vault.mdoge_sol_vault = ctx.accounts.mdoge_sol_vault.key();    
-    moondoge_vault.mdoge_custodian = ctx.accounts.mdoge_custodian.key();
+    moondoge_vault.dbtc_mint = dbtc_mint;
+    moondoge_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();    
+    moondoge_vault.dbtc_custodian = ctx.accounts.dbtc_custodian.key();
 
     moondoge_vault.electricity_per_weighted_moondoge = electricity_per_weighted_moondoge;
-    moondoge_vault.mdoge_locked = 0;
-    moondoge_vault.weighted_mdoge_locked = 0;
+    moondoge_vault.dbtc_locked = 0;
+    moondoge_vault.weighted_dbtc_locked = 0;
     moondoge_vault.accumulated_sol_per_point = 0;
     moondoge_vault.total_sol_distributed = 0;
     moondoge_vault.emergency_tax = EMERGENCY_WITHDRAWAL_PENALTY_PCT; // Default 10% tax for emergency withdrawals
     moondoge_vault.bump = ctx.bumps.moondoge_vault;
 
     emit!(MDogeVaultsInitialized {
-        mdoge_sol_vault: ctx.accounts.mdoge_sol_vault.key(),
-        mdoge_mint: mdoge_mint,
-        mdoge_custodian: ctx.accounts.mdoge_custodian.key(),
+        dbtc_sol_vault: ctx.accounts.dbtc_sol_vault.key(),
+        dbtc_mint: dbtc_mint,
+        dbtc_custodian: ctx.accounts.dbtc_custodian.key(),
     });
     
     Ok(())
@@ -260,12 +260,12 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
 
-    if moondoge_vault.weighted_mdoge_locked > 0 {
+    if moondoge_vault.weighted_dbtc_locked > 0 {
         let sol_per_point = (moondoge_amount as u128 * PRECISION_FACTOR as u128)
-            / moondoge_vault.weighted_mdoge_locked as u128;
+            / moondoge_vault.weighted_dbtc_locked as u128;
         moondoge_vault.accumulated_sol_per_point += sol_per_point;
         **fee_collector.try_borrow_mut_lamports()? -= moondoge_amount;
-        **ctx.accounts.mdoge_sol_vault.try_borrow_mut_lamports()? += moondoge_amount;
+        **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? += moondoge_amount;
         msg!("💰 Sent {} to MoonDoge vault", moondoge_amount);
     } else {
         moondoge_amount = 0;
@@ -418,42 +418,42 @@ pub struct InitializeMdogeVault<'info> {
         init,
         payer = authority,
         space = 0,
-        seeds = [MDOGE_SOL_VAULT_SEED.as_ref()],
+        seeds = [dbtc_SOL_VAULT_SEED.as_ref()],
         bump
     )]
-    pub mdoge_sol_vault: UncheckedAccount<'info>,
+    pub dbtc_sol_vault: UncheckedAccount<'info>,
 
-    // ------ mDOGE Token Storage Account and Signer-Only PDA ------
+    // ------ DOGE_BTC Token Storage Account and Signer-Only PDA ------
 
     /// CHECK: This is the authority of the custodian of the moonDoge tokens pda
     #[account(
         init,
         payer = authority,
         space = 0,                              // no data needed
-        seeds = [MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        seeds = [dbtc_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: signer-only PDA, no data or lamports required    
-    pub mdoge_custodian_authority: UncheckedAccount<'info>,
+    pub dbtc_custodian_authority: UncheckedAccount<'info>,
 
-    /// Token-2022 account to hold mDOGE
+    /// Token-2022 account to hold DOGE_BTC
     #[account(
         init,
         payer = authority,
         owner = token_program.key(),
-        seeds = [MDOGE_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
-        token::mint = mdoge_mint,
-        token::authority = mdoge_custodian_authority,
+        seeds = [dbtc_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        token::mint = dbtc_mint,
+        token::authority = dbtc_custodian_authority,
         bump
     )]
-    pub mdoge_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
    
     // -------- Signer & Mints --------
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    /// mDOGE mint (SPL-2022)
-    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+    /// DOGE_BTC mint (SPL-2022)
+    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
     
     // -------- Programs & Sysvars --------
     pub system_program: Program<'info, System>,
@@ -619,11 +619,11 @@ pub struct ClaimMoonBaseSOL<'info> {
 
     #[account(
         mut,
-        seeds = [MDOGE_SOL_VAULT_SEED.as_ref()],
+        seeds = [dbtc_SOL_VAULT_SEED.as_ref()],
         bump
     )]
     /// CHECK: This is the PDA that custodies SOL for MoonDoge stakers
-    pub mdoge_sol_vault: UncheckedAccount<'info>,
+    pub dbtc_sol_vault: UncheckedAccount<'info>,
 
     #[account(
         mut,

@@ -41,8 +41,8 @@ I've completely redesigned and implemented the **NFT Launchpad** program with Me
 #### MoonDoge Management:
 - `attach_moondoge`: Attach doge to moonbase (1 max per moonbase)
 - `detach_moondoge`: Remove doge from moonbase
-- `update_moondoge_money`: Accumulate money based on mDOGE mined
-  - Formula: `money += (mdoge_mined * 100) / 1,000,000`
+- `update_moondoge_money`: Accumulate money based on DOGE_BTC mined
+  - Formula: `money += (dbtc_mined * 100) / 1,000,000`
 
 #### Dragon Egg Management:
 - `incubate_dragon_egg`: Add egg to moonbase (max 10 per moonbase)
@@ -91,10 +91,10 @@ User → Moonbase Program → NFT Launchpad Program
 ```
 Cron Job (Every Hour)
     ↓
-Query moonbase hashpower & mDOGE
+Query moonbase hashpower & DOGE_BTC
     ↓
 For each attached doge:
-    call update_moondoge_money(mdoge_mined)
+    call update_moondoge_money(dbtc_mined)
     ↓
 For each incubated egg:
     call update_dragon_egg_power(total_hashpower)
@@ -123,8 +123,8 @@ For each incubated egg:
 
 ### MoonDoge Money
 - **What**: Currency accumulated by doge when attached to moonbase
-- **How**: Increases with mDOGE mined by moonbase
-- **Rate**: 0.01% of mDOGE mined = 1 money per 10,000 mDOGE
+- **How**: Increases with DOGE_BTC mined by moonbase
+- **Rate**: 0.01% of DOGE_BTC mined = 1 money per 10,000 DOGE_BTC
 - **Max**: Very high ceiling (`u64::MAX / 1000`)
 - **Future Use**: Upgrades, marketplace, special abilities
 
@@ -139,7 +139,7 @@ For each incubated egg:
 
 **MoonDoge Money:**
 ```
-Moonbase mines 100,000 mDOGE
+Moonbase mines 100,000 DOGE_BTC
 Money increase = (100,000 * 100) / 1,000,000 = 10 money
 ```
 

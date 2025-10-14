@@ -68,8 +68,8 @@ pub const MAX_DOGES_PER_MOONBASE: u8 = 1;
 /// Formula: egg_power += (total_hashpower / total_eggs) * POWER_RATE_MULTIPLIER
 pub const POWER_RATE_MULTIPLIER: u64 = 1000; // Divisor for balance
 
-/// Money accumulation rate for doge (per mDOGE mined)
-/// Formula: doge_money += mdoge_mined * MONEY_RATE_MULTIPLIER / 1e6
+/// Money accumulation rate for doge (per DOGE_BTC mined)
+/// Formula: doge_money += dbtc_mined * MONEY_RATE_MULTIPLIER / 1e6
 pub const MONEY_RATE_MULTIPLIER: u64 = 100; // 0.01% conversion rate
 
 /// Update frequency (seconds between power/money updates)

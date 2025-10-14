@@ -33,11 +33,11 @@ const deploymentData = JSON.parse(fs.readFileSync(deploymentPath, 'utf-8'));
 // ============================================================================
 
 async function getTokenStats() {
-    console.log('\x1b[35m%s\x1b[0m', '📊 ================================ mDOGE Token Statistics ================================');
+    console.log('\x1b[35m%s\x1b[0m', '📊 ================================ DOGE_BTC Token Statistics ================================');
     
     // Setup connection
     const connection = new Connection(RPC_URL, COMMITMENT);
-    const mintAddress = new PublicKey(deploymentData.mdoge_mint_address);
+    const mintAddress = new PublicKey(deploymentData.dbtc_mint_address);
     
     console.log('\x1b[36m%s\x1b[0m', '🔗 Network:', CLUSTER);
     console.log('\x1b[36m%s\x1b[0m', '🪙 Mint Address:', mintAddress.toBase58());

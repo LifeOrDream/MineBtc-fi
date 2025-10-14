@@ -82,7 +82,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, cr
     )?;
 
     // Initialize MoonDogeMining
-    doge_btc_mining.mdoge_token_vault = Pubkey::default(); // Will be set during initialize_mining
+    doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
     doge_btc_mining.total_active_hashpower = 0;
     doge_btc_mining.total_active_electricity = 0;
@@ -289,7 +289,7 @@ pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timest
     let cur_slot = Clock::get()?.slot;
 
     // ───── persist vault + bump(s) ─────
-    doge_btc_mining.mdoge_token_vault = ctx.accounts.token_vault.key();
+    doge_btc_mining.dbtc_token_vault = ctx.accounts.token_vault.key();
     doge_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
 
     // Initialize mining parameters
@@ -352,11 +352,11 @@ pub fn deposit_doge_btc_tokens_internal(  ctx: Context<DepositTokens>,  amount: 
                                                     token_if::TransferChecked {
                                                         from:      ctx.accounts.depositor_token_account.to_account_info(),
                                                         mint:      ctx.accounts.token_mint.to_account_info(),
-                                                        to:        ctx.accounts.mdoge_token_vault.to_account_info(),
+                                                        to:        ctx.accounts.dbtc_token_vault.to_account_info(),
                                                         authority: ctx.accounts.depositor.to_account_info(),
                                                     },
                                                 ),
-                                amount,  MDOGE_DECIMALS)?;
+                                amount,  DBTC_DECIMALS)?;
 
     msg!("Deposited {} MDOGE into mining vault", amount);
     Ok(())
@@ -374,26 +374,26 @@ pub fn initialize_loot_rewards_internal(ctx: Context<InitializeLootRewards>) -> 
     let _clock = Clock::get()?;
     
     // Initialize loot rewards state
-    loot_rewards.total_mdoge_accumulated = 0;
+    loot_rewards.total_dbtc_accumulated = 0;
     loot_rewards.total_sol_accumulated = 0;
-    loot_rewards.total_mdoge_distributed = 0;
+    loot_rewards.total_dbtc_distributed = 0;
     loot_rewards.total_sol_distributed = 0;
     loot_rewards.bump = ctx.bumps.loot_rewards;
     loot_rewards.sol_vault_bump = ctx.bumps.loot_sol_vault;
-    loot_rewards.mdoge_vault_bump = ctx.bumps.loot_mdoge_vault;
-    loot_rewards.mdoge_vault_authority_bump = ctx.bumps.loot_mdoge_vault_authority;
+    loot_rewards.dbtc_vault_bump = ctx.bumps.loot_dbtc_vault;
+    loot_rewards.dbtc_vault_authority_bump = ctx.bumps.loot_dbtc_vault_authority;
     
     emit!(LootRewardsInitialized {
         loot_rewards_pda: loot_rewards.key(),
         sol_vault_pda: ctx.accounts.loot_sol_vault.key(),
-        mdoge_vault_pda: ctx.accounts.loot_mdoge_vault.key(),
+        dbtc_vault_pda: ctx.accounts.loot_dbtc_vault.key(),
     });
     
     msg!("🎁 Loot rewards system initialized");
     msg!("   Loot Rewards PDA: {}", loot_rewards.key());
     msg!("   SOL Vault: {}", ctx.accounts.loot_sol_vault.key());
-    msg!("   mDOGE Vault: {}", ctx.accounts.loot_mdoge_vault.key());
-    msg!("   mDOGE Vault Authority: {}", ctx.accounts.loot_mdoge_vault_authority.key());
+    msg!("   DOGE_BTC Vault: {}", ctx.accounts.loot_dbtc_vault.key());
+    msg!("   DOGE_BTC Vault Authority: {}", ctx.accounts.loot_dbtc_vault_authority.key());
     
     Ok(())
 }
@@ -574,12 +574,6 @@ pub fn update_module_stats_internal(
     power_consumption: u16,
     base_hashpower: u32,
     base_xp_per_hour: u32,
-    base_damage: u32,
-    base_missiles_per_load: u8,
-    reload_time_seconds: u32,
-    cooldown_sec: u32,
-    max_reward: u64,
-    probability: u16,
 ) -> Result<()> {
     let module_config_account = &mut ctx.accounts.module_config_account;
     let config = &mut module_config_account.data;
@@ -762,9 +756,9 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     ctx.accounts.loot_rewards.total_sol_accumulated = ctx.accounts.loot_rewards.total_sol_accumulated.checked_add(loot_amount).unwrap();
     
     emit!(LootRewardsAccumulated {
-        mdoge_amount: 0,
+        dbtc_amount: 0,
         sol_amount: loot_amount,
-        total_mdoge_accumulated: ctx.accounts.loot_rewards.total_mdoge_accumulated,
+        total_dbtc_accumulated: ctx.accounts.loot_rewards.total_dbtc_accumulated,
         total_sol_accumulated: ctx.accounts.loot_rewards.total_sol_accumulated,
     });
 
@@ -787,10 +781,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     Ok(())
 }
 
-
-
-
-
+ 
 // ----------------------------------------------------------------------------------------
 // ------------ QUERY FUNCTIONS FOR EXTERNAL PROGRAMS ------------
 // ----------------------------------------------------------------------------------------
@@ -840,9 +831,9 @@ pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<G
 // ----------------------------------------------------------------------------------------
  
 
-/// Update mDOGE distribution rate based on price oracle
+/// Update DOGE_BTC distribution rate based on price oracle
 /// This function can be called by anyone every hour
-pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
+pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
     
@@ -868,56 +859,56 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
         return Ok(());
     }
     
-    msg!("🔄 Starting mDOGE distribution rate update");
+    msg!("🔄 Starting DOGE_BTC distribution rate update");
     msg!("   Current time: {}", current_time);
     msg!("   Last update: {}", doge_btc_mining.last_rate_update);
     msg!("   Current dist rate: {}", doge_btc_mining.current_dist_rate);
     
-    // Calculate mDOGE for liquidity based on current distribution rate and slots
-    let mdoge_for_liquidity = doge_btc_mining.current_dist_rate.checked_mul(doge_btc_mining.slots_for_swap).ok_or(ErrorCode::ArithmeticOverflow)?;
+    // Calculate DOGE_BTC for liquidity based on current distribution rate and slots
+    let dbtc_for_liquidity = doge_btc_mining.current_dist_rate.checked_mul(doge_btc_mining.slots_for_swap).ok_or(ErrorCode::ArithmeticOverflow)?;
         
-    msg!("   Price entry {}/8: Swapping {} mDOGE for SOL", 
-         doge_btc_mining.price_history.len() + 1, mdoge_for_liquidity);
+    msg!("   Price entry {}/8: Swapping {} DOGE_BTC for SOL", 
+         doge_btc_mining.price_history.len() + 1, dbtc_for_liquidity);
     
     // Perform swap via Raydium CPI to get current exchange rate
-    let sol_received = perform_mdoge_to_sol_swap(
+    let sol_received = perform_dbtc_to_sol_swap(
         &ctx.accounts.raydium_program,
         &ctx.accounts.pool_state,
         &ctx.accounts.amm_config,
         &ctx.accounts.authority_pda,
         &ctx.accounts.raydium_authority,
-        &ctx.accounts.mdoge_vault,
+        &ctx.accounts.dbtc_vault,
         &ctx.accounts.sol_vault,
-        &ctx.accounts.mdoge_token_account,
+        &ctx.accounts.dbtc_token_account,
         &ctx.accounts.sol_token_account,
-        &ctx.accounts.mdoge_mint,
+        &ctx.accounts.dbtc_mint,
         &ctx.accounts.sol_mint,
         &ctx.accounts.observation_state,
         &ctx.accounts.token_program_2022,
         &ctx.accounts.token_program,
-        mdoge_for_liquidity,
+        dbtc_for_liquidity,
         doge_btc_mining.vault_auth_bump,
     )?;
     
-    // Calculate current price (SOL per mDOGE) with proper decimal handling
-    // sol_received is in WSOL base units (9 decimals), mdoge_for_liquidity is in mDOGE base units (6 decimals)
+    // Calculate current price (SOL per DOGE_BTC) with proper decimal handling
+    // sol_received is in WSOL base units (9 decimals), dbtc_for_liquidity is in DOGE_BTC base units (6 decimals)
     // 
-    // Formula: Price = (sol_received / 10^9) / (mdoge_for_liquidity / 10^6)
-    // Simplified: Price = (sol_received * 10^6) / (mdoge_for_liquidity * 10^9)
+    // Formula: Price = (sol_received / 10^9) / (dbtc_for_liquidity / 10^6)
+    // Simplified: Price = (sol_received * 10^6) / (dbtc_for_liquidity * 10^9)
     // To store with 9-decimal precision: multiply by 10^9
-    // Final: Price = (sol_received * 10^6 * 10^9) / (mdoge_for_liquidity * 10^9) = (sol_received * 10^6) / mdoge_for_liquidity
-    let current_price = if mdoge_for_liquidity > 0 {
+    // Final: Price = (sol_received * 10^6 * 10^9) / (dbtc_for_liquidity * 10^9) = (sol_received * 10^6) / dbtc_for_liquidity
+    let current_price = if dbtc_for_liquidity > 0 {
         // Prevent overflow by checking limits
-        if sol_received > crate::state::MAX_SAFE_U64 || mdoge_for_liquidity > crate::state::MAX_SAFE_U64 {
+        if sol_received > crate::state::MAX_SAFE_U64 || dbtc_for_liquidity > crate::state::MAX_SAFE_U64 {
             msg!("⚠️ Price calculation values too large, using fallback");
             0
         } else {
-            // Calculate: (sol_received * 10^9) / mdoge_for_liquidity
-            // This gives us SOL per mDOGE stored with 9-decimal precision
+            // Calculate: (sol_received * 10^9) / dbtc_for_liquidity
+            // This gives us SOL per DOGE_BTC stored with 9-decimal precision
             (sol_received as u128)
                 .checked_mul(1_000_000_000) // Scale by 10^9 for full precision
                 .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(mdoge_for_liquidity as u128)
+                .checked_div(dbtc_for_liquidity as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .min(u64::MAX as u128) as u64
         }
@@ -926,11 +917,11 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     };
     
     // Calculate human-readable price for logging
-    // Convert back to actual SOL per mDOGE
+    // Convert back to actual SOL per DOGE_BTC
     let actual_price = current_price as f64 / 1_000_000_000.0;
-    msg!("   Swap details: {} mDOGE base units → {} WSOL base units", mdoge_for_liquidity, sol_received);
-    msg!("   Human readable: {} mDOGE → {:.9} SOL", mdoge_for_liquidity / 1_000_000, sol_received as f64 / 1_000_000_000.0);
-    msg!("   Current price: {} (9-decimal precision), Actual: {:.9} SOL per mDOGE", 
+    msg!("   Swap details: {} DOGE_BTC base units → {} WSOL base units", dbtc_for_liquidity, sol_received);
+    msg!("   Human readable: {} DOGE_BTC → {:.9} SOL", dbtc_for_liquidity / 1_000_000, sol_received as f64 / 1_000_000_000.0);
+    msg!("   Current price: {} (9-decimal precision), Actual: {:.9} SOL per DOGE_BTC", 
          current_price, actual_price);
     
     // Add current price to history
@@ -1051,13 +1042,13 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
         &ctx.accounts.pool_state,
         &ctx.accounts.authority_pda,
         &ctx.accounts.raydium_authority,
-        &ctx.accounts.mdoge_vault,
+        &ctx.accounts.dbtc_vault,
         &ctx.accounts.sol_vault,
-        &ctx.accounts.mdoge_token_account,
+        &ctx.accounts.dbtc_token_account,
         &ctx.accounts.sol_token_account,
         &ctx.accounts.lp_token_account,
         &ctx.accounts.lp_mint,
-        &ctx.accounts.mdoge_mint,
+        &ctx.accounts.dbtc_mint,
         &ctx.accounts.sol_mint,
         &ctx.accounts.token_program_2022,
         &ctx.accounts.token_program,
@@ -1107,18 +1098,18 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     Ok(())
 }
 
-/// Helper function to perform mDOGE to SOL swap via Raydium CPI
-fn perform_mdoge_to_sol_swap<'info>(
+/// Helper function to perform DOGE_BTC to SOL swap via Raydium CPI
+fn perform_dbtc_to_sol_swap<'info>(
     raydium_program: &AccountInfo<'info>,
     pool_state: &AccountInfo<'info>,
     amm_config: &AccountInfo<'info>,
     authority_pda: &AccountInfo<'info>,
     raydium_authority: &AccountInfo<'info>,
-    mdoge_vault: &AccountInfo<'info>,
+    dbtc_vault: &AccountInfo<'info>,
     sol_vault: &AccountInfo<'info>,
-    mdoge_token_account: &AccountInfo<'info>,
+    dbtc_token_account: &AccountInfo<'info>,
     sol_token_account: &AccountInfo<'info>,
-    mdoge_mint: &AccountInfo<'info>,
+    dbtc_mint: &AccountInfo<'info>,
     sol_mint: &AccountInfo<'info>,
     observation_state: &AccountInfo<'info>,
     token_program_2022: &AccountInfo<'info>,
@@ -1128,7 +1119,7 @@ fn perform_mdoge_to_sol_swap<'info>(
 ) -> Result<u64> {
     use raydium_cp_swap::cpi;
     
-    msg!("🔄 Performing real Raydium swap: {} mDOGE for WSOL", amount_in);
+    msg!("🔄 Performing real Raydium swap: {} DOGE_BTC for WSOL", amount_in);
     
     // Get WSOL token balance before swap by deserializing account data
     let sol_balance_before = {
@@ -1139,7 +1130,7 @@ fn perform_mdoge_to_sol_swap<'info>(
     
     // Create signer seeds for vault authority
     let authority_seeds = &[
-        MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[vault_auth_bump],
     ];
     let signer_seeds = &[&authority_seeds[..]];
@@ -1150,13 +1141,13 @@ fn perform_mdoge_to_sol_swap<'info>(
         authority: raydium_authority.to_account_info(), // Raydium's pool authority PDA
         amm_config: amm_config.to_account_info(),
         pool_state: pool_state.to_account_info(),
-        input_token_account: mdoge_token_account.to_account_info(),  // Our token account (authority = our PDA)
+        input_token_account: dbtc_token_account.to_account_info(),  // Our token account (authority = our PDA)
         output_token_account: sol_token_account.to_account_info(),   // Our token account (authority = our PDA)
-        input_vault: mdoge_vault.to_account_info(),     // Raydium's mDOGE vault
+        input_vault: dbtc_vault.to_account_info(),     // Raydium's DOGE_BTC vault
         output_vault: sol_vault.to_account_info(),      // Raydium's SOL vault  
-        input_token_program: token_program_2022.to_account_info(),   // Token-2022 for mDOGE
+        input_token_program: token_program_2022.to_account_info(),   // Token-2022 for DOGE_BTC
         output_token_program: token_program.to_account_info(),       // Standard token for SOL
-        input_token_mint: mdoge_mint.to_account_info(),
+        input_token_mint: dbtc_mint.to_account_info(),
         output_token_mint: sol_mint.to_account_info(),
         observation_state: observation_state.to_account_info(),
     };
@@ -1192,13 +1183,13 @@ fn perform_lp_addition_and_burn<'info>(
     pool_state: &AccountInfo<'info>,
     authority_pda: &AccountInfo<'info>,
     raydium_authority: &AccountInfo<'info>,
-    mdoge_vault: &AccountInfo<'info>,
+    dbtc_vault: &AccountInfo<'info>,
     sol_vault: &AccountInfo<'info>,
-    mdoge_token_account: &AccountInfo<'info>,
+    dbtc_token_account: &AccountInfo<'info>,
     sol_token_account: &AccountInfo<'info>,
     lp_token_account: &AccountInfo<'info>,
     lp_mint: &AccountInfo<'info>,
-    mdoge_mint: &AccountInfo<'info>,
+    dbtc_mint: &AccountInfo<'info>,
     sol_mint: &AccountInfo<'info>,
     token_program_2022: &AccountInfo<'info>,
     token_program: &AccountInfo<'info>,
@@ -1213,7 +1204,7 @@ fn perform_lp_addition_and_burn<'info>(
     
     // Create signer seeds for vault authority
     let authority_seeds = &[
-        MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[vault_auth_bump],
     ];
     let signer_seeds = &[&authority_seeds[..]];
@@ -1237,13 +1228,13 @@ fn perform_lp_addition_and_burn<'info>(
         pool_state: pool_state.to_account_info(),
         owner_lp_token: lp_token_account.to_account_info(), // LP token account (authority = our PDA)
         token_0_account: sol_token_account.to_account_info(),   // Our SOL account (authority = our PDA) - token0 is WSOL
-        token_1_account: mdoge_token_account.to_account_info(), // Our mDOGE account (authority = our PDA) - token1 is mDOGE
+        token_1_account: dbtc_token_account.to_account_info(), // Our DOGE_BTC account (authority = our PDA) - token1 is DOGE_BTC
         token_0_vault: sol_vault.to_account_info(),      // Raydium's SOL vault - token0 vault
-        token_1_vault: mdoge_vault.to_account_info(),    // Raydium's mDOGE vault - token1 vault
+        token_1_vault: dbtc_vault.to_account_info(),    // Raydium's DOGE_BTC vault - token1 vault
         token_program: token_program.to_account_info(),  // Standard token program
         token_program_2022: token_program_2022.to_account_info(), // Token-2022 program
         vault_0_mint: sol_mint.to_account_info(),        // SOL mint - token0 mint
-        vault_1_mint: mdoge_mint.to_account_info(),      // mDOGE mint - token1 mint
+        vault_1_mint: dbtc_mint.to_account_info(),      // DOGE_BTC mint - token1 mint
         lp_mint: lp_mint.to_account_info(),              // Raydium's LP mint
     };
     
@@ -1260,8 +1251,8 @@ fn perform_lp_addition_and_burn<'info>(
         token_account.amount
     };
     
-    let mdoge_vault_balance = {
-        let account_data = mdoge_vault.try_borrow_data()?;
+    let dbtc_vault_balance = {
+        let account_data = dbtc_vault.try_borrow_data()?;
         let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
         token_account.amount
     };
@@ -1289,8 +1280,8 @@ fn perform_lp_addition_and_burn<'info>(
         }
     };
     
-    msg!("📊 Pool balances - SOL vault: {}, mDOGE vault: {}, LP supply: {}", 
-         sol_vault_balance, mdoge_vault_balance, lp_supply);
+    msg!("📊 Pool balances - SOL vault: {}, DOGE_BTC vault: {}, LP supply: {}", 
+         sol_vault_balance, dbtc_vault_balance, lp_supply);
     
     // Reserve buffer upfront to account for transfer fees and rounding
     // This ensures our calculations are based on what we can actually use
@@ -1300,7 +1291,7 @@ fn perform_lp_addition_and_burn<'info>(
     msg!("🛡️ Reserved {} SOL as buffer, available for LP: {} SOL", sol_buffer, available_sol);
     
         // Calculate LP tokens and adjusted amounts to maximize token usage
-    let (estimated_lp_amount, adjusted_sol_amount, adjusted_mdoge_amount) = if admin_lp_override > 0 {
+    let (estimated_lp_amount, adjusted_sol_amount, adjusted_dbtc_amount) = if admin_lp_override > 0 {
         // Admin override: Calculate required token amounts for the specified LP amount
         let required_sol = if lp_supply > 0 && sol_vault_balance > 0 {
             (admin_lp_override as u128 * sol_vault_balance as u128 / lp_supply as u128) as u64
@@ -1308,44 +1299,44 @@ fn perform_lp_addition_and_burn<'info>(
             available_sol // Fallback to available amount (after buffer)
         };
         
-        let required_mdoge = if lp_supply > 0 && mdoge_vault_balance > 0 {
-            (admin_lp_override as u128 * mdoge_vault_balance as u128 / lp_supply as u128) as u64
+        let required_mdoge = if lp_supply > 0 && dbtc_vault_balance > 0 {
+            (admin_lp_override as u128 * dbtc_vault_balance as u128 / lp_supply as u128) as u64
         } else {
-            0 // No mDOGE needed if pool is empty
+            0 // No DOGE_BTC needed if pool is empty
         };
         
         // Use available SOL (already has buffer applied)
         let final_sol = required_sol.min(available_sol);
         let final_mdoge = required_mdoge + 100;
         
-        msg!("🔧 Admin override LP calculation: {} LP tokens (needs {} SOL, {} mDOGE)", 
+        msg!("🔧 Admin override LP calculation: {} LP tokens (needs {} SOL, {} DOGE_BTC)", 
              admin_lp_override, final_sol, final_mdoge);
              
         (admin_lp_override, final_sol, final_mdoge)
     } else {
         // Normal automatic calculation using available SOL (after buffer)
         let lp_from_sol = (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
-        let required_mdoge = (lp_from_sol as u128 * mdoge_vault_balance as u128 / lp_supply as u128) as u64;
-        msg!("💰 SOL-limited LP calculation: {} LP tokens (needs {} SOL, {} mDOGE)",  
+        let required_mdoge = (lp_from_sol as u128 * dbtc_vault_balance as u128 / lp_supply as u128) as u64;
+        msg!("💰 SOL-limited LP calculation: {} LP tokens (needs {} SOL, {} DOGE_BTC)",  
              lp_from_sol, available_sol, required_mdoge);
         (lp_from_sol, available_sol, required_mdoge + 100) // Add small buffer for ceiling rounding
     };
     
-    msg!("🎯 Final LP token amount: {} for deposits of {} SOL, {} mDOGE", 
-         estimated_lp_amount, adjusted_sol_amount, adjusted_mdoge_amount);
+    msg!("🎯 Final LP token amount: {} for deposits of {} SOL, {} DOGE_BTC", 
+         estimated_lp_amount, adjusted_sol_amount, adjusted_dbtc_amount);
     
-    // Add small additional buffer to mDOGE for transfer fees (1% burn tax)
-    // SOL already has buffer applied upfront, but mDOGE needs extra for burn tax
-    let max_mdoge_with_buffer = adjusted_mdoge_amount.saturating_add(adjusted_mdoge_amount / 50); // +2% buffer for burn tax
+    // Add small additional buffer to DOGE_BTC for transfer fees (1% burn tax)
+    // SOL already has buffer applied upfront, but DOGE_BTC needs extra for burn tax
+    let max_dbtc_with_buffer = adjusted_dbtc_amount.saturating_add(adjusted_dbtc_amount / 50); // +2% buffer for burn tax
     
-    msg!("🛡️ Maximum amounts: {} SOL (buffered upfront), {} mDOGE (with burn tax buffer)", 
-         adjusted_sol_amount, max_mdoge_with_buffer);
+    msg!("🛡️ Maximum amounts: {} SOL (buffered upfront), {} DOGE_BTC (with burn tax buffer)", 
+         adjusted_sol_amount, max_dbtc_with_buffer);
     
     // Perform the actual deposit with calculated LP amount and proper maximums
     // Parameters: (lp_token_amount, maximum_token_0_amount, maximum_token_1_amount)
-    // token0 = WSOL, token1 = mDOGE
-    // SOL amount is already buffered, mDOGE has burn tax buffer
-    raydium_cp_swap::cpi::deposit(cpi_ctx, estimated_lp_amount, adjusted_sol_amount, max_mdoge_with_buffer)?;
+    // token0 = WSOL, token1 = DOGE_BTC
+    // SOL amount is already buffered, DOGE_BTC has burn tax buffer
+    raydium_cp_swap::cpi::deposit(cpi_ctx, estimated_lp_amount, adjusted_sol_amount, max_dbtc_with_buffer)?;
     
     // Calculate actual LP tokens minted by checking balance difference
     let lp_balance_after = {
@@ -1391,20 +1382,20 @@ fn perform_lp_addition_and_burn<'info>(
         doge_btc_mining.pol_stats.update_after_lp_operation(
             lp_tokens_minted,
             sol_consumed,
-            adjusted_mdoge_amount
+            adjusted_dbtc_amount
         );
         
         msg!("📊 POL Stats Updated:");
         msg!("   Total LP Burnt: {}", doge_btc_mining.pol_stats.total_lp_burnt);
         msg!("   Total SOL Added: {}", doge_btc_mining.pol_stats.total_sol_added);
-        msg!("   Total mDOGE Added: {}", doge_btc_mining.pol_stats.total_mdoge_added);
+        msg!("   Total DOGE_BTC Added: {}", doge_btc_mining.pol_stats.total_dbtc_added);
         msg!("   LP Operations: {}", doge_btc_mining.pol_stats.lp_operations_count);
         
         // Emit LP burn tracking event
         emit!(LpTokensBurned {
             lp_tokens_burned: lp_tokens_minted,
             total_lp_burnt: doge_btc_mining.pol_stats.total_lp_burnt,
-            mdoge_amount_added: adjusted_mdoge_amount,
+            dbtc_amount_added: adjusted_dbtc_amount,
             sol_amount_added: sol_consumed,
             timestamp: Clock::get()?.unix_timestamp,
         });
@@ -1456,7 +1447,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         space = MoonDogeMining::LEN,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1500,7 +1491,7 @@ pub struct UpdateConfigAc<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
     pub doge_btc_mining: Option<Account<'info, MoonDogeMining>>,
@@ -1542,14 +1533,14 @@ pub struct InitializeMining<'info> {
 
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     //  Vault authority PDA (0-byte, signer only)
     #[account(
-        seeds = [MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: signer-only PDA, no data or lamports required
@@ -1560,7 +1551,7 @@ pub struct InitializeMining<'info> {
         init,
         payer  = authority,
         owner  = token_program.key(),
-        seeds  = [MDOGE_VAULT_SEED, doge_btc_mining.key().as_ref()],
+        seeds  = [DOGE_BTC_VAULT_SEED, doge_btc_mining.key().as_ref()],
         token::mint      = token_mint,
         token::authority = vault_authority,
         bump
@@ -1592,7 +1583,7 @@ pub struct UpdateSlotsPerHour<'info> {
     
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1611,21 +1602,21 @@ pub struct DepositTokens<'info> {
         mut,
         owner       = token_program.key(),                     // interface account check
         constraint  = depositor_token_account.owner == depositor.key() @ ErrorCode::Unauthorized,
-        constraint  = depositor_token_account.mint  == mdoge_token_vault.mint @ ErrorCode::InvalidMint
+        constraint  = depositor_token_account.mint  == dbtc_token_vault.mint @ ErrorCode::InvalidMint
     )]
     pub depositor_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
     // ─── mining token vault ───
     #[account(
         mut,
-        seeds  = [MDOGE_VAULT_SEED, doge_btc_mining.key().as_ref()],
+        seeds  = [DOGE_BTC_VAULT_SEED, doge_btc_mining.key().as_ref()],
         bump,
         owner  = token_program.key(),
     )]
-    pub mdoge_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1684,28 +1675,28 @@ pub struct InitializeLootRewards<'info> {
     )]
     pub loot_sol_vault: UncheckedAccount<'info>,
     
-    /// mDOGE vault for loot rewards
+    /// DOGE_BTC vault for loot rewards
     #[account(
         init,
         payer = authority,
         owner = token_program.key(),
-        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
-        token::mint = mdoge_mint,
-        token::authority = loot_mdoge_vault_authority,
+        seeds = [LOOT_DOGE_BTC_VAULT_SEED.as_ref()],
+        token::mint = dbtc_mint,
+        token::authority = loot_dbtc_vault_authority,
         bump
     )]
-    pub loot_mdoge_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub loot_dbtc_vault: InterfaceAccount<'info, TokenAccount2022>,
     
-    /// CHECK: Authority for loot mDOGE vault (0-byte PDA)
+    /// CHECK: Authority for loot DOGE_BTC vault (0-byte PDA)
     #[account(
-        seeds = [LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
-    pub loot_mdoge_vault_authority: UncheckedAccount<'info>,
+    pub loot_dbtc_vault_authority: UncheckedAccount<'info>,
     
-    /// mDOGE mint (Token-2022)
+    /// DOGE_BTC mint (Token-2022)
     #[account(owner = token_program.key())]
-    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1815,12 +1806,6 @@ pub struct AddModuleToConfigStore<'info> {
     power_consumption: u16,
     base_hashpower: u32,
     base_xp_per_hour: u32,
-    base_damage: u32,
-    base_missiles_per_load: u8,
-    reload_time_seconds: u32,
-    cooldown_sec: u32,
-    max_reward: u64,
-    probability: u16,
 )]
 pub struct UpdateModuleStats<'info> {
     #[account(
@@ -1879,7 +1864,7 @@ pub struct WithdrawSolFees<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     #[account(
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1928,7 +1913,7 @@ pub struct WithdrawSolFees<'info> {
 pub struct UpdateMdogeDistPerSlot<'info> {
     #[account(
         mut,
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,
@@ -1955,7 +1940,7 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     
     /// CHECK: Vault authority PDA (our program's authority for token accounts)
     #[account(
-        seeds = [MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
     pub authority_pda: UncheckedAccount<'info>,
@@ -1963,24 +1948,24 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     /// CHECK: Raydium's pool authority PDA (from Raydium program)
     pub raydium_authority: UncheckedAccount<'info>,
     
-    /// CHECK: mDOGE vault in Raydium pool
+    /// CHECK: DOGE_BTC vault in Raydium pool
     #[account(mut)]
-    pub mdoge_vault: UncheckedAccount<'info>,
+    pub dbtc_vault: UncheckedAccount<'info>,
     
     /// CHECK: SOL vault in Raydium pool
     #[account(mut)]
     pub sol_vault: UncheckedAccount<'info>,
     
-    /// CHECK: mDOGE token account for swapping
+    /// CHECK: DOGE_BTC token account for swapping
     #[account(mut)]
-    pub mdoge_token_account: UncheckedAccount<'info>,
+    pub dbtc_token_account: UncheckedAccount<'info>,
     
     /// CHECK: SOL token account for receiving
     #[account(mut)]
     pub sol_token_account: UncheckedAccount<'info>,
     
-    /// CHECK: mDOGE mint
-    pub mdoge_mint: UncheckedAccount<'info>,
+    /// CHECK: DOGE_BTC mint
+    pub dbtc_mint: UncheckedAccount<'info>,
     
     /// CHECK: SOL mint (WSOL)
     pub sol_mint: UncheckedAccount<'info>,
@@ -2005,7 +1990,7 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     #[account(mut)]
     pub lp_mint: UncheckedAccount<'info>,
     
-    /// Token-2022 program for mDOGE
+    /// Token-2022 program for DOGE_BTC
     pub token_program_2022: Program<'info, Token2022>,
     
     /// Standard token program for SOL
@@ -2026,7 +2011,7 @@ pub struct QueryTreasuryInfo<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     #[account(
-        seeds = [doge_btc_MINING_SEED.as_ref()],
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, MoonDogeMining>,

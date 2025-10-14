@@ -26,7 +26,7 @@ The XP (Experience Points) and Levels system in DogeTech is a comprehensive play
   - Enhances module efficiency
 
 ### Mining Operations
-- **Mining Rewards**: `15 XP per 1000 mDOGE` mined
+- **Mining Rewards**: `15 XP per 1000 DOGE_BTC` mined
   - Rewards active mining participation
   - Scales with mining performance
   - Calculated via `calculate_mining_xp()`
@@ -49,7 +49,7 @@ required_xp = 100 + (level² × 20)
 |-------|-------------|---------------|-------------------|
 | 1     | 120         | 120           | 12 daily logins   |
 | 2     | 180         | 300           | 6 module installs |
-| 5     | 600         | 1,500         | 100k mDOGE mined  |
+| 5     | 600         | 1,500         | 100k DOGE_BTC mined  |
 | 10    | 2,100       | 8,500         | 85 referrals      |
 | 15    | 4,600       | 24,000        | 480 daily logins  |
 | 20    | 8,100       | 44,000        | 880 module upgrades |
@@ -137,7 +137,7 @@ pub fn get_users_at_level(level_stats: &LevelStats, level: u8) -> u32
 // Calculate milestone rewards
 pub fn calculate_milestone_loot_reward(
     level_achieved: u8,
-    vault_mdoge_balance: u64,
+    vault_dbtc_balance: u64,
     vault_sol_balance: u64,
     users_at_level: u32,
 ) -> (u64, u64, String)
@@ -145,7 +145,7 @@ pub fn calculate_milestone_loot_reward(
 // Calculate probability rewards
 pub fn calculate_probability_loot_reward(
     user_level: u8,
-    vault_mdoge_balance: u64,
+    vault_dbtc_balance: u64,
     vault_sol_balance: u64,
     users_at_level: u32,
     random_seed: u64,
@@ -207,7 +207,7 @@ pub struct LevelUp {
 pub struct MilestoneLootAwarded {
     pub recipient: Pubkey,
     pub level_achieved: u8,
-    pub mdoge_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub milestone_type: String,
     pub users_at_level: u32,
@@ -217,7 +217,7 @@ pub struct MilestoneLootAwarded {
 pub struct ProbabilityLootAwarded {
     pub recipient: Pubkey,
     pub level: u8,
-    pub mdoge_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub probability_percentage: u32,
     pub users_at_level: u32,
@@ -234,7 +234,7 @@ pub struct ProbabilityLootAwarded {
 - Build mining infrastructure for passive XP
 
 #### **Mid Game (Levels 11-20)**
-- Optimize mining operations for mDOGE → XP conversion
+- Optimize mining operations for DOGE_BTC → XP conversion
 - Upgrade modules strategically
 - Consider referral program participation
 
@@ -299,7 +299,7 @@ To interact with the XP system:
 1. **Create Moonbase**: Starts at level 0 with 0 XP
 2. **Daily Login**: Call `daily_login()` for consistent XP
 3. **Build & Upgrade**: Install and upgrade modules for major XP gains
-4. **Mine Actively**: Claim mDOGE regularly for mining XP
+4. **Mine Actively**: Claim DOGE_BTC regularly for mining XP
 5. **Level Up**: Automatic when sufficient XP is reached
 6. **Loot Eligibility**: Higher levels = better loot chances
 

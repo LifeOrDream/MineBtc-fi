@@ -64,7 +64,7 @@ pub mod moon_base {
         )?;
 
         // Initialize MoonDogeMining
-        doge_btc_mining.mdoge_token_vault = Pubkey::default(); // Will be set during initialize_mining
+        doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
         doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
         doge_btc_mining.total_active_hashpower = 0;
         doge_btc_mining.total_active_electricity = 0;
@@ -287,7 +287,7 @@ pub mod moon_base {
     /// Withdraw collected SOL fees from the treasury
     /// 
     /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
-    /// 1. For mDOGE stakers
+    /// 1. For DOGE_BTC stakers
     /// 2. For liquidity providers
     /// 3. For game development
     /// 4. For devs
@@ -310,19 +310,19 @@ pub mod moon_base {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ UPDATE mDOGE DISTRIBUTION RATE (ANYONE) --------------------------------
+    // ------------ UPDATE DOGE_BTC DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Update mDOGE distribution rate based on price oracle (can be called by anyone every hour)
+    /// Update DOGE_BTC distribution rate based on price oracle (can be called by anyone every hour)
     /// 
-    /// We update mDOGE distribution rate every 8 hrs based on price increase / decrease. 
-    /// mDOGE is swapped for SOL on raydium every hr for first 7 hrs and combined with mDOGE from mining vault for last hr
+    /// We update DOGE_BTC distribution rate every 8 hrs based on price increase / decrease. 
+    /// DOGE_BTC is swapped for SOL on raydium every hr for first 7 hrs and combined with DOGE_BTC from mining vault for last hr
     /// and added to the LP pool, with LP tokens being burnt.
     /// 
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
-    pub fn update_mdoge_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-        admin::update_mdoge_dist_per_slot_internal(ctx, lp_token_amount)
+    pub fn update_dbtc_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
+        admin::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
     }
 
 
@@ -437,8 +437,8 @@ pub mod moon_base {
     // ----------------------------------------------------------------------------------------
     
     /// Claim MoonDoge tokens based on user's hashpower contribution
-    pub fn claim_mdoge_tokens(ctx: Context<ClaimMoonDoge>) -> Result<()> {
-        user::claim_mdoge_tokens_internal(ctx)
+    pub fn claim_dbtc_tokens(ctx: Context<ClaimMoonDoge>) -> Result<()> {
+        user::claim_dbtc_tokens_internal(ctx)
     }
 
 

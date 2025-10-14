@@ -51,7 +51,7 @@ const RAYDIUM_CP_PROGRAM_ID = new PublicKey(deploymentData.RAYDIUM_CP_PROGRAM_ID
 
 // Pool configuration constants
 const POOL_CONFIG = {
-    initialMdogeAmount: new BN(config.token.initial_supply * Math.pow(10, config.token.decimals) * config.raydium.initial_mdoge_percentage / 100),
+    initialMdogeAmount: new BN(config.token.initial_supply * Math.pow(10, config.token.decimals) * config.raydium.initial_dbtc_percentage / 100),
     initialSolAmount: new BN(config.raydium.initial_sol_amount),
     openTime: config.raydium.open_time
 };
@@ -69,7 +69,7 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
 // ============================================================================
 
 (async () => {
-    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech mDOGE-SOL Pool Creation ================================');
+    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech DOGE_BTC-SOL Pool Creation ================================');
     console.log('\x1b[36m%s\x1b[0m', '🌐 Network:', CLUSTER);
     console.log('\x1b[36m%s\x1b[0m', '🔗 RPC URL:', RPC_URL);
     console.log('\x1b[36m%s\x1b[0m', '💱 Pool Type: Raydium CP-Swap (Constant Product)');
@@ -224,12 +224,12 @@ function validatePrerequisites(deploymentData) {
     
     const errors = [];
     
-    if (!deploymentData.mdoge_mint_address) {
-        errors.push('mDOGE token mint address not found');
+    if (!deploymentData.dbtc_mint_address) {
+        errors.push('DOGE_BTC token mint address not found');
     }
     
-    if (!deploymentData.mdoge_token_account_created?.token_account_address) {
-        errors.push('mDOGE token account not found');
+    if (!deploymentData.dbtc_token_account_created?.token_account_address) {
+        errors.push('DOGE_BTC token account not found');
     }
     
     if (!deploymentData.initial_supply_minted) {
@@ -370,29 +370,29 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
 
 async function initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath) {
     // Check if already created
-    if (deploymentData.mdoge_sol_pool_created) {
-        console.log(COLOR_INFO, 'ℹ️ mDOGE-SOL pool already exists');
-        console.log(COLOR_INFO, '🔑 Pool State:', deploymentData.mdoge_sol_pool_created.poolStatePDA);
+    if (deploymentData.dbtc_sol_pool_created) {
+        console.log(COLOR_INFO, 'ℹ️ DOGE_BTC-SOL pool already exists');
+        console.log(COLOR_INFO, '🔑 Pool State:', deploymentData.dbtc_sol_pool_created.poolStatePDA);
         return;
     }
 
     // ------------- xxxx -----------------
-    // CREATE mDOGE-SOL POOL
+    // CREATE DOGE_BTC-SOL POOL
     // ------------- xxxx -----------------
 
     const ammConfigPDA = new PublicKey(deploymentData.raydium_amm_config_created.amm_config_pda);
 
-    // Step 2: Create mDOGE-SOL Pool
-    console.log(COLOR_STEP, '\n=================== [ CREATING mDOGE-SOL POOL ] ===================');
+    // Step 2: Create DOGE_BTC-SOL Pool
+    console.log(COLOR_STEP, '\n=================== [ CREATING DOGE_BTC-SOL POOL ] ===================');
     
-    if (!deploymentData.mdoge_sol_pool_created) {
-        console.log(COLOR_INFO, '🏊 Creating mDOGE-SOL pool...');
+    if (!deploymentData.dbtc_sol_pool_created) {
+        console.log(COLOR_INFO, '🏊 Creating DOGE_BTC-SOL pool...');
 
         // Get the token mints
-        const mdogeMintKey = new PublicKey(deploymentData.mdoge_mint_address);
+        const mdogeMintKey = new PublicKey(deploymentData.dbtc_mint_address);
         const wsolMintKey = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL mint
         
-        console.log(COLOR_DIM, `🔍 mDOGE Mint: ${mdogeMintKey.toString()}`);
+        console.log(COLOR_DIM, `🔍 DOGE_BTC Mint: ${mdogeMintKey.toString()}`);
         console.log(COLOR_DIM, `🔍 WSOL Mint: ${wsolMintKey.toString()}`);
         
         // Ensure correct token order (token0 < token1) using byte-wise comparison
@@ -403,8 +403,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const token0Mint = isMdogeToken0 ? mdogeMintKey : wsolMintKey;
         const token1Mint = isMdogeToken0 ? wsolMintKey : mdogeMintKey;
         
-        console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isMdogeToken0 ? '(mDOGE)' : '(WSOL)'}`);
-        console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isMdogeToken0 ? '(mDOGE)' : '(WSOL)'}`);
+        console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isMdogeToken0 ? '(DOGE_BTC)' : '(WSOL)'}`);
+        console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isMdogeToken0 ? '(DOGE_BTC)' : '(WSOL)'}`);
         console.log(COLOR_DIM, `🔍 Token order check: ${token0Mint.toString() < token1Mint.toString() ? 'CORRECT' : 'INCORRECT'}`);
 
         // Create and fund WSOL account
@@ -500,26 +500,26 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         // Get or create user token accounts
         console.log(COLOR_DIM, '🔍 Setting up user token accounts...');
         
-        // Get mDOGE account (SPL-2022)
+        // Get DOGE_BTC account (SPL-2022)
         const creatorMdogeAccount = await getAssociatedTokenAddress(
             mdogeMintKey,
             deployer.publicKey,
             false,
             anchor_spl.TOKEN_2022_PROGRAM_ID
         );
-        console.log(COLOR_DIM, `🔍 Creator mDOGE Account: ${creatorMdogeAccount.toString()}`);
+        console.log(COLOR_DIM, `🔍 Creator DOGE_BTC Account: ${creatorMdogeAccount.toString()}`);
 
-        // Check mDOGE balance
+        // Check DOGE_BTC balance
         try {
             const mdogeBalance = await connection.getTokenAccountBalance(creatorMdogeAccount);
-            console.log(COLOR_DIM, `🔍 Creator mDOGE balance: ${mdogeBalance.value.uiAmount} mDOGE`);
+            console.log(COLOR_DIM, `🔍 Creator DOGE_BTC balance: ${mdogeBalance.value.uiAmount} DOGE_BTC`);
             
             if (parseFloat(mdogeBalance.value.amount) < POOL_CONFIG.initialMdogeAmount.toNumber()) {
-                console.error(COLOR_ERROR, `❌ Insufficient mDOGE balance. Need: ${POOL_CONFIG.initialMdogeAmount.toNumber() / 1e6}, Have: ${mdogeBalance.value.uiAmount}`);
-                throw new Error('Insufficient mDOGE balance');
+                console.error(COLOR_ERROR, `❌ Insufficient DOGE_BTC balance. Need: ${POOL_CONFIG.initialMdogeAmount.toNumber() / 1e6}, Have: ${mdogeBalance.value.uiAmount}`);
+                throw new Error('Insufficient DOGE_BTC balance');
             }
         } catch (error) {
-            console.error(COLOR_ERROR, `❌ Error checking mDOGE balance: ${error.message}`);
+            console.error(COLOR_ERROR, `❌ Error checking DOGE_BTC balance: ${error.message}`);
             throw error;
         }
 
@@ -551,7 +551,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         }
 
         // Determine token programs based on the actual token types, not order
-        const mdogeTokenProgram = anchor_spl.TOKEN_2022_PROGRAM_ID; // mDOGE is always Token-2022
+        const mdogeTokenProgram = anchor_spl.TOKEN_2022_PROGRAM_ID; // DOGE_BTC is always Token-2022
         const wsolTokenProgram = TOKEN_PROGRAM_ID; // WSOL is always standard SPL
         
         // Assign programs based on which token is token0/token1
@@ -559,10 +559,10 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const token1Program = isMdogeToken0 ? wsolTokenProgram : mdogeTokenProgram;
         
         console.log(COLOR_DIM, `🔍 Token program assignment:`);
-        console.log(COLOR_DIM, `   mDOGE program: ${mdogeTokenProgram.toString()}`);
+        console.log(COLOR_DIM, `   DOGE_BTC program: ${mdogeTokenProgram.toString()}`);
         console.log(COLOR_DIM, `   WSOL program: ${wsolTokenProgram.toString()}`);
-        console.log(COLOR_DIM, `   token0Program: ${token0Program.toString()} (${isMdogeToken0 ? 'mDOGE' : 'WSOL'})`);
-        console.log(COLOR_DIM, `   token1Program: ${token1Program.toString()} (${isMdogeToken0 ? 'WSOL' : 'mDOGE'})`);
+        console.log(COLOR_DIM, `   token0Program: ${token0Program.toString()} (${isMdogeToken0 ? 'DOGE_BTC' : 'WSOL'})`);
+        console.log(COLOR_DIM, `   token1Program: ${token1Program.toString()} (${isMdogeToken0 ? 'WSOL' : 'DOGE_BTC'})`);
         
         // Verify token ownership
         try {
@@ -627,8 +627,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         });
 
         console.log(COLOR_DIM, '🔍 Pool initialization parameters:');
-        console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isMdogeToken0 ? 'mDOGE' : 'WSOL'})`);
-        console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isMdogeToken0 ? 'WSOL' : 'mDOGE'})`);
+        console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isMdogeToken0 ? 'DOGE_BTC' : 'WSOL'})`);
+        console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isMdogeToken0 ? 'WSOL' : 'DOGE_BTC'})`);
         console.log(COLOR_DIM, `   openTime: ${POOL_CONFIG.openTime} (${new Date(POOL_CONFIG.openTime * 1000).toLocaleString()})`);
 
         try {
@@ -649,7 +649,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 }
             );
 
-            console.log(COLOR_SUCCESS, '✅ mDOGE-SOL pool created successfully!');
+            console.log(COLOR_SUCCESS, '✅ DOGE_BTC-SOL pool created successfully!');
             console.log(COLOR_INFO, `🔗 Transaction: ${poolTxid}`);
             console.log(COLOR_DIM, `🔍 Explorer URL: https://explorer.solana.com/tx/${poolTxid}?cluster=${CLUSTER}`);
 
@@ -663,7 +663,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
             }
 
             // Update deployment data
-            deploymentData.mdoge_sol_pool_created = {
+            deploymentData.dbtc_sol_pool_created = {
                 poolStatePDA: poolStatePDA.toString(),
                 lpMintPDA: lpMintPDA.toString(),
                 token0VaultPDA: token0VaultPDA.toString(),
@@ -712,25 +712,25 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 throw error;
         }
     } else {
-        console.log(COLOR_INFO, 'ℹ️ mDOGE-SOL pool already exists');
+        console.log(COLOR_INFO, 'ℹ️ DOGE_BTC-SOL pool already exists');
             }
 }
 
 async function addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath) {
     // Check if already added
-    if (deploymentData.mdoge_sol_liquidity_added) {
+    if (deploymentData.dbtc_sol_liquidity_added) {
         console.log(COLOR_INFO, 'ℹ️ Liquidity already added to pool');
-        console.log(COLOR_INFO, '🔑 LP Tokens Received:', deploymentData.mdoge_sol_liquidity_added.lpTokensReceived);
+        console.log(COLOR_INFO, '🔑 LP Tokens Received:', deploymentData.dbtc_sol_liquidity_added.lpTokensReceived);
         return;
     }
 
-    // Get mDOGE mint
-    const mdogeMint = new PublicKey(deploymentData.mdoge_mint_address);
+    // Get DOGE_BTC mint
+    const mdogeMint = new PublicKey(deploymentData.dbtc_mint_address);
 
     // =================== [ ADDING LIQUIDITY TO POOL ] ===================
-    if (!deploymentData.mdoge_sol_liquidity_added) {
+    if (!deploymentData.dbtc_sol_liquidity_added) {
         console.log(COLOR_STEP, '\n=================== [ ADDING LIQUIDITY TO POOL ] ===================');
-        console.log(COLOR_INFO, '💧 Adding liquidity to mDOGE-SOL pool...');
+        console.log(COLOR_INFO, '💧 Adding liquidity to DOGE_BTC-SOL pool...');
         
         // Get token accounts (recreate them since they were in pool creation scope)
         const wsolMintKey = new PublicKey("So11111111111111111111111111111111111111112");
@@ -749,7 +749,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         );
         
         // Get pool data from deployment
-        const poolData = deploymentData.mdoge_sol_pool_created;
+        const poolData = deploymentData.dbtc_sol_pool_created;
         const poolStatePDA = new PublicKey(poolData.poolStatePDA);
         const lpMintPDA = new PublicKey(poolData.lpMintPDA);
         const token0VaultPDA = new PublicKey(poolData.token0VaultPDA);
@@ -764,13 +764,13 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         
         // Define liquidity amounts
         const liquidityAmount0 = new BN("5000000000"); // 5 WSOL
-        const liquidityAmount1 = new BN("5000000000000"); // 5000 mDOGE
+        const liquidityAmount1 = new BN("5000000000000"); // 5000 DOGE_BTC
         const maxSlippage = new BN("100000000"); // 0.1 SOL max slippage
-        const maxSlippageMdoge = new BN("100000000000"); // 100 mDOGE max slippage
+        const maxSlippageMdoge = new BN("100000000000"); // 100 DOGE_BTC max slippage
         
         console.log(COLOR_DIM, `🔍 Liquidity parameters:`);
         console.log(COLOR_DIM, `   Amount0 (WSOL): ${liquidityAmount0.toString()} (${liquidityAmount0.toNumber() / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   Amount1 (mDOGE): ${liquidityAmount1.toString()} (${liquidityAmount1.toNumber() / 1e9} mDOGE)`);
+        console.log(COLOR_DIM, `   Amount1 (DOGE_BTC): ${liquidityAmount1.toString()} (${liquidityAmount1.toNumber() / 1e9} DOGE_BTC)`);
         console.log(COLOR_DIM, `   Max slippage0: ${maxSlippage.toString()}`);
         console.log(COLOR_DIM, `   Max slippage1: ${maxSlippageMdoge.toString()}`);
         
@@ -780,7 +780,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         
         console.log(COLOR_DIM, `🔍 Current balances:`);
         console.log(COLOR_DIM, `   WSOL: ${wsolBalance.amount.toString()} (${Number(wsolBalance.amount) / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   mDOGE: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e9} mDOGE)`);
+        console.log(COLOR_DIM, `   DOGE_BTC: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e9} DOGE_BTC)`);
         
         // Verify we have enough tokens
         if (wsolBalance.amount < liquidityAmount0.toNumber()) {
@@ -803,7 +803,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         }
         
         if (mdogeBalance.amount < liquidityAmount1.toNumber()) {
-            throw new Error(`Insufficient mDOGE balance. Need ${liquidityAmount1.toNumber() / 1e9} mDOGE, have ${Number(mdogeBalance.amount) / 1e9} mDOGE`);
+            throw new Error(`Insufficient DOGE_BTC balance. Need ${liquidityAmount1.toNumber() / 1e9} DOGE_BTC, have ${Number(mdogeBalance.amount) / 1e9} DOGE_BTC`);
         }
         
         // Determine token accounts based on token order
@@ -865,7 +865,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             console.log(COLOR_SUCCESS, `💧 LP tokens received: ${lpBalance.amount.toString()} (${Number(lpBalance.amount) / 1e9} LP)`);
             
             // Update deployment status
-            deploymentData.mdoge_sol_liquidity_added = {
+            deploymentData.dbtc_sol_liquidity_added = {
                 timestamp: new Date().toISOString(),
                 amount0: liquidityAmount0.toString(),
                 amount1: liquidityAmount1.toString(),
@@ -902,13 +902,13 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ BURNING LP TOKENS ] ===================');
     
     console.log('\x1b[36m%s\x1b[0m', '🔥 LP Token Burning Configuration:');
-    console.log('\x1b[36m%s\x1b[0m', `   • Pool: ${deploymentData.mdoge_sol_pool_created.poolStatePDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Pool: ${deploymentData.dbtc_sol_pool_created.poolStatePDA}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Purpose: Permanent liquidity lock`);
     console.log('\x1b[36m%s\x1b[0m', `   • Effect: Cannot remove initial liquidity`);
     
     try {
         // Get the LP token mint from the pool creation data
-        const lpTokenMint = new PublicKey(deploymentData.mdoge_sol_pool_created.lpMintPDA);
+        const lpTokenMint = new PublicKey(deploymentData.dbtc_sol_pool_created.lpMintPDA);
         console.log(COLOR_DIM, `🔍 LP Token Mint: ${lpTokenMint.toString()}`);
         
         // Get deployer's LP token account (Associated Token Account)
@@ -934,11 +934,11 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
                 
                 // Record as already burned/no tokens to burn
                 deploymentData.lp_tokens_burned = {
-                    pool_state: deploymentData.mdoge_sol_pool_created.poolStatePDA,
+                    pool_state: deploymentData.dbtc_sol_pool_created.poolStatePDA,
                     burn_all_lp_tokens: true,
                     burn_purpose: "Permanent liquidity lock - cannot remove initial liquidity",
-                    mdoge_locked_amount: deploymentData.mdoge_sol_pool_created.initialMdogeAmount,
-                    sol_locked_amount: deploymentData.mdoge_sol_pool_created.initialSolAmount,
+                    dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialMdogeAmount,
+                    sol_locked_amount: deploymentData.dbtc_sol_pool_created.initialSolAmount,
                     burned_amount: "0",
                     burn_signature: "N/A - No tokens to burn",
                     status: 'no_tokens_to_burn',
@@ -958,11 +958,11 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
             console.log(COLOR_INFO, 'ℹ️ No LP tokens to burn (balance is 0)');
             
         deploymentData.lp_tokens_burned = {
-                pool_state: deploymentData.mdoge_sol_pool_created.poolStatePDA,
+                pool_state: deploymentData.dbtc_sol_pool_created.poolStatePDA,
             burn_all_lp_tokens: true,
             burn_purpose: "Permanent liquidity lock - cannot remove initial liquidity",
-                mdoge_locked_amount: deploymentData.mdoge_sol_pool_created.initialMdogeAmount,
-                sol_locked_amount: deploymentData.mdoge_sol_pool_created.initialSolAmount,
+                dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialMdogeAmount,
+                sol_locked_amount: deploymentData.dbtc_sol_pool_created.initialSolAmount,
                 burned_amount: "0",
                 burn_signature: "N/A - No tokens to burn",
                 status: 'no_tokens_to_burn',
@@ -1018,7 +1018,7 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
         
         // Record the successful LP token burn
         deploymentData.lp_tokens_burned = {
-            pool_state: deploymentData.mdoge_sol_pool_created.poolStatePDA,
+            pool_state: deploymentData.dbtc_sol_pool_created.poolStatePDA,
             lp_mint: lpTokenMint.toString(),
             deployer_lp_account: deployerLpAccount.toString(),
             burn_all_lp_tokens: true,
@@ -1026,8 +1026,8 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
             burned_amount_readable: `${Number(lpBalance) / 1e9} LP`,
             burn_signature: burnSignature,
             burn_purpose: "Permanent liquidity lock - cannot remove initial liquidity",
-            mdoge_locked_amount: deploymentData.mdoge_sol_pool_created.initialMdogeAmount,
-            sol_locked_amount: deploymentData.mdoge_sol_pool_created.initialSolAmount,
+            dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialMdogeAmount,
+            sol_locked_amount: deploymentData.dbtc_sol_pool_created.initialSolAmount,
             status: 'burned_successfully',
             permanent_lock: true,
             timestamp: new Date().toISOString()
@@ -1055,7 +1055,7 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
 
 function printCompletionSummary(deploymentData) {
     console.log('\x1b[35m%s\x1b[0m', '\n🎉 ================================ POOL CONFIGURATION COMPLETE ================================');
-    console.log('\x1b[32m%s\x1b[0m', '✅ mDOGE-SOL pool production configuration completed!');
+    console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC-SOL pool production configuration completed!');
     
     console.log('\x1b[36m%s\x1b[0m', '\n📋 Pool Summary:');
     console.log('\x1b[36m%s\x1b[0m', `  • Network: ${CLUSTER}`);
@@ -1063,8 +1063,8 @@ function printCompletionSummary(deploymentData) {
     console.log('\x1b[36m%s\x1b[0m', `  • Trade Fee: ${config.raydium.trade_fee_rate / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `  • Initial SOL: ${config.raydium.initial_sol_amount / 1e9} SOL`);
     if (deploymentData.raydium_pool_initialized) {
-        console.log('\x1b[36m%s\x1b[0m', `  • Initial mDOGE: ${deploymentData.raydium_pool_initialized.pool_mdoge_readable}`);
-        console.log('\x1b[36m%s\x1b[0m', `  • mDOGE Percentage: ${deploymentData.raydium_pool_initialized.mdoge_percentage_for_pool}% of total supply`);
+        console.log('\x1b[36m%s\x1b[0m', `  • Initial DOGE_BTC: ${deploymentData.raydium_pool_initialized.pool_dbtc_readable}`);
+        console.log('\x1b[36m%s\x1b[0m', `  • DOGE_BTC Percentage: ${deploymentData.raydium_pool_initialized.dbtc_percentage_for_pool}% of total supply`);
     }
     if (config.raydium.burn_lp_tokens) {
         console.log('\x1b[32m%s\x1b[0m', `  • LP Tokens: Will be BURNED (permanent liquidity lock)`);
@@ -1084,14 +1084,14 @@ function printCompletionSummary(deploymentData) {
     if (deploymentData.lp_tokens_burned) {
         console.log('\x1b[32m%s\x1b[0m', '\n🔥 LP Token Burning:');
         console.log('\x1b[32m%s\x1b[0m', `   Status: ${deploymentData.lp_tokens_burned.status}`);
-        console.log('\x1b[32m%s\x1b[0m', `   Locked mDOGE: ${deploymentData.lp_tokens_burned.mdoge_locked_amount}`);
+        console.log('\x1b[32m%s\x1b[0m', `   Locked DOGE_BTC: ${deploymentData.lp_tokens_burned.dbtc_locked_amount}`);
         console.log('\x1b[32m%s\x1b[0m', `   Locked SOL: ${deploymentData.lp_tokens_burned.sol_locked_amount}`);
         console.log('\x1b[32m%s\x1b[0m', `   🔒 Permanent Lock: ${deploymentData.lp_tokens_burned.permanent_lock ? 'YES' : 'NO'}`);
     }
         
     console.log('\x1b[33m%s\x1b[0m', '\n📋 PRODUCTION READY:');
     console.log('\x1b[33m%s\x1b[0m', '   • Pool configuration calculated and validated');
-    console.log('\x1b[33m%s\x1b[0m', '   • Liquidity amounts: 1% mDOGE supply + 10 SOL');
+    console.log('\x1b[33m%s\x1b[0m', '   • Liquidity amounts: 1% DOGE_BTC supply + 10 SOL');
     console.log('\x1b[33m%s\x1b[0m', '   • LP tokens configured for burning (permanent lock)');
     console.log('\x1b[33m%s\x1b[0m', '   • Ready for Raydium SDK integration');
     

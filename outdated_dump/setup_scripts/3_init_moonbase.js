@@ -12,7 +12,7 @@ import {
     addFaction, initializeLootRewards, initializeLevelStats, updateDeploymentStatus,
     updateGlobalConfigHelper, toggleGameActiveHelper, updateSlotsForSwapHelper,
     updateModuleConfigHelper, getSystemStatus, updateMdogeDistPerSlot, 
-    MDOGE_VAULT_SEED, MDOGE_VAULT_AUTHORITY_SEED, MODULE_CONFIG_STORE_SEED,
+    DOGE_BTC_VAULT_SEED, DOGE_BTC_VAULT_AUTHORITY_SEED, MODULE_CONFIG_STORE_SEED,
     MODULE_CONFIG_SEED, USER_MOONBASE_SEED, REFERRAL_REWARDS_SEED, MODULE_INSTANCE_SEED,
     LOOT_REWARDS_SEED, LEVEL_STATS_SEED, PVP_MATCHMAKER_SEED
  } from './helper.js';
@@ -43,15 +43,15 @@ if (fs.existsSync(deploymentPath)) {
 }
 
 // Calculate amounts based on config
-const MOONDOGE_TOKEN_MINT = deploymentFile.mdoge_mint_address ? 
-    new PublicKey(deploymentFile.mdoge_mint_address) : null;
+const MOONDOGE_TOKEN_MINT = deploymentFile.dbtc_mint_address ? 
+    new PublicKey(deploymentFile.dbtc_mint_address) : null;
  
 
 const ID_MOONBASE_PROGRAM = deploymentFile.MOON_BASE_PROGRAM_ID ? 
     new PublicKey(deploymentFile.MOON_BASE_PROGRAM_ID) : null;
 
 // Mining configuration
-const MDOGE_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
+const dbtc_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 const BASE_COST = config.moonbase.base_creation_cost;
 const MINING_START_TIMESTAMP = config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_doge_btc_PER_SLOT = new BN(config.mining.doge_btc_per_slot);
@@ -125,7 +125,7 @@ async function main() {
 
     // Verify prerequisites
     if (!MOONDOGE_TOKEN_MINT) {
-        console.error('\x1b[31m%s\x1b[0m', '❌ mDOGE token mint address not found in deployment file.');
+        console.error('\x1b[31m%s\x1b[0m', '❌ DOGE_BTC token mint address not found in deployment file.');
         console.log('\x1b[33m%s\x1b[0m', '⚠️ Please run the token deployment script first.');
         return;
     }
@@ -138,7 +138,7 @@ async function main() {
   
     console.log('\x1b[35m%s\x1b[0m', '============================== [ PROGRAMS ] ===============================');
     console.log('\x1b[36m%s\x1b[0m', '🚀 MoonBase Program ID:', ID_MOONBASE_PROGRAM.toString());        
-    console.log('\x1b[36m%s\x1b[0m', '🪙 mDOGE Token Mint:', MOONDOGE_TOKEN_MINT.toString());
+    console.log('\x1b[36m%s\x1b[0m', '🪙 DOGE_BTC Token Mint:', MOONDOGE_TOKEN_MINT.toString());
     
     const moonbaseProgram = new Program(IDL_MOONBASE, provider);
     console.log('\x1b[32m%s\x1b[0m', '✅ Connected to program:', moonbaseProgram.programId.toString());
@@ -187,7 +187,7 @@ async function main() {
         // 11. Initialize LP Token Accounts (required for Raydium integration)
         await initializeLpTokenAccounts(moonbaseProgram);
 
-        // // // 12. Update mDOGE Distribution Rate
+        // // // 12. Update DOGE_BTC Distribution Rate
         await updateDistributionRate(moonbaseProgram);
         return;
 
@@ -260,7 +260,7 @@ async function initializeMiningSystem(moonbaseProgram) {
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ INITIALIZING MINING SYSTEM ] ===================');
     
     const moonDogeMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.moonDogeMining_address);
-    const raydiumPoolState = deploymentFile.mdoge_sol_pool_created.poolStatePDA;
+    const raydiumPoolState = deploymentFile.dbtc_sol_pool_created.poolStatePDA;
 
     if (!raydiumPoolState) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Raydium pool state not found in deployment file.');
@@ -269,11 +269,11 @@ async function initializeMiningSystem(moonbaseProgram) {
     }
     
     const [vaultPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(MDOGE_VAULT_SEED), moonDogeMiningPDA.toBuffer()],
+        [Buffer.from(DOGE_BTC_VAULT_SEED), moonDogeMiningPDA.toBuffer()],
         moonbaseProgram.programId
     );
     const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(MDOGE_VAULT_AUTHORITY_SEED)],
+        [Buffer.from(DOGE_BTC_VAULT_AUTHORITY_SEED)],
         moonbaseProgram.programId
     );
 
@@ -383,8 +383,8 @@ async function initializeLootAndStats(moonbaseProgram) {
             deploymentFile.loot_rewards_initialized = {
                 loot_rewards_pda: result.data.lootRewardsPDA,
                 sol_vault: result.data.lootSolVaultPDA,
-                mdoge_vault: result.data.lootMdogeVaultPDA,
-                loot_mdoge_vault_authority: result.data.lootMdogeVaultAuthorityPDA,
+                dbtc_vault: result.data.lootMdogeVaultPDA,
+                loot_dbtc_vault_authority: result.data.lootMdogeVaultAuthorityPDA,
                 initTxid: result.data.initTxid,
                 timestamp: new Date().toISOString()
             };
@@ -653,18 +653,18 @@ async function depositMiningTokens(moonbaseProgram) {
         anchor_spl.TOKEN_2022_PROGRAM_ID
     );
 
-    console.log('\x1b[36m%s\x1b[0m', `💰 Depositing ${MDOGE_DEPOSIT_AMOUNT.toString()} tokens...`);
+    console.log('\x1b[36m%s\x1b[0m', `💰 Depositing ${dbtc_DEPOSIT_AMOUNT.toString()} tokens...`);
 
     const result = await depositMDOGE(
         connection, moonbaseProgram, wallet, walletKeypair,
         userTokenAccount, vaultPDA, vaultAuthorityPDA, MOONDOGE_TOKEN_MINT,
-        anchor_spl.TOKEN_2022_PROGRAM_ID, MDOGE_DEPOSIT_AMOUNT
+        anchor_spl.TOKEN_2022_PROGRAM_ID, dbtc_DEPOSIT_AMOUNT
     );
 
     if (result.success) {
         console.log('\x1b[32m%s\x1b[0m', '✅ Mining tokens deposited successfully!');
         deploymentFile.mining_tokens_deposited = {
-            amount: MDOGE_DEPOSIT_AMOUNT.toString(),
+            amount: dbtc_DEPOSIT_AMOUNT.toString(),
             tx: result.data.depositTxid,
             timestamp: new Date().toISOString()
         };
@@ -679,7 +679,7 @@ async function initializeLpTokenAccounts(moonbaseProgram) {
     
     try {
         // Get LP mint and vault authority from deployment file
-        if (!deploymentFile.mdoge_sol_pool_created?.lpMintPDA) {
+        if (!deploymentFile.dbtc_sol_pool_created?.lpMintPDA) {
             console.log('\x1b[33m%s\x1b[0m', '⚠️ LP mint not found in deployment file. Cannot initialize LP token accounts.');
             return;
         }
@@ -689,7 +689,7 @@ async function initializeLpTokenAccounts(moonbaseProgram) {
             return;
         }
 
-        const lpMint = new PublicKey(deploymentFile.mdoge_sol_pool_created.lpMintPDA);
+        const lpMint = new PublicKey(deploymentFile.dbtc_sol_pool_created.lpMintPDA);
         const vaultAuthority = new PublicKey(deploymentFile.mining_vault_initialized.vault_authority);
         
         // For Raydium deposit, LP token account must be owned by vault authority (same as other token accounts)
@@ -746,7 +746,7 @@ async function initializeLpTokenAccounts(moonbaseProgram) {
 
 async function updateDistributionRate(moonbaseProgram) {
 
-    console.log('\x1b[35m%s\x1b[0m', '\n================ [ UPDATING mDOGE DISTRIBUTION RATE ] ================');
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ UPDATING DOGE_BTC DISTRIBUTION RATE ] ================');
     
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
     const moonDogeMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.moonDogeMining_address);
@@ -756,15 +756,15 @@ async function updateDistributionRate(moonbaseProgram) {
     const mdogeTokenAccount = new PublicKey(deploymentFile.mining_vault_initialized.vault_address);
 
     // Check if Raydium pool is available for integration
-    if (!deploymentFile.mdoge_sol_pool_created) {
+    if (!deploymentFile.dbtc_sol_pool_created) {
         console.log('\x1b[33m%s\x1b[0m', '⚠️ Raydium pool not found in deployment file.');
-        console.log('\x1b[33m%s\x1b[0m', '   This function requires a deployed Raydium pool for mDOGE-SOL trading.');
+        console.log('\x1b[33m%s\x1b[0m', '   This function requires a deployed Raydium pool for DOGE_BTC-SOL trading.');
         console.log('\x1b[36m%s\x1b[0m', '   Please run the Raydium deployment script first.');
         return;
     }
 
     // Get Raydium pool data from deployment file
-    const raydiumPoolData = deploymentFile.mdoge_sol_pool_created;
+    const raydiumPoolData = deploymentFile.dbtc_sol_pool_created;
     console.log('\x1b[36m%s\x1b[0m', `🔄 Updating distribution rate with Raydium integration...`);
     console.log('\x1b[36m%s\x1b[0m', `   Pool State: ${raydiumPoolData.poolStatePDA}`);
     console.log('\x1b[36m%s\x1b[0m', `   LP Mint: ${raydiumPoolData.lpMintPDA}`);
@@ -778,9 +778,9 @@ async function updateDistributionRate(moonbaseProgram) {
     );
 
     if (result.success) {
-        console.log('\x1b[32m%s\x1b[0m', '✅ mDOGE distribution rate updated with Raydium integration!');
+        console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC distribution rate updated with Raydium integration!');
         console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.updateDistTxid}`);
-        deploymentFile.mdoge_dist_per_slot_updated = {
+        deploymentFile.dbtc_dist_per_slot_updated = {
             moonDogeMiningPDA: result.data.moonDogeMiningPDA,
             vaultAuthorityPDA: result.data.vaultAuthorityPDA,
             solTreasuryPDA: result.data.solTreasuryPDA,
@@ -792,7 +792,7 @@ async function updateDistributionRate(moonbaseProgram) {
         };
         saveDeploymentData();
     } else {
-        console.log('\x1b[31m%s\x1b[0m', '❌ Failed to update mDOGE distribution rate:', result.error);
+        console.log('\x1b[31m%s\x1b[0m', '❌ Failed to update DOGE_BTC distribution rate:', result.error);
         console.log('\x1b[33m%s\x1b[0m', '   This can be retried later once the Raydium pool is properly set up.');
         console.log('\x1b[33m%s\x1b[0m', '   The mining system will continue to work with the base distribution rate.');
     }
@@ -812,7 +812,7 @@ function printCompletionSummary() {
     console.log('\x1b[36m%s\x1b[0m', `  • Expansions: ${deploymentFile.expansions_added ? config.expansions.length + ' added ✅' : '❌'}`);
     console.log('\x1b[36m%s\x1b[0m', `  • Modules: ${deploymentFile.modules_added ? config.modules.length + ' added ✅' : '❌'}`);
     console.log('\x1b[36m%s\x1b[0m', `  • Mining Tokens: ${deploymentFile.mining_tokens_deposited ? '✅' : '❌'}`);
-    console.log('\x1b[36m%s\x1b[0m', `  • Distribution Rate: ${deploymentFile.mdoge_dist_per_slot_updated ? '✅' : '⚠️ Skipped (requires Raydium pool)'}`);
+    console.log('\x1b[36m%s\x1b[0m', `  • Distribution Rate: ${deploymentFile.dbtc_dist_per_slot_updated ? '✅' : '⚠️ Skipped (requires Raydium pool)'}`);
     console.log('\x1b[35m%s\x1b[0m', '========================================================================================');
     
     if (deploymentFile.moonbase_program_initialized) {

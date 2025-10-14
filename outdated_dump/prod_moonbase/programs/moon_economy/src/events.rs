@@ -15,9 +15,9 @@ pub struct ProgramInitialized {
 
 #[event]
 pub struct MDogeVaultsInitialized {
-    pub mdoge_sol_vault: Pubkey,
-    pub mdoge_mint: Pubkey,
-    pub mdoge_custodian: Pubkey,
+    pub dbtc_sol_vault: Pubkey,
+    pub dbtc_mint: Pubkey,
+    pub dbtc_custodian: Pubkey,
 }
 
 #[event]

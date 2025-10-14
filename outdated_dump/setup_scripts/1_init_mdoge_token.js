@@ -84,7 +84,7 @@ const TOKEN_METADATA = {
 // ============================================================================
 
 (async () => {
-    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech mDOGE Token Deployment ================================');
+    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech DOGE_BTC Token Deployment ================================');
     console.log('\x1b[36m%s\x1b[0m', '🌐 Network:', CLUSTER);
     console.log('\x1b[36m%s\x1b[0m', '🔗 RPC URL:', RPC_URL);
     console.log('\x1b[36m%s\x1b[0m', '🪙 Token Symbol:', config.token.symbol);
@@ -222,9 +222,9 @@ function loadDeploymentState() {
 }
 
 async function createMintAccountTx(connection, deployer, deploymentData, deploymentPath) {
-    if (deploymentData.mdoge_mint_created) {
-        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ mDOGE mint account already exists. Skipping...');
-        console.log('\x1b[36m%s\x1b[0m', '🔑 Mint Address:', deploymentData.mdoge_mint_created.mint_address);
+    if (deploymentData.dbtc_mint_created) {
+        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ DOGE_BTC mint account already exists. Skipping...');
+        console.log('\x1b[36m%s\x1b[0m', '🔑 Mint Address:', deploymentData.dbtc_mint_created.mint_address);
         return;
     }
 
@@ -280,7 +280,7 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
         console.log('\x1b[90m%s\x1b[0m', '🔗 Transaction:', signature);
         
         // Update deployment data
-        deploymentData.mdoge_mint_created = {
+        deploymentData.dbtc_mint_created = {
             mint_address: mintPubkey.toBase58(),
             mint_authority: mintAuthority.toBase58(),
             freeze_authority: freezeAuthority,
@@ -308,15 +308,15 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
 }
 
 async function createTokenAccount(connection, deployer, deploymentData, deploymentPath) {
-    if (deploymentData.mdoge_token_account_created) {
-        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ mDOGE token account already exists. Skipping...');
-        console.log('\x1b[36m%s\x1b[0m', '🔑 Token Account:', deploymentData.mdoge_token_account_created.token_account_address);
+    if (deploymentData.dbtc_token_account_created) {
+        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ DOGE_BTC token account already exists. Skipping...');
+        console.log('\x1b[36m%s\x1b[0m', '🔑 Token Account:', deploymentData.dbtc_token_account_created.token_account_address);
         return;
     }
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ CREATING TOKEN ACCOUNT ] ===================');
     
-    const mintPubkey = new PublicKey(deploymentData.mdoge_mint_created.mint_address);
+    const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
     
     try {
         const tokenAccount = await getOrCreateAssociatedTokenAccount(
@@ -335,7 +335,7 @@ async function createTokenAccount(connection, deployer, deploymentData, deployme
         console.log('\x1b[36m%s\x1b[0m', '👤 Owner:', deployer.publicKey.toBase58());
         
         // Update deployment data
-        deploymentData.mdoge_token_account_created = {
+        deploymentData.dbtc_token_account_created = {
             token_account_address: tokenAccount.address.toBase58(),
             owner_address: deployer.publicKey.toBase58(),
             mint_address: mintPubkey.toBase58(),
@@ -361,8 +361,8 @@ async function mintInitialSupply(connection, deployer, deploymentData, deploymen
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ MINTING INITIAL SUPPLY ] ===================');
     
-    const mintPubkey = new PublicKey(deploymentData.mdoge_mint_created.mint_address);
-    const tokenAccountAddress = new PublicKey(deploymentData.mdoge_token_account_created.token_account_address);
+    const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
+    const tokenAccountAddress = new PublicKey(deploymentData.dbtc_token_account_created.token_account_address);
     
     // Use string-based BigInt calculation to avoid any number conversion issues
     const initialSupplyString = config.token.initial_supply.toString();
@@ -442,7 +442,7 @@ async function mintInitialSupply(connection, deployer, deploymentData, deploymen
         };
         
         // Store mint address at top level for easy access
-        deploymentData.mdoge_mint_address = mintPubkey.toBase58();
+        deploymentData.dbtc_mint_address = mintPubkey.toBase58();
         
         // Save deployment data
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
@@ -463,10 +463,10 @@ async function removeMintAuthority(connection, deployer, deploymentData, deploym
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ REMOVING MINT AUTHORITY ] ===================');
     
-    const mintPubkey = new PublicKey(deploymentData.mdoge_mint_created.mint_address);
+    const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
     
     console.log('\x1b[36m%s\x1b[0m', '🔒 Making token non-mintable by removing mint authority...');
-    console.log('\x1b[36m%s\x1b[0m', `   • Current Mint Authority: ${deploymentData.mdoge_mint_created.mint_authority}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Current Mint Authority: ${deploymentData.dbtc_mint_created.mint_authority}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Action: Set mint authority to null`);
     
     try {
@@ -488,7 +488,7 @@ async function removeMintAuthority(connection, deployer, deploymentData, deploym
         
         // Update deployment data
         deploymentData.mint_authority_removed = {
-            previous_mint_authority: deploymentData.mdoge_mint_created.mint_authority,
+            previous_mint_authority: deploymentData.dbtc_mint_created.mint_authority,
             new_mint_authority: null,
             removal_signature: signature,
             timestamp: new Date().toISOString(),
@@ -496,8 +496,8 @@ async function removeMintAuthority(connection, deployer, deploymentData, deploym
         };
         
         // Update the mint creation data to reflect removed authority
-        deploymentData.mdoge_mint_created.mint_authority = null;
-        deploymentData.mdoge_mint_created.mint_authority_status = "removed";
+        deploymentData.dbtc_mint_created.mint_authority = null;
+        deploymentData.dbtc_mint_created.mint_authority_status = "removed";
         
         // Save deployment data
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
@@ -518,10 +518,10 @@ async function removeWithdrawWithheldAuthority(connection, deployer, deploymentD
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ REMOVING WITHDRAW WITHHELD AUTHORITY ] ===================');
     
-    const mintPubkey = new PublicKey(deploymentData.mdoge_mint_created.mint_address);
+    const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
     
     console.log('\x1b[36m%s\x1b[0m', '🔒 Removing withdraw withheld authority...');
-    console.log('\x1b[36m%s\x1b[0m', `   • Current Withdraw Withheld Authority: ${deploymentData.mdoge_mint_created.withdraw_withheld_authority}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Current Withdraw Withheld Authority: ${deploymentData.dbtc_mint_created.withdraw_withheld_authority}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Action: Set withdraw withheld authority to null`);
     
     try {
@@ -543,15 +543,15 @@ async function removeWithdrawWithheldAuthority(connection, deployer, deploymentD
         
         // Update deployment data
         deploymentData.withdraw_withheld_authority_removed = {
-            previous_withdraw_withheld_authority: deploymentData.mdoge_mint_created.withdraw_withheld_authority,
+            previous_withdraw_withheld_authority: deploymentData.dbtc_mint_created.withdraw_withheld_authority,
             new_withdraw_withheld_authority: null,
             removal_signature: signature,
             timestamp: new Date().toISOString()
         };
         
         // Update the mint creation data to reflect removed authority
-        deploymentData.mdoge_mint_created.withdraw_withheld_authority = null;
-        deploymentData.mdoge_mint_created.withdraw_withheld_authority_status = "removed";
+        deploymentData.dbtc_mint_created.withdraw_withheld_authority = null;
+        deploymentData.dbtc_mint_created.withdraw_withheld_authority_status = "removed";
         
         // Save deployment data
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
@@ -572,11 +572,11 @@ async function transferTransferFeeConfigAuthority(connection, deployer, deployme
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ TRANSFERRING TRANSFER FEE CONFIG AUTHORITY ] ===================');
     
-    const mintPubkey = new PublicKey(deploymentData.mdoge_mint_created.mint_address);
+    const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
     const newAuthority = new PublicKey(config.deployment.transfer_fee_config_authority);
     
     console.log('\x1b[36m%s\x1b[0m', '🔄 Transferring transfer fee config authority...');
-    console.log('\x1b[36m%s\x1b[0m', `   • Current Transfer Fee Config Authority: ${deploymentData.mdoge_mint_created.transfer_fee_config_authority}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Current Transfer Fee Config Authority: ${deploymentData.dbtc_mint_created.transfer_fee_config_authority}`);
     console.log('\x1b[36m%s\x1b[0m', `   • New Transfer Fee Config Authority: ${newAuthority.toBase58()}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Action: Transfer authority to configured address`);
     
@@ -599,15 +599,15 @@ async function transferTransferFeeConfigAuthority(connection, deployer, deployme
         
         // Update deployment data
         deploymentData.transfer_fee_config_authority_transferred = {
-            previous_transfer_fee_config_authority: deploymentData.mdoge_mint_created.transfer_fee_config_authority,
+            previous_transfer_fee_config_authority: deploymentData.dbtc_mint_created.transfer_fee_config_authority,
             new_transfer_fee_config_authority: newAuthority.toBase58(),
             transfer_signature: signature,
             timestamp: new Date().toISOString()
         };
         
         // Update the mint creation data to reflect new authority
-        deploymentData.mdoge_mint_created.transfer_fee_config_authority = newAuthority.toBase58();
-        deploymentData.mdoge_mint_created.transfer_fee_config_authority_status = "transferred";
+        deploymentData.dbtc_mint_created.transfer_fee_config_authority = newAuthority.toBase58();
+        deploymentData.dbtc_mint_created.transfer_fee_config_authority_status = "transferred";
         
         // Save deployment data
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
@@ -621,7 +621,7 @@ async function transferTransferFeeConfigAuthority(connection, deployer, deployme
 
 function printCompletionSummary(deploymentData) {
     console.log('\x1b[35m%s\x1b[0m', '\n🎉 ================================ DEPLOYMENT COMPLETE ================================');
-    console.log('\x1b[32m%s\x1b[0m', '✅ mDOGE token deployment completed successfully!');
+    console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC token deployment completed successfully!');
     
     console.log('\x1b[36m%s\x1b[0m', '\n📋 Deployment Summary:');
     console.log('\x1b[36m%s\x1b[0m', `  • Network: ${CLUSTER}`);
@@ -632,10 +632,10 @@ function printCompletionSummary(deploymentData) {
     console.log('\x1b[36m%s\x1b[0m', `  • Burn Tax: ${config.token.burn_tax_bps / 100}%`);
     
     console.log('\x1b[90m%s\x1b[0m', '\n🔑 Important Addresses:');
-    if (deploymentData.mdoge_mint_created) {
-        console.log('\x1b[90m%s\x1b[0m', `   Mint Address: ${deploymentData.mdoge_mint_created.mint_address}`);
-        if (deploymentData.mdoge_mint_created.metadata_included) {
-            console.log('\x1b[90m%s\x1b[0m', `   Metadata: ${deploymentData.mdoge_mint_created.metadata_name} (${deploymentData.mdoge_mint_created.metadata_symbol})`);
+    if (deploymentData.dbtc_mint_created) {
+        console.log('\x1b[90m%s\x1b[0m', `   Mint Address: ${deploymentData.dbtc_mint_created.mint_address}`);
+        if (deploymentData.dbtc_mint_created.metadata_included) {
+            console.log('\x1b[90m%s\x1b[0m', `   Metadata: ${deploymentData.dbtc_mint_created.metadata_name} (${deploymentData.dbtc_mint_created.metadata_symbol})`);
             console.log('\x1b[90m%s\x1b[0m', `   Metadata Location: Built into mint account (Token-2022 native)`);
         }
         
@@ -644,14 +644,14 @@ function printCompletionSummary(deploymentData) {
             console.log('\x1b[32m%s\x1b[0m', `   🔒 Mint Authority: REMOVED - Token is non-mintable`);
             console.log('\x1b[32m%s\x1b[0m', `   🔒 Total Supply: ${deploymentData.mint_authority_removed.total_supply_locked} (LOCKED FOREVER)`);
         } else {
-            console.log('\x1b[90m%s\x1b[0m', `   Mint Authority: ${deploymentData.mdoge_mint_created.mint_authority || 'None'}`);
+            console.log('\x1b[90m%s\x1b[0m', `   Mint Authority: ${deploymentData.dbtc_mint_created.mint_authority || 'None'}`);
         }
         
         // Withdraw Withheld Authority Status
         if (deploymentData.withdraw_withheld_authority_removed) {
             console.log('\x1b[32m%s\x1b[0m', `   🔒 Withdraw Withheld Authority: REMOVED - Withheld tokens locked`);
         } else {
-            console.log('\x1b[90m%s\x1b[0m', `   Withdraw Withheld Authority: ${deploymentData.mdoge_mint_created.withdraw_withheld_authority || 'None'}`);
+            console.log('\x1b[90m%s\x1b[0m', `   Withdraw Withheld Authority: ${deploymentData.dbtc_mint_created.withdraw_withheld_authority || 'None'}`);
         }
         
         // Transfer Fee Config Authority Status
@@ -659,11 +659,11 @@ function printCompletionSummary(deploymentData) {
             console.log('\x1b[33m%s\x1b[0m', `   🔄 Transfer Fee Config Authority: TRANSFERRED`);
             console.log('\x1b[33m%s\x1b[0m', `   🔑 New Authority: ${deploymentData.transfer_fee_config_authority_transferred.new_transfer_fee_config_authority}`);
         } else {
-            console.log('\x1b[90m%s\x1b[0m', `   Transfer Fee Config Authority: ${deploymentData.mdoge_mint_created.transfer_fee_config_authority || 'None'}`);
+            console.log('\x1b[90m%s\x1b[0m', `   Transfer Fee Config Authority: ${deploymentData.dbtc_mint_created.transfer_fee_config_authority || 'None'}`);
         }
     }
-    if (deploymentData.mdoge_token_account_created) {
-        console.log('\x1b[90m%s\x1b[0m', `   Token Account: ${deploymentData.mdoge_token_account_created.token_account_address}`);
+    if (deploymentData.dbtc_token_account_created) {
+        console.log('\x1b[90m%s\x1b[0m', `   Token Account: ${deploymentData.dbtc_token_account_created.token_account_address}`);
     }
     if (deploymentData.initial_supply_minted) {
         console.log('\x1b[90m%s\x1b[0m', `   Initial Supply Minted: ${deploymentData.initial_supply_minted.amount_readable}`);

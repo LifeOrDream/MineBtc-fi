@@ -5,11 +5,11 @@ pub const ME_CONFIG_SEED: &[u8] = b"global_config";
 pub const doge_btc_VAULT_SEED: &[u8] = b"moondoge_vault";
 pub const LIQUIDITY_VAULT_SEED: &[u8] = b"liquidity_vault";
 
-pub const MDOGE_SOL_VAULT_SEED: &[u8] = b"moondoge-sol-vault";
+pub const dbtc_SOL_VAULT_SEED: &[u8] = b"moondoge-sol-vault";
 pub const LP_SOL_VAULT_SEED: &[u8] = b"lp-sol-vault";
 
-pub const MDOGE_CUSTODIAN_SEED: &[u8] = b"moondoge-custodian";
-pub const MDOGE_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"moondoge-custodian-authority";
+pub const dbtc_CUSTODIAN_SEED: &[u8] = b"moondoge-custodian";
+pub const dbtc_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"moondoge-custodian-authority";
 
 
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"liquidity-custodian";
@@ -19,7 +19,7 @@ pub const DEV_EARNINGS_SEED: &[u8] = b"dev_earnings_collector";
 pub const FEE_COLLECTOR_SEED: &[u8] = b"fee_collector";
 
 pub const USER_ELECTRICITY_SEED: &[u8] = b"user-electricity";
-pub const MDOGE_POSITION_SEED: &[u8] = b"moondoge-position";
+pub const dbtc_POSITION_SEED: &[u8] = b"moondoge-position";
 pub const LP_POSITION_SEED: &[u8] = b"liquidity-position";
 
 
@@ -97,20 +97,20 @@ pub struct MoonDogeVault {
     /// Authority that can update parameters
     pub authority: Pubkey,
     /// PDA account that holds SOL to be distributed to MoonDoge stakers
-    pub mdoge_sol_vault: Pubkey,
+    pub dbtc_sol_vault: Pubkey,
 
     /// Token mint for MoonDoge
-    pub mdoge_mint: Pubkey,
+    pub dbtc_mint: Pubkey,
     /// Custodian that holds the staked tokens
-    pub mdoge_custodian: Pubkey,
+    pub dbtc_custodian: Pubkey,
     
     /// Electricity units per weighted MoonDoge units
     pub electricity_per_weighted_moondoge: u64,
     
     /// Total MoonDoge tokens locked in the vault
-    pub mdoge_locked: u64,
+    pub dbtc_locked: u64,
     /// Total weighted MoonDoge points (including time multipliers)
-    pub weighted_mdoge_locked: u64,
+    pub weighted_dbtc_locked: u64,
     
     /// Accumulated SOL per weighted MoonDoge point (precision factor applied)
     pub accumulated_sol_per_point: u128,
@@ -129,12 +129,12 @@ pub struct MoonDogeVault {
 impl MoonDogeVault {
     pub const LEN: usize = 8 + // discriminator
         32 + // authority
-        32 + // mdoge_sol_vault
-        32 + // mdoge_mint
-        32 + // mdoge_custodian
+        32 + // dbtc_sol_vault
+        32 + // dbtc_mint
+        32 + // dbtc_custodian
         8 +  // electricity_per_weighted_moondoge
-        8 +  // mdoge_locked
-        8 +  // weighted_mdoge_locked
+        8 +  // dbtc_locked
+        8 +  // weighted_dbtc_locked
         16 + // accumulated_sol_per_point
         8 +  // total_sol_distributed
         1 +  // emergency_tax

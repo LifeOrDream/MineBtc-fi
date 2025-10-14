@@ -47,7 +47,7 @@
         "fund_fee_rate": 25000,
         "create_pool_fee": 40000000,
         "initial_sol_amount": 100000000,
-        "initial_mdoge_percentage": 1,
+        "initial_dbtc_percentage": 1,
         "open_time": 0,
         "burn_lp_tokens": true
     },

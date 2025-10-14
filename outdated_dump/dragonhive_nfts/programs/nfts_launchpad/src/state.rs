@@ -87,7 +87,7 @@ pub struct MoonDogeMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
     
-    /// Money accumulated (increases with mDOGE mining)
+    /// Money accumulated (increases with DOGE_BTC mining)
     pub money: u64,
     
     /// Moonbase this doge is attached to (if any)
@@ -96,7 +96,7 @@ pub struct MoonDogeMetadata {
     /// Last update timestamp
     pub last_update_ts: i64,
     
-    /// Total mDOGE mined while this doge was attached
+    /// Total DOGE_BTC mined while this doge was attached
     pub total_btc_mined: u64,
     
     /// Creation timestamp
@@ -116,10 +116,10 @@ impl MoonDogeMetadata {
         8 +     // created_at
         1;      // bump
     
-    /// Calculate money accumulation based on mDOGE mined
-    pub fn calculate_money_increase(&self, mdoge_mined: u64) -> u64 {
-        // Formula: money_increase = (mdoge_mined * MONEY_RATE_MULTIPLIER) / 1_000_000
-        mdoge_mined
+    /// Calculate money accumulation based on DOGE_BTC mined
+    pub fn calculate_money_increase(&self, dbtc_mined: u64) -> u64 {
+        // Formula: money_increase = (dbtc_mined * MONEY_RATE_MULTIPLIER) / 1_000_000
+        dbtc_mined
             .saturating_mul(MONEY_RATE_MULTIPLIER)
             .saturating_div(1_000_000)
             .min(MAX_DOGE_MONEY.saturating_sub(self.money))
@@ -240,8 +240,8 @@ pub struct DogeAttachment {
     /// Last update timestamp
     pub last_update_ts: i64,
     
-    /// Last recorded mDOGE balance (for tracking delta)
-    pub last_mdoge_balance: u64,
+    /// Last recorded DOGE_BTC balance (for tracking delta)
+    pub last_dbtc_balance: u64,
     
     /// PDA bump
     pub bump: u8,
@@ -252,7 +252,7 @@ impl DogeAttachment {
         32 +    // moonbase_owner
         32 +    // doge_mint
         8 +     // last_update_ts
-        8 +     // last_mdoge_balance
+        8 +     // last_dbtc_balance
         1;      // bump
 }
 

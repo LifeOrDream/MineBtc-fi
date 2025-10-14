@@ -11,7 +11,7 @@ This document outlines the implementation of a sophisticated, PvP-ready module s
 ```rust
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
 pub enum ModuleType {
-    Mining,      // Generates hashpower → mDOGE
+    Mining,      // Generates hashpower → DOGE_BTC
     Attraction,  // Grants passive XP / social score
     Attack,      // Fires at rival bases or aliens (PvP ready)
     Research,    // Runs loot attempts with cooldowns
@@ -137,7 +137,7 @@ impl AttackStats {
 pub struct ResearchStats {
     pub max_hp: u32,                   // Maximum health points
     pub cooldown_sec: u32,             // Time between loot attempts at level 0
-    pub reward_type: u8,               // 0 = mDOGE, 1 = SOL
+    pub reward_type: u8,               // 0 = DOGE_BTC, 1 = SOL
     pub max_reward: u64,               // Maximum reward amount at level 0
     pub probability: u16,              // Success probability at level 0 (0-10000 = 0-100%)
     pub power_consumption: u16,        // Electricity consumed per hour
@@ -340,9 +340,9 @@ pub fn update_module_internal(
 **💡 Key Insight**: Burst DPS scales exponentially due to ALL THREE factors improving! Magazine size doubles the effective alpha strike damage.
  
 
-### 🔬 **Research Lab Progression (cooldown = 3600s, reward = 1M mDOGE, prob = 25%)**
+### 🔬 **Research Lab Progression (cooldown = 3600s, reward = 1M DOGE_BTC, prob = 25%)**
 
-| Level | Cooldown | Max Reward | Probability | Expected mDOGE/hour |
+| Level | Cooldown | Max Reward | Probability | Expected DOGE_BTC/hour |
 |-------|----------|------------|-------------|---------------------|
 | 0     | 60 min   | 1.0M       | 25%         | 250K                |
 | 1     | 55 min   | 1.15M      | 29%         | 378K (+51%)         |
@@ -397,8 +397,8 @@ upgrade_level_requirements: [8, 15, 25] // 3 upgrades, requires higher levels
 ResearchStats {
     max_hp: 500,
     cooldown_sec: 3600,         // 1 hour between loot attempts
-    reward_type: 0,             // mDOGE rewards
-    max_reward: 1_000_000_000,  // Up to 1 mDOGE
+    reward_type: 0,             // DOGE_BTC rewards
+    max_reward: 1_000_000_000,  // Up to 1 DOGE_BTC
     probability: 2500,          // 25% success rate
     power_consumption: 40,      // 40 kW/hour
 }

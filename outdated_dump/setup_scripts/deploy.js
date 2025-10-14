@@ -19,14 +19,14 @@ const CLUSTER = config.network.cluster;
 const PHASES = [
     {
         name: 'Token Deployment',
-        script: 'init_mdoge_token.js',
-        description: 'Deploy mDOGE token with Token 2022 extensions',
+        script: 'init_dbtc_token.js',
+        description: 'Deploy DOGE_BTC token with Token 2022 extensions',
         required: true,
         estimatedTime: '2-3 minutes'
     },
     {
         name: 'Pool Configuration',
-        script: 'init_mdoge_SOL_pool.js',
+        script: 'init_dbtc_SOL_pool.js',
         description: 'Configure Raydium pool parameters',
         required: false,
         estimatedTime: '1-2 minutes'
@@ -185,7 +185,7 @@ Options:
   --help, -h              Show this help message
 
 Phases:
-  1. Token Deployment     Deploy mDOGE token (required)
+  1. Token Deployment     Deploy DOGE_BTC token (required)
   2. Pool Configuration   Configure Raydium pool (optional)
   3. MoonBase Init        Initialize game system (required)
 

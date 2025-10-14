@@ -9,7 +9,7 @@ import path from 'path';
 import {  BorshAccountsCoder } from '@coral-xyz/anchor';
 import { getSolanaBalance, createUserMoonbase, stakeMDOGE, unStakeMDOGE,  stakeLP, 
     addNewModuleToConfigStore, addNewGearToConfigStore, unStakeLP,sendSPLToken,
-    MDOGE_VAULT_SEED,  MDOGE_VAULT_AUTHORITY_SEED,  
+    DOGE_BTC_VAULT_SEED,  DOGE_BTC_VAULT_AUTHORITY_SEED,  
     MODULE_CONFIG_STORE_SEED,  sendSPL22Token,
     USER_MOONBASE_SEED, REFERRAL_REWARDS_SEED, MODULE_INSTANCE_SEED,
  } from './helper.js';
@@ -32,8 +32,8 @@ const configDir = path.resolve(__dirname, './config.json');
 const config = JSON.parse(fs.readFileSync(configDir, 'utf-8'));
 
 
-const MOONDOGE_TOKEN_MINT = new PublicKey(deploymentFile.mdoge_mdoge_mint_account_created.mdoge_mintAddress);
-const MDOGE_NFT_ADDRESS = "8ieqNFzgctWbKjkbTjnTrTmkwjFNVCFkqowbBDDpHE1b";
+const MOONDOGE_TOKEN_MINT = new PublicKey(deploymentFile.dbtc_dbtc_mint_account_created.dbtc_mintAddress);
+const dbtc_NFT_ADDRESS = "8ieqNFzgctWbKjkbTjnTrTmkwjFNVCFkqowbBDDpHE1b";
 
 const ID_MOONBASE_PROGRAM = new PublicKey(deploymentFile.MOON_BASE_PROGRAM_ID);
 const ID_MOONECONOMY_PROGRAM = new PublicKey(deploymentFile.MOON_ECONOMY_PROGRAM_ID);
@@ -109,7 +109,7 @@ async function main() {
     console.log('\x1b[32m%s\x1b[0m', '✅ Connected to program:', moonBaseProgram.programId.toString() + " \n");
     console.log('\x1b[32m%s\x1b[0m', '✅ Connected to program:', moonEconomyProgram.programId.toString() + " \n");
     
-    let mDogeMint = deploymentFile.mdoge_mdoge_mint_account_created.mintAddress;
+    let mDogeMint = deploymentFile.dbtc_dbtc_mint_account_created.mintAddress;
     let lpMint = deploymentFile.testLP_mint_account_created.mintAddress;
     
     let globalConfigPDA = deploymentFile.moonEconomy_program_initialized.globalConfig_data_ac;
@@ -147,18 +147,18 @@ async function main() {
  
 
 
-  // // TRANSFER mDOGE TO USER
+  // // TRANSFER DOGE_BTC TO USER
   // await sendSPL22Token({
   //   connection,
   //   payer: walletKeypair,
-  //   senderTokenAccount: deploymentFile.mdoge_token_account_created.tokenAccountAddress,
+  //   senderTokenAccount: deploymentFile.dbtc_token_account_created.tokenAccountAddress,
   //   recipientWallet: "ZMgahU99BRMx9mjUngYyZSSZDREGizKaN4qT3KMJyeY",
-  //   mintAddress: deploymentFile.mdoge_mdoge_mint_account_created.mdoge_mintAddress,
+  //   mintAddress: deploymentFile.dbtc_dbtc_mint_account_created.dbtc_mintAddress,
   //   amount: 1000 * 1e9,
   // });
 
   
-  // TRANSFER mDOGE TO USER
+  // TRANSFER DOGE_BTC TO USER
   await sendSPLToken({
     connection,
     payer: walletKeypair,
@@ -172,13 +172,13 @@ async function main() {
 
 
 
-    // ------------ 2. Stake mDOGE tokens ------------
+    // ------------ 2. Stake DOGE_BTC tokens ------------
 
     let deposit_amount = new BN("10000000");
     let lockup_duration = 10;
     let index = 0;
     
-    const stake_mdoge_result = await stakeMDOGE(  connection,  moonEconomyProgram,  wallet,  walletKeypair,  deposit_amount,  lockup_duration,  index,
+    const stake_dbtc_result = await stakeMDOGE(  connection,  moonEconomyProgram,  wallet,  walletKeypair,  deposit_amount,  lockup_duration,  index,
         mDogeMint,  globalConfigPDA,  moondogeVaultPDA,  mdogeCustodianPDA,  moonbaseGlobalConfigPDA,  USER_MOONBASE_PDA,
         facilityMiningStatePDA,  feeCollectorPDA,  moonFacilityProgramPDA,  token22ProgramPDA)
     return;
@@ -206,7 +206,7 @@ async function main() {
 
     //     console.log(userMoonElectricity);
         
-    // // ------------ 3. Get user's Individual staked mDOGE position info ------------
+    // // ------------ 3. Get user's Individual staked DOGE_BTC position info ------------
     // let userMoonDogePositionPDA = "6nqEcbDjjYDssCHFqR5eSCLqeXiRJ8RgvLEiSZr1hw3G";
     // const userMoonDogePositionInfo = await connection.getAccountInfo( new PublicKey(userMoonDogePositionPDA));
     // const userMoonDogePosition = moonEconomyCoder.decode('MoonDogePosition', userMoonDogePositionInfo.data);
@@ -219,15 +219,15 @@ async function main() {
     //     console.log(userMoonDogePosition);
     // // return;
 
-    // // // ------------ 4. Unstake mDOGE tokens ------------
+    // // // ------------ 4. Unstake DOGE_BTC tokens ------------
         
     // // const _tokenAccount = await anchor_spl.getAccount( connection,   new PublicKey(mdogeCustodianPDA),   undefined,  token22ProgramPDA);
-    // // console.log(`available mDOGE: ${_tokenAccount.amount}`);
+    // // console.log(`available DOGE_BTC: ${_tokenAccount.amount}`);
     // // return
 
-    // let unstake_mdoge_index = 0;
-    // let unStakeMDOGE_result = await unStakeMDOGE(  connection,  moonEconomyProgram,  wallet,  walletKeypair,
-    //     unstake_mdoge_index,  mDogeMint,  globalConfigPDA,  moondogeVaultPDA,  mdogeCustodianPDA,  mdogeCustodianAuthorityPDA,
+    // let unstake_dbtc_index = 0;
+    // let unStakedbtc_result = await unStakeMDOGE(  connection,  moonEconomyProgram,  wallet,  walletKeypair,
+    //     unstake_dbtc_index,  mDogeMint,  globalConfigPDA,  moondogeVaultPDA,  mdogeCustodianPDA,  mdogeCustodianAuthorityPDA,
     //                                                 moonbaseGlobalConfigPDA,  USER_MOONBASE_PDA,  facilityMiningStatePDA,
     //                                                 feeCollectorPDA,  moonFacilityProgramPDA,  token22ProgramPDA ) 
 

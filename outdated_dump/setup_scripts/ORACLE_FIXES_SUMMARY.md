@@ -1,22 +1,22 @@
-# mDOGE Oracle Calculation Fixes
+# DOGE_BTC Oracle Calculation Fixes
 
 ## Overview
-Fixed critical issues in the mDOGE price oracle calculations related to decimal handling and overflow prevention.
+Fixed critical issues in the DOGE_BTC price oracle calculations related to decimal handling and overflow prevention.
 
 ## Issues Identified & Fixed
 
 ### 1. **Decimal Mismatch Issue**
-**Problem:** The original code was using 10^9 scaling (SOL decimals) for mDOGE price calculations, but mDOGE only has 6 decimals.
+**Problem:** The original code was using 10^9 scaling (SOL decimals) for DOGE_BTC price calculations, but DOGE_BTC only has 6 decimals.
 
 **Root Cause:** 
 - SOL has 9 decimals (1 SOL = 10^9 lamports)
-- mDOGE has 6 decimals (1 mDOGE = 10^6 base units)
+- DOGE_BTC has 6 decimals (1 DOGE_BTC = 10^6 base units)
 - Price calculation was incorrectly using 10^9 scaling
 
 **Fix Applied:**
 - Added proper decimal constants in `state.rs`:
   ```rust
-  pub const MDOGE_DECIMALS: u8 = 6;
+  pub const DBTC_DECIMALS: u8 = 6;
   pub const SOL_DECIMALS: u8 = 9;
   pub const PRICE_SCALE: u64 = 1_000; // 10^3 to bridge the 3-decimal difference
   pub const MAX_SAFE_U64: u64 = u64::MAX / 1_000_000; // Overflow prevention
@@ -99,7 +99,7 @@ if old_price > 0 {
 **Enhancement:** Better price logging to show both scaled and actual values:
 ```rust
 let actual_price = current_price as f64 / crate::state::PRICE_SCALE as f64;
-msg!("   Current price: {} (scaled by {}), Actual: {:.6} SOL per mDOGE", 
+msg!("   Current price: {} (scaled by {}), Actual: {:.6} SOL per DOGE_BTC", 
      current_price, crate::state::PRICE_SCALE, actual_price);
 ```
 
@@ -112,7 +112,7 @@ msg!("   Current price: {} (scaled by {}), Actual: {:.6} SOL per mDOGE",
 - ❌ Poor price representation
 
 ### After Fixes:
-- ✅ Correct decimal handling (mDOGE 6 decimals vs SOL 9 decimals)
+- ✅ Correct decimal handling (DOGE_BTC 6 decimals vs SOL 9 decimals)
 - ✅ Proper type conversions (i64 timestamps)
 - ✅ Comprehensive overflow protection
 - ✅ Accurate price calculations
@@ -122,25 +122,25 @@ msg!("   Current price: {} (scaled by {}), Actual: {:.6} SOL per mDOGE",
 
 **Correct Formula:**
 ```
-Price (scaled) = (SOL_received_in_lamports * PRICE_SCALE) / mDOGE_amount_in_base_units
+Price (scaled) = (SOL_received_in_lamports * PRICE_SCALE) / dbtc_amount_in_base_units
 
 Where:
 - SOL_received_in_lamports: SOL amount with 9 decimals
-- mDOGE_amount_in_base_units: mDOGE amount with 6 decimals  
+- dbtc_amount_in_base_units: DOGE_BTC amount with 6 decimals  
 - PRICE_SCALE = 1000 (10^3) to bridge the 3-decimal difference
-- Result: SOL per mDOGE scaled by 1000 for precision
+- Result: SOL per DOGE_BTC scaled by 1000 for precision
 ```
 
 **Example:**
-- Swap 1,000,000 mDOGE base units (1 mDOGE) for 500,000,000 lamports (0.5 SOL)
+- Swap 1,000,000 DOGE_BTC base units (1 DOGE_BTC) for 500,000,000 lamports (0.5 SOL)
 - Price = (500,000,000 * 1,000) / 1,000,000 = 500,000 (scaled)
-- Actual price = 500,000 / 1,000 = 500 SOL per mDOGE
+- Actual price = 500,000 / 1,000 = 500 SOL per DOGE_BTC
 
 ## Validation
 
 ✅ **Compilation:** All type mismatches resolved
 ✅ **Overflow Safety:** Comprehensive checked arithmetic
-✅ **Decimal Accuracy:** Proper scaling for 6-decimal mDOGE
+✅ **Decimal Accuracy:** Proper scaling for 6-decimal DOGE_BTC
 ✅ **Price Precision:** Maintains 3 decimal places of precision
 ✅ **Error Handling:** Graceful fallbacks for edge cases
 
@@ -156,4 +156,4 @@ Where:
    - Added comprehensive error checking
    - Improved logging and debugging
 
-The oracle system now correctly handles the decimal difference between SOL and mDOGE while preventing arithmetic overflows and providing accurate price calculations. 
+The oracle system now correctly handles the decimal difference between SOL and DOGE_BTC while preventing arithmetic overflows and providing accurate price calculations. 

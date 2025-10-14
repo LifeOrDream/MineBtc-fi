@@ -10,8 +10,8 @@ This directory contains the production-grade deployment system for **DogeTech**,
 setup_scripts/
 ├── config.json                    # Master configuration file
 ├── helper.js                      # Core helper functions
-├── init_mdoge_token.js            # Token deployment script
-├── init_mdoge_SOL_pool.js         # Pool creation script
+├── init_dbtc_token.js            # Token deployment script
+├── init_dbtc_SOL_pool.js         # Pool creation script
 ├── init_moonBase.js               # MoonBase program initialization
 ├── deployments/                   # Deployment state files
 │   ├── devnet.json               # Devnet deployment state
@@ -53,11 +53,11 @@ npm install @solana/web3.js @solana/spl-token @coral-xyz/anchor @metaplex-founda
 ### Phase 1: Token Deployment
 
 ```bash
-node init_mdoge_token.js
+node init_dbtc_token.js
 ```
 
 **What it does:**
-- Creates mDOGE token mint with Token 2022 extensions
+- Creates DOGE_BTC token mint with Token 2022 extensions
 - Implements burn tax mechanism (1% configurable)
 - Mints initial supply (21 billion tokens)
 - Creates metadata with Metaplex standards
@@ -73,7 +73,7 @@ node init_mdoge_token.js
 ### Phase 2: Pool Creation
 
 ```bash
-node init_mdoge_SOL_pool.js
+node init_dbtc_SOL_pool.js
 ```
 
 **What it does:**
@@ -121,7 +121,7 @@ Each deployment creates a state file with:
   "network": "devnet",
   "lastUpdated": "2024-01-01T00:00:00.000Z",
   "version": "2.0.0",
-  "mdoge_mint_address": "...",
+  "dbtc_mint_address": "...",
   "moonbase_program_initialized": {
     "globalConfig_address": "...",
     "moonDogeMining_address": "...",
@@ -149,7 +149,7 @@ Each deployment creates a state file with:
 4. **Orbital Guards** - Defenders of lunar territories
 
 ### Module Types
-- **Mining Modules**: Generate mDOGE tokens
+- **Mining Modules**: Generate DOGE_BTC tokens
 - **Attraction Modules**: Provide XP over time
 - **Research Modules**: Casino-style reward mechanics
 - **Attack Modules**: PvP combat capabilities

@@ -323,7 +323,7 @@ pub fn attach_moondoge_handler(
     doge_attachment.moonbase_owner = ctx.accounts.user.key();
     doge_attachment.doge_mint = doge_metadata.mint;
     doge_attachment.last_update_ts = current_time;
-    doge_attachment.last_mdoge_balance = 0; // Will be updated on first update call
+    doge_attachment.last_dbtc_balance = 0; // Will be updated on first update call
     doge_attachment.bump = ctx.bumps.doge_attachment;
     
     // Update metadata
@@ -378,10 +378,10 @@ pub fn detach_moondoge_handler(
     Ok(())
 }
 
-/// Update MoonDoge money based on mDOGE mined
+/// Update MoonDoge money based on DOGE_BTC mined
 pub fn update_moondoge_money_handler(
     ctx: Context<UpdateMoonDogeMoney>,
-    mdoge_mined: u64,
+    dbtc_mined: u64,
 ) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
     let doge_attachment = &mut ctx.accounts.doge_attachment;
@@ -392,22 +392,22 @@ pub fn update_moondoge_money_handler(
     );
     
     let old_money = doge_metadata.money;
-    let money_increase = calculate_doge_money_increase(mdoge_mined)?;
+    let money_increase = calculate_doge_money_increase(dbtc_mined)?;
     let new_money = old_money.saturating_add(money_increase).min(MAX_DOGE_MONEY);
     
     doge_metadata.money = new_money;
     doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    doge_metadata.total_btc_mined = doge_metadata.total_btc_mined.saturating_add(mdoge_mined);
+    doge_metadata.total_btc_mined = doge_metadata.total_btc_mined.saturating_add(dbtc_mined);
     
     doge_attachment.last_update_ts = Clock::get()?.unix_timestamp;
-    doge_attachment.last_mdoge_balance = doge_attachment.last_mdoge_balance.saturating_add(mdoge_mined);
+    doge_attachment.last_dbtc_balance = doge_attachment.last_dbtc_balance.saturating_add(dbtc_mined);
     
     emit!(MoonDogeMoneyUpdated {
         doge_mint: doge_metadata.mint,
         old_money,
         new_money,
         money_increase,
-        mdoge_mined,
+        dbtc_mined,
     });
     
     msg!("✅ MoonDoge money updated");

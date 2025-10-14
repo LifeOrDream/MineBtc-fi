@@ -51,7 +51,7 @@ pub struct MoonDogeMoneyUpdated {
     pub old_money: u64,
     pub new_money: u64,
     pub money_increase: u64,
-    pub mdoge_mined: u64,
+    pub dbtc_mined: u64,
 }
 
 // ========================================================================================

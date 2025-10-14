@@ -65,7 +65,7 @@ pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration:
     
     // Global moondoge vault
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
-    msg!("📊 Current vault state - Total locked: {}, Weighted locked: {}", moondoge_vault.mdoge_locked, moondoge_vault.weighted_mdoge_locked);
+    msg!("📊 Current vault state - Total locked: {}, Weighted locked: {}", moondoge_vault.dbtc_locked, moondoge_vault.weighted_dbtc_locked);
 
     // User Position :: Electricity account
     let electricity_ac = &mut ctx.accounts.electricity_ac;
@@ -117,7 +117,7 @@ pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration:
 
         // add rewards to pending rewards
         electricity_ac.pending_moondoge_rewards = electricity_ac.pending_moondoge_rewards.checked_add(new_rewards).unwrap();
-        msg!("   Updated pending mDOGE rewards: {}", electricity_ac.pending_moondoge_rewards);
+        msg!("   Updated pending DOGE_BTC rewards: {}", electricity_ac.pending_moondoge_rewards);
     }
     
     // If position exists, validate and update
@@ -166,33 +166,33 @@ pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration:
         electricity_ac.total_weighted_moondoge = electricity_ac.total_weighted_moondoge.checked_add(weighted_amount).unwrap();
 
         msg!("   Active positions: {}", electricity_ac.active_moondoge_positions);
-        msg!("   Total weighted mDOGE: {}", electricity_ac.total_weighted_moondoge);        
+        msg!("   Total weighted DOGE_BTC: {}", electricity_ac.total_weighted_moondoge);        
     }
     
     // Update global user state & Global reward debt
     electricity_ac.total_moondoge_staked = electricity_ac.total_moondoge_staked.checked_add(actual_amount).unwrap();
     electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
     
-    msg!("💱 Transferring {} mDOGE tokens from user to vault", amount);
-    msg!("   From: {}", ctx.accounts.user_mdoge_account.key());
-    msg!("   To: {}", ctx.accounts.mdoge_custodian.key());
+    msg!("💱 Transferring {} DOGE_BTC tokens from user to vault", amount);
+    msg!("   From: {}", ctx.accounts.user_dbtc_account.key());
+    msg!("   To: {}", ctx.accounts.dbtc_custodian.key());
 
     // Transfer mDoge tokens from user to moondoge vault
     // Note: We transfer the full amount including burn tax, as the tax will be applied during transfer
     let transfer_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         token_interface::TransferChecked {
-            from: ctx.accounts.user_mdoge_account.to_account_info(),
-            to: ctx.accounts.mdoge_custodian.to_account_info(),
+            from: ctx.accounts.user_dbtc_account.to_account_info(),
+            to: ctx.accounts.dbtc_custodian.to_account_info(),
             authority: ctx.accounts.authority.to_account_info(),
-            mint: ctx.accounts.mdoge_mint.to_account_info(),
+            mint: ctx.accounts.dbtc_mint.to_account_info(),
         },
     );
-    token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.mdoge_mint.decimals)?;
+    token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.dbtc_mint.decimals)?;
     
     // Update mDoge vault state with actual_amount (post-tax)
-    moondoge_vault.mdoge_locked = moondoge_vault.mdoge_locked.checked_add(actual_amount).unwrap();        
-    moondoge_vault.weighted_mdoge_locked = moondoge_vault.weighted_mdoge_locked.checked_add(weighted_amount).unwrap();
+    moondoge_vault.dbtc_locked = moondoge_vault.dbtc_locked.checked_add(actual_amount).unwrap();        
+    moondoge_vault.weighted_dbtc_locked = moondoge_vault.weighted_dbtc_locked.checked_add(weighted_amount).unwrap();
 
     msg!("⚡ Calculating electricity earnings");        
     // Calculate electricity earned
@@ -241,7 +241,7 @@ pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration:
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- UNSTAKE MOONDOGE TOKENS :: User gets mDOGE back ------------------------
+// ---- UNSTAKE MOONDOGE TOKENS :: User gets DOGE_BTC back ------------------------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Unstake MoonDoge tokens from a position
@@ -315,10 +315,10 @@ pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Re
         if penalty_amount > 0 {
             msg!("🔥 Burning {} penalty tokens", penalty_amount);
             
-            // Get PDA signer seeds for the mdoge_custodian
+            // Get PDA signer seeds for the dbtc_custodian
             let custodian_authority_seeds = &[
-                MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref(),
-                &[ctx.bumps.mdoge_custodian_authority]
+                dbtc_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+                &[ctx.bumps.dbtc_custodian_authority]
             ];
             let signer = &[&custodian_authority_seeds[..]];
             
@@ -326,9 +326,9 @@ pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Re
             let burn_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 token_interface::Burn {
-                    mint: ctx.accounts.mdoge_mint.to_account_info(),
-                    from: ctx.accounts.mdoge_custodian.to_account_info(),
-                    authority: ctx.accounts.mdoge_custodian_authority.to_account_info(),
+                    mint: ctx.accounts.dbtc_mint.to_account_info(),
+                    from: ctx.accounts.dbtc_custodian.to_account_info(),
+                    authority: ctx.accounts.dbtc_custodian_authority.to_account_info(),
                 },
                 signer,
             );            
@@ -384,9 +384,9 @@ pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Re
     
     // Update vault totals
     msg!("📊 Updating vault totals");
-    moondoge_vault.mdoge_locked = moondoge_vault.mdoge_locked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?;        
-    moondoge_vault.weighted_mdoge_locked = moondoge_vault.weighted_mdoge_locked.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
-    msg!("   New vault totals - Locked: {}, Weighted: {}", moondoge_vault.mdoge_locked, moondoge_vault.weighted_mdoge_locked);
+    moondoge_vault.dbtc_locked = moondoge_vault.dbtc_locked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?;        
+    moondoge_vault.weighted_dbtc_locked = moondoge_vault.weighted_dbtc_locked.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
+    msg!("   New vault totals - Locked: {}, Weighted: {}", moondoge_vault.dbtc_locked, moondoge_vault.weighted_dbtc_locked);
     
     // Update user global stats
     msg!("📊 Updating user stats");
@@ -400,12 +400,12 @@ pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Re
     
     // Transfer remaining tokens back to user
     if return_amount > 0 {
-        msg!("💱 Transferring {} mDOGE tokens to user", return_amount);
+        msg!("💱 Transferring {} DOGE_BTC tokens to user", return_amount);
         
-        // Get PDA signer seeds for the mdoge_custodian
+        // Get PDA signer seeds for the dbtc_custodian
         let custodian_authority_seeds = &[
-            MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.mdoge_custodian_authority]
+            dbtc_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[ctx.bumps.dbtc_custodian_authority]
         ];
         let signer = &[&custodian_authority_seeds[..]];
         
@@ -413,15 +413,15 @@ pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Re
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             token_interface::TransferChecked {
-                from: ctx.accounts.mdoge_custodian.to_account_info(),
-                to: ctx.accounts.user_mdoge_account.to_account_info(),
-                authority: ctx.accounts.mdoge_custodian_authority.to_account_info(),
-                mint: ctx.accounts.mdoge_mint.to_account_info(),
+                from: ctx.accounts.dbtc_custodian.to_account_info(),
+                to: ctx.accounts.user_dbtc_account.to_account_info(),
+                authority: ctx.accounts.dbtc_custodian_authority.to_account_info(),
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
             },
             signer,
         );
         
-        token_interface::transfer_checked(transfer_ctx, return_amount, ctx.accounts.mdoge_mint.decimals)?;
+        token_interface::transfer_checked(transfer_ctx, return_amount, ctx.accounts.dbtc_mint.decimals)?;
     }
     
     // Reset position data
@@ -843,9 +843,9 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     // User Position :: Electricity account
     let electricity_ac = &mut ctx.accounts.electricity_ac;
       
-    // Process any pending SOL rewards before claim (mDOGE staking)
+    // Process any pending SOL rewards before claim (DOGE_BTC staking)
     if electricity_ac.total_weighted_moondoge > 0 {
-        msg!("💰 Processing pending mDOGE rewards before claim");
+        msg!("💰 Processing pending DOGE_BTC rewards before claim");
                 
         // Calculate reward diff since last update
         let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
@@ -863,7 +863,7 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
 
         // add rewards to pending rewards
         electricity_ac.pending_moondoge_rewards = electricity_ac.pending_moondoge_rewards.checked_add(new_rewards).unwrap();
-        msg!("   Updated pending mDOGE rewards: {}", electricity_ac.pending_moondoge_rewards);
+        msg!("   Updated pending DOGE_BTC rewards: {}", electricity_ac.pending_moondoge_rewards);
     }
 
     // Process any pending rewards before claim (LP staking)
@@ -894,8 +894,8 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     // Transfer pending rewards to user
     let receiver = &ctx.accounts.authority;
 
-    // Transfer mDOGE staking rewards to user
-    **ctx.accounts.mdoge_sol_vault.try_borrow_mut_lamports()? -= electricity_ac.pending_moondoge_rewards;
+    // Transfer DOGE_BTC staking rewards to user
+    **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? -= electricity_ac.pending_moondoge_rewards;
     **receiver.try_borrow_mut_lamports()? += electricity_ac.pending_moondoge_rewards;
 
     // Transfer LP staking rewards to user
@@ -1034,7 +1034,7 @@ pub struct StakeMoonDoge<'info> {
         payer = authority,
         space = MoonDogePosition::LEN,
         seeds = [
-            MDOGE_POSITION_SEED,
+            dbtc_POSITION_SEED,
             authority.key().as_ref(),
             &[position_index]
         ],
@@ -1042,27 +1042,27 @@ pub struct StakeMoonDoge<'info> {
     )]
     pub user_position: Account<'info, MoonDogePosition>,
     
-    /// CHECK: mDOGE Mint
-    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: DOGE_BTC Mint
+    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
 
     // Token accounts
     #[account(
         mut,
-        constraint = user_mdoge_account.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
-        constraint = user_mdoge_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
-        constraint = user_mdoge_account.amount >= amount @ ErrorCode::InsufficientFunds,
+        constraint = user_dbtc_account.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
+        constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_dbtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
     )]
     /// User's MoonDoge token account
-    pub user_mdoge_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
         mut,
-        seeds = [MDOGE_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        seeds = [dbtc_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
         bump,
-        constraint = mdoge_custodian.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+        constraint = dbtc_custodian.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
-    /// Token-2022 account that holds staked mDOGE
-    pub mdoge_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    /// Token-2022 account that holds staked DOGE_BTC
+    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
         
     //MoonBase accounts
     /// MoonBase global configuration
@@ -1132,7 +1132,7 @@ pub struct UnstakeMoonDoge<'info> {
     #[account(
         mut,
         seeds = [
-            MDOGE_POSITION_SEED,
+            dbtc_POSITION_SEED,
             authority.key().as_ref(),
             &[position_index]
         ],
@@ -1141,35 +1141,35 @@ pub struct UnstakeMoonDoge<'info> {
     )]
     pub user_position: Account<'info, MoonDogePosition>,
     
-    /// CHECK: mDOGE Mint
+    /// CHECK: DOGE_BTC Mint
     #[account(mut)]
-    pub mdoge_mint: InterfaceAccount<'info, Mint2022>,
+    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
 
     // Token accounts
     #[account(
         mut,
-        constraint = user_mdoge_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
-        constraint = user_mdoge_account.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+        constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_dbtc_account.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
     /// User's MoonDoge token account to receive the unstaked tokens
-    pub user_mdoge_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
         mut,
-        seeds = [MDOGE_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        seeds = [dbtc_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
         bump,
-        constraint = mdoge_custodian.mint == moondoge_vault.mdoge_mint @ ErrorCode::InvalidTokenMint,
+        constraint = dbtc_custodian.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
-    /// Token-2022 account that holds staked mDOGE
-    pub mdoge_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    /// Token-2022 account that holds staked DOGE_BTC
+    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [MDOGE_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        seeds = [dbtc_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump,
     )]
     /// Authority of the custodian
     /// CHECK: This is a PDA that acts as the authority for the token account
-    pub mdoge_custodian_authority: UncheckedAccount<'info>,
+    pub dbtc_custodian_authority: UncheckedAccount<'info>,
     
     // MoonBase accounts
     /// MoonBase global configuration
@@ -1444,11 +1444,11 @@ pub struct ClaimSolRewards<'info> {
     
     #[account(
         mut,
-        seeds = [MDOGE_SOL_VAULT_SEED.as_ref()],
+        seeds = [dbtc_SOL_VAULT_SEED.as_ref()],
         bump
     )]
     /// CHECK: This is the PDA that custodies SOL for MoonDoge stakers
-    pub mdoge_sol_vault: UncheckedAccount<'info>,
+    pub dbtc_sol_vault: UncheckedAccount<'info>,
 
     #[account(
         mut,

@@ -136,12 +136,12 @@ pub mod nfts_launchpad {
         instructions::user::detach_moondoge_handler(ctx)
     }
 
-    /// Update MoonDoge money based on mDOGE mined (called periodically by backend)
+    /// Update MoonDoge money based on DOGE_BTC mined (called periodically by backend)
     pub fn update_moondoge_money(
         ctx: Context<UpdateMoonDogeMoney>,
-        mdoge_mined: u64,
+        dbtc_mined: u64,
     ) -> Result<()> {
-        instructions::user::update_moondoge_money_handler(ctx, mdoge_mined)
+        instructions::user::update_moondoge_money_handler(ctx, dbtc_mined)
     }
 
     // ========================================================================================

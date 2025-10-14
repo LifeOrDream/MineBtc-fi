@@ -73,8 +73,8 @@ The game features a comprehensive experience point (XP) and leveling system that
 | Daily login             | +10 XP    | Daily       |
 | Installing a new module | +50 XP    | Per install |
 | Upgrading a module      | +30 XP    | Per upgrade |
-| Locking a mDOGE NFT     | +20 XP    | Per lock    |
-| Mining 1000 mDOGE       | +15 XP    | Auto-scaled |
+| Locking a DOGE_BTC NFT     | +20 XP    | Per lock    |
+| Mining 1000 DOGE_BTC       | +15 XP    | Auto-scaled |
 | Referring 1 user        | +100 XP   | One-time    |
 
 #### **Level Progression**
@@ -142,7 +142,7 @@ The game implements a sophisticated price-responsive token distribution mechanis
 
 #### **8-Hour Price Oracle Cycles**
 
-- Every hour, 50% of the hourly mDOGE distribution is swapped for SOL via Raydium
+- Every hour, 50% of the hourly DOGE_BTC distribution is swapped for SOL via Raydium
 - Price data is collected and stored for 8-hour rolling averages
 - After 8 hours of data collection, the system processes accumulated liquidity
 
@@ -155,7 +155,7 @@ The game implements a sophisticated price-responsive token distribution mechanis
 #### **Protocol Owned Liquidity (POL)**
 
 - SOL from swaps accumulates over the 8-hour period
-- At cycle completion, accumulated SOL + calculated mDOGE are added to the Raydium LP
+- At cycle completion, accumulated SOL + calculated DOGE_BTC are added to the Raydium LP
 - LP tokens are immediately burned, permanently removing liquidity
 - Creates deflationary pressure while supporting price stability
 
@@ -164,7 +164,7 @@ The game implements a sophisticated price-responsive token distribution mechanis
 - `slots_for_swap`: Configurable timing parameter (default: 9000 slots)
 - Swap percentage: 50% of hourly distribution
 - Price history: 8-hour rolling window
-- LP calculation: `slots_for_swap × 8 ÷ 2 × current_dist_rate` mDOGE
+- LP calculation: `slots_for_swap × 8 ÷ 2 × current_dist_rate` DOGE_BTC
 
 This system ensures organic growth adjustments based on market conditions while building permanent liquidity support.
 
@@ -257,7 +257,7 @@ To initialize the program, urn the following scropts
 
 ```
 cd prod_moonbase/setup_scripts
-node init_mdoge_token.js
+node init_dbtc_token.js
 node init_testLP_token.js
 node init_moonbase.js
 ```
@@ -312,13 +312,13 @@ The game features an automated loot rewards system that accumulates tokens and S
 
 #### **Automatic Accumulation**
 
-- **mDOGE Loot**: 10% of all mining rewards are automatically transferred to the loot vault
+- **DOGE_BTC Loot**: 10% of all mining rewards are automatically transferred to the loot vault
 - **SOL Loot**: 10% of all SOL collections (moonbase creation, module costs, etc.) go to the loot vault
 - **Transparent Tracking**: All accumulations are tracked and logged via events
 
 #### **Loot Vault Infrastructure**
 
-- **Dedicated Vaults**: Separate secure vaults for mDOGE tokens and SOL
+- **Dedicated Vaults**: Separate secure vaults for DOGE_BTC tokens and SOL
 - **PDA Security**: All vaults use Program Derived Addresses for maximum security
 - **Admin Management**: Only program authorities can manage loot distribution
 - **Event Logging**: Comprehensive event system tracks all loot activities
