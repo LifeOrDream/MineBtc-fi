@@ -1059,17 +1059,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "launchpad"
-version = "0.1.0"
-dependencies = [
- "anchor-lang 0.32.1",
- "anchor-spl 0.32.1",
- "mpl-core 0.8.1",
- "mpl-token-metadata",
- "spl-token 8.0.0",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1202,8 +1191,7 @@ version = "1.0.0"
 dependencies = [
  "anchor-lang 0.31.1",
  "anchor-spl 0.31.1",
- "launchpad",
- "mpl-core 0.10.1",
+ "mpl-core",
  "mpl-token-metadata",
  "raydium-cp-swap",
  "spl-token 8.0.0",
@@ -1216,27 +1204,9 @@ dependencies = [
  "anchor-lang 0.32.1",
  "anchor-spl 0.32.1",
  "moonbase",
- "mpl-core 0.10.1",
+ "mpl-core",
  "mpl-token-metadata",
  "spl-token 8.0.0",
-]
-
-[[package]]
-name = "mpl-core"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d6c4e2e24ef8fb0029b0ccdde256c4581c8b7c82e0d3fae65c9904f879a2e17"
-dependencies = [
- "base64 0.22.1",
- "borsh 0.10.4",
- "kaigan",
- "modular-bitfield",
- "num-derive 0.3.3",
- "num-traits",
- "rmp-serde",
- "serde_json",
- "solana-program",
- "thiserror 1.0.69",
 ]
 
 [[package]]

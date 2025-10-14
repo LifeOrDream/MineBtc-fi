@@ -19,12 +19,12 @@ pub fn create_mpl_core_asset<'info>(
     // Validate Metaplex Core program
     require!(
         mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
-        crate::errors::NftLaunchpadError::InvalidMplCoreProgram
+        crate::errors::ErrorCode::InvalidMplCoreProgram
     );
-    
+
     // Build CreateV1 CPI
     let mut cpi_builder = CreateV1CpiBuilder::new(mpl_core_program);
-    
+
     cpi_builder
         .asset(asset)
         .payer(payer)
@@ -33,15 +33,15 @@ pub fn create_mpl_core_asset<'info>(
         .uri(uri)
         .owner(Some(owner))
         .update_authority(Some(authority));
-    
+
     // Add collection if provided
     if let Some(collection_account) = collection {
         cpi_builder.collection(Some(collection_account));
     }
-    
+
     // Execute CPI
     cpi_builder.invoke()?;
-    
+
     Ok(())
 }
 
@@ -58,26 +58,26 @@ pub fn transfer_mpl_core_asset<'info>(
     // Validate Metaplex Core program
     require!(
         mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
-        crate::errors::NftLaunchpadError::InvalidMplCoreProgram
+        crate::errors::ErrorCode::InvalidMplCoreProgram
     );
-    
+
     // Build TransferV1 CPI
     let mut cpi_builder = TransferV1CpiBuilder::new(mpl_core_program);
-    
+
     cpi_builder
         .asset(asset)
         .payer(payer)
         .authority(Some(authority))
         .new_owner(new_owner);
-    
+
     // Add collection if provided
     if let Some(collection_account) = collection {
         cpi_builder.collection(Some(collection_account));
     }
-    
+
     // Execute CPI
     cpi_builder.invoke()?;
-    
+
     Ok(())
 }
 
@@ -85,16 +85,15 @@ pub fn transfer_mpl_core_asset<'info>(
 pub fn get_mpl_core_owner(asset_account: &AccountInfo) -> Result<Pubkey> {
     // Metaplex Core V1 stores owner at bytes 8-40 (after discriminator)
     let data = asset_account.try_borrow_data()?;
-    
+
     require!(
         data.len() >= 40,
-        crate::errors::NftLaunchpadError::InvalidAccount
+        crate::errors::ErrorCode::InvalidAccount
     );
-    
+
     let owner_bytes = &data[8..40];
     let owner = Pubkey::try_from(owner_bytes)
-        .map_err(|_| crate::errors::NftLaunchpadError::InvalidAccount)?;
-    
+        .map_err(|_| crate::errors::ErrorCode::InvalidAccount)?;
+
     Ok(owner)
 }
-

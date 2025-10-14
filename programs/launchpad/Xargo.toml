@@ -1,2 +1,0 @@
-[target.bpfel-unknown-unknown.dependencies]
-arrayvec = "0.7"

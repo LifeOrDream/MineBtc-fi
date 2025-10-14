@@ -11,7 +11,6 @@ skip-lint = false
 [programs.devnet]
 moonbase = "76bGWqGdzwR13FSd1TDwanK7GFDHcunKh6WGbzAW1PjU"
 mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
-nft-launchpad = "CG6btG2MbTDXR2Ws6Kqn24HG6VqWWFJBrfxAK7NJVyNA"
 
 [registry]
 url = "https://api.apr.dev"

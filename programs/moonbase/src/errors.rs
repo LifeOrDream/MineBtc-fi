@@ -284,4 +284,10 @@ pub enum ErrorCode {
 
     #[msg("Module is already deployed and active")]
     ModuleAlreadyActive,
+
+    #[msg("Metaplex Core program ID mismatch")]
+    InvalidMplCoreProgram,
+
+    #[msg("Invalid account provided")]
+    InvalidAccount,
 } 

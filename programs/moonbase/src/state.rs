@@ -773,7 +773,12 @@ impl ModuleInstance {
  
 }
 
- 
+
+// ========== DRAGON EGG NFT CONSTANTS ========== //
+pub const BASE_EGG_POWER: u32 = 100;
+pub const MAX_EGG_POWER: u32 = 1_000_000;
+pub const POWER_RATE_MULTIPLIER: u64 = 1000; // Divisor for balance
+
 // ========== LOOT SYSTEM CONSTANTS ========== //
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 
@@ -803,4 +808,74 @@ pub const LOOT_TOP25_CHANCE_MULT: u32 = 110;      // 1.1x chance (≤25 users at
 pub const LOOT_TOP25_VAULT_MULT: u64 = 120;       // 1.2x vault (≤25 users at level)
  
 pub const MAX_VAULT_SLICE_BP: u64 = 1_000;          // 10 %
+
+// ========================================================================================
+// =============================== DRAGON EGG DNA UTILITIES ===============================
+// ========================================================================================
+
+/// Generate random DNA for new dragon eggs
+pub fn generate_dragon_egg_dna(slot: u64, owner: &Pubkey, index: u64) -> [u8; 32] {
+    let mut dna = [0u8; 32];
+
+    // Use slot, owner, and index as entropy sources
+    let seed = slot
+        .wrapping_add(index)
+        .wrapping_mul(1103515245)
+        .wrapping_add(12345);
+
+    for i in 0..32 {
+        let random_value = seed
+            .wrapping_mul(owner.to_bytes()[i % 32] as u64)
+            .wrapping_add(i as u64 * 31)
+            .wrapping_mul(1103515245);
+
+        dna[i] = (random_value & 0xFF) as u8;
+    }
+
+    dna
+}
+
+// ========================================================================================
+// =============================== DRAGON EGG NFT METADATA ===============================
+// ========================================================================================
+
+/// Dragon Egg NFT metadata (stored in moonbase program for simplicity)
+#[account]
+pub struct DragonEggMetadata {
+    /// The NFT mint address (Metaplex Core asset)
+    pub mint: Pubkey,
+
+    /// Current power level
+    pub power: u32,
+
+    /// DNA data (32 bytes for breeding/evolution)
+    pub dna: [u8; 32],
+
+    /// Moonbase this egg is incubated in (if any)
+    pub incubated_moonbase: Option<Pubkey>,
+
+    /// Last power update timestamp
+    pub last_update_ts: i64,
+
+    /// Total hashpower accumulated
+    pub total_hashpower_accumulated: u64,
+
+    /// Creation timestamp
+    pub created_at: i64,
+
+    /// PDA bump
+    pub bump: u8,
+}
+
+impl DragonEggMetadata {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        32 +    // mint
+        4 +     // power
+        32 +    // dna
+        33 +    // incubated_moonbase (Option<Pubkey>)
+        8 +     // last_update_ts
+        8 +     // total_hashpower_accumulated
+        8 +     // created_at
+        1;      // bump
+}
  

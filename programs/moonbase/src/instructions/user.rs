@@ -4,6 +4,7 @@ use crate::state::*;
 use crate::events::*;
 use crate::errors::ErrorCode;
 use crate::instructions::helper::{self, transfer_to_sol_treasury};
+use crate::mpl_core_helpers;
 
 use anchor_spl::token_interface::{ Mint as Mint2022 };
 
@@ -14,15 +15,22 @@ use anchor_spl::token_interface::{ Mint as Mint2022 };
 
 /// Creates a new moon base for a user
 /// This can only be called once per user
-pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8) -> Result<()> {
+/// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
+pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let new_rewards = &mut ctx.accounts.new_user_rewards;
     let user = &ctx.accounts.user;
-    
+
+    // Get moonbase count before mutable borrow
+    let moonbase_count = {
+        let global_config = &ctx.accounts.global_config;
+        global_config.total_moonbases_created
+    };
+
     // Increment total moonbases created and total sol spent
     let global_config = &mut ctx.accounts.global_config;
     global_config.total_moonbases_created = global_config.total_moonbases_created.saturating_add(1);
-    global_config.total_sol_spent = global_config.total_sol_spent.saturating_add(global_config.base_creation_cost);
+    global_config.total_sol_spent = global_config.total_sol_spent.saturating_add(pricing_tier);
     
     // Validate faction_id
     require!(
@@ -42,8 +50,11 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     new_rewards.bump = ctx.bumps.new_user_rewards;
     new_rewards.referrals_count = 0;
     
+    // Determine if user gets a Dragon Egg NFT
+    let includes_egg = pricing_tier >= 1_000_000_000; // 1 SOL threshold for egg
+
     // Charge the creation fee with 50/50 split
-    let creation_cost = global_config.base_creation_cost;
+    let creation_cost = pricing_tier;
     let fee_recipient_amount = creation_cost / 2; // 50% goes to creation fee recipient
     let remaining_amount = creation_cost - fee_recipient_amount; // 50% goes through existing system
     
@@ -122,15 +133,69 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     
     // Initialize moonbase expansion system
     helper::initialize_moonbase_dimensions(user_moonbase)?;
-    
+
+    // Mint Dragon Egg NFT if tier includes it
+    if includes_egg {
+        let name = format!("Dragon Egg #{}", moonbase_count);
+
+        // Generate DNA for the egg
+        let dna = generate_dragon_egg_dna(
+            Clock::get()?.slot,
+            &user.key(),
+            moonbase_count,
+        );
+
+        // Create Dragon Egg NFT with MPL Core
+        crate::mpl_core_helpers::create_mpl_core_asset(
+            &ctx.accounts.dragon_egg_asset.to_account_info(),
+            Some(&ctx.accounts.dragon_egg_collection.to_account_info()),
+            &ctx.accounts.global_config.to_account_info(),
+            &user.to_account_info(),
+            &user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            name.clone(),
+            format!("https://arweave.net/dragonegg/{}", moonbase_count),
+        )?;
+
+        // Initialize Dragon Egg metadata
+        let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+        egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
+        egg_metadata.power = 100; // BASE_EGG_POWER
+        egg_metadata.dna = dna;
+        egg_metadata.incubated_moonbase = None;
+        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+        egg_metadata.total_hashpower_accumulated = 0;
+        egg_metadata.created_at = Clock::get()?.unix_timestamp;
+        egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
+
+        // Update global stats (already done above)
+        // global_config.total_sol_spent already updated
+
+        // Emit events
+        emit!(DragonEggMinted {
+            mint: egg_metadata.mint,
+            name,
+            uri: format!("https://arweave.net/dragonegg/{}", moonbase_count),
+            dna,
+            initial_power: 100,
+            price_paid: 0, // Included in moonbase price
+        });
+
+        msg!("✅ Dragon Egg minted for moonbase creation");
+        msg!("   Egg: {}", egg_metadata.mint);
+    }
+
     // Emit event
     emit!(UserMoonBaseCreated {
         owner: user.key(),
         referrer,
     });
-    
-    msg!("Created new moon base for user {}", user.key());
-    
+
+    msg!("Created new moon base for user {} with tier: {} SOL {}",
+         user.key(), pricing_tier as f64 / 1_000_000_000.0,
+         if includes_egg { "(includes Dragon Egg)" } else { "(no NFT)" });
+
     Ok(())
 }
 
@@ -1467,6 +1532,26 @@ pub struct CreateUserMoonbase<'info> {
         address = global_config.creation_fee_recipient
     )]
     pub creation_fee_recipient: UncheckedAccount<'info>,
+
+    /// CHECK: Dragon Egg asset (if applicable) - will be created via CPI
+    #[account(mut)]
+    pub dragon_egg_asset: AccountInfo<'info>,
+
+    /// CHECK: Dragon Egg collection
+    #[account(mut)]
+    pub dragon_egg_collection: UncheckedAccount<'info>,
+
+    #[account(
+        init,
+        payer = user,
+        space = DragonEggMetadata::LEN,
+        seeds = [b"dragon-egg-metadata", dragon_egg_asset.key().as_ref()],
+        bump
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,

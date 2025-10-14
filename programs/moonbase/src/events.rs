@@ -406,6 +406,20 @@ pub struct LevelStatsUpdated {
     pub users_at_new_level: u32,
 }
 
+// ========================================================================================
+// =============================== DRAGON EGG NFT EVENTS =================================
+// ========================================================================================
+
+#[event]
+pub struct DragonEggMinted {
+    pub mint: Pubkey,
+    pub name: String,
+    pub uri: String,
+    pub dna: [u8; 32],
+    pub initial_power: u32,
+    pub price_paid: u64,
+}
+
 #[event]
 pub struct LevelStatsInitialized {
     pub level_stats_pda: Pubkey,

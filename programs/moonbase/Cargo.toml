@@ -25,5 +25,4 @@ anchor-spl  = { version = "0.31.1", features = [
 mpl-core = "0.10.1"
 mpl-token-metadata = { version = "5.1.1" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
-launchpad = { path = "../launchpad", features = ["cpi"] }
 raydium-cp-swap = { path = "../../raydium/programs/cp-swap", features = ["cpi"] }

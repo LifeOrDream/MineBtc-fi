@@ -3,6 +3,7 @@ use anchor_lang::system_program;
 mod state;
 mod errors;
 mod events;
+mod mpl_core_helpers;
 pub mod instructions;
 
 pub use instructions::admin::*;
@@ -244,8 +245,9 @@ pub mod moonbase {
     // ----------------------------------------------------------------------------------------
 
     /// Create a new moon base for a user
-    pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8) -> Result<()> {
-        user::initialize_user_moonbase(ctx, referrer, faction_id)
+    /// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
+    pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+        user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
     }
 
 
