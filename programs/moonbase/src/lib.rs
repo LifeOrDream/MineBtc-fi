@@ -60,6 +60,34 @@ pub mod moonbase {
         admin::add_expansion_internal(ctx, id, name, required_level, cost_sol, new_width, new_height)
     }
 
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ MOON_DOGE_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ----------------------------------------------------------------------------------------
+
+
+    /// Initialize mining by setting the token vault and starting timestamp
+    /// Can only be called once when mining_start_timestamp is 0
+    pub fn initialize_mining(
+        ctx: Context<InitializeMining>,
+        start_timestamp: u64,
+        moon_doge_per_slot: u64,
+        pool_state: Pubkey
+    ) -> Result<()> {
+        admin::initialize_mining_internal(ctx, start_timestamp, moon_doge_per_slot, pool_state)
+    }
+ 
+    /// Update slots per hour configuration (admin only)
+    pub fn update_slots_for_swap(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
+        admin::update_slots_for_swap_internal(ctx, new_slots_for_swap)
+    }    
+
+    /// Deposit moon doge tokens to the mining vault
+    pub fn deposit_moon_doge_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        admin::deposit_moon_doge_tokens_internal(ctx, amount)
+    }
+
+
     
 }
 

@@ -233,6 +233,106 @@ pub fn add_expansion_internal(
 }
 
 
+// -------------------------------------------------------------------------------- 
+// -------------------------------------------------------------------------------- 
+// ------------ MOON_DOGE_MINING :: INITIALIZATION & UPDATES ------------
+// -------------------------------------------------------------------------------- 
+// -------------------------------------------------------------------------------- 
+
+
+
+/// Initialize mining by setting the token vault and starting timestamp
+/// Can only be called once when mining_start_timestamp is 0
+pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timestamp: u64, 
+    moon_doge_per_slot: u64, pool_state: Pubkey) -> Result<()> {
+let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+
+// Check mining hasn't been initialized yet
+require!(
+moon_doge_mining.mining_start_timestamp == 0,
+ErrorCode::MiningAlreadyInitialized
+);
+
+let cur_slot = Clock::get()?.slot;
+
+// ───── persist vault + bump(s) ─────
+moon_doge_mining.mdoge_token_vault = ctx.accounts.token_vault.key();
+moon_doge_mining.vault_auth_bump = ctx.bumps.vault_authority;
+
+// Initialize mining parameters
+moon_doge_mining.mining_start_timestamp = start_timestamp;
+moon_doge_mining.moon_doge_per_slot = moon_doge_per_slot;
+moon_doge_mining.last_slot = cur_slot;
+
+// Initialize dynamic distribution fields  
+moon_doge_mining.raydium_pool_state = pool_state;
+moon_doge_mining.last_rate_update = Clock::get()?.unix_timestamp;
+moon_doge_mining.current_dist_rate = moon_doge_per_slot;
+moon_doge_mining.price_history = Vec::with_capacity(8);
+moon_doge_mining.avg_price_8h = 0;
+moon_doge_mining.prev_avg_price_8h = 0;
+moon_doge_mining.sol_for_pol = 0; // Initialize POL tracking
+moon_doge_mining.slots_for_swap = 9000; // Default: ~2.5 slots/second * 3600 seconds
+moon_doge_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
+
+msg!("Initialized dynamic distribution system with Raydium pool: {}", pool_state);
+
+// Emit event
+emit!(MiningTokenVaultSet {
+authority: ctx.accounts.authority.key(),
+token_vault: ctx.accounts.token_vault.key(),
+token_vault_authority: ctx.accounts.vault_authority.key(),
+mining_start_timestamp: start_timestamp,
+});
+
+msg!("Mining initialized with token vault: {}", 
+ctx.accounts.token_vault.key());
+
+Ok(())
+}
+
+/// Update slots per hour configuration (admin only)
+pub fn update_slots_for_swap_internal(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
+let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+
+require!(new_slots_for_swap > 0, ErrorCode::InvalidParameters);
+
+let old_slots_for_swap = moon_doge_mining.slots_for_swap;
+moon_doge_mining.slots_for_swap = new_slots_for_swap;
+
+msg!("Updated slots per hour from {} to {}", old_slots_for_swap, new_slots_for_swap);
+
+emit!(SlotsPerHourUpdated {
+authority: ctx.accounts.authority.key(),
+old_slots_for_swap,
+new_slots_for_swap,
+});
+
+Ok(())
+}
+
+/// Deposit moon doge tokens to the mining vault
+pub fn deposit_moon_doge_tokens_internal(  ctx: Context<DepositTokens>,  amount: u64) -> Result<()> {
+token_if::transfer_checked(
+CpiContext::new(
+ctx.accounts.token_program.to_account_info(),      // TOKEN_2022_PROGRAM_ID
+token_if::TransferChecked {
+from:      ctx.accounts.depositor_token_account.to_account_info(),
+mint:      ctx.accounts.token_mint.to_account_info(),
+to:        ctx.accounts.mdoge_token_vault.to_account_info(),
+authority: ctx.accounts.depositor.to_account_info(),
+},
+),
+amount,
+MDOGE_DECIMALS,     // decimals
+)?;
+
+msg!("Deposited {} MDOGE into mining vault", amount);
+Ok(())
+}
+
+
+
 
 // -------------------------------------------------------------------------------- 
 // ------------ GLOBAL_CONFIG :: INITIALIZE ------------
@@ -328,3 +428,127 @@ pub struct AddExpansion<'info> {
     pub system_program: Program<'info, System>,
 }
  
+
+
+#[derive(Accounts)]
+pub struct InitializeMining<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+
+    //  Vault authority PDA (0-byte, signer only)
+    #[account(
+        seeds = [MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: signer-only PDA, no data or lamports required
+    pub vault_authority: UncheckedAccount<'info>,
+
+    // ─────────────────── token-2022 vault account ────────────────────
+    #[account(
+        init,
+        payer  = authority,
+        owner  = token_program.key(),
+        seeds  = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        token::mint      = token_mint,
+        token::authority = vault_authority,
+        bump
+    )]
+    pub token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    // Mint created under Token-2022
+    #[account(mut, owner = token_program.key())]
+    pub token_mint: InterfaceAccount<'info, Mint2022>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+
+#[derive(Accounts)]
+pub struct UpdateSlotsPerHour<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+
+#[derive(Accounts)]
+pub struct DepositTokens<'info> {
+    #[account(mut)]
+    pub depositor: Signer<'info>,
+    
+    #[account(
+        mut,
+        owner       = token_program.key(),                     // interface account check
+        constraint  = depositor_token_account.owner == depositor.key() @ ErrorCode::Unauthorized,
+        constraint  = depositor_token_account.mint  == mdoge_token_vault.mint @ ErrorCode::InvalidMint
+    )]
+    pub depositor_token_account: InterfaceAccount<'info, TokenAccount2022>,
+
+    // ─── mining token vault ───
+    #[account(
+        mut,
+        seeds  = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        bump,
+        owner  = token_program.key(),
+    )]
+    pub mdoge_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+
+    #[account(
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(owner = token_program.key())]
+    pub token_mint: InterfaceAccount<'info, Mint2022>,
+    
+    pub token_program: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct CreateSystemReferralAccount<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = ReferralRewards::LEN,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), system_program.key().as_ref()],
+        bump,
+    )]
+    pub referrer_rewards: Account<'info, ReferralRewards>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+

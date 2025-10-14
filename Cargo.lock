@@ -1200,8 +1200,8 @@ dependencies = [
 name = "moonbase"
 version = "1.0.0"
 dependencies = [
- "anchor-lang 0.32.1",
- "anchor-spl 0.32.1",
+ "anchor-lang 0.31.1",
+ "anchor-spl 0.31.1",
  "launchpad",
  "mpl-core 0.10.1",
  "mpl-token-metadata",
