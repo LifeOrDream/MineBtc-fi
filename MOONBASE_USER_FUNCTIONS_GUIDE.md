@@ -1186,6 +1186,481 @@ module_config:
 
 ---
 
+---
+
+## 🔄 **Dynamic Distribution System (`update_dbtc_dist_per_slot`)**
+
+### **Purpose**: Automatically adjust DOGE_BTC mining rewards based on real-time market price
+
+This is a **CRITICAL economic function** that keeps the game sustainable by preventing inflation/deflation spirals.
+
+### **Who Can Call**: ANYONE (no permission needed)
+
+### **How Often**: Every hour (enforced by 1-hour cooldown)
+
+---
+
+### **What Happens (8-Hour Cycle)**
+
+```rust
+// STEP 1: SWAP DOGE_BTC FOR SOL (Hourly, 7 times)
+// --------------------------------------------------
+// Calculate swap amount:
+dbtc_for_swap = current_dist_rate × slots_for_swap
+// Example: 100 DBTC/slot × 9000 slots = 900,000 DBTC
+
+// Perform Raydium swap (CPI):
+sol_received = swap_on_raydium(900,000 DBTC)
+// Example: 900,000 DBTC → 500 SOL
+
+// Calculate current price:
+price = (sol_received × 10^9) / dbtc_for_swap
+// Example: (500 × 10^9) / 900,000 = 555,555 SOL per DBTC
+// (stored with 9-decimal precision)
+
+// Save price entry:
+price_history.push({
+    timestamp: current_time,
+    price: 555,555
+})
+
+// Accumulate SOL for liquidity:
+sol_for_pol += sol_received
+// Example: 500 SOL stored in WSOL account
+
+// Wait for next hour...
+
+
+// STEP 2: AFTER 8TH HOUR (Full Cycle)
+// --------------------------------------------------
+// Calculate weighted average price:
+weights = [1, 2, 3, 4, 5, 6, 7, 8]  // Recent prices weighted higher
+weighted_avg = Σ(price[i] × weight[i]) / Σ(weights)
+// This gives MORE importance to recent prices
+
+// Compare to previous 8-hour average:
+if new_avg > prev_avg:
+    // Price INCREASED → Reduce distribution by 3%
+    current_dist_rate = current_dist_rate × 0.97
+    msg!("📉 Price up! Reducing rewards to prevent deflation")
+    
+else if new_avg < prev_avg:
+    // Price DECREASED → Increase distribution by 1%
+    current_dist_rate = current_dist_rate × 1.01
+    msg!("📈 Price down! Increasing rewards to prevent inflation")
+    
+else:
+    msg!("➡️ Price stable, no adjustment")
+
+
+// STEP 3: ADD LIQUIDITY & BURN LP TOKENS (Protocol-Owned Liquidity)
+// --------------------------------------------------
+// Use accumulated SOL from 8 swaps:
+total_sol = sol_for_pol + current_swap_sol
+// Example: 3,500 SOL accumulated + 500 SOL = 4,000 SOL
+
+// Calculate proportional DOGE_BTC needed:
+dbtc_needed = (total_sol × dbtc_vault_balance) / sol_vault_balance
+// Example: (4,000 × 10M DBTC) / 100 SOL = 400,000 DBTC
+
+// Add liquidity to Raydium pool (CPI):
+lp_tokens_minted = raydium.deposit(4,000 SOL, 400,000 DBTC)
+// Example: Receive 50,000 LP tokens
+
+// IMMEDIATELY BURN LP TOKENS:
+burn(50,000 LP tokens)
+// This is permanent liquidity for the protocol!
+// Deepens the pool → Less slippage → Better trading
+
+// Update POL tracking:
+pol_stats.total_lp_burnt += 50,000
+pol_stats.total_sol_added += 4,000
+pol_stats.total_dbtc_added += 400,000
+pol_stats.lp_operations_count += 1
+
+// Clear price history and restart:
+price_history.clear()
+sol_for_pol = 0
+// Start new 8-hour cycle
+```
+
+---
+
+### **Why This Matters**
+
+#### **🎯 Problem Solved:**
+Without price adjustments, you'd have either:
+- **Hyperinflation**: DBTC price crashes → Players mine millions → Economy dies
+- **Deflation**: DBTC price moons → Nobody mines → Game stalls
+
+#### **✅ Solution:**
+- Price **decreases** → Distribute MORE tokens → Incentivize mining → Price stabilizes
+- Price **increases** → Distribute LESS tokens → Prevent dumping → Price stabilizes
+
+#### **💎 Protocol-Owned Liquidity:**
+Every 8 hours, the protocol:
+1. **Permanently adds liquidity** to Raydium pool
+2. **Burns the LP tokens** (can NEVER withdraw)
+3. **Deepens the market** → Better prices for everyone
+4. **Proves commitment** → Builds trust with players
+
+---
+
+### **Admin Override Mode**
+
+```rust
+// If lp_token_amount > 0:
+// Admin can manually specify LP token amount
+// (Requires authority signature)
+
+Example:
+update_dbtc_dist_per_slot(lp_token_amount: 100,000)
+// Will calculate exact SOL/DBTC needed for 100K LP tokens
+```
+
+---
+
+### **Key Insights**
+
+1. **Self-Regulating Economy**: Price feedback loop prevents extreme volatility
+2. **Gradual Adjustments**: ±1-3% changes prevent shock
+3. **Weighted Averages**: Recent prices matter more (trend-following)
+4. **POL Accumulation**: Protocol becomes largest liquidity provider over time
+5. **Transparent**: Anyone can call → No trust needed
+6. **Gas-Efficient**: Only 8 price entries stored (vs full history)
+
+---
+
+## 🎰 **Loot System Deep Dive**
+
+### **Overview**
+The loot system is a **casino-style reward mechanism** that distributes accumulated fees/rewards to players when they level up.
+
+---
+
+### **Loot Vault Accumulation (How It Fills)**
+
+```
+SOURCE 1: Mining Claims (10% of all DBTC mined)
+──────────────────────────────────────────────
+User claims 10,000 DBTC:
+  → 9,000 DBTC to user (90%)
+  → 1,000 DBTC to loot vault (10%)
+
+SOURCE 2: SOL Fee Withdrawals (10% of treasury)
+──────────────────────────────────────────────
+MoonEconomy withdraws 100 SOL from treasury:
+  → 90 SOL to MoonEconomy (90%)
+  → 10 SOL to loot vault (10%)
+
+SOURCE 3: Module Purchases, Upgrades, Expansions
+──────────────────────────────────────────────
+User pays 1 SOL for expansion:
+  → Goes to treasury
+  → Later withdrawn by MoonEconomy
+  → 10% flows to loot vault
+
+VAULT STATE:
+──────────────────────────────────────────────
+total_sol_accumulated: 1,250 SOL
+total_dbtc_accumulated: 5,000,000 DBTC
+total_sol_distributed: 85 SOL (paid out)
+total_dbtc_distributed: 500,000 DBTC (paid out)
+```
+
+---
+
+### **Loot Rolling Mechanics (When You Level Up)**
+
+#### **Phase 1: Generate Random Roll**
+```rust
+// Use Keccak hash of slot + user pubkey for RNG
+seed = keccak(current_slot + user.pubkey)
+roll = seed[0..2] as u16  // 0-65535
+roll_bp = roll % 10,000   // 0-9999 basis points
+```
+
+#### **Phase 2: Calculate Base Loot Chance**
+```
+TIER SYSTEM:
+
+Levels 1-4 (Learning):
+├─ Base: 3% + 0.2% per level
+├─ Vault: 1% of vault
+└─ Max: 3.8% chance at level 4
+
+Levels 5, 10 (Milestones):
+├─ Base: 100% (GUARANTEED!)
+├─ Vault: 0.5% of vault
+└─ Everyone gets loot at these levels
+
+Levels 6-14 (Growth):
+├─ Base: 3% + 0.2% per level
+├─ Vault: 1% of vault
+└─ Max: 5.8% chance at level 14
+
+Levels 15-24 (Rare):
+├─ Base: 15% (non-milestone)
+├─ Milestone (15, 20): 100% guaranteed
+├─ Vault: 5% of vault (non-milestone)
+└─ Vault: 2% (milestone)
+
+Level 25+ (Legendary):
+├─ Base: 25% (non-milestone)
+├─ Milestone (30, 40, 50...): 100%
+├─ Vault: 8% of vault (non-milestone)
+└─ Vault: 8% (milestone)
+```
+
+#### **Phase 3: Apply Exclusivity Bonuses**
+```
+RANKING SYSTEM:
+
+Global Max Level (e.g., level 50):
+├─ Chance multiplier: 150% (1.5x)
+├─ Vault multiplier: 300% (3x!)
+└─ Example: 25% base × 150% = 37.5% final chance
+           8% vault × 300% = 24% of vault (capped at 10%)
+
+Max - 1 Level (e.g., level 49):
+├─ Chance: 140%
+└─ Vault: 250%
+
+Max - 2 Level (e.g., level 48):
+├─ Chance: 130%
+└─ Vault: 200%
+
+≤3 Users at Your Level:
+├─ Chance: 125%
+└─ Vault: 175%
+
+≤10 Users at Your Level:
+├─ Chance: 120%
+└─ Vault: 150%
+
+≤25 Users at Your Level:
+├─ Chance: 110%
+└─ Vault: 120%
+
+Everyone Else:
+├─ Chance: 100% (no bonus)
+└─ Vault: 100% (no bonus)
+```
+
+#### **Phase 4: Roll for Loot**
+```rust
+if roll_bp < final_chance:
+    // WON LOOT!
+    proceed_to_payout_calculation()
+else:
+    // LOST
+    return (0, 0)
+```
+
+#### **Phase 5: Calculate Payout Amount**
+
+**A. Milestone Levels (10, 20, 30, 40...):**
+```rust
+// Try JACKPOT first (0.20% chance):
+jackpot_roll = random(0-9999)
+if jackpot_roll < 20:  // 0.20% = 20/10,000
+    // Try to award fixed pots:
+    for pot in [1000 SOL, 750 SOL, 690 SOL, 510 SOL, 420 SOL]:
+        if vault >= pot × 1.1:  // Need 110% buffer
+            award_jackpot(pot)
+            break
+
+// If no jackpot, calculate normal payout:
+desired_sol = vault × (vault_bp_final / 10,000)
+// Example: 1,000 SOL vault × (800bp × 300% / 10,000) = 24 SOL
+// But capped at 10% → 100 SOL max
+```
+
+**B. Regular Levels:**
+```rust
+desired_sol = vault × (vault_bp_final / 10,000)
+// Example: 1,000 SOL vault × (500bp / 10,000) = 5 SOL
+```
+
+#### **Phase 6: Currency Selection**
+
+**Milestone Levels** (prefer SOL):
+```rust
+if sol_vault >= desired_sol:
+    payout = (desired_sol SOL, 0 DBTC)
+else if dbtc_vault >= equivalent_dbtc:
+    payout = (0 SOL, equivalent_dbtc)
+else:
+    // Fallback: Pay half of whichever vault has funds
+    payout = (sol_vault / 2, 0) or (0, dbtc_vault / 2)
+```
+
+**Regular Levels** (50/50 coin flip):
+```rust
+coin_flip = random_bit()
+
+if sol_ok && dbtc_ok:
+    if coin_flip:
+        payout = (desired_sol, 0)
+    else:
+        payout = (0, equivalent_dbtc)
+else if sol_ok:
+    payout = (desired_sol, 0)
+else if dbtc_ok:
+    payout = (0, equivalent_dbtc)
+else:
+    payout = (0, 0)  // Both vaults empty
+```
+
+#### **Phase 7: Apply Safety Limits**
+```rust
+// Clamp SOL payouts:
+sol_payout = max(0.01 SOL, min(100 SOL, vault × 10%))
+
+// Clamp DBTC payouts:
+dbtc_payout = max(equivalent, min(equivalent_100_sol, vault × 10%))
+```
+
+#### **Phase 8: Transfer & Update**
+```rust
+// Transfer SOL (if won):
+if sol_payout > 0:
+    transfer(loot_sol_vault → user, sol_payout)
+    loot.total_sol_accumulated -= sol_payout
+    loot.total_sol_distributed += sol_payout
+
+// Transfer DBTC (if won):
+if dbtc_payout > 0:
+    transfer(loot_dbtc_vault → user, dbtc_payout)
+    loot.total_dbtc_accumulated -= dbtc_payout
+    loot.total_dbtc_distributed += dbtc_payout
+
+// Emit event:
+emit!(LootWon {
+    owner, level, sol, dbtc, tier, rank, chance%
+})
+```
+
+---
+
+### **Loot System Statistics**
+
+```
+PROBABILITY EXAMPLES:
+
+Level 1 (base 3.2%):
+├─ Regular user: 3.2% chance, 1% of vault
+├─ Max level: 3.2% × 150% = 4.8%, 3% of vault
+└─ ≤3 users: 3.2% × 125% = 4%, 1.75% of vault
+
+Level 10 (milestone):
+├─ Everyone: 100% guaranteed
+├─ Vault: 0.5% base
+├─ Max level: 0.5% × 300% = 1.5% of vault
+└─ Jackpot: 0.20% chance for 420-1000 SOL
+
+Level 25 (legendary):
+├─ Regular user: 25% chance, 8% of vault
+├─ Max level: 25% × 150% = 37.5%, 24% → capped at 10%
+└─ ≤10 users: 25% × 120% = 30%, 12% → capped at 10%
+
+Level 50 milestone (+ max level):
+├─ Base: 100% guaranteed
+├─ Vault: 8% base × 300% = 24% → capped at 10%
+├─ Jackpot: 0.20% for 420-1000 SOL
+└─ Expected: ~100-250 SOL per level-up
+```
+
+---
+
+### **Conversion Formula (SOL ↔ DBTC)**
+
+```rust
+// Get 8-hour average price from oracle:
+dbtc_price = doge_btc_mining.avg_price_8h  // 9-decimal precision
+
+// Convert SOL to DBTC:
+dbtc_amount = (sol_amount × 10^9) / dbtc_price
+
+// Example:
+// Want: 10 SOL worth
+// Price: 0.001 SOL per DBTC (1,000,000 in 9-decimal)
+// DBTC: (10 × 10^9) / 1,000,000 = 10,000 DBTC
+```
+
+---
+
+### **Edge Cases Handled**
+
+1. **Empty Vaults**: 
+   - Still level up, just no loot
+   - Vaults refill over time
+
+2. **Partial Liquidity**:
+   - Can't afford SOL → Switch to DBTC
+   - Can't afford DBTC → Switch to SOL
+   - Can't afford either → Pay half of available
+
+3. **Overflow Protection**:
+   - All calculations use saturating math
+   - Price values clamped to u64::MAX
+
+4. **First-Mover Advantage**:
+   - Early levels guaranteed for first players
+   - As game grows, vault grows
+   - Later players compete for larger pots
+
+---
+
+### **Strategic Implications**
+
+#### **For Players:**
+- **Race to max level** = 3x vault multiplier!
+- **Milestone levels** = Guaranteed loot + jackpot chance
+- **Stay at top** = Sustained high payouts
+- **Grind early** = Less competition
+
+#### **For Economy:**
+- **Self-balancing** = Price stabilizes automatically
+- **POL growth** = Market gets more liquid over time
+- **Sustainable** = 10% rake prevents vault depletion
+- **Fair** = Random rolls can't be gamed
+
+---
+
+### **Example: Full 8-Hour Cycle**
+
+```
+Hour 1: Swap 900K DBTC → 500 SOL (price: 0.000556)
+Hour 2: Swap 900K DBTC → 510 SOL (price: 0.000567)
+Hour 3: Swap 900K DBTC → 495 SOL (price: 0.000550)
+Hour 4: Swap 900K DBTC → 505 SOL (price: 0.000561)
+Hour 5: Swap 900K DBTC → 515 SOL (price: 0.000572)
+Hour 6: Swap 900K DBTC → 520 SOL (price: 0.000578)
+Hour 7: Swap 900K DBTC → 525 SOL (price: 0.000583)
+Hour 8: Swap 900K DBTC → 530 SOL (price: 0.000589)
+
+Total SOL accumulated: 4,100 SOL
+Weighted avg price: 0.000575 SOL/DBTC
+Previous avg: 0.000500 SOL/DBTC
+
+Price change: +15% → Reduce distribution by 3%
+New rate: 100 DBTC/slot × 0.97 = 97 DBTC/slot
+
+Add liquidity: 4,100 SOL + ~400K DBTC → Mint 55K LP
+Burn LP: 55,000 LP tokens permanently removed
+
+POL Stats Updated:
+├─ Total LP Burnt: 355,000
+├─ Total SOL Added: 25,000
+├─ Total DBTC Added: 3,000,000
+└─ Operations: 128
+
+Result: Market is now 55K LP deeper!
+```
+
+---
+
 ## Summary
 
 MoonBase is a **complex idle game** with:
@@ -1193,16 +1668,19 @@ MoonBase is a **complex idle game** with:
 - ✅ **Building**: Grid-based module placement system
 - ✅ **Progression**: XP & leveling with daily login streaks
 - ✅ **Gambling**: Casino-style loot rewards on level-up
-- ✅ **Economy**: SOL + DOGE_BTC dual token system
+- ✅ **Economy**: SOL + DOGE_BTC dual token system with **dynamic distribution**
 - ✅ **Social**: Referral rewards system
 - ✅ **Strategy**: Module placement, electricity management, upgrade paths
+- ✅ **DeFi Integration**: Protocol-Owned Liquidity via Raydium swaps & LP burning
 
 **Core Loop**: Build base → Mine tokens → Gain XP → Level up → Win loot → Expand → Repeat
 
-**Monetization**: Players pay SOL for modules, upgrades, expansions. 10% goes to loot vault, creating a fun lottery-style reward system.
+**Economic Loop**: Players spend SOL → 10% to loot → Loot distributed on level-up → DBTC price tracked → Distribution adjusted → POL grown
+
+**Monetization**: Players pay SOL for modules, upgrades, expansions. 10% goes to loot vault, creating a fun lottery-style reward system. Protocol permanently adds liquidity to Raydium pool every 8 hours.
 
 ---
 
 *Last Updated: October 2025*
-*Version: 1.0.0*
+*Version: 2.0.0 - Dynamic Distribution & POL System*
 

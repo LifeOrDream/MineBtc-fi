@@ -247,16 +247,15 @@ pub mod moonbase {
         admin::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
     }
 
-//     // ----------------------------------------------------------------------------------------
-//     // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 
-//     // ----------------------------------------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+    // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 
+    // ----------------------------------------------------------------------------------------
 
-//     /// Create a new moon base for a user
-//     /// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
-//     pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
-//         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
-//     }
-
+    /// Create a new moon base for a user
+    /// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
+    pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+        user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
+    }
 
 //     /// Purchase a moonbase expansion (user function)
 //     pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {

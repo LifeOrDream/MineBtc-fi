@@ -6,14 +6,9 @@ use crate::events::*;
 use crate::errors::ErrorCode;
 
 
-/// Calculate mining XP based on DOGE_BTC tokens mined
-/// Awards 15 XP per 1000 DOGE_BTC mined
-pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
-    let thousands_mined = tokens_mined / 1_000_000_000; // Assuming 9 decimals, so 1000 tokens = 1000 * 10^9
-    (thousands_mined as u32) * XP_MINING_1000_MDOGE
-}
-
-
+// -----------------------------------------------------
+// ------------ REFERRAL SYSTEM HELPERS ---------------- 
+// ----------------------------------------------------- 
 
 // Helper function to transfer SOL to the program's sol_treasury PDA
 pub fn transfer_to_sol_treasury<'info>(
@@ -65,17 +60,13 @@ pub fn process_referral_payment<'info>(
             let mut rewards = ReferralRewards::try_deserialize(&mut rewards_data.as_ref())?;
             
             // Update the referrer's earned amount
-            rewards.total_sol_earned = rewards.total_sol_earned
-                .checked_add(referral_fee)
-                .unwrap();
+            rewards.total_sol_earned = rewards.total_sol_earned.checked_add(referral_fee).unwrap();
                 
             // Serialize back to the account
             rewards.try_serialize(&mut *rewards_data)?;
 
             // Increment total referral sol paid
-            global_config.total_referral_sol_paid = global_config.total_referral_sol_paid
-                .checked_add(referral_fee)
-                .unwrap();
+            global_config.total_referral_sol_paid = global_config.total_referral_sol_paid.checked_add(referral_fee).unwrap();
             
             // Transfer SOL to the referrer's PDA account
             transfer(
@@ -114,12 +105,139 @@ pub fn process_referral_payment<'info>(
     )?;
     
     // Track total SOL spent by users
-    global_config.total_sol_spent = global_config.total_sol_spent
-        .checked_add(cost)
-        .unwrap_or(global_config.total_sol_spent);
+    global_config.total_sol_spent = global_config.total_sol_spent.checked_add(cost).unwrap_or(global_config.total_sol_spent);
     
     Ok((referral_fee, treasury_amount))
 }
+
+
+// -----------------------------------------------------
+// ------------ REFERRAL SYSTEM HELPERS ---------------- 
+// ----------------------------------------------------- 
+
+// ========== MOONBASE EXPANSION SYSTEM HELPERS ========== //
+
+/// Check if a user can purchase a specific expansion
+pub fn can_purchase_expansion(
+    user_moonbase: &UserMoonBaseInstance,
+    expansion: &ExpansionConfig,
+) -> Result<bool> {
+    // Check level requirement
+    if user_moonbase.level < expansion.required_level {
+        return Ok(false);
+    }
+    
+    // Check if already purchased
+    if user_moonbase.purchased_expansions.contains(&expansion.id) {
+        return Ok(false);
+    }
+    
+    // Check if expansion is active
+    if !expansion.is_active {
+        return Ok(false);
+    }
+    
+    Ok(true)
+}
+
+
+
+// --------------------------------------- //
+// ========== DAILY LOGIN SYSTEM =========== //
+// --------------------------------------- //
+
+/// Process daily login and award XP if eligible
+/// Returns (xp_gained, new_streak) if login reward was given, or (0, current_streak) if not
+pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)> {
+
+    let current_timestamp = Clock::get()?.unix_timestamp;
+    let one_day_seconds = 24 * 60 * 60; // 86400 seconds
+    
+    // Check if it's been at least 24 hours since last login
+    let time_since_last_login = current_timestamp - user.last_login_ts;
+
+    // withing 24 hours, no login reward
+    if ( time_since_last_login < one_day_seconds ) {
+        return Ok((0, user.daily_login_streak));
+    }
+    
+    // Check if the streak should continue (within 48 hours) or reset
+    if time_since_last_login >= one_day_seconds && time_since_last_login < 2 * one_day_seconds {        
+            user.daily_login_streak = user.daily_login_streak.saturating_add(1);
+    } else {
+       user.daily_login_streak = 1;
+    }
+        
+    // Update last login timestamp
+    user.last_login_ts = current_timestamp;
+        
+    // 🔥🔥🔥 DEGEN STREAK XP CALCULATION 🔥🔥🔥
+    let base_xp = XP_DAILY_LOGIN; // 10 XP base
+    let streak = user.daily_login_streak;
+        
+    let xp_gained = match streak {
+        1..=7 => base_xp + (streak as u32), // Day 7 = 17 XP :: Week 1: Build the habit (10-20 XP)
+        8..=14 => base_xp + 10 + (streak as u32), // Day 14 = 34 XP :: Week 2: Getting serious (21-35 XP) 
+        15..=30 => base_xp + 20 + (streak as u32), // Day 30 = 60 XP :: Week 3-4: Degen territory (36-60 XP)        
+        31..=60 => base_xp + 40 + ((streak - 20) as u32), // Day 60 = 90 XP :: Month 2: Diamond hands (61-80 XP)        
+        _ => {
+            let capped_streak = std::cmp::min(streak, 90); // Cap at day 90 scaling
+            base_xp + 50 + ((capped_streak - 30) as u32) // Day 90+ = 100 XP max
+            }
+        };
+        
+    // 🎰 MILESTONE STREAK BONUSES (REASONABLE BUT EXCITING) 🎰
+    let milestone_bonus = match streak {
+            7 => 50,     // Week milestone: +50 XP bonus
+            14 => 75,    // 2 weeks: +75 XP bonus  
+            30 => 100,   // Month: +100 XP bonus
+            50 => 125,   // 50 days: +125 XP bonus
+            69 => 150,   // Nice: +150 XP bonus 😏
+            100 => 200,  // 100 days: +200 XP bonus
+            150 => 250,  // 150 days: +250 XP bonus
+            200 => 300,  // 200 days: +300 XP bonus
+            365 => 500,  // 1 YEAR: +500 XP MEGA BONUS!
+            500 => 750,  // 500 days: +750 XP bonus
+            1000 => 1000, // 1000 days: +1000 XP LEGENDARY BONUS!
+            _ => 0,
+        };
+        
+    let total_xp = xp_gained + milestone_bonus;
+    user.xp = user.xp.saturating_add(total_xp);
+        
+    // 🎉 Enhanced logging for degen streaks
+    msg!("🗓️ Daily login: Day {} streak = {} XP (Building momentum...)", streak, total_xp);
+        
+        // Emit events
+        emit!(DailyLoginReward {
+            owner: user.owner,
+            streak: user.daily_login_streak,
+            xp_gained: total_xp,
+        });
+        
+    Ok((total_xp, user.daily_login_streak))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/// Calculate mining XP based on DOGE_BTC tokens mined
+/// Awards 15 XP per 1000 DOGE_BTC mined
+pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
+    let thousands_mined = tokens_mined / 1_000_000_000; // Assuming 9 decimals, so 1000 tokens = 1000 * 10^9
+    (thousands_mined as u32) * XP_MINING_1000_MDOGE
+}
+
+
+
 
 /// Update the mining state and distribute MoonDoge tokens
 /// This function should be called whenever global hashpower changes
@@ -227,30 +345,6 @@ pub fn initialize_moonbase_dimensions(user_moonbase: &mut UserMoonBaseInstance) 
     Ok(())
 }
 
-// ========== MOONBASE EXPANSION SYSTEM HELPERS ========== //
-
-/// Check if a user can purchase a specific expansion
-pub fn can_purchase_expansion(
-    user_moonbase: &UserMoonBaseInstance,
-    expansion: &ExpansionConfig,
-) -> Result<bool> {
-    // Check level requirement
-    if user_moonbase.level < expansion.required_level {
-        return Ok(false);
-    }
-    
-    // Check if already purchased
-    if user_moonbase.purchased_expansions.contains(&expansion.id) {
-        return Ok(false);
-    }
-    
-    // Check if expansion is active
-    if !expansion.is_active {
-        return Ok(false);
-    }
-    
-    Ok(true)
-}
 
 
 // --------------------------------------- //
@@ -320,127 +414,6 @@ pub fn add_xp_simple(user_moonbase: &mut UserMoonBaseInstance, xp_amount: u32, s
 
 
 
-// --------------------------------------- //
-// ========== DAILY LOGIN SYSTEM =========== //
-// --------------------------------------- //
-
-/// Process daily login and award XP if eligible
-/// Returns (xp_gained, new_streak) if login reward was given, or (0, current_streak) if not
-pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)> {
-    let current_timestamp = Clock::get()?.unix_timestamp;
-    let one_day_seconds = 24 * 60 * 60; // 86400 seconds
-    
-    // Check if it's been at least 24 hours since last login
-    let time_since_last_login = current_timestamp - user.last_login_ts;
-    
-    if time_since_last_login >= one_day_seconds {
-        // Check if the streak should continue (within 48 hours) or reset
-        let two_days_seconds = 2 * one_day_seconds;
-        
-        if time_since_last_login <= two_days_seconds && user.last_login_ts > 0 {
-            // Continue streak
-            user.daily_login_streak = user.daily_login_streak.saturating_add(1);
-        } else {
-            // Reset streak (first login or gap > 48 hours)
-            user.daily_login_streak = 1;
-        }
-        
-        // Update last login timestamp
-        user.last_login_ts = current_timestamp;
-        
-        // 🔥🔥🔥 DEGEN STREAK XP CALCULATION 🔥🔥🔥
-        let base_xp = XP_DAILY_LOGIN; // 10 XP base
-        let streak = user.daily_login_streak;
-        
-        let xp_gained = match streak {
-            // Week 1: Build the habit (10-20 XP)
-            1..=7 => base_xp + (streak as u32), // Day 7 = 17 XP
-            
-            // Week 2: Getting serious (21-35 XP) 
-            8..=14 => base_xp + 10 + (streak as u32), // Day 14 = 34 XP
-            
-            // Week 3-4: Degen territory (36-60 XP)
-            15..=30 => base_xp + 20 + (streak as u32), // Day 30 = 60 XP
-            
-            // Month 2: Diamond hands (61-80 XP)
-            31..=60 => base_xp + 40 + ((streak - 20) as u32), // Day 60 = 90 XP
-            
-            // Month 3+: Legendary status (81-100 XP max)
-            _ => {
-                let capped_streak = std::cmp::min(streak, 90); // Cap at day 90 scaling
-                base_xp + 50 + ((capped_streak - 30) as u32) // Day 90+ = 100 XP max
-            }
-        };
-        
-        // 🎰 MILESTONE STREAK BONUSES (REASONABLE BUT EXCITING) 🎰
-        let milestone_bonus = match streak {
-            7 => 50,     // Week milestone: +50 XP bonus
-            14 => 75,    // 2 weeks: +75 XP bonus  
-            30 => 100,   // Month: +100 XP bonus
-            50 => 125,   // 50 days: +125 XP bonus
-            69 => 150,   // Nice: +150 XP bonus 😏
-            100 => 200,  // 100 days: +200 XP bonus
-            150 => 250,  // 150 days: +250 XP bonus
-            200 => 300,  // 200 days: +300 XP bonus
-            365 => 500,  // 1 YEAR: +500 XP MEGA BONUS!
-            500 => 750,  // 500 days: +750 XP bonus
-            1000 => 1000, // 1000 days: +1000 XP LEGENDARY BONUS!
-            _ => 0,
-        };
-        
-        let total_xp = xp_gained + milestone_bonus;
-        user.xp = user.xp.saturating_add(total_xp);
-        
-        // 🎉 Enhanced logging for degen streaks
-        if milestone_bonus > 0 {
-            msg!("🔥🔥🔥 MILESTONE STREAK BONUS! 🔥🔥🔥");
-            msg!("🗓️ Day {} streak achieved: {} base XP + {} BONUS = {} TOTAL XP!", 
-                 streak, xp_gained, milestone_bonus, total_xp);
-            msg!("🎯 Keep the streak alive for exponential gains!");
-        } else if streak >= 100 {
-            msg!("👑 LEGENDARY DEGEN: Day {} streak = {} XP! You're a daily login WHALE! 🐋", 
-                 streak, total_xp);
-        } else if streak >= 50 {
-            msg!("💎 DIAMOND HANDS: Day {} streak = {} XP! Almost to legendary status!", 
-                 streak, total_xp);
-        } else if streak >= 30 {
-            msg!("🚀 MONTH STREAK: Day {} = {} XP! You're entering degen territory!", 
-                 streak, total_xp);
-        } else if streak >= 14 {
-            msg!("⚡ 2+ WEEK STREAK: Day {} = {} XP! The gains are exponential now!", 
-                 streak, total_xp);
-        } else if streak >= 7 {
-            msg!("🔥 WEEK STREAK: Day {} = {} XP! Habit formed, gains accelerating!", 
-                 streak, total_xp);
-        } else {
-            msg!("🗓️ Daily login: Day {} streak = {} XP (Building momentum...)", 
-                 streak, total_xp);
-        }
-        
-        // Emit events
-        emit!(DailyLoginReward {
-            owner: user.owner,
-            streak: user.daily_login_streak,
-            xp_gained: total_xp,
-        });
-        
-        emit!(XpGained {
-            owner: user.owner,
-            xp_amount: total_xp,
-            xp_source: if milestone_bonus > 0 {
-                format!("Daily Login (Day {} + {} Milestone Bonus)", streak, milestone_bonus)
-            } else {
-                format!("Daily Login (Day {} Streak)", streak)
-            },
-            total_xp: user.xp,
-        });
-        
-        Ok((total_xp, user.daily_login_streak))
-    } else {
-        // Not eligible for daily login reward yet
-        Ok((0, user.daily_login_streak))
-    }
-}
 
 
 /// Process the mining for a specific user

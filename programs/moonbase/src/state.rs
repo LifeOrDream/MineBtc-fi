@@ -2,7 +2,10 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ErrorCode;
 
+pub const PRICE_ONE: u64 = 500_000_000; // 0.5 SOL
+pub const PRICE_TWO: u64 = 1_420_000_000; // 1.42 SOL
 
+ 
 pub const DBTC_DECIMALS: u8 = 6;
 pub const ONE_HR: u64 = 1; // 3600;
 
