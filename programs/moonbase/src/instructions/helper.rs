@@ -1,0 +1,448 @@
+use anchor_lang::prelude::*;
+use anchor_lang::system_program::{self, transfer, Transfer};
+
+use crate::state::*;
+use crate::events::*;
+use crate::errors::ErrorCode;
+
+
+/// Calculate mining XP based on mDOGE tokens mined
+/// Awards 15 XP per 1000 mDOGE mined
+pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
+    let thousands_mined = tokens_mined / 1_000_000_000; // Assuming 9 decimals, so 1000 tokens = 1000 * 10^9
+    (thousands_mined as u32) * XP_MINING_1000_MDOGE
+}
+
+
+
+// Helper function to transfer SOL to the program's sol_treasury PDA
+pub fn transfer_to_sol_treasury<'info>(
+    from: &AccountInfo<'info>,
+    sol_treasury: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_treasury.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+/// Helper function to process referral payments
+/// 
+/// Takes a cost amount, calculates referral fee (if applicable), 
+/// transfers SOL to referrer's rewards account and treasury,
+/// increments referral count, and returns the referral fee and treasury amount
+pub fn process_referral_payment<'info>(
+    cost: u64,
+    referrer: &Pubkey,
+    user_key: &Pubkey,
+    user_account_info: &AccountInfo<'info>,
+    referrer_rewards: Option<&AccountInfo<'info>>,
+    global_config: &mut GlobalConfig,
+    sol_treasury: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+) -> Result<(u64, u64)> {
+    let mut referral_fee = 0;
+    let mut treasury_amount = cost;
+    
+    // Check if we have a referral that's not the default (system program)
+    if referrer != &system_program::ID {
+        // Calculate referral fee (15% of cost) & treasury amount
+        referral_fee = cost.checked_mul(REFERRAL_FEE).unwrap().checked_div(100).unwrap();
+        treasury_amount = cost.checked_sub(referral_fee).unwrap();
+
+        // If referrer rewards account is provided, update and transfer
+        if let Some(rewards_account_info) = referrer_rewards {
+            // Access the data to update the total_sol_earned
+            let mut rewards_data = rewards_account_info.try_borrow_mut_data()?;
+            let mut rewards = ReferralRewards::try_deserialize(&mut rewards_data.as_ref())?;
+            
+            // Update the referrer's earned amount
+            rewards.total_sol_earned = rewards.total_sol_earned
+                .checked_add(referral_fee)
+                .unwrap();
+                
+            // Serialize back to the account
+            rewards.try_serialize(&mut *rewards_data)?;
+
+            // Increment total referral sol paid
+            global_config.total_referral_sol_paid = global_config.total_referral_sol_paid
+                .checked_add(referral_fee)
+                .unwrap();
+            
+            // Transfer SOL to the referrer's PDA account
+            transfer(
+                CpiContext::new(
+                    system_program.to_account_info(),
+                    Transfer { 
+                        from: user_account_info.to_account_info(), 
+                        to: rewards_account_info.to_account_info() 
+                    },
+                ),
+                referral_fee,
+            )?;
+            
+            // Emit event for the referral
+            emit!(ReferralRewardsAdded { 
+                referrer: *referrer,
+                referred_user: *user_key,
+                amount: referral_fee 
+            });
+            
+            msg!("Transferred {} lamports to referrer's rewards account", referral_fee);
+        } else {
+            // No referrer rewards account found, all goes to treasury
+            treasury_amount = cost;
+            referral_fee = 0;
+            msg!("Referrer rewards account not found, all fees go to treasury");
+        }
+    }
+    
+    // Transfer the remaining amount to treasury
+    transfer_to_sol_treasury(
+        user_account_info,
+        sol_treasury,
+        system_program,
+        treasury_amount,
+    )?;
+    
+    // Track total SOL spent by users
+    global_config.total_sol_spent = global_config.total_sol_spent
+        .checked_add(cost)
+        .unwrap_or(global_config.total_sol_spent);
+    
+    Ok((referral_fee, treasury_amount))
+}
+
+/// Update the mining state and distribute MoonDoge tokens
+/// This function should be called whenever global hashpower changes
+pub fn update_mining_state(
+    moon_doge_mining: &mut MoonDogeMining,
+) -> Result<()> {
+    // Get the current slot
+    let current_slot = Clock::get()?.slot;
+    
+    // If mining hasn't started yet, just update the last slot
+    if moon_doge_mining.mining_start_timestamp == 0 {
+        moon_doge_mining.last_slot = current_slot;
+        return Ok(());
+    }
+    
+    // Calculate slots since last update
+    if current_slot <= moon_doge_mining.last_slot {
+        // No slots have passed, nothing to update
+        return Ok(());
+    }
+    
+    let slots_passed = current_slot - moon_doge_mining.last_slot;
+    
+    // Calculate current reward rate using dynamic distribution
+    let current_reward_rate = calculate_current_reward_rate(moon_doge_mining);
+    
+    // Calculate new tokens mined in this period
+    let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
+    
+    // Update total tokens mined
+    moon_doge_mining.total_tokens_mined = moon_doge_mining.total_tokens_mined
+        .checked_add(new_tokens_mined)
+        .unwrap_or(moon_doge_mining.total_tokens_mined);
+    
+    // Update last processed slot
+    moon_doge_mining.last_slot = current_slot;
+    
+    msg!("Mining state updated: {} new tokens mined, total: {}", 
+         new_tokens_mined, moon_doge_mining.total_tokens_mined);
+    
+    Ok(())
+}
+
+
+// ========== XP AND LEVEL SYSTEM HELPERS ========== //
+
+/// Integer square root implementation for u64
+/// Uses binary search to find the largest integer whose square is <= n
+pub fn integer_sqrt(n: u64) -> u32 {
+    if n == 0 {
+        return 0;
+    }
+    
+    let mut left = 1u32;
+    let mut right = if n > u32::MAX as u64 { u32::MAX } else { n as u32 };
+    let mut result = 0u32;
+    
+    while left <= right {
+        let mid = left + (right - left) / 2;
+        let mid_squared = (mid as u64) * (mid as u64);
+        
+        if mid_squared == n {
+            return mid;
+        } else if mid_squared < n {
+            result = mid;
+            left = mid + 1;
+        } else {
+            if mid == 0 {
+                break;
+            }
+            right = mid - 1;
+        }
+    }
+    
+    result
+}
+
+/// Calculate the current reward rate based on dynamic distribution
+fn calculate_current_reward_rate(moon_doge_mining: &MoonDogeMining) -> u64 {
+    // If mining hasn't started, return 0
+    if moon_doge_mining.mining_start_timestamp == 0 {
+        return 0;
+    }
+    
+    // Use the current dynamic distribution rate if available, otherwise fall back to original rate
+    if moon_doge_mining.current_dist_rate > 0 {
+        moon_doge_mining.current_dist_rate
+    } else {
+        moon_doge_mining.moon_doge_per_slot
+    }
+}
+
+
+
+/// Initialize default moonbase dimensions for a new user
+pub fn initialize_moonbase_dimensions(user_moonbase: &mut UserMoonBaseInstance) -> Result<()> {
+    user_moonbase.current_width = DEFAULT_MOONBASE_WIDTH;
+    user_moonbase.current_height = DEFAULT_MOONBASE_HEIGHT;
+    user_moonbase.purchased_expansions = Vec::new();
+    
+    msg!("🏗️ Initialized moonbase dimensions: {}x{} ({} tiles)", 
+         DEFAULT_MOONBASE_WIDTH, DEFAULT_MOONBASE_HEIGHT, 
+         (DEFAULT_MOONBASE_WIDTH as u32) * (DEFAULT_MOONBASE_HEIGHT as u32));
+    
+    Ok(())
+}
+
+// ========== MOONBASE EXPANSION SYSTEM HELPERS ========== //
+
+/// Check if a user can purchase a specific expansion
+pub fn can_purchase_expansion(
+    user_moonbase: &UserMoonBaseInstance,
+    expansion: &ExpansionConfig,
+) -> Result<bool> {
+    // Check level requirement
+    if user_moonbase.level < expansion.required_level {
+        return Ok(false);
+    }
+    
+    // Check if already purchased
+    if user_moonbase.purchased_expansions.contains(&expansion.id) {
+        return Ok(false);
+    }
+    
+    // Check if expansion is active
+    if !expansion.is_active {
+        return Ok(false);
+    }
+    
+    Ok(true)
+}
+
+
+// --------------------------------------- //
+// ========== ENHANCED XP & LEVEL UP SYSTEM =========== //
+// --------------------------------------- //
+
+/// Calculate required XP for a specific level using exponential curve: 120 × (1.35^level)
+/// Rounds to nearest 10 for clean numbers
+pub fn required_xp_new(level: u8) -> u64 {
+    msg!("📊 Calculating required XP for level {}:", level);
+    
+    let mut num: u64 = 1;
+    let mut den: u64 = 1;
+    
+    // Calculate exponential growth
+    for i in 0..level {
+        num = num.saturating_mul(XP_CURVE_NUM);
+        den = den.saturating_mul(XP_CURVE_DEN);
+        msg!("   Step {}: {} / {} = {}", 
+             i + 1, 
+             num, 
+             den, 
+             (num as f64 / den as f64) * XP_BASE as f64);
+    }
+    
+    // Calculate final XP requirement
+    let raw_xp = ((XP_BASE * num) / den + 5) / 10 * 10;   // round to nearest 10
+    
+    msg!("   Base XP: {}", XP_BASE);
+    msg!("   Final calculation: ({} * {}) / {} = {} (rounded to nearest 10)", 
+         XP_BASE, num, den, raw_xp);
+    
+    raw_xp
+}
+
+
+/// Add XP to user moonbase without level progression (XP accumulation only)
+/// Level-ups should be handled separately with loot transfers via process_auto_daily_login_and_activity_xp
+pub fn add_xp_simple(user_moonbase: &mut UserMoonBaseInstance, xp_amount: u32, source: &str) -> Result<()> {
+    if xp_amount == 0 {
+        return Ok(());
+    }
+    
+    msg!("🌟 Adding {} XP from: {}", xp_amount, source);
+    
+    let old_xp = user_moonbase.xp;
+    
+    // Add XP (convert to u64 for calculation to prevent overflow, then back to u32)
+    let new_xp = (user_moonbase.xp as u64).saturating_add(xp_amount as u64);
+    user_moonbase.xp = new_xp.min(u32::MAX as u64) as u32;
+    
+    // Check if user has enough XP for level-ups (but don't actually level up)
+    let current_required = required_xp_new(user_moonbase.level);
+    if (user_moonbase.xp as u64) >= current_required {
+        msg!("💡 User has accumulated enough XP for level-up! Current: {} XP, Required: {} XP", 
+             user_moonbase.xp, current_required);
+        msg!("   Use claim_level_up_rewards() or similar function to claim level-up with loot transfers");
+    } else {
+        let remaining = current_required.saturating_sub(user_moonbase.xp as u64);
+        msg!("📈 XP progress: {} -> {} (Level {} - need {} more for next level)", 
+             old_xp, user_moonbase.xp, user_moonbase.level, remaining);
+    }
+    
+    Ok(())
+}
+
+
+
+
+// --------------------------------------- //
+// ========== DAILY LOGIN SYSTEM =========== //
+// --------------------------------------- //
+
+/// Process daily login and award XP if eligible
+/// Returns (xp_gained, new_streak) if login reward was given, or (0, current_streak) if not
+pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)> {
+    let current_timestamp = Clock::get()?.unix_timestamp;
+    let one_day_seconds = 24 * 60 * 60; // 86400 seconds
+    
+    // Check if it's been at least 24 hours since last login
+    let time_since_last_login = current_timestamp - user.last_login_ts;
+    
+    if time_since_last_login >= one_day_seconds {
+        // Check if the streak should continue (within 48 hours) or reset
+        let two_days_seconds = 2 * one_day_seconds;
+        
+        if time_since_last_login <= two_days_seconds && user.last_login_ts > 0 {
+            // Continue streak
+            user.daily_login_streak = user.daily_login_streak.saturating_add(1);
+        } else {
+            // Reset streak (first login or gap > 48 hours)
+            user.daily_login_streak = 1;
+        }
+        
+        // Update last login timestamp
+        user.last_login_ts = current_timestamp;
+        
+        // 🔥🔥🔥 DEGEN STREAK XP CALCULATION 🔥🔥🔥
+        let base_xp = XP_DAILY_LOGIN; // 10 XP base
+        let streak = user.daily_login_streak;
+        
+        let xp_gained = match streak {
+            // Week 1: Build the habit (10-20 XP)
+            1..=7 => base_xp + (streak as u32), // Day 7 = 17 XP
+            
+            // Week 2: Getting serious (21-35 XP) 
+            8..=14 => base_xp + 10 + (streak as u32), // Day 14 = 34 XP
+            
+            // Week 3-4: Degen territory (36-60 XP)
+            15..=30 => base_xp + 20 + (streak as u32), // Day 30 = 60 XP
+            
+            // Month 2: Diamond hands (61-80 XP)
+            31..=60 => base_xp + 40 + ((streak - 20) as u32), // Day 60 = 90 XP
+            
+            // Month 3+: Legendary status (81-100 XP max)
+            _ => {
+                let capped_streak = std::cmp::min(streak, 90); // Cap at day 90 scaling
+                base_xp + 50 + ((capped_streak - 30) as u32) // Day 90+ = 100 XP max
+            }
+        };
+        
+        // 🎰 MILESTONE STREAK BONUSES (REASONABLE BUT EXCITING) 🎰
+        let milestone_bonus = match streak {
+            7 => 50,     // Week milestone: +50 XP bonus
+            14 => 75,    // 2 weeks: +75 XP bonus  
+            30 => 100,   // Month: +100 XP bonus
+            50 => 125,   // 50 days: +125 XP bonus
+            69 => 150,   // Nice: +150 XP bonus 😏
+            100 => 200,  // 100 days: +200 XP bonus
+            150 => 250,  // 150 days: +250 XP bonus
+            200 => 300,  // 200 days: +300 XP bonus
+            365 => 500,  // 1 YEAR: +500 XP MEGA BONUS!
+            500 => 750,  // 500 days: +750 XP bonus
+            1000 => 1000, // 1000 days: +1000 XP LEGENDARY BONUS!
+            _ => 0,
+        };
+        
+        let total_xp = xp_gained + milestone_bonus;
+        user.xp = user.xp.saturating_add(total_xp);
+        
+        // 🎉 Enhanced logging for degen streaks
+        if milestone_bonus > 0 {
+            msg!("🔥🔥🔥 MILESTONE STREAK BONUS! 🔥🔥🔥");
+            msg!("🗓️ Day {} streak achieved: {} base XP + {} BONUS = {} TOTAL XP!", 
+                 streak, xp_gained, milestone_bonus, total_xp);
+            msg!("🎯 Keep the streak alive for exponential gains!");
+        } else if streak >= 100 {
+            msg!("👑 LEGENDARY DEGEN: Day {} streak = {} XP! You're a daily login WHALE! 🐋", 
+                 streak, total_xp);
+        } else if streak >= 50 {
+            msg!("💎 DIAMOND HANDS: Day {} streak = {} XP! Almost to legendary status!", 
+                 streak, total_xp);
+        } else if streak >= 30 {
+            msg!("🚀 MONTH STREAK: Day {} = {} XP! You're entering degen territory!", 
+                 streak, total_xp);
+        } else if streak >= 14 {
+            msg!("⚡ 2+ WEEK STREAK: Day {} = {} XP! The gains are exponential now!", 
+                 streak, total_xp);
+        } else if streak >= 7 {
+            msg!("🔥 WEEK STREAK: Day {} = {} XP! Habit formed, gains accelerating!", 
+                 streak, total_xp);
+        } else {
+            msg!("🗓️ Daily login: Day {} streak = {} XP (Building momentum...)", 
+                 streak, total_xp);
+        }
+        
+        // Emit events
+        emit!(DailyLoginReward {
+            owner: user.owner,
+            streak: user.daily_login_streak,
+            xp_gained: total_xp,
+        });
+        
+        emit!(XpGained {
+            owner: user.owner,
+            xp_amount: total_xp,
+            xp_source: if milestone_bonus > 0 {
+                format!("Daily Login (Day {} + {} Milestone Bonus)", streak, milestone_bonus)
+            } else {
+                format!("Daily Login (Day {} Streak)", streak)
+            },
+            total_xp: user.xp,
+        });
+        
+        Ok((total_xp, user.daily_login_streak))
+    } else {
+        // Not eligible for daily login reward yet
+        Ok((0, user.daily_login_streak))
+    }
+}
+
+
+// --------------------------------------- //
+// ========== LEVEL STATISTICS =========== //
+// --------------------------------------- //

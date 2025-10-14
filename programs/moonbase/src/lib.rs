@@ -6,7 +6,7 @@ mod events;
 pub mod instructions;
 
 pub use instructions::admin::*;
-// pub use instructions::user::*;
+pub use instructions::user::*;
 // pub use instructions::game::*;
 
 declare_id!("76bGWqGdzwR13FSd1TDwanK7GFDHcunKh6WGbzAW1PjU");
@@ -15,6 +15,7 @@ declare_id!("76bGWqGdzwR13FSd1TDwanK7GFDHcunKh6WGbzAW1PjU");
 pub mod moonbase {
     use super::*;
     use crate::instructions::admin::{self};
+    use crate::instructions::user::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -238,7 +239,31 @@ pub mod moonbase {
         admin::update_mdoge_dist_per_slot_internal(ctx, lp_token_amount)
     }
 
+    // ----------------------------------------------------------------------------------------
+    // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 
+    // ----------------------------------------------------------------------------------------
 
+    /// Create a new moon base for a user
+    pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8) -> Result<()> {
+        user::initialize_user_moonbase(ctx, referrer, faction_id)
+    }
+
+
+    /// Purchase a moonbase expansion (user function)
+    pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
+        user::expand_moonbase_internal(ctx, expansion_id)
+    }
+
+    /// Claim referral rewards
+    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+        user::claim_referral_rewards_internal(ctx)
+    }
+
+
+
+    pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
+        user::update_user_electricity_internal(ctx, to_increase, amount)
+    }
 
 
 
