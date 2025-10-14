@@ -78,7 +78,7 @@ fn decay_factor(level: u8) -> u64 {
 
 // PDAs which hold GlobalConfig / MoonDogeMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
-pub const MOON_DOGE_MINING_SEED: &[u8] = b"moon-doge-mining";
+pub const doge_btc_MINING_SEED: &[u8] = b"moon-doge-mining";
 
 // PDAs which hold PvPMatchmaker state
 pub const PVP_MATCHMAKER_SEED: &[u8] = b"pvp-matchmaker";
@@ -270,7 +270,7 @@ pub struct MoonDogeMining {
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,        
     /// MoonDoge mined per slot (original base rate)
-    pub moon_doge_per_slot: u64,
+    pub doge_btc_per_slot: u64,
     /// Last slot when moondoge were mined
     pub last_slot: u64,
     /// Total active hashpower across all facilities
@@ -289,7 +289,7 @@ pub struct MoonDogeMining {
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
-    /// Current distribution rate (starts at moon_doge_per_slot)
+    /// Current distribution rate (starts at doge_btc_per_slot)
     pub current_dist_rate: u64,
     /// Price history for 8-hour rolling average (8 entries, 1 per hour)
     pub price_history: Vec<PriceEntry>,
@@ -306,7 +306,7 @@ pub struct MoonDogeMining {
 }
 
 impl MoonDogeMining {
-    // discriminator + mdoge_token_vault + mining_start_timestamp + moon_doge_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
+    // discriminator + mdoge_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + avg_price_8h + prev_avg_price_8h + sol_for_pol + slots_for_swap + pol_stats
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 8-hour rolling average
     pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN;

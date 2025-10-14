@@ -503,7 +503,7 @@ pub fn pvp_attack_turn_internal(
                 
                 // Update global hashpower tracking
                 helper::update_global_hashpower_for_pvp_damage(
-                    &mut ctx.accounts.moon_doge_mining,
+                    &mut ctx.accounts.doge_btc_mining,
                     -(hashpower_leeched as i64),
                 )?;
             }
@@ -1052,10 +1052,10 @@ pub struct PvPAttack<'info> {
     // Global mining state for hashpower tracking
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     // Global config for tracking total SOL spent
     #[account(
@@ -1095,10 +1095,10 @@ pub struct PvPAttackSimple<'info> {
 
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// CHECK: SOL treasury account
     #[account(mut)]

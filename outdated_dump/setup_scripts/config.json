@@ -36,7 +36,7 @@
     },
     "mining": {
         "start_timestamp": 0,
-        "moon_doge_per_slot": 1000000,
+        "doge_btc_per_slot": 1000000,
         "initial_deposit": "21000000000000",
         "slots_for_swap": 9000
     },

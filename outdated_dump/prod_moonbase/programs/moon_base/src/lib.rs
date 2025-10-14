@@ -28,7 +28,7 @@ pub mod moon_base {
     /// It will fail if the accounts already exist
     pub fn initialize(ctx: Context<Initialize>, base_creation_cost: u64, creation_fee_recipient: Pubkey) -> Result<()> {
         let global_config = &mut ctx.accounts.global_config;
-        let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+        let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
 
         // Initialize GlobalConfig
         global_config.ext_authority = ctx.accounts.authority.key();
@@ -64,25 +64,25 @@ pub mod moon_base {
         )?;
 
         // Initialize MoonDogeMining
-        moon_doge_mining.mdoge_token_vault = Pubkey::default(); // Will be set during initialize_mining
-        moon_doge_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
-        moon_doge_mining.total_active_hashpower = 0;
-        moon_doge_mining.total_active_electricity = 0;
-        moon_doge_mining.moon_doge_per_slot = 0;
-        moon_doge_mining.last_slot = 0;
-        moon_doge_mining.total_tokens_mined = 0;
-        moon_doge_mining.bump = ctx.bumps.moon_doge_mining;
-        moon_doge_mining.vault_auth_bump = 0; // Will be set during initialize_mining
+        doge_btc_mining.mdoge_token_vault = Pubkey::default(); // Will be set during initialize_mining
+        doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
+        doge_btc_mining.total_active_hashpower = 0;
+        doge_btc_mining.total_active_electricity = 0;
+        doge_btc_mining.doge_btc_per_slot = 0;
+        doge_btc_mining.last_slot = 0;
+        doge_btc_mining.total_tokens_mined = 0;
+        doge_btc_mining.bump = ctx.bumps.doge_btc_mining;
+        doge_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
         
         // Initialize dynamic distribution fields with defaults
-        moon_doge_mining.raydium_pool_state = Pubkey::default();
-        moon_doge_mining.last_rate_update = 0;
-        moon_doge_mining.current_dist_rate = 0;
-        moon_doge_mining.price_history = Vec::new();
-        moon_doge_mining.avg_price_8h = 0;
-        moon_doge_mining.prev_avg_price_8h = 0;
-        moon_doge_mining.sol_for_pol = 0;
-        moon_doge_mining.slots_for_swap = 9000;
+        doge_btc_mining.raydium_pool_state = Pubkey::default();
+        doge_btc_mining.last_rate_update = 0;
+        doge_btc_mining.current_dist_rate = 0;
+        doge_btc_mining.price_history = Vec::new();
+        doge_btc_mining.avg_price_8h = 0;
+        doge_btc_mining.prev_avg_price_8h = 0;
+        doge_btc_mining.sol_for_pol = 0;
+        doge_btc_mining.slots_for_swap = 9000;
         
         msg!("Program initialized with creation cost: {}", base_creation_cost);
         msg!("SOL Treasury PDA created at: {} with bump: {}", ctx.accounts.sol_treasury.key(), ctx.bumps.sol_treasury);
@@ -136,7 +136,7 @@ pub mod moon_base {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ MOON_DOGE_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
 
@@ -145,10 +145,10 @@ pub mod moon_base {
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
         start_timestamp: u64,
-        moon_doge_per_slot: u64,
+        doge_btc_per_slot: u64,
         pool_state: Pubkey
     ) -> Result<()> {
-        admin::initialize_mining_internal(ctx, start_timestamp, moon_doge_per_slot, pool_state)
+        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
     }
  
     /// Update slots per hour configuration (admin only)
@@ -157,8 +157,8 @@ pub mod moon_base {
     }    
 
     /// Deposit moon doge tokens to the mining vault
-    pub fn deposit_moon_doge_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-        admin::deposit_moon_doge_tokens_internal(ctx, amount)
+    pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        admin::deposit_doge_btc_tokens_internal(ctx, amount)
     }
 
     // ----------------------------------------------------------------------------------------

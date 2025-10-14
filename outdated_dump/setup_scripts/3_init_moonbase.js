@@ -54,7 +54,7 @@ const ID_MOONBASE_PROGRAM = deploymentFile.MOON_BASE_PROGRAM_ID ?
 const MDOGE_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 const BASE_COST = config.moonbase.base_creation_cost;
 const MINING_START_TIMESTAMP = config.mining.start_timestamp || Math.floor(Date.now() / 1000);
-const MINING_MOON_DOGE_PER_SLOT = new BN(config.mining.moon_doge_per_slot);
+const MINING_doge_btc_PER_SLOT = new BN(config.mining.doge_btc_per_slot);
 
 const RAYDIUM_PROGRAM_ID = deploymentFile.RAYDIUM_CP_PROGRAM_ID;
 
@@ -284,7 +284,7 @@ async function initializeMiningSystem(moonbaseProgram) {
         connection, moonbaseProgram, wallet, walletKeypair,
         moonDogeMiningPDA, vaultPDA, vaultAuthorityPDA, MOONDOGE_TOKEN_MINT,
         anchor_spl.TOKEN_2022_PROGRAM_ID, MINING_START_TIMESTAMP,
-        MINING_MOON_DOGE_PER_SLOT, raydiumPoolState
+        MINING_doge_btc_PER_SLOT, raydiumPoolState
     );
 
     if (result.success) {
@@ -293,7 +293,7 @@ async function initializeMiningSystem(moonbaseProgram) {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
             start_timestamp: MINING_START_TIMESTAMP,
-            moon_doge_per_slot: MINING_MOON_DOGE_PER_SLOT.toString(),
+            doge_btc_per_slot: MINING_doge_btc_PER_SLOT.toString(),
             init_tx: result.data.initMiningTxid,
             timestamp: new Date().toISOString()
         };

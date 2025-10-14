@@ -806,7 +806,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "pda": {
             "seeds": [
               {
@@ -1018,7 +1018,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -1367,7 +1367,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "docs": [
             "Moon Doge mining state (for vault authority bump)"
           ],
@@ -1423,7 +1423,7 @@
               },
               {
                 "kind": "account",
-                "path": "moon_doge_mining"
+                "path": "doge_btc_mining"
               }
             ]
           }
@@ -1966,7 +1966,7 @@
       ]
     },
     {
-      "name": "deposit_moon_doge_tokens",
+      "name": "deposit_doge_btc_tokens",
       "docs": [
         "Deposit moon doge tokens to the mining vault"
       ],
@@ -2013,13 +2013,13 @@
               },
               {
                 "kind": "account",
-                "path": "moon_doge_mining"
+                "path": "doge_btc_mining"
               }
             ]
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "pda": {
             "seeds": [
               {
@@ -2258,7 +2258,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -2702,7 +2702,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -2786,7 +2786,7 @@
               },
               {
                 "kind": "account",
-                "path": "moon_doge_mining"
+                "path": "doge_btc_mining"
               }
             ]
           }
@@ -2819,7 +2819,7 @@
           "type": "u64"
         },
         {
-          "name": "moon_doge_per_slot",
+          "name": "doge_btc_per_slot",
           "type": "u64"
         },
         {
@@ -3047,7 +3047,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -3298,7 +3298,7 @@
           "writable": true
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -3469,7 +3469,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "pda": {
             "seeds": [
               {
@@ -3641,7 +3641,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -3807,7 +3807,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -4076,7 +4076,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "optional": true,
           "pda": {
@@ -4172,7 +4172,7 @@
       ],
       "accounts": [
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -4536,7 +4536,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -4836,7 +4836,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "writable": true,
           "pda": {
             "seeds": [
@@ -4961,7 +4961,7 @@
           }
         },
         {
-          "name": "moon_doge_mining",
+          "name": "doge_btc_mining",
           "pda": {
             "seeds": [
               {
@@ -8259,7 +8259,7 @@
             "type": "u64"
           },
           {
-            "name": "moon_doge_per_slot",
+            "name": "doge_btc_per_slot",
             "docs": [
               "MoonDoge mined per slot (original base rate)"
             ],
@@ -8324,7 +8324,7 @@
           {
             "name": "current_dist_rate",
             "docs": [
-              "Current distribution rate (starts at moon_doge_per_slot)"
+              "Current distribution rate (starts at doge_btc_per_slot)"
             ],
             "type": "u64"
           },

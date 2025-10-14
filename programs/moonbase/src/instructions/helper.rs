@@ -124,41 +124,41 @@ pub fn process_referral_payment<'info>(
 /// Update the mining state and distribute MoonDoge tokens
 /// This function should be called whenever global hashpower changes
 pub fn update_mining_state(
-    moon_doge_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut MoonDogeMining,
 ) -> Result<()> {
     // Get the current slot
     let current_slot = Clock::get()?.slot;
     
     // If mining hasn't started yet, just update the last slot
-    if moon_doge_mining.mining_start_timestamp == 0 {
-        moon_doge_mining.last_slot = current_slot;
+    if doge_btc_mining.mining_start_timestamp == 0 {
+        doge_btc_mining.last_slot = current_slot;
         return Ok(());
     }
     
     // Calculate slots since last update
-    if current_slot <= moon_doge_mining.last_slot {
+    if current_slot <= doge_btc_mining.last_slot {
         // No slots have passed, nothing to update
         return Ok(());
     }
     
-    let slots_passed = current_slot - moon_doge_mining.last_slot;
+    let slots_passed = current_slot - doge_btc_mining.last_slot;
     
     // Calculate current reward rate using dynamic distribution
-    let current_reward_rate = calculate_current_reward_rate(moon_doge_mining);
+    let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);
     
     // Calculate new tokens mined in this period
     let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
     
     // Update total tokens mined
-    moon_doge_mining.total_tokens_mined = moon_doge_mining.total_tokens_mined
+    doge_btc_mining.total_tokens_mined = doge_btc_mining.total_tokens_mined
         .checked_add(new_tokens_mined)
-        .unwrap_or(moon_doge_mining.total_tokens_mined);
+        .unwrap_or(doge_btc_mining.total_tokens_mined);
     
     // Update last processed slot
-    moon_doge_mining.last_slot = current_slot;
+    doge_btc_mining.last_slot = current_slot;
     
     msg!("Mining state updated: {} new tokens mined, total: {}", 
-         new_tokens_mined, moon_doge_mining.total_tokens_mined);
+         new_tokens_mined, doge_btc_mining.total_tokens_mined);
     
     Ok(())
 }
@@ -198,17 +198,17 @@ pub fn integer_sqrt(n: u64) -> u32 {
 }
 
 /// Calculate the current reward rate based on dynamic distribution
-fn calculate_current_reward_rate(moon_doge_mining: &MoonDogeMining) -> u64 {
+fn calculate_current_reward_rate(doge_btc_mining: &MoonDogeMining) -> u64 {
     // If mining hasn't started, return 0
-    if moon_doge_mining.mining_start_timestamp == 0 {
+    if doge_btc_mining.mining_start_timestamp == 0 {
         return 0;
     }
     
     // Use the current dynamic distribution rate if available, otherwise fall back to original rate
-    if moon_doge_mining.current_dist_rate > 0 {
-        moon_doge_mining.current_dist_rate
+    if doge_btc_mining.current_dist_rate > 0 {
+        doge_btc_mining.current_dist_rate
     } else {
-        moon_doge_mining.moon_doge_per_slot
+        doge_btc_mining.doge_btc_per_slot
     }
 }
 
@@ -447,20 +447,20 @@ pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)
 /// This function should be called whenever a user's hashpower changes
 pub fn process_user_mining(
     user_moonbase: &mut UserMoonBaseInstance,
-    moon_doge_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut MoonDogeMining,
 ) -> Result<()> {
     // First update the global mining state to ensure it's current
-    update_mining_state(moon_doge_mining)?;
+    update_mining_state(doge_btc_mining)?;
     
     // If there's no global hashpower, nothing to distribute
-    if moon_doge_mining.total_active_hashpower == 0 {
+    if doge_btc_mining.total_active_hashpower == 0 {
         return Ok(());
     }
     
     // Calculate the user's share of global hashpower (as a proportion)
     // We use u128 for precision in intermediate calculations
     let user_hashpower = user_moonbase.active_hashpower as u128;
-    let global_hashpower = moon_doge_mining.total_active_hashpower as u128;
+    let global_hashpower = doge_btc_mining.total_active_hashpower as u128;
     
     // If user has no hashpower, nothing to mine
     if user_hashpower == 0 {
@@ -477,7 +477,7 @@ pub fn process_user_mining(
     
     // Calculate tokens mined in this period
     let slots = slots_since_last_claim as u128;
-    let rate = calculate_current_reward_rate(moon_doge_mining) as u128;
+    let rate = calculate_current_reward_rate(doge_btc_mining) as u128;
     let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
         if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
             total_rewards / precision
@@ -501,7 +501,7 @@ pub fn process_user_mining(
 /// Transfer claimed MoonDoge tokens to the user (with optional loot rewards)
 pub fn claim_moondoge_tokens<'info>(
     user_moonbase: &mut UserMoonBaseInstance,
-    moon_doge_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut MoonDogeMining,
     token_program: &AccountInfo<'info>,
     token_vault: &AccountInfo<'info>,
     token_mint: &AccountInfo<'info>,
@@ -512,11 +512,11 @@ pub fn claim_moondoge_tokens<'info>(
     loot_rewards: Option<&mut LootRewards>,
 ) -> Result<u64> {
     // Process mining to ensure up-to-date calculations
-    process_user_mining(user_moonbase, moon_doge_mining)?;
+    process_user_mining(user_moonbase, doge_btc_mining)?;
     
     // Calculate claimable amount based on hashpower share
     let user_hashpower = user_moonbase.active_hashpower as u128;
-    let global_hashpower = moon_doge_mining.total_active_hashpower as u128;
+    let global_hashpower = doge_btc_mining.total_active_hashpower as u128;
     
     // If user or global hashpower is zero, nothing to claim
     if user_hashpower == 0 || global_hashpower == 0 {
@@ -532,7 +532,7 @@ pub fn claim_moondoge_tokens<'info>(
     
     // Calculate tokens mined in this period
     let slots = slots_since_last_claim as u128;
-    let rate = calculate_current_reward_rate(moon_doge_mining) as u128;
+    let rate = calculate_current_reward_rate(doge_btc_mining) as u128;
     let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
         if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
             total_rewards / precision
@@ -1021,7 +1021,7 @@ pub fn add_xp_with_loot_transfers<'info>(
     xp_source: &str,
     loot_rewards: &mut LootRewards,
     level_stats: &mut LevelStats,
-    moon_doge_mining: &MoonDogeMining,
+    doge_btc_mining: &MoonDogeMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
     loot_mdoge_vault: &AccountInfo<'info>,
@@ -1073,7 +1073,7 @@ pub fn add_xp_with_loot_transfers<'info>(
         
         // Roll for loot and perform transfers if loot is won
         msg!("🎲 Rolling for loot at level {}...", user.level);
-        let (sol_payout, mdoge_payout) = try_roll_loot(user, loot_rewards, Some(level_stats), moon_doge_mining)?;
+        let (sol_payout, mdoge_payout) = try_roll_loot(user, loot_rewards, Some(level_stats), doge_btc_mining)?;
         
         // Perform actual transfers if loot was won
         if sol_payout > 0 {
@@ -1310,7 +1310,7 @@ fn try_roll_loot(
     user: &UserMoonBaseInstance, 
     loot: &mut LootRewards,
     level_stats: Option<&LevelStats>,
-    moon_doge_mining: &MoonDogeMining,
+    doge_btc_mining: &MoonDogeMining,
 ) -> Result<(u64, u64)> {
     use anchor_lang::solana_program::keccak;
     
@@ -1402,7 +1402,7 @@ fn try_roll_loot(
     if is_milestone {
         msg!("🎰 Attempting jackpot roll for milestone level {}", user.level);
         // Calculate combined vault value (SOL + mDOGE equivalent in SOL)
-        let mdoge_price = get_avg_price_in_sol(moon_doge_mining)?; // 1e9 scale
+        let mdoge_price = get_avg_price_in_sol(doge_btc_mining)?; // 1e9 scale
         let mdoge_sol_equivalent = (loot.total_mdoge_accumulated as u128 * mdoge_price as u128 / 1_000_000_000u128) as u64;
         let combined_vault_value = loot.total_sol_accumulated.saturating_add(mdoge_sol_equivalent);
         
@@ -1428,7 +1428,7 @@ fn try_roll_loot(
     }
 
     // --- after you have `desired_sol_payout` (may be 0 if jackpot didn't fire) ---
-    let mdoge_price      = get_avg_price_in_sol(moon_doge_mining)?;         // 1e9
+    let mdoge_price      = get_avg_price_in_sol(doge_btc_mining)?;         // 1e9
     let desired_sol      = clamp_to_vault(loot.total_sol_accumulated, desired_sol_payout);
     let desired_mdoge    = clamp_to_vault(loot.total_mdoge_accumulated,sol_to_mdoge(desired_sol, mdoge_price));
     
@@ -1605,10 +1605,10 @@ fn get_exclusivity_bonus(
 
 /// Get average mDOGE price in SOL from the mining state (scaled by 1e9)
 /// Production-grade: reads real price from MoonDogeMining.avg_price_8h
-fn get_avg_price_in_sol(moon_doge_mining: &MoonDogeMining) -> Result<u64> {
+fn get_avg_price_in_sol(doge_btc_mining: &MoonDogeMining) -> Result<u64> {
     // Use the real 8-hour average price from the dynamic distribution system
-    if moon_doge_mining.avg_price_8h > 0 {
-        Ok(moon_doge_mining.avg_price_8h)
+    if doge_btc_mining.avg_price_8h > 0 {
+        Ok(doge_btc_mining.avg_price_8h)
     } else {
         // Fallback to default if price hasn't been set yet (early bootstrap)
         Ok(1_000_000) // Default: 1 mDOGE = 0.001 SOL (scaled by 1e9)

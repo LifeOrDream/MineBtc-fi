@@ -81,7 +81,7 @@ function generateWebsiteConfig(config, deployment) {
       "mdoge_token_vault": deployment.mining_vault_initialized?.vault_address,
       "mdoge_vault_authority": deployment.mining_vault_initialized?.vault_authority,
       "mining_start_timestamp": deployment.mining_vault_initialized?.start_timestamp,
-      "moon_doge_per_slot": deployment.mining_vault_initialized?.moon_doge_per_slot,
+      "doge_btc_per_slot": deployment.mining_vault_initialized?.doge_btc_per_slot,
       
       // ========== LP TOKEN MANAGEMENT ==========
       "lp_token_account": deployment.lp_token_accounts_initialized?.lp_token_account,
@@ -107,7 +107,7 @@ function generateWebsiteConfig(config, deployment) {
       
       // ========== MINING CONFIGURATION ==========
       "slots_for_swap": config.mining?.slots_for_swap || 9000,
-      "initial_distribution_rate": config.mining?.moon_doge_per_slot || 1000000,
+      "initial_distribution_rate": config.mining?.doge_btc_per_slot || 1000000,
       
       // ========== PVP CONFIGURATION ==========
       "pvp_ticket_tiers": config.pvp?.ticket_tiers || [

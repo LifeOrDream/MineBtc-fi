@@ -219,7 +219,7 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     let cpi_program = ctx.accounts.moonbase_program.to_account_info();
     let cpi_accounts = moon_base::cpi::accounts::WithdrawSolFees {
         global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        moon_doge_mining: ctx.accounts.moonbase_mining_state.to_account_info(),
+        doge_btc_mining: ctx.accounts.moonbase_mining_state.to_account_info(),
         sol_treasury: ctx.accounts.moonbase_treasury.to_account_info(),
         fee_collector: ctx.accounts.fee_collector.to_account_info(),
         loot_sol_vault: ctx.accounts.loot_sol_vault.to_account_info(),
@@ -406,7 +406,7 @@ pub struct InitializeMdogeVault<'info> {
         init,
         payer = authority,
         space = MoonDogeVault::LEN,
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,
@@ -544,7 +544,7 @@ pub struct UpdateConfig<'info> {
 
     #[account(
         mut,
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump,
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,
@@ -605,7 +605,7 @@ pub struct ClaimMoonBaseSOL<'info> {
 
     #[account(
         mut,
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump 
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,

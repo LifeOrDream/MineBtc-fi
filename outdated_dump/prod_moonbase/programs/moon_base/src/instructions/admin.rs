@@ -217,7 +217,7 @@ pub fn add_expansion_internal(
 
 // -------------------------------------------------------------------------------- 
 // -------------------------------------------------------------------------------- 
-// ------------ MOON_DOGE_MINING :: INITIALIZATION & UPDATES ------------
+// ------------ doge_btc_MINING :: INITIALIZATION & UPDATES ------------
 // -------------------------------------------------------------------------------- 
 // -------------------------------------------------------------------------------- 
 
@@ -226,36 +226,36 @@ pub fn add_expansion_internal(
 /// Initialize mining by setting the token vault and starting timestamp
 /// Can only be called once when mining_start_timestamp is 0
 pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timestamp: u64, 
-                                    moon_doge_per_slot: u64, pool_state: Pubkey) -> Result<()> {
-    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+                                    doge_btc_per_slot: u64, pool_state: Pubkey) -> Result<()> {
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     
     // Check mining hasn't been initialized yet
     require!(
-        moon_doge_mining.mining_start_timestamp == 0,
+        doge_btc_mining.mining_start_timestamp == 0,
         ErrorCode::MiningAlreadyInitialized
     );
     
     let cur_slot = Clock::get()?.slot;
 
     // ───── persist vault + bump(s) ─────
-    moon_doge_mining.mdoge_token_vault = ctx.accounts.token_vault.key();
-    moon_doge_mining.vault_auth_bump = ctx.bumps.vault_authority;
+    doge_btc_mining.mdoge_token_vault = ctx.accounts.token_vault.key();
+    doge_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
 
     // Initialize mining parameters
-    moon_doge_mining.mining_start_timestamp = start_timestamp;
-    moon_doge_mining.moon_doge_per_slot = moon_doge_per_slot;
-    moon_doge_mining.last_slot = cur_slot;
+    doge_btc_mining.mining_start_timestamp = start_timestamp;
+    doge_btc_mining.doge_btc_per_slot = doge_btc_per_slot;
+    doge_btc_mining.last_slot = cur_slot;
 
     // Initialize dynamic distribution fields  
-    moon_doge_mining.raydium_pool_state = pool_state;
-    moon_doge_mining.last_rate_update = Clock::get()?.unix_timestamp;
-    moon_doge_mining.current_dist_rate = moon_doge_per_slot;
-    moon_doge_mining.price_history = Vec::with_capacity(8);
-    moon_doge_mining.avg_price_8h = 0;
-    moon_doge_mining.prev_avg_price_8h = 0;
-    moon_doge_mining.sol_for_pol = 0; // Initialize POL tracking
-    moon_doge_mining.slots_for_swap = 9000; // Default: ~2.5 slots/second * 3600 seconds
-    moon_doge_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
+    doge_btc_mining.raydium_pool_state = pool_state;
+    doge_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
+    doge_btc_mining.current_dist_rate = doge_btc_per_slot;
+    doge_btc_mining.price_history = Vec::with_capacity(8);
+    doge_btc_mining.avg_price_8h = 0;
+    doge_btc_mining.prev_avg_price_8h = 0;
+    doge_btc_mining.sol_for_pol = 0; // Initialize POL tracking
+    doge_btc_mining.slots_for_swap = 9000; // Default: ~2.5 slots/second * 3600 seconds
+    doge_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
     
     msg!("Initialized dynamic distribution system with Raydium pool: {}", pool_state);
 
@@ -275,12 +275,12 @@ pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timest
 
 /// Update slots per hour configuration (admin only)
 pub fn update_slots_for_swap_internal(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
-    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     
     require!(new_slots_for_swap > 0, ErrorCode::InvalidParameters);
     
-    let old_slots_for_swap = moon_doge_mining.slots_for_swap;
-    moon_doge_mining.slots_for_swap = new_slots_for_swap;
+    let old_slots_for_swap = doge_btc_mining.slots_for_swap;
+    doge_btc_mining.slots_for_swap = new_slots_for_swap;
     
     msg!("Updated slots per hour from {} to {}", old_slots_for_swap, new_slots_for_swap);
     
@@ -294,7 +294,7 @@ pub fn update_slots_for_swap_internal(ctx: Context<UpdateSlotsPerHour>, new_slot
 }
 
 /// Deposit moon doge tokens to the mining vault
-pub fn deposit_moon_doge_tokens_internal(  ctx: Context<DepositTokens>,  amount: u64) -> Result<()> {
+pub fn deposit_doge_btc_tokens_internal(  ctx: Context<DepositTokens>,  amount: u64) -> Result<()> {
     token_if::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),      // TOKEN_2022_PROGRAM_ID
@@ -791,7 +791,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 /// Update mDOGE distribution rate based on price oracle
 /// This function can be called by anyone every hour
 pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
     
     // Check if admin override is being used (when lp_token_amount > 0)
@@ -810,22 +810,22 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     
     // Check if at least 1 hour has passed since last update
     let one_hour = ONE_HR as i64; // seconds, convert to i64 to match timestamp type
-    if current_time < moon_doge_mining.last_rate_update + one_hour {
+    if current_time < doge_btc_mining.last_rate_update + one_hour {
         msg!("⏰ Update too early - must wait at least 1 hour between updates");
-        msg!("   Current time: {}, Next update allowed: {}, remaining minutes: {}", current_time, moon_doge_mining.last_rate_update + one_hour, (moon_doge_mining.last_rate_update + one_hour - current_time) / 60);
+        msg!("   Current time: {}, Next update allowed: {}, remaining minutes: {}", current_time, doge_btc_mining.last_rate_update + one_hour, (doge_btc_mining.last_rate_update + one_hour - current_time) / 60);
         return Ok(());
     }
     
     msg!("🔄 Starting mDOGE distribution rate update");
     msg!("   Current time: {}", current_time);
-    msg!("   Last update: {}", moon_doge_mining.last_rate_update);
-    msg!("   Current dist rate: {}", moon_doge_mining.current_dist_rate);
+    msg!("   Last update: {}", doge_btc_mining.last_rate_update);
+    msg!("   Current dist rate: {}", doge_btc_mining.current_dist_rate);
     
     // Calculate mDOGE for liquidity based on current distribution rate and slots
-    let mdoge_for_liquidity = moon_doge_mining.current_dist_rate.checked_mul(moon_doge_mining.slots_for_swap).ok_or(ErrorCode::ArithmeticOverflow)?;
+    let mdoge_for_liquidity = doge_btc_mining.current_dist_rate.checked_mul(doge_btc_mining.slots_for_swap).ok_or(ErrorCode::ArithmeticOverflow)?;
         
     msg!("   Price entry {}/8: Swapping {} mDOGE for SOL", 
-         moon_doge_mining.price_history.len() + 1, mdoge_for_liquidity);
+         doge_btc_mining.price_history.len() + 1, mdoge_for_liquidity);
     
     // Perform swap via Raydium CPI to get current exchange rate
     let sol_received = perform_mdoge_to_sol_swap(
@@ -844,7 +844,7 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
         &ctx.accounts.token_program_2022,
         &ctx.accounts.token_program,
         mdoge_for_liquidity,
-        moon_doge_mining.vault_auth_bump,
+        doge_btc_mining.vault_auth_bump,
     )?;
     
     // Calculate current price (SOL per mDOGE) with proper decimal handling
@@ -888,22 +888,22 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     };
     
     // Add price entry to history
-    moon_doge_mining.price_history.push(price_entry);
+    doge_btc_mining.price_history.push(price_entry);
         
     // ----------------------------------------------------
     // Check if we have 8 price entries for full processing
     // ----------------------------------------------------
-    if moon_doge_mining.price_history.len() < 8 {
+    if doge_btc_mining.price_history.len() < 8 {
         // Not enough price history yet - just accumulate SOL for future POL
         // The SOL is already in our sol_token_account, so we just track it
-        moon_doge_mining.sol_for_pol = moon_doge_mining.sol_for_pol.checked_add(sol_received).unwrap();
+        doge_btc_mining.sol_for_pol = doge_btc_mining.sol_for_pol.checked_add(sol_received).unwrap();
         
         msg!("   💰 Accumulated {} WSOL for POL, total reserve: {}, price entries: {}/8", 
-            sol_received, moon_doge_mining.sol_for_pol, moon_doge_mining.price_history.len());
+            sol_received, doge_btc_mining.sol_for_pol, doge_btc_mining.price_history.len());
         msg!("   WSOL remains in token account: {}", ctx.accounts.sol_token_account.key());
         
         // Update timestamp
-        moon_doge_mining.last_rate_update = current_time;
+        doge_btc_mining.last_rate_update = current_time;
         
         return Ok(());
     }
@@ -916,7 +916,7 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     let mut weighted_sum: u128 = 0;
     let mut total_weights: u128 = 0;
     
-    for (i, entry) in moon_doge_mining.price_history.iter().enumerate() {
+    for (i, entry) in doge_btc_mining.price_history.iter().enumerate() {
         let weight = (i + 1) as u128; // Weight from 1 to 8
         
         // Prevent overflow in weighted sum calculation
@@ -940,11 +940,11 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     };
     
     msg!("   New 8-hour weighted average price: {} (total_weights: {})", new_avg_price, total_weights);
-    msg!("   Previous 8-hour average: {}", moon_doge_mining.avg_price_8h);
+    msg!("   Previous 8-hour average: {}", doge_btc_mining.avg_price_8h);
     
     // Calculate price change percentage with proper bounds checking
-    let price_change_pct = if moon_doge_mining.avg_price_8h > 0 {
-        let old_price = moon_doge_mining.avg_price_8h as i128;
+    let price_change_pct = if doge_btc_mining.avg_price_8h > 0 {
+        let old_price = doge_btc_mining.avg_price_8h as i128;
         let new_price = new_avg_price as i128;
         
         let directional_change = if new_price > old_price {
@@ -960,10 +960,10 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     };
     
     // Adjust distribution rate based on price movement
-    let old_rate = moon_doge_mining.current_dist_rate;
+    let old_rate = doge_btc_mining.current_dist_rate;
     if price_change_pct == 1 {
         // Price increased - increase distribution by 1%
-        moon_doge_mining.current_dist_rate = moon_doge_mining.current_dist_rate
+        doge_btc_mining.current_dist_rate = doge_btc_mining.current_dist_rate
             .checked_mul(101)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
@@ -972,7 +972,7 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
         msg!("   📈 Price increased! Increasing distribution rate by 1%");
     } else if price_change_pct == -1 {
         // Price decreased - decrease distribution by 3%
-        moon_doge_mining.current_dist_rate = moon_doge_mining.current_dist_rate
+        doge_btc_mining.current_dist_rate = doge_btc_mining.current_dist_rate
             .checked_mul(97)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
@@ -985,7 +985,7 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     
     // Calculate amounts for LP addition using UPDATED distribution rate
     // Get SOL from treasury (accumulated POL + current swap)
-    let total_sol_for_lp = moon_doge_mining.sol_for_pol
+    let total_sol_for_lp = doge_btc_mining.sol_for_pol
         .checked_add(sol_received)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
@@ -1010,8 +1010,8 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
         &ctx.accounts.token_program_2022,
         &ctx.accounts.token_program,
         total_sol_for_lp,
-        moon_doge_mining.vault_auth_bump,
-        moon_doge_mining,
+        doge_btc_mining.vault_auth_bump,
+        doge_btc_mining,
         lp_token_amount, // Pass the LP token amount
     )?;
     
@@ -1026,25 +1026,25 @@ pub fn update_mdoge_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>,
     let sol_consumed_for_lp = total_sol_for_lp.saturating_sub(wsol_balance_after_lp);
     
     // Update POL tracking - subtract only the amount actually used
-    moon_doge_mining.sol_for_pol = wsol_balance_after_lp; // Keep any leftover WSOL for next cycle
+    doge_btc_mining.sol_for_pol = wsol_balance_after_lp; // Keep any leftover WSOL for next cycle
     
     msg!("   💰 SOL consumption: {} total available, {} consumed for LP, {} remaining", 
-         total_sol_for_lp, sol_consumed_for_lp, moon_doge_mining.sol_for_pol);
+         total_sol_for_lp, sol_consumed_for_lp, doge_btc_mining.sol_for_pol);
     
     // Clear price history to restart the 8-hour cycle
-    moon_doge_mining.price_history.clear();
+    doge_btc_mining.price_history.clear();
     
     // Update state
-    moon_doge_mining.prev_avg_price_8h = moon_doge_mining.avg_price_8h;
-    moon_doge_mining.avg_price_8h = new_avg_price;
-    moon_doge_mining.last_rate_update = current_time;
+    doge_btc_mining.prev_avg_price_8h = doge_btc_mining.avg_price_8h;
+    doge_btc_mining.avg_price_8h = new_avg_price;
+    doge_btc_mining.last_rate_update = current_time;
     
     msg!("   🔄 Price history cleared - restarting 8-hour accumulation cycle");
-    msg!("   🎯 Distribution rate updated from {} to {}", old_rate, moon_doge_mining.current_dist_rate);
+    msg!("   🎯 Distribution rate updated from {} to {}", old_rate, doge_btc_mining.current_dist_rate);
     
     emit!(DistributionRateUpdated {
         old_rate,
-        new_rate: moon_doge_mining.current_dist_rate,
+        new_rate: doge_btc_mining.current_dist_rate,
         price_change_pct,
         current_price,
         avg_price_8h: new_avg_price,
@@ -1152,7 +1152,7 @@ fn perform_lp_addition_and_burn<'info>(
     token_program: &AccountInfo<'info>,
     sol_amount: u64,
     vault_auth_bump: u8,
-    moon_doge_mining: &mut Account<MoonDogeMining>,
+    doge_btc_mining: &mut Account<MoonDogeMining>,
     admin_lp_override: u64,
 ) -> Result<()> {
 
@@ -1336,22 +1336,22 @@ fn perform_lp_addition_and_burn<'info>(
         };
             
         // Update POL stats with actual consumed amounts
-        moon_doge_mining.pol_stats.update_after_lp_operation(
+        doge_btc_mining.pol_stats.update_after_lp_operation(
             lp_tokens_minted,
             sol_consumed,
             adjusted_mdoge_amount
         );
         
         msg!("📊 POL Stats Updated:");
-        msg!("   Total LP Burnt: {}", moon_doge_mining.pol_stats.total_lp_burnt);
-        msg!("   Total SOL Added: {}", moon_doge_mining.pol_stats.total_sol_added);
-        msg!("   Total mDOGE Added: {}", moon_doge_mining.pol_stats.total_mdoge_added);
-        msg!("   LP Operations: {}", moon_doge_mining.pol_stats.lp_operations_count);
+        msg!("   Total LP Burnt: {}", doge_btc_mining.pol_stats.total_lp_burnt);
+        msg!("   Total SOL Added: {}", doge_btc_mining.pol_stats.total_sol_added);
+        msg!("   Total mDOGE Added: {}", doge_btc_mining.pol_stats.total_mdoge_added);
+        msg!("   LP Operations: {}", doge_btc_mining.pol_stats.lp_operations_count);
         
         // Emit LP burn tracking event
         emit!(LpTokensBurned {
             lp_tokens_burned: lp_tokens_minted,
-            total_lp_burnt: moon_doge_mining.pol_stats.total_lp_burnt,
+            total_lp_burnt: doge_btc_mining.pol_stats.total_lp_burnt,
             mdoge_amount_added: adjusted_mdoge_amount,
             sol_amount_added: sol_consumed,
             timestamp: Clock::get()?.unix_timestamp,
@@ -1365,7 +1365,7 @@ fn perform_lp_addition_and_burn<'info>(
             lp_account.amount
         };
         
-        msg!("🔥 LP tokens burned: {} (Total burnt: {})", lp_tokens_minted, moon_doge_mining.pol_stats.total_lp_burnt);
+        msg!("🔥 LP tokens burned: {} (Total burnt: {})", lp_tokens_minted, doge_btc_mining.pol_stats.total_lp_burnt);
         msg!("💰 Final LP token balance: {} (should equal initial: {})", lp_balance_final, lp_balance_before);
         
         // Ensure all LP tokens were properly burned
@@ -1399,10 +1399,10 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         space = MoonDogeMining::LEN,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// CHECK: 0-byte PDA that only stores lamports
     #[account(
@@ -1444,10 +1444,10 @@ pub struct UpdateConfigAc<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump,
     )]
-    pub moon_doge_mining: Option<Account<'info, MoonDogeMining>>,
+    pub doge_btc_mining: Option<Account<'info, MoonDogeMining>>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1485,10 +1485,10 @@ pub struct InitializeMining<'info> {
 
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     //  Vault authority PDA (0-byte, signer only)
     #[account(
@@ -1503,7 +1503,7 @@ pub struct InitializeMining<'info> {
         init,
         payer  = authority,
         owner  = token_program.key(),
-        seeds  = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        seeds  = [MDOGE_VAULT_SEED, doge_btc_mining.key().as_ref()],
         token::mint      = token_mint,
         token::authority = vault_authority,
         bump
@@ -1539,17 +1539,17 @@ pub struct DepositTokens<'info> {
     // ─── mining token vault ───
     #[account(
         mut,
-        seeds  = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        seeds  = [MDOGE_VAULT_SEED, doge_btc_mining.key().as_ref()],
         bump,
         owner  = token_program.key(),
     )]
     pub mdoge_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(owner = token_program.key())]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
@@ -1667,10 +1667,10 @@ pub struct WithdrawSolFees<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     #[account(
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// CHECK: safe PDA used as vault authority
     #[account(
@@ -1759,10 +1759,10 @@ pub struct ManageUserElectricity<'info> {
 pub struct UpdateMdogeDistPerSlot<'info> {
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     /// GlobalConfig for admin authority verification
     #[account(
@@ -1855,10 +1855,10 @@ pub struct UpdateSlotsPerHour<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2041,12 +2041,12 @@ pub struct ToggleGameActive<'info> {
 /// Query treasury information for external programs
 pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
     let sol_treasury = &ctx.accounts.sol_treasury;
-    let moon_doge_mining = &ctx.accounts.moon_doge_mining;
+    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let global_config = &ctx.accounts.global_config;
 
     let total_balance = sol_treasury.lamports();
     let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
-    let pol_reserves = moon_doge_mining.sol_for_pol;
+    let pol_reserves = doge_btc_mining.sol_for_pol;
     
     // Calculate available balance (total - POL reserve - rent)
     let reserved_amount = rent_exempt_amount.checked_add(pol_reserves)
@@ -2089,10 +2089,10 @@ pub struct QueryTreasuryInfo<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     #[account(
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// CHECK: SOL treasury PDA
     #[account(

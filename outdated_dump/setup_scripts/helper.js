@@ -35,7 +35,7 @@ import path from 'path';
 
 // PDAs which hold GlobalConfig / MoonDogeMining state
 export const GLOBAL_CONFIG_SEED = "global-config";
-export const MOON_DOGE_MINING_SEED = "moon-doge-mining";
+export const doge_btc_MINING_SEED = "moon-doge-mining";
 
 // PDAs which hold SOL collected by the program
 export const SOL_TREASURY_SEED = "sol-treasury";
@@ -71,7 +71,7 @@ export const PVP_MATCHMAKER_SEED = "pvp-matchmaker";
 
 export const MOON_ECONOMY_GLOBAL_CONFIG_SEED = "global_config";
 
-export const MOON_ECONOMY_MOON_DOGE_VAULT_SEED = "moondoge_vault";
+export const MOON_ECONOMY_doge_btc_VAULT_SEED = "moondoge_vault";
 export const MOON_ECONOMY_LIQUIDITY_VAULT_SEED = "liquidity_vault";
 
 export const MOON_ECONOMY_MDOGE_SOL_VAULT_SEED = "moondoge-sol-vault";
@@ -463,7 +463,7 @@ export async function initializeMoonbaseProgram(connection, program, wallet, wal
             
             // Find PDAs
             const [globalConfigPDA] = PublicKey.findProgramAddressSync(  [Buffer.from(GLOBAL_CONFIG_SEED)],  program.programId);            
-            const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_DOGE_MINING_SEED)],   program.programId);            
+            const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync( [Buffer.from(doge_btc_MINING_SEED)],   program.programId);            
             const [solTreasuryPDA] = PublicKey.findProgramAddressSync( [Buffer.from(SOL_TREASURY_SEED)],  program.programId);
     
             console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA.toString()}`);
@@ -515,7 +515,7 @@ export async function initializeMoonbaseProgram(connection, program, wallet, wal
       );
       
       const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(MOON_DOGE_MINING_SEED)], 
+        [Buffer.from(doge_btc_MINING_SEED)], 
         program.programId
       );
       
@@ -683,7 +683,7 @@ export async function setupMiningVault(
   tokenMint,
   token_program,
   start_timestamp,
-  moon_doge_per_slot,
+  doge_btc_per_slot,
   raydium_pool_state
 ) {
   try {
@@ -694,7 +694,7 @@ export async function setupMiningVault(
     console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Token Mint: ${tokenMint.toString()}`);
     console.log('\x1b[36m%s\x1b[0m', `🔑 mDOGE Token Program: ${token_program.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `⏰ Start Timestamp: ${start_timestamp}`);
-    console.log('\x1b[90m%s\x1b[0m', `💰 Moon Doge Per Slot: ${moon_doge_per_slot.toString()}`);
+    console.log('\x1b[90m%s\x1b[0m', `💰 Moon Doge Per Slot: ${doge_btc_per_slot.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `🔄 Raydium Pool State: ${raydium_pool_state.toString()}`);
 
     const [globalConfigPDA] = PublicKey.findProgramAddressSync(
@@ -705,7 +705,7 @@ export async function setupMiningVault(
     const miningTx = await program.methods
       .initializeMining(
         new BN(start_timestamp),     // start_timestamp
-        new BN(moon_doge_per_slot),  // moon_doge_per_slot (tokens per slot)
+        new BN(doge_btc_per_slot),  // doge_btc_per_slot (tokens per slot)
         new PublicKey(raydium_pool_state)  // pool_state (Raydium pool state)
       )
       .accounts({
@@ -764,7 +764,7 @@ export async function depositMDOGE(
     
     // Find the moon doge mining PDA
     const [moonDogeMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(MOON_DOGE_MINING_SEED)], 
+      [Buffer.from(doge_btc_MINING_SEED)], 
       program.programId
     );
     
@@ -1209,7 +1209,7 @@ export async function mEconomySetupMdogeVault(
     console.log(`DEBUG: Converted mint addresses to PublicKeys`);
     console.log(`DEBUG: mdogeMintPubkey = ${mdogeMintPubkey.toString()}`);
     
-    const [moondogeVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_MOON_DOGE_VAULT_SEED)],  program.programId );
+    const [moondogeVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_doge_btc_VAULT_SEED)],  program.programId );
     const [mdogeSolVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_MDOGE_SOL_VAULT_SEED)],  program.programId );
     const [mdogeCustodianAuthorityPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_MDOGE_CUSTODIAN_AUTHORITY_SEED)],  program.programId );
 
@@ -2260,7 +2260,7 @@ export async function debugPDAs(program, networkConfig) {
   );
   
   const [derivedMoondogeVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from(MOON_ECONOMY_MOON_DOGE_VAULT_SEED)], 
+    [Buffer.from(MOON_ECONOMY_doge_btc_VAULT_SEED)], 
     program.programId
   );
   
@@ -2389,7 +2389,7 @@ export async function debugPDAs(program, networkConfig) {
   // Additional debug info about seed strings
   console.log('\n\x1b[36m%s\x1b[0m', '🧪 Seed strings used for derivation:');
   console.log('\x1b[36m%s\x1b[0m', `  - Global Config: "${MOON_ECONOMY_GLOBAL_CONFIG_SEED}"`);
-  console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge Vault: "${MOON_ECONOMY_MOON_DOGE_VAULT_SEED}"`);
+  console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge Vault: "${MOON_ECONOMY_doge_btc_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Liquidity Vault: "${MOON_ECONOMY_LIQUIDITY_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge SOL Vault: "${MOON_ECONOMY_MDOGE_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Liquidity SOL Vault: "${MOON_ECONOMY_LP_SOL_VAULT_SEED}"`);

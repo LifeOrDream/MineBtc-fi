@@ -29,6 +29,22 @@ pub mod moonbase {
         admin::internal_initialize(ctx, base_creation_cost, creation_fee_recipient)         
     }
     
+
+    /// Add Dragon Egg URIs to the pool (admin only)
+    pub fn add_dragon_egg_uris(ctx: Context<UpdateConfigAc>, uris: Vec<String>) -> Result<()> {
+        admin::add_dragon_egg_uris_internal(ctx, uris)
+    }
+
+    /// Clear all Dragon Egg URIs (admin only)
+    pub fn clear_dragon_egg_uris(ctx: Context<UpdateConfigAc>) -> Result<()> {
+        admin::clear_dragon_egg_uris_internal(ctx)
+    }
+
+    /// Set the Dragon Egg collection address (admin only)
+    pub fn set_dragon_egg_collection(ctx: Context<UpdateConfigAc>, dragon_egg_collection: Pubkey) -> Result<()> {
+        admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
+    }
+
     /// Update the global configuration parameters
     /// Can only be called by the current authority
     pub fn update_config(
@@ -64,7 +80,7 @@ pub mod moonbase {
 
 
     // ----------------------------------------------------------------------------------------
-    // ------------ MOON_DOGE_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
 
@@ -73,10 +89,10 @@ pub mod moonbase {
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
         start_timestamp: u64,
-        moon_doge_per_slot: u64,
+        doge_btc_per_slot: u64,
         pool_state: Pubkey
     ) -> Result<()> {
-        admin::initialize_mining_internal(ctx, start_timestamp, moon_doge_per_slot, pool_state)
+        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
     }
  
     /// Update slots per hour configuration (admin only)
@@ -85,239 +101,261 @@ pub mod moonbase {
     }    
 
     /// Deposit moon doge tokens to the mining vault
-    pub fn deposit_moon_doge_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-        admin::deposit_moon_doge_tokens_internal(ctx, amount)
+    pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        admin::deposit_doge_btc_tokens_internal(ctx, amount)
     }
 
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
-    // ----------------------------------------------------------------------------------------
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
+//     // ----------------------------------------------------------------------------------------
 
-   /// Create a new moon base for a user
-   pub fn create_system_referral_account(ctx: Context<CreateSystemReferralAccount>) -> Result<()> {
-        let rewards_acct = &mut ctx.accounts.referrer_rewards;
-        // 1) Set the owner field to the system program key
-        rewards_acct.owner = ctx.accounts.system_program.key();
-        rewards_acct.total_sol_earned = 0;
-        rewards_acct.sol_claimed_for_xp = 0;
-        // 2) Set the bump field to the bump of the account
-        rewards_acct.bump = ctx.bumps.referrer_rewards;
-        rewards_acct.referrals_count = 0;
+//    /// Create a new moon base for a user
+//    pub fn create_system_referral_account(ctx: Context<CreateSystemReferralAccount>) -> Result<()> {
+//         let rewards_acct = &mut ctx.accounts.referrer_rewards;
+//         // 1) Set the owner field to the system program key
+//         rewards_acct.owner = ctx.accounts.system_program.key();
+//         rewards_acct.total_sol_earned = 0;
+//         rewards_acct.sol_claimed_for_xp = 0;
+//         // 2) Set the bump field to the bump of the account
+//         rewards_acct.bump = ctx.bumps.referrer_rewards;
+//         rewards_acct.referrals_count = 0;
 
-        Ok(())
-    }    
-
-
-    // ---------------------------------------------------------- 
-    // ------------ LOOT REWARDS (ADMIN) --------------------------------
-    // ---------------------------------------------------------- 
+//         Ok(())
+//     }    
 
 
-    /// Initialize the loot rewards system
-    pub fn initialize_loot_rewards(ctx: Context<InitializeLootRewards>) -> Result<()> {
-        admin::initialize_loot_rewards_internal(ctx)
-    }
+//     // ---------------------------------------------------------- 
+//     // ------------ LOOT REWARDS (ADMIN) --------------------------------
+//     // ---------------------------------------------------------- 
 
-    /// Initialize level statistics tracking (admin only)
-    pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
-        admin::initialize_level_stats_internal(ctx)
-    }
+
+//     /// Initialize the loot rewards system
+//     pub fn initialize_loot_rewards(ctx: Context<InitializeLootRewards>) -> Result<()> {
+//         admin::initialize_loot_rewards_internal(ctx)
+//     }
+
+//     /// Initialize level statistics tracking (admin only)
+//     pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
+//         admin::initialize_level_stats_internal(ctx)
+//     }
     
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ MOONBASE EXPANSION FUNCTIONS :: MANAGE EXPANSIONS & PURCHASE -----------
-    // ----------------------------------------------------------------------------------------
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ MOONBASE EXPANSION FUNCTIONS :: MANAGE EXPANSIONS & PURCHASE -----------
+//     // ----------------------------------------------------------------------------------------
 
-    /// Initialize config stores for modules and gears
-    /// Can only be called by the authority
-    pub fn initialize_config_stores(ctx: Context<InitializeConfigStore>) -> Result<()> {
-        admin::initialize_config_stores_internal(ctx)
-    }
+//     /// Initialize config stores for modules and gears
+//     /// Can only be called by the authority
+//     pub fn initialize_config_stores(ctx: Context<InitializeConfigStore>) -> Result<()> {
+//         admin::initialize_config_stores_internal(ctx)
+//     }
     
-    /// Initialize a new module configuration (basic info only)
-    pub fn add_module_to_base(
-        ctx: Context<AddModuleToConfigStore>,
-        name: String,
-        image_url: String,
-        module_type: state::ModuleType,
-        faction_ids: Vec<u8>,
-        min_level: u8,
-        max_per_base: u8,
-        width: u8,
-        height: u8,
-        mint_cost: u64,
-        upgrade_cost: u64,
-        upgrade_level_requirements: Vec<u8>,
-    ) -> Result<()> {
-        admin::add_module_to_base_internal(
-            ctx, name, image_url, module_type, 
-            faction_ids, min_level, max_per_base, width, height,
-            mint_cost, upgrade_cost, upgrade_level_requirements
-        )
-    }
+//     /// Initialize a new module configuration (basic info only)
+//     pub fn add_module_to_base(
+//         ctx: Context<AddModuleToConfigStore>,
+//         name: String,
+//         image_url: String,
+//         module_type: state::ModuleType,
+//         faction_ids: Vec<u8>,
+//         min_level: u8,
+//         max_per_base: u8,
+//         width: u8,
+//         height: u8,
+//         mint_cost: u64,
+//         upgrade_cost: u64,
+//         upgrade_level_requirements: Vec<u8>,
+//     ) -> Result<()> {
+//         admin::add_module_to_base_internal(
+//             ctx, name, image_url, module_type, 
+//             faction_ids, min_level, max_per_base, width, height,
+//             mint_cost, upgrade_cost, upgrade_level_requirements
+//         )
+//     }
 
-    pub fn update_module_internal(
-        ctx: Context<UpdateModuleConfig>,
-        id: u16,
-        image_url: Option<String>,
-        faction_ids: Option<Vec<u8>>,
-        max_per_base: Option<u8>,
-        mint_cost: Option<u64>,
-        upgrade_cost: Option<u64>,
-        upgrade_level_requirements: Option<Vec<u8>>,
-        is_active: Option<bool>,
-    ) -> Result<()> {
-        admin::update_module_internal(ctx, id, image_url, faction_ids, max_per_base, mint_cost, upgrade_cost, upgrade_level_requirements, is_active)
-    }
-
-
-    /// Update module stats (required before module can be used)
-    pub fn update_module_stats(
-        ctx: Context<UpdateModuleStats>,
-        id: u16,
-        max_hp: u32,
-        power_consumption: u16,
-        base_hashpower: u32,
-        base_xp_per_hour: u32,
-        base_damage: u32,
-        base_missiles_per_load: u8,
-        reload_time_seconds: u32,
-        cooldown_sec: u32,
-        max_reward: u64,
-        probability: u16,
-    ) -> Result<()> {
-        admin::update_module_stats_internal(
-            ctx, id, max_hp, power_consumption, base_hashpower, base_xp_per_hour, base_damage,
-            base_missiles_per_load, reload_time_seconds, cooldown_sec,
-            max_reward, probability
-        )
-    }
-
-    // ---------------------------------------------------------- 
-    // ------------ WITHDRAW SOL FEES (ANYONE) --------------------------------
-    // ---------------------------------------------------------- 
+//     pub fn update_module_internal(
+//         ctx: Context<UpdateModuleConfig>,
+//         id: u16,
+//         image_url: Option<String>,
+//         faction_ids: Option<Vec<u8>>,
+//         max_per_base: Option<u8>,
+//         mint_cost: Option<u64>,
+//         upgrade_cost: Option<u64>,
+//         upgrade_level_requirements: Option<Vec<u8>>,
+//         is_active: Option<bool>,
+//     ) -> Result<()> {
+//         admin::update_module_internal(ctx, id, image_url, faction_ids, max_per_base, mint_cost, upgrade_cost, upgrade_level_requirements, is_active)
+//     }
 
 
-    /// Withdraw collected SOL fees from the treasury
-    /// 
-    /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
-    /// 1. For mDOGE stakers
-    /// 2. For liquidity providers
-    /// 3. For devs
-    /// 
-    /// Internally, 10% is sent to loot rewards. 
-    /// 
-    pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
-        admin::withdraw_sol_fees_internal(ctx)
-    }
+//     /// Update module stats (required before module can be used)
+//     pub fn update_module_stats(
+//         ctx: Context<UpdateModuleStats>,
+//         id: u16,
+//         max_hp: u32,
+//         power_consumption: u16,
+//         base_hashpower: u32,
+//         base_xp_per_hour: u32,
+//         base_damage: u32,
+//         base_missiles_per_load: u8,
+//         reload_time_seconds: u32,
+//         cooldown_sec: u32,
+//         max_reward: u64,
+//         probability: u16,
+//     ) -> Result<()> {
+//         admin::update_module_stats_internal(
+//             ctx, id, max_hp, power_consumption, base_hashpower, base_xp_per_hour, base_damage,
+//             base_missiles_per_load, reload_time_seconds, cooldown_sec,
+//             max_reward, probability
+//         )
+//     }
 
-    /// Query function to get treasury info for external programs
-    /// Returns available balance after accounting for POL reserves and loot percentage
-    pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
-        admin::query_treasury_info_internal(ctx)
-    }
-
-    /// Query function to get global config values for external programs
-    pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
-        admin::query_global_config_internal(ctx)
-    }
-
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ UPDATE mDOGE DISTRIBUTION RATE (ANYONE) --------------------------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Update mDOGE distribution rate based on price oracle (can be called by anyone every hour)
-    /// 
-    /// We update mDOGE distribution rate every 8 hrs based on price increase / decrease. 
-    /// mDOGE is swapped for SOL on raydium every hr for first 7 hrs and combined with mDOGE from mining vault for last hr
-    /// and added to the LP pool, with LP tokens being burnt.
-    /// 
-    /// When lp_token_amount > 0: Admin override mode (requires authority signature)
-    /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
-    pub fn update_mdoge_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-        admin::update_mdoge_dist_per_slot_internal(ctx, lp_token_amount)
-    }
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 
-    // ----------------------------------------------------------------------------------------
-
-    /// Create a new moon base for a user
-    /// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
-    pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
-        user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
-    }
+//     // ---------------------------------------------------------- 
+//     // ------------ WITHDRAW SOL FEES (ANYONE) --------------------------------
+//     // ---------------------------------------------------------- 
 
 
-    /// Purchase a moonbase expansion (user function)
-    pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
-        user::expand_moonbase_internal(ctx, expansion_id)
-    }
+//     /// Withdraw collected SOL fees from the treasury
+//     /// 
+//     /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
+//     /// 1. For mDOGE stakers
+//     /// 2. For liquidity providers
+//     /// 3. For devs
+//     /// 
+//     /// Internally, 10% is sent to loot rewards. 
+//     /// 
+//     pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
+//         admin::withdraw_sol_fees_internal(ctx)
+//     }
 
-    /// Claim referral rewards
-    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-        user::claim_referral_rewards_internal(ctx)
-    }
+//     /// Query function to get treasury info for external programs
+//     /// Returns available balance after accounting for POL reserves and loot percentage
+//     pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
+//         admin::query_treasury_info_internal(ctx)
+//     }
+
+//     /// Query function to get global config values for external programs
+//     pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
+//         admin::query_global_config_internal(ctx)
+//     }
+
+
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ UPDATE mDOGE DISTRIBUTION RATE (ANYONE) --------------------------------
+//     // ----------------------------------------------------------------------------------------
+
+//     /// Update mDOGE distribution rate based on price oracle (can be called by anyone every hour)
+//     /// 
+//     /// We update mDOGE distribution rate every 8 hrs based on price increase / decrease. 
+//     /// mDOGE is swapped for SOL on raydium every hr for first 7 hrs and combined with mDOGE from mining vault for last hr
+//     /// and added to the LP pool, with LP tokens being burnt.
+//     /// 
+//     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
+//     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
+//     pub fn update_mdoge_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
+//         admin::update_mdoge_dist_per_slot_internal(ctx, lp_token_amount)
+//     }
+
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 
+//     // ----------------------------------------------------------------------------------------
+
+//     /// Create a new moon base for a user
+//     /// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
+//     pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+//         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
+//     }
+
+
+//     /// Purchase a moonbase expansion (user function)
+//     pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
+//         user::expand_moonbase_internal(ctx, expansion_id)
+//     }
+
+//     /// Claim referral rewards
+//     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+//         user::claim_referral_rewards_internal(ctx)
+//     }
 
 
 
-    pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
-        user::update_user_electricity_internal(ctx, to_increase, amount)
-    }
+//     pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
+//         user::update_user_electricity_internal(ctx, to_increase, amount)
+//     }
 
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
-    // ----------------------------------------------------------------------------------------
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
+//     // ----------------------------------------------------------------------------------------
 
-    /// Buy a module without installing it
-    pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
-        user::buy_module(ctx, config_id)
-    }
+//     /// Buy a module without installing it
+//     pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
+//         user::buy_module(ctx, config_id)
+//     }
     
-    /// Install/deploy an existing undeployed module
-    pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
-        user::install_module(ctx, module_index, pos_x, pos_y)
-    }
+//     /// Install/deploy an existing undeployed module
+//     pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
+//         user::install_module(ctx, module_index, pos_x, pos_y)
+//     }
 
-    /// Remove a module instance from the moonbase
-    pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
-        user::remove_module_internal(ctx, module_index)
-    }
+//     /// Remove a module instance from the moonbase
+//     pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
+//         user::remove_module_internal(ctx, module_index)
+//     }
 
-    /// Delete a specific undeployed module permanently
-    pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
-        user::delete_module(ctx, module_index)
-    }
+//     /// Delete a specific undeployed module permanently
+//     pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
+//         user::delete_module(ctx, module_index)
+//     }
 
-    /// Upgrade a module instance
-    pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
-        user::upgrade_module_internal(ctx, module_index)
-    }
+//     /// Upgrade a module instance
+//     pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
+//         user::upgrade_module_internal(ctx, module_index)
+//     }
 
-    /// Claim accumulated XP from Attraction modules
-    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
-        user::claim_attraction_xp_internal(ctx, module_index)
-    }
-
-
-    /// Claim level-up rewards based on accumulated XP (with loot transfers)
-    pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
-        user::claim_level_up_rewards_internal(ctx)
-    }
+//     /// Claim accumulated XP from Attraction modules
+//     pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
+//         user::claim_attraction_xp_internal(ctx, module_index)
+//     }
 
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
-    // ----------------------------------------------------------------------------------------
+//     /// Claim level-up rewards based on accumulated XP (with loot transfers)
+//     pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
+//         user::claim_level_up_rewards_internal(ctx)
+//     }
+
+
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
+//     // ----------------------------------------------------------------------------------------
     
-    /// Claim MoonDoge tokens based on user's hashpower contribution
-    pub fn claim_mdoge_tokens(ctx: Context<ClaimMoonDoge>) -> Result<()> {
-        user::claim_mdoge_tokens_internal(ctx)
-    }
+//     /// Claim MoonDoge tokens based on user's hashpower contribution
+//     pub fn claim_mdoge_tokens(ctx: Context<ClaimMoonDoge>) -> Result<()> {
+//         user::claim_mdoge_tokens_internal(ctx)
+//     }
+
+
+//     // ----------------------------------------------------------------------------------------
+//     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
+//     // ----------------------------------------------------------------------------------------
+
+
+//     /// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
+//     pub fn incubate_dragon_egg(ctx: Context<IncubateDragonEgg>) -> Result<()> {
+//         user::incubate_dragon_egg_internal(ctx)
+//     }
+
+//     /// Remove Dragon Egg from moonbase incubation
+//     pub fn remove_dragon_egg(ctx: Context<RemoveDragonEgg>) -> Result<()> {
+//         user::remove_dragon_egg_internal(ctx)
+//     }
+
+//     /// Update Dragon Egg power based on hashpower (called periodically by backend)
+//     pub fn update_dragon_egg_power(ctx: Context<UpdateDragonEggPower>) -> Result<()> {
+//         user::update_dragon_egg_power_internal(ctx)
+//     }
 
 }
+
 
  

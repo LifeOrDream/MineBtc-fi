@@ -290,4 +290,22 @@ pub enum ErrorCode {
 
     #[msg("Invalid account provided")]
     InvalidAccount,
+
+    #[msg("Invalid metadata provided")]
+    InvalidMetadata,
+
+    #[msg("URI too long - maximum 200 characters")]
+    UriTooLong,
+
+    #[msg("Dragon Egg is already incubated in a moonbase")]
+    EggAlreadyIncubated,
+
+    #[msg("Moonbase has reached maximum incubated eggs limit (1 per moonbase)")]
+    MaxEggsReached,
+
+    #[msg("Dragon Egg is not incubated in this moonbase")]
+    EggNotIncubated,
+
+    #[msg("NFT is not owned by the user")]
+    NftNotOwnedByUser,
 } 

@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use crate::errors::ErrorCode;
+
 
 pub const MDOGE_DECIMALS: u8 = 6;
 pub const ONE_HR: u64 = 1; // 3600;
@@ -61,10 +63,7 @@ fn growth_factor(level: u8) -> u64 {
 
 // PDAs which hold GlobalConfig / MoonDogeMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
-pub const MOON_DOGE_MINING_SEED: &[u8] = b"moon-doge-mining";
-
-// PDAs which hold PvPMatchmaker state
-pub const PVP_MATCHMAKER_SEED: &[u8] = b"pvp-matchmaker";
+pub const doge_btc_MINING_SEED: &[u8] = b"moon-doge-mining";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
@@ -83,6 +82,11 @@ pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 
 // PDAs which hold GearInstance / ModuleInstance state
 pub const MODULE_INSTANCE_SEED: &[u8] = b"module-instance";
+
+// PDAs for Dragon Egg NFT system
+pub const DRAGON_EGG_COLLECTION_SEED: &[u8] = b"dragon-egg-collection";
+pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
+pub const INCUBATION_STATE_SEED: &[u8] = b"incubation-state";
 
 
 
@@ -175,10 +179,16 @@ pub struct GlobalConfig {
     pub supported_factions: Vec<String>,
     /// Available moonbase expansions (level requirements and costs)
     pub expansions: Vec<ExpansionConfig>,
+    /// Dragon Egg collection address (Metaplex Core)
+    pub dragon_egg_collection: Pubkey,
+    /// Total Dragon Eggs minted
+    pub total_dragon_eggs_minted: u64,
+    /// Available Dragon Egg URIs (randomly selected on mint)
+    pub dragon_egg_uris: Vec<String>,
 }
  
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + game_authority + sol_treasury + base_creation_cost + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec)
+    // discriminator + authority + fee_collector + game_authority + sol_treasury + base_creation_cost + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<ExpansionConfig> = 4 bytes (vec length) + MAX_EXPANSIONS * ExpansionConfig::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
@@ -195,7 +205,19 @@ impl GlobalConfig {
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)) + // supported_factions vec
-        4 + (MAX_EXPANSIONS * ExpansionConfig::LEN);         // expansions vec
+        4 + (MAX_EXPANSIONS * ExpansionConfig::LEN) +         // expansions vec
+        32 +                    // dragon_egg_collection
+        8 +                     // total_dragon_eggs_minted
+        4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH));    // dragon_egg_uris vec
+
+    /// Select random Dragon Egg URI based on slot, index, and DNA
+    pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {
+        require!(!self.dragon_egg_uris.is_empty(), ErrorCode::InvalidMetadata);
+
+        let dna_seed = u64::from_le_bytes([dna[0], dna[1], dna[2], dna[3], dna[4], dna[5], dna[6], dna[7]]);
+        let random_index = (slot.wrapping_add(index).wrapping_add(dna_seed)) as usize % self.dragon_egg_uris.len();
+        Ok(self.dragon_egg_uris[random_index].clone())
+    }
 }
 
 /// ------------ MOON DOGE MINING ------------
@@ -253,7 +275,7 @@ pub struct MoonDogeMining {
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,        
     /// MoonDoge mined per slot (original base rate)
-    pub moon_doge_per_slot: u64,
+    pub doge_btc_per_slot: u64,
     /// Last slot when moondoge were mined
     pub last_slot: u64,
     /// Total active hashpower across all facilities
@@ -272,7 +294,7 @@ pub struct MoonDogeMining {
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
-    /// Current distribution rate (starts at moon_doge_per_slot)
+    /// Current distribution rate (starts at doge_btc_per_slot)
     pub current_dist_rate: u64,
     /// Price history for 8-hour rolling average (8 entries, 1 per hour)
     pub price_history: Vec<PriceEntry>,
@@ -289,7 +311,7 @@ pub struct MoonDogeMining {
 }
 
 impl MoonDogeMining {
-    // discriminator + mdoge_token_vault + mining_start_timestamp + moon_doge_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
+    // discriminator + mdoge_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + avg_price_8h + prev_avg_price_8h + sol_for_pol + slots_for_swap + pol_stats
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 8-hour rolling average
     pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN;
@@ -778,6 +800,9 @@ impl ModuleInstance {
 pub const BASE_EGG_POWER: u32 = 100;
 pub const MAX_EGG_POWER: u32 = 1_000_000;
 pub const POWER_RATE_MULTIPLIER: u64 = 1000; // Divisor for balance
+pub const MAX_EGGS_PER_MOONBASE: u8 = 1; // Max 1 egg per moonbase
+pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
+pub const MAX_URI_LENGTH: usize = 200;
 
 // ========== LOOT SYSTEM CONSTANTS ========== //
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
@@ -876,6 +901,57 @@ impl DragonEggMetadata {
         8 +     // last_update_ts
         8 +     // total_hashpower_accumulated
         8 +     // created_at
+        1;      // bump
+
+    /// Calculate power increase based on hashpower and time
+    pub fn calculate_power_increase(
+        &self,
+        total_hashpower: u64,
+        time_elapsed: i64,
+    ) -> u32 {
+        if time_elapsed <= 0 {
+            return 0;
+        }
+
+        // Formula: power_increase = total_hashpower * time_elapsed / POWER_RATE_MULTIPLIER
+        let power_increase = total_hashpower
+            .saturating_mul(time_elapsed as u64)
+            .saturating_div(POWER_RATE_MULTIPLIER) as u32;
+
+        // Cap at max power
+        power_increase.min(MAX_EGG_POWER.saturating_sub(self.power))
+    }
+}
+
+// ========================================================================================
+// =============================== MOONBASE INCUBATION STATE =============================
+// ========================================================================================
+
+/// Incubation state for a specific moonbase (tracks incubated egg)
+#[account]
+pub struct IncubationState {
+    /// Moonbase owner
+    pub moonbase_owner: Pubkey,
+
+    /// Incubated egg mint (Option for max 1 egg)
+    pub incubated_egg: Option<Pubkey>,
+
+    /// Last update timestamp
+    pub last_update_ts: i64,
+
+    /// Total power accumulated
+    pub total_power: u64,
+
+    /// PDA bump
+    pub bump: u8,
+}
+
+impl IncubationState {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        32 +    // moonbase_owner
+        33 +    // incubated_egg (Option<Pubkey>)
+        8 +     // last_update_ts
+        8 +     // total_power
         1;      // bump
 }
  

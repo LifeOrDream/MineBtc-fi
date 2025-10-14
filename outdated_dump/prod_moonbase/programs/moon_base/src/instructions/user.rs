@@ -417,7 +417,7 @@ fn process_auto_daily_login_and_activity_xp<'info>(
     activity_source: &str,
     loot_rewards: &mut LootRewards,
     level_stats: &mut LevelStats,
-    moon_doge_mining: &MoonDogeMining,
+    doge_btc_mining: &MoonDogeMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
     loot_mdoge_vault: &AccountInfo<'info>,
@@ -451,7 +451,7 @@ fn process_auto_daily_login_and_activity_xp<'info>(
             &xp_source,
             loot_rewards,
             level_stats,
-            moon_doge_mining,
+            doge_btc_mining,
             loot_sol_vault,
             loot_mdoge_vault,
             loot_mdoge_vault_authority,
@@ -755,7 +755,7 @@ pub fn install_module(
              old_hashpower, user_moonbase.active_hashpower, hashpower_increase, module_instance.upgrade_level);
         
         // Update global hashpower
-        let mining_state = &mut ctx.accounts.moon_doge_mining;
+        let mining_state = &mut ctx.accounts.doge_btc_mining;
         let old_global_hashpower = mining_state.total_active_hashpower;
         mining_state.total_active_hashpower = mining_state.total_active_hashpower
             .checked_add(hashpower_increase)
@@ -916,7 +916,7 @@ pub fn remove_module_internal(
              old_hashpower, user_moonbase.active_hashpower, hashpower_reduction);
         
         // Update global hashpower
-        let mining_state = &mut ctx.accounts.moon_doge_mining;
+        let mining_state = &mut ctx.accounts.doge_btc_mining;
         let old_global_hashpower = mining_state.total_active_hashpower;
         mining_state.total_active_hashpower = mining_state.total_active_hashpower
             .saturating_sub(hashpower_reduction);
@@ -1074,7 +1074,7 @@ pub fn upgrade_module_internal (
                          hashpower_increase);
                          
                     // Update global hashpower for upgrades
-                    let mining_state = &mut ctx.accounts.moon_doge_mining;
+                    let mining_state = &mut ctx.accounts.doge_btc_mining;
                     let old_global_hashpower = mining_state.total_active_hashpower;
                     mining_state.total_active_hashpower = mining_state.total_active_hashpower
                         .checked_add(hashpower_increase)
@@ -1125,31 +1125,31 @@ pub fn claim_mdoge_tokens_internal(
     ctx: Context<ClaimMoonDoge>,
 ) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
-    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let user = &ctx.accounts.user;
     
     // Ensure mining has been initialized
     require!(
-        moon_doge_mining.mining_start_timestamp > 0,
+        doge_btc_mining.mining_start_timestamp > 0,
         ErrorCode::MiningNotInitialized
     );
 
     // Process any pending mining rewards
-    helper::process_user_mining(user_moonbase, moon_doge_mining)?;
+    helper::process_user_mining(user_moonbase, doge_btc_mining)?;
 
     // Get vault authority signer seeds
     let vault_seeds = &[
         MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
-        &[moon_doge_mining.vault_auth_bump],
+        &[doge_btc_mining.vault_auth_bump],
     ];
 
-    // Get account info before using moon_doge_mining as a mutable reference
-    let mining_account_info = moon_doge_mining.to_account_info();
+    // Get account info before using doge_btc_mining as a mutable reference
+    let mining_account_info = doge_btc_mining.to_account_info();
     
     // Claim tokens
     let claimed_amount = helper::claim_moondoge_tokens(
         user_moonbase,
-        moon_doge_mining,
+        doge_btc_mining,
         &ctx.accounts.token_program.to_account_info(),
         &ctx.accounts.token_vault.to_account_info(),
         &ctx.accounts.token_mint.to_account_info(),
@@ -1427,7 +1427,7 @@ pub fn claim_research_rewards_internal(
         // Get vault authority signer seeds for main mDOGE vault
         let vault_seeds = &[
             MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.accounts.moon_doge_mining.vault_auth_bump],
+            &[ctx.accounts.doge_btc_mining.vault_auth_bump],
         ];
         let signer_seeds = &[&vault_seeds[..]];
         
@@ -1624,10 +1624,10 @@ pub struct CreateModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(
         mut,
@@ -1695,10 +1695,10 @@ pub struct UpdateModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(
         mut,
@@ -1739,10 +1739,10 @@ pub struct ClaimMoonDoge<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     /// CHECK: This is the token vault that holds all the MoonDoge tokens
@@ -1796,7 +1796,7 @@ pub struct UpdateUserElectricity<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump
     )]
     pub mining_state: Account<'info, MoonDogeMining>,
@@ -1944,15 +1944,15 @@ pub struct ClaimResearchRewards<'info> {
     
     /// Moon Doge mining state (for vault authority bump)
     #[account(
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// Main mDOGE custody vault (where deposits go)
     #[account(
         mut,
-        seeds = [MDOGE_VAULT_SEED, moon_doge_mining.key().as_ref()],
+        seeds = [MDOGE_VAULT_SEED, doge_btc_mining.key().as_ref()],
         bump,
     )]
     /// CHECK: Main mDOGE custody vault
@@ -2080,7 +2080,7 @@ pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Res
         "Level-Up Rewards Claim",
         &mut ctx.accounts.loot_rewards,
         &mut ctx.accounts.level_stats,
-        &ctx.accounts.moon_doge_mining,
+        &ctx.accounts.doge_btc_mining,
         &ctx.accounts.loot_sol_vault,
         &ctx.accounts.loot_mdoge_vault,
         &ctx.accounts.loot_mdoge_vault_authority,
@@ -2128,10 +2128,10 @@ pub struct ClaimLevelUpRewards<'info> {
     pub level_stats: Account<'info, LevelStats>,
     
     #[account(
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// Loot SOL vault for distributing SOL loot
     #[account(
@@ -2210,10 +2210,10 @@ pub struct RemoveModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -2351,10 +2351,10 @@ pub struct InstallModule<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     pub user: Signer<'info>,

@@ -1014,7 +1014,7 @@ pub struct StakeMoonDoge<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump = moondoge_vault.bump
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,
@@ -1116,7 +1116,7 @@ pub struct UnstakeMoonDoge<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump = moondoge_vault.bump
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,
@@ -1422,7 +1422,7 @@ pub struct ClaimSolRewards<'info> {
 
     #[account(
         mut,
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump 
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,
@@ -1474,7 +1474,7 @@ pub struct UpdatePendingRewards<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     #[account(
-        seeds = [MOON_DOGE_VAULT_SEED.as_ref()],
+        seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump 
     )]
     pub moondoge_vault: Account<'info, MoonDogeVault>,

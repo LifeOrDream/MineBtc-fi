@@ -119,7 +119,7 @@
     "vault_address": "7cmTQNaL7HXAAatqyiiA25x3Zxy6P7LD8Q9RDKWWeptb",
     "vault_authority": "7dfMqmSu8kCBLkFNRzU4HYzZwxqoTz4EWGxhE1ZDA5gu",
     "start_timestamp": 1750832024,
-    "moon_doge_per_slot": "1000000",
+    "doge_btc_per_slot": "1000000",
     "init_tx": "5bxtG5foAyxfRZgGQhc4ru3DdRgMinm3EoqT1R4tE8eLSPsg3FYUgjfFJADdkQZXrkfrDH9xGwLcC3E4o7VCoEQU",
     "timestamp": "2025-06-25T06:13:45.154Z"
   },

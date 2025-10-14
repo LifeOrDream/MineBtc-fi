@@ -524,31 +524,31 @@ pub fn claim_mdoge_tokens_internal(
     ctx: Context<ClaimMoonDoge>,
 ) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
-    let moon_doge_mining = &mut ctx.accounts.moon_doge_mining;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let user = &ctx.accounts.user;
     
     // Ensure mining has been initialized
     require!(
-        moon_doge_mining.mining_start_timestamp > 0,
+        doge_btc_mining.mining_start_timestamp > 0,
         ErrorCode::MiningNotInitialized
     );
 
     // Process any pending mining rewards
-    helper::process_user_mining(user_moonbase, moon_doge_mining)?;
+    helper::process_user_mining(user_moonbase, doge_btc_mining)?;
 
     // Get vault authority signer seeds
     let vault_seeds = &[
         MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
-        &[moon_doge_mining.vault_auth_bump],
+        &[doge_btc_mining.vault_auth_bump],
     ];
 
-    // Get account info before using moon_doge_mining as a mutable reference
-    let mining_account_info = moon_doge_mining.to_account_info();
+    // Get account info before using doge_btc_mining as a mutable reference
+    let mining_account_info = doge_btc_mining.to_account_info();
     
     // Claim tokens
     let claimed_amount = helper::claim_moondoge_tokens(
         user_moonbase,
-        moon_doge_mining,
+        doge_btc_mining,
         &ctx.accounts.token_program.to_account_info(),
         &ctx.accounts.token_vault.to_account_info(),
         &ctx.accounts.token_mint.to_account_info(),
@@ -857,7 +857,7 @@ pub fn install_module(
              old_hashpower, user_moonbase.active_hashpower, hashpower_increase, module_instance.upgrade_level);
         
         // Update global hashpower
-        let mining_state = &mut ctx.accounts.moon_doge_mining;
+        let mining_state = &mut ctx.accounts.doge_btc_mining;
         let old_global_hashpower = mining_state.total_active_hashpower;
         mining_state.total_active_hashpower = mining_state.total_active_hashpower
             .checked_add(hashpower_increase)
@@ -1018,7 +1018,7 @@ pub fn remove_module_internal(
              old_hashpower, user_moonbase.active_hashpower, hashpower_reduction);
         
         // Update global hashpower
-        let mining_state = &mut ctx.accounts.moon_doge_mining;
+        let mining_state = &mut ctx.accounts.doge_btc_mining;
         let old_global_hashpower = mining_state.total_active_hashpower;
         mining_state.total_active_hashpower = mining_state.total_active_hashpower
             .saturating_sub(hashpower_reduction);
@@ -1174,7 +1174,7 @@ pub fn upgrade_module_internal (
                          hashpower_increase);
                          
                     // Update global hashpower for upgrades
-                    let mining_state = &mut ctx.accounts.moon_doge_mining;
+                    let mining_state = &mut ctx.accounts.doge_btc_mining;
                     let old_global_hashpower = mining_state.total_active_hashpower;
                     mining_state.total_active_hashpower = mining_state.total_active_hashpower
                         .checked_add(hashpower_increase)
@@ -1379,7 +1379,7 @@ pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Res
         "Level-Up Rewards Claim",
         &mut ctx.accounts.loot_rewards,
         &mut ctx.accounts.level_stats,
-        &ctx.accounts.moon_doge_mining,
+        &ctx.accounts.doge_btc_mining,
         &ctx.accounts.loot_sol_vault,
         &ctx.accounts.loot_mdoge_vault,
         &ctx.accounts.loot_mdoge_vault_authority,
@@ -1414,7 +1414,7 @@ fn process_auto_daily_login_and_activity_xp<'info>(
     activity_source: &str,
     loot_rewards: &mut LootRewards,
     level_stats: &mut LevelStats,
-    moon_doge_mining: &MoonDogeMining,
+    doge_btc_mining: &MoonDogeMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
     loot_mdoge_vault: &AccountInfo<'info>,
@@ -1448,7 +1448,7 @@ fn process_auto_daily_login_and_activity_xp<'info>(
             &xp_source,
             loot_rewards,
             level_stats,
-            moon_doge_mining,
+            doge_btc_mining,
             loot_sol_vault,
             loot_mdoge_vault,
             loot_mdoge_vault_authority,
@@ -1641,7 +1641,7 @@ pub struct UpdateUserElectricity<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump
     )]
     pub mining_state: Account<'info, MoonDogeMining>,
@@ -1676,10 +1676,10 @@ pub struct ClaimMoonDoge<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     /// CHECK: This is the token vault that holds all the MoonDoge tokens
@@ -1813,10 +1813,10 @@ pub struct InstallModule<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -1858,10 +1858,10 @@ pub struct RemoveModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -1988,10 +1988,10 @@ pub struct UpdateModuleInstance<'info> {
     
     #[account(
         mut,
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
-        bump = moon_doge_mining.bump,
+        seeds = [doge_btc_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
     
     #[account(
         mut,
@@ -2043,10 +2043,10 @@ pub struct ClaimLevelUpRewards<'info> {
     pub level_stats: Account<'info, LevelStats>,
     
     #[account(
-        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        seeds = [doge_btc_MINING_SEED.as_ref()],
         bump
     )]
-    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, MoonDogeMining>,
 
     /// Loot SOL vault for distributing SOL loot
     #[account(
@@ -2090,3 +2090,226 @@ pub struct ClaimLevelUpRewards<'info> {
     
     pub system_program: Program<'info, System>,
 }
+
+
+// ----------------------------------------------------------------------------------------
+// -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+/// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
+pub fn incubate_dragon_egg_internal(
+    ctx: Context<IncubateDragonEgg>,
+) -> Result<()> {
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let incubation_state = &mut ctx.accounts.incubation_state;
+    let user_moonbase = &ctx.accounts.user_moonbase;
+
+    // Verify ownership from Metaplex Core asset
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
+    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+
+    // Validation
+    require!(
+        egg_metadata.incubated_moonbase.is_none(),
+        ErrorCode::EggAlreadyIncubated
+    );
+    require!(
+        incubation_state.incubated_egg.is_none(),
+        ErrorCode::MaxEggsReached
+    );
+
+    let current_time = Clock::get()?.unix_timestamp;
+
+    // Add egg to incubation state
+    incubation_state.incubated_egg = Some(egg_metadata.mint);
+    incubation_state.last_update_ts = current_time;
+    incubation_state.moonbase_owner = user_moonbase.owner;
+
+    // Update egg metadata
+    egg_metadata.incubated_moonbase = Some(user_moonbase.owner);
+    egg_metadata.last_update_ts = current_time;
+
+    msg!("✅ Dragon Egg incubated in moonbase");
+    msg!("   Egg: {}", egg_metadata.mint);
+    msg!("   Moonbase: {}", user_moonbase.owner);
+
+    Ok(())
+}
+
+/// Remove Dragon Egg from moonbase incubation
+pub fn remove_dragon_egg_internal(
+    ctx: Context<RemoveDragonEgg>,
+) -> Result<()> {
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let incubation_state = &mut ctx.accounts.incubation_state;
+
+    // Verify ownership from Metaplex Core asset
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
+    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+
+    require!(
+        egg_metadata.incubated_moonbase.is_some(),
+        ErrorCode::EggNotIncubated
+    );
+
+    let current_time = Clock::get()?.unix_timestamp;
+
+    // Remove egg from incubation state
+    incubation_state.incubated_egg = None;
+    incubation_state.last_update_ts = current_time;
+
+    // Update egg metadata
+    let final_power = egg_metadata.power;
+    egg_metadata.incubated_moonbase = None;
+    egg_metadata.last_update_ts = current_time;
+
+    msg!("✅ Dragon Egg removed from incubation");
+    msg!("   Egg: {}", egg_metadata.mint);
+    msg!("   Final Power: {}", final_power);
+
+    Ok(())
+}
+
+/// Update Dragon Egg power based on hashpower accumulation
+pub fn update_dragon_egg_power_internal(
+    ctx: Context<UpdateDragonEggPower>,
+) -> Result<()> {
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let incubation_state = &mut ctx.accounts.incubation_state;
+    let user_moonbase = &ctx.accounts.user_moonbase;
+
+    require!(
+        egg_metadata.incubated_moonbase.is_some(),
+        ErrorCode::EggNotIncubated
+    );
+
+    let current_time = Clock::get()?.unix_timestamp;
+    let time_elapsed = current_time.saturating_sub(egg_metadata.last_update_ts);
+
+    let old_power = egg_metadata.power;
+    let power_increase = egg_metadata.calculate_power_increase(
+        user_moonbase.active_hashpower,
+        time_elapsed,
+    );
+    let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
+
+    egg_metadata.power = new_power;
+    egg_metadata.last_update_ts = current_time;
+    egg_metadata.total_hashpower_accumulated = egg_metadata.total_hashpower_accumulated
+        .saturating_add(user_moonbase.active_hashpower);
+
+    incubation_state.total_power = new_power as u64;
+    incubation_state.last_update_ts = current_time;
+
+    msg!("✅ Dragon Egg power updated");
+    msg!("   Power: {} -> {} (+{})", old_power, new_power, power_increase);
+    msg!("   Hashpower: {}", user_moonbase.active_hashpower);
+
+    Ok(())
+}
+
+
+// ----------------------------------------------------------------------------------------
+// -------------- DRAGON EGG ACCOUNT CONTEXTS ---------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+#[derive(Accounts)]
+pub struct IncubateDragonEgg<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via get_mpl_core_owner helper
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_metadata.mint.as_ref()],
+        bump = dragon_egg_metadata.bump,
+        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = IncubationState::LEN,
+        seeds = [INCUBATION_STATE_SEED.as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub incubation_state: Account<'info, IncubationState>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RemoveDragonEgg<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+
+    /// Metaplex Core asset (source of truth for ownership)
+    /// CHECK: Verified via get_mpl_core_owner helper
+    pub dragon_egg_asset: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_metadata.mint.as_ref()],
+        bump = dragon_egg_metadata.bump,
+        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+
+    #[account(
+        mut,
+        seeds = [INCUBATION_STATE_SEED.as_ref(), user.key().as_ref()],
+        bump = incubation_state.bump,
+    )]
+    pub incubation_state: Account<'info, IncubationState>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateDragonEggPower<'info> {
+    #[account(
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_metadata.mint.as_ref()],
+        bump = dragon_egg_metadata.bump,
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+
+    #[account(
+        mut,
+        seeds = [INCUBATION_STATE_SEED.as_ref(), user.key().as_ref()],
+        bump = incubation_state.bump,
+    )]
+    pub incubation_state: Account<'info, IncubationState>,
+
+    /// CHECK: User wallet (used for PDA derivation)
+    pub user: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
