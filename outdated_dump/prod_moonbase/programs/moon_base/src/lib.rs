@@ -110,10 +110,10 @@ pub mod moon_base {
         )
     }
 
-    /// Toggle the PvP game active state (admin only)
-    pub fn toggle_game_active(ctx: Context<ToggleGameActive>) -> Result<()> {
-        admin::toggle_game_active_internal(ctx)
-    }
+    // /// Toggle the PvP game active state (admin only)
+    // pub fn toggle_game_active(ctx: Context<ToggleGameActive>) -> Result<()> {
+    //     admin::toggle_game_active_internal(ctx)
+    // }
     
 
     /// Add a new faction to the supported factions list (admin only)

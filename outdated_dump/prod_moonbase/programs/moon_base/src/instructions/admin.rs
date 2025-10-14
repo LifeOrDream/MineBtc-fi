@@ -99,48 +99,48 @@ pub fn toggle_game_active_internal(ctx: Context<ToggleGameActive>) -> Result<()>
     Ok(())
 }
 
-/// Add a new faction to the supported factions list (admin only)
-/// Factions cannot be removed once added to maintain data integrity
-pub fn add_faction_internal(ctx: Context<AddFaction>, name: String) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
+// /// Add a new faction to the supported factions list (admin only)
+// /// Factions cannot be removed once added to maintain data integrity
+// pub fn add_faction_internal(ctx: Context<AddFaction>, name: String) -> Result<()> {
+//     let global_config = &mut ctx.accounts.global_config;
     
-    // Validate faction name length
-    require!(
-        name.len() > 0 && name.len() <= MAX_FACTION_NAME_LENGTH,
-        ErrorCode::InvalidFactionName
-    );
+//     // Validate faction name length
+//     require!(
+//         name.len() > 0 && name.len() <= MAX_FACTION_NAME_LENGTH,
+//         ErrorCode::InvalidFactionName
+//     );
     
-    // Check if we've reached the maximum number of factions
-    require!(
-        global_config.supported_factions.len() < MAX_FACTIONS,
-        ErrorCode::MaxFactionsReached
-    );
+//     // Check if we've reached the maximum number of factions
+//     require!(
+//         global_config.supported_factions.len() < MAX_FACTIONS,
+//         ErrorCode::MaxFactionsReached
+//     );
     
-    // Check if faction name already exists (case-insensitive)
-    let name_lower = name.to_lowercase();
-    for existing_faction in &global_config.supported_factions {
-        require!(
-            existing_faction.to_lowercase() != name_lower,
-            ErrorCode::FactionAlreadyExists
-        );
-    }
+//     // Check if faction name already exists (case-insensitive)
+//     let name_lower = name.to_lowercase();
+//     for existing_faction in &global_config.supported_factions {
+//         require!(
+//             existing_faction.to_lowercase() != name_lower,
+//             ErrorCode::FactionAlreadyExists
+//         );
+//     }
     
-    // Add the faction to the list
-    global_config.supported_factions.push(name.clone());
+//     // Add the faction to the list
+//     global_config.supported_factions.push(name.clone());
     
-    let faction_id = (global_config.supported_factions.len() - 1) as u8;
+//     let faction_id = (global_config.supported_factions.len() - 1) as u8;
     
-    msg!("Added new faction '{}' with ID {}", name, faction_id);
+//     msg!("Added new faction '{}' with ID {}", name, faction_id);
     
-    emit!(FactionAdded {
-        authority: ctx.accounts.authority.key(),
-        faction_name: name,
-        faction_id,
-        total_factions: global_config.supported_factions.len() as u8,
-    });
+//     emit!(FactionAdded {
+//         authority: ctx.accounts.authority.key(),
+//         faction_name: name,
+//         faction_id,
+//         total_factions: global_config.supported_factions.len() as u8,
+//     });
     
-    Ok(())
-}
+//     Ok(())
+// }
  
 
 /// Add a new expansion configuration (admin only)
