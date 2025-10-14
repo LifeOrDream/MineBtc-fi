@@ -1010,3 +1010,682 @@ pub fn can_place_module_in_moonbase(
     
     Ok(true)
 }
+
+
+
+
+/// Enhanced XP function with actual loot transfers - for use in instruction handlers
+pub fn add_xp_with_loot_transfers<'info>(
+    user: &mut UserMoonBaseInstance,
+    xp_amount: u32,
+    xp_source: &str,
+    loot_rewards: &mut LootRewards,
+    level_stats: &mut LevelStats,
+    moon_doge_mining: &MoonDogeMining,
+    // Transfer-related accounts (required for loot transfers)
+    loot_sol_vault: &AccountInfo<'info>,
+    loot_mdoge_vault: &AccountInfo<'info>,
+    loot_mdoge_vault_authority: &AccountInfo<'info>,
+    user_account: &AccountInfo<'info>,
+    user_token_account: Option<&AccountInfo<'info>>,
+    token_mint: Option<&AccountInfo<'info>>,
+    token_program: Option<&AccountInfo<'info>>,
+    system_program: &AccountInfo<'info>,
+) -> Result<bool> {
+    msg!("🎮 Processing XP for user {}: {} XP from {}", user.owner, xp_amount, xp_source);
+    
+    // Add XP
+    let old_xp = user.xp;
+    user.xp = user.xp.saturating_add(xp_amount);
+    
+    // Emit XP gained event
+    emit!(XpGained {
+        owner: user.owner,
+        xp_amount,
+        xp_source: xp_source.to_string(),
+        total_xp: user.xp,
+    });
+    
+    msg!("🌟 Player {} gained {} XP from {} (Total: {}, Previous: {})", 
+         user.owner, xp_amount, xp_source, user.xp, old_xp);
+    
+    let mut leveled_up = false;
+    let old_level = user.level;
+    
+    // Check for multiple level-ups
+    while user.xp >= required_xp_new(user.level) as u32 {
+        let required_xp = required_xp_new(user.level) as u32;
+        let remaining_xp = user.xp.saturating_sub(required_xp);
+        
+        user.xp = remaining_xp;
+        user.level = user.level.saturating_add(1);
+        leveled_up = true;
+        
+        // Emit level up event
+        emit!(LevelUp { 
+            owner: user.owner, 
+            new_level: user.level,
+            total_xp: user.xp,
+        });
+        
+        msg!("🎉 Player {} leveled up to level {}! (Required: {}, Remaining XP: {})", 
+             user.owner, user.level, required_xp, remaining_xp);
+        
+        // Roll for loot and perform transfers if loot is won
+        msg!("🎲 Rolling for loot at level {}...", user.level);
+        let (sol_payout, mdoge_payout) = try_roll_loot(user, loot_rewards, Some(level_stats), moon_doge_mining)?;
+        
+        // Perform actual transfers if loot was won
+        if sol_payout > 0 {
+            msg!("💰 Processing SOL loot transfer of {} lamports...", sol_payout);
+            transfer_loot_sol_to_user(
+                loot_sol_vault,
+                user_account,
+                system_program,
+                sol_payout,
+                loot_rewards.sol_vault_bump,
+            )?;
+        }
+        
+        if mdoge_payout > 0 {
+            if let (Some(user_token_account), Some(token_mint), Some(token_program)) = 
+                (user_token_account, token_mint, token_program) {
+                msg!("💎 Processing mDOGE loot transfer of {} tokens...", mdoge_payout);
+                transfer_loot_mdoge_to_user(
+                    token_program,
+                    loot_mdoge_vault,
+                    user_token_account,
+                    loot_mdoge_vault_authority,
+                    token_mint,
+                    mdoge_payout,
+                    loot_rewards.mdoge_vault_authority_bump,
+                )?;
+            } else if mdoge_payout > 0 {
+                msg!("⚠️ mDOGE loot won ({} tokens) but token accounts not provided - transfer skipped", mdoge_payout);
+            }
+        }
+    }
+    
+    // Update level statistics if leveled up
+    if leveled_up {
+        msg!("📊 Updating level statistics for user {} (Level {} -> {})", 
+             user.owner, old_level, user.level);
+        update_level_stats(level_stats, &user.owner, old_level, user.level)?;
+    }
+    
+    Ok(leveled_up)
+}
+
+
+
+/// Transfer mDOGE from loot vault to user
+pub fn transfer_loot_mdoge_to_user<'info>(
+    token_program: &AccountInfo<'info>,
+    loot_mdoge_vault: &AccountInfo<'info>,
+    user_token_account: &AccountInfo<'info>,
+    loot_mdoge_vault_authority: &AccountInfo<'info>,
+    token_mint: &AccountInfo<'info>,
+    amount: u64,
+    mdoge_vault_authority_bump: u8,
+) -> Result<()> {
+    msg!("💎 Initiating mDOGE loot transfer:");
+    msg!("   From: {} (Loot mDOGE Vault)", loot_mdoge_vault.key());
+    msg!("   To: {} (User Token Account)", user_token_account.key());
+    msg!("   Amount: {} mDOGE", amount as f64 / 1e9);
+    
+    let seeds = &[
+        LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref(),
+        &[mdoge_vault_authority_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    // Get initial balances using token program CPI
+    let initial_vault_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &loot_mdoge_vault.data.borrow()[..])?.amount;
+    let initial_user_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &user_token_account.data.borrow()[..])?.amount;
+    
+    // Use Token-2022 transfer_checked instruction
+    let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
+        &anchor_spl::token_2022::spl_token_2022::ID,
+        &loot_mdoge_vault.key(),
+        &token_mint.key(),
+        &user_token_account.key(),
+        &loot_mdoge_vault_authority.key(),
+        &[],
+        amount,
+        MDOGE_DECIMALS, // mDOGE has 6 decimals
+    )?;
+    
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            token_program.clone(),
+            loot_mdoge_vault.clone(),
+            user_token_account.clone(),
+            loot_mdoge_vault_authority.clone(),
+            token_mint.clone(),
+        ],
+        signer_seeds,
+    )?;
+    
+    // Get final balances
+    let final_vault_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &loot_mdoge_vault.data.borrow()[..])?.amount;
+    let final_user_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &user_token_account.data.borrow()[..])?.amount;
+    
+    msg!("✅ mDOGE transfer completed successfully:");
+    msg!("   Vault balance: {} -> {} mDOGE", 
+         initial_vault_balance as f64 / 1e9, 
+         final_vault_balance as f64 / 1e9);
+    msg!("   User balance: {} -> {} mDOGE", 
+         initial_user_balance as f64 / 1e9, 
+         final_user_balance as f64 / 1e9);
+    
+    Ok(())
+}
+
+
+
+
+// --------------------------------------- //
+// ========== LEVEL STATISTICS =========== //
+// --------------------------------------- //
+
+/// Update level statistics when a user levels up (gas-optimized top-level tracking)
+/// Maintains a sorted list (descending) of top 25 levels with efficient operations
+/// O(25) update of LevelStats
+pub fn update_level_stats(
+    stats: &mut LevelStats,
+    user_pk: &Pubkey,
+    old_lvl: u8,
+    new_lvl: u8,
+) -> Result<()> {
+
+    // ---------- 0. quick exit ----------
+    if old_lvl == new_lvl { return Ok(()); }
+
+    // ---------- 1. total user count ----------
+    if old_lvl == 0 {                         // first time levelling
+        stats.total_users = stats.total_users.saturating_add(1);
+    }
+
+    // ---------- 2. bump max level ----------
+    if new_lvl > stats.max_level_achieved {
+        stats.max_level_achieved = new_lvl;
+    }
+
+    // ---------- 3. single scan pass ----------
+    let mut found_old = None;
+    let mut found_new = None;
+
+    for (idx, entry) in stats.tracked_levels.iter_mut().enumerate() {
+        if entry.level == old_lvl {
+            // ↓ remove one user; flag if becomes 0
+            entry.user_count = entry.user_count.saturating_sub(1);
+            if entry.user_count == 0 { found_old = Some(idx); }
+        }
+        if entry.level == new_lvl {
+            found_new = Some(idx);
+        }
+    }
+
+    // ---------- 4. drop old level if now empty ----------
+    if let Some(i) = found_old {
+        stats.tracked_levels.swap_remove(i);   // O(1)
+    }
+
+    // ---------- 5. add / inc new level ----------
+    if let Some(i) = found_new {
+        stats.tracked_levels[i].user_count =
+            stats.tracked_levels[i].user_count.saturating_add(1);
+    } else {
+        // not tracked yet
+        if stats.tracked_levels.len() < LevelStats::MAX_TRACKED_LEVELS {
+            stats.tracked_levels.push(LevelEntry { level: new_lvl, user_count: 1 });
+        } else {
+            // list full – push & pop lowest in one shot
+            stats.tracked_levels.push(LevelEntry { level: new_lvl, user_count: 1 });
+            // find lowest (smallest level)
+            let (low_i, _) = stats.tracked_levels
+        .iter()
+                .enumerate()
+                .min_by_key(|(_,e)| e.level)
+                .unwrap();
+            stats.tracked_levels.swap_remove(low_i);
+        }
+    }
+
+    // ---------- 6. re-sort descending (25 items max) ----------
+    stats.tracked_levels.sort_unstable_by(|a,b| b.level.cmp(&a.level));
+
+    // ---------- 7. update min level & timestamp ----------
+    stats.min_tracked_level = stats.tracked_levels
+        .last()
+        .map(|e| e.level)
+        .unwrap_or(0);
+
+    stats.last_update_timestamp = Clock::get()?.unix_timestamp;
+
+    emit!(LevelStatsUpdated {
+        user: *user_pk,
+        old_level: old_lvl,
+        new_level: new_lvl,
+        total_users: stats.total_users,
+        users_at_new_level: stats.tracked_levels
+        .iter()
+            .find(|e| e.level == new_lvl)
+            .map(|e| e.user_count)
+            .unwrap_or(0),
+    });
+    
+    Ok(())
+}
+
+/// Get user count at a specific level from dynamic tracking (optimized for sorted list)
+pub fn get_users_at_level(level_stats: &LevelStats, level: u8) -> u32 {
+    // Since list is sorted descending, we can stop early if we go below target level
+    for entry in &level_stats.tracked_levels {
+        if entry.level == level {
+            return entry.user_count;
+        } else if entry.level < level {
+            // We've gone below the target level, it's not tracked
+            break;
+        }
+    }
+    0
+}
+
+
+ 
+
+// --------------------------------------- //
+// --------------------------------------- //
+// ========== LOOT ROLLING SYSTEM =========== //
+// --------------------------------------- //
+// --------------------------------------- //
+
+
+
+/// Try to roll loot when user levels up - NEW CASINO-STYLE SYSTEM WITH DUAL TOKEN DISTRIBUTION
+/// Returns (sol_payout, mdoge_payout) if loot was won
+fn try_roll_loot(
+    user: &UserMoonBaseInstance, 
+    loot: &mut LootRewards,
+    level_stats: Option<&LevelStats>,
+    moon_doge_mining: &MoonDogeMining,
+) -> Result<(u64, u64)> {
+    use anchor_lang::solana_program::keccak;
+    
+    msg!("🎲 Starting loot roll for user {} at level {}", user.owner, user.level);
+    
+    // ---------- RNG seed -------------
+    let slot = Clock::get()?.slot;
+    let seed = keccak::hashv(&[&slot.to_le_bytes(), &user.owner.to_bytes()]);
+    let roll = u16::from_le_bytes([seed.0[0], seed.0[1]]); // 0-65535
+    let roll_bp = (roll % 10_000) as u32; // 0-9999 bps
+
+    msg!("🎲 Generated roll: {} (raw), {} basis points", roll, roll_bp);
+
+    // ---------- tier & base -----------
+    // base_chance: Base probability of getting loot (in basis points)
+    // vault_bp: Vault bonus probability (in basis points)
+    let (base_chance, vault_bp) = match user.level {
+        1..=4 => {
+            msg!("📊 Minor tier (levels 1-4): Base chance {}bp + {}bp per level, vault bonus {}bp", 
+                300, 20, 100);
+            (300 + 20 * user.level as u32, 100)
+        },
+        5 | 10 => {
+            msg!("🌟 Milestone level: Guaranteed roll (10,000bp) with {}bp vault bonus", 50);
+            (10_000, 50)
+        },
+        6..=14 => {
+            msg!("📊 Regular tier (levels 6-14): Base chance {}bp + {}bp per level, vault bonus {}bp", 
+                300, 20, 100);
+            (300 + 20 * user.level as u32, 100)
+        },
+        15..=24 => {
+            if user.level % 5 == 0 { 
+                msg!("🌟 Rare milestone (level {}): Guaranteed roll (10,000bp) with {}bp vault bonus", 
+                    user.level, 200);
+                (10_000, 200)
+            } else { 
+                msg!("💎 Rare tier (levels 15-24): Base chance {}bp, vault bonus {}bp", 
+                    1_500, 500);
+                (1_500, 500) 
+            }
+        },
+        _ => {
+            if user.level % 5 == 0 {
+                msg!("🌟 Legendary milestone (level {}): Guaranteed roll (10,000bp) with {}bp vault bonus", 
+                    user.level, 800);
+                (10_000, 800)
+            } else {
+                msg!("👑 Legendary tier (level 25+): Base chance {}bp, vault bonus {}bp", 
+                    2_500, 800);
+                (2_500, 800)
+            }
+        }
+    };
+    
+    msg!("📊 Base chance: {}bp ({}%), Vault bonus: {}bp", 
+         base_chance, base_chance as f64 / 100.0, vault_bp);
+
+    // ---------- exclusivity bonus -----------
+    let bonus = get_exclusivity_bonus(user.level, level_stats);
+    
+    msg!("🏆 Exclusivity bonus: Chance multiplier {}%, Vault multiplier {}%, Rank {}", 
+         bonus.chance_mult, bonus.vault_mult, bonus.rank);
+
+    // ---------- final probabilities -----------
+    let chance_bp_final = (base_chance as u32).saturating_mul(bonus.chance_mult) / 100;
+    let vault_bp_final = (vault_bp as u64).saturating_mul(bonus.vault_mult) / 100;
+    
+    msg!("🎯 Final probabilities after bonuses:");
+    msg!("   Win chance: {}bp ({}%)", chance_bp_final, chance_bp_final as f64 / 100.0);
+    msg!("   Vault cut: {}bp ({}%)", vault_bp_final, vault_bp_final as f64 / 100.0);
+
+    // ---------- roll result -------------
+    if roll_bp >= chance_bp_final {
+        msg!("❌ Roll failed: {} >= {}", roll_bp, chance_bp_final);
+        return Ok((0, 0));
+    }
+    
+    msg!("✨ Roll succeeded! {} < {}", roll_bp, chance_bp_final);
+
+    // ---------- Calculate desired payout amounts -------------
+    let is_milestone = user.level % 10 == 0;
+    let mut desired_sol_payout = 0_u64;
+    let mut jackpot = false;
+    
+    msg!("💰 Calculating payout amounts (Milestone level: {})", is_milestone);
+
+    // Try jackpot first for milestone levels
+    if is_milestone {
+        msg!("🎰 Attempting jackpot roll for milestone level {}", user.level);
+        // Calculate combined vault value (SOL + mDOGE equivalent in SOL)
+        let mdoge_price = get_avg_price_in_sol(moon_doge_mining)?; // 1e9 scale
+        let mdoge_sol_equivalent = (loot.total_mdoge_accumulated as u128 * mdoge_price as u128 / 1_000_000_000u128) as u64;
+        let combined_vault_value = loot.total_sol_accumulated.saturating_add(mdoge_sol_equivalent);
+        
+        msg!("   Combined vault value: {} SOL (SOL: {}, mDOGE equivalent: {})", 
+             combined_vault_value, loot.total_sol_accumulated, mdoge_sol_equivalent);
+        
+        let (jp, hit) = try_jackpot(combined_vault_value, roll_bp as u16);
+        if hit { 
+            msg!("🎊 JACKPOT HIT! Amount: {} SOL", jp);
+            desired_sol_payout = jp; 
+            jackpot = true; 
+        } else {
+            msg!("   Jackpot not hit, falling back to normal payout");
+        }
+    };
+
+    // If no jackpot, calculate normal payout
+    if !jackpot {
+        msg!("💫 Calculating normal payout with {}bp vault cut", vault_bp_final);
+        desired_sol_payout = loot.total_sol_accumulated * vault_bp_final / 10_000;
+        desired_sol_payout = clamp_payout(loot.total_sol_accumulated, desired_sol_payout);
+        msg!("   Initial payout calculation: {} SOL", desired_sol_payout);
+    }
+
+    // --- after you have `desired_sol_payout` (may be 0 if jackpot didn't fire) ---
+    let mdoge_price      = get_avg_price_in_sol(moon_doge_mining)?;         // 1e9
+    let desired_sol      = clamp_to_vault(loot.total_sol_accumulated, desired_sol_payout);
+    let desired_mdoge    = clamp_to_vault(loot.total_mdoge_accumulated,sol_to_mdoge(desired_sol, mdoge_price));
+    
+    msg!("💎 Desired payouts after clamping:");
+    msg!("   SOL: {} (from {})", desired_sol, desired_sol_payout);
+    msg!("   mDOGE: {} (at price {})", desired_mdoge, mdoge_price);
+
+    // currency decision
+    let (final_sol_payout, final_mdoge_payout, payout_type) =
+        if is_milestone {
+            msg!("🎯 Milestone level: Preferring SOL payout");
+            pick_preferring_sol(desired_sol, desired_mdoge, loot)
+        } else {
+            let flip = (roll_bp & 1) == 0;
+            msg!("🎯 Regular level: Using best available ({} preference)", 
+                if flip { "SOL" } else { "mDOGE" });
+            pick_best_available(desired_sol, desired_mdoge, loot, flip)
+        };
+    
+    msg!("💰 Final payout decision:");
+    msg!("   Type: {}", payout_type);
+    msg!("   SOL: {}", final_sol_payout);
+    msg!("   mDOGE: {}", final_mdoge_payout);
+
+    // bail-out if nothing can be paid
+    if final_sol_payout == 0 && final_mdoge_payout == 0 {
+        msg!("⚠️ No payouts possible - vaults empty");
+        return Ok((0, 0));
+    }
+
+    if final_sol_payout > 0 || final_mdoge_payout > 0 {
+        // Update vault balances
+        loot.total_sol_accumulated = loot.total_sol_accumulated.saturating_sub(final_sol_payout);
+        loot.total_mdoge_accumulated = loot.total_mdoge_accumulated.saturating_sub(final_mdoge_payout);
+        loot.total_sol_distributed = loot.total_sol_distributed.saturating_add(final_sol_payout);
+        loot.total_mdoge_distributed = loot.total_mdoge_distributed.saturating_add(final_mdoge_payout);
+
+        // Emit event
+        emit!(LootWon {
+            owner: user.owner,
+            level: user.level,
+            sol: final_sol_payout,
+            mdoge: final_mdoge_payout,
+            loot_tier: payout_type.to_string(),
+            exclusivity_rank: bonus.rank,
+            chance_percentage: chance_bp_final,
+        });
+
+        // Log the result
+        if final_sol_payout > 0 && final_mdoge_payout > 0 {
+            msg!("🎁 DUAL LOOT WON! Player {} won {} SOL + {} mDOGE at level {} ({}% chance, {} type)", 
+                user.owner, final_sol_payout, final_mdoge_payout, user.level, 
+                chance_bp_final as f64 / 100.0, payout_type);
+        } else if final_sol_payout > 0 {
+            msg!("🎁 SOL LOOT WON! Player {} won {} SOL at level {} ({}% chance, {} type)", 
+                user.owner, final_sol_payout, user.level, 
+                chance_bp_final as f64 / 100.0, payout_type);
+        } else {
+            msg!("🎁 mDOGE LOOT WON! Player {} won {} mDOGE at level {} ({}% chance, {} type)", 
+                user.owner, final_mdoge_payout, user.level, 
+                chance_bp_final as f64 / 100.0, payout_type);
+        }
+    }
+
+    msg!("✅ Loot roll complete");
+    Ok((final_sol_payout, final_mdoge_payout))
+}
+
+/// Transfer SOL from loot vault to user
+pub fn transfer_loot_sol_to_user<'info>(
+    loot_sol_vault: &AccountInfo<'info>,
+    user: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    sol_vault_bump: u8,
+) -> Result<()> {
+    msg!("💰 Initiating SOL loot transfer:");
+    msg!("   From: {} (Loot SOL Vault)", loot_sol_vault.key());
+    msg!("   To: {} (User)", user.key());
+    msg!("   Amount: {} SOL", amount as f64 / 1e9);
+    
+    let seeds = &[
+        LOOT_SOL_VAULT_SEED.as_ref(),
+        &[sol_vault_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    // Get initial balances
+    let initial_vault_balance = loot_sol_vault.lamports();
+    let initial_user_balance = user.lamports();
+    
+    anchor_lang::system_program::transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            anchor_lang::system_program::Transfer {
+                from: loot_sol_vault.to_account_info(),
+                to: user.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )?;
+    
+    // Get final balances
+    let final_vault_balance = loot_sol_vault.lamports();
+    let final_user_balance = user.lamports();
+    
+    msg!("✅ SOL transfer completed successfully:");
+    msg!("   Vault balance: {} -> {} SOL", 
+         initial_vault_balance as f64 / 1e9, 
+         final_vault_balance as f64 / 1e9);
+    msg!("   User balance: {} -> {} SOL", 
+         initial_user_balance as f64 / 1e9, 
+         final_user_balance as f64 / 1e9);
+    
+    Ok(())
+}
+
+
+/// Loot exclusivity bonus based on global level proximity and crowd size
+#[derive(Clone, Copy)]
+struct ExclusivityBonus {
+    chance_mult: u32,  // Percentage multiplier for chance
+    vault_mult: u64,   // Percentage multiplier for vault cut
+    rank: u8,          // Bucket rank for UI (0 = max level, 1 = max-1, 2 = max-2, 99 = crowd bucket)
+}
+
+/// Loot exclusivity bonus without per-player rank / new state.
+///  - Rewards being at (or near) the global-max level.
+///  - Otherwise uses how crowded the level is.
+///
+/// Returns: percentage multipliers (100 = no change) and a pseudo-rank
+///          bucket just for UI (0 = max level, 1 = max-1, 2 = max-2, 99 = crowd bucket).
+fn get_exclusivity_bonus(
+    level: u8,
+    level_stats: Option<&LevelStats>,
+) -> ExclusivityBonus {
+    // Default (no stats passed in)
+    let default = ExclusivityBonus { 
+        chance_mult: 100, 
+        vault_mult: 100, 
+        rank: 255 
+    };
+
+    let stats = match level_stats { Some(s) => s, None => return default };
+
+    // -------- 1. distance to global max (HIGHEST PRIORITY) --------
+    let delta = stats.max_level_achieved.saturating_sub(level);
+    match delta {
+        0 => return ExclusivityBonus { chance_mult: LOOT_FIRST_CHANCE_MULT, vault_mult: LOOT_FIRST_VAULT_MULT, rank: 0 }, // 150%, 300%
+        1 => return ExclusivityBonus { chance_mult: 140, vault_mult: 250, rank: 1 }, // max-1 level (better than any crowd bonus)
+        2 => return ExclusivityBonus { chance_mult: 130, vault_mult: 200, rank: 2 }, // max-2 level (better than any crowd bonus)
+        _ => { /* fall through to crowd logic */ }
+    };
+
+    // -------- 2. crowd-size bonus (LOWER PRIORITY) ---------------
+    if let Some(entry) = stats.tracked_levels.iter().find(|e| e.level == level) {
+        let c = entry.user_count;
+        if c <= 3 {
+            return ExclusivityBonus { chance_mult: 125, vault_mult: 175, rank: 3 }; // Below max-2
+        } else if c <= 10 {
+            return ExclusivityBonus { chance_mult: LOOT_TOP10_CHANCE_MULT, vault_mult: LOOT_TOP10_VAULT_MULT, rank: 4 }; // 120%, 150%
+        } else if c <= 25 {
+            return ExclusivityBonus { chance_mult: LOOT_TOP25_CHANCE_MULT, vault_mult: LOOT_TOP25_VAULT_MULT, rank: 5 }; // 110%, 120%
+        }
+    }
+
+    default
+}
+
+
+
+
+
+/// Get average mDOGE price in SOL from the mining state (scaled by 1e9)
+/// Production-grade: reads real price from MoonDogeMining.avg_price_8h
+fn get_avg_price_in_sol(moon_doge_mining: &MoonDogeMining) -> Result<u64> {
+    // Use the real 8-hour average price from the dynamic distribution system
+    if moon_doge_mining.avg_price_8h > 0 {
+        Ok(moon_doge_mining.avg_price_8h)
+    } else {
+        // Fallback to default if price hasn't been set yet (early bootstrap)
+        Ok(1_000_000) // Default: 1 mDOGE = 0.001 SOL (scaled by 1e9)
+    }
+}
+
+/// Clamp payout between min & max, and never over 10% of vault
+fn clamp_payout(vault: u64, want: u64) -> u64 {
+    want.max(MIN_SOL_PAYOUT_LAMPORTS)
+        .min(MAX_SOL_PAYOUT_LAMPORTS)
+        .min(vault / 10) // ≤10%
+}
+
+/// Try wheel jackpots – returns (payout, was_jackpot)
+fn try_jackpot(vault: u64, seed: u16) -> (u64, bool) {
+    if seed > JACKPOT_CHANCE_BP { 
+        return (0, false); // 0.20% gate
+    }
+    
+    for pot in JACKPOT_POTS_SOL {
+        if vault >= pot * 11 / 10 { // keep 10% buffer
+            return (pot, true);
+        }
+    }
+    (0, false)
+}
+
+
+
+#[inline]
+fn clamp_to_vault(vault: u64, want: u64) -> u64 {
+    want.max(MIN_SOL_PAYOUT_LAMPORTS)
+        .min(MAX_SOL_PAYOUT_LAMPORTS)
+        .min(vault * MAX_VAULT_SLICE_BP / 10_000)
+}
+
+#[inline]
+fn sol_to_mdoge(sol: u64, price_q9: u64) -> u64 {
+    ((sol as u128 * 1_000_000_000u128) / price_q9 as u128) as u64
+}
+
+#[inline]
+fn pick_preferring_sol(
+    want_sol:   u64,
+    want_doge:  u64,
+    loot:       &LootRewards,
+) -> (u64,u64,&'static str) {
+    if loot.total_sol_accumulated >= want_sol && want_sol > 0 {
+        (want_sol, 0, "sol_milestone")
+    } else if loot.total_mdoge_accumulated >= want_doge && want_doge > 0 {
+        (0, want_doge, "mdoge_fallback")
+    } else {
+        // fallback: half of whichever vault is non-zero
+        if loot.total_sol_accumulated > 0 {
+            let pay = clamp_to_vault(loot.total_sol_accumulated, loot.total_sol_accumulated / 2);
+            (pay, 0, "sol_reduced")
+        } else {
+            let pay_d = clamp_to_vault(loot.total_mdoge_accumulated, loot.total_mdoge_accumulated / 2);
+            (0, pay_d, "mdoge_reduced")
+        }
+    }
+}
+
+#[inline]
+fn pick_best_available(
+    want_sol:  u64,
+    want_doge: u64,
+    loot:      &LootRewards,
+    coin_flip: bool,
+) -> (u64,u64,&'static str) {
+    let sol_ok   = loot.total_sol_accumulated   >= want_sol  && want_sol  > 0;
+    let doge_ok  = loot.total_mdoge_accumulated >= want_doge && want_doge > 0;
+
+    match (sol_ok, doge_ok) {
+        (true, false)  => (want_sol, 0, "sol_only"),
+        (false, true)  => (0, want_doge, "mdoge_only"),
+        (true,  true)  => if coin_flip { (want_sol,0,"sol_normal") } else { (0,want_doge,"mdoge_normal") },
+        _ => (0,0,"none"),
+    }
+}

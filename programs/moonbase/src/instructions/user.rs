@@ -999,6 +999,415 @@ pub fn remove_module_internal(
 
 
 
+
+/// Upgrade a module instance (deployed or undeployed)
+pub fn upgrade_module_internal (
+    ctx: Context<UpdateModuleInstance>,
+    module_index: u8,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("⬆️ Starting module upgrade for user {}", user.key());
+    msg!("   Module index: {}, Current level: {}, Deployed: {}", 
+         module_index, module_instance.upgrade_level, module_instance.is_active);
+    
+    // Get the module config from the individual PDA
+    let module_config = &module_config_account.data;
+    
+    // Make sure the module is not already at max level
+    require!(
+        module_instance.upgrade_level < module_config.max_upgrades(),
+        ErrorCode::ModuleInstanceMaxLevel
+    );
+    
+    // Calculate new upgrade level
+    let new_upgrade_level = module_instance.upgrade_level + 1;
+    
+    // Check moonbase level requirement for this upgrade
+    if let Some(required_level) = module_config.get_upgrade_level_requirement(new_upgrade_level) {
+        require!(
+            user_moonbase.level >= required_level,
+            ErrorCode::UserLevelTooLow
+        );
+        msg!("✅ User level {} meets upgrade requirement of {}", user_moonbase.level, required_level);
+    }
+    
+    // Calculate hashpower difference for mining modules BEFORE upgrade (only if deployed)
+    let old_hashpower = if module_instance.is_active {
+        if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+            if let ModuleRuntimeState::Mining { .. } = &module_instance.runtime_state {
+                Some(mining_stats.current_hashpower(module_instance.upgrade_level) as u64)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // Get the cost to upgrade this module (progressive pricing)
+    let cost = module_config.next_upgrade_cost(module_instance.upgrade_level);
+    
+    msg!("💰 Progressive upgrade cost: {} SOL (base: {} SOL, level {} -> {})", 
+         cost as f64 / 1e9, 
+         module_config.upgrade_cost as f64 / 1e9,
+         module_instance.upgrade_level,
+         new_upgrade_level);
+    
+    // Process the payment, handle referral if applicable
+    let referrer = user_moonbase.referral;
+    
+    // Handle the referral payment
+    let (referral_fee, _) = helper::process_referral_payment(
+        cost,
+        &referrer,
+        &user.key(),
+        &user.to_account_info(),
+        ctx.accounts.referral_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        &mut ctx.accounts.global_config,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+    )?;
+    
+    msg!("💰 Payment processed: {} SOL cost, {} SOL referral fee", 
+         cost as f64 / 1e9, referral_fee as f64 / 1e9);
+    
+    // Update the module instance
+    module_instance.upgrade_level = new_upgrade_level;
+    module_instance.last_updated = Clock::get()?.unix_timestamp;
+    
+    // Update electricity cost for the new level
+    let new_electricity_cost = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.power_consumption as u32,
+        ModuleStats::Attraction(stats) => stats.power_consumption as u32,
+    };
+    module_instance.electricity_cost = new_electricity_cost;
+    
+    // If module is deployed, update user and global stats
+    if module_instance.is_active {
+        msg!("🔄 Module is deployed - updating user and global stats");
+        
+        // Update hashpower if this is a mining module
+        if let (Some(old_hp), ModuleStats::Mining(mining_stats)) = (old_hashpower, &module_config.stats) {
+            if let ModuleRuntimeState::Mining { .. } = &module_instance.runtime_state {
+                let new_hashpower = mining_stats.current_hashpower(new_upgrade_level) as u64;
+                let hashpower_increase = new_hashpower.saturating_sub(old_hp);
+                
+                if hashpower_increase > 0 {
+                    user_moonbase.active_hashpower = user_moonbase.active_hashpower
+                        .checked_add(hashpower_increase)
+                        .ok_or(ErrorCode::ArithmeticOverflow)?;
+                    
+                    msg!("⛏️ Updated hashpower: {} -> {} (+{})", 
+                         user_moonbase.active_hashpower - hashpower_increase, 
+                         user_moonbase.active_hashpower, 
+                         hashpower_increase);
+                         
+                    // Update global hashpower for upgrades
+                    let mining_state = &mut ctx.accounts.moon_doge_mining;
+                    let old_global_hashpower = mining_state.total_active_hashpower;
+                    mining_state.total_active_hashpower = mining_state.total_active_hashpower
+                        .checked_add(hashpower_increase)
+                        .ok_or(ErrorCode::ArithmeticOverflow)?;
+                    
+                    msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
+                         old_global_hashpower, mining_state.total_active_hashpower, hashpower_increase);
+                }
+            }
+        }
+    } else {
+        msg!("⚠️ Module is undeployed - stats will be applied when deployed");
+    }
+    
+    // Process daily login and award XP for upgrading module (based on SOL spent)
+    let upgrade_xp = helper::calculate_sol_based_xp(cost);
+    process_daily_login_and_xp(
+        user_moonbase,
+        upgrade_xp,
+        &format!("Upgrade Module ({} SOL)", cost as f64 / 1e9),
+    )?;
+    
+    // Emit event
+    emit!(ModuleInstanceUpgraded {
+        owner: user.key(),
+        module_index,
+        new_upgrade_level,
+        cost,
+        referral_fee,
+    });
+    
+    msg!("🎉 Module upgrade completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Module Index: {}, New Level: {}", module_index, new_upgrade_level);
+    msg!("   Cost: {} SOL, Referral Fee: {} SOL", cost as f64 / 1e9, referral_fee as f64 / 1e9);
+    msg!("   Deployed: {}", module_instance.is_active);
+    
+    Ok(())
+}
+ 
+
+
+/// Claim accumulated XP from Attraction modules
+pub fn claim_attraction_xp_internal(
+    ctx: Context<ClaimAttractionXP>,
+    module_index: u8,
+) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("🎯 Starting Attraction XP claim for user {}", user.key());
+    msg!("   Module index: {}", module_index);
+    
+    // Get the module config from the individual PDA
+    let module_config = &module_config_account.data;
+    
+    // Ensure this is an Attraction module
+    require!(
+        module_config.module_type == ModuleType::Attraction,
+        ErrorCode::InvalidModuleType
+    );
+    
+    // Get attraction stats
+    let attraction_stats = match &module_config.stats {
+        ModuleStats::Attraction(stats) => stats,
+        _ => return Err(ErrorCode::ModuleTypeMismatch.into()),
+    };
+    
+    // Get runtime state for Attraction module
+    let (current_hp, last_xp_claim) = match &module_instance.runtime_state {
+        ModuleRuntimeState::Attraction { current_hp, last_xp_claim, .. } => (*current_hp, *last_xp_claim),
+        _ => return Err(ErrorCode::ModuleTypeMismatch.into()),
+    };
+    
+    msg!("✅ Module validation passed - Attraction module with {} HP", current_hp);
+    
+    // Check if module is active and has HP
+    require!(module_instance.is_active, ErrorCode::ModuleNotActive);
+    require!(current_hp > 0, ErrorCode::ModuleDamaged);
+    
+    // Calculate time elapsed since last claim
+    let current_time = Clock::get()?.unix_timestamp;
+    let time_elapsed = current_time.saturating_sub(last_xp_claim);
+    
+    // Convert seconds to hours (with precision)
+    let hours_elapsed = time_elapsed as f64 / 3600.0;
+    
+    msg!("⏰ Time calculation:");
+    msg!("   Last claim: {}", last_xp_claim);
+    msg!("   Current time: {}", current_time);
+    msg!("   Time elapsed: {} seconds ({:.2} hours)", time_elapsed, hours_elapsed);
+    
+    // Return early if less than 1 minute has passed (prevent spam)
+    if time_elapsed < 60 {
+        msg!("⚠️ Must wait at least 1 minute between claims");
+        return Ok(());
+    }
+    
+    // Calculate current XP per hour based on upgrade level
+    let base_xp_per_hour = attraction_stats.current_xp_per_hour(module_instance.upgrade_level);
+    
+    // Apply HP efficiency multiplier (damaged modules generate less XP)
+    let hp_efficiency = module_instance.hp_efficiency_multiplier(attraction_stats.max_hp);
+    let effective_xp_per_hour = (base_xp_per_hour as f64 * hp_efficiency) as u32;
+    
+    // Calculate total XP accumulated
+    let accumulated_xp = (effective_xp_per_hour as f64 * hours_elapsed) as u32;
+    
+    msg!("💫 XP calculation:");
+    msg!("   Base XP/hour (level {}): {}", module_instance.upgrade_level, base_xp_per_hour);
+    msg!("   HP efficiency: {:.2}% ({} / {} HP)", hp_efficiency * 100.0, current_hp, attraction_stats.max_hp);
+    msg!("   Effective XP/hour: {}", effective_xp_per_hour);
+    msg!("   Accumulated XP: {}", accumulated_xp);
+    
+    // Return early if no XP to claim
+    if accumulated_xp == 0 {
+        msg!("⚠️ No XP accumulated yet");
+        return Ok(());
+    }
+    
+    // Update module's runtime state
+    if let ModuleRuntimeState::Attraction { total_xp_generated, last_xp_claim, .. } = &mut module_instance.runtime_state {
+        *total_xp_generated = total_xp_generated.saturating_add(accumulated_xp as u64);
+        *last_xp_claim = current_time;
+    }
+    
+    module_instance.last_updated = current_time;
+    
+    msg!("📊 Updated module state - new total XP generated: {}", 
+         match &module_instance.runtime_state {
+             ModuleRuntimeState::Attraction { total_xp_generated, .. } => *total_xp_generated,
+             _ => 0,
+         });
+    
+    // Process daily login and award the accumulated XP
+    process_daily_login_and_xp(
+        user_moonbase,
+        accumulated_xp,
+        &format!("Attraction Module ({:.1}h)", hours_elapsed),
+    )?;
+    
+    // Emit event
+    emit!(AttractionXPClaimed {
+        owner: user.key(),
+        module_index,
+        xp_claimed: accumulated_xp,
+        hours_elapsed: hours_elapsed,
+        effective_xp_per_hour,
+    });
+    
+    msg!("🎉 Attraction XP claim completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Module Index: {}", module_index);
+    msg!("   XP Claimed: {} ({:.2} hours at {}/hour)", accumulated_xp, hours_elapsed, effective_xp_per_hour);
+    
+    Ok(())
+}
+
+
+
+/// Claim level-up rewards based on accumulated XP (with loot transfers)
+/// This function processes any pending level-ups and awards loot rewards
+pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let user = &ctx.accounts.user;
+    
+    msg!("🎉 Starting level-up rewards claim for user {}", user.key());
+    msg!("   Current Level: {}, Current XP: {}", user_moonbase.level, user_moonbase.xp);
+    
+    // Check if user has enough XP for any level-ups
+    let current_required = helper::required_xp_new(user_moonbase.level);
+    if (user_moonbase.xp as u64) < current_required {
+        let remaining = current_required.saturating_sub(user_moonbase.xp as u64);
+        msg!("⚠️ Not enough XP for level-up. Need {} more XP", remaining);
+        return Ok(());
+    }
+    
+    // Calculate how many levels can be gained
+    let mut potential_level = user_moonbase.level;
+    let mut levels_to_gain = 0;
+    
+    loop {
+        let required_for_next = helper::required_xp_new(potential_level);
+        if (user_moonbase.xp as u64) >= required_for_next {
+            potential_level += 1;
+            levels_to_gain += 1;
+        } else {
+            break;
+        }
+    }
+    
+    msg!("🚀 Can gain {} level{}: {} -> {}", 
+         levels_to_gain, if levels_to_gain == 1 { "" } else { "s" },
+         user_moonbase.level, user_moonbase.level + levels_to_gain);
+    
+    // Process level-ups with full loot system
+    process_auto_daily_login_and_activity_xp(
+        user_moonbase,
+        0, // No additional XP, just process existing XP into levels
+        "Level-Up Rewards Claim",
+        &mut ctx.accounts.loot_rewards,
+        &mut ctx.accounts.level_stats,
+        &ctx.accounts.moon_doge_mining,
+        &ctx.accounts.loot_sol_vault,
+        &ctx.accounts.loot_mdoge_vault,
+        &ctx.accounts.loot_mdoge_vault_authority,
+        &ctx.accounts.user.to_account_info(),
+        ctx.accounts.user_mdoge_token_account.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        ctx.accounts.mdoge_token_mint.as_ref().map(|mint| mint.to_account_info()).as_ref(),
+        ctx.accounts.token_program_2022.as_ref().map(|prog| prog.to_account_info()).as_ref(),
+        &ctx.accounts.system_program,
+    )?;
+    
+    let final_level = user_moonbase.level;
+    let actual_levels_gained = final_level.saturating_sub(user_moonbase.level);
+    
+    msg!("🎉 Level-up rewards claim completed!");
+    msg!("   Final Level: {}, XP: {}", final_level, user_moonbase.xp);
+    msg!("   Levels gained: {}", actual_levels_gained);
+    
+    Ok(())
+}
+
+
+
+// ----------------------------------------------------------------------------------------
+// INTERNAL :: PROCESS DAILY LOGIN AND ACTIVITY XP ----------------
+// ----------------------------------------------------------------------------------------
+
+/// Process daily login and activity XP with full loot transfers
+/// This is the central function for all user XP interactions
+fn process_auto_daily_login_and_activity_xp<'info>(
+    user_moonbase: &mut UserMoonBaseInstance,
+    activity_xp: u32,
+    activity_source: &str,
+    loot_rewards: &mut LootRewards,
+    level_stats: &mut LevelStats,
+    moon_doge_mining: &MoonDogeMining,
+    // Transfer-related accounts (required for loot transfers)
+    loot_sol_vault: &AccountInfo<'info>,
+    loot_mdoge_vault: &AccountInfo<'info>,
+    loot_mdoge_vault_authority: &AccountInfo<'info>,
+    user_account: &AccountInfo<'info>,
+    user_token_account: Option<&AccountInfo<'info>>,
+    token_mint: Option<&AccountInfo<'info>>,
+    token_program: Option<&AccountInfo<'info>>,
+    system_program: &AccountInfo<'info>,
+) -> Result<()> {
+    // Process daily login first
+    let (daily_login_xp, _streak) = helper::process_daily_login(user_moonbase)?;
+    
+    // Calculate total XP to award
+    let total_xp = daily_login_xp + activity_xp;
+    
+    if total_xp > 0 {
+        // Determine XP source description
+        let xp_source = if daily_login_xp > 0 && activity_xp > 0 {
+            format!("{} + Daily Login", activity_source)
+        } else if daily_login_xp > 0 {
+            "Daily Login".to_string()
+        } else {
+            activity_source.to_string()
+        };
+        
+        // Award all XP using enhanced system with transfers
+        helper::add_xp_with_loot_transfers(
+            user_moonbase,
+            total_xp,
+            &xp_source,
+            loot_rewards,
+            level_stats,
+            moon_doge_mining,
+            loot_sol_vault,
+            loot_mdoge_vault,
+            loot_mdoge_vault_authority,
+            user_account,
+            user_token_account,
+            token_mint,
+            token_program,
+            system_program,
+        )?;
+        
+        if daily_login_xp > 0 && activity_xp > 0 {
+            msg!("🗓️ Combined XP awarded: {} Daily Login + {} {} = {} total (Streak: {})", 
+                 daily_login_xp, activity_xp, activity_source, total_xp, user_moonbase.daily_login_streak);
+        } else if daily_login_xp > 0 {
+            msg!("🗓️ Daily login processed: {} XP gained (Streak: {})", 
+                 daily_login_xp, user_moonbase.daily_login_streak);
+        }
+    }
+    
+    Ok(())
+}
+
+ 
+
 // ------------------------------------------------------------------------------------------
 // -------------- ACCOUNT VALIDATION STRUCTURES ----------------------------------------------
 // ------------------------------------------------------------------------------------------
@@ -1408,6 +1817,188 @@ pub struct DeleteModule<'info> {
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+#[derive(Accounts)]
+#[instruction(module_index: u8)]
+pub struct ClaimAttractionXP<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            module_index.to_le_bytes().as_ref()
+        ],
+        bump,
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Access the specific module config directly via PDA using the config_id from module_instance
+    #[account(
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+ 
+
+#[derive(Accounts)]
+#[instruction(module_index: u8)]
+pub struct UpdateModuleInstance<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            module_index.to_le_bytes().as_ref()
+        ],
+        bump,
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Access the specific module config directly via PDA using the config_id from module_instance
+    #[account(
+        seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
+        bump = module_config_account.bump,
+    )]
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump = moon_doge_mining.bump,
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+    
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: This is the PDA that holds collected SOL fees
+    pub sol_treasury: UncheckedAccount<'info>,
+    
+    #[account(
+        constraint = referral_rewards.owner == user_moonbase.referral @ ErrorCode::InvalidReferralAccount,
+    )]
+    pub referral_rewards: Option<Account<'info, ReferralRewards>>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+ 
+
+
+
+
+#[derive(Accounts)]
+pub struct ClaimLevelUpRewards<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+
+    /// Loot rewards tracking account (required for loot transfers)
+    #[account(
+        mut,
+        seeds = [LOOT_REWARDS_SEED.as_ref()],
+        bump = loot_rewards.bump,
+    )]
+    pub loot_rewards: Account<'info, LootRewards>,
+
+    /// Level statistics tracking account (required for level-up processing)
+    #[account(
+        mut,
+        seeds = [LEVEL_STATS_SEED.as_ref()],
+        bump = level_stats.bump,
+    )]
+    pub level_stats: Account<'info, LevelStats>,
+    
+    #[account(
+        seeds = [MOON_DOGE_MINING_SEED.as_ref()],
+        bump
+    )]
+    pub moon_doge_mining: Account<'info, MoonDogeMining>,
+
+    /// Loot SOL vault for distributing SOL loot
+    #[account(
+        mut,
+        seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Loot SOL vault PDA
+    pub loot_sol_vault: UncheckedAccount<'info>,
+
+    /// Loot mDOGE vault for distributing mDOGE loot
+    #[account(
+        mut,
+        seeds = [LOOT_MDOGE_VAULT_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Loot mDOGE vault PDA
+    pub loot_mdoge_vault: UncheckedAccount<'info>,
+
+    /// Loot mDOGE vault authority for signing transfers
+    #[account(
+        seeds = [LOOT_MDOGE_VAULT_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Loot mDOGE vault authority PDA
+    pub loot_mdoge_vault_authority: UncheckedAccount<'info>,
+
+    /// User's mDOGE token account for receiving loot tokens (optional)
+    #[account(mut)]
+    /// CHECK: User's mDOGE token account
+    pub user_mdoge_token_account: Option<UncheckedAccount<'info>>,
+
+    /// mDOGE token mint (Token-2022) (optional)
+    pub mdoge_token_mint: Option<InterfaceAccount<'info, anchor_spl::token_interface::Mint>>,
+
+    /// SPL Token-2022 program (optional)
+    pub token_program_2022: Option<Program<'info, anchor_spl::token_2022::Token2022>>,
     
     #[account(mut)]
     pub user: Signer<'info>,

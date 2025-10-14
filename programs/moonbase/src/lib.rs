@@ -285,26 +285,26 @@ pub mod moonbase {
         user::remove_module_internal(ctx, module_index)
     }
 
-    // /// Delete a specific undeployed module permanently
-    // pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
-    //     user::delete_module(ctx, module_index)
-    // }
+    /// Delete a specific undeployed module permanently
+    pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
+        user::delete_module(ctx, module_index)
+    }
 
-    // /// Upgrade a module instance
-    // pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
-    //     user::upgrade_module_internal(ctx, module_index)
-    // }
+    /// Upgrade a module instance
+    pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
+        user::upgrade_module_internal(ctx, module_index)
+    }
 
-    // /// Claim accumulated XP from Attraction modules
-    // pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
-    //     user::claim_attraction_xp_internal(ctx, module_index)
-    // }
+    /// Claim accumulated XP from Attraction modules
+    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
+        user::claim_attraction_xp_internal(ctx, module_index)
+    }
 
 
-    // /// Claim level-up rewards based on accumulated XP (with loot transfers)
-    // pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
-    //     user::claim_level_up_rewards_internal(ctx)
-    // }
+    /// Claim level-up rewards based on accumulated XP (with loot transfers)
+    pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
+        user::claim_level_up_rewards_internal(ctx)
+    }
 
 
     // ----------------------------------------------------------------------------------------
