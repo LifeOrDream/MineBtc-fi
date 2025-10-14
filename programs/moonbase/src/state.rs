@@ -467,8 +467,6 @@ impl LevelStats {
 pub enum ModuleType {
     Mining,      // Generates hashpower → mDOGE
     Attraction,  // Grants passive XP / social score
-    Attack,      // Fires at rival bases or aliens
-    Research,    // Runs timed studies → loot / buffs
 }
 
 impl ModuleType {
@@ -515,97 +513,17 @@ impl AttractionStats {
     }
 }
 
-/// Attack module statistics - for PvP combat
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
-pub struct AttackStats {
-    pub max_hp: u32,
-    pub base_damage: u32,              // Base damage per shot at level 0
-    pub base_missiles_per_load: u8,    // Base magazine size at level 0
-    pub reload_time_seconds: u32,      // Time to reload magazine at level 0
-    pub power_consumption: u16,        // Electricity consumed per shot
-}
-
-impl AttackStats {
-    pub const LEN: usize = 4 + 4 + 1 + 4 + 2; // 15 bytes
-    
-    /// Calculate current damage using exponential growth curve (Power Curve)
-    /// Each upgrade provides ~15% multiplicative increase
-    pub fn current_damage(&self, upgrade_level: u8) -> u32 {
-        let q32 = growth_factor(upgrade_level);
-        ((self.base_damage as u64 * q32) >> 32)
-            .min(u32::MAX as u64) as u32
-    }
-    
-    /// Calculate current missiles per load using capped exponential growth
-    /// Uses growth_factor but caps at reasonable magazine sizes (max 50)
-    /// This prevents ridiculous 100+ missile magazines while still scaling
-    pub fn current_missiles_per_load(&self, upgrade_level: u8) -> u8 {
-        let q32 = growth_factor(upgrade_level);
-        let scaled_missiles = ((self.base_missiles_per_load as u64 * q32) >> 32) as u8;
-        scaled_missiles.min(50) // Cap at 50 missiles max for balance
-    }
-    
-    /// Calculate current reload time using exponential decay curve
-    /// Each upgrade reduces cooldown by ~9% effectively
-    pub fn current_reload_time_seconds(&self, upgrade_level: u8) -> u32 {
-        let q32_inv = decay_factor(upgrade_level);
-        ((self.reload_time_seconds as u64 * q32_inv) >> 32)
-            .max(1) as u32 // Minimum 1 second
-    }
-}
-
- 
-
-/// Research module statistics - for mDOGE loot generation
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
-pub struct ResearchStats {
-    pub max_hp: u32,
-    pub cooldown_sec: u32,             // Time between research attempts at level 0
-    pub max_reward: u64,               // Maximum mDOGE reward amount at level 0
-    pub probability: u16,              // Success probability at level 0 (0-10000 = 0-100%)
-    pub power_consumption: u16,        // Electricity consumed per hour
-}
-
-impl ResearchStats {
-    pub const LEN: usize = 4 + 4 + 8 + 2 + 2; // 20 bytes (reduced by 1)
-    
-    /// Calculate current cooldown using exponential decay curve
-    /// Each upgrade reduces research time by ~9% effectively
-    pub fn current_cooldown_sec(&self, upgrade_level: u8) -> u32 {
-        let q32_inv = decay_factor(upgrade_level);
-        ((self.cooldown_sec as u64 * q32_inv) >> 32)
-            .max(60) as u32 // Minimum 1 minute
-    }
-    
-    /// Calculate current max reward using exponential growth curve (Power Curve)
-    /// Each upgrade provides ~15% multiplicative increase
-    pub fn current_max_reward(&self, upgrade_level: u8) -> u64 {
-        let q32 = growth_factor(upgrade_level);
-        ((self.max_reward as u128 * q32 as u128) >> 32)
-            .min(u64::MAX as u128) as u64
-    }
-    
-    /// Calculate current probability using exponential growth curve (Power Curve)
-    /// Each upgrade provides ~15% multiplicative increase, capped at 100%
-    pub fn current_probability(&self, upgrade_level: u8) -> u16 {
-        let q32 = growth_factor(upgrade_level);
-        ((self.probability as u64 * q32) >> 32)
-            .min(10000) as u16 // Cap at 100% (10000)
-    }
-}
 
 /// Type-safe stats union for different module types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub enum ModuleStats {
     Mining(MiningStats),
     Attraction(AttractionStats),
-    Attack(AttackStats),
-    Research(ResearchStats),
 }
 
 impl ModuleStats {
-    // Use the largest variant for size calculation (ResearchStats is currently largest at 20 bytes)
-    pub const LEN: usize = 1 + ResearchStats::LEN; // enum discriminant + largest variant
+    // Use the largest variant for size calculation (both are 10 bytes)
+    pub const LEN: usize = 1 + MiningStats::LEN; // enum discriminant + largest variant
 }
 
 /// Configuration for a type of module that can be built
@@ -768,24 +686,12 @@ pub enum ModuleRuntimeState {
         total_xp_generated: u64,
         last_xp_claim: i64,
     },
-    Attack {
-        current_hp: u32,
-        missiles_left: u8,
-        last_shot_timestamp: i64,
-        total_shots_fired: u32,
-    },
-    Research {
-        current_hp: u32,
-        current_research_start: i64,
-        research_completed: u32,
-        active_research_id: Option<u8>,
-    },
 }
 
 impl ModuleRuntimeState {
     // Use largest variant for size calculation
-    // Research variant: discriminant(1) + current_hp(4) + current_research_start(8) + research_completed(4) + active_research_id(Option<u8> = 1+1)
-    pub const LEN: usize = 1 + 4 + 8 + 4 + 2; // 19 bytes total
+    // Attraction variant: discriminant(1) + current_hp(4) + total_xp_generated(8) + last_xp_claim(8)
+    pub const LEN: usize = 1 + 4 + 8 + 8; // 21 bytes total
 }
 
 /// Module instance owned by a user with enhanced type safety
@@ -832,8 +738,6 @@ impl ModuleInstance {
         match &self.runtime_state {
             ModuleRuntimeState::Mining { current_hp, .. } => *current_hp,
             ModuleRuntimeState::Attraction { current_hp, .. } => *current_hp,
-            ModuleRuntimeState::Attack { current_hp, .. } => *current_hp,
-            ModuleRuntimeState::Research { current_hp, .. } => *current_hp,
         }
     }
 
@@ -863,50 +767,6 @@ impl ModuleInstance {
         (base_xp as f64 * efficiency) as u32
     }
 
-    /// Calculate effective damage for attack modules
-    pub fn effective_damage(&self, stats: &AttackStats) -> u32 {
-        let base_damage = stats.current_damage(self.upgrade_level);
-        let efficiency = self.hp_efficiency_multiplier(stats.max_hp);
-        (base_damage as f64 * efficiency) as u32
-    }
-
-    /// Calculate effective missiles per load for attack modules
-    pub fn effective_missiles_per_load(&self, stats: &AttackStats) -> u8 {
-        let base_missiles = stats.current_missiles_per_load(self.upgrade_level);
-        let efficiency = self.hp_efficiency_multiplier(stats.max_hp);
-        ((base_missiles as f64 * efficiency) as u8).max(1) // Minimum 1 missile
-    }
-
-    /// Calculate effective reload time for attack modules
-    pub fn effective_reload_time_seconds(&self, stats: &AttackStats) -> u32 {
-        let base_reload_time = stats.current_reload_time_seconds(self.upgrade_level);
-        let efficiency = self.hp_efficiency_multiplier(stats.max_hp);
-        // Lower efficiency means longer reload time (inverse relationship)
-        ((base_reload_time as f64 / efficiency) as u32).max(1) // Minimum 1 second
-    }
-
-    /// Calculate effective loot cooldown for research modules
-    pub fn effective_loot_cooldown_sec(&self, stats: &ResearchStats) -> u32 {
-        let base_cooldown = stats.current_cooldown_sec(self.upgrade_level);
-        let efficiency = self.hp_efficiency_multiplier(stats.max_hp);
-        // Lower efficiency means longer cooldown (inverse relationship)
-        ((base_cooldown as f64 / efficiency) as u32).max(60) // Minimum 1 minute
-    }
-
-    /// Calculate effective max reward for research modules
-    pub fn effective_max_reward(&self, stats: &ResearchStats) -> u64 {
-        let base_reward = stats.current_max_reward(self.upgrade_level);
-        let efficiency = self.hp_efficiency_multiplier(stats.max_hp);
-        (base_reward as f64 * efficiency) as u64
-    }
-
-    /// Calculate effective probability for research modules
-    pub fn effective_probability(&self, stats: &ResearchStats) -> u16 {
-        let base_probability = stats.current_probability(self.upgrade_level);
-        let efficiency = self.hp_efficiency_multiplier(stats.max_hp);
-        ((base_probability as f64 * efficiency) as u16).min(10000) // Cap at 100%
-    }
-
     /// Check if this module can be upgraded to the next level
     pub fn can_upgrade(&self, config: &ModuleConfig, moonbase_level: u8) -> bool {
         if self.upgrade_level >= config.max_upgrades() {
@@ -927,34 +787,7 @@ impl ModuleInstance {
         Some(config.next_upgrade_cost(self.upgrade_level))
     }
 
-    /// Calculate repair cost based on missing HP
-    pub fn repair_cost(&self, stats: &ModuleStats) -> u64 {
-        let max_hp = match stats {
-            ModuleStats::Mining(s) => s.max_hp,
-            ModuleStats::Attraction(s) => s.max_hp,
-            ModuleStats::Attack(s) => s.max_hp,
-            ModuleStats::Research(s) => s.max_hp,
-        };
-        
-        let current_hp = self.current_hp();
-        let missing_hp = max_hp.saturating_sub(current_hp);
-        
-        // Repair cost: 0.001 SOL per missing HP point
-        const REPAIR_SOL_PER_HP: u64 = 1_000_000; // 0.001 SOL in lamports
-        missing_hp as u64 * REPAIR_SOL_PER_HP
-    }
-
-    /// Check if this module is fully repaired
-    pub fn is_fully_repaired(&self, stats: &ModuleStats) -> bool {
-        let max_hp = match stats {
-            ModuleStats::Mining(s) => s.max_hp,
-            ModuleStats::Attraction(s) => s.max_hp,
-            ModuleStats::Attack(s) => s.max_hp,
-            ModuleStats::Research(s) => s.max_hp,
-        };
-        
-        self.current_hp() >= max_hp
-    }
+ 
 }
 
  
