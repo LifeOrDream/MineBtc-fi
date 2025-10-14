@@ -955,7 +955,7 @@ version = "1.0.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "mpl-core",
+ "mpl-core 0.10.1",
  "mpl-token-metadata",
  "spl-token",
 ]
@@ -967,9 +967,27 @@ dependencies = [
  "anchor-lang",
  "anchor-spl",
  "moonbase",
- "mpl-core",
+ "mpl-core 0.10.1",
  "mpl-token-metadata",
  "spl-token",
+]
+
+[[package]]
+name = "mpl-core"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d6c4e2e24ef8fb0029b0ccdde256c4581c8b7c82e0d3fae65c9904f879a2e17"
+dependencies = [
+ "base64 0.22.1",
+ "borsh 0.10.4",
+ "kaigan",
+ "modular-bitfield",
+ "num-derive 0.3.3",
+ "num-traits",
+ "rmp-serde",
+ "serde_json",
+ "solana-program",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1008,6 +1026,10 @@ name = "nft-launchpad"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "anchor-spl",
+ "mpl-core 0.8.1",
+ "mpl-token-metadata",
+ "spl-token",
 ]
 
 [[package]]
