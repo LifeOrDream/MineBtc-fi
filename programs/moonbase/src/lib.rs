@@ -155,6 +155,21 @@ pub mod moonbase {
         )
     }
 
+    pub fn update_module_internal(
+        ctx: Context<UpdateModuleConfig>,
+        id: u16,
+        image_url: Option<String>,
+        faction_ids: Option<Vec<u8>>,
+        max_per_base: Option<u8>,
+        mint_cost: Option<u64>,
+        upgrade_cost: Option<u64>,
+        upgrade_level_requirements: Option<Vec<u8>>,
+        is_active: Option<bool>,
+    ) -> Result<()> {
+        admin::update_module_internal(ctx, id, image_url, faction_ids, max_per_base, mint_cost, upgrade_cost, upgrade_level_requirements, is_active)
+    }
+
+
     /// Update module stats (required before module can be used)
     pub fn update_module_stats(
         ctx: Context<UpdateModuleStats>,
@@ -176,6 +191,56 @@ pub mod moonbase {
             max_reward, probability
         )
     }
+
+    // ---------------------------------------------------------- 
+    // ------------ WITHDRAW SOL FEES (ANYONE) --------------------------------
+    // ---------------------------------------------------------- 
+
+
+    /// Withdraw collected SOL fees from the treasury
+    /// 
+    /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
+    /// 1. For mDOGE stakers
+    /// 2. For liquidity providers
+    /// 3. For devs
+    /// 
+    /// Internally, 10% is sent to loot rewards. 
+    /// 
+    pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
+        admin::withdraw_sol_fees_internal(ctx)
+    }
+
+    /// Query function to get treasury info for external programs
+    /// Returns available balance after accounting for POL reserves and loot percentage
+    pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
+        admin::query_treasury_info_internal(ctx)
+    }
+
+    /// Query function to get global config values for external programs
+    pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
+        admin::query_global_config_internal(ctx)
+    }
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ UPDATE mDOGE DISTRIBUTION RATE (ANYONE) --------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Update mDOGE distribution rate based on price oracle (can be called by anyone every hour)
+    /// 
+    /// We update mDOGE distribution rate every 8 hrs based on price increase / decrease. 
+    /// mDOGE is swapped for SOL on raydium every hr for first 7 hrs and combined with mDOGE from mining vault for last hr
+    /// and added to the LP pool, with LP tokens being burnt.
+    /// 
+    /// When lp_token_amount > 0: Admin override mode (requires authority signature)
+    /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
+    pub fn update_mdoge_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
+        admin::update_mdoge_dist_per_slot_internal(ctx, lp_token_amount)
+    }
+
+
+
+
 
 
 
