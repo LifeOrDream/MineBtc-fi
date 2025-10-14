@@ -52,7 +52,7 @@ pub fn transfer_mpl_core_asset<'info>(
     payer: &AccountInfo<'info>,
     authority: &AccountInfo<'info>,
     new_owner: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
+    _system_program: &AccountInfo<'info>,
     mpl_core_program: &AccountInfo<'info>,
 ) -> Result<()> {
     // Validate Metaplex Core program

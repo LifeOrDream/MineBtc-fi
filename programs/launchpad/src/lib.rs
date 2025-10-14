@@ -81,6 +81,19 @@ pub mod nft_launchpad {
         instructions::admin::clear_dragon_egg_uris_handler(ctx)
     }
 
+    // ========================================================================================
+    // ======================== MOONBASE CREATION WITH NFTS ==================================
+    // ========================================================================================    
+
+    /// Mint NFTs based on moonbase creation tier (called by moonbase program)
+    /// pricing_tier: MOONBASE_BASIC_PRICE (0.25), MOONBASE_DOGE_PRICE (0.5), or MOONBASE_FULL_PRICE (1.0)
+    pub fn mint_nfts_for_moonbase(
+        ctx: Context<MintNftsForMoonbase>,
+        pricing_tier: u64,
+    ) -> Result<()> {
+        instructions::user::mint_nfts_for_moonbase_handler(ctx, pricing_tier)
+    }
+
 
 
 

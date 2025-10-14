@@ -19,7 +19,7 @@ pub fn initialize_handler(
     
     // Create MoonDoge collection with MPL Core
     crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.moondoge_collection,
+        &ctx.accounts.moondoge_collection.to_account_info(),
         None, // No parent collection for collections
         &ctx.accounts.authority.to_account_info(),
         &ctx.accounts.authority.to_account_info(),
@@ -32,7 +32,7 @@ pub fn initialize_handler(
     
     // Create Dragon Egg collection with MPL Core
     crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.dragon_egg_collection,
+        &ctx.accounts.dragon_egg_collection.to_account_info(),
         None, // No parent collection for collections
         &ctx.accounts.authority.to_account_info(),
         &ctx.accounts.authority.to_account_info(),
