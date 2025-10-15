@@ -2149,6 +2149,20 @@ pub fn incubate_dragon_egg_internal(
 
     let current_time = Clock::get()?.unix_timestamp;
 
+    msg!("🔒 Transferring NFT to custody PDA (locking)");
+    
+    // Transfer NFT from user to custody PDA (this locks the NFT)
+    crate::mpl_core_helpers::transfer_mpl_core_asset(
+        &ctx.accounts.dragon_egg_asset.to_account_info(),
+        ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(), // User is current owner/authority
+        &ctx.accounts.egg_custody_pda.to_account_info(), // Transfer to custody PDA
+        &ctx.accounts.mpl_core_program.to_account_info(),
+    )?;
+
+    msg!("✅ NFT locked in custody PDA: {}", ctx.accounts.egg_custody_pda.key());
+
     // Update moonbase state
     user_moonbase.incubated_dragon_egg = Some(egg_metadata.key());
 
@@ -2176,9 +2190,9 @@ pub fn remove_dragon_egg_internal(
     let incubation_state = &mut ctx.accounts.incubation_state;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
 
-    // Verify ownership from Metaplex Core asset
+    // Verify NFT is in custody PDA (it should be locked there)
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
-    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+    require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::EggNotIncubated);
 
     require!(
         egg_metadata.incubated_moonbase.is_some(),
@@ -2186,6 +2200,32 @@ pub fn remove_dragon_egg_internal(
     );
 
     let current_time = Clock::get()?.unix_timestamp;
+    let final_power = egg_metadata.power;
+
+    msg!("🔓 Transferring NFT back to user (unlocking)");
+    
+    // Get PDA signer seeds for custody PDA
+    let custody_seeds = &[
+        DRAGON_EGG_CUSTODY_SEED,
+        &[ctx.bumps.egg_custody_pda],
+    ];
+    let signer_seeds = &[&custody_seeds[..]];
+
+    // Transfer NFT back from custody PDA to user (unlock)
+    let mut cpi_builder = mpl_core::instructions::TransferV1CpiBuilder::new(&ctx.accounts.mpl_core_program);
+    cpi_builder
+        .asset(&ctx.accounts.dragon_egg_asset)
+        .payer(&ctx.accounts.user)
+        .authority(Some(&ctx.accounts.egg_custody_pda)) // Custody PDA is authority
+        .new_owner(&ctx.accounts.user);
+    
+    if let Some(collection) = &ctx.accounts.dragon_egg_collection {
+        cpi_builder.collection(Some(collection));
+    }
+    
+    cpi_builder.invoke_signed(signer_seeds)?;
+
+    msg!("✅ NFT unlocked and returned to user: {}", ctx.accounts.user.key());
 
     // Update moonbase state
     user_moonbase.incubated_dragon_egg = None;
@@ -2195,7 +2235,6 @@ pub fn remove_dragon_egg_internal(
     incubation_state.last_update_ts = current_time;
 
     // Update egg metadata
-    let final_power = egg_metadata.power;
     egg_metadata.incubated_moonbase = None;
     egg_metadata.last_update_ts = current_time;
 
@@ -2222,8 +2261,13 @@ pub struct IncubateDragonEgg<'info> {
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
 
     /// Metaplex Core asset (source of truth for ownership)
+    #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
     pub dragon_egg_asset: UncheckedAccount<'info>,
+
+    /// Optional collection account for the Dragon Egg
+    /// CHECK: Optional collection
+    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
@@ -2242,6 +2286,17 @@ pub struct IncubateDragonEgg<'info> {
     )]
     pub incubation_state: Account<'info, IncubationState>,
 
+    /// PDA that holds custody of locked NFTs
+    #[account(
+        seeds = [DRAGON_EGG_CUSTODY_SEED],
+        bump
+    )]
+    /// CHECK: PDA for NFT custody
+    pub egg_custody_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -2258,9 +2313,14 @@ pub struct RemoveDragonEgg<'info> {
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
 
-    /// Metaplex Core asset (source of truth for ownership)
+    /// Metaplex Core asset (currently locked in custody PDA)
+    #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
     pub dragon_egg_asset: UncheckedAccount<'info>,
+
+    /// Optional collection account for the Dragon Egg
+    /// CHECK: Optional collection
+    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
@@ -2276,6 +2336,17 @@ pub struct RemoveDragonEgg<'info> {
         bump = incubation_state.bump,
     )]
     pub incubation_state: Account<'info, IncubationState>,
+
+    /// PDA that holds custody of locked NFTs
+    #[account(
+        seeds = [DRAGON_EGG_CUSTODY_SEED],
+        bump
+    )]
+    /// CHECK: PDA for NFT custody
+    pub egg_custody_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,

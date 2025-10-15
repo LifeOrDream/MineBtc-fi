@@ -89,6 +89,7 @@ pub const MODULE_INSTANCE_SEED: &[u8] = b"module-instance";
 // PDAs for Dragon Egg NFT system
 pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
 pub const INCUBATION_STATE_SEED: &[u8] = b"incubation-state";
+pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
 
 
 
