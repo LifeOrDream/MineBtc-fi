@@ -287,7 +287,7 @@ pub struct DogeBtcMining {
     pub total_tokens_mined: u64,       
 
     /// dBTC tokens minted per hashpower (index for tracking distirbution)
-    pub dbtc_tokens_minted_per_hashpower: u64,
+    pub dbtc_tokens_minted_per_hashpower: u128,
 
     /// Bump for PDA derivation
     pub bump: u8,
@@ -347,7 +347,7 @@ pub struct UserMoonBaseInstance {
     pub available_electricity: u64,
     pub used_electricity: u64,
 
-    pub moondoge_claim_index: u64,
+    pub moondoge_claim_index: u128,
 
     pub bump: u8,
     /// Faction ID (0-based index into GlobalConfig.supported_factions)

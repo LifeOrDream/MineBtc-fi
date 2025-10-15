@@ -20,6 +20,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
 
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let new_rewards = &mut ctx.accounts.new_user_rewards;
+    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let user = &ctx.accounts.user;
 
     // Get moonbase count before mutable borrow
@@ -134,7 +135,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.active_hashpower = 0;
     user_moonbase.available_electricity = 0;
     user_moonbase.used_electricity = 0;
-    user_moonbase.moondoge_claim_index = 0;
+    user_moonbase.moondoge_claim_index =  doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     user_moonbase.bump = ctx.bumps.user_moonbase;
     user_moonbase.faction_id = faction_id;
     
@@ -1534,6 +1535,12 @@ pub struct CreateUserMoonbase<'info> {
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     #[account(
         mut,

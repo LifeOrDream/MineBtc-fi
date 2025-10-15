@@ -222,7 +222,7 @@ pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)
 /// Calculate mining XP based on DOGE_BTC tokens mined
 /// Awards 15 XP per 1000 DOGE_BTC mined
 pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
-    (tokens_mined * XP_MINING_1000_MDOGE) / (1_000_000 * 1000)
+    ((tokens_mined * XP_MINING_1000_MDOGE as u64) / (1_000_000 * 1000)) as u32
 }
 
 // --------------------------------------- //
@@ -243,7 +243,7 @@ pub fn claim_dogebtc_tokens<'info>(
     loot_rewards: Option<&mut LootRewards>,
 ) -> Result<u64> {
 
-    let claimable_amount = mine_dbtc_for_user(user_moonbase, doge_btc_mining);    
+    let claimable_amount = mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;    
     
     // If there's nothing to claim, return early
     if claimable_amount == 0 {
@@ -287,9 +287,6 @@ pub fn claim_dogebtc_tokens<'info>(
         }
     }
     
-    // Update the user's claim index to the current slot
-    user_moonbase.moondoge_claim_index = current_slot;
-    
     // Log the claim
     msg!("Claimed {} DogeBtc tokens", user_amount);
     
@@ -302,17 +299,21 @@ pub fn claim_dogebtc_tokens<'info>(
 pub fn mine_dbtc_for_user(
     user_moonbase: &mut UserMoonBaseInstance,
     doge_btc_mining: &mut DogeBtcMining,
-) -> claimable_amount {
+) -> Result<u64> {
     // First update the global mining state to ensure it's current
     update_global_mining_index(doge_btc_mining)?;
     
     // If there's no global hashpower, nothing to distribute
-    if doge_btc_mining.total_active_hashpower == 0 || user_moonbase.active_hashpower  == 0 {
-        return Ok(());
+    if doge_btc_mining.total_active_hashpower == 0 || user_moonbase.active_hashpower == 0 {
+        return Ok(0);
     }    
     
-    let index_dif = doge_btc_mining.dbtc_tokens_minted_per_hashpower.saturating_sub(user_moonbase.moondoge_claim_index);
-    let claimable_amount = index_dif.checked_mul(user_moonbase.active_hashpower) / MAX_SAFE_U64;
+    let index_diff = doge_btc_mining.dbtc_tokens_minted_per_hashpower.saturating_sub(user_moonbase.moondoge_claim_index);
+    
+    // Use u128 to prevent overflow: (index_diff * hashpower) / MAX_SAFE_U64
+    let claimable_amount = ((index_diff as u128)
+        .saturating_mul(user_moonbase.active_hashpower as u128)
+        .saturating_div(MAX_SAFE_U64 as u128)) as u64;
 
     user_moonbase.moondoge_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     
@@ -320,7 +321,7 @@ pub fn mine_dbtc_for_user(
     msg!("User mining processed: {} tokens earned with hashpower {}",
          claimable_amount, user_moonbase.active_hashpower);
     
-    claimable_amount
+    Ok(claimable_amount)
 }
 
 
@@ -333,7 +334,13 @@ pub fn update_global_mining_index(
     let current_slot = Clock::get()?.slot;
     
     // If mining hasn't started yet, just update the last slot
-    if doge_btc_mining.mining_start_timestamp == 0 ||  current_slot <= doge_btc_mining.last_slot  {
+    if doge_btc_mining.mining_start_timestamp == 0 || current_slot <= doge_btc_mining.last_slot {
+        doge_btc_mining.last_slot = current_slot;
+        return Ok(());
+    }
+    
+    // Early return if no active hashpower (prevents division by zero)
+    if doge_btc_mining.total_active_hashpower == 0 {
         doge_btc_mining.last_slot = current_slot;
         return Ok(());
     }
@@ -343,8 +350,14 @@ pub fn update_global_mining_index(
     let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);    
     let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
 
-    let index_increment = (new_tokens_mined * MAX_SAFE_U64) / doge_btc_mining.total_active_hashpower;
-    doge_btc_mining.dbtc_tokens_minted_per_hashpower = doge_btc_mining.dbtc_tokens_minted_per_hashpower.checked_add(index_increment).unwrap_or(doge_btc_mining.dbtc_tokens_minted_per_hashpower);
+    // Use u128 to prevent overflow: (new_tokens_mined * MAX_SAFE_U64) / total_active_hashpower
+    let index_increment = ((new_tokens_mined as u128)
+        .saturating_mul(MAX_SAFE_U64 as u128)
+        .saturating_div(doge_btc_mining.total_active_hashpower as u128))  ;
+    
+    doge_btc_mining.dbtc_tokens_minted_per_hashpower = doge_btc_mining
+        .dbtc_tokens_minted_per_hashpower
+        .saturating_add(index_increment);
 
     msg!("Slots passed: {}", slots_passed);
     msg!("Current reward rate: {}", current_reward_rate);
@@ -353,7 +366,7 @@ pub fn update_global_mining_index(
     msg!("Total tokens minted per hashpower: {}", doge_btc_mining.dbtc_tokens_minted_per_hashpower);
     
     // Update total tokens mined
-    doge_btc_mining.total_tokens_mined = doge_btc_mining.total_tokens_mined.checked_add(new_tokens_mined).unwrap_or(doge_btc_mining.total_tokens_mined);
+    doge_btc_mining.total_tokens_mined = doge_btc_mining.total_tokens_mined.saturating_add(new_tokens_mined);
     doge_btc_mining.last_slot = current_slot;
     
     msg!("Mining state updated: {} new tokens mined, total: {}", 
@@ -547,8 +560,7 @@ pub fn transfer_to_loot_dbtc_vault<'info>(
             &[vault_authority_seeds],
         )?;
         
-        msg!("🎁 Transferred {} DOGE_BTC tokens to loot vault ({}% of {})", 
-             loot_amount, LOOT_REWARDS_PERCENTAGE, amount);
+        msg!("🎁 Transferred {} DOGE_BTC tokens to loot vault", loot_amount);
     }
     
     Ok(())
