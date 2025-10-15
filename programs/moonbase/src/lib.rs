@@ -313,32 +313,27 @@ pub mod moonbase {
         user::claim_attraction_xp_internal(ctx, module_index)
     }
 
+    /// Claim level-up rewards based on accumulated XP (with loot transfers)
+    pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
+        user::claim_level_up_rewards_internal(ctx)
+    }
 
-//     /// Claim level-up rewards based on accumulated XP (with loot transfers)
-//     pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
-//         user::claim_level_up_rewards_internal(ctx)
-//     }
-
-//     // ----------------------------------------------------------------------------------------
-//     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
-//     // ----------------------------------------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+    // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
+    // ----------------------------------------------------------------------------------------
 
 
-//     /// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
-//     pub fn incubate_dragon_egg(ctx: Context<IncubateDragonEgg>) -> Result<()> {
-//         user::incubate_dragon_egg_internal(ctx)
-//     }
+    /// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
+    pub fn incubate_dragon_egg(ctx: Context<IncubateDragonEgg>) -> Result<()> {
+        user::incubate_dragon_egg_internal(ctx)
+    }
 
-//     /// Remove Dragon Egg from moonbase incubation
-//     pub fn remove_dragon_egg(ctx: Context<RemoveDragonEgg>) -> Result<()> {
-//         user::remove_dragon_egg_internal(ctx)
-//     }
+    /// Remove Dragon Egg from moonbase incubation
+    pub fn remove_dragon_egg(ctx: Context<RemoveDragonEgg>) -> Result<()> {
+        user::remove_dragon_egg_internal(ctx)
+    }
 
-//     /// Update Dragon Egg power based on hashpower (called periodically by backend)
-//     pub fn update_dragon_egg_power(ctx: Context<UpdateDragonEggPower>) -> Result<()> {
-//         user::update_dragon_egg_power_internal(ctx)
-//     }
-
+ 
 }
 
 

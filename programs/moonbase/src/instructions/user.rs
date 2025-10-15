@@ -151,6 +151,13 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     // Initialize moonbase expansion system
     helper::initialize_moonbase_dimensions(user_moonbase)?;
 
+    // Initialize PVP and Dragon Egg fields
+    user_moonbase.pvp_hp = 0;
+    user_moonbase.active_game = None;
+    user_moonbase.last_game_end_ts = 0;
+    user_moonbase.modules_repaired_since_last_game = false;
+    user_moonbase.incubated_dragon_egg = None;
+
     // Mint Dragon Egg NFT if tier includes it
     if to_mint_dragon {
         // Unwrap optional accounts (required for NFT minting)
@@ -201,7 +208,6 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         egg_metadata.dna = dna;
         egg_metadata.incubated_moonbase = None;
         egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-        egg_metadata.total_hashpower_accumulated = 0;
         egg_metadata.created_at = Clock::get()?.unix_timestamp;
         egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
 
@@ -446,7 +452,7 @@ pub fn update_user_electricity_internal(ctx: Context<UpdateUserElectricity>, to_
     let mining_state = &mut ctx.accounts.mining_state;
     
     // Process daily login automatically (no loot/level stats for this admin function)
-    let (xp_gained, _streak) = helper::process_daily_login(user_moonbase)?;
+    let (_xp_gained, _streak) = helper::process_daily_login(user_moonbase)?;
 
     // Check if the authority is the fee_collector 
     require!(ctx.accounts.authority.key() == ctx.accounts.global_config.ext_fee_collector, ErrorCode::Unauthorized);
@@ -584,12 +590,44 @@ pub fn claim_dbtc_tokens_internal(
         Some(&mut ctx.accounts.loot_rewards),
     )?;
 
+    // Update Dragon Egg power if one is incubated
+    if let Some(egg_metadata_pubkey) = user_moonbase.incubated_dragon_egg {
+        // If moonbase has an incubated egg, egg accounts MUST be provided
+        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let incubation_state = ctx.accounts.incubation_state.as_mut()
+            .ok_or(ErrorCode::InvalidAccount)?;
+
+        // Verify this is the correct egg
+        require!(
+            egg_metadata.key() == egg_metadata_pubkey,
+            ErrorCode::InvalidAccount
+        );
+        
+        let current_time = Clock::get()?.unix_timestamp;
+        
+        // Calculate power increase based on claimed amount
+        // Formula: power_increase = claimed_amount / POWER_RATE_MULTIPLIER
+        let power_increase = (claimed_amount / POWER_RATE_MULTIPLIER) as u32;
+        
+        let old_power = egg_metadata.power;
+        let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
+        
+        egg_metadata.power = new_power;
+        egg_metadata.last_update_ts = current_time;
+        
+        incubation_state.total_power = new_power as u64;
+        incubation_state.last_update_ts = current_time;
+        
+        msg!("🥚 Dragon Egg power updated: {} -> {} (+{})", old_power, new_power, power_increase);
+    }
+
     // Process daily login and award XP based on tokens mined
     let mining_xp = helper::calculate_mining_xp(claimed_amount);
-    process_daily_login_and_xp(   user_moonbase, mining_xp, "Mining")?;
+    process_daily_login_and_xp(user_moonbase, mining_xp, "Mining")?;
 
     // Emit event
-    emit!(DogeBtcTokensClaimed {  owner: user.key(), amount: claimed_amount });
+    emit!(DogeBtcTokensClaimed { owner: user.key(), amount: claimed_amount });
 
     msg!("User {} claimed {} DogeBtc tokens", user.key(), claimed_amount);
 
@@ -1690,6 +1728,19 @@ pub struct ClaimDogeBtc<'info> {
     )]
     pub loot_rewards: Account<'info, LootRewards>,
 
+    // Optional Dragon Egg accounts (for power updates during claim)
+    #[account(mut)]
+    /// CHECK: Optional Dragon Egg NFT asset from Metaplex Core
+    pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
+
+    #[account(mut)]
+    /// CHECK: Optional Dragon Egg metadata PDA
+    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+
+    #[account(mut)]
+    /// CHECK: Optional incubation state PDA
+    pub incubation_state: Option<Account<'info, IncubationState>>,
+
     #[account(mut)]
     pub user: Signer<'info>,
     
@@ -2082,7 +2133,7 @@ pub fn incubate_dragon_egg_internal(
 ) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
-    let user_moonbase = &ctx.accounts.user_moonbase;
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
 
     // Verify ownership from Metaplex Core asset
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
@@ -2094,11 +2145,14 @@ pub fn incubate_dragon_egg_internal(
         ErrorCode::EggAlreadyIncubated
     );
     require!(
-        incubation_state.incubated_egg.is_none(),
+        user_moonbase.incubated_dragon_egg.is_none(),
         ErrorCode::MaxEggsReached
     );
 
     let current_time = Clock::get()?.unix_timestamp;
+
+    // Update moonbase state
+    user_moonbase.incubated_dragon_egg = Some(egg_metadata.key());
 
     // Add egg to incubation state
     incubation_state.incubated_egg = Some(egg_metadata.mint);
@@ -2122,6 +2176,7 @@ pub fn remove_dragon_egg_internal(
 ) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
 
     // Verify ownership from Metaplex Core asset
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
@@ -2133,6 +2188,9 @@ pub fn remove_dragon_egg_internal(
     );
 
     let current_time = Clock::get()?.unix_timestamp;
+
+    // Update moonbase state
+    user_moonbase.incubated_dragon_egg = None;
 
     // Remove egg from incubation state
     incubation_state.incubated_egg = None;
@@ -2149,45 +2207,7 @@ pub fn remove_dragon_egg_internal(
 
     Ok(())
 }
-
-/// Update Dragon Egg power based on hashpower accumulation
-pub fn update_dragon_egg_power_internal(
-    ctx: Context<UpdateDragonEggPower>,
-) -> Result<()> {
-    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
-    let incubation_state = &mut ctx.accounts.incubation_state;
-    let user_moonbase = &ctx.accounts.user_moonbase;
-
-    require!(
-        egg_metadata.incubated_moonbase.is_some(),
-        ErrorCode::EggNotIncubated
-    );
-
-    let current_time = Clock::get()?.unix_timestamp;
-    let time_elapsed = current_time.saturating_sub(egg_metadata.last_update_ts);
-
-    let old_power = egg_metadata.power;
-    let power_increase = egg_metadata.calculate_power_increase(
-        user_moonbase.active_hashpower,
-        time_elapsed,
-    );
-    let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
-
-    egg_metadata.power = new_power;
-    egg_metadata.last_update_ts = current_time;
-    egg_metadata.total_hashpower_accumulated = egg_metadata.total_hashpower_accumulated
-        .saturating_add(user_moonbase.active_hashpower);
-
-    incubation_state.total_power = new_power as u64;
-    incubation_state.last_update_ts = current_time;
-
-    msg!("✅ Dragon Egg power updated");
-    msg!("   Power: {} -> {} (+{})", old_power, new_power, power_increase);
-    msg!("   Hashpower: {}", user_moonbase.active_hashpower);
-
-    Ok(())
-}
-
+ 
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG ACCOUNT CONTEXTS ---------------------------------------------

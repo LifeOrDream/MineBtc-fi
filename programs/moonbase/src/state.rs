@@ -381,15 +381,20 @@ pub struct UserMoonBaseInstance {
     pub last_game_end_ts: i64,
     /// Flag indicating whether modules were repaired since last game
     pub modules_repaired_since_last_game: bool,
+
+    // ========== DRAGON EGG INTEGRATION ========== //
+    /// Incubated Dragon Egg metadata address (max 1 per moonbase)
+    pub incubated_dragon_egg: Option<Pubkey>,
 }
 
 // UserMoonBaseInstance
 impl UserMoonBaseInstance {
-    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game
+    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg
     // purchased_expansions = 4 bytes (vec length) + MAX_EXPANSIONS * 1 byte per expansion ID
     // available_modules = 4 bytes (vec length) + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1;
+    // incubated_dragon_egg = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33;
 }
 
 /// Stores referral rewards that a user has earned from referrals
@@ -888,9 +893,6 @@ pub struct DragonEggMetadata {
     /// Last power update timestamp
     pub last_update_ts: i64,
 
-    /// Total hashpower accumulated
-    pub total_hashpower_accumulated: u64,
-
     /// Creation timestamp
     pub created_at: i64,
 
@@ -905,7 +907,6 @@ impl DragonEggMetadata {
         32 +    // dna
         33 +    // incubated_moonbase (Option<Pubkey>)
         8 +     // last_update_ts
-        8 +     // total_hashpower_accumulated
         8 +     // created_at
         1;      // bump
 
