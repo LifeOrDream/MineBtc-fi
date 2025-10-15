@@ -16,9 +16,9 @@
         "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
     },
     "token": {
-        "name": "MoonDoge",
+        "name": "DogeBtc",
         "symbol": "MDOGE",
-        "description": "MoonDoge - The First Doge on the Moon! Play-to-earn lunar mining game token.",
+        "description": "DogeBtc - The First Doge on the Moon! Play-to-earn lunar mining game token.",
         "image": "https://arweave.net/moondoge-logo",
         "external_url": "https://moondoge.game",
         "decimals": 6,

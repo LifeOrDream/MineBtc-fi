@@ -171,7 +171,7 @@ pub struct LootRewards {
 - **Level-Up Trigger**: Called automatically when user gains XP
 - **Mining Integration**: 10% of DOGE_BTC rewards flow to loot vault
 - **Fee Integration**: 10% of SOL collections flow to loot vault
-- **Price Oracle**: Reads from MoonDogeMining.avg_price_8h
+- **Price Oracle**: Reads from DogeBtcMining.avg_price_8h
 
 ## 🎮 Player Experience Journey
 

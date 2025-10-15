@@ -108,11 +108,11 @@ pub mod moon_economy {
         instructions::user::initialize_electricity_account(ctx)
     }
 
-    pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration: u64, lockup_index: u8) -> Result<()> {
+    pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: u64, lockup_index: u8) -> Result<()> {
         instructions::user::stake_moondoge(ctx, amount, lockup_duration, lockup_index)
     }
 
-    pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Result<()> {
+    pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
         instructions::user::unstake_moondoge(ctx, position_index)
     }
 

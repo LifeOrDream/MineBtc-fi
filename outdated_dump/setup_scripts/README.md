@@ -2,7 +2,7 @@
 
 ## 🚀 Overview
 
-This directory contains the production-grade deployment system for **DogeTech**, a comprehensive Solana-based lunar mining game with MoonDoge token economy. The system implements a professional deployment flow with proper error handling, state management, and recovery mechanisms.
+This directory contains the production-grade deployment system for **DogeTech**, a comprehensive Solana-based lunar mining game with DogeBtc token economy. The system implements a professional deployment flow with proper error handling, state management, and recovery mechanisms.
 
 ## 📁 Project Structure
 
@@ -30,7 +30,7 @@ The `config.json` file contains all deployment parameters:
 - **commitment**: Transaction commitment level
 
 ### Token Configuration
-- **name**: Token name (MoonDoge)
+- **name**: Token name (DogeBtc)
 - **symbol**: Token symbol (MDOGE)
 - **initial_supply**: Total token supply (21B)
 - **burn_tax_bps**: Burn tax in basis points

@@ -1042,7 +1042,7 @@ All major actions emit events for frontend/analytics:
 - `ModuleDeleted`
 - `ModuleInstanceUpgraded`
 - `AttractionXPClaimed`
-- `MoonDogeTokensClaimed`
+- `DogeBtcTokensClaimed`
 - `LevelUp`
 - `LootWon`
 - `XpGained`
@@ -1138,7 +1138,7 @@ GlobalConfig (PDA):
 - Faction list
 - Expansion configs
 
-MoonDogeMining (PDA):
+DogeBtcMining (PDA):
 - Global mining state
 - Total hashpower
 - Distribution rate

@@ -14,7 +14,7 @@ Updated the NFT URI system to use a **pool of URIs stored in GlobalConfig** with
 pub struct GlobalConfig {
     // ... existing fields ...
     
-    /// Available MoonDoge URIs (randomly selected on mint)
+    /// Available DogeBtc URIs (randomly selected on mint)
     pub moondoge_uris: Vec<String>,
     
     /// Available Dragon Egg URIs (randomly selected on mint)
@@ -30,7 +30,7 @@ pub struct GlobalConfig {
 
 ```rust
 impl GlobalConfig {
-    /// Select random MoonDoge URI based on slot and index
+    /// Select random DogeBtc URI based on slot and index
     pub fn get_random_moondoge_uri(&self, slot: u64, index: u64) -> Result<String> {
         let random_index = (slot + index) % self.moondoge_uris.len();
         Ok(self.moondoge_uris[random_index].clone())
@@ -57,7 +57,7 @@ impl GlobalConfig {
 ### Add URIs to Pool
 
 ```rust
-// Add MoonDoge URIs
+// Add DogeBtc URIs
 pub fn add_moondoge_uris(
     ctx: Context<UpdateConfig>,
     uris: Vec<String>,
@@ -73,7 +73,7 @@ pub fn add_dragon_egg_uris(
 **Example:**
 ```typescript
 await program.methods
-  .addMoonDogeUris([
+  .addDogeBtcUris([
     "https://arweave.net/moondoge/variant1",
     "https://arweave.net/moondoge/variant2",
     "https://arweave.net/moondoge/variant3",
@@ -89,7 +89,7 @@ await program.methods
 ### Clear URI Pool
 
 ```rust
-// Clear MoonDoge URIs
+// Clear DogeBtc URIs
 pub fn clear_moondoge_uris(
     ctx: Context<UpdateConfig>,
 ) -> Result<()>
@@ -149,7 +149,7 @@ const dragonEggUris = [
 
 // 4. Add URIs to program
 await program.methods
-  .addMoonDogeUris(moonDogeUris)
+  .addDogeBtcUris(moonDogeUris)
   .accounts({ globalConfig, authority })
   .rpc();
 
@@ -162,12 +162,12 @@ await program.methods
 ### Minting Phase (Users)
 
 ```typescript
-// User mints MoonDoge #0
+// User mints DogeBtc #0
 // → Slot: 12345, Index: 0
 // → Random: (12345 + 0) % 4 = 1
 // → URI: "https://arweave.net/abc123/moondoge_blue"
 
-// User mints MoonDoge #1
+// User mints DogeBtc #1
 // → Slot: 12350, Index: 1
 // → Random: (12350 + 1) % 4 = 3
 // → URI: "https://arweave.net/abc123/moondoge_rainbow"
@@ -187,12 +187,12 @@ await program.methods
 
 ### 1. **Trait Variants**
 ```
-Pool of 5 MoonDoge variants:
-- Red Suit MoonDoge
-- Blue Suit MoonDoge
-- Gold Suit MoonDoge
-- Space Suit MoonDoge
-- Cyber Suit MoonDoge
+Pool of 5 DogeBtc variants:
+- Red Suit DogeBtc
+- Blue Suit DogeBtc
+- Gold Suit DogeBtc
+- Space Suit DogeBtc
+- Cyber Suit DogeBtc
 
 Each mint randomly selects one!
 ```
@@ -211,12 +211,12 @@ Random selection naturally creates rarity!
 ### 3. **Seasonal Updates**
 ```
 // Add Halloween variants
-await program.methods.clearMoonDogeUris().rpc();
-await program.methods.addMoonDogeUris(halloweenUris).rpc();
+await program.methods.clearDogeBtcUris().rpc();
+await program.methods.addDogeBtcUris(halloweenUris).rpc();
 
 // Add Christmas variants later
-await program.methods.clearMoonDogeUris().rpc();
-await program.methods.addMoonDogeUris(christmasUris).rpc();
+await program.methods.clearDogeBtcUris().rpc();
+await program.methods.addDogeBtcUris(christmasUris).rpc();
 ```
 
 ### 4. **DNA-Based Selection (Eggs)**
@@ -264,7 +264,7 @@ require!(
 
 **After:**
 - GlobalConfig: ~4,500 bytes
-  - 10 MoonDoge URIs × 204 bytes = 2,040 bytes
+  - 10 DogeBtc URIs × 204 bytes = 2,040 bytes
   - 10 Dragon Egg URIs × 204 bytes = 2,040 bytes
   - Overhead + existing fields = ~420 bytes
 
@@ -322,7 +322,7 @@ const legacyUris = Array.from({ length: 1000 }, (_, i) =>
 // Add in batches (vector size limits)
 for (let i = 0; i < legacyUris.length; i += 10) {
   await program.methods
-    .addMoonDogeUris(legacyUris.slice(i, i + 10))
+    .addDogeBtcUris(legacyUris.slice(i, i + 10))
     .rpc();
 }
 ```
@@ -339,12 +339,12 @@ const uris = [
   "https://test.com/variant3",
 ];
 
-await program.methods.addMoonDogeUris(uris).rpc();
+await program.methods.addDogeBtcUris(uris).rpc();
 
 // Mint 100 NFTs, track distribution
 const distribution = { 0: 0, 1: 0, 2: 0 };
 for (let i = 0; i < 100; i++) {
-  const nft = await mintMoonDoge();
+  const nft = await mintDogeBtc();
   const uriIndex = uris.indexOf(nft.uri);
   distribution[uriIndex]++;
 }

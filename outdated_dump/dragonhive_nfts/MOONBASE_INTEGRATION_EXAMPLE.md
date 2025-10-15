@@ -45,11 +45,11 @@ pub struct CreateUserMoonbase<'info> {
     
     // Optional accounts (depending on pricing tier)
     #[account(mut)]
-    /// CHECK: MoonDoge mint (if tier includes doge)
+    /// CHECK: DogeBtc mint (if tier includes doge)
     pub moondoge_mint: Option<UncheckedAccount<'info>>,
     
     #[account(mut)]
-    /// CHECK: MoonDoge metadata (if tier includes doge)
+    /// CHECK: DogeBtc metadata (if tier includes doge)
     pub moondoge_metadata: Option<UncheckedAccount<'info>>,
     
     #[account(mut)]
@@ -211,7 +211,7 @@ pub fn initialize_user_moonbase(
     msg!("   Owner: {}", user_moonbase.owner);
     msg!("   Pricing Tier: {} SOL", pricing_tier as f64 / 1e9);
     if includes_doge {
-        msg!("   ✨ MoonDoge NFT included!");
+        msg!("   ✨ DogeBtc NFT included!");
     }
     if includes_egg {
         msg!("   🥚 Dragon Egg NFT included!");
@@ -313,7 +313,7 @@ async function createMoonbase(
   console.log("   Pricing Tier:", pricingTier);
   
   if (moondogeMint) {
-    console.log("   🐶 MoonDoge:", moondogeMint.publicKey.toString());
+    console.log("   🐶 DogeBtc:", moondogeMint.publicKey.toString());
   }
   
   if (dragonEggMint) {
@@ -332,7 +332,7 @@ await createMoonbase(
   moonbaseProgram,
   nftLaunchpadProgram,
   userKeypair,
-  "FULL" // Create moonbase with MoonDoge + Dragon Egg
+  "FULL" // Create moonbase with DogeBtc + Dragon Egg
 );
 ```
 

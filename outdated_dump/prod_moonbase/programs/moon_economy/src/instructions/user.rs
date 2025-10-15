@@ -45,9 +45,9 @@ pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> 
 // ---- STAKE MOONDOGE TOKENS :: User gets electricity and SOL rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Stake MoonDoge tokens
-pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration: u64, position_index: u8) -> Result<()> {
-    msg!("🔒 Starting MoonDoge staking - Amount: {}, Lockup: {} days, Position: {}", amount, lockup_duration, position_index);
+/// Stake DogeBtc tokens
+pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: u64, position_index: u8) -> Result<()> {
+    msg!("🔒 Starting DogeBtc staking - Amount: {}, Lockup: {} days, Position: {}", amount, lockup_duration, position_index);
     // Validate inputs
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(
@@ -226,8 +226,8 @@ pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration:
     // Update user electricity
     moon_base::cpi::update_user_electricity(cpi_ctx, true, electricity_increase)?;
 
-    msg!("✅ MoonDoge staking successful");    
-    emit!(MoonDogeStaked {
+    msg!("✅ DogeBtc staking successful");    
+    emit!(DogeBtcStaked {
         owner: ctx.accounts.authority.key(),
         amount: actual_amount, // Use actual_amount (post-tax) in the event
         lockup_duration,
@@ -244,8 +244,8 @@ pub fn stake_moondoge(ctx: Context<StakeMoonDoge>, amount: u64, lockup_duration:
 // ---- UNSTAKE MOONDOGE TOKENS :: User gets DOGE_BTC back ------------------------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Unstake MoonDoge tokens from a position
-pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Result<()> {
+/// Unstake DogeBtc tokens from a position
+pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
     // Get references to all accounts
     let electricity_ac = &mut ctx.accounts.electricity_ac;
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
@@ -429,7 +429,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeMoonDoge>, position_index: u8) -> Re
     user_position.weighted_amount = 0;
     user_position.electricity_per_day = 0;
     
-    emit!(MoonDogeUnstaked {
+    emit!(DogeBtcUnstaked {
         owner: ctx.accounts.authority.key(),
         position_index,
         amount: return_amount,
@@ -931,11 +931,11 @@ pub fn update_pending_rewards(ctx: Context<UpdatePendingRewards>) -> Result<()> 
     
     msg!("📊 Updating pending rewards for user: {}", ctx.accounts.authority.key());
     
-    // Update pending MoonDoge rewards
+    // Update pending DogeBtc rewards
     if electricity_ac.total_weighted_moondoge > 0 {
         let pending_moondoge = (electricity_ac.total_weighted_moondoge as u128 * moondoge_vault.accumulated_sol_per_point / PRECISION_FACTOR as u128) as u64;
         electricity_ac.pending_moondoge_rewards = pending_moondoge.saturating_sub(electricity_ac.moondoge_reward_debt as u64);
-        msg!("💰 Updated pending MoonDoge rewards: {}", electricity_ac.pending_moondoge_rewards);
+        msg!("💰 Updated pending DogeBtc rewards: {}", electricity_ac.pending_moondoge_rewards);
     } else {
         electricity_ac.pending_moondoge_rewards = 0;
     }
@@ -1004,7 +1004,7 @@ pub struct InitializeElectricityAc<'info> {
 
 #[derive(Accounts)]
 #[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
-pub struct StakeMoonDoge<'info> {
+pub struct StakeDogeBtc<'info> {
     // Global config and vaults
     #[account(
         seeds = [ME_CONFIG_SEED.as_ref()],
@@ -1017,7 +1017,7 @@ pub struct StakeMoonDoge<'info> {
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump = moondoge_vault.bump
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
     
     // User accounts
     #[account(
@@ -1032,7 +1032,7 @@ pub struct StakeMoonDoge<'info> {
     #[account(
         init_if_needed,
         payer = authority,
-        space = MoonDogePosition::LEN,
+        space = DogeBtcPosition::LEN,
         seeds = [
             dbtc_POSITION_SEED,
             authority.key().as_ref(),
@@ -1040,7 +1040,7 @@ pub struct StakeMoonDoge<'info> {
         ],
         bump
     )]
-    pub user_position: Account<'info, MoonDogePosition>,
+    pub user_position: Account<'info, DogeBtcPosition>,
     
     /// CHECK: DOGE_BTC Mint
     pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
@@ -1052,7 +1052,7 @@ pub struct StakeMoonDoge<'info> {
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
         constraint = user_dbtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
     )]
-    /// User's MoonDoge token account
+    /// User's DogeBtc token account
     pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
@@ -1106,7 +1106,7 @@ pub struct StakeMoonDoge<'info> {
 
 #[derive(Accounts)]
 #[instruction(position_index: u8)]
-pub struct UnstakeMoonDoge<'info> {
+pub struct UnstakeDogeBtc<'info> {
     // Global config and vaults
     #[account(
         seeds = [ME_CONFIG_SEED.as_ref()],
@@ -1119,7 +1119,7 @@ pub struct UnstakeMoonDoge<'info> {
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump = moondoge_vault.bump
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
     
     // User accounts
     #[account(
@@ -1139,7 +1139,7 @@ pub struct UnstakeMoonDoge<'info> {
         bump,
         constraint = user_position.position_index == position_index
     )]
-    pub user_position: Account<'info, MoonDogePosition>,
+    pub user_position: Account<'info, DogeBtcPosition>,
     
     /// CHECK: DOGE_BTC Mint
     #[account(mut)]
@@ -1151,7 +1151,7 @@ pub struct UnstakeMoonDoge<'info> {
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
         constraint = user_dbtc_account.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
-    /// User's MoonDoge token account to receive the unstaked tokens
+    /// User's DogeBtc token account to receive the unstaked tokens
     pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
@@ -1425,7 +1425,7 @@ pub struct ClaimSolRewards<'info> {
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump 
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
     
     #[account(
         mut,
@@ -1447,7 +1447,7 @@ pub struct ClaimSolRewards<'info> {
         seeds = [dbtc_SOL_VAULT_SEED.as_ref()],
         bump
     )]
-    /// CHECK: This is the PDA that custodies SOL for MoonDoge stakers
+    /// CHECK: This is the PDA that custodies SOL for DogeBtc stakers
     pub dbtc_sol_vault: UncheckedAccount<'info>,
 
     #[account(
@@ -1477,7 +1477,7 @@ pub struct UpdatePendingRewards<'info> {
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump 
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
     
     #[account(
         seeds = [LIQUIDITY_VAULT_SEED.as_ref()],

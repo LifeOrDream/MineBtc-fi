@@ -2,7 +2,7 @@
 
 ## ✅ What Has Been Implemented
 
-I've completely redesigned and implemented the **NFT Launchpad** program with Metaplex Core integration for MoonDoge and Dragon Egg NFTs. The moonbase program remains **unchanged**.
+I've completely redesigned and implemented the **NFT Launchpad** program with Metaplex Core integration for DogeBtc and Dragon Egg NFTs. The moonbase program remains **unchanged**.
 
 ---
 
@@ -10,13 +10,13 @@ I've completely redesigned and implemented the **NFT Launchpad** program with Me
 
 ### 1. **Core State Management** (`state.rs`)
 - `GlobalConfig`: Program-wide settings and counters
-- `MoonDogeMetadata`: Tracks MoonDoge NFTs with money accumulation
+- `DogeBtcMetadata`: Tracks DogeBtc NFTs with money accumulation
 - `DragonEggMetadata`: Tracks Dragon Egg NFTs with power and DNA
 - `IncubationState`: Manages egg incubation per moonbase
 - `DogeAttachment`: Manages doge attachment per moonbase
 
 ### 2. **Constants** (`constants.rs`)
-- Supply limits: 10k MoonDoges, 15k initial Dragon Eggs
+- Supply limits: 10k DogeBtcs, 15k initial Dragon Eggs
 - Pricing tiers: 0.25 SOL (basic), 0.5 SOL (doge), 1.0 SOL (full)
 - Gameplay constants: Max 10 eggs, 1 doge per moonbase
 - PDA seeds and program IDs
@@ -35,10 +35,10 @@ I've completely redesigned and implemented the **NFT Launchpad** program with Me
   - Emits creation events
 
 #### Individual Purchases:
-- `purchase_moondoge`: Buy MoonDoge for 0.5 SOL
+- `purchase_moondoge`: Buy DogeBtc for 0.5 SOL
 - `purchase_dragon_egg`: Buy Dragon Egg for 0.5 SOL
 
-#### MoonDoge Management:
+#### DogeBtc Management:
 - `attach_moondoge`: Attach doge to moonbase (1 max per moonbase)
 - `detach_moondoge`: Remove doge from moonbase
 - `update_moondoge_money`: Accumulate money based on DOGE_BTC mined
@@ -63,7 +63,7 @@ I've completely redesigned and implemented the **NFT Launchpad** program with Me
 
 ### 7. **Events** (`events.rs`)
 - Program initialization and config updates
-- MoonDoge events (minted, attached, detached, money updated)
+- DogeBtc events (minted, attached, detached, money updated)
 - Dragon Egg events (minted, incubated, removed, power updated)
 - Moonbase creation events
 - Economic tracking events
@@ -80,8 +80,8 @@ User → Moonbase Program → NFT Launchpad Program
                                     ↓
                            Mint NFTs based on tier:
                            - 0.25 SOL: None
-                           - 0.5 SOL: MoonDoge
-                           - 1.0 SOL: MoonDoge + Dragon Egg
+                           - 0.5 SOL: DogeBtc
+                           - 1.0 SOL: DogeBtc + Dragon Egg
                                     ↓
                            Transfer to user
 ```
@@ -105,12 +105,12 @@ For each incubated egg:
 ## 💡 How Metaplex Core Is Used
 
 **Metaplex Core** provides a streamlined NFT standard with:
-- **Assets**: Individual NFTs (MoonDoge, Dragon Egg)
+- **Assets**: Individual NFTs (DogeBtc, Dragon Egg)
 - **Collections**: Groups of assets
 - **Plugin System**: Extensible functionality
 
 **In this implementation:**
-1. Two collections are created (MoonDoge, Dragon Egg)
+1. Two collections are created (DogeBtc, Dragon Egg)
 2. Individual assets are minted as Metaplex Core NFTs
 3. Program-specific state (money, power, DNA) is stored in separate PDAs
 4. This hybrid approach combines:
@@ -121,7 +121,7 @@ For each incubated egg:
 
 ## 🎮 Game Mechanics
 
-### MoonDoge Money
+### DogeBtc Money
 - **What**: Currency accumulated by doge when attached to moonbase
 - **How**: Increases with DOGE_BTC mined by moonbase
 - **Rate**: 0.01% of DOGE_BTC mined = 1 money per 10,000 DOGE_BTC
@@ -137,7 +137,7 @@ For each incubated egg:
 
 ### Example Calculations
 
-**MoonDoge Money:**
+**DogeBtc Money:**
 ```
 Moonbase mines 100,000 DOGE_BTC
 Money increase = (100,000 * 100) / 1,000,000 = 10 money
@@ -165,8 +165,8 @@ GlobalConfig (PDA: ["global-config"])
 ├── total_dragon_eggs_minted: 0 → 15,000+
 └── total_sol_collected: u64
 
-Per MoonDoge:
-  MoonDogeMetadata (PDA: ["moondoge-metadata", mint])
+Per DogeBtc:
+  DogeBtcMetadata (PDA: ["moondoge-metadata", mint])
   ├── mint: Pubkey
   ├── owner: Pubkey
   ├── money: u64 (increases with mining)
@@ -196,7 +196,7 @@ Per Moonbase:
 
 ## 🔐 Security Features
 
-1. **Supply Enforcement**: MoonDoge capped at 10k on-chain
+1. **Supply Enforcement**: DogeBtc capped at 10k on-chain
 2. **Ownership Verification**: All operations check NFT ownership
 3. **Attachment Limits**: Max 1 doge, 10 eggs per moonbase
 4. **Canonical PDAs**: All accounts use deterministic derivation
@@ -233,7 +233,7 @@ Per Moonbase:
 2. **Evolution System**: Evolve eggs into dragons
 3. **PvP Integration**: Use egg power in battles
 4. **Marketplace**: Trade NFTs with accumulated attributes
-5. **Staking**: Stake MoonDoge for benefits
+5. **Staking**: Stake DogeBtc for benefits
 6. **Rarity System**: DNA-based rarity tiers
 
 ---
@@ -248,7 +248,7 @@ Per Moonbase:
 
 ## ✨ Key Achievements
 
-✅ Two NFT collections (MoonDoge & Dragon Egg)  
+✅ Two NFT collections (DogeBtc & Dragon Egg)  
 ✅ Three pricing tiers for moonbase creation  
 ✅ Individual purchase options  
 ✅ Attachment system (1 doge per moonbase)  

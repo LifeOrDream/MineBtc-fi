@@ -57,7 +57,7 @@ pub mod nfts_launchpad {
         instructions::admin::pause_program_handler(ctx, is_paused)
     }
 
-    /// Add MoonDoge URIs to the pool (admin only)
+    /// Add DogeBtc URIs to the pool (admin only)
     pub fn add_moondoge_uris(
         ctx: Context<UpdateConfig>,
         uris: Vec<String>,
@@ -73,7 +73,7 @@ pub mod nfts_launchpad {
         instructions::admin::add_dragon_egg_uris_handler(ctx, uris)
     }
 
-    /// Clear all MoonDoge URIs (admin only)
+    /// Clear all DogeBtc URIs (admin only)
     pub fn clear_moondoge_uris(
         ctx: Context<UpdateConfig>,
     ) -> Result<()> {
@@ -104,9 +104,9 @@ pub mod nfts_launchpad {
     // ======================== INDIVIDUAL NFT PURCHASES =====================================
     // ========================================================================================
 
-    /// Purchase a MoonDoge NFT (0.5 SOL)
+    /// Purchase a DogeBtc NFT (0.5 SOL)
     pub fn purchase_moondoge(
-        ctx: Context<PurchaseMoonDoge>,
+        ctx: Context<PurchaseDogeBtc>,
     ) -> Result<()> {
         instructions::user::purchase_moondoge_handler(ctx)
     }
@@ -122,23 +122,23 @@ pub mod nfts_launchpad {
     // ======================== MOONDOGE ATTACHMENT ==========================================
     // ========================================================================================
 
-    /// Attach MoonDoge to moonbase (1 per moonbase max)
+    /// Attach DogeBtc to moonbase (1 per moonbase max)
     pub fn attach_moondoge(
-        ctx: Context<AttachMoonDoge>,
+        ctx: Context<AttachDogeBtc>,
     ) -> Result<()> {
         instructions::user::attach_moondoge_handler(ctx)
     }
 
-    /// Detach MoonDoge from moonbase
+    /// Detach DogeBtc from moonbase
     pub fn detach_moondoge(
-        ctx: Context<DetachMoonDoge>,
+        ctx: Context<DetachDogeBtc>,
     ) -> Result<()> {
         instructions::user::detach_moondoge_handler(ctx)
     }
 
-    /// Update MoonDoge money based on DOGE_BTC mined (called periodically by backend)
+    /// Update DogeBtc money based on DOGE_BTC mined (called periodically by backend)
     pub fn update_moondoge_money(
-        ctx: Context<UpdateMoonDogeMoney>,
+        ctx: Context<UpdateDogeBtcMoney>,
         dbtc_mined: u64,
     ) -> Result<()> {
         instructions::user::update_moondoge_money_handler(ctx, dbtc_mined)

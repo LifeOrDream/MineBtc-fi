@@ -81,7 +81,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, cr
         1,
     )?;
 
-    // Initialize MoonDogeMining
+    // Initialize DogeBtcMining
     doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
     doge_btc_mining.total_active_hashpower = 0;
@@ -1195,7 +1195,7 @@ fn perform_lp_addition_and_burn<'info>(
     token_program: &AccountInfo<'info>,
     sol_amount: u64,
     vault_auth_bump: u8,
-    doge_btc_mining: &mut Account<MoonDogeMining>,
+    doge_btc_mining: &mut Account<DogeBtcMining>,
     admin_lp_override: u64,
 ) -> Result<()> {
 
@@ -1443,11 +1443,11 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = MoonDogeMining::LEN,
+        space = DogeBtcMining::LEN,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// CHECK: 0-byte PDA that only stores lamports
     #[account(
@@ -1491,7 +1491,7 @@ pub struct UpdateConfigAc<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
-    pub doge_btc_mining: Option<Account<'info, MoonDogeMining>>,
+    pub doge_btc_mining: Option<Account<'info, DogeBtcMining>>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1533,7 +1533,7 @@ pub struct InitializeMining<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     //  Vault authority PDA (0-byte, signer only)
     #[account(
@@ -1583,7 +1583,7 @@ pub struct UpdateSlotsPerHour<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1616,7 +1616,7 @@ pub struct DepositTokens<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(owner = token_program.key())]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
@@ -1864,7 +1864,7 @@ pub struct WithdrawSolFees<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// CHECK: safe PDA used as vault authority
     #[account(
@@ -1913,7 +1913,7 @@ pub struct UpdateMdogeDistPerSlot<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     /// GlobalConfig for admin authority verification
     #[account(
@@ -2011,7 +2011,7 @@ pub struct QueryTreasuryInfo<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// CHECK: SOL treasury PDA
     #[account(

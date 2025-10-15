@@ -22,18 +22,18 @@ pub fn mint_nfts_for_moonbase_handler(
     let mut moondoge_mint: Option<Pubkey> = None;
     let mut dragon_egg_mint: Option<Pubkey> = None;
     
-    // Mint MoonDoge if tier includes it
+    // Mint DogeBtc if tier includes it
     if mint_doge {
         require!(
             global_config.total_moondoges_minted < MAX_MOONDOGE_SUPPLY,
-            NftLaunchpadError::MaxMoonDogeSupplyReached
+            NftLaunchpadError::MaxDogeBtcSupplyReached
         );
         
         let index = global_config.total_moondoges_minted;
         let name = generate_moondoge_name(index);
         let uri = global_config.get_random_moondoge_uri(Clock::get()?.slot, index)?;
         
-        // Create MoonDoge NFT with MPL Core
+        // Create DogeBtc NFT with MPL Core
         crate::mpl_core_helpers::create_mpl_core_asset(
             &ctx.accounts.moondoge_asset.as_ref().unwrap(),
             Some(&ctx.accounts.moondoge_collection),
@@ -58,7 +58,7 @@ pub fn mint_nfts_for_moonbase_handler(
         global_config.total_moondoges_minted += 1;
         moondoge_mint = Some(doge_metadata.mint);
         
-        emit!(MoonDogeMinted {
+        emit!(DogeBtcMinted {
             mint: doge_metadata.mint,
             name,
             uri,
@@ -132,7 +132,7 @@ pub fn mint_nfts_for_moonbase_handler(
     msg!("✅ NFTs minted for moonbase creation");
     msg!("   Tier: {}", get_pricing_tier_name(pricing_tier));
     if let Some(doge) = moondoge_mint {
-        msg!("   MoonDoge: {}", doge);
+        msg!("   DogeBtc: {}", doge);
     }
     if let Some(egg) = dragon_egg_mint {
         msg!("   Dragon Egg: {}", egg);
@@ -145,16 +145,16 @@ pub fn mint_nfts_for_moonbase_handler(
 // ========================== INDIVIDUAL NFT PURCHASES ===================================
 // ========================================================================================
 
-/// Purchase a MoonDoge NFT (0.5 SOL)
+/// Purchase a DogeBtc NFT (0.5 SOL)
 pub fn purchase_moondoge_handler(
-    ctx: Context<PurchaseMoonDoge>,
+    ctx: Context<PurchaseDogeBtc>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
     
     require!(!global_config.is_paused, NftLaunchpadError::ProgramPaused);
     require!(
         global_config.total_moondoges_minted < MAX_MOONDOGE_SUPPLY,
-        NftLaunchpadError::MaxMoonDogeSupplyReached
+        NftLaunchpadError::MaxDogeBtcSupplyReached
     );
     
     // Transfer SOL to treasury
@@ -173,7 +173,7 @@ pub fn purchase_moondoge_handler(
     let name = generate_moondoge_name(index);
     let uri = global_config.get_random_moondoge_uri(Clock::get()?.slot, index)?;
     
-    // Create MoonDoge NFT with MPL Core
+    // Create DogeBtc NFT with MPL Core
     crate::mpl_core_helpers::create_mpl_core_asset(
         &ctx.accounts.moondoge_asset,
         Some(&ctx.accounts.moondoge_collection),
@@ -199,7 +199,7 @@ pub fn purchase_moondoge_handler(
     global_config.total_moondoges_minted += 1;
     global_config.total_sol_collected += MOONDOGE_PRICE;
     
-    emit!(MoonDogeMinted {
+    emit!(DogeBtcMinted {
         mint: doge_metadata.mint,
         name,
         uri,
@@ -212,7 +212,7 @@ pub fn purchase_moondoge_handler(
         pricing_tier: None,
     });
     
-    msg!("✅ MoonDoge purchased");
+    msg!("✅ DogeBtc purchased");
     msg!("   Mint: {}", doge_metadata.mint);
     msg!("   Price: {} SOL", MOONDOGE_PRICE as f64 / LAMPORTS_PER_SOL as f64);
     
@@ -301,9 +301,9 @@ pub fn purchase_dragon_egg_handler(
 // ========================== MOONDOGE ATTACHMENT ========================================
 // ========================================================================================
 
-/// Attach MoonDoge to moonbase (1 per moonbase max)
+/// Attach DogeBtc to moonbase (1 per moonbase max)
 pub fn attach_moondoge_handler(
-    ctx: Context<AttachMoonDoge>,
+    ctx: Context<AttachDogeBtc>,
 ) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
     let doge_attachment = &mut ctx.accounts.doge_attachment;
@@ -330,22 +330,22 @@ pub fn attach_moondoge_handler(
     doge_metadata.attached_moonbase = Some(ctx.accounts.user.key());
     doge_metadata.last_update_ts = current_time;
     
-    emit!(MoonDogeAttached {
+    emit!(DogeBtcAttached {
         doge_mint: doge_metadata.mint,
         moonbase_owner: ctx.accounts.user.key(),
         attached_at: current_time,
     });
     
-    msg!("✅ MoonDoge attached to moonbase");
+    msg!("✅ DogeBtc attached to moonbase");
     msg!("   Doge: {}", doge_metadata.mint);
     msg!("   Moonbase: {}", ctx.accounts.user.key());
     
     Ok(())
 }
 
-/// Detach MoonDoge from moonbase
+/// Detach DogeBtc from moonbase
 pub fn detach_moondoge_handler(
-    ctx: Context<DetachMoonDoge>,
+    ctx: Context<DetachDogeBtc>,
 ) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
     
@@ -364,23 +364,23 @@ pub fn detach_moondoge_handler(
     doge_metadata.attached_moonbase = None;
     doge_metadata.last_update_ts = current_time;
     
-    emit!(MoonDogeDetached {
+    emit!(DogeBtcDetached {
         doge_mint: doge_metadata.mint,
         moonbase_owner: ctx.accounts.user.key(),
         detached_at: current_time,
         final_money,
     });
     
-    msg!("✅ MoonDoge detached from moonbase");
+    msg!("✅ DogeBtc detached from moonbase");
     msg!("   Doge: {}", doge_metadata.mint);
     msg!("   Final Money: {}", final_money);
     
     Ok(())
 }
 
-/// Update MoonDoge money based on DOGE_BTC mined
+/// Update DogeBtc money based on DOGE_BTC mined
 pub fn update_moondoge_money_handler(
-    ctx: Context<UpdateMoonDogeMoney>,
+    ctx: Context<UpdateDogeBtcMoney>,
     dbtc_mined: u64,
 ) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.moondoge_metadata;
@@ -402,7 +402,7 @@ pub fn update_moondoge_money_handler(
     doge_attachment.last_update_ts = Clock::get()?.unix_timestamp;
     doge_attachment.last_dbtc_balance = doge_attachment.last_dbtc_balance.saturating_add(dbtc_mined);
     
-    emit!(MoonDogeMoneyUpdated {
+    emit!(DogeBtcMoneyUpdated {
         doge_mint: doge_metadata.mint,
         old_money,
         new_money,
@@ -410,7 +410,7 @@ pub fn update_moondoge_money_handler(
         dbtc_mined,
     });
     
-    msg!("✅ MoonDoge money updated");
+    msg!("✅ DogeBtc money updated");
     msg!("   Money: {} -> {} (+{})", old_money, new_money, money_increase);
     
     Ok(())
@@ -579,22 +579,22 @@ pub struct MintNftsForMoonbase<'info> {
     /// CHECK: SOL treasury PDA
     pub sol_treasury: UncheckedAccount<'info>,
     
-    /// CHECK: MoonDoge asset (if applicable)
+    /// CHECK: DogeBtc asset (if applicable)
     #[account(mut)]
     pub moondoge_asset: Option<UncheckedAccount<'info>>,
     
-    /// CHECK: MoonDoge collection
+    /// CHECK: DogeBtc collection
     #[account(mut)]
     pub moondoge_collection: UncheckedAccount<'info>,
     
     #[account(
         init_if_needed,
         payer = user,
-        space = MoonDogeMetadata::LEN,
+        space = DogeBtcMetadata::LEN,
         seeds = [MOONDOGE_METADATA_SEED, moondoge_asset.as_ref().unwrap().key().as_ref()],
         bump
     )]
-    pub moondoge_metadata: Option<Account<'info, MoonDogeMetadata>>,
+    pub moondoge_metadata: Option<Account<'info, DogeBtcMetadata>>,
     
     /// CHECK: Dragon Egg asset (if applicable)
     #[account(mut)]
@@ -623,7 +623,7 @@ pub struct MintNftsForMoonbase<'info> {
 }
 
 #[derive(Accounts)]
-pub struct PurchaseMoonDoge<'info> {
+pub struct PurchaseDogeBtc<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED],
@@ -639,22 +639,22 @@ pub struct PurchaseMoonDoge<'info> {
     /// CHECK: SOL treasury PDA
     pub sol_treasury: UncheckedAccount<'info>,
     
-    /// CHECK: MoonDoge asset (Metaplex Core NFT)
+    /// CHECK: DogeBtc asset (Metaplex Core NFT)
     #[account(mut)]
     pub moondoge_asset: UncheckedAccount<'info>,
     
-    /// CHECK: MoonDoge collection
+    /// CHECK: DogeBtc collection
     #[account(mut)]
     pub moondoge_collection: UncheckedAccount<'info>,
     
     #[account(
         init,
         payer = user,
-        space = MoonDogeMetadata::LEN,
+        space = DogeBtcMetadata::LEN,
         seeds = [MOONDOGE_METADATA_SEED, moondoge_asset.key().as_ref()],
         bump
     )]
-    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    pub moondoge_metadata: Account<'info, DogeBtcMetadata>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -709,7 +709,7 @@ pub struct PurchaseDragonEgg<'info> {
 }
 
 #[derive(Accounts)]
-pub struct AttachMoonDoge<'info> {
+pub struct AttachDogeBtc<'info> {
     /// Metaplex Core asset (source of truth for ownership)
     /// CHECK: Verified via verify_nft_ownership helper
     pub moondoge_asset: UncheckedAccount<'info>,
@@ -720,7 +720,7 @@ pub struct AttachMoonDoge<'info> {
         bump = moondoge_metadata.bump,
         constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
-    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    pub moondoge_metadata: Account<'info, DogeBtcMetadata>,
     
     #[account(
         init,
@@ -738,7 +738,7 @@ pub struct AttachMoonDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct DetachMoonDoge<'info> {
+pub struct DetachDogeBtc<'info> {
     /// Metaplex Core asset (source of truth for ownership)
     /// CHECK: Verified via verify_nft_ownership helper
     pub moondoge_asset: UncheckedAccount<'info>,
@@ -749,7 +749,7 @@ pub struct DetachMoonDoge<'info> {
         bump = moondoge_metadata.bump,
         constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
-    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    pub moondoge_metadata: Account<'info, DogeBtcMetadata>,
     
     #[account(
         mut,
@@ -766,13 +766,13 @@ pub struct DetachMoonDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateMoonDogeMoney<'info> {
+pub struct UpdateDogeBtcMoney<'info> {
     #[account(
         mut,
         seeds = [MOONDOGE_METADATA_SEED, moondoge_metadata.mint.as_ref()],
         bump = moondoge_metadata.bump,
     )]
-    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    pub moondoge_metadata: Account<'info, DogeBtcMetadata>,
     
     #[account(
         mut,

@@ -207,16 +207,16 @@ async function main() {
     //     console.log(userMoonElectricity);
         
     // // ------------ 3. Get user's Individual staked DOGE_BTC position info ------------
-    // let userMoonDogePositionPDA = "6nqEcbDjjYDssCHFqR5eSCLqeXiRJ8RgvLEiSZr1hw3G";
-    // const userMoonDogePositionInfo = await connection.getAccountInfo( new PublicKey(userMoonDogePositionPDA));
-    // const userMoonDogePosition = moonEconomyCoder.decode('MoonDogePosition', userMoonDogePositionInfo.data);
-    //     userMoonDogePosition.staked_amount = userMoonDogePosition.staked_amount.toNumber();
-    //     userMoonDogePosition.weighted_amount = userMoonDogePosition.weighted_amount.toNumber();
-    //     userMoonDogePosition.start_timestamp = userMoonDogePosition.start_timestamp.toNumber();
-    //     userMoonDogePosition.lockup_end_timestamp = userMoonDogePosition.lockup_end_timestamp.toNumber();
-    //     userMoonDogePosition.lockup_duration = userMoonDogePosition.lockup_duration.toNumber();
-    //     userMoonDogePosition.electricity_per_day = userMoonDogePosition.electricity_per_day.toNumber();
-    //     console.log(userMoonDogePosition);
+    // let userDogeBtcPositionPDA = "6nqEcbDjjYDssCHFqR5eSCLqeXiRJ8RgvLEiSZr1hw3G";
+    // const userDogeBtcPositionInfo = await connection.getAccountInfo( new PublicKey(userDogeBtcPositionPDA));
+    // const userDogeBtcPosition = moonEconomyCoder.decode('DogeBtcPosition', userDogeBtcPositionInfo.data);
+    //     userDogeBtcPosition.staked_amount = userDogeBtcPosition.staked_amount.toNumber();
+    //     userDogeBtcPosition.weighted_amount = userDogeBtcPosition.weighted_amount.toNumber();
+    //     userDogeBtcPosition.start_timestamp = userDogeBtcPosition.start_timestamp.toNumber();
+    //     userDogeBtcPosition.lockup_end_timestamp = userDogeBtcPosition.lockup_end_timestamp.toNumber();
+    //     userDogeBtcPosition.lockup_duration = userDogeBtcPosition.lockup_duration.toNumber();
+    //     userDogeBtcPosition.electricity_per_day = userDogeBtcPosition.electricity_per_day.toNumber();
+    //     console.log(userDogeBtcPosition);
     // // return;
 
     // // // ------------ 4. Unstake DOGE_BTC tokens ------------

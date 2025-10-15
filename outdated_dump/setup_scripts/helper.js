@@ -33,7 +33,7 @@ import path from 'path';
 
 // ----- [SEEDS] -----
 
-// PDAs which hold GlobalConfig / MoonDogeMining state
+// PDAs which hold GlobalConfig / DogeBtcMining state
 export const GLOBAL_CONFIG_SEED = "global-config";
 export const DOGE_BTC_MINING_SEED = "moon-doge-mining";
 
@@ -770,7 +770,7 @@ export async function depositMDOGE(
     
     // Create the deposit instruction
     const depositTx = await program.methods
-      .depositMoonDogeTokens(amount)
+      .depositDogeBtcTokens(amount)
       .accounts({
         depositor: wallet.publicKey,
         depositorTokenAccount: userTokenAccount,
@@ -2344,7 +2344,7 @@ export async function debugPDAs(program, networkConfig) {
     moondogeVault: comparePDAs(
       derivedMoondogeVaultPDA, 
       networkConfig.moonEconomy_mDogeVault_initialized?.moondogeVault || '', 
-      'MoonDoge Vault'
+      'DogeBtc Vault'
     ),
     liquidityVault: comparePDAs(
       derivedLiquidityVaultPDA, 
@@ -2354,7 +2354,7 @@ export async function debugPDAs(program, networkConfig) {
     mdogeSolVault: comparePDAs(
       derivedMdogeSolVaultPDA, 
       networkConfig.moonEconomy_mDogeVault_initialized?.mdogeSolVault || '', 
-      'MoonDoge SOL Vault'
+      'DogeBtc SOL Vault'
     ),
     liquiditySolVault: comparePDAs(
       derivedLiquiditySolVaultPDA, 
@@ -2389,9 +2389,9 @@ export async function debugPDAs(program, networkConfig) {
   // Additional debug info about seed strings
   console.log('\n\x1b[36m%s\x1b[0m', '🧪 Seed strings used for derivation:');
   console.log('\x1b[36m%s\x1b[0m', `  - Global Config: "${MOON_ECONOMY_GLOBAL_CONFIG_SEED}"`);
-  console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge Vault: "${MOON_ECONOMY_doge_btc_VAULT_SEED}"`);
+  console.log('\x1b[36m%s\x1b[0m', `  - DogeBtc Vault: "${MOON_ECONOMY_doge_btc_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Liquidity Vault: "${MOON_ECONOMY_LIQUIDITY_VAULT_SEED}"`);
-  console.log('\x1b[36m%s\x1b[0m', `  - MoonDoge SOL Vault: "${MOON_ECONOMY_dbtc_SOL_VAULT_SEED}"`);
+  console.log('\x1b[36m%s\x1b[0m', `  - DogeBtc SOL Vault: "${MOON_ECONOMY_dbtc_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Liquidity SOL Vault: "${MOON_ECONOMY_LP_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Game SOL Vault: "${MOON_ECONOMY_GAME_SOL_VAULT_SEED}"`);
   console.log('\x1b[36m%s\x1b[0m', `  - Dev Earnings Collector: "${MOON_ECONOMY_DEV_EARNINGS_SEED}"`);

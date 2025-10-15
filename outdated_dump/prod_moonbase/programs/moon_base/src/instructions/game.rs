@@ -1055,7 +1055,7 @@ pub struct PvPAttack<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     // Global config for tracking total SOL spent
     #[account(
@@ -1098,7 +1098,7 @@ pub struct PvPAttackSimple<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// CHECK: SOL treasury account
     #[account(mut)]

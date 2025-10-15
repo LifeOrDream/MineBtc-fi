@@ -14,14 +14,14 @@ pub enum NftLaunchpadError {
     // ========================================================================================
     // ================================= NFT ERRORS ========================================== 
     // ========================================================================================
-    #[msg("MoonDoge NFT not found or invalid")]
-    MoonDogeNotFound,
+    #[msg("DogeBtc NFT not found or invalid")]
+    DogeBtcNotFound,
 
     #[msg("Dragon Egg NFT not found or invalid")]
     DragonEggNotFound,
 
-    #[msg("MoonDoge collection is full - maximum supply reached")]
-    MaxMoonDogeSupplyReached,
+    #[msg("DogeBtc collection is full - maximum supply reached")]
+    MaxDogeBtcSupplyReached,
 
     #[msg("Dragon Egg collection is full - maximum supply reached")]
     MaxDragonEggSupplyReached,
@@ -32,19 +32,19 @@ pub enum NftLaunchpadError {
     // ========================================================================================
     // ============================== ATTACHMENT ERRORS ====================================== 
     // ========================================================================================
-    #[msg("MoonDoge is already attached to a moonbase")]
+    #[msg("DogeBtc is already attached to a moonbase")]
     DogeAlreadyAttached,
 
     #[msg("Dragon Egg is already incubated in a moonbase")]
     EggAlreadyIncubated,
 
-    #[msg("Moonbase already has a MoonDoge attached (max 1 per moonbase)")]
+    #[msg("Moonbase already has a DogeBtc attached (max 1 per moonbase)")]
     MoonbaseAlreadyHasDoge,
 
     #[msg("Moonbase has reached maximum incubated eggs limit")]
     MaxEggsReached,
 
-    #[msg("MoonDoge is not attached to this moonbase")]
+    #[msg("DogeBtc is not attached to this moonbase")]
     DogeNotAttached,
 
     #[msg("Dragon Egg is not incubated in this moonbase")]

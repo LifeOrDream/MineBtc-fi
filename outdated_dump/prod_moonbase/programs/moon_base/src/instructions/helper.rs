@@ -121,10 +121,10 @@ pub fn process_referral_payment<'info>(
     Ok((referral_fee, treasury_amount))
 }
 
-/// Update the mining state and distribute MoonDoge tokens
+/// Update the mining state and distribute DogeBtc tokens
 /// This function should be called whenever global hashpower changes
 pub fn update_mining_state(
-    doge_btc_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // Get the current slot
     let current_slot = Clock::get()?.slot;
@@ -164,7 +164,7 @@ pub fn update_mining_state(
 }
 
 /// Calculate the current reward rate based on dynamic distribution
-fn calculate_current_reward_rate(doge_btc_mining: &MoonDogeMining) -> u64 {
+fn calculate_current_reward_rate(doge_btc_mining: &DogeBtcMining) -> u64 {
     // If mining hasn't started, return 0
     if doge_btc_mining.mining_start_timestamp == 0 {
         return 0;
@@ -182,7 +182,7 @@ fn calculate_current_reward_rate(doge_btc_mining: &MoonDogeMining) -> u64 {
 /// This function should be called whenever a user's hashpower changes
 pub fn process_user_mining(
     user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // First update the global mining state to ensure it's current
     update_mining_state(doge_btc_mining)?;
@@ -233,10 +233,10 @@ pub fn process_user_mining(
     Ok(())
 }
 
-/// Transfer claimed MoonDoge tokens to the user (with optional loot rewards)
-pub fn claim_moondoge_tokens<'info>(
+/// Transfer claimed DogeBtc tokens to the user (with optional loot rewards)
+pub fn claim_dogebtc_tokens<'info>(
     user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut DogeBtcMining,
     token_program: &AccountInfo<'info>,
     token_vault: &AccountInfo<'info>,
     token_mint: &AccountInfo<'info>,
@@ -335,7 +335,7 @@ pub fn claim_moondoge_tokens<'info>(
     user_moonbase.moondoge_claim_index = current_slot;
     
     // Log the claim
-    msg!("Claimed {} MoonDoge tokens", claimable_amount);
+    msg!("Claimed {} DogeBtc tokens", claimable_amount);
     
     // Return the amount claimed
     Ok(claimable_amount)
@@ -1123,7 +1123,7 @@ fn try_roll_loot(
     user: &UserMoonBaseInstance, 
     loot: &mut LootRewards,
     level_stats: Option<&LevelStats>,
-    doge_btc_mining: &MoonDogeMining,
+    doge_btc_mining: &DogeBtcMining,
 ) -> Result<(u64, u64)> {
     use anchor_lang::solana_program::keccak;
     
@@ -1431,7 +1431,7 @@ pub fn add_xp_with_loot_transfers<'info>(
     xp_source: &str,
     loot_rewards: &mut LootRewards,
     level_stats: &mut LevelStats,
-    doge_btc_mining: &MoonDogeMining,
+    doge_btc_mining: &DogeBtcMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
     loot_dbtc_vault: &AccountInfo<'info>,
@@ -1580,8 +1580,8 @@ fn get_exclusivity_bonus(
 
 
 /// Get average DOGE_BTC price in SOL from the mining state (scaled by 1e9)
-/// Production-grade: reads real price from MoonDogeMining.avg_price_8h
-fn get_avg_price_in_sol(doge_btc_mining: &MoonDogeMining) -> Result<u64> {
+/// Production-grade: reads real price from DogeBtcMining.avg_price_8h
+fn get_avg_price_in_sol(doge_btc_mining: &DogeBtcMining) -> Result<u64> {
     // Use the real 8-hour average price from the dynamic distribution system
     if doge_btc_mining.avg_price_8h > 0 {
         Ok(doge_btc_mining.avg_price_8h)
@@ -2026,7 +2026,7 @@ pub fn check_special_effect(random_seed: &[u8], chance_bp: u16) -> bool {
 
 /// Update global hashpower when mining modules are damaged in PvP
 pub fn update_global_hashpower_for_pvp_damage(
-    mining_state: &mut MoonDogeMining,
+    mining_state: &mut DogeBtcMining,
     hashpower_change: i64, // Positive for increase, negative for decrease
 ) -> Result<()> {
     if hashpower_change >= 0 {

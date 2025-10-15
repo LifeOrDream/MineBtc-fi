@@ -3,7 +3,7 @@
 
 # Project Root
 [/]
-description = "DogeTech - A Solana-based mining game with MoonDoge token economy"
+description = "DogeTech - A Solana-based mining game with DogeBtc token economy"
 tags = ["solana", "moonDoge", "lunar-mining", "play-to-earn"]
 
 # Game Logic - Solana Programs
@@ -24,7 +24,7 @@ tags = ["token-economy", "marketplace", "mdoge-token"]
 
 # Deployment Scripts
 [/deploy/]
-description = "Scripts for deploying MoonDoge token and initializing the economy"
+description = "Scripts for deploying DogeBtc token and initializing the economy"
 language = "javascript"
 
 [/deploy/config/]
@@ -133,7 +133,7 @@ description = "Frontend hooks interact with the Moon Facility program"
 name = "deploys"
 from = "/deploy/1_mint_moondoge.js"
 to = "/gameLogic/moonEconomy/"
-description = "Deployment script creates the MoonDoge token used by the economy"
+description = "Deployment script creates the DogeBtc token used by the economy"
 
 [[relationship]]
 name = "boosts"
@@ -150,5 +150,5 @@ description = "Modules provide space and power for mining gear"
 [[relationship]]
 name = "generates"
 from = "Gear"
-to = "MoonDoge"
-description = "Mining gear generates MoonDoge tokens based on hashpower"
+to = "DogeBtc"
+description = "Mining gear generates DogeBtc tokens based on hashpower"

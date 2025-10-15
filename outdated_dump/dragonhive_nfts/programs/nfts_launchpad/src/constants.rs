@@ -7,13 +7,13 @@
 /// Global configuration PDA seed
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 
-/// MoonDoge collection PDA seed
+/// DogeBtc collection PDA seed
 pub const MOONDOGE_COLLECTION_SEED: &[u8] = b"moondoge-collection";
 
 /// Dragon Egg collection PDA seed
 pub const DRAGON_EGG_COLLECTION_SEED: &[u8] = b"dragon-egg-collection";
 
-/// MoonDoge metadata PDA seed
+/// DogeBtc metadata PDA seed
 pub const MOONDOGE_METADATA_SEED: &[u8] = b"moondoge-metadata";
 
 /// Dragon Egg metadata PDA seed
@@ -32,7 +32,7 @@ pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
 // ================================ NFT SUPPLY CONSTANTS =================================
 // ========================================================================================
 
-/// Maximum MoonDoge NFT supply (limited)
+/// Maximum DogeBtc NFT supply (limited)
 pub const MAX_MOONDOGE_SUPPLY: u64 = 10_000;
 
 /// Initial Dragon Egg NFT supply (can be expanded)
@@ -47,8 +47,8 @@ pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 
 /// Moonbase creation pricing tiers
 pub const MOONBASE_BASIC_PRICE: u64 = 250_000_000;     // 0.25 SOL (no NFT)
-pub const MOONBASE_DOGE_PRICE: u64 = 500_000_000;      // 0.5 SOL (+ MoonDoge)
-pub const MOONBASE_FULL_PRICE: u64 = 1_000_000_000;    // 1.0 SOL (MoonDoge + Dragon Egg)
+pub const MOONBASE_DOGE_PRICE: u64 = 500_000_000;      // 0.5 SOL (+ DogeBtc)
+pub const MOONBASE_FULL_PRICE: u64 = 1_000_000_000;    // 1.0 SOL (DogeBtc + Dragon Egg)
 
 /// Individual NFT prices
 pub const MOONDOGE_PRICE: u64 = 500_000_000;           // 0.5 SOL

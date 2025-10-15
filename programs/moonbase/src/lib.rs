@@ -257,31 +257,29 @@ pub mod moonbase {
         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
     }
 
-//     /// Purchase a moonbase expansion (user function)
-//     pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
-//         user::expand_moonbase_internal(ctx, expansion_id)
-//     }
+    /// Purchase a moonbase expansion (user function)
+    pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
+        user::expand_moonbase_internal(ctx, expansion_id)
+    }
 
-//     /// Claim referral rewards
-//     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-//         user::claim_referral_rewards_internal(ctx)
-//     }
+    /// Claim referral rewards
+    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+        user::claim_referral_rewards_internal(ctx)
+    }
 
-
-
-//     pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
-//         user::update_user_electricity_internal(ctx, to_increase, amount)
-//     }
+    pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
+        user::update_user_electricity_internal(ctx, to_increase, amount)
+    }
 
 
-//     // ----------------------------------------------------------------------------------------
-//     // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
-//     // ----------------------------------------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+    // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
+    // ----------------------------------------------------------------------------------------
 
-//     /// Buy a module without installing it
-//     pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
-//         user::buy_module(ctx, config_id)
-//     }
+    // /// Buy a module without installing it
+    // pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
+    //     user::buy_module(ctx, config_id)
+    // }
     
 //     /// Install/deploy an existing undeployed module
 //     pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
@@ -319,8 +317,8 @@ pub mod moonbase {
 //     // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
 //     // ----------------------------------------------------------------------------------------
     
-//     /// Claim MoonDoge tokens based on user's hashpower contribution
-//     pub fn claim_dbtc_tokens(ctx: Context<ClaimMoonDoge>) -> Result<()> {
+//     /// Claim DogeBtc tokens based on user's hashpower contribution
+//     pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>) -> Result<()> {
 //         user::claim_dbtc_tokens_internal(ctx)
 //     }
 

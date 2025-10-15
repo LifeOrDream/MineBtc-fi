@@ -4,7 +4,7 @@
     "name": "moon_base",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Moon Base Facility Management Program for MoonDoge Game"
+    "description": "Moon Base Facility Management Program for DogeBtc Game"
   },
   "instructions": [
     {
@@ -974,7 +974,7 @@
     {
       "name": "claim_dbtc_tokens",
       "docs": [
-        "Claim MoonDoge tokens based on user's hashpower contribution"
+        "Claim DogeBtc tokens based on user's hashpower contribution"
       ],
       "discriminator": [
         13,
@@ -5161,7 +5161,7 @@
       ]
     },
     {
-      "name": "MoonDogeMining",
+      "name": "DogeBtcMining",
       "discriminator": [
         185,
         98,
@@ -5683,7 +5683,7 @@
       ]
     },
     {
-      "name": "MoonDogeTokensClaimed",
+      "name": "DogeBtcTokensClaimed",
       "discriminator": [
         77,
         66,
@@ -6078,7 +6078,7 @@
     },
     {
       "code": 6016,
-      "name": "MoonDogeMiningSAccountMissing",
+      "name": "DogeBtcMiningSAccountMissing",
       "msg": "Moon doge mining account not provided"
     },
     {
@@ -8237,7 +8237,7 @@
       }
     },
     {
-      "name": "MoonDogeMining",
+      "name": "DogeBtcMining",
       "docs": [
         "Moon Doge Mining status and parameters"
       ],
@@ -8261,7 +8261,7 @@
           {
             "name": "doge_btc_per_slot",
             "docs": [
-              "MoonDoge mined per slot (original base rate)"
+              "DogeBtc mined per slot (original base rate)"
             ],
             "type": "u64"
           },
@@ -8384,7 +8384,7 @@
       }
     },
     {
-      "name": "MoonDogeTokensClaimed",
+      "name": "DogeBtcTokensClaimed",
       "type": {
         "kind": "struct",
         "fields": [

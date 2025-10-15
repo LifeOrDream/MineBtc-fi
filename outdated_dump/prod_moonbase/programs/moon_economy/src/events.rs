@@ -74,7 +74,7 @@ pub struct SolFeesWithdrawnEvent {
 // ------------------------------
 
 #[event]
-pub struct MoonDogeStaked {
+pub struct DogeBtcStaked {
     pub owner: Pubkey,
     pub position_index: u8,
     pub amount: u64,
@@ -85,7 +85,7 @@ pub struct MoonDogeStaked {
 }
 
 #[event]
-pub struct MoonDogeStakedEvent {
+pub struct DogeBtcStakedEvent {
     pub owner: Pubkey,
     pub amount: u64,
     pub weighted_amount: u64,
@@ -95,7 +95,7 @@ pub struct MoonDogeStakedEvent {
 }
 
 #[event]
-pub struct MoonDogeUnstaked {
+pub struct DogeBtcUnstaked {
     pub owner: Pubkey,
     pub position_index: u8,
     pub amount: u64,
@@ -104,7 +104,7 @@ pub struct MoonDogeUnstaked {
 }
 
 #[event]
-pub struct MoonDogeUnstakedEvent {
+pub struct DogeBtcUnstakedEvent {
     pub owner: Pubkey,
     pub amount: u64,
     pub weighted_amount: u64,
@@ -130,7 +130,7 @@ pub struct GlobalPositionUpdated {
 }
 
 #[event]
-pub struct MoonDogeVaultSolAddedEvent {
+pub struct DogeBtcVaultSolAddedEvent {
     pub amount: u64,
     pub new_accumulated_sol_per_point: u64,
 }

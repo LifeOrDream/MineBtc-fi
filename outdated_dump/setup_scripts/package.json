@@ -2,7 +2,7 @@
     "name": "moondoge-scripts",
     "version": "1.0.0",
     "type": "module",
-    "description": "Scripts for deploying and initializing MoonDoge",
+    "description": "Scripts for deploying and initializing DogeBtc",
     "main": "init.js",
     "scripts": {
         "initialize": "node init.js"

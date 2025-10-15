@@ -1,4 +1,4 @@
-# MoonDoge PvP Game Design
+# DogeBtc PvP Game Design
 
 > **Version 0.1 – Draft for internal review**  
 > Last updated: 2025-06-19
@@ -7,7 +7,7 @@
 
 ## 1  Vision
 
-MoonDoge PvP transforms passive moon-base building into a **high-stakes, casino-flavoured battle arena**.  Players wager SOL, attack opponents' economic modules, and siphon value (XP, DOGE_BTC, hash-power) while fighting for a **winner-takes-most** prize pot.  Damage persists until repaired, creating long-term rivalry loops.
+DogeBtc PvP transforms passive moon-base building into a **high-stakes, casino-flavoured battle arena**.  Players wager SOL, attack opponents' economic modules, and siphon value (XP, DOGE_BTC, hash-power) while fighting for a **winner-takes-most** prize pot.  Damage persists until repaired, creating long-term rivalry loops.
 
 _Target player:_ **Solana degen / gambler** who enjoys real economic risk and big dopamine spikes.
 

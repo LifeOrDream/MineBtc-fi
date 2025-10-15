@@ -76,7 +76,7 @@ fn decay_factor(level: u8) -> u64 {
 
 // ----- [SEEDS] -----
 
-// PDAs which hold GlobalConfig / MoonDogeMining state
+// PDAs which hold GlobalConfig / DogeBtcMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 pub const DOGE_BTC_MINING_SEED: &[u8] = b"moon-doge-mining";
 
@@ -264,12 +264,12 @@ impl ProtocolOwnedLiquidity {
 
 /// Moon Doge Mining status and parameters
 #[account]
-pub struct MoonDogeMining {
+pub struct DogeBtcMining {
     /// Token vault that holds all pre-minted tokens
     pub dbtc_token_vault: Pubkey,         
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,        
-    /// MoonDoge mined per slot (original base rate)
+    /// DogeBtc mined per slot (original base rate)
     pub doge_btc_per_slot: u64,
     /// Last slot when moondoge were mined
     pub last_slot: u64,
@@ -305,7 +305,7 @@ pub struct MoonDogeMining {
     pub pol_stats: ProtocolOwnedLiquidity,
 }
 
-impl MoonDogeMining {
+impl DogeBtcMining {
     // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + avg_price_8h + prev_avg_price_8h + sol_for_pol + slots_for_swap + pol_stats
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 8-hour rolling average

@@ -1,7 +1,7 @@
 [package]
 name = "moon_economy"
 version = "0.1.0"
-description = "Moon Economy which regulates electricity generation for MoonDoge Game"
+description = "Moon Economy which regulates electricity generation for DogeBtc Game"
 edition = "2021"
 
 [lib]

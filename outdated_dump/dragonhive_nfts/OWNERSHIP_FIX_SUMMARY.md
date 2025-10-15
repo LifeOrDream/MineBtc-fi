@@ -3,11 +3,11 @@
 ## ✅ Problem Solved
 
 ### The Issue
-Previously, `MoonDogeMetadata` and `DragonEggMetadata` stored an `owner` field that would become **stale** when NFTs were traded on marketplaces:
+Previously, `DogeBtcMetadata` and `DragonEggMetadata` stored an `owner` field that would become **stale** when NFTs were traded on marketplaces:
 
 ```rust
 // ❌ OLD (BROKEN):
-pub struct MoonDogeMetadata {
+pub struct DogeBtcMetadata {
     pub mint: Pubkey,
     pub owner: Pubkey,  // ❌ STALE after marketplace trade!
     pub money: u64,
@@ -16,7 +16,7 @@ pub struct MoonDogeMetadata {
 
 // When Alice sells to Bob on Magic Eden:
 // - Metaplex Core NFT owner = Bob ✅
-// - MoonDogeMetadata.owner = Alice ❌ (STALE!)
+// - DogeBtcMetadata.owner = Alice ❌ (STALE!)
 // - Bob owns NFT but can't use it!
 ```
 
@@ -25,7 +25,7 @@ pub struct MoonDogeMetadata {
 
 ```rust
 // ✅ NEW (FIXED):
-pub struct MoonDogeMetadata {
+pub struct DogeBtcMetadata {
     pub mint: Pubkey,
     // NO owner field - derive from Metaplex Core!
     pub money: u64,
@@ -42,16 +42,16 @@ verify_nft_ownership(&moondoge_asset, &expected_owner)?;
 
 ### 1. **State Structure Updates** (`state.rs`)
 
-#### MoonDogeMetadata
+#### DogeBtcMetadata
 ```diff
-pub struct MoonDogeMetadata {
+pub struct DogeBtcMetadata {
     pub mint: Pubkey,
 -   pub owner: Pubkey,  // ❌ REMOVED
     pub money: u64,
     // ...
 }
 
-impl MoonDogeMetadata {
+impl DogeBtcMetadata {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
 -       32 +    // owner (REMOVED)
@@ -124,7 +124,7 @@ doge_metadata.money = BASE_DOGE_MONEY;
 #### Updated All Ownership Checks
 ```diff
 // attach_moondoge_handler
-pub fn attach_moondoge_handler(ctx: Context<AttachMoonDoge>) -> Result<()> {
+pub fn attach_moondoge_handler(ctx: Context<AttachDogeBtc>) -> Result<()> {
 -   require!(
 -       doge_metadata.owner == ctx.accounts.user.key(),
 -       NftLaunchpadError::NftNotOwnedByUser
@@ -147,7 +147,7 @@ Added Metaplex Core asset account to all contexts:
 
 ```diff
 #[derive(Accounts)]
-pub struct AttachMoonDoge<'info> {
+pub struct AttachDogeBtc<'info> {
 +   /// Metaplex Core asset (source of truth for ownership)
 +   /// CHECK: Verified via verify_nft_ownership helper
 +   pub moondoge_asset: UncheckedAccount<'info>,
@@ -158,14 +158,14 @@ pub struct AttachMoonDoge<'info> {
         bump = moondoge_metadata.bump,
 +       constraint = moondoge_metadata.mint == moondoge_asset.key() @ NftLaunchpadError::InvalidAccount
     )]
-    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    pub moondoge_metadata: Account<'info, DogeBtcMetadata>,
     // ...
 }
 ```
 
 Updated contexts:
-- ✅ `AttachMoonDoge`
-- ✅ `DetachMoonDoge`
+- ✅ `AttachDogeBtc`
+- ✅ `DetachDogeBtc`
 - ✅ `IncubateDragonEgg`
 - ✅ `RemoveDragonEgg`
 
@@ -175,7 +175,7 @@ Removed `owner` field from events:
 
 ```diff
 #[event]
-pub struct MoonDogeMinted {
+pub struct DogeBtcMinted {
     pub mint: Pubkey,
 -   pub owner: Pubkey,  // ❌ REMOVED
     pub name: String,
@@ -184,7 +184,7 @@ pub struct MoonDogeMinted {
 }
 
 #[event]
-pub struct MoonDogeMoneyUpdated {
+pub struct DogeBtcMoneyUpdated {
     pub doge_mint: Pubkey,
 -   pub owner: Pubkey,  // ❌ REMOVED
     pub old_money: u64,
@@ -193,8 +193,8 @@ pub struct MoonDogeMoneyUpdated {
 ```
 
 Updated events:
-- ✅ `MoonDogeMinted`
-- ✅ `MoonDogeMoneyUpdated`
+- ✅ `DogeBtcMinted`
+- ✅ `DogeBtcMoneyUpdated`
 - ✅ `DragonEggMinted`
 - ✅ `DragonEggPowerUpdated`
 
@@ -221,7 +221,7 @@ Compare with expected owner (user)
 ❌ Error if mismatch
 ```
 
-### Example: Attach MoonDoge
+### Example: Attach DogeBtc
 
 ```rust
 // 1. User calls with Metaplex Core asset account

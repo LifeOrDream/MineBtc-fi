@@ -218,7 +218,7 @@ async function initializeMoonEconomyProgramLocal(moonEconomyProgram) {
     const devAddress = walletKeypair.publicKey;
     console.log('\x1b[36m%s\x1b[0m', '📝 Configuration:');
     console.log('\x1b[36m%s\x1b[0m', `   Dev Address: ${devAddress.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `   MoonDoge Allocation: ${MOONDOGE_ALLOCATION}%`);
+    console.log('\x1b[36m%s\x1b[0m', `   DogeBtc Allocation: ${MOONDOGE_ALLOCATION}%`);
     console.log('\x1b[36m%s\x1b[0m', `   Liquidity Allocation: ${LIQUIDITY_ALLOCATION}%`);
     console.log('\x1b[36m%s\x1b[0m', `   Lockup Days: ${MIN_LOCKUP_DAYS}-${MAX_LOCKUP_DAYS}`);
     console.log('\x1b[36m%s\x1b[0m', `   Multipliers: ${BASE_MULTIPLIER}-${MAX_MULTIPLIER}`);
@@ -346,7 +346,7 @@ async function claimMoonbaseSol(moonEconomyProgram) {
         // Verify all required addresses exist
         const requiredAddresses = {
             'Moon Economy Global Config': deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac,
-            'MoonDoge Vault': deploymentFile.moonEconomy_mDogeVault_initialized?.moondogeVault,
+            'DogeBtc Vault': deploymentFile.moonEconomy_mDogeVault_initialized?.moondogeVault,
             'Liquidity Vault': deploymentFile.moonEconomy_liquidityVault_initialized?.liquidityVault,
             'MoonBase Global Config': deploymentFile.moonbase_program_initialized?.globalConfig_address,
             'MoonBase Treasury': deploymentFile.moonbase_program_initialized?.solTreasury_address,
@@ -468,7 +468,7 @@ async function queryEconomyConfig(moonEconomyProgram) {
         console.log('\x1b[36m%s\x1b[0m', `   Authority: ${displayConfig.authority}`);
         console.log('\x1b[36m%s\x1b[0m', `   Dev Address: ${displayConfig.dev_address}`);
         console.log('\x1b[36m%s\x1b[0m', `   Fee Collector: ${displayConfig.fee_collector}`);
-        console.log('\x1b[36m%s\x1b[0m', `   MoonDoge Allocation: ${displayConfig.moondoge_allocation}%`);
+        console.log('\x1b[36m%s\x1b[0m', `   DogeBtc Allocation: ${displayConfig.moondoge_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Liquidity Allocation: ${displayConfig.liquidity_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Game Allocation: ${displayConfig.game_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Lockup Days: ${displayConfig.min_lockup_days}-${displayConfig.max_lockup_days}`);

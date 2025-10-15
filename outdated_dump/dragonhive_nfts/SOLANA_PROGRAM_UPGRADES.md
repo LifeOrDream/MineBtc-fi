@@ -53,14 +53,14 @@ anchor upgrade target/deploy/nfts_launchpad.so \
 ```rust
 // OLD VERSION - v1.0
 pub mod nfts_launchpad {
-    pub fn purchase_moondoge(ctx: Context<PurchaseMoonDoge>) -> Result<()> { ... }
+    pub fn purchase_moondoge(ctx: Context<PurchaseDogeBtc>) -> Result<()> { ... }
     pub fn purchase_dragon_egg(ctx: Context<PurchaseDragonEgg>) -> Result<()> { ... }
 }
 
 // NEW VERSION - v2.0 (ADD breeding/evolution)
 pub mod nfts_launchpad {
     // Old functions still work
-    pub fn purchase_moondoge(ctx: Context<PurchaseMoonDoge>) -> Result<()> { ... }
+    pub fn purchase_moondoge(ctx: Context<PurchaseDogeBtc>) -> Result<()> { ... }
     pub fn purchase_dragon_egg(ctx: Context<PurchaseDragonEgg>) -> Result<()> { ... }
     
     // NEW: Add breeding functionality
@@ -317,13 +317,13 @@ impl DragonBreedingState {
 
 ```rust
 // Your NFT Launchpad v1.0
-pub fn purchase_moondoge(ctx: Context<PurchaseMoonDoge>) -> Result<()> { ... }
+pub fn purchase_moondoge(ctx: Context<PurchaseDogeBtc>) -> Result<()> { ... }
 
 // Moonbase program calls it:
 nfts_launchpad::cpi::purchase_moondoge(cpi_ctx)?;
 
 // Your NFT Launchpad v2.0 - ADD new function (non-breaking)
-pub fn purchase_moondoge(ctx: Context<PurchaseMoonDoge>) -> Result<()> { ... }
+pub fn purchase_moondoge(ctx: Context<PurchaseDogeBtc>) -> Result<()> { ... }
 pub fn breed_dragons(ctx: Context<BreedDragons>) -> Result<()> { ... }  // NEW
 
 // ✅ Moonbase program still works! No upgrade needed.
@@ -333,11 +333,11 @@ pub fn breed_dragons(ctx: Context<BreedDragons>) -> Result<()> { ... }  // NEW
 
 ```rust
 // NFT Launchpad v1.0
-pub fn purchase_moondoge(ctx: Context<PurchaseMoonDoge>) -> Result<()> { ... }
+pub fn purchase_moondoge(ctx: Context<PurchaseDogeBtc>) -> Result<()> { ... }
 
 // NFT Launchpad v2.0 - CHANGE signature (breaking!)
 pub fn purchase_moondoge(
-    ctx: Context<PurchaseMoonDoge>,
+    ctx: Context<PurchaseDogeBtc>,
     new_required_param: u64,  // ❌ Breaking change!
 ) -> Result<()> { ... }
 
@@ -363,8 +363,8 @@ pub struct GlobalConfig {
 ### 2. Version Your Instructions
 ```rust
 // Keep old versions for backward compatibility
-pub fn purchase_moondoge_v1(ctx: Context<PurchaseMoonDogeV1>) -> Result<()> { ... }
-pub fn purchase_moondoge_v2(ctx: Context<PurchaseMoonDogeV2>, extra_param: u64) -> Result<()> { ... }
+pub fn purchase_moondoge_v1(ctx: Context<PurchaseDogeBtcV1>) -> Result<()> { ... }
+pub fn purchase_moondoge_v2(ctx: Context<PurchaseDogeBtcV2>, extra_param: u64) -> Result<()> { ... }
 ```
 
 ### 3. Use Migration Instructions

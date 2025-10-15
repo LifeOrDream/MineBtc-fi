@@ -7,19 +7,19 @@ cargo update -p base64ct --precise 1.7.1
 
 
 
-# MoonDoge Facility - Solana Game
+# DogeBtc Facility - Solana Game
 
-A Solana-based mining game where players build moon bases, install modules, deploy mining gear, and earn MoonDoge tokens through gameplay.
+A Solana-based mining game where players build moon bases, install modules, deploy mining gear, and earn DogeBtc tokens through gameplay.
 
 ## Overview
 
-MoonDoge Facility is a play-to-earn blockchain game built on the Solana network. Players can:
+DogeBtc Facility is a play-to-earn blockchain game built on the Solana network. Players can:
 
 - Create personal moon bases
 - Install and upgrade modules (rooms)
 - Deploy mining gear to generate hashpower
 - Lock NFTs to boost mining capabilities
-- Earn MoonDoge tokens through mining operations
+- Earn DogeBtc tokens through mining operations
 - Participate in a referral system for additional rewards
 
 The game implements a dynamic mining economy with price-responsive distribution adjustments and Protocol Owned Liquidity (POL) mechanisms, creating a self-balancing tokenomics model.
@@ -43,7 +43,7 @@ The Solana program is organized into several components:
 
 - **Hashpower**: Determines mining rewards
 - **Electricity**: Limits how much gear can be deployed
-- **MoonDoge Tokens**: Earned through mining operations
+- **DogeBtc Tokens**: Earned through mining operations
 
 ### Player Factions
 

@@ -338,7 +338,7 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>) -> Re
  
 
 
-/// Update user's available electricity based on MoonDoge staking
+/// Update user's available electricity based on DogeBtc staking
 pub fn update_user_electricity_internal(ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
     msg!("⚡ Updating user electricity - Increase: {}, Amount: {}", to_increase, amount);
     let user_moonbase = &mut ctx.accounts.user_moonbase;
@@ -417,7 +417,7 @@ fn process_auto_daily_login_and_activity_xp<'info>(
     activity_source: &str,
     loot_rewards: &mut LootRewards,
     level_stats: &mut LevelStats,
-    doge_btc_mining: &MoonDogeMining,
+    doge_btc_mining: &DogeBtcMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
     loot_dbtc_vault: &AccountInfo<'info>,
@@ -1120,9 +1120,9 @@ pub fn upgrade_module_internal (
 // -------------- USER :: MINING FUNCTIONS ---------------------------------------------------
 // ------------------------------------------------------------------------------------------
 
-/// Claim MoonDoge tokens that the user has mined
+/// Claim DogeBtc tokens that the user has mined
 pub fn claim_dbtc_tokens_internal(
-    ctx: Context<ClaimMoonDoge>,
+    ctx: Context<ClaimDogeBtc>,
 ) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
@@ -1147,7 +1147,7 @@ pub fn claim_dbtc_tokens_internal(
     let mining_account_info = doge_btc_mining.to_account_info();
     
     // Claim tokens
-    let claimed_amount = helper::claim_moondoge_tokens(
+    let claimed_amount = helper::claim_dogebtc_tokens(
         user_moonbase,
         doge_btc_mining,
         &ctx.accounts.token_program.to_account_info(),
@@ -1169,12 +1169,12 @@ pub fn claim_dbtc_tokens_internal(
     )?;
 
     // Emit event
-    emit!(MoonDogeTokensClaimed {
+    emit!(DogeBtcTokensClaimed {
         owner: user.key(),
         amount: claimed_amount,
     });
 
-    msg!("User {} claimed {} MoonDoge tokens", user.key(), claimed_amount);
+    msg!("User {} claimed {} DogeBtc tokens", user.key(), claimed_amount);
 
     Ok(())
 }
@@ -1627,7 +1627,7 @@ pub struct CreateModuleInstance<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(
         mut,
@@ -1698,7 +1698,7 @@ pub struct UpdateModuleInstance<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(
         mut,
@@ -1728,7 +1728,7 @@ pub struct UpdateModuleInstance<'info> {
  
 
 #[derive(Accounts)]
-pub struct ClaimMoonDoge<'info> {
+pub struct ClaimDogeBtc<'info> {
     #[account(
         mut,
         seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
@@ -1742,14 +1742,14 @@ pub struct ClaimMoonDoge<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(mut)]
-    /// CHECK: This is the token vault that holds all the MoonDoge tokens
+    /// CHECK: This is the token vault that holds all the DogeBtc tokens
     pub token_vault: UncheckedAccount<'info>,
     
     #[account(mut)]
-    /// CHECK: This is the user's token account that will receive MoonDoge tokens
+    /// CHECK: This is the user's token account that will receive DogeBtc tokens
     pub user_token_account: UncheckedAccount<'info>,
 
     // Mint created under Token-2022
@@ -1799,7 +1799,7 @@ pub struct UpdateUserElectricity<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub mining_state: Account<'info, MoonDogeMining>,
+    pub mining_state: Account<'info, DogeBtcMining>,
     
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1947,7 +1947,7 @@ pub struct ClaimResearchRewards<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// Main DOGE_BTC custody vault (where deposits go)
     #[account(
@@ -2131,7 +2131,7 @@ pub struct ClaimLevelUpRewards<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// Loot SOL vault for distributing SOL loot
     #[account(
@@ -2213,7 +2213,7 @@ pub struct RemoveModuleInstance<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -2354,7 +2354,7 @@ pub struct InstallModule<'info> {
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
-    pub doge_btc_mining: Account<'info, MoonDogeMining>,
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     #[account(mut)]
     pub user: Signer<'info>,

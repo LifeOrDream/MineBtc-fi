@@ -17,7 +17,7 @@ pub fn initialize_handler(
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
     
-    // Create MoonDoge collection with MPL Core
+    // Create DogeBtc collection with MPL Core
     crate::mpl_core_helpers::create_mpl_core_asset(
         &ctx.accounts.moondoge_collection,
         None, // No parent collection for collections
@@ -64,7 +64,7 @@ pub fn initialize_handler(
     });
     
     msg!("✅ NFT Launchpad initialized");
-    msg!("   MoonDoge Collection: {}", global_config.moondoge_collection);
+    msg!("   DogeBtc Collection: {}", global_config.moondoge_collection);
     msg!("   Dragon Egg Collection: {}", global_config.dragon_egg_collection);
     
     Ok(())
@@ -106,7 +106,7 @@ pub fn pause_program_handler(
     Ok(())
 }
 
-/// Add MoonDoge URIs to the pool (admin only)
+/// Add DogeBtc URIs to the pool (admin only)
 pub fn add_moondoge_uris_handler(
     ctx: Context<UpdateConfig>,
     uris: Vec<String>,
@@ -121,8 +121,8 @@ pub fn add_moondoge_uris_handler(
     // Add new URIs
     global_config.moondoge_uris.extend(uris.clone());
     
-    msg!("✅ Added {} MoonDoge URIs", uris.len());
-    msg!("   Total MoonDoge URIs: {}", global_config.moondoge_uris.len());
+    msg!("✅ Added {} DogeBtc URIs", uris.len());
+    msg!("   Total DogeBtc URIs: {}", global_config.moondoge_uris.len());
     
     Ok(())
 }
@@ -148,14 +148,14 @@ pub fn add_dragon_egg_uris_handler(
     Ok(())
 }
 
-/// Clear all MoonDoge URIs (admin only)
+/// Clear all DogeBtc URIs (admin only)
 pub fn clear_moondoge_uris_handler(
     ctx: Context<UpdateConfig>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
     global_config.moondoge_uris.clear();
     
-    msg!("✅ Cleared all MoonDoge URIs");
+    msg!("✅ Cleared all DogeBtc URIs");
     
     Ok(())
 }
@@ -187,7 +187,7 @@ pub struct Initialize<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
     
-    /// CHECK: MoonDoge collection (Metaplex Core asset)
+    /// CHECK: DogeBtc collection (Metaplex Core asset)
     #[account(mut)]
     pub moondoge_collection: UncheckedAccount<'info>,
     

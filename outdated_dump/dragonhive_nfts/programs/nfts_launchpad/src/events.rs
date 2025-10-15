@@ -23,7 +23,7 @@ pub struct ConfigUpdated {
 // ========================================================================================
 
 #[event]
-pub struct MoonDogeMinted {
+pub struct DogeBtcMinted {
     pub mint: Pubkey,
     pub name: String,
     pub uri: String,
@@ -31,14 +31,14 @@ pub struct MoonDogeMinted {
 }
 
 #[event]
-pub struct MoonDogeAttached {
+pub struct DogeBtcAttached {
     pub doge_mint: Pubkey,
     pub moonbase_owner: Pubkey,
     pub attached_at: i64,
 }
 
 #[event]
-pub struct MoonDogeDetached {
+pub struct DogeBtcDetached {
     pub doge_mint: Pubkey,
     pub moonbase_owner: Pubkey,
     pub detached_at: i64,
@@ -46,7 +46,7 @@ pub struct MoonDogeDetached {
 }
 
 #[event]
-pub struct MoonDogeMoneyUpdated {
+pub struct DogeBtcMoneyUpdated {
     pub doge_mint: Pubkey,
     pub old_money: u64,
     pub new_money: u64,

@@ -248,7 +248,7 @@ pub struct ConfigUpdated {
 }
  
 #[event]
-pub struct MoonDogeTokensClaimed {
+pub struct DogeBtcTokensClaimed {
     pub owner: Pubkey,
     pub amount: u64,
 }

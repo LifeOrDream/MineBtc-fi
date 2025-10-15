@@ -10,7 +10,7 @@
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Address: 0xABC123... (the NFT mint/asset itself)   │   │
 │  │  Owner: user_wallet (can trade, transfer, sell)     │   │
-│  │  Name: "MoonDoge #42"                                │   │
+│  │  Name: "DogeBtc #42"                                │   │
 │  │  URI: "https://arweave.net/moondoge/42"              │   │
 │  │  Collection: moondoge_collection                     │   │
 │  │  ─────────────────────────────────────────────────── │   │
@@ -51,7 +51,7 @@ pub struct BaseAssetV1 {
     pub key: Key,              // Account type discriminator
     pub owner: Pubkey,         // ← WHO OWNS THE NFT
     pub update_authority: UpdateAuthority,
-    pub name: String,          // "MoonDoge #42"
+    pub name: String,          // "DogeBtc #42"
     pub uri: String,           // "https://arweave.net/..."
     pub seq: Option<u64>,
     // ... more fields
@@ -70,7 +70,7 @@ This is **our custom data** that:
 
 **Account Structure:**
 ```rust
-pub struct MoonDogeMetadata {
+pub struct DogeBtcMetadata {
     pub mint: Pubkey,              // ← LINKS TO METAPLEX ASSET
     pub money: u64,                // Game attribute
     pub attached_moonbase: Option<Pubkey>,  // Game state
@@ -95,7 +95,7 @@ User's Wallet:
     └── URI: "https://..."
 
 Our Program:
-└── MoonDogeMetadata (PDA)
+└── DogeBtcMetadata (PDA)
     ├── Derived from: ["moondoge-metadata", 0xABC123...]
     ├── mint: 0xABC123...  ← SAME ADDRESS!
     └── money: 1000
@@ -213,7 +213,7 @@ msg!("✅ Created game metadata: {}", ctx.accounts.moondoge_metadata.key());
 ### Trading Flow (Why Our Fix Matters)
 
 ```
-1. Alice owns MoonDoge NFT
+1. Alice owns DogeBtc NFT
    • Metaplex asset owner = Alice ✅
    • Our metadata mint = asset_address ✅
    ↓
@@ -233,11 +233,11 @@ msg!("✅ Created game metadata: {}", ctx.accounts.moondoge_metadata.key());
 
 ## 📦 Account Relationships
 
-### When Attaching MoonDoge
+### When Attaching DogeBtc
 
 ```rust
 #[derive(Accounts)]
-pub struct AttachMoonDoge<'info> {
+pub struct AttachDogeBtc<'info> {
     /// The actual NFT (Metaplex Core)
     /// CHECK: We verify ownership from this account
     pub moondoge_asset: UncheckedAccount<'info>,
@@ -249,7 +249,7 @@ pub struct AttachMoonDoge<'info> {
         bump = moondoge_metadata.bump,
         constraint = moondoge_metadata.mint == moondoge_asset.key()  // ← LINK!
     )]
-    pub moondoge_metadata: Account<'info, MoonDogeMetadata>,
+    pub moondoge_metadata: Account<'info, DogeBtcMetadata>,
     
     // ...
 }
@@ -310,14 +310,14 @@ use mpl_core::{
 
 ```rust
 #[derive(Accounts)]
-pub struct PurchaseMoonDoge<'info> {
+pub struct PurchaseDogeBtc<'info> {
     // ... existing accounts ...
     
     /// CHECK: Metaplex Core program
     #[account(address = MPL_CORE_PROGRAM_ID)]
     pub mpl_core_program: UncheckedAccount<'info>,
     
-    /// CHECK: MoonDoge collection (Metaplex Core)
+    /// CHECK: DogeBtc collection (Metaplex Core)
     pub moondoge_collection: UncheckedAccount<'info>,
 }
 ```
@@ -366,7 +366,7 @@ See the production implementation example above.
 ## 🚀 When Fully Implemented
 
 ```
-User mints MoonDoge NFT
+User mints DogeBtc NFT
    ↓
 Metaplex Core creates NFT
    ↓

@@ -53,7 +53,7 @@ pub enum ErrorCode {
     ModuleConfigStoreMissing,
         
     #[msg("Moon doge mining account not provided")]
-    MoonDogeMiningSAccountMissing,
+    DogeBtcMiningSAccountMissing,
 
     #[msg("User moonbase already exists")]
     UserMoonBaseAlreadyExists,

@@ -63,7 +63,7 @@ pub mod moon_base {
             1,
         )?;
 
-        // Initialize MoonDogeMining
+        // Initialize DogeBtcMining
         doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
         doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
         doge_btc_mining.total_active_hashpower = 0;
@@ -436,8 +436,8 @@ pub mod moon_base {
     // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
     // ----------------------------------------------------------------------------------------
     
-    /// Claim MoonDoge tokens based on user's hashpower contribution
-    pub fn claim_dbtc_tokens(ctx: Context<ClaimMoonDoge>) -> Result<()> {
+    /// Claim DogeBtc tokens based on user's hashpower contribution
+    pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>) -> Result<()> {
         user::claim_dbtc_tokens_internal(ctx)
     }
 

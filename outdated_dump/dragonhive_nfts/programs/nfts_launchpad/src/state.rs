@@ -14,13 +14,13 @@ pub struct GlobalConfig {
     /// Treasury account for collecting SOL fees
     pub treasury: Pubkey,
     
-    /// MoonDoge collection mint (Metaplex Core)
+    /// DogeBtc collection mint (Metaplex Core)
     pub moondoge_collection: Pubkey,
     
     /// Dragon Egg collection mint (Metaplex Core)
     pub dragon_egg_collection: Pubkey,
     
-    /// Total MoonDoge NFTs minted
+    /// Total DogeBtc NFTs minted
     pub total_moondoges_minted: u64,
     
     /// Total Dragon Egg NFTs minted
@@ -29,7 +29,7 @@ pub struct GlobalConfig {
     /// Total SOL collected from sales
     pub total_sol_collected: u64,
     
-    /// Available MoonDoge URIs (randomly selected on mint)
+    /// Available DogeBtc URIs (randomly selected on mint)
     pub moondoge_uris: Vec<String>,
     
     /// Available Dragon Egg URIs (randomly selected on mint)
@@ -58,7 +58,7 @@ impl GlobalConfig {
         1 +   // config_bump
         1;    // treasury_bump
     
-    /// Select random MoonDoge URI based on slot and index
+    /// Select random DogeBtc URI based on slot and index
     pub fn get_random_moondoge_uri(&self, slot: u64, index: u64) -> Result<String> {
         require!(!self.moondoge_uris.is_empty(), crate::errors::NftLaunchpadError::InvalidMetadata);
         
@@ -80,10 +80,10 @@ impl GlobalConfig {
 // =============================== MOONDOGE NFT STATE ====================================
 // ========================================================================================
 
-/// MoonDoge NFT metadata (stored separately from Metaplex Core asset)
+/// DogeBtc NFT metadata (stored separately from Metaplex Core asset)
 /// NOTE: Owner is NOT stored here - always derive from Metaplex Core asset (source of truth)
 #[account]
-pub struct MoonDogeMetadata {
+pub struct DogeBtcMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
     
@@ -106,7 +106,7 @@ pub struct MoonDogeMetadata {
     pub bump: u8,
 }
 
-impl MoonDogeMetadata {
+impl DogeBtcMetadata {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
         8 +     // money
@@ -234,7 +234,7 @@ pub struct DogeAttachment {
     /// Moonbase owner
     pub moonbase_owner: Pubkey,
     
-    /// Attached MoonDoge mint
+    /// Attached DogeBtc mint
     pub doge_mint: Pubkey,
     
     /// Last update timestamp

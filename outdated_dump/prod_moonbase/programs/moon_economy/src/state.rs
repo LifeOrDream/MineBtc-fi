@@ -58,7 +58,7 @@ pub struct GlobalConfig {
     pub max_multiplier: u16,
 
     /// Distribution percentages (out of 100)
-    /// Percentage of SOL distributed to MoonDoge stakers
+    /// Percentage of SOL distributed to DogeBtc stakers
     pub moondoge_allocation: u8,
     /// Percentage of SOL distributed to LP token stakers
     pub liquidity_allocation: u8,
@@ -91,31 +91,31 @@ impl GlobalConfig {
 
 /// ------------ VAULTS :: MOON-DOGE and LP TOKEN VAULTs------------
 
-/// MoonDoge Vault configuration and state
+/// DogeBtc Vault configuration and state
 #[account]
-pub struct MoonDogeVault {
+pub struct DogeBtcVault {
     /// Authority that can update parameters
     pub authority: Pubkey,
-    /// PDA account that holds SOL to be distributed to MoonDoge stakers
+    /// PDA account that holds SOL to be distributed to DogeBtc stakers
     pub dbtc_sol_vault: Pubkey,
 
-    /// Token mint for MoonDoge
+    /// Token mint for DogeBtc
     pub dbtc_mint: Pubkey,
     /// Custodian that holds the staked tokens
     pub dbtc_custodian: Pubkey,
     
-    /// Electricity units per weighted MoonDoge units
+    /// Electricity units per weighted DogeBtc units
     pub electricity_per_weighted_moondoge: u64,
     
-    /// Total MoonDoge tokens locked in the vault
+    /// Total DogeBtc tokens locked in the vault
     pub dbtc_locked: u64,
-    /// Total weighted MoonDoge points (including time multipliers)
+    /// Total weighted DogeBtc points (including time multipliers)
     pub weighted_dbtc_locked: u64,
     
-    /// Accumulated SOL per weighted MoonDoge point (precision factor applied)
+    /// Accumulated SOL per weighted DogeBtc point (precision factor applied)
     pub accumulated_sol_per_point: u128,
     
-    /// Total SOL distributed to MoonDoge stakers
+    /// Total SOL distributed to DogeBtc stakers
     pub total_sol_distributed: u64,
     
     /// Emergency withdrawal tax percentage (0-100)
@@ -125,8 +125,8 @@ pub struct MoonDogeVault {
     pub bump: u8
 }
 
-// For MoonDogeVault
-impl MoonDogeVault {
+// For DogeBtcVault
+impl DogeBtcVault {
     pub const LEN: usize = 8 + // discriminator
         32 + // authority
         32 + // dbtc_sol_vault
@@ -192,13 +192,13 @@ impl LiquidityVault {
 
 /// ------------ USER POSITIONS :: MOON-DOGE and LP TOKEN POSITIONS------------
 
-/// User MoonDoge staking position
+/// User DogeBtc staking position
 #[account]
 pub struct UserMoonElectricity {
         /// User's wallet address
         pub owner: Pubkey,
         
-        /// Total MoonDoge staking stats
+        /// Total DogeBtc staking stats
         pub total_moondoge_staked: u64,
         pub total_weighted_moondoge: u64,
         pub active_moondoge_positions: u8,  // Max 7
@@ -212,9 +212,9 @@ pub struct UserMoonElectricity {
         pub electricity_earned: u64,
             
         /// SOL rewards tracking
-        pub moondoge_reward_debt: u128,     // Last checkpoint for MoonDoge rewards
+        pub moondoge_reward_debt: u128,     // Last checkpoint for DogeBtc rewards
         pub lp_reward_debt: u128,           // Last checkpoint for LP rewards
-        pub pending_moondoge_rewards: u64,  // Unclaimed MoonDoge staking rewards
+        pub pending_moondoge_rewards: u64,  // Unclaimed DogeBtc staking rewards
         pub pending_lp_rewards: u64,        // Unclaimed LP staking rewards
         pub total_sol_claimed: u64,     // Total SOL rewards claimed
         
@@ -246,9 +246,9 @@ pub struct UserMoonElectricity {
     }
     
     
-/// Individual MoonDoge staking position
+/// Individual DogeBtc staking position
 #[account]
-pub struct MoonDogePosition {
+pub struct DogeBtcPosition {
     pub position_index: u8,   
     
     /// Staking details
@@ -262,7 +262,7 @@ pub struct MoonDogePosition {
     pub bump: u8
 }
 
-impl MoonDogePosition {
+impl DogeBtcPosition {
     pub const LEN: usize = 8 +  // discriminator
         1 +  // position_index
         8 +  // staked_amount
@@ -292,5 +292,5 @@ pub struct LiquidityPosition {
 }
 
 impl LiquidityPosition {
-    pub const LEN: usize = MoonDogePosition::LEN;  // Same structure
+    pub const LEN: usize = DogeBtcPosition::LEN;  // Same structure
 }

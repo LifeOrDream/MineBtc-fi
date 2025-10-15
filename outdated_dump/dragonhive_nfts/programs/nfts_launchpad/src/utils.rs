@@ -158,9 +158,9 @@ pub fn get_pricing_tier_name(amount: u64) -> &'static str {
 // =============================== NFT UTILITIES =========================================
 // ========================================================================================
 
-/// Generate MoonDoge name
+/// Generate DogeBtc name
 pub fn generate_moondoge_name(index: u64) -> String {
-    format!("MoonDoge #{}", index)
+    format!("DogeBtc #{}", index)
 }
 
 /// Generate Dragon Egg name
@@ -168,7 +168,7 @@ pub fn generate_dragon_egg_name(index: u64) -> String {
     format!("Dragon Egg #{}", index)
 }
 
-/// Generate MoonDoge URI (placeholder - would be actual IPFS/Arweave URI)
+/// Generate DogeBtc URI (placeholder - would be actual IPFS/Arweave URI)
 pub fn generate_moondoge_uri(index: u64) -> String {
     format!("https://arweave.net/moondoge/{}", index)
 }

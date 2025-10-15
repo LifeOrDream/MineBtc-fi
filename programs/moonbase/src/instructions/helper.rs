@@ -218,61 +218,37 @@ pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)
     Ok((total_xp, user.daily_login_streak))
 }
 
-
-
-
-
-
-
-
-
-
-
-
+ 
 /// Calculate mining XP based on DOGE_BTC tokens mined
 /// Awards 15 XP per 1000 DOGE_BTC mined
 pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
-    let thousands_mined = tokens_mined / 1_000_000_000; // Assuming 9 decimals, so 1000 tokens = 1000 * 10^9
-    (thousands_mined as u32) * XP_MINING_1000_MDOGE
+    (tokens_mined * XP_MINING_1000_MDOGE) / (1_000_000 * 1000)
 }
 
 
 
 
-/// Update the mining state and distribute MoonDoge tokens
+/// Update the mining state and distribute DogeBtc tokens
 /// This function should be called whenever global hashpower changes
 pub fn update_mining_state(
-    doge_btc_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // Get the current slot
     let current_slot = Clock::get()?.slot;
     
     // If mining hasn't started yet, just update the last slot
-    if doge_btc_mining.mining_start_timestamp == 0 {
+    if doge_btc_mining.mining_start_timestamp == 0 ||  current_slot <= doge_btc_mining.last_slot  {
         doge_btc_mining.last_slot = current_slot;
         return Ok(());
     }
-    
-    // Calculate slots since last update
-    if current_slot <= doge_btc_mining.last_slot {
-        // No slots have passed, nothing to update
-        return Ok(());
-    }
-    
-    let slots_passed = current_slot - doge_btc_mining.last_slot;
-    
-    // Calculate current reward rate using dynamic distribution
-    let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);
-    
+        
     // Calculate new tokens mined in this period
+    let slots_passed = current_slot - doge_btc_mining.last_slot;
+    let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);    
     let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
     
     // Update total tokens mined
-    doge_btc_mining.total_tokens_mined = doge_btc_mining.total_tokens_mined
-        .checked_add(new_tokens_mined)
-        .unwrap_or(doge_btc_mining.total_tokens_mined);
-    
-    // Update last processed slot
+    doge_btc_mining.total_tokens_mined = doge_btc_mining.total_tokens_mined.checked_add(new_tokens_mined).unwrap_or(doge_btc_mining.total_tokens_mined);
     doge_btc_mining.last_slot = current_slot;
     
     msg!("Mining state updated: {} new tokens mined, total: {}", 
@@ -280,6 +256,28 @@ pub fn update_mining_state(
     
     Ok(())
 }
+
+
+/// Calculate the current reward rate based on dynamic distribution
+fn calculate_current_reward_rate(doge_btc_mining: &DogeBtcMining) -> u64 {
+    if doge_btc_mining.current_dist_rate > 0 {
+        doge_btc_mining.current_dist_rate
+    } else {
+        doge_btc_mining.doge_btc_per_slot
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // ========== XP AND LEVEL SYSTEM HELPERS ========== //
@@ -315,20 +313,6 @@ pub fn integer_sqrt(n: u64) -> u32 {
     result
 }
 
-/// Calculate the current reward rate based on dynamic distribution
-fn calculate_current_reward_rate(doge_btc_mining: &MoonDogeMining) -> u64 {
-    // If mining hasn't started, return 0
-    if doge_btc_mining.mining_start_timestamp == 0 {
-        return 0;
-    }
-    
-    // Use the current dynamic distribution rate if available, otherwise fall back to original rate
-    if doge_btc_mining.current_dist_rate > 0 {
-        doge_btc_mining.current_dist_rate
-    } else {
-        doge_btc_mining.doge_btc_per_slot
-    }
-}
 
 
 
@@ -420,7 +404,7 @@ pub fn add_xp_simple(user_moonbase: &mut UserMoonBaseInstance, xp_amount: u32, s
 /// This function should be called whenever a user's hashpower changes
 pub fn process_user_mining(
     user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // First update the global mining state to ensure it's current
     update_mining_state(doge_btc_mining)?;
@@ -451,6 +435,7 @@ pub fn process_user_mining(
     // Calculate tokens mined in this period
     let slots = slots_since_last_claim as u128;
     let rate = calculate_current_reward_rate(doge_btc_mining) as u128;
+    
     let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
         if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
             total_rewards / precision
@@ -471,10 +456,10 @@ pub fn process_user_mining(
     Ok(())
 }
 
-/// Transfer claimed MoonDoge tokens to the user (with optional loot rewards)
-pub fn claim_moondoge_tokens<'info>(
+/// Transfer claimed DogeBtc tokens to the user (with optional loot rewards)
+pub fn claim_dogebtc_tokens<'info>(
     user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut MoonDogeMining,
+    doge_btc_mining: &mut DogeBtcMining,
     token_program: &AccountInfo<'info>,
     token_vault: &AccountInfo<'info>,
     token_mint: &AccountInfo<'info>,
@@ -573,7 +558,7 @@ pub fn claim_moondoge_tokens<'info>(
     user_moonbase.moondoge_claim_index = current_slot;
     
     // Log the claim
-    msg!("Claimed {} MoonDoge tokens", claimable_amount);
+    msg!("Claimed {} DogeBtc tokens", claimable_amount);
     
     // Return the amount claimed
     Ok(claimable_amount)
@@ -994,7 +979,7 @@ pub fn add_xp_with_loot_transfers<'info>(
     xp_source: &str,
     loot_rewards: &mut LootRewards,
     level_stats: &mut LevelStats,
-    doge_btc_mining: &MoonDogeMining,
+    doge_btc_mining: &DogeBtcMining,
     // Transfer-related accounts (required for loot transfers)
     loot_sol_vault: &AccountInfo<'info>,
     loot_dbtc_vault: &AccountInfo<'info>,
@@ -1283,7 +1268,7 @@ fn try_roll_loot(
     user: &UserMoonBaseInstance, 
     loot: &mut LootRewards,
     level_stats: Option<&LevelStats>,
-    doge_btc_mining: &MoonDogeMining,
+    doge_btc_mining: &DogeBtcMining,
 ) -> Result<(u64, u64)> {
     use anchor_lang::solana_program::keccak;
     
@@ -1577,8 +1562,8 @@ fn get_exclusivity_bonus(
 
 
 /// Get average DOGE_BTC price in SOL from the mining state (scaled by 1e9)
-/// Production-grade: reads real price from MoonDogeMining.avg_price_8h
-fn get_avg_price_in_sol(doge_btc_mining: &MoonDogeMining) -> Result<u64> {
+/// Production-grade: reads real price from DogeBtcMining.avg_price_8h
+fn get_avg_price_in_sol(doge_btc_mining: &DogeBtcMining) -> Result<u64> {
     // Use the real 8-hour average price from the dynamic distribution system
     if doge_btc_mining.avg_price_8h > 0 {
         Ok(doge_btc_mining.avg_price_8h)

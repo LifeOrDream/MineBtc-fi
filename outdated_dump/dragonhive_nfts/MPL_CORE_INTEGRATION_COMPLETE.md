@@ -52,7 +52,7 @@ This module provides reusable functions for Metaplex Core operations:
 
 The `initialize_handler` creates two Metaplex Core collection assets:
 
-1. **MoonDoge Collection**
+1. **DogeBtc Collection**
    - Created with provided name and URI
    - Update authority: Program authority
    - Stored in `GlobalConfig.moondoge_collection`
@@ -69,8 +69,8 @@ The `initialize_handler` creates two Metaplex Core collection assets:
 Three minting paths, all using `create_mpl_core_asset()`:
 
 1. **`purchase_moondoge_handler`**
-   - Creates MoonDoge NFT with MPL Core
-   - Links to MoonDoge collection
+   - Creates DogeBtc NFT with MPL Core
+   - Links to DogeBtc collection
    - Owner: User (purchaser)
    - Creates custom metadata PDA for game attributes
 
@@ -82,7 +82,7 @@ Three minting paths, all using `create_mpl_core_asset()`:
    - Creates custom metadata PDA for game attributes
 
 3. **`mint_nfts_for_moonbase_handler`**
-   - Conditionally mints MoonDoge and/or Dragon Egg based on pricing tier
+   - Conditionally mints DogeBtc and/or Dragon Egg based on pricing tier
    - Same flow as individual purchases
    - Called by moonbase program during base creation
 
@@ -102,7 +102,7 @@ Each NFT is a Metaplex Core `BaseAssetV1` account containing:
 
 Separate PDA accounts store game-specific data:
 
-**`MoonDogeMetadata`**
+**`DogeBtcMetadata`**
 - `mint`: Pubkey (links to MPL Core asset)
 - `money`: u64 (game currency)
 - `attached_moonbase`: Option<Pubkey>
@@ -159,7 +159,7 @@ All minting and ownership-checking contexts include:
 /// CHECK: Metaplex Core program
 pub mpl_core_program: UncheckedAccount<'info>,
 
-/// CHECK: MoonDoge/Dragon Egg collection
+/// CHECK: DogeBtc/Dragon Egg collection
 pub moondoge_collection: UncheckedAccount<'info>,
 pub dragon_egg_collection: UncheckedAccount<'info>,
 
@@ -179,13 +179,13 @@ pub dragon_egg_asset: UncheckedAccount<'info>,
 ## Testing Checklist
 
 - [ ] Initialize program with collections
-- [ ] Add MoonDoge/Dragon Egg URIs
-- [ ] Purchase MoonDoge NFT individually
+- [ ] Add DogeBtc/Dragon Egg URIs
+- [ ] Purchase DogeBtc NFT individually
 - [ ] Purchase Dragon Egg NFT individually
 - [ ] Create moonbase with different tiers (basic, doge, full)
 - [ ] Verify assets on explorer (Solscan, Solana Explorer)
 - [ ] Trade NFT on marketplace
-- [ ] Attach MoonDoge after trading (verify ownership check)
+- [ ] Attach DogeBtc after trading (verify ownership check)
 - [ ] Incubate Dragon Egg after trading (verify ownership check)
 - [ ] Update money/power values
 - [ ] Detach/remove NFTs

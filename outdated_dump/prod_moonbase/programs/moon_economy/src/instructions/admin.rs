@@ -77,7 +77,7 @@ pub fn initialize_dbtc_vault(
 ) -> Result<()> {
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
 
-    // Initialize MoonDoge Vault
+    // Initialize DogeBtc Vault
     moondoge_vault.authority = ctx.accounts.authority.key();
     moondoge_vault.dbtc_mint = dbtc_mint;
     moondoge_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();    
@@ -177,7 +177,7 @@ pub fn internal_update_configuration(
     // if electricity_per_weighted_moondoge is provided, update it
     if let Some(electricity_per_weighted_moondoge) = new_electricity_per_weighted_moondoge {
         moondoge_vault.electricity_per_weighted_moondoge = electricity_per_weighted_moondoge;
-        msg!("Updated electricity per weighted MoonDoge to {}", electricity_per_weighted_moondoge);
+        msg!("Updated electricity per weighted DogeBtc to {}", electricity_per_weighted_moondoge);
     }
 
     // if electricity_per_weighted_lp_tokens is provided, update it
@@ -254,7 +254,7 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     let mut liquidity_amount = (available_for_distribution as u128).checked_mul(global_config.liquidity_allocation as u128)
                                                         .unwrap().checked_div(M_HUNDRED as u128).unwrap() as u64;
         
-    msg!("📊 Allocations - MoonDoge: {}, Liquidity: {}", moondoge_amount, liquidity_amount);
+    msg!("📊 Allocations - DogeBtc: {}, Liquidity: {}", moondoge_amount, liquidity_amount);
 
     // Now distribute to respective vaults
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
@@ -266,7 +266,7 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
         moondoge_vault.accumulated_sol_per_point += sol_per_point;
         **fee_collector.try_borrow_mut_lamports()? -= moondoge_amount;
         **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? += moondoge_amount;
-        msg!("💰 Sent {} to MoonDoge vault", moondoge_amount);
+        msg!("💰 Sent {} to DogeBtc vault", moondoge_amount);
     } else {
         moondoge_amount = 0;
     }
@@ -396,7 +396,7 @@ pub struct InitializeGlobalConfig<'info> {
 // --- INITIALIZE VAULTS ------------ 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-/// Initialize the MoonDoge vault
+/// Initialize the DogeBtc vault
 #[derive(Accounts)]
 pub struct InitializeMdogeVault<'info> {
 
@@ -405,15 +405,15 @@ pub struct InitializeMdogeVault<'info> {
     #[account(
         init,
         payer = authority,
-        space = MoonDogeVault::LEN,
+        space = DogeBtcVault::LEN,
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
 
     // ------ SOL Storage Accounts ------
 
-    /// CHECK: This is a 0-byte PDA owned by the program that will store SOL to be distributed to the MoonDoge vault
+    /// CHECK: This is a 0-byte PDA owned by the program that will store SOL to be distributed to the DogeBtc vault
     #[account(
         init,
         payer = authority,
@@ -547,7 +547,7 @@ pub struct UpdateConfig<'info> {
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump,
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
 
     #[account(
         mut,
@@ -608,7 +608,7 @@ pub struct ClaimMoonBaseSOL<'info> {
         seeds = [doge_btc_VAULT_SEED.as_ref()],
         bump 
     )]
-    pub moondoge_vault: Account<'info, MoonDogeVault>,
+    pub moondoge_vault: Account<'info, DogeBtcVault>,
 
     #[account(
         mut,
@@ -622,7 +622,7 @@ pub struct ClaimMoonBaseSOL<'info> {
         seeds = [dbtc_SOL_VAULT_SEED.as_ref()],
         bump
     )]
-    /// CHECK: This is the PDA that custodies SOL for MoonDoge stakers
+    /// CHECK: This is the PDA that custodies SOL for DogeBtc stakers
     pub dbtc_sol_vault: UncheckedAccount<'info>,
 
     #[account(
