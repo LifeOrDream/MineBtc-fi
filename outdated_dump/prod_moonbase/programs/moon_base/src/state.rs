@@ -336,7 +336,7 @@ pub struct UserMoonBaseInstance {
     pub active_hashpower: u64,
     pub available_electricity: u64,
     pub used_electricity: u64,
-    pub moondoge_claim_index: u64,
+    pub dbtc_claim_index: u64,
     pub bump: u8,
     /// Faction ID (0-based index into GlobalConfig.supported_factions)
     pub faction_id: u8,
@@ -372,7 +372,7 @@ pub struct UserMoonBaseInstance {
 
 // UserMoonBaseInstance
 impl UserMoonBaseInstance {
-    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + moondoge_claim_index + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game
+    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game
     // purchased_expansions = 4 bytes (vec length) + MAX_EXPANSIONS * 1 byte per expansion ID
     // available_modules = 4 bytes (vec length) + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes

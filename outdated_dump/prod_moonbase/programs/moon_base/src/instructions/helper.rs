@@ -204,7 +204,7 @@ pub fn mine_dbtc_for_user(
     
     // Calculate tokens mined since last claim
     let current_slot = Clock::get()?.slot;
-    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.moondoge_claim_index);
+    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.dbtc_claim_index);
     
     // User's share as a proportion of total (using 10^12 precision)
     let precision = 1_000_000_000_000u128;
@@ -224,7 +224,7 @@ pub fn mine_dbtc_for_user(
     };
     
     // Update the user's claim index to the current slot
-    user_moonbase.moondoge_claim_index = current_slot;
+    user_moonbase.dbtc_claim_index = current_slot;
     
     // Log the mining activity
     msg!("User mining processed: {} tokens earned with hashpower {} out of global {}",
@@ -263,7 +263,7 @@ pub fn claim_dogebtc_tokens<'info>(
     let user_share_precision = user_hashpower.checked_mul(precision).unwrap_or(0) / global_hashpower;
     
     let current_slot = Clock::get()?.slot;
-    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.moondoge_claim_index);
+    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.dbtc_claim_index);
     
     // Calculate tokens mined in this period
     let slots = slots_since_last_claim as u128;
@@ -332,7 +332,7 @@ pub fn claim_dogebtc_tokens<'info>(
     }
     
     // Update the user's claim index to the current slot
-    user_moonbase.moondoge_claim_index = current_slot;
+    user_moonbase.dbtc_claim_index = current_slot;
     
     // Log the claim
     msg!("Claimed {} DogeBtc tokens", claimable_amount);

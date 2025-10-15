@@ -10,7 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::user::*;
 // pub use instructions::game::*;
 
-declare_id!("76bGWqGdzwR13FSd1TDwanK7GFDHcunKh6WGbzAW1PjU");
+declare_id!("CSWE15QqLXN3ucPJQY2EaHKauNvUPhBPA5yB6yxqiVHr");
 
 #[program]
 pub mod moonbase {
@@ -159,7 +159,6 @@ pub mod moonbase {
         module_type: state::ModuleType,
         faction_ids: Vec<u8>,
         min_level: u8,
-        max_per_base: u8,
         width: u8,
         height: u8,
         mint_cost: u64,
@@ -168,7 +167,7 @@ pub mod moonbase {
     ) -> Result<()> {
         admin::add_module_to_base_internal(
             ctx, name, image_url, module_type, 
-            faction_ids, min_level, max_per_base, width, height,
+            faction_ids, min_level, width, height,
             mint_cost, upgrade_cost, upgrade_level_requirements
         )
     }
@@ -178,13 +177,12 @@ pub mod moonbase {
         id: u16,
         image_url: Option<String>,
         faction_ids: Option<Vec<u8>>,
-        max_per_base: Option<u8>,
         mint_cost: Option<u64>,
         upgrade_cost: Option<u64>,
         upgrade_level_requirements: Option<Vec<u8>>,
         is_active: Option<bool>,
     ) -> Result<()> {
-        admin::update_module_internal(ctx, id, image_url, faction_ids, max_per_base, mint_cost, upgrade_cost, upgrade_level_requirements, is_active)
+        admin::update_module_internal(ctx, id, image_url, faction_ids, mint_cost, upgrade_cost, upgrade_level_requirements, is_active)
     }
 
 
@@ -276,52 +274,50 @@ pub mod moonbase {
     // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
     // ----------------------------------------------------------------------------------------
 
-    // /// Buy a module without installing it
-    // pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
-    //     user::buy_module(ctx, config_id)
-    // }
+    /// Buy a module without installing it
+    pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
+        user::buy_module(ctx, config_id)
+    }
     
-//     /// Install/deploy an existing undeployed module
-//     pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
-//         user::install_module(ctx, module_index, pos_x, pos_y)
-//     }
+    /// Install/deploy an existing undeployed module
+    pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
+        user::install_module(ctx, module_index, pos_x, pos_y)
+    }
 
-//     /// Remove a module instance from the moonbase
-//     pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
-//         user::remove_module_internal(ctx, module_index)
-//     }
+    /// Remove a module instance from the moonbase
+    pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
+        user::remove_module_internal(ctx, module_index)
+    }
 
-//     /// Delete a specific undeployed module permanently
-//     pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
-//         user::delete_module(ctx, module_index)
-//     }
+    /// Delete a specific undeployed module permanently
+    pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
+        user::delete_module(ctx, module_index)
+    }
 
-//     /// Upgrade a module instance
-//     pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
-//         user::upgrade_module_internal(ctx, module_index)
-//     }
+    /// Upgrade a module instance
+    pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
+        user::upgrade_module_internal(ctx, module_index)
+    }
 
-//     /// Claim accumulated XP from Attraction modules
-//     pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
-//         user::claim_attraction_xp_internal(ctx, module_index)
-//     }
+    // ----------------------------------------------------------------------------------------
+    // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
+    // ----------------------------------------------------------------------------------------
+    
+    /// Claim DogeBtc tokens based on user's hashpower contribution
+    pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>) -> Result<()> {
+        user::claim_dbtc_tokens_internal(ctx)
+    }
+
+    /// Claim accumulated XP from Attraction modules
+    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
+        user::claim_attraction_xp_internal(ctx, module_index)
+    }
 
 
 //     /// Claim level-up rewards based on accumulated XP (with loot transfers)
 //     pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
 //         user::claim_level_up_rewards_internal(ctx)
 //     }
-
-
-//     // ----------------------------------------------------------------------------------------
-//     // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
-//     // ----------------------------------------------------------------------------------------
-    
-//     /// Claim DogeBtc tokens based on user's hashpower contribution
-//     pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>) -> Result<()> {
-//         user::claim_dbtc_tokens_internal(ctx)
-//     }
-
 
 //     // ----------------------------------------------------------------------------------------
 //     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------

@@ -135,7 +135,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.active_hashpower = 0;
     user_moonbase.available_electricity = 0;
     user_moonbase.used_electricity = 0;
-    user_moonbase.moondoge_claim_index =  doge_btc_mining.dbtc_tokens_minted_per_hashpower;
+    user_moonbase.dbtc_claim_index =  doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     user_moonbase.bump = ctx.bumps.user_moonbase;
     user_moonbase.faction_id = faction_id;
     
@@ -626,33 +626,14 @@ pub fn buy_module(
     msg!("✅ Module config {} is active", config_id);
     
     // Validate user level requirement
-    require!(
-        user_moonbase.level >= module_config.min_level,
-        ErrorCode::UserLevelTooLow
-    );
+    require!(  user_moonbase.level >= module_config.min_level,  ErrorCode::UserLevelTooLow);
     msg!("✅ User level {} meets requirement of {}", user_moonbase.level, module_config.min_level);
     
     // Validate faction access (if faction restrictions exist)
     if !module_config.faction_ids.is_empty() {
-        require!(
-            module_config.faction_ids.contains(&user_moonbase.faction_id),
-            ErrorCode::FactionNotAllowed
-        );
+        require!(  module_config.faction_ids.contains(&user_moonbase.faction_id),  ErrorCode::FactionNotAllowed);
         msg!("✅ User faction {} is allowed for this module", user_moonbase.faction_id);
     }
-    
-    // Count existing instances of this module type (available modules = total owned)
-    let total_instances = user_moonbase.available_modules.iter()
-        .find(|entry| entry.config_id == config_id)
-        .map(|entry| entry.count)
-        .unwrap_or(0);
-    
-    // Validate max instances per base
-    require!(
-        total_instances < module_config.max_per_base,
-        ErrorCode::MaxModuleInstancesReached
-    );
-    msg!("✅ Total module instances {} < max {}", total_instances, module_config.max_per_base);
     
     // Check if user has enough SOL for the module cost
     let cost = module_config.mint_cost;
@@ -864,6 +845,9 @@ pub fn install_module(
     
     // Update hashpower if this is a mining module (based on current upgrade level)
     if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+        // Mine pending rewards BEFORE changing hashpower
+        helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
+        
         let hashpower_increase = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
         let old_hashpower = user_moonbase.active_hashpower;
         
@@ -887,11 +871,7 @@ pub fn install_module(
     
     // Process daily login and award XP for installing module
     let installation_xp = 25; // Fixed XP for installation
-    process_daily_login_and_xp(
-        user_moonbase,
-        installation_xp,
-        "Install Module",
-    )?;
+    process_daily_login_and_xp(  user_moonbase,  installation_xp, "Install Module")?;
     
     // Emit event
     emit!(ModuleInstalled {
@@ -1026,6 +1006,9 @@ pub fn remove_module_internal(
     
     // Update hashpower if this is a mining module
     if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+        // Mine pending rewards BEFORE changing hashpower
+        helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
+        
         let hashpower_reduction = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
         let old_hashpower = user_moonbase.active_hashpower;
         
@@ -1077,12 +1060,7 @@ pub fn remove_module_internal(
     
     Ok(())
 }
-
-
-
-
-
-
+ 
 /// Upgrade a module instance (deployed or undeployed)
 pub fn upgrade_module_internal (
     ctx: Context<UpdateModuleInstance>,
@@ -1178,6 +1156,9 @@ pub fn upgrade_module_internal (
         // Update hashpower if this is a mining module
         if let (Some(old_hp), ModuleStats::Mining(mining_stats)) = (old_hashpower, &module_config.stats) {
             if let ModuleRuntimeState::Mining { .. } = &module_instance.runtime_state {
+                // Mine pending rewards BEFORE changing hashpower
+                helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
+                
                 let new_hashpower = mining_stats.current_hashpower(new_upgrade_level) as u64;
                 let hashpower_increase = new_hashpower.saturating_sub(old_hp);
                 
@@ -1359,42 +1340,16 @@ pub fn claim_attraction_xp_internal(
 /// This function processes any pending level-ups and awards loot rewards
 pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
-    let user = &ctx.accounts.user;
+    let old_level = user_moonbase.level;
     
-    msg!("🎉 Starting level-up rewards claim for user {}", user.key());
-    msg!("   Current Level: {}, Current XP: {}", user_moonbase.level, user_moonbase.xp);
+    msg!("🎉 Processing level-ups for user {} (Level: {}, XP: {})", 
+         ctx.accounts.user.key(), old_level, user_moonbase.xp);
     
-    // Check if user has enough XP for any level-ups
-    let current_required = helper::required_xp_new(user_moonbase.level);
-    if (user_moonbase.xp as u64) < current_required {
-        let remaining = current_required.saturating_sub(user_moonbase.xp as u64);
-        msg!("⚠️ Not enough XP for level-up. Need {} more XP", remaining);
-        return Ok(());
-    }
-    
-    // Calculate how many levels can be gained
-    let mut potential_level = user_moonbase.level;
-    let mut levels_to_gain = 0;
-    
-    loop {
-        let required_for_next = helper::required_xp_new(potential_level);
-        if (user_moonbase.xp as u64) >= required_for_next {
-            potential_level += 1;
-            levels_to_gain += 1;
-        } else {
-            break;
-        }
-    }
-    
-    msg!("🚀 Can gain {} level{}: {} -> {}", 
-         levels_to_gain, if levels_to_gain == 1 { "" } else { "s" },
-         user_moonbase.level, user_moonbase.level + levels_to_gain);
-    
-    // Process level-ups with full loot system
+    // Process any pending level-ups with loot system
     process_auto_daily_login_and_activity_xp(
         user_moonbase,
-        0, // No additional XP, just process existing XP into levels
-        "Level-Up Rewards Claim",
+        0, // No new XP, just convert existing XP to levels
+        "Level-Up Claim",
         &mut ctx.accounts.loot_rewards,
         &mut ctx.accounts.level_stats,
         &ctx.accounts.doge_btc_mining,
@@ -1408,12 +1363,8 @@ pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Res
         &ctx.accounts.system_program,
     )?;
     
-    let final_level = user_moonbase.level;
-    let actual_levels_gained = final_level.saturating_sub(user_moonbase.level);
-    
-    msg!("🎉 Level-up rewards claim completed!");
-    msg!("   Final Level: {}, XP: {}", final_level, user_moonbase.xp);
-    msg!("   Levels gained: {}", actual_levels_gained);
+    let levels_gained = user_moonbase.level.saturating_sub(old_level);
+    msg!("✅ Level-up complete: {} -> {} (+{} levels)", old_level, user_moonbase.level, levels_gained);
     
     Ok(())
 }

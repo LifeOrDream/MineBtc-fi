@@ -371,7 +371,7 @@ GLOBAL.total_active_hashpower += 15
 ```rust
 // 1. PROCESS MINING (update to current slot)
 current_slot: 12345
-slots_since_last_claim: current_slot - user.moondoge_claim_index
+slots_since_last_claim: current_slot - user.dbtc_claim_index
 
 // 2. CALCULATE YOUR SHARE
 // Proportional distribution based on hashpower:
@@ -401,7 +401,7 @@ loot_rewards.total_dbtc_accumulated += 1,000
 // Example: 10,000 DOGE_BTC = 150 XP
 
 // 8. UPDATE CLAIM INDEX
-user.moondoge_claim_index = current_slot
+user.dbtc_claim_index = current_slot
 ```
 
 **Result**:
@@ -1678,6 +1678,389 @@ MoonBase is a **complex idle game** with:
 **Economic Loop**: Players spend SOL → 10% to loot → Loot distributed on level-up → DBTC price tracked → Distribution adjusted → POL grown
 
 **Monetization**: Players pay SOL for modules, upgrades, expansions. 10% goes to loot vault, creating a fun lottery-style reward system. Protocol permanently adds liquidity to Raydium pool every 8 hours.
+
+---
+
+## 🔧 **Technical Implementation Details**
+
+### **Loot System Architecture**
+
+#### **Overflow Prevention (u128 Intermediate Math)**
+
+All critical calculations use `u128` to prevent overflow:
+
+```rust
+// SAFE: Jackpot vault calculation
+let dbtc_sol_equivalent = ((loot.total_dbtc_accumulated as u128)
+    .saturating_mul(dbtc_price as u128)
+    .saturating_div(1_000_000_000u128)) as u64;
+
+// SAFE: Mining index calculation  
+let index_increment = ((new_tokens_mined as u128)
+    .saturating_mul(MAX_SAFE_U64 as u128)
+    .saturating_div(total_active_hashpower as u128)) as u64;
+
+// SAFE: User share calculation
+let claimable_amount = ((index_diff as u128)
+    .saturating_mul(user_hashpower as u128)
+    .saturating_div(MAX_SAFE_U64 as u128)) as u64;
+```
+
+**Why u128?**
+- u64 max: 18,446,744,073,709,551,615
+- Multiplying two large u64s can overflow
+- u128 provides 340 undecillion headroom
+- Saturating ops ensure graceful degradation
+
+#### **Mining Distribution System (Index-Based)**
+
+The mining system uses a **global index** to track rewards:
+
+```rust
+// Global state (DogeBtcMining):
+dbtc_tokens_minted_per_hashpower: u128  // Accumulates over time
+
+// User state (UserMoonBaseInstance):
+dbtc_claim_index: u128   // Last claimed index
+claimable_dbtc: u64      // Pending tokens
+
+// On each claim:
+index_diff = global_index - user_index
+user_tokens = (index_diff × user_hashpower) / MAX_SAFE_U64
+```
+
+**Benefits:**
+- ✅ O(1) complexity per user (no loops)
+- ✅ Fair distribution (proportional to hashpower)
+- ✅ No rounding errors accumulation
+- ✅ Scales to millions of users
+
+#### **State Account Sizes**
+
+```
+GlobalConfig:         ~2,500 bytes (factions + expansions + URIs)
+DogeBtcMining:        ~450 bytes (price history + POL stats)
+UserMoonBaseInstance: ~800 bytes (grid bitmap + modules)
+ModuleInstance:       ~120 bytes per module
+LootRewards:          ~40 bytes (vault tracking)
+LevelStats:           ~180 bytes (top 10 levels)
+```
+
+#### **Gas Optimization Strategies**
+
+1. **Bitmap Grid**: 300 tiles = 38 bytes (vs 300 bools = 300 bytes)
+2. **Lazy Updates**: Mining state only updates when needed
+3. **Single-Pass Loops**: Level stats use one scan
+4. **Saturating Math**: Cheaper than checked + error handling
+5. **Event-Driven**: Frontend tracks history via events
+
+---
+
+## 🎲 **Loot System: Complete Technical Breakdown**
+
+### **Phase-by-Phase Execution**
+
+#### **Phase 1: RNG Generation (Deterministic Randomness)**
+
+```rust
+// Keccak256 hash of (slot + user pubkey)
+let seed = keccak::hashv(&[
+    &Clock::get()?.slot.to_le_bytes(),
+    &user.owner.to_bytes()
+]);
+
+// Extract 16-bit roll
+let roll = u16::from_le_bytes([seed.0[0], seed.0[1]]);
+let roll_bp = (roll % 10_000) as u32;  // 0-9999 basis points
+```
+
+**Properties:**
+- ✅ Deterministic (same slot + user = same roll)
+- ✅ Unpredictable (can't predict future slots)
+- ✅ Fair (uniform distribution)
+- ✅ Cheap (single hash operation)
+
+#### **Phase 2: Tier-Based Probability**
+
+```rust
+let (base_chance, vault_bp) = match user.level {
+    1..=4   => (300 + 20 * level, 100),      // Learning
+    5 | 10  => (10_000, 50),                  // Milestone (guaranteed)
+    6..=14  => (300 + 20 * level, 100),      // Growth
+    15..=24 => {
+        if level % 5 == 0 { (10_000, 200) }  // Milestone
+        else { (1_500, 500) }                 // Rare
+    },
+    _ => {
+        if level % 5 == 0 { (10_000, 800) }  // Milestone
+        else { (2_500, 800) }                 // Legendary
+    }
+};
+```
+
+**Design Philosophy:**
+- Early levels: Frequent small rewards (player retention)
+- Milestones: Guaranteed payouts (dopamine hits)
+- Late game: Big swings (whale engagement)
+
+#### **Phase 3: Exclusivity Multipliers**
+
+```rust
+struct ExclusivityBonus {
+    chance_mult: u32,  // Percentage (100 = 1x, 150 = 1.5x)
+    vault_mult: u64,   // Percentage (100 = 1x, 300 = 3x)
+    rank: u8,          // 0 = max, 1-10 = top10, 99 = crowd
+}
+
+fn get_exclusivity_bonus(level: u8, stats: &LevelStats) -> ExclusivityBonus {
+    let max_level = stats.max_level_achieved;
+    let users_at_level = get_users_at_level(stats, level);
+    
+    if level == max_level {
+        // GLOBAL MAX: Massive bonuses
+        ExclusivityBonus { 
+            chance_mult: 150, 
+            vault_mult: 300, 
+            rank: 0 
+        }
+    } else if users_at_level <= 3 {
+        // ULTRA RARE: Elite bonuses
+        ExclusivityBonus { 
+            chance_mult: 125, 
+            vault_mult: 175, 
+            rank: users_at_level as u8 
+        }
+    } else if users_at_level <= 10 {
+        // TOP 10: Strong bonuses
+        ExclusivityBonus { 
+            chance_mult: 120, 
+            vault_mult: 150, 
+            rank: 10 
+        }
+    } else if users_at_level <= 25 {
+        // TOP 25: Moderate bonuses
+        ExclusivityBonus { 
+            chance_mult: 110, 
+            vault_mult: 120, 
+            rank: 25 
+        }
+    } else {
+        // EVERYONE ELSE: No bonuses
+        ExclusivityBonus { 
+            chance_mult: 100, 
+            vault_mult: 100, 
+            rank: 99 
+        }
+    }
+}
+```
+
+**Competitive Dynamics:**
+- Race to max level = Highest multipliers
+- Pioneer advantage = Early adopters rewarded
+- Plateau effect = Bonuses diminish as crowd grows
+- Catchup mechanics = Lower levels easier to grind
+
+#### **Phase 4: Jackpot System (Milestone Levels)**
+
+```rust
+const JACKPOT_CHANCE_BP: u16 = 20;  // 0.20% = 20/10,000
+const JACKPOT_POTS_SOL: [u64; 5] = [
+    1_000 * LAMPORTS_PER_SOL,  // 1000 SOL
+    750 * LAMPORTS_PER_SOL,    // 750 SOL
+    690 * LAMPORTS_PER_SOL,    // 690 SOL (meme)
+    510 * LAMPORTS_PER_SOL,    // 510 SOL
+    420 * LAMPORTS_PER_SOL,    // 420 SOL (meme)
+];
+
+fn try_jackpot(vault_value: u64, roll: u16) -> (u64, bool) {
+    if roll >= JACKPOT_CHANCE_BP {
+        return (0, false);  // No jackpot
+    }
+    
+    // Try pots in descending order
+    for &pot in JACKPOT_POTS_SOL.iter() {
+        let required = pot.saturating_mul(11).saturating_div(10);  // 110% buffer
+        if vault_value >= required {
+            return (pot, true);  // Jackpot hit!
+        }
+    }
+    
+    (0, false)  // Vault too small for any pot
+}
+```
+
+**Jackpot Mechanics:**
+- Only on milestone levels (10, 20, 30, ...)
+- 0.20% chance = 1 in 500 level-ups
+- Requires 110% vault buffer (safety)
+- Falls back to normal payout if vault insufficient
+
+#### **Phase 5: Currency Selection Algorithm**
+
+```rust
+// MILESTONE PREFERENCE (levels 10, 20, 30, ...):
+fn pick_preferring_sol(sol: u64, dbtc: u64, loot: &LootRewards) 
+    -> (u64, u64, &str) 
+{
+    if loot.total_sol_accumulated >= sol {
+        (sol, 0, "SOL-Primary")
+    } else if loot.total_dbtc_accumulated >= dbtc {
+        (0, dbtc, "DBTC-Fallback")
+    } else {
+        // Emergency: Pay half of whatever's available
+        let sol_half = loot.total_sol_accumulated / 2;
+        let dbtc_half = loot.total_dbtc_accumulated / 2;
+        
+        if sol_half >= MIN_SOL_PAYOUT_LAMPORTS {
+            (sol_half, 0, "SOL-Emergency")
+        } else if dbtc_half > 0 {
+            (0, dbtc_half, "DBTC-Emergency")
+        } else {
+            (0, 0, "Empty-Vault")
+        }
+    }
+}
+
+// REGULAR PREFERENCE (other levels):
+fn pick_best_available(sol: u64, dbtc: u64, loot: &LootRewards, prefer_sol: bool)
+    -> (u64, u64, &str)
+{
+    let sol_ok = loot.total_sol_accumulated >= sol;
+    let dbtc_ok = loot.total_dbtc_accumulated >= dbtc;
+    
+    match (sol_ok, dbtc_ok, prefer_sol) {
+        (true, true, true)   => (sol, 0, "SOL-Preferred"),
+        (true, true, false)  => (0, dbtc, "DBTC-Preferred"),
+        (true, false, _)     => (sol, 0, "SOL-Only"),
+        (false, true, _)     => (0, dbtc, "DBTC-Only"),
+        (false, false, _)    => {
+            // Both insufficient, try halves
+            let sol_half = loot.total_sol_accumulated / 2;
+            let dbtc_half = loot.total_dbtc_accumulated / 2;
+            
+            if sol_half >= MIN_SOL_PAYOUT_LAMPORTS {
+                (sol_half, 0, "SOL-Half")
+            } else if dbtc_half > 0 {
+                (0, dbtc_half, "DBTC-Half")
+            } else {
+                (0, 0, "Empty")
+            }
+        }
+    }
+}
+```
+
+**Smart Fallbacks:**
+1. Try primary currency
+2. Fall back to secondary
+3. Emergency: Pay half of available
+4. Last resort: (0, 0) but still level up
+
+#### **Phase 6: Safety Limits (Vault Protection)**
+
+```rust
+const MIN_SOL_PAYOUT_LAMPORTS: u64 = 10_000_000;      // 0.01 SOL
+const MAX_SOL_PAYOUT_LAMPORTS: u64 = 100 * 1e9;      // 100 SOL
+const MAX_VAULT_SLICE_BP: u64 = 1_000;                // 10%
+
+fn clamp_payout(vault: u64, desired: u64) -> u64 {
+    let max_slice = vault.saturating_mul(MAX_VAULT_SLICE_BP) / 10_000;
+    let clamped = desired.min(max_slice).min(MAX_SOL_PAYOUT_LAMPORTS);
+    
+    if clamped < MIN_SOL_PAYOUT_LAMPORTS {
+        0  // Too small, pay nothing
+    } else {
+        clamped
+    }
+}
+
+fn clamp_to_vault(vault: u64, desired: u64) -> u64 {
+    desired.min(vault)  // Never exceed vault balance
+}
+```
+
+**Protection Mechanisms:**
+- ✅ Minimum payout (prevent dust)
+- ✅ Maximum payout (prevent whale drain)
+- ✅ Vault slice cap (sustainability)
+- ✅ Balance check (never overdraw)
+
+---
+
+### **Complete Loot Flow Example**
+
+```rust
+// USER: Level 49 → 50 (milestone + global max)
+// VAULT: 500 SOL, 10M DBTC
+// PRICE: 0.0005 SOL per DBTC
+
+// STEP 1: RNG
+slot = 12345678
+seed = keccak(12345678 + user_pubkey)
+roll_bp = 3421  // Random
+
+// STEP 2: Base probability
+is_milestone = true  // Level 50
+base_chance = 10_000 bp  // Guaranteed
+vault_bp = 800 bp  // 8% of vault
+
+// STEP 3: Exclusivity
+is_global_max = true
+chance_mult = 150%  // 1.5x
+vault_mult = 300%   // 3x
+
+final_chance = 10_000 bp (already 100%)
+final_vault_bp = 800 × 300% = 2400 bp → capped at 1000 bp (10%)
+
+// STEP 4: Roll check
+3421 < 10_000 → WON!
+
+// STEP 5: Jackpot attempt
+combined_vault = 500 SOL + (10M DBTC × 0.0005) = 500 + 5000 = 5500 SOL
+jackpot_roll = 15  // 0.15% < 0.20% threshold
+try_jackpot(5500 SOL):
+  - 1000 SOL × 110% = 1100 SOL required ✅
+  - JACKPOT HIT: 1000 SOL!
+
+desired_sol_payout = 1000 SOL
+
+// STEP 6: Currency selection (milestone prefers SOL)
+sol_vault = 500 SOL
+desired = 1000 SOL
+500 < 1000 → Insufficient!
+
+Fallback to DBTC:
+dbtc_equivalent = 1000 SOL / 0.0005 = 2,000,000 DBTC
+dbtc_vault = 10,000,000 DBTC
+10M >=2M ✅
+
+payout = (0 SOL, 2,000,000 DBTC, "DBTC-Fallback")
+
+// STEP 7: Safety check
+2M DBTC < 10M ✅
+2M DBTC < 10% of 10M (1M) ❌
+Clamped to: 1,000,000 DBTC
+
+final_payout = (0 SOL, 1,000,000 DBTC)
+
+// STEP 8: Transfer
+transfer(loot_dbtc_vault → user, 1M DBTC)
+loot.total_dbtc_accumulated = 10M - 1M = 9M
+loot.total_dbtc_distributed += 1M
+
+emit!(LootWon {
+    owner: user,
+    level: 50,
+    sol: 0,
+    mdoge: 1_000_000,
+    loot_tier: "DBTC-Fallback",
+    exclusivity_rank: 0,
+    chance_percentage: 10_000,
+})
+```
+
+**Result**: User won jackpot equivalent but paid in DBTC due to SOL vault limits!
 
 ---
 

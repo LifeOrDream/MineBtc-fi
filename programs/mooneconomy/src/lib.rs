@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("F6VLRcemPCd4Hm9iREcpXzvPfXNhQwxMmY5afpkH6wVZ");
+declare_id!("4iiv7LNziMazs9S5gUL1XQZKEwbowDA3m2wMfZfbc8cv");
 
 #[program]
 pub mod moonbase {

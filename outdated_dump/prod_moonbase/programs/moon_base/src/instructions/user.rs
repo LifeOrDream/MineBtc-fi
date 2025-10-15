@@ -107,7 +107,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.active_hashpower = 0;
     user_moonbase.available_electricity = 0;
     user_moonbase.used_electricity = 0;
-    user_moonbase.moondoge_claim_index = 0;
+    user_moonbase.dbtc_claim_index = 0;
     user_moonbase.bump = ctx.bumps.user_moonbase;
     user_moonbase.faction_id = faction_id;
     

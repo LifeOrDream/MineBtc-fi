@@ -9431,7 +9431,7 @@
             "type": "u64"
           },
           {
-            "name": "moondoge_claim_index",
+            "name": "dbtc_claim_index",
             "type": "u64"
           },
           {

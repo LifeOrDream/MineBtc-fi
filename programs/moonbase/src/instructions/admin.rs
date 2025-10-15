@@ -449,7 +449,6 @@ pub fn add_module_to_base_internal(
     module_type: ModuleType,
     faction_ids: Vec<u8>,
     min_level: u8,
-    max_per_base: u8,
     width: u8,
     height: u8,
     mint_cost: u64,
@@ -491,14 +490,12 @@ pub fn add_module_to_base_internal(
     msg!("Stats (placeholders): {:?}", stats);
     msg!("Faction IDs: {:?}", faction_ids);
     msg!("Min level: {}", min_level);
-    msg!("Max per base: {}", max_per_base);
     msg!("Width: {}", width);
     
     // Validate inputs
     require!(name.len() <= 32, ErrorCode::InvalidModuleName);
     require!(image_url.len() <= 64, ErrorCode::InvalidImageUrl);
     require!(upgrade_level_requirements.len() <= MAX_MODULE_UPGRADES as usize, ErrorCode::InvalidUpgradeConfiguration);
-    require!(max_per_base > 0 && max_per_base <= MAX_MODULES_PER_BASE, ErrorCode::InvalidModuleConfiguration);
     require!(faction_ids.len() <= MAX_FACTION_IDS_PER_MODULE, ErrorCode::TooManyFactionIds);
     
     // Validate that upgrade level requirements are increasing and start at or above min_level
@@ -537,7 +534,6 @@ pub fn add_module_to_base_internal(
         stats,
         faction_ids,
         min_level,
-        max_per_base,
         width,
         height,
         mint_cost,
@@ -631,7 +627,6 @@ pub fn update_module_internal(
     id: u16,
     image_url: Option<String>,
     faction_ids: Option<Vec<u8>>,
-    max_per_base: Option<u8>,
     mint_cost: Option<u64>,
     upgrade_cost: Option<u64>,
     upgrade_level_requirements: Option<Vec<u8>>,
@@ -690,12 +685,6 @@ pub fn update_module_internal(
         require!(new_faction_ids.len() <= MAX_FACTION_IDS_PER_MODULE, ErrorCode::TooManyFactionIds);
         config.faction_ids = new_faction_ids;
         msg!("Updated faction IDs");
-    }
-    
-    if let Some(new_max_per_base) = max_per_base {
-        require!(new_max_per_base > 0 && new_max_per_base <= MAX_MODULES_PER_BASE, ErrorCode::InvalidModuleConfiguration);
-        config.max_per_base = new_max_per_base;
-        msg!("Updated max per base to: {}", new_max_per_base);
     }
     
     // Emit event

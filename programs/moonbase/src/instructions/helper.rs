@@ -243,13 +243,17 @@ pub fn claim_dogebtc_tokens<'info>(
     loot_rewards: Option<&mut LootRewards>,
 ) -> Result<u64> {
 
-    let claimable_amount = mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;    
+    mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;    
+    let claimable_amount = user_moonbase.claimable_dbtc;
     
     // If there's nothing to claim, return early
     if claimable_amount == 0 {
         msg!("No tokens to claim");
         return Ok(0);
     }
+    
+    // Reset claimable amount since we're claiming it now
+    user_moonbase.claimable_dbtc = 0;
     
     // Calculate loot rewards (10% of claimable amount)
     let loot_amount = claimable_amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
@@ -299,29 +303,30 @@ pub fn claim_dogebtc_tokens<'info>(
 pub fn mine_dbtc_for_user(
     user_moonbase: &mut UserMoonBaseInstance,
     doge_btc_mining: &mut DogeBtcMining,
-) -> Result<u64> {
+) -> Result<()> {
     // First update the global mining state to ensure it's current
     update_global_mining_index(doge_btc_mining)?;
     
     // If there's no global hashpower, nothing to distribute
     if doge_btc_mining.total_active_hashpower == 0 || user_moonbase.active_hashpower == 0 {
-        return Ok(0);
+        return Ok(());
     }    
     
-    let index_diff = doge_btc_mining.dbtc_tokens_minted_per_hashpower.saturating_sub(user_moonbase.moondoge_claim_index);
+    let index_diff = doge_btc_mining.dbtc_tokens_minted_per_hashpower.saturating_sub(user_moonbase.dbtc_claim_index);
     
     // Use u128 to prevent overflow: (index_diff * hashpower) / MAX_SAFE_U64
     let claimable_amount = ((index_diff as u128)
         .saturating_mul(user_moonbase.active_hashpower as u128)
         .saturating_div(MAX_SAFE_U64 as u128)) as u64;
 
-    user_moonbase.moondoge_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
+    user_moonbase.dbtc_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
+    user_moonbase.claimable_dbtc = user_moonbase.claimable_dbtc + claimable_amount;
     
     // Log the mining activity
     msg!("User mining processed: {} tokens earned with hashpower {}",
          claimable_amount, user_moonbase.active_hashpower);
     
-    Ok(claimable_amount)
+    Ok(())
 }
 
 
@@ -653,6 +658,45 @@ pub fn can_place_module(
     Ok(true)
 }
 
+
+/// Check if a module placement is within the user's current moonbase boundaries
+pub fn can_place_module_in_moonbase(
+    user_moonbase: &UserMoonBaseInstance,
+    x: u8,
+    y: u8,
+    width: u8,
+    height: u8,
+) -> Result<bool> {
+    // 1. Check if within current moonbase bounds (not full grid)
+    if x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_width {
+        return Ok(false);
+    }
+    if y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_height {
+        return Ok(false);
+    }
+    
+    // 2. Check overlap with existing modules
+    for dy in 0..height {
+        for dx in 0..width {
+            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
+            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
+            
+            if is_tile_occupied(user_moonbase, tile_x, tile_y)? {
+                return Ok(false);
+            }
+        }
+    }
+    
+    Ok(true)
+}
+
+
+
+
+
+
+
+
 /// Check if a specific tile is occupied
 pub fn is_tile_occupied(user_moonbase: &UserMoonBaseInstance, x: u8, y: u8) -> Result<bool> {
     if x >= GRID_WIDTH || y >= GRID_HEIGHT {
@@ -890,37 +934,6 @@ pub fn get_current_moonbase_dimensions(user_moonbase: &UserMoonBaseInstance) -> 
 /// Get the current usable tile count for a user's moonbase
 pub fn get_current_usable_tiles(user_moonbase: &UserMoonBaseInstance) -> u32 {
     (user_moonbase.current_width as u32) * (user_moonbase.current_height as u32)
-}
-
-/// Check if a module placement is within the user's current moonbase boundaries
-pub fn can_place_module_in_moonbase(
-    user_moonbase: &UserMoonBaseInstance,
-    x: u8,
-    y: u8,
-    width: u8,
-    height: u8,
-) -> Result<bool> {
-    // 1. Check if within current moonbase bounds (not full grid)
-    if x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_width {
-        return Ok(false);
-    }
-    if y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_height {
-        return Ok(false);
-    }
-    
-    // 2. Check overlap with existing modules
-    for dy in 0..height {
-        for dx in 0..width {
-            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
-            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
-            
-            if is_tile_occupied(user_moonbase, tile_x, tile_y)? {
-                return Ok(false);
-            }
-        }
-    }
-    
-    Ok(true)
 }
 
 
@@ -1314,8 +1327,11 @@ fn try_roll_loot(
     if is_milestone {
         msg!("🎰 Attempting jackpot roll for milestone level {}", user.level);
         // Calculate combined vault value (SOL + DOGE_BTC equivalent in SOL)
+        // Use u128 throughout to prevent overflow
         let dbtc_price = get_avg_price_in_sol(doge_btc_mining)?; // 1e9 scale
-        let dbtc_sol_equivalent = (loot.total_dbtc_accumulated as u128 * dbtc_price as u128 / 1_000_000_000u128) as u64;
+        let dbtc_sol_equivalent = ((loot.total_dbtc_accumulated as u128)
+            .saturating_mul(dbtc_price as u128)
+            .saturating_div(1_000_000_000u128)) as u64;
         let combined_vault_value = loot.total_sol_accumulated.saturating_add(dbtc_sol_equivalent);
         
         msg!("   Combined vault value: {} SOL (SOL: {}, DOGE_BTC equivalent: {})", 
@@ -1342,22 +1358,22 @@ fn try_roll_loot(
     // --- after you have `desired_sol_payout` (may be 0 if jackpot didn't fire) ---
     let dbtc_price      = get_avg_price_in_sol(doge_btc_mining)?;         // 1e9
     let desired_sol      = clamp_to_vault(loot.total_sol_accumulated, desired_sol_payout);
-    let desired_mdoge    = clamp_to_vault(loot.total_dbtc_accumulated,sol_to_mdoge(desired_sol, dbtc_price));
+    let desired_dbtc    = clamp_to_vault(loot.total_dbtc_accumulated,sol_to_mdoge(desired_sol, dbtc_price));
     
     msg!("💎 Desired payouts after clamping:");
     msg!("   SOL: {} (from {})", desired_sol, desired_sol_payout);
-    msg!("   DOGE_BTC: {} (at price {})", desired_mdoge, dbtc_price);
+    msg!("   DOGE_BTC: {} (at price {})", desired_dbtc, dbtc_price);
 
     // currency decision
     let (final_sol_payout, final_dbtc_payout, payout_type) =
         if is_milestone {
             msg!("🎯 Milestone level: Preferring SOL payout");
-            pick_preferring_sol(desired_sol, desired_mdoge, loot)
+            pick_preferring_sol(desired_sol, desired_dbtc, loot)
         } else {
             let flip = (roll_bp & 1) == 0;
             msg!("🎯 Regular level: Using best available ({} preference)", 
                 if flip { "SOL" } else { "DOGE_BTC" });
-            pick_best_available(desired_sol, desired_mdoge, loot, flip)
+            pick_best_available(desired_sol, desired_dbtc, loot, flip)
         };
     
     msg!("💰 Final payout decision:");

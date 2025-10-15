@@ -316,10 +316,10 @@ pub struct DogeBtcMining {
 }
 
 impl DogeBtcMining {
-    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + bump + vault_auth_bump +
+    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + avg_price_8h + prev_avg_price_8h + sol_for_pol + slots_for_swap + pol_stats
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 8-hour rolling average
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN;
 }
 
 /// ------------ USER MOON-BASE INSTANCES ------------
@@ -347,7 +347,8 @@ pub struct UserMoonBaseInstance {
     pub available_electricity: u64,
     pub used_electricity: u64,
 
-    pub moondoge_claim_index: u128,
+    pub dbtc_claim_index: u128,
+    pub claimable_dbtc: u64,
 
     pub bump: u8,
     /// Faction ID (0-based index into GlobalConfig.supported_factions)
@@ -384,11 +385,11 @@ pub struct UserMoonBaseInstance {
 
 // UserMoonBaseInstance
 impl UserMoonBaseInstance {
-    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + moondoge_claim_index + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game
+    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game
     // purchased_expansions = 4 bytes (vec length) + MAX_EXPANSIONS * 1 byte per expansion ID
     // available_modules = 4 bytes (vec length) + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1;
 }
 
 /// Stores referral rewards that a user has earned from referrals
@@ -548,7 +549,6 @@ pub struct ModuleConfig {
     pub stats: ModuleStats,
     pub faction_ids: Vec<u8>,       // Which factions can use this module (empty = all)
     pub min_level: u8,              // Minimum moonbase level required to build
-    pub max_per_base: u8,           // Maximum instances per moonbase
     pub width: u8,                  // Grid width
     pub height: u8,                 // Grid height
     pub mint_cost: u64,             // Base SOL cost to mint
@@ -566,7 +566,6 @@ impl ModuleConfig {
         ModuleStats::LEN +          // stats (largest variant)
         4 + (1 * MAX_FACTION_IDS_PER_MODULE) + // faction_ids (Vec with length prefix) - each faction_id is u8 (1 byte)
         1 +                         // min_level
-        1 +                         // max_per_base
         1 +                         // width
         1 +                         // height
         8 +                         // mint_cost
