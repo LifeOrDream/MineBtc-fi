@@ -225,12 +225,108 @@ pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
     (tokens_mined * XP_MINING_1000_MDOGE) / (1_000_000 * 1000)
 }
 
+// --------------------------------------- //
+// ========== DOGE BTC MINING SYSTEM =========== //
+// --------------------------------------- //
 
+/// Transfer claimed DogeBtc tokens to the user (with optional loot rewards)
+pub fn claim_dogebtc_tokens<'info>(
+    user_moonbase: &mut UserMoonBaseInstance,
+    doge_btc_mining: &mut DogeBtcMining,
+    token_program: &AccountInfo<'info>,
+    token_vault: &AccountInfo<'info>,
+    token_mint: &AccountInfo<'info>,
+    user_token_account: &AccountInfo<'info>,
+    vault_authority: &AccountInfo<'info>,
+    vault_authority_seeds: &[&[u8]],
+    loot_dbtc_vault: Option<&AccountInfo<'info>>,
+    loot_rewards: Option<&mut LootRewards>,
+) -> Result<u64> {
+
+    let claimable_amount = mine_dbtc_for_user(user_moonbase, doge_btc_mining);    
+    
+    // If there's nothing to claim, return early
+    if claimable_amount == 0 {
+        msg!("No tokens to claim");
+        return Ok(0);
+    }
+    
+    // Calculate loot rewards (10% of claimable amount)
+    let loot_amount = claimable_amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
+    let user_amount = claimable_amount.checked_sub(loot_amount).unwrap();
+    
+    // Transfer tokens from vault to user (90% of claimable amount)
+    let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
+        &anchor_spl::token_2022::spl_token_2022::ID,           // program_id
+        &token_vault.key(),            // source (vault)
+        &token_mint.key(),             // mint           
+        &user_token_account.key(),     // destination
+        &vault_authority.key(),        // authority
+        &[],                           // signer_pubkeys (vault PDA is a signer later)
+        user_amount,                   // amount (90% of total)
+        DBTC_DECIMALS,                             // decimals      
+    )?;
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            token_program.clone(),
+            token_vault.clone(),
+            user_token_account.clone(),
+            vault_authority.clone(),
+        ],
+        &[vault_authority_seeds],
+    )?;
+    
+    // Transfer loot rewards to loot vault (10% of claimable amount)
+    if loot_amount > 0 && loot_dbtc_vault.is_some() {
+        transfer_to_loot_dbtc_vault(  token_program, token_vault,  loot_dbtc_vault.unwrap(),  vault_authority,  token_mint, vault_authority_seeds, loot_amount)?;
+        
+        // Update loot rewards tracking
+        if let Some(loot_rewards_account) = loot_rewards {
+            update_loot_rewards_accumulation(loot_rewards_account, claimable_amount, 0)?;
+        }
+    }
+    
+    // Update the user's claim index to the current slot
+    user_moonbase.moondoge_claim_index = current_slot;
+    
+    // Log the claim
+    msg!("Claimed {} DogeBtc tokens", user_amount);
+    
+    // Return the amount claimed
+    Ok(user_amount)
+}
+
+/// Process the mining for a specific user
+/// This function should be called whenever a user's hashpower changes
+pub fn mine_dbtc_for_user(
+    user_moonbase: &mut UserMoonBaseInstance,
+    doge_btc_mining: &mut DogeBtcMining,
+) -> claimable_amount {
+    // First update the global mining state to ensure it's current
+    update_global_mining_index(doge_btc_mining)?;
+    
+    // If there's no global hashpower, nothing to distribute
+    if doge_btc_mining.total_active_hashpower == 0 || user_moonbase.active_hashpower  == 0 {
+        return Ok(());
+    }    
+    
+    let index_dif = doge_btc_mining.dbtc_tokens_minted_per_hashpower.saturating_sub(user_moonbase.moondoge_claim_index);
+    let claimable_amount = index_dif.checked_mul(user_moonbase.active_hashpower) / MAX_SAFE_U64;
+
+    user_moonbase.moondoge_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
+    
+    // Log the mining activity
+    msg!("User mining processed: {} tokens earned with hashpower {}",
+         claimable_amount, user_moonbase.active_hashpower);
+    
+    claimable_amount
+}
 
 
 /// Update the mining state and distribute DogeBtc tokens
 /// This function should be called whenever global hashpower changes
-pub fn update_mining_state(
+pub fn update_global_mining_index(
     doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // Get the current slot
@@ -246,6 +342,15 @@ pub fn update_mining_state(
     let slots_passed = current_slot - doge_btc_mining.last_slot;
     let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);    
     let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
+
+    let index_increment = (new_tokens_mined * MAX_SAFE_U64) / doge_btc_mining.total_active_hashpower;
+    doge_btc_mining.dbtc_tokens_minted_per_hashpower = doge_btc_mining.dbtc_tokens_minted_per_hashpower.checked_add(index_increment).unwrap_or(doge_btc_mining.dbtc_tokens_minted_per_hashpower);
+
+    msg!("Slots passed: {}", slots_passed);
+    msg!("Current reward rate: {}", current_reward_rate);
+    msg!("New tokens mined: {}", new_tokens_mined);
+    msg!("Index increment: {}", index_increment);
+    msg!("Total tokens minted per hashpower: {}", doge_btc_mining.dbtc_tokens_minted_per_hashpower);
     
     // Update total tokens mined
     doge_btc_mining.total_tokens_mined = doge_btc_mining.total_tokens_mined.checked_add(new_tokens_mined).unwrap_or(doge_btc_mining.total_tokens_mined);
@@ -400,169 +505,8 @@ pub fn add_xp_simple(user_moonbase: &mut UserMoonBaseInstance, xp_amount: u32, s
 
 
 
-/// Process the mining for a specific user
-/// This function should be called whenever a user's hashpower changes
-pub fn process_user_mining(
-    user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut DogeBtcMining,
-) -> Result<()> {
-    // First update the global mining state to ensure it's current
-    update_mining_state(doge_btc_mining)?;
-    
-    // If there's no global hashpower, nothing to distribute
-    if doge_btc_mining.total_active_hashpower == 0 {
-        return Ok(());
-    }
-    
-    // Calculate the user's share of global hashpower (as a proportion)
-    // We use u128 for precision in intermediate calculations
-    let user_hashpower = user_moonbase.active_hashpower as u128;
-    let global_hashpower = doge_btc_mining.total_active_hashpower as u128;
-    
-    // If user has no hashpower, nothing to mine
-    if user_hashpower == 0 {
-        return Ok(());
-    }
-    
-    // Calculate tokens mined since last claim
-    let current_slot = Clock::get()?.slot;
-    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.moondoge_claim_index);
-    
-    // User's share as a proportion of total (using 10^12 precision)
-    let precision = 1_000_000_000_000u128;
-    let user_share_precision = user_hashpower.checked_mul(precision).unwrap_or(0) / global_hashpower;
-    
-    // Calculate tokens mined in this period
-    let slots = slots_since_last_claim as u128;
-    let rate = calculate_current_reward_rate(doge_btc_mining) as u128;
-    
-    let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
-        if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
-            total_rewards / precision
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-    
-    // Update the user's claim index to the current slot
-    user_moonbase.moondoge_claim_index = current_slot;
-    
-    // Log the mining activity
-    msg!("User mining processed: {} tokens earned with hashpower {} out of global {}",
-         tokens_mined, user_hashpower, global_hashpower);
-    
-    Ok(())
-}
 
-/// Transfer claimed DogeBtc tokens to the user (with optional loot rewards)
-pub fn claim_dogebtc_tokens<'info>(
-    user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut DogeBtcMining,
-    token_program: &AccountInfo<'info>,
-    token_vault: &AccountInfo<'info>,
-    token_mint: &AccountInfo<'info>,
-    user_token_account: &AccountInfo<'info>,
-    vault_authority: &AccountInfo<'info>,
-    vault_authority_seeds: &[&[u8]],
-    loot_dbtc_vault: Option<&AccountInfo<'info>>,
-    loot_rewards: Option<&mut LootRewards>,
-) -> Result<u64> {
-    // Process mining to ensure up-to-date calculations
-    process_user_mining(user_moonbase, doge_btc_mining)?;
-    
-    // Calculate claimable amount based on hashpower share
-    let user_hashpower = user_moonbase.active_hashpower as u128;
-    let global_hashpower = doge_btc_mining.total_active_hashpower as u128;
-    
-    // If user or global hashpower is zero, nothing to claim
-    if user_hashpower == 0 || global_hashpower == 0 {
-        return Ok(0);
-    }
-    
-    // Calculate the user's share of tokens mined since last claim
-    let precision = 1_000_000_000_000u128;
-    let user_share_precision = user_hashpower.checked_mul(precision).unwrap_or(0) / global_hashpower;
-    
-    let current_slot = Clock::get()?.slot;
-    let slots_since_last_claim = current_slot.saturating_sub(user_moonbase.moondoge_claim_index);
-    
-    // Calculate tokens mined in this period
-    let slots = slots_since_last_claim as u128;
-    let rate = calculate_current_reward_rate(doge_btc_mining) as u128;
-    let tokens_mined = if let Some(slot_rewards) = slots.checked_mul(rate) {
-        if let Some(total_rewards) = slot_rewards.checked_mul(user_share_precision) {
-            total_rewards / precision
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-    
-    // Ensure we don't claim more than available
-    let claimable_amount = tokens_mined.min(u64::MAX as u128) as u64;
-    
-    // If there's nothing to claim, return early
-    if claimable_amount == 0 {
-        msg!("No tokens to claim");
-        return Ok(0);
-    }
-    
-    // Calculate loot rewards (10% of claimable amount)
-    let loot_amount = claimable_amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
-    let user_amount = claimable_amount.checked_sub(loot_amount).unwrap();
-    
-    // Transfer tokens from vault to user (90% of claimable amount)
-    let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
-        &anchor_spl::token_2022::spl_token_2022::ID,           // program_id
-        &token_vault.key(),            // source (vault)
-        &token_mint.key(),             // mint            ▲ NEW
-        &user_token_account.key(),     // destination
-        &vault_authority.key(),        // authority
-        &[],                           // signer_pubkeys (vault PDA is a signer later)
-        user_amount,                   // amount (90% of total)
-        DBTC_DECIMALS,                             // decimals        ▲ NEW
-    )?;
-    anchor_lang::solana_program::program::invoke_signed(
-        &ix,
-        &[
-            token_program.clone(),
-            token_vault.clone(),
-            user_token_account.clone(),
-            vault_authority.clone(),
-        ],
-        &[vault_authority_seeds],
-    )?;
-    
-    // Transfer loot rewards to loot vault (10% of claimable amount)
-    if loot_amount > 0 && loot_dbtc_vault.is_some() {
-        transfer_to_loot_dbtc_vault(
-            token_program,
-            token_vault,
-            loot_dbtc_vault.unwrap(),
-            vault_authority,
-            token_mint,
-            vault_authority_seeds,
-            claimable_amount, // Pass total amount, function will calculate 10%
-        )?;
-        
-        // Update loot rewards tracking
-        if let Some(loot_rewards_account) = loot_rewards {
-            update_loot_rewards_accumulation(loot_rewards_account, claimable_amount, 0)?;
-        }
-    }
-    
-    // Update the user's claim index to the current slot
-    user_moonbase.moondoge_claim_index = current_slot;
-    
-    // Log the claim
-    msg!("Claimed {} DogeBtc tokens", claimable_amount);
-    
-    // Return the amount claimed
-    Ok(claimable_amount)
-}
+
 
 
 
@@ -576,10 +520,8 @@ pub fn transfer_to_loot_dbtc_vault<'info>(
     vault_authority: &AccountInfo<'info>,
     token_mint: &AccountInfo<'info>,
     vault_authority_seeds: &[&[u8]],
-    amount: u64,
+    loot_amount: u64,
 ) -> Result<()> {
-    let loot_amount = amount.checked_mul(LOOT_REWARDS_PERCENTAGE).unwrap().checked_div(100).unwrap();
-    
     if loot_amount > 0 {
         // Transfer DOGE_BTC tokens using Token-2022 instruction directly
         let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(

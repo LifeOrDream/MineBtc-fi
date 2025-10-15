@@ -558,7 +558,7 @@ pub fn claim_dbtc_tokens_internal(
     );
 
     // Process any pending mining rewards
-    helper::process_user_mining(user_moonbase, doge_btc_mining)?;
+    helper::mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
 
     // Get vault authority signer seeds
     let vault_seeds = &[
@@ -585,17 +585,10 @@ pub fn claim_dbtc_tokens_internal(
 
     // Process daily login and award XP based on tokens mined
     let mining_xp = helper::calculate_mining_xp(claimed_amount);
-    process_daily_login_and_xp(
-        user_moonbase,
-        mining_xp,
-        "Mining",
-    )?;
+    process_daily_login_and_xp(   user_moonbase, mining_xp, "Mining")?;
 
     // Emit event
-    emit!(DogeBtcTokensClaimed {
-        owner: user.key(),
-        amount: claimed_amount,
-    });
+    emit!(DogeBtcTokensClaimed {  owner: user.key(), amount: claimed_amount });
 
     msg!("User {} claimed {} DogeBtc tokens", user.key(), claimed_amount);
 

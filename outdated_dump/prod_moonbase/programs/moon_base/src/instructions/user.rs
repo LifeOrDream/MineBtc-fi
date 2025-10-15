@@ -1135,7 +1135,7 @@ pub fn claim_dbtc_tokens_internal(
     );
 
     // Process any pending mining rewards
-    helper::process_user_mining(user_moonbase, doge_btc_mining)?;
+    helper::mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
 
     // Get vault authority signer seeds
     let vault_seeds = &[

@@ -284,7 +284,11 @@ pub struct DogeBtcMining {
     /// Total active electricity across all facilities
     pub total_active_electricity: u64,      
     /// Total tokens mined so far
-    pub total_tokens_mined: u64,            
+    pub total_tokens_mined: u64,       
+
+    /// dBTC tokens minted per hashpower (index for tracking distirbution)
+    pub dbtc_tokens_minted_per_hashpower: u64,
+
     /// Bump for PDA derivation
     pub bump: u8,
     /// Bump for vault authority PDA derivation
@@ -339,10 +343,12 @@ pub struct UserMoonBaseInstance {
     pub owner: Pubkey,
     pub referral: Pubkey,    
     pub modules_count: u8,
-    pub active_hashpower: u64,
+    pub active_hashpower: u64,    
     pub available_electricity: u64,
     pub used_electricity: u64,
+
     pub moondoge_claim_index: u64,
+
     pub bump: u8,
     /// Faction ID (0-based index into GlobalConfig.supported_factions)
     pub faction_id: u8,

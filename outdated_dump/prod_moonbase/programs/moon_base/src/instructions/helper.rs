@@ -123,7 +123,7 @@ pub fn process_referral_payment<'info>(
 
 /// Update the mining state and distribute DogeBtc tokens
 /// This function should be called whenever global hashpower changes
-pub fn update_mining_state(
+pub fn update_global_mining_index(
     doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // Get the current slot
@@ -180,12 +180,12 @@ fn calculate_current_reward_rate(doge_btc_mining: &DogeBtcMining) -> u64 {
 
 /// Process the mining for a specific user
 /// This function should be called whenever a user's hashpower changes
-pub fn process_user_mining(
+pub fn mine_dbtc_for_user(
     user_moonbase: &mut UserMoonBaseInstance,
     doge_btc_mining: &mut DogeBtcMining,
 ) -> Result<()> {
     // First update the global mining state to ensure it's current
-    update_mining_state(doge_btc_mining)?;
+    update_global_mining_index(doge_btc_mining)?;
     
     // If there's no global hashpower, nothing to distribute
     if doge_btc_mining.total_active_hashpower == 0 {
@@ -247,7 +247,7 @@ pub fn claim_dogebtc_tokens<'info>(
     loot_rewards: Option<&mut LootRewards>,
 ) -> Result<u64> {
     // Process mining to ensure up-to-date calculations
-    process_user_mining(user_moonbase, doge_btc_mining)?;
+    mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
     
     // Calculate claimable amount based on hashpower share
     let user_hashpower = user_moonbase.active_hashpower as u128;
