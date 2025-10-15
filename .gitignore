@@ -1,7 +1,5 @@
-outdated_dump/degenhive/*
-outdated_dump/mpl_core/*/target/*
-outdated_dump/raydium/*/target/*
-outdated_dump/*/target/*
+raydium/*/target/*
+*/*/target/*
 
 
 target/*

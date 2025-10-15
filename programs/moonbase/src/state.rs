@@ -87,7 +87,6 @@ pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const MODULE_INSTANCE_SEED: &[u8] = b"module-instance";
 
 // PDAs for Dragon Egg NFT system
-pub const DRAGON_EGG_COLLECTION_SEED: &[u8] = b"dragon-egg-collection";
 pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
 pub const INCUBATION_STATE_SEED: &[u8] = b"incubation-state";
 
@@ -103,9 +102,7 @@ pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
  
 // ========== MODULE SYSTEM CONSTANTS ========== //
 pub const MAX_MODULE_UPGRADES: u8 = 10; // Maximum upgrade level for any module
-pub const UPGRADE_SCALING_FACTOR: u32 = 115; // 1.15x scaling per upgrade (15% increase)
-pub const UPGRADE_SCALING_BASE: u32 = 100; // Base for percentage calculations
-pub const MAX_MODULES_PER_BASE: u8 = 50; // Maximum total modules per moonbase
+
 pub const MAX_BOUGHT_MODULES: usize = 100; // Maximum modules that can be bought but not installed
 
 // ========== GRID SYSTEM CONSTANTS ========== //
@@ -811,7 +808,7 @@ impl ModuleInstance {
 pub const BASE_EGG_POWER: u32 = 100;
 pub const MAX_EGG_POWER: u32 = 1_000_000;
 pub const POWER_RATE_MULTIPLIER: u64 = 1000; // Divisor for balance
-pub const MAX_EGGS_PER_MOONBASE: u8 = 1; // Max 1 egg per moonbase
+
 pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
 

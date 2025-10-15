@@ -1,0 +1,518 @@
+{
+    "network": {
+        "cluster": "devnet", 
+        "rpc_url": "https://api.devnet.solana.com", 
+        "commitment": "confirmed"
+    },
+    "deployment": {
+        "paths": {
+            "deployer_key": "../wallet-keypair.json",
+            "moonbase_idl": "../prod_moonbase/target/idl/moon_base.json",
+            "moon_economy_idl": "../prod_moonbase/target/idl/moon_economy.json",
+            "raydium_idl": "../raydium_cp/target/idl/raydium_cp_swap.json",
+            "deployments_dir": "./deployments"
+        },
+        "creation_fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+        "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
+    },
+    "token": {
+        "name": "DogeBtc",
+        "symbol": "MDOGE",
+        "description": "DogeBtc - The First Doge on the Moon! Play-to-earn lunar mining game token.",
+        "image": "https://arweave.net/dogewifbtc-logo",
+        "external_url": "https://moondoge.game",
+        "decimals": 6,
+        "initial_supply": 21000000000,
+        "burn_tax_bps": 100,
+        "max_burn_amount": 1000000
+    },
+    "moonbase": {
+        "base_creation_cost": 100000000,
+        "loot_percentage": 10,
+        "default_width": 8,
+        "default_height": 6,
+        "grid_max_width": 16,
+        "grid_max_height": 12
+    },
+    "mining": {
+        "start_timestamp": 0,
+        "doge_btc_per_slot": 1000000,
+        "initial_deposit": "21000000000000",
+        "slots_for_swap": 9000
+    },
+    "raydium": {
+        "amm_config_index": 0,
+        "trade_fee_rate": 25,
+        "protocol_fee_rate": 5,
+        "fund_fee_rate": 25000,
+        "create_pool_fee": 40000000,
+        "initial_sol_amount": 100000000,
+        "initial_dbtc_percentage": 1,
+        "open_time": 0,
+        "burn_lp_tokens": true
+    },
+    "factions": [
+        {
+            "name": "United States",
+            "description": "Advanced space technology and military supremacy doctrine"
+        },
+        {
+            "name": "China",
+            "description": "Mass production efficiency and systematic expansion strategy"
+        },
+        {
+            "name": "Russia",
+            "description": "Heavy-duty engineering and military-first approach"
+        },
+        {
+            "name": "Israel",
+            "description": "Cutting-edge defense systems and intelligence operations"
+        },
+        {
+            "name": "Iran",
+            "description": "Resource extraction focus and asymmetric warfare tactics"
+        },
+        {
+            "name": "Ukraine",
+            "description": "Resilient defensive technology and freedom preservation"
+        }
+    ],
+    "expansions": [
+        {
+            "id": 1,
+            "name": "Forward Operating Base",
+            "required_level": 5,
+            "cost_sol": 1000000000,
+            "new_width": 10,
+            "new_height": 8
+        },
+        {
+            "id": 2,
+            "name": "Strategic Command Center",
+            "required_level": 10,
+            "cost_sol": 2000000000,
+            "new_width": 12,
+            "new_height": 10
+        },
+        {
+            "id": 3,
+            "name": "Military Industrial Complex",
+            "required_level": 20,
+            "cost_sol": 5000000000,
+            "new_width": 14,
+            "new_height": 12
+        },
+        {
+            "id": 4,
+            "name": "Lunar Superbase",
+            "required_level": 35,
+            "cost_sol": 10000000000,
+            "new_width": 16,
+            "new_height": 12
+        }
+    ],
+    "modules": [
+        {
+            "name": "F",
+            "image_url": "FF ",
+            "module_type": "Mining",
+            "stats": {
+                "mining": {
+                    "maxHp": 1100,
+                    "baseHashpower": 1200,
+                    "powerConsumption": 90
+                }
+            },
+            "faction_ids": [1,2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 4,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 150000000,
+            "upgrade_cost": 75000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Red Dragon Extraction Facility",
+            "image_url": "https://arweave.net/china-extraction-facility",
+            "module_type": "Mining",
+            "stats": {
+                "Mining": {
+                    "maxHp": 1600,
+                    "baseHashpower": 2800,
+                    "powerConsumption": 180
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 5,
+            "width": 3,
+            "height": 2,
+            "mint_cost": 400000000,
+            "upgrade_cost": 150000000,
+            "upgrade_level_requirements": [1, 2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Siberian Deep Core Rig",
+            "image_url": "https://arweave.net/russia-deep-core-rig",
+            "module_type": "Mining",
+            "stats": {
+                "Mining": {
+                    "maxHp": 2800,
+                    "baseHashpower": 5500,
+                    "powerConsumption": 350
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 2,
+            "width": 3,
+            "height": 3,
+            "mint_cost": 1800000000,
+            "upgrade_cost": 450000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Persian Gulf Energy Harvester",
+            "image_url": "https://arweave.net/iran-energy-harvester",
+            "module_type": "Mining",
+            "stats": {
+                "Mining": {
+                    "maxHp": 1400,
+                    "baseHashpower": 3200,
+                    "powerConsumption": 220
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 3,
+            "width": 2,
+            "height": 3,
+            "mint_cost": 600000000,
+            "upgrade_cost": 200000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Liberty Memorial Complex",
+            "image_url": "https://arweave.net/usa-memorial-complex",
+            "module_type": "Attraction",
+            "stats": {
+                "Attraction": {
+                    "maxHp": 900,
+                    "baseXpPerHour": 120,
+                    "powerConsumption": 45
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 3,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 200000000,
+            "upgrade_cost": 90000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Red Square Monument",
+            "image_url": "https://arweave.net/russia-red-square",
+            "module_type": "Attraction",
+            "stats": {
+                "Attraction": {
+                    "maxHp": 1200,
+                    "baseXpPerHour": 150,
+                    "powerConsumption": 60
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 2,
+            "width": 3,
+            "height": 2,
+            "mint_cost": 350000000,
+            "upgrade_cost": 140000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Maidan Memorial",
+            "image_url": "https://arweave.net/ukraine-maidan-memorial",
+            "module_type": "Attraction",
+            "stats": {
+                "Attraction": {
+                    "maxHp": 800,
+                    "baseXpPerHour": 180,
+                    "powerConsumption": 40
+                }
+            },
+            "faction_ids": [5],
+            "min_level": 5,
+            "max_per_base": 4,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 180000000,
+            "upgrade_cost": 70000000,
+            "upgrade_level_requirements": [7, 10, 14, 18, 23, 28, 34, 40, 47, 55]
+        },
+        {
+            "name": "NASA Advanced Laboratory",
+            "image_url": "https://arweave.net/nasa-lab",
+            "module_type": "Research",
+            "stats": {
+                "Research": {
+                    "maxHp": 1400,
+                    "cooldownSec": 3200,
+                    "maxReward": 1200000000,
+                    "probability": 6000,
+                    "powerConsumption": 140
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 2,
+            "width": 3,
+            "height": 2,
+            "mint_cost": 450000000,
+            "upgrade_cost": 180000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Jade Rabbit Research Station",
+            "image_url": "https://arweave.net/china-jade-rabbit",
+            "module_type": "Research",
+            "stats": {
+                "Research": {
+                    "maxHp": 1600,
+                    "cooldownSec": 2800,
+                    "maxReward": 1400000000,
+                    "probability": 5500,
+                    "powerConsumption": 160
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 3,
+            "width": 2,
+            "height": 3,
+            "mint_cost": 500000000,
+            "upgrade_cost": 200000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Mossad Intelligence Center",
+            "image_url": "https://arweave.net/israel-mossad-center",
+            "module_type": "Research",
+            "stats": {
+                "Research": {
+                    "maxHp": 1100,
+                    "cooldownSec": 2400,
+                    "maxReward": 900000000,
+                    "probability": 7500,
+                    "powerConsumption": 120
+                }
+            },
+            "faction_ids": [3],
+            "min_level": 10,
+            "max_per_base": 2,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 600000000,
+            "upgrade_cost": 250000000,
+            "upgrade_level_requirements": [13, 16, 20, 25, 30, 36, 42, 49, 57, 66]
+        },
+        {
+            "name": "Iron Dome Lunar Defense",
+            "image_url": "https://arweave.net/israel-iron-dome",
+            "module_type": "Attack",
+            "stats": {
+                "Attack": {
+                    "maxHp": 1300,
+                    "baseDamage": 180,
+                    "baseMissilesPerLoad": 12,
+                    "reloadTimeSeconds": 25,
+                    "powerConsumption": 85
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 4,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 400000000,
+            "upgrade_cost": 160000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Kalashnikov Orbital Platform",
+            "image_url": "https://arweave.net/russia-kalashnikov",
+            "module_type": "Attack",
+            "stats": {
+                "Attack": {
+                    "maxHp": 2200,
+                    "baseDamage": 320,
+                    "baseMissilesPerLoad": 8,
+                    "reloadTimeSeconds": 45,
+                    "powerConsumption": 180
+                }
+            },
+            "faction_ids": [1, 2, 3, 4, 5],
+            "min_level": 0,
+            "max_per_base": 2,
+            "width": 3,
+            "height": 2,
+            "mint_cost": 900000000,
+            "upgrade_cost": 350000000,
+            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
+        },
+        {
+            "name": "Patriot Moon Battery",
+            "image_url": "https://arweave.net/usa-patriot-battery",
+            "module_type": "Attack",
+            "stats": {
+                "Attack": {
+                    "maxHp": 1800,
+                    "baseDamage": 280,
+                    "baseMissilesPerLoad": 6,
+                    "reloadTimeSeconds": 35,
+                    "powerConsumption": 150
+                }
+            },
+            "faction_ids": [0],
+            "min_level": 12,
+            "max_per_base": 3,
+            "width": 3,
+            "height": 2,
+            "mint_cost": 750000000,
+            "upgrade_cost": 280000000,
+            "upgrade_level_requirements": [15, 19, 23, 28, 34, 40, 47, 55, 64, 74]
+        },
+        {
+            "name": "Shaheed Drone Swarm Hub",
+            "image_url": "https://arweave.net/iran-drone-swarm",
+            "module_type": "Attack",
+            "stats": {
+                "Attack": {
+                    "maxHp": 1000,
+                    "baseDamage": 140,
+                    "baseMissilesPerLoad": 20,
+                    "reloadTimeSeconds": 60,
+                    "powerConsumption": 100
+                }
+            },
+            "faction_ids": [4],
+            "min_level": 10,
+            "max_per_base": 3,
+            "width": 2,
+            "height": 3,
+            "mint_cost": 500000000,
+            "upgrade_cost": 180000000,
+            "upgrade_level_requirements": [13, 16, 20, 25, 30, 36, 42, 49, 57, 66]
+        },
+        {
+            "name": "Javelin Defense System",
+            "image_url": "https://arweave.net/ukraine-javelin",
+            "module_type": "Attack",
+            "stats": {
+                "Attack": {
+                    "maxHp": 1200,
+                    "baseDamage": 220,
+                    "baseMissilesPerLoad": 4,
+                    "reloadTimeSeconds": 40,
+                    "powerConsumption": 90
+                }
+            },
+            "faction_ids": [5],
+            "min_level": 9,
+            "max_per_base": 4,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 350000000,
+            "upgrade_cost": 140000000,
+            "upgrade_level_requirements": [12, 15, 19, 24, 29, 35, 41, 48, 56, 65]
+        },
+        {
+            "name": "Great Wall Observatory",
+            "image_url": "https://arweave.net/china-great-wall-observatory",
+            "module_type": "Attraction",
+            "stats": {
+                "Attraction": {
+                    "maxHp": 1000,
+                    "baseXpPerHour": 130,
+                    "powerConsumption": 55
+                }
+            },
+            "faction_ids": [1],
+            "min_level": 6,
+            "max_per_base": 3,
+            "width": 3,
+            "height": 2,
+            "mint_cost": 280000000,
+            "upgrade_cost": 110000000,
+            "upgrade_level_requirements": [8, 11, 15, 19, 24, 29, 35, 41, 48, 56]
+        },
+        {
+            "name": "Roscosmos Deep Space Lab",
+            "image_url": "https://arweave.net/russia-roscosmos-lab",
+            "module_type": "Research",
+            "stats": {
+                "Research": {
+                    "maxHp": 1800,
+                    "cooldownSec": 3600,
+                    "maxReward": 1600000000,
+                    "probability": 4500,
+                    "powerConsumption": 200
+                }
+            },
+            "faction_ids": [2],
+            "min_level": 12,
+            "max_per_base": 2,
+            "width": 3,
+            "height": 3,
+            "mint_cost": 750000000,
+            "upgrade_cost": 300000000,
+            "upgrade_level_requirements": [15, 19, 24, 29, 35, 41, 48, 56, 65, 75]
+        },
+        {
+            "name": "Tehran Command Center",
+            "image_url": "https://arweave.net/iran-command-center",
+            "module_type": "Attraction",
+            "stats": {
+                "Attraction": {
+                    "maxHp": 1100,
+                    "baseXpPerHour": 140,
+                    "powerConsumption": 70
+                }
+            },
+            "faction_ids": [4],
+            "min_level": 8,
+            "max_per_base": 2,
+            "width": 2,
+            "height": 3,
+            "mint_cost": 320000000,
+            "upgrade_cost": 130000000,
+            "upgrade_level_requirements": [11, 14, 18, 23, 28, 34, 40, 47, 55, 64]
+        }
+    ],
+    "moonEconomy": {
+        "moondoge_allocation": 33,
+        "liquidity_allocation": 33,
+        "min_lockup_days": 1,
+        "max_lockup_days": 365,
+        "base_multiplier": 100,
+        "max_multiplier": 700,
+        "electricity_per_weighted_mdoge": 100,
+        "electricity_per_weighted_lp_tokens": 400
+    },
+    "pvp": {
+        "min_hp_required": 1000,
+        "turn_timeout_seconds": 300,
+        "max_turns": 15,
+        "max_hash_leech_percent": 50,
+        "ticket_tiers": [
+            100000000,
+            1000000000,
+            10000000000,
+            100000000000,
+            500000000000
+        ]
+    }
+
+}

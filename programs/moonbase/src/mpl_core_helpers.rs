@@ -45,41 +45,41 @@ pub fn create_mpl_core_asset<'info>(
     Ok(())
 }
 
-/// Transfer a Metaplex Core NFT asset via CPI
-pub fn transfer_mpl_core_asset<'info>(
-    asset: &AccountInfo<'info>,
-    collection: Option<&AccountInfo<'info>>,
-    payer: &AccountInfo<'info>,
-    authority: &AccountInfo<'info>,
-    new_owner: &AccountInfo<'info>,
-    _system_program: &AccountInfo<'info>,
-    mpl_core_program: &AccountInfo<'info>,
-) -> Result<()> {
-    // Validate Metaplex Core program
-    require!(
-        mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
-        crate::errors::ErrorCode::InvalidMplCoreProgram
-    );
+// /// Transfer a Metaplex Core NFT asset via CPI
+// pub fn transfer_mpl_core_asset<'info>(
+//     asset: &AccountInfo<'info>,
+//     collection: Option<&AccountInfo<'info>>,
+//     payer: &AccountInfo<'info>,
+//     authority: &AccountInfo<'info>,
+//     new_owner: &AccountInfo<'info>,
+//     _system_program: &AccountInfo<'info>,
+//     mpl_core_program: &AccountInfo<'info>,
+// ) -> Result<()> {
+//     // Validate Metaplex Core program
+//     require!(
+//         mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
+//         crate::errors::ErrorCode::InvalidMplCoreProgram
+//     );
 
-    // Build TransferV1 CPI
-    let mut cpi_builder = TransferV1CpiBuilder::new(mpl_core_program);
+//     // Build TransferV1 CPI
+//     let mut cpi_builder = TransferV1CpiBuilder::new(mpl_core_program);
 
-    cpi_builder
-        .asset(asset)
-        .payer(payer)
-        .authority(Some(authority))
-        .new_owner(new_owner);
+//     cpi_builder
+//         .asset(asset)
+//         .payer(payer)
+//         .authority(Some(authority))
+//         .new_owner(new_owner);
 
-    // Add collection if provided
-    if let Some(collection_account) = collection {
-        cpi_builder.collection(Some(collection_account));
-    }
+//     // Add collection if provided
+//     if let Some(collection_account) = collection {
+//         cpi_builder.collection(Some(collection_account));
+//     }
 
-    // Execute CPI
-    cpi_builder.invoke()?;
+//     // Execute CPI
+//     cpi_builder.invoke()?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Get NFT owner from Metaplex Core asset account
 pub fn get_mpl_core_owner(asset_account: &AccountInfo) -> Result<Pubkey> {

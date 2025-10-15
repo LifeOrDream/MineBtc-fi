@@ -33,8 +33,6 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     let sol_cost: u64;
     let to_mint_dragon: bool;
     
-    const PRICE_ONE: u64 = 500_000_000;  // 0.5 SOL
-    const PRICE_TWO: u64 = 1_420_000_000; // 1.42 SOL
     
     if pricing_tier == PRICE_ONE {
         sol_cost = PRICE_ONE;
@@ -2284,32 +2282,3 @@ pub struct RemoveDragonEgg<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
-#[derive(Accounts)]
-pub struct UpdateDragonEggPower<'info> {
-    #[account(
-        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
-        bump = user_moonbase.bump,
-    )]
-    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-
-    #[account(
-        mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_metadata.mint.as_ref()],
-        bump = dragon_egg_metadata.bump,
-    )]
-    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
-
-    #[account(
-        mut,
-        seeds = [INCUBATION_STATE_SEED.as_ref(), user.key().as_ref()],
-        bump = incubation_state.bump,
-    )]
-    pub incubation_state: Account<'info, IncubationState>,
-
-    /// CHECK: User wallet (used for PDA derivation)
-    pub user: UncheckedAccount<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-

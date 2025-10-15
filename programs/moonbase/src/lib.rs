@@ -8,7 +8,6 @@ pub mod instructions;
 
 pub use instructions::admin::*;
 pub use instructions::user::*;
-// pub use instructions::game::*;
 
 declare_id!("CSWE15QqLXN3ucPJQY2EaHKauNvUPhBPA5yB6yxqiVHr");
 
