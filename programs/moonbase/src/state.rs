@@ -7,7 +7,9 @@ pub const PRICE_TWO: u64 = 1_420_000_000; // 1.42 SOL
 
  
 pub const DBTC_DECIMALS: u8 = 6;
-pub const ONE_HR: u64 = 1; // 3600;
+pub const THIRTY_MINS: u64 = 1800; // 30 minutes in seconds
+pub const FOUR_HOURS: u64 = 14400; // 4 hours in seconds
+pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
@@ -16,8 +18,12 @@ pub const MAX_SAFE_U64: u64 = u64::MAX / 1_000_000; // Leave headroom for calcul
 
 // ========== GLOBAL CONSTANTS ========== //
 pub const REFERRAL_FEE: u64 = 15; // 15%
-pub const LOOT_REWARDS_PERCENTAGE: u64 = 10; // 10% of distributions/collections go to loot rewards
+pub const LOOT_REWARDS_PERCENTAGE: u64 = 15; // 15% of distributions/collections go to loot rewards (increased for sustainability)
 pub const DISCRIMINATOR_SIZE: usize = 8;
+
+// ========== LOOT SYSTEM CONSTANTS ========== //
+pub const LOOT_TARGET_SOL_VAULT: u64 = 1_000_000_000_000; // 1,000 SOL target for healthy vault
+pub const LOOT_TARGET_DBTC_VAULT: u64 = 100_000_000_000; // 100,000 DBTC target for healthy vault
 
 // ========== FACTION CONSTANTS ========== //
 pub const MAX_FACTIONS: usize = 25; // Maximum number of supported factions
@@ -299,25 +305,27 @@ pub struct DogeBtcMining {
     pub last_rate_update: i64,
     /// Current distribution rate (starts at doge_btc_per_slot)
     pub current_dist_rate: u64,
-    /// Price history for 8-hour rolling average (8 entries, 1 per hour)
+    /// Price history for 4-hour rolling average (8 entries, 1 per 30 mins)
     pub price_history: Vec<PriceEntry>,
-    /// Current 8-hour average price
-    pub avg_price_8h: u64,
-    /// Previous 8-hour average price for comparison
-    pub prev_avg_price_8h: u64,
+    /// Recent price (last snapshot, used for comparison)
+    pub recent_price: u64,
+    /// Track price (price when last rate change actually happened)
+    pub track_price: u64,
     /// SOL amount reserved for Protocol Owned Liquidity (tracked but stored in pda_sol_treasury)
     pub sol_for_pol: u64,
-    /// Slots per hour for swap calculations (configurable, default ~9000)
+    /// Slots per 30min for swap calculations (configurable, default ~4500)
     pub slots_for_swap: u64,
     /// Protocol Owned Liquidity tracking
     pub pol_stats: ProtocolOwnedLiquidity,
+    /// LP token price in SOL (9-decimal precision, updated during oracle updates)
+    pub lp_token_price_in_sol: u64,
 }
 
 impl DogeBtcMining {
     // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
-    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + avg_price_8h + prev_avg_price_8h + sol_for_pol + slots_for_swap + pol_stats
-    pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 8-hour rolling average
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN;
+    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + slots_for_swap + pol_stats + lp_token_price_in_sol
+    pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN + 8;
 }
 
 /// ------------ USER MOON-BASE INSTANCES ------------

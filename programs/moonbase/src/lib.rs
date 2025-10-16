@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program;
 mod state;
 mod errors;
 mod events;
@@ -225,6 +224,11 @@ pub mod moonbase {
     /// Query function to get global config values for external programs
     pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
         admin::query_global_config_internal(ctx)
+    }
+
+    /// Query function to get token prices (dBTC and LP) for external programs
+    pub fn query_token_prices(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
+        admin::query_token_prices_internal(ctx)
     }
 
 

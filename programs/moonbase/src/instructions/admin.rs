@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use crate::state::*;
 use crate::events::*;
-use anchor_lang::system_program::{self, Transfer}; // <- the CPI struct
+use anchor_lang::system_program;
 
 use crate::errors::ErrorCode;
 
@@ -36,6 +36,12 @@ pub struct GlobalConfigInfo {
     pub base_creation_cost: u64,
     pub ext_authority: Pubkey,
     pub ext_fee_collector: Pubkey,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct TokenPricesInfo {
+    pub dbtc_price_in_sol: u64,
+    pub lp_token_price_in_sol: u64,
 }
 
 // -------------------------------------------------------------------------------- 
@@ -97,10 +103,10 @@ pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, cr
     doge_btc_mining.last_rate_update = 0;
     doge_btc_mining.current_dist_rate = 0;
     doge_btc_mining.price_history = Vec::new();
-    doge_btc_mining.avg_price_8h = 0;
-    doge_btc_mining.prev_avg_price_8h = 0;
+    doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
+    doge_btc_mining.track_price = 0;
     doge_btc_mining.sol_for_pol = 0;
-    doge_btc_mining.slots_for_swap = 9000;
+    doge_btc_mining.slots_for_swap = 450; // 3-minute periods
     
     msg!("Program initialized with creation cost: {}", base_creation_cost);
     msg!("SOL Treasury PDA created at: {} with bump: {}", ctx.accounts.sol_treasury.key(), ctx.bumps.sol_treasury);
@@ -303,14 +309,14 @@ pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timest
     doge_btc_mining.current_dist_rate = doge_btc_per_slot;
 
     doge_btc_mining.price_history = Vec::with_capacity(8);
-    doge_btc_mining.avg_price_8h = 0;
-    doge_btc_mining.prev_avg_price_8h = 0;
+    doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
+    doge_btc_mining.track_price = 0; // Initialize with same default
 
     doge_btc_mining.sol_for_pol = 0; // Initialize POL tracking
-    doge_btc_mining.slots_for_swap = 9000; // Default: ~2.5 slots/second * 3600 seconds
+    doge_btc_mining.slots_for_swap = 450; // Default: ~2.5 slots/second * 1800 seconds (3 mins)
     doge_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
 
-    msg!("Initialized dynamic distribution system with Raydium pool: {}", pool_state);
+    msg!("Initialized dynamic distribution system (30min snapshots, 4hr cycles) with Raydium pool: {}", pool_state);
 
     // Emit event
     emit!(MiningTokenVaultSet {
@@ -813,6 +819,16 @@ pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<G
     })
 }
 
+/// Query token prices (dBTC and LP) for external programs
+pub fn query_token_prices_internal(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
+    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
+
+    Ok(TokenPricesInfo {
+        dbtc_price_in_sol: doge_btc_mining.recent_price,
+        lp_token_price_in_sol: doge_btc_mining.lp_token_price_in_sol,
+    })
+}
+
 
 
 // ----------------------------------------------------------------------------------------
@@ -820,8 +836,34 @@ pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<G
 // ----------------------------------------------------------------------------------------
  
 
-/// Update DOGE_BTC distribution rate based on price oracle
-/// This function can be called by anyone every hour
+/// Calculate price change percentage between old and new price
+/// Returns (change_pct, direction) where direction: 1=increase, -1=decrease, 0=same
+fn calculate_price_change_pct(old_price: u64, new_price: u64) -> (i64, i64) {
+    if old_price == 0 || new_price == 0 {
+        return (0, 0);
+    }
+    
+    let old = old_price as i128;
+    let new = new_price as i128;
+    
+    // Calculate percentage change: ((new - old) / old) × 100
+    let diff = new - old;
+    let change_pct = (diff * 100) / old;
+    
+    let direction = if new > old {
+        1
+    } else if new < old {
+        -1
+    } else {
+        0
+    };
+    
+    (change_pct as i64, direction)
+}
+
+/// Update DBTC distribution rate based on price oracle
+/// This function can be called by anyone every 30 minutes
+/// Distribution rate updated every 4 hours with 3% deadband
 pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
@@ -840,11 +882,11 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
         msg!("🔄 Using automatic LP calculation");
     }
     
-    // Check if at least 1 hour has passed since last update
-    let one_hour = ONE_HR as i64; // seconds, convert to i64 to match timestamp type
-    if current_time < doge_btc_mining.last_rate_update + one_hour {
-        msg!("⏰ Update too early - must wait at least 1 hour between updates");
-        msg!("   Current time: {}, Next update allowed: {}, remaining minutes: {}", current_time, doge_btc_mining.last_rate_update + one_hour, (doge_btc_mining.last_rate_update + one_hour - current_time) / 60);
+    // Check if at least 30 minutes has passed since last update
+    let thirty_mins = THIRTY_MINS as i64;
+    if current_time < doge_btc_mining.last_rate_update + thirty_mins {
+        msg!("⏰ Update too early - must wait at least 30 minutes between updates");
+        msg!("   Current time: {}, Next update allowed: {}, remaining seconds: {}", current_time, doge_btc_mining.last_rate_update + thirty_mins, (doge_btc_mining.last_rate_update + thirty_mins - current_time));
         return Ok(());
     }
     
@@ -853,10 +895,10 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     msg!("   Last update: {}", doge_btc_mining.last_rate_update);
     msg!("   Current dist rate: {}", doge_btc_mining.current_dist_rate);
     
-    // Calculate DOGE_BTC for liquidity based on current distribution rate and slots
+    // Calculate DBTC for liquidity based on current distribution rate and slots
     let dbtc_for_liquidity = doge_btc_mining.current_dist_rate.checked_mul(doge_btc_mining.slots_for_swap).ok_or(ErrorCode::ArithmeticOverflow)?;
         
-    msg!("   Price entry {}/8: Swapping {} DOGE_BTC for SOL", 
+    msg!("   Price snapshot {}/8: Swapping {} DOGE_BTC for SOL", 
          doge_btc_mining.price_history.len() + 1, dbtc_for_liquidity);
     
     // Perform swap via Raydium CPI to get current exchange rate
@@ -921,37 +963,17 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     
     // Add price entry to history
     doge_btc_mining.price_history.push(price_entry);
-        
-    // ----------------------------------------------------
-    // Check if we have 8 price entries for full processing
-    // ----------------------------------------------------
-    if doge_btc_mining.price_history.len() < 8 {
-        // Not enough price history yet - just accumulate SOL for future POL
-        // The SOL is already in our sol_token_account, so we just track it
-        doge_btc_mining.sol_for_pol = doge_btc_mining.sol_for_pol.checked_add(sol_received).unwrap();
-        
-        msg!("   💰 Accumulated {} WSOL for POL, total reserve: {}, price entries: {}/8", 
-            sol_received, doge_btc_mining.sol_for_pol, doge_btc_mining.price_history.len());
-        msg!("   WSOL remains in token account: {}", ctx.accounts.sol_token_account.key());
-        
-        // Update timestamp
-        doge_btc_mining.last_rate_update = current_time;
-        
-        return Ok(());
-    }
     
-    // ----------------------------------------------------
-    // We have 8 price entries - do weighted average (recent prices get higher weight)
-    // ----------------------------------------------------
-    // Weights: [1, 2, 3, 4, 5, 6, 7, 8] for positions [0, 1, 2, 3, 4, 5, 6, 7]
-    // Most recent price (index 7) gets weight 8, oldest (index 0) gets weight 1
+    // Accumulate SOL for POL
+    doge_btc_mining.sol_for_pol = doge_btc_mining.sol_for_pol.checked_add(sol_received).unwrap();
+    
+    // Calculate ongoing weighted average (even before 4 hours)
     let mut weighted_sum: u128 = 0;
     let mut total_weights: u128 = 0;
     
     for (i, entry) in doge_btc_mining.price_history.iter().enumerate() {
         let weight = (i + 1) as u128; // Weight from 1 to 8
         
-        // Prevent overflow in weighted sum calculation
         let price_contribution = (entry.price as u128)
             .checked_mul(weight)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -965,63 +987,115 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     
-    let new_avg_price = if total_weights > 0 {
+    let current_weighted_avg = if total_weights > 0 {
         (weighted_sum / total_weights).min(u64::MAX as u128) as u64
     } else {
-        0
+        current_price
     };
     
-    msg!("   New 8-hour weighted average price: {} (total_weights: {})", new_avg_price, total_weights);
-    msg!("   Previous 8-hour average: {}", doge_btc_mining.avg_price_8h);
+    // Update recent price with current weighted average
+    doge_btc_mining.recent_price = current_weighted_avg;
     
-    // Calculate price change percentage with proper bounds checking
-    let price_change_pct = if doge_btc_mining.avg_price_8h > 0 {
-        let old_price = doge_btc_mining.avg_price_8h as i128;
-        let new_price = new_avg_price as i128;
+    msg!("   💰 Accumulated {} WSOL for POL, total reserve: {}", sol_received, doge_btc_mining.sol_for_pol);
+    msg!("   📊 Ongoing weighted average: {} (from {} snapshots)", current_weighted_avg, doge_btc_mining.price_history.len());
+    msg!("   🎯 Track price (last rate change): {}", doge_btc_mining.track_price);
+    
+    // Update timestamp for next snapshot
+    doge_btc_mining.last_rate_update = current_time;
         
-        let directional_change = if new_price > old_price {
-           1
-        } else if new_price < old_price {
-            -1
-        } else {
-            0 // Exact same price
-        };
-        directional_change
+    // ----------------------------------------------------
+    // Check if 4 hours have passed AND we have 8 price entries
+    // Only then check if distribution rate should change
+    // ----------------------------------------------------
+    let four_hours = FOUR_HOURS as i64;
+    let time_since_last = doge_btc_mining.price_history.first()
+        .map(|e| current_time - e.timestamp)
+        .unwrap_or(0);
+    
+    if doge_btc_mining.price_history.len() < 8 || time_since_last < four_hours {
+        msg!("   ⏰ Not ready for rate update: {} snapshots, {} seconds elapsed (need 8 snapshots over 4 hours)", 
+             doge_btc_mining.price_history.len(), time_since_last);
+        return Ok(());
+    }
+    
+    // ----------------------------------------------------
+    // 4 hours completed - Check if rate should change
+    // ----------------------------------------------------
+    msg!("   ✅ 4-hour cycle complete with {} snapshots", doge_btc_mining.price_history.len());
+    
+    let new_avg_price = current_weighted_avg;
+    
+    // Initialize track_price if first time
+    if doge_btc_mining.track_price == 0 {
+        doge_btc_mining.track_price = new_avg_price;
+        msg!("   🎯 Initialized track_price: {}", doge_btc_mining.track_price);
+    }
+    
+    // Calculate price change percentage from BOTH recent and track prices
+    // Use the LARGER change to determine if we should update
+    let change_from_track = calculate_price_change_pct(doge_btc_mining.track_price, new_avg_price);
+    
+    // For recent_price, use the oldest entry in history (4 hours ago)
+    let recent_comparison_price = doge_btc_mining.price_history.first()
+        .map(|e| e.price)
+        .unwrap_or(new_avg_price);
+    let change_from_recent = calculate_price_change_pct(recent_comparison_price, new_avg_price);
+    
+    msg!("   📊 Price changes: from track_price ({}): {}%, from 4h ago ({}): {}%", 
+         doge_btc_mining.track_price, change_from_track.0,
+         recent_comparison_price, change_from_recent.0);
+    
+    // Pick the larger change (by absolute value)
+    let (price_change_pct, direction) = if change_from_track.0.abs() > change_from_recent.0.abs() {
+        msg!("   🎯 Using change from track_price (larger movement)");
+        change_from_track
     } else {
-        0
+        msg!("   🎯 Using change from 4h ago price (larger movement)");
+        change_from_recent
     };
     
-    // Adjust distribution rate based on price movement
+    msg!("   📈 Selected price change: {}% (direction: {})", price_change_pct, direction);
+    
+    // Check if change exceeds 3% threshold
     let old_rate = doge_btc_mining.current_dist_rate;
-    if price_change_pct == 1 {
-        // Price increased - increase distribution by 1%
+    let mut rate_changed = false;
+    
+    if price_change_pct.abs() < PRICE_CHANGE_THRESHOLD as i64 {
+        msg!("   ➡️ Price change {}% within ±3% deadband, keeping same distribution rate", price_change_pct);
+        // Don't update track_price, keep monitoring
+    } else if direction > 0 {
+        // Price increased by >3% - increase distribution by 1%
         doge_btc_mining.current_dist_rate = doge_btc_mining.current_dist_rate
             .checked_mul(101)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         
-        msg!("   📈 Price increased! Increasing distribution rate by 1%");
-    } else if price_change_pct == -1 {
-        // Price decreased - decrease distribution by 3%
+        msg!("   📈 Price increased {}%! Increasing distribution rate by 1%", price_change_pct);
+        rate_changed = true;
+    } else {
+        // Price decreased by >3% - decrease distribution by 3%
         doge_btc_mining.current_dist_rate = doge_btc_mining.current_dist_rate
             .checked_mul(97)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         
-        msg!("   📉 Price decreased! Decreasing distribution rate by 3%");
-    } else {
-        msg!("   ➡️ Price unchanged, keeping same distribution rate");
+        msg!("   📉 Price decreased {}%! Decreasing distribution rate by 3%", price_change_pct);
+        rate_changed = true;
+    }
+    
+    // Update track_price only if rate actually changed
+    if rate_changed {
+        doge_btc_mining.track_price = new_avg_price;
+        msg!("   🎯 Updated track_price to: {}", doge_btc_mining.track_price);
     }
     
     // Calculate amounts for LP addition using UPDATED distribution rate
-    // Get SOL from treasury (accumulated POL + current swap)
-    let total_sol_for_lp = doge_btc_mining.sol_for_pol
-        .checked_add(sol_received)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    // Use accumulated SOL (already includes current swap)
+    let total_sol_for_lp = doge_btc_mining.sol_for_pol;
     
-    msg!("   🏦 Adding liquidity: {} WSOL", total_sol_for_lp);
+    msg!("   🏦 Adding liquidity: {} WSOL (accumulated over 4 hours)", total_sol_for_lp);
     
     // Note: WSOL is already in our sol_token_account from swaps, no need to withdraw from treasury
     
@@ -1063,23 +1137,27 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     msg!("   💰 SOL consumption: {} total available, {} consumed for LP, {} remaining", 
          total_sol_for_lp, sol_consumed_for_lp, doge_btc_mining.sol_for_pol);
     
-    // Clear price history to restart the 8-hour cycle
+    // Clear price history to restart the 4-hour cycle
     doge_btc_mining.price_history.clear();
     
     // Update state
-    doge_btc_mining.prev_avg_price_8h = doge_btc_mining.avg_price_8h;
-    doge_btc_mining.avg_price_8h = new_avg_price;
+    doge_btc_mining.recent_price = new_avg_price; // Store as recent for next cycle
     doge_btc_mining.last_rate_update = current_time;
     
-    msg!("   🔄 Price history cleared - restarting 8-hour accumulation cycle");
-    msg!("   🎯 Distribution rate updated from {} to {}", old_rate, doge_btc_mining.current_dist_rate);
+    msg!("   🔄 Price history cleared - restarting 4-hour accumulation cycle");
+    msg!("   🎯 Distribution rate: {} -> {} ({})", 
+         old_rate, doge_btc_mining.current_dist_rate,
+         if rate_changed { "CHANGED" } else { "unchanged" });
     
     emit!(DistributionRateUpdated {
         old_rate,
         new_rate: doge_btc_mining.current_dist_rate,
-        price_change_pct,
+        price_change_pct: price_change_pct as i32,
         current_price,
-        avg_price_8h: new_avg_price,
+        avg_price_4h: new_avg_price,
+        track_price: doge_btc_mining.track_price,
+        recent_price: doge_btc_mining.recent_price,
+        rate_changed,
         sol_received,
         timestamp: current_time,
     });
@@ -1405,6 +1483,88 @@ fn perform_lp_addition_and_burn<'info>(
     } else {
         msg!("⚠️ No LP tokens were minted, skipping burn");
     }
+    
+    // Calculate and store LP token price in SOL terms
+    // LP price = (SOL_in_pool + DBTC_in_pool * DBTC_price) / LP_supply
+    let sol_vault_balance_final = {
+        let account_data = sol_vault.try_borrow_data()?;
+        let token_account = anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
+        token_account.amount
+    };
+    
+    let dbtc_vault_balance_final = {
+        let account_data = dbtc_vault.try_borrow_data()?;
+        let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
+        token_account.amount
+    };
+    
+    let lp_supply_final = {
+        let pool_data = pool_state.try_borrow_data()?;
+        let lp_supply_offset = 8 + 10 * 32 + 5;
+        if pool_data.len() >= lp_supply_offset + 8 {
+            u64::from_le_bytes([
+                pool_data[lp_supply_offset],
+                pool_data[lp_supply_offset + 1],
+                pool_data[lp_supply_offset + 2],
+                pool_data[lp_supply_offset + 3],
+                pool_data[lp_supply_offset + 4],
+                pool_data[lp_supply_offset + 5],
+                pool_data[lp_supply_offset + 6],
+                pool_data[lp_supply_offset + 7],
+            ])
+        } else {
+            0
+        }
+    };
+    
+    // Calculate LP token price if we have valid data
+    if lp_supply_final > 0 {
+        // Get dBTC price from the recent_price (already in 9-decimal precision)
+        let dbtc_price = doge_btc_mining.recent_price;
+        
+        // Calculate total value in pool in SOL terms (9-decimal precision)
+        // SOL value = sol_vault_balance (9 decimals)
+        // DBTC value in SOL = dbtc_vault_balance (6 decimals) * dbtc_price (9 decimals) / 10^6
+        let sol_value = sol_vault_balance_final; // Already in 9-decimal precision (lamports)
+        
+        let dbtc_value_in_sol = if dbtc_price > 0 {
+            // (dbtc_vault * dbtc_price) / 10^6
+            // This gives us SOL value with 9-decimal precision
+            (dbtc_vault_balance_final as u128)
+                .checked_mul(dbtc_price as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(1_000_000) // DBTC has 6 decimals
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .min(u64::MAX as u128) as u64
+        } else {
+            0
+        };
+        
+        let total_pool_value_sol = sol_value
+            .checked_add(dbtc_value_in_sol)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        // LP token price = total_pool_value / lp_supply
+        // Result in 9-decimal precision (SOL per LP token)
+        doge_btc_mining.lp_token_price_in_sol = (total_pool_value_sol as u128)
+            .checked_mul(1_000_000_000) // Scale to 9 decimals
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(lp_supply_final as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .min(u64::MAX as u128) as u64;
+        
+        let lp_price_actual = doge_btc_mining.lp_token_price_in_sol as f64 / 1_000_000_000.0;
+        msg!("💎 LP token price updated: {} (9-decimal precision), Actual: {:.9} SOL per LP token", 
+             doge_btc_mining.lp_token_price_in_sol, lp_price_actual);
+        msg!("   Pool composition: {} SOL + {} DBTC (worth {} SOL) = {} SOL total value",
+             sol_vault_balance_final as f64 / 1_000_000_000.0,
+             dbtc_vault_balance_final as f64 / 1_000_000.0,
+             dbtc_value_in_sol as f64 / 1_000_000_000.0,
+             total_pool_value_sol as f64 / 1_000_000_000.0);
+    } else {
+        msg!("⚠️ LP supply is 0, cannot calculate LP token price");
+    }
+    
     msg!("✅ LP addition and burn completed successfully");
     
     Ok(())
@@ -2018,6 +2178,15 @@ pub struct QueryGlobalConfig<'info> {
         bump = global_config.bump,
     )]
     pub global_config: Account<'info, GlobalConfig>,
+}
+
+#[derive(Accounts)]
+pub struct QueryTokenPrices<'info> {
+    #[account(
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 }
 
 

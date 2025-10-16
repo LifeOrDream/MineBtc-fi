@@ -46,8 +46,7 @@ pub mod mooneconomy {
         new_dev_address: Option<Pubkey>,
         new_moondoge_allocation: Option<u8>,
         new_liquidity_allocation: Option<u8>, 
-        new_electricity_per_weighted_moondoge: Option<u64>,
-        new_electricity_per_weighted_lp_tokens: Option<u64>,
+        new_electricity_per_weighted_sol: Option<u64>,
         new_emergency_tax: Option<u8>,
         
     ) -> Result<()> {
@@ -57,8 +56,7 @@ pub mod mooneconomy {
             new_dev_address, 
             new_moondoge_allocation, 
             new_liquidity_allocation, 
-            new_electricity_per_weighted_moondoge, 
-            new_electricity_per_weighted_lp_tokens,
+            new_electricity_per_weighted_sol,
             new_emergency_tax
         )
     }
@@ -70,17 +68,15 @@ pub mod mooneconomy {
     pub fn initialize_dbtc_vault(
         ctx: Context<InitializeMdogeVault>,
         moondoge_mint: Pubkey,
-        electricity_per_weighted_moondoge: u64,
     ) -> Result<()> {
-        admin::initialize_dbtc_vault(ctx, moondoge_mint, electricity_per_weighted_moondoge)
+        admin::initialize_dbtc_vault(ctx, moondoge_mint)
     }
 
     pub fn initialize_liquidity_vault(
         ctx: Context<InitializeLiquidityVault>,
         lp_token_mint: Pubkey,
-        electricity_per_weighted_lp_tokens: u64,
     ) -> Result<()> {
-        admin::initialize_liquidity_vault(ctx, lp_token_mint, electricity_per_weighted_lp_tokens)
+        admin::initialize_liquidity_vault(ctx, lp_token_mint)
     }
 
  

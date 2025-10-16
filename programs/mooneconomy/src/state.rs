@@ -66,6 +66,9 @@ pub struct GlobalConfig {
     /// Last claim slot
     pub last_claim_slot: u64,
     
+    /// Electricity per weighted SOL staked (used for both dBTC and LP staking)
+    pub electricity_per_weighted_sol: u64,
+    
     /// Bump for PDA derivation
     pub bump: u8
 }
@@ -84,6 +87,7 @@ impl GlobalConfig {
         1 +  // moondoge_allocation
         1 +  // liquidity_allocation
         8 +  // last_claim_slot
+        8 +  // electricity_per_weighted_sol
         1;   // bump
 }
 
@@ -103,9 +107,6 @@ pub struct DogeBtcVault {
     pub dbtc_mint: Pubkey,
     /// Custodian that holds the staked tokens
     pub dbtc_custodian: Pubkey,
-    
-    /// Electricity units per weighted DogeBtc units
-    pub electricity_per_weighted_moondoge: u64,
     
     /// Total DogeBtc tokens locked in the vault
     pub dbtc_locked: u64,
@@ -132,7 +133,6 @@ impl DogeBtcVault {
         32 + // dbtc_sol_vault
         32 + // dbtc_mint
         32 + // dbtc_custodian
-        8 +  // electricity_per_weighted_moondoge
         8 +  // dbtc_locked
         8 +  // weighted_dbtc_locked
         16 + // accumulated_sol_per_point
@@ -153,9 +153,6 @@ pub struct LiquidityVault {
     pub lp_token_mint: Pubkey,
     /// Custodian that holds the staked LP tokens
     pub liquidity_custodian: Pubkey,
-    
-    /// Electricity units per weighted LP tokens
-    pub electricity_per_weighted_lp_tokens: u64,
 
     /// Total LP tokens locked in the vault
     pub lp_tokens_locked: u64,
@@ -181,7 +178,6 @@ impl LiquidityVault {
         32 + // liquidity_sol_vault
         32 + // lp_token_mint
         32 + // liquidity_custodian
-        8 +  // electricity_per_weighted_lp_tokens
         8 +  // lp_tokens_locked
         8 +  // weighted_lp_locked
         16 + // accumulated_sol_per_point

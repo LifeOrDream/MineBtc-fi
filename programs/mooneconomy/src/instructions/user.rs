@@ -194,9 +194,40 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
     moondoge_vault.dbtc_locked = moondoge_vault.dbtc_locked.checked_add(actual_amount).unwrap();        
     moondoge_vault.weighted_dbtc_locked = moondoge_vault.weighted_dbtc_locked.checked_add(weighted_amount).unwrap();
 
-    msg!("⚡ Calculating electricity earnings");        
-    // Calculate electricity earned
-    let electricity_increase = weighted_amount.checked_mul(moondoge_vault.electricity_per_weighted_moondoge).unwrap();
+    msg!("⚡ Calculating electricity earnings based on SOL value");        
+    
+    // Query dBTC price from moonbase mining state using CPI
+    let cpi_program_query = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts_query = moonbase::cpi::accounts::QueryTokenPrices {
+        doge_btc_mining: ctx.accounts.doge_btc_mining_state.to_account_info(),
+    };
+    let cpi_ctx_query = CpiContext::new(cpi_program_query, cpi_accounts_query);
+    let token_prices = moonbase::cpi::query_token_prices(cpi_ctx_query)?;
+    let dbtc_price_in_sol = token_prices.get().dbtc_price_in_sol;
+    
+    msg!("   DOGE_BTC price: {} (9-decimal precision)", dbtc_price_in_sol);
+    
+    // Convert weighted dBTC amount to SOL value
+    // weighted_amount is in DOGE_BTC base units (6 decimals)
+    // dbtc_price_in_sol is SOL per DOGE_BTC with 9-decimal precision
+    // sol_value = (weighted_amount * dbtc_price_in_sol) / 10^6 / 10^9 * 10^9 = (weighted_amount * dbtc_price_in_sol) / 10^6
+    let sol_value = (weighted_amount as u128)
+        .checked_mul(dbtc_price_in_sol as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(1_000_000) // Divide by 10^6 to convert from DOGE_BTC base units
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .min(u64::MAX as u128) as u64;
+    
+    msg!("   SOL value of staked weighted DOGE_BTC: {} lamports", sol_value);
+    
+    // Calculate electricity based on SOL value
+    // electricity_per_weighted_sol is configured in global config
+    let electricity_increase = sol_value
+        .checked_mul(ctx.accounts.global_config.electricity_per_weighted_sol)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(1_000_000_000) // Divide by 10^9 since sol_value is in lamports
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
     msg!("   Electricity increase: {}", electricity_increase);
 
     // Update user's position electricity per day and total electricity earned
@@ -581,10 +612,47 @@ pub fn stake_lp_tokens(ctx: Context<StakeLpTokens>, amount: u64, lockup_duration
     liquidity_vault.lp_tokens_locked = liquidity_vault.lp_tokens_locked.checked_add(amount).unwrap();        
     liquidity_vault.weighted_lp_locked = liquidity_vault.weighted_lp_locked.checked_add(weighted_amount).unwrap();
 
-    msg!("⚡ Calculating electricity earnings");        
-    // Calculate electricity earned
-    let electricity_increase = weighted_amount.checked_mul(liquidity_vault.electricity_per_weighted_lp_tokens).unwrap();
-    msg!("   Electricity increase: {}", electricity_increase);
+    msg!("⚡ Calculating electricity earnings based on SOL value with 50% LP bonus");        
+    
+    // Query LP token price from moonbase mining state using CPI
+    let cpi_program_query = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts_query = moonbase::cpi::accounts::QueryTokenPrices {
+        doge_btc_mining: ctx.accounts.doge_btc_mining_state.to_account_info(),
+    };
+    let cpi_ctx_query = CpiContext::new(cpi_program_query, cpi_accounts_query);
+    let token_prices = moonbase::cpi::query_token_prices(cpi_ctx_query)?;
+    let lp_token_price_in_sol = token_prices.get().lp_token_price_in_sol;
+    
+    msg!("   LP token price: {} (9-decimal precision)", lp_token_price_in_sol);
+    
+    // Convert weighted LP amount to SOL value
+    // weighted_amount is in LP token base units (9 decimals, same as standard SPL)
+    // lp_token_price_in_sol is SOL per LP token with 9-decimal precision
+    // sol_value = (weighted_amount * lp_token_price_in_sol) / 10^9 / 10^9 * 10^9 = (weighted_amount * lp_token_price_in_sol) / 10^9
+    let sol_value = (weighted_amount as u128)
+        .checked_mul(lp_token_price_in_sol as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(1_000_000_000) // Divide by 10^9 to convert from LP base units
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .min(u64::MAX as u128) as u64;
+    
+    msg!("   SOL value of staked weighted LP: {} lamports", sol_value);
+    
+    // Calculate base electricity based on SOL value
+    let base_electricity = sol_value
+        .checked_mul(ctx.accounts.global_config.electricity_per_weighted_sol)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(1_000_000_000) // Divide by 10^9 since sol_value is in lamports
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Apply 50% bonus for LP staking: multiply by 150 and divide by 100
+    let electricity_increase = base_electricity
+        .checked_mul(150)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(100)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    msg!("   Base electricity: {}, with 50% LP bonus: {}", base_electricity, electricity_increase);
 
     // Update user's position electricity per day and total electricity earned
     user_position.electricity_per_day += electricity_increase;
@@ -1078,6 +1146,10 @@ pub struct StakeDogeBtc<'info> {
     /// CHECK: Mining state in MoonFacility
     pub facility_mining_state: UncheckedAccount<'info>,
     
+    /// CHECK: DogeBtc mining state for querying token prices
+    #[account(constraint = *doge_btc_mining_state.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    pub doge_btc_mining_state: UncheckedAccount<'info>,
+    
     #[account(
         mut,
         seeds = [FEE_COLLECTOR_SEED.as_ref()],
@@ -1279,6 +1351,10 @@ pub struct StakeLpTokens<'info> {
     #[account(mut)]
     /// CHECK: Mining state in MoonFacility
     pub facility_mining_state: UncheckedAccount<'info>,
+    
+    /// CHECK: DogeBtc mining state for querying token prices
+    #[account(constraint = *doge_btc_mining_state.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    pub doge_btc_mining_state: UncheckedAccount<'info>,
     
     #[account(
         mut,

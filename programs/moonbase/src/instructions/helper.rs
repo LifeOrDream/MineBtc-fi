@@ -1229,6 +1229,34 @@ pub fn get_users_at_level(level_stats: &LevelStats, level: u8) -> u32 {
 
 
 
+/// Calculate vault health multiplier (reduces payouts when vaults are low)
+/// Returns percentage (100 = full payout, 50 = half payout, etc.)
+fn calculate_vault_health_multiplier(loot: &LootRewards) -> u64 {
+    // Calculate health for each vault
+    let sol_health = if LOOT_TARGET_SOL_VAULT > 0 {
+        (loot.total_sol_accumulated.saturating_mul(100)) / LOOT_TARGET_SOL_VAULT
+    } else {
+        100
+    };
+    
+    let dbtc_health = if LOOT_TARGET_DBTC_VAULT > 0 {
+        (loot.total_dbtc_accumulated.saturating_mul(100)) / LOOT_TARGET_DBTC_VAULT
+    } else {
+        100
+    };
+    
+    // Use the LOWER of the two health values (most conservative)
+    let vault_health = sol_health.min(dbtc_health);
+    
+    // Multiplier: 100% if vault >= target, scales down if vault < target
+    let multiplier = vault_health.min(100);
+    
+    msg!("🏥 Vault health: SOL={}%, DBTC={}%, Multiplier={}%", 
+         sol_health, dbtc_health, multiplier);
+    
+    multiplier
+}
+
 /// Try to roll loot when user levels up - NEW CASINO-STYLE SYSTEM WITH DUAL TOKEN DISTRIBUTION
 /// Returns (sol_payout, dbtc_payout) if loot was won
 fn try_roll_loot(
@@ -1252,41 +1280,42 @@ fn try_roll_loot(
     // ---------- tier & base -----------
     // base_chance: Base probability of getting loot (in basis points)
     // vault_bp: Vault bonus probability (in basis points)
+    // Reduced vault cuts by 10x for sustainability
     let (base_chance, vault_bp) = match user.level {
         1..=4 => {
             msg!("📊 Minor tier (levels 1-4): Base chance {}bp + {}bp per level, vault bonus {}bp", 
-                300, 20, 100);
-            (300 + 20 * user.level as u32, 100)
+                300, 20, 10);
+            (300 + 20 * user.level as u32, 10)  // 0.1% vault (was 1%)
         },
         5 | 10 => {
-            msg!("🌟 Milestone level: Guaranteed roll (10,000bp) with {}bp vault bonus", 50);
-            (10_000, 50)
+            msg!("🌟 Milestone level: Guaranteed roll (10,000bp) with {}bp vault bonus", 5);
+            (10_000, 5)  // 0.05% vault (was 0.5%)
         },
         6..=14 => {
             msg!("📊 Regular tier (levels 6-14): Base chance {}bp + {}bp per level, vault bonus {}bp", 
-                300, 20, 100);
-            (300 + 20 * user.level as u32, 100)
+                300, 20, 10);
+            (300 + 20 * user.level as u32, 10)  // 0.1% vault (was 1%)
         },
         15..=24 => {
             if user.level % 5 == 0 { 
                 msg!("🌟 Rare milestone (level {}): Guaranteed roll (10,000bp) with {}bp vault bonus", 
-                    user.level, 200);
-                (10_000, 200)
+                    user.level, 20);
+                (10_000, 20)  // 0.2% vault (was 2%)
             } else { 
                 msg!("💎 Rare tier (levels 15-24): Base chance {}bp, vault bonus {}bp", 
-                    1_500, 500);
-                (1_500, 500) 
+                    1_500, 50);
+                (1_500, 50)  // 0.5% vault (was 5%)
             }
         },
         _ => {
             if user.level % 5 == 0 {
                 msg!("🌟 Legendary milestone (level {}): Guaranteed roll (10,000bp) with {}bp vault bonus", 
-                    user.level, 800);
-                (10_000, 800)
+                    user.level, 40);
+                (10_000, 40)  // 0.4% vault (was 4% for milestones, was 8% for regular)
             } else {
                 msg!("👑 Legendary tier (level 25+): Base chance {}bp, vault bonus {}bp", 
-                    2_500, 800);
-                (2_500, 800)
+                    2_500, 80);
+                (2_500, 80)  // 0.8% vault (was 8%)
             }
         }
     };
@@ -1302,11 +1331,17 @@ fn try_roll_loot(
 
     // ---------- final probabilities -----------
     let chance_bp_final = (base_chance as u32).saturating_mul(bonus.chance_mult) / 100;
-    let vault_bp_final = (vault_bp as u64).saturating_mul(bonus.vault_mult) / 100;
+    let vault_bp_with_bonus = (vault_bp as u64).saturating_mul(bonus.vault_mult) / 100;
+    
+    // Apply vault health multiplier (reduces payouts when vault is low)
+    let vault_health_mult = calculate_vault_health_multiplier(loot);
+    let vault_bp_final = (vault_bp_with_bonus as u64).saturating_mul(vault_health_mult) / 100;
     
     msg!("🎯 Final probabilities after bonuses:");
     msg!("   Win chance: {}bp ({}%)", chance_bp_final, chance_bp_final as f64 / 100.0);
-    msg!("   Vault cut: {}bp ({}%)", vault_bp_final, vault_bp_final as f64 / 100.0);
+    msg!("   Vault cut (with bonus): {}bp", vault_bp_with_bonus);
+    msg!("   Vault health multiplier: {}%", vault_health_mult);
+    msg!("   Vault cut (final): {}bp ({}%)", vault_bp_final, vault_bp_final as f64 / 100.0);
 
     // ---------- roll result -------------
     if roll_bp >= chance_bp_final {
@@ -1532,11 +1567,11 @@ fn get_exclusivity_bonus(
 
 
 /// Get average DOGE_BTC price in SOL from the mining state (scaled by 1e9)
-/// Production-grade: reads real price from DogeBtcMining.avg_price_8h
+/// Production-grade: reads real price from DogeBtcMining.recent_price
 fn get_avg_price_in_sol(doge_btc_mining: &DogeBtcMining) -> Result<u64> {
-    // Use the real 8-hour average price from the dynamic distribution system
-    if doge_btc_mining.avg_price_8h > 0 {
-        Ok(doge_btc_mining.avg_price_8h)
+    // Use the recent price from the dynamic distribution system (most up-to-date)
+    if doge_btc_mining.recent_price > 0 {
+        Ok(doge_btc_mining.recent_price)
     } else {
         // Fallback to default if price hasn't been set yet (early bootstrap)
         Ok(1_000_000) // Default: 1 DOGE_BTC = 0.001 SOL (scaled by 1e9)

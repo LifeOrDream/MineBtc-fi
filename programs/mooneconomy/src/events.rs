@@ -31,8 +31,7 @@ pub struct LiquidityVaultsInitialized {
 #[event]
 pub struct ConfigUpdated {
     pub authority: Pubkey,
-    pub electricity_per_weighted_moondoge: u64,
-    pub electricity_per_weighted_lp_tokens: u64,
+    pub electricity_per_weighted_sol: u64,
     pub moondoge_allocation: u8,
     pub liquidity_allocation: u8
 }

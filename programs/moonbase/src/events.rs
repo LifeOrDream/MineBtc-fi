@@ -291,9 +291,12 @@ pub struct RaydiumPoolSet {
 pub struct DistributionRateUpdated {
     pub old_rate: u64,
     pub new_rate: u64,
-    pub price_change_pct: i8,
+    pub price_change_pct: i32,
     pub current_price: u64,
-    pub avg_price_8h: u64,
+    pub avg_price_4h: u64,
+    pub track_price: u64,
+    pub recent_price: u64,
+    pub rate_changed: bool,
     pub sol_received: u64,
     pub timestamp: i64,
 }

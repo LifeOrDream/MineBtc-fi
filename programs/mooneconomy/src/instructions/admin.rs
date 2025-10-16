@@ -73,7 +73,6 @@ pub fn initialize_global_config(
 pub fn initialize_dbtc_vault(
     ctx: Context<InitializeMdogeVault>,
     dbtc_mint: Pubkey,
-    electricity_per_weighted_moondoge: u64,
 ) -> Result<()> {
     let moondoge_vault = &mut ctx.accounts.moondoge_vault;
 
@@ -83,7 +82,6 @@ pub fn initialize_dbtc_vault(
     moondoge_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();    
     moondoge_vault.dbtc_custodian = ctx.accounts.dbtc_custodian.key();
 
-    moondoge_vault.electricity_per_weighted_moondoge = electricity_per_weighted_moondoge;
     moondoge_vault.dbtc_locked = 0;
     moondoge_vault.weighted_dbtc_locked = 0;
     moondoge_vault.accumulated_sol_per_point = 0;
@@ -105,7 +103,6 @@ pub fn initialize_dbtc_vault(
 pub fn initialize_liquidity_vault(
     ctx: Context<InitializeLiquidityVault>,
     lp_token_mint: Pubkey,
-    electricity_per_weighted_lp_tokens: u64,
 ) -> Result<()> {
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
 
@@ -115,7 +112,6 @@ pub fn initialize_liquidity_vault(
     liquidity_vault.liquidity_sol_vault = ctx.accounts.liquidity_sol_vault.key();
     liquidity_vault.liquidity_custodian = ctx.accounts.liquidity_custodian.key();
 
-    liquidity_vault.electricity_per_weighted_lp_tokens = electricity_per_weighted_lp_tokens;
     liquidity_vault.lp_tokens_locked = 0;
     liquidity_vault.weighted_lp_locked = 0;
     liquidity_vault.accumulated_sol_per_point = 0;
@@ -142,8 +138,7 @@ pub fn internal_update_configuration(
     new_dev_address: Option<Pubkey>,
     new_moondoge_allocation: Option<u8>,
     new_liquidity_allocation: Option<u8>, 
-    new_electricity_per_weighted_moondoge: Option<u64>,
-    new_electricity_per_weighted_lp_tokens: Option<u64>,
+    new_electricity_per_weighted_sol: Option<u64>,
     new_emergency_tax: Option<u8>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
@@ -174,16 +169,10 @@ pub fn internal_update_configuration(
         msg!("Updated liquidity allocation to {}", liquidity_allocation);
     }
 
-    // if electricity_per_weighted_moondoge is provided, update it
-    if let Some(electricity_per_weighted_moondoge) = new_electricity_per_weighted_moondoge {
-        moondoge_vault.electricity_per_weighted_moondoge = electricity_per_weighted_moondoge;
-        msg!("Updated electricity per weighted DogeBtc to {}", electricity_per_weighted_moondoge);
-    }
-
-    // if electricity_per_weighted_lp_tokens is provided, update it
-    if let Some(electricity_per_weighted_lp_tokens) = new_electricity_per_weighted_lp_tokens {
-        liquidity_vault.electricity_per_weighted_lp_tokens = electricity_per_weighted_lp_tokens;
-        msg!("Updated electricity per weighted LP tokens to {}", electricity_per_weighted_lp_tokens);
+    // if electricity_per_weighted_sol is provided, update it
+    if let Some(electricity_per_weighted_sol) = new_electricity_per_weighted_sol {
+        global_config.electricity_per_weighted_sol = electricity_per_weighted_sol;
+        msg!("Updated electricity per weighted SOL to {}", electricity_per_weighted_sol);
     }
     
     // if emergency_tax is provided, update it (ensuring it's not more than 100%)
@@ -197,8 +186,7 @@ pub fn internal_update_configuration(
     // Emit update event
     emit!(ConfigUpdated {
         authority: global_config.authority,
-        electricity_per_weighted_moondoge: moondoge_vault.electricity_per_weighted_moondoge,
-        electricity_per_weighted_lp_tokens: liquidity_vault.electricity_per_weighted_lp_tokens,
+        electricity_per_weighted_sol: global_config.electricity_per_weighted_sol,
         moondoge_allocation: global_config.moondoge_allocation,
         liquidity_allocation: global_config.liquidity_allocation
     });
