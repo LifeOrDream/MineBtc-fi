@@ -4,7 +4,6 @@ use crate::state::*;
 use crate::events::*;
 use crate::errors::ErrorCode;
 use crate::instructions::helper::{self, transfer_to_sol_treasury};
-use crate::mpl_core_helpers;
 
 use anchor_spl::token_interface::{ Mint as Mint2022 };
 
@@ -360,15 +359,76 @@ pub fn expand_moonbase_internal(ctx: Context<ExpandMoonbase>, expansion_id: u8) 
 
 
 // ----------------------------------------------------------------------------------------
+// -------------- HELPER :: UPDATE ELECTRICITY FROM MOONECONOMY CPI ----------------------
+// ----------------------------------------------------------------------------------------
+
+/// Update user electricity from mooneconomy CPI call
+/// Verifies caller is authorized and updates both user and global electricity
+fn update_electricity_from_mooneconomy(
+    user_moonbase: &mut UserMoonBaseInstance,
+    doge_btc_mining: &mut DogeBtcMining,
+    global_config: &GlobalConfig,
+    caller_program: &Pubkey,
+    new_electricity: u64,
+) -> Result<()> {
+    // Verify caller is mooneconomy program
+    require!(
+        *caller_program == global_config.mooneconomy_program,
+        ErrorCode::Unauthorized
+    );
+    
+    msg!("⚡ Updating electricity from mooneconomy CPI call");
+    msg!("   Old electricity: {}", user_moonbase.available_electricity);
+    msg!("   New electricity: {}", new_electricity);
+    msg!("   Used electricity: {}", user_moonbase.used_electricity);
+    
+    // Calculate electricity change for global update
+    if new_electricity > user_moonbase.available_electricity {
+        let increase = new_electricity - user_moonbase.available_electricity;
+        doge_btc_mining.total_active_electricity = doge_btc_mining.total_active_electricity
+            .checked_add(increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!("   Global electricity increased by: {}", increase);
+    } else {
+        let decrease = user_moonbase.available_electricity - new_electricity;
+        doge_btc_mining.total_active_electricity = doge_btc_mining.total_active_electricity
+            .saturating_sub(decrease);
+        msg!("   Global electricity decreased by: {}", decrease);
+    };
+    
+    // Update user's available electricity
+    user_moonbase.available_electricity = new_electricity;
+    
+    // Log if user is over-utilizing (used > available) - this is okay, means profit
+    if user_moonbase.used_electricity > user_moonbase.available_electricity {
+        msg!("⚠️ User is over-utilizing electricity (profit mode):");
+        msg!("   Used: {} > Available: {}", user_moonbase.used_electricity, user_moonbase.available_electricity);
+        msg!("   Over-utilization: {} units", user_moonbase.used_electricity - user_moonbase.available_electricity);
+    }
+    
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------------------
 // -------------- USER FUNCTIONS :: CLAIM REFERRAL REWARDS ----------------
 // ----------------------------------------------------------------------------------------
  
 
 /// Claim referral rewards
-pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+/// This function can only be called via CPI from mooneconomy program
+pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_electricity: u64) -> Result<()> {
     let rewards_account = &mut ctx.accounts.referral_rewards;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let user = &ctx.accounts.user;
+    
+    // Update electricity from mooneconomy
+    update_electricity_from_mooneconomy(
+        user_moonbase,
+        &mut ctx.accounts.doge_btc_mining,
+        &ctx.accounts.global_config,
+        &ctx.accounts.caller_program.key(),
+        new_electricity,
+    )?;
         
     // Calculate actual available balance in the account (this is real SOL)
     let account_balance = rewards_account.to_account_info().lamports();
@@ -549,12 +609,23 @@ fn process_daily_login_and_xp(user_moonbase: &mut UserMoonBaseInstance, activity
 // ------------------------------------------------------------------------------------------
 
 /// Claim DogeBtc tokens that the user has mined
+/// This function can only be called via CPI from mooneconomy program
 pub fn claim_dbtc_tokens_internal(
     ctx: Context<ClaimDogeBtc>,
+    new_electricity: u64,
 ) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let user = &ctx.accounts.user;
+    
+    // Update electricity from mooneconomy
+    update_electricity_from_mooneconomy(
+        user_moonbase,
+        doge_btc_mining,
+        &ctx.accounts.global_config,
+        &ctx.accounts.caller_program.key(),
+        new_electricity,
+    )?;
     
     // Ensure mining has been initialized
     require!(
@@ -1253,14 +1324,25 @@ pub fn upgrade_module_internal (
 
 
 /// Claim accumulated XP from Attraction modules
+/// This function can only be called via CPI from mooneconomy program
 pub fn claim_attraction_xp_internal(
     ctx: Context<ClaimAttractionXP>,
     module_index: u8,
+    new_electricity: u64,
 ) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let module_instance = &mut ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
+    
+    // Update electricity from mooneconomy
+    update_electricity_from_mooneconomy(
+        user_moonbase,
+        &mut ctx.accounts.doge_btc_mining,
+        &ctx.accounts.global_config,
+        &ctx.accounts.caller_program.key(),
+        new_electricity,
+    )?;
     
     msg!("🎯 Starting Attraction XP claim for user {}", user.key());
     msg!("   Module index: {}", module_index);
@@ -1637,6 +1719,22 @@ pub struct ClaimReferralRewards<'info> {
         constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: Caller program (verified to be mooneconomy via global_config)
+    pub caller_program: UncheckedAccount<'info>,
         
     #[account(mut)]
     pub user: Signer<'info>,
@@ -1738,6 +1836,15 @@ pub struct ClaimDogeBtc<'info> {
     #[account(mut)]
     /// CHECK: Optional incubation state PDA
     pub incubation_state: Option<Account<'info, IncubationState>>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: Caller program (verified to be mooneconomy via global_config)
+    pub caller_program: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -1968,6 +2075,22 @@ pub struct ClaimAttractionXP<'info> {
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: Caller program (verified to be mooneconomy via global_config)
+    pub caller_program: UncheckedAccount<'info>,
     
     #[account(mut)]
     pub user: Signer<'info>,

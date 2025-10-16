@@ -263,9 +263,9 @@ pub mod moonbase {
         user::expand_moonbase_internal(ctx, expansion_id)
     }
 
-    /// Claim referral rewards
-    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-        user::claim_referral_rewards_internal(ctx)
+    /// Claim referral rewards (CPI only from mooneconomy)
+    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>, new_electricity: u64) -> Result<()> {
+        user::claim_referral_rewards_internal(ctx, new_electricity)
     }
 
     pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
@@ -306,14 +306,14 @@ pub mod moonbase {
     // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
     // ----------------------------------------------------------------------------------------
     
-    /// Claim DogeBtc tokens based on user's hashpower contribution
-    pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>) -> Result<()> {
-        user::claim_dbtc_tokens_internal(ctx)
+    /// Claim DogeBtc tokens based on user's hashpower contribution (CPI only from mooneconomy)
+    pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>, new_electricity: u64) -> Result<()> {
+        user::claim_dbtc_tokens_internal(ctx, new_electricity)
     }
 
-    /// Claim accumulated XP from Attraction modules
-    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8) -> Result<()> {
-        user::claim_attraction_xp_internal(ctx, module_index)
+    /// Claim accumulated XP from Attraction modules (CPI only from mooneconomy)
+    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8, new_electricity: u64) -> Result<()> {
+        user::claim_attraction_xp_internal(ctx, module_index, new_electricity)
     }
 
     /// Claim level-up rewards based on accumulated XP (with loot transfers)

@@ -160,7 +160,9 @@ pub struct GlobalConfig {
     /// Direct recipient for 50% of creation fees
     pub creation_fee_recipient: Pubkey,
     /// PDA account that holds collected SOL fees
-    pub pda_sol_treasury: Pubkey,    
+    pub pda_sol_treasury: Pubkey,
+    /// Mooneconomy program ID (for CPI authorization)
+    pub mooneconomy_program: Pubkey,
     /// ------------------------------------------------------------           
     /// Cost in SOL to create a new facility (0.1 SOL)
     pub base_creation_cost: u64,        
@@ -193,7 +195,7 @@ pub struct GlobalConfig {
 }
  
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + game_authority + sol_treasury + base_creation_cost + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
+    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury + mooneconomy_program + base_creation_cost + total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<ExpansionConfig> = 4 bytes (vec length) + MAX_EXPANSIONS * ExpansionConfig::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
@@ -201,6 +203,7 @@ impl GlobalConfig {
         32 +                    // ext_fee_collector  
         32 +                    // creation_fee_recipient
         32 +                    // pda_sol_treasury
+        32 +                    // mooneconomy_program
         8 +                     // base_creation_cost
         8 +                     // total_moonbases_created
         8 +                     // total_sol_spent
