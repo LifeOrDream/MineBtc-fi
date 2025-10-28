@@ -173,22 +173,38 @@ function updateRaydiumAdmins(libPath, deployerPubkey) {
   
   let libContent = fs.readFileSync(libPath, 'utf8');
   
-  // Update admin pubkey in admin module (devnet)
-  libContent = libContent.replace(
-    /#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\("([^"]+)"\);/,
-    `#[cfg(feature = "devnet")]\n    pub const ID: Pubkey = pubkey!("${deployerPubkey}");`
-  );
+  // Update admin::ID pubkey (devnet) - this controls who can create AMM configs
+  const adminModuleRegex = /pub mod admin \{[\s\S]*?#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\("([^"]+)"\);/;
+  const adminMatch = libContent.match(adminModuleRegex);
   
-  // Update create_pool_fee_receiver pubkey (devnet) 
-  libContent = libContent.replace(
-    /pub mod create_pool_fee_reveiver \{[^}]+#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\("([^"]+)"\);/s,
-    (match) => {
-      return match.replace(/pubkey!\("([^"]+)"\)/, `pubkey!("${deployerPubkey}")`);
-    }
-  );
+  if (adminMatch) {
+    const oldAdminId = adminMatch[1];
+    libContent = libContent.replace(
+      adminModuleRegex,
+      (match) => match.replace(oldAdminId, deployerPubkey)
+    );
+    console.log(`\x1b[32m  ✅ Updated admin::ID (devnet): ${oldAdminId} → ${deployerPubkey}\x1b[0m`);
+  } else {
+    console.log(`\x1b[33m  ⚠️  Could not find admin::ID (devnet) pattern\x1b[0m`);
+  }
+  
+  // Update create_pool_fee_reveiver::ID pubkey (devnet) - this is where pool creation fees are sent
+  const feeReceiverModuleRegex = /pub mod create_pool_fee_reveiver \{[\s\S]*?#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\("([^"]+)"\);/;
+  const feeReceiverMatch = libContent.match(feeReceiverModuleRegex);
+  
+  if (feeReceiverMatch) {
+    const oldFeeReceiverId = feeReceiverMatch[1];
+    libContent = libContent.replace(
+      feeReceiverModuleRegex,
+      (match) => match.replace(oldFeeReceiverId, deployerPubkey)
+    );
+    console.log(`\x1b[32m  ✅ Updated create_pool_fee_reveiver::ID (devnet): ${oldFeeReceiverId} → ${deployerPubkey}\x1b[0m`);
+  } else {
+    console.log(`\x1b[33m  ⚠️  Could not find create_pool_fee_reveiver::ID (devnet) pattern\x1b[0m`);
+  }
   
   fs.writeFileSync(libPath, libContent);
-  console.log(`\x1b[32m  ✅ Updated Raydium admin addresses to: ${deployerPubkey}\x1b[0m`);
+  console.log(`\x1b[32m  ✅ Raydium admin configuration updated for localnet/devnet\x1b[0m`);
 }
 
 function checkPrerequisites() {

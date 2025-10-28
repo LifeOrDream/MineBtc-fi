@@ -9,7 +9,7 @@
             "deployer_key": "../wallet-keypair.json",
             "moonbase_idl": "../prod_moonbase/target/idl/moon_base.json",
             "moon_economy_idl": "../prod_moonbase/target/idl/moon_economy.json",
-            "raydium_idl": "../raydium_cp/target/idl/raydium_cp_swap.json",
+            "raydium_idl": "../raydium/target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
         "creation_fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -46,6 +46,7 @@
         "protocol_fee_rate": 5,
         "fund_fee_rate": 25000,
         "create_pool_fee": 40000000,
+        "creator_fee_rate": 0,
         "initial_sol_amount": 100000000,
         "initial_dbtc_percentage": 1,
         "open_time": 0,

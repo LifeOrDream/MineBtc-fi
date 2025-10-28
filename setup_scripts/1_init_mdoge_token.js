@@ -357,14 +357,18 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
     const withdrawWithheldAuthority = deployer.publicKey;
     
     // Prepare metadata (Token-2022 metadata format)
+    // Note: uri should point to off-chain JSON metadata, but we'll use image URL directly
+    // and add description in additionalMetadata for on-chain display
     const metadata = {
         mint: mintPubkey,
         name: TOKEN_METADATA.name,
         symbol: TOKEN_METADATA.symbol,
-        uri: TOKEN_METADATA.image,
-        additionalMetadata: TOKEN_METADATA.description ? [
-            ['description', TOKEN_METADATA.description]
-        ] : []
+        uri: TOKEN_METADATA.image, // Image URL (ideally should be JSON metadata URI)
+        additionalMetadata: [
+            ...(TOKEN_METADATA.description ? [['description', TOKEN_METADATA.description]] : []),
+            ...(TOKEN_METADATA.image ? [['image', TOKEN_METADATA.image]] : []),
+            ...(TOKEN_METADATA.external_url ? [['external_url', TOKEN_METADATA.external_url]] : [])
+        ]
     };
     
     console.log('\x1b[36m%s\x1b[0m', '⚙️ Mint Configuration:');
@@ -373,7 +377,11 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
     console.log('\x1b[36m%s\x1b[0m', `   • Max Burn: ${maxBurnAmount.toLocaleString()} tokens`);
     console.log('\x1b[36m%s\x1b[0m', `   • Mint Authority: ${mintAuthority.toBase58()}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Freeze Authority: ${freezeAuthority || 'None'}`);
-    console.log('\x1b[36m%s\x1b[0m', `   • Metadata: ${metadata.name} (${metadata.symbol})`);
+    console.log('\x1b[36m%s\x1b[0m', '📝 Token Metadata:');
+    console.log('\x1b[36m%s\x1b[0m', `   • Name: ${metadata.name}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Symbol: ${metadata.symbol}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • URI: ${metadata.uri}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Additional Metadata Fields: ${metadata.additionalMetadata.length}`);
     
     try {
         const signature = await createMintAccountWithMetadata(
@@ -410,8 +418,9 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
             timestamp: new Date().toISOString()
         };
         
-        // Save deployment data with backup
-        saveDeploymentDataSafely(deploymentPath, deploymentData);
+        // Save deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to create mint account with metadata:', error);
@@ -458,8 +467,9 @@ async function createTokenAccount(connection, deployer, deploymentData, deployme
             timestamp: new Date().toISOString()
         };
         
-        // Save deployment data with backup
-        saveDeploymentDataSafely(deploymentPath, deploymentData);
+        // Save deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to create token account:', error);
@@ -560,8 +570,9 @@ async function mintInitialSupply(connection, deployer, deploymentData, deploymen
         // Store mint address at top level for easy access
         deploymentData.dbtc_mint_address = mintPubkey.toBase58();
         
-        // Save deployment data with backup
-        saveDeploymentDataSafely(deploymentPath, deploymentData);
+        // Save deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to mint initial supply:', error);
@@ -618,8 +629,9 @@ async function removeMintAuthority(connection, deployer, deploymentData, deploym
         deploymentData.dbtc_mint_created.mint_authority = null;
         deploymentData.dbtc_mint_created.mint_authority_status = "removed";
         
-        // Save deployment data with backup
-        saveDeploymentDataSafely(deploymentPath, deploymentData);
+        // Save deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to remove mint authority:', error);
@@ -675,8 +687,9 @@ async function removeWithdrawWithheldAuthority(connection, deployer, deploymentD
         deploymentData.dbtc_mint_created.withdraw_withheld_authority = null;
         deploymentData.dbtc_mint_created.withdraw_withheld_authority_status = "removed";
         
-        // Save deployment data with backup
-        saveDeploymentDataSafely(deploymentPath, deploymentData);
+        // Save deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to remove withdraw withheld authority:', error);
@@ -734,8 +747,9 @@ async function transferTransferFeeConfigAuthority(connection, deployer, deployme
         deploymentData.dbtc_mint_created.transfer_fee_config_authority = newAuthority.toBase58();
         deploymentData.dbtc_mint_created.transfer_fee_config_authority_status = "transferred";
         
-        // Save deployment data with backup
-        saveDeploymentDataSafely(deploymentPath, deploymentData);
+        // Save deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to transfer transfer fee config authority:', error);
@@ -743,39 +757,6 @@ async function transferTransferFeeConfigAuthority(connection, deployer, deployme
         if (error.logs) {
             console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
         }
-        throw error;
-    }
-}
-
-function saveDeploymentDataSafely(deploymentPath, deploymentData) {
-    try {
-        // Create backup of existing deployment file
-        if (fs.existsSync(deploymentPath)) {
-            const backupPath = `${deploymentPath}.backup_${Date.now()}`;
-            fs.copyFileSync(deploymentPath, backupPath);
-            console.log('\x1b[36m%s\x1b[0m', `📦 Backup created: ${path.basename(backupPath)}`);
-        }
-        
-        // Write new deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
-        
-        // Clean up old backups (keep only last 5)
-        const deploymentDir = path.dirname(deploymentPath);
-        const baseFilename = path.basename(deploymentPath);
-        const backupFiles = fs.readdirSync(deploymentDir)
-            .filter(f => f.startsWith(`${baseFilename}.backup_`))
-            .sort()
-            .reverse();
-        
-        if (backupFiles.length > 5) {
-            backupFiles.slice(5).forEach(f => {
-                fs.unlinkSync(path.join(deploymentDir, f));
-            });
-            console.log('\x1b[36m%s\x1b[0m', `🧹 Cleaned up ${backupFiles.length - 5} old backup(s)`);
-        }
-    } catch (error) {
-        console.error('\x1b[31m%s\x1b[0m', '⚠️ Warning: Failed to save deployment data:', error.message);
         throw error;
     }
 }

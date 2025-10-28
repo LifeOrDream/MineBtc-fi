@@ -1,3 +1,30 @@
+/**
+ * ============================================================================
+ * DOGE_BTC-SOL RAYDIUM POOL INITIALIZATION SCRIPT
+ * ============================================================================
+ * 
+ * Deployment Steps:
+ * 1. Validates prerequisites (token mint, token account, initial supply)
+ * 2. Creates AMM config with fee parameters
+ * 3. Initializes DOGE_BTC-SOL pool with correct token order
+ * 4. Optionally burns LP tokens for permanent liquidity lock
+ * 
+ * Safety Features:
+ * - Connection retry logic with exponential backoff
+ * - Balance verification before operations
+ * - On-chain account existence checks
+ * - Automatic error recovery where possible
+ * - Timestamped deployment state tracking
+ * 
+ * Configuration Source: setup_scripts/config.json
+ * State Management: setup_scripts/deployments/{cluster}.json
+ * 
+ * @requires @solana/web3.js
+ * @requires @solana/spl-token
+ * @requires @coral-xyz/anchor
+ * ============================================================================
+ */
+
 import {
     Connection,
     Keypair,
@@ -20,7 +47,7 @@ import {
     createSyncNativeInstruction
 } from "@solana/spl-token";
 import pkg from '@coral-xyz/anchor';
-const { AnchorProvider, BN, Program, setProvider, web3 } = pkg;
+const { AnchorProvider, BN, Program, setProvider, web3, Wallet } = pkg;
 import * as anchor_spl from '@solana/spl-token';
 import fs from 'fs';
 import path from 'path';
@@ -42,19 +69,7 @@ const COMMITMENT = config.network.commitment;
 
 // Raydium CP-Swap constants
 const CP_AMM_CONFIG_SEED = "amm_config";
-
-// Load deployment state
-const { deploymentData, deploymentPath } = loadDeploymentState();
-
-// Raydium CP-Swap Program ID (official)
-const RAYDIUM_CP_PROGRAM_ID = new PublicKey(deploymentData.RAYDIUM_CP_PROGRAM_ID);
-
-// Pool configuration constants
-const POOL_CONFIG = {
-    initialMdogeAmount: new BN(config.token.initial_supply * Math.pow(10, config.token.decimals) * config.raydium.initial_dbtc_percentage / 100),
-    initialSolAmount: new BN(config.raydium.initial_sol_amount),
-    openTime: config.raydium.open_time
-};
+const WSOL_MINT = "So11111111111111111111111111111111111111112"; // Native SOL wrapper
 
 // Color constants for consistent logging
 const COLOR_STEP = '\x1b[35m%s\x1b[0m';
@@ -74,6 +89,9 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     console.log('\x1b[36m%s\x1b[0m', '🔗 RPC URL:', RPC_URL);
     console.log('\x1b[36m%s\x1b[0m', '💱 Pool Type: Raydium CP-Swap (Constant Product)');
 
+    // Validate configuration
+    validateConfiguration();
+
     // Setup connection and deployer
     const connection = await initializeConnection();
     const deployer = await setupDeployerAccount(connection);
@@ -84,22 +102,30 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     // Validate prerequisites
     validatePrerequisites(deploymentData);
     
-    // Setup Raydium program
-    const provider = new AnchorProvider( connection,   deployer, { commitment: 'confirmed' });
-    const cpIdlPath = path.resolve(__dirname, '../raydium_cp/target/idl/raydium_cp_swap.json');
+    // Get Raydium program ID from deployment data
+    const RAYDIUM_CP_PROGRAM_ID = new PublicKey(deploymentData.RAYDIUM_CP_PROGRAM_ID);
+    console.log('\x1b[36m%s\x1b[0m', '🔑 Raydium CP Program:', RAYDIUM_CP_PROGRAM_ID.toBase58());
+    
+    // Setup Raydium program with wallet wrapper
+    const wallet = new Wallet(deployer);
+    const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
+    const cpIdlPath = path.resolve(__dirname, config.deployment.paths.raydium_idl || '../raydium/target/idl/raydium_cp_swap.json');
+    
+    if (!fs.existsSync(cpIdlPath)) {
+        console.error('\x1b[31m%s\x1b[0m', `❌ Raydium IDL not found at: ${cpIdlPath}`);
+        console.error('\x1b[31m%s\x1b[0m', '⚠️ Please ensure Raydium program is built first.');
+        process.exit(1);
+    }
+    
     const cpIdl = JSON.parse(fs.readFileSync(cpIdlPath, 'utf8'));
-
-    const cpProgram =  new Program(cpIdl, provider);
-    // return
+    const cpProgram = new Program(cpIdl, provider);
     
     try {
         // 1. Create AMM Config
-        await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath);
-        // return
+        await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
         
         // 2. Initialize Pool :: Automatically adds initial liquidity
-        await initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath);
-        return
+        await initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
         
         // 3. Add Initial Liquidity
         // await addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath);
@@ -123,6 +149,89 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
 // ========== HELPER FUNCTIONS ===============================================
 // ============================================================================
 
+/**
+ * Validates all required configuration parameters from config.json
+ * Exits the process if any validation fails
+ */
+function validateConfiguration() {
+    console.log('\x1b[33m%s\x1b[0m', '🔍 Validating configuration...');
+    
+    const errors = [];
+    
+    // Network configuration
+    if (!config.network?.cluster) {
+        errors.push('network.cluster is required');
+    }
+    if (!config.network?.rpc_url) {
+        errors.push('network.rpc_url is required');
+    }
+    if (!config.network?.commitment) {
+        errors.push('network.commitment is required');
+    }
+    
+    // Token configuration
+    if (!config.token?.decimals || config.token.decimals < 0) {
+        errors.push('token.decimals must be a positive number');
+    }
+    if (!config.token?.initial_supply || config.token.initial_supply <= 0) {
+        errors.push('token.initial_supply must be greater than 0');
+    }
+    
+    // Raydium configuration
+    if (!config.raydium) {
+        errors.push('raydium configuration is missing');
+    } else {
+        if (config.raydium.amm_config_index === undefined) {
+            errors.push('raydium.amm_config_index is required');
+        }
+        if (!config.raydium.trade_fee_rate && config.raydium.trade_fee_rate !== 0) {
+            errors.push('raydium.trade_fee_rate is required');
+        }
+        if (!config.raydium.protocol_fee_rate && config.raydium.protocol_fee_rate !== 0) {
+            errors.push('raydium.protocol_fee_rate is required');
+        }
+        if (!config.raydium.fund_fee_rate && config.raydium.fund_fee_rate !== 0) {
+            errors.push('raydium.fund_fee_rate is required');
+        }
+        if (!config.raydium.create_pool_fee || config.raydium.create_pool_fee <= 0) {
+            errors.push('raydium.create_pool_fee must be greater than 0');
+        }
+        if (!config.raydium.initial_sol_amount || config.raydium.initial_sol_amount <= 0) {
+            errors.push('raydium.initial_sol_amount must be greater than 0');
+        }
+        if (!config.raydium.initial_dbtc_percentage || config.raydium.initial_dbtc_percentage <= 0 || config.raydium.initial_dbtc_percentage > 100) {
+            errors.push('raydium.initial_dbtc_percentage must be between 0 and 100');
+        }
+        if (config.raydium.open_time === undefined) {
+            errors.push('raydium.open_time is required (use 0 for immediate opening)');
+        }
+        if (config.raydium.burn_lp_tokens === undefined) {
+            errors.push('raydium.burn_lp_tokens must be true or false');
+        }
+    }
+    
+    // Deployment paths
+    if (!config.deployment?.paths?.deployer_key) {
+        errors.push('deployment.paths.deployer_key is required');
+    }
+    if (!config.deployment?.paths?.deployments_dir) {
+        errors.push('deployment.paths.deployments_dir is required');
+    }
+    
+    if (errors.length > 0) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Configuration validation failed:');
+        errors.forEach(error => console.error('\x1b[31m%s\x1b[0m', `   • ${error}`));
+        console.log('\x1b[33m%s\x1b[0m', '⚠️ Please check your config.json file');
+        process.exit(1);
+    }
+    
+    console.log('\x1b[32m%s\x1b[0m', '✅ Configuration validated successfully');
+}
+
+/**
+ * Initializes connection to Solana RPC with retry logic
+ * @returns {Promise<Connection>} Established Solana connection
+ */
 async function initializeConnection() {
     console.log('\x1b[33m%s\x1b[0m', '🔄 Initializing connection...');
     
@@ -149,6 +258,11 @@ async function initializeConnection() {
     return connection;
 }
 
+/**
+ * Loads and validates the deployer account, checks balance
+ * @param {Connection} connection - Solana connection
+ * @returns {Promise<Keypair>} Deployer keypair
+ */
 async function setupDeployerAccount(connection) {
     console.log('\x1b[33m%s\x1b[0m', '🔄 Setting up deployer account...');
     
@@ -202,6 +316,10 @@ async function setupDeployerAccount(connection) {
     return deployer;
 }
 
+/**
+ * Loads existing deployment state from deployments/{cluster}.json
+ * @returns {Object} Object containing deploymentData and deploymentPath
+ */
 function loadDeploymentState() {
     console.log('\x1b[33m%s\x1b[0m', '📋 Loading deployment state...');
     
@@ -219,10 +337,18 @@ function loadDeploymentState() {
     return { deploymentData, deploymentPath };
 }
 
+/**
+ * Validates that all prerequisites for pool creation are met
+ * @param {Object} deploymentData - Deployment state data
+ */
 function validatePrerequisites(deploymentData) {
     console.log('\x1b[33m%s\x1b[0m', '🔍 Validating prerequisites...');
     
     const errors = [];
+    
+    if (!deploymentData.RAYDIUM_CP_PROGRAM_ID) {
+        errors.push('Raydium CP program not deployed - run 0_deploy_game.js first');
+    }
     
     if (!deploymentData.dbtc_mint_address) {
         errors.push('DOGE_BTC token mint address not found');
@@ -246,9 +372,16 @@ function validatePrerequisites(deploymentData) {
     console.log('\x1b[32m%s\x1b[0m', '✅ All prerequisites validated');
 }
 
- 
-
-async function createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath) {
+/**
+ * Creates the AMM configuration for the Raydium pool
+ * @param {Connection} connection - Solana connection
+ * @param {Program} cpProgram - Raydium CP program instance
+ * @param {Keypair} deployer - Deployer keypair
+ * @param {Object} deploymentData - Deployment state data
+ * @param {string} deploymentPath - Path to deployment file
+ * @param {PublicKey} RAYDIUM_CP_PROGRAM_ID - Raydium program ID
+ */
+async function createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID) {
     if (deploymentData.raydium_amm_config_created) {
         console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Raydium AMM config already exists. Skipping...');
         console.log('\x1b[36m%s\x1b[0m', '🔑 AMM Config:', deploymentData.raydium_amm_config_created.amm_config_pda);
@@ -256,18 +389,22 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
     }
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ CREATING AMM CONFIG ] ===================');
+    console.log(`deployer.publicKey: ${deployer.publicKey.toBase58()}`);
+    console.log(`RAYDIUM_CP_PROGRAM_ID: ${RAYDIUM_CP_PROGRAM_ID.toBase58()}`);
     
     const configIndex = config.raydium.amm_config_index;
     const tradeFeeRate = new BN(config.raydium.trade_fee_rate);
     const protocolFeeRate = new BN(config.raydium.protocol_fee_rate);
     const fundFeeRate = new BN(config.raydium.fund_fee_rate);
     const createPoolFee = new BN(config.raydium.create_pool_fee);
+    const creatorFeeRate = new BN(config.raydium.creator_fee_rate || 0); // Default to 0 if not specified
             
     console.log('\x1b[36m%s\x1b[0m', '⚙️ AMM Config Parameters:');
     console.log('\x1b[36m%s\x1b[0m', `   • Config Index: ${configIndex}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Trade Fee Rate: ${tradeFeeRate.toNumber() / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `   • Protocol Fee Rate: ${protocolFeeRate.toNumber() / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `   • Fund Fee Rate: ${fundFeeRate.toNumber() / 10000}%`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Creator Fee Rate: ${creatorFeeRate.toNumber() / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `   • Create Pool Fee: ${createPoolFee.toNumber() / 1e9} SOL`);
             
     try {
@@ -299,6 +436,7 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
                     protocol_fee_rate: protocolFeeRate.toNumber(),
                     fund_fee_rate: fundFeeRate.toNumber(),
                     create_pool_fee: createPoolFee.toString(),
+                    creator_fee_rate: creatorFeeRate.toNumber(),
                     status: 'already_exists',
                     timestamp: new Date().toISOString()
                 };
@@ -314,26 +452,21 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
         console.log('\x1b[33m%s\x1b[0m', '📡 Creating AMM config on-chain...');
         
         // Call the createAmmConfig instruction
-        const tx = await cpProgram.methods
+        const txid = await cpProgram.methods
             .createAmmConfig(
                 configIndex,           // index: u16
                 tradeFeeRate,         // trade_fee_rate: u64  
                 protocolFeeRate,      // protocol_fee_rate: u64
                 fundFeeRate,          // fund_fee_rate: u64
-                createPoolFee         // create_pool_fee: u64
+                createPoolFee,        // create_pool_fee: u64
+                creatorFeeRate        // creator_fee_rate: u64
             )
             .accounts({
                 owner: deployer.publicKey,
                 ammConfig: ammConfigPDA,
                 systemProgram: SystemProgram.programId,
             })
-            .transaction();
-
-            const txid = await web3.sendAndConfirmTransaction(
-                connection,
-                tx,
-                [deployer]
-            );
+            .rpc();
             
         console.log('\x1b[32m%s\x1b[0m', '✅ AMM config created successfully!');
         console.log('\x1b[90m%s\x1b[0m', '🔗 Transaction:', txid);
@@ -349,9 +482,11 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
             protocol_fee_rate: protocolFeeRate.toNumber(),
             fund_fee_rate: fundFeeRate.toNumber(),
             create_pool_fee: createPoolFee.toString(),
+            creator_fee_rate: creatorFeeRate.toNumber(),
             trade_fee_readable: `${tradeFeeRate.toNumber() / 10000}%`,
             protocol_fee_readable: `${protocolFeeRate.toNumber() / 10000}%`,
             fund_fee_readable: `${fundFeeRate.toNumber() / 10000}%`,
+            creator_fee_readable: `${creatorFeeRate.toNumber() / 10000}%`,
             create_pool_fee_readable: `${createPoolFee.toNumber() / 1e9} SOL`,
             creation_signature: txid,
             pda_bump: bump,
@@ -368,7 +503,16 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
     }
 }
 
-async function initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath) {
+/**
+ * Initializes the DOGE_BTC-SOL liquidity pool with Raydium CP-Swap
+ * @param {Connection} connection - Solana connection
+ * @param {Program} cpProgram - Raydium CP program instance
+ * @param {Keypair} deployer - Deployer keypair
+ * @param {Object} deploymentData - Deployment state data
+ * @param {string} deploymentPath - Path to deployment file
+ * @param {PublicKey} RAYDIUM_CP_PROGRAM_ID - Raydium program ID
+ */
+async function initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID) {
     // Check if already created
     if (deploymentData.dbtc_sol_pool_created) {
         console.log(COLOR_INFO, 'ℹ️ DOGE_BTC-SOL pool already exists');
@@ -390,7 +534,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
 
         // Get the token mints
         const mdogeMintKey = new PublicKey(deploymentData.dbtc_mint_address);
-        const wsolMintKey = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL mint
+        const wsolMintKey = new PublicKey(WSOL_MINT);
         
         console.log(COLOR_DIM, `🔍 DOGE_BTC Mint: ${mdogeMintKey.toString()}`);
         console.log(COLOR_DIM, `🔍 WSOL Mint: ${wsolMintKey.toString()}`);
@@ -423,8 +567,14 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const currentWsolBalance = await connection.getTokenAccountBalance(creatorWsolAccount.address);
         console.log(COLOR_DIM, `🔍 Current WSOL balance: ${currentWsolBalance.value.uiAmount || 0} WSOL`);
 
-        // Wrap SOL to WSOL for pool creation
-        const wrapSolAmount = POOL_CONFIG.initialSolAmount.add(new BN("100000000")); // Extra 0.1 SOL for fees
+        // Calculate pool amounts from config
+        const initialMdogeAmount = new BN(
+            Math.floor(config.token.initial_supply * Math.pow(10, config.token.decimals) * config.raydium.initial_dbtc_percentage / 100)
+        );
+        const initialSolAmount = new BN(config.raydium.initial_sol_amount);
+        
+        // Wrap SOL to WSOL for pool creation (add buffer for fees)
+        const wrapSolAmount = initialSolAmount.add(new BN(100000000)); // Extra 0.1 SOL for fees
         console.log(COLOR_DIM, `🔍 Wrapping ${wrapSolAmount.toNumber() / 1e9} SOL to WSOL...`);
         
         const wrapSolTx = new Transaction().add(
@@ -514,8 +664,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
             const mdogeBalance = await connection.getTokenAccountBalance(creatorMdogeAccount);
             console.log(COLOR_DIM, `🔍 Creator DOGE_BTC balance: ${mdogeBalance.value.uiAmount} DOGE_BTC`);
             
-            if (parseFloat(mdogeBalance.value.amount) < POOL_CONFIG.initialMdogeAmount.toNumber()) {
-                console.error(COLOR_ERROR, `❌ Insufficient DOGE_BTC balance. Need: ${POOL_CONFIG.initialMdogeAmount.toNumber() / 1e6}, Have: ${mdogeBalance.value.uiAmount}`);
+            if (parseFloat(mdogeBalance.value.amount) < initialMdogeAmount.toNumber()) {
+                console.error(COLOR_ERROR, `❌ Insufficient DOGE_BTC balance. Need: ${initialMdogeAmount.toNumber() / Math.pow(10, config.token.decimals)}, Have: ${mdogeBalance.value.uiAmount}`);
                 throw new Error('Insufficient DOGE_BTC balance');
             }
         } catch (error) {
@@ -529,25 +679,41 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         );
         console.log(COLOR_DIM, `🔍 Creator LP Account: ${creatorLpAccount.toString()}`);
 
-        // Get the correct pool fee account - use WSOL token account for fee receiver
-        const feeReceiverAddress = new PublicKey("DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61");
+        // The pool fee receiver address should be set to deployer's address in the deployed Raydium program
+        // This was configured during deployment in 0_deploy_game.js
+        const POOL_FEE_RECEIVER = deployer.publicKey;
+        console.log(COLOR_INFO, `🔍 Pool fee receiver (from deployed program): ${POOL_FEE_RECEIVER.toString()}`);
         
-        console.log(COLOR_INFO, `🔍 Fee Receiver Address: ${feeReceiverAddress.toString()}`);
-        console.log(COLOR_INFO, `🔍 Our deployer address: ${deployer.publicKey.toString()}`);
-        console.log(COLOR_INFO, `🔍 Addresses match: ${feeReceiverAddress.equals(deployer.publicKey)}`);
+        // Get the WSOL token account for the fee receiver (deployer)
+        // This is where the pool creation fee will be sent
+        const poolFeeAccount = await getAssociatedTokenAddress(
+            wsolMintKey,
+            POOL_FEE_RECEIVER,
+            false, // allowOwnerOffCurve
+            TOKEN_PROGRAM_ID
+        );
+        console.log(COLOR_INFO, `🔍 Pool fee account (Deployer's WSOL ATA): ${poolFeeAccount.toString()}`);
         
-        // Since fee receiver is our deployer, use our WSOL account
-        const poolFeeAccount = creatorWsolAccount.address;
-        console.log(COLOR_INFO, `🔍 Using our WSOL account as pool fee account: ${poolFeeAccount.toString()}`);
-        
-        // Verify the account details
-        try {
-            const feeAccountInfo = await connection.getAccountInfo(poolFeeAccount);
-            console.log(COLOR_DIM, `🔍 Pool fee account owner: ${feeAccountInfo?.owner.toString()}`);
-            console.log(COLOR_DIM, `🔍 Pool fee account exists: ${!!feeAccountInfo}`);
-            console.log(COLOR_DIM, `🔍 Pool fee account data length: ${feeAccountInfo?.data.length}`);
-        } catch (error) {
-            console.log(COLOR_ERROR, `❌ Error checking pool fee account: ${error.message}`);
+        // Check if the pool fee account exists
+        const poolFeeAccountInfo = await connection.getAccountInfo(poolFeeAccount);
+        if (!poolFeeAccountInfo) {
+            console.log(COLOR_WARNING, '⚠️ Pool fee account does not exist yet, creating it...');
+            // Create the WSOL account for the deployer to receive pool creation fees
+            const createWsolAccountIx = await getOrCreateAssociatedTokenAccount(
+                connection,
+                deployer,
+                wsolMintKey,
+                POOL_FEE_RECEIVER,
+                false,
+                undefined,
+                undefined,
+                TOKEN_PROGRAM_ID
+            );
+            console.log(COLOR_SUCCESS, `✅ Created pool fee WSOL account: ${createWsolAccountIx.address.toString()}`);
+        } else {
+            console.log(COLOR_DIM, `🔍 Pool fee account exists: ${!!poolFeeAccountInfo}`);
+            console.log(COLOR_DIM, `🔍 Pool fee account owner: ${poolFeeAccountInfo.owner.toString()}`);
+            console.log(COLOR_DIM, `🔍 Pool fee account data length: ${poolFeeAccountInfo.data.length} bytes`);
         }
 
         // Determine token programs based on the actual token types, not order
@@ -593,8 +759,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const creatorToken1 = isMdogeToken0 ? creatorWsolAccount.address : creatorMdogeAccount;
 
         // Determine initial amounts based on token order
-        const initAmount0 = isMdogeToken0 ? POOL_CONFIG.initialMdogeAmount : POOL_CONFIG.initialSolAmount;
-        const initAmount1 = isMdogeToken0 ? POOL_CONFIG.initialSolAmount : POOL_CONFIG.initialMdogeAmount;
+        const initAmount0 = isMdogeToken0 ? initialMdogeAmount : initialSolAmount;
+        const initAmount1 = isMdogeToken0 ? initialSolAmount : initialMdogeAmount;
 
         // Prepare pool accounts
         console.log(COLOR_DIM, '🔍 Preparing pool accounts structure...');
@@ -626,10 +792,12 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
             console.log(COLOR_DIM, `   ${key}: ${value.toString()}`);
         });
 
+        const openTime = config.raydium.open_time;
+        
         console.log(COLOR_DIM, '🔍 Pool initialization parameters:');
         console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isMdogeToken0 ? 'DOGE_BTC' : 'WSOL'})`);
         console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isMdogeToken0 ? 'WSOL' : 'DOGE_BTC'})`);
-        console.log(COLOR_DIM, `   openTime: ${POOL_CONFIG.openTime} (${new Date(POOL_CONFIG.openTime * 1000).toLocaleString()})`);
+        console.log(COLOR_DIM, `   openTime: ${openTime} (${openTime > 0 ? new Date(openTime * 1000).toLocaleString() : 'Opens immediately'})`);
 
         try {
             console.log(COLOR_INFO, '🚀 Calling cpInitializePool...');
@@ -644,7 +812,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 {
                     initAmount0: initAmount0,
                     initAmount1: initAmount1,
-                    openTime: POOL_CONFIG.openTime,
+                    openTime: openTime,
                     accounts: poolAccounts
                 }
             );
@@ -675,9 +843,10 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 isMdogeToken0: isMdogeToken0,
                 txid: poolTxid,
                 wrapTxid: wrapTxid,
-                initialMdogeAmount: POOL_CONFIG.initialMdogeAmount.toString(),
-                initialSolAmount: POOL_CONFIG.initialSolAmount.toString(),
-                openTime: POOL_CONFIG.openTime
+                initialMdogeAmount: initialMdogeAmount.toString(),
+                initialSolAmount: initialSolAmount.toString(),
+                openTime: openTime,
+                timestamp: new Date().toISOString()
             };
             fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
             console.log(COLOR_SUCCESS, '✅ Deployment status updated');
@@ -716,6 +885,14 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
             }
 }
 
+/**
+ * Adds additional liquidity to the pool (optional, for post-creation liquidity)
+ * @param {Connection} connection - Solana connection
+ * @param {Program} cpProgram - Raydium CP program instance
+ * @param {Keypair} deployer - Deployer keypair
+ * @param {Object} deploymentData - Deployment state data
+ * @param {string} deploymentPath - Path to deployment file
+ */
 async function addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath) {
     // Check if already added
     if (deploymentData.dbtc_sol_liquidity_added) {
@@ -733,7 +910,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         console.log(COLOR_INFO, '💧 Adding liquidity to DOGE_BTC-SOL pool...');
         
         // Get token accounts (recreate them since they were in pool creation scope)
-        const wsolMintKey = new PublicKey("So11111111111111111111111111111111111111112");
+        const wsolMintKey = new PublicKey(WSOL_MINT);
         const creatorWsolAccount = await getOrCreateAssociatedTokenAccount(
             connection,
             deployer,
@@ -891,6 +1068,13 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             }
 }
 
+/**
+ * Burns LP tokens to permanently lock initial liquidity
+ * @param {Connection} connection - Solana connection
+ * @param {Keypair} deployer - Deployer keypair
+ * @param {Object} deploymentData - Deployment state data
+ * @param {string} deploymentPath - Path to deployment file
+ */
 async function burnLpTokens(connection, deployer, deploymentData, deploymentPath) {
     if (deploymentData.lp_tokens_burned) {
         console.log('\x1b[34m%s\x1b[0m', 'ℹ️ LP tokens already burned. Skipping...');
@@ -1053,6 +1237,10 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
     }
 }
 
+/**
+ * Prints a summary of the completed pool configuration
+ * @param {Object} deploymentData - Deployment state data
+ */
 function printCompletionSummary(deploymentData) {
     console.log('\x1b[35m%s\x1b[0m', '\n🎉 ================================ POOL CONFIGURATION COMPLETE ================================');
     console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC-SOL pool production configuration completed!');
