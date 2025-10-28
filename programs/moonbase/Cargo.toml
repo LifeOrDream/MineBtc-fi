@@ -26,3 +26,5 @@ mpl-core = "0.10.1"
 mpl-token-metadata = { version = "5.1.1" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 raydium-cp-swap = { path = "../../raydium/programs/cp-swap", features = ["cpi"] }
+subtle = { version = "2", default-features = false }
+constant_time_eq = "0.3"

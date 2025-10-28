@@ -1,14 +1,14 @@
 [toolchain]
-anchor_version = "0.32.1"
+anchor_version = "0.31.1"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.localnet]
-moonbase = "Jyam4vJutwJgp4w5EuHt3V9TCvubjBzDTa5ZL8axk5r"
-mooneconomy = "6WqJSW8zANSREiuQ47GHbz3f11oNCQLsPrwbxnWd4Qbm"
-raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
+moonbase = "2GFMxLgtYAWwkw9ZqYmPTLJ4WvspaiFPFfnF4F5qwH4V"
+mooneconomy = "vMhjY6oeJnfT7BeTcDm55haBs18KFCQQCH4did8a9zQ"
+raydium_cp_swap = "Hmv2hqrtco9Yx77ExnwBqjNgbnFni4s6e79EzRZmeBGq"
 
 [programs.devnet]
 moonbase = "Jyam4vJutwJgp4w5EuHt3V9TCvubjBzDTa5ZL8axk5r"
@@ -22,6 +22,7 @@ wallet = "~/Desktop/LifeOrDream Labs/DogeBTC/MineBtc-fi/wallet-keypair.json"
 
 [workspace]
 members = ["programs/*"]
+
 
 [test]
 startup_wait = 5000

@@ -212,16 +212,57 @@ function checkPrerequisites() {
   console.log(`\x1b[32m✅ All prerequisites met\x1b[0m`);
 }
 
+function initSbpfEnvironment() {
+  console.log(`\x1b[36m🛠  Initializing SBPF toolchain...\x1b[0m`);
+  try {
+    // Clean previous SBPF artifacts to avoid mismatched toolchain errors
+    runCommand('rm -rf target/sbpf-solana-solana');
+  } catch {}
+  // Note: Ensure Solana CLI is v2.x (matching crates) before building
+}
+
+function cleanBuild(programConfig) {
+  console.log(`\x1b[36m🧹 Cleaning ${programConfig.displayName}...\x1b[0m`);
+  try {
+    runCommand('anchor clean', programConfig.buildDir);
+  } catch (error) {
+    console.log(`\x1b[33m⚠️  Clean failed (may not exist yet), continuing...\x1b[0m`);
+  }
+}
+
 function buildProgram(programConfig) {
   console.log(`\x1b[36m🏗️  Building ${programConfig.displayName}...\x1b[0m`);
   
   if (programConfig.name === 'raydium_cp_swap') {
-    // Build Raydium - for localnet, we still use devnet feature to enable admin changes
-    // The feature flag is for code compilation, not network selection
-    runCommand('anchor build -- --features devnet', programConfig.buildDir);
+    // Build Raydium in its own workspace to avoid conflicts
+    // Use cargo build-sbf directly instead of anchor build
+    const raydiumProgramPath = path.join(programConfig.buildDir, 'programs', 'cp-swap');
+    runCommand('cargo build-sbf --features devnet -- --locked', raydiumProgramPath);
+    
+    // Copy the built .so file to the expected location
+    const builtSoPath = path.join(raydiumProgramPath, 'target', 'deploy', 'raydium_cp_swap.so');
+    const targetSoPath = programConfig.soPath;
+    
+    ensureDirectoryExists(path.dirname(targetSoPath));
+    if (fs.existsSync(builtSoPath)) {
+      fs.copyFileSync(builtSoPath, targetSoPath);
+      console.log(`\x1b[32m  ✅ Copied .so to: ${targetSoPath}\x1b[0m`);
+    }
   } else {
-    // Build main programs
-    runCommand('anchor build', programConfig.buildDir);
+    // Build each Anchor program in its own crate to avoid workspace conflicts
+    const programDir = path.join(programConfig.buildDir, 'programs', programConfig.name);
+    // Use cargo build-sbf directly (same as Anchor under the hood)
+    runCommand('cargo build-sbf -- --locked', programDir);
+
+    // Copy the built .so file to the expected root target location
+    const builtSoPath = path.join(programDir, 'target', 'deploy', `${programConfig.name}.so`);
+    const targetSoPath = programConfig.soPath;
+
+    ensureDirectoryExists(path.dirname(targetSoPath));
+    if (fs.existsSync(builtSoPath)) {
+      fs.copyFileSync(builtSoPath, targetSoPath);
+      console.log(`\x1b[32m  ✅ Copied .so to: ${targetSoPath}\x1b[0m`);
+    }
   }
   
   console.log(`\x1b[32m✅ ${programConfig.displayName} built successfully\x1b[0m`);
@@ -312,6 +353,8 @@ async function main() {
     
     // Step 1: Check prerequisites
     checkPrerequisites();
+    // Reinitialize SBPF platform tools once per run
+    initSbpfEnvironment();
     
     // Get deployer wallet public key
     const deployerPubkey = getDeployerPublicKey();
