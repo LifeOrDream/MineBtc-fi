@@ -8,7 +8,7 @@ pub mod instructions;
 use instructions::admin::*;
 use instructions::user::*;
 
-declare_id!("4iiv7LNziMazs9S5gUL1XQZKEwbowDA3m2wMfZfbc8cv");
+declare_id!("6WqJSW8zANSREiuQ47GHbz3f11oNCQLsPrwbxnWd4Qbm");
 
 #[program]
 pub mod mooneconomy {

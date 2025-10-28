@@ -10,29 +10,43 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Configuration
-const PROD_MOONBASE_DIR = path.join(__dirname, '..', 'prod_moonbase');
-const WALLET_KEYPAIR_PATH = path.join(__dirname, '..', 'wallet-keypair.json');
-const ANCHOR_TOML_PATH = path.join(PROD_MOONBASE_DIR, 'Anchor.toml');
+const ROOT_DIR = path.join(__dirname, '..');
+const RAYDIUM_DIR = path.join(ROOT_DIR, 'raydium');
+const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, 'wallet-keypair.json');
+const ANCHOR_TOML_PATH = path.join(ROOT_DIR, 'Anchor.toml');
 const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
 
 // Program configurations
 const PROGRAMS = {
-  moon_base: {
-    name: 'moon_base',
-    keypairPath: path.join(PROD_MOONBASE_DIR, 'target', 'deploy', 'moon_base-keypair.json'),
-    soPath: path.join(PROD_MOONBASE_DIR, 'target', 'deploy', 'moon_base.so'),
-    libPath: path.join(PROD_MOONBASE_DIR, 'programs', 'moon_base', 'src', 'lib.rs')
+  raydium_cp_swap: {
+    name: 'raydium_cp_swap',
+    displayName: 'Raydium CP Swap',
+    keypairPath: path.join(ROOT_DIR, 'raydium', 'target', 'deploy', 'raydium_cp_swap-keypair.json'),
+    soPath: path.join(ROOT_DIR, 'raydium', 'target', 'deploy', 'raydium_cp_swap.so'),
+    libPath: path.join(ROOT_DIR, 'raydium', 'programs', 'cp-swap', 'src', 'lib.rs'),
+    buildDir: RAYDIUM_DIR,
+    needsAdminUpdate: true
   },
-  moon_economy: {
-    name: 'moon_economy',
-    keypairPath: path.join(PROD_MOONBASE_DIR, 'target', 'deploy', 'moon_economy-keypair.json'),
-    soPath: path.join(PROD_MOONBASE_DIR, 'target', 'deploy', 'moon_economy.so'),
-    libPath: path.join(PROD_MOONBASE_DIR, 'programs', 'moon_economy', 'src', 'lib.rs')
+  moonbase: {
+    name: 'moonbase',
+    displayName: 'MoonBase',
+    keypairPath: path.join(ROOT_DIR, 'target', 'deploy', 'moonbase-keypair.json'),
+    soPath: path.join(ROOT_DIR, 'target', 'deploy', 'moonbase.so'),
+    libPath: path.join(ROOT_DIR, 'programs', 'moonbase', 'src', 'lib.rs'),
+    buildDir: ROOT_DIR
+  },
+  mooneconomy: {
+    name: 'mooneconomy',
+    displayName: 'MoonEconomy',
+    keypairPath: path.join(ROOT_DIR, 'target', 'deploy', 'mooneconomy-keypair.json'),
+    soPath: path.join(ROOT_DIR, 'target', 'deploy', 'mooneconomy.so'),
+    libPath: path.join(ROOT_DIR, 'programs', 'mooneconomy', 'src', 'lib.rs'),
+    buildDir: ROOT_DIR
   }
 };
 
 // Utility functions
-function runCommand(command, cwd = PROD_MOONBASE_DIR) {
+function runCommand(command, cwd = ROOT_DIR) {
   console.log(`\x1b[36m🔧 Running: ${command}\x1b[0m`);
   try {
     const result = execSync(command, { 
@@ -48,6 +62,12 @@ function runCommand(command, cwd = PROD_MOONBASE_DIR) {
     if (error.stderr) console.error(`\x1b[33mSTDERR: ${error.stderr}\x1b[0m`);
     throw error;
   }
+}
+
+function getDeployerPublicKey() {
+  const keypairData = JSON.parse(fs.readFileSync(WALLET_KEYPAIR_PATH, 'utf8'));
+  const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
+  return keypair.publicKey.toString();
 }
 
 function ensureDirectoryExists(dirPath) {
@@ -131,17 +151,44 @@ function updateDeclareId(libPath, programAddress) {
   
   let libContent = fs.readFileSync(libPath, 'utf8');
   
-  // Update declare_id! macro
-  const declareIdRegex = /declare_id!\("([^"]+)"\);/;
-  const replacement = `declare_id!("${programAddress}");`;
+  // Update declare_id! macro (handles both devnet and non-devnet versions)
+  const declareIdRegex = /declare_id!\("([^"]+)"\);/g;
+  let updated = false;
   
-  if (libContent.match(declareIdRegex)) {
-    libContent = libContent.replace(declareIdRegex, replacement);
+  libContent = libContent.replace(declareIdRegex, (match) => {
+    updated = true;
+    return `declare_id!("${programAddress}");`;
+  });
+  
+  if (updated) {
     fs.writeFileSync(libPath, libContent);
     console.log(`\x1b[32m  ✅ Updated declare_id! to: ${programAddress}\x1b[0m`);
   } else {
     console.log(`\x1b[33m  ⚠️  Could not find declare_id! in ${libPath}\x1b[0m`);
   }
+}
+
+function updateRaydiumAdmins(libPath, deployerPubkey) {
+  console.log(`\x1b[33m📝 Updating Raydium admin addresses in ${libPath}...\x1b[0m`);
+  
+  let libContent = fs.readFileSync(libPath, 'utf8');
+  
+  // Update admin pubkey in admin module (devnet)
+  libContent = libContent.replace(
+    /#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\("([^"]+)"\);/,
+    `#[cfg(feature = "devnet")]\n    pub const ID: Pubkey = pubkey!("${deployerPubkey}");`
+  );
+  
+  // Update create_pool_fee_receiver pubkey (devnet) 
+  libContent = libContent.replace(
+    /pub mod create_pool_fee_reveiver \{[^}]+#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\("([^"]+)"\);/s,
+    (match) => {
+      return match.replace(/pubkey!\("([^"]+)"\)/, `pubkey!("${deployerPubkey}")`);
+    }
+  );
+  
+  fs.writeFileSync(libPath, libContent);
+  console.log(`\x1b[32m  ✅ Updated Raydium admin addresses to: ${deployerPubkey}\x1b[0m`);
 }
 
 function checkPrerequisites() {
@@ -152,12 +199,12 @@ function checkPrerequisites() {
     throw new Error(`Wallet keypair not found at: ${WALLET_KEYPAIR_PATH}`);
   }
   
-  // Check if prod_moonbase directory exists
-  if (!fs.existsSync(PROD_MOONBASE_DIR)) {
-    throw new Error(`prod_moonbase directory not found at: ${PROD_MOONBASE_DIR}`);
+  // Check if Raydium directory exists
+  if (!fs.existsSync(RAYDIUM_DIR)) {
+    throw new Error(`Raydium directory not found at: ${RAYDIUM_DIR}`);
   }
   
-  // Check if Anchor.toml exists
+  // Check if main Anchor.toml exists
   if (!fs.existsSync(ANCHOR_TOML_PATH)) {
     throw new Error(`Anchor.toml not found at: ${ANCHOR_TOML_PATH}`);
   }
@@ -165,14 +212,23 @@ function checkPrerequisites() {
   console.log(`\x1b[32m✅ All prerequisites met\x1b[0m`);
 }
 
-function buildPrograms() {
-  console.log(`\x1b[36m🏗️  Building programs...\x1b[0m`);
-  runCommand('anchor build');
-  console.log(`\x1b[32m✅ Programs built successfully\x1b[0m`);
+function buildProgram(programConfig) {
+  console.log(`\x1b[36m🏗️  Building ${programConfig.displayName}...\x1b[0m`);
+  
+  if (programConfig.name === 'raydium_cp_swap') {
+    // Build Raydium - for localnet, we still use devnet feature to enable admin changes
+    // The feature flag is for code compilation, not network selection
+    runCommand('anchor build -- --features devnet', programConfig.buildDir);
+  } else {
+    // Build main programs
+    runCommand('anchor build', programConfig.buildDir);
+  }
+  
+  console.log(`\x1b[32m✅ ${programConfig.displayName} built successfully\x1b[0m`);
 }
 
 function deployProgram(programConfig, walletPath) {
-  console.log(`\x1b[36m🚀 Deploying ${programConfig.name}...\x1b[0m`);
+  console.log(`\x1b[36m🚀 Deploying ${programConfig.displayName}...\x1b[0m`);
   
   // Read cluster configuration from config.json
   const configPath = path.join(__dirname, 'config.json');
@@ -190,10 +246,10 @@ function deployProgram(programConfig, walletPath) {
   
   try {
     const result = runCommand(deployCommand);
-    console.log(`\x1b[32m✅ Successfully deployed ${programConfig.name}\x1b[0m`);
+    console.log(`\x1b[32m✅ Successfully deployed ${programConfig.displayName}\x1b[0m`);
     return result;
   } catch (error) {
-    console.error(`\x1b[31m❌ Failed to deploy ${programConfig.name}\x1b[0m`);
+    console.error(`\x1b[31m❌ Failed to deploy ${programConfig.displayName}\x1b[0m`);
     throw error;
   }
 }
@@ -229,8 +285,9 @@ function saveDeploymentInfo(programAddresses) {
   }
   
   // Update program IDs
-  deploymentData.MOON_BASE_PROGRAM_ID = programAddresses.moon_base;
-  deploymentData.MOON_ECONOMY_PROGRAM_ID = programAddresses.moon_economy;
+  deploymentData.RAYDIUM_CP_SWAP_PROGRAM_ID = programAddresses.raydium_cp_swap;
+  deploymentData.MOONBASE_PROGRAM_ID = programAddresses.moonbase;
+  deploymentData.MOONECONOMY_PROGRAM_ID = programAddresses.mooneconomy;
   
   // Update deployment timestamp
   deploymentData.last_deployment = {
@@ -243,8 +300,9 @@ function saveDeploymentInfo(programAddresses) {
   fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
   console.log(`\x1b[32m✅ Updated deployment file: ${deploymentPath}\x1b[0m`);
   console.log(`\x1b[32m   📍 Cluster: ${cluster}\x1b[0m`);
-  console.log(`\x1b[32m   🔗 MOON_BASE_PROGRAM_ID: ${programAddresses.moon_base}\x1b[0m`);
-  console.log(`\x1b[32m   🔗 MOON_ECONOMY_PROGRAM_ID: ${programAddresses.moon_economy}\x1b[0m`);
+  console.log(`\x1b[32m   🔗 RAYDIUM_CP_SWAP_PROGRAM_ID: ${programAddresses.raydium_cp_swap}\x1b[0m`);
+  console.log(`\x1b[32m   🔗 MOONBASE_PROGRAM_ID: ${programAddresses.moonbase}\x1b[0m`);
+  console.log(`\x1b[32m   🔗 MOONECONOMY_PROGRAM_ID: ${programAddresses.mooneconomy}\x1b[0m`);
 }
 
 async function main() {
@@ -255,6 +313,10 @@ async function main() {
     // Step 1: Check prerequisites
     checkPrerequisites();
     
+    // Get deployer wallet public key
+    const deployerPubkey = getDeployerPublicKey();
+    console.log(`\x1b[36m📝 Deployer wallet: ${deployerPubkey}\x1b[0m`);
+    
     // Step 2: Generate keypairs and collect addresses
     console.log(`\x1b[36m\n📋 Step 1: Generating program keypairs...\x1b[0m`);
     const programAddresses = {};
@@ -263,26 +325,44 @@ async function main() {
       programAddresses[programName] = generateKeypair(config.keypairPath);
     }
     
-    // Step 3: Update Anchor.toml
+    // Step 3: Update configuration files
     console.log(`\x1b[36m\n📋 Step 2: Updating configuration files...\x1b[0m`);
-    updateAnchorToml(programAddresses);
     
-    // Step 4: Update declare_id! in lib.rs files
+    // Update Raydium admin addresses first (before updating declare_id)
+    const raydiumConfig = PROGRAMS.raydium_cp_swap;
+    if (raydiumConfig.needsAdminUpdate) {
+      updateRaydiumAdmins(raydiumConfig.libPath, deployerPubkey);
+    }
+    
+    // Update declare_id! in all lib.rs files
     for (const [programName, config] of Object.entries(PROGRAMS)) {
       updateDeclareId(config.libPath, programAddresses[programName]);
     }
     
-    // Step 5: Build programs
+    // Update Anchor.toml
+    updateAnchorToml(programAddresses);
+    
+    // Step 4: Build programs (in order: Raydium first, then game programs)
     console.log(`\x1b[36m\n📋 Step 3: Building programs...\x1b[0m`);
-    buildPrograms();
     
-    // Step 6: Deploy programs
+    // Build Raydium first as it's a dependency
+    buildProgram(PROGRAMS.raydium_cp_swap);
+    
+    // Then build game programs
+    buildProgram(PROGRAMS.moonbase);
+    buildProgram(PROGRAMS.mooneconomy);
+    
+    // Step 5: Deploy programs (in order: Raydium first)
     console.log(`\x1b[36m\n📋 Step 4: Deploying programs...\x1b[0m`);
-    for (const [programName, config] of Object.entries(PROGRAMS)) {
-      deployProgram(config, WALLET_KEYPAIR_PATH);
-    }
     
-    // Step 7: Save deployment information
+    // Deploy Raydium first
+    deployProgram(PROGRAMS.raydium_cp_swap, WALLET_KEYPAIR_PATH);
+    
+    // Then deploy game programs
+    deployProgram(PROGRAMS.moonbase, WALLET_KEYPAIR_PATH);
+    deployProgram(PROGRAMS.mooneconomy, WALLET_KEYPAIR_PATH);
+    
+    // Step 6: Save deployment information
     console.log(`\x1b[36m\n📋 Step 5: Saving deployment information...\x1b[0m`);
     saveDeploymentInfo(programAddresses);
     
@@ -292,24 +372,33 @@ async function main() {
     console.log(`\x1b[36m📊 Deployed Programs:\x1b[0m`);
     
     for (const [programName, address] of Object.entries(programAddresses)) {
-      console.log(`\x1b[32m  ✅ ${programName}: ${address}\x1b[0m`);
+      const displayName = PROGRAMS[programName].displayName;
+      console.log(`\x1b[32m  ✅ ${displayName}: ${address}\x1b[0m`);
     }
     
+    console.log(`\x1b[36m\n📝 Admin Configuration:\x1b[0m`);
+    console.log(`\x1b[33m  Raydium admin: ${deployerPubkey}\x1b[0m`);
+    console.log(`\x1b[33m  Pool fee receiver: ${deployerPubkey}\x1b[0m`);
+    
     console.log(`\x1b[36m\n🔗 Next Steps:\x1b[0m`);
-    console.log(`\x1b[33m  1. Run initialization scripts (1_mint_moondoge.js, 2_initialize_raydium.js, etc.)\x1b[0m`);
-    console.log(`\x1b[33m  2. Test the deployed programs\x1b[0m`);
-    console.log(`\x1b[33m  3. Update frontend configuration with new program IDs\x1b[0m`);
+    console.log(`\x1b[33m  1. Run 1_init_mdoge_token.js to create the game token\x1b[0m`);
+    console.log(`\x1b[33m  2. Run 2_init_mdoge_SOL_pool.js to create the Raydium pool\x1b[0m`);
+    console.log(`\x1b[33m  3. Run 3_init_moonbase.js and 4_init_moonEconomy.js\x1b[0m`);
+    console.log(`\x1b[33m  4. Update frontend configuration with new program IDs\x1b[0m`);
     
   } catch (error) {
     console.error(`\x1b[31m\n💥 DEPLOYMENT FAILED! 💥\x1b[0m`);
     console.error(`\x1b[31m========================\x1b[0m`);
     console.error(`\x1b[31mError: ${error.message}\x1b[0m`);
+    if (error.stack) {
+      console.error(`\x1b[90m${error.stack}\x1b[0m`);
+    }
     
     console.log(`\x1b[33m\n🔧 Troubleshooting:\x1b[0m`);
-    console.log(`\x1b[33m  1. Make sure Solana CLI is installed and configured\x1b[0m`);
+    console.log(`\x1b[33m  1. Make sure Solana CLI and Anchor are installed\x1b[0m`);
     console.log(`\x1b[33m  2. Check that your wallet has sufficient SOL for deployment\x1b[0m`);
-    console.log(`\x1b[33m  3. Verify that the localnet validator is running\x1b[0m`);
-    console.log(`\x1b[33m  4. Ensure all file paths are correct\x1b[0m`);
+    console.log(`\x1b[33m  3. Verify that the validator is running (solana-test-validator)\x1b[0m`);
+    console.log(`\x1b[33m  4. Ensure all dependencies are installed (cargo build-sbf)\x1b[0m`);
     
     process.exit(1);
   }

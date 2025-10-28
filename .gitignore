@@ -10,3 +10,12 @@ outdated_dump/setup_scripts/node_modules/*
 
 
 future_scope/*/target/*
+
+test-ledger/*
+
+tweets/*
+p_tweets/*
+
+raydium/target/*
+
+setup_scripts/node_modules/*

@@ -8,7 +8,7 @@ pub mod instructions;
 pub use instructions::admin::*;
 pub use instructions::user::*;
 
-declare_id!("CSWE15QqLXN3ucPJQY2EaHKauNvUPhBPA5yB6yxqiVHr");
+declare_id!("Jyam4vJutwJgp4w5EuHt3V9TCvubjBzDTa5ZL8axk5r");
 
 #[program]
 pub mod moonbase {

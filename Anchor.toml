@@ -1,6 +1,3 @@
-[workspace]
-members = ["programs/*"]
-
 [toolchain]
 anchor_version = "0.32.1"
 
@@ -8,16 +5,23 @@ anchor_version = "0.32.1"
 resolution = true
 skip-lint = false
 
-[programs.devnet]
-moonbase = "76bGWqGdzwR13FSd1TDwanK7GFDHcunKh6WGbzAW1PjU"
-mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
+[programs.localnet]
+moonbase = "Jyam4vJutwJgp4w5EuHt3V9TCvubjBzDTa5ZL8axk5r"
+mooneconomy = "6WqJSW8zANSREiuQ47GHbz3f11oNCQLsPrwbxnWd4Qbm"
+raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 
-[registry]
-url = "https://api.apr.dev"
+[programs.devnet]
+moonbase = "Jyam4vJutwJgp4w5EuHt3V9TCvubjBzDTa5ZL8axk5r"
+mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
+mooneconomy = "6WqJSW8zANSREiuQ47GHbz3f11oNCQLsPrwbxnWd4Qbm"
+raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/Desktop/LifeOrDream Labs/DogeBTC/MineBtc-fi/wallet-keypair.json"
+
+[workspace]
+members = ["programs/*"]
 
 [test]
 startup_wait = 5000
