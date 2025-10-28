@@ -16,11 +16,11 @@
         "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
     },
     "token": {
-        "name": "DogeBtc",
-        "symbol": "MDOGE",
-        "description": "DogeBtc - The First Doge on the Moon! Play-to-earn lunar mining game token.",
-        "image": "https://arweave.net/dogewifbtc-logo",
-        "external_url": "https://moondoge.game",
+        "name": "DogeWifBTC",
+        "symbol": "DBTC",
+        "description": "The ONLY price-aware $BTC$ in existence. $DBTC$ fuels the entire Lunar Playground economy: Stake for Electricity, Mine for adaptive emissions, and earn $SOL$ rewards from game fees.",
+        "image": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
+        "external_url": "https://minebtc.fun/",
         "decimals": 6,
         "initial_supply": 21000000000,
         "burn_tax_bps": 100,

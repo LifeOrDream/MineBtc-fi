@@ -65,9 +65,9 @@ Saved to `setup_scripts/deployments/localnet.json`:
 
 ```json
 {
-  "RAYDIUM_CP_SWAP_PROGRAM_ID": "...",
-  "MOONBASE_PROGRAM_ID": "...",
-  "MOONECONOMY_PROGRAM_ID": "...",
+  "RAYDIUM_CP_PROGRAM_ID": "...",
+  "MOON_BASE_PROGRAM_ID": "...",
+  "MOON_ECONOMY_PROGRAM_ID": "...",
   "last_deployment": {
     "timestamp": "...",
     "cluster": "localnet",

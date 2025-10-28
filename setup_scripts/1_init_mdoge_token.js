@@ -1,3 +1,28 @@
+/**
+ * ============================================================================
+ * DOGE_BTC TOKEN INITIALIZATION SCRIPT (Production-Grade)
+ * ============================================================================
+ * 
+ * This script initializes the DOGE_BTC Token-2022 with the following features:
+ * 
+ * DEPLOYMENT STEPS:
+ * 1. Create mint account with metadata and transfer fee config
+ * 2. Create associated token account for deployer
+ * 3. Mint initial supply with verification
+ * 4. Remove mint authority (make token non-mintable)
+ * 5. Remove withdraw withheld authority
+ * 6. Transfer transfer fee config authority to configured address
+ * 
+ * SAFETY FEATURES:
+ * - All operations are idempotent (can be safely re-run)
+ * - Deployment state is persisted after each step
+ * - Backups are created before updating deployment data
+ * - On-chain verification ensures data consistency
+ * - Comprehensive validation prevents invalid configurations
+ * 
+ * ============================================================================
+ */
+
 import {
     Connection,
     Keypair,
@@ -53,30 +78,7 @@ const TOKEN_METADATA = {
     symbol: config.token.symbol,
     description: config.token.description,
     image: config.token.image,
-    external_url: config.token.external_url,
-    attributes: [
-        {
-            trait_type: "Generation",
-            value: "1"
-        },
-        {
-            trait_type: "Type",
-            value: "Utility Token"
-        },
-        {
-            trait_type: "Network",
-            value: CLUSTER
-        }
-    ],
-    properties: {
-        files: [
-            {
-                uri: config.token.image,
-                type: "image/png"
-            }
-        ],
-        category: "cryptocurrency"
-    }
+    external_url: config.token.external_url
 };
 
 // ============================================================================
@@ -90,6 +92,8 @@ const TOKEN_METADATA = {
     console.log('\x1b[36m%s\x1b[0m', '🪙 Token Symbol:', config.token.symbol);
     console.log('\x1b[36m%s\x1b[0m', '📊 Initial Supply:', config.token.initial_supply.toLocaleString());
 
+    // Validate configuration before proceeding
+    validateConfiguration();
 
     // Setup connection
     const connection = await initializeConnection();
@@ -100,12 +104,12 @@ const TOKEN_METADATA = {
 
     let deployer_balance = await getSolanaBalance(connection, deployer.publicKey);
     console.log('\x1b[36m%s\x1b[0m', '💰 Deployer Balance:', deployer_balance / 1e9, 'SOL');
-   
-    
+
+    // Check sufficient balance for deployment
+    await validateDeployerBalance(connection, deployer.publicKey);
     
     // Load or create deployment state
     const { deploymentData, deploymentPath } = loadDeploymentState();
-    // return;
     
     try {
         // 1. Create mint account with metadata
@@ -134,6 +138,99 @@ const TOKEN_METADATA = {
         process.exit(1);
     }
 })();
+
+// ============================================================================
+// ========== VALIDATION FUNCTIONS ===========================================
+// ============================================================================
+
+function validateConfiguration() {
+    console.log('\x1b[33m%s\x1b[0m', '🔍 Validating configuration...');
+    
+    const errors = [];
+    
+    // Token configuration validation
+    if (!config.token.name || config.token.name.trim().length === 0) {
+        errors.push('Token name is required');
+    }
+    if (!config.token.symbol || config.token.symbol.trim().length === 0) {
+        errors.push('Token symbol is required');
+    }
+    if (!config.token.decimals || config.token.decimals < 0 || config.token.decimals > 9) {
+        errors.push('Token decimals must be between 0 and 9');
+    }
+    if (!config.token.initial_supply || config.token.initial_supply <= 0) {
+        errors.push('Initial supply must be greater than 0');
+    }
+    if (config.token.burn_tax_bps === undefined || config.token.burn_tax_bps < 0 || config.token.burn_tax_bps > 10000) {
+        errors.push('Burn tax basis points must be between 0 and 10000 (0-100%)');
+    }
+    if (!config.token.max_burn_amount || config.token.max_burn_amount <= 0) {
+        errors.push('Max burn amount must be greater than 0');
+    }
+    
+    // Network validation
+    if (!config.network.cluster) {
+        errors.push('Network cluster is required');
+    }
+    if (!config.network.rpc_url) {
+        errors.push('RPC URL is required');
+    }
+    
+    // Deployment paths validation
+    if (!config.deployment.paths.deployer_key) {
+        errors.push('Deployer key path is required');
+    }
+    if (!config.deployment.paths.deployments_dir) {
+        errors.push('Deployments directory path is required');
+    }
+    
+    // Transfer fee config authority validation
+    if (!config.deployment.transfer_fee_config_authority) {
+        errors.push('Transfer fee config authority is required');
+    } else {
+        try {
+            new PublicKey(config.deployment.transfer_fee_config_authority);
+        } catch (e) {
+            errors.push('Transfer fee config authority must be a valid Solana public key');
+        }
+    }
+    
+    // Metadata validation
+    if (!TOKEN_METADATA.name || TOKEN_METADATA.name.trim().length === 0) {
+        errors.push('Token metadata name is required');
+    }
+    if (!TOKEN_METADATA.symbol || TOKEN_METADATA.symbol.trim().length === 0) {
+        errors.push('Token metadata symbol is required');
+    }
+    
+    if (errors.length > 0) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Configuration validation failed:');
+        errors.forEach(error => console.error('\x1b[31m%s\x1b[0m', `   • ${error}`));
+        process.exit(1);
+    }
+    
+    console.log('\x1b[32m%s\x1b[0m', '✅ Configuration validated successfully');
+}
+
+async function validateDeployerBalance(connection, deployerPublicKey) {
+    console.log('\x1b[33m%s\x1b[0m', '🔍 Checking deployer balance...');
+    
+    const balance = await getSolanaBalance(connection, deployerPublicKey);
+    const balanceSOL = balance / 1e9;
+    
+    // Minimum 0.1 SOL required for deployment (conservative estimate)
+    const MIN_BALANCE_SOL = 0.1;
+    
+    if (balanceSOL < MIN_BALANCE_SOL) {
+        console.error('\x1b[31m%s\x1b[0m', `❌ Insufficient balance for deployment`);
+        console.error('\x1b[31m%s\x1b[0m', `   • Current Balance: ${balanceSOL.toFixed(4)} SOL`);
+        console.error('\x1b[31m%s\x1b[0m', `   • Required Balance: ${MIN_BALANCE_SOL} SOL`);
+        console.error('\x1b[31m%s\x1b[0m', `   • Please fund deployer: ${deployerPublicKey.toBase58()}`);
+        process.exit(1);
+    }
+    
+    console.log('\x1b[32m%s\x1b[0m', '✅ Deployer has sufficient balance');
+}
 
 // ============================================================================
 // ========== HELPER FUNCTIONS ===============================================
@@ -225,6 +322,18 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
     if (deploymentData.dbtc_mint_created) {
         console.log('\x1b[34m%s\x1b[0m', 'ℹ️ DOGE_BTC mint account already exists. Skipping...');
         console.log('\x1b[36m%s\x1b[0m', '🔑 Mint Address:', deploymentData.dbtc_mint_created.mint_address);
+        
+        // Verify mint account exists on-chain
+        try {
+            const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
+            const mintInfo = await getMint(connection, mintPubkey, 'confirmed', TOKEN_2022_PROGRAM_ID);
+            console.log('\x1b[32m%s\x1b[0m', '✅ Mint account verified on-chain');
+            console.log('\x1b[36m%s\x1b[0m', `   • Supply: ${mintInfo.supply.toString()}`);
+            console.log('\x1b[36m%s\x1b[0m', `   • Decimals: ${mintInfo.decimals}`);
+        } catch (error) {
+            console.error('\x1b[31m%s\x1b[0m', '⚠️ WARNING: Mint account not found on-chain. Deployment data may be stale.');
+            console.error('\x1b[31m%s\x1b[0m', '   Consider clearing deployment data and redeploying.');
+        }
         return;
     }
 
@@ -247,18 +356,15 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
     const transferFeeConfigAuthority = deployer.publicKey;
     const withdrawWithheldAuthority = deployer.publicKey;
     
-    // Prepare metadata
+    // Prepare metadata (Token-2022 metadata format)
     const metadata = {
         mint: mintPubkey,
         name: TOKEN_METADATA.name,
         symbol: TOKEN_METADATA.symbol,
         uri: TOKEN_METADATA.image,
-        additionalMetadata: [
-            ['description', TOKEN_METADATA.description],
-            ['generation', '1'],
-            ['type', 'Utility Token'],
-            ['network', CLUSTER]
-        ],
+        additionalMetadata: TOKEN_METADATA.description ? [
+            ['description', TOKEN_METADATA.description]
+        ] : []
     };
     
     console.log('\x1b[36m%s\x1b[0m', '⚙️ Mint Configuration:');
@@ -279,6 +385,13 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
         console.log('\x1b[32m%s\x1b[0m', '✅ Mint account with metadata created successfully!');
         console.log('\x1b[90m%s\x1b[0m', '🔗 Transaction:', signature);
         
+        // Verify mint account was created successfully
+        console.log('\x1b[33m%s\x1b[0m', '🔍 Verifying mint account creation...');
+        const mintInfo = await getMint(connection, mintPubkey, 'confirmed', TOKEN_2022_PROGRAM_ID);
+        console.log('\x1b[32m%s\x1b[0m', '✅ Mint account verified on-chain');
+        console.log('\x1b[36m%s\x1b[0m', `   • Decimals: ${mintInfo.decimals}`);
+        console.log('\x1b[36m%s\x1b[0m', `   • Supply: ${mintInfo.supply.toString()}`);
+        
         // Update deployment data
         deploymentData.dbtc_mint_created = {
             mint_address: mintPubkey.toBase58(),
@@ -297,12 +410,15 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
             timestamp: new Date().toISOString()
         };
         
-        // Save deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        // Save deployment data with backup
+        saveDeploymentDataSafely(deploymentPath, deploymentData);
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to create mint account with metadata:', error);
+        console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
+        if (error.logs) {
+            console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
+        }
         throw error;
     }
 }
@@ -342,12 +458,12 @@ async function createTokenAccount(connection, deployer, deploymentData, deployme
             timestamp: new Date().toISOString()
         };
         
-        // Save deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        // Save deployment data with backup
+        saveDeploymentDataSafely(deploymentPath, deploymentData);
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to create token account:', error);
+        console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
         throw error;
     }
 }
@@ -444,12 +560,15 @@ async function mintInitialSupply(connection, deployer, deploymentData, deploymen
         // Store mint address at top level for easy access
         deploymentData.dbtc_mint_address = mintPubkey.toBase58();
         
-        // Save deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        // Save deployment data with backup
+        saveDeploymentDataSafely(deploymentPath, deploymentData);
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to mint initial supply:', error);
+        console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
+        if (error.logs) {
+            console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
+        }
         throw error;
     }
 }
@@ -499,12 +618,15 @@ async function removeMintAuthority(connection, deployer, deploymentData, deploym
         deploymentData.dbtc_mint_created.mint_authority = null;
         deploymentData.dbtc_mint_created.mint_authority_status = "removed";
         
-        // Save deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        // Save deployment data with backup
+        saveDeploymentDataSafely(deploymentPath, deploymentData);
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to remove mint authority:', error);
+        console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
+        if (error.logs) {
+            console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
+        }
         throw error;
     }
 }
@@ -553,12 +675,15 @@ async function removeWithdrawWithheldAuthority(connection, deployer, deploymentD
         deploymentData.dbtc_mint_created.withdraw_withheld_authority = null;
         deploymentData.dbtc_mint_created.withdraw_withheld_authority_status = "removed";
         
-        // Save deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        // Save deployment data with backup
+        saveDeploymentDataSafely(deploymentPath, deploymentData);
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to remove withdraw withheld authority:', error);
+        console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
+        if (error.logs) {
+            console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
+        }
         throw error;
     }
 }
@@ -609,12 +734,48 @@ async function transferTransferFeeConfigAuthority(connection, deployer, deployme
         deploymentData.dbtc_mint_created.transfer_fee_config_authority = newAuthority.toBase58();
         deploymentData.dbtc_mint_created.transfer_fee_config_authority_status = "transferred";
         
-        // Save deployment data
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        // Save deployment data with backup
+        saveDeploymentDataSafely(deploymentPath, deploymentData);
         
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to transfer transfer fee config authority:', error);
+        console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
+        if (error.logs) {
+            console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
+        }
+        throw error;
+    }
+}
+
+function saveDeploymentDataSafely(deploymentPath, deploymentData) {
+    try {
+        // Create backup of existing deployment file
+        if (fs.existsSync(deploymentPath)) {
+            const backupPath = `${deploymentPath}.backup_${Date.now()}`;
+            fs.copyFileSync(deploymentPath, backupPath);
+            console.log('\x1b[36m%s\x1b[0m', `📦 Backup created: ${path.basename(backupPath)}`);
+        }
+        
+        // Write new deployment data
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
+        
+        // Clean up old backups (keep only last 5)
+        const deploymentDir = path.dirname(deploymentPath);
+        const baseFilename = path.basename(deploymentPath);
+        const backupFiles = fs.readdirSync(deploymentDir)
+            .filter(f => f.startsWith(`${baseFilename}.backup_`))
+            .sort()
+            .reverse();
+        
+        if (backupFiles.length > 5) {
+            backupFiles.slice(5).forEach(f => {
+                fs.unlinkSync(path.join(deploymentDir, f));
+            });
+            console.log('\x1b[36m%s\x1b[0m', `🧹 Cleaned up ${backupFiles.length - 5} old backup(s)`);
+        }
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '⚠️ Warning: Failed to save deployment data:', error.message);
         throw error;
     }
 }

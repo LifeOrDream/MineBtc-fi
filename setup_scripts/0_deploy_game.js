@@ -326,9 +326,9 @@ function saveDeploymentInfo(programAddresses) {
   }
   
   // Update program IDs
-  deploymentData.RAYDIUM_CP_SWAP_PROGRAM_ID = programAddresses.raydium_cp_swap;
-  deploymentData.MOONBASE_PROGRAM_ID = programAddresses.moonbase;
-  deploymentData.MOONECONOMY_PROGRAM_ID = programAddresses.mooneconomy;
+  deploymentData.RAYDIUM_CP_PROGRAM_ID = programAddresses.raydium_cp_swap;
+  deploymentData.MOON_BASE_PROGRAM_ID = programAddresses.moonbase;
+  deploymentData.MOON_ECONOMY_PROGRAM_ID = programAddresses.mooneconomy;
   
   // Update deployment timestamp
   deploymentData.last_deployment = {
@@ -341,9 +341,9 @@ function saveDeploymentInfo(programAddresses) {
   fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
   console.log(`\x1b[32m✅ Updated deployment file: ${deploymentPath}\x1b[0m`);
   console.log(`\x1b[32m   📍 Cluster: ${cluster}\x1b[0m`);
-  console.log(`\x1b[32m   🔗 RAYDIUM_CP_SWAP_PROGRAM_ID: ${programAddresses.raydium_cp_swap}\x1b[0m`);
-  console.log(`\x1b[32m   🔗 MOONBASE_PROGRAM_ID: ${programAddresses.moonbase}\x1b[0m`);
-  console.log(`\x1b[32m   🔗 MOONECONOMY_PROGRAM_ID: ${programAddresses.mooneconomy}\x1b[0m`);
+  console.log(`\x1b[32m   🔗 RAYDIUM_CP_PROGRAM_ID: ${programAddresses.raydium_cp_swap}\x1b[0m`);
+  console.log(`\x1b[32m   🔗 MOON_BASE_PROGRAM_ID: ${programAddresses.moonbase}\x1b[0m`);
+  console.log(`\x1b[32m   🔗 MOON_ECONOMY_PROGRAM_ID: ${programAddresses.mooneconomy}\x1b[0m`);
 }
 
 async function main() {
