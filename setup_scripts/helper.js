@@ -246,132 +246,232 @@ export async function createMintAccount(
     }
 } 
 
-// Create mint account for Token-2022 with both transfer fee and metadata extensions
+ 
+
 export async function createMintAccountWithMetadata(
-    connection, 
-    deployer, 
-    moonDogeMint, 
-    BURN_TAX_BPS, 
-    burn_tax, 
-    decimals,
-    mintAuthority, 
-    freezeAuthority,
-    transferFeeConfigAuthority, 
-    withdrawWithheldAuthority,
-    metadata
+  connection,
+  deployer,
+  moonDogeMint,
+  BURN_TAX_BPS,
+  burn_tax,
+  decimals,
+  mintAuthority,
+  freezeAuthority,
+  transferFeeConfigAuthority,
+  withdrawWithheldAuthority,
+  metadata
 ) {
-    try {
-        console.log('\x1b[36m%s\x1b[0m', '📝 Creating mint account with transfer fee and metadata extensions...');
-        
-        const MAX_BURN_TAX = BigInt(burn_tax) * BigInt(10) ** BigInt(decimals);
-        console.log('\x1b[36m%s\x1b[0m', `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`);
-        
-        // Create mint account with both transfer fee and metadata pointer extensions
-        const extensions = [ExtensionType.TransferFeeConfig, ExtensionType.MetadataPointer];
-        const mintLen = getMintLen(extensions);
-        
-        // Calculate metadata length
-        const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
-        
-        // Total space needed
-        const totalSpace = mintLen + metadataLen;
-        const lamports = await connection.getMinimumBalanceForRentExemption(totalSpace);
-        
-        console.log('\x1b[36m%s\x1b[0m', `   • Mint Length: ${mintLen}`);
-        console.log('\x1b[36m%s\x1b[0m', `   • Metadata Length: ${metadataLen}`);
-        console.log('\x1b[36m%s\x1b[0m', `   • Total Space: ${totalSpace}`);
-        
-        console.log('\x1b[36m%s\x1b[0m', '🔧 Preparing instructions...');
-        
-        // Create account instruction
-        const createAccountIx = SystemProgram.createAccount({
-            fromPubkey: deployer.publicKey,
-            newAccountPubkey: moonDogeMint.publicKey,
-            space: mintLen, // Start with just mint space
-            lamports,
-            programId: TOKEN_2022_PROGRAM_ID,
-        });
-        
-        // Initialize metadata pointer instruction (points to the mint itself)
-        const initMetadataPointerIx = createInitializeMetadataPointerInstruction(
-            moonDogeMint.publicKey,
-            deployer.publicKey, // update authority
-            moonDogeMint.publicKey, // metadata address (self)
-            TOKEN_2022_PROGRAM_ID
-        );
-        
-        // Initialize transfer fee config instruction
-        const initTransferFeeIx = createInitializeTransferFeeConfigInstruction(
-            moonDogeMint.publicKey,
-            transferFeeConfigAuthority,
-            withdrawWithheldAuthority,
-            BURN_TAX_BPS,
-            MAX_BURN_TAX,
-            TOKEN_2022_PROGRAM_ID
-        );
-        
-        // Initialize mint instruction
-        const initMintIx = createInitializeMintInstruction(
-            moonDogeMint.publicKey,
-            decimals,
-            mintAuthority,
-            freezeAuthority,
-            TOKEN_2022_PROGRAM_ID
-        );
-        
-        // Initialize metadata instruction
-        const initMetadataIx = createInitializeInstruction({
-            programId: TOKEN_2022_PROGRAM_ID,
-            mint: moonDogeMint.publicKey,
-            metadata: moonDogeMint.publicKey, // metadata stored in mint
-            name: metadata.name,
-            symbol: metadata.symbol,
-            uri: metadata.uri,
-            mintAuthority: deployer.publicKey,
-            updateAuthority: deployer.publicKey,
-        });
-        
-        console.log('\x1b[36m%s\x1b[0m', '📤 Building and sending transaction...');
-        
-        const tx = new Transaction()
-            .add(createAccountIx)
-            .add(initMetadataPointerIx)
-            .add(initTransferFeeIx)
-            .add(initMintIx)
-            .add(initMetadataIx);
-        
-        // Add retry mechanism for transaction confirmation
-        let retries = 3;
-        while (retries > 0) {
-            try {
-                const signature = await sendAndConfirmTransaction(
-                    connection,
-                    tx,
-                    [deployer, moonDogeMint],
-                    {
-                        commitment: 'confirmed',
-                        maxRetries: 3,
-                        preflightCommitment: 'confirmed'
-                    }
-                );
-                console.log('\x1b[32m%s\x1b[0m', `✅ Token mint with metadata created successfully!`);
-                console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${signature}`);
-                return signature;
-            } catch (error) {
-                retries--;
-                if (retries === 0) {
-                    console.error('\x1b[31m%s\x1b[0m', `❌ Failed to create token mint with metadata: ${error.message}`);
-                    throw error;
-                }
-                console.log('\x1b[33m%s\x1b[0m', `⚠️ Retrying transaction... (${retries} attempts remaining)`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-        }
-    } catch (error) {
-        console.error('\x1b[31m%s\x1b[0m', `❌ Error in createMintAccountWithMetadata: ${error.message}`);
-        throw error;
-    }
+  try {
+      console.log('\x1b[36m%s\x1b[0m', '📝 Creating mint account with transfer fee and metadata extensions (2-TX method)...');
+
+      const MAX_BURN_TAX = BigInt(burn_tax) * BigInt(10) ** BigInt(decimals);
+      console.log('\x1b[36m%s\x1b[0m', `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`);
+
+      // 1. Define ALL extensions
+      const extensions = [
+          ExtensionType.MetadataPointer,
+          ExtensionType.TransferFeeConfig // <-- This was missing in your original code
+      ];
+      const mintLen = getMintLen(extensions);
+
+      const metadataPayloadLen = pack({
+        updateAuthority: deployer.publicKey,
+        mint: moonDogeMint.publicKey,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        uri: metadata.uri,
+        additionalMetadata: metadata.additionalMetadata ?? [],
+      }).length;
+      const tlvLen = TYPE_SIZE + LENGTH_SIZE + metadataPayloadLen;
+
+      // external metadata account (token-owned)
+      const metaKp = Keypair.generate();
+
+      console.log('\x1b[36m%s\x1b[0m', `   • Mint+Extensions Length: ${mintLen}`);
+      console.log('\x1b[36m%s\x1b[0m', `   • Metadata TLV Length: ${tlvLen}`);
+
+      console.log('\x1b[36m%s\x1b[0m', '🔧 Preparing instructions...');
+
+      // ---------- lamports ----------
+      const mintLamports = await connection.getMinimumBalanceForRentExemption(mintLen);
+      const metaLamports = await connection.getMinimumBalanceForRentExemption(tlvLen);
+
+
+      // === Transaction 1: Create Account + Init Native Extensions + Init Mint ===
+      
+      // ---------- TX 1: create + InitializeMint ----------
+      const tx1 = new Transaction().add(
+        // create mint (EXACT size = mintLen)
+        SystemProgram.createAccount({
+          fromPubkey: deployer.publicKey,
+          newAccountPubkey: moonDogeMint.publicKey,
+          lamports: mintLamports,
+          space: mintLen,
+          programId: TOKEN_2022_PROGRAM_ID,
+        }),
+        // initialize base mint FIRST (strict builds prefer this order)
+        createInitializeMintInstruction(
+          moonDogeMint.publicKey,
+          decimals,
+          mintAuthority,
+          freezeAuthority,
+          TOKEN_2022_PROGRAM_ID
+        ),
+      );
+      let sig1 = await sendAndConfirmTransaction(connection, tx1, [deployer, moonDogeMint], {
+        commitment: "confirmed", preflightCommitment: "confirmed", maxRetries: 3
+      });
+      console.log('\x1b[32m%s\x1b[0m', `✅ Mint initialized (tx1): ${sig1}`);
+
+      // // 2. Init Metadata Pointer
+      // const initMetadataPointerIx = createInitializeMetadataPointerInstruction(
+      //     moonDogeMint.publicKey,
+      //     deployer.publicKey, // update authority
+      //     moonDogeMint.publicKey, // metadata stored on the mint (TLV)
+      //     TOKEN_2022_PROGRAM_ID
+      // );
+
+      // // 3. Init Transfer Fee Config
+      // const initTransferFeeIx = createInitializeTransferFeeConfigInstruction(
+      //     moonDogeMint.publicKey,
+      //     transferFeeConfigAuthority,
+      //     withdrawWithheldAuthority,
+      //     BURN_TAX_BPS,
+      //     MAX_BURN_TAX,
+      //     TOKEN_2022_PROGRAM_ID
+      // );
+
+      // // 4. Init Mint (MUST BE LAST in this group)
+      // const initMintIx = createInitializeMintInstruction(
+      //     moonDogeMint.publicKey,
+      //     decimals,
+      //     mintAuthority,
+      //     freezeAuthority,
+      //     TOKEN_2022_PROGRAM_ID
+      // );
+
+      // console.log('\x1b[36m%s\x1b[0m', '📤 Building and sending transaction 1 (Initialize Mint)...');
+      
+      // const tx1 = new Transaction()
+      //     .add(createAccountIx)
+      //     .add(initMetadataPointerIx)
+      //     .add(initTransferFeeIx) // <-- This was the critical missing piece
+      //     .add(initMintIx);
+      
+      // const sig1 = await sendAndConfirmTransaction(
+      //     connection,
+      //     tx1,
+      //     [deployer, moonDogeMint],
+      //     { commitment: 'confirmed', preflightCommitment: 'confirmed', maxRetries: 3 }
+      // );
+      // console.log('\x1b[32m%s\x1b[0m', `✅ Mint + Extensions initialized (tx1): ${sig1}`);
+
+      // // === Transaction 2: Write Metadata using spl-token-metadata library ===
+
+      // // 5. Init Metadata TLV
+      // const initMetadataIx = createInitializeInstruction({
+      //     programId: TOKEN_2022_PROGRAM_ID, // Must be 2022 program
+      //     mint: moonDogeMint.publicKey,
+      //     metadata: moonDogeMint.publicKey, // Write to the mint itself
+      //     name: metadata.name,
+      //     symbol: metadata.symbol,
+      //     uri: metadata.uri,
+      //     mintAuthority: deployer.publicKey,
+      //     updateAuthority: deployer.publicKey,
+      // });
+
+      // console.log('\x1b[36m%s\x1b[0m', '📤 Building and sending transaction 2 (Write Metadata)...');
+      
+      // const tx2 = new Transaction().add(initMetadataIx);
+
+      // const sig2 = await sendAndConfirmTransaction(
+      //     connection,
+      //     tx2,
+      //     [deployer],
+      //     { commitment: 'confirmed', preflightCommitment: 'confirmed', maxRetries: 3 }
+      // );
+      // console.log('\x1b[32m%s\x1b[0m', `✅ Metadata TLV initialized (tx2): ${sig2}`);
+      
+      // return sig2; // Return the signature for the final step
+
+  } catch (error) {
+      console.error('\x1b[31m%s\x1b[0m', `❌ Error in createMintAccountWithMetadata: ${error.message}`);
+      throw error;
+  }
 }
+
+
+
+
+
+
+export async function createMintAccount_T22_TransferFeeOnly(
+  connection,
+  deployer,
+  moonDogeMint,
+  decimals,
+  mintAuthority,
+  freezeAuthority,
+  transferFeeConfigAuthority,
+  withdrawWithheldAuthority,
+  burnTaxBps,
+  maxBurnTokens
+) {
+  // Convert max burn into base units
+  // const maxBurnInBaseUnits = maxBurnTokens * (10n ** BigInt(decimals));
+  const MAX_BURN_TAX = BigInt(maxBurnTokens) * BigInt(10) ** BigInt(decimals);
+  console.log('\x1b[36m%s\x1b[0m', `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`);
+
+  // We are ONLY using TransferFeeConfig at creation time
+  const extensions = [ExtensionType.TransferFeeConfig];
+  const mintLen = getMintLen(extensions);
+  const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
+
+  // Create the mint account owned by Token-2022
+  const createIx = SystemProgram.createAccount({
+    fromPubkey: deployer.publicKey,
+    newAccountPubkey: moonDogeMint.publicKey,
+    space: mintLen,
+    lamports,
+    programId: TOKEN_2022_PROGRAM_ID,
+  });
+
+  // IMPORTANT: initialize the extension BEFORE InitializeMint
+  const initTransferFeeIx = createInitializeTransferFeeConfigInstruction(
+    moonDogeMint.publicKey,
+    transferFeeConfigAuthority,
+    withdrawWithheldAuthority,
+    burnTaxBps,                                   // basis points
+    MAX_BURN_TAX,                           // u64 in base units
+    TOKEN_2022_PROGRAM_ID
+  );
+
+  const initMintIx = createInitializeMintInstruction(
+    moonDogeMint.publicKey,
+    decimals,
+    mintAuthority,
+    freezeAuthority,                              // can be null
+    TOKEN_2022_PROGRAM_ID
+  );
+
+  const tx = new Transaction()
+    .add(createIx)
+    .add(initTransferFeeIx)   // <-- extension first
+    .add(initMintIx);         // <-- then InitializeMint
+
+  return await sendAndConfirmTransaction(connection, tx, [deployer, moonDogeMint], {
+    commitment: "confirmed", preflightCommitment: "confirmed", maxRetries: 3,
+  });
+}
+
+
+
+
+
+
+
+
+
 
 
 

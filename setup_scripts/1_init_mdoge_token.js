@@ -56,8 +56,8 @@ import { fileURLToPath } from 'url';
 import { 
     getSolanaBalance, 
     updateDeploymentStatus, 
-    createMintAccount,
-    createMintAccountWithMetadata 
+    createMintAccountWithMetadata,
+    createMintAccount_T22_TransferFeeOnly
 } from './helper.js';
 
 // ES Module compatibility
@@ -365,9 +365,9 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
         symbol: TOKEN_METADATA.symbol,
         uri: TOKEN_METADATA.image, // Image URL (ideally should be JSON metadata URI)
         additionalMetadata: [
-            ...(TOKEN_METADATA.description ? [['description', TOKEN_METADATA.description]] : []),
-            ...(TOKEN_METADATA.image ? [['image', TOKEN_METADATA.image]] : []),
-            ...(TOKEN_METADATA.external_url ? [['external_url', TOKEN_METADATA.external_url]] : [])
+        //     ...(TOKEN_METADATA.description ? [['description', TOKEN_METADATA.description]] : []),
+            // ...(TOKEN_METADATA.image ? [['image', TOKEN_METADATA.image]] : []),
+            // ...(TOKEN_METADATA.external_url ? [['external_url', TOKEN_METADATA.external_url]] : [])
         ]
     };
     
@@ -384,11 +384,14 @@ async function createMintAccountTx(connection, deployer, deploymentData, deploym
     console.log('\x1b[36m%s\x1b[0m', `   • Additional Metadata Fields: ${metadata.additionalMetadata.length}`);
     
     try {
-        const signature = await createMintAccountWithMetadata(
-            connection, deployer, moonDogeMint, burnTaxBps, maxBurnAmount, decimals,
+        // const signature = await createMintAccountWithMetadata(
+        //     connection, deployer, moonDogeMint, burnTaxBps, maxBurnAmount, decimals,
+        //     mintAuthority, freezeAuthority, transferFeeConfigAuthority, withdrawWithheldAuthority,
+        //     metadata
+        // );
+        let signature = await createMintAccount_T22_TransferFeeOnly(connection, deployer, moonDogeMint, decimals,
             mintAuthority, freezeAuthority, transferFeeConfigAuthority, withdrawWithheldAuthority,
-            metadata
-        );
+            burnTaxBps, maxBurnAmount);
         
         console.log('\x1b[32m%s\x1b[0m', '✅ Mint account with metadata created successfully!');
         console.log('\x1b[90m%s\x1b[0m', '🔗 Transaction:', signature);

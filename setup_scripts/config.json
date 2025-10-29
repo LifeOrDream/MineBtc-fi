@@ -514,6 +514,17 @@
             100000000000,
             500000000000
         ]
+    },
+    "dragon_eggs": {
+        "collection_name": "DogeTech Dragon Eggs",
+        "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+        "uris": [
+            "https://arweave.net/dragon-egg-1.json",
+            "https://arweave.net/dragon-egg-2.json",
+            "https://arweave.net/dragon-egg-3.json",
+            "https://arweave.net/dragon-egg-4.json",
+            "https://arweave.net/dragon-egg-5.json"
+        ]
     }
 
 }
