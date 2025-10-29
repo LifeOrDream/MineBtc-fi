@@ -8,7 +8,7 @@ pub mod instructions;
 pub use instructions::admin::*;
 pub use instructions::user::*;
 
-declare_id!("6Bk2aL6eCZ6aAxca6gF7zZytKEqG48xEgHb5uNwVTSUy");
+declare_id!("Dy95nLJuuXveQ4WYKMueAV9nGn7BCDJuHnUA7C8it1xa");
 
 #[program]
 pub mod moonbase {
@@ -27,6 +27,10 @@ pub mod moonbase {
         admin::internal_initialize(ctx, base_creation_cost, creation_fee_recipient)         
     }
     
+    /// Set the Dragon Egg collection address (admin only)
+    pub fn set_dragon_egg_collection(ctx: Context<UpdateConfigAc>, dragon_egg_collection: Pubkey) -> Result<()> {
+        admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
+    }
 
     /// Add Dragon Egg URIs to the pool (admin only)
     pub fn add_dragon_egg_uris(ctx: Context<UpdateConfigAc>, uris: Vec<String>) -> Result<()> {
@@ -38,10 +42,6 @@ pub mod moonbase {
         admin::clear_dragon_egg_uris_internal(ctx)
     }
 
-    /// Set the Dragon Egg collection address (admin only)
-    pub fn set_dragon_egg_collection(ctx: Context<UpdateConfigAc>, dragon_egg_collection: Pubkey) -> Result<()> {
-        admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
-    }
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority

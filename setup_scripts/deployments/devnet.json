@@ -103,7 +103,7 @@
   },
   "moonbase_program_initialized": {
     "globalConfig_address": "9k6ZhNmLkqi3tJkL4VgmrJ4ozw491aZXfgNtp3vvQZ44",
-    "moonDogeMining_address": "4fZQ2W96MiHC4A2J8oPyKEdbZ58LjVK4SpmNZYdsvFV1",
+    "dogeBtcMining_address": "4fZQ2W96MiHC4A2J8oPyKEdbZ58LjVK4SpmNZYdsvFV1",
     "solTreasury_address": "ASzfncPh7BYAWHYobc3qSZkaT2W3zDGm5XD3uq5fMuyz",
     "timestamp": "2025-06-25T07:13:21.412Z"
   },
@@ -919,7 +919,7 @@
     "timestamp": "2025-06-25T07:14:19.631Z"
   },
   "dbtc_dist_per_slot_updated": {
-    "moonDogeMiningPDA": "4fZQ2W96MiHC4A2J8oPyKEdbZ58LjVK4SpmNZYdsvFV1",
+    "dogeBtcMiningPDA": "4fZQ2W96MiHC4A2J8oPyKEdbZ58LjVK4SpmNZYdsvFV1",
     "vaultAuthorityPDA": "2PDg82uXpy341qN1pYiZGoWnwsPY69CJH1YE7WUXQBhb",
     "solTreasuryPDA": "ASzfncPh7BYAWHYobc3qSZkaT2W3zDGm5XD3uq5fMuyz",
     "poolStatePDA": "3qte2o2E44PDJ7PdwrtiB19W2Gd4XXGncxwHVA85WK3s",

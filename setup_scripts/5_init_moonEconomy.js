@@ -256,12 +256,12 @@ async function initializeMdogeVault(moonEconomyProgram) {
             console.log('\x1b[35m%s\x1b[0m', '\n================ [ INITIALIZING MOON ECONOMY MDOGE VAULT ] =================');
             
             // Get token addresses from deployment file
-    const mdogeMintKey = deploymentFile.dbtc_mint_address || deploymentFile.dbtc_dbtc_mint_account_created?.dbtc_mintAddress;
-    if (!mdogeMintKey) {
+    const dbtcMintKey = deploymentFile.dbtc_mint_address || deploymentFile.dbtc_dbtc_mint_account_created?.dbtc_mintAddress;
+    if (!dbtcMintKey) {
         throw new Error('MDOGE token mint address not found in deployment file');
     }
     
-    const dbtc_TOKEN_MINT = new PublicKey(mdogeMintKey);
+    const dbtc_TOKEN_MINT = new PublicKey(dbtcMintKey);
             console.log('\x1b[36m%s\x1b[0m', `🔑 MDOGE Token (SPL-2022): ${dbtc_TOKEN_MINT.toString()}`);
     console.log('\x1b[36m%s\x1b[0m', `⚡ Electricity per weighted MDOGE: ${ELECTRICITY_PER_WEIGHTED_MDOGE}`);
             
@@ -370,7 +370,7 @@ async function claimMoonbaseSol(moonEconomyProgram) {
                     deploymentFile.moonEconomy_liquidityVault_initialized.liquiditySolVault,
                     deploymentFile.moonEconomy_program_initialized.moonEconomy_devEarnings_data_ac,
             deploymentFile.moonbase_program_initialized.globalConfig_address,
-            deploymentFile.moonbase_program_initialized.moonDogeMining_address,            
+            deploymentFile.moonbase_program_initialized.dogeBtcMining_address,            
             deploymentFile.moonbase_program_initialized.solTreasury_address,
                     deploymentFile.moonEconomy_program_initialized.moonEconomy_feeCollector_data_ac,
             lootSolVaultPDA,
@@ -564,7 +564,7 @@ async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
             connection, moonBaseProgram, wallet, walletKeypair,
             deploymentFile.moonbase_program_initialized?.globalConfig_address,
             deploymentFile.config_stores_initialized?.module_config_store,
-            deploymentFile.moonbase_program_initialized?.moonDogeMining_address,
+            deploymentFile.moonbase_program_initialized?.dogeBtcMining_address,
             walletKeypair.publicKey.toString(), // authority
             newFeeCollectorAddress, // fee collector
             null, null, null // other params unchanged
@@ -596,7 +596,7 @@ async function updateMoonEconomyConfig(moonEconomyProgram, newAuthorityAddress) 
             connection, moonEconomyProgram, wallet, walletKeypair,
             deploymentFile.moonbase_program_initialized?.globalConfig_address,
             deploymentFile.config_stores_initialized?.module_config_store,
-            deploymentFile.moonbase_program_initialized?.moonDogeMining_address,
+            deploymentFile.moonbase_program_initialized?.dogeBtcMining_address,
             newAuthorityAddress, // new authority
             deploymentFile.moonEconomy_program_initialized?.moonEconomy_feeCollector_data_ac,
             null, null, null // other params unchanged

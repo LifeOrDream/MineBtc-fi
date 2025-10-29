@@ -85,8 +85,6 @@ const MPL_CORE_PROGRAM_ID = new PublicKey('CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4
         // 1. Create Dragon Egg Collection
         const collectionAddress = await createDragonEggCollection(connection, deployer, deploymentData, deploymentPath);
         
-        // // 2. Set collection in MoonBase program
-        // await setCollectionInMoonBase(connection, deployer, deploymentData, deploymentPath, collectionAddress);
         
         // // 3. Add Dragon Egg URIs
         // await addDragonEggUris(connection, deployer, deploymentData, deploymentPath);
@@ -334,73 +332,6 @@ async function createDragonEggCollection(connection, deployer, deploymentData, d
         
     } catch (error) {
         console.error(COLOR_ERROR, '❌ Failed to create collection:', error);
-        throw error;
-    }
-}
-
-/**
- * Sets the Dragon Egg collection address in the MoonBase program
- */
-async function setCollectionInMoonBase(connection, deployer, deploymentData, deploymentPath, collectionAddress) {
-    if (deploymentData.dragon_egg_collection_set_in_program) {
-        console.log(COLOR_INFO, 'ℹ️ Dragon Egg collection already set in MoonBase program');
-        return;
-    }
-
-    console.log(COLOR_STEP, '\n=================== [ SETTING COLLECTION IN MOONBASE ] ===================');
-    
-    try {
-        // Load MoonBase program
-        const moonbaseIdlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
-        if (!fs.existsSync(moonbaseIdlPath)) {
-            throw new Error(`MoonBase IDL not found at: ${moonbaseIdlPath}`);
-        }
-        
-        const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
-        const wallet = new Wallet(deployer);
-        const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
-        const moonbaseProgram = new Program(moonbaseIdl, provider);
-        
-        console.log(COLOR_INFO, '🔑 MoonBase Program:', moonbaseProgram.programId.toString());
-        console.log(COLOR_INFO, '🎨 Collection Address:', collectionAddress.toString());
-        
-        // Derive Global Config PDA
-        const [globalConfigPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from('global_config')],
-            moonbaseProgram.programId
-        );
-        
-        console.log(COLOR_DIM, '🔍 Global Config PDA:', globalConfigPDA.toString());
-        console.log(COLOR_INFO, '📡 Calling set_dragon_egg_collection...');
-        
-        // Call the program instruction
-        const txid = await moonbaseProgram.methods
-            .setDragonEggCollection(collectionAddress)
-            .accounts({
-                globalConfig: globalConfigPDA,
-                moduleConfigStore: null,
-                dogeBtcMining: null,
-                authority: deployer.publicKey,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-        
-        console.log(COLOR_SUCCESS, '✅ Dragon Egg collection set in MoonBase program!');
-        console.log(COLOR_DIM, '🔗 Transaction:', txid);
-        console.log(COLOR_DIM, `🔍 Explorer: https://explorer.solana.com/tx/${txid}?cluster=${CLUSTER}`);
-        
-        // Save to deployment data
-        deploymentData.dragon_egg_collection_set_in_program = {
-            collection_address: collectionAddress.toString(),
-            global_config_pda: globalConfigPDA.toString(),
-            tx_signature: txid,
-            timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log(COLOR_SUCCESS, '✅ Deployment status updated');
-        
-    } catch (error) {
-        console.error(COLOR_ERROR, '❌ Failed to set collection in program:', error);
         throw error;
     }
 }

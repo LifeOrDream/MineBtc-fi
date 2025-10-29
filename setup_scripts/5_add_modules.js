@@ -233,7 +233,7 @@ async function initializeMoonbaseProgramLocal(moonbaseProgram) {
         console.log('\x1b[32m%s\x1b[0m', '✅ Program initialized successfully!');
         deploymentFile.moonbase_program_initialized = {
             globalConfig_address: result.data.globalConfig_address,
-            moonDogeMining_address: result.data.moonDogeMining_address,
+            dogeBtcMining_address: result.data.dogeBtcMining_address,
             solTreasury_address: result.data.solTreasury_address,
             timestamp: new Date().toISOString()
         };
@@ -251,7 +251,7 @@ async function initializeMiningSystem(moonbaseProgram) {
 
     console.log('\x1b[35m%s\x1b[0m', '\n=================== [ INITIALIZING MINING SYSTEM ] ===================');
     
-    const moonDogeMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.moonDogeMining_address);
+    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
     const raydiumPoolState = deploymentFile.dbtc_sol_pool_created.poolStatePDA;
 
     if (!raydiumPoolState) {
@@ -261,7 +261,7 @@ async function initializeMiningSystem(moonbaseProgram) {
     }
     
     const [vaultPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(DOGE_BTC_VAULT_SEED), moonDogeMiningPDA.toBuffer()],
+        [Buffer.from(DOGE_BTC_VAULT_SEED), dogeBtcMiningPDA.toBuffer()],
         moonbaseProgram.programId
     );
     const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
@@ -274,7 +274,7 @@ async function initializeMiningSystem(moonbaseProgram) {
 
     const result = await setupMiningVault(
         connection, moonbaseProgram, wallet, walletKeypair,
-        moonDogeMiningPDA, vaultPDA, vaultAuthorityPDA, MOONDOGE_TOKEN_MINT,
+        dogeBtcMiningPDA, vaultPDA, vaultAuthorityPDA, MOONDOGE_TOKEN_MINT,
         anchor_spl.TOKEN_2022_PROGRAM_ID, MINING_START_TIMESTAMP,
         MINING_doge_btc_PER_SLOT, raydiumPoolState
     );
@@ -701,7 +701,7 @@ async function updateDistributionRate(moonbaseProgram) {
     console.log('\x1b[35m%s\x1b[0m', '\n================ [ UPDATING DOGE_BTC DISTRIBUTION RATE ] ================');
     
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-    const moonDogeMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.moonDogeMining_address);
+    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
     const ammConfigPDA = new PublicKey(deploymentFile.raydium_amm_config_created.amm_config_pda);
     const solTreasuryPDA = new PublicKey(deploymentFile.moonbase_program_initialized.solTreasury_address);
     const vaultAuthorityPDA = new PublicKey(deploymentFile.mining_vault_initialized.vault_authority);
@@ -725,7 +725,7 @@ async function updateDistributionRate(moonbaseProgram) {
     
     const result = await updateMdogeDistPerSlot(
         connection, moonbaseProgram, RAYDIUM_PROGRAM_ID, wallet, walletKeypair, globalConfigPDA,
-        moonDogeMiningPDA, raydiumPoolData, MOONDOGE_TOKEN_MINT, ammConfigPDA, solTreasuryPDA,
+        dogeBtcMiningPDA, raydiumPoolData, MOONDOGE_TOKEN_MINT, ammConfigPDA, solTreasuryPDA,
         vaultAuthorityPDA, mdogeTokenAccount
     );
 
@@ -733,7 +733,7 @@ async function updateDistributionRate(moonbaseProgram) {
         console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC distribution rate updated with Raydium integration!');
         console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.updateDistTxid}`);
         deploymentFile.dbtc_dist_per_slot_updated = {
-            moonDogeMiningPDA: result.data.moonDogeMiningPDA,
+            dogeBtcMiningPDA: result.data.dogeBtcMiningPDA,
             vaultAuthorityPDA: result.data.vaultAuthorityPDA,
             solTreasuryPDA: result.data.solTreasuryPDA,
             poolStatePDA: result.data.poolStatePDA,
@@ -770,7 +770,7 @@ function printCompletionSummary() {
     if (deploymentFile.moonbase_program_initialized) {
         console.log('\x1b[90m%s\x1b[0m', '\n🔑 Important Addresses:');
         console.log('\x1b[90m%s\x1b[0m', `   Global Config: ${deploymentFile.moonbase_program_initialized.globalConfig_address}`);
-        console.log('\x1b[90m%s\x1b[0m', `   Mining State: ${deploymentFile.moonbase_program_initialized.moonDogeMining_address}`);
+        console.log('\x1b[90m%s\x1b[0m', `   Mining State: ${deploymentFile.moonbase_program_initialized.dogeBtcMining_address}`);
         console.log('\x1b[90m%s\x1b[0m', `   SOL Treasury: ${deploymentFile.moonbase_program_initialized.solTreasury_address}`);
         if (deploymentFile.mining_vault_initialized) {
             console.log('\x1b[90m%s\x1b[0m', `   Mining Vault: ${deploymentFile.mining_vault_initialized.vault_address}`);
@@ -850,14 +850,14 @@ async function updateSlotsForSwap(moonbaseProgram, newSlotsForSwap) {
     }
     
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-    const moonDogeMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.moonDogeMining_address);
+    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
     
     console.log('\x1b[36m%s\x1b[0m', `📝 Updating slots for swap to: ${newSlotsForSwap}`);
     console.log('\x1b[36m%s\x1b[0m', `   Multiplier vs default (9000): ${(newSlotsForSwap/9000).toFixed(2)}x`);
     
     const result = await updateSlotsForSwapHelper(
         connection, moonbaseProgram, wallet, walletKeypair,
-        globalConfigPDA, moonDogeMiningPDA, newSlotsForSwap
+        globalConfigPDA, dogeBtcMiningPDA, newSlotsForSwap
     );
 
     if (result.success) {
@@ -918,9 +918,9 @@ async function adminUtilities(moonbaseProgram) {
     console.log('\x1b[35m%s\x1b[0m', '\n================ [ ADMIN UTILITIES ] ================');
     
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-    const moonDogeMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.moonDogeMining_address);
+    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
     
-    const result = await getSystemStatus(moonbaseProgram, globalConfigPDA, moonDogeMiningPDA);
+    const result = await getSystemStatus(moonbaseProgram, globalConfigPDA, dogeBtcMiningPDA);
     
     if (result.success) {
         const data = result.data;

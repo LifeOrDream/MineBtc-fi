@@ -11,6 +11,12 @@
 
 ---
 
+
+solana-test-validator --reset \
+  --bpf-program CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d core.so \
+  --clone TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb \
+  --url https://api.mainnet-beta.solana.com
+
 ## System Overview
 
 **MoonBase** is a Solana-based game where players:

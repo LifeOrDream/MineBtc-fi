@@ -7,8 +7,8 @@
     "deployment": {
         "paths": {
             "deployer_key": "../wallet-keypair.json",
-            "moonbase_idl": "../prod_moonbase/target/idl/moon_base.json",
-            "moon_economy_idl": "../prod_moonbase/target/idl/moon_economy.json",
+            "moonbase_idl": "../target/idl/moonbase.json",
+            "moon_economy_idl": "../target/idl/mooneconomy.json",
             "raydium_idl": "../raydium/target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },

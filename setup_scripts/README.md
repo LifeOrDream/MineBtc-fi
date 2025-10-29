@@ -124,7 +124,7 @@ Each deployment creates a state file with:
   "dbtc_mint_address": "...",
   "moonbase_program_initialized": {
     "globalConfig_address": "...",
-    "moonDogeMining_address": "...",
+    "dogeBtcMining_address": "...",
     "timestamp": "..."
   },
   "mining_vault_initialized": { ... },

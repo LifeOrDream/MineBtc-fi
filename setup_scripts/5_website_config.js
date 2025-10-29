@@ -74,7 +74,7 @@ function generateWebsiteConfig(config, deployment) {
       
       // ========== MOON BASE PROGRAM ACCOUNTS ==========
       "globalConfig_pda": deployment.moonbase_program_initialized?.globalConfig_address,
-      "moonDogeMining_pda": deployment.moonbase_program_initialized?.moonDogeMining_address,
+      "dogeBtcMining_pda": deployment.moonbase_program_initialized?.dogeBtcMining_address,
       "sol_treasury_pda": deployment.moonbase_program_initialized?.solTreasury_address,
       
       // ========== DOGE_BTC MINING VAULT ==========

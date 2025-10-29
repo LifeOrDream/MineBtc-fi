@@ -533,19 +533,19 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         console.log(COLOR_INFO, '🏊 Creating DOGE_BTC-SOL pool...');
 
         // Get the token mints
-        const mdogeMintKey = new PublicKey(deploymentData.dbtc_mint_address);
+        const dbtcMintKey = new PublicKey(deploymentData.dbtc_mint_address);
         const wsolMintKey = new PublicKey(WSOL_MINT);
         
-        console.log(COLOR_DIM, `🔍 DOGE_BTC Mint: ${mdogeMintKey.toString()}`);
+        console.log(COLOR_DIM, `🔍 DOGE_BTC Mint: ${dbtcMintKey.toString()}`);
         console.log(COLOR_DIM, `🔍 WSOL Mint: ${wsolMintKey.toString()}`);
         
         // Ensure correct token order (token0 < token1) using byte-wise comparison
-        const mdogeMintBytes = mdogeMintKey.toBytes();
+        const dbtcMintBytes = dbtcMintKey.toBytes();
         const wsolMintBytes = wsolMintKey.toBytes();
-        const isMdogeToken0 = Buffer.compare(mdogeMintBytes, wsolMintBytes) < 0;
+        const isMdogeToken0 = Buffer.compare(dbtcMintBytes, wsolMintBytes) < 0;
         
-        const token0Mint = isMdogeToken0 ? mdogeMintKey : wsolMintKey;
-        const token1Mint = isMdogeToken0 ? wsolMintKey : mdogeMintKey;
+        const token0Mint = isMdogeToken0 ? dbtcMintKey : wsolMintKey;
+        const token1Mint = isMdogeToken0 ? wsolMintKey : dbtcMintKey;
         
         console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isMdogeToken0 ? '(DOGE_BTC)' : '(WSOL)'}`);
         console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isMdogeToken0 ? '(DOGE_BTC)' : '(WSOL)'}`);
@@ -652,7 +652,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         
         // Get DOGE_BTC account (SPL-2022)
         const creatorMdogeAccount = await getAssociatedTokenAddress(
-            mdogeMintKey,
+            dbtcMintKey,
             deployer.publicKey,
             false,
             anchor_spl.TOKEN_2022_PROGRAM_ID
@@ -902,7 +902,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
     }
 
     // Get DOGE_BTC mint
-    const mdogeMint = new PublicKey(deploymentData.dbtc_mint_address);
+    const dbtcMint = new PublicKey(deploymentData.dbtc_mint_address);
 
     // =================== [ ADDING LIQUIDITY TO POOL ] ===================
     if (!deploymentData.dbtc_sol_liquidity_added) {
@@ -919,7 +919,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         );
         
         const creatorMdogeAccount = await getAssociatedTokenAddress(
-            mdogeMint,
+            dbtcMint,
             deployer.publicKey,
             false,
             anchor_spl.TOKEN_2022_PROGRAM_ID
@@ -999,8 +999,8 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             token1Vault: token1VaultPDA,
             tokenProgram: TOKEN_PROGRAM_ID,
             tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
-            vault0Mint: isMdogeToken0 ? mdogeMint : wsolMintKey,
-            vault1Mint: isMdogeToken0 ? wsolMintKey : mdogeMint,
+            vault0Mint: isMdogeToken0 ? dbtcMint : wsolMintKey,
+            vault1Mint: isMdogeToken0 ? wsolMintKey : dbtcMint,
             lpMint: lpMintPDA,
         };
         
