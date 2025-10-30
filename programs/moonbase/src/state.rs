@@ -2,8 +2,11 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ErrorCode;
 
-pub const PRICE_ONE: u64 = 500_000_000; // 0.5 SOL
-pub const PRICE_TWO: u64 = 1_420_000_000; // 1.42 SOL
+// Moonbase pricing tiers
+pub const PRICE_TIER_1: u64 = 500_000_000;   // 0.5 SOL (no egg)
+pub const PRICE_TIER_2: u64 = 1_420_000_000; // 1.42 SOL (has egg)
+pub const PRICE_TIER_3: u64 = 2_420_000_000; // 2.42 SOL (has egg)
+pub const PRICE_TIER_4: u64 = 4_200_000_000; // 4.20 SOL (has egg)
 
  
 pub const DBTC_DECIMALS: u8 = 6;
@@ -364,6 +367,8 @@ pub struct UserMoonBaseInstance {
     pub faction_id: u8,
     /// Player level (starts at 0)
     pub level: u8,
+    /// Initialization tier (1, 2, 3, or 4) - determines initial bonuses
+    pub init_type: u8,
     /// Current XP points
     pub xp: u32,
     /// Last login timestamp for daily login tracking
@@ -398,12 +403,12 @@ pub struct UserMoonBaseInstance {
 
 // UserMoonBaseInstance
 impl UserMoonBaseInstance {
-    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg
+    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + init_type + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg
     // purchased_expansions = 4 bytes (vec length) + MAX_EXPANSIONS * 1 byte per expansion ID
     // available_modules = 4 bytes (vec length) + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
     // incubated_dragon_egg = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33;
 }
 
 /// Stores referral rewards that a user has earned from referrals

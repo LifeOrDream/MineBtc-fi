@@ -9,7 +9,7 @@ import path from 'path';
 import { 
     getSolanaBalance, initializeMoonbaseProgram, depositMDOGE, setupMiningVault, 
     initializeConfigStores, addNewModuleToConfigStore, updateModuleStatsHelper, createSystemReferralAccount,
-    addFaction, initializeLootRewards, initializeLevelStats, updateDeploymentStatus,
+    addFactions as addFactionsHelper, initializeLootRewards, initializeLevelStats, updateDeploymentStatus,
     updateGlobalConfigHelper, toggleGameActiveHelper, updateSlotsForSwapHelper,
     updateModuleConfigHelper, getSystemStatus, updateMdogeDistPerSlot, 
     DOGE_BTC_VAULT_SEED, DOGE_BTC_VAULT_AUTHORITY_SEED, MODULE_CONFIG_STORE_SEED,
@@ -175,13 +175,13 @@ async function main() {
         await initializeLootAndStats(moonbaseProgram);
         // return;
         
-        // 2. Set collection in MoonBase program
-        await setCollectionInMoonBase(connection, wallet, deploymentFile, deploymentPath, deploymentFile.dragon_egg_collection_created.collection_address);
-
+        // 6. Set collection in MoonBase program
+        const collectionPubkey = new PublicKey(deploymentFile.dragon_egg_collection_created.collection_address);
+        await setCollectionInMoonBase(connection, walletKeypair, deploymentFile, deploymentPath, collectionPubkey);
         
-        // // 7. Add Factions
-        // await addFactions(moonbaseProgram);
-        // // return;
+        // 7. Add Factions
+        await addFactions(moonbaseProgram);
+        return;
         
         // // 8. Add Expansions
         // await addExpansions(moonbaseProgram);
@@ -267,7 +267,7 @@ async function initializeMoonbaseProgramLocal(moonbaseProgram) {
 /**
  * Sets the Dragon Egg collection address in the MoonBase program
  */
-async function setCollectionInMoonBase(connection, deployer, deploymentData, deploymentPath, collectionAddress) {
+async function setCollectionInMoonBase(connection, deployerKeypair, deploymentData, deploymentPath, collectionAddress) {
     if (deploymentData.dragon_egg_collection_set_in_program) {
         console.log(COLOR_INFO, 'ℹ️ Dragon Egg collection already set in MoonBase program');
         return;
@@ -283,16 +283,16 @@ async function setCollectionInMoonBase(connection, deployer, deploymentData, dep
         }
         
         const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
-        const wallet = new Wallet(deployer);
+        const wallet = new Wallet(deployerKeypair);
         const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
         const moonbaseProgram = new Program(moonbaseIdl, provider);
         
         console.log(COLOR_INFO, '🔑 MoonBase Program:', moonbaseProgram.programId.toString());
         console.log(COLOR_INFO, '🎨 Collection Address:', collectionAddress.toString());
         
-        // Derive Global Config PDA
+        // Derive Global Config PDA (use correct seed with hyphen)
         const [globalConfigPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from('global_config')],
+            [Buffer.from('global-config')],
             moonbaseProgram.programId
         );
         const moduleConfigStorePDA = new PublicKey(deploymentFile.config_stores_initialized.module_config_store);
@@ -301,14 +301,19 @@ async function setCollectionInMoonBase(connection, deployer, deploymentData, dep
         console.log(COLOR_DIM, '🔍 Global Config PDA:', globalConfigPDA.toString());
         console.log(COLOR_INFO, '📡 Calling set_dragon_egg_collection...');
         
+        // Ensure collectionAddress is a PublicKey object
+        const collectionPubkey = collectionAddress instanceof PublicKey 
+            ? collectionAddress 
+            : new PublicKey(collectionAddress);
+
         // Call the program instruction
         const txid = await moonbaseProgram.methods
-            .setDragonEggCollection(collectionAddress)
+            .setDragonEggCollection(collectionPubkey)
             .accounts({
                 globalConfig: globalConfigPDA,
                 moduleConfigStore: moduleConfigStorePDA,
                 dogeBtcMining: dogeBtcMiningPDA,
-                authority: deployer.publicKey,
+                authority: deployerKeypair.publicKey,
                 systemProgram: SystemProgram.programId,
             })
             .rpc();
@@ -557,39 +562,37 @@ async function addFactions(moonbaseProgram) {
     console.log('\x1b[35m%s\x1b[0m', '\n================ [ ADDING FACTIONS ] ================');
     
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-    const addedFactions = [];
+    const moduleConfigStorePDA = new PublicKey(deploymentFile.config_stores_initialized.module_config_store);
+    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
+    
+    // Collect all faction names
+    const factionNames = config.factions.map(f => f.name);
+    
+    try {
+        const result = await addFactionsHelper(
+            connection, moonbaseProgram, wallet, walletKeypair,
+            globalConfigPDA, moduleConfigStorePDA, dogeBtcMiningPDA,
+            factionNames
+        );
 
-    for (const faction of config.factions) {
-        try {
-            const result = await addFaction(
-                connection, moonbaseProgram, wallet, walletKeypair,
-                globalConfigPDA, faction.name
-            );
-
-            if (result.success) {
-                console.log('\x1b[32m%s\x1b[0m', `✅ Added faction: ${faction.name}`);
-                console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.addFactionTxid}`);
-                addedFactions.push({
-                    name: faction.name,
-                    description: faction.description,
-                    tx: result.data.addFactionTxid
-                });
-            }
-        } catch (error) {
-            console.log('\x1b[33m%s\x1b[0m', `⚠️ Faction ${faction.name} may already exist`);
-            addedFactions.push({
-                name: faction.name,
-                description: faction.description,
-                status: 'already_exists'
-            });
-            }
+        if (result.success) {
+            console.log('\x1b[32m%s\x1b[0m', `✅ Added ${factionNames.length} factions successfully`);
+            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.addFactionsTxid}`);
+            
+            deploymentFile.factions_added = {
+                factions: config.factions.map(f => ({
+                    name: f.name,
+                    description: f.description,
+                })),
+                tx: result.data.addFactionsTxid,
+                timestamp: new Date().toISOString()
+            };
+            saveDeploymentData();
         }
-        
-    deploymentFile.factions_added = {
-        factions: addedFactions,
-        timestamp: new Date().toISOString()
-    };
-    saveDeploymentData();
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to add factions:', error);
+        throw error;
+    }
 }
 
 async function addExpansions(moonbaseProgram) {

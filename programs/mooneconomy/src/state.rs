@@ -206,6 +206,7 @@ pub struct UserMoonElectricity {
         
         /// Electricity stats
         pub electricity_earned: u64,
+        pub free_electricity: u64,  // Free electricity from init tier bonus
             
         /// SOL rewards tracking
         pub moondoge_reward_debt: u128,     // Last checkpoint for DogeBtc rewards
@@ -231,6 +232,7 @@ pub struct UserMoonElectricity {
             8 +  // total_weighted_lp
             1 +  // active_lp_positions
             8 +  // electricity_earned
+            8 +  // free_electricity
             16 + // moondoge_reward_debt
             16 + // lp_reward_debt
             8 +  // pending_moondoge_rewards

@@ -21,11 +21,10 @@ use anchor_spl::token_2022::Token2022;
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
  
 
-/// Initialize a user's electricity account
+/// Initialize a user's electricity account with tier-based bonuses
 pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> Result<()> {
     msg!("🔒 Initializing electricity account");
   
-    // Electricity account
     let electricity_ac = &mut ctx.accounts.electricity_ac;
 
     // Initialize owner if this is a new account
@@ -33,11 +32,71 @@ pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> 
         electricity_ac.owner = ctx.accounts.authority.key();
         electricity_ac.moondoge_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize );
         electricity_ac.lp_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize);
+        
+        // Query moonbase init_type and grant initial electricity bonus
+        let moonbase_data = ctx.accounts.facility_user_moonbase.try_borrow_data()?;
+        let init_type = get_moonbase_init_type(&moonbase_data)?;
+        
+        let initial_electricity = calculate_initial_electricity_bonus(init_type);
+        
+        // Store free electricity amount
+        electricity_ac.free_electricity = initial_electricity;
+        
+        // Grant electricity to moonbase via proper CPI call
+        if initial_electricity > 0 {
+            // Fee collector seeds for CPI signer
+            let fee_collector_seeds = &[
+                b"fee_collector".as_ref(),
+                &[ctx.bumps.fee_collector],
+            ];
+            let signer_seeds = &[&fee_collector_seeds[..]];
+            
+            let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+            let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
+                user: ctx.accounts.authority.to_account_info(),
+                user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+                mining_state: ctx.accounts.facility_mining_state.to_account_info(),
+                global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+                authority: ctx.accounts.fee_collector.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+            };
+            
+            let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+            moonbase::cpi::update_user_electricity(cpi_ctx, true, initial_electricity)?;
+        }
+        
         msg!("👤 Initializing new user electricity account");
+        msg!("🎁 Tier {} bonus: {} free electricity granted", init_type, initial_electricity);
     }
    
     msg!("✅ Electricity account initialized");
     Ok(())
+}
+
+/// Extract init_type from moonbase account data
+fn get_moonbase_init_type(moonbase_data: &[u8]) -> Result<u8> {
+    // UserMoonBaseInstance layout:
+    // discriminator(8) + owner(32) + referral(32) + modules_count(1) + active_hashpower(8) 
+    // + available_electricity(8) + used_electricity(8) + dbtc_claim_index(16) + claimable_dbtc(8)
+    // + bump(1) + faction_id(1) + level(1) + init_type(1)
+    const INIT_TYPE_OFFSET: usize = 8 + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1;
+    
+    if moonbase_data.len() <= INIT_TYPE_OFFSET {
+        return Err(ErrorCode::InvalidInitType.into());
+    }
+    
+    Ok(moonbase_data[INIT_TYPE_OFFSET])
+}
+
+/// Calculate initial electricity bonus based on tier
+fn calculate_initial_electricity_bonus(init_type: u8) -> u64 {
+    match init_type {
+        1 => 0,           // 0.5 SOL tier: no bonus
+        2 => 10_000,      // 1.42 SOL tier: 10k electricity
+        3 => 30_000,      // 2.42 SOL tier: 30k electricity
+        4 => 75_000,      // 4.20 SOL tier: 75k electricity
+        _ => 0,           // fallback
+    }
 }
 
 
@@ -1043,6 +1102,7 @@ pub struct InitializeElectricityAc<'info> {
         bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
+    
     // User accounts
     #[account(
         init,
@@ -1054,10 +1114,28 @@ pub struct InitializeElectricityAc<'info> {
     pub electricity_ac: Account<'info, UserMoonElectricity>,
      
     #[account(mut)]
-    /// CHECK: User instance in MoonFacility
+    /// CHECK: User instance in MoonFacility - will be updated via CPI
     pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonFacility mining state
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonFacility global config
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    /// Fee collector PDA for CPI authority
+    #[account(
+        seeds = [b"fee_collector"],
+        bump
+    )]
+    /// CHECK: Fee collector PDA
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    /// MoonBase program for CPI
+    /// CHECK: MoonBase program
+    pub moonbase_program: UncheckedAccount<'info>,
 
-    /// User who is staking tokens
+    /// User who is initializing electricity account
     #[account(mut)]
     pub authority: Signer<'info>,
     

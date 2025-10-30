@@ -2676,44 +2676,45 @@ export async function updateSlotsPerHour(
 }
 
 /**
- * Add a new faction to the supported factions list (admin only)
+ * Add factions to the supported factions list (admin only)
  */
-export async function addFaction(
+export async function addFactions(
   connection,
   program,
   wallet,
   walletKeypair,
   globalConfigPDA,
-  factionName
+  moduleConfigStorePDA,
+  dogeBtcMiningPDA,
+  factionNames
 ) {
   try {
-    console.log('\x1b[33m%s\x1b[0m', '📡 Adding new faction...');
+    console.log('\x1b[33m%s\x1b[0m', '📡 Adding factions...');
     console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
-    console.log('\x1b[36m%s\x1b[0m', `🏴 Faction Name: ${factionName}`);
+    console.log('\x1b[36m%s\x1b[0m', `🏴 Factions: ${factionNames.join(', ')}`);
 
-    const addFactionTx = await program.methods.addFaction(factionName)
+    const addFactionsTxid = await program.methods.addFactions(factionNames)
       .accounts({
         globalConfig: new PublicKey(globalConfigPDA),
+        moduleConfigStore: new PublicKey(moduleConfigStorePDA),
+        dogeBtcMining: new PublicKey(dogeBtcMiningPDA),
         authority: wallet.publicKey,
         systemProgram: web3.SystemProgram.programId,
       })
-      .transaction();
+      .rpc();
 
-    const addFactionTxid = await web3.sendAndConfirmTransaction(connection, addFactionTx, [walletKeypair]);
-
-    console.log('\x1b[32m%s\x1b[0m', `✅ Faction '${factionName}' added successfully`);
-    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${addFactionTxid}`);
-    console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${addFactionTxid}?cluster=devnet`);
+    console.log('\x1b[32m%s\x1b[0m', `✅ Added ${factionNames.length} factions successfully`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${addFactionsTxid}`);
 
     return {
       success: true,
       data: {
-        addFactionTxid: addFactionTxid,
-        factionName: factionName
+        addFactionsTxid: addFactionsTxid,
+        factionNames: factionNames
       }
     };
   } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '❌ Error adding faction:', error);
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error adding factions:', error);
     return {
       success: false,
       error: error.toString()

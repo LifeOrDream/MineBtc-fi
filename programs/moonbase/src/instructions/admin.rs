@@ -165,6 +165,33 @@ pub fn set_dragon_egg_collection_internal(
     Ok(())
 }
 
+/// Add factions to the global config (admin only)
+pub fn add_factions_internal(
+    ctx: Context<UpdateConfigAc>,
+    factions: Vec<String>,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+
+    // Validate faction names
+    for faction in &factions {
+        require!(faction.len() > 0 && faction.len() <= 16, ErrorCode::InvalidFactionName);
+    }
+
+    // Check we don't exceed max factions (10)
+    require!(
+        global_config.supported_factions.len() + factions.len() <= 10,
+        ErrorCode::MaxFactionsReached
+    );
+
+    // Add new factions
+    global_config.supported_factions.extend(factions.clone());
+
+    msg!("✅ Added {} factions", factions.len());
+    msg!("   Total factions: {}", global_config.supported_factions.len());
+
+    Ok(())
+}
+
 
 /// Update the global configuration parameters
 /// Can only be called by the current authority

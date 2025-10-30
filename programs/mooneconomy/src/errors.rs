@@ -85,4 +85,10 @@ pub enum ErrorCode {
     
     #[msg("Insufficient funds")]
     InsufficientFunds,
+    
+    #[msg("Invalid moonbase init type")]
+    InvalidInitType,
+    
+    #[msg("Invalid moonbase account")]
+    InvalidMoonbaseAccount,
 }

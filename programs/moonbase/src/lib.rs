@@ -8,7 +8,7 @@ pub mod instructions;
 pub use instructions::admin::*;
 pub use instructions::user::*;
 
-declare_id!("Dy95nLJuuXveQ4WYKMueAV9nGn7BCDJuHnUA7C8it1xa");
+declare_id!("54VXNmJVUjKBAtuqssBuB8hbR9CtgQJiWE3DotEgkiuJ");
 
 #[program]
 pub mod moonbase {
@@ -40,6 +40,11 @@ pub mod moonbase {
     /// Clear all Dragon Egg URIs (admin only)
     pub fn clear_dragon_egg_uris(ctx: Context<UpdateConfigAc>) -> Result<()> {
         admin::clear_dragon_egg_uris_internal(ctx)
+    }
+
+    /// Add factions to the global config (admin only)
+    pub fn add_factions(ctx: Context<UpdateConfigAc>, factions: Vec<String>) -> Result<()> {
+        admin::add_factions_internal(ctx, factions)
     }
 
 
@@ -253,7 +258,11 @@ pub mod moonbase {
     // ----------------------------------------------------------------------------------------
 
     /// Create a new moon base for a user
-    /// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
+    /// pricing_tier options:
+    /// - PRICE_TIER_1 (0.5 SOL): Basic moonbase, no Dragon Egg
+    /// - PRICE_TIER_2 (1.42 SOL): Moonbase + Dragon Egg + 10k electricity
+    /// - PRICE_TIER_3 (2.42 SOL): Moonbase + Dragon Egg + 30k electricity
+    /// - PRICE_TIER_4 (4.20 SOL): Moonbase + Dragon Egg + 75k electricity
     pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
     }

@@ -28,20 +28,14 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         global_config.total_moonbases_created
     };
 
-    // Determine pricing and NFT minting
-    let sol_cost: u64;
-    let to_mint_dragon: bool;
-    
-    
-    if pricing_tier == PRICE_ONE {
-        sol_cost = PRICE_ONE;
-        to_mint_dragon = false;
-    } else if pricing_tier == PRICE_TWO {
-        sol_cost = PRICE_TWO;
-        to_mint_dragon = true;
-    } else {
-        return Err(ErrorCode::InvalidParameters.into());
-    }
+    // Determine pricing and NFT minting based on tier
+    let (sol_cost, to_mint_dragon, init_type): (u64, bool, u8) = match pricing_tier {
+        PRICE_TIER_1 => (PRICE_TIER_1, false, 1),
+        PRICE_TIER_2 => (PRICE_TIER_2, true, 2),
+        PRICE_TIER_3 => (PRICE_TIER_3, true, 3),
+        PRICE_TIER_4 => (PRICE_TIER_4, true, 4),
+        _ => return Err(ErrorCode::InvalidParameters.into()),
+    };
 
     let global_config = &mut ctx.accounts.global_config;
 
@@ -136,8 +130,9 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.bump = ctx.bumps.user_moonbase;
     user_moonbase.faction_id = faction_id;
     
-    // Initialize XP and level system
+    // Initialize XP, level, and tier system
     user_moonbase.level = 0;
+    user_moonbase.init_type = init_type;
     user_moonbase.xp = 0;
     user_moonbase.last_login_ts = Clock::get()?.unix_timestamp;
     user_moonbase.daily_login_streak = 0;
@@ -231,8 +226,8 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         referrer,
     });
 
-    msg!("Created new moon base for user {} with tier: {} SOL {}",
-         user.key(), sol_cost as f64 / 1_000_000_000.0,
+    msg!("Created new moon base for user {} - Tier {}: {} SOL {}",
+         user.key(), init_type, sol_cost as f64 / 1_000_000_000.0,
          if to_mint_dragon { "(includes Dragon Egg)" } else { "(no NFT)" });
 
     Ok(())

@@ -64,6 +64,81 @@ function runCommand(command, cwd = ROOT_DIR) {
   }
 }
 
+function getExistingDeployment() {
+  const configPath = path.join(__dirname, 'config.json');
+  let cluster = 'localnet';
+  
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    cluster = config.network?.cluster || 'localnet';
+  } catch (error) {
+    // Use default
+  }
+  
+  const deploymentPath = path.join(DEPLOYMENTS_DIR, `${cluster}.json`);
+  
+  if (fs.existsSync(deploymentPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+    } catch (error) {
+      return null;
+    }
+  }
+  
+  return null;
+}
+
+function isProgramDeployed(programName, deploymentData) {
+  if (!deploymentData) return false;
+  
+  const programIdKey = {
+    'raydium_cp_swap': 'RAYDIUM_CP_PROGRAM_ID',
+    'moonbase': 'MOON_BASE_PROGRAM_ID',
+    'mooneconomy': 'MOON_ECONOMY_PROGRAM_ID'
+  }[programName];
+  
+  return deploymentData[programIdKey] && deploymentData[programIdKey] !== '';
+}
+
+function extractIdlFromBinary(programConfig) {
+  console.log(`\x1b[36m📝 Extracting IDL for ${programConfig.displayName}...\x1b[0m`);
+  
+  const idlDir = path.join(ROOT_DIR, 'target', 'idl');
+  ensureDirectoryExists(idlDir);
+  
+  try {
+    if (programConfig.name === 'raydium_cp_swap') {
+      // For Raydium, build IDL from its workspace
+      runCommand('anchor idl build', programConfig.buildDir);
+      const idlSourcePath = path.join(programConfig.buildDir, 'target', 'idl', 'raydium_cp_swap.json');
+      const idlTargetPath = path.join(idlDir, 'raydium_cp_swap.json');
+      if (fs.existsSync(idlSourcePath)) {
+        fs.copyFileSync(idlSourcePath, idlTargetPath);
+        console.log(`\x1b[32m  ✅ IDL extracted: ${idlTargetPath}\x1b[0m`);
+        return true;
+      }
+    } else {
+      // For moonbase/mooneconomy, capture IDL output from anchor idl build
+      const idlOutput = runCommand(`anchor idl build -p ${programConfig.name}`, ROOT_DIR);
+      
+      // Extract JSON from output (it's printed after the compilation messages)
+      const jsonMatch = idlOutput.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const idlPath = path.join(idlDir, `${programConfig.name}.json`);
+        fs.writeFileSync(idlPath, jsonMatch[0]);
+        console.log(`\x1b[32m  ✅ IDL extracted: ${idlPath}\x1b[0m`);
+        return true;
+      } else {
+        console.log(`\x1b[33m⚠️  Could not extract IDL JSON from output\x1b[0m`);
+      }
+    }
+  } catch (error) {
+    console.log(`\x1b[33m⚠️  IDL extraction failed: ${error.message}\x1b[0m`);
+  }
+  
+  return false;
+}
+
 function getDeployerPublicKey() {
   const keypairData = JSON.parse(fs.readFileSync(WALLET_KEYPAIR_PATH, 'utf8'));
   const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
@@ -144,6 +219,16 @@ function updateAnchorToml(programAddresses) {
   
   fs.writeFileSync(ANCHOR_TOML_PATH, anchorContent);
   console.log(`\x1b[32m✅ Anchor.toml updated successfully for cluster: ${cluster}\x1b[0m`);
+  
+  // Also update Raydium's Anchor.toml
+  const raydiumAnchorToml = path.join(RAYDIUM_DIR, 'Anchor.toml');
+  if (fs.existsSync(raydiumAnchorToml) && programAddresses.raydium_cp_swap) {
+    let raydiumContent = fs.readFileSync(raydiumAnchorToml, 'utf8');
+    const raydiumProgramRegex = /raydium_cp_swap\s*=\s*"([^"]+)"/g;
+    raydiumContent = raydiumContent.replace(raydiumProgramRegex, `raydium_cp_swap = "${programAddresses.raydium_cp_swap}"`);
+    fs.writeFileSync(raydiumAnchorToml, raydiumContent);
+    console.log(`\x1b[32m✅ Updated Raydium Anchor.toml: ${programAddresses.raydium_cp_swap}\x1b[0m`);
+  }
 }
 
 function updateDeclareId(libPath, programAddress) {
@@ -264,6 +349,21 @@ function buildProgram(programConfig) {
       fs.copyFileSync(builtSoPath, targetSoPath);
       console.log(`\x1b[32m  ✅ Copied .so to: ${targetSoPath}\x1b[0m`);
     }
+    
+    // Generate IDL for Raydium
+    console.log(`\x1b[36m📝 Generating IDL for ${programConfig.displayName}...\x1b[0m`);
+    try {
+      runCommand('anchor idl build', programConfig.buildDir);
+      const idlSourcePath = path.join(programConfig.buildDir, 'target', 'idl', 'raydium_cp_swap.json');
+      const idlTargetPath = path.join(ROOT_DIR, 'target', 'idl', 'raydium_cp_swap.json');
+      if (fs.existsSync(idlSourcePath)) {
+        ensureDirectoryExists(path.dirname(idlTargetPath));
+        fs.copyFileSync(idlSourcePath, idlTargetPath);
+        console.log(`\x1b[32m  ✅ IDL copied to: ${idlTargetPath}\x1b[0m`);
+      }
+    } catch (error) {
+      console.log(`\x1b[33m⚠️  IDL generation failed, continuing...\x1b[0m`);
+    }
   } else {
     // Build each Anchor program in its own crate to avoid workspace conflicts
     const programDir = path.join(programConfig.buildDir, 'programs', programConfig.name);
@@ -278,6 +378,28 @@ function buildProgram(programConfig) {
     if (fs.existsSync(builtSoPath)) {
       fs.copyFileSync(builtSoPath, targetSoPath);
       console.log(`\x1b[32m  ✅ Copied .so to: ${targetSoPath}\x1b[0m`);
+    }
+    
+    // Generate IDL for Anchor programs by capturing output
+    console.log(`\x1b[36m📝 Generating IDL for ${programConfig.displayName}...\x1b[0m`);
+    try {
+      const idlDir = path.join(ROOT_DIR, 'target', 'idl');
+      ensureDirectoryExists(idlDir);
+      
+      // Run anchor idl build and capture JSON output
+      const idlOutput = runCommand(`anchor idl build -p ${programConfig.name}`, ROOT_DIR);
+      
+      // Extract JSON from output
+      const jsonMatch = idlOutput.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const idlPath = path.join(idlDir, `${programConfig.name}.json`);
+        fs.writeFileSync(idlPath, jsonMatch[0]);
+        console.log(`\x1b[32m  ✅ IDL generated at: ${idlPath}\x1b[0m`);
+      } else {
+        console.log(`\x1b[33m⚠️  Could not extract IDL JSON from output\x1b[0m`);
+      }
+    } catch (error) {
+      console.log(`\x1b[33m⚠️  IDL generation failed, continuing...\x1b[0m`);
     }
   }
   
@@ -304,6 +426,30 @@ function deployProgram(programConfig, walletPath) {
   try {
     const result = runCommand(deployCommand);
     console.log(`\x1b[32m✅ Successfully deployed ${programConfig.displayName}\x1b[0m`);
+    
+    // Update IDL with actual deployed program ID
+    console.log(`\x1b[36m📝 Updating IDL with deployed address for ${programConfig.displayName}...\x1b[0m`);
+    try {
+      const idlDir = path.join(ROOT_DIR, 'target', 'idl');
+      ensureDirectoryExists(idlDir);
+      const idlPath = path.join(idlDir, `${programConfig.name}.json`);
+      
+      // Read the deployed program ID from keypair
+      const keypairData = JSON.parse(fs.readFileSync(programConfig.keypairPath, 'utf8'));
+      const deployedKeypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
+      const deployedProgramId = deployedKeypair.publicKey.toString();
+      
+      if (fs.existsSync(idlPath)) {
+        // Update the address field in the IDL
+        const idlContent = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
+        idlContent.address = deployedProgramId;
+        fs.writeFileSync(idlPath, JSON.stringify(idlContent, null, 2));
+        console.log(`\x1b[32m  ✅ IDL updated with deployed address: ${deployedProgramId}\x1b[0m`);
+      }
+    } catch (error) {
+      console.log(`\x1b[33m⚠️  IDL update failed: ${error.message}\x1b[0m`);
+    }
+    
     return result;
   } catch (error) {
     console.error(`\x1b[31m❌ Failed to deploy ${programConfig.displayName}\x1b[0m`);
@@ -366,6 +512,31 @@ async function main() {
   try {
     console.log(`\x1b[35m🚀 Starting automated program deployment...\x1b[0m`);
     console.log(`\x1b[35m==============================================\x1b[0m`);
+    
+    // Check for existing deployment
+    const existingDeployment = getExistingDeployment();
+    
+    // Check if all programs are already deployed
+    const allDeployed = existingDeployment && 
+      isProgramDeployed('raydium_cp_swap', existingDeployment) &&
+      isProgramDeployed('moonbase', existingDeployment) &&
+      isProgramDeployed('mooneconomy', existingDeployment);
+    
+    if (allDeployed) {
+      console.log(`\x1b[32m✅ All programs already deployed!\x1b[0m`);
+      console.log(`\x1b[36m   🔗 RAYDIUM_CP_PROGRAM_ID: ${existingDeployment.RAYDIUM_CP_PROGRAM_ID}\x1b[0m`);
+      console.log(`\x1b[36m   🔗 MOON_BASE_PROGRAM_ID: ${existingDeployment.MOON_BASE_PROGRAM_ID}\x1b[0m`);
+      console.log(`\x1b[36m   🔗 MOON_ECONOMY_PROGRAM_ID: ${existingDeployment.MOON_ECONOMY_PROGRAM_ID}\x1b[0m`);
+      console.log(`\x1b[36m\n📋 Regenerating IDL files from deployed programs...\x1b[0m`);
+      
+      // Extract IDL from existing .so files
+      extractIdlFromBinary(PROGRAMS.raydium_cp_swap);
+      extractIdlFromBinary(PROGRAMS.moonbase);
+      extractIdlFromBinary(PROGRAMS.mooneconomy);
+      
+      console.log(`\x1b[32m\n✅ IDL files regenerated successfully!\x1b[0m`);
+      return;
+    }
     
     // Step 1: Check prerequisites
     checkPrerequisites();
