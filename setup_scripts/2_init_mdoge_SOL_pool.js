@@ -109,7 +109,7 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     // Setup Raydium program with wallet wrapper
     const wallet = new Wallet(deployer);
     const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
-    const cpIdlPath = path.resolve(__dirname, config.deployment.paths.raydium_idl || '../raydium/target/idl/raydium_cp_swap.json');
+    const cpIdlPath = path.resolve(__dirname, config.deployment.paths.raydium_idl || '../target/idl/raydium_cp_swap.json');
     
     if (!fs.existsSync(cpIdlPath)) {
         console.error('\x1b[31m%s\x1b[0m', `❌ Raydium IDL not found at: ${cpIdlPath}`);

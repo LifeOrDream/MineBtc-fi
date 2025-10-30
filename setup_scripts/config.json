@@ -9,7 +9,7 @@
             "deployer_key": "../wallet-keypair.json",
             "moonbase_idl": "../target/idl/moonbase.json",
             "moon_economy_idl": "../target/idl/mooneconomy.json",
-            "raydium_idl": "../raydium/target/idl/raydium_cp_swap.json",
+            "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
         "creation_fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",

@@ -1,3 +1,71 @@
 {
- 
+  "RAYDIUM_CP_PROGRAM_ID": "2uWiL6LJnbaK5RpGxY86TCrKR8ZEX63bbB5Dnv1WqpDc",
+  "raydium_last_deployment": {
+    "timestamp": "2025-10-30T21:15:12.874Z",
+    "cluster": "localnet"
+  },
+  "MOON_BASE_PROGRAM_ID": "G9Xg6bi7WxdYrEUXHqeqyDGHajSWqAtCrXJ4DS8QXfUY",
+  "MOON_ECONOMY_PROGRAM_ID": "7JvaP3ztjYBSaZyPSripAaqxrCgjDGFG71c6MGYuZNkS",
+  "game_programs_deployment": {
+    "timestamp": "2025-10-30T21:17:43.601Z",
+    "cluster": "localnet"
+  },
+  "dbtc_mint_created": {
+    "mint_address": "Fawd7r8rk6W315SsHbG6svP7tys2hEpkXcs8HoSUD6DH",
+    "mint_authority": null,
+    "freeze_authority": null,
+    "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "withdraw_withheld_authority": null,
+    "decimals": 6,
+    "burn_tax_bps": 100,
+    "max_burn_amount": 1000000,
+    "metadata_included": true,
+    "metadata_name": "DogeWifBTC",
+    "metadata_symbol": "DBTC",
+    "metadata_uri": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
+    "creation_signature": "2qARMvaj4ZaRcY4dnNHz4RvktzZierYutemffMERSLXxvM5xbpVYzj1xLoW3o5tW8gEAzNRZd6UGracipCmrKYTi",
+    "timestamp": "2025-10-30T21:17:51.735Z",
+    "mint_authority_status": "removed",
+    "withdraw_withheld_authority_status": "removed",
+    "transfer_fee_config_authority_status": "transferred"
+  },
+  "dbtc_token_account_created": {
+    "token_account_address": "Drfhwkc9hnTAakGsRsNQMRvswk3Tv7p1UVRiT1HsUNs3",
+    "owner_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "mint_address": "Fawd7r8rk6W315SsHbG6svP7tys2hEpkXcs8HoSUD6DH",
+    "timestamp": "2025-10-30T21:17:52.231Z"
+  },
+  "initial_supply_minted": {
+    "amount": "21000000000000000",
+    "actual_minted_amount": "21000000000000000",
+    "amount_readable": "21,000,000,000 DBTC",
+    "token_account_address": "Drfhwkc9hnTAakGsRsNQMRvswk3Tv7p1UVRiT1HsUNs3",
+    "mint_signature": "27vcsA3MDgbKHXgzFKnUdcbro56RU325Qtax9ziaxTGmDRkdyuiWSyb5p3fjxgfQb5TWNckAU1uoYpJpPmqa7tq2",
+    "bigint_verification": {
+      "expected": "21000000000000000",
+      "actual": "21000000000000000",
+      "match": true
+    },
+    "timestamp": "2025-10-30T21:17:52.750Z"
+  },
+  "dbtc_mint_address": "Fawd7r8rk6W315SsHbG6svP7tys2hEpkXcs8HoSUD6DH",
+  "mint_authority_removed": {
+    "previous_mint_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "new_mint_authority": null,
+    "removal_signature": "2uf3msse3tVCs7LkHD7FcnMzkaMuqQCrSZcLFAS5XMGL5UBELsqs4hyiQJiP6nCCKdQ4tY4EeF3jYKwxMS8DpjQp",
+    "timestamp": "2025-10-30T21:17:53.140Z",
+    "total_supply_locked": "21,000,000,000 DBTC"
+  },
+  "withdraw_withheld_authority_removed": {
+    "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "new_withdraw_withheld_authority": null,
+    "removal_signature": "5XHWWbH5yLpAkkMtdHFqDf6sUxsoLQFMsY4aq5MYR5wouWXTpFjesU8xGPWrB8a21J4uiKaMSSkjczbVDhjCvZry",
+    "timestamp": "2025-10-30T21:17:53.602Z"
+  },
+  "transfer_fee_config_authority_transferred": {
+    "previous_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "new_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "transfer_signature": "4HjidFzwMwQzS4r3zbtwrtZijKmgvXuaGgzWiJ74BDXri8ghenixoEe7QSGadHX3h1Y4qJB5RuYeiaFkg2dSDy7Y",
+    "timestamp": "2025-10-30T21:17:54.085Z"
+  }
 }
