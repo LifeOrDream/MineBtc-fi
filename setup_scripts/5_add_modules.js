@@ -705,7 +705,7 @@ async function updateDistributionRate(moonbaseProgram) {
     const ammConfigPDA = new PublicKey(deploymentFile.raydium_amm_config_created.amm_config_pda);
     const solTreasuryPDA = new PublicKey(deploymentFile.moonbase_program_initialized.solTreasury_address);
     const vaultAuthorityPDA = new PublicKey(deploymentFile.mining_vault_initialized.vault_authority);
-    const mdogeTokenAccount = new PublicKey(deploymentFile.mining_vault_initialized.vault_address);
+    const dbtcTokenAccount = new PublicKey(deploymentFile.mining_vault_initialized.vault_address);
 
     // Check if Raydium pool is available for integration
     if (!deploymentFile.dbtc_sol_pool_created) {
@@ -726,7 +726,7 @@ async function updateDistributionRate(moonbaseProgram) {
     const result = await updateMdogeDistPerSlot(
         connection, moonbaseProgram, RAYDIUM_PROGRAM_ID, wallet, walletKeypair, globalConfigPDA,
         dogeBtcMiningPDA, raydiumPoolData, MOONDOGE_TOKEN_MINT, ammConfigPDA, solTreasuryPDA,
-        vaultAuthorityPDA, mdogeTokenAccount
+        vaultAuthorityPDA, dbtcTokenAccount
     );
 
     if (result.success) {

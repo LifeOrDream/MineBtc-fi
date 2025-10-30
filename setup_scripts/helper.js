@@ -3246,7 +3246,7 @@ export async function updateMdogeDistPerSlot(
   ammConfigPDA,
   solTreasuryPDA,
   vaultAuthorityPDA,
-  mdogeTokenAccount
+  dbtcTokenAccount
   
 ) {
   try {
@@ -3266,11 +3266,11 @@ export async function updateMdogeDistPerSlot(
     
     // Assign vaults based on actual token ordering
     const solVaultPDA = isMdogeToken0 ? token1VaultPDA : token0VaultPDA;   // WSOL vault
-    const mdogeVaultPDA = isMdogeToken0 ? token0VaultPDA : token1VaultPDA; // DOGE_BTC vault
+    const dbtcVaultPDA = isMdogeToken0 ? token0VaultPDA : token1VaultPDA; // DOGE_BTC vault
     
     console.log('\x1b[90m%s\x1b[0m', `   Token ordering: isMdogeToken0=${isMdogeToken0}`);
     console.log('\x1b[90m%s\x1b[0m', `   WSOL vault (solVaultPDA): ${solVaultPDA.toString()}`);
-    console.log('\x1b[90m%s\x1b[0m', `   DOGE_BTC vault (mdogeVaultPDA): ${mdogeVaultPDA.toString()}`);
+    console.log('\x1b[90m%s\x1b[0m', `   DOGE_BTC vault (dbtcVaultPDA): ${dbtcVaultPDA.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `   token0VaultPDA: ${token0VaultPDA.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `   token1VaultPDA: ${token1VaultPDA.toString()}`)
 
@@ -3337,7 +3337,7 @@ export async function updateMdogeDistPerSlot(
     // console.log('\x1b[90m%s\x1b[0m', `   Raydium Pool State: ${poolStatePDA.toString()}`);
     // console.log('\x1b[90m%s\x1b[0m', `   Vault Authority PDA: ${vaultAuthorityPDA.toString()}`);
     // console.log('\x1b[90m%s\x1b[0m', `   AMM Config: ${ammConfigPDA.toString()}`);
-    // console.log('\x1b[90m%s\x1b[0m', `   DOGE_BTC Vault (Token Account): ${mdogeTokenAccount.toString()}`);
+    // console.log('\x1b[90m%s\x1b[0m', `   DOGE_BTC Vault (Token Account): ${dbtcTokenAccount.toString()}`);
     // console.log('\x1b[90m%s\x1b[0m', `   SOL Token Account: ${solTokenAccount.toString()}`);
 
 
@@ -3348,9 +3348,9 @@ export async function updateMdogeDistPerSlot(
     console.log(`ammConfig: ${ammConfigPDA.toString()}`);
     console.log(`authorityPda: ${vaultAuthorityPDA.toString()}`);
     console.log(`raydiumAuthority: ${authorityPDA.toString()}`);
-    console.log(`mdogeVault: ${mdogeVaultPDA.toString()}`);
+    console.log(`dbtcVault: ${dbtcVaultPDA.toString()}`);
     console.log(`solVault: ${solVaultPDA.toString()}`);
-    console.log(`mdogeTokenAccount: ${mdogeTokenAccount.toString()}`);
+    console.log(`dbtcTokenAccount: ${dbtcTokenAccount.toString()}`);
     console.log(`solTokenAccount: ${solTokenAccount.toString()}`);
     console.log(`dbtcMint: ${dbtcMint.toString()}`);
     console.log(`solMint: ${solMint.toString()}`);
@@ -3364,7 +3364,7 @@ export async function updateMdogeDistPerSlot(
 
 
     const tx = await program.methods
-      .updateMdogeDistPerSlot(new BN(0))
+      .updateDbtcDistPerSlot(new BN(0))
       .accounts({
         globalConfig: globalConfigPDA,
         dogeBtcMining: dogeBtcMiningPDA,
@@ -3373,9 +3373,9 @@ export async function updateMdogeDistPerSlot(
         ammConfig: ammConfigPDA,
         authorityPda: vaultAuthorityPDA,
         raydiumAuthority: authorityPDA,
-        mdogeVault: mdogeVaultPDA, // DOGE_BTC vault in Raydium pool
+        dbtcVault: dbtcVaultPDA, // DOGE_BTC vault in Raydium pool
         solVault: solVaultPDA,     // SOL vault in Raydium pool
-        mdogeTokenAccount: mdogeTokenAccount,
+        dbtcTokenAccount: dbtcTokenAccount,
         solTokenAccount: solTokenAccount,
         dbtcMint: dbtcMint,
         solMint: solMint,

@@ -118,5 +118,799 @@
     "status": "burned_successfully",
     "permanent_lock": true,
     "timestamp": "2025-10-30T21:32:37.413Z"
+  },
+  "dragon_egg_collection_created": {
+    "collection_address": "HeriAxG2rZTcrEXCkkZ7hrUpsdK335SoybGP1msNqa5Y",
+    "collection_name": "DogeTech Dragon Eggs",
+    "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+    "update_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "timestamp": "2025-10-30T21:33:16.811Z"
+  },
+  "moonbase_program_initialized": {
+    "globalConfig_address": "9DjGfhE23bPfo4YoSE8roMyFoxcV4EPD2UWnqihoU7H4",
+    "dogeBtcMining_address": "7PoLrVLoSwasW1kho3Ps211h5gkMS7Z4721hyKYgSh26",
+    "solTreasury_address": "48cy9QZHvqyqCP37YCKUatLVV52y4V2Z7614jFGLSuKd",
+    "timestamp": "2025-10-30T21:33:29.544Z"
+  },
+  "mining_vault_initialized": {
+    "vault_address": "9qYeAQGXr5qviYWzTJpwRCbQYZotLRSKBVLSuoF7ReSX",
+    "vault_authority": "B789VEB7wuXHF2m1mvvmok63UkSH3jsu99pN4BFfBHE8",
+    "start_timestamp": 1761860008,
+    "doge_btc_per_slot": "1000000",
+    "init_tx": "4RCa4iqdDE3DeRm5hv5iBA78EEYaV7QLJkDVY8dA3Hg1E5UXH2m1iNznzMJhMrQutJAKADNhTZ2MPQcV2vDn6ubs",
+    "timestamp": "2025-10-30T21:33:29.957Z"
+  },
+  "referral_system_initialized": {
+    "system_referral_pda": "3ZWhjEFp3w6CnGRL8zgi7nk8y9qiCqcGBd373gn3CF7R",
+    "timestamp": "2025-10-30T21:33:30.434Z"
+  },
+  "config_stores_initialized": {
+    "module_config_store": "9PPpYHLnbADYac7Ja5KQnw5Hiyk56ZUuCiCPoNGWr79r",
+    "timestamp": "2025-10-30T21:33:30.901Z"
+  },
+  "loot_rewards_initialized": {
+    "loot_rewards_pda": "CHPj39mNrbR8KsoJ27jwPFTkkaBYX57PgaBEGdUeycf2",
+    "sol_vault": "2reUqoZm6V3KeRgUAiDEwgtKmmRroeYSwaxzUybFR8v6",
+    "dbtc_vault": "8hKwyaWcUwjHNKAAozVmHRLwEXaJxXQo4hcmxPQBz3tE",
+    "loot_dbtc_vault_authority": "6T54deFbn3GRFgqZJjkuKgugubqdCXSJDFDpCbTNAyqy",
+    "initTxid": "2SAXdt5zS2SpHVhNAdEc7gnkTjKtrFVYAcdbRQiAWXgc1gNhBKmoaMrrVKLsJrVHihrQ1u5DgvCQVPmZQTLrU4sa",
+    "timestamp": "2025-10-30T21:33:31.367Z"
+  },
+  "level_stats_initialized": {
+    "level_stats_pda": "5qu5kX1BLafEMsUH71w29bmVxvcGsLoocLkWp7cgRxyE",
+    "initTxid": "5Kc5MtUUjHLJYnN1rQyjFvCY6XfMgGRgSc4y6aqC4XtyQ21CEyafhb42Gm4w8yeuMrpv7SwrVSMHuVn3uGK82pDQ",
+    "timestamp": "2025-10-30T21:33:31.836Z"
+  },
+  "dragon_egg_collection_set_in_program": {
+    "collection_address": "HeriAxG2rZTcrEXCkkZ7hrUpsdK335SoybGP1msNqa5Y",
+    "global_config_pda": "9DjGfhE23bPfo4YoSE8roMyFoxcV4EPD2UWnqihoU7H4",
+    "tx_signature": "4sPqMzbFaKzBreSgYGSBvCt3riY8PwLrs9wbuwSA2NwJi4hYuggaiF2zh5Gdr5tupF7vb3iCCXVF7n1La2ajYrB9",
+    "timestamp": "2025-10-30T21:33:32.335Z"
+  },
+  "factions_added": {
+    "factions": [
+      {
+        "name": "United States",
+        "description": "Advanced space technology and military supremacy doctrine"
+      },
+      {
+        "name": "China",
+        "description": "Mass production efficiency and systematic expansion strategy"
+      },
+      {
+        "name": "Russia",
+        "description": "Heavy-duty engineering and military-first approach"
+      },
+      {
+        "name": "Israel",
+        "description": "Cutting-edge defense systems and intelligence operations"
+      },
+      {
+        "name": "Iran",
+        "description": "Resource extraction focus and asymmetric warfare tactics"
+      },
+      {
+        "name": "Ukraine",
+        "description": "Resilient defensive technology and freedom preservation"
+      }
+    ],
+    "tx": "55A95jv4dNZBHt2L8XsxwVLo5YGKBmSERRNHDucVyzYecBGDB7QNyZWYVRPX7DNFJpYqJiA61CG6BcKQPc2P4nC1",
+    "timestamp": "2025-10-30T21:33:32.845Z"
+  },
+  "expansions_added": {
+    "expansions": [
+      {
+        "id": 1,
+        "name": "Forward Operating Base",
+        "required_level": 5,
+        "cost_sol": 1000000000,
+        "new_width": 10,
+        "new_height": 8,
+        "tx": "3Rj44AzY1N19TkPjsJpzBg8tbJaLEYCMJKBcHXEGzEwvqcik7Bgh673nuEr89GwAH2siSx3r86ohsmHc5y739uxh"
+      },
+      {
+        "id": 2,
+        "name": "Strategic Command Center",
+        "required_level": 10,
+        "cost_sol": 2000000000,
+        "new_width": 12,
+        "new_height": 10,
+        "tx": "5L2nHhUCbCyhQBiB33dacDW6Rp6yN4M7x2EDr6A4QTUbHWtBG7qMYQiwoVoMR73Pusbju5mGZK1PAVM88X1sDGXV"
+      },
+      {
+        "id": 3,
+        "name": "Military Industrial Complex",
+        "required_level": 20,
+        "cost_sol": 5000000000,
+        "new_width": 14,
+        "new_height": 12,
+        "tx": "2CxQDZGbC276PnapWtGaEL3CgoDE7Qc588TN5r6CoZg4DJ5RPagPkYudCYHwTTS7ZMbA52bwF2YBCgVrS9v8km1C"
+      },
+      {
+        "id": 4,
+        "name": "Lunar Superbase",
+        "required_level": 35,
+        "cost_sol": 10000000000,
+        "new_width": 16,
+        "new_height": 12,
+        "tx": "2p2MDKgPQj54VZLj5DGXgxXaMXVkNjcedyysRwqjrngN2niJkbcBN6XZ3J3VQNcR7dzCqpM1Cs9vK7fnZpPq3f9B"
+      }
+    ],
+    "timestamp": "2025-10-30T21:34:01.047Z"
+  },
+  "modules_added": {
+    "modules": [
+      {
+        "name": "F",
+        "image_url": "FF ",
+        "module_type": "Mining",
+        "stats": {
+          "mining": {
+            "maxHp": 1100,
+            "baseHashpower": 1200,
+            "powerConsumption": 90
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 4,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 150000000,
+        "upgrade_cost": 75000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments F,FF ,[object Object],\u0001\u0002\u0003\u0004\u0005,0,4,2,2,150000000,75000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Red Dragon Extraction Facility",
+        "image_url": "https://arweave.net/china-extraction-facility",
+        "module_type": "Mining",
+        "stats": {
+          "Mining": {
+            "maxHp": 1600,
+            "baseHashpower": 2800,
+            "powerConsumption": 180
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 5,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 400000000,
+        "upgrade_cost": 150000000,
+        "upgrade_level_requirements": [
+          1,
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Red Dragon Extraction Facility,https://arweave.net/china-extraction-facility,[object Object],\u0001\u0002\u0003\u0004\u0005,0,5,3,2,400000000,150000000,\u0001\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Siberian Deep Core Rig",
+        "image_url": "https://arweave.net/russia-deep-core-rig",
+        "module_type": "Mining",
+        "stats": {
+          "Mining": {
+            "maxHp": 2800,
+            "baseHashpower": 5500,
+            "powerConsumption": 350
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 2,
+        "width": 3,
+        "height": 3,
+        "mint_cost": 1800000000,
+        "upgrade_cost": 450000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Siberian Deep Core Rig,https://arweave.net/russia-deep-core-rig,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,3,1800000000,450000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Persian Gulf Energy Harvester",
+        "image_url": "https://arweave.net/iran-energy-harvester",
+        "module_type": "Mining",
+        "stats": {
+          "Mining": {
+            "maxHp": 1400,
+            "baseHashpower": 3200,
+            "powerConsumption": 220
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 3,
+        "width": 2,
+        "height": 3,
+        "mint_cost": 600000000,
+        "upgrade_cost": 200000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Persian Gulf Energy Harvester,https://arweave.net/iran-energy-harvester,[object Object],\u0001\u0002\u0003\u0004\u0005,0,3,2,3,600000000,200000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Liberty Memorial Complex",
+        "image_url": "https://arweave.net/usa-memorial-complex",
+        "module_type": "Attraction",
+        "stats": {
+          "Attraction": {
+            "maxHp": 900,
+            "baseXpPerHour": 120,
+            "powerConsumption": 45
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 3,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 200000000,
+        "upgrade_cost": 90000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Liberty Memorial Complex,https://arweave.net/usa-memorial-complex,[object Object],\u0001\u0002\u0003\u0004\u0005,0,3,2,2,200000000,90000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Red Square Monument",
+        "image_url": "https://arweave.net/russia-red-square",
+        "module_type": "Attraction",
+        "stats": {
+          "Attraction": {
+            "maxHp": 1200,
+            "baseXpPerHour": 150,
+            "powerConsumption": 60
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 2,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 350000000,
+        "upgrade_cost": 140000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Red Square Monument,https://arweave.net/russia-red-square,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,2,350000000,140000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Maidan Memorial",
+        "image_url": "https://arweave.net/ukraine-maidan-memorial",
+        "module_type": "Attraction",
+        "stats": {
+          "Attraction": {
+            "maxHp": 800,
+            "baseXpPerHour": 180,
+            "powerConsumption": 40
+          }
+        },
+        "faction_ids": [
+          5
+        ],
+        "min_level": 5,
+        "max_per_base": 4,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 180000000,
+        "upgrade_cost": 70000000,
+        "upgrade_level_requirements": [
+          7,
+          10,
+          14,
+          18,
+          23,
+          28,
+          34,
+          40,
+          47,
+          55
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Maidan Memorial,https://arweave.net/ukraine-maidan-memorial,[object Object],\u0005,5,4,2,2,180000000,70000000,\u0007\n\u000e\u0012\u0017\u001c\"(/7,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "NASA Advanced Laboratory",
+        "image_url": "https://arweave.net/nasa-lab",
+        "module_type": "Research",
+        "stats": {
+          "Research": {
+            "maxHp": 1400,
+            "cooldownSec": 3200,
+            "maxReward": 1200000000,
+            "probability": 6000,
+            "powerConsumption": 140
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 2,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 450000000,
+        "upgrade_cost": 180000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments NASA Advanced Laboratory,https://arweave.net/nasa-lab,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,2,450000000,180000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Jade Rabbit Research Station",
+        "image_url": "https://arweave.net/china-jade-rabbit",
+        "module_type": "Research",
+        "stats": {
+          "Research": {
+            "maxHp": 1600,
+            "cooldownSec": 2800,
+            "maxReward": 1400000000,
+            "probability": 5500,
+            "powerConsumption": 160
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 3,
+        "width": 2,
+        "height": 3,
+        "mint_cost": 500000000,
+        "upgrade_cost": 200000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Jade Rabbit Research Station,https://arweave.net/china-jade-rabbit,[object Object],\u0001\u0002\u0003\u0004\u0005,0,3,2,3,500000000,200000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Mossad Intelligence Center",
+        "image_url": "https://arweave.net/israel-mossad-center",
+        "module_type": "Research",
+        "stats": {
+          "Research": {
+            "maxHp": 1100,
+            "cooldownSec": 2400,
+            "maxReward": 900000000,
+            "probability": 7500,
+            "powerConsumption": 120
+          }
+        },
+        "faction_ids": [
+          3
+        ],
+        "min_level": 10,
+        "max_per_base": 2,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 600000000,
+        "upgrade_cost": 250000000,
+        "upgrade_level_requirements": [
+          13,
+          16,
+          20,
+          25,
+          30,
+          36,
+          42,
+          49,
+          57,
+          66
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Mossad Intelligence Center,https://arweave.net/israel-mossad-center,[object Object],\u0003,10,2,2,2,600000000,250000000,\r\u0010\u0014\u0019\u001e$*19B,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Iron Dome Lunar Defense",
+        "image_url": "https://arweave.net/israel-iron-dome",
+        "module_type": "Attack",
+        "stats": {
+          "Attack": {
+            "maxHp": 1300,
+            "baseDamage": 180,
+            "baseMissilesPerLoad": 12,
+            "reloadTimeSeconds": 25,
+            "powerConsumption": 85
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 4,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 400000000,
+        "upgrade_cost": 160000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Iron Dome Lunar Defense,https://arweave.net/israel-iron-dome,[object Object],\u0001\u0002\u0003\u0004\u0005,0,4,2,2,400000000,160000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Kalashnikov Orbital Platform",
+        "image_url": "https://arweave.net/russia-kalashnikov",
+        "module_type": "Attack",
+        "stats": {
+          "Attack": {
+            "maxHp": 2200,
+            "baseDamage": 320,
+            "baseMissilesPerLoad": 8,
+            "reloadTimeSeconds": 45,
+            "powerConsumption": 180
+          }
+        },
+        "faction_ids": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "max_per_base": 2,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 900000000,
+        "upgrade_cost": 350000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Kalashnikov Orbital Platform,https://arweave.net/russia-kalashnikov,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,2,900000000,350000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Patriot Moon Battery",
+        "image_url": "https://arweave.net/usa-patriot-battery",
+        "module_type": "Attack",
+        "stats": {
+          "Attack": {
+            "maxHp": 1800,
+            "baseDamage": 280,
+            "baseMissilesPerLoad": 6,
+            "reloadTimeSeconds": 35,
+            "powerConsumption": 150
+          }
+        },
+        "faction_ids": [
+          0
+        ],
+        "min_level": 12,
+        "max_per_base": 3,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 750000000,
+        "upgrade_cost": 280000000,
+        "upgrade_level_requirements": [
+          15,
+          19,
+          23,
+          28,
+          34,
+          40,
+          47,
+          55,
+          64,
+          74
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Patriot Moon Battery,https://arweave.net/usa-patriot-battery,[object Object],\u0000,12,3,3,2,750000000,280000000,\u000f\u0013\u0017\u001c\"(/7@J,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Shaheed Drone Swarm Hub",
+        "image_url": "https://arweave.net/iran-drone-swarm",
+        "module_type": "Attack",
+        "stats": {
+          "Attack": {
+            "maxHp": 1000,
+            "baseDamage": 140,
+            "baseMissilesPerLoad": 20,
+            "reloadTimeSeconds": 60,
+            "powerConsumption": 100
+          }
+        },
+        "faction_ids": [
+          4
+        ],
+        "min_level": 10,
+        "max_per_base": 3,
+        "width": 2,
+        "height": 3,
+        "mint_cost": 500000000,
+        "upgrade_cost": 180000000,
+        "upgrade_level_requirements": [
+          13,
+          16,
+          20,
+          25,
+          30,
+          36,
+          42,
+          49,
+          57,
+          66
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Shaheed Drone Swarm Hub,https://arweave.net/iran-drone-swarm,[object Object],\u0004,10,3,2,3,500000000,180000000,\r\u0010\u0014\u0019\u001e$*19B,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Javelin Defense System",
+        "image_url": "https://arweave.net/ukraine-javelin",
+        "module_type": "Attack",
+        "stats": {
+          "Attack": {
+            "maxHp": 1200,
+            "baseDamage": 220,
+            "baseMissilesPerLoad": 4,
+            "reloadTimeSeconds": 40,
+            "powerConsumption": 90
+          }
+        },
+        "faction_ids": [
+          5
+        ],
+        "min_level": 9,
+        "max_per_base": 4,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 350000000,
+        "upgrade_cost": 140000000,
+        "upgrade_level_requirements": [
+          12,
+          15,
+          19,
+          24,
+          29,
+          35,
+          41,
+          48,
+          56,
+          65
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Javelin Defense System,https://arweave.net/ukraine-javelin,[object Object],\u0005,9,4,2,2,350000000,140000000,\f\u000f\u0013\u0018\u001d#)08A,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Great Wall Observatory",
+        "image_url": "https://arweave.net/china-great-wall-observatory",
+        "module_type": "Attraction",
+        "stats": {
+          "Attraction": {
+            "maxHp": 1000,
+            "baseXpPerHour": 130,
+            "powerConsumption": 55
+          }
+        },
+        "faction_ids": [
+          1
+        ],
+        "min_level": 6,
+        "max_per_base": 3,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 280000000,
+        "upgrade_cost": 110000000,
+        "upgrade_level_requirements": [
+          8,
+          11,
+          15,
+          19,
+          24,
+          29,
+          35,
+          41,
+          48,
+          56
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Great Wall Observatory,https://arweave.net/china-great-wall-observatory,[object Object],\u0001,6,3,3,2,280000000,110000000,\b\u000b\u000f\u0013\u0018\u001d#)08,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Roscosmos Deep Space Lab",
+        "image_url": "https://arweave.net/russia-roscosmos-lab",
+        "module_type": "Research",
+        "stats": {
+          "Research": {
+            "maxHp": 1800,
+            "cooldownSec": 3600,
+            "maxReward": 1600000000,
+            "probability": 4500,
+            "powerConsumption": 200
+          }
+        },
+        "faction_ids": [
+          2
+        ],
+        "min_level": 12,
+        "max_per_base": 2,
+        "width": 3,
+        "height": 3,
+        "mint_cost": 750000000,
+        "upgrade_cost": 300000000,
+        "upgrade_level_requirements": [
+          15,
+          19,
+          24,
+          29,
+          35,
+          41,
+          48,
+          56,
+          65,
+          75
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Roscosmos Deep Space Lab,https://arweave.net/russia-roscosmos-lab,[object Object],\u0002,12,2,3,3,750000000,300000000,\u000f\u0013\u0018\u001d#)08AK,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Tehran Command Center",
+        "image_url": "https://arweave.net/iran-command-center",
+        "module_type": "Attraction",
+        "stats": {
+          "Attraction": {
+            "maxHp": 1100,
+            "baseXpPerHour": 140,
+            "powerConsumption": 70
+          }
+        },
+        "faction_ids": [
+          4
+        ],
+        "min_level": 8,
+        "max_per_base": 2,
+        "width": 2,
+        "height": 3,
+        "mint_cost": 320000000,
+        "upgrade_cost": 130000000,
+        "upgrade_level_requirements": [
+          11,
+          14,
+          18,
+          23,
+          28,
+          34,
+          40,
+          47,
+          55,
+          64
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Tehran Command Center,https://arweave.net/iran-command-center,[object Object],\u0004,8,2,2,3,320000000,130000000,\u000b\u000e\u0012\u0017\u001c\"(/7@,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      }
+    ],
+    "timestamp": "2025-10-30T21:34:01.077Z"
+  },
+  "mining_tokens_deposited": {
+    "amount": "21000000000000",
+    "tx": "2ZuVExWm3nr65iQVnMnwAFU7pidobZAhE3ZqTLKEFyVr1q2xqeaeGs8B5pH8eXAfkt3RpmPQ27iDoReUN8DoMEij",
+    "timestamp": "2025-10-30T21:34:01.414Z"
+  },
+  "lp_token_accounts_initialized": {
+    "lp_token_account": "6LDRwZSeoNqYHucXufnyYXNvqEypU6kyFVLer1LbB5TF",
+    "lp_token_owner": "B789VEB7wuXHF2m1mvvmok63UkSH3jsu99pN4BFfBHE8",
+    "lp_mint": "6nDXMbEZFBhPwsuz5e46V8xDWPmYzJqByDsXxCtDJhkW",
+    "timestamp": "2025-10-30T21:34:01.969Z"
+  },
+  "dbtc_dist_per_slot_updated": {
+    "dogeBtcMiningPDA": "7PoLrVLoSwasW1kho3Ps211h5gkMS7Z4721hyKYgSh26",
+    "vaultAuthorityPDA": "B789VEB7wuXHF2m1mvvmok63UkSH3jsu99pN4BFfBHE8",
+    "solTreasuryPDA": "48cy9QZHvqyqCP37YCKUatLVV52y4V2Z7614jFGLSuKd",
+    "poolStatePDA": "BYn9zeKJ9VQik3ksyPPuGUBcJ8jLD66eQHgzSYCuD4Pj",
+    "ammConfigPDA": "AuLDuiroaE3WguAtEr3P72g1FaEwKvx2Aqs9Sf8nusKz",
+    "method": "raydium_integration",
+    "tx_signature": "2o5i1QMtm9SxBroKKMTrwEbRT1ugAM68PPhk8BntMBdGtcVuvYLRo232qSoDAyqw43dZzdaoER28PTopEuhcY8ix",
+    "timestamp": "2025-10-30T21:36:06.742Z"
   }
 }
