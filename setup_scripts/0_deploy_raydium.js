@@ -12,8 +12,9 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.join(__dirname, '..');
 const RAYDIUM_DIR = path.join(ROOT_DIR, 'raydium');
 const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, 'wallet-keypair.json');
-const RAYDIUM_KEYPAIR_PATH = path.join(RAYDIUM_DIR, 'target', 'deploy', 'raydium_cp_swap-keypair.json');
-const RAYDIUM_SO_PATH = path.join(RAYDIUM_DIR, 'target', 'deploy', 'raydium_cp_swap.so');
+const RAYDIUM_DEPLOY_DIR = path.join(RAYDIUM_DIR, 'target', 'deploy');
+const RAYDIUM_KEYPAIR_PATH = path.join(RAYDIUM_DEPLOY_DIR, 'raydium_cp_swap-keypair.json');
+const RAYDIUM_SO_PATH = path.join(RAYDIUM_DEPLOY_DIR, 'raydium_cp_swap.so');
 const RAYDIUM_LIB_PATH = path.join(RAYDIUM_DIR, 'programs', 'cp-swap', 'src', 'lib.rs');
 const RAYDIUM_BUILD_DIR = path.join(RAYDIUM_DIR, 'programs', 'cp-swap');
 const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
@@ -42,26 +43,19 @@ function getDeployerPublicKey() {
   return keypair.publicKey.toString();
 }
 
-function getOrCreateKeypair() {
-  ensureDirectoryExists(path.dirname(RAYDIUM_KEYPAIR_PATH));
-  
-  if (fs.existsSync(RAYDIUM_KEYPAIR_PATH)) {
-    console.log(`\x1b[33m🔑 Using existing Raydium keypair\x1b[0m`);
-    const keypairData = JSON.parse(fs.readFileSync(RAYDIUM_KEYPAIR_PATH, 'utf8'));
-    const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
-    const programId = keypair.publicKey.toString();
-    console.log(`\x1b[32m   Program ID: ${programId}\x1b[0m`);
-    return programId;
-  }
-  
-  console.log(`\x1b[33m🔑 Generating new Raydium keypair\x1b[0m`);
-  runCommand(`solana-keygen new -o ${RAYDIUM_KEYPAIR_PATH} --force --no-bip39-passphrase`);
-  
-  const keypairData = JSON.parse(fs.readFileSync(RAYDIUM_KEYPAIR_PATH, 'utf8'));
-  const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
+function writeKeypair(secretKeyBytes) {
+  ensureDirectoryExists(RAYDIUM_DEPLOY_DIR);
+  fs.writeFileSync(RAYDIUM_KEYPAIR_PATH, JSON.stringify(Array.from(secretKeyBytes)));
+}
+
+function createNewKeypair() {
+  ensureDirectoryExists(RAYDIUM_DEPLOY_DIR);
+  const keypair = Keypair.generate();
+  writeKeypair(keypair.secretKey);
   const programId = keypair.publicKey.toString();
+  console.log(`\x1b[33m🔑 Generating Raydium keypair\x1b[0m`);
   console.log(`\x1b[32m   Program ID: ${programId}\x1b[0m`);
-  return programId;
+  return { programId, secretKey: keypair.secretKey };
 }
 
 function updateRaydiumCode(programId, deployerPubkey) {
@@ -99,7 +93,7 @@ function updateRaydiumCode(programId, deployerPubkey) {
   }
 }
 
-function buildRaydium() {
+function buildRaydium(secretKey) {
   console.log(`\x1b[36m🏗️  Building Raydium CP Swap...\x1b[0m`);
   console.log(`\x1b[36m🧹 Cleaning build cache...\x1b[0m`);
   try {
@@ -108,13 +102,29 @@ function buildRaydium() {
     console.log(`\x1b[33m   ⚠️  Clean failed, continuing...\x1b[0m`);
   }
   
-  runCommand('cargo build-sbf --features devnet', RAYDIUM_BUILD_DIR);
+  runCommand('cargo build-sbf --features devnet -- --locked', RAYDIUM_BUILD_DIR);
   
   // Copy to expected location
-  const builtSoPath = path.join(RAYDIUM_DIR, 'target', 'sbpf-solana-solana', 'release', 'raydium_cp_swap.so');
-  if (fs.existsSync(builtSoPath)) {
+  const builtSoPath = path.join(RAYDIUM_DIR, 'target', 'deploy', 'raydium_cp_swap.so');
+  ensureDirectoryExists(RAYDIUM_DEPLOY_DIR);
+  if (!fs.existsSync(builtSoPath)) {
+    // fallback to sbpf release path
+    const releaseSoPath = path.join(RAYDIUM_DIR, 'target', 'sbpf-solana-solana', 'release', 'raydium_cp_swap.so');
+    if (fs.existsSync(releaseSoPath)) {
+      fs.copyFileSync(releaseSoPath, RAYDIUM_SO_PATH);
+    }
+  } else if (builtSoPath !== RAYDIUM_SO_PATH) {
     fs.copyFileSync(builtSoPath, RAYDIUM_SO_PATH);
+  }
+  // Re-write keypair to prevent tooling from replacing it
+  if (secretKey) {
+    writeKeypair(secretKey);
+  }
+
+  if (fs.existsSync(RAYDIUM_SO_PATH)) {
     console.log(`\x1b[32m✅ Built and copied .so file\x1b[0m`);
+  } else {
+    throw new Error('Compiled .so file not found after build');
   }
 }
 
@@ -136,43 +146,25 @@ function deployRaydium(programId) {
 }
 
 function generateIdl(programId) {
-  console.log(`\x1b[36m📝 Generating IDL...\x1b[0m`);
+  console.log(`\x1b[36m📝 Updating IDL...\x1b[0m`);
+  const idlPath = path.join(ROOT_DIR, 'target', 'idl', 'raydium_cp_swap.json');
   
-  const idlTargetPath = path.join(ROOT_DIR, 'target', 'idl', 'raydium_cp_swap.json');
-  ensureDirectoryExists(path.dirname(idlTargetPath));
+  if (!fs.existsSync(idlPath)) {
+    console.log(`\x1b[31m❌ IDL template not found at ${idlPath}\x1b[0m`);
+    return;
+  }
   
   try {
-    // Run anchor idl build from Raydium workspace and capture output
-    const idlOutput = runCommand('anchor idl build', RAYDIUM_DIR);
-    
-    // Extract JSON from output
-    const jsonMatch = idlOutput.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const idlContent = JSON.parse(jsonMatch[0]);
-      idlContent.address = programId;
-      fs.writeFileSync(idlTargetPath, JSON.stringify(idlContent, null, 2));
-      console.log(`\x1b[32m✅ IDL generated with address: ${programId}\x1b[0m`);
-      return;
+    const idlContent = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
+    if (!idlContent.instructions || idlContent.instructions.length === 0) {
+      throw new Error('IDL template is empty');
     }
+    idlContent.address = programId;
+    fs.writeFileSync(idlPath, JSON.stringify(idlContent, null, 2));
+    console.log(`\x1b[32m✅ IDL address updated: ${programId}\x1b[0m`);
   } catch (error) {
-    console.log(`\x1b[33m⚠️  Anchor IDL build failed, trying alternative...\x1b[0m`);
+    console.log(`\x1b[31m❌ Failed to update IDL: ${error.message}\x1b[0m`);
   }
-  
-  // Fallback: Update existing IDL if present
-  if (fs.existsSync(idlTargetPath)) {
-    try {
-      const idlContent = JSON.parse(fs.readFileSync(idlTargetPath, 'utf8'));
-      if (idlContent.instructions && idlContent.instructions.length > 0) {
-        idlContent.address = programId;
-        fs.writeFileSync(idlTargetPath, JSON.stringify(idlContent, null, 2));
-        console.log(`\x1b[32m✅ Updated existing IDL address: ${programId}\x1b[0m`);
-        return;
-      }
-    } catch (error) {}
-  }
-  
-  console.log(`\x1b[31m❌ Could not generate IDL\x1b[0m`);
-  console.log(`\x1b[33m   IDL file exists but may need manual verification\x1b[0m`);
 }
 
 function saveDeployment(programId) {
@@ -204,6 +196,22 @@ function saveDeployment(programId) {
   console.log(`\x1b[32m✅ Saved to: ${deploymentPath}\x1b[0m`);
 }
 
+function resetArtifacts() {
+  console.log(`\x1b[36m🧹 Resetting previous artifacts...\x1b[0m`);
+  const targets = [
+    path.join(RAYDIUM_DIR, 'target', 'sbpf-solana-solana'),
+    path.join(RAYDIUM_DIR, 'target', 'sbf'),
+    RAYDIUM_SO_PATH,
+    RAYDIUM_KEYPAIR_PATH
+  ];
+  targets.forEach((target) => {
+    if (fs.existsSync(target)) {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  });
+  ensureDirectoryExists(RAYDIUM_DEPLOY_DIR);
+}
+
 async function main() {
   try {
     console.log(`\x1b[35m🚀 Raydium CP-Swap Program Deployment\x1b[0m`);
@@ -212,9 +220,11 @@ async function main() {
     const deployerPubkey = getDeployerPublicKey();
     console.log(`\x1b[36m📝 Deployer: ${deployerPubkey}\x1b[0m`);
     
-    const programId = getOrCreateKeypair();
+    resetArtifacts();
+    const { programId, secretKey } = createNewKeypair();
     updateRaydiumCode(programId, deployerPubkey);
-    buildRaydium();
+    buildRaydium(secretKey);
+    writeKeypair(secretKey); // ensure deploy uses expected keypair
     deployRaydium(programId);
     generateIdl(programId);
     saveDeployment(programId);
