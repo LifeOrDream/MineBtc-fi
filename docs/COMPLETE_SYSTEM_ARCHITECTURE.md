@@ -180,7 +180,7 @@ referral-rewards + user         → ReferralRewards
 #### MoonEconomy
 ```
 global_config                   → GlobalConfig
-moondoge_vault                  → DogeBtcVault
+dogebtc_vault                  → DogeBtcVault
 liquidity_vault                 → LiquidityVault
 dogewifbtc-custodian           → DBTC custody account
 liquidity-custodian            → LP custody account

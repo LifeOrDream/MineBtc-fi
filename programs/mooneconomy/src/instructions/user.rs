@@ -123,8 +123,8 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
         BURN_TAX_PERCENTAGE, amount, burn_amount, actual_amount);
     
     // Global moondoge vault
-    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
-    msg!("📊 Current vault state - Total locked: {}, Weighted locked: {}", moondoge_vault.dbtc_locked, moondoge_vault.weighted_dbtc_locked);
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
+    msg!("📊 Current vault state - Total locked: {}, Weighted locked: {}", dogebtc_vault.dbtc_locked, dogebtc_vault.weighted_dbtc_locked);
 
     // User Position :: Electricity account
     let electricity_ac = &mut ctx.accounts.electricity_ac;
@@ -162,8 +162,8 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
         msg!("   Previous reward debt: {}", electricity_ac.moondoge_reward_debt);
                 
         // Calculate reward diff since last update
-        let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
-        msg!("   New accumulated sol per point: {}", moondoge_vault.accumulated_sol_per_point);
+        let reward_diff = dogebtc_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
+        msg!("   New accumulated sol per point: {}", dogebtc_vault.accumulated_sol_per_point);
         msg!("   Reward diff: {}", reward_diff);
 
         // rewards earned = total weighted moondoge * accumulated sol per point - reward debt
@@ -230,7 +230,7 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
     
     // Update global user state & Global reward debt
     electricity_ac.total_moondoge_staked = electricity_ac.total_moondoge_staked.checked_add(actual_amount).unwrap();
-    electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
+    electricity_ac.moondoge_reward_debt = dogebtc_vault.accumulated_sol_per_point;
     
     msg!("💱 Transferring {} DOGE_BTC tokens from user to vault", amount);
     msg!("   From: {}", ctx.accounts.user_dbtc_account.key());
@@ -250,8 +250,8 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
     token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.dbtc_mint.decimals)?;
     
     // Update mDoge vault state with actual_amount (post-tax)
-    moondoge_vault.dbtc_locked = moondoge_vault.dbtc_locked.checked_add(actual_amount).unwrap();        
-    moondoge_vault.weighted_dbtc_locked = moondoge_vault.weighted_dbtc_locked.checked_add(weighted_amount).unwrap();
+    dogebtc_vault.dbtc_locked = dogebtc_vault.dbtc_locked.checked_add(actual_amount).unwrap();        
+    dogebtc_vault.weighted_dbtc_locked = dogebtc_vault.weighted_dbtc_locked.checked_add(weighted_amount).unwrap();
 
     msg!("⚡ Calculating electricity earnings based on SOL value");        
     
@@ -338,7 +338,7 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
 pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
     // Get references to all accounts
     let electricity_ac = &mut ctx.accounts.electricity_ac;
-    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
     
@@ -363,7 +363,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         msg!("💰 Processing pending rewards before unstaking");
         
         // Calculate reward diff since last update
-        let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);            
+        let reward_diff = dogebtc_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);            
         msg!("   Reward diff: {}", reward_diff);
         
         // Calculate new rewards
@@ -376,7 +376,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     }
     
     // Update reward debt to current rate
-    electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
+    electricity_ac.moondoge_reward_debt = dogebtc_vault.accumulated_sol_per_point;
     
     // Calculate return amount based on early withdrawal status
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
@@ -393,7 +393,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         msg!("   Lockup remaining: {}%", remaining_seconds_pct);
         
         // Apply emergency tax for early withdrawal
-        let calc_penalty_pct = (moondoge_vault.emergency_tax as u64).checked_mul(remaining_seconds_pct as u64).unwrap().checked_div(M_HUNDRED).unwrap();
+        let calc_penalty_pct = (dogebtc_vault.emergency_tax as u64).checked_mul(remaining_seconds_pct as u64).unwrap().checked_div(M_HUNDRED).unwrap();
         msg!("   Emergency tax percentage: {}%", calc_penalty_pct);
         
         // Apply penalty to return amount
@@ -474,9 +474,9 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     
     // Update vault totals
     msg!("📊 Updating vault totals");
-    moondoge_vault.dbtc_locked = moondoge_vault.dbtc_locked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?;        
-    moondoge_vault.weighted_dbtc_locked = moondoge_vault.weighted_dbtc_locked.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
-    msg!("   New vault totals - Locked: {}, Weighted: {}", moondoge_vault.dbtc_locked, moondoge_vault.weighted_dbtc_locked);
+    dogebtc_vault.dbtc_locked = dogebtc_vault.dbtc_locked.checked_sub(original_amount).ok_or(ErrorCode::ArithmeticOverflow)?;        
+    dogebtc_vault.weighted_dbtc_locked = dogebtc_vault.weighted_dbtc_locked.checked_sub(user_position.weighted_amount).ok_or(ErrorCode::ArithmeticOverflow)?;    
+    msg!("   New vault totals - Locked: {}, Weighted: {}", dogebtc_vault.dbtc_locked, dogebtc_vault.weighted_dbtc_locked);
     
     // Update user global stats
     msg!("📊 Updating user stats");
@@ -964,7 +964,7 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     msg!("🔒 Starting claim SOL rewards");
 
     // Global moondoge vault
-    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
 
     // User Position :: Electricity account
@@ -975,9 +975,9 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
         msg!("💰 Processing pending DOGE_BTC rewards before claim");
                 
         // Calculate reward diff since last update
-        let reward_diff = moondoge_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
+        let reward_diff = dogebtc_vault.accumulated_sol_per_point.checked_sub(electricity_ac.moondoge_reward_debt).unwrap_or(0);
         msg!("   Previous reward debt: {}", electricity_ac.moondoge_reward_debt);
-        msg!("   New accumulated sol per point: {}", moondoge_vault.accumulated_sol_per_point);
+        msg!("   New accumulated sol per point: {}", dogebtc_vault.accumulated_sol_per_point);
         msg!("   Reward diff: {}", reward_diff);
 
         // rewards earned = total weighted moondoge * accumulated sol per point - reward debt
@@ -1015,7 +1015,7 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     }
 
     // Update reward debt to current rate
-    electricity_ac.moondoge_reward_debt = moondoge_vault.accumulated_sol_per_point;
+    electricity_ac.moondoge_reward_debt = dogebtc_vault.accumulated_sol_per_point;
     electricity_ac.lp_reward_debt = liquidity_vault.accumulated_sol_per_point;
     
     // Transfer pending rewards to user
@@ -1053,14 +1053,14 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
 /// This function recalculates pending rewards based on current vault state
 pub fn update_pending_rewards(ctx: Context<UpdatePendingRewards>) -> Result<()> {
     let electricity_ac = &mut ctx.accounts.electricity_ac;
-    let moondoge_vault = &ctx.accounts.moondoge_vault;
+    let dogebtc_vault = &ctx.accounts.dogebtc_vault;
     let liquidity_vault = &ctx.accounts.liquidity_vault;
     
     msg!("📊 Updating pending rewards for user: {}", ctx.accounts.authority.key());
     
     // Update pending DogeBtc rewards
     if electricity_ac.total_weighted_moondoge > 0 {
-        let pending_moondoge = (electricity_ac.total_weighted_moondoge as u128 * moondoge_vault.accumulated_sol_per_point / PRECISION_FACTOR as u128) as u64;
+        let pending_moondoge = (electricity_ac.total_weighted_moondoge as u128 * dogebtc_vault.accumulated_sol_per_point / PRECISION_FACTOR as u128) as u64;
         electricity_ac.pending_moondoge_rewards = pending_moondoge.saturating_sub(electricity_ac.moondoge_reward_debt as u64);
         msg!("💰 Updated pending DogeBtc rewards: {}", electricity_ac.pending_moondoge_rewards);
     } else {
@@ -1161,9 +1161,9 @@ pub struct StakeDogeBtc<'info> {
     #[account(
         mut,
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
-        bump = moondoge_vault.bump
+        bump = dogebtc_vault.bump
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
     
     // User accounts
     #[account(
@@ -1194,7 +1194,7 @@ pub struct StakeDogeBtc<'info> {
     // Token accounts
     #[account(
         mut,
-        constraint = user_dbtc_account.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
+        constraint = user_dbtc_account.mint == dogebtc_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
         constraint = user_dbtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
     )]
@@ -1203,9 +1203,9 @@ pub struct StakeDogeBtc<'info> {
     
     #[account(
         mut,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), dogebtc_vault.key().as_ref()],
         bump,
-        constraint = dbtc_custodian.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
+        constraint = dbtc_custodian.mint == dogebtc_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
     /// Token-2022 account that holds staked DOGE_BTC
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
@@ -1267,9 +1267,9 @@ pub struct UnstakeDogeBtc<'info> {
     #[account(
         mut,
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
-        bump = moondoge_vault.bump
+        bump = dogebtc_vault.bump
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
     
     // User accounts
     #[account(
@@ -1299,16 +1299,16 @@ pub struct UnstakeDogeBtc<'info> {
     #[account(
         mut,
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
-        constraint = user_dbtc_account.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
+        constraint = user_dbtc_account.mint == dogebtc_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
     /// User's DogeBtc token account to receive the unstaked tokens
     pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
         mut,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), dogebtc_vault.key().as_ref()],
         bump,
-        constraint = dbtc_custodian.mint == moondoge_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
+        constraint = dbtc_custodian.mint == dogebtc_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
     )]
     /// Token-2022 account that holds staked DOGE_BTC
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
@@ -1579,7 +1579,7 @@ pub struct ClaimSolRewards<'info> {
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
         bump 
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
     
     #[account(
         mut,
@@ -1631,7 +1631,7 @@ pub struct UpdatePendingRewards<'info> {
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
         bump 
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
     
     #[account(
         seeds = [LIQUIDITY_VAULT_SEED.as_ref()],

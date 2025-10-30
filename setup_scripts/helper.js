@@ -71,7 +71,7 @@ export const PVP_MATCHMAKER_SEED = "pvp-matchmaker";
 
 export const MOON_ECONOMY_GLOBAL_CONFIG_SEED = "global_config";
 
-export const MOON_ECONOMY_DOGE_BTC_VAULT_SEED = "moondoge_vault";
+export const MOON_ECONOMY_DOGE_BTC_VAULT_SEED = "dogebtc_vault";
 export const MOON_ECONOMY_LIQUIDITY_VAULT_SEED = "liquidity_vault";
 
 export const MOON_ECONOMY_DBTC_SOL_VAULT_SEED = "dogewifbtc-sol-vault";
@@ -1286,19 +1286,17 @@ export async function initializeMoonEconomyProgram(connection, program, wallet, 
 /**
  * Creates a token account for the program to use as mining vault and initializes mining parameters
  */
-export async function mEconomySetupMdogeVault(
+export async function mEconomySetupDbtcVault(
   connection, 
   program,
   wallet, 
   walletKeypair,
   mDogeMint,
-  electricity_per_weighted_moondoge,
   newTokenProgram,
 ) {
   try {
     console.log('\x1b[33m%s\x1b[0m', '📡 Initializing Moon Economy :: DOGE_BTC Vault...');
     console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Mint (SPL-2022): ${mDogeMint.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Electricity Per Weighted DOGE_BTC: ${electricity_per_weighted_moondoge.toString()}`);
 
     console.log(`DEBUG: Program ID: ${program.programId.toString()}`);
     console.log(`DEBUG: Token-2022 Program ID: ${newTokenProgram.toString()}`);
@@ -1309,39 +1307,36 @@ export async function mEconomySetupMdogeVault(
     console.log(`DEBUG: Converted mint addresses to PublicKeys`);
     console.log(`DEBUG: dbtcMintPubkey = ${dbtcMintPubkey.toString()}`);
     
-    const [moondogeVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DOGE_BTC_VAULT_SEED)],  program.programId );
-    const [mdogeSolVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DBTC_SOL_VAULT_SEED)],  program.programId );
-    const [mdogeCustodianAuthorityPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DBTC_CUSTODIAN_AUTHORITY_SEED)],  program.programId );
+    const [dogebtcVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DOGE_BTC_VAULT_SEED)],  program.programId );
+    const [dbtcSolVaultPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DBTC_SOL_VAULT_SEED)],  program.programId );
+    const [dbtcCustodianAuthorityPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DBTC_CUSTODIAN_AUTHORITY_SEED)],  program.programId );
 
     console.log(`DEBUG: PDAs generated for vaults and authorities`);
-    console.log(`DEBUG: moondogeVaultPDA = ${moondogeVaultPDA.toString()}`);
-    console.log(`DEBUG: mdogeSolVaultPDA = ${mdogeSolVaultPDA.toString()}`);
-    console.log(`DEBUG: mdogeCustodianAuthorityPDA = ${mdogeCustodianAuthorityPDA.toString()}`);
+    console.log(`DEBUG: dogebtcVaultPDA = ${dogebtcVaultPDA.toString()}`);
+    console.log(`DEBUG: dbtcSolVaultPDA = ${dbtcSolVaultPDA.toString()}`);
+    console.log(`DEBUG: dbtcCustodianAuthorityPDA = ${dbtcCustodianAuthorityPDA.toString()}`);
  
-    const [mdogeCustodianPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DBTC_CUSTODIAN_SEED), moondogeVaultPDA.toBytes()],  program.programId );
+    const [dbtcCustodianPDA] = PublicKey.findProgramAddressSync( [Buffer.from(MOON_ECONOMY_DBTC_CUSTODIAN_SEED), dogebtcVaultPDA.toBytes()],  program.programId );
     
     console.log(`DEBUG: Generated custodian PDAs`);
-    console.log(`DEBUG: mdogeCustodianPDA = ${mdogeCustodianPDA.toString()}`);
+    console.log(`DEBUG: dbtcCustodianPDA = ${dbtcCustodianPDA.toString()}`);
     
-    // Convert electricity parameters to BN objects
-    const electricityPerWeightedMoondogeBN = new BN(electricity_per_weighted_moondoge);
-
     // Create a transaction with all the accounts, ensuring rent is included
     console.log(`DEBUG: Preparing transaction accounts...`);
     const miningTx = await program.methods
-        .initializeMdogeVault(
-            dbtcMintPubkey, 
-            electricityPerWeightedMoondogeBN
+        .initializeDbtcVault(
+            dbtcMintPubkey
         )
         .accounts({
-            moondogeVault: moondogeVaultPDA,
-            mdogeSolVault: mdogeSolVaultPDA,
-            mdogeCustodianAuthority: mdogeCustodianAuthorityPDA,
-            mdogeCustodian: mdogeCustodianPDA,
+            dogebtcVault: dogebtcVaultPDA,
+            dbtcSolVault: dbtcSolVaultPDA,
+            dbtcCustodianAuthority: dbtcCustodianAuthorityPDA,
+            dbtcCustodian: dbtcCustodianPDA,
             authority: wallet.publicKey,
             dbtcMint: dbtcMintPubkey,
             systemProgram: web3.SystemProgram.programId,
-            tokenProgram: newTokenProgram
+            tokenProgram: newTokenProgram,
+            rent: web3.SYSVAR_RENT_PUBKEY
         })
         .transaction();
     
@@ -1366,10 +1361,10 @@ export async function mEconomySetupMdogeVault(
     return {
       success: true,
       data: {
-        moondogeVaultAddress: moondogeVaultPDA.toString(),
-        mdogeSolVaultAddress: mdogeSolVaultPDA.toString(),
-        mdogeCustodianAuthorityAddress: mdogeCustodianAuthorityPDA.toString(),
-        mdogeCustodianAddress: mdogeCustodianPDA.toString(),
+        dogebtcVaultAddress: dogebtcVaultPDA.toString(),
+        dbtcSolVaultAddress: dbtcSolVaultPDA.toString(),
+        dbtcCustodianAuthorityAddress: dbtcCustodianAuthorityPDA.toString(),
+        dbtcCustodianAddress: dbtcCustodianPDA.toString(),
         initMiningTxid: miningTxid,
       }
     };
@@ -1398,13 +1393,11 @@ export async function mEconomySetupLiquidityVaults(
   wallet, 
   walletKeypair,
   lpTokenMint,
-  electricity_per_weighted_lp_tokens,
   tokenProgram,
 ) {
   try {
     console.log('\x1b[33m%s\x1b[0m', '📡 Initializing Moon Economy :: Liquidity Vaults...');
     console.log('\x1b[36m%s\x1b[0m', `🔑 LP Token Mint (standard SPL): ${lpTokenMint.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Electricity Per Weighted LP Tokens: ${electricity_per_weighted_lp_tokens.toString()}`);
     console.log(`DEBUG: Program ID: ${program.programId.toString()}`);
     console.log(`DEBUG: Token Program ID: ${tokenProgram.toString()}`);
 
@@ -1426,15 +1419,11 @@ export async function mEconomySetupLiquidityVaults(
     console.log(`DEBUG: Generated custodian PDAs`);
     console.log(`DEBUG: liquidityCustodianPDA = ${liquidityCustodianPDA.toString()}`);
     
-    // Convert electricity parameters to BN objects
-    const electricityPerWeightedLpTokensBN = new BN(electricity_per_weighted_lp_tokens); 
-
     // Create a transaction with all the accounts, ensuring rent is included
     console.log(`DEBUG: Preparing transaction accounts...`);
     const miningTx = await program.methods
         .initializeLiquidityVault(
-            lpTokenMintPubkey,
-            electricityPerWeightedLpTokensBN
+            lpTokenMintPubkey
         )
         .accounts({
             liquidityVault: liquidityVaultPDA,
@@ -1502,9 +1491,9 @@ export async function mEconomy_claimMoonbaseSol(
   wallet,
   walletKeypair,
   globalConfigPDA,
-  moondogeVaultPDA,
+  dogebtcVaultPDA,
   liquidityVaultPDA,
-  mdogeSolVaultPDA,
+  dbtcSolVaultPDA,
   liquiditySolVaultPDA,
   devEarningsPDA,
   moonbaseGlobalConfigPDA,
@@ -1524,9 +1513,9 @@ export async function mEconomy_claimMoonbaseSol(
  
     
     console.log(`DEBUG: globalConfig: ${globalConfigPDA}`);
-    console.log(`DEBUG: moondogeVault: ${moondogeVaultPDA}`);
+    console.log(`DEBUG: dogebtcVault: ${dogebtcVaultPDA}`);
     console.log(`DEBUG: liquidityVault: ${liquidityVaultPDA}`);
-    console.log(`DEBUG: mdogeSolVault: ${mdogeSolVaultPDA}`);
+    console.log(`DEBUG: dbtcSolVault: ${dbtcSolVaultPDA}`);
     console.log(`DEBUG: liquiditySolVault: ${liquiditySolVaultPDA}`);
     console.log(`DEBUG: devEarningsPDA: ${devEarningsPDA}`);
     console.log(`DEBUG: moonbaseGlobalConfig: ${moonbaseGlobalConfigPDA}`);
@@ -1540,9 +1529,9 @@ export async function mEconomy_claimMoonbaseSol(
     const claimMoonbaseSolTx = await program.methods.claimMoonbaseSol()
         .accounts({
             globalConfig: new PublicKey(globalConfigPDA),
-            moondogeVault: new PublicKey(moondogeVaultPDA),
+            dogebtcVault: new PublicKey(dogebtcVaultPDA),
             liquidityVault: new PublicKey(liquidityVaultPDA),
-            mdogeSolVault: new PublicKey(mdogeSolVaultPDA),
+            dbtcSolVault: new PublicKey(dbtcSolVaultPDA),
             liquiditySolVault: new PublicKey(liquiditySolVaultPDA),
             devEarningsCollector: new PublicKey(devEarningsPDA),
             moonbaseGlobalConfig: new PublicKey(moonbaseGlobalConfigPDA),
@@ -1804,8 +1793,8 @@ export async function stakeMDOGE(
   index,
   mDogeMint,
   globalConfigPDA,
-  moondogeVaultPDA,
-  mdogeCustodianPDA,
+  dogebtcVaultPDA,
+  dbtcCustodianPDA,
   moonbaseGlobalConfigPDA,
   UserMoonbaseInstancePDA,
   facilityMiningStatePDA,
@@ -1861,11 +1850,11 @@ export async function stakeMDOGE(
     console.log(`indexNumber: ${indexNumber}`);
 
     console.log(`globalConfigPDA: ${globalConfigPDA}`);
-    console.log(`moondogeVaultPDA: ${moondogeVaultPDA}`);
+    console.log(`dogebtcVaultPDA: ${dogebtcVaultPDA}`);
     console.log(`userElectricityPDA: ${userElectricityPDA}`);
     console.log(`userPositionPDA: ${userPositionPDA}`);
     console.log(`userMdogeAccountPDA: ${userMdogeAccountPDA}`);
-    console.log(`mdogeCustodianPDA: ${mdogeCustodianPDA}`);
+    console.log(`dbtcCustodianPDA: ${dbtcCustodianPDA}`);
     console.log(`moonbaseGlobalConfigPDA: ${moonbaseGlobalConfigPDA}`);
     console.log(`UserMoonbaseInstancePDA: ${UserMoonbaseInstancePDA}`);
     console.log(`facilityMiningStatePDA: ${facilityMiningStatePDA}`);
@@ -1883,12 +1872,12 @@ export async function stakeMDOGE(
       indexNumber                 // Use Number for u8
     ).accounts({
       globalConfig: new PublicKey(globalConfigPDA),
-      moondogeVault: new PublicKey(moondogeVaultPDA),
+      dogebtcVault: new PublicKey(dogebtcVaultPDA),
       electricityAc: new PublicKey(userElectricityPDA),
       userPosition: new PublicKey(userPositionPDA),
       dbtcMint: new PublicKey(mDogeMint),
       userMdogeAccount: new PublicKey(userMdogeAccountPDA),
-      mdogeCustodian: new PublicKey(mdogeCustodianPDA),
+      dbtcCustodian: new PublicKey(dbtcCustodianPDA),
       moonbaseGlobalConfig: new PublicKey(moonbaseGlobalConfigPDA),
       facilityUserMoonbase: new PublicKey(UserMoonbaseInstancePDA),
       facilityMiningState: new PublicKey(facilityMiningStatePDA),
@@ -1929,9 +1918,9 @@ export async function unStakeMDOGE(
   index,
   mDogeMint,
   globalConfigPDA,
-  moondogeVaultPDA,
-  mdogeCustodianPDA,
-  mdogeCustodianAuthorityPDA,
+  dogebtcVaultPDA,
+  dbtcCustodianPDA,
+  dbtcCustodianAuthorityPDA,
   moonbaseGlobalConfigPDA,
   UserMoonbaseInstancePDA,
   facilityMiningStatePDA,
@@ -1976,13 +1965,13 @@ export async function unStakeMDOGE(
     // Use the proper BN values in the transaction
     const updateTx = await program.methods.unstakeMoondoge(indexNumber).accounts({
       globalConfig: new PublicKey(globalConfigPDA),
-      moondogeVault: new PublicKey(moondogeVaultPDA),
+      dogebtcVault: new PublicKey(dogebtcVaultPDA),
       electricityAc: new PublicKey(userElectricityPDA),
       userPosition: new PublicKey(userPositionPDA),
       dbtcMint: new PublicKey(mDogeMint),
       userMdogeAccount: new PublicKey(userMdogeAccountPDA),
-      mdogeCustodian: new PublicKey(mdogeCustodianPDA),
-      mdogeCustodianAuthority: new PublicKey(mdogeCustodianAuthorityPDA),
+      dbtcCustodian: new PublicKey(dbtcCustodianPDA),
+      dbtcCustodianAuthority: new PublicKey(dbtcCustodianAuthorityPDA),
       moonbaseGlobalConfig: new PublicKey(moonbaseGlobalConfigPDA),
       facilityUserMoonbase: new PublicKey(UserMoonbaseInstancePDA),
       facilityMiningState: new PublicKey(facilityMiningStatePDA),
@@ -2441,9 +2430,9 @@ export async function debugPDAs(program, networkConfig) {
       networkConfig.moonEconomy_program_initialized?.globalConfig_data_ac || '', 
       'Global Config'
     ),
-    moondogeVault: comparePDAs(
+    dogebtcVault: comparePDAs(
       derivedMoondogeVaultPDA, 
-      networkConfig.moonEconomy_mDogeVault_initialized?.moondogeVault || '', 
+      networkConfig.moonEconomy_mDogeVault_initialized?.dogebtcVault || '', 
       'DogeBtc Vault'
     ),
     liquidityVault: comparePDAs(
@@ -2451,9 +2440,9 @@ export async function debugPDAs(program, networkConfig) {
       networkConfig.moonEconomy_liquidityVault_initialized?.liquidityVault || '', 
       'Liquidity Vault'
     ),
-    mdogeSolVault: comparePDAs(
+    dbtcSolVault: comparePDAs(
       derivedMdogeSolVaultPDA, 
-      networkConfig.moonEconomy_mDogeVault_initialized?.mdogeSolVault || '', 
+      networkConfig.moonEconomy_mDogeVault_initialized?.dbtcSolVault || '', 
       'DogeBtc SOL Vault'
     ),
     liquiditySolVault: comparePDAs(

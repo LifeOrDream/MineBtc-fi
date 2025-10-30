@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 pub const ME_CONFIG_SEED: &[u8] = b"global_config";
 
-pub const DOGE_BTC_VAULT_SEED: &[u8] = b"moondoge_vault";
+pub const DOGE_BTC_VAULT_SEED: &[u8] = b"dogebtc_vault";
 pub const LIQUIDITY_VAULT_SEED: &[u8] = b"liquidity_vault";
 
 pub const DBTC_SOL_VAULT_SEED: &[u8] = b"dogewifbtc-sol-vault";

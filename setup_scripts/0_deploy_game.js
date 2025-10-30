@@ -133,15 +133,15 @@ function ensureDirectoryExists(dirPath) {
 function generateOrReadKeypair(outputPath) {
   ensureDirectoryExists(path.dirname(outputPath));
   
-  // Check if keypair already exists
-  if (fs.existsSync(outputPath)) {
-    console.log(`\x1b[33m🔑 Reading existing keypair: ${outputPath}\x1b[0m`);
-    const keypairData = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-    const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
-    const publicKey = keypair.publicKey.toString();
-    console.log(`\x1b[32m✅ Using existing keypair: ${publicKey}\x1b[0m`);
-    return publicKey;
-  }
+  // // Check if keypair already exists
+  // if (fs.existsSync(outputPath)) {
+  //   console.log(`\x1b[33m🔑 Reading existing keypair: ${outputPath}\x1b[0m`);
+  //   const keypairData = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+  //   const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
+  //   const publicKey = keypair.publicKey.toString();
+  //   console.log(`\x1b[32m✅ Using existing keypair: ${publicKey}\x1b[0m`);
+  //   return publicKey;
+  // }
   
   console.log(`\x1b[33m🔑 Generating new keypair: ${outputPath}\x1b[0m`);
   runCommand(`solana-keygen new -o ${outputPath} --force --no-bip39-passphrase`);

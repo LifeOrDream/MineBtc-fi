@@ -935,10 +935,10 @@
     "timestamp": "2025-06-25T07:14:32.047Z"
   },
   "moonEconomy_mDogeVault_initialized": {
-    "moondogeVault": "ESZkSySHDwxUcG5Y2wj4mmBurJbhLe9yVcFbyJbwYufi",
-    "mdogeSolVault": "7sD32KuhjL1sxw7UhBQSJ9LiG9STpVHF6XTZWgttjspz",
-    "mdogeCustodian": "3aLziGXwyUvZVnvdJKYF5rmpU3jaAd7SVPXnRshnbQ2j",
-    "mdogeCustodianAuthority": "135M6zqqiugFzEwRthRzKwSpZG43PgatFopby6rxjnUy",
+    "dogebtcVault": "ESZkSySHDwxUcG5Y2wj4mmBurJbhLe9yVcFbyJbwYufi",
+    "dbtcSolVault": "7sD32KuhjL1sxw7UhBQSJ9LiG9STpVHF6XTZWgttjspz",
+    "dbtcCustodian": "3aLziGXwyUvZVnvdJKYF5rmpU3jaAd7SVPXnRshnbQ2j",
+    "dbtcCustodianAuthority": "135M6zqqiugFzEwRthRzKwSpZG43PgatFopby6rxjnUy",
     "timestamp": "2025-06-25T07:14:33.927Z"
   },
   "moonEconomy_liquidityVault_initialized": {

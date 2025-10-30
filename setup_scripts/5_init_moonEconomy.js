@@ -8,7 +8,7 @@ import fs from 'fs';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import path from 'path';
 import { 
-    getSolanaBalance, initializeMoonEconomyProgram, mEconomySetupMdogeVault, mEconomySetupLiquidityVaults, 
+    getSolanaBalance, initializeMoonEconomyProgram, mEconomySetupDbtcVault, mEconomySetupLiquidityVaults, 
     mEconomy_claimMoonbaseSol, mEconomy_withdrawDevEarnings, updateGlobalConfig, updateMoonEconomyGlobalConfig,
     LOOT_REWARDS_SEED, LOOT_SOL_VAULT_SEED
  } from './helper.js';
@@ -53,7 +53,6 @@ const MAX_LOCKUP_DAYS = config.moonEconomy?.max_lockup_days || 365;
 const BASE_MULTIPLIER = config.moonEconomy?.base_multiplier || 100;
 const MAX_MULTIPLIER = config.moonEconomy?.max_multiplier || 700;
 const ELECTRICITY_PER_WEIGHTED_MDOGE = config.moonEconomy?.electricity_per_weighted_mdoge || 100;
-const ELECTRICITY_PER_WEIGHTED_LP_TOKENS = config.moonEconomy?.electricity_per_weighted_lp_tokens || 400;
 
 // -------------------------------------------------------------------
 // ==================== [ READ ::: IDL | WALLET | DEPLOYMENT ] ====================
@@ -154,7 +153,7 @@ async function main() {
         // return;
         
         // 2. Initialize MDOGE Vault
-        await initializeMdogeVault(moonEconomyProgram);
+        await initializeDbtcVault(moonEconomyProgram);
         // return;
         
         // 3. Initialize Liquidity Vault
@@ -162,7 +161,7 @@ async function main() {
         // return;
         
         // 🔧 Configuration Updates
-        await updateMoonBaseConfig(moonBaseProgram, deploymentFile.moonEconomy_program_initialized.moonEconomy_feeCollector_data_ac);
+        await updateMoonBaseConfig(moonBaseProgram, deploymentFile.moonbase_program_initialized.moonbase_fee_collector);
         return;
 
         // 4. Claim MoonBase SOL
@@ -247,7 +246,7 @@ async function initializeMoonEconomyProgramLocal(moonEconomyProgram) {
     }
 }
 
-async function initializeMdogeVault(moonEconomyProgram) {
+async function initializeDbtcVault(moonEconomyProgram) {
     if (deploymentFile.moonEconomy_mDogeVault_initialized) {
         console.log('\x1b[34m%s\x1b[0m', 'ℹ️ MDOGE vault already initialized. Skipping...');
             return;
@@ -263,21 +262,20 @@ async function initializeMdogeVault(moonEconomyProgram) {
     
     const dbtc_TOKEN_MINT = new PublicKey(dbtcMintKey);
             console.log('\x1b[36m%s\x1b[0m', `🔑 MDOGE Token (SPL-2022): ${dbtc_TOKEN_MINT.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `⚡ Electricity per weighted MDOGE: ${ELECTRICITY_PER_WEIGHTED_MDOGE}`);
-            
-            const result = await mEconomySetupMdogeVault(
+    
+            const result = await mEconomySetupDbtcVault(
         connection, moonEconomyProgram, wallet, walletKeypair,
-        dbtc_TOKEN_MINT, ELECTRICITY_PER_WEIGHTED_MDOGE, anchor_spl.TOKEN_2022_PROGRAM_ID
+        dbtc_TOKEN_MINT, anchor_spl.TOKEN_2022_PROGRAM_ID
             );
 
             if (result.success) {
         console.log('\x1b[32m%s\x1b[0m', '✅ MDOGE vault initialized successfully!');
                 
                 deploymentFile.moonEconomy_mDogeVault_initialized = {
-                    moondogeVault: result.data.moondogeVaultAddress,
-                    mdogeSolVault: result.data.mdogeSolVaultAddress,
-                    mdogeCustodian: result.data.mdogeCustodianAddress,
-            mdogeCustodianAuthority: result.data.mdogeCustodianAuthorityAddress,
+                    dogebtcVault: result.data.dogebtcVaultAddress,
+                    dbtcSolVault: result.data.dbtcSolVaultAddress,
+                    dbtcCustodian: result.data.dbtcCustodianAddress,
+            dbtcCustodianAuthority: result.data.dbtcCustodianAuthorityAddress,
             timestamp: new Date().toISOString()
                 };
         saveDeploymentData();
@@ -302,11 +300,10 @@ async function initializeLiquidityVault(moonEconomyProgram) {
     
     const LP_TOKEN_MINT = new PublicKey(lpMintKey);
             console.log('\x1b[36m%s\x1b[0m', `🔑 LP Token (standard SPL): ${LP_TOKEN_MINT.toString()}`);
-    console.log('\x1b[36m%s\x1b[0m', `⚡ Electricity per weighted LP tokens: ${ELECTRICITY_PER_WEIGHTED_LP_TOKENS}`);
             
             const result = await mEconomySetupLiquidityVaults(
         connection, moonEconomyProgram, wallet, walletKeypair,
-        LP_TOKEN_MINT, ELECTRICITY_PER_WEIGHTED_LP_TOKENS, anchor_spl.TOKEN_PROGRAM_ID
+        LP_TOKEN_MINT, anchor_spl.TOKEN_PROGRAM_ID
             );
 
             if (result.success) {
@@ -346,7 +343,7 @@ async function claimMoonbaseSol(moonEconomyProgram) {
         // Verify all required addresses exist
         const requiredAddresses = {
             'Moon Economy Global Config': deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac,
-            'DogeBtc Vault': deploymentFile.moonEconomy_mDogeVault_initialized?.moondogeVault,
+            'DogeBtc Vault': deploymentFile.moonEconomy_mDogeVault_initialized?.dogebtcVault,
             'Liquidity Vault': deploymentFile.moonEconomy_liquidityVault_initialized?.liquidityVault,
             'MoonBase Global Config': deploymentFile.moonbase_program_initialized?.globalConfig_address,
             'MoonBase Treasury': deploymentFile.moonbase_program_initialized?.solTreasury_address,
@@ -364,9 +361,9 @@ async function claimMoonbaseSol(moonEconomyProgram) {
                 const result = await mEconomy_claimMoonbaseSol(
             connection, moonEconomyProgram, wallet, walletKeypair,
                     deploymentFile.moonEconomy_program_initialized.moonEconomy_globalConfig_data_ac,
-                    deploymentFile.moonEconomy_mDogeVault_initialized.moondogeVault,
+                    deploymentFile.moonEconomy_mDogeVault_initialized.dogebtcVault,
                     deploymentFile.moonEconomy_liquidityVault_initialized.liquidityVault,
-                    deploymentFile.moonEconomy_mDogeVault_initialized.mdogeSolVault,
+                    deploymentFile.moonEconomy_mDogeVault_initialized.dbtcSolVault,
                     deploymentFile.moonEconomy_liquidityVault_initialized.liquiditySolVault,
                     deploymentFile.moonEconomy_program_initialized.moonEconomy_devEarnings_data_ac,
             deploymentFile.moonbase_program_initialized.globalConfig_address,
@@ -415,7 +412,7 @@ function printCompletionSummary() {
         console.log('\x1b[90m%s\x1b[0m', `   Dev Earnings: ${deploymentFile.moonEconomy_program_initialized.moonEconomy_devEarnings_data_ac}`);
         console.log('\x1b[90m%s\x1b[0m', `   Fee Collector: ${deploymentFile.moonEconomy_program_initialized.moonEconomy_feeCollector_data_ac}`);
         if (deploymentFile.moonEconomy_mDogeVault_initialized) {
-            console.log('\x1b[90m%s\x1b[0m', `   MDOGE Vault: ${deploymentFile.moonEconomy_mDogeVault_initialized.moondogeVault}`);
+            console.log('\x1b[90m%s\x1b[0m', `   MDOGE Vault: ${deploymentFile.moonEconomy_mDogeVault_initialized.dogebtcVault}`);
         }
         if (deploymentFile.moonEconomy_liquidityVault_initialized) {
             console.log('\x1b[90m%s\x1b[0m', `   Liquidity Vault: ${deploymentFile.moonEconomy_liquidityVault_initialized.liquidityVault}`);
@@ -558,25 +555,53 @@ async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
     }
 
     try {
-        console.log('\x1b[36m%s\x1b[0m', `📝 Setting new fee collector: ${newFeeCollectorAddress}`);
-        
+        const feeCollectorPubkey = new PublicKey(newFeeCollectorAddress);
+        const globalConfigAddress = deploymentFile.moonbase_program_initialized?.globalConfig_address;
+        const moduleConfigStoreAddress = deploymentFile.config_stores_initialized?.module_config_store;
+        const dogeBtcMiningAddress = deploymentFile.moonbase_program_initialized?.dogeBtcMining_address;
+
+        const requiredAddresses = {
+            'MoonBase Global Config': globalConfigAddress,
+            'Module Config Store': moduleConfigStoreAddress,
+            'Doge BTC Mining State': dogeBtcMiningAddress
+        };
+
+        for (const [label, value] of Object.entries(requiredAddresses)) {
+            if (!value) {
+                throw new Error(`${label} address not found in deployment file`);
+            }
+        }
+
+        console.log('\x1b[36m%s\x1b[0m', `📝 Setting new fee collector: ${feeCollectorPubkey.toString()}`);
+
         const result = await updateGlobalConfig(
-            connection, moonBaseProgram, wallet, walletKeypair,
-            deploymentFile.moonbase_program_initialized?.globalConfig_address,
-            deploymentFile.config_stores_initialized?.module_config_store,
-            deploymentFile.moonbase_program_initialized?.dogeBtcMining_address,
-            walletKeypair.publicKey.toString(), // authority
-            newFeeCollectorAddress, // fee collector
-            null, null, null // other params unchanged
+            connection,
+            moonBaseProgram,
+            wallet,
+            walletKeypair,
+            globalConfigAddress,
+            moduleConfigStoreAddress,
+            dogeBtcMiningAddress,
+            walletKeypair.publicKey.toString(),
+            feeCollectorPubkey.toString(),
+            null,
+            null,
+            null
         );
 
         if (result.success) {
             console.log('\x1b[32m%s\x1b[0m', '✅ MoonBase config updated successfully!');
-            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.txid}`);
+            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.txid ?? result.data.updateTxid}`);
+
+            deploymentFile.moonbase_program_initialized = {
+                ...deploymentFile.moonbase_program_initialized,
+                moonbase_fee_collector: feeCollectorPubkey.toString()
+            };
+            saveDeploymentData();
         } else {
             console.error('\x1b[31m%s\x1b[0m', '❌ Failed to update MoonBase config:', result.error);
-                }
-            } catch (error) {
+        }
+    } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Error updating MoonBase config:', error);
     }
 }

@@ -151,10 +151,10 @@ function generateWebsiteConfig(config, deployment) {
         "moonEconomy_feeCollector_pda": deployment.moonEconomy_program_initialized?.moonEconomy_feeCollector_data_ac,
         
         // ========== MOON ECONOMY DOGE_BTC VAULTS ==========
-        "moonEconomy_dbtc_vault": deployment.moonEconomy_mDogeVault_initialized?.moondogeVault,
-        "moonEconomy_dbtc_sol_vault": deployment.moonEconomy_mDogeVault_initialized?.mdogeSolVault,
-        "moonEconomy_dbtc_custodian": deployment.moonEconomy_mDogeVault_initialized?.mdogeCustodian,
-        "moonEconomy_dbtc_custodian_authority": deployment.moonEconomy_mDogeVault_initialized?.mdogeCustodianAuthority,
+        "moonEconomy_dbtc_vault": deployment.moonEconomy_mDogeVault_initialized?.dogebtcVault,
+        "moonEconomy_dbtc_sol_vault": deployment.moonEconomy_mDogeVault_initialized?.dbtcSolVault,
+        "moonEconomy_dbtc_custodian": deployment.moonEconomy_mDogeVault_initialized?.dbtcCustodian,
+        "moonEconomy_dbtc_custodian_authority": deployment.moonEconomy_mDogeVault_initialized?.dbtcCustodianAuthority,
         
         // ========== MOON ECONOMY LIQUIDITY VAULTS ==========
         "moonEconomy_liquidity_vault": deployment.moonEconomy_liquidityVault_initialized?.liquidityVault,

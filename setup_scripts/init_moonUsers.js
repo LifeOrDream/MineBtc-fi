@@ -113,9 +113,9 @@ async function main() {
     let lpMint = deploymentFile.testLP_mint_account_created.mintAddress;
     
     let globalConfigPDA = deploymentFile.moonEconomy_program_initialized.globalConfig_data_ac;
-    let moondogeVaultPDA = deploymentFile.moonEconomy_mDogeVault_initialized.moondogeVault;
-    let mdogeCustodianPDA = deploymentFile.moonEconomy_mDogeVault_initialized.mdogeCustodian;
-    let mdogeCustodianAuthorityPDA = deploymentFile.moonEconomy_mDogeVault_initialized.mdogeCustodianAuthority;
+    let dogebtcVaultPDA = deploymentFile.moonEconomy_mDogeVault_initialized.dogebtcVault;
+    let dbtcCustodianPDA = deploymentFile.moonEconomy_mDogeVault_initialized.dbtcCustodian;
+    let dbtcCustodianAuthorityPDA = deploymentFile.moonEconomy_mDogeVault_initialized.dbtcCustodianAuthority;
     let moonbaseGlobalConfigPDA = deploymentFile.moonbase_program_initialized.globalConfig_data_ac;
 
     let liquidityVaultPDA = deploymentFile.moonEconomy_liquidityVault_initialized.liquidityVault;
@@ -179,7 +179,7 @@ async function main() {
     let index = 0;
     
     const stake_dbtc_result = await stakeMDOGE(  connection,  moonEconomyProgram,  wallet,  walletKeypair,  deposit_amount,  lockup_duration,  index,
-        mDogeMint,  globalConfigPDA,  moondogeVaultPDA,  mdogeCustodianPDA,  moonbaseGlobalConfigPDA,  USER_MOONBASE_PDA,
+        mDogeMint,  globalConfigPDA,  dogebtcVaultPDA,  dbtcCustodianPDA,  moonbaseGlobalConfigPDA,  USER_MOONBASE_PDA,
         facilityMiningStatePDA,  feeCollectorPDA,  moonFacilityProgramPDA,  token22ProgramPDA)
     return;
 
@@ -221,13 +221,13 @@ async function main() {
 
     // // // ------------ 4. Unstake DOGE_BTC tokens ------------
         
-    // // const _tokenAccount = await anchor_spl.getAccount( connection,   new PublicKey(mdogeCustodianPDA),   undefined,  token22ProgramPDA);
+    // // const _tokenAccount = await anchor_spl.getAccount( connection,   new PublicKey(dbtcCustodianPDA),   undefined,  token22ProgramPDA);
     // // console.log(`available DOGE_BTC: ${_tokenAccount.amount}`);
     // // return
 
     // let unstake_dbtc_index = 0;
     // let unStakedbtc_result = await unStakeMDOGE(  connection,  moonEconomyProgram,  wallet,  walletKeypair,
-    //     unstake_dbtc_index,  mDogeMint,  globalConfigPDA,  moondogeVaultPDA,  mdogeCustodianPDA,  mdogeCustodianAuthorityPDA,
+    //     unstake_dbtc_index,  mDogeMint,  globalConfigPDA,  dogebtcVaultPDA,  dbtcCustodianPDA,  dbtcCustodianAuthorityPDA,
     //                                                 moonbaseGlobalConfigPDA,  USER_MOONBASE_PDA,  facilityMiningStatePDA,
     //                                                 feeCollectorPDA,  moonFacilityProgramPDA,  token22ProgramPDA ) 
 

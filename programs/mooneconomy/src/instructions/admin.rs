@@ -71,23 +71,23 @@ pub fn initialize_global_config(
 /// Initialize the global program configuration
 /// This function can only be called once as it creates the program's configuration accounts
 pub fn initialize_dbtc_vault(
-    ctx: Context<InitializeMdogeVault>,
+    ctx: Context<InitializeDbtcVault>,
     dbtc_mint: Pubkey,
 ) -> Result<()> {
-    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
 
     // Initialize DogeBtc Vault
-    moondoge_vault.authority = ctx.accounts.authority.key();
-    moondoge_vault.dbtc_mint = dbtc_mint;
-    moondoge_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();    
-    moondoge_vault.dbtc_custodian = ctx.accounts.dbtc_custodian.key();
+    dogebtc_vault.authority = ctx.accounts.authority.key();
+    dogebtc_vault.dbtc_mint = dbtc_mint;
+    dogebtc_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();    
+    dogebtc_vault.dbtc_custodian = ctx.accounts.dbtc_custodian.key();
 
-    moondoge_vault.dbtc_locked = 0;
-    moondoge_vault.weighted_dbtc_locked = 0;
-    moondoge_vault.accumulated_sol_per_point = 0;
-    moondoge_vault.total_sol_distributed = 0;
-    moondoge_vault.emergency_tax = EMERGENCY_WITHDRAWAL_PENALTY_PCT; // Default 10% tax for emergency withdrawals
-    moondoge_vault.bump = ctx.bumps.moondoge_vault;
+    dogebtc_vault.dbtc_locked = 0;
+    dogebtc_vault.weighted_dbtc_locked = 0;
+    dogebtc_vault.accumulated_sol_per_point = 0;
+    dogebtc_vault.total_sol_distributed = 0;
+    dogebtc_vault.emergency_tax = EMERGENCY_WITHDRAWAL_PENALTY_PCT; // Default 10% tax for emergency withdrawals
+    dogebtc_vault.bump = ctx.bumps.dogebtc_vault;
 
     emit!(MDogeVaultsInitialized {
         dbtc_sol_vault: ctx.accounts.dbtc_sol_vault.key(),
@@ -142,13 +142,13 @@ pub fn internal_update_configuration(
     new_emergency_tax: Option<u8>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
-    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
     
     // Update authority if provided
     if let Some(new_authority) = new_authority {
         global_config.authority = new_authority;
-        moondoge_vault.authority = new_authority;
+        dogebtc_vault.authority = new_authority;
         liquidity_vault.authority = new_authority;
         msg!("Updated authority to {}", new_authority);
     }
@@ -178,7 +178,7 @@ pub fn internal_update_configuration(
     // if emergency_tax is provided, update it (ensuring it's not more than 100%)
     if let Some(emergency_tax) = new_emergency_tax {
         require!(emergency_tax <= (M_HUNDRED as u8), ErrorCode::InvalidAmount);
-        moondoge_vault.emergency_tax = emergency_tax;
+        dogebtc_vault.emergency_tax = emergency_tax;
         liquidity_vault.emergency_tax = emergency_tax;
         msg!("Updated emergency withdrawal tax to {}%", emergency_tax);
     }
@@ -245,13 +245,13 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     msg!("📊 Allocations - DogeBtc: {}, Liquidity: {}", moondoge_amount, liquidity_amount);
 
     // Now distribute to respective vaults
-    let moondoge_vault = &mut ctx.accounts.moondoge_vault;
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
 
-    if moondoge_vault.weighted_dbtc_locked > 0 {
+    if dogebtc_vault.weighted_dbtc_locked > 0 {
         let sol_per_point = (moondoge_amount as u128 * PRECISION_FACTOR as u128)
-            / moondoge_vault.weighted_dbtc_locked as u128;
-        moondoge_vault.accumulated_sol_per_point += sol_per_point;
+            / dogebtc_vault.weighted_dbtc_locked as u128;
+        dogebtc_vault.accumulated_sol_per_point += sol_per_point;
         **fee_collector.try_borrow_mut_lamports()? -= moondoge_amount;
         **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? += moondoge_amount;
         msg!("💰 Sent {} to DogeBtc vault", moondoge_amount);
@@ -390,7 +390,7 @@ pub struct InitializeGlobalConfig<'info> {
 
 /// Initialize the DogeBtc vault
 #[derive(Accounts)]
-pub struct InitializeMdogeVault<'info> {
+pub struct InitializeDbtcVault<'info> {
 
     // ------ Data Storage Accounts ------
 
@@ -401,7 +401,7 @@ pub struct InitializeMdogeVault<'info> {
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
         bump
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
 
     // ------ SOL Storage Accounts ------
 
@@ -433,7 +433,7 @@ pub struct InitializeMdogeVault<'info> {
         init,
         payer = authority,
         owner = token_program.key(),
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), moondoge_vault.key().as_ref()],
+        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), dogebtc_vault.key().as_ref()],
         token::mint = dbtc_mint,
         token::authority = dbtc_custodian_authority,
         bump
@@ -539,7 +539,7 @@ pub struct UpdateConfig<'info> {
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
         bump,
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
 
     #[account(
         mut,
@@ -600,7 +600,7 @@ pub struct ClaimMoonBaseSOL<'info> {
         seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
         bump 
     )]
-    pub moondoge_vault: Account<'info, DogeBtcVault>,
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
 
     #[account(
         mut,

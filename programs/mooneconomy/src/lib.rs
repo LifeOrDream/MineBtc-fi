@@ -8,7 +8,7 @@ pub mod instructions;
 use instructions::admin::*;
 use instructions::user::*;
 
-declare_id!("7JvaP3ztjYBSaZyPSripAaqxrCgjDGFG71c6MGYuZNkS");
+declare_id!("6WzooE4dLYMK5B75GtN79neesqq2H9nAF3BPsFmDygxW");
 
 #[program]
 pub mod mooneconomy {
@@ -66,10 +66,10 @@ pub mod mooneconomy {
     // ----------------------------------------------------------------------------------------
 
     pub fn initialize_dbtc_vault(
-        ctx: Context<InitializeMdogeVault>,
-        moondoge_mint: Pubkey,
+        ctx: Context<InitializeDbtcVault>,
+        dogebtc_mint: Pubkey,
     ) -> Result<()> {
-        admin::initialize_dbtc_vault(ctx, moondoge_mint)
+        admin::initialize_dbtc_vault(ctx, dogebtc_mint)
     }
 
     pub fn initialize_liquidity_vault(
