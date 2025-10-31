@@ -150,75 +150,75 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.modules_repaired_since_last_game = false;
     user_moonbase.incubated_dragon_egg = None;
 
-    // Mint Dragon Egg NFT if tier includes it
-    if to_mint_dragon {
-        // Unwrap optional accounts (required for NFT minting)
-        let dragon_egg_asset = ctx.accounts.dragon_egg_asset.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
-            .ok_or(ErrorCode::InvalidAccount)?;
+    // // Mint Dragon Egg NFT if tier includes it
+    // if to_mint_dragon {
+    //     // Unwrap optional accounts (required for NFT minting)
+    //     let dragon_egg_asset = ctx.accounts.dragon_egg_asset.as_ref()
+    //         .ok_or(ErrorCode::InvalidAccount)?;
+    //     let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
+    //         .ok_or(ErrorCode::InvalidAccount)?;
+    //     let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
+    //         .ok_or(ErrorCode::InvalidAccount)?;
+    //     let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
+    //         .ok_or(ErrorCode::InvalidAccount)?;
 
-        let name = format!("Dragon Egg #{}", moonbase_count);
+    //     let name = format!("Dragon Egg #{}", moonbase_count);
 
-        // Generate DNA for the egg
-        let dna = generate_dragon_egg_dna(
-            Clock::get()?.slot,
-            &user.key(),
-            moonbase_count,
-        );
+    //     // Generate DNA for the egg
+    //     let dna = generate_dragon_egg_dna(
+    //         Clock::get()?.slot,
+    //         &user.key(),
+    //         moonbase_count,
+    //     );
 
-        // Get URI from global config or use fallback
-        let uri = global_config.get_random_dragon_egg_uri(
-            Clock::get()?.slot,
-            moonbase_count,
-            &dna,
-        ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", moonbase_count));
+    //     // Get URI from global config or use fallback
+    //     let uri = global_config.get_random_dragon_egg_uri(
+    //         Clock::get()?.slot,
+    //         moonbase_count,
+    //         &dna,
+    //     ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", moonbase_count));
 
-        // Get global config as AccountInfo before using mutable reference
-        let global_config_info = global_config.to_account_info();
+    //     // Get global config as AccountInfo before using mutable reference
+    //     let global_config_info = global_config.to_account_info();
 
-        // Create Dragon Egg NFT with MPL Core
-        crate::mpl_core_helpers::create_mpl_core_asset(
-            dragon_egg_asset,
-            Some(dragon_egg_collection),
-            &global_config_info,
-            &user.to_account_info(),
-            &user.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            mpl_core_program,
-            name.clone(),
-            uri.clone(),
-        )?;
+    //     // Create Dragon Egg NFT with MPL Core
+    //     crate::mpl_core_helpers::create_mpl_core_asset(
+    //         dragon_egg_asset,
+    //         Some(dragon_egg_collection),
+    //         &global_config_info,
+    //         &user.to_account_info(),
+    //         &user.to_account_info(),
+    //         &ctx.accounts.system_program.to_account_info(),
+    //         mpl_core_program,
+    //         name.clone(),
+    //         uri.clone(),
+    //     )?;
 
-        // Initialize Dragon Egg metadata
-        egg_metadata.mint = dragon_egg_asset.key();
-        egg_metadata.power = BASE_EGG_POWER;
-        egg_metadata.dna = dna;
-        egg_metadata.incubated_moonbase = None;
-        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-        egg_metadata.created_at = Clock::get()?.unix_timestamp;
-        egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
+    //     // Initialize Dragon Egg metadata
+    //     egg_metadata.mint = dragon_egg_asset.key();
+    //     egg_metadata.power = BASE_EGG_POWER;
+    //     egg_metadata.dna = dna;
+    //     egg_metadata.incubated_moonbase = None;
+    //     egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    //     egg_metadata.created_at = Clock::get()?.unix_timestamp;
+    //     egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
 
-        // Update global dragon egg counter
-        global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
+    //     // Update global dragon egg counter
+    //     global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
 
-        // Emit events
-        emit!(DragonEggMinted {
-            mint: egg_metadata.mint,
-            name,
-            uri,
-            dna,
-            initial_power: BASE_EGG_POWER,
-            price_paid: 0, // Included in moonbase price
-        });
+    //     // Emit events
+    //     emit!(DragonEggMinted {
+    //         mint: egg_metadata.mint,
+    //         name,
+    //         uri,
+    //         dna,
+    //         initial_power: BASE_EGG_POWER,
+    //         price_paid: 0, // Included in moonbase price
+    //     });
 
-        msg!("✅ Dragon Egg minted for moonbase creation");
-        msg!("   Egg: {}", egg_metadata.mint);
-    }
+    //     msg!("✅ Dragon Egg minted for moonbase creation");
+    //     msg!("   Egg: {}", egg_metadata.mint);
+    // }
 
     // Emit event
     emit!(UserMoonBaseCreated {
@@ -654,37 +654,37 @@ pub fn claim_dbtc_tokens_internal(
         Some(&mut ctx.accounts.loot_rewards),
     )?;
 
-    // Update Dragon Egg power if one is incubated
-    if let Some(egg_metadata_pubkey) = user_moonbase.incubated_dragon_egg {
-        // If moonbase has an incubated egg, egg accounts MUST be provided
-        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let incubation_state = ctx.accounts.incubation_state.as_mut()
-            .ok_or(ErrorCode::InvalidAccount)?;
+    // // Update Dragon Egg power if one is incubated
+    // if let Some(egg_metadata_pubkey) = user_moonbase.incubated_dragon_egg {
+    //     // If moonbase has an incubated egg, egg accounts MUST be provided
+    //     let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
+    //         .ok_or(ErrorCode::InvalidAccount)?;
+    //     let incubation_state = ctx.accounts.incubation_state.as_mut()
+    //         .ok_or(ErrorCode::InvalidAccount)?;
 
-        // Verify this is the correct egg
-        require!(
-            egg_metadata.key() == egg_metadata_pubkey,
-            ErrorCode::InvalidAccount
-        );
+    //     // Verify this is the correct egg
+    //     require!(
+    //         egg_metadata.key() == egg_metadata_pubkey,
+    //         ErrorCode::InvalidAccount
+    //     );
         
-        let current_time = Clock::get()?.unix_timestamp;
+    //     let current_time = Clock::get()?.unix_timestamp;
         
-        // Calculate power increase based on claimed amount
-        // Formula: power_increase = claimed_amount / POWER_RATE_MULTIPLIER
-        let power_increase = (claimed_amount / POWER_RATE_MULTIPLIER) as u32;
+    //     // Calculate power increase based on claimed amount
+    //     // Formula: power_increase = claimed_amount / POWER_RATE_MULTIPLIER
+    //     let power_increase = (claimed_amount / POWER_RATE_MULTIPLIER) as u32;
         
-        let old_power = egg_metadata.power;
-        let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
+    //     let old_power = egg_metadata.power;
+    //     let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
         
-        egg_metadata.power = new_power;
-        egg_metadata.last_update_ts = current_time;
+    //     egg_metadata.power = new_power;
+    //     egg_metadata.last_update_ts = current_time;
         
-        incubation_state.total_power = new_power as u64;
-        incubation_state.last_update_ts = current_time;
+    //     incubation_state.total_power = new_power as u64;
+    //     incubation_state.last_update_ts = current_time;
         
-        msg!("🥚 Dragon Egg power updated: {} -> {} (+{})", old_power, new_power, power_increase);
-    }
+    //     msg!("🥚 Dragon Egg power updated: {} -> {} (+{})", old_power, new_power, power_increase);
+    // }
 
     // Process daily login and award XP based on tokens mined
     let mining_xp = helper::calculate_mining_xp(claimed_amount);
@@ -1621,30 +1621,29 @@ pub struct CreateUserMoonbase<'info> {
     )]
     pub creation_fee_recipient: UncheckedAccount<'info>,
 
-    /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
-    #[account(mut)]
-    pub dragon_egg_asset: Option<AccountInfo<'info>>,
+    // /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
+    // #[account(mut)]
+    // pub dragon_egg_asset: Option<AccountInfo<'info>>,
 
-    /// CHECK: Dragon Egg collection (optional)
-    #[account(mut)]
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    // /// CHECK: Dragon Egg collection (optional)
+    // #[account(mut)]
+    // pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
 
-    /// Dragon Egg metadata (optional) - only created if tier includes egg
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = DragonEggMetadata::LEN,
-        seeds = [
-            DRAGON_EGG_METADATA_SEED.as_ref(), 
-            user.key().as_ref(),
-            global_config.total_moonbases_created.to_le_bytes().as_ref()
-        ],
-        bump
-    )]
-    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    // /// Dragon Egg metadata (optional) - only created if tier includes egg
+    // #[account(
+    //     init_if_needed,
+    //     payer = user,
+    //     space = DragonEggMetadata::LEN,
+    //     seeds = [
+    //         DRAGON_EGG_METADATA_SEED.as_ref(), 
+    //         user.key().as_ref(),
+    //     ],
+    //     bump
+    // )]
+    // pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
 
     /// CHECK: Metaplex Core program (optional)
-    pub mpl_core_program: Option<UncheckedAccount<'info>>,
+    // pub mpl_core_program: Option<UncheckedAccount<'info>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -1819,18 +1818,18 @@ pub struct ClaimDogeBtc<'info> {
     )]
     pub loot_rewards: Account<'info, LootRewards>,
 
-    // Optional Dragon Egg accounts (for power updates during claim)
-    #[account(mut)]
-    /// CHECK: Optional Dragon Egg NFT asset from Metaplex Core
-    pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
+    // // Optional Dragon Egg accounts (for power updates during claim)
+    // #[account(mut)]
+    // /// CHECK: Optional Dragon Egg NFT asset from Metaplex Core
+    // pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
 
-    #[account(mut)]
-    /// CHECK: Optional Dragon Egg metadata PDA
-    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    // #[account(mut)]
+    // /// CHECK: Optional Dragon Egg metadata PDA
+    // pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
 
-    #[account(mut)]
-    /// CHECK: Optional incubation state PDA
-    pub incubation_state: Option<Account<'info, IncubationState>>,
+    // #[account(mut)]
+    // /// CHECK: Optional incubation state PDA
+    // pub incubation_state: Option<Account<'info, IncubationState>>,
     
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],

@@ -161,7 +161,14 @@ async function main() {
         // return;
         
         // 🔧 Configuration Updates
-        await updateMoonBaseConfig(moonBaseProgram, deploymentFile.moonbase_program_initialized.moonbase_fee_collector);
+        // Derive MoonEconomy's fee collector PDA
+        const [feeCollectorPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from("fee_collector")],
+            moonEconomyProgram.programId
+        );
+        console.log('\x1b[36m%s\x1b[0m', `\n📍 MoonEconomy Fee Collector PDA: ${feeCollectorPDA.toString()}`);
+        
+        await updateMoonBaseConfig(moonBaseProgram, feeCollectorPDA.toString());
         return;
 
         // 4. Claim MoonBase SOL
@@ -572,7 +579,7 @@ async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
             }
         }
 
-        console.log('\x1b[36m%s\x1b[0m', `📝 Setting new fee collector: ${feeCollectorPubkey.toString()}`);
+        console.log('\x1b[36m%s\x1b[0m', `📝 Setting MoonEconomy fee collector PDA as ext_fee_collector: ${feeCollectorPubkey.toString()}`);
 
         const result = await updateGlobalConfig(
             connection,
@@ -582,11 +589,11 @@ async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
             globalConfigAddress,
             moduleConfigStoreAddress,
             dogeBtcMiningAddress,
-            walletKeypair.publicKey.toString(),
-            feeCollectorPubkey.toString(),
-            null,
-            null,
-            null
+            null, // newAuthority (keep current)
+            feeCollectorPubkey.toString(), // newFeeCollector (ext_fee_collector)
+            null, // newCreationFeeRecipient
+            null, // newBaseCreationCost
+            null  // newLootPercentage
         );
 
         if (result.success) {

@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Load IDL
-const idlPath = path.join(process.cwd(), '../prod_moonbase/target/idl/moon_base.json');
+const idlPath = path.join(process.cwd(), '../target/idl/moonbase.json');
 const moonBaseIdl = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
 
 // Load config
@@ -151,25 +151,123 @@ async function getModuleConfig(configId) {
   }
 }
 
+// Get DogeBtcMining state
+async function getDogeBtcMining() {
+  try {
+    console.log('\n🔍 Reading DogeBtcMining state...');
+    
+    // Use stored address from deployment if available
+    let miningPda;
+    if (deployment.moonbase_program_initialized?.dogeBtcMining_address) {
+      miningPda = new PublicKey(deployment.moonbase_program_initialized.dogeBtcMining_address);
+      console.log(`📍 Using stored DogeBtcMining address: ${miningPda}`);
+    } else {
+      // Fallback: Derive the DogeBtcMining PDA
+      [miningPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("doge-btc-mining")],
+        programId
+      );
+      console.log(`📍 Derived DogeBtcMining PDA: ${miningPda}`);
+    }
+    
+    const accountInfo = await connection.getAccountInfo(miningPda);
+    
+    if (!accountInfo) {
+      console.log('❌ DogeBtcMining account not found');
+      return null;
+    }
+
+    const coder = new BorshAccountsCoder(moonBaseIdl);
+    const miningData = coder.decode('DogeBtcMining', accountInfo.data);
+    
+    console.log('\n📊 Raw DogeBtcMining Account fields:');
+    console.log('Available keys:', Object.keys(miningData));
+    
+    // Convert Pubkeys to strings (using snake_case field names from IDL)
+    const processedData = {
+      dbtc_token_vault: miningData.dbtc_token_vault?.toString() || 'N/A',
+      raydium_pool_state: miningData.raydium_pool_state?.toString() || 'N/A',
+      mining_start_timestamp: convertBNToString(miningData.mining_start_timestamp),
+      doge_btc_per_slot: convertBNToString(miningData.doge_btc_per_slot),
+      last_slot: convertBNToString(miningData.last_slot),
+      total_active_hashpower: convertBNToString(miningData.total_active_hashpower),
+      total_active_electricity: convertBNToString(miningData.total_active_electricity),
+      total_tokens_mined: convertBNToString(miningData.total_tokens_mined),
+      dbtc_tokens_minted_per_hashpower: convertBNToString(miningData.dbtc_tokens_minted_per_hashpower),
+      bump: miningData.bump,
+      vault_auth_bump: miningData.vault_auth_bump,
+      last_rate_update: convertBNToString(miningData.last_rate_update),
+      current_dist_rate: convertBNToString(miningData.current_dist_rate),
+      recent_price: convertBNToString(miningData.recent_price),
+      track_price: convertBNToString(miningData.track_price),
+      sol_for_pol: convertBNToString(miningData.sol_for_pol),
+      slots_for_swap: convertBNToString(miningData.slots_for_swap),
+      lp_token_price_in_sol: convertBNToString(miningData.lp_token_price_in_sol)
+    };
+    
+    // Process price history array
+    if (miningData.price_history && Array.isArray(miningData.price_history)) {
+      processedData.price_history = miningData.price_history.map((entry) => ({
+        timestamp: convertBNToString(entry.timestamp),
+        price: convertBNToString(entry.price)
+      }));
+    }
+    
+    // Process POL stats
+    if (miningData.pol_stats) {
+      processedData.pol_stats = {
+        total_lp_burnt: convertBNToString(miningData.pol_stats.total_lp_burnt),
+        total_sol_added: convertBNToString(miningData.pol_stats.total_sol_added),
+        total_dbtc_added: convertBNToString(miningData.pol_stats.total_dbtc_added),
+        lp_operations_count: convertBNToNumber(miningData.pol_stats.lp_operations_count)
+      };
+    }
+    
+    console.log('\n✅ Processed DogeBtcMining Data:');
+    console.log(JSON.stringify(processedData, null, 2));
+    
+    return processedData;
+    
+  } catch (error) {
+    console.error('❌ Error reading DogeBtcMining state:', error);
+    console.error('Error details:', error.message);
+    if (error.logs) {
+      console.error('Logs:', error.logs);
+    }
+    return null;
+  }
+}
+
 // Test with module ID 20 (the one we just created)
 async function main() {
   console.log('🚀 Testing Module Config Reading...');
   
-  // Test the module we just created
-  const result = await getModuleConfig(1);
+  // // Test the module we just created
+  // const moduleResult = await getModuleConfig(1);
   
-  if (result && result.stats) {
-    console.log('\n🎉 SUCCESS! Stats values are:');
-    console.log(`Max HP: ${result.stats.max_hp}`);
-    console.log(`Cooldown Sec: ${result.stats.cooldown_sec}`);
-    console.log(`Max Reward: ${result.stats.max_reward}`);
-    console.log(`Probability: ${result.stats.probability}`);
-    console.log(`Power Consumption: ${result.stats.power_consumption}`);
+  // if (moduleResult && moduleResult.stats) {
+  //   console.log('\n🎉 SUCCESS! Module Stats values are:');
+  //   console.log(`Max HP: ${moduleResult.stats.max_hp}`);
+  //   console.log(`Cooldown Sec: ${moduleResult.stats.cooldown_sec}`);
+  //   console.log(`Max Reward: ${moduleResult.stats.max_reward}`);
+  //   console.log(`Probability: ${moduleResult.stats.probability}`);
+  //   console.log(`Power Consumption: ${moduleResult.stats.power_consumption}`);
+  // } else {
+  //   console.log('❌ Failed to read module stats');
+  // }
+
+  // Test DogeBtcMining state reading
+  const miningResult = await getDogeBtcMining();
+  
+  if (miningResult) {
+    console.log('\n🎉 SUCCESS! DogeBtcMining data retrieved');
+    console.log(`Total Active Hashpower: ${miningResult.total_active_hashpower}`);
+    console.log(`Total Active Electricity: ${miningResult.total_active_electricity}`);
+    console.log(`Current Distribution Rate: ${miningResult.current_dist_rate}`);
+    console.log(`SOL for POL: ${miningResult.sol_for_pol}`);
   } else {
-    console.log('❌ Failed to read stats');
+    console.log('❌ Failed to read DogeBtcMining state');
   }
 }
 
-main().catch(console.error); 
-
-//  anchor upgrade target/deploy/moon_base.so --program-id 3VWMZMjJZm5jjwWUZM1i8JPGYRMVtFuJTc9SUasyDVSB --provider.cluster localnet
+main().catch(console.error);

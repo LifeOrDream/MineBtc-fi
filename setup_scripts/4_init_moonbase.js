@@ -657,12 +657,12 @@ async function addModules(moonbaseProgram) {
         try {
             console.log(`\n🔧 Processing module: ${module.name}`);
             
-            // Step 1: Create module config with basic info
+            // Step 1: Create module config
             const result = await addNewModuleToConfigStore(
                 connection, moonbaseProgram, wallet, walletKeypair,
                 globalConfigPDA, moduleConfigStorePDA,
                 module.name, module.image_url, module.module_type, module.stats,
-                module.faction_ids, module.min_level, module.max_per_base,
+                module.faction_ids, module.min_level, 10, // max_per_base default to 10
                 module.width, module.height,
                 new BN(module.mint_cost), new BN(module.upgrade_cost),
                 module.upgrade_level_requirements || []
@@ -671,7 +671,7 @@ async function addModules(moonbaseProgram) {
             if (result.success) {
                 console.log('\x1b[32m%s\x1b[0m', `✅ Step 1: Module config created for ${module.name} (ID: ${result.data.moduleId})`);
                 
-            //     // Step 2: Update module stats to activate it
+                // Step 2: Update module stats to activate it
                 const statsResult = await updateModuleStatsHelper(
                     connection, moonbaseProgram, wallet, walletKeypair, globalConfigPDA,
                     result.data.moduleId, module.stats, module.module_type

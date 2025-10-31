@@ -655,24 +655,30 @@ export async function updateGlobalConfig(
   globalConfigPDA,
   moduleConfigStorePDA,
   dogeBtcMiningPDA,
-  newAuthority,
-  newSolClaimer,
-  newGameAuthority,
-  newDogeCollection,
-  newBaseCreationCost
+  newAuthority = null,
+  newFeeCollector = null,
+  newCreationFeeRecipient = null,
+  newBaseCreationCost = null,
+  newLootPercentage = null
 ) {
   try {
-    console.log('\x1b[33m%s\x1b[0m', '📡 Updating global config...');
+    console.log('\x1b[33m%s\x1b[0m', '📡 Updating MoonBase global config...');
     console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
     console.log('\x1b[36m%s\x1b[0m', `🔑 Module Config Store PDA: ${moduleConfigStorePDA}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Moon Doge Mining PDA: ${dogeBtcMiningPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 DogeBtc Mining PDA: ${dogeBtcMiningPDA}`);
+    
+    if (newAuthority) console.log('\x1b[36m%s\x1b[0m', `   New Authority: ${newAuthority}`);
+    if (newFeeCollector) console.log('\x1b[36m%s\x1b[0m', `   New Fee Collector (ext_fee_collector): ${newFeeCollector}`);
+    if (newCreationFeeRecipient) console.log('\x1b[36m%s\x1b[0m', `   New Creation Fee Recipient: ${newCreationFeeRecipient}`);
+    if (newBaseCreationCost) console.log('\x1b[36m%s\x1b[0m', `   New Base Creation Cost: ${newBaseCreationCost}`);
+    if (newLootPercentage) console.log('\x1b[36m%s\x1b[0m', `   New Loot Percentage: ${newLootPercentage}`);
  
     const updateTx = await program.methods.updateConfig(
-        new PublicKey(newAuthority),
-        new PublicKey(newSolClaimer),
-        null,
-        null,
-        null
+        newAuthority ? new PublicKey(newAuthority) : null,
+        newFeeCollector ? new PublicKey(newFeeCollector) : null,
+        newCreationFeeRecipient ? new PublicKey(newCreationFeeRecipient) : null,
+        newBaseCreationCost ? new BN(newBaseCreationCost) : null,
+        newLootPercentage
       )
       .accounts({
         globalConfig: new PublicKey(globalConfigPDA),
@@ -685,9 +691,8 @@ export async function updateGlobalConfig(
 
     const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
 
-    console.log('\x1b[32m%s\x1b[0m', `✅ Global config updated`);
+    console.log('\x1b[32m%s\x1b[0m', `✅ MoonBase global config updated`);
     console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
-    console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${updateTxid}?cluster=devnet`);
 
     return {
       success: true,
@@ -696,7 +701,7 @@ export async function updateGlobalConfig(
       }
     };
   } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '❌ Error updating global config:', error);
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error updating MoonBase global config:', error);
     return {
       success: false,
       error: error.toString()
