@@ -4,14 +4,14 @@
     "timestamp": "2025-10-30T21:41:37.117Z",
     "cluster": "localnet"
   },
-  "MOON_BASE_PROGRAM_ID": "EUXh3enDSh1xUZoE2ZCSEwufVQ9NW3Rgo8U2UWN3j7Xg",
-  "MOON_ECONOMY_PROGRAM_ID": "6wsUtvmKCY2VZfRWuGKcrmpi7MkYvfNSSPuwNQv1mLWN",
+  "MOON_BASE_PROGRAM_ID": "AL5Q6PzbHFthrCCJ8bn4NQg6m88RJfDtkSmwxaAKJtnm",
+  "MOON_ECONOMY_PROGRAM_ID": "7VqHmqfNsopcDp3kKET6Ud6DEHFMy3RiYz3s4Zc5MKUE",
   "game_programs_deployment": {
-    "timestamp": "2025-10-30T23:37:56.763Z",
+    "timestamp": "2025-10-31T06:14:11.684Z",
     "cluster": "localnet"
   },
   "dbtc_mint_created": {
-    "mint_address": "q6ijaLyJ6vCCh9crrhXLB44BpcsbLDRQoeAckTGXZts",
+    "mint_address": "CUuUKofdmEq1yijucTn7VUEwnarYemxWTV9Y7svGJTvD",
     "mint_authority": null,
     "freeze_authority": null,
     "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -23,50 +23,50 @@
     "metadata_name": "DogeWifBTC",
     "metadata_symbol": "DBTC",
     "metadata_uri": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
-    "creation_signature": "QgUN7E9Bd97ev3DdogmWB2FwttwJNDrftcGCRPMwuVJv85Lb2ZrS3dYukH3gPncDYostsmzuSTZn4pKAs3tdjPN",
-    "timestamp": "2025-10-30T23:38:52.410Z",
+    "creation_signature": "4atabpvEKjsWW8rFgNTeTRJUFiPYDggWULVPrFbm95B5x7RQofmDKm35SRW1MFy1Muom3YcHhtiBdSU6qd3CSTss",
+    "timestamp": "2025-10-31T06:14:23.112Z",
     "mint_authority_status": "removed",
     "withdraw_withheld_authority_status": "removed",
     "transfer_fee_config_authority_status": "transferred"
   },
   "dbtc_token_account_created": {
-    "token_account_address": "48ofoCXPF8WTK83xGvaqb5499Bh23yiucw7EzMPbugPV",
+    "token_account_address": "4DEvqFL4SgZ9SnSLbKKnxHLp4dfMdXkQUeDU1AwyTPom",
     "owner_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "mint_address": "q6ijaLyJ6vCCh9crrhXLB44BpcsbLDRQoeAckTGXZts",
-    "timestamp": "2025-10-30T23:38:52.928Z"
+    "mint_address": "CUuUKofdmEq1yijucTn7VUEwnarYemxWTV9Y7svGJTvD",
+    "timestamp": "2025-10-31T06:14:23.569Z"
   },
   "initial_supply_minted": {
     "amount": "21000000000000000",
     "actual_minted_amount": "21000000000000000",
     "amount_readable": "21,000,000,000 DBTC",
-    "token_account_address": "48ofoCXPF8WTK83xGvaqb5499Bh23yiucw7EzMPbugPV",
-    "mint_signature": "4VK4LkCs32BtjtsLsriBcimA1LQ6WZL41L4TDR4PGXC7Sk5WKySu2TxRdJbpJTu2AGQTyuvNB7DcjYT4C2z3gDty",
+    "token_account_address": "4DEvqFL4SgZ9SnSLbKKnxHLp4dfMdXkQUeDU1AwyTPom",
+    "mint_signature": "5boAaZNAupqkmCGHEuYz3RqEc9ND1B5TmtzD99cwTSTiq47ykNtocQJoXzpaWUuJyeBbp8iMRUak7w44dtqZFhoL",
     "bigint_verification": {
       "expected": "21000000000000000",
       "actual": "21000000000000000",
       "match": true
     },
-    "timestamp": "2025-10-30T23:38:53.336Z"
+    "timestamp": "2025-10-31T06:14:24.041Z"
   },
-  "dbtc_mint_address": "q6ijaLyJ6vCCh9crrhXLB44BpcsbLDRQoeAckTGXZts",
+  "dbtc_mint_address": "CUuUKofdmEq1yijucTn7VUEwnarYemxWTV9Y7svGJTvD",
   "mint_authority_removed": {
     "previous_mint_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_mint_authority": null,
-    "removal_signature": "5NCqf1VoPfJJFjp9MkA9Uh8JN51CdMhKpHm7T9YXus2jK3NnSNswbbKodnnSgZzvod5FULdRG5rKGsdF419mRVmc",
-    "timestamp": "2025-10-30T23:38:53.846Z",
+    "removal_signature": "65pH8A4iQA7DGYM2cbaZCju1J6iqGiv9u3f9tJDbx1unhVeBj4GQkTCKFF1q3DvY2TtA5SuC8P7uvD1dYHkmDvGq",
+    "timestamp": "2025-10-31T06:14:24.502Z",
     "total_supply_locked": "21,000,000,000 DBTC"
   },
   "withdraw_withheld_authority_removed": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_withdraw_withheld_authority": null,
-    "removal_signature": "3tFzNu6rjvwFXkBp5v3kV4Ls6M8MNpEjvbNYE7u1FmR1se9AeE1e2uz3G7xRoEWmyESD9fJAivxe1Ziw2uXyq3iz",
-    "timestamp": "2025-10-30T23:38:54.358Z"
+    "removal_signature": "3W4MTE9G91uiV5SWgtx9TvpCYkiP3Yb81TMPqfKufqWAqiAn7uMVvqcixrrtRNdSibb3dRRgc8H8iQ7qBpLZ44M3",
+    "timestamp": "2025-10-31T06:14:24.961Z"
   },
   "transfer_fee_config_authority_transferred": {
     "previous_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "transfer_signature": "XtxbWfuj3JNJrAnaZThvQ3zVvkLWUimxwxZKeEnEJEsNf2XxFin5sW2XD4mfYH7375z1Kwu2UeDWbgC3SPNKRGY",
-    "timestamp": "2025-10-30T23:38:54.748Z"
+    "transfer_signature": "2hvhPdgPnKaGPSncRYkZ8zMJN1C2DGVxJ8zvxNBR8pr2JmVjJUh7YfN7siZJwG3aP8Y17zzGcgzEBvNm1ss9S8Ss",
+    "timestamp": "2025-10-31T06:14:25.427Z"
   },
   "raydium_amm_config_created": {
     "amm_config_pda": "A7Vi23J2jZaiT3ZR9MoFiqoppivK8po8vVrjFPCRqkHe",
@@ -78,88 +78,88 @@
     "create_pool_fee": "40000000",
     "creator_fee_rate": 0,
     "status": "already_exists",
-    "timestamp": "2025-10-30T23:39:45.755Z"
+    "timestamp": "2025-10-31T06:14:28.365Z"
   },
   "dbtc_sol_pool_created": {
-    "poolStatePDA": "5fPnY5QAVo94etvjwez3sWZEUnyVqPepkdf3dV2c1MBL",
-    "lpMintPDA": "ADoYSB8FMnuqatN51dgcDeNtzZcVWQCfbRUSSnKTZHkc",
-    "token0VaultPDA": "Di5Pg9WApvSpW6DRSkQLm57JpbCqRbJaB3AivbmPgSYd",
-    "token1VaultPDA": "71e51jWehUUaQTfgMa58zL2taG8mRQDhKePJFYeLxBuR",
+    "poolStatePDA": "63MaxYheu5m8vFQxeekxsdMcEZAzCLcy4wCj3LCHQTj4",
+    "lpMintPDA": "7r8EwyARWDp42bgaMMbKYrswp4vCV6ZDcBMyXV3ChADw",
+    "token0VaultPDA": "F9bMKs1w5oQi2JvUNSxzyYPtQNwNGSfNpAYSvZkS9vac",
+    "token1VaultPDA": "shpL2JwpgKguLL1341LYj7jYym11QagNp7vPTaYCwLu",
     "authorityPDA": "JDn1SuzCdLNGLwZ7mWCzLjh4Mp5y8HZPrmW2m3GtgDXS",
-    "observationStatePDA": "HXeGTsUZANSz6Lvaq4mYCpZR1SG1bQuwHTP3S5fDN8cq",
+    "observationStatePDA": "ByYaPGmx9iPJ1QwoVEBJgS4cDVQpLLCtKa7H5KyxQ4dT",
     "token0Mint": "So11111111111111111111111111111111111111112",
-    "token1Mint": "q6ijaLyJ6vCCh9crrhXLB44BpcsbLDRQoeAckTGXZts",
+    "token1Mint": "CUuUKofdmEq1yijucTn7VUEwnarYemxWTV9Y7svGJTvD",
     "isMdogeToken0": false,
-    "txid": "cVbTsPyHfKVgb62GG6u1uPkqVzZ597AM1hyQ22GQ6U1vVPn5tqSJyXrfRuHwwdjtJbHNjSiRwL2FsXfRpnMmeXA",
-    "wrapTxid": "3zZh6sozXBhMqfzs4z17wm3y1UXzqjDq4T6eVpazyAGDQCpX6xHCCFLEdfc72Ju8zugyhaBDDMTmryCEk2Z7EA3a",
+    "txid": "RXYe9gB7aLJdUYTdT4mgSm3tZ5NrYYWn4v7FYGu5VUNyCwdysD5erzpsfkUggQDRmvW3Qbe8YSnaZAjoZ4ZWMuA",
+    "wrapTxid": "489jdUnGCstijjs8PecfVoaHbyAcSHE6VWmJ79KvW4zcmbtANbbdtcXWW9gAmq6XGgmgX7dagbaLnLVJrTHeQiQX",
     "initialMdogeAmount": "210000000000000",
     "initialSolAmount": "100000000",
     "openTime": 0,
-    "timestamp": "2025-10-30T23:39:46.264Z"
+    "timestamp": "2025-10-31T06:14:29.184Z"
   },
   "lp_tokens_burned": {
-    "pool_state": "5fPnY5QAVo94etvjwez3sWZEUnyVqPepkdf3dV2c1MBL",
-    "lp_mint": "ADoYSB8FMnuqatN51dgcDeNtzZcVWQCfbRUSSnKTZHkc",
-    "deployer_lp_account": "HDz2zKRiLyToetKqPQkyoK7BM51gBmqWTavAo5Tr3JoX",
+    "pool_state": "63MaxYheu5m8vFQxeekxsdMcEZAzCLcy4wCj3LCHQTj4",
+    "lp_mint": "7r8EwyARWDp42bgaMMbKYrswp4vCV6ZDcBMyXV3ChADw",
+    "deployer_lp_account": "FdYzjzWcejhRGbXEmtRc5AwQ9wAVvHxbv84TR9Jhj9so",
     "burn_all_lp_tokens": true,
     "burned_amount": "144568322848",
     "burned_amount_readable": "144.568322848 LP",
-    "burn_signature": "2Gxnh1wVFdQvmRrh7fy95QnE2Q4ZQP8bke4wBCLSPrCwLwCc83PycJfaHYbvCt2UGQe8FtR5YZMxBiT8AvQi9H94",
+    "burn_signature": "37XnsNhTwki6avsXtN4tKQfaaTMPwPC6mgCueuSDsk9nivXuGFFJQRb2iMoU74ZqbjSTR13yG7Sd3eRLHnrwUzRb",
     "burn_purpose": "Permanent liquidity lock - cannot remove initial liquidity",
     "dbtc_locked_amount": "210000000000000",
     "sol_locked_amount": "100000000",
     "status": "burned_successfully",
     "permanent_lock": true,
-    "timestamp": "2025-10-30T23:39:46.740Z"
+    "timestamp": "2025-10-31T06:14:29.731Z"
   },
   "dragon_egg_collection_created": {
-    "collection_address": "DCZFPLmC6pq2DPjrPc8tvqQoU1J72bCMTemYa8EUxqyL",
+    "collection_address": "E2BBiw6dQygJZ1R48o6FCrB98pVLFfbiG6em32y4CBYq",
     "collection_name": "DogeTech Dragon Eggs",
     "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
     "update_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "timestamp": "2025-10-30T23:40:07.196Z"
+    "timestamp": "2025-10-31T06:14:48.252Z"
   },
   "moonbase_program_initialized": {
-    "globalConfig_address": "8meDhJ6fo8fCuKbshrFW1Rz6c7PKLxnRVTAdKRb5ni54",
-    "dogeBtcMining_address": "6M4FeJzZ2pLp2ppJ94UaAkV7tsCNBDBq5FAKgt98KRwC",
-    "solTreasury_address": "A3fJkKFiHa1mPvZfKFjUJP3jCuCiqyPrUjeCN1nJeers",
-    "timestamp": "2025-10-30T23:40:44.318Z",
-    "moonbase_fee_collector": "DyjGsUv7i9osZ5tHhdkHtW8cggMkrShy6W5MdUgxbkJt"
+    "globalConfig_address": "5cfjpgLjzBhJiQBNtVuDT8fthcTGLrzhMwKJ7PP6zSTL",
+    "dogeBtcMining_address": "9TCYKGvpZfiLbMXByG7cY6QAvanGn4Hbc9qYmPt5nK36",
+    "solTreasury_address": "GmPmkj77L5HrrSh46fRkckYw3NSSYPtj1NWALvAguJdR",
+    "timestamp": "2025-10-31T06:23:05.964Z",
+    "moonbase_fee_collector": "3mm9dByjHLnDbCoKK6H9ZVM7EHVokdG7hAn2wYT7Qiqi"
   },
   "mining_vault_initialized": {
-    "vault_address": "AQCfgRSfkK6sDorcr6hsitutSwG6pMtC7Ni1EjSNdWsS",
-    "vault_authority": "AxVdPbNDDc9uKbodqbpQvJW1kkANQyPbEGxQPWqCSfAV",
-    "start_timestamp": 1761867644,
+    "vault_address": "FZSDeDzuU5wS3RAq5RY3HTPjVT1pkDg4aKVEZaFTgHxF",
+    "vault_authority": "Gg3aZCHbcV7bEpc9brVmrwYDbJqKNML3TPo5XcCHWoRo",
+    "start_timestamp": 1761891785,
     "doge_btc_per_slot": "1000000",
-    "init_tx": "5qJQ7L1j3dWvc7d6g2iG9NEwmip5jqdcrQ51itDkmqcTpSTR2xNaVBc1YnBfz9e8DiB7XWWuWJokqJxb8LBRADgM",
-    "timestamp": "2025-10-30T23:40:44.716Z"
+    "init_tx": "3tTBn3SJeR7ysnLbRAyjCLuqzUKRghJqgPjfhAUsYb3Q55hoLqheMcuhjYm3nsXDRfHqv2T7A9gozrForJS9e5uC",
+    "timestamp": "2025-10-31T06:23:06.484Z"
   },
   "referral_system_initialized": {
-    "system_referral_pda": "762r2SiAuRWQ2Zu5spe44otoEiuctuZ9WCS5kAZN9UfX",
-    "timestamp": "2025-10-30T23:40:45.249Z"
+    "system_referral_pda": "FzZ47sTWz63nKdFB7VHMtpvbwRzSQbLd8Wp8srZhJxdZ",
+    "timestamp": "2025-10-31T06:23:06.883Z"
   },
   "config_stores_initialized": {
-    "module_config_store": "Eh1YzorttaRsfraYzZB5yeZ7LdReRuNJd3vJdEUkuaHG",
-    "timestamp": "2025-10-30T23:40:45.671Z"
+    "module_config_store": "J8e7iwsNc9RonnRPTAVRLhSkfbrtqQgc81sKa3ECD4kY",
+    "timestamp": "2025-10-31T06:23:07.412Z"
   },
   "loot_rewards_initialized": {
-    "loot_rewards_pda": "3DctVSS8euhWRzFouskPrQKARXHS1xnfn5ipBHH9Rret",
-    "sol_vault": "G2hGwjaJqtj6Z9qasqKDi1bdErwLqaDi1n5q4WePypga",
-    "dbtc_vault": "3H4ErBaPF3p75LX6TQYVDCjm3imJbFZGW5XKtKy9odro",
-    "loot_dbtc_vault_authority": "DHd2FoQRDJiCzBeaWWbSG93Gf2x1K8rWj26G5aWAn2Dp",
-    "initTxid": "5q7P4YH6uWh9GHFmzZVhex7seXMUNnVJp1jSsWrJpAAgpaRHmRpcz7o1P5EkJeoq9AH2isxwobjoH1cXeK7upLqZ",
-    "timestamp": "2025-10-30T23:40:46.132Z"
+    "loot_rewards_pda": "DBVHK5AuanK7b2mEnEvuFhAGSKyhXuXfr5LyQs38fyi7",
+    "sol_vault": "Ak1UeTxRCmGfLgUvKNPAWfmdr97wjqi7vFt9oe8KruiH",
+    "dbtc_vault": "7fvwHFVQYaxgJBjHzRRxywDR7jSSQm94txxw8cFwjZNB",
+    "loot_dbtc_vault_authority": "8MYy5HdvjfxJ2epvMdVJ6Q866hYmJbTwzaqNfAYawvSj",
+    "initTxid": "3HCXn4CMiG2xdj1GjB4S8fHxzv4xY8FKMisF9i1RncGNr7SDB2Jtkud4V5NrbZJMXpxDckzfDNLBmMJhYRGZohFf",
+    "timestamp": "2025-10-31T06:23:07.815Z"
   },
   "level_stats_initialized": {
-    "level_stats_pda": "2AxcM79XqMktargLxDQ4nrmuiXeGwW26RwtckWLcGC5P",
-    "initTxid": "4rxB48arUFBAB2yk3yDhGsVjhurATmUze6vEUkH8FjpXEAvJkje1eFca46M5rypdiHmPNcFRzvDTk7RVcc8bLvSw",
-    "timestamp": "2025-10-30T23:40:46.598Z"
+    "level_stats_pda": "2N2zfNJMXTCfhZCN3XHTfjVNukLbR8R4KarQfcZdn9jo",
+    "initTxid": "34xULz1tx8cT5z9t2brvq6FQiJcDENXusjaSnG16S1VA8mAM82nXzMweoqD6cfLppsjNfBYJEUCKPeLyLHTsgZS",
+    "timestamp": "2025-10-31T06:23:08.284Z"
   },
   "dragon_egg_collection_set_in_program": {
-    "collection_address": "DCZFPLmC6pq2DPjrPc8tvqQoU1J72bCMTemYa8EUxqyL",
-    "global_config_pda": "8meDhJ6fo8fCuKbshrFW1Rz6c7PKLxnRVTAdKRb5ni54",
-    "tx_signature": "29kUc7u53Fi7ideXgqPka7GWG1D7TXuC7aXE8KraTBn9jtk6VFBESbL5Ywb9ToS6TxF7DGyu46WeWqnVBMAwVRrj",
-    "timestamp": "2025-10-30T23:40:47.102Z"
+    "collection_address": "E2BBiw6dQygJZ1R48o6FCrB98pVLFfbiG6em32y4CBYq",
+    "global_config_pda": "5cfjpgLjzBhJiQBNtVuDT8fthcTGLrzhMwKJ7PP6zSTL",
+    "tx_signature": "H3JZzTHMab3KR1W2DFFDkYBNPMLaS1qvqdXwfsD56XKnF4x2Eok3ZCLkhkFaiY9s678DUyrPvP5TYWgagXEUsgf",
+    "timestamp": "2025-10-31T06:23:08.755Z"
   },
   "factions_added": {
     "factions": [
@@ -188,8 +188,8 @@
         "description": "Resilient defensive technology and freedom preservation"
       }
     ],
-    "tx": "2h99BV86W9kehkCEQknhRXoHVxq4Nx4w9gX2ve6dPjzJwftohCy2cCzpGoFPoKsA4bM5CddBp6tNfptbyyd9Mqzw",
-    "timestamp": "2025-10-30T23:40:47.614Z"
+    "tx": "RnZAM7QaBuGW7x5tY2bszfumSBHdTy57mAxeEsm4Ajf14zRWZ2npJinbDg3a774FTKcnQvJXKCuDaP52rKvSkHZ",
+    "timestamp": "2025-10-31T06:23:09.223Z"
   },
   "expansions_added": {
     "expansions": [
@@ -200,7 +200,7 @@
         "cost_sol": 1000000000,
         "new_width": 10,
         "new_height": 8,
-        "tx": "VLAWooYJdSvHw2uzKw1Z2tD7q2kVAvDp6KUyXdg4CwrgLNXUoajvko2BxaD81QdSQPDDXCiCRFN1bMvgAsp5AUP"
+        "tx": "2qBmLmkxFM4FnChvo48wnzdMv1e28aFJbbf6KY7iCtWxp8R5bDwXsGzcF6ZGjyB3f7GRvSX7BNzPzSFtck4PomU4"
       },
       {
         "id": 2,
@@ -209,7 +209,7 @@
         "cost_sol": 2000000000,
         "new_width": 12,
         "new_height": 10,
-        "tx": "5oedQyWbzd5hzfLfkxSZtogP4upW1Nx7Ui6BuBvgyhEMj34ZVpg3srCmBL7Wo7MmncR9wwvmvv826MhwrobjevgW"
+        "tx": "5BRJXtfCoDCdag2MTFca7imCZSyLTeDxZkx7Rg9hQCRa3ihx2x2paDzkjLAEVyh4dUjUVJ6w6ddriQjberqKdjRq"
       },
       {
         "id": 3,
@@ -218,7 +218,7 @@
         "cost_sol": 5000000000,
         "new_width": 14,
         "new_height": 12,
-        "tx": "2W7gVNhPjLDRBnWS8J3cw1zJVHzD3WpQaSzFdiEDDSSRva7ApdeQ3PFzYLybSKY9MDdxycbDdmK8mhjSi8nzY4uJ"
+        "tx": "2x5ZbXX1cpxTY12XvL6q4BsbiVTAccBKZsrto97zLoiWd9TgJAJgmLjzv5YZ7833jtG5BEv1dycmbN67Yx61dSaJ"
       },
       {
         "id": 4,
@@ -227,25 +227,24 @@
         "cost_sol": 10000000000,
         "new_width": 16,
         "new_height": 12,
-        "tx": "4gmyriKnARbD8e9UWA1d8Cyn1y73UpXsqAMyFXqeWrAu4EvA1ewUkbApH5TDxumoSrwtHtwBU5P7AH1Gk19ppp87"
+        "tx": "49C7FadeQCkLA25fZqACuTeDcFByGe6taL7KiCMAFWrF8Lt5a55Yoz1a9Cu8uTZstmZkqpCkF9zTYWegAPyzi4jU"
       }
     ],
-    "timestamp": "2025-10-30T23:40:49.475Z"
+    "timestamp": "2025-10-31T06:23:11.118Z"
   },
   "modules_added": {
     "modules": [
       {
-        "name": "F",
-        "image_url": "FF ",
+        "name": "Basic Mining Rig",
+        "image_url": "https://arweave.net/basic-mining-rig",
         "module_type": "Mining",
         "stats": {
-          "mining": {
-            "maxHp": 1100,
-            "baseHashpower": 1200,
-            "powerConsumption": 90
-          }
+          "maxHp": 1100,
+          "baseHashpower": 1200,
+          "powerConsumption": 90
         },
         "faction_ids": [
+          0,
           1,
           2,
           3,
@@ -253,7 +252,6 @@
           5
         ],
         "min_level": 0,
-        "max_per_base": 4,
         "width": 2,
         "height": 2,
         "mint_cost": 150000000,
@@ -267,233 +265,21 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments F,FF ,[object Object],\u0001\u0002\u0003\u0004\u0005,0,4,2,2,150000000,75000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Basic Mining Rig,https://arweave.net/basic-mining-rig,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,150000000,75000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       },
       {
-        "name": "Red Dragon Extraction Facility",
-        "image_url": "https://arweave.net/china-extraction-facility",
-        "module_type": "Mining",
-        "stats": {
-          "Mining": {
-            "maxHp": 1600,
-            "baseHashpower": 2800,
-            "powerConsumption": 180
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 5,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 400000000,
-        "upgrade_cost": 150000000,
-        "upgrade_level_requirements": [
-          1,
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Red Dragon Extraction Facility,https://arweave.net/china-extraction-facility,[object Object],\u0001\u0002\u0003\u0004\u0005,0,5,3,2,400000000,150000000,\u0001\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Siberian Deep Core Rig",
-        "image_url": "https://arweave.net/russia-deep-core-rig",
-        "module_type": "Mining",
-        "stats": {
-          "Mining": {
-            "maxHp": 2800,
-            "baseHashpower": 5500,
-            "powerConsumption": 350
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 3,
-        "mint_cost": 1800000000,
-        "upgrade_cost": 450000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Siberian Deep Core Rig,https://arweave.net/russia-deep-core-rig,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,3,1800000000,450000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Persian Gulf Energy Harvester",
-        "image_url": "https://arweave.net/iran-energy-harvester",
-        "module_type": "Mining",
-        "stats": {
-          "Mining": {
-            "maxHp": 1400,
-            "baseHashpower": 3200,
-            "powerConsumption": 220
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 600000000,
-        "upgrade_cost": 200000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Persian Gulf Energy Harvester,https://arweave.net/iran-energy-harvester,[object Object],\u0001\u0002\u0003\u0004\u0005,0,3,2,3,600000000,200000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Liberty Memorial Complex",
-        "image_url": "https://arweave.net/usa-memorial-complex",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 900,
-            "baseXpPerHour": 120,
-            "powerConsumption": 45
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 200000000,
-        "upgrade_cost": 90000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Liberty Memorial Complex,https://arweave.net/usa-memorial-complex,[object Object],\u0001\u0002\u0003\u0004\u0005,0,3,2,2,200000000,90000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Red Square Monument",
-        "image_url": "https://arweave.net/russia-red-square",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 1200,
-            "baseXpPerHour": 150,
-            "powerConsumption": 60
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 350000000,
-        "upgrade_cost": 140000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Red Square Monument,https://arweave.net/russia-red-square,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,2,350000000,140000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Maidan Memorial",
-        "image_url": "https://arweave.net/ukraine-maidan-memorial",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 800,
-            "baseXpPerHour": 180,
-            "powerConsumption": 40
-          }
-        },
-        "faction_ids": [
-          5
-        ],
-        "min_level": 5,
-        "max_per_base": 4,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 180000000,
-        "upgrade_cost": 70000000,
-        "upgrade_level_requirements": [
-          7,
-          10,
-          14,
-          18,
-          23,
-          28,
-          34,
-          40,
-          47,
-          55
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Maidan Memorial,https://arweave.net/ukraine-maidan-memorial,[object Object],\u0005,5,4,2,2,180000000,70000000,\u0007\n\u000e\u0012\u0017\u001c\"(/7,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "NASA Advanced Laboratory",
-        "image_url": "https://arweave.net/nasa-lab",
+        "name": "Advanced Research Lab",
+        "image_url": "https://arweave.net/advanced-research-lab",
         "module_type": "Research",
         "stats": {
-          "Research": {
-            "maxHp": 1400,
-            "cooldownSec": 3200,
-            "maxReward": 1200000000,
-            "probability": 6000,
-            "powerConsumption": 140
-          }
+          "maxHp": 1400,
+          "cooldownSec": 3200,
+          "maxReward": 1200000000,
+          "probability": 6000,
+          "powerConsumption": 140
         },
         "faction_ids": [
+          0,
           1,
           2,
           3,
@@ -501,7 +287,6 @@
           5
         ],
         "min_level": 0,
-        "max_per_base": 2,
         "width": 3,
         "height": 2,
         "mint_cost": 450000000,
@@ -515,22 +300,19 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments NASA Advanced Laboratory,https://arweave.net/nasa-lab,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,2,450000000,180000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Advanced Research Lab,https://arweave.net/advanced-research-lab,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,3,2,450000000,180000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       },
       {
-        "name": "Jade Rabbit Research Station",
-        "image_url": "https://arweave.net/china-jade-rabbit",
-        "module_type": "Research",
+        "name": "Cultural Monument",
+        "image_url": "https://arweave.net/cultural-monument",
+        "module_type": "Attraction",
         "stats": {
-          "Research": {
-            "maxHp": 1600,
-            "cooldownSec": 2800,
-            "maxReward": 1400000000,
-            "probability": 5500,
-            "powerConsumption": 160
-          }
+          "maxHp": 900,
+          "baseXpPerHour": 120,
+          "powerConsumption": 45
         },
         "faction_ids": [
+          0,
           1,
           2,
           3,
@@ -538,11 +320,10 @@
           5
         ],
         "min_level": 0,
-        "max_per_base": 3,
         "width": 2,
-        "height": 3,
-        "mint_cost": 500000000,
-        "upgrade_cost": 200000000,
+        "height": 2,
+        "mint_cost": 200000000,
+        "upgrade_cost": 90000000,
         "upgrade_level_requirements": [
           2,
           3,
@@ -552,59 +333,21 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments Jade Rabbit Research Station,https://arweave.net/china-jade-rabbit,[object Object],\u0001\u0002\u0003\u0004\u0005,0,3,2,3,500000000,200000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Cultural Monument,https://arweave.net/cultural-monument,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,200000000,90000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       },
       {
-        "name": "Mossad Intelligence Center",
-        "image_url": "https://arweave.net/israel-mossad-center",
-        "module_type": "Research",
-        "stats": {
-          "Research": {
-            "maxHp": 1100,
-            "cooldownSec": 2400,
-            "maxReward": 900000000,
-            "probability": 7500,
-            "powerConsumption": 120
-          }
-        },
-        "faction_ids": [
-          3
-        ],
-        "min_level": 10,
-        "max_per_base": 2,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 600000000,
-        "upgrade_cost": 250000000,
-        "upgrade_level_requirements": [
-          13,
-          16,
-          20,
-          25,
-          30,
-          36,
-          42,
-          49,
-          57,
-          66
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Mossad Intelligence Center,https://arweave.net/israel-mossad-center,[object Object],\u0003,10,2,2,2,600000000,250000000,\r\u0010\u0014\u0019\u001e$*19B,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Iron Dome Lunar Defense",
-        "image_url": "https://arweave.net/israel-iron-dome",
+        "name": "Defense Battery",
+        "image_url": "https://arweave.net/defense-battery",
         "module_type": "Attack",
         "stats": {
-          "Attack": {
-            "maxHp": 1300,
-            "baseDamage": 180,
-            "baseMissilesPerLoad": 12,
-            "reloadTimeSeconds": 25,
-            "powerConsumption": 85
-          }
+          "maxHp": 1300,
+          "baseDamage": 180,
+          "baseMissilesPerLoad": 12,
+          "reloadTimeSeconds": 25,
+          "powerConsumption": 85
         },
         "faction_ids": [
+          0,
           1,
           2,
           3,
@@ -612,7 +355,6 @@
           5
         ],
         "min_level": 0,
-        "max_per_base": 4,
         "width": 2,
         "height": 2,
         "mint_cost": 400000000,
@@ -626,305 +368,50 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments Iron Dome Lunar Defense,https://arweave.net/israel-iron-dome,[object Object],\u0001\u0002\u0003\u0004\u0005,0,4,2,2,400000000,160000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Kalashnikov Orbital Platform",
-        "image_url": "https://arweave.net/russia-kalashnikov",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 2200,
-            "baseDamage": 320,
-            "baseMissilesPerLoad": 8,
-            "reloadTimeSeconds": 45,
-            "powerConsumption": 180
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 900000000,
-        "upgrade_cost": 350000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Kalashnikov Orbital Platform,https://arweave.net/russia-kalashnikov,[object Object],\u0001\u0002\u0003\u0004\u0005,0,2,3,2,900000000,350000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Patriot Moon Battery",
-        "image_url": "https://arweave.net/usa-patriot-battery",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1800,
-            "baseDamage": 280,
-            "baseMissilesPerLoad": 6,
-            "reloadTimeSeconds": 35,
-            "powerConsumption": 150
-          }
-        },
-        "faction_ids": [
-          0
-        ],
-        "min_level": 12,
-        "max_per_base": 3,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 750000000,
-        "upgrade_cost": 280000000,
-        "upgrade_level_requirements": [
-          15,
-          19,
-          23,
-          28,
-          34,
-          40,
-          47,
-          55,
-          64,
-          74
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Patriot Moon Battery,https://arweave.net/usa-patriot-battery,[object Object],\u0000,12,3,3,2,750000000,280000000,\u000f\u0013\u0017\u001c\"(/7@J,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Shaheed Drone Swarm Hub",
-        "image_url": "https://arweave.net/iran-drone-swarm",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1000,
-            "baseDamage": 140,
-            "baseMissilesPerLoad": 20,
-            "reloadTimeSeconds": 60,
-            "powerConsumption": 100
-          }
-        },
-        "faction_ids": [
-          4
-        ],
-        "min_level": 10,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 500000000,
-        "upgrade_cost": 180000000,
-        "upgrade_level_requirements": [
-          13,
-          16,
-          20,
-          25,
-          30,
-          36,
-          42,
-          49,
-          57,
-          66
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Shaheed Drone Swarm Hub,https://arweave.net/iran-drone-swarm,[object Object],\u0004,10,3,2,3,500000000,180000000,\r\u0010\u0014\u0019\u001e$*19B,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Javelin Defense System",
-        "image_url": "https://arweave.net/ukraine-javelin",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1200,
-            "baseDamage": 220,
-            "baseMissilesPerLoad": 4,
-            "reloadTimeSeconds": 40,
-            "powerConsumption": 90
-          }
-        },
-        "faction_ids": [
-          5
-        ],
-        "min_level": 9,
-        "max_per_base": 4,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 350000000,
-        "upgrade_cost": 140000000,
-        "upgrade_level_requirements": [
-          12,
-          15,
-          19,
-          24,
-          29,
-          35,
-          41,
-          48,
-          56,
-          65
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Javelin Defense System,https://arweave.net/ukraine-javelin,[object Object],\u0005,9,4,2,2,350000000,140000000,\f\u000f\u0013\u0018\u001d#)08A,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Great Wall Observatory",
-        "image_url": "https://arweave.net/china-great-wall-observatory",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 1000,
-            "baseXpPerHour": 130,
-            "powerConsumption": 55
-          }
-        },
-        "faction_ids": [
-          1
-        ],
-        "min_level": 6,
-        "max_per_base": 3,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 280000000,
-        "upgrade_cost": 110000000,
-        "upgrade_level_requirements": [
-          8,
-          11,
-          15,
-          19,
-          24,
-          29,
-          35,
-          41,
-          48,
-          56
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Great Wall Observatory,https://arweave.net/china-great-wall-observatory,[object Object],\u0001,6,3,3,2,280000000,110000000,\b\u000b\u000f\u0013\u0018\u001d#)08,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Roscosmos Deep Space Lab",
-        "image_url": "https://arweave.net/russia-roscosmos-lab",
-        "module_type": "Research",
-        "stats": {
-          "Research": {
-            "maxHp": 1800,
-            "cooldownSec": 3600,
-            "maxReward": 1600000000,
-            "probability": 4500,
-            "powerConsumption": 200
-          }
-        },
-        "faction_ids": [
-          2
-        ],
-        "min_level": 12,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 3,
-        "mint_cost": 750000000,
-        "upgrade_cost": 300000000,
-        "upgrade_level_requirements": [
-          15,
-          19,
-          24,
-          29,
-          35,
-          41,
-          48,
-          56,
-          65,
-          75
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Roscosmos Deep Space Lab,https://arweave.net/russia-roscosmos-lab,[object Object],\u0002,12,2,3,3,750000000,300000000,\u000f\u0013\u0018\u001d#)08AK,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
-      },
-      {
-        "name": "Tehran Command Center",
-        "image_url": "https://arweave.net/iran-command-center",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 1100,
-            "baseXpPerHour": 140,
-            "powerConsumption": 70
-          }
-        },
-        "faction_ids": [
-          4
-        ],
-        "min_level": 8,
-        "max_per_base": 2,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 320000000,
-        "upgrade_cost": 130000000,
-        "upgrade_level_requirements": [
-          11,
-          14,
-          18,
-          23,
-          28,
-          34,
-          40,
-          47,
-          55,
-          64
-        ],
-        "status": "create_failed",
-        "error": "Error: provided too many arguments Tehran Command Center,https://arweave.net/iran-command-center,[object Object],\u0004,8,2,2,3,320000000,130000000,\u000b\u000e\u0012\u0017\u001c\"(/7@,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Defense Battery,https://arweave.net/defense-battery,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,400000000,160000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       }
     ],
-    "timestamp": "2025-10-30T23:40:49.496Z"
+    "timestamp": "2025-10-31T06:23:11.124Z"
   },
   "mining_tokens_deposited": {
     "amount": "21000000000000",
-    "tx": "2Z6tU58oSSVAwnTFC6mvEgjggrFBpsTDw5HDyPWjUDvvwmi2JATD2p1PPf5WS8WahkxHqxmynprsVSSWokn9X4sx",
-    "timestamp": "2025-10-30T23:40:49.880Z"
+    "tx": "JGcvv4rxLScmw2AjRaipVaxLggxzKZUC3UgymE1QvemVcht1XfYjvWwR7VSBd8v7kf56sCPMHck57gyaspQ9HfW",
+    "timestamp": "2025-10-31T06:23:11.633Z"
   },
   "lp_token_accounts_initialized": {
-    "lp_token_account": "CBGXWiYaf6y5MPh5a48w6eKnRHP5SmhWMN5SyJhuFb3N",
-    "lp_token_owner": "AxVdPbNDDc9uKbodqbpQvJW1kkANQyPbEGxQPWqCSfAV",
-    "lp_mint": "ADoYSB8FMnuqatN51dgcDeNtzZcVWQCfbRUSSnKTZHkc",
-    "timestamp": "2025-10-30T23:40:50.351Z"
+    "lp_token_account": "3PgXb5DsU8W4YW1ga5rK4wjEZkKe9pA4Vr5H4igHAPKV",
+    "lp_token_owner": "Gg3aZCHbcV7bEpc9brVmrwYDbJqKNML3TPo5XcCHWoRo",
+    "lp_mint": "7r8EwyARWDp42bgaMMbKYrswp4vCV6ZDcBMyXV3ChADw",
+    "timestamp": "2025-10-31T06:23:11.999Z"
   },
   "dbtc_dist_per_slot_updated": {
-    "dogeBtcMiningPDA": "6M4FeJzZ2pLp2ppJ94UaAkV7tsCNBDBq5FAKgt98KRwC",
-    "vaultAuthorityPDA": "AxVdPbNDDc9uKbodqbpQvJW1kkANQyPbEGxQPWqCSfAV",
-    "solTreasuryPDA": "A3fJkKFiHa1mPvZfKFjUJP3jCuCiqyPrUjeCN1nJeers",
-    "poolStatePDA": "5fPnY5QAVo94etvjwez3sWZEUnyVqPepkdf3dV2c1MBL",
+    "dogeBtcMiningPDA": "9TCYKGvpZfiLbMXByG7cY6QAvanGn4Hbc9qYmPt5nK36",
+    "vaultAuthorityPDA": "Gg3aZCHbcV7bEpc9brVmrwYDbJqKNML3TPo5XcCHWoRo",
+    "solTreasuryPDA": "GmPmkj77L5HrrSh46fRkckYw3NSSYPtj1NWALvAguJdR",
+    "poolStatePDA": "63MaxYheu5m8vFQxeekxsdMcEZAzCLcy4wCj3LCHQTj4",
     "ammConfigPDA": "A7Vi23J2jZaiT3ZR9MoFiqoppivK8po8vVrjFPCRqkHe",
     "method": "raydium_integration",
-    "tx_signature": "3HJ71UXXFziynuPV1s2uT5qzq764EE1oztukJdiTcQZW8ytiHtaRSV7dw4eNWvn5Lwct8nnbqcmqejuEw22giRJK",
-    "timestamp": "2025-10-30T23:40:51.285Z"
+    "tx_signature": "zp8Xbjj1NGbABHVn4mhAbPVrMyJvFuxtyim8Ket5C2iHcmxTgxgwQf8mUWBtbHoWusU8UiTLgC4g9pd69WUUeB5",
+    "timestamp": "2025-10-31T06:23:12.995Z"
   },
   "moonEconomy_program_initialized": {
-    "moonEconomy_globalConfig_data_ac": "BZAPABbDcU7iGw62XQdqyRDRBANZyJXoBEJhh1USp4Ns",
-    "moonEconomy_devEarnings_data_ac": "CqCfDRAaiSAz44LFCGC5SRZ8MA3Kfbtog5rD1J2U4Lfi",
-    "moonEconomy_feeCollector_data_ac": "DyjGsUv7i9osZ5tHhdkHtW8cggMkrShy6W5MdUgxbkJt",
-    "timestamp": "2025-10-30T23:40:59.729Z"
+    "moonEconomy_globalConfig_data_ac": "7EayehyqtLFxExQFtq1gpi1k7PLCGCpScxkkP9jF9S2J",
+    "moonEconomy_devEarnings_data_ac": "5Wveqe2rSn2g89Qvpn1i6H3YAnv8hzVPNVQUABjw196i",
+    "moonEconomy_feeCollector_data_ac": "3mm9dByjHLnDbCoKK6H9ZVM7EHVokdG7hAn2wYT7Qiqi",
+    "timestamp": "2025-10-31T06:23:19.446Z"
   },
   "moonEconomy_mDogeVault_initialized": {
-    "dogebtcVault": "4z6noyUXj6PVweEDiGct9TTR5Nc237a9aojrX1F6VsTQ",
-    "dbtcSolVault": "33g4pgmqCLUmtZsxoUG6VsAxgGP6Ag2PZHMDnRDku2sd",
-    "dbtcCustodian": "CA3konarR1LdXBWD5FwZQfTVqgUV9rfjQkcPvjWbAbeV",
-    "dbtcCustodianAuthority": "C1L6zCx75x3k3EDL7y5pduNcxVTPZ3sX36LworUNhGtp",
-    "timestamp": "2025-10-30T23:41:00.201Z"
+    "dogebtcVault": "FfYLiWLgst2Hv1DqMRDTnv34PTSBPXZohHCTm22zZLu3",
+    "dbtcSolVault": "3yxuRbDRpV6oDVqXtuLtNPXdzWxkg5znfFgzFUwzt4pf",
+    "dbtcCustodian": "5BRrAyV9KK4yvH4mfKwNjqJXaEKEjvyHsBBKbuU5ogHJ",
+    "dbtcCustodianAuthority": "CTtdKDmUZsHkMGUEHZ3RDMKHgYigJdwUPjzQzqkU9bzy",
+    "timestamp": "2025-10-31T06:23:19.932Z"
   },
   "moonEconomy_liquidityVault_initialized": {
-    "liquidityVault": "AKZUftuzM8vgHvxGshqNYYZ659wwcY5YzC3DvSyx11Ba",
-    "liquiditySolVault": "6oyZqnnH2Jc7C9d1i6owCFfnihJ47c5jKcNRZFyKZuxs",
-    "liquidityCustodian": "HmZMztK3c1p3JYgmRASqeqctSUj1KDVSJK9QYqvK911K",
-    "liquidityCustodianAuthority": "A83jx8ZSo29RiyptApfFhCdrwJvXN27AeGrvvvEb9s6Y",
-    "timestamp": "2025-10-30T23:41:00.695Z"
+    "liquidityVault": "96bDMAeh4BpCRZZZbC9pCsiEJFRwMpwdUgLBHkq3bD7A",
+    "liquiditySolVault": "ETJXsdvdqQrZrGHm6n3hxng13qVRzygwyitht5KebECH",
+    "liquidityCustodian": "3E5szeM6SrfJ17byuvtu1T5v8qdgZcS3op82zzDp5kj9",
+    "liquidityCustodianAuthority": "DFsHKX7S6cZHXxGXzkrLMhGYqQd5ByM6sKrbY7nqEGnV",
+    "timestamp": "2025-10-31T06:23:20.451Z"
   }
 }

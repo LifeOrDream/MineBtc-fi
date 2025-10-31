@@ -164,12 +164,15 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
 
     //     let name = format!("Dragon Egg #{}", moonbase_count);
 
-    //     // Generate DNA for the egg
-    //     let dna = generate_dragon_egg_dna(
-    //         Clock::get()?.slot,
-    //         &user.key(),
+    //     // Generate DNA for the egg using genescience
+    //     // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
+    //     let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
+    //     let dna = crate::genescience::generate_genesis_dna_with_tier(
     //         moonbase_count,
-    //     );
+    //         &user.key(),
+    //         Clock::get()?.slot,
+    //         family_type,
+    //     )?;
 
     //     // Get URI from global config or use fallback
     //     let uri = global_config.get_random_dragon_egg_uri(
@@ -194,7 +197,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     //         uri.clone(),
     //     )?;
 
-    //     // Initialize Dragon Egg metadata
+    //     // Initialize Dragon Egg metadata with DNA
     //     egg_metadata.mint = dragon_egg_asset.key();
     //     egg_metadata.power = BASE_EGG_POWER;
     //     egg_metadata.dna = dna;
@@ -205,6 +208,11 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
 
     //     // Update global dragon egg counter
     //     global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
+
+    //     // Log DNA info for debugging
+    //     let family = crate::genescience::get_family_type(&dna);
+    //     let stage = crate::genescience::get_evolutionary_stage(&dna);
+    //     msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
 
     //     // Emit events
     //     emit!(DragonEggMinted {
@@ -218,6 +226,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
 
     //     msg!("✅ Dragon Egg minted for moonbase creation");
     //     msg!("   Egg: {}", egg_metadata.mint);
+    //     msg!("   DNA Family/Tier: {}", family);
     // }
 
     // Emit event

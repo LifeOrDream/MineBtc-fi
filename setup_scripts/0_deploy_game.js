@@ -256,7 +256,7 @@ function buildProgram(programConfig) {
   console.log(`\x1b[36m🏗️  Building ${programConfig.displayName}...\x1b[0m`);
   
   const programDir = path.join(programConfig.buildDir, 'programs', programConfig.name);
-  runCommand('cargo build-sbf -- --locked', programDir);
+  runCommand('clear', programDir);
 
   const builtSoPath = path.join(programDir, 'target', 'deploy', `${programConfig.name}.so`);
   const targetSoPath = programConfig.soPath;
