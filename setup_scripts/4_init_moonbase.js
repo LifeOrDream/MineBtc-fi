@@ -173,8 +173,12 @@ async function main() {
         
         // 5. Initialize Loot & Level Stats
         await initializeLootAndStats(moonbaseProgram);
-        // return;
+        return;
         
+        // 1. Create Dragon Egg Collection
+        const collectionAddress = await createDragonEggCollection(connection, deployer, deploymentData, deploymentPath);
+        
+
         // 6. Set collection in MoonBase program
         const collectionPubkey = new PublicKey(deploymentFile.dragon_egg_collection_created.collection_address);
         await setCollectionInMoonBase(connection, walletKeypair, deploymentFile, deploymentPath, collectionPubkey);
@@ -505,6 +509,97 @@ async function initializeLootAndStats(moonbaseProgram) {
         } else {
             throw new Error(`Level stats initialization failed: ${result.error}`);
         }
+    }
+}
+
+
+/**
+ * Creates the Dragon Egg NFT collection using Metaplex Core
+ */
+async function createDragonEggCollection(connection, deployer, deploymentData, deploymentPath) {
+    if (deploymentData.dragon_egg_collection_created) {
+        console.log(COLOR_INFO, 'ℹ️ Dragon Egg collection already created');
+        console.log(COLOR_INFO, '🔑 Collection Address:', deploymentData.dragon_egg_collection_created.collection_address);
+        return new PublicKey(deploymentData.dragon_egg_collection_created.collection_address);
+    }
+
+    console.log(COLOR_STEP, '\n=================== [ CREATING DRAGON EGG COLLECTION ] ===================');
+    
+    try {
+        // Load MoonBase program
+        const moonbaseIdlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
+        const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
+        const wallet = new Wallet(deployer);
+        const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
+        const moonbaseProgram = new Program(moonbaseIdl, provider);
+        
+        // Derive PDAs
+        const [globalConfigPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from("global-config")],
+            moonbaseProgram.programId
+        );
+        
+        const [collectionAuthorityPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from("collection_authority")],
+            moonbaseProgram.programId
+        );
+        
+        console.log(COLOR_INFO, '🎨 Creating Metaplex Core collection...');
+        console.log(COLOR_DIM, `   Name: ${config.dragon_eggs.collection_name}`);
+        console.log(COLOR_DIM, `   URI: ${config.dragon_eggs.collection_uri}`);
+        console.log(COLOR_INFO, '🔐 Collection Authority PDA:', collectionAuthorityPDA.toString());
+        
+        // Generate a new keypair for the collection
+        const collectionKeypair = Keypair.generate();
+        
+        // Call the MoonBase admin function to create the collection
+        const tx = await moonbaseProgram.methods
+            .createDragonEggCollection(
+                config.dragon_eggs.collection_name,
+                config.dragon_eggs.collection_uri
+            )
+            .accounts({
+                authority: deployer.publicKey,
+                globalConfig: globalConfigPDA,
+                collection: collectionKeypair.publicKey,
+                collectionAuthority: collectionAuthorityPDA,
+                mplCoreProgram: new PublicKey("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"),
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([collectionKeypair])
+            .rpc();
+            
+        const collectionPubkey = collectionKeypair.publicKey;
+        
+        console.log(COLOR_SUCCESS, '✅ Dragon Egg collection created successfully!');
+        console.log(COLOR_INFO, '🔑 Collection Address:', collectionPubkey.toString());
+        console.log(COLOR_DIM, `🔍 Explorer: https://explorer.solana.com/address/${collectionPubkey.toString()}?cluster=${CLUSTER}`);
+        
+        console.log(COLOR_INFO, '📍 Transaction:', tx);
+        
+        // Verify collection was created by checking global config
+        const globalConfig = await moonbaseProgram.account.globalConfig.fetch(globalConfigPDA);
+        if (globalConfig.dragonEggCollection.toString() === collectionPubkey.toString()) {
+            console.log(COLOR_SUCCESS, '✅ Collection verified in global config');
+        }
+        
+        // Save to deployment data
+        deploymentData.dragon_egg_collection_created = {
+            collection_address: collectionPubkey.toString(),
+            collection_name: config.dragon_eggs.collection_name,
+            collection_uri: config.dragon_eggs.collection_uri,
+            update_authority: collectionAuthorityPDA.toString(),
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log(COLOR_SUCCESS, '✅ Deployment status updated');
+        
+        return collectionPubkey;
+        
+    } catch (error) {
+        console.error(COLOR_ERROR, '❌ Failed to create collection:', error);
+        throw error;
     }
 }
 

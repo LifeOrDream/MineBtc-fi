@@ -9,12 +9,12 @@ pub mod instructions;
 pub use instructions::admin::*;
 pub use instructions::user::*;
 
-declare_id!("AL5Q6PzbHFthrCCJ8bn4NQg6m88RJfDtkSmwxaAKJtnm");
+declare_id!("6JrsTb7T6Dgzs4RAKiS73fUr9EXi3PASDMybkyBezq6B");
 
 #[program]
 pub mod moonbase {
     use super::*;
-    use crate::instructions::admin::{self};
+    use crate::instructions::admin::{self, CreateDragonEggCollection};
     use crate::instructions::user::{self};
 
     // ----------------------------------------------------------------------------------------
@@ -46,6 +46,16 @@ pub mod moonbase {
     /// Add factions to the global config (admin only)
     pub fn add_factions(ctx: Context<UpdateConfigAc>, factions: Vec<String>) -> Result<()> {
         admin::add_factions_internal(ctx, factions)
+    }
+
+    /// Create Dragon Egg collection with program PDA as authority
+    /// This allows the program to mint NFTs from the collection
+    pub fn create_dragon_egg_collection(
+        ctx: Context<CreateDragonEggCollection>,
+        name: String,
+        uri: String,
+    ) -> Result<()> {
+        admin::create_dragon_egg_collection_internal(ctx, name, uri)
     }
 
 

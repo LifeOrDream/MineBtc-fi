@@ -150,84 +150,91 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.modules_repaired_since_last_game = false;
     user_moonbase.incubated_dragon_egg = None;
 
-    // // Mint Dragon Egg NFT if tier includes it
-    // if to_mint_dragon {
-    //     // Unwrap optional accounts (required for NFT minting)
-    //     let dragon_egg_asset = ctx.accounts.dragon_egg_asset.as_ref()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
+    // Mint Dragon Egg NFT if tier includes it
+    if to_mint_dragon {
+        // Unwrap optional accounts (required for NFT minting)
+        let dragon_egg_asset = ctx.accounts.dragon_egg_asset.as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let collection_authority = ctx.accounts.collection_authority.as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
 
-    //     let name = format!("Dragon Egg #{}", moonbase_count);
+        let name = format!("Dragon Egg #{}", moonbase_count);
 
-    //     // Generate DNA for the egg using genescience
-    //     // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
-    //     let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
-    //     let dna = crate::genescience::generate_genesis_dna_with_tier(
-    //         moonbase_count,
-    //         &user.key(),
-    //         Clock::get()?.slot,
-    //         family_type,
-    //     )?;
+        // Generate DNA for the egg using genescience
+        // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
+        let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
+        let dna = crate::genescience::generate_genesis_dna_with_tier(
+            moonbase_count,
+            &user.key(),
+            Clock::get()?.slot,
+            family_type,
+        )?;
 
-    //     // Get URI from global config or use fallback
-    //     let uri = global_config.get_random_dragon_egg_uri(
-    //         Clock::get()?.slot,
-    //         moonbase_count,
-    //         &dna,
-    //     ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", moonbase_count));
+        // Get URI from global config or use fallback
+        let uri = global_config.get_random_dragon_egg_uri(
+            Clock::get()?.slot,
+            moonbase_count,
+            &dna,
+        ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", moonbase_count));
 
-    //     // Get global config as AccountInfo before using mutable reference
-    //     let global_config_info = global_config.to_account_info();
+        // Get the collection authority bump for signing
+        let collection_authority_bump = ctx.bumps.collection_authority.unwrap();
+        let collection_authority_seeds = &[
+            crate::state::COLLECTION_AUTHORITY_SEED,
+            &[collection_authority_bump],
+        ];
 
-    //     // Create Dragon Egg NFT with MPL Core
-    //     crate::mpl_core_helpers::create_mpl_core_asset(
-    //         dragon_egg_asset,
-    //         Some(dragon_egg_collection),
-    //         &global_config_info,
-    //         &user.to_account_info(),
-    //         &user.to_account_info(),
-    //         &ctx.accounts.system_program.to_account_info(),
-    //         mpl_core_program,
-    //         name.clone(),
-    //         uri.clone(),
-    //     )?;
+        // Create Dragon Egg NFT with MPL Core
+        crate::mpl_core_helpers::create_mpl_core_asset(
+            dragon_egg_asset,
+            Some(dragon_egg_collection),
+            collection_authority,
+            &user.to_account_info(),
+            &user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            mpl_core_program,
+            name.clone(),
+            uri.clone(),
+            Some(&[collection_authority_seeds]),
+        )?;
 
-    //     // Initialize Dragon Egg metadata with DNA
-    //     egg_metadata.mint = dragon_egg_asset.key();
-    //     egg_metadata.power = BASE_EGG_POWER;
-    //     egg_metadata.dna = dna;
-    //     egg_metadata.incubated_moonbase = None;
-    //     egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    //     egg_metadata.created_at = Clock::get()?.unix_timestamp;
-    //     egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
+        // Initialize Dragon Egg metadata with DNA
+        egg_metadata.mint = dragon_egg_asset.key();
+        egg_metadata.power = BASE_EGG_POWER;
+        egg_metadata.dna = dna;
+        egg_metadata.incubated_moonbase = None;
+        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+        egg_metadata.created_at = Clock::get()?.unix_timestamp;
+        egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
 
-    //     // Update global dragon egg counter
-    //     global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
+        // Update global dragon egg counter
+        global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
 
-    //     // Log DNA info for debugging
-    //     let family = crate::genescience::get_family_type(&dna);
-    //     let stage = crate::genescience::get_evolutionary_stage(&dna);
-    //     msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
+        // Log DNA info for debugging
+        let family = crate::genescience::get_family_type(&dna);
+        let stage = crate::genescience::get_evolutionary_stage(&dna);
+        msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
 
-    //     // Emit events
-    //     emit!(DragonEggMinted {
-    //         mint: egg_metadata.mint,
-    //         name,
-    //         uri,
-    //         dna,
-    //         initial_power: BASE_EGG_POWER,
-    //         price_paid: 0, // Included in moonbase price
-    //     });
+        // Emit events
+        emit!(DragonEggMinted {
+            mint: egg_metadata.mint,
+            name,
+            uri,
+            dna,
+            initial_power: BASE_EGG_POWER,
+            price_paid: 0, // Included in moonbase price
+        });
 
-    //     msg!("✅ Dragon Egg minted for moonbase creation");
-    //     msg!("   Egg: {}", egg_metadata.mint);
-    //     msg!("   DNA Family/Tier: {}", family);
-    // }
+        msg!("✅ Dragon Egg minted for moonbase creation");
+        msg!("   Egg: {}", egg_metadata.mint);
+        msg!("   DNA Family/Tier: {}", family);
+    }
 
     // Emit event
     emit!(UserMoonBaseCreated {
@@ -1630,29 +1637,36 @@ pub struct CreateUserMoonbase<'info> {
     )]
     pub creation_fee_recipient: UncheckedAccount<'info>,
 
-    // /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
-    // #[account(mut)]
-    // pub dragon_egg_asset: Option<AccountInfo<'info>>,
+    /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
+    #[account(mut)]
+    pub dragon_egg_asset: Option<AccountInfo<'info>>,
 
-    // /// CHECK: Dragon Egg collection (optional)
-    // #[account(mut)]
-    // pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    /// CHECK: Dragon Egg collection (optional)
+    #[account(mut)]
+    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
 
-    // /// Dragon Egg metadata (optional) - only created if tier includes egg
-    // #[account(
-    //     init_if_needed,
-    //     payer = user,
-    //     space = DragonEggMetadata::LEN,
-    //     seeds = [
-    //         DRAGON_EGG_METADATA_SEED.as_ref(), 
-    //         user.key().as_ref(),
-    //     ],
-    //     bump
-    // )]
-    // pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    /// Dragon Egg metadata (optional) - only created if tier includes egg
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = DragonEggMetadata::LEN,
+        seeds = [
+            DRAGON_EGG_METADATA_SEED.as_ref(), 
+            user.key().as_ref(),
+        ],
+        bump
+    )]
+    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
 
     /// CHECK: Metaplex Core program (optional)
-    // pub mpl_core_program: Option<UncheckedAccount<'info>>,
+    pub mpl_core_program: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Collection authority PDA (optional) - required if minting with collection
+    #[account(
+        seeds = [crate::state::COLLECTION_AUTHORITY_SEED],
+        bump
+    )]
+    pub collection_authority: Option<UncheckedAccount<'info>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -2285,6 +2299,7 @@ pub fn incubate_dragon_egg_internal(
         &ctx.accounts.user.to_account_info(), // User is current owner/authority
         &ctx.accounts.egg_custody_pda.to_account_info(), // Transfer to custody PDA
         &ctx.accounts.mpl_core_program.to_account_info(),
+        None, // No signer seeds needed - user is signing
     )?;
 
     msg!("✅ NFT locked in custody PDA: {}", ctx.accounts.egg_custody_pda.key());

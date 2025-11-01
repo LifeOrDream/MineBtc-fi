@@ -15,6 +15,7 @@ pub fn create_mpl_core_asset<'info>(
     mpl_core_program: &AccountInfo<'info>,
     name: String,
     uri: String,
+    signer_seeds: Option<&[&[&[u8]]]>,
 ) -> Result<()> {
     // Validate Metaplex Core program
     require!(
@@ -39,8 +40,12 @@ pub fn create_mpl_core_asset<'info>(
         cpi_builder.collection(Some(collection_account));
     }
 
-    // Execute CPI
-    cpi_builder.invoke()?;
+    // Execute CPI with or without signer seeds
+    if let Some(seeds) = signer_seeds {
+        cpi_builder.invoke_signed(seeds)?;
+    } else {
+        cpi_builder.invoke()?;
+    }
 
     Ok(())
 }
@@ -53,6 +58,7 @@ pub fn transfer_mpl_core_asset<'info>(
     authority: &AccountInfo<'info>,
     new_owner: &AccountInfo<'info>,
     mpl_core_program: &AccountInfo<'info>,
+    signer_seeds: Option<&[&[&[u8]]]>,
 ) -> Result<()> {
     // Validate Metaplex Core program
     require!(
@@ -74,8 +80,12 @@ pub fn transfer_mpl_core_asset<'info>(
         cpi_builder.collection(Some(collection_account));
     }
 
-    // Execute CPI
-    cpi_builder.invoke()?;
+    // Execute CPI with or without signer seeds
+    if let Some(seeds) = signer_seeds {
+        cpi_builder.invoke_signed(seeds)?;
+    } else {
+        cpi_builder.invoke()?;
+    }
 
     Ok(())
 }

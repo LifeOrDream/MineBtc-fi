@@ -91,6 +91,7 @@ pub const MODULE_CONFIG_SEED: &[u8] = b"module-config"; // For individual module
 // PDAs which hold UserMoonBaseInstance / ReferralRewards state
 pub const USER_MOONBASE_SEED: &[u8] = b"user-moonbase";
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
+pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
 // PDAs which hold GearInstance / ModuleInstance state
 pub const MODULE_INSTANCE_SEED: &[u8] = b"module-instance";

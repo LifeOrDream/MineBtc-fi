@@ -424,6 +424,14 @@ pub struct DragonEggMinted {
 }
 
 #[event]
+pub struct DragonEggCollectionCreated {
+    pub collection: Pubkey,
+    pub update_authority: Pubkey,
+    pub name: String,
+    pub uri: String,
+}
+
+#[event]
 pub struct LevelStatsInitialized {
     pub level_stats_pda: Pubkey,
     pub tracked_levels: u8,

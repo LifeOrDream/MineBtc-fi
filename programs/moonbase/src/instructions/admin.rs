@@ -2,6 +2,10 @@ use anchor_lang::prelude::*;
 use crate::state::*;
 use crate::events::*;
 use anchor_lang::system_program;
+use mpl_core::{
+    instructions::CreateCollectionV1CpiBuilder,
+    ID as MPL_CORE_PROGRAM_ID,
+};
 
 use crate::errors::ErrorCode;
 
@@ -2213,6 +2217,91 @@ pub struct QueryTokenPrices<'info> {
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
+}
+
+/// Create Dragon Egg collection with program PDA as authority
+pub fn create_dragon_egg_collection_internal(
+    ctx: Context<CreateDragonEggCollection>,
+    name: String,
+    uri: String,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    let authority = &ctx.accounts.authority;
+    
+    // Verify authority
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+    
+    msg!("Creating Dragon Egg collection with program PDA as update authority");
+    msg!("Collection: {}", ctx.accounts.collection.key());
+    msg!("Collection Authority PDA: {}", ctx.accounts.collection_authority.key());
+    
+    // Get the collection authority bump for signing
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let _collection_authority_seeds = &[
+        COLLECTION_AUTHORITY_SEED,
+        &[collection_authority_bump],
+    ];
+    
+    // Create the collection using CPI
+    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
+    let mut cpi_builder = CreateCollectionV1CpiBuilder::new(mpl_core_program);
+    
+    cpi_builder
+        .collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.authority.to_account_info())
+        .update_authority(Some(&ctx.accounts.collection_authority.to_account_info()))
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        .name(name.clone())
+        .uri(uri.clone())
+        .invoke()?;
+    
+    // Store the collection address in global config
+    global_config.dragon_egg_collection = ctx.accounts.collection.key();
+    
+    emit!(DragonEggCollectionCreated {
+        collection: ctx.accounts.collection.key(),
+        update_authority: ctx.accounts.collection_authority.key(),
+        name,
+        uri,
+    });
+    
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CreateDragonEggCollection<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: Dragon Egg collection account (will be created by MPL Core)
+    #[account(
+        mut,
+        signer
+    )]
+    pub collection: UncheckedAccount<'info>,
+    
+    /// CHECK: Collection authority PDA that will be the update authority
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+    
+    /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID)]
+    pub mpl_core_program: UncheckedAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
 }
 
 

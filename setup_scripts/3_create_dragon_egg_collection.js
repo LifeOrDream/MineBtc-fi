@@ -263,78 +263,7 @@ function validatePrerequisites(deploymentData) {
     console.log(COLOR_SUCCESS, '✅ All prerequisites validated');
 }
 
-/**
- * Creates the Dragon Egg NFT collection using Metaplex Core
- */
-async function createDragonEggCollection(connection, deployer, deploymentData, deploymentPath) {
-    if (deploymentData.dragon_egg_collection_created) {
-        console.log(COLOR_INFO, 'ℹ️ Dragon Egg collection already created');
-        console.log(COLOR_INFO, '🔑 Collection Address:', deploymentData.dragon_egg_collection_created.collection_address);
-        return new PublicKey(deploymentData.dragon_egg_collection_created.collection_address);
-    }
 
-    console.log(COLOR_STEP, '\n=================== [ CREATING DRAGON EGG COLLECTION ] ===================');
-    
-    try {
-        // Create UMI instance
-        const umi = createUmi(RPC_URL);
-        
-        // Convert web3.js keypair to UMI signer
-        const umiKeypair = umi.eddsa.createKeypairFromSecretKey(deployer.secretKey);
-        const umiSigner = createSignerFromKeypair(umi, umiKeypair);
-        
-        umi.use(signerIdentity(umiSigner));
-        umi.use(mplCore());
-        
-        console.log(COLOR_INFO, '🎨 Creating Metaplex Core collection...');
-        console.log(COLOR_DIM, `   Name: ${config.dragon_eggs.collection_name}`);
-        console.log(COLOR_DIM, `   URI: ${config.dragon_eggs.collection_uri}`);
-        
-        // Generate collection address
-        const collection = generateSigner(umi);
-        
-        // Create the collection
-        await createCollectionV1(umi, {
-            collection,
-            name: config.dragon_eggs.collection_name,
-            uri: config.dragon_eggs.collection_uri,
-        }).sendAndConfirm(umi);
-        
-        const collectionPubkey = toWeb3JsPublicKey(collection.publicKey);
-        
-        console.log(COLOR_SUCCESS, '✅ Dragon Egg collection created successfully!');
-        console.log(COLOR_INFO, '🔑 Collection Address:', collectionPubkey.toString());
-        console.log(COLOR_DIM, `🔍 Explorer: https://explorer.solana.com/address/${collectionPubkey.toString()}?cluster=${CLUSTER}`);
-        
-        // Verify collection was created
-        try {
-            const collectionData = await fetchCollectionV1(umi, collection.publicKey);
-            console.log(COLOR_SUCCESS, '✅ Collection verified on-chain');
-            console.log(COLOR_DIM, `   Update Authority: ${collectionData.updateAuthority}`);
-            console.log(COLOR_DIM, `   Num Minted: ${collectionData.numMinted}`);
-            console.log(COLOR_DIM, `   Current Size: ${collectionData.currentSize}`);
-        } catch (error) {
-            console.log(COLOR_WARNING, '⚠️ Could not verify collection:', error.message);
-        }
-        
-        // Save to deployment data
-        deploymentData.dragon_egg_collection_created = {
-            collection_address: collectionPubkey.toString(),
-            collection_name: config.dragon_eggs.collection_name,
-            collection_uri: config.dragon_eggs.collection_uri,
-            update_authority: deployer.publicKey.toString(),
-            timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-        console.log(COLOR_SUCCESS, '✅ Deployment status updated');
-        
-        return collectionPubkey;
-        
-    } catch (error) {
-        console.error(COLOR_ERROR, '❌ Failed to create collection:', error);
-        throw error;
-    }
-}
 
 /**
  * Adds Dragon Egg URIs to the MoonBase program
