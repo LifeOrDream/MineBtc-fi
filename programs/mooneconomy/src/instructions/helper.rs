@@ -105,3 +105,38 @@ pub fn remove_lp_position(electricity_ac: &mut UserMoonElectricity, position_ind
     
     Ok(())
 }
+
+/// Helper function to update user electricity via CPI to MoonBase program
+pub fn update_user_electricity_cpi<'info>(
+    moonbase_program: &AccountInfo<'info>,
+    authority: &AccountInfo<'info>,
+    user_moonbase: &AccountInfo<'info>,
+    mining_state: &AccountInfo<'info>,
+    global_config: &AccountInfo<'info>,
+    fee_collector: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    fee_collector_bump: u8,
+    to_increase: bool,
+    amount: u64,
+) -> Result<()> {
+    // Fee collector seeds for CPI signer
+    let fee_collector_seeds = &[
+        crate::state::FEE_COLLECTOR_SEED.as_ref(),
+        &[fee_collector_bump],
+    ];
+    let signer_seeds = &[&fee_collector_seeds[..]];
+    
+    let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
+        user: authority.clone(),
+        user_moonbase: user_moonbase.clone(),
+        mining_state: mining_state.clone(),
+        global_config: global_config.clone(),
+        authority: fee_collector.clone(),
+        system_program: system_program.clone(),
+    };
+    
+    let cpi_ctx = CpiContext::new_with_signer(moonbase_program.clone(), cpi_accounts, signer_seeds);
+    moonbase::cpi::update_user_electricity(cpi_ctx, to_increase, amount)?;
+    
+    Ok(())
+}

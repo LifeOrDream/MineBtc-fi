@@ -316,46 +316,7 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ 
 
 /// Expand a moonbase
 pub fn expand_moonbase_internal(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
