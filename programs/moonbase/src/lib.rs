@@ -9,7 +9,7 @@ pub mod instructions;
 pub use instructions::admin::*;
 pub use instructions::user::*;
 
-declare_id!("Cus3VE8iKXB8T3oiWZD3gphQgNU18YGNVquC41z5jSLa");
+declare_id!("DGfU1gsKVteSYTQFqAsP8kjNVeaTjcaeSdPe4d5yRrG3");
 
 #[program]
 pub mod moonbase {
@@ -276,6 +276,11 @@ pub mod moonbase {
     /// - PRICE_TIER_4 (4.20 SOL): Moonbase + Dragon Egg + 75k electricity
     pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
+    }
+
+    /// Create user moonbase with Dragon Egg NFT (tiers 2-4)
+    pub fn create_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+        user::initialize_user_moonbase_w_egg(ctx, referrer, faction_id, pricing_tier)
     }
 
     /// Purchase a moonbase expansion (user function)

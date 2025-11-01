@@ -12,33 +12,26 @@ use anchor_spl::token_interface::{ Mint as Mint2022 };
 // -------------- USER FUNCTIONS :: CREATE MOON-BASE, EXPAND MOONBASE ----------------
 // ----------------------------------------------------------------------------------------
 
-/// Creates a new moon base for a user
-/// This can only be called once per user
-/// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
-pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+// ----------------------------------------------------------------------------------------
+// -------------- HELPER :: COMMON MOONBASE INITIALIZATION LOGIC ------------------------
+// ----------------------------------------------------------------------------------------
 
-    let user_moonbase = &mut ctx.accounts.user_moonbase;
-    let new_rewards = &mut ctx.accounts.new_user_rewards;
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-    let user = &ctx.accounts.user;
-
-    // Get moonbase count before mutable borrow
-    let moonbase_count = {
-        let global_config = &ctx.accounts.global_config;
-        global_config.total_moonbases_created
-    };
-
-    // Determine pricing and NFT minting based on tier
-    let (sol_cost, to_mint_dragon, init_type): (u64, bool, u8) = match pricing_tier {
-        PRICE_TIER_1 => (PRICE_TIER_1, false, 1),
-        PRICE_TIER_2 => (PRICE_TIER_2, true, 2),
-        PRICE_TIER_3 => (PRICE_TIER_3, true, 3),
-        PRICE_TIER_4 => (PRICE_TIER_4, true, 4),
-        _ => return Err(ErrorCode::InvalidParameters.into()),
-    };
-
-    let global_config = &mut ctx.accounts.global_config;
-
+/// Common initialization logic shared between create_user_moonbase and create_user_moonbase_w_egg
+fn initialize_moonbase_common<'info>(
+    user_moonbase: &mut Account<'info, UserMoonBaseInstance>,
+    new_rewards: &mut Account<'info, ReferralRewards>,
+    doge_btc_mining: &Account<'info, DogeBtcMining>,
+    global_config: &mut Account<'info, GlobalConfig>,
+    user: &Signer<'info>,
+    sol_treasury: &AccountInfo<'info>,
+    creation_fee_recipient: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    referrer: Option<Pubkey>,
+    referrer_rewards: Option<&mut Account<'info, ReferralRewards>>,
+    sol_cost: u64,
+    init_type: u8,
+    faction_id: u8,
+) -> Result<()> {
     // Increment total moonbases created and total sol spent
     global_config.total_moonbases_created = global_config.total_moonbases_created.saturating_add(1);
     global_config.total_sol_spent = global_config.total_sol_spent.saturating_add(sol_cost);
@@ -58,10 +51,8 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     new_rewards.owner = user.key();
     new_rewards.total_sol_earned = 0;
     new_rewards.sol_claimed_for_xp = 0;
-    new_rewards.bump = ctx.bumps.new_user_rewards;
     new_rewards.referrals_count = 0;
     
- 
     // Charge the creation fee with 50/50 split
     let fee_recipient_amount = sol_cost / 2; // 50% goes to creation fee recipient
     let remaining_amount = sol_cost - fee_recipient_amount; // 50% goes through existing system
@@ -69,10 +60,10 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     // Transfer 50% directly to creation fee recipient
     anchor_lang::system_program::transfer(
         CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
+            system_program.clone(),
             anchor_lang::system_program::Transfer {
                 from: user.to_account_info(),
-                to: ctx.accounts.creation_fee_recipient.to_account_info(),
+                to: creation_fee_recipient.clone(),
             },
         ),
         fee_recipient_amount,
@@ -95,14 +86,14 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
             &ref_pubkey,
             &user.key(),
             &user.to_account_info(),
-            ctx.accounts.referrer_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+            referrer_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
             global_config,
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
+            sol_treasury,
+            system_program,
         )?;
         
         // Process new referral (increment count) if referrer rewards account exists
-        if let Some(referrer_rewards_account) = &mut ctx.accounts.referrer_rewards {
+        if let Some(referrer_rewards_account) = referrer_rewards {
             referrer_rewards_account.referrals_count = referrer_rewards_account.referrals_count.saturating_add(1);
             
             msg!("🤝 New referral processed: {} total referrals for {}", 
@@ -110,13 +101,13 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         }
     } else {
         // If no referrer, set to default (system program is a common default)
-        user_moonbase.referral = ctx.accounts.system_program.key();
+        user_moonbase.referral = anchor_lang::solana_program::system_program::ID;
         
         // If no referrer, remaining 50% goes directly to treasury
         transfer_to_sol_treasury(
             &user.to_account_info(),
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
+            sol_treasury,
+            system_program,
             remaining_amount,
         )?;
     }
@@ -126,8 +117,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.active_hashpower = 0;
     user_moonbase.available_electricity = 0;
     user_moonbase.used_electricity = 0;
-    user_moonbase.dbtc_claim_index =  doge_btc_mining.dbtc_tokens_minted_per_hashpower;
-    user_moonbase.bump = ctx.bumps.user_moonbase;
+    user_moonbase.dbtc_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     user_moonbase.faction_id = faction_id;
     
     // Initialize XP, level, and tier system
@@ -150,104 +140,220 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.modules_repaired_since_last_game = false;
     user_moonbase.incubated_dragon_egg = None;
 
-    // Mint Dragon Egg NFT if tier includes it
-    if to_mint_dragon {
-        // Unwrap optional accounts (required for NFT minting)
-        let dragon_egg_asset_signer = ctx.accounts.dragon_egg_asset.as_ref()
-        .ok_or(ErrorCode::InvalidAccount)?;
-        let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
-            .ok_or(ErrorCode::InvalidAccount)?;
-        let collection_authority = ctx.accounts.collection_authority.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
+    Ok(())
+}
 
-        let name = format!("Dragon Egg #{}", moonbase_count);
+/// Creates a new moon base for a user
+/// This can only be called once per user
+/// pricing_tier: PRICE_TIER_1 (0.5 SOL, no NFT)
+pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+    require!(pricing_tier == PRICE_TIER_1, ErrorCode::InvalidParameters);
 
-        // Generate DNA for the egg using genescience
-        // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
-        let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
-        let dna = crate::genescience::generate_genesis_dna_with_tier(
-            moonbase_count,
-            &user.key(),
-            Clock::get()?.slot,
-            family_type,
-        )?;
+    let (sol_cost, init_type) = (PRICE_TIER_1, 1u8);
 
-        // Get URI from global config or use fallback
-        let uri = global_config.get_random_dragon_egg_uri(
-            Clock::get()?.slot,
-            moonbase_count,
-            &dna,
-        ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", moonbase_count));
+    // Initialize common moonbase fields
+    initialize_moonbase_common(
+        &mut ctx.accounts.user_moonbase,
+        &mut ctx.accounts.new_user_rewards,
+        &ctx.accounts.doge_btc_mining,
+        &mut ctx.accounts.global_config,
+        &ctx.accounts.user,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.creation_fee_recipient.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        referrer,
+        ctx.accounts.referrer_rewards.as_mut(),
+        sol_cost,
+        init_type,
+        faction_id,
+    )?;
 
-        // Get the collection authority bump for signing
-        let collection_authority_bump = ctx.bumps.collection_authority.unwrap();
-        let collection_authority_seeds = &[
-            crate::state::COLLECTION_AUTHORITY_SEED,
-            &[collection_authority_bump],
-        ];
-
-        // Create Dragon Egg NFT with MPL Core
-        crate::mpl_core_helpers::create_mpl_core_asset(
-            &dragon_egg_asset_signer.to_account_info(),
-            Some(dragon_egg_collection),
-            collection_authority,
-            &user.to_account_info(),
-            &user.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            mpl_core_program,
-            name.clone(),
-            uri.clone(),
-            Some(&[collection_authority_seeds]),
-        )?;
-
-        // Initialize Dragon Egg metadata with DNA
-        egg_metadata.mint = dragon_egg_asset_signer.key();
-        egg_metadata.power = BASE_EGG_POWER;
-        egg_metadata.dna = dna;
-        egg_metadata.incubated_moonbase = None;
-        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-        egg_metadata.created_at = Clock::get()?.unix_timestamp;
-        egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
-
-        // Update global dragon egg counter
-        global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
-
-        // Log DNA info for debugging
-        let family = crate::genescience::get_family_type(&dna);
-        let stage = crate::genescience::get_evolutionary_stage(&dna);
-        msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
-
-        // Emit events
-        emit!(DragonEggMinted {
-            mint: egg_metadata.mint,
-            name,
-            uri,
-            dna,
-            initial_power: BASE_EGG_POWER,
-            price_paid: 0, // Included in moonbase price
-        });
-
-        msg!("✅ Dragon Egg minted for moonbase creation");
-        msg!("   Egg: {}", egg_metadata.mint);
-        msg!("   DNA Family/Tier: {}", family);
-    }
+    // Set bump for accounts
+    ctx.accounts.new_user_rewards.bump = ctx.bumps.new_user_rewards;
+    ctx.accounts.user_moonbase.bump = ctx.bumps.user_moonbase;
 
     // Emit event
     emit!(UserMoonBaseCreated {
-        owner: user.key(),
+        owner: ctx.accounts.user.key(),
         referrer,
     });
 
-    msg!("Created new moon base for user {} - Tier {}: {} SOL {}",
-         user.key(), init_type, sol_cost as f64 / 1_000_000_000.0,
-         if to_mint_dragon { "(includes Dragon Egg)" } else { "(no NFT)" });
+    msg!("Created new moon base for user {} - Tier {}: {} SOL (no NFT)",
+         ctx.accounts.user.key(), init_type, sol_cost as f64 / 1_000_000_000.0);
 
     Ok(())
 }
+
+
+
+
+
+
+/// Creates a new moon base for a user with Dragon Egg NFT (tiers 2-4)
+pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+    // Determine pricing and NFT minting based on tier
+    let (sol_cost, init_type): (u64, u8) = match pricing_tier {
+        PRICE_TIER_2 => (PRICE_TIER_2, 2),
+        PRICE_TIER_3 => (PRICE_TIER_3, 3),
+        PRICE_TIER_4 => (PRICE_TIER_4, 4),
+        _ => return Err(ErrorCode::InvalidParameters.into()),
+    };
+
+    // Get moonbase count before mutable borrow
+    let egg_count = {
+        ctx.accounts.global_config.total_dragon_eggs_minted
+    };
+
+    // Initialize common moonbase fields
+    initialize_moonbase_common(
+        &mut ctx.accounts.user_moonbase,
+        &mut ctx.accounts.new_user_rewards,
+        &ctx.accounts.doge_btc_mining,
+        &mut ctx.accounts.global_config,
+        &ctx.accounts.user,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.creation_fee_recipient.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        referrer,
+        ctx.accounts.referrer_rewards.as_mut(),
+        sol_cost,
+        init_type,
+        faction_id,
+    )?;
+
+    // Set bump for accounts
+    ctx.accounts.new_user_rewards.bump = ctx.bumps.new_user_rewards;
+    ctx.accounts.user_moonbase.bump = ctx.bumps.user_moonbase;
+
+    // Mint Dragon Egg NFT
+    let dragon_egg_asset_signer = &ctx.accounts.dragon_egg_asset.as_ref();
+    let dragon_egg_collection = &ctx.accounts.dragon_egg_collection;
+    let mpl_core_program = &ctx.accounts.mpl_core_program;
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let collection_authority = &ctx.accounts.collection_authority;
+
+    let name = format!("Dragon Egg #{}", egg_count);
+
+    // Generate DNA for the egg using genescience
+    // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
+    let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
+    let dna = crate::genescience::generate_genesis_dna_with_tier(
+        egg_count,
+        &ctx.accounts.user.key(),
+        Clock::get()?.slot,
+        family_type,
+    )?;
+
+    // Get URI from global config or use fallback
+    let uri = ctx.accounts.global_config.get_random_dragon_egg_uri(
+        Clock::get()?.slot,
+        egg_count,
+        &dna,
+    ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_count));
+
+    // Get the collection authority bump for signing
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let collection_authority_seeds = &[
+        crate::state::COLLECTION_AUTHORITY_SEED,
+        &[collection_authority_bump],
+    ];
+
+    // Create Dragon Egg NFT with MPL Core
+    crate::mpl_core_helpers::create_mpl_core_asset(
+        &dragon_egg_asset_signer.to_account_info(),
+        Some(&dragon_egg_collection.to_account_info()),
+        collection_authority,
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        mpl_core_program,
+        name.clone(),
+        uri.clone(),
+        Some(&[collection_authority_seeds]),
+    )?;
+
+    // Initialize Dragon Egg metadata with DNA
+    egg_metadata.mint = dragon_egg_asset_signer.key();
+    egg_metadata.power = BASE_EGG_POWER;
+    egg_metadata.dna = dna;
+    egg_metadata.incubated_moonbase = None;
+    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    egg_metadata.created_at = Clock::get()?.unix_timestamp;
+    egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
+
+    // Update global dragon egg counter
+    ctx.accounts.global_config.total_dragon_eggs_minted = ctx.accounts.global_config.total_dragon_eggs_minted.saturating_add(1);
+
+    // Log DNA info for debugging
+    let family = crate::genescience::get_family_type(&dna);
+    let stage = crate::genescience::get_evolutionary_stage(&dna);
+    msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
+
+    // Emit events
+    emit!(DragonEggMinted {
+        mint: egg_metadata.mint,
+        name,
+        uri,
+        dna,
+        initial_power: BASE_EGG_POWER,
+        price_paid: 0, // Included in moonbase price
+    });
+
+    msg!("✅ Dragon Egg minted for moonbase creation");
+    msg!("   Egg: {}", egg_metadata.mint);
+    msg!("   DNA Family/Tier: {}", family);
+
+    // Emit event
+    emit!(UserMoonBaseCreated {
+        owner: ctx.accounts.user.key(),
+        referrer,
+    });
+
+    msg!("Created new moon base for user {} - Tier {}: {} SOL (includes Dragon Egg)",
+         ctx.accounts.user.key(), init_type, sol_cost as f64 / 1_000_000_000.0);
+
+    Ok(())
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1637,14 +1743,81 @@ pub struct CreateUserMoonbase<'info> {
     )]
     pub creation_fee_recipient: UncheckedAccount<'info>,
 
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
+#[derive(Accounts)]
+#[instruction(referrer: Option<Pubkey>, faction_id: u8)]
+pub struct CreateUserMoonbaseWithEgg<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = UserMoonBaseInstance::LEN,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    // Create rewards account for the new user 
+    #[account(
+        init,
+        payer = user,
+        space = ReferralRewards::LEN,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub new_user_rewards: Account<'info, ReferralRewards>,
+    
+    // Only require this account if referrer is provided
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), 
+                referrer.as_ref().unwrap_or(&system_program.key()).as_ref()],
+        bump,
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: This is the PDA that holds collected SOL fees
+    pub sol_treasury: UncheckedAccount<'info>,
+
+    /// CHECK: Creation fee recipient account (from global config)
+    #[account(
+        mut,
+        address = global_config.creation_fee_recipient
+    )]
+    pub creation_fee_recipient: UncheckedAccount<'info>,
+
     /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
     /// This MUST be a signer for the Metaplex Core CreateV1 instruction.
     #[account(mut)] // Signer implies mutability, but explicit `mut` is fine
-    pub dragon_egg_asset: Option<Signer<'info>>,
+    pub dragon_egg_asset: Signer<'info>,
 
     /// CHECK: Dragon Egg collection (optional)
     #[account(mut)]
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    pub dragon_egg_collection: UncheckedAccount<'info>,
 
     /// Dragon Egg metadata (optional) - only created if tier includes egg
     #[account(
@@ -1657,25 +1830,23 @@ pub struct CreateUserMoonbase<'info> {
         ],
         bump
     )]
-    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
 
     /// CHECK: Metaplex Core program (optional)
-    pub mpl_core_program: Option<UncheckedAccount<'info>>,
+    pub mpl_core_program: UncheckedAccount<'info>,
 
     /// CHECK: Collection authority PDA (optional) - required if minting with collection
     #[account(
         seeds = [crate::state::COLLECTION_AUTHORITY_SEED],
         bump
     )]
-    pub collection_authority: Option<UncheckedAccount<'info>>,
+    pub collection_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
     
     pub system_program: Program<'info, System>,
 }
-
-
 
 
 

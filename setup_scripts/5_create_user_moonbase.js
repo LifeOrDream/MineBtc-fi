@@ -196,40 +196,57 @@ async function main() {
 
         console.log(COLOR_STEP, '\n🚀 Creating User MoonBase...');
 
-        // Build the instruction
-        const txBuilder = moonbaseProgram.methods
-        .createUserMoonbase(
-            referrerAddress ? new PublicKey(referrerAddress) : null,
-            factionId,
-            new BN(tierPrice)
-        )
-        .accounts({
-            userMoonbase: userMoonbasePDA,
-            newUserRewards: newUserRewardsPDA,
-            referrerRewards: referrerRewardsPDA,
-            globalConfig: globalConfigPDA,
-            dogeBtcMining: dogeBtcMiningPDA,
-            solTreasury: solTreasuryPDA,
-            creationFeeRecipient: globalConfig.creationFeeRecipient,
-            dragonEggAsset: includesDragonEgg ? dragonEggAsset : null,
-            dragonEggCollection: includesDragonEgg ? dragonEggCollection : null,
-            dragonEggMetadata: includesDragonEgg ? dragonEggMetadata : null,
-            mplCoreProgram: includesDragonEgg ? mplCoreProgram : null,
-            collectionAuthority: includesDragonEgg ? collectionAuthorityPDA : null,
-            user: userKeypair.publicKey,
-            systemProgram: SystemProgram.programId,
-        });
+        let tx;
+        if (includesDragonEgg) {
+            // Use the egg version with required signer
+            const txBuilder = moonbaseProgram.methods
+                .createUserMoonbaseWEgg(
+                    referrerAddress ? new PublicKey(referrerAddress) : null,
+                    factionId,
+                    new BN(tierPrice)
+                )
+                .accounts({
+                    userMoonbase: userMoonbasePDA,
+                    newUserRewards: newUserRewardsPDA,
+                    referrerRewards: referrerRewardsPDA,
+                    globalConfig: globalConfigPDA,
+                    dogeBtcMining: dogeBtcMiningPDA,
+                    solTreasury: solTreasuryPDA,
+                    creationFeeRecipient: globalConfig.creationFeeRecipient,
+                    dragonEggAsset: dragonEggAsset,
+                    dragonEggCollection: dragonEggCollection,
+                    dragonEggMetadata: dragonEggMetadata,
+                    mplCoreProgram: mplCoreProgram,
+                    collectionAuthority: collectionAuthorityPDA,
+                    user: userKeypair.publicKey,
+                    systemProgram: SystemProgram.programId,
+                });
 
-        // Create a list of extra signers
-        const extraSigners = [];
-        if (includesDragonEgg && dragonEggAssetKeypair) {
-        extraSigners.push(dragonEggAssetKeypair);
+            // Add dragon egg asset keypair as signer
+            tx = await txBuilder
+                .signers([dragonEggAssetKeypair])
+                .rpc();
+        } else {
+            // Use the non-egg version
+            tx = await moonbaseProgram.methods
+                .createUserMoonbase(
+                    referrerAddress ? new PublicKey(referrerAddress) : null,
+                    factionId,
+                    new BN(tierPrice)
+                )
+                .accounts({
+                    userMoonbase: userMoonbasePDA,
+                    newUserRewards: newUserRewardsPDA,
+                    referrerRewards: referrerRewardsPDA,
+                    globalConfig: globalConfigPDA,
+                    dogeBtcMining: dogeBtcMiningPDA,
+                    solTreasury: solTreasuryPDA,
+                    creationFeeRecipient: globalConfig.creationFeeRecipient,
+                    user: userKeypair.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .rpc();
         }
-
-        // Execute the transaction, adding the extra signers
-        const tx = await txBuilder
-        .signers(extraSigners) // <-- ADD THIS
-        .rpc();
 
         console.log(COLOR_SUCCESS, '✅ User MoonBase created successfully!');
         console.log(COLOR_INFO, `📍 Transaction: ${tx}`);
