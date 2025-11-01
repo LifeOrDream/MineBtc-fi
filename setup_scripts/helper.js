@@ -1033,14 +1033,14 @@ export async function addNewModuleToConfigStore(
         moduleConfigName,          // string
         moduleConfigImageUrl,      // string
         { [moduleType.toLowerCase()]: {} }, // enum variant
-        Buffer.from(factionVec),                // Vec<u8>
+        factionVec,                // Vec<u8> - pass as plain array
         minLevel,                  // u8
         maxPerBase,                // u8
         moduleConfigWidth,         // u8
         moduleConfigHeight,        // u8
         mintCostBN,                // u64
         upgradeCostBN,             // u64
-        Buffer.from(upgradeVec)                 // Vec<u8>
+        upgradeVec                 // Vec<u8> - pass as plain array
       )
       .accounts({
         globalConfig: globalConfigPDA,

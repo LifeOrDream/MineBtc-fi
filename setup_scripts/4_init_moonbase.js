@@ -270,7 +270,7 @@ async function initializeMoonbaseProgramLocal(moonbaseProgram) {
  * Sets the Dragon Egg collection address in the MoonBase program
  */
 async function setCollectionInMoonBase(connection, deployerKeypair, deploymentData, deploymentPath) {
-    const collectionAddress = new PublicKey(deploymentFile.dragon_egg_collection_created.collection_address);
+    const collectionAddress = new PublicKey(deploymentData.dragon_egg_collection_created.collection_address);
 
     if (deploymentData.dragon_egg_collection_set_in_program) {
         console.log(COLOR_INFO, 'ℹ️ Dragon Egg collection already set in MoonBase program');

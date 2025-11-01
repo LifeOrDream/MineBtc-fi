@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { Connection, Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { AnchorProvider, Program, Wallet, BN } from '@coral-xyz/anchor';
+import pkg from '@coral-xyz/anchor';
+const { AnchorProvider, BN, Program, setProvider, web3, Wallet } = pkg;
 import { MPL_CORE_PROGRAM_ID } from '@metaplex-foundation/mpl-core';
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +33,7 @@ const COLOR_STEP = '\x1b[35m%s\x1b[0m';
 
 // Dragon egg asset seeds
 const DRAGON_EGG_ASSET_SEED = "dragon_egg_asset";
-const DRAGON_EGG_METADATA_SEED = "dragon_egg_metadata";
+const DRAGON_EGG_METADATA_SEED = "dragon-egg-metadata";
 
 // =============================================================================
 // ======================== MAIN EXECUTION ====================================
@@ -89,17 +90,14 @@ async function main() {
             throw new Error('MoonBase program not deployed. Run 0_deploy_game.js first');
         }
 
-        if (!deploymentData.moonbase_initialized) {
-            throw new Error('MoonBase not initialized. Run 4_init_moonbase.js first');
-        }
-
         // Connect to Solana
         const connection = new Connection(RPC_URL, COMMITMENT);
 
         // Load user wallet
-        const walletPath = path.join(__dirname, 'wallet-keypair.json');
-        const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
-        const userKeypair = Keypair.fromSecretKey(new Uint8Array(walletData));
+        const walletPath = path.resolve(__dirname, config.deployment.paths.deployer_key);
+        const userKeypair = Keypair.fromSecretKey(
+            new Uint8Array(JSON.parse(fs.readFileSync(walletPath, 'utf8')))
+        );
         const wallet = new Wallet(userKeypair);
         const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
 
@@ -118,29 +116,19 @@ async function main() {
         const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
         const moonbaseProgram = new Program(moonbaseIdl, provider);
 
-        // Derive PDAs
+        // Get PDAs from deployment file
+        const globalConfigPDA = new PublicKey(deploymentData.moonbase_program_initialized.globalConfig_address);
+        const dogeBtcMiningPDA = new PublicKey(deploymentData.moonbase_program_initialized.dogeBtcMining_address);
+        const solTreasuryPDA = new PublicKey(deploymentData.moonbase_program_initialized.solTreasury_address);
+
+        // Derive user-specific PDAs
         const [userMoonbasePDA] = PublicKey.findProgramAddressSync(
             [Buffer.from("user-moonbase"), userKeypair.publicKey.toBuffer()],
             moonbaseProgram.programId
         );
 
         const [newUserRewardsPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from("referral_rewards"), userKeypair.publicKey.toBuffer()],
-            moonbaseProgram.programId
-        );
-
-        const [globalConfigPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from("global-config")],
-            moonbaseProgram.programId
-        );
-
-        const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from("doge-btc-mining")],
-            moonbaseProgram.programId
-        );
-
-        const [solTreasuryPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from("sol_treasury")],
+            [Buffer.from("referral-rewards"), userKeypair.publicKey.toBuffer()],
             moonbaseProgram.programId
         );
 
