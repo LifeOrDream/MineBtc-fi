@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -39,6 +39,29 @@ const PROGRAMS = {
 // Utility functions
 function runCommand(command, cwd = ROOT_DIR) {
   console.log(`\x1b[36m🔧 Running: ${command}\x1b[0m`);
+  
+  // Parse command and args
+  const parts = command.split(' ');
+  const cmd = parts[0];
+  const args = parts.slice(1);
+  
+  const result = spawnSync(cmd, args, {
+    cwd,
+    stdio: 'inherit',
+    shell: true
+  });
+  
+  if (result.status !== 0) {
+    console.error(`\x1b[31m❌ Command failed with exit code ${result.status}: ${command}\x1b[0m`);
+    throw new Error(`Command failed: ${command}`);
+  }
+  
+  return ''; // Success
+}
+
+function runCommandWithOutput(command, cwd = ROOT_DIR) {
+  // Use this when we need to capture output (like for IDL generation)
+  console.log(`\x1b[36m🔧 Running: ${command}\x1b[0m`);
   try {
     const result = execSync(command, { 
       cwd, 
@@ -47,10 +70,10 @@ function runCommand(command, cwd = ROOT_DIR) {
     });
     return result.trim();
   } catch (error) {
-    console.error(`\x1b[31m❌ Command failed: ${command}\x1b[0m`);
-    console.error(`\x1b[31m${error.message}\x1b[0m`);
-    if (error.stdout) console.error(`\x1b[33mSTDOUT: ${error.stdout}\x1b[0m`);
-    if (error.stderr) console.error(`\x1b[33mSTDERR: ${error.stderr}\x1b[0m`);
+    // For commands that need output, return stdout even if there's stderr
+    if (error.stdout) {
+      return error.stdout.trim();
+    }
     throw error;
   }
 }
@@ -256,15 +279,27 @@ function buildProgram(programConfig) {
   console.log(`\x1b[36m🏗️  Building ${programConfig.displayName}...\x1b[0m`);
   
   const programDir = path.join(programConfig.buildDir, 'programs', programConfig.name);
-  runCommand('clear', programDir);
 
-  const builtSoPath = path.join(programDir, 'target', 'deploy', `${programConfig.name}.so`);
+  // Actually build the program using cargo build-sbf from the program's directory
+  console.log(`\x1b[36m🔨 Compiling ${programConfig.displayName} with cargo build-sbf...\x1b[0m`);
+  try {
+    // Run cargo build-sbf from the program directory to avoid workspace post-processing issues
+    runCommand(`cargo build-sbf`, programDir);
+    console.log(`\x1b[32m  ✅ Compiled successfully\x1b[0m`);
+  } catch (error) {
+    throw new Error(`Failed to build ${programConfig.displayName}: ${error.message}`);
+  }
+
+  // The .so file is built to ROOT/target/deploy/ when using cargo build-sbf from workspace root
+  const builtSoPath = path.join(ROOT_DIR, 'target', 'deploy', `${programConfig.name}.so`);
   const targetSoPath = programConfig.soPath;
 
   ensureDirectoryExists(path.dirname(targetSoPath));
   if (fs.existsSync(builtSoPath)) {
-    fs.copyFileSync(builtSoPath, targetSoPath);
-    console.log(`\x1b[32m  ✅ Copied .so\x1b[0m`);
+    // The file is already in the right place, just verify it exists
+    console.log(`\x1b[32m  ✅ Built .so file at ${builtSoPath}\x1b[0m`);
+  } else {
+    throw new Error(`.so file not found at ${builtSoPath} after build`);
   }
   
   console.log(`\x1b[36m📝 Generating IDL...\x1b[0m`);
@@ -272,7 +307,7 @@ function buildProgram(programConfig) {
     const idlDir = path.join(ROOT_DIR, 'target', 'idl');
     ensureDirectoryExists(idlDir);
     
-    const idlOutput = runCommand(`anchor idl build -p ${programConfig.name}`, ROOT_DIR);
+    const idlOutput = runCommandWithOutput(`anchor idl build -p ${programConfig.name}`, ROOT_DIR);
     const jsonMatch = idlOutput.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const idlPath = path.join(idlDir, `${programConfig.name}.json`);
@@ -280,7 +315,7 @@ function buildProgram(programConfig) {
       console.log(`\x1b[32m  ✅ IDL generated\x1b[0m`);
     }
   } catch (error) {
-    console.log(`\x1b[33m⚠️  IDL generation failed\x1b[0m`);
+    console.log(`\x1b[33m⚠️  IDL generation failed: ${error.message}\x1b[0m`);
   }
   
   console.log(`\x1b[32m✅ ${programConfig.displayName} built\x1b[0m`);

@@ -113,10 +113,45 @@
     "permanent_lock": true,
     "timestamp": "2025-11-01T09:32:14.016Z"
   },
-  "MOON_BASE_PROGRAM_ID": "6JrsTb7T6Dgzs4RAKiS73fUr9EXi3PASDMybkyBezq6B",
-  "MOON_ECONOMY_PROGRAM_ID": "4hjq6GntxwUwS6w7bdryVkkYZpHiNNMrKZqzUquvVsVx",
+  "MOON_BASE_PROGRAM_ID": "AugGBXh6X8FkCVtQZcXDgZege4oLPTfZrVuwQU4RV2aj",
+  "MOON_ECONOMY_PROGRAM_ID": "BY3i1wtBGnn51zP9QkMPdUnAJXdt1cCTWEoxKaLUkH1P",
   "game_programs_deployment": {
-    "timestamp": "2025-11-01T09:36:32.656Z",
+    "timestamp": "2025-11-01T10:01:52.315Z",
     "cluster": "localnet"
+  },
+  "moonbase_program_initialized": {
+    "globalConfig_address": "8DFKWAaxWJZeuzGWmK4oheEX34kRifpa9Z4Yk9yGaWBE",
+    "dogeBtcMining_address": "ExGU5Mo6jEjtnFFk2WsnbP2N6TCK3zMoYxjRi7owHQMZ",
+    "solTreasury_address": "DhCwAMvomNNfGFpuu4TXYRRdbCvGqF4XmSZ41aYsYQmQ",
+    "timestamp": "2025-11-01T10:02:28.431Z"
+  },
+  "mining_vault_initialized": {
+    "vault_address": "7AJnbt1XiwnnyuNejyskFotvZM2CkvXWeJxZX54EV5Xm",
+    "vault_authority": "ETsBqD27tEphYShGNW3ycbGqhQYkgFSRqU6Jy9tuBpKK",
+    "start_timestamp": 1761991347,
+    "doge_btc_per_slot": "1000000",
+    "init_tx": "4iWjfPBqFxgisVL8gF8Ug83HiQc1Qysd7wqtQkpQbAbFKmd7LTDjVuU9mXeUnzKGESDm7G7XkFJBTQXMdshU4nzZ",
+    "timestamp": "2025-11-01T10:02:28.822Z"
+  },
+  "referral_system_initialized": {
+    "system_referral_pda": "BiWDDfhAbGwtu3L4K621J2s2YM7ycsBW65ouXapcR9HL",
+    "timestamp": "2025-11-01T10:02:29.286Z"
+  },
+  "config_stores_initialized": {
+    "module_config_store": "GJ3XocmLpKneyCyZaizfQdRfKLznMBgpeL3ga2qFK5aS",
+    "timestamp": "2025-11-01T10:02:29.779Z"
+  },
+  "loot_rewards_initialized": {
+    "loot_rewards_pda": "64ePZoLDfonWVbxaHaoofHEfppiUcb6Jx3S5Uj49dfmt",
+    "sol_vault": "EZKECNmVrPYYdhMFTF5SUhjLaJr5di8HaHYsv6rG68N9",
+    "dbtc_vault": "3FRCnPpoXRFgL3TXgqHw5fXAS4DC2ZPBTrGG2SR2Y1Jd",
+    "loot_dbtc_vault_authority": "FfWb2kbcduhJ8m3dWkNdRoqE6X9WXMEBWsgjZGpSmwf",
+    "initTxid": "4AYbhWoxwuxwXqAXBPfr4Poh3BCedQF32iDS4yVvQZMoUyTXfBUetffjZozCuLwpx54q1fmjuxc1rrcy3yXTs7TV",
+    "timestamp": "2025-11-01T10:02:30.299Z"
+  },
+  "level_stats_initialized": {
+    "level_stats_pda": "HEzPTguNntNPvhuJx7VYukRF9DkBRokAFQWqu6kEP1MA",
+    "initTxid": "4EKfqjjHVLaDZ1RRBdyLqVhxBqkogxYReEty6zAbNNXNav4rCFXHw75Za1pNtQtdc9zKqMHGuNv8Cx3BNJS3TZqY",
+    "timestamp": "2025-11-01T10:02:30.692Z"
   }
 }
