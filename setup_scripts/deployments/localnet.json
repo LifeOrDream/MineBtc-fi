@@ -153,5 +153,252 @@
     "level_stats_pda": "HEzPTguNntNPvhuJx7VYukRF9DkBRokAFQWqu6kEP1MA",
     "initTxid": "4EKfqjjHVLaDZ1RRBdyLqVhxBqkogxYReEty6zAbNNXNav4rCFXHw75Za1pNtQtdc9zKqMHGuNv8Cx3BNJS3TZqY",
     "timestamp": "2025-11-01T10:02:30.692Z"
+  },
+  "dragon_egg_collection_created": {
+    "collection_address": "Buze9RwCGo9FfhqaBndE36UpSSEgqcapqThJcGwgsxzR",
+    "collection_name": "DogeTech Dragon Eggs",
+    "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+    "update_authority": "DMoEWyZGRjAAy5rob8zVT6AosyyYQ3mFfF8yfB2PzV72",
+    "tx_signature": "45q4AqaLqhjSfLBgvgGPAhRi2SF7vmXq2jXeAcnrdwo6nLuM5c5XDmvYcS1R7rHPg2rqCK9YvmtUX1A9yiLLSRih",
+    "timestamp": "2025-11-01T10:04:35.266Z"
+  },
+  "dragon_egg_collection_set_in_program": {
+    "collection_address": "Buze9RwCGo9FfhqaBndE36UpSSEgqcapqThJcGwgsxzR",
+    "global_config_pda": "8DFKWAaxWJZeuzGWmK4oheEX34kRifpa9Z4Yk9yGaWBE",
+    "tx_signature": "55qounPN3cG4i95y34UDy92znvQmmcvQqrfsp9DQ8Vy4KksSViLmp8kFVAArZXWhue2AqHam6broX1V3A5JCL9zr",
+    "timestamp": "2025-11-01T10:07:19.015Z"
+  },
+  "factions_added": {
+    "factions": [
+      {
+        "name": "United States",
+        "description": "Advanced space technology and military supremacy doctrine"
+      },
+      {
+        "name": "China",
+        "description": "Mass production efficiency and systematic expansion strategy"
+      },
+      {
+        "name": "Russia",
+        "description": "Heavy-duty engineering and military-first approach"
+      },
+      {
+        "name": "Israel",
+        "description": "Cutting-edge defense systems and intelligence operations"
+      },
+      {
+        "name": "Iran",
+        "description": "Resource extraction focus and asymmetric warfare tactics"
+      },
+      {
+        "name": "Ukraine",
+        "description": "Resilient defensive technology and freedom preservation"
+      }
+    ],
+    "tx": "46fAjjhzpo2o8Mi9RZpVy5rXK9vp6VT2ybJzRsUpGQkHw7zVpdBaNaNdvFRJEJT2nNMnQ639Hkzs7TPWrpNLhWPh",
+    "timestamp": "2025-11-01T10:07:19.510Z"
+  },
+  "expansions_added": {
+    "expansions": [
+      {
+        "id": 1,
+        "name": "Forward Operating Base",
+        "required_level": 5,
+        "cost_sol": 1000000000,
+        "new_width": 10,
+        "new_height": 8,
+        "tx": "2H8yuXTMQi7KyYLZUFpL8v469ooMfW9KrcroNzpsf1GUB7kMTjd1dXqqaQkrEGFuaFgyGzGpp8iuSmozfgW4wnd6"
+      },
+      {
+        "id": 2,
+        "name": "Strategic Command Center",
+        "required_level": 10,
+        "cost_sol": 2000000000,
+        "new_width": 12,
+        "new_height": 10,
+        "tx": "28Tzd42A9tUvPfiCKXSvpBfDJY6gNxxXU6EALDMQ1j4xMhGkreJKYNCUNFfxweJc8kHnjiDPjL75WLwqy4SA3Tct"
+      },
+      {
+        "id": 3,
+        "name": "Military Industrial Complex",
+        "required_level": 20,
+        "cost_sol": 5000000000,
+        "new_width": 14,
+        "new_height": 12,
+        "tx": "45qobs1K5jx9d7mA1CiZ4yBG1F8QKSqCP5xdPyLnpwsECf6SugwPKuffVkziaG54kDQ3VKDc8P2T9yxKkE6C6ENY"
+      },
+      {
+        "id": 4,
+        "name": "Lunar Superbase",
+        "required_level": 35,
+        "cost_sol": 10000000000,
+        "new_width": 16,
+        "new_height": 12,
+        "tx": "4zgyMJAATGRgT5yQNUTjnVv9y6PCZePLtbTEgcSc3TjUq1X2B1nq14oNLmioMs8HXXBbze7Mt7zhRuHESpSkLr3b"
+      }
+    ],
+    "timestamp": "2025-11-01T10:07:21.366Z"
+  },
+  "modules_added": {
+    "modules": [
+      {
+        "name": "Basic Mining Rig",
+        "image_url": "https://arweave.net/basic-mining-rig",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 1100,
+          "baseHashpower": 1200,
+          "powerConsumption": 90
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 150000000,
+        "upgrade_cost": 75000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Basic Mining Rig,https://arweave.net/basic-mining-rig,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,150000000,75000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Advanced Research Lab",
+        "image_url": "https://arweave.net/advanced-research-lab",
+        "module_type": "Research",
+        "stats": {
+          "maxHp": 1400,
+          "cooldownSec": 3200,
+          "maxReward": 1200000000,
+          "probability": 6000,
+          "powerConsumption": 140
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 450000000,
+        "upgrade_cost": 180000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Advanced Research Lab,https://arweave.net/advanced-research-lab,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,3,2,450000000,180000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Cultural Monument",
+        "image_url": "https://arweave.net/cultural-monument",
+        "module_type": "Attraction",
+        "stats": {
+          "maxHp": 900,
+          "baseXpPerHour": 120,
+          "powerConsumption": 45
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 200000000,
+        "upgrade_cost": 90000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Cultural Monument,https://arweave.net/cultural-monument,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,200000000,90000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      },
+      {
+        "name": "Defense Battery",
+        "image_url": "https://arweave.net/defense-battery",
+        "module_type": "Attack",
+        "stats": {
+          "maxHp": 1300,
+          "baseDamage": 180,
+          "baseMissilesPerLoad": 12,
+          "reloadTimeSeconds": 25,
+          "powerConsumption": 85
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 400000000,
+        "upgrade_cost": 160000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "status": "create_failed",
+        "error": "Error: provided too many arguments Defense Battery,https://arweave.net/defense-battery,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,400000000,160000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+      }
+    ],
+    "timestamp": "2025-11-01T10:07:21.371Z"
+  },
+  "mining_tokens_deposited": {
+    "amount": "21000000000000",
+    "tx": "3rk1pepdkKtSzXrC7xCY9BG3BFWgK5sdAF8EM4pePVj8e5D4PYTAREGcbudWyckdGdgLa7ZGnTnrEe9qRTjtEA4d",
+    "timestamp": "2025-11-01T10:07:21.882Z"
+  },
+  "lp_token_accounts_initialized": {
+    "lp_token_account": "AeeW87NLSJhC4Ane2VGDqy55ZL28HAJD4ufW1q5rVavd",
+    "lp_token_owner": "ETsBqD27tEphYShGNW3ycbGqhQYkgFSRqU6Jy9tuBpKK",
+    "lp_mint": "BzKMDe6vyed7VWN1EvJwccHd7fQ5QvAJcKH8z7xRf28K",
+    "timestamp": "2025-11-01T10:07:22.267Z"
+  },
+  "dbtc_dist_per_slot_updated": {
+    "dogeBtcMiningPDA": "ExGU5Mo6jEjtnFFk2WsnbP2N6TCK3zMoYxjRi7owHQMZ",
+    "vaultAuthorityPDA": "ETsBqD27tEphYShGNW3ycbGqhQYkgFSRqU6Jy9tuBpKK",
+    "solTreasuryPDA": "DhCwAMvomNNfGFpuu4TXYRRdbCvGqF4XmSZ41aYsYQmQ",
+    "poolStatePDA": "4t1gP21iWipmSHdvMm9tjRxDs81tH7SYEDAFg1KcJLcA",
+    "ammConfigPDA": "HU5eFBHsdUxsBdTqYSQV5RzCv6S7dRnVbtafGW7FgjUn",
+    "method": "raydium_integration",
+    "tx_signature": "3yLtbJFuQJrygnAT99LjvtMF7bEMoKCLCCz4PhiAgcqLf2sHw22qwk2BBkx2VSbJzh62d1fKR9GFFAKCyg35nPWL",
+    "timestamp": "2025-11-01T10:07:23.220Z"
   }
 }

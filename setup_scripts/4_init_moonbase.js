@@ -173,15 +173,13 @@ async function main() {
         
         // 5. Initialize Loot & Level Stats
         await initializeLootAndStats(moonbaseProgram);
-        return;
+        // return;
         
         // 1. Create Dragon Egg Collection
-        const collectionAddress = await createDragonEggCollection(connection, deployer, deploymentData, deploymentPath);
+        await createDragonEggCollection(connection, walletKeypair, deploymentFile, deploymentPath);
         
-
         // 6. Set collection in MoonBase program
-        const collectionPubkey = new PublicKey(deploymentFile.dragon_egg_collection_created.collection_address);
-        await setCollectionInMoonBase(connection, walletKeypair, deploymentFile, deploymentPath, collectionPubkey);
+        await setCollectionInMoonBase(connection, walletKeypair, deploymentFile, deploymentPath);
         
         // 7. Add Factions
         await addFactions(moonbaseProgram);
@@ -271,7 +269,9 @@ async function initializeMoonbaseProgramLocal(moonbaseProgram) {
 /**
  * Sets the Dragon Egg collection address in the MoonBase program
  */
-async function setCollectionInMoonBase(connection, deployerKeypair, deploymentData, deploymentPath, collectionAddress) {
+async function setCollectionInMoonBase(connection, deployerKeypair, deploymentData, deploymentPath) {
+    const collectionAddress = new PublicKey(deploymentFile.dragon_egg_collection_created.collection_address);
+
     if (deploymentData.dragon_egg_collection_set_in_program) {
         console.log(COLOR_INFO, 'ℹ️ Dragon Egg collection already set in MoonBase program');
         return;
@@ -594,8 +594,6 @@ async function createDragonEggCollection(connection, deployer, deploymentData, d
         };
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
         console.log(COLOR_SUCCESS, '✅ Deployment status updated');
-        
-        return collectionPubkey;
         
     } catch (error) {
         console.error(COLOR_ERROR, '❌ Failed to create collection:', error);
