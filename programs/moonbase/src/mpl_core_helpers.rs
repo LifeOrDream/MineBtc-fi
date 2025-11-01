@@ -8,7 +8,7 @@ use mpl_core::{
 pub fn create_mpl_core_asset<'info>(
     asset: &AccountInfo<'info>,
     collection: Option<&AccountInfo<'info>>,
-    authority: &AccountInfo<'info>,
+    authority: &AccountInfo<'info>, // This is the signer (e.g., collection_authority PDA)
     payer: &AccountInfo<'info>,
     owner: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
@@ -33,7 +33,9 @@ pub fn create_mpl_core_asset<'info>(
         .name(name)
         .uri(uri)
         .owner(Some(owner))
-        .update_authority(Some(authority));
+        // Set the signer authority. This fixes the compiler error.
+        .authority(Some(authority)); 
+        // DO NOT set .update_authority(). This fixes the 0x1d runtime error.
 
     // Add collection if provided
     if let Some(collection_account) = collection {

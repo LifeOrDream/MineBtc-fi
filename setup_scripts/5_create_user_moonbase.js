@@ -34,6 +34,7 @@ const COLOR_STEP = '\x1b[35m%s\x1b[0m';
 // Dragon egg asset seeds
 const DRAGON_EGG_ASSET_SEED = "dragon_egg_asset";
 const DRAGON_EGG_METADATA_SEED = "dragon-egg-metadata";
+const COLLECTION_AUTHORITY_SEED = "collection_authority";
 
 // =============================================================================
 // ======================== MAIN EXECUTION ====================================
@@ -141,6 +142,7 @@ async function main() {
         let dragonEggMetadata = null;
         let mplCoreProgram = null;
         let collectionAuthorityPDA = null;
+        let dragonEggAssetKeypair = null;
 
         if (includesDragonEgg) {
             // Get collection address from deployment data
@@ -152,7 +154,7 @@ async function main() {
             
             // For MPL Core assets, we need to provide a keypair that will become the asset address
             // The program will create the NFT at this address
-            const dragonEggAssetKeypair = Keypair.generate();
+            dragonEggAssetKeypair = Keypair.generate();
             dragonEggAsset = dragonEggAssetKeypair.publicKey;
 
             // Derive Dragon Egg Metadata PDA
@@ -169,7 +171,7 @@ async function main() {
             
             // Also derive the collection authority PDA
             [collectionAuthorityPDA] = PublicKey.findProgramAddressSync(
-                [Buffer.from("collection_authority")],
+                [Buffer.from(COLLECTION_AUTHORITY_SEED)],
                 moonbaseProgram.programId
             );
 
@@ -194,30 +196,40 @@ async function main() {
 
         console.log(COLOR_STEP, '\n🚀 Creating User MoonBase...');
 
-        // Build the transaction
-        const tx = await moonbaseProgram.methods
-            .createUserMoonbase(
-                referrerAddress ? new PublicKey(referrerAddress) : null,
-                factionId,
-                new BN(tierPrice)
-            )
-            .accounts({
-                userMoonbase: userMoonbasePDA,
-                newUserRewards: newUserRewardsPDA,
-                referrerRewards: referrerRewardsPDA,
-                globalConfig: globalConfigPDA,
-                dogeBtcMining: dogeBtcMiningPDA,
-                solTreasury: solTreasuryPDA,
-                creationFeeRecipient: globalConfig.creationFeeRecipient,
-                dragonEggAsset: includesDragonEgg ? dragonEggAsset : null,
-                dragonEggCollection: includesDragonEgg ? dragonEggCollection : null,
-                dragonEggMetadata: includesDragonEgg ? dragonEggMetadata : null,
-                mplCoreProgram: includesDragonEgg ? mplCoreProgram : null,
-                collectionAuthority: includesDragonEgg ? collectionAuthorityPDA : null,
-                user: userKeypair.publicKey,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
+        // Build the instruction
+        const txBuilder = moonbaseProgram.methods
+        .createUserMoonbase(
+            referrerAddress ? new PublicKey(referrerAddress) : null,
+            factionId,
+            new BN(tierPrice)
+        )
+        .accounts({
+            userMoonbase: userMoonbasePDA,
+            newUserRewards: newUserRewardsPDA,
+            referrerRewards: referrerRewardsPDA,
+            globalConfig: globalConfigPDA,
+            dogeBtcMining: dogeBtcMiningPDA,
+            solTreasury: solTreasuryPDA,
+            creationFeeRecipient: globalConfig.creationFeeRecipient,
+            dragonEggAsset: includesDragonEgg ? dragonEggAsset : null,
+            dragonEggCollection: includesDragonEgg ? dragonEggCollection : null,
+            dragonEggMetadata: includesDragonEgg ? dragonEggMetadata : null,
+            mplCoreProgram: includesDragonEgg ? mplCoreProgram : null,
+            collectionAuthority: includesDragonEgg ? collectionAuthorityPDA : null,
+            user: userKeypair.publicKey,
+            systemProgram: SystemProgram.programId,
+        });
+
+        // Create a list of extra signers
+        const extraSigners = [];
+        if (includesDragonEgg && dragonEggAssetKeypair) {
+        extraSigners.push(dragonEggAssetKeypair);
+        }
+
+        // Execute the transaction, adding the extra signers
+        const tx = await txBuilder
+        .signers(extraSigners) // <-- ADD THIS
+        .rpc();
 
         console.log(COLOR_SUCCESS, '✅ User MoonBase created successfully!');
         console.log(COLOR_INFO, `📍 Transaction: ${tx}`);

@@ -113,60 +113,60 @@
     "permanent_lock": true,
     "timestamp": "2025-11-01T09:32:14.016Z"
   },
-  "MOON_BASE_PROGRAM_ID": "AugGBXh6X8FkCVtQZcXDgZege4oLPTfZrVuwQU4RV2aj",
-  "MOON_ECONOMY_PROGRAM_ID": "BY3i1wtBGnn51zP9QkMPdUnAJXdt1cCTWEoxKaLUkH1P",
+  "MOON_BASE_PROGRAM_ID": "Cus3VE8iKXB8T3oiWZD3gphQgNU18YGNVquC41z5jSLa",
+  "MOON_ECONOMY_PROGRAM_ID": "FxvRHGCPPE93i7Vs7ohwrkbHMMxpJ9jDdufD37b4xjQw",
   "game_programs_deployment": {
-    "timestamp": "2025-11-01T10:01:52.315Z",
+    "timestamp": "2025-11-01T12:00:52.911Z",
     "cluster": "localnet"
   },
   "moonbase_program_initialized": {
-    "globalConfig_address": "8DFKWAaxWJZeuzGWmK4oheEX34kRifpa9Z4Yk9yGaWBE",
-    "dogeBtcMining_address": "ExGU5Mo6jEjtnFFk2WsnbP2N6TCK3zMoYxjRi7owHQMZ",
-    "solTreasury_address": "DhCwAMvomNNfGFpuu4TXYRRdbCvGqF4XmSZ41aYsYQmQ",
-    "timestamp": "2025-11-01T10:02:28.431Z"
+    "globalConfig_address": "4QQqynRvDWA9WL2VwWj2H9JHi66P17eSgF6n6XyLqBLf",
+    "dogeBtcMining_address": "8swt4BC6BBXgjnUjSfEXFgQKr8xr3ZTawed24ogKp5jM",
+    "solTreasury_address": "2m3nJksgM1FWMmGLiRuxn5zMA53eosBdXAUDVgtKcwgs",
+    "timestamp": "2025-11-01T12:02:56.706Z"
   },
   "mining_vault_initialized": {
-    "vault_address": "7AJnbt1XiwnnyuNejyskFotvZM2CkvXWeJxZX54EV5Xm",
-    "vault_authority": "ETsBqD27tEphYShGNW3ycbGqhQYkgFSRqU6Jy9tuBpKK",
-    "start_timestamp": 1761991347,
+    "vault_address": "7Mh5rdPAgS9dtvVHNckF2YNgg7nReQ3nSukrVWYScHXy",
+    "vault_authority": "HRN1dRE863BPvYgqfCNDAwXjPhqnehx2nbErygbfuV2V",
+    "start_timestamp": 1761998576,
     "doge_btc_per_slot": "1000000",
-    "init_tx": "4iWjfPBqFxgisVL8gF8Ug83HiQc1Qysd7wqtQkpQbAbFKmd7LTDjVuU9mXeUnzKGESDm7G7XkFJBTQXMdshU4nzZ",
-    "timestamp": "2025-11-01T10:02:28.822Z"
+    "init_tx": "xFLKMGdgAKgw32NSVdVSm3RnyQiZ2JBc7cUKABfWmnhJfapSkizEW6scff1jwnZEex8bLUVdxmPovKZcRv1rAVj",
+    "timestamp": "2025-11-01T12:02:57.172Z"
   },
   "referral_system_initialized": {
-    "system_referral_pda": "BiWDDfhAbGwtu3L4K621J2s2YM7ycsBW65ouXapcR9HL",
-    "timestamp": "2025-11-01T10:02:29.286Z"
+    "system_referral_pda": "F9RA6ScE4cfrzb3gys2hcZmyUZaLguJLusVRBKrcGpx3",
+    "timestamp": "2025-11-01T12:02:57.664Z"
   },
   "config_stores_initialized": {
-    "module_config_store": "GJ3XocmLpKneyCyZaizfQdRfKLznMBgpeL3ga2qFK5aS",
-    "timestamp": "2025-11-01T10:02:29.779Z"
+    "module_config_store": "HrDx19zVvdbzgaVhfHF1NNQKMf4jzQQkgLBt1MBnPmtg",
+    "timestamp": "2025-11-01T12:02:58.180Z"
   },
   "loot_rewards_initialized": {
-    "loot_rewards_pda": "64ePZoLDfonWVbxaHaoofHEfppiUcb6Jx3S5Uj49dfmt",
-    "sol_vault": "EZKECNmVrPYYdhMFTF5SUhjLaJr5di8HaHYsv6rG68N9",
-    "dbtc_vault": "3FRCnPpoXRFgL3TXgqHw5fXAS4DC2ZPBTrGG2SR2Y1Jd",
-    "loot_dbtc_vault_authority": "FfWb2kbcduhJ8m3dWkNdRoqE6X9WXMEBWsgjZGpSmwf",
-    "initTxid": "4AYbhWoxwuxwXqAXBPfr4Poh3BCedQF32iDS4yVvQZMoUyTXfBUetffjZozCuLwpx54q1fmjuxc1rrcy3yXTs7TV",
-    "timestamp": "2025-11-01T10:02:30.299Z"
+    "loot_rewards_pda": "FuzoioCtn7MeR5ywMnx7fjKXec4ynZU57bRGDB4WNtam",
+    "sol_vault": "FfpwqoHqdRQouFL7GcvyBqUiMAwFFkfPBWwdsBugkti8",
+    "dbtc_vault": "BTLvCmfx8kENgqBgQoiTJaxqodEpAiZWXoBDLrKmZiGE",
+    "loot_dbtc_vault_authority": "CkxZG5u5jbPCMm4iwPKApkJyEPWfavGNwcvUEEwnuypx",
+    "initTxid": "4oJZ4zMhzNu6xQodaArjzQh5F6depyBiuodFrHB6YmYQhhD7nK5kUmpKuanYUcJ3FbQjZaxttzbP381D72Nb5Xjs",
+    "timestamp": "2025-11-01T12:02:58.575Z"
   },
   "level_stats_initialized": {
-    "level_stats_pda": "HEzPTguNntNPvhuJx7VYukRF9DkBRokAFQWqu6kEP1MA",
-    "initTxid": "4EKfqjjHVLaDZ1RRBdyLqVhxBqkogxYReEty6zAbNNXNav4rCFXHw75Za1pNtQtdc9zKqMHGuNv8Cx3BNJS3TZqY",
-    "timestamp": "2025-11-01T10:02:30.692Z"
+    "level_stats_pda": "GXKA4vWtALGrukVoEb4oUX5jYcMgpCWxfdAsLAz94sLH",
+    "initTxid": "5Kq3hYqoWV6tvyW9NZh7gxXv91ZasxdpD4Qd3tNGmnTbNDBE5RMQN3rYcjX95mM3CSgLda9er44S1scqneaXK992",
+    "timestamp": "2025-11-01T12:02:59.046Z"
   },
   "dragon_egg_collection_created": {
-    "collection_address": "Buze9RwCGo9FfhqaBndE36UpSSEgqcapqThJcGwgsxzR",
+    "collection_address": "CnBQxbx7ppF5mnggFP7Nz9HyBN6VPtHaEz4owhewpeVi",
     "collection_name": "DogeTech Dragon Eggs",
     "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
-    "update_authority": "DMoEWyZGRjAAy5rob8zVT6AosyyYQ3mFfF8yfB2PzV72",
-    "tx_signature": "45q4AqaLqhjSfLBgvgGPAhRi2SF7vmXq2jXeAcnrdwo6nLuM5c5XDmvYcS1R7rHPg2rqCK9YvmtUX1A9yiLLSRih",
-    "timestamp": "2025-11-01T10:04:35.266Z"
+    "update_authority": "AtA9ZZnhPKzjS6aELuQ1TQTHWjBPVrzTkjJJZqA3axKH",
+    "tx_signature": "3tPHefJfX8iaQdZQyw1wwbb9U8BpVKDjijBBWUJiWqWg25HbBMLU7TDfRsHzZ8ZDRUUD8aUEMq9bb8qBFBEV8wqL",
+    "timestamp": "2025-11-01T12:02:59.539Z"
   },
   "dragon_egg_collection_set_in_program": {
-    "collection_address": "Buze9RwCGo9FfhqaBndE36UpSSEgqcapqThJcGwgsxzR",
-    "global_config_pda": "8DFKWAaxWJZeuzGWmK4oheEX34kRifpa9Z4Yk9yGaWBE",
-    "tx_signature": "55qounPN3cG4i95y34UDy92znvQmmcvQqrfsp9DQ8Vy4KksSViLmp8kFVAArZXWhue2AqHam6broX1V3A5JCL9zr",
-    "timestamp": "2025-11-01T10:07:19.015Z"
+    "collection_address": "CnBQxbx7ppF5mnggFP7Nz9HyBN6VPtHaEz4owhewpeVi",
+    "global_config_pda": "4QQqynRvDWA9WL2VwWj2H9JHi66P17eSgF6n6XyLqBLf",
+    "tx_signature": "3cfZTZWhVMbdZ3TdwXs2HLjYzBkMEaGyUARrdpgpjJp3EFuqRnJx6a83ejNayf4XfSpHyzG3D8yBtvWTGGjj65ef",
+    "timestamp": "2025-11-01T12:03:00.050Z"
   },
   "factions_added": {
     "factions": [
@@ -195,8 +195,8 @@
         "description": "Resilient defensive technology and freedom preservation"
       }
     ],
-    "tx": "46fAjjhzpo2o8Mi9RZpVy5rXK9vp6VT2ybJzRsUpGQkHw7zVpdBaNaNdvFRJEJT2nNMnQ639Hkzs7TPWrpNLhWPh",
-    "timestamp": "2025-11-01T10:07:19.510Z"
+    "tx": "2bfxteAmcdQLWfLn3KaskeBCH4EAgf6AgP6EuaTZpj7LaHa2NM686cDqcVbzTj1tcz3viNbuAPLqdAaMaFvbt1yX",
+    "timestamp": "2025-11-01T12:03:00.447Z"
   },
   "expansions_added": {
     "expansions": [
@@ -207,7 +207,7 @@
         "cost_sol": 1000000000,
         "new_width": 10,
         "new_height": 8,
-        "tx": "2H8yuXTMQi7KyYLZUFpL8v469ooMfW9KrcroNzpsf1GUB7kMTjd1dXqqaQkrEGFuaFgyGzGpp8iuSmozfgW4wnd6"
+        "tx": "25Xxz9TL3G5V2pudWpMsPdb3GQCPTQbE5BvrQKozkYDa46Fxu1FedcXBJNcUiHVS7PKt4HoAfkfgvL4n6vX3Xori"
       },
       {
         "id": 2,
@@ -216,7 +216,7 @@
         "cost_sol": 2000000000,
         "new_width": 12,
         "new_height": 10,
-        "tx": "28Tzd42A9tUvPfiCKXSvpBfDJY6gNxxXU6EALDMQ1j4xMhGkreJKYNCUNFfxweJc8kHnjiDPjL75WLwqy4SA3Tct"
+        "tx": "5zhy2TdRDx1VH7F8UtD6ith1pozaHZ5UY5pjzZzCKfCmpNt79iVE3Z2EAKbWKQHeZdUE5L6p4dipjvh28BXn76g5"
       },
       {
         "id": 3,
@@ -225,7 +225,7 @@
         "cost_sol": 5000000000,
         "new_width": 14,
         "new_height": 12,
-        "tx": "45qobs1K5jx9d7mA1CiZ4yBG1F8QKSqCP5xdPyLnpwsECf6SugwPKuffVkziaG54kDQ3VKDc8P2T9yxKkE6C6ENY"
+        "tx": "asWXBCy8RfXAvCP9VfT66YKyiPeoNzmFyNRjsPD1zHV4Me4hxGQrzp5Sj1MwhhSMtySXtwV39A6wG4qxM2uJGqA"
       },
       {
         "id": 4,
@@ -234,10 +234,10 @@
         "cost_sol": 10000000000,
         "new_width": 16,
         "new_height": 12,
-        "tx": "4zgyMJAATGRgT5yQNUTjnVv9y6PCZePLtbTEgcSc3TjUq1X2B1nq14oNLmioMs8HXXBbze7Mt7zhRuHESpSkLr3b"
+        "tx": "3auSQyG1sbffSzgbJFCvSLzA5817dtfLYDD2fKkjDx2sGLEv3eStPzTCe6rBbF2quSSKEEAUnKo6hacxm76Ab7fS"
       }
     ],
-    "timestamp": "2025-11-01T10:07:21.366Z"
+    "timestamp": "2025-11-01T12:03:02.321Z"
   },
   "modules_added": {
     "modules": [
@@ -272,7 +272,7 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments Basic Mining Rig,https://arweave.net/basic-mining-rig,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,150000000,75000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Basic Mining Rig,https://arweave.net/basic-mining-rig,[object Object],0,1,2,3,4,5,0,10,2,2,150000000,75000000,2,3,6,9,12,42,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       },
       {
         "name": "Advanced Research Lab",
@@ -307,7 +307,7 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments Advanced Research Lab,https://arweave.net/advanced-research-lab,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,3,2,450000000,180000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Advanced Research Lab,https://arweave.net/advanced-research-lab,[object Object],0,1,2,3,4,5,0,10,3,2,450000000,180000000,2,3,6,9,12,42,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       },
       {
         "name": "Cultural Monument",
@@ -340,7 +340,7 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments Cultural Monument,https://arweave.net/cultural-monument,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,200000000,90000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Cultural Monument,https://arweave.net/cultural-monument,[object Object],0,1,2,3,4,5,0,10,2,2,200000000,90000000,2,3,6,9,12,42,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       },
       {
         "name": "Defense Battery",
@@ -375,30 +375,30 @@
           42
         ],
         "status": "create_failed",
-        "error": "Error: provided too many arguments Defense Battery,https://arweave.net/defense-battery,[object Object],\u0000\u0001\u0002\u0003\u0004\u0005,0,10,2,2,400000000,160000000,\u0002\u0003\u0006\t\f*,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
+        "error": "Error: provided too many arguments Defense Battery,https://arweave.net/defense-battery,[object Object],0,1,2,3,4,5,0,10,2,2,400000000,160000000,2,3,6,9,12,42,[object Object] to instruction addModuleToBase expecting: name,imageUrl,moduleType,factionIds,minLevel,width,height,mintCost,upgradeCost,upgradeLevelRequirements"
       }
     ],
-    "timestamp": "2025-11-01T10:07:21.371Z"
+    "timestamp": "2025-11-01T12:03:02.326Z"
   },
   "mining_tokens_deposited": {
     "amount": "21000000000000",
-    "tx": "3rk1pepdkKtSzXrC7xCY9BG3BFWgK5sdAF8EM4pePVj8e5D4PYTAREGcbudWyckdGdgLa7ZGnTnrEe9qRTjtEA4d",
-    "timestamp": "2025-11-01T10:07:21.882Z"
+    "tx": "3L7A32tEUfkHq7GKuyQECXsQusWro79sRjKqtoWRZ64wHTPv8CQ1o6TP3unzqYzjKSRqJRpyUeXyM1FKexB9xd2h",
+    "timestamp": "2025-11-01T12:03:02.830Z"
   },
   "lp_token_accounts_initialized": {
-    "lp_token_account": "AeeW87NLSJhC4Ane2VGDqy55ZL28HAJD4ufW1q5rVavd",
-    "lp_token_owner": "ETsBqD27tEphYShGNW3ycbGqhQYkgFSRqU6Jy9tuBpKK",
+    "lp_token_account": "6mAJ7wAm5K7A75thkMLkGcC7k2m8bJwAeqSd7ryUnW84",
+    "lp_token_owner": "HRN1dRE863BPvYgqfCNDAwXjPhqnehx2nbErygbfuV2V",
     "lp_mint": "BzKMDe6vyed7VWN1EvJwccHd7fQ5QvAJcKH8z7xRf28K",
-    "timestamp": "2025-11-01T10:07:22.267Z"
+    "timestamp": "2025-11-01T12:03:03.347Z"
   },
   "dbtc_dist_per_slot_updated": {
-    "dogeBtcMiningPDA": "ExGU5Mo6jEjtnFFk2WsnbP2N6TCK3zMoYxjRi7owHQMZ",
-    "vaultAuthorityPDA": "ETsBqD27tEphYShGNW3ycbGqhQYkgFSRqU6Jy9tuBpKK",
-    "solTreasuryPDA": "DhCwAMvomNNfGFpuu4TXYRRdbCvGqF4XmSZ41aYsYQmQ",
+    "dogeBtcMiningPDA": "8swt4BC6BBXgjnUjSfEXFgQKr8xr3ZTawed24ogKp5jM",
+    "vaultAuthorityPDA": "HRN1dRE863BPvYgqfCNDAwXjPhqnehx2nbErygbfuV2V",
+    "solTreasuryPDA": "2m3nJksgM1FWMmGLiRuxn5zMA53eosBdXAUDVgtKcwgs",
     "poolStatePDA": "4t1gP21iWipmSHdvMm9tjRxDs81tH7SYEDAFg1KcJLcA",
     "ammConfigPDA": "HU5eFBHsdUxsBdTqYSQV5RzCv6S7dRnVbtafGW7FgjUn",
     "method": "raydium_integration",
-    "tx_signature": "3yLtbJFuQJrygnAT99LjvtMF7bEMoKCLCCz4PhiAgcqLf2sHw22qwk2BBkx2VSbJzh62d1fKR9GFFAKCyg35nPWL",
-    "timestamp": "2025-11-01T10:07:23.220Z"
+    "tx_signature": "2Sen2mrnEo39YDWjGVbQ8oao7nzkqKurfYpwej4X3KqD6mBQpjrWdjksz74BBH74hDxNysSvxuUJidxJaLaoQDJY",
+    "timestamp": "2025-11-01T12:03:04.183Z"
   }
 }

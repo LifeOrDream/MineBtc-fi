@@ -1,0 +1,14 @@
+{
+  "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61": {
+    "moonbase_pda": "EXRmrsyVPWFEVQBqkfixjCZVNrskwLMmxVGGMiQ4oUgj",
+    "rewards_pda": "54GHjAzoaiEBYCwAgHtqeDvncgUf2BZKAyWw1qs1y6WF",
+    "faction_id": 0,
+    "init_type": 2,
+    "pricing_tier": 2,
+    "referrer": null,
+    "dragon_egg_asset": "9XG82D1T9VsadukBf6mnh5iiGAvA7n6bmWRpJNvr5T41",
+    "dragon_egg_metadata": "72PgSukqhzvxzwhjQWP2TTetVTzvKj7MKdCKrbsPFraj",
+    "created_at": "2025-11-01T12:03:20.543Z",
+    "tx_signature": "2twMF29eB6SYH19D7zb49eyPBcnEQEGYav5RVHiKXVfmbpdKDYDKDbwReeVung9jmXWD7pashsdUufAwA5TprSd1"
+  }
+}

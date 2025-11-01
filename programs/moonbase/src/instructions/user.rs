@@ -153,8 +153,8 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     // Mint Dragon Egg NFT if tier includes it
     if to_mint_dragon {
         // Unwrap optional accounts (required for NFT minting)
-        let dragon_egg_asset = ctx.accounts.dragon_egg_asset.as_ref()
-            .ok_or(ErrorCode::InvalidAccount)?;
+        let dragon_egg_asset_signer = ctx.accounts.dragon_egg_asset.as_ref()
+        .ok_or(ErrorCode::InvalidAccount)?;
         let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
             .ok_or(ErrorCode::InvalidAccount)?;
         let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
@@ -192,7 +192,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
 
         // Create Dragon Egg NFT with MPL Core
         crate::mpl_core_helpers::create_mpl_core_asset(
-            dragon_egg_asset,
+            &dragon_egg_asset_signer.to_account_info(),
             Some(dragon_egg_collection),
             collection_authority,
             &user.to_account_info(),
@@ -205,7 +205,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         )?;
 
         // Initialize Dragon Egg metadata with DNA
-        egg_metadata.mint = dragon_egg_asset.key();
+        egg_metadata.mint = dragon_egg_asset_signer.key();
         egg_metadata.power = BASE_EGG_POWER;
         egg_metadata.dna = dna;
         egg_metadata.incubated_moonbase = None;
@@ -1638,8 +1638,9 @@ pub struct CreateUserMoonbase<'info> {
     pub creation_fee_recipient: UncheckedAccount<'info>,
 
     /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
-    #[account(mut)]
-    pub dragon_egg_asset: Option<AccountInfo<'info>>,
+    /// This MUST be a signer for the Metaplex Core CreateV1 instruction.
+    #[account(mut)] // Signer implies mutability, but explicit `mut` is fine
+    pub dragon_egg_asset: Option<Signer<'info>>,
 
     /// CHECK: Dragon Egg collection (optional)
     #[account(mut)]
