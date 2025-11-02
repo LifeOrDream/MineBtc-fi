@@ -9,7 +9,7 @@ pub mod instructions;
 pub use instructions::admin::*;
 pub use instructions::user::*;
 
-declare_id!("DGfU1gsKVteSYTQFqAsP8kjNVeaTjcaeSdPe4d5yRrG3");
+declare_id!("G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt");
 
 #[program]
 pub mod moonbase {
@@ -77,6 +77,16 @@ pub mod moonbase {
             new_base_creation_cost,
             new_loot_percentage,
         )
+    }
+
+    /// Update egg limits for tiers (admin only)
+    pub fn update_egg_limits(
+        ctx: Context<UpdateConfigAc>,
+        tier2_limit: Option<u64>,
+        tier3_limit: Option<u64>,
+        tier4_limit: Option<u64>,
+    ) -> Result<()> {
+        admin::update_egg_limits_internal(ctx, tier2_limit, tier3_limit, tier4_limit)
     }
 
     /// Add a new expansion configuration (admin only)
@@ -170,7 +180,7 @@ pub mod moonbase {
         ctx: Context<AddModuleToConfigStore>,
         name: String,
         image_url: String,
-        module_type: state::ModuleType,
+        module_type: u8,
         faction_ids: Vec<u8>,
         min_level: u8,
         width: u8,
@@ -305,6 +315,11 @@ pub mod moonbase {
     /// Buy a module without installing it
     pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
         user::buy_module(ctx, config_id)
+    }
+    
+    /// Install the free command center module (can only be called once per moonbase)
+    pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos_y: u8) -> Result<()> {
+        user::install_command_center(ctx, pos_x, pos_y)
     }
     
     /// Install/deploy an existing undeployed module

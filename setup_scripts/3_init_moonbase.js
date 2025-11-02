@@ -189,7 +189,11 @@ async function main() {
         await addExpansions(moonbaseProgram);
         // return;
         
-        // 9. Add Modules
+        // 9. Add Command Center Modules (must be added before regular modules to get correct IDs)
+        await addCommandCenters(moonbaseProgram);
+        // return;
+        
+        // 9.5. Add Regular Modules
         await addModules(moonbaseProgram);
         // return;
         
@@ -600,51 +604,7 @@ async function createDragonEggCollection(connection, deployer, deploymentData, d
         throw error;
     }
 }
-
-async function initializePvPMatchmaker(moonbaseProgram) {
-    if (deploymentFile.pvp_matchmaker_initialized) {
-        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ PvP matchmaker already initialized. Skipping...');
-        return;
-    }
-
-    console.log('\x1b[35m%s\x1b[0m', '\n================ [ INITIALIZING PVP MATCHMAKER ] ================');
-              
-    const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-    
-    const [pvpMatchmakerPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(PVP_MATCHMAKER_SEED)],
-        moonbaseProgram.programId
-    );
-
-    try {
-        const tx = await moonbaseProgram.methods
-            .initializePvpMatchmaker()
-            .accounts({
-                globalConfig: globalConfigPDA,
-                pvpMatchmaker: pvpMatchmakerPDA,
-                authority: wallet.publicKey,
-                systemProgram: web3.SystemProgram.programId,
-            })
-            .rpc();
-
-        console.log('\x1b[32m%s\x1b[0m', '✅ PvP matchmaker initialized!');
-        console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${tx}`);
-        deploymentFile.pvp_matchmaker_initialized = {
-            pvp_matchmaker_pda: pvpMatchmakerPDA.toString(),
-            tx_signature: tx,
-            timestamp: new Date().toISOString()
-                    };
-        saveDeploymentData();
-    } catch (error) {
-        if (error.toString().includes('already in use')) {
-            console.log('\x1b[34m%s\x1b[0m', 'ℹ️ PvP matchmaker already exists. Continuing...');
-            deploymentFile.pvp_matchmaker_initialized = { timestamp: new Date().toISOString() };
-            saveDeploymentData();
-                } else {
-            throw new Error(`PvP matchmaker initialization failed: ${error}`);
-        }
-    }
-}
+ 
 
 async function addFactions(moonbaseProgram) {
     if (deploymentFile.factions_added) {
@@ -809,6 +769,150 @@ async function addModules(moonbaseProgram) {
 
     deploymentFile.modules_added = {
         modules: addedModules,
+        timestamp: new Date().toISOString()
+    };
+    saveDeploymentData();
+}
+
+async function addCommandCenters(moonbaseProgram) {
+    if (deploymentFile.command_centers_added) {
+        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Command centers already added. Skipping...');
+        return;
+    }
+
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ ADDING COMMAND CENTER MODULES ] ================');
+    console.log('\x1b[33m%s\x1b[0m', '⚠️  Note: Command centers use auto-incrementing IDs from module config store.');
+    console.log('\x1b[33m%s\x1b[0m', '⚠️  If IDs don\'t match expected values (1000-1003), update contract constants accordingly.');
+            
+    const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+    const moduleConfigStorePDA = new PublicKey(deploymentFile.config_stores_initialized.module_config_store);
+    const addedCommandCenters = [];
+
+    // Check if command_centers exists in config
+    if (!config.command_centers || config.command_centers.length === 0) {
+        console.log('\x1b[33m%s\x1b[0m', '⚠️ No command centers defined in config.json. Skipping...');
+        return;
+    }
+
+    for (let i = 0; i < config.command_centers.length ; i++) {  
+        const commandCenter = config.command_centers[i];
+        
+        try {
+            console.log(`\n🏛️ Processing command center: ${commandCenter.name} (Tier ${commandCenter.tier}, Config ID: ${commandCenter.config_id})`);
+            
+            // Derive module config PDA with specific config_id
+            const configIdBuffer = Buffer.allocUnsafe(2);
+            configIdBuffer.writeUInt16LE(commandCenter.config_id, 0);
+            const [moduleConfigAccountPDA] = PublicKey.findProgramAddressSync(
+                [Buffer.from(MODULE_CONFIG_SEED), configIdBuffer],
+                moonbaseProgram.programId
+            );
+            
+            console.log('\x1b[36m%s\x1b[0m', `🔑 Command Center Config PDA: ${moduleConfigAccountPDA.toString()}`);
+            console.log('\x1b[36m%s\x1b[0m', `🔑 Using Config ID: ${commandCenter.config_id}`);
+            
+            // Check if account already exists
+            const existingAccount = await connection.getAccountInfo(moduleConfigAccountPDA);
+            if (existingAccount) {
+                console.log('\x1b[33m%s\x1b[0m', `⚠️ Command center config ${commandCenter.config_id} already exists. Skipping creation...`);
+                
+                // Still update stats if needed
+                const statsResult = await updateModuleStatsHelper(
+                    connection, moonbaseProgram, wallet, walletKeypair, globalConfigPDA,
+                    commandCenter.config_id, commandCenter.stats, commandCenter.module_type
+                );
+                
+                if (statsResult.success) {
+                    console.log('\x1b[32m%s\x1b[0m', `✅ Command center stats updated for ${commandCenter.name}`);
+                    addedCommandCenters.push({
+                        ...commandCenter,
+                        config_id: commandCenter.config_id,
+                        status: 'updated_stats_only'
+                    });
+                }
+                continue;
+            }
+            
+            // Step 1: Create command center module config with specific config_id
+            // We need to manually create the account since addModuleToBase uses nextId
+            // For now, we'll use addNewModuleToConfigStore and verify the ID matches
+            // Note: This requires command centers to be added before other modules use IDs 1000-1003
+            const result = await addNewModuleToConfigStore(
+                connection, moonbaseProgram, wallet, walletKeypair,
+                globalConfigPDA, moduleConfigStorePDA,
+                commandCenter.name, commandCenter.image_url, commandCenter.module_type, commandCenter.stats,
+                commandCenter.faction_ids, commandCenter.min_level, 1,  
+                commandCenter.width, commandCenter.height,
+                new BN(commandCenter.mint_cost), new BN(commandCenter.upgrade_cost),
+                commandCenter.upgrade_level_requirements || []
+            );
+
+            if (result.success) {
+                const actualConfigId = result.data.moduleId;
+                console.log('\x1b[32m%s\x1b[0m', `✅ Step 1: Command center config created for ${commandCenter.name} (ID: ${actualConfigId})`);
+                
+                // Verify the config_id matches
+                if (actualConfigId !== commandCenter.config_id) {
+                    console.log('\x1b[33m%s\x1b[0m', `⚠️ Warning: Config ID mismatch. Expected ${commandCenter.config_id}, got ${actualConfigId}`);
+                    console.log('\x1b[33m%s\x1b[0m', `⚠️ Note: Command centers use auto-incrementing IDs. Update contract constants if needed.`);
+                    console.log('\x1b[33m%s\x1b[0m', `⚠️ The PDA derivation uses the actual ID (${actualConfigId}), not the expected ID (${commandCenter.config_id}).`);
+                    
+                    // Update the config_id to match what was actually created
+                    commandCenter.config_id = actualConfigId;
+                }
+                
+                // Step 2: Update module stats to activate it
+                const statsResult = await updateModuleStatsHelper(
+                    connection, moonbaseProgram, wallet, walletKeypair, globalConfigPDA,
+                    result.data.moduleId, commandCenter.stats, commandCenter.module_type
+                );
+
+                if (statsResult.success) {
+                    console.log('\x1b[32m%s\x1b[0m', `✅ Step 2: Command center stats updated and activated for ${commandCenter.name}`);
+                    addedCommandCenters.push({
+                        ...commandCenter,
+                        config_id: actualConfigId, // Use the actual ID that was created
+                        expected_config_id: commandCenter.config_id, // Save original expected ID for reference
+                        create_tx: result.data.addModuleTxid,
+                        stats_tx: statsResult.data.updateStatsTxid,
+                        status: 'completed'
+                    });
+                    
+                    if (actualConfigId !== commandCenter.config_id) {
+                        console.log('\x1b[33m%s\x1b[0m', `⚠️ IMPORTANT: Update contract constants:`);
+                        console.log('\x1b[33m%s\x1b[0m', `   COMMAND_CENTER_TIER_${commandCenter.tier}_CONFIG_ID = ${actualConfigId}`);
+                    }
+                } else {
+                    console.log('\x1b[33m%s\x1b[0m', `⚠️ Step 2 failed for ${commandCenter.name}: ${statsResult.error}`);
+                    addedCommandCenters.push({
+                        ...commandCenter,
+                        config_id: actualConfigId,
+                        expected_config_id: commandCenter.config_id,
+                        create_tx: result.data.addModuleTxid,
+                        status: 'stats_failed',
+                        error: statsResult.error
+                    });
+                }
+            } else {
+                console.log('\x1b[33m%s\x1b[0m', `⚠️ Step 1 failed for ${commandCenter.name}: ${result.error}`);
+                addedCommandCenters.push({
+                    ...commandCenter,
+                    status: 'create_failed',
+                    error: result.error
+                });
+            }
+        } catch (error) {
+            console.log('\x1b[31m%s\x1b[0m', `❌ Error processing ${commandCenter.name}: ${error.message}`);
+            addedCommandCenters.push({
+                ...commandCenter,
+                status: 'error',
+                error: error.message
+            });
+        }
+    }
+
+    deploymentFile.command_centers_added = {
+        command_centers: addedCommandCenters,
         timestamp: new Date().toISOString()
     };
     saveDeploymentData();
@@ -991,6 +1095,7 @@ function printCompletionSummary() {
     console.log('\x1b[36m%s\x1b[0m', `  • Factions: ${deploymentFile.factions_added ? config.factions.length + ' added ✅' : '❌'}`);
     console.log('\x1b[36m%s\x1b[0m', `  • Expansions: ${deploymentFile.expansions_added ? config.expansions.length + ' added ✅' : '❌'}`);
     console.log('\x1b[36m%s\x1b[0m', `  • Modules: ${deploymentFile.modules_added ? config.modules.length + ' added ✅' : '❌'}`);
+    console.log('\x1b[36m%s\x1b[0m', `  • Command Centers: ${deploymentFile.command_centers_added ? config.command_centers.length + ' added ✅' : '❌'}`);
     console.log('\x1b[36m%s\x1b[0m', `  • Mining Tokens: ${deploymentFile.mining_tokens_deposited ? '✅' : '❌'}`);
     console.log('\x1b[36m%s\x1b[0m', `  • Distribution Rate: ${deploymentFile.dbtc_dist_per_slot_updated ? '✅' : '⚠️ Skipped (requires Raydium pool)'}`);
     console.log('\x1b[35m%s\x1b[0m', '========================================================================================');

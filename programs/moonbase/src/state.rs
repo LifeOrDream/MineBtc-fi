@@ -116,6 +116,12 @@ pub const MAX_MODULE_UPGRADES: u8 = 10; // Maximum upgrade level for any module
 
 pub const MAX_BOUGHT_MODULES: usize = 100; // Maximum modules that can be bought but not installed
 
+// Command Center config IDs (one per init_type tier)
+pub const COMMAND_CENTER_TIER_1_CONFIG_ID: u16 = 1000; // Tier 1 (no egg)
+pub const COMMAND_CENTER_TIER_2_CONFIG_ID: u16 = 1001; // Tier 2
+pub const COMMAND_CENTER_TIER_3_CONFIG_ID: u16 = 1002; // Tier 3
+pub const COMMAND_CENTER_TIER_4_CONFIG_ID: u16 = 1003; // Tier 4
+
 // ========== GRID SYSTEM CONSTANTS ========== //
 pub const GRID_WIDTH: u8 = 20; // 20 tiles wide
 pub const GRID_HEIGHT: u8 = 15; // 15 tiles tall
@@ -196,6 +202,9 @@ pub struct GlobalConfig {
     pub total_dragon_eggs_minted: u64,
     /// Available Dragon Egg URIs (randomly selected on mint)
     pub dragon_egg_uris: Vec<String>,
+    /// Egg limits per tier: [unused, tier2_limit, tier3_limit, tier4_limit]
+    /// Tier 2: 5000 eggs, Tier 3: 5000 eggs, Tier 4: 5000 eggs
+    pub egg_limits: [u64; 4],
 }
  
 impl GlobalConfig {
@@ -220,7 +229,8 @@ impl GlobalConfig {
         4 + (MAX_EXPANSIONS * ExpansionConfig::LEN) +         // expansions vec
         32 +                    // dragon_egg_collection
         8 +                     // total_dragon_eggs_minted
-        4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH));    // dragon_egg_uris vec
+        4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH)) +    // dragon_egg_uris vec
+        (4 * 8);                // egg_limits [u64; 4] = 32 bytes
 
     /// Select random Dragon Egg URI based on slot, index, and DNA
     pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {
@@ -400,16 +410,21 @@ pub struct UserMoonBaseInstance {
     // ========== DRAGON EGG INTEGRATION ========== //
     /// Incubated Dragon Egg metadata address (max 1 per moonbase)
     pub incubated_dragon_egg: Option<Pubkey>,
+    
+    // ========== COMMAND CENTER MODULE ========== //
+    /// Command center module instance (always index 0, non-removable)
+    pub command_center_module: Option<Pubkey>,
 }
 
 // UserMoonBaseInstance
 impl UserMoonBaseInstance {
-    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + init_type + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg
+    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + init_type + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg + command_center_module
     // purchased_expansions = 4 bytes (vec length) + MAX_EXPANSIONS * 1 byte per expansion ID
     // available_modules = 4 bytes (vec length) + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
     // incubated_dragon_egg = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33;
+    // command_center_module = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33 + 33;
 }
 
 /// Stores referral rewards that a user has earned from referrals
@@ -755,14 +770,17 @@ pub struct ModuleInstance {
     /// Last update timestamp
     pub last_updated: i64,
     
+    /// Whether this module can be removed (command center is non-removable)
+    pub is_removable: bool,
+    
     /// Bump for PDA derivation
     pub bump: u8,
 }
 
 impl ModuleInstance {
     // discriminator + config_id + upgrade_level + index + module_type + pos_x + pos_y + width + height + runtime_state + 
-    // electricity_cost + is_active + created_at + last_updated + bump
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 2 + 1 + 1 + ModuleType::LEN + 1 + 1 + 1 + 1 + ModuleRuntimeState::LEN + 4 + 1 + 8 + 8 + 1;
+    // electricity_cost + is_active + created_at + last_updated + is_removable + bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 2 + 1 + 1 + ModuleType::LEN + 1 + 1 + 1 + 1 + ModuleRuntimeState::LEN + 4 + 1 + 8 + 8 + 1 + 1;
 
     /// Calculate current HP from runtime state
     pub fn current_hp(&self) -> u32 {

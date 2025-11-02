@@ -1,14 +1,14 @@
 {
   "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61": {
-    "moonbase_pda": "AppoXxZtHheF8tXcCiRzDR3MtbiX4GcJm2ooRffCaMhP",
-    "rewards_pda": "Cun7U782wGfXbeEMrvfFg29mnm7TcF1kj3AkEU3tZFVm",
+    "moonbase_pda": "CxSy5Qxq44Vgcf7gB82cMbQvHdSKCZfoMNn4psTkZo34",
+    "rewards_pda": "GWtRbhQ8B463mkuMzxVZBWSURWeEVXK6vkPfYM9dCKEh",
     "faction_id": 0,
-    "init_type": 2,
-    "pricing_tier": 2,
+    "init_type": 3,
+    "pricing_tier": 3,
     "referrer": null,
-    "dragon_egg_asset": "5zidCfX6GLbTttLgmenY3zw2UTHPAksiKanbJRrMs3zr",
-    "dragon_egg_metadata": "2iYYXWKMrdt5Yft5uFk5urYze1zmjCfscbtr3rYqd5Z3",
-    "created_at": "2025-11-01T13:22:51.192Z",
-    "tx_signature": "4hY5j5uoLid6JM29GT2p7bCLsvBoatshgneqzcy1Zm1EySkSujyksMYkEs4PPqv7ttaW1Tq6J1WhpixUZLpYo8Ww"
+    "dragon_egg_asset": "9Vws9UQTDogTKUa6tcusXQSMqVaMJRE4MNxtBRibGBme",
+    "dragon_egg_metadata": "GMe7NE8RDo61aLFqLWQPgNv9CHE6ikNYY2LtxTgQ3fqF",
+    "created_at": "2025-11-02T06:03:00.470Z",
+    "tx_signature": "2m9RvEtPGY8UA4qUzsPurVGEfU77MgTq6E4SsJ1EbDXma6v8oBLt6hhTAvKvaZqJmL4eyQUU1Z3jD15eg35i4GVG"
   }
 }

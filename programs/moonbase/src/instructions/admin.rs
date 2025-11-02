@@ -70,6 +70,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, cr
     global_config.total_sol_spent = 0;
     global_config.total_referral_sol_paid = 0;
     global_config.total_dragon_eggs_minted = 0;
+    
+    // Initialize egg limits: [unused, tier2_limit, tier3_limit, tier4_limit]
+    global_config.egg_limits = [0, 5000, 5000, 5000];
 
     global_config.bump = ctx.bumps.global_config;
     global_config.base_creation_cost = base_creation_cost;
@@ -238,6 +241,33 @@ pub fn update_config_internal(
         require!(loot_percentage <= 100, ErrorCode::InvalidParameters);
         global_config.loot_percentage = loot_percentage;
         msg!("Updated loot percentage to {}%", loot_percentage);
+    }
+    
+    Ok(())
+}
+
+/// Update egg limits for tiers (admin only)
+pub fn update_egg_limits_internal(
+    ctx: Context<UpdateConfigAc>,
+    tier2_limit: Option<u64>,
+    tier3_limit: Option<u64>,
+    tier4_limit: Option<u64>,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    if let Some(limit) = tier2_limit {
+        global_config.egg_limits[1] = limit; // Tier 2 is at index 1
+        msg!("Updated Tier 2 egg limit to {}", limit);
+    }
+    
+    if let Some(limit) = tier3_limit {
+        global_config.egg_limits[2] = limit; // Tier 3 is at index 2
+        msg!("Updated Tier 3 egg limit to {}", limit);
+    }
+    
+    if let Some(limit) = tier4_limit {
+        global_config.egg_limits[3] = limit; // Tier 4 is at index 3
+        msg!("Updated Tier 4 egg limit to {}", limit);
     }
     
     Ok(())
@@ -483,7 +513,7 @@ pub fn add_module_to_base_internal(
     ctx: Context<AddModuleToConfigStore>,
     name: String,
     image_url: String,
-    module_type: ModuleType,
+    module_type: u8,
     faction_ids: Vec<u8>,
     min_level: u8,
     width: u8,
@@ -502,12 +532,20 @@ pub fn add_module_to_base_internal(
         ErrorCode::Unauthorized
     );
 
+    // Convert u8 to ModuleType enum
+    // 1 = Mining, 2 = Attraction
+    let module_type_enum = match module_type {
+        1 => ModuleType::Mining,
+        2 => ModuleType::Attraction,
+        _ => return Err(ErrorCode::InvalidModuleType.into()),
+    };
+
     msg!("Adding module: {}", name);
     msg!("Image URL: {}", image_url);
-    msg!("Module type: {:?}", module_type);
+    msg!("Module type: {:?} (from u8: {})", module_type_enum, module_type);
 
     // Build ModuleStats with placeholder values (will be updated later)
-    let stats: ModuleStats = match module_type {
+    let stats: ModuleStats = match module_type_enum {
         ModuleType::Mining => {
             ModuleStats::Mining(MiningStats {
                 max_hp: 0,
@@ -567,7 +605,7 @@ pub fn add_module_to_base_internal(
         id,
         name: name.clone(),
         image_url: image_url.clone(),
-        module_type,
+        module_type: module_type_enum,
         stats,
         faction_ids,
         min_level,
@@ -1936,7 +1974,7 @@ pub struct InitializeConfigStore<'info> {
 #[instruction(
     name: String,
     image_url: String,
-    module_type: ModuleType,
+    module_type: u8,
     faction_ids: Vec<u8>,
     min_level: u8,
     width: u8,

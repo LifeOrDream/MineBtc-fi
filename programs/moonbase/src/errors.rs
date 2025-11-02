@@ -285,6 +285,9 @@ pub enum ErrorCode {
     #[msg("Module is already deployed and active")]
     ModuleAlreadyActive,
 
+    #[msg("Module cannot be removed (command center is permanent)")]
+    ModuleNotRemovable,
+
     #[msg("Metaplex Core program ID mismatch")]
     InvalidMplCoreProgram,
 
@@ -305,6 +308,9 @@ pub enum ErrorCode {
 
     #[msg("Dragon Egg is not incubated in this moonbase")]
     EggNotIncubated,
+
+    #[msg("Egg limit for this tier has been reached")]
+    EggLimitExceeded,
 
     #[msg("NFT is not owned by the user")]
     NftNotOwnedByUser,

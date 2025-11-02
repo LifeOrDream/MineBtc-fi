@@ -139,6 +139,9 @@ fn initialize_moonbase_common<'info>(
     user_moonbase.last_game_end_ts = 0;
     user_moonbase.modules_repaired_since_last_game = false;
     user_moonbase.incubated_dragon_egg = None;
+    
+    // Initialize command center module (not installed yet)
+    user_moonbase.command_center_module = None;
 
     Ok(())
 }
@@ -315,8 +318,216 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     Ok(())
 }
 
+/// Helper function to get command center config ID based on init_type
+fn get_command_center_config_id(init_type: u8) -> Result<u16> {
+    match init_type {
+        1 => Ok(crate::state::COMMAND_CENTER_TIER_1_CONFIG_ID),
+        2 => Ok(crate::state::COMMAND_CENTER_TIER_2_CONFIG_ID),
+        3 => Ok(crate::state::COMMAND_CENTER_TIER_3_CONFIG_ID),
+        4 => Ok(crate::state::COMMAND_CENTER_TIER_4_CONFIG_ID),
+        _ => Err(ErrorCode::InvalidParameters.into()),
+    }
+}
 
- 
+/// Install the free command center module for a moonbase
+/// This can only be called once per moonbase and must be called after moonbase creation
+pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos_y: u8) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("🏗️ Installing command center for user {}", user.key());
+    msg!("   Position: ({}, {})", pos_x, pos_y);
+    
+    // Check if command center is already installed
+    require!(
+        user_moonbase.command_center_module.is_none(),
+        ErrorCode::ModuleAlreadyActive
+    );
+    
+    // Command center must be installed before any modules are bought
+    // This ensures clean index allocation (command center = index 0)
+    require!(
+        user_moonbase.modules_count == 0,
+        ErrorCode::InvalidParameters
+    );
+    
+    // Get command center config ID based on init_type
+    let config_id = get_command_center_config_id(user_moonbase.init_type)?;
+    msg!("   Command Center Config ID: {} (Tier {})", config_id, user_moonbase.init_type);
+    
+    // Derive and validate the module config account PDA
+    let expected_config_account = Pubkey::find_program_address(
+        &[
+            crate::state::MODULE_CONFIG_SEED.as_ref(),
+            &config_id.to_le_bytes(),
+        ],
+        ctx.program_id,
+    ).0;
+    
+    require!(
+        ctx.accounts.module_config_account.key() == expected_config_account,
+        ErrorCode::InvalidAccount
+    );
+    
+    // Validate config_id matches
+    require!(
+        module_config_account.data.id == config_id,
+        ErrorCode::ModuleConfigMismatch
+    );
+    
+    let module_config = &module_config_account.data;
+    
+    // Validate module is active
+    require!(module_config.is_active, ErrorCode::ModuleNotActive);
+    
+    // Calculate electricity cost
+    let electricity_cost = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.power_consumption as u64,
+        ModuleStats::Attraction(stats) => stats.power_consumption as u64,
+    };
+    
+    msg!("📊 Command Center electricity requirement: {} units", electricity_cost);
+    
+    // Check electricity availability
+    if electricity_cost > 0 {
+        let new_used_electricity = user_moonbase.used_electricity
+            .checked_add(electricity_cost)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        require!(
+            new_used_electricity <= user_moonbase.available_electricity,
+            ErrorCode::ElectricityCapacityExceeded
+        );
+        
+        msg!("✅ Electricity check passed: {} + {} = {} <= {}", 
+             user_moonbase.used_electricity, 
+             electricity_cost,
+             new_used_electricity,
+             user_moonbase.available_electricity);
+    }
+    
+    // Check placement within moonbase bounds and no collision
+    require!(
+        helper::can_place_module_in_moonbase(
+            user_moonbase,
+            pos_x,
+            pos_y,
+            module_config.width,
+            module_config.height,
+        )?,
+        ErrorCode::PlacementOutsideMoonbaseArea
+    );
+    
+    msg!("✅ Command Center placement validated at ({}, {}) with size {}x{}", 
+         pos_x, pos_y, module_config.width, module_config.height);
+    
+    // Initialize runtime state based on module type
+    let runtime_state = helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
+    
+    // Get width and height before mutable borrow
+    let module_width = module_config.width;
+    let module_height = module_config.height;
+    
+    // Initialize module instance (command center is always index 0)
+    module_instance.config_id = config_id;
+    module_instance.upgrade_level = 0;
+    module_instance.index = 0; // Command center is always index 0
+    module_instance.module_type = module_config.module_type.clone();
+    module_instance.runtime_state = runtime_state;
+    module_instance.electricity_cost = electricity_cost as u32;
+    module_instance.is_active = true; // Immediately active
+    module_instance.is_removable = false; // Command center cannot be removed
+    module_instance.created_at = Clock::get()?.unix_timestamp;
+    module_instance.last_updated = Clock::get()?.unix_timestamp;
+    module_instance.bump = ctx.bumps.module_instance;
+    
+    // Place the module on the grid
+    helper::place_module(
+        user_moonbase,
+        module_instance,
+        pos_x,
+        pos_y,
+        module_width,
+        module_height,
+    )?;
+    
+    msg!("📍 Command Center placed successfully on grid");
+    
+    // Update electricity usage
+    if electricity_cost > 0 {
+        user_moonbase.used_electricity = user_moonbase.used_electricity
+            .checked_add(electricity_cost)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("⚡ Updated electricity usage: {} -> {} / {}", 
+             user_moonbase.used_electricity - electricity_cost,
+             user_moonbase.used_electricity,
+             user_moonbase.available_electricity);
+    }
+    
+    // Update modules_count (command center is the first module)
+    user_moonbase.modules_count = 1;
+    
+    // Update total moonbase HP
+    let module_max_hp = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.max_hp,
+        ModuleStats::Attraction(stats) => stats.max_hp,
+    };
+    
+    user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_add(module_max_hp);
+    msg!("🛡️ Updated moonbase HP: added {} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
+    
+    // Update hashpower if this is a mining module
+    if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+        let hashpower_increase = mining_stats.current_hashpower(0) as u64; // Level 0
+        
+        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("⛏️ Updated hashpower: {} -> {} (+{})", 
+             user_moonbase.active_hashpower - hashpower_increase, 
+             user_moonbase.active_hashpower, 
+             hashpower_increase);
+        
+        // Update global hashpower
+        let mining_state = &mut ctx.accounts.doge_btc_mining;
+        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
+             mining_state.total_active_hashpower - hashpower_increase,
+             mining_state.total_active_hashpower,
+             hashpower_increase);
+    }
+    
+    // Track command center module
+    user_moonbase.command_center_module = Some(module_instance.key());
+    
+    // Process daily login and award XP for installing command center
+    let installation_xp = 50; // Bonus XP for installing command center
+    process_daily_login_and_xp(user_moonbase, installation_xp, "Install Command Center")?;
+    
+    // Emit event
+    emit!(ModuleInstalled {
+        owner: user.key(),
+        config_id,
+        module_index: 0,
+        pos_x,
+        pos_y,
+    });
+    
+    msg!("🎉 Command Center installation completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Config ID: {}, Module Index: 0", config_id);
+    msg!("   Position: ({}, {}), Size: {}x{}", pos_x, pos_y, module_config.width, module_config.height);
+    msg!("   Command Center is now active and cannot be removed!");
+    
+    Ok(())
+}
 
 /// Expand a moonbase
 pub fn expand_moonbase_internal(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
@@ -803,6 +1014,12 @@ pub fn buy_module(
     msg!("🛒 Starting module purchase for user {}", user.key());
     msg!("   Config ID: {}", config_id);
     
+    // Command center must be installed before buying other modules
+    require!(
+        user_moonbase.command_center_module.is_some(),
+        ErrorCode::InvalidParameters
+    );
+    
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
     
@@ -886,6 +1103,7 @@ pub fn buy_module(
     module_instance.is_active = false; // NOT DEPLOYED YET
     module_instance.created_at = current_timestamp;
     module_instance.last_updated = current_timestamp;
+    module_instance.is_removable = true; // All purchased modules are removable
     module_instance.bump = ctx.bumps.module_instance;
     
   
@@ -1165,6 +1383,10 @@ pub fn remove_module_internal(
     
     // Verify module is deployed before removal
     require!(module_instance.is_active, ErrorCode::ModuleNotActive);
+    
+    // Check if module is removable (command center cannot be removed)
+    require!(module_instance.is_removable, ErrorCode::ModuleNotRemovable);
+    
     msg!("✅ Module is deployed and can be removed");
     
     // Clear the module's position on the grid
@@ -2008,6 +2230,49 @@ pub struct ClaimDogeBtc<'info> {
 }
 
 
+
+#[derive(Accounts)]
+#[instruction(pos_x: u8, pos_y: u8)]
+pub struct InstallCommandCenter<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    // Create the command center module instance (always index 0)
+    #[account(
+        init,
+        payer = user,
+        space = ModuleInstance::LEN,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            0u8.to_le_bytes().as_ref() // Command center is always index 0
+        ],
+        bump
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Command center module config account (will be validated against init_type in instruction)
+    #[account(mut)]
+    /// CHECK: Validated in instruction to match command center config for this tier
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 #[instruction(config_id: u16)]

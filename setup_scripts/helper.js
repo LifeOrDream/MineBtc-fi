@@ -1004,8 +1004,24 @@ export async function addNewModuleToConfigStore(
     console.log('\x1b[36m%s\x1b[0m', `🔑 Module Config Account PDA: ${moduleConfigAccountPDA.toString()}`);
     console.log('\x1b[36m%s\x1b[0m', `🔑 Next Module ID: ${nextId}`);
 
-    // Build enum variant for ModuleType - use lowercase as in the IDL
-    const moduleTypeVariant = { [moduleType.toLowerCase()]: {} };
+    // Map module types to integer values for contract
+    // 1 = Mining, 2 = Attraction
+    // Research and Attack modules map to Attraction (2)
+    const moduleTypeMap = {
+      'Mining': 1,
+      'Attraction': 2,
+      'Research': 2,  // Research modules become Attraction
+      'Attack': 2     // Attack modules become Attraction
+    };
+    
+    const moduleTypeInt = moduleTypeMap[moduleType] || 2; // Default to Attraction if unknown
+    if (moduleType !== 'Mining' && moduleType !== 'Attraction') {
+      console.log('\x1b[33m%s\x1b[0m', `⚠️  Module type "${moduleType}" mapped to integer ${moduleTypeInt} (Attraction)`);
+    }
+    
+    // Ensure moduleTypeInt is a number (not string or object)
+    const moduleTypeValue = typeof moduleTypeInt === 'number' ? moduleTypeInt : parseInt(moduleTypeInt, 10);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Module Type Integer: ${moduleTypeValue} (type: ${typeof moduleTypeValue})`);
 
     // Extract only maxHp and powerConsumption from stats for basic config
     const rawStats = moduleStats[moduleType.toLowerCase()] || moduleStats[moduleType] || moduleStats;
@@ -1022,9 +1038,20 @@ export async function addNewModuleToConfigStore(
       const mintCostBN    = new BN(moduleConfigMintCost);   // u64
       const upgradeCostBN = new BN(moduleConfigUpgradeCost);
 
-      // ---- 3. Pass Vec<u8> as number[] (Anchor will add the length prefix) ----
-      const factionVec   = factionIds;          // e.g. [0, 3]
-      const upgradeVec   = upgradeRequirements; // e.g. [3,6,9,12...]
+      // ---- 3. Pass Vec<u8> as Buffer (Anchor serializes this as bytes) ----
+      const factionVec   = Buffer.from(factionIds);      // e.g. Buffer.from([0, 3])
+      const upgradeVec   = Buffer.from(upgradeRequirements); // e.g. Buffer.from([3,6,9,12...])
+
+      console.log(`moduleConfigName = ${moduleConfigName}`);
+      console.log(`moduleConfigImageUrl = ${moduleConfigImageUrl}`);
+      console.log(`moduleTypeValue = ${moduleTypeValue}`);
+      console.log(`factionVec = ${factionVec}`);
+      console.log(`minLevel = ${minLevel}`);
+      console.log(`moduleConfigWidth = ${moduleConfigWidth}`);
+      console.log(`moduleConfigHeight = ${moduleConfigHeight}`);
+      console.log(`mintCostBN = ${mintCostBN}`);
+      console.log(`upgradeCostBN = ${upgradeCostBN}`);
+      console.log(`upgradeVec = ${upgradeVec}`);
 
 
     // Prepare instruction - match exact simplified lib.rs signature
@@ -1032,10 +1059,9 @@ export async function addNewModuleToConfigStore(
       .addModuleToBase(
         moduleConfigName,          // string
         moduleConfigImageUrl,      // string
-        { [moduleType.toLowerCase()]: {} }, // enum variant
+        moduleTypeValue,           // u8: 1 = Mining, 2 = Attraction
         factionVec,                // Vec<u8> - pass as plain array
         minLevel,                  // u8
-        maxPerBase,                // u8
         moduleConfigWidth,         // u8
         moduleConfigHeight,        // u8
         mintCostBN,                // u64
@@ -3440,12 +3466,6 @@ export async function updateModuleStatsHelper(
     let powerConsumption = 0;
     let baseHashpower = 0;
     let baseXpPerHour = 0;
-    let baseDamage = 0;
-    let baseMissilesPerLoad = 0;
-    let reloadTimeSeconds = 0;
-    let cooldownSec = 0;
-    let maxReward = 0;
-    let probability = 0;
 
     const rawStats = moduleStats[moduleType.toLowerCase()] || moduleStats[moduleType] || moduleStats;
 
@@ -3460,20 +3480,6 @@ export async function updateModuleStatsHelper(
         powerConsumption = rawStats.power_consumption ?? rawStats.powerConsumption;
         baseXpPerHour = rawStats.base_xp_per_hour ?? rawStats.baseXpPerHour;
         break;
-      case 'Attack':
-        maxHp = rawStats.max_hp ?? rawStats.maxHp;
-        powerConsumption = rawStats.power_consumption ?? rawStats.powerConsumption;
-        baseDamage = rawStats.base_damage ?? rawStats.baseDamage;
-        baseMissilesPerLoad = rawStats.base_missiles_per_load ?? rawStats.baseMissilesPerLoad;
-        reloadTimeSeconds = rawStats.reload_time_seconds ?? rawStats.reloadTimeSeconds;
-        break;
-      case 'Research':
-        maxHp = rawStats.max_hp ?? rawStats.maxHp;
-        powerConsumption = rawStats.power_consumption ?? rawStats.powerConsumption;
-        cooldownSec = rawStats.cooldown_sec ?? rawStats.cooldownSec;
-        maxReward = rawStats.max_reward ?? rawStats.maxReward;
-        probability = rawStats.probability;
-        break;
       default:
         throw new Error(`Unsupported module type: ${moduleType}`);
     }
@@ -3483,12 +3489,6 @@ export async function updateModuleStatsHelper(
     console.log('\x1b[36m%s\x1b[0m', `   powerConsumption: ${powerConsumption}`);
     console.log('\x1b[36m%s\x1b[0m', `   baseHashpower: ${baseHashpower}`);
     console.log('\x1b[36m%s\x1b[0m', `   baseXpPerHour: ${baseXpPerHour}`);
-    console.log('\x1b[36m%s\x1b[0m', `   baseDamage: ${baseDamage}`);
-    console.log('\x1b[36m%s\x1b[0m', `   baseMissilesPerLoad: ${baseMissilesPerLoad}`);
-    console.log('\x1b[36m%s\x1b[0m', `   reloadTimeSeconds: ${reloadTimeSeconds}`);
-    console.log('\x1b[36m%s\x1b[0m', `   cooldownSec: ${cooldownSec}`);
-    console.log('\x1b[36m%s\x1b[0m', `   maxReward: ${maxReward}`);
-    console.log('\x1b[36m%s\x1b[0m', `   probability: ${probability}`);
 
     console.log(`globalConfig: ${globalConfigPDA.toString()}`);
     console.log(`moduleConfigAccount: ${moduleConfigAccountPDA.toString()}`);
@@ -3502,12 +3502,6 @@ export async function updateModuleStatsHelper(
         new BN(powerConsumption),
         new BN(baseHashpower),
         new BN(baseXpPerHour),
-        new BN(baseDamage),
-        baseMissilesPerLoad,
-        new BN(reloadTimeSeconds),
-        new BN(cooldownSec),
-        new BN(maxReward),
-        probability
       )
       .accounts({
         globalConfig: globalConfigPDA,
