@@ -52,7 +52,6 @@ const ID_MOONBASE_PROGRAM = deploymentFile.MOON_BASE_PROGRAM_ID ?
 
 // Mining configuration
 const dbtc_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
-const BASE_COST = config.moonbase.base_creation_cost;
 const MINING_START_TIMESTAMP = config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_doge_btc_PER_SLOT = new BN(config.mining.doge_btc_per_slot);
 

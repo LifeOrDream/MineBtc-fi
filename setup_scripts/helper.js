@@ -558,7 +558,6 @@ export async function createSystemReferralAccount(connection, program, wallet, w
 export async function initializeMoonbaseProgram(connection, program, wallet, walletKeypair, baseCost, creationFeeRecipient) { 
   try {
             // Define parameters
-            const base_Cost = new BN(baseCost); // 0.1 SOL in lamports
             const feeRecipient = new PublicKey(creationFeeRecipient);
             
             // Find PDAs
@@ -573,7 +572,7 @@ export async function initializeMoonbaseProgram(connection, program, wallet, wal
             
             // Build transaction
     const tx = await program.methods
-                .initialize(base_Cost, feeRecipient)
+                .initialize(feeRecipient)
                 .accounts({
                     globalConfig: globalConfigPDA,
                     dogeBtcMining: dogeBtcMiningPDA,

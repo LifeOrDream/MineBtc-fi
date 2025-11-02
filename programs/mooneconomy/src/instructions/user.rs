@@ -33,10 +33,15 @@ pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> 
         electricity_ac.moondoge_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize );
         electricity_ac.lp_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize);
         
-        // Query moonbase init_type and grant initial electricity bonus
-        let moonbase_data = ctx.accounts.facility_user_moonbase.try_borrow_data()?;
-        let init_type = get_moonbase_init_type(&moonbase_data)?;        
-        let initial_electricity = calculate_initial_electricity_bonus(init_type);
+        // Query moonbase init_type and calculate initial electricity bonus
+        // Scope the borrow to release it before CPI call
+        let (init_type, initial_electricity) = {
+            let moonbase_data = ctx.accounts.facility_user_moonbase.try_borrow_data()?;
+            let init_type = get_moonbase_init_type(&moonbase_data)?;        
+            let initial_electricity = calculate_initial_electricity_bonus(init_type);
+            (init_type, initial_electricity)
+        }; // moonbase_data is dropped here, releasing the borrow
+        
         msg!("🎁 Tier {} - Initial electricity bonus: {}", init_type, initial_electricity);
         
         // Store free electricity amount

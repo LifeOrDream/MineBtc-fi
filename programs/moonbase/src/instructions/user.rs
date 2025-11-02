@@ -52,7 +52,7 @@ fn initialize_moonbase_common<'info>(
     new_rewards.total_sol_earned = 0;
     new_rewards.sol_claimed_for_xp = 0;
     new_rewards.referrals_count = 0;
-    
+ 
     // Charge the creation fee with 50/50 split
     let fee_recipient_amount = sol_cost / 2; // 50% goes to creation fee recipient
     let remaining_amount = sol_cost - fee_recipient_amount; // 50% goes through existing system
@@ -139,7 +139,7 @@ fn initialize_moonbase_common<'info>(
     user_moonbase.last_game_end_ts = 0;
     user_moonbase.modules_repaired_since_last_game = false;
     user_moonbase.incubated_dragon_egg = None;
-    
+
     // Initialize command center module (not installed yet)
     user_moonbase.command_center_module = None;
 
@@ -243,15 +243,15 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     let dna = crate::genescience::generate_genesis_dna_with_tier(
         egg_count,
         &ctx.accounts.user.key(),
-        Clock::get()?.slot,
+            Clock::get()?.slot,
         family_type,
     )?;
 
-    // Get URI from global config or use fallback
+        // Get URI from global config or use fallback
     let uri = ctx.accounts.global_config.get_random_dragon_egg_uri(
-        Clock::get()?.slot,
+            Clock::get()?.slot,
         egg_count,
-        &dna,
+            &dna,
     ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_count));
 
     // Get the collection authority bump for signing
@@ -261,49 +261,62 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
         &[collection_authority_bump],
     ];
 
-    // Create Dragon Egg NFT with MPL Core
-    crate::mpl_core_helpers::create_mpl_core_asset(
+        // Create Dragon Egg NFT with MPL Core
+        crate::mpl_core_helpers::create_mpl_core_asset(
         &dragon_egg_asset_signer.to_account_info(),
         Some(&dragon_egg_collection.to_account_info()),
         collection_authority,
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        mpl_core_program,
-        name.clone(),
-        uri.clone(),
+            &ctx.accounts.system_program.to_account_info(),
+            mpl_core_program,
+            name.clone(),
+            uri.clone(),
         Some(&[collection_authority_seeds]),
-    )?;
+        )?;
 
+    // Calculate multiplier based on pricing tier (basis points)
+    // Tier 2 (1.42 SOL): 150 = 1.5x
+    // Tier 3 (2.42 SOL): 200 = 2.0x
+    // Tier 4 (4.20 SOL): 300 = 3.0x
+    let multiplier = match init_type {
+        2 => 150,  // 1.5x multiplier
+        3 => 200,  // 2.0x multiplier
+        4 => 300,  // 3.0x multiplier
+        _ => 100,  // 1.0x fallback (shouldn't happen)
+    };
+    
     // Initialize Dragon Egg metadata with DNA
     egg_metadata.mint = dragon_egg_asset_signer.key();
-    egg_metadata.power = BASE_EGG_POWER;
-    egg_metadata.dna = dna;
-    egg_metadata.incubated_moonbase = None;
-    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    egg_metadata.created_at = Clock::get()?.unix_timestamp;
+        egg_metadata.power = BASE_EGG_POWER;
+        egg_metadata.dna = dna;
+        egg_metadata.incubated_moonbase = None;
+    egg_metadata.multiplier = multiplier;
+        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+        egg_metadata.created_at = Clock::get()?.unix_timestamp;
     egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
 
-    // Update global dragon egg counter
+        // Update global dragon egg counter
     ctx.accounts.global_config.total_dragon_eggs_minted = ctx.accounts.global_config.total_dragon_eggs_minted.saturating_add(1);
 
     // Log DNA info for debugging
     let family = crate::genescience::get_family_type(&dna);
     let stage = crate::genescience::get_evolutionary_stage(&dna);
-    msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
+    msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}, Multiplier: {}x", 
+         family, stage, multiplier as f64 / 100.0);
 
-    // Emit events
-    emit!(DragonEggMinted {
-        mint: egg_metadata.mint,
-        name,
-        uri,
-        dna,
-        initial_power: BASE_EGG_POWER,
-        price_paid: 0, // Included in moonbase price
-    });
+        // Emit events
+        emit!(DragonEggMinted {
+            mint: egg_metadata.mint,
+            name,
+            uri,
+            dna,
+            initial_power: BASE_EGG_POWER,
+            price_paid: 0, // Included in moonbase price
+        });
 
-    msg!("✅ Dragon Egg minted for moonbase creation");
-    msg!("   Egg: {}", egg_metadata.mint);
+        msg!("✅ Dragon Egg minted for moonbase creation");
+        msg!("   Egg: {}", egg_metadata.mint);
     msg!("   DNA Family/Tier: {}", family);
 
     // Emit event
@@ -657,16 +670,17 @@ fn update_electricity_from_mooneconomy(
     user_moonbase: &mut UserMoonBaseInstance,
     doge_btc_mining: &mut DogeBtcMining,
     global_config: &GlobalConfig,
-    caller_program: &Pubkey,
+    caller_authority: &Pubkey,
     new_electricity: u64,
 ) -> Result<()> {
-    // Verify caller is mooneconomy program
+    // Verify caller is mooneconomy program by checking authority == ext_fee_collector
     require!(
-        *caller_program == global_config.mooneconomy_program,
+        *caller_authority == global_config.ext_fee_collector,
         ErrorCode::Unauthorized
     );
     
     msg!("⚡ Updating electricity from mooneconomy CPI call");
+    msg!("   Caller authority verified: {}", caller_authority);
     msg!("   Old electricity: {}", user_moonbase.available_electricity);
     msg!("   New electricity: {}", new_electricity);
     msg!("   Used electricity: {}", user_moonbase.used_electricity);
@@ -2003,13 +2017,14 @@ pub struct CreateUserMoonbaseWithEgg<'info> {
     pub dragon_egg_collection: UncheckedAccount<'info>,
 
     /// Dragon Egg metadata (optional) - only created if tier includes egg
+    /// PDA seed uses dragon_egg_asset to uniquely tie metadata to the NFT
     #[account(
         init_if_needed,
         payer = user,
         space = DragonEggMetadata::LEN,
         seeds = [
             DRAGON_EGG_METADATA_SEED.as_ref(), 
-            user.key().as_ref(),
+            dragon_egg_asset.key().as_ref(),
         ],
         bump
     )]

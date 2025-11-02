@@ -233,155 +233,6 @@
     ],
     "timestamp": "2025-11-02T09:31:47.756Z"
   },
-  "modules_added": {
-    "modules": [
-      {
-        "name": "Basic Mining Rig",
-        "image_url": "https://arweave.net/basic-mining-rig",
-        "module_type": "Mining",
-        "stats": {
-          "maxHp": 1100,
-          "baseHashpower": 1200,
-          "powerConsumption": 90
-        },
-        "faction_ids": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 150000000,
-        "upgrade_cost": 75000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 11,
-        "create_tx": "34eu9trnRc7ZHCupzENriXs92sWMTme3dN4tiJsfs992GveSaaS4V3wyb4bn277KEApcVrn185A1HH7ksfZRpXX",
-        "stats_tx": "awiupZo9Ba4wyJNcKmQfi7tP7syCNesPKd3WWgbk77kvBT4U3sV4wb9h3Ta8vPCQS9YrsnEvxw3dqkj3sjmxdgA",
-        "status": "completed"
-      },
-      {
-        "name": "Advanced Mining Lab",
-        "image_url": "https://arweave.net/advanced-research-lab",
-        "module_type": "Mining",
-        "stats": {
-          "maxHp": 1400,
-          "cooldownSec": 3200,
-          "maxReward": 1200000000,
-          "probability": 6000,
-          "powerConsumption": 140
-        },
-        "faction_ids": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 450000000,
-        "upgrade_cost": 180000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 12,
-        "create_tx": "2qne8o77RwT87VXUd9Yf5rQnGqAYVM4y37EzidKekksKeHpJ3Hmahs7bG7gejf2w8APLpgbAo3yC1D8FGCrJSm14",
-        "status": "stats_failed",
-        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Advanced Mining Lab (ID: 12)\",\n  \"Program log: Module type: Mining\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:661. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt consumed 12557 of 200000 compute units\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
-      },
-      {
-        "name": "Cultural Monument",
-        "image_url": "https://arweave.net/cultural-monument",
-        "module_type": "Attraction",
-        "stats": {
-          "maxHp": 900,
-          "baseXpPerHour": 120,
-          "powerConsumption": 45
-        },
-        "faction_ids": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 200000000,
-        "upgrade_cost": 90000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 13,
-        "create_tx": "4qX1EXWyUUEW9ygmFmnUA8S4Km7CVEEYNGJamrRZmKVG3zYxmz1E3nvDbKNnSEUAjRkDR2L3uf8JjETfvki1JRhL",
-        "stats_tx": "4wPTZKvdghLzb2Fv7DVgdcxr7eQpGcg4Z317Dtf55StbFe3wUkdu2BcD3DCJe45L8CEGiqf9MXikcKhPbqDUJWzs",
-        "status": "completed"
-      },
-      {
-        "name": "Defense Battery",
-        "image_url": "https://arweave.net/defense-battery",
-        "module_type": "Attraction",
-        "stats": {
-          "maxHp": 1300,
-          "baseDamage": 180,
-          "baseMissilesPerLoad": 12,
-          "reloadTimeSeconds": 25,
-          "powerConsumption": 85
-        },
-        "faction_ids": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 400000000,
-        "upgrade_cost": 160000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 14,
-        "create_tx": "3ekTLKWjUACqy7ufrerNSZk1zjE3TpXp1xfFvpxDAQKxqo54VmiQBAWTTFLnGKnvvu8VTQu3F6yS3E3UmTHn2YF7",
-        "status": "stats_failed",
-        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Defense Battery (ID: 14)\",\n  \"Program log: Module type: Attraction\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:670. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt consumed 12611 of 200000 compute units\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
-      }
-    ],
-    "timestamp": "2025-11-02T09:48:39.715Z"
-  },
   "command_centers_added": {
     "command_centers": [
       {
@@ -545,8 +396,8 @@
     "poolStatePDA": "DRUeNFa79sVAhPzij7ChWLC7JKZ6AibXTGnyJeetm5b4",
     "ammConfigPDA": "Cc2bqfc7bGPbeQMZopRERw4YKEpf6opUYd49Nh1GRKXm",
     "method": "raydium_integration",
-    "tx_signature": "4kfZ8Fj7oMzPb6EnhGEsvjVVyziX7zEPA7uNk78MTSaribVc9eRQGmSV1jKdmxzPCJJz2HCbNBou8ihrqrySLeJk",
-    "timestamp": "2025-11-02T09:49:41.563Z"
+    "tx_signature": "H94kMVggaVKRhGyN2XR56QMDx8UvDgfQbirJ3FTnsVQUC4Yw95yiS2Chk7ypgHdGJxwiQL9EuPw9sdtU4wR6xP4",
+    "timestamp": "2025-11-02T15:22:30.238Z"
   },
   "moonEconomy_program_initialized": {
     "moonEconomy_globalConfig_data_ac": "6Bp1WTLpPHpCmQZNG1GSDeyC1hDG2vJWVXNseFyLNno6",
@@ -567,5 +418,154 @@
     "liquidityCustodian": "3s79vExbKhvthTudh13qSUtHp9PyJNDLrjToia73dsFH",
     "liquidityCustodianAuthority": "AC36KU2qU73rtBS9TyndcuARMUs1ALv2Zv28GH8d2xjA",
     "timestamp": "2025-11-02T09:50:20.470Z"
+  },
+  "modules_added": {
+    "modules": [
+      {
+        "name": "Basic Mining Rig",
+        "image_url": "https://arweave.net/basic-mining-rig",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 1100,
+          "baseHashpower": 1200,
+          "powerConsumption": 90
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 150000000,
+        "upgrade_cost": 75000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "config_id": 19,
+        "create_tx": "2Taw72X4mD8v8DWLTz2LmYPQZ5t328GwqR2zU2HLM5yKYXVJPkB4ed9h4kxAw3PnGdFN2Xa5yzhAzw3QZP7KKDhJ",
+        "stats_tx": "5jav1qBSn9vaiDiXhdwEfWHieFdDrqduiTHTPenaUusELHX82zCerjgRHKeNPrrij7Vi2iHaDiV36rqWRXMsJwtU",
+        "status": "completed"
+      },
+      {
+        "name": "Advanced Mining Lab",
+        "image_url": "https://arweave.net/advanced-research-lab",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 1400,
+          "cooldownSec": 3200,
+          "maxReward": 1200000000,
+          "probability": 6000,
+          "powerConsumption": 140
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 3,
+        "height": 2,
+        "mint_cost": 450000000,
+        "upgrade_cost": 180000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "config_id": 20,
+        "create_tx": "5MTXkqRRBym9mHz6uVdpyzeHYUP8KXMDLEj1prFym4rH1fn5oUquyCGUNVEWosucSEaev9tdn9YdMShGGhg7oyCz",
+        "status": "stats_failed",
+        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Advanced Mining Lab (ID: 20)\",\n  \"Program log: Module type: Mining\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:661. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt consumed 12557 of 200000 compute units\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
+      },
+      {
+        "name": "Cultural Monument",
+        "image_url": "https://arweave.net/cultural-monument",
+        "module_type": "Attraction",
+        "stats": {
+          "maxHp": 900,
+          "baseXpPerHour": 120,
+          "powerConsumption": 45
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 200000000,
+        "upgrade_cost": 90000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "config_id": 21,
+        "create_tx": "Sr6eTHhLMRatjPkojtmsTpkYBmhgfkqbgLWTUscdetQfXrqqdbezxZXr54asG4XB8YXyJpMW7ieioqV4MU1Grwj",
+        "stats_tx": "2LquWD1i2pXZuSmZL1AcnPB9nnNNjvZMYDSewBkV12eGwtvv2TnxK5kPqW2rUmjA2uLciaE6UBbiPPnNYVfXbvU6",
+        "status": "completed"
+      },
+      {
+        "name": "Defense Battery",
+        "image_url": "https://arweave.net/defense-battery",
+        "module_type": "Attraction",
+        "stats": {
+          "maxHp": 1300,
+          "baseDamage": 180,
+          "baseMissilesPerLoad": 12,
+          "reloadTimeSeconds": 25,
+          "powerConsumption": 85
+        },
+        "faction_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 400000000,
+        "upgrade_cost": 160000000,
+        "upgrade_level_requirements": [
+          2,
+          3,
+          6,
+          9,
+          12,
+          42
+        ],
+        "config_id": 22,
+        "create_tx": "26kdKMo8cYnJS99UtiicWznJHYjyQA44sMZxG4cyGq7hQQbcdTxHoZWwETiqZ2oVCSPWGhoB1ez86LanDEnuWoLa",
+        "status": "stats_failed",
+        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Defense Battery (ID: 22)\",\n  \"Program log: Module type: Attraction\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:670. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt consumed 12611 of 200000 compute units\",\n  \"Program G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
+      }
+    ],
+    "timestamp": "2025-11-02T15:22:29.742Z"
   }
 }

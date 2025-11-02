@@ -508,14 +508,12 @@ async function queryMoonBaseConfig(moonBaseProgram) {
             ext_authority: moonbaseConfig.ext_authority.toBase58(),
             ext_fee_collector: moonbaseConfig.ext_fee_collector.toBase58(),
             pda_sol_treasury: moonbaseConfig.pda_sol_treasury.toBase58(),
-            base_creation_cost: moonbaseConfig.base_creation_cost.toNumber()
         };
 
         console.log('\x1b[36m%s\x1b[0m', '📊 Current MoonBase Configuration:');
         console.log('\x1b[36m%s\x1b[0m', `   Authority: ${displayConfig.ext_authority}`);
         console.log('\x1b[36m%s\x1b[0m', `   Fee Collector: ${displayConfig.ext_fee_collector}`);
         console.log('\x1b[36m%s\x1b[0m', `   SOL Treasury: ${displayConfig.pda_sol_treasury}`);
-        console.log('\x1b[36m%s\x1b[0m', `   Base Creation Cost: ${displayConfig.base_creation_cost / 1e9} SOL`);
         console.log('\x1b[36m%s\x1b[0m', `   Loot Percentage: ${displayConfig.loot_percentage}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Game Active: ${displayConfig.is_game_active ? '🟢 YES' : '🔴 NO'}`);
     } catch (error) {

@@ -37,7 +37,6 @@ pub struct TreasuryInfo {
 pub struct GlobalConfigInfo {
     pub loot_percentage: u8,
     pub is_game_active: bool,
-    pub base_creation_cost: u64,
     pub ext_authority: Pubkey,
     pub ext_fee_collector: Pubkey,
 }
@@ -53,7 +52,7 @@ pub struct TokenPricesInfo {
 // -------------------------------------------------------------------------------- 
 
 
-pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, creation_fee_recipient: Pubkey) -> Result<()> {
+pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
 
@@ -75,7 +74,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, cr
     global_config.egg_limits = [0, 5000, 5000, 5000];
 
     global_config.bump = ctx.bumps.global_config;
-    global_config.base_creation_cost = base_creation_cost;
     global_config.loot_percentage = 10; // Default 10% for loot rewards
     global_config.is_game_active = false; // Default to false 
     
@@ -115,7 +113,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, base_creation_cost: u64, cr
     doge_btc_mining.sol_for_pol = 0;
     doge_btc_mining.slots_for_swap = 450; // 3-minute periods
     
-    msg!("Program initialized with creation cost: {}", base_creation_cost);
     msg!("SOL Treasury PDA created at: {} with bump: {}", ctx.accounts.sol_treasury.key(), ctx.bumps.sol_treasury);
     
     Ok(())
@@ -207,7 +204,6 @@ pub fn update_config_internal(
     new_authority: Option<Pubkey>,
     new_fee_collector: Option<Pubkey>,
     new_creation_fee_recipient: Option<Pubkey>,
-    new_base_creation_cost: Option<u64>,
     new_loot_percentage: Option<u8>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
@@ -229,13 +225,7 @@ pub fn update_config_internal(
         global_config.creation_fee_recipient = creation_fee_recipient;
         msg!("Updated creation fee recipient to {}", creation_fee_recipient);
     }
-    
-    // Update facility creation cost if provided
-    if let Some(cost) = new_base_creation_cost {
-        global_config.base_creation_cost = cost;
-        msg!("Updated facility creation cost to {}", cost);
-    }
-    
+      
     // Update loot percentage if provided
     if let Some(loot_percentage) = new_loot_percentage {
         require!(loot_percentage <= 100, ErrorCode::InvalidParameters);
@@ -882,7 +872,6 @@ pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<G
     Ok(GlobalConfigInfo {
         loot_percentage: global_config.loot_percentage,
         is_game_active: global_config.is_game_active,
-        base_creation_cost: global_config.base_creation_cost,
         ext_authority: global_config.ext_authority,
         ext_fee_collector: global_config.ext_fee_collector,
     })

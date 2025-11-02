@@ -171,11 +171,7 @@ pub struct GlobalConfig {
     pub creation_fee_recipient: Pubkey,
     /// PDA account that holds collected SOL fees
     pub pda_sol_treasury: Pubkey,
-    /// Mooneconomy program ID (for CPI authorization)
-    pub mooneconomy_program: Pubkey,
     /// ------------------------------------------------------------           
-    /// Cost in SOL to create a new facility (0.1 SOL)
-    pub base_creation_cost: u64,        
     /// Total number of moonbases that have been created
     pub total_moonbases_created: u64,
     /// Total SOL spent by users in the game
@@ -208,7 +204,7 @@ pub struct GlobalConfig {
 }
  
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury + mooneconomy_program + base_creation_cost + total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
+    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<ExpansionConfig> = 4 bytes (vec length) + MAX_EXPANSIONS * ExpansionConfig::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
@@ -216,8 +212,6 @@ impl GlobalConfig {
         32 +                    // ext_fee_collector  
         32 +                    // creation_fee_recipient
         32 +                    // pda_sol_treasury
-        32 +                    // mooneconomy_program
-        8 +                     // base_creation_cost
         8 +                     // total_moonbases_created
         8 +                     // total_sol_spent
         8 +                     // total_referral_sol_paid
@@ -923,6 +917,9 @@ pub struct DragonEggMetadata {
     /// Moonbase this egg is incubated in (if any)
     pub incubated_moonbase: Option<Pubkey>,
 
+    /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
+    pub multiplier: u32,
+
     /// Last power update timestamp
     pub last_update_ts: i64,
 
@@ -939,6 +936,7 @@ impl DragonEggMetadata {
         4 +     // power
         32 +    // dna
         33 +    // incubated_moonbase (Option<Pubkey>)
+        4 +     // multiplier
         8 +     // last_update_ts
         8 +     // created_at
         1;      // bump
