@@ -8,6 +8,7 @@ pub mod instructions;
 
 pub use instructions::admin::*;
 pub use instructions::user::*;
+pub use instructions::economy::*;
 
 declare_id!("G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt");
 
@@ -16,6 +17,7 @@ pub mod moonbase {
     use super::*;
     use crate::instructions::admin::{self, CreateDragonEggCollection};
     use crate::instructions::user::{self};
+    use crate::instructions::economy::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -269,7 +271,7 @@ pub mod moonbase {
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
     pub fn update_dbtc_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-        admin::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
+        economy::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
     }
 
     // ----------------------------------------------------------------------------------------
