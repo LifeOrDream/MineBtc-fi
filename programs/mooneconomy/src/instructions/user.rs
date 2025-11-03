@@ -1096,7 +1096,8 @@ pub struct InitializeElectricityAc<'info> {
     /// CHECK: User instance in MoonFacility - will be updated via CPI
     pub facility_user_moonbase: UncheckedAccount<'info>,
     
-    /// CHECK: MoonFacility mining state
+    #[account(mut)]
+    /// CHECK: MoonFacility mining state - will be updated via CPI
     pub facility_mining_state: UncheckedAccount<'info>,
     
     /// CHECK: MoonFacility global config

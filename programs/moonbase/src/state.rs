@@ -119,10 +119,10 @@ pub const MAX_MODULE_UPGRADES: u8 = 10; // Maximum upgrade level for any module
 pub const MAX_BOUGHT_MODULES: usize = 100; // Maximum modules that can be bought but not installed
 
 // Command Center config IDs (one per init_type tier)
-pub const COMMAND_CENTER_TIER_1_CONFIG_ID: u16 = 1000; // Tier 1 (no egg)
-pub const COMMAND_CENTER_TIER_2_CONFIG_ID: u16 = 1001; // Tier 2
-pub const COMMAND_CENTER_TIER_3_CONFIG_ID: u16 = 1002; // Tier 3
-pub const COMMAND_CENTER_TIER_4_CONFIG_ID: u16 = 1003; // Tier 4
+pub const COMMAND_CENTER_TIER_1_CONFIG_ID: u16 = 1; // Tier 1 (no egg)
+pub const COMMAND_CENTER_TIER_2_CONFIG_ID: u16 = 2; // Tier 2
+pub const COMMAND_CENTER_TIER_3_CONFIG_ID: u16 = 3; // Tier 3
+pub const COMMAND_CENTER_TIER_4_CONFIG_ID: u16 = 4; // Tier 4
 
 // ========== GRID SYSTEM CONSTANTS ========== //
 pub const GRID_WIDTH: u8 = 20; // 20 tiles wide

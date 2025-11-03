@@ -76,6 +76,8 @@ function generateWebsiteConfig(config, deployment) {
       "globalConfig_pda": deployment.moonbase_program_initialized?.globalConfig_address,
       "dogeBtcMining_pda": deployment.moonbase_program_initialized?.dogeBtcMining_address,
       "sol_treasury_pda": deployment.moonbase_program_initialized?.solTreasury_address,
+
+      "dragon_egg_collection": deployment.dragon_egg_collection_created?.collection_address,
       
       // ========== DOGE_BTC MINING VAULT ==========
       "dbtc_token_vault": deployment.mining_vault_initialized?.vault_address,
