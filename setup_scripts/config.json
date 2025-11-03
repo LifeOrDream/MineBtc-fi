@@ -265,7 +265,7 @@
         }
     ],
     "moonEconomy": {
-        "moondoge_allocation": 33,
+        "dogebtc_allocation": 33,
         "liquidity_allocation": 33,
         "min_lockup_days": 1,
         "max_lockup_days": 365,

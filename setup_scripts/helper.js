@@ -1237,10 +1237,10 @@ export async function updateGearConfig(
 /**
  * Initialize the Moon Economy program
  */
-export async function initializeMoonEconomyProgram(connection, program, wallet, walletKeypair, dev_address, moondoge_allocation, liquidity_allocation, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier) { 
+export async function initializeMoonEconomyProgram(connection, program, wallet, walletKeypair, dev_address, dogebtc_allocation, liquidity_allocation, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier) { 
 
   console.log(`dev_address = ${dev_address}`);
-  console.log(`moondoge_allocation = ${moondoge_allocation}`);
+  console.log(`dogebtc_allocation = ${dogebtc_allocation}`);
   console.log(`liquidity_allocation = ${liquidity_allocation}`);
   console.log(`min_lockup_days = ${min_lockup_days}`);
   console.log(`max_lockup_days = ${max_lockup_days}`);
@@ -1259,7 +1259,7 @@ export async function initializeMoonEconomyProgram(connection, program, wallet, 
             console.log('\x1b[36m%s\x1b[0m', `🔑 Fee Collector PDA: ${feeCollectorPDA.toString()}`);
  
     const tx = await program.methods
-                .initializeGlobalConfig(new PublicKey(dev_address), moondoge_allocation, liquidity_allocation, new BN(min_lockup_days), new BN(max_lockup_days), base_multiplier, max_multiplier)
+                .initializeGlobalConfig(new PublicKey(dev_address), dogebtc_allocation, liquidity_allocation, new BN(min_lockup_days), new BN(max_lockup_days), base_multiplier, max_multiplier)
                 .accounts({
                     globalConfig: globalConfigPDA,
                     devEarningsCollector: devEarningsPDA,

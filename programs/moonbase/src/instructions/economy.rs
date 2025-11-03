@@ -1,12 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::state::*;
 use crate::events::*;
-use anchor_lang::system_program;
-use mpl_core::{
-    instructions::CreateCollectionV1CpiBuilder,
-    ID as MPL_CORE_PROGRAM_ID,
-};
-
 use crate::errors::ErrorCode;
 
 use anchor_spl::token_interface::{

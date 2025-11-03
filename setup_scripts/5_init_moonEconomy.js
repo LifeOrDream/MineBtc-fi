@@ -45,7 +45,7 @@ const ID_MOON_ECONOMY_PROGRAM = deploymentFile.MOON_ECONOMY_PROGRAM_ID ?
     new PublicKey(deploymentFile.MOON_ECONOMY_PROGRAM_ID) : null;
 
 // Moon Economy configuration
-const MOONDOGE_ALLOCATION = config.moonEconomy?.moondoge_allocation || 25;
+const MOONDOGE_ALLOCATION = config.moonEconomy?.dogebtc_allocation || 25;
 const LIQUIDITY_ALLOCATION = config.moonEconomy?.liquidity_allocation || 25;
 const GAME_ALLOCATION = config.moonEconomy?.game_allocation || 30;
 const MIN_LOCKUP_DAYS = config.moonEconomy?.min_lockup_days || 1;
@@ -472,7 +472,7 @@ async function queryEconomyConfig(moonEconomyProgram) {
         console.log('\x1b[36m%s\x1b[0m', `   Authority: ${displayConfig.authority}`);
         console.log('\x1b[36m%s\x1b[0m', `   Dev Address: ${displayConfig.dev_address}`);
         console.log('\x1b[36m%s\x1b[0m', `   Fee Collector: ${displayConfig.fee_collector}`);
-        console.log('\x1b[36m%s\x1b[0m', `   DogeBtc Allocation: ${displayConfig.moondoge_allocation}%`);
+        console.log('\x1b[36m%s\x1b[0m', `   DogeBtc Allocation: ${displayConfig.dogebtc_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Liquidity Allocation: ${displayConfig.liquidity_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Game Allocation: ${displayConfig.game_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Lockup Days: ${displayConfig.min_lockup_days}-${displayConfig.max_lockup_days}`);

@@ -59,7 +59,7 @@ pub struct GlobalConfig {
 
     /// Distribution percentages (out of 100)
     /// Percentage of SOL distributed to DogeBtc stakers
-    pub moondoge_allocation: u8,
+    pub dogebtc_allocation: u8,
     /// Percentage of SOL distributed to LP token stakers
     pub liquidity_allocation: u8,
     
@@ -68,6 +68,9 @@ pub struct GlobalConfig {
     
     /// Electricity per weighted SOL staked (used for both dBTC and LP staking)
     pub electricity_per_weighted_sol: u64,
+    
+    /// Whether SOL distribution from fee collector is enabled (prevents early stakers from capturing all initial SOL)
+    pub sol_distribution_enabled: bool,
     
     /// Bump for PDA derivation
     pub bump: u8
@@ -78,16 +81,16 @@ impl GlobalConfig {
     pub const LEN: usize = 8 + // discriminator
         32 + // authority
         32 + // dev_address
-        32 + // game_address
         32 + // fee_collector
         8 +  // min_lockup_days
         8 +  // max_lockup_days
         2 +  // base_multiplier
         2 +  // max_multiplier
-        1 +  // moondoge_allocation
+        1 +  // dogebtc_allocation
         1 +  // liquidity_allocation
         8 +  // last_claim_slot
         8 +  // electricity_per_weighted_sol
+        1 +  // sol_distribution_enabled
         1;   // bump
 }
 

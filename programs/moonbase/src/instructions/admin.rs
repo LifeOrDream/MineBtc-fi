@@ -787,39 +787,39 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     
     // Calculate available balance (total - rent)
     let reserved_amount = rent_exempt_amount;    
-    let available_balance = current_balance.saturating_sub(reserved_amount);
+    let available_solana = current_balance.saturating_sub(reserved_amount);
     
     // Check if we have enough available balance
-    if available_balance == 0 {
-        msg!("⚠️ No available balance to withdraw. Available: {}", available_balance);
+    if available_solana == 0 {
+        msg!("⚠️ No SOL balance to withdraw. Available: {}", available_solana);
         msg!("   Total balance: {}, Rent: {}", current_balance, rent_exempt_amount);
         return Err(ErrorCode::InsufficientTreasuryFunds.into());
     }
 
     // Calculate loot rewards amount using configurable percentage
     let loot_percentage = global_config.loot_percentage as u64;
-    let loot_amount = available_balance.checked_mul(loot_percentage).unwrap().checked_div(100).unwrap();
-    let fee_collector_amount = available_balance.checked_sub(loot_amount).unwrap();
+    let sol_for_loots = available_solana.checked_mul(loot_percentage).unwrap().checked_div(100).unwrap();
+    let fee_collector_amount = available_solana.checked_sub(sol_for_loots).unwrap();
 
     // Transfer loot rewards to loot SOL vault (required)
     // Transfer loot amount to loot SOL vault
-    **sol_treasury.try_borrow_mut_lamports()? = current_balance.checked_sub(loot_amount).unwrap();
-    **ctx.accounts.loot_sol_vault.try_borrow_mut_lamports()? += loot_amount;
+    **sol_treasury.try_borrow_mut_lamports()? = current_balance.checked_sub(sol_for_loots).unwrap();
+    **ctx.accounts.loot_sol_vault.try_borrow_mut_lamports()? += sol_for_loots;
 
     // Update loot rewards tracking
-    ctx.accounts.loot_rewards.total_sol_accumulated = ctx.accounts.loot_rewards.total_sol_accumulated.checked_add(loot_amount).unwrap();
+    ctx.accounts.loot_rewards.total_sol_accumulated = ctx.accounts.loot_rewards.total_sol_accumulated.checked_add(sol_for_loots).unwrap();
     
     emit!(LootRewardsAccumulated {
         dbtc_amount: 0,
-        sol_amount: loot_amount,
+        sol_amount: sol_for_loots,
         total_dbtc_accumulated: ctx.accounts.loot_rewards.total_dbtc_accumulated,
         total_sol_accumulated: ctx.accounts.loot_rewards.total_sol_accumulated,
     });
 
-    msg!("🎁 Transferred {} SOL to loot rewards vault ({}%)", loot_amount, loot_percentage);
+    msg!("🎁 Transferred {} SOL to loot rewards vault ({}%)", sol_for_loots, loot_percentage);
     
     // Transfer remaining amount to fee collector
-    let remaining_balance = current_balance.saturating_sub(available_balance);
+    let remaining_balance = current_balance.saturating_sub(available_solana);
     **sol_treasury.try_borrow_mut_lamports()? = remaining_balance;
     **fee_collector.try_borrow_mut_lamports()? += fee_collector_amount;
 
@@ -827,7 +827,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     emit!(SolFeesWithdrawn {
         fee_collector: fee_collector.key(),
         amount: fee_collector_amount,
-        loot_amount,
+        loot_amount: sol_for_loots,
     });
 
     msg!("Withdrew {} lamports from treasury (Available balance now: {})", fee_collector_amount, remaining_balance.saturating_sub(reserved_amount));

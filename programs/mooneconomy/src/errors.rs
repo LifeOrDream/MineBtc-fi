@@ -91,4 +91,7 @@ pub enum ErrorCode {
     
     #[msg("Invalid moonbase account")]
     InvalidMoonbaseAccount,
+    
+    #[msg("SOL distribution is currently disabled - will be enabled by admin after launch period")]
+    SolDistributionDisabled,
 }
