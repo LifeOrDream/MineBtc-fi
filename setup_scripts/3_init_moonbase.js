@@ -212,10 +212,11 @@ async function main() {
 
         // 11.5. Initialize Buybacks System (required for distribution rate updates)
         await initializeBuybacksSystem(moonbaseProgram);
-
+        // return;
+        
         // // // 12. Update DOGE_BTC Distribution Rate
         await updateDistributionRate(moonbaseProgram);
-        return;
+        // return;
 
         // Print completion summary
         // printCompletionSummary();

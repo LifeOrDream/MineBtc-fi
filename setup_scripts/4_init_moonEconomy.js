@@ -170,6 +170,7 @@ async function main() {
         console.log('\x1b[36m%s\x1b[0m', `\n📍 MoonEconomy Fee Collector PDA: ${feeCollectorPDA.toString()}`);
         
         await updateMoonBaseConfig(moonBaseProgram, feeCollectorPDA.toString());
+        // return;
         
         // 3.5. Set initial DOGE_BTC to SOL price (default price for electricity calculations)
         await setInitialDbtcSolPrice(moonEconomyProgram);
@@ -560,8 +561,8 @@ async function setInitialDbtcSolPrice(moonEconomyProgram) {
     
     try {
         const globalConfigAddress = deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac;
-        const dogebtcVaultAddress = deploymentFile.moonEconomy_program_initialized?.dbtc_vault_initialized?.dogebtc_vault_pda;
-        const liquidityVaultAddress = deploymentFile.moonEconomy_program_initialized?.liquidity_vault_initialized?.liquidity_vault_pda;
+        const dogebtcVaultAddress = deploymentFile.moonEconomy_mDogeVault_initialized?.dogebtcVault;
+        const liquidityVaultAddress = deploymentFile.moonEconomy_liquidityVault_initialized?.liquidityVault;
 
         const requiredAddresses = {
             'MoonEconomy Global Config': globalConfigAddress,

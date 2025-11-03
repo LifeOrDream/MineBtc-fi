@@ -4,14 +4,14 @@
     "timestamp": "2025-11-03T07:51:50.870Z",
     "cluster": "localnet"
   },
-  "MOON_BASE_PROGRAM_ID": "FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j",
-  "MOON_ECONOMY_PROGRAM_ID": "7w8i1bvEbdge2zumQjsLQBHuciCoPFsxs9Mqz7DNZfk4",
+  "MOON_BASE_PROGRAM_ID": "8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL",
+  "MOON_ECONOMY_PROGRAM_ID": "6e5ha8rA9aip64J4nr5xe1NLhvkFp5n7VsdB4LNN337Q",
   "game_programs_deployment": {
-    "timestamp": "2025-11-03T08:17:01.871Z",
+    "timestamp": "2025-11-03T10:09:33.054Z",
     "cluster": "localnet"
   },
   "dbtc_mint_created": {
-    "mint_address": "BN96y4XxJAFs8wEhV47WFZ2XZELLXEowSK4yvZnjdazd",
+    "mint_address": "Frq3YSrm5TvSVPTeMrbwdXK3cgsPGeJ9954YuSp2xjmW",
     "mint_authority": null,
     "freeze_authority": null,
     "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -23,50 +23,50 @@
     "metadata_name": "DogeWifBTC",
     "metadata_symbol": "DBTC",
     "metadata_uri": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
-    "creation_signature": "3rG9yiaWk8HN2KR4Y5ZDAaMX9TLh8MM42Y42DKUrCLJgamugWBkobZ1UJ6Ne23WGshWhE18DtweZmvUqe4GARzEU",
-    "timestamp": "2025-11-03T08:19:22.516Z",
+    "creation_signature": "5E7PZQ6H8TV8NcEgdow2eUrhKbKpPHY4h5NXNRGyc5DFJSukeh1ozstiaicL8fTJgQxLwU4Wb7qZJYn3RnpdWYi2",
+    "timestamp": "2025-11-03T10:09:49.981Z",
     "mint_authority_status": "removed",
     "withdraw_withheld_authority_status": "removed",
     "transfer_fee_config_authority_status": "transferred"
   },
   "dbtc_token_account_created": {
-    "token_account_address": "2Vxvh1Lcy24qZWiRapC1aRuVW2EzN3WhnPk7mqPGJ7fo",
+    "token_account_address": "CPsjjvKsbNa1YpKHmHev6oTnAEcsmPsuwoeiWMa8LUw2",
     "owner_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "mint_address": "BN96y4XxJAFs8wEhV47WFZ2XZELLXEowSK4yvZnjdazd",
-    "timestamp": "2025-11-03T08:19:22.982Z"
+    "mint_address": "Frq3YSrm5TvSVPTeMrbwdXK3cgsPGeJ9954YuSp2xjmW",
+    "timestamp": "2025-11-03T10:09:50.455Z"
   },
   "initial_supply_minted": {
     "amount": "21000000000000000",
     "actual_minted_amount": "21000000000000000",
     "amount_readable": "21,000,000,000 DBTC",
-    "token_account_address": "2Vxvh1Lcy24qZWiRapC1aRuVW2EzN3WhnPk7mqPGJ7fo",
-    "mint_signature": "63YVmTvvMUESSYavGA89F4ZJTzgMW4NCNPbM6o4oSvHDNVT7AyGHqJQwL14ym11EBWg2q4vFfnAx7M3sfy4RivSY",
+    "token_account_address": "CPsjjvKsbNa1YpKHmHev6oTnAEcsmPsuwoeiWMa8LUw2",
+    "mint_signature": "5tcLwngFUhvnRjoh8qYtJHXkJMKjYBKiSVUsw7MmnJk8U4DrWybGW15tetPU1TMjLBVoMT9Wc2LHtaCRXga5pdJi",
     "bigint_verification": {
       "expected": "21000000000000000",
       "actual": "21000000000000000",
       "match": true
     },
-    "timestamp": "2025-11-03T08:19:23.448Z"
+    "timestamp": "2025-11-03T10:09:50.919Z"
   },
-  "dbtc_mint_address": "BN96y4XxJAFs8wEhV47WFZ2XZELLXEowSK4yvZnjdazd",
+  "dbtc_mint_address": "Frq3YSrm5TvSVPTeMrbwdXK3cgsPGeJ9954YuSp2xjmW",
   "mint_authority_removed": {
     "previous_mint_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_mint_authority": null,
-    "removal_signature": "2vG935988WGQmzamNpVdPwSxkWXcVJ21nq1vjcfpxMUsQtPnKdeq62UYtgDMtRFGSf28quaEp7MiVu9jWh6WZTT5",
-    "timestamp": "2025-11-03T08:19:23.910Z",
+    "removal_signature": "Qw7EJv6FoWvQP5Uy37JstKa2Yk6PxXNzsGvvdCD5C4ghVaKSjtm2JVVWogRwJXum1C1k5PXQJ6nkzxNg17mnXN6",
+    "timestamp": "2025-11-03T10:09:51.484Z",
     "total_supply_locked": "21,000,000,000 DBTC"
   },
   "withdraw_withheld_authority_removed": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_withdraw_withheld_authority": null,
-    "removal_signature": "5kP3EyKhYUizMoMXun9oivMZJwD8YySrBsSxKubptfptinKkUt2V3gpSUwz9QRLm4S8QVC14RhASxBQMGJ1sKRku",
-    "timestamp": "2025-11-03T08:19:24.382Z"
+    "removal_signature": "5re5ChH9xnPic6BAXzmBoRX8jspjYXYMub14ReCz5X7rFucS5QHBMS9AmxVVrc8NAmzXosbNPfG1YSrEBtPFZb9J",
+    "timestamp": "2025-11-03T10:09:51.853Z"
   },
   "transfer_fee_config_authority_transferred": {
     "previous_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "transfer_signature": "j97UdhW5ypfcXxhZkaYvPZvVBHr6tVNCXkEL47x5uXf4xAJDE9cPgykzdjFtT2tyciauoxaocrCR1f8jR8xGmS8",
-    "timestamp": "2025-11-03T08:19:24.846Z"
+    "transfer_signature": "5W5pnZdTtGfnBUmSWBiQ6adm4vHvn7f9FY7THjqE2zy8jziyeDpN45gTKcfaSuSg3QfvXTRqvLXg2SBQustJHZRa",
+    "timestamp": "2025-11-03T10:09:52.324Z"
   },
   "raydium_amm_config_created": {
     "amm_config_pda": "ANyW35pshL2R6NVDYmQMps4fpqrVgyaYnmMBhEkht7XK",
@@ -78,88 +78,88 @@
     "create_pool_fee": "40000000",
     "creator_fee_rate": 0,
     "status": "already_exists",
-    "timestamp": "2025-11-03T08:19:34.714Z"
+    "timestamp": "2025-11-03T10:09:58.682Z"
   },
   "dbtc_sol_pool_created": {
-    "poolStatePDA": "Cw8r6Zff1tnP5ZTtx7URmEc7LsGUBhApojEm14vVxRfC",
-    "lpMintPDA": "BCmuG3eWk4unrMvcusnQQddqfqN2xdYm89RVGpacPSBS",
-    "token0VaultPDA": "Ad13JmuDun5wk8WM2j4jDT5LvhQTNd7Nf7uqUoLdzwux",
-    "token1VaultPDA": "7tNgigMW5ZahCM1risEHjtFGANiRxNKMjijCrZrCLdZK",
+    "poolStatePDA": "7a3KTo1znhQgZvR2QnBEuajharZq17i5vrQEizVuXiHk",
+    "lpMintPDA": "Aum1pWc14Rb1B26DaPr9AW8T717ru9HX79SfEGCiRFYY",
+    "token0VaultPDA": "DPReg6tKbC6PZs3gwQgDv3Q7Z3bB3LWdpM8XtWzHUuMv",
+    "token1VaultPDA": "Ayd5632aBCg988YXAHKZeAxTExCTAxiNZ3GEXh95nXL4",
     "authorityPDA": "DSYEn3TfRm5iXkaHWGv4VAWToyi4oprXrgj6ZS5caF67",
-    "observationStatePDA": "98LmPtt4LdvySpPLWfoQk222Aoejnqww8U2B7RDMHVEH",
+    "observationStatePDA": "px28891LCveZy8fUvn38CnuqADLKAcFNmxZU32r14yj",
     "token0Mint": "So11111111111111111111111111111111111111112",
-    "token1Mint": "BN96y4XxJAFs8wEhV47WFZ2XZELLXEowSK4yvZnjdazd",
+    "token1Mint": "Frq3YSrm5TvSVPTeMrbwdXK3cgsPGeJ9954YuSp2xjmW",
     "isMdogeToken0": false,
-    "txid": "57LBY6XkqDjrfG1E5vib1bAGo88YQqKauEBtoZRLaepJyTav43ndzy7a1Qh6Hq4HqK7fbxArsxCe64yj1GQxaJNh",
-    "wrapTxid": "3wdGG2MYnKJva9crUAHaMHRrF12VC9fT7tFx6pACH1mkGDwz8DqWZtjbcYr9WerHzRzQDPfMWZN3spD854puUp91",
+    "txid": "4Q3AwzfcfWFsjikRMiM1Puz38dKN61HKYybwtsbnDZW9qnEdvbBUYzyRXePM3BUA1SBoXx5d1Tw3Td9qL4P9bQqZ",
+    "wrapTxid": "4eRNNCmNhzpzop1BDcasbBUGPMAAPMgs6BjPbZ9oYCvKPkKHyVpfBMKTmi38ogqCmeJL6QYkBKDA4zZ7xJwEpRcR",
     "initialMdogeAmount": "210000000000000",
     "initialSolAmount": "100000000",
     "openTime": 0,
-    "timestamp": "2025-11-03T08:19:35.683Z"
+    "timestamp": "2025-11-03T10:09:59.433Z"
   },
   "lp_tokens_burned": {
-    "pool_state": "Cw8r6Zff1tnP5ZTtx7URmEc7LsGUBhApojEm14vVxRfC",
-    "lp_mint": "BCmuG3eWk4unrMvcusnQQddqfqN2xdYm89RVGpacPSBS",
-    "deployer_lp_account": "EKFhQ5r16FXJejp1d3rFdWQRM1qEfxjX2T3ocqmfBSep",
+    "pool_state": "7a3KTo1znhQgZvR2QnBEuajharZq17i5vrQEizVuXiHk",
+    "lp_mint": "Aum1pWc14Rb1B26DaPr9AW8T717ru9HX79SfEGCiRFYY",
+    "deployer_lp_account": "77cnxgpMJmwtmFuYQxu3Cu1qNYmmifx9TsEeqbNnmzkq",
     "burn_all_lp_tokens": true,
     "burned_amount": "144568322848",
     "burned_amount_readable": "144.568322848 LP",
-    "burn_signature": "3i5ACjbiCCH4p7ZBFsHP8x8mnTQWzUaRyvGjBUKMeyXJL6aFP5SQHuufLgCeMbc6m8PNPwtvd48V4puzpu7SJ2nz",
+    "burn_signature": "5TNHiajGH6MdeVYGmKt4RdvEkVsPNPWxLrKyk3xBfzjWBMUQpMBDoMZFtczbzRjq8kmukWz2Lqpetb6vTvYQb3e",
     "burn_purpose": "Permanent liquidity lock - cannot remove initial liquidity",
     "dbtc_locked_amount": "210000000000000",
     "sol_locked_amount": "100000000",
     "status": "burned_successfully",
     "permanent_lock": true,
-    "timestamp": "2025-11-03T08:19:36.157Z"
+    "timestamp": "2025-11-03T10:09:59.943Z"
   },
   "moonbase_program_initialized": {
-    "globalConfig_address": "C8AbN5HESLT8DbTqRfotfC1AMmS17kLNp53K9YZdG53B",
-    "dogeBtcMining_address": "HGEJcL8DeViQvisEdYbfhfFRxLswtET933kCDaPG2pmw",
-    "solTreasury_address": "EqL5cx38kjAr27rrjD1Z4gTmpzkKtVqN6V3HaobjBRoT",
-    "timestamp": "2025-11-03T08:22:19.075Z",
-    "moonbase_fee_collector": "2bSB8Mqc1k1ZGpSmG1x6qc6X7ESqXzAWReb55BKTpRZ5"
+    "globalConfig_address": "Ervo7WAunmK18o5EQ5A7AHtFqzSMd7eY6buy7a9jPFyj",
+    "dogeBtcMining_address": "7XKa9dXGpxFiXJ1xSsz62oKttvS1UcA6cURQZdoHTujA",
+    "solTreasury_address": "3vEoEFjCi7aDpgtSMvvtX47RGDZkvGybcJsiAUGsGQud",
+    "timestamp": "2025-11-03T10:10:21.665Z",
+    "moonbase_fee_collector": "CbcHquwMA3unEs4QuW5WdL21USJQjZANSYiN4vhq8nPu"
   },
   "mining_vault_initialized": {
-    "vault_address": "C4LgV1fYYJtYaUzWymDm4iUcsxcVypuWWyTv2BhQ4eFa",
-    "vault_authority": "7ZzF8bHCdJhrDrgViT4hNJUjqZYpSY1X8wNLLJuSrDtb",
-    "start_timestamp": 1762158138,
+    "vault_address": "FVQ4VAosRjxtqQFYCF2XTMTPhBKYP7kwoaVSyi5rK4Ss",
+    "vault_authority": "Jb3XKxYJHrbGgEmp2XUcX1G8MWaVN1rfdQr3HMG6mxR",
+    "start_timestamp": 1762164621,
     "doge_btc_per_slot": "1000000",
-    "init_tx": "4ED7jctwLSiFu3DRivmDgJufLgsNt9Ap14L6nbAF5qwgiCc5H27RSJr52nYA1v1nE9fWNNao6NVEjodGFXAP6x1C",
-    "timestamp": "2025-11-03T08:22:19.468Z"
+    "init_tx": "4oMk5wMaDzWKdgFauJYGysgkab7b6qpSWiRGsxDSD5K763UfvzFarRMUheQapV1w4GLVYExER4HGnYsuoVFVjeu1",
+    "timestamp": "2025-11-03T10:10:22.046Z"
   },
   "referral_system_initialized": {
-    "system_referral_pda": "L7PSREFdC5tpVe1PZSP1bd68Mj64dxSS8xW58CYgCDt",
-    "timestamp": "2025-11-03T08:22:19.933Z"
+    "system_referral_pda": "Ft65amXypJorGgrT6QuhFbYWcbU7uor8hRQV3simS14j",
+    "timestamp": "2025-11-03T10:10:22.517Z"
   },
   "config_stores_initialized": {
-    "module_config_store": "CwUNN8zbGk9rXmoeqgkXqLhZhBXzASBxovfQuKdoJMbZ",
-    "timestamp": "2025-11-03T08:22:20.423Z"
+    "module_config_store": "7Y1mAZMPLRW1vMAP5giy2eieRYbyC72a2bFQK4oYh36a",
+    "timestamp": "2025-11-03T10:10:23.005Z"
   },
   "raydium_pool_state_set": {
-    "pool_state_address": "Cw8r6Zff1tnP5ZTtx7URmEc7LsGUBhApojEm14vVxRfC",
-    "tx_signature": "448CsxGjw9K1RpfK7ZYGXKNW3PRePsJkVoeg2M6DgsE9SDzJtf1X4y1QE3dDhMqep1iqzjc2Uf8vfRsnMct3kmwj",
-    "timestamp": "2025-11-03T08:23:00.933Z"
+    "pool_state_address": "7a3KTo1znhQgZvR2QnBEuajharZq17i5vrQEizVuXiHk",
+    "tx_signature": "2Sgim2hGZt8DDncqpgnaHQx6M2uS7qaPK13PCyNnr9wqkf4SERWjGcE9Htunji9M7UCWh4UMWHA73aACVdM1XCwM",
+    "timestamp": "2025-11-03T10:10:23.520Z"
   },
   "loot_rewards_initialized": {
-    "loot_rewards_pda": "5Pr5YsdYjV5VfkkvD3EFqHiyaRkLPbyBgAwy8ugPRBBj",
-    "sol_vault": "eLoyRsD7FRquUjJs9enLVdJcCFnuz2srkT89XeDRTst",
-    "dbtc_vault": "C5JBUAyACpvbV3dUwgJgH1kwAxhc9N3dzfnNWfE67bBD",
-    "loot_dbtc_vault_authority": "2bLofLzHfoyuv8HHSSWcNU3kEdipWgsCZsyZPPBd2t2D",
-    "initTxid": "2HW5zyMUjPFmGHhu3oM8QDnBC6v98Rg5m7QXGPsSQtPHSrgz4amXR8dAfi75WafTheVCXrQzaNodfhaQBPS84Wyx",
-    "timestamp": "2025-11-03T08:23:01.337Z"
+    "loot_rewards_pda": "BLbBGsshUgqh5cmBxrfPfHaxbY17g6T1VUoLS13Tdrfw",
+    "sol_vault": "EJYJtXY6bscBRXxqrjEnYx7gBV5iN9uBuRWDTPzJN89r",
+    "dbtc_vault": "3nuJEwJLwDR5uu2EPiEuiM7HETM2pQenNr5Ze1R2Yuz4",
+    "loot_dbtc_vault_authority": "D7fx2wZtjyQo38S3dvmdeqetTZeNGhnfrmqDCRYamkbw",
+    "initTxid": "5LTjdyi5fFy5Ei1xnpZwtEZ17cf9jyoHWFDmu7q3JpTTC1wqDVnN9s3yXJL9gRiKvgoiwDm4dQ8DFdvk4KHm1fXf",
+    "timestamp": "2025-11-03T10:10:47.911Z"
   },
   "level_stats_initialized": {
-    "level_stats_pda": "6QzU5RoQc5UrtsZKqqZ3s6rdQ53Sit4pvRFiML5Wnmuj",
-    "initTxid": "2BrvTHE4oh8hJtPBsqFyKdYS6iTEvZWf27utMVReLDXQArq2tJEFTK9VVfhfK2gbhoCpDDyYvkkq5ioz79wodBV5",
-    "timestamp": "2025-11-03T08:23:01.806Z"
+    "level_stats_pda": "H59nBDB2SEWQXPHruDKJM4GZPfxx7SsBwPzgMy75aC7Q",
+    "initTxid": "3bEeCKKy8iH5e14ydhHb7R3qJ9eFPJibukRSgAJoWSAaJp15L4XHCUpj9DPmTrNFNH56HnjTHtRhFWQovx4pk8w1",
+    "timestamp": "2025-11-03T10:10:48.383Z"
   },
   "dragon_egg_collection_created": {
-    "collection_address": "9DMJoSBAvyGAeKguFBhRzLJtqkwXrDAwvsyVbihLRrY5",
+    "collection_address": "rTaKRuuVPEto4kAtuwxAHZRfikYCQcM4icFRnAE2Q7y",
     "collection_name": "DogeTech Dragon Eggs",
     "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
-    "update_authority": "69RK5pFGQindP2TngpoheNf8SNtmimv8bVbpo6isk5UW",
-    "tx_signature": "sZCqAunbGHWmZNfaqKusFRMymFwzjDzy5Cwx5WB5k5hYz4fEJcmfQ9AXL3TSt6696B8jxwtXbmvyZwaPipkk6nR",
-    "timestamp": "2025-11-03T08:23:02.282Z"
+    "update_authority": "Br9X5K2An67T5vYo287YzWMZXQR515K6T7uxQVedck4d",
+    "tx_signature": "3ckjdeGD9eheHkJCJW6EAKDWMaXx7Y6EqGjWTsRsYM5dLLzzhomHUgyAC3X15Q4udzjAPLnKHgWkHagZuMZkkALB",
+    "timestamp": "2025-11-03T10:10:48.853Z"
   },
   "dragon_egg_uris_added": {
     "uris": [
@@ -169,8 +169,8 @@
       "https://arweave.net/dragon-egg-4.json",
       "https://arweave.net/dragon-egg-5.json"
     ],
-    "tx_signature": "YGoWKw8R1ZD1DTGQfrNkCYNQ1omHRZeRPYj4agyJfbP3Wvs2AYgehAohH55bPE3H1BPpYPMVdPniEUpL3HPyHp6",
-    "timestamp": "2025-11-03T08:23:02.781Z"
+    "tx_signature": "osGbsYiU7hgGN5rK2uFyb4RFJhWpZXdu1p51bUaDeN4nPSi3q3nRWGWzRfJZz3tRockW4SGnaRWd2HotdkdnZ4u",
+    "timestamp": "2025-11-03T10:10:49.362Z"
   },
   "factions_added": {
     "factions": [
@@ -199,8 +199,8 @@
         "description": "Resilient defensive technology and freedom preservation"
       }
     ],
-    "tx": "eNo8Q87g4kE7WuP6BgMYnKxz8G2RPtJacHAdpTW76nw7cnBU8pHjpEMCtJMRrxNoZzRLzj3KD23wa1hprKxxvt6",
-    "timestamp": "2025-11-03T08:25:00.889Z"
+    "tx": "5dHevLkmb7MEswh7cR6PEG9TurDrXPzxQNZ5ufbMmHcwhtvwp2khuFpfExvgw2AJmiF2jeAJjYu8wQHiwJtjr7u3",
+    "timestamp": "2025-11-03T10:10:49.875Z"
   },
   "command_centers_added": {
     "command_centers": [
@@ -235,8 +235,8 @@
           50
         ],
         "expected_config_id": 1,
-        "create_tx": "3dvrCkNcDHbXzM9mKpz4azr6bd4MZLnSp9viEDVLFRZV96oQ1pCbwucKxrhdhFLD8vhupdcGKoPWHaFASmoHr5xR",
-        "stats_tx": "5aM8rUykGQMcKxGPr4MAdEKVSheGmDx67rKX95JR8zyhg2YiNRWji5EaQr8N1zJEaTb1xt4kwPd8MxjJFqN26GNk",
+        "create_tx": "23ZvLrW1vmFPYtvhT2YhVQPFD7k8YKnwtow9YjJcAt4pnJTL5oFe2oWNv9PdNdr8QDRfEYytT9XMFiUegi69Ln6s",
+        "stats_tx": "2sGy899xzZZT9qQjdzS7hE6MBBL1xxk53StN1Mo5xC5s8hfxHf6dZgLadcSQJYCNUutoXjuwEsuyUJ5iBCDpzkkd",
         "status": "completed"
       },
       {
@@ -270,8 +270,8 @@
           50
         ],
         "expected_config_id": 2,
-        "create_tx": "2269B8ucMbr2izV6FC3XHKnKg8DottHMK3bJJDQhPpbeauCMtoD6sGKhXG6LYAYP7cBu1NZtT8FJV4CuMghnVSM6",
-        "stats_tx": "5wJmQBkhAtsNT1axdj2YTD35pwzBDDCV5znpjUuLzPm7YeKpcHQt3jYiiPvb4rVj99EfaGqz7uunHrVSopZ5Nbge",
+        "create_tx": "2FophkHeppyNCewC184WPF6z5N1jvkeYfDEChVfCnTkJ1t5rxED6bsCig9R345BN8DBbiw4zsg6vkbsYTiLpCCWU",
+        "stats_tx": "5PuZh6M1hvHcawGMtfisNWM892ECBkeCEMN8yyQEiSgDAj31e9vndrjMdd3g4xokrSzPonXDQHNNCHEVurREsyhr",
         "status": "completed"
       },
       {
@@ -305,8 +305,8 @@
           50
         ],
         "expected_config_id": 3,
-        "create_tx": "27GNeQuMLXLseuVBgXNqmhqYCghrysCxv4P77Hxdeb1RTGUFLzGJQ2AsRj4kwLwKUfD1cZMRVa9A6sut4rwKv5MG",
-        "stats_tx": "2BGHgvoCZc8Ey7VDQkvZ6DYtV9e4ig29NXBq4zqFSZ12KcWWQoqFEeBVqKAvm74c95z3NDfhGDDHRXytfqETiQH8",
+        "create_tx": "5d7TY3UsxgEVmnnxpJESJXBRAiEA1gGUfwiubqGZKMMwK931GnVXCcPgQF3zvg4TZUEyjB4RbSteBTVDwaMasY9z",
+        "stats_tx": "4R5ZTGk6gvvNCZHDxsmAj8kDBGtt6SsLa2rzBX2xe23fhsbdW2zEMyWcwQqxRs8JSf8GN7FYAF5AGsnBkUdBWbFp",
         "status": "completed"
       },
       {
@@ -340,12 +340,12 @@
           50
         ],
         "expected_config_id": 4,
-        "create_tx": "53ivC4FJkpB1LpS9igMkBWkdM55yG1MERpgDA8vtuAcyxwEnM8rHpGByr1LrKrgxDRUFZ5se6JbJW3VYbtAuDRAd",
-        "stats_tx": "2UMvCp6cQXDQgf8BucpkrTeRP8pRc2EJUMmVFZBboar9DeFj8rMMoakR1QeVcA5ak6A25cQirVeB1YQh5i8iZtH5",
+        "create_tx": "44oHSDQ2rBepQZPhx4yFThXczVNq3zFPgbJMnZZ5DBovHiYRQYMqBC7WvM7azsLpZ3kZV6yqMR2oUzrME2nZAEJD",
+        "stats_tx": "33KEcvKoUkmTDPyZi6c9pcM1XZ6gvSBREJKj5ayrK8k4LJh5tBaEtjT1Nsws69XWQqs4prvvq3rZWYSu5KJVYLow",
         "status": "completed"
       }
     ],
-    "timestamp": "2025-11-03T08:25:15.431Z"
+    "timestamp": "2025-11-03T10:10:53.588Z"
   },
   "expansions_added": {
     "expansions": [
@@ -356,7 +356,7 @@
         "cost_sol": 1000000000,
         "new_width": 10,
         "new_height": 8,
-        "tx": "3RspdD4rguYkFRbLhCsRdWQbHrubddh8fLzwbQJn9zbirdscjSwCuDzBydpGhZsWoHMfVV97DKGVvBLJy3MwK5QB"
+        "tx": "2p61JwBc7krBncoUu4fU2ax3SQVYggi6EonTp9gpsV8NjCqnZMydCjmVWth5nSU2XK8q4YxVtCme9be2uGfUozWC"
       },
       {
         "id": 2,
@@ -365,7 +365,7 @@
         "cost_sol": 2000000000,
         "new_width": 12,
         "new_height": 10,
-        "tx": "35BWw54rwQf76AiQVYg7dn1sVtbi7T4s3pEddEXTud99X5u1cVE6eys4FBNmC42Vy1Dwcg3y5k82ETiqyUxMecNy"
+        "tx": "3CYJx69rACG2BBMC4iZkXa8JdMwT5wpfMk7wzsWcQ9meGAkeQErmT3ghMbWTpzs5apD7mv4Zj2ZnTxK59aEjgrvA"
       },
       {
         "id": 3,
@@ -374,7 +374,7 @@
         "cost_sol": 5000000000,
         "new_width": 14,
         "new_height": 12,
-        "tx": "675reZmYbELm4nF1w8yaH7G1An7pZ1pJFYkpZSRqFtG2yDPC3WZa8knrwKm5cTRrQrXZdG5LDdMczd14kfbNeLJj"
+        "tx": "61jjatLXDXcvKPJrEZqeeDqEKawoQdRdWrViep9f9h6RVWhWmTuBfbH8HZurLUdLJ81hdKfunKrqh41x35AVMGsL"
       },
       {
         "id": 4,
@@ -383,10 +383,10 @@
         "cost_sol": 10000000000,
         "new_width": 16,
         "new_height": 12,
-        "tx": "3Q8rQLtgsZRoQYX3txC9kqpbTJCYbpnGSUwNCUjxhzwFjTfk76e8oCcTyNLdstHkpKFhCKroEixR3iCUicW59EZK"
+        "tx": "62yA4RxwWYDenDD4aXPPwjF9oC6uXZ9XXJknPZUxsijothH6MMYxmT5VeErtTiy3Lfo26tRnhRuniNsqHt5dVqZm"
       }
     ],
-    "timestamp": "2025-11-03T08:25:58.197Z"
+    "timestamp": "2025-11-03T10:11:16.185Z"
   },
   "modules_added": {
     "modules": [
@@ -421,8 +421,8 @@
           42
         ],
         "config_id": 5,
-        "create_tx": "5DgVriqNgoBUWxx2Dwsq3z3KnSBxiP5oe8euDnBp27sau2vdCwdxjEjy1JfM2ztfbJwE1GhdZYc2REetD4y3Fwdr",
-        "stats_tx": "Uo3xcMXt7oM6FZJg2TQ25hznFTzqAt8Hcu7r7dL1brnuJPsdt7pTRSNGUfrVz1JTqfMtt9myPBocvNmjdUy6GpZ",
+        "create_tx": "3tdKusc3i4cGjh8NVHAPbHUaVckn8GRoFmPHXKT8ojrV8q1V2WTVQnYzeTtGYazjoLt55PS1kTPT4L5wK3Yz3HJu",
+        "stats_tx": "4v9GM6MGAKT9ivwWg391QXE9RPh9yzj9qxXYmrccsQxyDgoYjoA1i1xQn1xeQKtZSZ6KWuRxkr3mggVsjjXfMXqw",
         "status": "completed"
       },
       {
@@ -458,9 +458,9 @@
           42
         ],
         "config_id": 6,
-        "create_tx": "NgRSoV3GEimLeXb8UKKvBASQLP2R4xTzuRXJvFCEbdDc7uKRGpXL6zjgPdVmRepiEfbDJHMb6UeMUwDgeMihB3Z",
+        "create_tx": "2kUkntg98fryxL5dLZmZFCM1jXsTP2wsnRrk9jEsiwMmDKHnGAgPQzFkJRjYzse8vL3JkmWN3QaZsWNFXsSZWfF",
         "status": "stats_failed",
-        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Advanced Mining Lab (ID: 6)\",\n  \"Program log: Module type: Mining\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:672. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j consumed 14312 of 200000 compute units\",\n  \"Program FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
+        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program 8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Advanced Mining Lab (ID: 6)\",\n  \"Program log: Module type: Mining\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:672. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program 8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL consumed 14312 of 200000 compute units\",\n  \"Program 8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
       },
       {
         "name": "Cultural Monument",
@@ -493,8 +493,8 @@
           42
         ],
         "config_id": 7,
-        "create_tx": "2qnQSvfde8HRHRt1ZRaohoB1sLXqpSTzN9iZypdNx3Q7uGw9Q9SaM8Nv1XPCab7kRLH788xAzgF3YyxgiStEvouM",
-        "stats_tx": "NEm8r5s3rRbHsLSYEjWgJE8NAb7beeiKXdWxWvB1akwGeFKErU21j8cSysoraKB1EjV3iHzjnVdVrAPQQuRU9wm",
+        "create_tx": "VVAiBspXSrPH9DoF1fDfNGJ15eSebVjc3nvRLe8LbaiKXRt7cbgAtKD8ofZqduGWQo8p2aYf8ssLLjCHypzqmVH",
+        "stats_tx": "2SPS5VSHz2cT9kNuoJRVjfK9TPM9ZxBgdmp5JmFtkcSVbULGgk3pZEQEcN1u84SYKFvBtkjBRC8T7ushU3j7jowZ",
         "status": "completed"
       },
       {
@@ -530,42 +530,63 @@
           42
         ],
         "config_id": 8,
-        "create_tx": "5wkYAq1KfyZUQDVRVdhPwajC1i7E2K1CDJMZiySzoj3v9eALAFzkyzD2yRZEZqhPXCKVKc2qee8matJwFHSePwqw",
+        "create_tx": "3puywGL6cmZXZM5cHtmdf65dJMMSoNPKhXunLDjFjC2UNJWAXbh1H65fw6v3ZYW61Yq9WRLs9LWLbPb8KduNJ1CD",
         "status": "stats_failed",
-        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Defense Battery (ID: 8)\",\n  \"Program log: Module type: Attraction\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:681. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j consumed 14199 of 200000 compute units\",\n  \"Program FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
+        "error": "Error: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x17a0. \nLogs: \n[\n  \"Program 8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL invoke [1]\",\n  \"Program log: Instruction: UpdateModuleStats\",\n  \"Program log: Updating stats for module: Defense Battery (ID: 8)\",\n  \"Program log: Module type: Attraction\",\n  \"Program log: AnchorError thrown in programs/moonbase/src/instructions/admin.rs:681. Error Code: InvalidModuleConfiguration. Error Number: 6048. Error Message: Invalid module configuration.\",\n  \"Program 8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL consumed 14199 of 200000 compute units\",\n  \"Program 8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL failed: custom program error: 0x17a0\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
       }
     ],
-    "timestamp": "2025-11-03T08:26:01.023Z"
+    "timestamp": "2025-11-03T10:11:27.058Z"
   },
   "mining_tokens_deposited": {
     "amount": "21000000000000",
-    "tx": "64bDjcPqduvYxU2vu4mycSvbS6zjwjWHvUpDG48FktDHRBgqxVXmv5R9TPxocLSRQg2dy92M3vne6Gv695CckG5z",
-    "timestamp": "2025-11-03T08:26:01.489Z"
+    "tx": "2om5pcBvqPg8U3asqSQonuDAwpi43GWQH8KxMW8LSAZu1reWH3qPEcAkqvjM9MKVmmhESDjqiYJkqrfmkQHD32Ra",
+    "timestamp": "2025-11-03T10:11:43.589Z"
   },
   "lp_token_accounts_initialized": {
-    "lp_token_account": "5zS8QkQGevhUDjLo4fjsrGgYG8fKc5mDSuFqrw72XqZ8",
-    "lp_token_owner": "7ZzF8bHCdJhrDrgViT4hNJUjqZYpSY1X8wNLLJuSrDtb",
-    "lp_mint": "BCmuG3eWk4unrMvcusnQQddqfqN2xdYm89RVGpacPSBS",
-    "timestamp": "2025-11-03T08:26:01.990Z"
+    "lp_token_account": "4Q6U6QU2U4anRor5JZ18LZWZGNamKeGJdeNJpeCQHwow",
+    "lp_token_owner": "Jb3XKxYJHrbGgEmp2XUcX1G8MWaVN1rfdQr3HMG6mxR",
+    "lp_mint": "Aum1pWc14Rb1B26DaPr9AW8T717ru9HX79SfEGCiRFYY",
+    "timestamp": "2025-11-03T10:12:03.512Z"
+  },
+  "buybacks_initialized": {
+    "buybacks_account_pda": "8HxCNj2baLJpVaVXowa7LgZw3PiVnoJjsuyTyPp8cPNL",
+    "buybacks_sol_vault_pda": "HVsGyA3f67Sd7qhR9t3Ta9ofpwqCYbZci3FtHwqmTdY9",
+    "init_tx": "22aKRzNnGzQzDRSKZSa9FqyD8jqk9nrPTDrbyLKEqEmyP4VgjqXRjwKrnatrcJe8u4MZkpXPUKkxDeSDHovC2ovS",
+    "timestamp": "2025-11-03T10:12:03.891Z"
+  },
+  "dbtc_dist_per_slot_updated": {
+    "dogeBtcMiningPDA": "7XKa9dXGpxFiXJ1xSsz62oKttvS1UcA6cURQZdoHTujA",
+    "vaultAuthorityPDA": "Jb3XKxYJHrbGgEmp2XUcX1G8MWaVN1rfdQr3HMG6mxR",
+    "solTreasuryPDA": "3vEoEFjCi7aDpgtSMvvtX47RGDZkvGybcJsiAUGsGQud",
+    "poolStatePDA": "7a3KTo1znhQgZvR2QnBEuajharZq17i5vrQEizVuXiHk",
+    "ammConfigPDA": "ANyW35pshL2R6NVDYmQMps4fpqrVgyaYnmMBhEkht7XK",
+    "method": "raydium_integration",
+    "tx_signature": "5xsQC9j93mJBdeWDRcZRxFr73ttkpwszxzCbLWcZZSg63Q2faa6EXz1qwgiumP4GJamNe62rzMEW1bovvvuY7ihE",
+    "timestamp": "2025-11-03T10:12:15.681Z"
   },
   "moonEconomy_program_initialized": {
-    "moonEconomy_globalConfig_data_ac": "FLju5SmXbCYbV43sY2HBfD8PVHFakxbhyqGcg4Kkiw3w",
-    "moonEconomy_devEarnings_data_ac": "BM3FnHKgqQQTCEhbeeVdpjdMyZqLodR737NyM5tY7wXx",
-    "moonEconomy_feeCollector_data_ac": "2bSB8Mqc1k1ZGpSmG1x6qc6X7ESqXzAWReb55BKTpRZ5",
-    "timestamp": "2025-11-03T08:28:42.208Z"
+    "moonEconomy_globalConfig_data_ac": "E728Tw2obEDhS6AFxRDujetukwWSZqMPe9Ui4Eezm9sX",
+    "moonEconomy_devEarnings_data_ac": "Di2HPqrEnVnEANxZz5tqjUUn66WTjs75rjAJKHVr3B7j",
+    "moonEconomy_feeCollector_data_ac": "CbcHquwMA3unEs4QuW5WdL21USJQjZANSYiN4vhq8nPu",
+    "timestamp": "2025-11-03T10:14:22.736Z",
+    "initial_dbtc_sol_price": {
+      "price": 1000000,
+      "set_tx": "5uyDG8tFYR9xNN17uTiaeqdPYocW1q4ckW6kcAsxehNLMQuKWKtFaZ6LwmCjX87gKM93tHQ68ioyiXoXUQm2GTKc",
+      "timestamp": "2025-11-03T10:16:08.180Z"
+    }
   },
   "moonEconomy_mDogeVault_initialized": {
-    "dogebtcVault": "G44B9H6Tj28GMM73fuE7Qf68iJebz16A45WiZA85Mpvi",
-    "dbtcSolVault": "Div7Uk7tAy9ToZKLxqLRr7qDyCfrH2BhjoaDV1nzJkhZ",
-    "dbtcCustodian": "DM63EwoUyzNArBDaaZFD7333Y6dR9Rg18KoqpM9p1rQy",
-    "dbtcCustodianAuthority": "4HukHDdncREXzF6ehD8wDsBRMeHUm9NRCUmn6SNKnNmB",
-    "timestamp": "2025-11-03T08:28:42.717Z"
+    "dogebtcVault": "6vVUo3y1TbVxgyC1hZTEBdgsxrZX1GpVFxoFYaofLMZD",
+    "dbtcSolVault": "Hw1SRQv4b9EJaHZWeT1rcCxS5oAs5t6AVWY9P6m4xSQF",
+    "dbtcCustodian": "H1VhJoB1ow6pU9ma2v3siBJEo3BKCPCAbbjxJHgM5LeS",
+    "dbtcCustodianAuthority": "FYewu4GvpRPqEzYPFDiybyub8uLy9WqfiFRr4mX6iMNL",
+    "timestamp": "2025-11-03T10:14:23.244Z"
   },
   "moonEconomy_liquidityVault_initialized": {
-    "liquidityVault": "BfJ9DMw7a1cvbR2jKsbPHizBjRLXnjRWYnhM82XpgeYB",
-    "liquiditySolVault": "AHhNHHdgvvufyYcPJsckrhmh8mReLJhoXQZfYS12PBeB",
-    "liquidityCustodian": "3eFQAgaS2WWDYsnJkTrbZkgubCzmgUxPZ7QG9kQo8yJN",
-    "liquidityCustodianAuthority": "FLh4bMuvsYaVLD6eMYdkM8j3AFYZrv7VPArZVhW5xsnA",
-    "timestamp": "2025-11-03T08:28:43.113Z"
+    "liquidityVault": "BEjNh72rxxNsvuA3AKFzJyJG7ye9ZJhJkfMyaERgiPm4",
+    "liquiditySolVault": "73ycgn7LPTaCZVHaHS6723vzAZVy66295pP9VEUpXQxM",
+    "liquidityCustodian": "GzpY3NGQgmy9uMA3pc84u1XSLfS7qktiEp7bx9nYQWJS",
+    "liquidityCustodianAuthority": "8naMQmrdQR3LARsb5j8mzDE3dfBDKF8nHXv9Z5o8yUZn",
+    "timestamp": "2025-11-03T10:14:23.758Z"
   }
 }
