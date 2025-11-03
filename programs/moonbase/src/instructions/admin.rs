@@ -74,7 +74,8 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     global_config.egg_limits = [0, 5000, 5000, 5000];
 
     global_config.bump = ctx.bumps.global_config;
-    global_config.loot_percentage = 10; // Default 10% for loot rewards
+    global_config.loot_percentage = 15; // Default 15% for loot rewards
+    global_config.buyback_percentage = 20; // Default 20% for buybacks
     global_config.is_game_active = false; // Default to false 
     
     // Initialize empty factions list
@@ -455,6 +456,23 @@ pub fn initialize_loot_rewards_internal(ctx: Context<InitializeLootRewards>) -> 
     Ok(())
 }
 
+/// Initialize buybacks account system
+pub fn initialize_buybacks_internal(ctx: Context<InitializeBuybacks>) -> Result<()> {
+    let buybacks_account = &mut ctx.accounts.buybacks_account;
+    
+    // Initialize buybacks state
+    buybacks_account.total_sol_accumulated = 0;
+    buybacks_account.total_sol_used = 0;
+    buybacks_account.bump = ctx.bumps.buybacks_account;
+    buybacks_account.sol_vault_bump = ctx.bumps.buybacks_sol_vault;
+    
+    msg!("💰 Buybacks system initialized");
+    msg!("   Buybacks Account PDA: {}", buybacks_account.key());
+    msg!("   SOL Vault PDA: {}", ctx.accounts.buybacks_sol_vault.key());
+    
+    Ok(())
+}
+
 /// Initialize level statistics tracking (admin only)
 pub fn initialize_level_stats_internal(ctx: Context<InitializeLevelStats>) -> Result<()> {
     msg!("🔒 Initializing level statistics tracking");
@@ -799,10 +817,15 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     // Calculate loot rewards amount using configurable percentage
     let loot_percentage = global_config.loot_percentage as u64;
     let sol_for_loots = available_solana.checked_mul(loot_percentage).unwrap().checked_div(100).unwrap();
-    let fee_collector_amount = available_solana.checked_sub(sol_for_loots).unwrap();
+    
+    // Calculate buybacks amount using configurable percentage
+    let buyback_percentage = global_config.buyback_percentage as u64;
+    let sol_for_buybacks = available_solana.checked_mul(buyback_percentage).unwrap().checked_div(100).unwrap();
+    
+    // Remaining amount goes to fee collector (for distribution to stakers and dev)
+    let fee_collector_amount = available_solana.checked_sub(sol_for_loots).unwrap().checked_sub(sol_for_buybacks).unwrap();
 
-    // Transfer loot rewards to loot SOL vault (required)
-    // Transfer loot amount to loot SOL vault
+    // Transfer loot rewards to loot SOL vault
     **sol_treasury.try_borrow_mut_lamports()? = current_balance.checked_sub(sol_for_loots).unwrap();
     **ctx.accounts.loot_sol_vault.try_borrow_mut_lamports()? += sol_for_loots;
 
@@ -818,6 +841,16 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
     msg!("🎁 Transferred {} SOL to loot rewards vault ({}%)", sol_for_loots, loot_percentage);
     
+    // Transfer buybacks amount to buybacks SOL vault
+    let balance_after_loot = current_balance.checked_sub(sol_for_loots).unwrap();
+    **sol_treasury.try_borrow_mut_lamports()? = balance_after_loot.checked_sub(sol_for_buybacks).unwrap();
+    **ctx.accounts.buybacks_sol_vault.try_borrow_mut_lamports()? += sol_for_buybacks;
+    
+    // Update buybacks tracking
+    ctx.accounts.buybacks_account.total_sol_accumulated = ctx.accounts.buybacks_account.total_sol_accumulated.checked_add(sol_for_buybacks).unwrap();
+    
+    msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks, buyback_percentage);
+    
     // Transfer remaining amount to fee collector
     let remaining_balance = current_balance.saturating_sub(available_solana);
     **sol_treasury.try_borrow_mut_lamports()? = remaining_balance;
@@ -828,6 +861,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
         fee_collector: fee_collector.key(),
         amount: fee_collector_amount,
         loot_amount: sol_for_loots,
+        buyback_amount: sol_for_buybacks,
     });
 
     msg!("Withdrew {} lamports from treasury (Available balance now: {})", fee_collector_amount, remaining_balance.saturating_sub(reserved_amount));
@@ -1172,6 +1206,44 @@ pub struct InitializeLootRewards<'info> {
 
 
 
+/// Account struct for initializing buybacks system
+#[derive(Accounts)]
+pub struct InitializeBuybacks<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = BuybacksAccount::LEN,
+        seeds = [BUYBACKS_SEED.as_ref()],
+        bump
+    )]
+    pub buybacks_account: Account<'info, BuybacksAccount>,
+    
+    /// CHECK: SOL vault for buybacks (0-byte PDA)
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = crate::ID
+    )]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
 /// Account struct for initializing level statistics
 #[derive(Accounts)]
 pub struct InitializeLevelStats<'info> {
@@ -1360,6 +1432,23 @@ pub struct WithdrawSolFees<'info> {
         bump,
     )]
     pub loot_rewards: Account<'info, LootRewards>,
+    
+    /// CHECK: Buybacks SOL vault PDA (required)
+    #[account(
+        mut,
+        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = crate::ID
+    )]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+    
+    /// Buybacks tracking account (required)
+    #[account(
+        mut,
+        seeds = [BUYBACKS_SEED.as_ref()],
+        bump,
+    )]
+    pub buybacks_account: Account<'info, BuybacksAccount>,
 
     pub system_program: Program<'info, System>,
 }

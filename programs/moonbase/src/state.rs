@@ -108,6 +108,8 @@ pub const LOOT_REWARDS_SEED: &[u8] = b"loot-rewards";
 pub const LOOT_SOL_VAULT_SEED: &[u8] = b"loot-sol-vault";
 pub const LOOT_DOGE_BTC_VAULT_SEED: &[u8] = b"loot-mdoge-vault";
 pub const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"loot-mdoge-vault-authority";
+pub const BUYBACKS_SEED: &[u8] = b"buybacks";
+pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
 pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
 
  
@@ -180,6 +182,8 @@ pub struct GlobalConfig {
     pub total_referral_sol_paid: u64,
     /// Percentage of distributions/fees that go to loot rewards (default 10%)
     pub loot_percentage: u8,
+    /// Percentage of SOL fees that go to buybacks (default 20%)
+    pub buyback_percentage: u8,
     /// Whether PvP games are currently active and can be created
     pub is_game_active: bool,
     /// ------------------------------------------------------------           
@@ -204,7 +208,7 @@ pub struct GlobalConfig {
 }
  
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
+    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + buyback_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<ExpansionConfig> = 4 bytes (vec length) + MAX_EXPANSIONS * ExpansionConfig::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
@@ -216,6 +220,7 @@ impl GlobalConfig {
         8 +                     // total_sol_spent
         8 +                     // total_referral_sol_paid
         1 +                     // loot_percentage
+        1 +                     // buyback_percentage
         1 +                     // is_game_active
         1 +                     // bump
         1 +                     // treasury_bump
@@ -462,6 +467,24 @@ pub struct LootRewards {
 impl LootRewards {
     // discriminator + total_dbtc_accumulated + total_sol_accumulated + total_dbtc_distributed + total_sol_distributed + bump + sol_vault_bump + dbtc_vault_bump + dbtc_vault_authority_bump
     pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1;
+}
+
+/// Buybacks account that accumulates SOL for token buybacks
+#[account]
+pub struct BuybacksAccount {
+    /// Total SOL accumulated for buybacks (in lamports)
+    pub total_sol_accumulated: u64,
+    /// Total SOL used for buybacks (in lamports)
+    pub total_sol_used: u64,
+    /// Bump for PDA derivation
+    pub bump: u8,
+    /// Bump for SOL vault PDA derivation
+    pub sol_vault_bump: u8,
+}
+
+impl BuybacksAccount {
+    // discriminator + total_sol_accumulated + total_sol_used + bump + sol_vault_bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 1 + 1;
 }
 
 /// Level statistics for tracking user distribution across top levels only

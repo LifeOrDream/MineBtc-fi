@@ -159,6 +159,11 @@ pub mod moonbase {
         admin::initialize_loot_rewards_internal(ctx)
     }
 
+    /// Initialize buybacks account system (admin only)
+    pub fn initialize_buybacks(ctx: Context<InitializeBuybacks>) -> Result<()> {
+        admin::initialize_buybacks_internal(ctx)
+    }
+
     /// Initialize level statistics tracking (admin only)
     pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
         admin::initialize_level_stats_internal(ctx)

@@ -208,6 +208,7 @@ pub struct SolFeesWithdrawn {
     pub fee_collector: Pubkey,
     pub amount: u64,
     pub loot_amount: u64,
+    pub buyback_amount: u64,
 }
 
 // ------------------------------
