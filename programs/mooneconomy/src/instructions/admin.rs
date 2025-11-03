@@ -216,6 +216,8 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
         fee_collector: ctx.accounts.fee_collector.to_account_info(),
         loot_sol_vault: ctx.accounts.loot_sol_vault.to_account_info(),
         loot_rewards: ctx.accounts.loot_rewards.to_account_info(),
+        buybacks_sol_vault: ctx.accounts.buybacks_sol_vault.to_account_info(),
+        buybacks_account: ctx.accounts.buybacks_account.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
     };
 
@@ -662,6 +664,14 @@ pub struct ClaimMoonBaseSOL<'info> {
     /// CHECK: MoonBase's loot rewards tracking account
     #[account(mut)]
     pub loot_rewards: UncheckedAccount<'info>,
+
+    /// CHECK: MoonBase's buybacks SOL vault
+    #[account(mut)]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+
+    /// CHECK: MoonBase's buybacks tracking account
+    #[account(mut)]
+    pub buybacks_account: UncheckedAccount<'info>,
 
     /// CHECK: TheMoonBaseprogram
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,

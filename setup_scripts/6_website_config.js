@@ -106,7 +106,6 @@ function generateWebsiteConfig(config, deployment) {
       "loot_percentage": config.moonbase?.loot_percentage || 10,
       
       // ========== MINING CONFIGURATION ==========
-      "slots_for_swap": config.mining?.slots_for_swap || 9000,
       "initial_distribution_rate": config.mining?.doge_btc_per_slot || 1000000,
       
       // ========== PVP CONFIGURATION ==========

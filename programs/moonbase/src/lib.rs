@@ -10,7 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::user::*;
 pub use instructions::economy::*;
 
-declare_id!("G3ZjKB4rEsXn41J32y6BW68MhZo1Lb7jmZoGH1WNdwFt");
+declare_id!("GnYmQsNgqaBYqbAPMc9KfTSma6Psca2FdTJN1huV6mLh");
 
 #[program]
 pub mod moonbase {
@@ -118,11 +118,6 @@ pub mod moonbase {
     ) -> Result<()> {
         admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
     }
- 
-    /// Update slots per hour configuration (admin only)
-    pub fn update_slots_for_swap(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
-        admin::update_slots_for_swap_internal(ctx, new_slots_for_swap)
-    }    
 
     /// Deposit moon doge tokens to the mining vault
     pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {

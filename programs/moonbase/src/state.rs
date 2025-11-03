@@ -329,8 +329,6 @@ pub struct DogeBtcMining {
     pub track_price: u64,
     /// SOL amount reserved for Protocol Owned Liquidity (tracked but stored in pda_sol_treasury)
     pub sol_for_pol: u64,
-    /// Slots per 30min for swap calculations (configurable, default ~4500)
-    pub slots_for_swap: u64,
     /// Protocol Owned Liquidity tracking
     pub pol_stats: ProtocolOwnedLiquidity,
     /// LP token price in SOL (9-decimal precision, updated during oracle updates)
@@ -339,9 +337,9 @@ pub struct DogeBtcMining {
 
 impl DogeBtcMining {
     // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
-    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + slots_for_swap + pol_stats + lp_token_price_in_sol
+    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN + 8;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN + 8;
 }
 
 /// ------------ USER MOON-BASE INSTANCES ------------

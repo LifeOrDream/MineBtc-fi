@@ -300,14 +300,7 @@ pub struct DistributionRateUpdated {
     pub sol_received: u64,
     pub timestamp: i64,
 }
-
-#[event]
-pub struct SlotsPerHourUpdated {
-    pub authority: Pubkey,
-    pub old_slots_for_swap: u64,
-    pub new_slots_for_swap: u64,
-}
-
+ 
 #[event]
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
@@ -377,12 +370,15 @@ pub struct LevelStatsUpdated {
 
 #[event]
 pub struct DragonEggMinted {
+    pub egg_metadata_account: Pubkey,
+    pub dragon_egg_asset_signer: Pubkey,
+    pub owner: Pubkey,
     pub mint: Pubkey,
     pub name: String,
     pub uri: String,
     pub dna: [u8; 32],
+    pub multiplier: u32,
     pub initial_power: u32,
-    pub price_paid: u64,
 }
 
 #[event]

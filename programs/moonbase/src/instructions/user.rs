@@ -307,12 +307,15 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
 
         // Emit events
         emit!(DragonEggMinted {
+            egg_metadata_account: egg_metadata.key(),
+            dragon_egg_asset_signer: dragon_egg_asset_signer.key(),
+            owner: ctx.accounts.user.key(),
             mint: egg_metadata.mint,
             name,
             uri,
             dna,
             initial_power: BASE_EGG_POWER,
-            price_paid: 0, // Included in moonbase price
+            multiplier: multiplier,
         });
 
         msg!("✅ Dragon Egg minted for moonbase creation");

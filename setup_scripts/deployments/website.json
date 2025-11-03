@@ -38,7 +38,6 @@
     "level_stats_pda": "DqVmiAoRoiaDEbKwrSkzRWiWu2owJYyQn5nCfp7frHDU",
     "base_creation_cost": 100000000,
     "loot_percentage": 10,
-    "slots_for_swap": 9000,
     "initial_distribution_rate": 1000000,
     "pvp_ticket_tiers": [
       100000000,
@@ -167,7 +166,6 @@
     "level_stats_pda": "G61wnWy8UovcFwLiAGqMrakxYrbTQnGe1KgWJjaeoahT",
     "base_creation_cost": 100000000,
     "loot_percentage": 10,
-    "slots_for_swap": 9000,
     "initial_distribution_rate": 1000000,
     "pvp_ticket_tiers": [
       100000000,

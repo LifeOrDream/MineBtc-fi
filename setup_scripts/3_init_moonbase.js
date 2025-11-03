@@ -174,11 +174,12 @@ async function main() {
         await initializeLootAndStats(moonbaseProgram);
         // return;
         
-        // 1. Create Dragon Egg Collection
+        // 1. Create Dragon Egg Collection (collection is automatically set in global config)
         await createDragonEggCollection(connection, walletKeypair, deploymentFile, deploymentPath);
         
-        // 6. Set collection in MoonBase program
-        await setCollectionInMoonBase(connection, walletKeypair, deploymentFile, deploymentPath);
+        // 2. Add Dragon Egg URIs to the pool
+        await addDragonEggUris(connection, walletKeypair, deploymentFile, deploymentPath);
+        return;
         
         // 7. Add Factions
         await addFactions(moonbaseProgram);
@@ -249,7 +250,6 @@ async function initializeMoonbaseProgramLocal(moonbaseProgram) {
                     moonbaseProgram,
                     wallet,
                     walletKeypair,
-        BASE_COST,
         wallet.publicKey  // Use wallet as creation fee recipient for now
                 );
                 
@@ -270,7 +270,83 @@ async function initializeMoonbaseProgramLocal(moonbaseProgram) {
 
 
 /**
+ * Adds Dragon Egg URIs to the MoonBase program's URI pool
+ */
+async function addDragonEggUris(connection, deployerKeypair, deploymentData, deploymentPath) {
+    if (!deploymentData.dragon_egg_collection_created) {
+        console.error(COLOR_ERROR, '❌ Dragon Egg collection must be created first');
+        throw new Error('Collection not created');
+    }
+
+    if (deploymentData.dragon_egg_uris_added) {
+        console.log(COLOR_INFO, 'ℹ️ Dragon Egg URIs already added');
+        return;
+    }
+
+    console.log(COLOR_STEP, '\n=================== [ ADDING DRAGON EGG URIS ] ===================');
+    
+    try {
+        // Load MoonBase program
+        const moonbaseIdlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
+        if (!fs.existsSync(moonbaseIdlPath)) {
+            throw new Error(`MoonBase IDL not found at: ${moonbaseIdlPath}`);
+        }
+        
+        const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
+        const wallet = new Wallet(deployerKeypair);
+        const provider = new AnchorProvider(connection, wallet, { commitment: COMMITMENT });
+        const moonbaseProgram = new Program(moonbaseIdl, provider);
+        
+        // Derive Global Config PDA
+        const [globalConfigPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from('global-config')],
+            moonbaseProgram.programId
+        );
+        const moduleConfigStorePDA = new PublicKey(deploymentFile.config_stores_initialized.module_config_store);
+        const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
+        
+        console.log(COLOR_INFO, '🔑 MoonBase Program:', moonbaseProgram.programId.toString());
+        console.log(COLOR_INFO, '📝 Adding URIs:', config.dragon_eggs.uris.length);
+        config.dragon_eggs.uris.forEach((uri, index) => {
+            console.log(COLOR_DIM, `   ${index + 1}. ${uri}`);
+        });
+        
+        // Call the program instruction
+        const txid = await moonbaseProgram.methods
+            .addDragonEggUris(config.dragon_eggs.uris)
+            .accounts({
+                globalConfig: globalConfigPDA,
+                moduleConfigStore: moduleConfigStorePDA,
+                dogeBtcMining: dogeBtcMiningPDA,
+                authority: deployerKeypair.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+        
+        console.log(COLOR_SUCCESS, '✅ Dragon Egg URIs added successfully!');
+        console.log(COLOR_DIM, '🔗 Transaction:', txid);
+        console.log(COLOR_DIM, `🔍 Explorer: https://explorer.solana.com/tx/${txid}?cluster=${CLUSTER}`);
+        
+        // Save to deployment data
+        deploymentData.dragon_egg_uris_added = {
+            uris: config.dragon_eggs.uris,
+            tx_signature: txid,
+            timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+        console.log(COLOR_SUCCESS, '✅ Deployment status updated');
+        
+    } catch (error) {
+        console.error(COLOR_ERROR, '❌ Failed to add Dragon Egg URIs:', error);
+        throw error;
+    }
+}
+
+
+/**
  * Sets the Dragon Egg collection address in the MoonBase program
+ * NOTE: This function is now redundant as the collection is automatically set
+ * in create_dragon_egg_collection_internal. Keeping for reference or manual override.
  */
 async function setCollectionInMoonBase(connection, deployerKeypair, deploymentData, deploymentPath) {
     const collectionAddress = new PublicKey(deploymentData.dragon_egg_collection_created.collection_address);
@@ -281,6 +357,7 @@ async function setCollectionInMoonBase(connection, deployerKeypair, deploymentDa
     }
 
     console.log(COLOR_STEP, '\n=================== [ SETTING COLLECTION IN MOONBASE ] ===================');
+    console.log(COLOR_WARNING, '⚠️ NOTE: Collection is automatically set during creation. This call is redundant.');
     
     try {
         // Load MoonBase program
@@ -518,6 +595,8 @@ async function initializeLootAndStats(moonbaseProgram) {
 
 /**
  * Creates the Dragon Egg NFT collection using Metaplex Core
+ * NOTE: The collection is automatically set in global_config during creation,
+ * so no separate set_collection call is needed.
  */
 async function createDragonEggCollection(connection, deployer, deploymentData, deploymentPath) {
     if (deploymentData.dragon_egg_collection_created) {

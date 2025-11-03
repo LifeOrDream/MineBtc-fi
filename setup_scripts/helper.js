@@ -555,7 +555,7 @@ export async function createSystemReferralAccount(connection, program, wallet, w
  * @param {PublicKey} creationFeeRecipient Address to receive creation fees
  * @returns {Promise<Object>} Result object with success status and data
  */
-export async function initializeMoonbaseProgram(connection, program, wallet, walletKeypair, baseCost, creationFeeRecipient) { 
+export async function initializeMoonbaseProgram(connection, program, wallet, walletKeypair, creationFeeRecipient) { 
   try {
             // Define parameters
             const feeRecipient = new PublicKey(creationFeeRecipient);

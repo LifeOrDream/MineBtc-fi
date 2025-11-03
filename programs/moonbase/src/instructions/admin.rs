@@ -112,7 +112,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
     doge_btc_mining.track_price = 0;
     doge_btc_mining.sol_for_pol = 0;
-    doge_btc_mining.slots_for_swap = 450; // 3-minute periods
     
     msg!("SOL Treasury PDA created at: {} with bump: {}", ctx.accounts.sol_treasury.key(), ctx.bumps.sol_treasury);
     
@@ -365,7 +364,6 @@ pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timest
     doge_btc_mining.track_price = 0; // Initialize with same default
 
     doge_btc_mining.sol_for_pol = 0; // Initialize POL tracking
-    doge_btc_mining.slots_for_swap = 450; // Default: ~2.5 slots/second * 1800 seconds (3 mins)
     doge_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
 
     msg!("Initialized dynamic distribution system (30min snapshots, 4hr cycles) with Raydium pool: {}", pool_state);
@@ -384,26 +382,7 @@ pub fn initialize_mining_internal(  ctx: Context<InitializeMining>, start_timest
     Ok(())
 }
 
-/// Update slots per hour configuration (admin only)
-pub fn update_slots_for_swap_internal(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
-    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
-
-    require!(new_slots_for_swap > 0, ErrorCode::InvalidParameters);
-
-    let old_slots_for_swap = doge_btc_mining.slots_for_swap;
-    doge_btc_mining.slots_for_swap = new_slots_for_swap;
-
-    msg!("Updated slots per hour from {} to {}", old_slots_for_swap, new_slots_for_swap);
-
-    emit!(SlotsPerHourUpdated {
-            authority: ctx.accounts.authority.key(),
-            old_slots_for_swap,
-            new_slots_for_swap,
-    });
-
-    Ok(())
-}
-
+ 
 /// Deposit moon doge tokens to the mining vault
 pub fn deposit_doge_btc_tokens_internal(  ctx: Context<DepositTokens>,  amount: u64) -> Result<()> {
     token_if::transfer_checked(  CpiContext::new(  ctx.accounts.token_program.to_account_info(),      // TOKEN_2022_PROGRAM_ID
