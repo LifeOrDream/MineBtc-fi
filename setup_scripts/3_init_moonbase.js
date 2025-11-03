@@ -11,7 +11,7 @@ import {
     initializeConfigStores, addNewModuleToConfigStore, updateModuleStatsHelper, createSystemReferralAccount,
     addFactions as addFactionsHelper, initializeLootRewards, initializeLevelStats, updateDeploymentStatus,
     updateGlobalConfigHelper, toggleGameActiveHelper, updateSlotsForSwapHelper,
-    updateModuleConfigHelper, getSystemStatus, updateMdogeDistPerSlot, 
+    updateModuleConfigHelper, getSystemStatus, updateMdogeDistPerSlot, initializeBuybacks,
     DOGE_BTC_VAULT_SEED, DOGE_BTC_VAULT_AUTHORITY_SEED, MODULE_CONFIG_STORE_SEED,
     MODULE_CONFIG_SEED, USER_MOONBASE_SEED, REFERRAL_REWARDS_SEED, MODULE_INSTANCE_SEED,
     LOOT_REWARDS_SEED, LEVEL_STATS_SEED, PVP_MATCHMAKER_SEED
@@ -170,6 +170,10 @@ async function main() {
         await initializeConfigStoresLocal(moonbaseProgram);
         // return;
         
+        // 4.5. Set Raydium Pool State (security: prevents using malicious pools)
+        await setRaydiumPoolState(moonbaseProgram);
+        // return;
+        
         // 5. Initialize Loot & Level Stats
         await initializeLootAndStats(moonbaseProgram);
         // return;
@@ -179,19 +183,21 @@ async function main() {
         
         // 2. Add Dragon Egg URIs to the pool
         await addDragonEggUris(connection, walletKeypair, deploymentFile, deploymentPath);
-        return;
+        // return;
         
         // 7. Add Factions
         await addFactions(moonbaseProgram);
         // return;
+
+        // 9. Add Command Center Modules (must be added before regular modules to get correct IDs)
+        await addCommandCenters(moonbaseProgram);
+        // return;
+
         
         // 8. Add Expansions
         await addExpansions(moonbaseProgram);
         // return;
-        
-        // 9. Add Command Center Modules (must be added before regular modules to get correct IDs)
-        await addCommandCenters(moonbaseProgram);
-        // return;
+
         
         // 9.5. Add Regular Modules
         await addModules(moonbaseProgram);
@@ -203,6 +209,9 @@ async function main() {
 
         // 11. Initialize LP Token Accounts (required for Raydium integration)
         await initializeLpTokenAccounts(moonbaseProgram);
+
+        // 11.5. Initialize Buybacks System (required for distribution rate updates)
+        await initializeBuybacksSystem(moonbaseProgram);
 
         // // // 12. Update DOGE_BTC Distribution Rate
         await updateDistributionRate(moonbaseProgram);
@@ -473,6 +482,58 @@ async function initializeMiningSystem(moonbaseProgram) {
         saveDeploymentData();
     } else {
         throw new Error(`Mining system initialization failed: ${result.error}`);
+    }
+}
+
+async function setRaydiumPoolState(moonbaseProgram) {
+    if (deploymentFile.raydium_pool_state_set) {
+        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Raydium pool state already set. Skipping...');
+        return;
+    }
+
+    console.log('\x1b[35m%s\x1b[0m', '\n=================== [ SETTING RAYDIUM POOL STATE ] ===================');
+    
+    const raydiumPoolState = deploymentFile.dbtc_sol_pool_created?.poolStatePDA;
+
+    if (!raydiumPoolState) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Raydium pool state not found in deployment file.');
+        console.log('\x1b[33m%s\x1b[0m', '⚠️ Please run the raydium deployment script first.');
+        return;
+    }
+
+    const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+    const moduleConfigStorePDA = new PublicKey(deploymentFile.config_stores_initialized.module_config_store);
+    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
+    const poolStatePubkey = new PublicKey(raydiumPoolState);
+
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Pool State Address: ${poolStatePubkey.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔐 Global Config PDA: ${globalConfigPDA.toString()}`);
+
+    try {
+        const tx = await moonbaseProgram.methods
+            .setRaydiumPoolState(poolStatePubkey)
+            .accounts({
+                globalConfig: globalConfigPDA,
+                moduleConfigStore: moduleConfigStorePDA,
+                dogeBtcMining: dogeBtcMiningPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+
+        console.log('\x1b[32m%s\x1b[0m', '✅ Raydium pool state set successfully!');
+        console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${tx}`);
+        console.log('\x1b[90m%s\x1b[0m', `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`);
+
+        deploymentFile.raydium_pool_state_set = {
+            pool_state_address: poolStatePubkey.toString(),
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        saveDeploymentData();
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set Raydium pool state:', error);
+        throw error;
     }
 }
 
@@ -1033,6 +1094,35 @@ async function depositMiningTokens(moonbaseProgram) {
         saveDeploymentData();
     } else {
         throw new Error(`Token deposit failed: ${result.error}`);
+    }
+}
+
+async function initializeBuybacksSystem(moonbaseProgram) {
+    if (deploymentFile.buybacks_initialized) {
+        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Buybacks system already initialized. Skipping...');
+        return;
+    }
+
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ INITIALIZING BUYBACKS SYSTEM ] ================');
+    
+    const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+    
+    const result = await initializeBuybacks(
+        connection, moonbaseProgram, wallet, walletKeypair,
+        globalConfigPDA
+    );
+
+    if (result.success) {
+        console.log('\x1b[32m%s\x1b[0m', '✅ Buybacks system initialized!');
+        deploymentFile.buybacks_initialized = {
+            buybacks_account_pda: result.data.buybacksAccountPDA,
+            buybacks_sol_vault_pda: result.data.buybacksSolVaultPDA,
+            init_tx: result.data.initTxid,
+            timestamp: new Date().toISOString()
+        };
+        saveDeploymentData();
+    } else {
+        throw new Error(`Buybacks system initialization failed: ${result.error}`);
     }
 }
 

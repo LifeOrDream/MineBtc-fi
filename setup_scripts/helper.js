@@ -64,6 +64,8 @@ export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
 export const LOOT_DOGE_BTC_VAULT_SEED = "loot-mdoge-vault";
 export const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED = "loot-mdoge-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
+export const BUYBACKS_SEED = "buybacks";
+export const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
 
 // PDA for PvP matchmaker
 export const PVP_MATCHMAKER_SEED = "pvp-matchmaker";
@@ -676,7 +678,6 @@ export async function updateGlobalConfig(
         newAuthority ? new PublicKey(newAuthority) : null,
         newFeeCollector ? new PublicKey(newFeeCollector) : null,
         newCreationFeeRecipient ? new PublicKey(newCreationFeeRecipient) : null,
-        newBaseCreationCost ? new BN(newBaseCreationCost) : null,
         newLootPercentage
       )
       .accounts({
@@ -1310,7 +1311,59 @@ export async function initializeMoonEconomyProgram(connection, program, wallet, 
     }
   }
 }
+
+/**
+ * Set DOGE_BTC to SOL price in MoonEconomy GlobalConfig
+ * Price should be in 9-decimal precision (same as MoonBase)
+ * Example: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
+ */
+export async function setDbtcSolPrice(
+  connection,
+  program,
+  wallet,
+  walletKeypair,
+  globalConfigPDA,
+  dogebtcVaultPDA,
+  liquidityVaultPDA,
+  price // Price in 9-decimal precision (u64)
+) {
+  try {
+    console.log('\x1b[33m%s\x1b[0m', '📡 Setting DOGE_BTC to SOL price...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `   Price: ${price} (9-decimal precision)`);
+    console.log('\x1b[36m%s\x1b[0m', `   Actual price: ${(price / 1_000_000_000).toFixed(9)} SOL per DOGE_BTC`);
  
+    const updateTx = await program.methods.setDbtcSolPrice(new BN(price))
+      .accounts({
+        globalConfig: new PublicKey(globalConfigPDA),
+        dogebtcVault: new PublicKey(dogebtcVaultPDA),
+        liquidityVault: new PublicKey(liquidityVaultPDA),
+        authority: wallet.publicKey,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .transaction();
+
+    const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
+
+    console.log('\x1b[32m%s\x1b[0m', `✅ DOGE_BTC to SOL price set successfully`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
+
+    return {
+      success: true,
+      data: {
+        updateTxid: updateTxid,
+        price: price
+      }
+    };
+  } catch (error) {
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error setting DOGE_BTC price:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
 
 
 /**
@@ -3064,6 +3117,64 @@ export async function initializeLevelStats(
     };
   }
 }
+
+export async function initializeBuybacks(
+  connection,
+  program,
+  wallet,
+  walletKeypair,
+  globalConfigPDA
+) {
+  try {
+    console.log('\x1b[33m%s\x1b[0m', '📡 Initializing buybacks system...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
+
+    // Derive buybacks PDAs
+    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SEED)], 
+      program.programId
+    );
+    
+    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
+      program.programId
+    );
+
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks Account PDA: ${buybacksAccountPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks SOL Vault PDA: ${buybacksSolVaultPDA}`);
+
+    const initTx = await program.methods.initializeBuybacks()
+      .accounts({
+        globalConfig: new PublicKey(globalConfigPDA),
+        buybacksAccount: buybacksAccountPDA,
+        buybacksSolVault: buybacksSolVaultPDA,
+        authority: wallet.publicKey,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .transaction();
+
+    const initTxid = await web3.sendAndConfirmTransaction(connection, initTx, [walletKeypair]);
+
+    console.log('\x1b[32m%s\x1b[0m', `✅ Buybacks system initialized`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction: ${initTxid}`);
+    console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${initTxid}?cluster=devnet`);
+
+    return {
+      success: true,
+      data: {
+        initTxid: initTxid,
+        buybacksAccountPDA: buybacksAccountPDA.toString(),
+        buybacksSolVaultPDA: buybacksSolVaultPDA.toString(),
+      }
+    };
+  } catch (error) {
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error initializing buybacks system:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
   
 // ==================== [ ADMIN HELPER FUNCTIONS ] ====================
 
@@ -3380,6 +3491,26 @@ export async function updateMdogeDistPerSlot(
     console.log(`tokenProgram2022: ${anchor_spl.TOKEN_2022_PROGRAM_ID.toString()}`);
     console.log(`tokenProgram: ${anchor_spl.TOKEN_PROGRAM_ID.toString()}`);
  
+    // Derive buybacks PDAs
+    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SEED)], 
+      program.programId
+    );
+    
+    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
+      program.programId
+    );
+    
+    // Derive main DOGE_BTC vault PDA (for dbtc_token_vault)
+    const [dbtcTokenVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(DOGE_BTC_VAULT_SEED), dogeBtcMiningPDA.toBuffer()],
+      program.programId
+    );
+    
+    console.log(`buybacksSolVault: ${buybacksSolVaultPDA.toString()}`);
+    console.log(`buybacksAccount: ${buybacksAccountPDA.toString()}`);
+    console.log(`dbtcTokenVault: ${dbtcTokenVaultPDA.toString()}`);
 
 
     const tx = await program.methods
@@ -3404,6 +3535,9 @@ export async function updateMdogeDistPerSlot(
         lpMint: lpMintPDA,
         tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
         tokenProgram: anchor_spl.TOKEN_PROGRAM_ID,
+        buybacksSolVault: buybacksSolVaultPDA,
+        buybacksAccount: buybacksAccountPDA,
+        dbtcTokenVault: dbtcTokenVaultPDA, // Main DOGE_BTC vault PDA
       })
       .rpc();
 

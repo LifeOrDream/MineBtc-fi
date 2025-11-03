@@ -8,7 +8,7 @@ pub mod instructions;
 use instructions::admin::*;
 use instructions::user::*;
 
-declare_id!("Bw6BX1XgsUyd8eXsnjXs14UM6wx4Ewz78vkX4hm1dpfE");
+declare_id!("7w8i1bvEbdge2zumQjsLQBHuciCoPFsxs9Mqz7DNZfk4");
 
 #[program]
 pub mod mooneconomy {
@@ -59,6 +59,15 @@ pub mod mooneconomy {
             new_electricity_per_weighted_sol,
             new_emergency_tax
         )
+    }
+
+    /// Set DOGE_BTC to SOL price (admin only)
+    /// Price is stored with 9-decimal precision (same as MoonBase)
+    pub fn set_dbtc_sol_price(
+        ctx: Context<UpdateConfig>,
+        price: u64,
+    ) -> Result<()> {
+        admin::set_dbtc_sol_price_internal(ctx, price)
     }
  
     // ----------------------------------------------------------------------------------------

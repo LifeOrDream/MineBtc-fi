@@ -10,7 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::user::*;
 pub use instructions::economy::*;
 
-declare_id!("GnYmQsNgqaBYqbAPMc9KfTSma6Psca2FdTJN1huV6mLh");
+declare_id!("FxsggDi5MXPhowSbtcCpqC9NzjyHa1HKjjBVXyqgLH2j");
 
 #[program]
 pub mod moonbase {
@@ -33,6 +33,12 @@ pub mod moonbase {
     /// Set the Dragon Egg collection address (admin only)
     pub fn set_dragon_egg_collection(ctx: Context<UpdateConfigAc>, dragon_egg_collection: Pubkey) -> Result<()> {
         admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
+    }
+
+    /// Set the Raydium pool state address (admin only)
+    /// Security: Prevents using malicious pools for swaps
+    pub fn set_raydium_pool_state(ctx: Context<UpdateConfigAc>, raydium_pool_state: Pubkey) -> Result<()> {
+        admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
     /// Add Dragon Egg URIs to the pool (admin only)

@@ -60,6 +60,9 @@ pub fn initialize_global_config(
     // Initialize SOL distribution as disabled to prevent early stakers from capturing all initial SOL
     global_config.sol_distribution_enabled = false;
     
+    // Initialize price to 0 (must be set by admin via set_dbtc_sol_price function)
+    global_config.dbtc_sol_price = 0;
+    
     global_config.bump = ctx.bumps.global_config;
 
     emit!(ProgramInitialized {
@@ -194,6 +197,28 @@ pub fn internal_update_configuration(
         dogebtc_allocation: global_config.dogebtc_allocation,
         liquidity_allocation: global_config.liquidity_allocation
     });
+    
+    Ok(())
+}
+
+/// Set DOGE_BTC to SOL price (admin only)
+/// Price is stored with 9-decimal precision (same as MoonBase)
+/// Example: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
+pub fn set_dbtc_sol_price_internal(
+    ctx: Context<UpdateConfig>,
+    price: u64,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    require!(
+        price > 0,
+        ErrorCode::InvalidAmount
+    );
+    
+    global_config.dbtc_sol_price = price;
+    
+    msg!("✅ Set DOGE_BTC to SOL price: {} (9-decimal precision)", price);
+    msg!("   Actual price: {:.9} SOL per DOGE_BTC", price as f64 / 1_000_000_000.0);
     
     Ok(())
 }

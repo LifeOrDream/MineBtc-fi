@@ -23,6 +23,17 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     let doge_btc_mining: &mut Account<'_, DogeBtcMining> = &mut ctx.accounts.doge_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
     
+    // SECURITY: Validate that the provided pool_state matches the authorized pool in global_config
+    require!(
+        ctx.accounts.global_config.raydium_pool_state != Pubkey::default(),
+        ErrorCode::InvalidAccount
+    );
+    require!(
+        ctx.accounts.pool_state.key() == ctx.accounts.global_config.raydium_pool_state,
+        ErrorCode::InvalidAccount
+    );
+    msg!("✅ Verified pool_state matches authorized Raydium pool: {}", ctx.accounts.pool_state.key());
+    
     // Check if admin override is being used (when lp_token_amount > 0)
     if lp_token_amount > 0 {
         // Verify that the authority is provided and matches the global config

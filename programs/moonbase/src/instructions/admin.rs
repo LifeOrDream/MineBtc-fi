@@ -72,6 +72,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     
     // Initialize egg limits: [unused, tier2_limit, tier3_limit, tier4_limit]
     global_config.egg_limits = [0, 5000, 5000, 5000];
+    
+    // Initialize Raydium pool state to default (must be set via admin function)
+    global_config.raydium_pool_state = Pubkey::default();
 
     global_config.bump = ctx.bumps.global_config;
     global_config.loot_percentage = 15; // Default 15% for loot rewards
@@ -153,6 +156,26 @@ pub fn clear_dragon_egg_uris_internal(
 
     msg!("✅ Cleared all Dragon Egg URIs");
 
+    Ok(())
+}
+
+/// Set the Raydium pool state address (admin only)
+/// This is a security measure to prevent using malicious pools
+pub fn set_raydium_pool_state_internal(
+    ctx: Context<UpdateConfigAc>,
+    raydium_pool_state: Pubkey,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    require!(
+        raydium_pool_state != Pubkey::default(),
+        ErrorCode::InvalidAccount
+    );
+    
+    global_config.raydium_pool_state = raydium_pool_state;
+    
+    msg!("✅ Set Raydium pool state: {}", raydium_pool_state);
+    
     Ok(())
 }
 

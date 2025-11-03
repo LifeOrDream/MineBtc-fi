@@ -259,9 +259,23 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
     };
     let cpi_ctx_query = CpiContext::new(cpi_program_query, cpi_accounts_query);
     let token_prices = moonbase::cpi::query_token_prices(cpi_ctx_query)?;
-    let dbtc_price_in_sol = token_prices.get().dbtc_price_in_sol;
+    let moonbase_price = token_prices.get().dbtc_price_in_sol;
     
-    msg!("   DOGE_BTC price: {} (9-decimal precision)", dbtc_price_in_sol);
+    // Use MoonBase price if available, otherwise use stored price
+    let dbtc_price_in_sol = if moonbase_price > 0 {
+        // Update stored price with MoonBase price
+        ctx.accounts.global_config.dbtc_sol_price = moonbase_price;
+        msg!("   Updated stored price from MoonBase: {} (9-decimal precision)", moonbase_price);
+        moonbase_price
+    } else {
+        // Use stored price (fallback to default if MoonBase price is 0)
+        let stored_price = ctx.accounts.global_config.dbtc_sol_price;
+        require!(stored_price > 0, ErrorCode::InvalidAmount);
+        msg!("   MoonBase price is 0, using stored price: {} (9-decimal precision)", stored_price);
+        stored_price
+    };
+    
+    msg!("   Final DOGE_BTC price used: {} (9-decimal precision)", dbtc_price_in_sol);
     
     // Convert weighted dBTC amount to SOL value
     // weighted_amount is in DOGE_BTC base units (6 decimals)

@@ -205,10 +205,12 @@ pub struct GlobalConfig {
     /// Egg limits per tier: [unused, tier2_limit, tier3_limit, tier4_limit]
     /// Tier 2: 5000 eggs, Tier 3: 5000 eggs, Tier 4: 5000 eggs
     pub egg_limits: [u64; 4],
+    /// Authorized Raydium pool state address (security: prevents using malicious pools)
+    pub raydium_pool_state: Pubkey,
 }
  
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + buyback_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
+    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + buyback_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris + egg_limits + raydium_pool_state
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<ExpansionConfig> = 4 bytes (vec length) + MAX_EXPANSIONS * ExpansionConfig::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
@@ -229,7 +231,8 @@ impl GlobalConfig {
         32 +                    // dragon_egg_collection
         8 +                     // total_dragon_eggs_minted
         4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH)) +    // dragon_egg_uris vec
-        (4 * 8);                // egg_limits [u64; 4] = 32 bytes
+        (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
+        32;                     // raydium_pool_state
 
     /// Select random Dragon Egg URI based on slot, index, and DNA
     pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {

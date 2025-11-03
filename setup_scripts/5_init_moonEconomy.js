@@ -10,6 +10,7 @@ import path from 'path';
 import { 
     getSolanaBalance, initializeMoonEconomyProgram, mEconomySetupDbtcVault, mEconomySetupLiquidityVaults, 
     mEconomy_claimMoonbaseSol, mEconomy_withdrawDevEarnings, updateGlobalConfig, updateMoonEconomyGlobalConfig,
+    setDbtcSolPrice,
     LOOT_REWARDS_SEED, LOOT_SOL_VAULT_SEED
  } from './helper.js';
 
@@ -169,6 +170,9 @@ async function main() {
         console.log('\x1b[36m%s\x1b[0m', `\n📍 MoonEconomy Fee Collector PDA: ${feeCollectorPDA.toString()}`);
         
         await updateMoonBaseConfig(moonBaseProgram, feeCollectorPDA.toString());
+        
+        // 3.5. Set initial DOGE_BTC to SOL price (default price for electricity calculations)
+        await setInitialDbtcSolPrice(moonEconomyProgram);
         return;
 
         // 4. Claim MoonBase SOL
@@ -551,6 +555,66 @@ async function withdrawDevEarnings(moonEconomyProgram) {
     }
 }
 
+async function setInitialDbtcSolPrice(moonEconomyProgram) {
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ SETTING INITIAL DOGE_BTC TO SOL PRICE ] ================');
+    
+    try {
+        const globalConfigAddress = deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac;
+        const dogebtcVaultAddress = deploymentFile.moonEconomy_program_initialized?.dbtc_vault_initialized?.dogebtc_vault_pda;
+        const liquidityVaultAddress = deploymentFile.moonEconomy_program_initialized?.liquidity_vault_initialized?.liquidity_vault_pda;
+
+        const requiredAddresses = {
+            'MoonEconomy Global Config': globalConfigAddress,
+            'DOGE_BTC Vault': dogebtcVaultAddress,
+            'Liquidity Vault': liquidityVaultAddress
+        };
+
+        for (const [label, value] of Object.entries(requiredAddresses)) {
+            if (!value) {
+                throw new Error(`${label} address not found in deployment file`);
+            }
+        }
+
+        // Default price: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
+        // This can be adjusted in config.json if needed
+        const defaultPrice = config.moonEconomy?.default_dbtc_sol_price || 1_000_000; // 0.001 SOL per DOGE_BTC
+        
+        console.log('\x1b[36m%s\x1b[0m', `📝 Setting initial DOGE_BTC to SOL price: ${defaultPrice} (9-decimal precision)`);
+        console.log('\x1b[36m%s\x1b[0m', `   Actual price: ${(defaultPrice / 1_000_000_000).toFixed(9)} SOL per DOGE_BTC`);
+
+        const result = await setDbtcSolPrice(
+            connection,
+            moonEconomyProgram,
+            wallet,
+            walletKeypair,
+            globalConfigAddress,
+            dogebtcVaultAddress,
+            liquidityVaultAddress,
+            defaultPrice
+        );
+
+        if (result.success) {
+            console.log('\x1b[32m%s\x1b[0m', '✅ Initial DOGE_BTC to SOL price set successfully!');
+            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.updateTxid}`);
+            
+            deploymentFile.moonEconomy_program_initialized = {
+                ...deploymentFile.moonEconomy_program_initialized,
+                initial_dbtc_sol_price: {
+                    price: defaultPrice,
+                    set_tx: result.data.updateTxid,
+                    timestamp: new Date().toISOString()
+                }
+            };
+            saveDeploymentData();
+        } else {
+            throw new Error(`Failed to set initial DOGE_BTC price: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set initial DOGE_BTC price:', error);
+        throw error;
+    }
+}
+
 async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
     console.log('\x1b[35m%s\x1b[0m', '\n================ [ UPDATING MOONBASE CONFIG ] ================');
     
@@ -590,7 +654,6 @@ async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
             null, // newAuthority (keep current)
             feeCollectorPubkey.toString(), // newFeeCollector (ext_fee_collector)
             null, // newCreationFeeRecipient
-            null, // newBaseCreationCost
             null  // newLootPercentage
         );
 

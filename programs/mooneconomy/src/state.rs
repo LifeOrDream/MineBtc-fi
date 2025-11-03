@@ -72,6 +72,10 @@ pub struct GlobalConfig {
     /// Whether SOL distribution from fee collector is enabled (prevents early stakers from capturing all initial SOL)
     pub sol_distribution_enabled: bool,
     
+    /// Current DOGE_BTC to SOL price (9-decimal precision, same as MoonBase)
+    /// Used for electricity calculations when MoonBase price is 0 or unavailable
+    pub dbtc_sol_price: u64,
+    
     /// Bump for PDA derivation
     pub bump: u8
 }
@@ -91,6 +95,7 @@ impl GlobalConfig {
         8 +  // last_claim_slot
         8 +  // electricity_per_weighted_sol
         1 +  // sol_distribution_enabled
+        8 +  // dbtc_sol_price (u64)
         1;   // bump
 }
 
