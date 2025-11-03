@@ -12,33 +12,26 @@ use anchor_spl::token_interface::{ Mint as Mint2022 };
 // -------------- USER FUNCTIONS :: CREATE MOON-BASE, EXPAND MOONBASE ----------------
 // ----------------------------------------------------------------------------------------
 
-/// Creates a new moon base for a user
-/// This can only be called once per user
-/// pricing_tier: MOONBASE_BASIC_PRICE (0.5 SOL, no NFT) or MOONBASE_EGG_PRICE (1.42 SOL, + Dragon Egg)
-pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+// ----------------------------------------------------------------------------------------
+// -------------- HELPER :: COMMON MOONBASE INITIALIZATION LOGIC ------------------------
+// ----------------------------------------------------------------------------------------
 
-    let user_moonbase = &mut ctx.accounts.user_moonbase;
-    let new_rewards = &mut ctx.accounts.new_user_rewards;
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-    let user = &ctx.accounts.user;
-
-    // Get moonbase count before mutable borrow
-    let moonbase_count = {
-        let global_config = &ctx.accounts.global_config;
-        global_config.total_moonbases_created
-    };
-
-    // Determine pricing and NFT minting based on tier
-    let (sol_cost, to_mint_dragon, init_type): (u64, bool, u8) = match pricing_tier {
-        PRICE_TIER_1 => (PRICE_TIER_1, false, 1),
-        PRICE_TIER_2 => (PRICE_TIER_2, true, 2),
-        PRICE_TIER_3 => (PRICE_TIER_3, true, 3),
-        PRICE_TIER_4 => (PRICE_TIER_4, true, 4),
-        _ => return Err(ErrorCode::InvalidParameters.into()),
-    };
-
-    let global_config = &mut ctx.accounts.global_config;
-
+/// Common initialization logic shared between create_user_moonbase and create_user_moonbase_w_egg
+fn initialize_moonbase_common<'info>(
+    user_moonbase: &mut Account<'info, UserMoonBaseInstance>,
+    new_rewards: &mut Account<'info, ReferralRewards>,
+    doge_btc_mining: &Account<'info, DogeBtcMining>,
+    global_config: &mut Account<'info, GlobalConfig>,
+    user: &Signer<'info>,
+    sol_treasury: &AccountInfo<'info>,
+    creation_fee_recipient: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    referrer: Option<Pubkey>,
+    referrer_rewards: Option<&mut Account<'info, ReferralRewards>>,
+    sol_cost: u64,
+    init_type: u8,
+    faction_id: u8,
+) -> Result<()> {
     // Increment total moonbases created and total sol spent
     global_config.total_moonbases_created = global_config.total_moonbases_created.saturating_add(1);
     global_config.total_sol_spent = global_config.total_sol_spent.saturating_add(sol_cost);
@@ -58,9 +51,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     new_rewards.owner = user.key();
     new_rewards.total_sol_earned = 0;
     new_rewards.sol_claimed_for_xp = 0;
-    new_rewards.bump = ctx.bumps.new_user_rewards;
     new_rewards.referrals_count = 0;
-    
  
     // Charge the creation fee with 50/50 split
     let fee_recipient_amount = sol_cost / 2; // 50% goes to creation fee recipient
@@ -69,10 +60,10 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     // Transfer 50% directly to creation fee recipient
     anchor_lang::system_program::transfer(
         CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
+            system_program.clone(),
             anchor_lang::system_program::Transfer {
                 from: user.to_account_info(),
-                to: ctx.accounts.creation_fee_recipient.to_account_info(),
+                to: creation_fee_recipient.clone(),
             },
         ),
         fee_recipient_amount,
@@ -95,14 +86,14 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
             &ref_pubkey,
             &user.key(),
             &user.to_account_info(),
-            ctx.accounts.referrer_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+            referrer_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
             global_config,
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
+            sol_treasury,
+            system_program,
         )?;
         
         // Process new referral (increment count) if referrer rewards account exists
-        if let Some(referrer_rewards_account) = &mut ctx.accounts.referrer_rewards {
+        if let Some(referrer_rewards_account) = referrer_rewards {
             referrer_rewards_account.referrals_count = referrer_rewards_account.referrals_count.saturating_add(1);
             
             msg!("🤝 New referral processed: {} total referrals for {}", 
@@ -110,13 +101,13 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         }
     } else {
         // If no referrer, set to default (system program is a common default)
-        user_moonbase.referral = ctx.accounts.system_program.key();
+        user_moonbase.referral = anchor_lang::solana_program::system_program::ID;
         
         // If no referrer, remaining 50% goes directly to treasury
         transfer_to_sol_treasury(
             &user.to_account_info(),
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
+            sol_treasury,
+            system_program,
             remaining_amount,
         )?;
     }
@@ -126,8 +117,7 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.active_hashpower = 0;
     user_moonbase.available_electricity = 0;
     user_moonbase.used_electricity = 0;
-    user_moonbase.dbtc_claim_index =  doge_btc_mining.dbtc_tokens_minted_per_hashpower;
-    user_moonbase.bump = ctx.bumps.user_moonbase;
+    user_moonbase.dbtc_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     user_moonbase.faction_id = faction_id;
     
     // Initialize XP, level, and tier system
@@ -150,99 +140,410 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
     user_moonbase.modules_repaired_since_last_game = false;
     user_moonbase.incubated_dragon_egg = None;
 
-    // // Mint Dragon Egg NFT if tier includes it
-    // if to_mint_dragon {
-    //     // Unwrap optional accounts (required for NFT minting)
-    //     let dragon_egg_asset = ctx.accounts.dragon_egg_asset.as_ref()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let dragon_egg_collection = ctx.accounts.dragon_egg_collection.as_ref()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let mpl_core_program = ctx.accounts.mpl_core_program.as_ref()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
+    // Initialize command center module (not installed yet)
+    user_moonbase.command_center_module = None;
 
-    //     let name = format!("Dragon Egg #{}", moonbase_count);
+    Ok(())
+}
 
-    //     // Generate DNA for the egg using genescience
-    //     // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
-    //     let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
-    //     let dna = crate::genescience::generate_genesis_dna_with_tier(
-    //         moonbase_count,
-    //         &user.key(),
-    //         Clock::get()?.slot,
-    //         family_type,
-    //     )?;
+/// Creates a new moon base for a user
+/// This can only be called once per user
+/// pricing_tier: PRICE_TIER_1 (0.5 SOL, no NFT)
+pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+    require!(pricing_tier == PRICE_TIER_1, ErrorCode::InvalidParameters);
 
-    //     // Get URI from global config or use fallback
-    //     let uri = global_config.get_random_dragon_egg_uri(
-    //         Clock::get()?.slot,
-    //         moonbase_count,
-    //         &dna,
-    //     ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", moonbase_count));
+    let (sol_cost, init_type) = (PRICE_TIER_1, 1u8);
 
-    //     // Get global config as AccountInfo before using mutable reference
-    //     let global_config_info = global_config.to_account_info();
+    // Initialize common moonbase fields
+    initialize_moonbase_common(
+        &mut ctx.accounts.user_moonbase,
+        &mut ctx.accounts.new_user_rewards,
+        &ctx.accounts.doge_btc_mining,
+        &mut ctx.accounts.global_config,
+        &ctx.accounts.user,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.creation_fee_recipient.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        referrer,
+        ctx.accounts.referrer_rewards.as_mut(),
+        sol_cost,
+        init_type,
+        faction_id,
+    )?;
 
-    //     // Create Dragon Egg NFT with MPL Core
-    //     crate::mpl_core_helpers::create_mpl_core_asset(
-    //         dragon_egg_asset,
-    //         Some(dragon_egg_collection),
-    //         &global_config_info,
-    //         &user.to_account_info(),
-    //         &user.to_account_info(),
-    //         &ctx.accounts.system_program.to_account_info(),
-    //         mpl_core_program,
-    //         name.clone(),
-    //         uri.clone(),
-    //     )?;
-
-    //     // Initialize Dragon Egg metadata with DNA
-    //     egg_metadata.mint = dragon_egg_asset.key();
-    //     egg_metadata.power = BASE_EGG_POWER;
-    //     egg_metadata.dna = dna;
-    //     egg_metadata.incubated_moonbase = None;
-    //     egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    //     egg_metadata.created_at = Clock::get()?.unix_timestamp;
-    //     egg_metadata.bump = ctx.bumps.dragon_egg_metadata.unwrap();
-
-    //     // Update global dragon egg counter
-    //     global_config.total_dragon_eggs_minted = global_config.total_dragon_eggs_minted.saturating_add(1);
-
-    //     // Log DNA info for debugging
-    //     let family = crate::genescience::get_family_type(&dna);
-    //     let stage = crate::genescience::get_evolutionary_stage(&dna);
-    //     msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}", family, stage);
-
-    //     // Emit events
-    //     emit!(DragonEggMinted {
-    //         mint: egg_metadata.mint,
-    //         name,
-    //         uri,
-    //         dna,
-    //         initial_power: BASE_EGG_POWER,
-    //         price_paid: 0, // Included in moonbase price
-    //     });
-
-    //     msg!("✅ Dragon Egg minted for moonbase creation");
-    //     msg!("   Egg: {}", egg_metadata.mint);
-    //     msg!("   DNA Family/Tier: {}", family);
-    // }
+    // Set bump for accounts
+    ctx.accounts.new_user_rewards.bump = ctx.bumps.new_user_rewards;
+    ctx.accounts.user_moonbase.bump = ctx.bumps.user_moonbase;
 
     // Emit event
     emit!(UserMoonBaseCreated {
-        owner: user.key(),
+        owner: ctx.accounts.user.key(),
         referrer,
     });
 
-    msg!("Created new moon base for user {} - Tier {}: {} SOL {}",
-         user.key(), init_type, sol_cost as f64 / 1_000_000_000.0,
-         if to_mint_dragon { "(includes Dragon Egg)" } else { "(no NFT)" });
+    msg!("Created new moon base for user {} - Tier {}: {} SOL (no NFT)",
+         ctx.accounts.user.key(), init_type, sol_cost as f64 / 1_000_000_000.0);
 
     Ok(())
 }
 
 
+
+
+
+
+/// Creates a new moon base for a user with Dragon Egg NFT (tiers 2-4)
+pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+    // Determine pricing and NFT minting based on tier
+    let (sol_cost, init_type): (u64, u8) = match pricing_tier {
+        PRICE_TIER_2 => (PRICE_TIER_2, 2),
+        PRICE_TIER_3 => (PRICE_TIER_3, 3),
+        PRICE_TIER_4 => (PRICE_TIER_4, 4),
+        _ => return Err(ErrorCode::InvalidParameters.into()),
+    };
+
+    // Get moonbase count before mutable borrow
+    let egg_count = {
+        ctx.accounts.global_config.total_dragon_eggs_minted
+    };
+
+    // Initialize common moonbase fields
+    initialize_moonbase_common(
+        &mut ctx.accounts.user_moonbase,
+        &mut ctx.accounts.new_user_rewards,
+        &ctx.accounts.doge_btc_mining,
+        &mut ctx.accounts.global_config,
+        &ctx.accounts.user,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.creation_fee_recipient.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        referrer,
+        ctx.accounts.referrer_rewards.as_mut(),
+        sol_cost,
+        init_type,
+        faction_id,
+    )?;
+
+    // Set bump for accounts
+    ctx.accounts.new_user_rewards.bump = ctx.bumps.new_user_rewards;
+    ctx.accounts.user_moonbase.bump = ctx.bumps.user_moonbase;
+
+    // Mint Dragon Egg NFT
+    let dragon_egg_asset_signer = &ctx.accounts.dragon_egg_asset.as_ref();
+    let dragon_egg_collection = &ctx.accounts.dragon_egg_collection;
+    let mpl_core_program = &ctx.accounts.mpl_core_program;
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let collection_authority = &ctx.accounts.collection_authority;
+
+    let name = format!("Dragon Egg #{}", egg_count);
+
+    // Generate DNA for the egg using genescience
+    // The pricing tier (init_type) determines the dragon family (1-4 maps to family 0-3)
+    let family_type = (init_type - 1) as u8; // Tier 1->Family 0, Tier 2->Family 1, etc.
+    let dna = crate::genescience::generate_genesis_dna_with_tier(
+        egg_count,
+        &ctx.accounts.user.key(),
+            Clock::get()?.slot,
+        family_type,
+    )?;
+
+        // Get URI from global config or use fallback
+    let uri = ctx.accounts.global_config.get_random_dragon_egg_uri(
+            Clock::get()?.slot,
+        egg_count,
+            &dna,
+    ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_count));
+
+    // Get the collection authority bump for signing
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let collection_authority_seeds = &[
+        crate::state::COLLECTION_AUTHORITY_SEED,
+        &[collection_authority_bump],
+    ];
+
+        // Create Dragon Egg NFT with MPL Core
+        crate::mpl_core_helpers::create_mpl_core_asset(
+        &dragon_egg_asset_signer.to_account_info(),
+        Some(&dragon_egg_collection.to_account_info()),
+        collection_authority,
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            mpl_core_program,
+            name.clone(),
+            uri.clone(),
+        Some(&[collection_authority_seeds]),
+        )?;
+
+    // Calculate multiplier based on pricing tier (basis points)
+    // Tier 2 (1.42 SOL): 150 = 1.5x
+    // Tier 3 (2.42 SOL): 200 = 2.0x
+    // Tier 4 (4.20 SOL): 300 = 3.0x
+    let multiplier = match init_type {
+        2 => 150,  // 1.5x multiplier
+        3 => 200,  // 2.0x multiplier
+        4 => 300,  // 3.0x multiplier
+        _ => 100,  // 1.0x fallback (shouldn't happen)
+    };
+    
+    // Initialize Dragon Egg metadata with DNA
+    egg_metadata.mint = dragon_egg_asset_signer.key();
+        egg_metadata.power = BASE_EGG_POWER;
+        egg_metadata.dna = dna;
+        egg_metadata.incubated_moonbase = None;
+    egg_metadata.multiplier = multiplier;
+        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+        egg_metadata.created_at = Clock::get()?.unix_timestamp;
+    egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
+
+        // Update global dragon egg counter
+    ctx.accounts.global_config.total_dragon_eggs_minted = ctx.accounts.global_config.total_dragon_eggs_minted.saturating_add(1);
+
+    // Log DNA info for debugging
+    let family = crate::genescience::get_family_type(&dna);
+    let stage = crate::genescience::get_evolutionary_stage(&dna);
+    msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}, Multiplier: {}x", 
+         family, stage, multiplier as f64 / 100.0);
+
+        // Emit events
+        emit!(DragonEggMinted {
+            egg_metadata_account: egg_metadata.key(),
+            dragon_egg_asset_signer: dragon_egg_asset_signer.key(),
+            owner: ctx.accounts.user.key(),
+            mint: egg_metadata.mint,
+            name,
+            uri,
+            dna,
+            initial_power: BASE_EGG_POWER,
+            multiplier: multiplier,
+        });
+
+        msg!("✅ Dragon Egg minted for moonbase creation");
+        msg!("   Egg: {}", egg_metadata.mint);
+    msg!("   DNA Family/Tier: {}", family);
+
+    // Emit event
+    emit!(UserMoonBaseCreated {
+        owner: ctx.accounts.user.key(),
+        referrer,
+    });
+
+    msg!("Created new moon base for user {} - Tier {}: {} SOL (includes Dragon Egg)",
+         ctx.accounts.user.key(), init_type, sol_cost as f64 / 1_000_000_000.0);
+
+    Ok(())
+}
+
+/// Helper function to get command center config ID based on init_type
+fn get_command_center_config_id(init_type: u8) -> Result<u16> {
+    match init_type {
+        1 => Ok(crate::state::COMMAND_CENTER_TIER_1_CONFIG_ID),
+        2 => Ok(crate::state::COMMAND_CENTER_TIER_2_CONFIG_ID),
+        3 => Ok(crate::state::COMMAND_CENTER_TIER_3_CONFIG_ID),
+        4 => Ok(crate::state::COMMAND_CENTER_TIER_4_CONFIG_ID),
+        _ => Err(ErrorCode::InvalidParameters.into()),
+    }
+}
+
+/// Install the free command center module for a moonbase
+/// This can only be called once per moonbase and must be called after moonbase creation
+pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos_y: u8) -> Result<()> {
+    let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let module_instance = &mut ctx.accounts.module_instance;
+    let module_config_account = &ctx.accounts.module_config_account;
+    let user = &ctx.accounts.user;
+    
+    msg!("🏗️ Installing command center for user {}", user.key());
+    msg!("   Position: ({}, {})", pos_x, pos_y);
+    
+    // Check if command center is already installed
+    require!(
+        user_moonbase.command_center_module.is_none(),
+        ErrorCode::ModuleAlreadyActive
+    );
+    
+    // Command center must be installed before any modules are bought
+    // This ensures clean index allocation (command center = index 0)
+    require!(
+        user_moonbase.modules_count == 0,
+        ErrorCode::InvalidParameters
+    );
+    
+    // Get command center config ID based on init_type
+    let config_id = get_command_center_config_id(user_moonbase.init_type)?;
+    msg!("   Command Center Config ID: {} (Tier {})", config_id, user_moonbase.init_type);
+    
+    // Derive and validate the module config account PDA
+    let expected_config_account = Pubkey::find_program_address(
+        &[
+            crate::state::MODULE_CONFIG_SEED.as_ref(),
+            &config_id.to_le_bytes(),
+        ],
+        ctx.program_id,
+    ).0;
+    
+    require!(
+        ctx.accounts.module_config_account.key() == expected_config_account,
+        ErrorCode::InvalidAccount
+    );
+    
+    // Validate config_id matches
+    require!(
+        module_config_account.data.id == config_id,
+        ErrorCode::ModuleConfigMismatch
+    );
+    
+    let module_config = &module_config_account.data;
+    
+    // Validate module is active
+    require!(module_config.is_active, ErrorCode::ModuleNotActive);
+    
+    // Calculate electricity cost
+    let electricity_cost = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.power_consumption as u64,
+        ModuleStats::Attraction(stats) => stats.power_consumption as u64,
+    };
+    
+    msg!("📊 Command Center electricity requirement: {} units", electricity_cost);
+    
+    // Check electricity availability
+    if electricity_cost > 0 {
+        let new_used_electricity = user_moonbase.used_electricity
+            .checked_add(electricity_cost)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        require!(
+            new_used_electricity <= user_moonbase.available_electricity,
+            ErrorCode::ElectricityCapacityExceeded
+        );
+        
+        msg!("✅ Electricity check passed: {} + {} = {} <= {}", 
+             user_moonbase.used_electricity, 
+             electricity_cost,
+             new_used_electricity,
+             user_moonbase.available_electricity);
+    }
+    
+    // Check placement within moonbase bounds and no collision
+    require!(
+        helper::can_place_module_in_moonbase(
+            user_moonbase,
+            pos_x,
+            pos_y,
+            module_config.width,
+            module_config.height,
+        )?,
+        ErrorCode::PlacementOutsideMoonbaseArea
+    );
+    
+    msg!("✅ Command Center placement validated at ({}, {}) with size {}x{}", 
+         pos_x, pos_y, module_config.width, module_config.height);
+    
+    // Initialize runtime state based on module type
+    let runtime_state = helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
+    
+    // Get width and height before mutable borrow
+    let module_width = module_config.width;
+    let module_height = module_config.height;
+    
+    // Initialize module instance (command center is always index 0)
+    module_instance.config_id = config_id;
+    module_instance.upgrade_level = 0;
+    module_instance.index = 0; // Command center is always index 0
+    module_instance.module_type = module_config.module_type.clone();
+    module_instance.runtime_state = runtime_state;
+    module_instance.electricity_cost = electricity_cost as u32;
+    module_instance.is_active = true; // Immediately active
+    module_instance.is_removable = false; // Command center cannot be removed
+    module_instance.created_at = Clock::get()?.unix_timestamp;
+    module_instance.last_updated = Clock::get()?.unix_timestamp;
+    module_instance.bump = ctx.bumps.module_instance;
+    
+    // Place the module on the grid
+    helper::place_module(
+        user_moonbase,
+        module_instance,
+        pos_x,
+        pos_y,
+        module_width,
+        module_height,
+    )?;
+    
+    msg!("📍 Command Center placed successfully on grid");
+    
+    // Update electricity usage
+    if electricity_cost > 0 {
+        user_moonbase.used_electricity = user_moonbase.used_electricity
+            .checked_add(electricity_cost)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("⚡ Updated electricity usage: {} -> {} / {}", 
+             user_moonbase.used_electricity - electricity_cost,
+             user_moonbase.used_electricity,
+             user_moonbase.available_electricity);
+    }
+    
+    // Update modules_count (command center is the first module)
+    user_moonbase.modules_count = 1;
+    
+    // Update total moonbase HP
+    let module_max_hp = match &module_config.stats {
+        ModuleStats::Mining(stats) => stats.max_hp,
+        ModuleStats::Attraction(stats) => stats.max_hp,
+    };
+    
+    user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_add(module_max_hp);
+    msg!("🛡️ Updated moonbase HP: added {} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
+    
+    // Update hashpower if this is a mining module
+    if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+        let hashpower_increase = mining_stats.current_hashpower(0) as u64; // Level 0
+        
+        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("⛏️ Updated hashpower: {} -> {} (+{})", 
+             user_moonbase.active_hashpower - hashpower_increase, 
+             user_moonbase.active_hashpower, 
+             hashpower_increase);
+        
+        // Update global hashpower
+        let mining_state = &mut ctx.accounts.doge_btc_mining;
+        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
+             mining_state.total_active_hashpower - hashpower_increase,
+             mining_state.total_active_hashpower,
+             hashpower_increase);
+    }
+    
+    // Track command center module
+    user_moonbase.command_center_module = Some(module_instance.key());
+    
+    // Process daily login and award XP for installing command center
+    let installation_xp = 50; // Bonus XP for installing command center
+    process_daily_login_and_xp(user_moonbase, installation_xp, "Install Command Center")?;
+    
+    // Emit event
+    emit!(ModuleInstalled {
+        owner: user.key(),
+        config_id,
+        module_index: 0,
+        pos_x,
+        pos_y,
+    });
+    
+    msg!("🎉 Command Center installation completed successfully!");
+    msg!("   User: {}", user.key());
+    msg!("   Config ID: {}, Module Index: 0", config_id);
+    msg!("   Position: ({}, {}), Size: {}x{}", pos_x, pos_y, module_config.width, module_config.height);
+    msg!("   Command Center is now active and cannot be removed!");
+    
+    Ok(())
+}
 
 /// Expand a moonbase
 pub fn expand_moonbase_internal(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
@@ -372,16 +673,17 @@ fn update_electricity_from_mooneconomy(
     user_moonbase: &mut UserMoonBaseInstance,
     doge_btc_mining: &mut DogeBtcMining,
     global_config: &GlobalConfig,
-    caller_program: &Pubkey,
+    caller_authority: &Pubkey,
     new_electricity: u64,
 ) -> Result<()> {
-    // Verify caller is mooneconomy program
+    // Verify caller is mooneconomy program by checking authority == ext_fee_collector
     require!(
-        *caller_program == global_config.mooneconomy_program,
+        *caller_authority == global_config.ext_fee_collector,
         ErrorCode::Unauthorized
     );
     
     msg!("⚡ Updating electricity from mooneconomy CPI call");
+    msg!("   Caller authority verified: {}", caller_authority);
     msg!("   Old electricity: {}", user_moonbase.available_electricity);
     msg!("   New electricity: {}", new_electricity);
     msg!("   Used electricity: {}", user_moonbase.used_electricity);
@@ -729,6 +1031,12 @@ pub fn buy_module(
     msg!("🛒 Starting module purchase for user {}", user.key());
     msg!("   Config ID: {}", config_id);
     
+    // Command center must be installed before buying other modules
+    require!(
+        user_moonbase.command_center_module.is_some(),
+        ErrorCode::InvalidParameters
+    );
+    
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
     
@@ -812,6 +1120,7 @@ pub fn buy_module(
     module_instance.is_active = false; // NOT DEPLOYED YET
     module_instance.created_at = current_timestamp;
     module_instance.last_updated = current_timestamp;
+    module_instance.is_removable = true; // All purchased modules are removable
     module_instance.bump = ctx.bumps.module_instance;
     
   
@@ -1091,6 +1400,10 @@ pub fn remove_module_internal(
     
     // Verify module is deployed before removal
     require!(module_instance.is_active, ErrorCode::ModuleNotActive);
+    
+    // Check if module is removable (command center cannot be removed)
+    require!(module_instance.is_removable, ErrorCode::ModuleNotRemovable);
+    
     msg!("✅ Module is deployed and can be removed");
     
     // Clear the module's position on the grid
@@ -1630,30 +1943,6 @@ pub struct CreateUserMoonbase<'info> {
     )]
     pub creation_fee_recipient: UncheckedAccount<'info>,
 
-    // /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
-    // #[account(mut)]
-    // pub dragon_egg_asset: Option<AccountInfo<'info>>,
-
-    // /// CHECK: Dragon Egg collection (optional)
-    // #[account(mut)]
-    // pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
-
-    // /// Dragon Egg metadata (optional) - only created if tier includes egg
-    // #[account(
-    //     init_if_needed,
-    //     payer = user,
-    //     space = DragonEggMetadata::LEN,
-    //     seeds = [
-    //         DRAGON_EGG_METADATA_SEED.as_ref(), 
-    //         user.key().as_ref(),
-    //     ],
-    //     bump
-    // )]
-    // pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
-
-    /// CHECK: Metaplex Core program (optional)
-    // pub mpl_core_program: Option<UncheckedAccount<'info>>,
-
     #[account(mut)]
     pub user: Signer<'info>,
     
@@ -1661,6 +1950,104 @@ pub struct CreateUserMoonbase<'info> {
 }
 
 
+
+#[derive(Accounts)]
+#[instruction(referrer: Option<Pubkey>, faction_id: u8)]
+pub struct CreateUserMoonbaseWithEgg<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = UserMoonBaseInstance::LEN,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    // Create rewards account for the new user 
+    #[account(
+        init,
+        payer = user,
+        space = ReferralRewards::LEN,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub new_user_rewards: Account<'info, ReferralRewards>,
+    
+    // Only require this account if referrer is provided
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), 
+                referrer.as_ref().unwrap_or(&system_program.key()).as_ref()],
+        bump,
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: This is the PDA that holds collected SOL fees
+    pub sol_treasury: UncheckedAccount<'info>,
+
+    /// CHECK: Creation fee recipient account (from global config)
+    #[account(
+        mut,
+        address = global_config.creation_fee_recipient
+    )]
+    pub creation_fee_recipient: UncheckedAccount<'info>,
+
+    /// CHECK: Dragon Egg asset (optional) - will be created via CPI if tier includes egg
+    /// This MUST be a signer for the Metaplex Core CreateV1 instruction.
+    #[account(mut)] // Signer implies mutability, but explicit `mut` is fine
+    pub dragon_egg_asset: Signer<'info>,
+
+    /// CHECK: Dragon Egg collection (optional)
+    #[account(mut)]
+    pub dragon_egg_collection: UncheckedAccount<'info>,
+
+    /// Dragon Egg metadata (optional) - only created if tier includes egg
+    /// PDA seed uses dragon_egg_asset to uniquely tie metadata to the NFT
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = DragonEggMetadata::LEN,
+        seeds = [
+            DRAGON_EGG_METADATA_SEED.as_ref(), 
+            dragon_egg_asset.key().as_ref(),
+        ],
+        bump
+    )]
+    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
+
+    /// CHECK: Metaplex Core program (optional)
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    /// CHECK: Collection authority PDA (optional) - required if minting with collection
+    #[account(
+        seeds = [crate::state::COLLECTION_AUTHORITY_SEED],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
 
 
 
@@ -1861,6 +2248,49 @@ pub struct ClaimDogeBtc<'info> {
 }
 
 
+
+#[derive(Accounts)]
+#[instruction(pos_x: u8, pos_y: u8)]
+pub struct InstallCommandCenter<'info> {
+    #[account(
+        mut,
+        seeds = [USER_MOONBASE_SEED.as_ref(), user.key().as_ref()],
+        bump = user_moonbase.bump,
+        constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub user_moonbase: Account<'info, UserMoonBaseInstance>,
+    
+    // Create the command center module instance (always index 0)
+    #[account(
+        init,
+        payer = user,
+        space = ModuleInstance::LEN,
+        seeds = [
+            MODULE_INSTANCE_SEED.as_ref(), 
+            user.key().as_ref(), 
+            0u8.to_le_bytes().as_ref() // Command center is always index 0
+        ],
+        bump
+    )]
+    pub module_instance: Account<'info, ModuleInstance>,
+    
+    // Command center module config account (will be validated against init_type in instruction)
+    #[account(mut)]
+    /// CHECK: Validated in instruction to match command center config for this tier
+    pub module_config_account: Account<'info, ModuleConfigAccount>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 #[instruction(config_id: u16)]
@@ -2285,6 +2715,7 @@ pub fn incubate_dragon_egg_internal(
         &ctx.accounts.user.to_account_info(), // User is current owner/authority
         &ctx.accounts.egg_custody_pda.to_account_info(), // Transfer to custody PDA
         &ctx.accounts.mpl_core_program.to_account_info(),
+        None, // No signer seeds needed - user is signing
     )?;
 
     msg!("✅ NFT locked in custody PDA: {}", ctx.accounts.egg_custody_pda.key());

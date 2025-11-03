@@ -24,7 +24,7 @@ use anchor_spl::token_2022::Token2022;
 pub fn initialize_global_config(
     ctx: Context<InitializeGlobalConfig>,
     dev_address: Pubkey,
-    moondoge_allocation: u8,
+    dogebtc_allocation: u8,
     liquidity_allocation: u8,
     min_lockup_days: u64,
     max_lockup_days: u64,
@@ -46,7 +46,7 @@ pub fn initialize_global_config(
     global_config.authority = ctx.accounts.authority.key();
     global_config.fee_collector = ctx.accounts.fee_collector.key();
     
-    global_config.moondoge_allocation = moondoge_allocation;
+    global_config.dogebtc_allocation = dogebtc_allocation;
     global_config.liquidity_allocation = liquidity_allocation;
 
     global_config.min_lockup_days = min_lockup_days;
@@ -55,14 +55,21 @@ pub fn initialize_global_config(
     global_config.base_multiplier = base_multiplier;
     global_config.max_multiplier = max_multiplier;
     
-    global_config.last_claim_slot = Clock::get()?.slot;    
+    global_config.last_claim_slot = Clock::get()?.slot;
+    
+    // Initialize SOL distribution as disabled to prevent early stakers from capturing all initial SOL
+    global_config.sol_distribution_enabled = false;
+    
+    // Initialize price to 0 (must be set by admin via set_dbtc_sol_price function)
+    global_config.dbtc_sol_price = 0;
+    
     global_config.bump = ctx.bumps.global_config;
 
     emit!(ProgramInitialized {
         dev_address: dev_address,
         dev_earnings_collector: ctx.accounts.dev_earnings_collector.key(),
         fee_collector: ctx.accounts.fee_collector.key(),
-        moondoge_allocation,
+        dogebtc_allocation,
         liquidity_allocation
     });
     Ok(())
@@ -136,7 +143,7 @@ pub fn internal_update_configuration(
     ctx: Context<UpdateConfig>,
     new_authority: Option<Pubkey>,
     new_dev_address: Option<Pubkey>,
-    new_moondoge_allocation: Option<u8>,
+    new_dogebtc_allocation: Option<u8>,
     new_liquidity_allocation: Option<u8>, 
     new_electricity_per_weighted_sol: Option<u64>,
     new_emergency_tax: Option<u8>,
@@ -159,10 +166,10 @@ pub fn internal_update_configuration(
         msg!("Updated dev address to {}", new_dev_address);
     }
 
-    // if moondoge_allocation is provided, update it
-    if let Some(moondoge_allocation) = new_moondoge_allocation {
-        global_config.moondoge_allocation = moondoge_allocation;
-        msg!("Updated moondoge allocation to {}", moondoge_allocation);
+    // if dogebtc_allocation is provided, update it
+    if let Some(dogebtc_allocation) = new_dogebtc_allocation {
+        global_config.dogebtc_allocation = dogebtc_allocation;
+        msg!("Updated moondoge allocation to {}", dogebtc_allocation);
     }
     if let Some(liquidity_allocation) = new_liquidity_allocation {
         global_config.liquidity_allocation = liquidity_allocation;
@@ -187,9 +194,31 @@ pub fn internal_update_configuration(
     emit!(ConfigUpdated {
         authority: global_config.authority,
         electricity_per_weighted_sol: global_config.electricity_per_weighted_sol,
-        moondoge_allocation: global_config.moondoge_allocation,
+        dogebtc_allocation: global_config.dogebtc_allocation,
         liquidity_allocation: global_config.liquidity_allocation
     });
+    
+    Ok(())
+}
+
+/// Set DOGE_BTC to SOL price (admin only)
+/// Price is stored with 9-decimal precision (same as MoonBase)
+/// Example: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
+pub fn set_dbtc_sol_price_internal(
+    ctx: Context<UpdateConfig>,
+    price: u64,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    require!(
+        price > 0,
+        ErrorCode::InvalidAmount
+    );
+    
+    global_config.dbtc_sol_price = price;
+    
+    msg!("✅ Set DOGE_BTC to SOL price: {} (9-decimal precision)", price);
+    msg!("   Actual price: {:.9} SOL per DOGE_BTC", price as f64 / 1_000_000_000.0);
     
     Ok(())
 }
@@ -212,6 +241,8 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
         fee_collector: ctx.accounts.fee_collector.to_account_info(),
         loot_sol_vault: ctx.accounts.loot_sol_vault.to_account_info(),
         loot_rewards: ctx.accounts.loot_rewards.to_account_info(),
+        buybacks_sol_vault: ctx.accounts.buybacks_sol_vault.to_account_info(),
+        buybacks_account: ctx.accounts.buybacks_account.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
     };
 
@@ -229,48 +260,48 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     // This is what we need to distribute, not the original treasury balance
     let fee_collector = &ctx.accounts.fee_collector;
     let fee_collector_rent = Rent::get()?.minimum_balance(fee_collector.data_len());
-    let available_for_distribution = fee_collector.lamports().saturating_sub(fee_collector_rent);
-    msg!("🔍 Available for distribution from fee collector: {}", available_for_distribution);
+    let sol_for_distribution = fee_collector.lamports().saturating_sub(fee_collector_rent);
+    msg!("🔍 SOL for distribution from fee collector: {}", sol_for_distribution);
 
     // Get allocation percentages from global config
     let global_config = &ctx.accounts.global_config;
-    
+    // Check if SOL distribution is enabled
+    require!( global_config.sol_distribution_enabled, ErrorCode::SolDistributionDisabled );
+        
     // Calculate amounts for each vault based on what we actually have
-    let mut moondoge_amount = (available_for_distribution as u128).checked_mul(global_config.moondoge_allocation as u128)
+    let mut sol_for_dbtc_stakers = (sol_for_distribution as u128).checked_mul(global_config.dogebtc_allocation as u128)
                                                         .unwrap().checked_div(M_HUNDRED as u128).unwrap() as u64;
         
-    let mut liquidity_amount = (available_for_distribution as u128).checked_mul(global_config.liquidity_allocation as u128)
+    let mut sol_for_lp_stakers = (sol_for_distribution as u128).checked_mul(global_config.liquidity_allocation as u128)
                                                         .unwrap().checked_div(M_HUNDRED as u128).unwrap() as u64;
         
-    msg!("📊 Allocations - DogeBtc: {}, Liquidity: {}", moondoge_amount, liquidity_amount);
+    msg!("📊 Allocations - DogeBtc: {}, Liquidity: {}", sol_for_dbtc_stakers, sol_for_lp_stakers);
 
     // Now distribute to respective vaults
     let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
 
     if dogebtc_vault.weighted_dbtc_locked > 0 {
-        let sol_per_point = (moondoge_amount as u128 * PRECISION_FACTOR as u128)
-            / dogebtc_vault.weighted_dbtc_locked as u128;
+        let sol_per_point = (sol_for_dbtc_stakers as u128 * PRECISION_FACTOR as u128) / dogebtc_vault.weighted_dbtc_locked as u128;
         dogebtc_vault.accumulated_sol_per_point += sol_per_point;
-        **fee_collector.try_borrow_mut_lamports()? -= moondoge_amount;
-        **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? += moondoge_amount;
-        msg!("💰 Sent {} to DogeBtc vault", moondoge_amount);
+        **fee_collector.try_borrow_mut_lamports()? -= sol_for_dbtc_stakers;
+        **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? += sol_for_dbtc_stakers;
+        msg!("💰 Sent {} to DogeBtc vault", sol_for_dbtc_stakers);
     } else {
-        moondoge_amount = 0;
+        sol_for_dbtc_stakers = 0;
     }
 
     if liquidity_vault.weighted_lp_locked > 0 {
-        let sol_per_point = (liquidity_amount as u128 * PRECISION_FACTOR as u128)
-            / liquidity_vault.weighted_lp_locked as u128;
+        let sol_per_point = (sol_for_lp_stakers as u128 * PRECISION_FACTOR as u128) / liquidity_vault.weighted_lp_locked as u128;
         liquidity_vault.accumulated_sol_per_point += sol_per_point;
-        **fee_collector.try_borrow_mut_lamports()? -= liquidity_amount;
-        **ctx.accounts.liquidity_sol_vault.try_borrow_mut_lamports()? += liquidity_amount;
-        msg!("💰 Sent {} to Liquidity vault", liquidity_amount);
+        **fee_collector.try_borrow_mut_lamports()? -= sol_for_lp_stakers;
+        **ctx.accounts.liquidity_sol_vault.try_borrow_mut_lamports()? += sol_for_lp_stakers;
+        msg!("💰 Sent {} to Liquidity vault", sol_for_lp_stakers);
     } else {
-        liquidity_amount = 0;
+        sol_for_lp_stakers = 0;
     }
 
-    let dev_earnings = available_for_distribution.saturating_sub(moondoge_amount + liquidity_amount);
+    let dev_earnings = sol_for_distribution.saturating_sub(sol_for_dbtc_stakers + sol_for_lp_stakers);
     if dev_earnings > 0 {
         **fee_collector.try_borrow_mut_lamports()? -= dev_earnings;
         **ctx.accounts.dev_earnings_collector.try_borrow_mut_lamports()? += dev_earnings;
@@ -278,9 +309,9 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     }
 
     emit!(SolDistributed {
-        total_amount: available_for_distribution,
-        moondoge_amount,
-        liquidity_amount,
+        sol_for_distribution: sol_for_distribution,
+        sol_for_dbtc_stakers,
+        sol_for_lp_stakers,
         dev_earnings,
         timestamp: Clock::get()?.unix_timestamp,
     });
@@ -336,7 +367,7 @@ pub fn withdraw_dev_earnings(ctx: Context<WithdrawDevEarnings>) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(
     dev_address: Pubkey,
-    moondoge_allocation: u8,
+    dogebtc_allocation: u8,
     liquidity_allocation: u8,
     min_lockup_days: u64,
     max_lockup_days: u64,
@@ -659,6 +690,14 @@ pub struct ClaimMoonBaseSOL<'info> {
     #[account(mut)]
     pub loot_rewards: UncheckedAccount<'info>,
 
+    /// CHECK: MoonBase's buybacks SOL vault
+    #[account(mut)]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+
+    /// CHECK: MoonBase's buybacks tracking account
+    #[account(mut)]
+    pub buybacks_account: UncheckedAccount<'info>,
+
     /// CHECK: TheMoonBaseprogram
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
 
@@ -666,6 +705,45 @@ pub struct ClaimMoonBaseSOL<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+// ========================================================================================
+// ============================= ENABLE/DISABLE SOL DISTRIBUTION ==========================
+// ========================================================================================
+
+/// Enable or disable SOL distribution from fee collector
+/// This prevents early stakers from capturing all initial SOL during launch period
+pub fn set_sol_distribution_enabled(
+    ctx: Context<SetSolDistributionEnabled>,
+    enabled: bool,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    
+    let old_value = global_config.sol_distribution_enabled;
+    global_config.sol_distribution_enabled = enabled;
+    
+    msg!("🔄 SOL distribution status changed: {} -> {}", old_value, enabled);
+    
+    if enabled {
+        msg!("✅ SOL distribution ENABLED - stakers can now claim SOL rewards");
+    } else {
+        msg!("⏸️  SOL distribution DISABLED - SOL will accumulate but not be claimable");
+    }
+    
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct SetSolDistributionEnabled<'info> {
+    #[account(
+        mut,
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    pub authority: Signer<'info>,
 } 
  
 

@@ -9,7 +9,7 @@ pub struct ProgramInitialized {
     pub dev_address: Pubkey,
     pub dev_earnings_collector: Pubkey,
     pub fee_collector: Pubkey,
-    pub moondoge_allocation: u8,
+    pub dogebtc_allocation: u8,
     pub liquidity_allocation: u8
 }
 
@@ -32,7 +32,7 @@ pub struct LiquidityVaultsInitialized {
 pub struct ConfigUpdated {
     pub authority: Pubkey,
     pub electricity_per_weighted_sol: u64,
-    pub moondoge_allocation: u8,
+    pub dogebtc_allocation: u8,
     pub liquidity_allocation: u8
 }
 
@@ -49,9 +49,9 @@ pub struct AdminEarningsWithdrawn {
 
 #[event]
 pub struct SolDistributed {
-    pub total_amount: u64,
-    pub moondoge_amount: u64,
-    pub liquidity_amount: u64,
+    pub sol_for_distribution: u64,
+    pub sol_for_dbtc_stakers: u64,
+    pub sol_for_lp_stakers: u64,
     pub dev_earnings: u64,
     pub timestamp: i64,
 }

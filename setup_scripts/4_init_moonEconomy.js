@@ -10,6 +10,7 @@ import path from 'path';
 import { 
     getSolanaBalance, initializeMoonEconomyProgram, mEconomySetupDbtcVault, mEconomySetupLiquidityVaults, 
     mEconomy_claimMoonbaseSol, mEconomy_withdrawDevEarnings, updateGlobalConfig, updateMoonEconomyGlobalConfig,
+    setDbtcSolPrice,
     LOOT_REWARDS_SEED, LOOT_SOL_VAULT_SEED
  } from './helper.js';
 
@@ -45,7 +46,7 @@ const ID_MOON_ECONOMY_PROGRAM = deploymentFile.MOON_ECONOMY_PROGRAM_ID ?
     new PublicKey(deploymentFile.MOON_ECONOMY_PROGRAM_ID) : null;
 
 // Moon Economy configuration
-const MOONDOGE_ALLOCATION = config.moonEconomy?.moondoge_allocation || 25;
+const MOONDOGE_ALLOCATION = config.moonEconomy?.dogebtc_allocation || 25;
 const LIQUIDITY_ALLOCATION = config.moonEconomy?.liquidity_allocation || 25;
 const GAME_ALLOCATION = config.moonEconomy?.game_allocation || 30;
 const MIN_LOCKUP_DAYS = config.moonEconomy?.min_lockup_days || 1;
@@ -169,6 +170,10 @@ async function main() {
         console.log('\x1b[36m%s\x1b[0m', `\n📍 MoonEconomy Fee Collector PDA: ${feeCollectorPDA.toString()}`);
         
         await updateMoonBaseConfig(moonBaseProgram, feeCollectorPDA.toString());
+        // return;
+        
+        // 3.5. Set initial DOGE_BTC to SOL price (default price for electricity calculations)
+        await setInitialDbtcSolPrice(moonEconomyProgram);
         return;
 
         // 4. Claim MoonBase SOL
@@ -472,7 +477,7 @@ async function queryEconomyConfig(moonEconomyProgram) {
         console.log('\x1b[36m%s\x1b[0m', `   Authority: ${displayConfig.authority}`);
         console.log('\x1b[36m%s\x1b[0m', `   Dev Address: ${displayConfig.dev_address}`);
         console.log('\x1b[36m%s\x1b[0m', `   Fee Collector: ${displayConfig.fee_collector}`);
-        console.log('\x1b[36m%s\x1b[0m', `   DogeBtc Allocation: ${displayConfig.moondoge_allocation}%`);
+        console.log('\x1b[36m%s\x1b[0m', `   DogeBtc Allocation: ${displayConfig.dogebtc_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Liquidity Allocation: ${displayConfig.liquidity_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Game Allocation: ${displayConfig.game_allocation}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Lockup Days: ${displayConfig.min_lockup_days}-${displayConfig.max_lockup_days}`);
@@ -508,14 +513,12 @@ async function queryMoonBaseConfig(moonBaseProgram) {
             ext_authority: moonbaseConfig.ext_authority.toBase58(),
             ext_fee_collector: moonbaseConfig.ext_fee_collector.toBase58(),
             pda_sol_treasury: moonbaseConfig.pda_sol_treasury.toBase58(),
-            base_creation_cost: moonbaseConfig.base_creation_cost.toNumber()
         };
 
         console.log('\x1b[36m%s\x1b[0m', '📊 Current MoonBase Configuration:');
         console.log('\x1b[36m%s\x1b[0m', `   Authority: ${displayConfig.ext_authority}`);
         console.log('\x1b[36m%s\x1b[0m', `   Fee Collector: ${displayConfig.ext_fee_collector}`);
         console.log('\x1b[36m%s\x1b[0m', `   SOL Treasury: ${displayConfig.pda_sol_treasury}`);
-        console.log('\x1b[36m%s\x1b[0m', `   Base Creation Cost: ${displayConfig.base_creation_cost / 1e9} SOL`);
         console.log('\x1b[36m%s\x1b[0m', `   Loot Percentage: ${displayConfig.loot_percentage}%`);
         console.log('\x1b[36m%s\x1b[0m', `   Game Active: ${displayConfig.is_game_active ? '🟢 YES' : '🔴 NO'}`);
     } catch (error) {
@@ -550,6 +553,66 @@ async function withdrawDevEarnings(moonEconomyProgram) {
         }
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Error withdrawing dev earnings:', error);
+    }
+}
+
+async function setInitialDbtcSolPrice(moonEconomyProgram) {
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ SETTING INITIAL DOGE_BTC TO SOL PRICE ] ================');
+    
+    try {
+        const globalConfigAddress = deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac;
+        const dogebtcVaultAddress = deploymentFile.moonEconomy_mDogeVault_initialized?.dogebtcVault;
+        const liquidityVaultAddress = deploymentFile.moonEconomy_liquidityVault_initialized?.liquidityVault;
+
+        const requiredAddresses = {
+            'MoonEconomy Global Config': globalConfigAddress,
+            'DOGE_BTC Vault': dogebtcVaultAddress,
+            'Liquidity Vault': liquidityVaultAddress
+        };
+
+        for (const [label, value] of Object.entries(requiredAddresses)) {
+            if (!value) {
+                throw new Error(`${label} address not found in deployment file`);
+            }
+        }
+
+        // Default price: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
+        // This can be adjusted in config.json if needed
+        const defaultPrice = config.moonEconomy?.default_dbtc_sol_price || 1_000_000; // 0.001 SOL per DOGE_BTC
+        
+        console.log('\x1b[36m%s\x1b[0m', `📝 Setting initial DOGE_BTC to SOL price: ${defaultPrice} (9-decimal precision)`);
+        console.log('\x1b[36m%s\x1b[0m', `   Actual price: ${(defaultPrice / 1_000_000_000).toFixed(9)} SOL per DOGE_BTC`);
+
+        const result = await setDbtcSolPrice(
+            connection,
+            moonEconomyProgram,
+            wallet,
+            walletKeypair,
+            globalConfigAddress,
+            dogebtcVaultAddress,
+            liquidityVaultAddress,
+            defaultPrice
+        );
+
+        if (result.success) {
+            console.log('\x1b[32m%s\x1b[0m', '✅ Initial DOGE_BTC to SOL price set successfully!');
+            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.updateTxid}`);
+            
+            deploymentFile.moonEconomy_program_initialized = {
+                ...deploymentFile.moonEconomy_program_initialized,
+                initial_dbtc_sol_price: {
+                    price: defaultPrice,
+                    set_tx: result.data.updateTxid,
+                    timestamp: new Date().toISOString()
+                }
+            };
+            saveDeploymentData();
+        } else {
+            throw new Error(`Failed to set initial DOGE_BTC price: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set initial DOGE_BTC price:', error);
+        throw error;
     }
 }
 
@@ -592,7 +655,6 @@ async function updateMoonBaseConfig(moonBaseProgram, newFeeCollectorAddress) {
             null, // newAuthority (keep current)
             feeCollectorPubkey.toString(), // newFeeCollector (ext_fee_collector)
             null, // newCreationFeeRecipient
-            null, // newBaseCreationCost
             null  // newLootPercentage
         );
 

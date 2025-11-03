@@ -64,6 +64,8 @@ export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
 export const LOOT_DOGE_BTC_VAULT_SEED = "loot-mdoge-vault";
 export const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED = "loot-mdoge-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
+export const BUYBACKS_SEED = "buybacks";
+export const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
 
 // PDA for PvP matchmaker
 export const PVP_MATCHMAKER_SEED = "pvp-matchmaker";
@@ -555,10 +557,9 @@ export async function createSystemReferralAccount(connection, program, wallet, w
  * @param {PublicKey} creationFeeRecipient Address to receive creation fees
  * @returns {Promise<Object>} Result object with success status and data
  */
-export async function initializeMoonbaseProgram(connection, program, wallet, walletKeypair, baseCost, creationFeeRecipient) { 
+export async function initializeMoonbaseProgram(connection, program, wallet, walletKeypair, creationFeeRecipient) { 
   try {
             // Define parameters
-            const base_Cost = new BN(baseCost); // 0.1 SOL in lamports
             const feeRecipient = new PublicKey(creationFeeRecipient);
             
             // Find PDAs
@@ -573,7 +574,7 @@ export async function initializeMoonbaseProgram(connection, program, wallet, wal
             
             // Build transaction
     const tx = await program.methods
-                .initialize(base_Cost, feeRecipient)
+                .initialize(feeRecipient)
                 .accounts({
                     globalConfig: globalConfigPDA,
                     dogeBtcMining: dogeBtcMiningPDA,
@@ -677,7 +678,6 @@ export async function updateGlobalConfig(
         newAuthority ? new PublicKey(newAuthority) : null,
         newFeeCollector ? new PublicKey(newFeeCollector) : null,
         newCreationFeeRecipient ? new PublicKey(newCreationFeeRecipient) : null,
-        newBaseCreationCost ? new BN(newBaseCreationCost) : null,
         newLootPercentage
       )
       .accounts({
@@ -1004,8 +1004,24 @@ export async function addNewModuleToConfigStore(
     console.log('\x1b[36m%s\x1b[0m', `🔑 Module Config Account PDA: ${moduleConfigAccountPDA.toString()}`);
     console.log('\x1b[36m%s\x1b[0m', `🔑 Next Module ID: ${nextId}`);
 
-    // Build enum variant for ModuleType - use lowercase as in the IDL
-    const moduleTypeVariant = { [moduleType.toLowerCase()]: {} };
+    // Map module types to integer values for contract
+    // 1 = Mining, 2 = Attraction
+    // Research and Attack modules map to Attraction (2)
+    const moduleTypeMap = {
+      'Mining': 1,
+      'Attraction': 2,
+      'Research': 2,  // Research modules become Attraction
+      'Attack': 2     // Attack modules become Attraction
+    };
+    
+    const moduleTypeInt = moduleTypeMap[moduleType] || 2; // Default to Attraction if unknown
+    if (moduleType !== 'Mining' && moduleType !== 'Attraction') {
+      console.log('\x1b[33m%s\x1b[0m', `⚠️  Module type "${moduleType}" mapped to integer ${moduleTypeInt} (Attraction)`);
+    }
+    
+    // Ensure moduleTypeInt is a number (not string or object)
+    const moduleTypeValue = typeof moduleTypeInt === 'number' ? moduleTypeInt : parseInt(moduleTypeInt, 10);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Module Type Integer: ${moduleTypeValue} (type: ${typeof moduleTypeValue})`);
 
     // Extract only maxHp and powerConsumption from stats for basic config
     const rawStats = moduleStats[moduleType.toLowerCase()] || moduleStats[moduleType] || moduleStats;
@@ -1022,9 +1038,20 @@ export async function addNewModuleToConfigStore(
       const mintCostBN    = new BN(moduleConfigMintCost);   // u64
       const upgradeCostBN = new BN(moduleConfigUpgradeCost);
 
-      // ---- 3. Pass Vec<u8> as number[] (Anchor will add the length prefix) ----
-      const factionVec   = factionIds;          // e.g. [0, 3]
-      const upgradeVec   = upgradeRequirements; // e.g. [3,6,9,12...]
+      // ---- 3. Pass Vec<u8> as Buffer (Anchor serializes this as bytes) ----
+      const factionVec   = Buffer.from(factionIds);      // e.g. Buffer.from([0, 3])
+      const upgradeVec   = Buffer.from(upgradeRequirements); // e.g. Buffer.from([3,6,9,12...])
+
+      console.log(`moduleConfigName = ${moduleConfigName}`);
+      console.log(`moduleConfigImageUrl = ${moduleConfigImageUrl}`);
+      console.log(`moduleTypeValue = ${moduleTypeValue}`);
+      console.log(`factionVec = ${factionVec}`);
+      console.log(`minLevel = ${minLevel}`);
+      console.log(`moduleConfigWidth = ${moduleConfigWidth}`);
+      console.log(`moduleConfigHeight = ${moduleConfigHeight}`);
+      console.log(`mintCostBN = ${mintCostBN}`);
+      console.log(`upgradeCostBN = ${upgradeCostBN}`);
+      console.log(`upgradeVec = ${upgradeVec}`);
 
 
     // Prepare instruction - match exact simplified lib.rs signature
@@ -1032,15 +1059,14 @@ export async function addNewModuleToConfigStore(
       .addModuleToBase(
         moduleConfigName,          // string
         moduleConfigImageUrl,      // string
-        { [moduleType.toLowerCase()]: {} }, // enum variant
-        Buffer.from(factionVec),                // Vec<u8>
+        moduleTypeValue,           // u8: 1 = Mining, 2 = Attraction
+        factionVec,                // Vec<u8> - pass as plain array
         minLevel,                  // u8
-        maxPerBase,                // u8
         moduleConfigWidth,         // u8
         moduleConfigHeight,        // u8
         mintCostBN,                // u64
         upgradeCostBN,             // u64
-        Buffer.from(upgradeVec)                 // Vec<u8>
+        upgradeVec                 // Vec<u8> - pass as plain array
       )
       .accounts({
         globalConfig: globalConfigPDA,
@@ -1212,10 +1238,10 @@ export async function updateGearConfig(
 /**
  * Initialize the Moon Economy program
  */
-export async function initializeMoonEconomyProgram(connection, program, wallet, walletKeypair, dev_address, moondoge_allocation, liquidity_allocation, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier) { 
+export async function initializeMoonEconomyProgram(connection, program, wallet, walletKeypair, dev_address, dogebtc_allocation, liquidity_allocation, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier) { 
 
   console.log(`dev_address = ${dev_address}`);
-  console.log(`moondoge_allocation = ${moondoge_allocation}`);
+  console.log(`dogebtc_allocation = ${dogebtc_allocation}`);
   console.log(`liquidity_allocation = ${liquidity_allocation}`);
   console.log(`min_lockup_days = ${min_lockup_days}`);
   console.log(`max_lockup_days = ${max_lockup_days}`);
@@ -1234,7 +1260,7 @@ export async function initializeMoonEconomyProgram(connection, program, wallet, 
             console.log('\x1b[36m%s\x1b[0m', `🔑 Fee Collector PDA: ${feeCollectorPDA.toString()}`);
  
     const tx = await program.methods
-                .initializeGlobalConfig(new PublicKey(dev_address), moondoge_allocation, liquidity_allocation, new BN(min_lockup_days), new BN(max_lockup_days), base_multiplier, max_multiplier)
+                .initializeGlobalConfig(new PublicKey(dev_address), dogebtc_allocation, liquidity_allocation, new BN(min_lockup_days), new BN(max_lockup_days), base_multiplier, max_multiplier)
                 .accounts({
                     globalConfig: globalConfigPDA,
                     devEarningsCollector: devEarningsPDA,
@@ -1285,7 +1311,59 @@ export async function initializeMoonEconomyProgram(connection, program, wallet, 
     }
   }
 }
+
+/**
+ * Set DOGE_BTC to SOL price in MoonEconomy GlobalConfig
+ * Price should be in 9-decimal precision (same as MoonBase)
+ * Example: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
+ */
+export async function setDbtcSolPrice(
+  connection,
+  program,
+  wallet,
+  walletKeypair,
+  globalConfigPDA,
+  dogebtcVaultPDA,
+  liquidityVaultPDA,
+  price // Price in 9-decimal precision (u64)
+) {
+  try {
+    console.log('\x1b[33m%s\x1b[0m', '📡 Setting DOGE_BTC to SOL price...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `   Price: ${price} (9-decimal precision)`);
+    console.log('\x1b[36m%s\x1b[0m', `   Actual price: ${(price / 1_000_000_000).toFixed(9)} SOL per DOGE_BTC`);
  
+    const updateTx = await program.methods.setDbtcSolPrice(new BN(price))
+      .accounts({
+        globalConfig: new PublicKey(globalConfigPDA),
+        dogebtcVault: new PublicKey(dogebtcVaultPDA),
+        liquidityVault: new PublicKey(liquidityVaultPDA),
+        authority: wallet.publicKey,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .transaction();
+
+    const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
+
+    console.log('\x1b[32m%s\x1b[0m', `✅ DOGE_BTC to SOL price set successfully`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
+
+    return {
+      success: true,
+      data: {
+        updateTxid: updateTxid,
+        price: price
+      }
+    };
+  } catch (error) {
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error setting DOGE_BTC price:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
 
 
 /**
@@ -3039,6 +3117,64 @@ export async function initializeLevelStats(
     };
   }
 }
+
+export async function initializeBuybacks(
+  connection,
+  program,
+  wallet,
+  walletKeypair,
+  globalConfigPDA
+) {
+  try {
+    console.log('\x1b[33m%s\x1b[0m', '📡 Initializing buybacks system...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
+
+    // Derive buybacks PDAs
+    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SEED)], 
+      program.programId
+    );
+    
+    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
+      program.programId
+    );
+
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks Account PDA: ${buybacksAccountPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks SOL Vault PDA: ${buybacksSolVaultPDA}`);
+
+    const initTx = await program.methods.initializeBuybacks()
+      .accounts({
+        globalConfig: new PublicKey(globalConfigPDA),
+        buybacksAccount: buybacksAccountPDA,
+        buybacksSolVault: buybacksSolVaultPDA,
+        authority: wallet.publicKey,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .transaction();
+
+    const initTxid = await web3.sendAndConfirmTransaction(connection, initTx, [walletKeypair]);
+
+    console.log('\x1b[32m%s\x1b[0m', `✅ Buybacks system initialized`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction: ${initTxid}`);
+    console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${initTxid}?cluster=devnet`);
+
+    return {
+      success: true,
+      data: {
+        initTxid: initTxid,
+        buybacksAccountPDA: buybacksAccountPDA.toString(),
+        buybacksSolVaultPDA: buybacksSolVaultPDA.toString(),
+      }
+    };
+  } catch (error) {
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error initializing buybacks system:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
   
 // ==================== [ ADMIN HELPER FUNCTIONS ] ====================
 
@@ -3355,6 +3491,26 @@ export async function updateMdogeDistPerSlot(
     console.log(`tokenProgram2022: ${anchor_spl.TOKEN_2022_PROGRAM_ID.toString()}`);
     console.log(`tokenProgram: ${anchor_spl.TOKEN_PROGRAM_ID.toString()}`);
  
+    // Derive buybacks PDAs
+    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SEED)], 
+      program.programId
+    );
+    
+    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
+      program.programId
+    );
+    
+    // Derive main DOGE_BTC vault PDA (for dbtc_token_vault)
+    const [dbtcTokenVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(DOGE_BTC_VAULT_SEED), dogeBtcMiningPDA.toBuffer()],
+      program.programId
+    );
+    
+    console.log(`buybacksSolVault: ${buybacksSolVaultPDA.toString()}`);
+    console.log(`buybacksAccount: ${buybacksAccountPDA.toString()}`);
+    console.log(`dbtcTokenVault: ${dbtcTokenVaultPDA.toString()}`);
 
 
     const tx = await program.methods
@@ -3379,6 +3535,9 @@ export async function updateMdogeDistPerSlot(
         lpMint: lpMintPDA,
         tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
         tokenProgram: anchor_spl.TOKEN_PROGRAM_ID,
+        buybacksSolVault: buybacksSolVaultPDA,
+        buybacksAccount: buybacksAccountPDA,
+        dbtcTokenVault: dbtcTokenVaultPDA, // Main DOGE_BTC vault PDA
       })
       .rpc();
 
@@ -3440,12 +3599,6 @@ export async function updateModuleStatsHelper(
     let powerConsumption = 0;
     let baseHashpower = 0;
     let baseXpPerHour = 0;
-    let baseDamage = 0;
-    let baseMissilesPerLoad = 0;
-    let reloadTimeSeconds = 0;
-    let cooldownSec = 0;
-    let maxReward = 0;
-    let probability = 0;
 
     const rawStats = moduleStats[moduleType.toLowerCase()] || moduleStats[moduleType] || moduleStats;
 
@@ -3460,20 +3613,6 @@ export async function updateModuleStatsHelper(
         powerConsumption = rawStats.power_consumption ?? rawStats.powerConsumption;
         baseXpPerHour = rawStats.base_xp_per_hour ?? rawStats.baseXpPerHour;
         break;
-      case 'Attack':
-        maxHp = rawStats.max_hp ?? rawStats.maxHp;
-        powerConsumption = rawStats.power_consumption ?? rawStats.powerConsumption;
-        baseDamage = rawStats.base_damage ?? rawStats.baseDamage;
-        baseMissilesPerLoad = rawStats.base_missiles_per_load ?? rawStats.baseMissilesPerLoad;
-        reloadTimeSeconds = rawStats.reload_time_seconds ?? rawStats.reloadTimeSeconds;
-        break;
-      case 'Research':
-        maxHp = rawStats.max_hp ?? rawStats.maxHp;
-        powerConsumption = rawStats.power_consumption ?? rawStats.powerConsumption;
-        cooldownSec = rawStats.cooldown_sec ?? rawStats.cooldownSec;
-        maxReward = rawStats.max_reward ?? rawStats.maxReward;
-        probability = rawStats.probability;
-        break;
       default:
         throw new Error(`Unsupported module type: ${moduleType}`);
     }
@@ -3483,12 +3622,6 @@ export async function updateModuleStatsHelper(
     console.log('\x1b[36m%s\x1b[0m', `   powerConsumption: ${powerConsumption}`);
     console.log('\x1b[36m%s\x1b[0m', `   baseHashpower: ${baseHashpower}`);
     console.log('\x1b[36m%s\x1b[0m', `   baseXpPerHour: ${baseXpPerHour}`);
-    console.log('\x1b[36m%s\x1b[0m', `   baseDamage: ${baseDamage}`);
-    console.log('\x1b[36m%s\x1b[0m', `   baseMissilesPerLoad: ${baseMissilesPerLoad}`);
-    console.log('\x1b[36m%s\x1b[0m', `   reloadTimeSeconds: ${reloadTimeSeconds}`);
-    console.log('\x1b[36m%s\x1b[0m', `   cooldownSec: ${cooldownSec}`);
-    console.log('\x1b[36m%s\x1b[0m', `   maxReward: ${maxReward}`);
-    console.log('\x1b[36m%s\x1b[0m', `   probability: ${probability}`);
 
     console.log(`globalConfig: ${globalConfigPDA.toString()}`);
     console.log(`moduleConfigAccount: ${moduleConfigAccountPDA.toString()}`);
@@ -3502,12 +3635,6 @@ export async function updateModuleStatsHelper(
         new BN(powerConsumption),
         new BN(baseHashpower),
         new BN(baseXpPerHour),
-        new BN(baseDamage),
-        baseMissilesPerLoad,
-        new BN(reloadTimeSeconds),
-        new BN(cooldownSec),
-        new BN(maxReward),
-        probability
       )
       .accounts({
         globalConfig: globalConfigPDA,

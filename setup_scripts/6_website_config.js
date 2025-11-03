@@ -106,7 +106,6 @@ function generateWebsiteConfig(config, deployment) {
       "loot_percentage": config.moonbase?.loot_percentage || 10,
       
       // ========== MINING CONFIGURATION ==========
-      "slots_for_swap": config.mining?.slots_for_swap || 9000,
       "initial_distribution_rate": config.mining?.doge_btc_per_slot || 1000000,
       
       // ========== PVP CONFIGURATION ==========
@@ -136,7 +135,7 @@ function generateWebsiteConfig(config, deployment) {
             // ========== MOON ECONOMY (if deployed) ==========
       ...(deployment.MOON_ECONOMY_PROGRAM_ID && {
         "moon_economy_enabled": true,
-        "moondoge_allocation": config.moonEconomy?.moondoge_allocation || 33,
+        "dogebtc_allocation": config.moonEconomy?.dogebtc_allocation || 33,
         "liquidity_allocation": config.moonEconomy?.liquidity_allocation || 33,
         "min_lockup_days": config.moonEconomy?.min_lockup_days || 1,
         "max_lockup_days": config.moonEconomy?.max_lockup_days || 365,

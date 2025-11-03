@@ -91,6 +91,7 @@ pub const MODULE_CONFIG_SEED: &[u8] = b"module-config"; // For individual module
 // PDAs which hold UserMoonBaseInstance / ReferralRewards state
 pub const USER_MOONBASE_SEED: &[u8] = b"user-moonbase";
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
+pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
 // PDAs which hold GearInstance / ModuleInstance state
 pub const MODULE_INSTANCE_SEED: &[u8] = b"module-instance";
@@ -107,6 +108,8 @@ pub const LOOT_REWARDS_SEED: &[u8] = b"loot-rewards";
 pub const LOOT_SOL_VAULT_SEED: &[u8] = b"loot-sol-vault";
 pub const LOOT_DOGE_BTC_VAULT_SEED: &[u8] = b"loot-mdoge-vault";
 pub const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"loot-mdoge-vault-authority";
+pub const BUYBACKS_SEED: &[u8] = b"buybacks";
+pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
 pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
 
  
@@ -114,6 +117,12 @@ pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
 pub const MAX_MODULE_UPGRADES: u8 = 10; // Maximum upgrade level for any module
 
 pub const MAX_BOUGHT_MODULES: usize = 100; // Maximum modules that can be bought but not installed
+
+// Command Center config IDs (one per init_type tier)
+pub const COMMAND_CENTER_TIER_1_CONFIG_ID: u16 = 1000; // Tier 1 (no egg)
+pub const COMMAND_CENTER_TIER_2_CONFIG_ID: u16 = 1001; // Tier 2
+pub const COMMAND_CENTER_TIER_3_CONFIG_ID: u16 = 1002; // Tier 3
+pub const COMMAND_CENTER_TIER_4_CONFIG_ID: u16 = 1003; // Tier 4
 
 // ========== GRID SYSTEM CONSTANTS ========== //
 pub const GRID_WIDTH: u8 = 20; // 20 tiles wide
@@ -164,11 +173,7 @@ pub struct GlobalConfig {
     pub creation_fee_recipient: Pubkey,
     /// PDA account that holds collected SOL fees
     pub pda_sol_treasury: Pubkey,
-    /// Mooneconomy program ID (for CPI authorization)
-    pub mooneconomy_program: Pubkey,
     /// ------------------------------------------------------------           
-    /// Cost in SOL to create a new facility (0.1 SOL)
-    pub base_creation_cost: u64,        
     /// Total number of moonbases that have been created
     pub total_moonbases_created: u64,
     /// Total SOL spent by users in the game
@@ -177,6 +182,8 @@ pub struct GlobalConfig {
     pub total_referral_sol_paid: u64,
     /// Percentage of distributions/fees that go to loot rewards (default 10%)
     pub loot_percentage: u8,
+    /// Percentage of SOL fees that go to buybacks (default 20%)
+    pub buyback_percentage: u8,
     /// Whether PvP games are currently active and can be created
     pub is_game_active: bool,
     /// ------------------------------------------------------------           
@@ -195,10 +202,15 @@ pub struct GlobalConfig {
     pub total_dragon_eggs_minted: u64,
     /// Available Dragon Egg URIs (randomly selected on mint)
     pub dragon_egg_uris: Vec<String>,
+    /// Egg limits per tier: [unused, tier2_limit, tier3_limit, tier4_limit]
+    /// Tier 2: 5000 eggs, Tier 3: 5000 eggs, Tier 4: 5000 eggs
+    pub egg_limits: [u64; 4],
+    /// Authorized Raydium pool state address (security: prevents using malicious pools)
+    pub raydium_pool_state: Pubkey,
 }
  
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury + mooneconomy_program + base_creation_cost + total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris
+    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + buyback_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris + egg_limits + raydium_pool_state
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<ExpansionConfig> = 4 bytes (vec length) + MAX_EXPANSIONS * ExpansionConfig::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
@@ -206,12 +218,11 @@ impl GlobalConfig {
         32 +                    // ext_fee_collector  
         32 +                    // creation_fee_recipient
         32 +                    // pda_sol_treasury
-        32 +                    // mooneconomy_program
-        8 +                     // base_creation_cost
         8 +                     // total_moonbases_created
         8 +                     // total_sol_spent
         8 +                     // total_referral_sol_paid
         1 +                     // loot_percentage
+        1 +                     // buyback_percentage
         1 +                     // is_game_active
         1 +                     // bump
         1 +                     // treasury_bump
@@ -219,7 +230,9 @@ impl GlobalConfig {
         4 + (MAX_EXPANSIONS * ExpansionConfig::LEN) +         // expansions vec
         32 +                    // dragon_egg_collection
         8 +                     // total_dragon_eggs_minted
-        4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH));    // dragon_egg_uris vec
+        4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH)) +    // dragon_egg_uris vec
+        (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
+        32;                     // raydium_pool_state
 
     /// Select random Dragon Egg URI based on slot, index, and DNA
     pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {
@@ -319,8 +332,6 @@ pub struct DogeBtcMining {
     pub track_price: u64,
     /// SOL amount reserved for Protocol Owned Liquidity (tracked but stored in pda_sol_treasury)
     pub sol_for_pol: u64,
-    /// Slots per 30min for swap calculations (configurable, default ~4500)
-    pub slots_for_swap: u64,
     /// Protocol Owned Liquidity tracking
     pub pol_stats: ProtocolOwnedLiquidity,
     /// LP token price in SOL (9-decimal precision, updated during oracle updates)
@@ -329,9 +340,9 @@ pub struct DogeBtcMining {
 
 impl DogeBtcMining {
     // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
-    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + slots_for_swap + pol_stats + lp_token_price_in_sol
+    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN + 8;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN + 8;
 }
 
 /// ------------ USER MOON-BASE INSTANCES ------------
@@ -399,16 +410,21 @@ pub struct UserMoonBaseInstance {
     // ========== DRAGON EGG INTEGRATION ========== //
     /// Incubated Dragon Egg metadata address (max 1 per moonbase)
     pub incubated_dragon_egg: Option<Pubkey>,
+    
+    // ========== COMMAND CENTER MODULE ========== //
+    /// Command center module instance (always index 0, non-removable)
+    pub command_center_module: Option<Pubkey>,
 }
 
 // UserMoonBaseInstance
 impl UserMoonBaseInstance {
-    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + init_type + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg
+    // discriminator + owner + referral + modules_count + active_hashpower + available_electricity + used_electricity + dbtc_claim_index + claimable_dbtc + bump + faction_id + level + init_type + xp + last_login_ts + daily_login_streak + current_width + current_height + purchased_expansions + occupied_bitmap + available_modules + pvp_hp + active_game + last_game_end_ts + modules_repaired_since_last_game + incubated_dragon_egg + command_center_module
     // purchased_expansions = 4 bytes (vec length) + MAX_EXPANSIONS * 1 byte per expansion ID
     // available_modules = 4 bytes (vec length) + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
     // incubated_dragon_egg = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33;
+    // command_center_module = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33 + 33;
 }
 
 /// Stores referral rewards that a user has earned from referrals
@@ -452,6 +468,26 @@ pub struct LootRewards {
 impl LootRewards {
     // discriminator + total_dbtc_accumulated + total_sol_accumulated + total_dbtc_distributed + total_sol_distributed + bump + sol_vault_bump + dbtc_vault_bump + dbtc_vault_authority_bump
     pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1;
+}
+
+/// Buybacks account that accumulates SOL for token buybacks
+#[account]
+pub struct BuybacksAccount {
+    /// Total SOL accumulated for buybacks (in lamports)
+    pub total_sol_accumulated: u64,
+    /// Total SOL used for buybacks (in lamports)
+    pub total_sol_used: u64,
+    /// SOL earnmarked for Protocol Owned Liquidity (in lamports)
+    pub sol_for_pol: u64,
+    /// Bump for PDA derivation
+    pub bump: u8,
+    /// Bump for SOL vault PDA derivation
+    pub sol_vault_bump: u8,
+}
+
+impl BuybacksAccount {
+    // discriminator + total_sol_accumulated + total_sol_used + sol_for_pol + bump + sol_vault_bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 1 + 1;
 }
 
 /// Level statistics for tracking user distribution across top levels only
@@ -754,14 +790,17 @@ pub struct ModuleInstance {
     /// Last update timestamp
     pub last_updated: i64,
     
+    /// Whether this module can be removed (command center is non-removable)
+    pub is_removable: bool,
+    
     /// Bump for PDA derivation
     pub bump: u8,
 }
 
 impl ModuleInstance {
     // discriminator + config_id + upgrade_level + index + module_type + pos_x + pos_y + width + height + runtime_state + 
-    // electricity_cost + is_active + created_at + last_updated + bump
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 2 + 1 + 1 + ModuleType::LEN + 1 + 1 + 1 + 1 + ModuleRuntimeState::LEN + 4 + 1 + 8 + 8 + 1;
+    // electricity_cost + is_active + created_at + last_updated + is_removable + bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 2 + 1 + 1 + ModuleType::LEN + 1 + 1 + 1 + 1 + ModuleRuntimeState::LEN + 4 + 1 + 8 + 8 + 1 + 1;
 
     /// Calculate current HP from runtime state
     pub fn current_hp(&self) -> u32 {
@@ -904,6 +943,9 @@ pub struct DragonEggMetadata {
     /// Moonbase this egg is incubated in (if any)
     pub incubated_moonbase: Option<Pubkey>,
 
+    /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
+    pub multiplier: u32,
+
     /// Last power update timestamp
     pub last_update_ts: i64,
 
@@ -920,6 +962,7 @@ impl DragonEggMetadata {
         4 +     // power
         32 +    // dna
         33 +    // incubated_moonbase (Option<Pubkey>)
+        4 +     // multiplier
         8 +     // last_update_ts
         8 +     // created_at
         1;      // bump

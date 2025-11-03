@@ -208,6 +208,7 @@ pub struct SolFeesWithdrawn {
     pub fee_collector: Pubkey,
     pub amount: u64,
     pub loot_amount: u64,
+    pub buyback_amount: u64,
 }
 
 // ------------------------------
@@ -244,7 +245,6 @@ pub struct MiningTokenVaultSet {
 pub struct ConfigUpdated {
     pub authority: Pubkey,
     pub sol_claimer: Pubkey,
-    pub base_creation_cost: u64,
 }
  
 #[event]
@@ -300,14 +300,7 @@ pub struct DistributionRateUpdated {
     pub sol_received: u64,
     pub timestamp: i64,
 }
-
-#[event]
-pub struct SlotsPerHourUpdated {
-    pub authority: Pubkey,
-    pub old_slots_for_swap: u64,
-    pub new_slots_for_swap: u64,
-}
-
+ 
 #[event]
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
@@ -315,18 +308,6 @@ pub struct LpTokensBurned {
     pub dbtc_amount_added: u64,
     pub sol_amount_added: u64,
     pub timestamp: i64,
-}
-
-// ------------------------------
-// Faction management events
-// ------------------------------
-
-#[event]
-pub struct FactionAdded {
-    pub authority: Pubkey,
-    pub faction_name: String,
-    pub faction_id: u8,
-    pub total_factions: u8,
 }
 
 // ------------------------------
@@ -364,14 +345,7 @@ pub struct LootRewardsAccumulated {
     pub total_dbtc_accumulated: u64,
     pub total_sol_accumulated: u64,
 }
-
-#[event]
-pub struct LootRewardsDistributed {
-    pub recipient: Pubkey,
-    pub dbtc_amount: u64,
-    pub sol_amount: u64,
-    pub event_type: String,
-}
+ 
 
 #[event]
 pub struct LootRewardsInitialized {
@@ -379,26 +353,7 @@ pub struct LootRewardsInitialized {
     pub sol_vault_pda: Pubkey,
     pub dbtc_vault_pda: Pubkey,
 }
-
-#[event]
-pub struct MilestoneLootAwarded {
-    pub recipient: Pubkey,
-    pub level_achieved: u8,
-    pub dbtc_amount: u64,
-    pub sol_amount: u64,
-    pub milestone_type: String, // "major", "rare", "legendary"
-    pub users_at_level: u32,
-}
-
-#[event]
-pub struct ProbabilityLootAwarded {
-    pub recipient: Pubkey,
-    pub level: u8,
-    pub dbtc_amount: u64,
-    pub sol_amount: u64,
-    pub probability_percentage: u32, // Chance this user had to win
-    pub users_at_level: u32,
-}
+ 
 
 #[event]
 pub struct LevelStatsUpdated {
@@ -415,12 +370,23 @@ pub struct LevelStatsUpdated {
 
 #[event]
 pub struct DragonEggMinted {
+    pub egg_metadata_account: Pubkey,
+    pub dragon_egg_asset_signer: Pubkey,
+    pub owner: Pubkey,
     pub mint: Pubkey,
     pub name: String,
     pub uri: String,
     pub dna: [u8; 32],
+    pub multiplier: u32,
     pub initial_power: u32,
-    pub price_paid: u64,
+}
+
+#[event]
+pub struct DragonEggCollectionCreated {
+    pub collection: Pubkey,
+    pub update_authority: Pubkey,
+    pub name: String,
+    pub uri: String,
 }
 
 #[event]
@@ -480,36 +446,7 @@ pub struct ReferralSuccess {
 }
 
 // ========== PVP GAME EVENTS ========== //
-
-#[event]
-pub struct PvPGameCreated {
-    pub game_id: Pubkey,
-    pub player_a: Pubkey,
-    pub ticket_lamports: u64,
-    pub pot_lamports: u64,
-}
-
-#[event]
-pub struct PlayerBJoinedTheGame {
-    pub game_id: Pubkey,
-    pub player_b: Pubkey,
-    pub ticket_lamports: u64,
-}
-
-#[event]
-pub struct PvPGameCancelled {
-    pub game_id: Pubkey,
-    pub player_a: Pubkey,
-    pub ticket_lamports: u64
-}
-
-#[event]
-pub struct ExpiredPvPGameCancelled {
-    pub game_id: Pubkey,
-    pub player_a: Pubkey,
-    pub ticket_lamports: u64
-}
-
+ 
 #[event]
 pub struct AttractionXPClaimed {
     pub owner: Pubkey,
@@ -517,101 +454,6 @@ pub struct AttractionXPClaimed {
     pub xp_claimed: u32,
     pub hours_elapsed: f64,
     pub effective_xp_per_hour: u32,
-}
-
-#[event]
-pub struct ResearchRewardsClaimed {
-    pub owner: Pubkey,
-    pub module_index: u8,
-    pub success: bool,
-    pub reward_amount: u64,
-    pub success_probability: u16,
-    pub research_completed: u32,
-    pub xp_gained: u32,
-}
-
-// ========== PVP GAME SESSION EVENTS ========== //
-
-#[event]
-pub struct PvPAttackPerformed {
-    pub game_id: Pubkey,
-    pub attacker: Pubkey,
-    pub defender: Pubkey,
-    pub attacker_module_index: u8,
-    pub target_module_type: String,
-    pub target_module_index: u8,
-    pub base_damage: u32,
-    pub actual_damage: u32,
-    pub damage_multiplier: f64,
-    pub turn_number: u8,
-}
-
-#[event]
-pub struct PvPAttackEffects {
-    pub game_id: Pubkey,
-    pub attacker: Pubkey,
-    pub defender: Pubkey,
-    pub target_module_type: String,
-    pub xp_stolen: u32,
-    pub dbtc_stolen: u64,
-    pub hashpower_leeched: u64,
-    pub special_effect: String, // "None", "Double XP", "Magazine Explosion", etc.
-    pub ticket_multiplier: f64,
-}
-
-#[event]
-pub struct PvPGameFinished {
-    pub game_id: Pubkey,
-    pub winner: Pubkey,
-    pub loser: Pubkey,
-    pub victory_condition: String, // "Total HP", "Timeout", "Forfeit"
-    pub final_attacker_hp: u32,
-    pub final_defender_hp: u32,
-    pub prize_amount: u64,
-    pub total_turns: u8,
-    pub duration_seconds: i64,
-}
-
-#[event]
-pub struct PvPModuleDamaged {
-    pub game_id: Pubkey,
-    pub owner: Pubkey,
-    pub module_index: u8,
-    pub module_type: String,
-    pub old_hp: u32,
-    pub new_hp: u32,
-    pub damage_taken: u32,
-    pub efficiency_before: f64,
-    pub efficiency_after: f64,
-}
-
-#[event]
-pub struct PvPHashpowerLeeched {
-    pub game_id: Pubkey,
-    pub attacker: Pubkey,
-    pub defender: Pubkey,
-    pub hashpower_amount: u64,
-    pub attacker_leech_total: u64,
-    pub defender_lost_total: u64,
-}
-
-#[event]
-pub struct PvPSpecialEffect {
-    pub game_id: Pubkey,
-    pub attacker: Pubkey,
-    pub effect_type: String,
-    pub effect_value: u64,
-    pub probability_roll: u16,
-    pub success_threshold: u16,
-}
-
-#[event]
-pub struct MoonbaseRepaired {
-    pub owner: Pubkey,
-    pub repair_cost: u64,
-    pub modules_repaired: u8,
-    pub hp_restored: u32,
-    pub repair_type: String, // "Free Cooldown", "Paid Instant"
 }
 
  

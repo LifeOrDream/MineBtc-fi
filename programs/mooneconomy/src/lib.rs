@@ -8,7 +8,7 @@ pub mod instructions;
 use instructions::admin::*;
 use instructions::user::*;
 
-declare_id!("7VqHmqfNsopcDp3kKET6Ud6DEHFMy3RiYz3s4Zc5MKUE");
+declare_id!("6e5ha8rA9aip64J4nr5xe1NLhvkFp5n7VsdB4LNN337Q");
 
 #[program]
 pub mod mooneconomy {
@@ -21,7 +21,7 @@ pub mod mooneconomy {
     pub fn initialize_global_config(
         ctx: Context<InitializeGlobalConfig>,
         dev_address: Pubkey,
-        moondoge_allocation: u8,
+        dogebtc_allocation: u8,
         liquidity_allocation: u8,
         min_lockup_days: u64,
         max_lockup_days: u64,
@@ -31,7 +31,7 @@ pub mod mooneconomy {
         admin::initialize_global_config(
             ctx,
             dev_address,
-            moondoge_allocation,
+            dogebtc_allocation,
             liquidity_allocation,
             min_lockup_days,
             max_lockup_days,
@@ -44,7 +44,7 @@ pub mod mooneconomy {
         ctx: Context<UpdateConfig>,
         new_authority: Option<Pubkey>,
         new_dev_address: Option<Pubkey>,
-        new_moondoge_allocation: Option<u8>,
+        new_dogebtc_allocation: Option<u8>,
         new_liquidity_allocation: Option<u8>, 
         new_electricity_per_weighted_sol: Option<u64>,
         new_emergency_tax: Option<u8>,
@@ -54,11 +54,20 @@ pub mod mooneconomy {
             ctx, 
             new_authority, 
             new_dev_address, 
-            new_moondoge_allocation, 
+            new_dogebtc_allocation, 
             new_liquidity_allocation, 
             new_electricity_per_weighted_sol,
             new_emergency_tax
         )
+    }
+
+    /// Set DOGE_BTC to SOL price (admin only)
+    /// Price is stored with 9-decimal precision (same as MoonBase)
+    pub fn set_dbtc_sol_price(
+        ctx: Context<UpdateConfig>,
+        price: u64,
+    ) -> Result<()> {
+        admin::set_dbtc_sol_price_internal(ctx, price)
     }
  
     // ----------------------------------------------------------------------------------------
@@ -95,6 +104,14 @@ pub mod mooneconomy {
 
     pub fn claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()> {
         instructions::admin::internal_claim_moonbase_sol(ctx)
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ ENABLE/DISABLE SOL DISTRIBUTION (admin only) ------------
+    // ----------------------------------------------------------------------------------------
+
+    pub fn set_sol_distribution_enabled(ctx: Context<SetSolDistributionEnabled>, enabled: bool) -> Result<()> {
+        instructions::admin::set_sol_distribution_enabled(ctx, enabled)
     }
 
     // ----------------------------------------------------------------------------------------

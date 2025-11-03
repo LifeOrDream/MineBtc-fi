@@ -33,37 +33,34 @@ pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> 
         electricity_ac.moondoge_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize );
         electricity_ac.lp_position_indices = Vec::with_capacity( MAX_ALLOWED_POSITIONS as usize);
         
-        // Query moonbase init_type and grant initial electricity bonus
-        let moonbase_data = ctx.accounts.facility_user_moonbase.try_borrow_data()?;
-        let init_type = get_moonbase_init_type(&moonbase_data)?;
+        // Query moonbase init_type and calculate initial electricity bonus
+        // Scope the borrow to release it before CPI call
+        let (init_type, initial_electricity) = {
+            let moonbase_data = ctx.accounts.facility_user_moonbase.try_borrow_data()?;
+            let init_type = get_moonbase_init_type(&moonbase_data)?;        
+            let initial_electricity = calculate_initial_electricity_bonus(init_type);
+            (init_type, initial_electricity)
+        }; // moonbase_data is dropped here, releasing the borrow
         
-        let initial_electricity = calculate_initial_electricity_bonus(init_type);
+        msg!("🎁 Tier {} - Initial electricity bonus: {}", init_type, initial_electricity);
         
         // Store free electricity amount
         electricity_ac.free_electricity = initial_electricity;
         
         // Grant electricity to moonbase via proper CPI call
-        if initial_electricity > 0 {
-            // Fee collector seeds for CPI signer
-            let fee_collector_seeds = &[
-                b"fee_collector".as_ref(),
-                &[ctx.bumps.fee_collector],
-            ];
-            let signer_seeds = &[&fee_collector_seeds[..]];
-            
-            let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-            let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
-                user: ctx.accounts.authority.to_account_info(),
-                user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-                mining_state: ctx.accounts.facility_mining_state.to_account_info(),
-                global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-                authority: ctx.accounts.fee_collector.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-            };
-            
-            let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-            moonbase::cpi::update_user_electricity(cpi_ctx, true, initial_electricity)?;
-        }
+        helper::update_user_electricity_cpi(
+            &ctx.accounts.moonbase_program.to_account_info(),
+            &ctx.accounts.authority.to_account_info(),
+            &ctx.accounts.facility_user_moonbase.to_account_info(),
+            &ctx.accounts.facility_mining_state.to_account_info(),
+            &ctx.accounts.moonbase_global_config.to_account_info(),
+            &ctx.accounts.fee_collector.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            ctx.bumps.fee_collector,
+            true,
+            initial_electricity,
+        )?;
+        
         
         msg!("👤 Initializing new user electricity account");
         msg!("🎁 Tier {} bonus: {} free electricity granted", init_type, initial_electricity);
@@ -91,10 +88,10 @@ fn get_moonbase_init_type(moonbase_data: &[u8]) -> Result<u8> {
 /// Calculate initial electricity bonus based on tier
 fn calculate_initial_electricity_bonus(init_type: u8) -> u64 {
     match init_type {
-        1 => 0,           // 0.5 SOL tier: no bonus
-        2 => 10_000,      // 1.42 SOL tier: 10k electricity
-        3 => 30_000,      // 2.42 SOL tier: 30k electricity
-        4 => 75_000,      // 4.20 SOL tier: 75k electricity
+        1 => 1000,           // 0.5 SOL tier: 1k electricity
+        2 => 5_000,      // 1.42 SOL tier: 5k electricity
+        3 => 10_000,      // 2.42 SOL tier: 10k electricity
+        4 => 15_000,      // 4.20 SOL tier: 15k electricity
         _ => 0,           // fallback
     }
 }
@@ -262,9 +259,23 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
     };
     let cpi_ctx_query = CpiContext::new(cpi_program_query, cpi_accounts_query);
     let token_prices = moonbase::cpi::query_token_prices(cpi_ctx_query)?;
-    let dbtc_price_in_sol = token_prices.get().dbtc_price_in_sol;
+    let moonbase_price = token_prices.get().dbtc_price_in_sol;
     
-    msg!("   DOGE_BTC price: {} (9-decimal precision)", dbtc_price_in_sol);
+    // Use MoonBase price if available, otherwise use stored price
+    let dbtc_price_in_sol = if moonbase_price > 0 {
+        // Update stored price with MoonBase price
+        ctx.accounts.global_config.dbtc_sol_price = moonbase_price;
+        msg!("   Updated stored price from MoonBase: {} (9-decimal precision)", moonbase_price);
+        moonbase_price
+    } else {
+        // Use stored price (fallback to default if MoonBase price is 0)
+        let stored_price = ctx.accounts.global_config.dbtc_sol_price;
+        require!(stored_price > 0, ErrorCode::InvalidAmount);
+        msg!("   MoonBase price is 0, using stored price: {} (9-decimal precision)", stored_price);
+        stored_price
+    };
+    
+    msg!("   Final DOGE_BTC price used: {} (9-decimal precision)", dbtc_price_in_sol);
     
     // Convert weighted dBTC amount to SOL value
     // weighted_amount is in DOGE_BTC base units (6 decimals)
@@ -296,25 +307,18 @@ pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: 
     msg!("   Total electricity earned: {}", electricity_ac.electricity_earned);
     msg!("🔌 Calling MoonBase to update user electricity");
     
-    // Derive PDA seeds for fee_collector signer
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];    
-
-    // Update CPI accounts structure
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
-        user: ctx.accounts.authority.to_account_info(),
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        authority: ctx.accounts.fee_collector.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-    };
-    
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-    
-    // Update user electricity
-    moonbase::cpi::update_user_electricity(cpi_ctx, true, electricity_increase)?;
+    helper::update_user_electricity_cpi(
+        &ctx.accounts.moonbase_program.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+        &ctx.accounts.facility_user_moonbase.to_account_info(),
+        &ctx.accounts.facility_mining_state.to_account_info(),
+        &ctx.accounts.moonbase_global_config.to_account_info(),
+        &ctx.accounts.fee_collector.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        ctx.bumps.fee_collector,
+        true,
+        electricity_increase,
+    )?;
 
     msg!("✅ DogeBtc staking successful");    
     emit!(DogeBtcStaked {
@@ -450,27 +454,18 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     msg!("   Updated electricity earned: {}", electricity_ac.electricity_earned);
     
     // Update CPI to decrease electricity in MoonFacility
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];
-    
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
-        user: ctx.accounts.authority.to_account_info(),
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        authority: ctx.accounts.fee_collector.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-    };
-    
-    let cpi_ctx = CpiContext::new_with_signer(
-        cpi_program,
-        cpi_accounts,
-        signer_seeds,
-    );
-    
-    // The second parameter as false indicates we're decreasing electricity
-    moonbase::cpi::update_user_electricity(cpi_ctx, false, electricity_decrease)?;
+    helper::update_user_electricity_cpi(
+        &ctx.accounts.moonbase_program.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+        &ctx.accounts.facility_user_moonbase.to_account_info(),
+        &ctx.accounts.facility_mining_state.to_account_info(),
+        &ctx.accounts.moonbase_global_config.to_account_info(),
+        &ctx.accounts.fee_collector.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        ctx.bumps.fee_collector,
+        false,
+        electricity_decrease,
+    )?;
     
     // Update vault totals
     msg!("📊 Updating vault totals");
@@ -720,25 +715,18 @@ pub fn stake_lp_tokens(ctx: Context<StakeLpTokens>, amount: u64, lockup_duration
     msg!("   Total electricity earned: {}", electricity_ac.electricity_earned);
     msg!("🔌 Calling MoonBase to update user electricity");
     
-    // Derive PDA seeds for fee_collector signer
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];    
-
-    // Update CPI accounts structure
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
-        user: ctx.accounts.authority.to_account_info(),
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        authority: ctx.accounts.fee_collector.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-    };
-    
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-    
-    // Update user electricity
-    moonbase::cpi::update_user_electricity(cpi_ctx, true, electricity_increase)?;
+    helper::update_user_electricity_cpi(
+        &ctx.accounts.moonbase_program.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+        &ctx.accounts.facility_user_moonbase.to_account_info(),
+        &ctx.accounts.facility_mining_state.to_account_info(),
+        &ctx.accounts.moonbase_global_config.to_account_info(),
+        &ctx.accounts.fee_collector.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        ctx.bumps.fee_collector,
+        true,
+        electricity_increase,
+    )?;
 
     msg!("✅ LP token staking successful");    
     emit!(LiquidityStaked {
@@ -874,27 +862,18 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     electricity_ac.electricity_earned = electricity_ac.electricity_earned.checked_sub(electricity_decrease).unwrap_or(0);
     
     // Update CPI to decrease electricity in MoonFacility
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];
-    
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::UpdateUserElectricity {
-        user: ctx.accounts.authority.to_account_info(),
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        mining_state: ctx.accounts.facility_mining_state.to_account_info(),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        authority: ctx.accounts.fee_collector.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-    };
-    
-    let cpi_ctx = CpiContext::new_with_signer(
-        cpi_program,
-        cpi_accounts,
-        signer_seeds,
-    );
-    
-    // The second parameter as false indicates we're decreasing electricity
-    moonbase::cpi::update_user_electricity(cpi_ctx, false, electricity_decrease)?;
+    helper::update_user_electricity_cpi(
+        &ctx.accounts.moonbase_program.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+        &ctx.accounts.facility_user_moonbase.to_account_info(),
+        &ctx.accounts.facility_mining_state.to_account_info(),
+        &ctx.accounts.moonbase_global_config.to_account_info(),
+        &ctx.accounts.fee_collector.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        ctx.bumps.fee_collector,
+        false,
+        electricity_decrease,
+    )?;
     
     // Update vault totals
     msg!("📊 Updating vault totals");

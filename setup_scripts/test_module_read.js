@@ -201,7 +201,6 @@ async function getDogeBtcMining() {
       recent_price: convertBNToString(miningData.recent_price),
       track_price: convertBNToString(miningData.track_price),
       sol_for_pol: convertBNToString(miningData.sol_for_pol),
-      slots_for_swap: convertBNToString(miningData.slots_for_swap),
       lp_token_price_in_sol: convertBNToString(miningData.lp_token_price_in_sol)
     };
     

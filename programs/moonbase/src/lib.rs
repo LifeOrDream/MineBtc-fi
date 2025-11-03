@@ -8,14 +8,16 @@ pub mod instructions;
 
 pub use instructions::admin::*;
 pub use instructions::user::*;
+pub use instructions::economy::*;
 
-declare_id!("AL5Q6PzbHFthrCCJ8bn4NQg6m88RJfDtkSmwxaAKJtnm");
+declare_id!("8yqi5xiGMeCXkwYKeQGdwwC76UG9y19fNss8ZMLrn2kL");
 
 #[program]
 pub mod moonbase {
     use super::*;
-    use crate::instructions::admin::{self};
+    use crate::instructions::admin::{self, CreateDragonEggCollection};
     use crate::instructions::user::{self};
+    use crate::instructions::economy::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -24,13 +26,19 @@ pub mod moonbase {
     /// Initialize the global program configuration
     /// This function can only be called once as it creates the program's configuration accounts
     /// It will fail if the accounts already exist
-    pub fn initialize(ctx: Context<Initialize>, base_creation_cost: u64, creation_fee_recipient: Pubkey) -> Result<()> {
-        admin::internal_initialize(ctx, base_creation_cost, creation_fee_recipient)         
+    pub fn initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
+        admin::internal_initialize(ctx, creation_fee_recipient)         
     }
     
     /// Set the Dragon Egg collection address (admin only)
     pub fn set_dragon_egg_collection(ctx: Context<UpdateConfigAc>, dragon_egg_collection: Pubkey) -> Result<()> {
         admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
+    }
+
+    /// Set the Raydium pool state address (admin only)
+    /// Security: Prevents using malicious pools for swaps
+    pub fn set_raydium_pool_state(ctx: Context<UpdateConfigAc>, raydium_pool_state: Pubkey) -> Result<()> {
+        admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
     /// Add Dragon Egg URIs to the pool (admin only)
@@ -48,6 +56,16 @@ pub mod moonbase {
         admin::add_factions_internal(ctx, factions)
     }
 
+    /// Create Dragon Egg collection with program PDA as authority
+    /// This allows the program to mint NFTs from the collection
+    pub fn create_dragon_egg_collection(
+        ctx: Context<CreateDragonEggCollection>,
+        name: String,
+        uri: String,
+    ) -> Result<()> {
+        admin::create_dragon_egg_collection_internal(ctx, name, uri)
+    }
+
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
@@ -56,7 +74,6 @@ pub mod moonbase {
         new_authority: Option<Pubkey>,
         new_fee_collector: Option<Pubkey>,
         new_creation_fee_recipient: Option<Pubkey>,
-        new_base_creation_cost: Option<u64>,
         new_loot_percentage: Option<u8>,
     ) -> Result<()> {
         admin::update_config_internal(
@@ -64,9 +81,18 @@ pub mod moonbase {
             new_authority,
             new_fee_collector,
             new_creation_fee_recipient,
-            new_base_creation_cost,
             new_loot_percentage,
         )
+    }
+
+    /// Update egg limits for tiers (admin only)
+    pub fn update_egg_limits(
+        ctx: Context<UpdateConfigAc>,
+        tier2_limit: Option<u64>,
+        tier3_limit: Option<u64>,
+        tier4_limit: Option<u64>,
+    ) -> Result<()> {
+        admin::update_egg_limits_internal(ctx, tier2_limit, tier3_limit, tier4_limit)
     }
 
     /// Add a new expansion configuration (admin only)
@@ -98,11 +124,6 @@ pub mod moonbase {
     ) -> Result<()> {
         admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
     }
- 
-    /// Update slots per hour configuration (admin only)
-    pub fn update_slots_for_swap(ctx: Context<UpdateSlotsPerHour>, new_slots_for_swap: u64) -> Result<()> {
-        admin::update_slots_for_swap_internal(ctx, new_slots_for_swap)
-    }    
 
     /// Deposit moon doge tokens to the mining vault
     pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
@@ -139,6 +160,11 @@ pub mod moonbase {
         admin::initialize_loot_rewards_internal(ctx)
     }
 
+    /// Initialize buybacks account system (admin only)
+    pub fn initialize_buybacks(ctx: Context<InitializeBuybacks>) -> Result<()> {
+        admin::initialize_buybacks_internal(ctx)
+    }
+
     /// Initialize level statistics tracking (admin only)
     pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
         admin::initialize_level_stats_internal(ctx)
@@ -160,7 +186,7 @@ pub mod moonbase {
         ctx: Context<AddModuleToConfigStore>,
         name: String,
         image_url: String,
-        module_type: state::ModuleType,
+        module_type: u8,
         faction_ids: Vec<u8>,
         min_level: u8,
         width: u8,
@@ -251,7 +277,7 @@ pub mod moonbase {
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
     pub fn update_dbtc_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-        admin::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
+        economy::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -266,6 +292,11 @@ pub mod moonbase {
     /// - PRICE_TIER_4 (4.20 SOL): Moonbase + Dragon Egg + 75k electricity
     pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
+    }
+
+    /// Create user moonbase with Dragon Egg NFT (tiers 2-4)
+    pub fn create_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+        user::initialize_user_moonbase_w_egg(ctx, referrer, faction_id, pricing_tier)
     }
 
     /// Purchase a moonbase expansion (user function)
@@ -290,6 +321,11 @@ pub mod moonbase {
     /// Buy a module without installing it
     pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
         user::buy_module(ctx, config_id)
+    }
+    
+    /// Install the free command center module (can only be called once per moonbase)
+    pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos_y: u8) -> Result<()> {
+        user::install_command_center(ctx, pos_x, pos_y)
     }
     
     /// Install/deploy an existing undeployed module

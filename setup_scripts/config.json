@@ -37,8 +37,7 @@
     "mining": {
         "start_timestamp": 0,
         "doge_btc_per_slot": 1000000,
-        "initial_deposit": "21000000000000",
-        "slots_for_swap": 9000
+        "initial_deposit": "21000000000000"
     },
     "raydium": {
         "amm_config_index": 0,
@@ -131,9 +130,9 @@
             "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
         },
         {
-            "name": "Advanced Research Lab",
+            "name": "Advanced Mining Lab",
             "image_url": "https://arweave.net/advanced-research-lab",
-            "module_type": "Research",
+            "module_type": "Mining",
             "stats": {
                 "maxHp": 1400,
                 "cooldownSec": 3200,
@@ -169,7 +168,7 @@
         {
             "name": "Defense Battery",
             "image_url": "https://arweave.net/defense-battery",
-            "module_type": "Attack",
+            "module_type": "Attraction",
             "stats": {
                 "maxHp": 1300,
                 "baseDamage": 180,
@@ -186,8 +185,86 @@
             "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
         }
     ],
+    "command_centers": [
+        {
+            "config_id": 1,
+            "tier": 1,
+            "name": "Command Center Tier 1",
+            "image_url": "https://arweave.net/command-center-tier-1",
+            "module_type": "Mining",
+            "stats": {
+                "maxHp": 1000,
+                "baseHashpower": 500,
+                "powerConsumption": 500
+            },
+            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "min_level": 0,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 0,
+            "upgrade_cost": 0,
+            "upgrade_level_requirements": [5, 10, 20, 50]
+        },
+        {
+            "config_id": 2,
+            "tier": 2,
+            "name": "Command Center Tier 2",
+            "image_url": "https://arweave.net/command-center-tier-2",
+            "module_type": "Mining",
+            "stats": {
+                "maxHp": 1500,
+                "baseHashpower": 2400,
+                "powerConsumption": 1500
+            },
+            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "min_level": 0,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 0,
+            "upgrade_cost": 0,
+            "upgrade_level_requirements": [5, 10, 20, 50]
+        },
+        {
+            "config_id": 3,
+            "tier": 3,
+            "name": "Command Center Tier 3",
+            "image_url": "https://arweave.net/command-center-tier-3",
+            "module_type": "Mining",
+            "stats": {
+                "maxHp": 2000,
+                "baseHashpower": 4200,
+                "powerConsumption": 3000
+            },
+            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "min_level": 0,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 0,
+            "upgrade_cost": 0,
+            "upgrade_level_requirements": [5, 10, 20, 50]
+        },
+        {
+            "config_id": 4,
+            "tier": 4,
+            "name": "Command Center Tier 4",
+            "image_url": "https://arweave.net/command-center-tier-4",
+            "module_type": "Mining",
+            "stats": {
+                "maxHp": 2500,
+                "baseHashpower": 6900,
+                "powerConsumption": 5100
+            },
+            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "min_level": 0,
+            "width": 2,
+            "height": 2,
+            "mint_cost": 0,
+            "upgrade_cost": 0,
+            "upgrade_level_requirements": [5, 10, 20, 50]
+        }
+    ],
     "moonEconomy": {
-        "moondoge_allocation": 33,
+        "dogebtc_allocation": 33,
         "liquidity_allocation": 33,
         "min_lockup_days": 1,
         "max_lockup_days": 365,
