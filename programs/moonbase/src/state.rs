@@ -476,6 +476,8 @@ pub struct BuybacksAccount {
     pub total_sol_accumulated: u64,
     /// Total SOL used for buybacks (in lamports)
     pub total_sol_used: u64,
+    /// SOL earnmarked for Protocol Owned Liquidity (in lamports)
+    pub sol_for_pol: u64,
     /// Bump for PDA derivation
     pub bump: u8,
     /// Bump for SOL vault PDA derivation
@@ -483,8 +485,8 @@ pub struct BuybacksAccount {
 }
 
 impl BuybacksAccount {
-    // discriminator + total_sol_accumulated + total_sol_used + bump + sol_vault_bump
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 1 + 1;
+    // discriminator + total_sol_accumulated + total_sol_used + sol_for_pol + bump + sol_vault_bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 1 + 1;
 }
 
 /// Level statistics for tracking user distribution across top levels only

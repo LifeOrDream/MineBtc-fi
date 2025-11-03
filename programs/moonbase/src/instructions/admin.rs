@@ -463,6 +463,7 @@ pub fn initialize_buybacks_internal(ctx: Context<InitializeBuybacks>) -> Result<
     // Initialize buybacks state
     buybacks_account.total_sol_accumulated = 0;
     buybacks_account.total_sol_used = 0;
+    buybacks_account.sol_for_pol = 0;
     buybacks_account.bump = ctx.bumps.buybacks_account;
     buybacks_account.sol_vault_bump = ctx.bumps.buybacks_sol_vault;
     
