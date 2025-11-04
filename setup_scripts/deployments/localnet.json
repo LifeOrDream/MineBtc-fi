@@ -571,13 +571,18 @@
     "timestamp": "2025-11-04T14:41:04.032Z",
     "initial_dbtc_sol_price": {
       "price": 1000000,
-      "set_tx": "4Vmhoqdmk9WzcWzFfcxn3jw3N6pC2E3ihqrHz8WhaoMRxXtbTGYMZM13ymKpveHKnkouW7h7QfjyBkvchWZkha6F",
-      "timestamp": "2025-11-04T15:01:58.326Z"
+      "set_tx": "9QogQdiz81eNA75nVLWKGqwaZtwBuVCUtr9LYUW4UHdfRUFZjAPbVJonCDd4Q7W5JLcbJs4Ud1MQdea76VCz9W4",
+      "timestamp": "2025-11-04T15:49:51.615Z"
     },
     "electricity_per_weighted_sol": {
       "value": 1000,
-      "set_tx": "ivdqo2PLArKiEnuUaSZYLcFsVgWLcMsLp8ib7YzM2Y9ehWFwiF6ADZQBkDsSChY4rRfbP2A194wCZ9rMc6bc1oc",
-      "timestamp": "2025-11-04T15:01:58.706Z"
+      "set_tx": "3Qhj8gKXmW7r1teHNcJoAtN4szvjuT9ADnU6EjUms5Svi4x2vfvNHP2CprMHw1n4GPmuyvJ5RiuqfTFjJrAQamg7",
+      "timestamp": "2025-11-04T15:49:52.132Z"
+    },
+    "sol_distribution_enabled": {
+      "enabled": true,
+      "set_tx": "5XNso9B4ci9oAbz3RfxSbPcYLgFUnGQNHso1bb2wU2P5vjZjW2ZdnRqwzn1cHzg2aSU6tnDyRiyVMoscPcrHvD3z",
+      "timestamp": "2025-11-04T15:49:52.522Z"
     }
   },
   "moonEconomy_mDogeVault_initialized": {

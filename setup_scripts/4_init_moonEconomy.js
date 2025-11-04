@@ -699,7 +699,7 @@ async function setSolDistributionEnabledStatus(moonEconomyProgram) {
 
         // Default: disabled (false) - admin will enable later after launch period
         // This can be adjusted in config.json if needed
-        const enabled = config.moonEconomy?.sol_distribution_enabled || false;
+        const enabled = true; // config.moonEconomy?.sol_distribution_enabled || false;
         
         console.log('\x1b[36m%s\x1b[0m', `📝 Setting SOL distribution enabled: ${enabled}`);
         console.log('\x1b[36m%s\x1b[0m', `   ${enabled ? '✅ ENABLED - Stakers can claim SOL rewards' : '⏸️  DISABLED - SOL will accumulate but not be claimable (admin will enable later)'}`);
