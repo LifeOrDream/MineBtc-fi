@@ -2882,6 +2882,8 @@ pub fn incubate_dragon_egg_internal(
     user_moonbase.incubated_dragon_egg = Some(egg_metadata.key());
 
     // Add egg to incubation state
+    // Store the bump when creating the account (for consistency and debugging)
+    incubation_state.bump = ctx.bumps.incubation_state;
     incubation_state.incubated_egg = Some(egg_metadata.mint);
     incubation_state.last_update_ts = current_time;
     incubation_state.moonbase_owner = user_moonbase.owner;
@@ -3099,7 +3101,7 @@ pub struct RemoveDragonEgg<'info> {
     #[account(
         mut,
         seeds = [INCUBATION_STATE_SEED.as_ref(), user.key().as_ref()],
-        bump = incubation_state.bump,
+        bump,
     )]
     pub incubation_state: Account<'info, IncubationState>,
 
