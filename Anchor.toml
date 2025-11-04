@@ -6,8 +6,8 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-moonbase = "24Day29UxpP4EHUFCfq6pMt6nCYJwapQoAg98EHtNhSd"
-mooneconomy = "AAv9L82Y8w1YxDmraBWR3vhTNbWWuJHXG7b617UU1KXi"
+moonbase = "B8MwbMqPGV19p1t3RBghcBrZHtqw1bcV1YduxYirVFmk"
+mooneconomy = "w2EzNTG5Q5qFr8s7cH1UWEhftNg2MnuCyktWUSRaDSj"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]

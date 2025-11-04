@@ -13,8 +13,9 @@
 
 
 solana-test-validator --reset \
+  --limit-ledger-size 100000000 \
   --bpf-program CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d core.so \
-  --clone CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d \
+  --clone CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d \ 
   --url https://api.mainnet-beta.solana.com
 
 solana-keygen new -o target/deploy/moonbase-keypair.json  --force --no-bip39-passphrase

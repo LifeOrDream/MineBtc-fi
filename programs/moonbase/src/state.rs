@@ -207,6 +207,8 @@ pub struct GlobalConfig {
     pub egg_limits: [u64; 4],
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
+    /// Global total power across all Dragon Eggs (sum of all egg powers)
+    pub global_dragon_egg_power: u64,
 }
  
 impl GlobalConfig {
@@ -232,7 +234,8 @@ impl GlobalConfig {
         8 +                     // total_dragon_eggs_minted
         4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH)) +    // dragon_egg_uris vec
         (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
-        32;                     // raydium_pool_state
+        32 +                    // raydium_pool_state
+        8;                      // global_dragon_egg_power
 
     /// Select random Dragon Egg URI based on slot, index, and DNA
     pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {
@@ -967,24 +970,7 @@ impl DragonEggMetadata {
         8 +     // created_at
         1;      // bump
 
-    /// Calculate power increase based on hashpower and time
-    pub fn calculate_power_increase(
-        &self,
-        total_hashpower: u64,
-        time_elapsed: i64,
-    ) -> u32 {
-        if time_elapsed <= 0 {
-            return 0;
-        }
-
-        // Formula: power_increase = total_hashpower * time_elapsed / POWER_RATE_MULTIPLIER
-        let power_increase = total_hashpower
-            .saturating_mul(time_elapsed as u64)
-            .saturating_div(POWER_RATE_MULTIPLIER) as u32;
-
-        // Cap at max power
-        power_increase.min(MAX_EGG_POWER.saturating_sub(self.power))
-    }
+ 
 }
 
 // ========================================================================================

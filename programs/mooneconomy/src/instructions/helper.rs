@@ -140,3 +140,15 @@ pub fn update_user_electricity_cpi<'info>(
     
     Ok(())
 }
+
+/// Calculate total electricity for a user (sum of all staking positions)
+pub fn calculate_total_electricity(
+    electricity_ac: &UserMoonElectricity,
+    _global_config: &GlobalConfig,
+    _dogebtc_vault: &DogeBtcVault,
+    _liquidity_vault: &LiquidityVault,
+) -> Result<u64> {
+    // electricity_earned already includes electricity from all DOGE_BTC and LP positions
+    // It's updated whenever user stakes/unstakes
+    Ok(electricity_ac.electricity_earned)
+}

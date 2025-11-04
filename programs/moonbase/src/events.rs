@@ -15,6 +15,7 @@ pub struct UserMoonBaseCreated {
 pub struct ReferralRewardsAdded {
     pub referrer: Pubkey,
     pub referred_user: Pubkey,
+    pub referral_rewards_account: Pubkey,
     pub amount: u64,
 }
 

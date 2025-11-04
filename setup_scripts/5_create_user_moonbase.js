@@ -161,7 +161,7 @@ async function main() {
             const [dragonEggMetadataPDA] = PublicKey.findProgramAddressSync(
                 [
                     Buffer.from(DRAGON_EGG_METADATA_SEED),
-                    userKeypair.publicKey.toBuffer()
+                    dragonEggAssetKeypair.publicKey.toBuffer()
                 ],
                 moonbaseProgram.programId
             );

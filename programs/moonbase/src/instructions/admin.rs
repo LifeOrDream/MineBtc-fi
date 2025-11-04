@@ -75,6 +75,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
+    
+    // Initialize global dragon egg power tracker
+    global_config.global_dragon_egg_power = 0;
 
     global_config.bump = ctx.bumps.global_config;
     global_config.loot_percentage = 15; // Default 15% for loot rewards
@@ -879,6 +882,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
 /// Query treasury information for external programs
 pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
+    msg!("🔍 Querying treasury info");
     let sol_treasury = &ctx.accounts.sol_treasury;
     let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let global_config = &ctx.accounts.global_config;
@@ -892,6 +896,9 @@ pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<T
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
     let available_for_withdrawal = total_balance.saturating_sub(reserved_amount);
+    
+    msg!("📊 Treasury: total={}, POL={}, rent={}, available={}", 
+         total_balance, pol_reserves, rent_exempt_amount, available_for_withdrawal);
 
     Ok(TreasuryInfo {
         total_balance,
@@ -904,7 +911,11 @@ pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<T
 
 /// Query global config information for external programs
 pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
+    msg!("🔍 Querying global config");
     let global_config = &ctx.accounts.global_config;
+    
+    msg!("📊 Config: loot={}%, active={}, authority={}", 
+         global_config.loot_percentage, global_config.is_game_active, global_config.ext_authority);
 
     Ok(GlobalConfigInfo {
         loot_percentage: global_config.loot_percentage,

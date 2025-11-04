@@ -84,6 +84,7 @@ pub fn process_referral_payment<'info>(
             emit!(ReferralRewardsAdded { 
                 referrer: *referrer,
                 referred_user: *user_key,
+                referral_rewards_account: rewards_account_info.key(),
                 amount: referral_fee 
             });
             

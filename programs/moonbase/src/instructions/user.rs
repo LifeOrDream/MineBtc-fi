@@ -9,6 +9,40 @@ use anchor_spl::token_interface::{ Mint as Mint2022 };
 
 
 // ----------------------------------------------------------------------------------------
+// -------------- HELPER :: EGG MULTIPLIER CALCULATIONS -----------------------------------
+// ----------------------------------------------------------------------------------------
+
+/// Get the egg multiplier for a moonbase (100 = 1.0x if no egg, or egg's multiplier if incubated)
+fn get_egg_multiplier(user_moonbase: &UserMoonBaseInstance, dragon_egg_metadata: Option<&Account<DragonEggMetadata>>) -> Result<u32> {
+    if user_moonbase.incubated_dragon_egg.is_some() {
+        if let Some(egg) = dragon_egg_metadata {
+            Ok(egg.multiplier)
+        } else {
+            // Egg is incubated but metadata not provided - should not happen
+            Ok(100)
+        }
+    } else {
+        Ok(100) // No egg = 1.0x multiplier
+    }
+}
+
+/// Apply egg multiplier to a hashpower value
+fn apply_egg_multiplier(hashpower: u64, multiplier: u32) -> Result<u64> {
+    if multiplier == 100 {
+        Ok(hashpower) // No change for 1.0x
+    } else {
+        let boosted = (hashpower as u128)
+            .checked_mul(multiplier as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .min(u64::MAX as u128) as u64;
+        Ok(boosted)
+    }
+}
+
+
+// ----------------------------------------------------------------------------------------
 // -------------- USER FUNCTIONS :: CREATE MOON-BASE, EXPAND MOONBASE ----------------
 // ----------------------------------------------------------------------------------------
 
@@ -229,11 +263,21 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     ctx.accounts.user_moonbase.bump = ctx.bumps.user_moonbase;
 
     // Mint Dragon Egg NFT
+    msg!("🥚 ========== MINTING DRAGON EGG NFT ==========");
     let dragon_egg_asset_signer = &ctx.accounts.dragon_egg_asset.as_ref();
+    msg!("📍 Dragon Egg Asset: {}", dragon_egg_asset_signer.key());
+    msg!("   Asset owner BEFORE CPI: {}", ctx.accounts.dragon_egg_asset.owner);
+    msg!("   Asset data length BEFORE CPI: {}", ctx.accounts.dragon_egg_asset.data_len());
+    
     let dragon_egg_collection = &ctx.accounts.dragon_egg_collection;
+    msg!("📚 Dragon Egg Collection: {}", dragon_egg_collection.key());
     let mpl_core_program = &ctx.accounts.mpl_core_program;
+    msg!("🔧 MPL Core Program: {}", mpl_core_program.key());
+    msg!("   Expected MPL Core: CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d");
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    msg!("📋 Egg Metadata PDA: {}", egg_metadata.key());
     let collection_authority = &ctx.accounts.collection_authority;
+    msg!("🔐 Collection Authority: {}", collection_authority.key());
 
     let name = format!("Dragon Egg #{}", egg_count);
 
@@ -261,6 +305,10 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
         &[collection_authority_bump],
     ];
 
+    msg!("🎨 Creating Dragon Egg NFT via Metaplex Core CPI");
+    msg!("   Name: {}", name);
+    msg!("   URI: {}", uri);
+    
         // Create Dragon Egg NFT with MPL Core
         crate::mpl_core_helpers::create_mpl_core_asset(
         &dragon_egg_asset_signer.to_account_info(),
@@ -274,6 +322,10 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
             uri.clone(),
         Some(&[collection_authority_seeds]),
         )?;
+    
+    msg!("✅ Metaplex Core CPI completed");
+    msg!("   Asset owner AFTER CPI: {}", ctx.accounts.dragon_egg_asset.owner);
+    msg!("   Asset data length AFTER CPI: {}", ctx.accounts.dragon_egg_asset.data_len());
 
     // Calculate multiplier based on pricing tier (basis points)
     // Tier 2 (1.42 SOL): 150 = 1.5x
@@ -296,8 +348,21 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
         egg_metadata.created_at = Clock::get()?.unix_timestamp;
     egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
 
+    msg!("Egg Metadata: {}", egg_metadata.key());
+    msg!("Power: {}", egg_metadata.power);
+    msg!("DNA: {:?}", egg_metadata.dna);
+    msg!("Incubated Moonbase: {:?}", egg_metadata.incubated_moonbase);
+    msg!("Multiplier: {}", egg_metadata.multiplier);
+    msg!("Last Update TS: {}", egg_metadata.last_update_ts);
+    msg!("Created At: {}", egg_metadata.created_at);
+    msg!("Bump: {}", egg_metadata.bump);
+
         // Update global dragon egg counter
     ctx.accounts.global_config.total_dragon_eggs_minted = ctx.accounts.global_config.total_dragon_eggs_minted.saturating_add(1);
+    
+    // Update global dragon egg power
+    ctx.accounts.global_config.global_dragon_egg_power = ctx.accounts.global_config.global_dragon_egg_power
+        .saturating_add(BASE_EGG_POWER as u64);
 
     // Log DNA info for debugging
     let family = crate::genescience::get_family_type(&dna);
@@ -965,37 +1030,43 @@ pub fn claim_dbtc_tokens_internal(
         Some(&mut ctx.accounts.loot_rewards),
     )?;
 
-    // // Update Dragon Egg power if one is incubated
-    // if let Some(egg_metadata_pubkey) = user_moonbase.incubated_dragon_egg {
-    //     // If moonbase has an incubated egg, egg accounts MUST be provided
-    //     let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
-    //     let incubation_state = ctx.accounts.incubation_state.as_mut()
-    //         .ok_or(ErrorCode::InvalidAccount)?;
+    // Update Dragon Egg power if one is incubated
+    if let Some(egg_metadata_pubkey) = user_moonbase.incubated_dragon_egg {
+        // If moonbase has an incubated egg, egg accounts MUST be provided
+        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let incubation_state = ctx.accounts.incubation_state.as_mut()
+            .ok_or(ErrorCode::InvalidAccount)?;
 
-    //     // Verify this is the correct egg
-    //     require!(
-    //         egg_metadata.key() == egg_metadata_pubkey,
-    //         ErrorCode::InvalidAccount
-    //     );
+        // Verify this is the correct egg
+        require!(
+            egg_metadata.key() == egg_metadata_pubkey,
+            ErrorCode::InvalidAccount
+        );
         
-    //     let current_time = Clock::get()?.unix_timestamp;
+        let current_time = Clock::get()?.unix_timestamp;
         
-    //     // Calculate power increase based on claimed amount
-    //     // Formula: power_increase = claimed_amount / POWER_RATE_MULTIPLIER
-    //     let power_increase = (claimed_amount / POWER_RATE_MULTIPLIER) as u32;
+        // Calculate power increase based on claimed amount
+        // Formula: power_increase = claimed_amount / POWER_RATE_MULTIPLIER
+        let power_increase = (claimed_amount / POWER_RATE_MULTIPLIER) as u32;
         
-    //     let old_power = egg_metadata.power;
-    //     let new_power = old_power.saturating_add(power_increase).min(MAX_EGG_POWER);
+        let old_power = egg_metadata.power;
+        let new_power = old_power.saturating_add(power_increase);
+        let actual_increase = new_power.saturating_sub(old_power);
         
-    //     egg_metadata.power = new_power;
-    //     egg_metadata.last_update_ts = current_time;
+        egg_metadata.power = new_power;
+        egg_metadata.last_update_ts = current_time;
         
-    //     incubation_state.total_power = new_power as u64;
-    //     incubation_state.last_update_ts = current_time;
+        incubation_state.total_power = new_power as u64;
+        incubation_state.last_update_ts = current_time;
         
-    //     msg!("🥚 Dragon Egg power updated: {} -> {} (+{})", old_power, new_power, power_increase);
-    // }
+        // Update global dragon egg power
+        ctx.accounts.global_config.global_dragon_egg_power = ctx.accounts.global_config.global_dragon_egg_power
+            .saturating_add(actual_increase as u64);
+        
+        msg!("🥚 Dragon Egg power updated: {} -> {} (+{})", old_power, new_power, actual_increase);
+        msg!("🌐 Global egg power: {}", ctx.accounts.global_config.global_dragon_egg_power);
+    }
 
     // Process daily login and award XP based on tokens mined
     let mining_xp = helper::calculate_mining_xp(claimed_amount);
@@ -1268,15 +1339,26 @@ pub fn install_module(
         // Mine pending rewards BEFORE changing hashpower
         helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
         
-        let hashpower_increase = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+        let base_hashpower_increase = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+        
+        // Apply egg multiplier if an egg is incubated
+        let egg_multiplier = get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
+        let hashpower_increase = apply_egg_multiplier(base_hashpower_increase, egg_multiplier)?;
+        
         let old_hashpower = user_moonbase.active_hashpower;
         
         user_moonbase.active_hashpower = user_moonbase.active_hashpower
             .checked_add(hashpower_increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         
+        if egg_multiplier > 100 {
+            msg!("⛏️ Updated hashpower: {} -> {} (+{} base, +{} with {}x egg multiplier) at level {}", 
+                 old_hashpower, user_moonbase.active_hashpower, base_hashpower_increase, hashpower_increase, 
+                 egg_multiplier as f64 / 100.0, module_instance.upgrade_level);
+        } else {
         msg!("⛏️ Updated hashpower: {} -> {} (+{}) at level {}", 
              old_hashpower, user_moonbase.active_hashpower, hashpower_increase, module_instance.upgrade_level);
+        }
         
         // Update global hashpower
         let mining_state = &mut ctx.accounts.doge_btc_mining;
@@ -1429,18 +1511,29 @@ pub fn remove_module_internal(
     }
     
     // Update hashpower if this is a mining module
-    if let ModuleStats::Mining(mining_stats) = &module_config.stats {
+    let hashpower_reduced = if let ModuleStats::Mining(mining_stats) = &module_config.stats {
         // Mine pending rewards BEFORE changing hashpower
         helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
         
-        let hashpower_reduction = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+        let base_hashpower_reduction = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+        
+        // Apply egg multiplier if an egg is incubated
+        let egg_multiplier = get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
+        let hashpower_reduction = apply_egg_multiplier(base_hashpower_reduction, egg_multiplier)?;
+        
         let old_hashpower = user_moonbase.active_hashpower;
         
         user_moonbase.active_hashpower = user_moonbase.active_hashpower
             .saturating_sub(hashpower_reduction);
         
+        if egg_multiplier > 100 {
+            msg!("⛏️ Reduced hashpower: {} -> {} (-{} base, -{} with {}x egg multiplier)", 
+                 old_hashpower, user_moonbase.active_hashpower, base_hashpower_reduction, hashpower_reduction,
+                 egg_multiplier as f64 / 100.0);
+        } else {
         msg!("⛏️ Reduced hashpower: {} -> {} (-{})", 
              old_hashpower, user_moonbase.active_hashpower, hashpower_reduction);
+        }
         
         // Update global hashpower
         let mining_state = &mut ctx.accounts.doge_btc_mining;
@@ -1450,7 +1543,11 @@ pub fn remove_module_internal(
         
         msg!("🌐 Reduced global hashpower: {} -> {} (-{})", 
              old_global_hashpower, mining_state.total_active_hashpower, hashpower_reduction);
-    }
+        
+        hashpower_reduction
+    } else {
+        0
+    };
     
     // Update total moonbase HP (subtract module's HP from moonbase)
     let module_max_hp = match &module_config.stats {
@@ -1469,11 +1566,7 @@ pub fn remove_module_internal(
         position_x: module_instance.pos_x,
         position_y: module_instance.pos_y,
         electricity_freed: electricity_reduction,
-        hashpower_lost: if let ModuleStats::Mining(mining_stats) = &module_config.stats {
-            mining_stats.current_hashpower(module_instance.upgrade_level) as u64
-        } else {
-            0
-        },
+        hashpower_lost: hashpower_reduced,
     });
     
     msg!("🎉 Module removal completed successfully!");
@@ -1583,18 +1676,31 @@ pub fn upgrade_module_internal (
                 // Mine pending rewards BEFORE changing hashpower
                 helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
                 
-                let new_hashpower = mining_stats.current_hashpower(new_upgrade_level) as u64;
-                let hashpower_increase = new_hashpower.saturating_sub(old_hp);
+                let new_base_hashpower = mining_stats.current_hashpower(new_upgrade_level) as u64;
+                let base_hashpower_increase = new_base_hashpower.saturating_sub(old_hp);
+                
+                // Apply egg multiplier if an egg is incubated
+                let egg_multiplier = get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
+                let hashpower_increase = apply_egg_multiplier(base_hashpower_increase, egg_multiplier)?;
                 
                 if hashpower_increase > 0 {
                     user_moonbase.active_hashpower = user_moonbase.active_hashpower
                         .checked_add(hashpower_increase)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
                     
+                    if egg_multiplier > 100 {
+                        msg!("⛏️ Updated hashpower: {} -> {} (+{} base, +{} with {}x egg multiplier)", 
+                             user_moonbase.active_hashpower - hashpower_increase, 
+                             user_moonbase.active_hashpower, 
+                             base_hashpower_increase,
+                             hashpower_increase,
+                             egg_multiplier as f64 / 100.0);
+                    } else {
                     msg!("⛏️ Updated hashpower: {} -> {} (+{})", 
                          user_moonbase.active_hashpower - hashpower_increase, 
                          user_moonbase.active_hashpower, 
                          hashpower_increase);
+                    }
                          
                     // Update global hashpower for upgrades
                     let mining_state = &mut ctx.accounts.doge_btc_mining;
@@ -2214,20 +2320,21 @@ pub struct ClaimDogeBtc<'info> {
     )]
     pub loot_rewards: Account<'info, LootRewards>,
 
-    // // Optional Dragon Egg accounts (for power updates during claim)
-    // #[account(mut)]
-    // /// CHECK: Optional Dragon Egg NFT asset from Metaplex Core
-    // pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
+    /// Optional Dragon Egg accounts (for power updates during claim)
+    #[account(mut)]
+    /// CHECK: Optional Dragon Egg NFT asset from Metaplex Core
+    pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
 
-    // #[account(mut)]
-    // /// CHECK: Optional Dragon Egg metadata PDA
-    // pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    #[account(mut)]
+    /// CHECK: Optional Dragon Egg metadata PDA
+    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
 
-    // #[account(mut)]
-    // /// CHECK: Optional incubation state PDA
-    // pub incubation_state: Option<Account<'info, IncubationState>>,
+    #[account(mut)]
+    /// CHECK: Optional incubation state PDA
+    pub incubation_state: Option<Account<'info, IncubationState>>,
     
     #[account(
+        mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
@@ -2387,6 +2494,10 @@ pub struct InstallModule<'info> {
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
+    /// Optional Dragon Egg metadata (for applying multiplier to hashpower changes)
+    /// Only required if user has an incubated egg
+    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    
     #[account(mut)]
     pub user: Signer<'info>,
     
@@ -2431,6 +2542,10 @@ pub struct RemoveModuleInstance<'info> {
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    /// Optional Dragon Egg metadata (for applying multiplier to hashpower changes)
+    /// Only required if user has an incubated egg
+    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -2591,6 +2706,10 @@ pub struct UpdateModuleInstance<'info> {
     )]
     pub referral_rewards: Option<Account<'info, ReferralRewards>>,
     
+    /// Optional Dragon Egg metadata (for applying multiplier to hashpower changes)
+    /// Only required if user has an incubated egg
+    pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
+    
     #[account(mut)]
     pub user: Signer<'info>,
     
@@ -2688,6 +2807,7 @@ pub fn incubate_dragon_egg_internal(
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
 
     // Verify ownership from Metaplex Core asset
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
@@ -2720,6 +2840,44 @@ pub fn incubate_dragon_egg_internal(
 
     msg!("✅ NFT locked in custody PDA: {}", ctx.accounts.egg_custody_pda.key());
 
+    // Apply egg multiplier to hashpower (if user has active hashpower)
+    if user_moonbase.active_hashpower > 0 {
+        msg!("⛏️ Applying Dragon Egg multiplier to hashpower");
+        msg!("   Current hashpower: {}", user_moonbase.active_hashpower);
+        msg!("   Egg multiplier: {}x", egg_metadata.multiplier as f64 / 100.0);
+        
+        // Mine pending rewards BEFORE changing hashpower
+        helper::mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
+        
+        // Calculate new hashpower with multiplier applied
+        // multiplier is in basis points (150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
+        let current_hashpower = user_moonbase.active_hashpower;
+        let new_hashpower = (current_hashpower as u128)
+            .checked_mul(egg_metadata.multiplier as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .min(u64::MAX as u128) as u64;
+        
+        let hashpower_increase = new_hashpower
+            .checked_sub(current_hashpower)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("   New hashpower: {} (+{})", new_hashpower, hashpower_increase);
+        
+        // Update user hashpower
+        user_moonbase.active_hashpower = new_hashpower;
+        
+        // Update global hashpower
+        doge_btc_mining.total_active_hashpower = doge_btc_mining.total_active_hashpower
+            .checked_add(hashpower_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("🌐 Updated global hashpower: +{}", hashpower_increase);
+    } else {
+        msg!("⚠️ No active hashpower - multiplier will apply when modules are installed");
+    }
+
     // Update moonbase state
     user_moonbase.incubated_dragon_egg = Some(egg_metadata.key());
 
@@ -2727,6 +2885,7 @@ pub fn incubate_dragon_egg_internal(
     incubation_state.incubated_egg = Some(egg_metadata.mint);
     incubation_state.last_update_ts = current_time;
     incubation_state.moonbase_owner = user_moonbase.owner;
+    incubation_state.total_power = egg_metadata.power as u64;
 
     // Update egg metadata
     egg_metadata.incubated_moonbase = Some(user_moonbase.owner);
@@ -2735,6 +2894,7 @@ pub fn incubate_dragon_egg_internal(
     msg!("✅ Dragon Egg incubated in moonbase");
     msg!("   Egg: {}", egg_metadata.mint);
     msg!("   Moonbase: {}", user_moonbase.owner);
+    msg!("   Multiplier applied: {}x", egg_metadata.multiplier as f64 / 100.0);
 
     Ok(())
 }
@@ -2746,6 +2906,7 @@ pub fn remove_dragon_egg_internal(
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
 
     // Verify NFT is in custody PDA (it should be locked there)
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
@@ -2758,6 +2919,45 @@ pub fn remove_dragon_egg_internal(
 
     let current_time = Clock::get()?.unix_timestamp;
     let final_power = egg_metadata.power;
+
+    // Remove egg multiplier from hashpower (if user has active hashpower)
+    if user_moonbase.active_hashpower > 0 {
+        msg!("⛏️ Removing Dragon Egg multiplier from hashpower");
+        msg!("   Current hashpower (with multiplier): {}", user_moonbase.active_hashpower);
+        msg!("   Egg multiplier: {}x", egg_metadata.multiplier as f64 / 100.0);
+        
+        // Mine pending rewards BEFORE changing hashpower
+        helper::mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
+        
+        // Calculate original hashpower (reverse the multiplier)
+        // current_hashpower = original * multiplier / 100
+        // original = current_hashpower * 100 / multiplier
+        let current_hashpower = user_moonbase.active_hashpower;
+        let original_hashpower = (current_hashpower as u128)
+            .checked_mul(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(egg_metadata.multiplier as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .min(u64::MAX as u128) as u64;
+        
+        let hashpower_decrease = current_hashpower
+            .checked_sub(original_hashpower)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("   Original hashpower (without multiplier): {} (-{})", original_hashpower, hashpower_decrease);
+        
+        // Update user hashpower
+        user_moonbase.active_hashpower = original_hashpower;
+        
+        // Update global hashpower
+        doge_btc_mining.total_active_hashpower = doge_btc_mining.total_active_hashpower
+            .checked_sub(hashpower_decrease)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("🌐 Updated global hashpower: -{}", hashpower_decrease);
+    } else {
+        msg!("⚠️ No active hashpower - no multiplier to remove");
+    }
 
     msg!("🔓 Transferring NFT back to user (unlocking)");
     
@@ -2798,6 +2998,7 @@ pub fn remove_dragon_egg_internal(
     msg!("✅ Dragon Egg removed from incubation");
     msg!("   Egg: {}", egg_metadata.mint);
     msg!("   Final Power: {}", final_power);
+    msg!("   Multiplier removed: {}x", egg_metadata.multiplier as f64 / 100.0);
 
     Ok(())
 }
@@ -2851,6 +3052,14 @@ pub struct IncubateDragonEgg<'info> {
     /// CHECK: PDA for NFT custody
     pub egg_custody_pda: UncheckedAccount<'info>,
 
+    /// Global mining state for hashpower tracking
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
 
@@ -2901,6 +3110,14 @@ pub struct RemoveDragonEgg<'info> {
     )]
     /// CHECK: PDA for NFT custody
     pub egg_custody_pda: UncheckedAccount<'info>,
+
+    /// Global mining state for hashpower tracking
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,

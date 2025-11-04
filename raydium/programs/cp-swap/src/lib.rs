@@ -20,9 +20,9 @@ solana_security_txt::security_txt! {
 }
 
 #[cfg(feature = "devnet")]
-declare_id!("2JrxbdeWVFbgJLdsP5FdF6QyMg2wR5RaGbrwE9m4pkyC");
+declare_id!("Gv2Vsb6b1ZTM5D7QPTTiSiFdoUCAMSw7kbLbWjFjbrVX");
 #[cfg(not(feature = "devnet"))]
-declare_id!("2JrxbdeWVFbgJLdsP5FdF6QyMg2wR5RaGbrwE9m4pkyC");
+declare_id!("Gv2Vsb6b1ZTM5D7QPTTiSiFdoUCAMSw7kbLbWjFjbrVX");
 
 pub mod admin {
     use super::{pubkey, Pubkey};

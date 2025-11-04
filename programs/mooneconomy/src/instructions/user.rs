@@ -1631,3 +1631,346 @@ pub struct UpdatePendingRewards<'info> {
     #[account(mut)]
     pub authority: Signer<'info>
 }
+
+// ----------------------------------------------------------------------------------------
+// ------------ CPI WRAPPERS :: MOONBASE CLAIM FUNCTIONS WITH ELECTRICITY UPDATES --------
+// ----------------------------------------------------------------------------------------
+
+/// Claim DOGE_BTC mining rewards - calculates electricity and calls MoonBase
+pub fn claim_dbtc_tokens_wrapper(ctx: Context<ClaimDbtcTokens>) -> Result<()> {
+    msg!("💰 Claim DOGE_BTC tokens - calculating electricity");
+    
+    // Calculate current total electricity from all positions
+    let new_electricity = helper::calculate_total_electricity(
+        &ctx.accounts.electricity_ac,
+        &ctx.accounts.global_config,
+        &ctx.accounts.dogebtc_vault,
+        &ctx.accounts.liquidity_vault,
+    )?;
+    
+    msg!("⚡ Total electricity: {}", new_electricity);
+    
+    // CPI to MoonBase claim_dbtc_tokens
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moonbase::cpi::accounts::ClaimDogeBtc {
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
+        token_vault: ctx.accounts.dbtc_token_vault.to_account_info(),
+        user_token_account: ctx.accounts.user_dbtc_account.to_account_info(),
+        token_mint: ctx.accounts.dbtc_mint.to_account_info(),
+        loot_dbtc_vault: ctx.accounts.loot_dbtc_vault.to_account_info(),
+        loot_rewards: ctx.accounts.loot_rewards.to_account_info(),
+        dragon_egg_asset: ctx.accounts.dragon_egg_asset.as_ref().map(|a| a.to_account_info()),
+        dragon_egg_metadata: ctx.accounts.dragon_egg_metadata.as_ref().map(|a| a.to_account_info()),
+        incubation_state: ctx.accounts.incubation_state.as_ref().map(|a| a.to_account_info()),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        caller_program: ctx.accounts.fee_collector.to_account_info(),
+        user: ctx.accounts.authority.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+        token_program: ctx.accounts.token_program.to_account_info(),
+    };
+    
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];
+    
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+    moonbase::cpi::claim_dbtc_tokens(cpi_ctx, new_electricity)?;
+    
+    msg!("✅ DOGE_BTC tokens claimed successfully");
+    
+    Ok(())
+}
+
+/// Claim referral rewards - calculates electricity and calls MoonBase
+pub fn claim_referral_rewards_wrapper(ctx: Context<ClaimReferralRewardsWrapper>) -> Result<()> {
+    msg!("🤝 Claim referral rewards - calculating electricity");
+    
+    // Calculate current total electricity from all positions
+    let new_electricity = helper::calculate_total_electricity(
+        &ctx.accounts.electricity_ac,
+        &ctx.accounts.global_config,
+        &ctx.accounts.dogebtc_vault,
+        &ctx.accounts.liquidity_vault,
+    )?;
+    
+    msg!("⚡ Total electricity: {}", new_electricity);
+    
+    // CPI to MoonBase claim_referral_rewards
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moonbase::cpi::accounts::ClaimReferralRewards {
+        referral_rewards: ctx.accounts.referral_rewards.to_account_info(),
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        caller_program: ctx.accounts.fee_collector.to_account_info(),
+        user: ctx.accounts.authority.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];
+    
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+    moonbase::cpi::claim_referral_rewards(cpi_ctx, new_electricity)?;
+    
+    msg!("✅ Referral rewards claimed successfully");
+    
+    Ok(())
+}
+
+/// Claim attraction XP - calculates electricity and calls MoonBase
+pub fn claim_attraction_xp_wrapper(ctx: Context<ClaimAttractionXpWrapper>, module_index: u8) -> Result<()> {
+    msg!("🎯 Claim attraction XP - calculating electricity");
+    
+    // Calculate current total electricity from all positions
+    let new_electricity = helper::calculate_total_electricity(
+        &ctx.accounts.electricity_ac,
+        &ctx.accounts.global_config,
+        &ctx.accounts.dogebtc_vault,
+        &ctx.accounts.liquidity_vault,
+    )?;
+    
+    msg!("⚡ Total electricity: {}", new_electricity);
+    
+    // CPI to MoonBase claim_attraction_xp
+    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
+    let cpi_accounts = moonbase::cpi::accounts::ClaimAttractionXP {
+        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
+        module_instance: ctx.accounts.module_instance.to_account_info(),
+        module_config_account: ctx.accounts.module_config_account.to_account_info(),
+        doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
+        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
+        caller_program: ctx.accounts.fee_collector.to_account_info(),
+        user: ctx.accounts.authority.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
+    let signer_seeds = &[&fee_collector_seeds[..]];
+    
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+    moonbase::cpi::claim_attraction_xp(cpi_ctx, module_index, new_electricity)?;
+    
+    msg!("✅ Attraction XP claimed successfully");
+    
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------------------
+// ------------ ACCOUNT STRUCTS :: CPI WRAPPER FUNCTIONS ----------------------------------
+// ----------------------------------------------------------------------------------------
+
+#[derive(Accounts)]
+pub struct ClaimDbtcTokens<'info> {
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
+    
+    #[account(
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    // MoonBase accounts for CPI
+    #[account(mut)]
+    /// CHECK: User moonbase instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: MoonBase global config
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: DOGE_BTC token vault
+    pub dbtc_token_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: User's DOGE_BTC token account
+    pub user_dbtc_account: UncheckedAccount<'info>,
+    
+    /// CHECK: DOGE_BTC mint
+    pub dbtc_mint: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Loot DOGE_BTC vault
+    pub loot_dbtc_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Loot rewards account
+    pub loot_rewards: UncheckedAccount<'info>,
+    
+    /// Optional Dragon Egg accounts (required if user has incubated egg for power updates)
+    #[account(mut)]
+    /// CHECK: Optional Dragon Egg NFT asset
+    pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
+    
+    #[account(mut)]
+    /// CHECK: Optional Dragon Egg metadata
+    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
+    
+    #[account(mut)]
+    /// CHECK: Optional incubation state
+    pub incubation_state: Option<UncheckedAccount<'info>>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Fee collector PDA (used as caller_program signer)
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    
+    /// CHECK: Token program
+    pub token_program: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimReferralRewardsWrapper<'info> {
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
+    
+    #[account(
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    // MoonBase accounts for CPI
+    #[account(mut)]
+    /// CHECK: Referral rewards account in MoonFacility
+    pub referral_rewards: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: User moonbase instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: MoonBase global config
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Fee collector PDA (used as caller_program signer)
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(module_index: u8)]
+pub struct ClaimAttractionXpWrapper<'info> {
+    #[account(
+        seeds = [ME_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub dogebtc_vault: Account<'info, DogeBtcVault>,
+    
+    #[account(
+        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub liquidity_vault: Account<'info, LiquidityVault>,
+    
+    #[account(
+        mut,
+        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub electricity_ac: Account<'info, UserMoonElectricity>,
+    
+    // MoonBase accounts for CPI
+    #[account(mut)]
+    /// CHECK: User moonbase instance in MoonFacility
+    pub facility_user_moonbase: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Mining state in MoonFacility
+    pub facility_mining_state: UncheckedAccount<'info>,
+    
+    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
+    /// CHECK: MoonBase global config
+    pub moonbase_global_config: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    /// CHECK: Module instance
+    pub module_instance: UncheckedAccount<'info>,
+    
+    /// CHECK: Module config account
+    pub module_config_account: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [FEE_COLLECTOR_SEED.as_ref()],
+        bump,
+    )]
+    /// CHECK: Fee collector PDA (used as caller_program signer)
+    pub fee_collector: UncheckedAccount<'info>,
+    
+    pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}

@@ -127,8 +127,8 @@ function generateWebsiteConfig(config, deployment) {
         "United States", "China", "Russia", "Israel", "Iran", "Ukraine"
       ],
       
-      // ========== EXPANSION CONFIGURATION ==========
-      "expansions": config.expansions || [],
+      // // ========== EXPANSION CONFIGURATION ==========
+      // "expansions": config.expansions || [],
             
       // ========== AUTHORITIES ==========
       "creation_fee_recipient": config.deployment?.creation_fee_recipient,
@@ -170,15 +170,15 @@ function generateWebsiteConfig(config, deployment) {
       "grid_height": 15,
       "max_upgrade_level": 10,
       
-      // ========== FEATURE FLAGS ==========
-      "features": {
-        "pvp_enabled": config.moonbase?.is_game_active !== false,
-        "loot_rewards_enabled": true,
-        "referral_system_enabled": true,
-        "level_system_enabled": true,
-        "expansion_system_enabled": true,
-        "moon_economy_enabled": !!deployment.MOON_ECONOMY_PROGRAM_ID
-      }
+      // // ========== FEATURE FLAGS ==========
+      // "features": {
+      //   "pvp_enabled": config.moonbase?.is_game_active !== false,
+      //   "loot_rewards_enabled": true,
+      //   "referral_system_enabled": true,
+      //   "level_system_enabled": true,
+      //   "expansion_system_enabled": true,
+      //   "moon_economy_enabled": !!deployment.MOON_ECONOMY_PROGRAM_ID
+      // }
     }
   };
   
