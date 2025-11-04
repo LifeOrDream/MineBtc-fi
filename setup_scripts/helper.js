@@ -1364,6 +1364,121 @@ export async function setDbtcSolPrice(
   }
 }
 
+/**
+ * Update MoonEconomy global configuration
+ * Used to set electricity_per_weighted_sol and other config parameters
+ */
+export async function updateMoonEconomyConfiguration(
+  connection,
+  program,
+  wallet,
+  walletKeypair,
+  globalConfigPDA,
+  dogebtcVaultPDA,
+  liquidityVaultPDA,
+  newAuthority = null,
+  newDevAddress = null,
+  newDogebtcAllocation = null,
+  newLiquidityAllocation = null,
+  newElectricityPerWeightedSol = null,
+  newEmergencyTax = null
+) {
+  try {
+    console.log('\x1b[33m%s\x1b[0m', '📡 Updating MoonEconomy configuration...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
+    
+    if (newElectricityPerWeightedSol !== null) {
+      console.log('\x1b[36m%s\x1b[0m', `   Electricity per weighted SOL: ${newElectricityPerWeightedSol}`);
+    }
+    if (newDogebtcAllocation !== null) {
+      console.log('\x1b[36m%s\x1b[0m', `   DOGE_BTC Allocation: ${newDogebtcAllocation}%`);
+    }
+    if (newLiquidityAllocation !== null) {
+      console.log('\x1b[36m%s\x1b[0m', `   Liquidity Allocation: ${newLiquidityAllocation}%`);
+    }
+
+    const updateTx = await program.methods.updateConfiguration(
+      newAuthority ? new PublicKey(newAuthority) : null,
+      newDevAddress ? new PublicKey(newDevAddress) : null,
+      newDogebtcAllocation,
+      newLiquidityAllocation,
+      newElectricityPerWeightedSol ? new BN(newElectricityPerWeightedSol) : null,
+      newEmergencyTax
+    )
+      .accounts({
+        globalConfig: new PublicKey(globalConfigPDA),
+        dogebtcVault: new PublicKey(dogebtcVaultPDA),
+        liquidityVault: new PublicKey(liquidityVaultPDA),
+        authority: wallet.publicKey,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .transaction();
+
+    const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
+
+    console.log('\x1b[32m%s\x1b[0m', `✅ MoonEconomy configuration updated successfully`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
+
+    return {
+      success: true,
+      data: {
+        updateTxid: updateTxid
+      }
+    };
+  } catch (error) {
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error updating MoonEconomy configuration:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+
+
+/**
+ * Set SOL distribution enabled status
+ */
+export async function setSolDistributionEnabled(
+  connection,
+  program,
+  wallet,
+  walletKeypair,
+  globalConfigPDA,
+  enabled
+) {
+  try {
+    console.log('\x1b[33m%s\x1b[0m', '📡 Setting SOL distribution status...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
+    console.log('\x1b[36m%s\x1b[0m', `   SOL distribution enabled: ${enabled}`);
+
+    const updateTx = await program.methods.setSolDistributionEnabled(enabled)
+      .accounts({
+        globalConfig: new PublicKey(globalConfigPDA),
+        authority: wallet.publicKey,
+      })
+      .transaction();
+
+    const updateTxid = await web3.sendAndConfirmTransaction(connection, updateTx, [walletKeypair]);
+
+    console.log('\x1b[32m%s\x1b[0m', `✅ SOL distribution status set successfully (${enabled ? 'ENABLED' : 'DISABLED'})`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${updateTxid}`);
+
+    return {
+      success: true,
+      data: {
+        updateTxid: updateTxid
+      }
+    };
+  } catch (error) {
+    console.error('\x1b[31m%s\x1b[0m', '❌ Error setting SOL distribution status:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
 
 
 /**

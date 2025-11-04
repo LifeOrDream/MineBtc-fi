@@ -1012,9 +1012,6 @@ pub fn claim_dbtc_tokens_internal(
         DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[doge_btc_mining.vault_auth_bump],
     ];
-
-    // Get account info before using doge_btc_mining as a mutable reference
-    let mining_account_info = doge_btc_mining.to_account_info();
     
     // Claim tokens
     let claimed_amount = helper::claim_dogebtc_tokens(
@@ -1024,7 +1021,7 @@ pub fn claim_dbtc_tokens_internal(
         &ctx.accounts.token_vault.to_account_info(),
         &ctx.accounts.token_mint.to_account_info(),
         &ctx.accounts.user_token_account.to_account_info(),
-        &mining_account_info,
+        &ctx.accounts.vault_authority.to_account_info(),
         vault_seeds,
         Some(&ctx.accounts.loot_dbtc_vault.to_account_info()),
         Some(&mut ctx.accounts.loot_rewards),
@@ -2290,6 +2287,14 @@ pub struct ClaimDogeBtc<'info> {
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    /// Vault authority PDA for signing token transfers
+    #[account(
+        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = doge_btc_mining.vault_auth_bump,
+    )]
+    /// CHECK: Vault authority PDA (needed to sign token transfers)
+    pub vault_authority: UncheckedAccount<'info>,
     
     #[account(mut)]
     /// CHECK: This is the token vault that holds all the DogeBtc tokens

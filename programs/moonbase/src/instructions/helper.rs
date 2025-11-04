@@ -276,6 +276,7 @@ pub fn claim_dogebtc_tokens<'info>(
         &[
             token_program.clone(),
             token_vault.clone(),
+            token_mint.clone(),
             user_token_account.clone(),
             vault_authority.clone(),
         ],

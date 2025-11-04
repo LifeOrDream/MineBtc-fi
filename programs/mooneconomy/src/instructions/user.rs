@@ -1650,11 +1650,30 @@ pub fn claim_dbtc_tokens_wrapper(ctx: Context<ClaimDbtcTokens>) -> Result<()> {
     
     msg!("⚡ Total electricity: {}", new_electricity);
     
+    // Derive and validate vault authority PDA
+    let vault_authority_seed = b"mdoge-vault-authority";
+    let (expected_vault_authority, _bump) = Pubkey::find_program_address(
+        &[vault_authority_seed],
+        &ctx.accounts.moonbase_program.key(),
+    );
+
+    msg!("Expected vault authority: {}", expected_vault_authority);
+    msg!("Vault authority: {}", ctx.accounts.vault_authority.key());
+    
+    require_keys_eq!(
+        ctx.accounts.vault_authority.key(),
+        expected_vault_authority,
+        ErrorCode::InvalidAccount
+    );
+    
+    msg!("✅ Vault authority validated: {}", ctx.accounts.vault_authority.key());
+    
     // CPI to MoonBase claim_dbtc_tokens
     let cpi_program = ctx.accounts.moonbase_program.to_account_info();
     let cpi_accounts = moonbase::cpi::accounts::ClaimDogeBtc {
         user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
         doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
+        vault_authority: ctx.accounts.vault_authority.to_account_info(),
         token_vault: ctx.accounts.dbtc_token_vault.to_account_info(),
         user_token_account: ctx.accounts.user_dbtc_account.to_account_info(),
         token_mint: ctx.accounts.dbtc_mint.to_account_info(),
@@ -1796,8 +1815,11 @@ pub struct ClaimDbtcTokens<'info> {
     /// CHECK: Mining state in MoonFacility
     pub facility_mining_state: UncheckedAccount<'info>,
     
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: MoonBase global config
+    #[account(
+        mut,
+        constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner
+    )]
+    /// CHECK: MoonBase global config (mutable for updating global_dragon_egg_power)
     pub moonbase_global_config: UncheckedAccount<'info>,
     
     #[account(mut)]
@@ -1808,8 +1830,12 @@ pub struct ClaimDbtcTokens<'info> {
     /// CHECK: User's DOGE_BTC token account
     pub user_dbtc_account: UncheckedAccount<'info>,
     
-    /// CHECK: DOGE_BTC mint
+    #[account(mut)]
+    /// CHECK: DOGE_BTC mint (mutable for CPI)
     pub dbtc_mint: UncheckedAccount<'info>,
+    
+    /// CHECK: Vault authority PDA (derived from MoonBase program, needed for token transfers)
+    pub vault_authority: UncheckedAccount<'info>,
     
     #[account(mut)]
     /// CHECK: Loot DOGE_BTC vault

@@ -10,7 +10,7 @@ import path from 'path';
 import { 
     getSolanaBalance, initializeMoonEconomyProgram, mEconomySetupDbtcVault, mEconomySetupLiquidityVaults, 
     mEconomy_claimMoonbaseSol, mEconomy_withdrawDevEarnings, updateGlobalConfig, updateMoonEconomyGlobalConfig,
-    setDbtcSolPrice,
+    setDbtcSolPrice, updateMoonEconomyConfiguration, setSolDistributionEnabled,
     LOOT_REWARDS_SEED, LOOT_SOL_VAULT_SEED
  } from './helper.js';
 
@@ -174,6 +174,12 @@ async function main() {
         
         // 3.5. Set initial DOGE_BTC to SOL price (default price for electricity calculations)
         await setInitialDbtcSolPrice(moonEconomyProgram);
+        
+        // 3.6. Set electricity_per_weighted_sol configuration
+        await setElectricityPerWeightedSol(moonEconomyProgram);
+        
+        // 3.7. Set SOL distribution enabled status (disabled by default, admin will enable later)
+        await setSolDistributionEnabledStatus(moonEconomyProgram);
         return;
 
         // 4. Claim MoonBase SOL
@@ -612,6 +618,119 @@ async function setInitialDbtcSolPrice(moonEconomyProgram) {
         }
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set initial DOGE_BTC price:', error);
+        throw error;
+    }
+}
+
+async function setElectricityPerWeightedSol(moonEconomyProgram) {
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ SETTING ELECTRICITY PER WEIGHTED SOL ] ================');
+    
+    try {
+        const globalConfigAddress = deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac;
+        const dogebtcVaultAddress = deploymentFile.moonEconomy_mDogeVault_initialized?.dogebtcVault;
+        const liquidityVaultAddress = deploymentFile.moonEconomy_liquidityVault_initialized?.liquidityVault;
+
+        const requiredAddresses = {
+            'MoonEconomy Global Config': globalConfigAddress,
+            'DOGE_BTC Vault': dogebtcVaultAddress,
+            'Liquidity Vault': liquidityVaultAddress
+        };
+
+        for (const [label, value] of Object.entries(requiredAddresses)) {
+            if (!value) {
+                throw new Error(`${label} address not found in deployment file`);
+            }
+        }
+
+        // Default: 1000 electricity per weighted SOL (1 SOL = 1000 electricity)
+        // This can be adjusted in config.json if needed
+        const defaultElectricityPerWeightedSol = config.moonEconomy?.electricity_per_weighted_sol || 1000;
+        
+        console.log('\x1b[36m%s\x1b[0m', `📝 Setting electricity per weighted SOL: ${defaultElectricityPerWeightedSol}`);
+        console.log('\x1b[36m%s\x1b[0m', `   Meaning: 1 SOL staked = ${defaultElectricityPerWeightedSol} electricity`);
+
+        const result = await updateMoonEconomyConfiguration(
+            connection,
+            moonEconomyProgram,
+            wallet,
+            walletKeypair,
+            globalConfigAddress,
+            dogebtcVaultAddress,
+            liquidityVaultAddress,
+            null, // newAuthority
+            null, // newDevAddress
+            null, // newDogebtcAllocation
+            null, // newLiquidityAllocation
+            defaultElectricityPerWeightedSol, // newElectricityPerWeightedSol
+            null  // newEmergencyTax
+        );
+
+        if (result.success) {
+            console.log('\x1b[32m%s\x1b[0m', '✅ Electricity per weighted SOL set successfully!');
+            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.updateTxid}`);
+            
+            deploymentFile.moonEconomy_program_initialized = {
+                ...deploymentFile.moonEconomy_program_initialized,
+                electricity_per_weighted_sol: {
+                    value: defaultElectricityPerWeightedSol,
+                    set_tx: result.data.updateTxid,
+                    timestamp: new Date().toISOString()
+                }
+            };
+            saveDeploymentData();
+        } else {
+            throw new Error(`Failed to set electricity per weighted SOL: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set electricity per weighted SOL:', error);
+        throw error;
+    }
+}
+
+async function setSolDistributionEnabledStatus(moonEconomyProgram) {
+    console.log('\x1b[35m%s\x1b[0m', '\n================ [ SETTING SOL DISTRIBUTION STATUS ] ================');
+    
+    try {
+        const globalConfigAddress = deploymentFile.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac;
+
+        if (!globalConfigAddress) {
+            throw new Error('MoonEconomy Global Config address not found in deployment file');
+        }
+
+        // Default: disabled (false) - admin will enable later after launch period
+        // This can be adjusted in config.json if needed
+        const enabled = config.moonEconomy?.sol_distribution_enabled || false;
+        
+        console.log('\x1b[36m%s\x1b[0m', `📝 Setting SOL distribution enabled: ${enabled}`);
+        console.log('\x1b[36m%s\x1b[0m', `   ${enabled ? '✅ ENABLED - Stakers can claim SOL rewards' : '⏸️  DISABLED - SOL will accumulate but not be claimable (admin will enable later)'}`);
+
+        const result = await setSolDistributionEnabled(
+            connection,
+            moonEconomyProgram,
+            wallet,
+            walletKeypair,
+            globalConfigAddress,
+            enabled
+        );
+
+        if (result.success) {
+            console.log('\x1b[32m%s\x1b[0m', '✅ SOL distribution status set successfully!');
+            console.log('\x1b[90m%s\x1b[0m', `   Transaction: ${result.data.updateTxid}`);
+            
+            deploymentFile.moonEconomy_program_initialized = {
+                ...deploymentFile.moonEconomy_program_initialized,
+                sol_distribution_enabled: {
+                    enabled: enabled,
+                    set_tx: result.data.updateTxid,
+                    timestamp: new Date().toISOString()
+                }
+            };
+            saveDeploymentData();
+        } else {
+            throw new Error(`Failed to set SOL distribution status: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set SOL distribution status:', error);
         throw error;
     }
 }

@@ -94,4 +94,7 @@ pub enum ErrorCode {
     
     #[msg("SOL distribution is currently disabled - will be enabled by admin after launch period")]
     SolDistributionDisabled,
+    
+    #[msg("Invalid account")]
+    InvalidAccount,
 }
