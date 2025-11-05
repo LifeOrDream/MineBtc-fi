@@ -817,7 +817,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     if available_solana == 0 {
         msg!("⚠️ No SOL balance to withdraw. Available: {}", available_solana);
         msg!("   Total balance: {}, Rent: {}", current_balance, rent_exempt_amount);
-        return Err(ErrorCode::InsufficientTreasuryFunds.into());
+        return Ok(());
     }
 
     // Calculate loot rewards amount using configurable percentage

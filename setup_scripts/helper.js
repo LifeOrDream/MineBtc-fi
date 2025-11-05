@@ -3653,6 +3653,7 @@ export async function updateMdogeDistPerSlot(
         buybacksSolVault: buybacksSolVaultPDA,
         buybacksAccount: buybacksAccountPDA,
         dbtcTokenVault: dbtcTokenVaultPDA, // Main DOGE_BTC vault PDA
+        systemProgram: web3.SystemProgram.programId
       })
       .rpc();
 

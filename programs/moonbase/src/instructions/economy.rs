@@ -4,8 +4,6 @@ use crate::events::*;
 use crate::errors::ErrorCode;
 
 use anchor_spl::token_interface::{
-    self as token_if,           // gives you CPI helpers such as `token_if::transfer`
-    Mint as Mint2022,
     TokenAccount as TokenAccount2022,
 };
 use anchor_spl::token_2022::Token2022;          // ← the PROGRAM-ID wrapper (implements Id)
@@ -20,76 +18,147 @@ use raydium_cp_swap;
 /// This function can be called by anyone every 30 minutes
 /// Distribution rate updated every 4 hours with 3% deadband
 pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
+    msg!("🌟 === STARTING UPDATE DBTC DISTRIBUTION PER SLOT ===");
+    
     let doge_btc_mining: &mut Account<'_, DogeBtcMining> = &mut ctx.accounts.doge_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
     
+    msg!("   📅 Current timestamp: {}", current_time);
+    msg!("   ⏰ Last update timestamp: {}", doge_btc_mining.last_rate_update);
+    msg!("   🎯 Admin LP override: {}", lp_token_amount);
+    
     // SECURITY: Validate that the provided pool_state matches the authorized pool in global_config
+    msg!("\n   🔒 Validating Raydium pool authorization...");
     require!(
         ctx.accounts.global_config.raydium_pool_state != Pubkey::default(),
         ErrorCode::InvalidAccount
     );
+    msg!("   📍 Authorized pool: {}", ctx.accounts.global_config.raydium_pool_state);
+    msg!("   📍 Provided pool: {}", ctx.accounts.pool_state.key());
     require!(
         ctx.accounts.pool_state.key() == ctx.accounts.global_config.raydium_pool_state,
         ErrorCode::InvalidAccount
     );
-    msg!("✅ Verified pool_state matches authorized Raydium pool: {}", ctx.accounts.pool_state.key());
+    msg!("   ✅ Pool validation passed!");
     
     // Check if admin override is being used (when lp_token_amount > 0)
     if lp_token_amount > 0 {
+        msg!("\n   🔧 Admin override detected");
         // Verify that the authority is provided and matches the global config
         require!(ctx.accounts.authority.is_some(), ErrorCode::Unauthorized);
         let authority = ctx.accounts.authority.as_ref().unwrap();
+        msg!("   👤 Authority: {}", authority.key());
+        msg!("   🔐 Expected authority: {}", ctx.accounts.global_config.ext_authority);
         require!(
             ctx.accounts.global_config.ext_authority == authority.key(),
             ErrorCode::Unauthorized
         );
-        msg!("🔧 Admin override: Using LP token amount {}", lp_token_amount);
+        msg!("   ✅ Admin authority validated");
+        msg!("   🎯 Using LP token amount: {}", lp_token_amount);
     } else {
-        msg!("🔄 Using automatic LP calculation");
+        msg!("\n   🔄 Using automatic LP calculation (no admin override)");
     }
     
     // Check if at least 30 minutes has passed since last update
+    msg!("\n   ⏱️ Checking time constraints...");
     let thirty_mins = THIRTY_MINS as i64;
     if current_time < doge_btc_mining.last_rate_update + thirty_mins {
-        msg!("⏰ Update too early - must wait at least 30 minutes between updates");
-        msg!("   Current time: {}, Next update allowed: {}, remaining seconds: {}", current_time, doge_btc_mining.last_rate_update + thirty_mins, (doge_btc_mining.last_rate_update + thirty_mins - current_time));
+        msg!("   ⏰ Update too early - must wait at least 30 minutes between updates");
+        msg!("      Next update allowed: {}", doge_btc_mining.last_rate_update + thirty_mins);
+        msg!("      Time remaining: {} seconds", (doge_btc_mining.last_rate_update + thirty_mins - current_time));
         return Ok(());
     }
+    msg!("   ✅ Time constraint satisfied ({}s since last update)", 
+         current_time - doge_btc_mining.last_rate_update);
     
-    msg!("🔄 Starting DOGE_BTC distribution rate update");
-    msg!("   Current time: {}", current_time);
-    msg!("   Last update: {}", doge_btc_mining.last_rate_update);
-    msg!("   Current dist rate: {}", doge_btc_mining.current_dist_rate);
+    msg!("\n🔄 === PROCESSING DISTRIBUTION RATE UPDATE ===");
+    msg!("   ⚙️  Current distribution rate: {} DOGE_BTC per slot", doge_btc_mining.current_dist_rate);
     
     // Read buybacks SOL vault balance
+    msg!("\n💰 === CHECKING BUYBACKS VAULT ===");
     let buybacks_vault_balance = ctx.accounts.buybacks_sol_vault.lamports();
     let buybacks_account = &mut ctx.accounts.buybacks_account;
     
-    // Calculate available SOL (subtract already earnmarked SOL for POL)
-    let available_sol = buybacks_vault_balance.saturating_sub(buybacks_account.sol_for_pol);
+    msg!("   💳 Buybacks vault: {}", ctx.accounts.buybacks_sol_vault.key());
+    msg!("   💰 Raw balance: {} lamports ({} SOL)", 
+         buybacks_vault_balance, buybacks_vault_balance as f64 / 1e9);
     
-    msg!("   💰 Buybacks vault balance: {} SOL", buybacks_vault_balance as f64 / 1e9);
-    msg!("   💰 Already earnmarked for POL: {} SOL", buybacks_account.sol_for_pol as f64 / 1e9);
-    msg!("   💰 Available SOL: {} SOL", available_sol as f64 / 1e9);
+    // Calculate rent-exempt minimum for the buybacks vault
+    let rent = Rent::get()?;
+    let buybacks_vault_data_len = ctx.accounts.buybacks_sol_vault.data_len();
+    let buybacks_vault_rent_exempt = rent.minimum_balance(buybacks_vault_data_len);
+    
+    msg!("   📏 Vault data length: {} bytes", buybacks_vault_data_len);
+    msg!("   💎 Rent-exempt minimum: {} lamports ({} SOL)", 
+         buybacks_vault_rent_exempt, buybacks_vault_rent_exempt as f64 / 1e9);
+    msg!("   💰 Previously earnmarked POL: {} lamports ({} SOL)", 
+         buybacks_account.sol_for_pol, buybacks_account.sol_for_pol as f64 / 1e9);
+    
+    // Calculate available SOL (subtract rent-exempt minimum and already earnmarked SOL for POL)
+    let available_sol = buybacks_vault_balance
+        .saturating_sub(buybacks_vault_rent_exempt)
+        .saturating_sub(buybacks_account.sol_for_pol);
+    
+    msg!("   ✅ Available SOL: {} lamports ({} SOL)", 
+         available_sol, available_sol as f64 / 1e9);
+    msg!("      (balance - rent_exempt - earnmarked_pol)");
+    
+    // Ensure we have enough SOL available
+    if available_sol == 0 {
+        msg!("   ⚠️ No SOL available for swaps after accounting for rent-exempt minimum");
+        return Ok(());
+    }
     
     // Calculate 10% for swap (SOL → DOGE_BTC), 10% for POL earnmarking
+    msg!("\n💱 === CALCULATING BUYBACK AND POL AMOUNTS ===");
     let sol_for_swap = available_sol / 10; // 10% for price oracle swap
     let sol_for_pol_earnmark = available_sol / 10; // 10% for POL
     
-    msg!("   Price snapshot {}/8: Swapping {} SOL for DOGE_BTC (10% for oracle)", 
-         doge_btc_mining.price_history.len() + 1, sol_for_swap as f64 / 1e9);
-    msg!("   💰 Earnmarking {} SOL for POL (10% for liquidity)", sol_for_pol_earnmark as f64 / 1e9);
+    msg!("   📊 Price snapshot {}/8: Planning SOL → DOGE_BTC swap", 
+         doge_btc_mining.price_history.len() + 1);
+    msg!("   💵 SOL for swap: {} lamports ({} SOL) [10% of available]", 
+         sol_for_swap, sol_for_swap as f64 / 1e9);
+    msg!("   💰 SOL for POL earnmark: {} lamports ({} SOL) [10% of available]", 
+         sol_for_pol_earnmark, sol_for_pol_earnmark as f64 / 1e9);
+    msg!("   📊 Total SOL to be used: {} lamports ({} SOL)", 
+         sol_for_swap + sol_for_pol_earnmark, (sol_for_swap + sol_for_pol_earnmark) as f64 / 1e9);
     
     // Transfer SOL from buybacks vault to sol_token_account for swap
     if sol_for_swap > 0 {
-        **ctx.accounts.buybacks_sol_vault.to_account_info().try_borrow_mut_lamports()? -= sol_for_swap;
-        **ctx.accounts.sol_token_account.to_account_info().try_borrow_mut_lamports()? += sol_for_swap;
-        msg!("   ✅ Transferred {} SOL from buybacks vault to swap account", sol_for_swap as f64 / 1e9);
+        msg!("\n💸 === TRANSFERRING SOL FOR SWAP ===");
+        msg!("   📤 From: Buybacks vault ({})", ctx.accounts.buybacks_sol_vault.key());
+        msg!("   📥 To: SOL token account ({})", ctx.accounts.sol_token_account.key());
+        msg!("   💵 Amount: {} lamports ({} SOL)", sol_for_swap, sol_for_swap as f64 / 1e9);
+        
+        msg!("   🔑 Using buybacks vault PDA seeds with bump: {}", ctx.bumps.buybacks_sol_vault);
+        
+        // Manually transfer lamports from the program-owned PDA
+        // by debiting its lamports and crediting the destination.
+        **ctx.accounts.buybacks_sol_vault.try_borrow_mut_lamports()? -= sol_for_swap;
+        **ctx.accounts.sol_token_account.try_borrow_mut_lamports()? += sol_for_swap;
+        msg!("   ✅ SOL transfer completed");
+        
+        // Then sync the native SOL balance with the token account
+        // This is required for wrapped SOL (WSOL) token accounts
+        msg!("   🔄 Syncing native SOL balance for WSOL token account...");
+        anchor_spl::token::sync_native(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::SyncNative {
+                    account: ctx.accounts.sol_token_account.to_account_info(),
+                },
+            ),
+        )?;
+        
+        msg!("   ✅ WSOL sync completed");
+        msg!("   💰 Successfully transferred {} SOL and synced WSOL account", sol_for_swap as f64 / 1e9);
     }
     
     // Perform swap via Raydium CPI to get current exchange rate (SOL → DOGE_BTC)
+    msg!("\n💱 === PERFORMING RAYDIUM SWAP ===");
     let dbtc_received = if sol_for_swap > 0 {
-        perform_sol_to_dbtc_swap(
+        msg!("   🚀 Calling Raydium swap CPI...");
+        let received = perform_sol_to_dbtc_swap(
             &ctx.accounts.raydium_program,
             &ctx.accounts.pool_state,
             &ctx.accounts.amm_config,
@@ -106,12 +175,21 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
             &ctx.accounts.token_program,
             sol_for_swap,
             doge_btc_mining.vault_auth_bump,
-        )?
+        )?;
+        msg!("   ✅ Swap completed: Received {} DOGE_BTC ({} DOGE_BTC)", 
+             received, received as f64 / 1e6);
+        received
     } else {
+        msg!("   ⚠️ No SOL to swap, skipping");
         0
     };
     
     // Calculate current price (SOL per DOGE_BTC) with proper decimal handling
+    msg!("\n📊 === CALCULATING NEW PRICE ===");
+    msg!("   🧮 Price calculation:");
+    msg!("      SOL swapped: {} lamports ({} SOL)", sol_for_swap, sol_for_swap as f64 / 1e9);
+    msg!("      DOGE_BTC received: {} units ({} DOGE_BTC)", dbtc_received, dbtc_received as f64 / 1e6);
+    
     // sol_for_swap is in WSOL base units (9 decimals), dbtc_received is in DOGE_BTC base units (6 decimals)
     // 
     // Formula: Price = (sol_for_swap / 10^9) / (dbtc_received / 10^6)
@@ -140,10 +218,10 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     // Calculate human-readable price for logging
     // Convert back to actual SOL per DOGE_BTC
     let actual_price = current_price as f64 / 1_000_000_000.0;
-    msg!("   Swap details: {} SOL base units → {} DOGE_BTC base units", sol_for_swap, dbtc_received);
-    msg!("   Human readable: {:.9} SOL → {} DOGE_BTC", sol_for_swap as f64 / 1_000_000_000.0, dbtc_received / 1_000_000);
-    msg!("   Current price: {} (9-decimal precision), Actual: {:.9} SOL per DOGE_BTC", 
-         current_price, actual_price);
+    msg!("   ✅ Price calculated:");
+    msg!("      Raw price (with precision): {}", current_price);
+    msg!("      Actual price: {:.9} SOL per DOGE_BTC", actual_price);
+    msg!("      Inverse: {:.6} DOGE_BTC per SOL", 1.0 / actual_price);
     
     // Add current price to history
     let price_entry = PriceEntry {
@@ -153,11 +231,22 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     
     // Add price entry to history
     doge_btc_mining.price_history.push(price_entry);
+    msg!("   📈 Added price entry to history. Total entries: {}/8", 
+         doge_btc_mining.price_history.len());
     
     // Earnmark SOL for POL in buybacks account
+    msg!("\n💰 === EARNMARKING SOL FOR POL ===");
+    let previous_pol = buybacks_account.sol_for_pol;
     buybacks_account.sol_for_pol = buybacks_account.sol_for_pol.checked_add(sol_for_pol_earnmark).ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   💵 Earnmarking: {} lamports ({} SOL)", 
+         sol_for_pol_earnmark, sol_for_pol_earnmark as f64 / 1e9);
+    msg!("   📊 Previous POL balance: {} lamports ({} SOL)", 
+         previous_pol, previous_pol as f64 / 1e9);
+    msg!("   ✅ New POL balance: {} lamports ({} SOL)", 
+         buybacks_account.sol_for_pol, buybacks_account.sol_for_pol as f64 / 1e9);
     
     // Calculate ongoing weighted average (even before 4 hours)
+    msg!("\n📊 === CALCULATING WEIGHTED AVERAGE PRICE ===");
     let mut weighted_sum: u128 = 0;
     let mut total_weights: u128 = 0;
     
@@ -175,6 +264,9 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
         total_weights = total_weights
             .checked_add(weight)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("   Entry {}: Price={}, Weight={}, Contribution={}", 
+             i + 1, entry.price, weight, price_contribution);
     }
     
     let current_weighted_avg = if total_weights > 0 {
@@ -183,12 +275,14 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
         current_price
     };
     
+    msg!("   📊 Weighted sum: {}", weighted_sum);
+    msg!("   📊 Total weights: {}", total_weights);
+    msg!("   ✅ Weighted average price: {} ({:.9} SOL per DOGE_BTC)", 
+         current_weighted_avg, current_weighted_avg as f64 / 1e9);
+    
     // Update recent price with current weighted average
     doge_btc_mining.recent_price = current_weighted_avg;
     
-    msg!("   💰 Earnmarked {} SOL for POL, total earnmarked: {}", sol_for_pol_earnmark, buybacks_account.sol_for_pol);
-    msg!("   📊 Ongoing weighted average: {} (from {} snapshots)", current_weighted_avg, doge_btc_mining.price_history.len());
-    msg!("   🎯 Track price (last rate change): {}", doge_btc_mining.track_price);
     
     // Update timestamp for next snapshot
     doge_btc_mining.last_rate_update = current_time;
@@ -197,14 +291,31 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     // Check if 4 hours have passed AND we have 8 price entries
     // Only then check if distribution rate should change
     // ----------------------------------------------------
+    msg!("\n⏱️ === CHECKING DISTRIBUTION RATE UPDATE CONDITIONS ===");
     let four_hours = FOUR_HOURS as i64;
+    let time_since_last_update = current_time - doge_btc_mining.last_rate_update;
+    msg!("   📊 Price history entries: {}/8", doge_btc_mining.price_history.len());
+    msg!("   ⏰ Time since last distribution update: {}s ({}h)", 
+         time_since_last_update, time_since_last_update as f64 / 3600.0);
+    msg!("   🎯 4-hour threshold: {}s", four_hours);
     let time_since_last = doge_btc_mining.price_history.first()
         .map(|e| current_time - e.timestamp)
         .unwrap_or(0);
+    msg!("   ⏰ Time since first snapshot: {}s ({}h)", 
+         time_since_last, time_since_last as f64 / 3600.0);
     
     if doge_btc_mining.price_history.len() < 8 || time_since_last < four_hours {
-        msg!("   ⏰ Not ready for rate update: {} snapshots, {} seconds elapsed (need 8 snapshots over 4 hours)", 
-             doge_btc_mining.price_history.len(), time_since_last);
+        msg!("   ❌ Conditions NOT met for distribution rate update:");
+        if doge_btc_mining.price_history.len() < 8 {
+            msg!("      Need {} more price snapshots", 8 - doge_btc_mining.price_history.len());
+        }
+        if time_since_last < four_hours {
+            msg!("      Need to wait {} more seconds ({} hours)", 
+                 four_hours - time_since_last, 
+                 (four_hours - time_since_last) as f64 / 3600.0);
+        }
+        msg!("   ⏸️ Skipping distribution rate update for now");
+        msg!("\n✅ === UPDATE COMPLETE (PRICE SNAPSHOT ONLY) ===");
         return Ok(());
     }
     
@@ -283,22 +394,49 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     
     // Calculate amounts for LP addition using UPDATED distribution rate
     // Use earnmarked SOL from buybacks account
+    msg!("\n💧 === LIQUIDITY POOL OPERATIONS ===");
     let total_sol_for_lp = buybacks_account.sol_for_pol;
     
-    msg!("   🏦 Adding liquidity: {} SOL (earnmarked from buybacks over 4 hours)", total_sol_for_lp as f64 / 1e9);
+    msg!("   💰 Total SOL earnmarked for LP: {} lamports ({} SOL)", 
+         total_sol_for_lp, total_sol_for_lp as f64 / 1e9);
+    msg!("   📊 Accumulated over {} price snapshots", doge_btc_mining.price_history.len());
     
     // Transfer SOL from buybacks vault to sol_token_account for LP addition
     if total_sol_for_lp > 0 {
-        **ctx.accounts.buybacks_sol_vault.to_account_info().try_borrow_mut_lamports()? -= total_sol_for_lp;
-        **ctx.accounts.sol_token_account.to_account_info().try_borrow_mut_lamports()? += total_sol_for_lp;
-        msg!("   ✅ Transferred {} SOL from buybacks vault to LP account", total_sol_for_lp as f64 / 1e9);
+        msg!("\n   💸 === TRANSFERRING SOL FOR LP ===");
+        msg!("   📤 From: Buybacks vault ({})", ctx.accounts.buybacks_sol_vault.key());
+        msg!("   📥 To: SOL token account ({})", ctx.accounts.sol_token_account.key());
+        msg!("   💵 Amount: {} lamports ({} SOL)", total_sol_for_lp, total_sol_for_lp as f64 / 1e9);
+
+        // Manually transfer lamports from the program-owned PDA
+        // by debiting its lamports and crediting the destination.
+        **ctx.accounts.buybacks_sol_vault.try_borrow_mut_lamports()? -= total_sol_for_lp;
+        **ctx.accounts.sol_token_account.try_borrow_mut_lamports()? += total_sol_for_lp;
+        
+        // Then sync the native SOL balance with the token account
+        // This is required for wrapped SOL (WSOL) token accounts
+        anchor_spl::token::sync_native(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::SyncNative {
+                    account: ctx.accounts.sol_token_account.to_account_info(),
+                },
+            ),
+        )?;
+        
+        msg!("   ✅ Transferred {} SOL from buybacks vault to LP account and synced", total_sol_for_lp as f64 / 1e9);
+    } else {
+        msg!("   ⚠️ No SOL earnmarked for LP, skipping LP operations");
     }
     
     // Perform actual LP addition and burn
     // The function will calculate DOGE_BTC needed based on SOL amount
     // Bought-back DOGE_BTC in dbtc_token_account will be used first
     // If more DOGE_BTC is needed, it will be transferred from dbtc_token_vault
-    perform_lp_addition_and_burn(
+    if total_sol_for_lp > 0 {
+        msg!("\n   🎯 === ADDING LIQUIDITY TO POOL ===");
+        msg!("   📊 Using bought-back DOGE_BTC first, then main vault if needed");
+        perform_lp_addition_and_burn(
         &ctx.accounts.raydium_program,
         &ctx.accounts.pool_state,
         &ctx.accounts.authority_pda,
@@ -318,35 +456,50 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
         doge_btc_mining,
         lp_token_amount, // Pass the LP token amount
         Some(&ctx.accounts.dbtc_token_vault.to_account_info()), // Main vault for additional DOGE_BTC
-    )?;
-    
-    // Check actual WSOL balance after LP addition to see how much was consumed
-    let wsol_balance_after_lp = {
-        let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
-        let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
-        sol_token_data.amount
-    };
-    
-    // Calculate how much SOL was actually consumed for LP
-    let sol_consumed_for_lp = total_sol_for_lp.saturating_sub(wsol_balance_after_lp);
-    
-    // Update buybacks POL tracking - subtract only the amount actually used
-    buybacks_account.sol_for_pol = wsol_balance_after_lp; // Keep any leftover SOL for next cycle
-    
-    msg!("   💰 SOL consumption: {} total available, {} consumed for LP, {} remaining", 
-         total_sol_for_lp, sol_consumed_for_lp, buybacks_account.sol_for_pol);
+        )?;
+        msg!("   ✅ Successfully added liquidity and burned LP tokens");
+        
+        // Check actual WSOL balance after LP addition to see how much was consumed
+        let wsol_balance_after_lp = {
+            let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
+            let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+            sol_token_data.amount
+        };
+        msg!("   💰 WSOL balance after LP addition: {}", wsol_balance_after_lp);
+        
+        // Calculate how much SOL was actually consumed for LP
+        let sol_consumed_for_lp = total_sol_for_lp.saturating_sub(wsol_balance_after_lp);
+        msg!("   📊 SOL consumed for LP: {} SOL", sol_consumed_for_lp as f64 / 1e9);
+        
+        // Update buybacks POL tracking - subtract only the amount actually used
+        buybacks_account.sol_for_pol = wsol_balance_after_lp; // Keep any leftover SOL for next cycle
+        msg!("   🔄 Updated POL tracking: {} SOL remaining for next cycle", wsol_balance_after_lp as f64 / 1e9);
+        
+        msg!("   💰 LP summary: {} SOL available, {} SOL consumed, {} SOL remaining for POL", 
+             total_sol_for_lp, sol_consumed_for_lp, buybacks_account.sol_for_pol);
+    }
     
     // Clear price history to restart the 4-hour cycle
     doge_btc_mining.price_history.clear();
     
+    msg!("\n🧹 === FINALIZING UPDATE ===");
+    msg!("   🔄 Cleared price history for new 4-hour accumulation cycle");
+    
     // Update state
     doge_btc_mining.recent_price = new_avg_price; // Store as recent for next cycle
     doge_btc_mining.last_rate_update = current_time;
+    msg!("   📝 Updated recent price: {} DOGE_BTC per SOL", new_avg_price);
+    msg!("   ⏰ Updated last rate update timestamp: {}", current_time);
     
-    msg!("   🔄 Price history cleared - restarting 4-hour accumulation cycle");
+    msg!("\n✅ === DOGE_BTC DISTRIBUTION UPDATE COMPLETE ===");
     msg!("   🎯 Distribution rate: {} -> {} ({})", 
          old_rate, doge_btc_mining.current_dist_rate,
          if rate_changed { "CHANGED" } else { "unchanged" });
+    msg!("   📊 Average price (4h): {} DOGE_BTC per SOL", new_avg_price);
+    msg!("   💰 DOGE_BTC received from swap: {}", dbtc_received);
+    msg!("   💎 SOL earnmarked for next POL: {} SOL", buybacks_account.sol_for_pol as f64 / 1e9);
+    msg!("   ⏱️  Next update available in: ~30 minutes");
+    msg!("=== END UPDATE DBTC DISTRIBUTION ===\n");
     
     emit!(DistributionRateUpdated {
         old_rate,
@@ -466,26 +619,38 @@ fn perform_sol_to_dbtc_swap<'info>(
 ) -> Result<u64> {
     use raydium_cp_swap::cpi;
     
-    msg!("🔄 Performing real Raydium swap: {} WSOL for DOGE_BTC", sol_amount_in);
+    msg!("🔄 === STARTING SOL → DOGE_BTC SWAP ===");
+    msg!("   💵 Input amount: {} lamports ({} SOL)", sol_amount_in, sol_amount_in as f64 / 1e9);
+    msg!("   🏦 Raydium program: {}", raydium_program.key());
+    msg!("   🏊 Pool state: {}", pool_state.key());
+    msg!("   ⚙️  AMM config: {}", amm_config.key());
+    msg!("   🔐 Our authority PDA: {}", authority_pda.key());
+    msg!("   🔐 Raydium authority: {}", raydium_authority.key());
     
     // Get DOGE_BTC token balance before swap by deserializing account data
+    msg!("   📊 Reading DOGE_BTC token account balance...");
     let dbtc_balance_before = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
         let dbtc_account_data = dbtc_token_account.try_borrow_data()?;
         let dbtc_token_data = TokenAccountInterface::try_deserialize(&mut &dbtc_account_data[..])?;
+        msg!("   ✅ Successfully deserialized DOGE_BTC token account");
         dbtc_token_data.amount
     }; // Borrow is dropped here
     
-    msg!("💰 DOGE_BTC balance before swap: {}", dbtc_balance_before);
+    msg!("   💰 DOGE_BTC balance BEFORE swap: {} ({} DOGE_BTC)", 
+         dbtc_balance_before, dbtc_balance_before as f64 / 1e6);
     
     // Create signer seeds for vault authority
+    msg!("   🔑 Creating signer seeds for vault authority PDA...");
     let authority_seeds = &[
         DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[vault_auth_bump],
     ];
     let signer_seeds = &[&authority_seeds[..]];
+    msg!("   ✅ Signer seeds created with bump: {}", vault_auth_bump);
     
     // Create CPI context for Raydium swap
+    msg!("   📦 Setting up CPI accounts for Raydium swap...");
     let cpi_accounts = cpi::accounts::Swap {
         payer: authority_pda.to_account_info(),         // Our PDA as the payer/signer
         authority: raydium_authority.to_account_info(), // Raydium's pool authority PDA
@@ -501,6 +666,7 @@ fn perform_sol_to_dbtc_swap<'info>(
         output_token_mint: dbtc_mint.to_account_info(),
         observation_state: observation_state.to_account_info(),
     };
+    msg!("   ✅ CPI accounts configured");
     
     let cpi_ctx = CpiContext::new_with_signer(
         raydium_program.to_account_info(),
@@ -510,20 +676,35 @@ fn perform_sol_to_dbtc_swap<'info>(
     
     // Accept any amount out since we're getting current market price
     let min_amount_out = 0;
+    msg!("   🎯 Min amount out set to: {} (accepting any amount for price discovery)", min_amount_out);
     
     // Perform the actual swap
+    msg!("   🚀 Executing Raydium swap CPI...");
+    msg!("      Input: {} SOL", sol_amount_in as f64 / 1e9);
+    msg!("      Min output: {} DOGE_BTC (accepting any amount)", min_amount_out);
     cpi::swap_base_input(cpi_ctx, sol_amount_in, min_amount_out)?;
+    msg!("   ✅ Raydium swap CPI completed successfully");
     
     // Calculate actual DOGE_BTC received by checking token account balance again
+    msg!("   📊 Reading DOGE_BTC token account balance after swap...");
     let dbtc_received = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
         let dbtc_account_data_after = dbtc_token_account.try_borrow_data()?;
         let dbtc_token_data_after = TokenAccountInterface::try_deserialize(&mut &dbtc_account_data_after[..])?;
         let dbtc_balance_after = dbtc_token_data_after.amount;
-        dbtc_balance_after.saturating_sub(dbtc_balance_before)
+        msg!("   💰 DOGE_BTC balance AFTER swap: {} ({} DOGE_BTC)", 
+             dbtc_balance_after, dbtc_balance_after as f64 / 1e6);
+        let received = dbtc_balance_after.saturating_sub(dbtc_balance_before);
+        msg!("   📈 DOGE_BTC received: {} ({} DOGE_BTC)", 
+             received, received as f64 / 1e6);
+        received
     }; // Borrow is dropped here
     
-    msg!("✅ Swap completed: received {} DOGE_BTC tokens", dbtc_received);
+    msg!("✅ === SWAP COMPLETED SUCCESSFULLY ===");
+    msg!("   Swapped: {} SOL → {} DOGE_BTC", 
+         sol_amount_in as f64 / 1e9, dbtc_received as f64 / 1e6);
+    msg!("   Exchange rate: {} DOGE_BTC per SOL", 
+         (dbtc_received as f64 / 1e6) / (sol_amount_in as f64 / 1e9));
     
     Ok(dbtc_received)
 }
@@ -555,11 +736,16 @@ fn perform_lp_addition_and_burn<'info>(
     admin_lp_override: u64,
     buyback_dbtc_vault: Option<&AccountInfo<'info>>, // Optional main vault to transfer from if needed
 ) -> Result<()> {
-
-    
-    msg!("🏦 Starting LP addition: {} SOL", sol_amount);
+    msg!("🏦 === STARTING LP ADDITION AND BURN ===");
+    msg!("   💵 SOL amount for LP: {} lamports ({} SOL)", sol_amount, sol_amount as f64 / 1e9);
+    msg!("   🏦 Raydium program: {}", raydium_program.key());
+    msg!("   🏊 Pool state: {}", pool_state.key());
+    msg!("   🔐 Authority PDA: {}", authority_pda.key());
+    msg!("   🎯 Admin LP override: {}", admin_lp_override);
+    msg!("   💰 Main DOGE_BTC vault available: {}", buyback_dbtc_vault.is_some());
     
     // Check available bought-back DOGE_BTC in dbtc_token_account
+    msg!("   📊 Checking bought-back DOGE_BTC balance...");
     let bought_back_dbtc = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
         let dbtc_account_data = dbtc_token_account.try_borrow_data()?;
@@ -567,16 +753,20 @@ fn perform_lp_addition_and_burn<'info>(
         dbtc_account.amount
     };
     
-    msg!("💰 Available bought-back DOGE_BTC: {}", bought_back_dbtc);
+    msg!("   💰 Available bought-back DOGE_BTC: {} ({} DOGE_BTC)", 
+         bought_back_dbtc, bought_back_dbtc as f64 / 1e6);
     
     // Create signer seeds for vault authority
+    msg!("   🔑 Creating signer seeds for vault authority PDA...");
     let authority_seeds = &[
         DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[vault_auth_bump],
     ];
     let signer_seeds = &[&authority_seeds[..]];
+    msg!("   ✅ Signer seeds created with bump: {}", vault_auth_bump);
     
     // Step 1: Get LP token balance before deposit to calculate actual minted amount
+    msg!("   📊 Reading LP token balance before deposit...");
     let lp_balance_before = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
         let lp_account_data = lp_token_account.try_borrow_data()?;
@@ -584,10 +774,11 @@ fn perform_lp_addition_and_burn<'info>(
         lp_account.amount
     };
     
-    msg!("💰 LP token balance before deposit: {}", lp_balance_before);
+    msg!("   💰 LP token balance before deposit: {}", lp_balance_before);
     
     // Step 2: Use actual Raydium CPI for deposit
-    msg!("🏦 Creating CPI context for Raydium deposit");
+    msg!("\n   🏦 Setting up Raydium deposit CPI...");
+    msg!("   📦 Creating CPI accounts for deposit...");
     
     let cpi_accounts = raydium_cp_swap::cpi::accounts::Deposit {
         owner: authority_pda.to_account_info(),        // Our vault authority as the owner/signer
@@ -610,21 +801,28 @@ fn perform_lp_addition_and_burn<'info>(
         cpi_accounts,
         signer_seeds, // Use vault authority signer seeds for all operations
     );
+    msg!("   ✅ CPI context created");
     
     // Read token vault balances directly from the token accounts
+    msg!("\n   📊 Reading pool vault balances...");
     let sol_vault_balance = {
         let account_data = sol_vault.try_borrow_data()?;
         let token_account = anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
+        msg!("   💰 SOL vault balance: {} ({} SOL)", 
+             token_account.amount, token_account.amount as f64 / 1e9);
         token_account.amount
     };
     
     let dbtc_vault_balance = {
         let account_data = dbtc_vault.try_borrow_data()?;
         let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
+        msg!("   💰 DOGE_BTC vault balance: {} ({} DOGE_BTC)", 
+             token_account.amount, token_account.amount as f64 / 1e6);
         token_account.amount
     };
     
     // Read LP supply from pool state (this is what Raydium uses internally)
+    msg!("   📊 Reading LP supply from pool state...");
     let lp_supply = {
         let pool_data = pool_state.try_borrow_data()?;
         // Skip discriminator (8 bytes) and read the lp_supply field directly
@@ -646,18 +844,25 @@ fn perform_lp_addition_and_burn<'info>(
             0 // Fallback if we can't read the data
         }
     };
-    
-    msg!("📊 Pool balances - SOL vault: {}, DOGE_BTC vault: {}, LP supply: {}", 
-         sol_vault_balance, dbtc_vault_balance, lp_supply);
+    msg!("   💰 LP supply from pool state: {}", lp_supply);
+    msg!("\n   📊 Pool summary:");
+    msg!("      SOL vault: {} ({} SOL)", sol_vault_balance, sol_vault_balance as f64 / 1e9);
+    msg!("      DOGE_BTC vault: {} ({} DOGE_BTC)", dbtc_vault_balance, dbtc_vault_balance as f64 / 1e6);
+    msg!("      LP supply: {}", lp_supply);
+    msg!("      Pool ratio: {} DOGE_BTC per SOL", 
+         (dbtc_vault_balance as f64 / 1e6) / (sol_vault_balance as f64 / 1e9));
     
     // Reserve buffer upfront to account for transfer fees and rounding
     // This ensures our calculations are based on what we can actually use
+    msg!("\n   🛡️ Calculating buffer for safe deposit...");
     let sol_buffer = sol_amount / 50; // 2% buffer for transfer fees and rounding
     let available_sol = sol_amount.saturating_sub(sol_buffer);
     
-    msg!("🛡️ Reserved {} SOL as buffer, available for LP: {} SOL", sol_buffer, available_sol);
+    msg!("      Reserved buffer: {} SOL (2%)", sol_buffer as f64 / 1e9);
+    msg!("      Available for LP: {} SOL", available_sol as f64 / 1e9);
     
-        // Calculate LP tokens and adjusted amounts to maximize token usage
+    // Calculate LP tokens and adjusted amounts to maximize token usage
+    msg!("\n   🧮 Calculating optimal deposit amounts...");
     let (estimated_lp_amount, adjusted_sol_amount, adjusted_dbtc_amount) = if admin_lp_override > 0 {
         // Admin override: Calculate required token amounts for the specified LP amount
         let required_sol = if lp_supply > 0 && sol_vault_balance > 0 {
@@ -1011,9 +1216,11 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     pub sol_token_account: UncheckedAccount<'info>,
     
     /// CHECK: DOGE_BTC mint
+    #[account(mut)]
     pub dbtc_mint: UncheckedAccount<'info>,
     
     /// CHECK: SOL mint (WSOL)
+    #[account(mut)]
     pub sol_mint: UncheckedAccount<'info>,
     
     /// CHECK: Raydium observation state
@@ -1066,4 +1273,7 @@ pub struct UpdateMdogeDistPerSlot<'info> {
         bump,
     )]
     pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// System program (required for sync_native)
+    pub system_program: Program<'info, System>,
 }
