@@ -10,7 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::user::*;
 pub use instructions::economy::*;
 
-declare_id!("9hGscbFmxq78v8RFgrFy15JjNHrFjbifyK6KTMM8mUn7");
+declare_id!("CAxbTfWPZKw6zfDUBzPoV48Qz7ruFJsx5UkzZScRfufh");
 
 #[program]
 pub mod moonbase {
@@ -264,21 +264,27 @@ pub mod moonbase {
     }
 
 
-//     // ----------------------------------------------------------------------------------------
-//     // ------------ UPDATE DOGE_BTC DISTRIBUTION RATE (ANYONE) --------------------------------
-//     // ----------------------------------------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+    // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
+    // ----------------------------------------------------------------------------------------
 
-    /// Update DOGE_BTC distribution rate based on price oracle (can be called by anyone every hour)
-    /// 
-    /// We update DOGE_BTC distribution rate every 8 hrs based on price increase / decrease. 
-    /// DOGE_BTC is swapped for SOL on raydium every hr for first 7 hrs and combined with DOGE_BTC from mining vault for last hr
-    /// and added to the LP pool, with LP tokens being burnt.
+    /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
+    /// Performs a small SOL → DOGE_BTC swap for price discovery and earnmarks SOL for POL
+    /// After 8 snapshots over 4 hours, call update_rate_and_add_lp to finalize
+    pub fn snapshot_price(ctx: Context<SnapshotPrice>) -> Result<()> {
+        economy::snapshot_price_internal(ctx)
+    }
+
+    /// INSTRUCTION 2: Update distribution rate and add liquidity (can be called after 4 hours)
+    /// Checks if 8 snapshots collected, updates distribution rate, and adds liquidity to pool
     /// 
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
-    pub fn update_dbtc_dist_per_slot(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-        economy::update_dbtc_dist_per_slot_internal(ctx, lp_token_amount)
+    pub fn update_rate_and_add_lp(ctx: Context<UpdateRateAndAddLp>, lp_token_amount: u64) -> Result<()> {
+        economy::update_rate_and_add_lp_internal(ctx, lp_token_amount)
     }
+    
+ 
 
     // ----------------------------------------------------------------------------------------
     // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 

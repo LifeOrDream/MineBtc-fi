@@ -14,18 +14,16 @@ use raydium_cp_swap;
 
 
 
-/// Update DBTC distribution rate based on price oracle
-/// This function can be called by anyone every 30 minutes
-/// Distribution rate updated every 4 hours with 3% deadband
-pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, lp_token_amount: u64) -> Result<()> {
-    msg!("🌟 === STARTING UPDATE DBTC DISTRIBUTION PER SLOT ===");
+/// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
+/// Performs a small SOL → DOGE_BTC swap for price discovery and earnmarks SOL for POL
+pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
+    msg!("🌟 === STARTING PRICE SNAPSHOT ===");
     
     let doge_btc_mining: &mut Account<'_, DogeBtcMining> = &mut ctx.accounts.doge_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
     
     msg!("   📅 Current timestamp: {}", current_time);
     msg!("   ⏰ Last update timestamp: {}", doge_btc_mining.last_rate_update);
-    msg!("   🎯 Admin LP override: {}", lp_token_amount);
     
     // SECURITY: Validate that the provided pool_state matches the authorized pool in global_config
     msg!("\n   🔒 Validating Raydium pool authorization...");
@@ -41,25 +39,7 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     );
     msg!("   ✅ Pool validation passed!");
     
-    // Check if admin override is being used (when lp_token_amount > 0)
-    if lp_token_amount > 0 {
-        msg!("\n   🔧 Admin override detected");
-        // Verify that the authority is provided and matches the global config
-        require!(ctx.accounts.authority.is_some(), ErrorCode::Unauthorized);
-        let authority = ctx.accounts.authority.as_ref().unwrap();
-        msg!("   👤 Authority: {}", authority.key());
-        msg!("   🔐 Expected authority: {}", ctx.accounts.global_config.ext_authority);
-        require!(
-            ctx.accounts.global_config.ext_authority == authority.key(),
-            ErrorCode::Unauthorized
-        );
-        msg!("   ✅ Admin authority validated");
-        msg!("   🎯 Using LP token amount: {}", lp_token_amount);
-    } else {
-        msg!("\n   🔄 Using automatic LP calculation (no admin override)");
-    }
-    
-    // Check if at least 30 minutes has passed since last update
+    // Check if at least 30 minutes has passed since last snapshot
     msg!("\n   ⏱️ Checking time constraints...");
     let thirty_mins = THIRTY_MINS as i64;
     if current_time < doge_btc_mining.last_rate_update + thirty_mins {
@@ -290,10 +270,58 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     // Update recent price with current weighted average
     doge_btc_mining.recent_price = current_weighted_avg;
     
-    
     // Update timestamp for next snapshot
     doge_btc_mining.last_rate_update = current_time;
-        
+    
+    msg!("   📊 Snapshot {}/8 recorded", doge_btc_mining.price_history.len());
+    msg!("   💰 DOGE_BTC received from swap: {}", dbtc_received);
+    msg!("   💎 SOL earnmarked for POL: {} SOL", buybacks_account.sol_for_pol as f64 / 1e9);
+    msg!("   ⏱️  Next snapshot available in: ~30 minutes");
+    
+    Ok(())
+}
+
+
+/// INSTRUCTION 2: Update distribution rate and add liquidity (can be called by anyone after 4 hours)
+/// Checks if conditions are met, updates distribution rate, and adds liquidity to pool
+pub fn update_rate_and_add_lp_internal(ctx: Context<UpdateRateAndAddLp>, lp_token_amount: u64) -> Result<()> {
+    msg!("🌟 === STARTING RATE UPDATE AND LP ADDITION ===");
+    
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
+    let buybacks_account = &mut ctx.accounts.buybacks_account;
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    msg!("   📅 Current timestamp: {}", current_time);
+    msg!("   ⚙️  Current distribution rate: {} DOGE_BTC per slot", doge_btc_mining.current_dist_rate);
+    msg!("   🎯 Admin LP override: {}", lp_token_amount);
+    
+    // SECURITY: Validate that the provided pool_state matches the authorized pool in global_config
+    msg!("\n   🔒 Validating Raydium pool authorization...");
+    require!(
+        ctx.accounts.global_config.raydium_pool_state != Pubkey::default(),
+        ErrorCode::InvalidAccount
+    );
+    require!(
+        ctx.accounts.pool_state.key() == ctx.accounts.global_config.raydium_pool_state,
+        ErrorCode::InvalidAccount
+    );
+    msg!("   ✅ Pool validation passed!");
+    
+    // Check if admin override is being used (when lp_token_amount > 0)
+    if lp_token_amount > 0 {
+        msg!("\n   🔧 Admin override detected");
+        require!(ctx.accounts.authority.is_some(), ErrorCode::Unauthorized);
+        let authority = ctx.accounts.authority.as_ref().unwrap();
+        require!(
+            ctx.accounts.global_config.ext_authority == authority.key(),
+            ErrorCode::Unauthorized
+        );
+        msg!("   ✅ Admin authority validated");
+        msg!("   🎯 Using LP token amount: {}", lp_token_amount);
+    } else {
+        msg!("\n   🔄 Using automatic LP calculation (no admin override)");
+    }
+    
     // ----------------------------------------------------
     // Check if 4 hours have passed AND we have 8 price entries
     // Only then check if distribution rate should change
@@ -317,8 +345,7 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
                  four_hours - time_since_last, 
                  (four_hours - time_since_last) as f64 / 3600.0);
         }
-        msg!("   ⏸️ Skipping distribution rate update for now");
-        msg!("\n✅ === UPDATE COMPLETE (PRICE SNAPSHOT ONLY) ===");
+        msg!("   ⏸️ Conditions not met - call snapshot_price instead");
         return Ok(());
     }
     
@@ -327,7 +354,40 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     // ----------------------------------------------------
     msg!("   ✅ 4-hour cycle complete with {} snapshots", doge_btc_mining.price_history.len());
     
-    let new_avg_price = current_weighted_avg;
+    // Recalculate weighted average from price history
+    msg!("\n📊 === RECALCULATING WEIGHTED AVERAGE PRICE ===");
+    let mut weighted_sum: u128 = 0;
+    let mut total_weights: u128 = 0;
+    
+    for (i, entry) in doge_btc_mining.price_history.iter().enumerate() {
+        let weight = (i + 1) as u128; // Weight from 1 to 8
+        
+        let price_contribution = (entry.price as u128)
+            .checked_mul(weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        weighted_sum = weighted_sum
+            .checked_add(price_contribution)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        total_weights = total_weights
+            .checked_add(weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("   Entry {}: Price={}, Weight={}, Contribution={}", 
+             i + 1, entry.price, weight, price_contribution);
+    }
+    
+    let new_avg_price = if total_weights > 0 {
+        (weighted_sum / total_weights).min(u64::MAX as u128) as u64
+    } else {
+        doge_btc_mining.recent_price
+    };
+    
+    msg!("   📊 Weighted sum: {}", weighted_sum);
+    msg!("   📊 Total weights: {}", total_weights);
+    msg!("   ✅ Weighted average price: {} ({:.9} SOL per DOGE_BTC)", 
+         new_avg_price, new_avg_price as f64 / 1e9);
     
     // Calculate price change percentage from BOTH recent and track prices
     // Use the LARGER change to determine if we should update
@@ -500,26 +560,25 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     msg!("   📝 Updated recent price: {} DOGE_BTC per SOL", new_avg_price);
     msg!("   ⏰ Updated last rate update timestamp: {}", current_time);
     
-    msg!("\n✅ === DOGE_BTC DISTRIBUTION UPDATE COMPLETE ===");
+    msg!("\n✅ === RATE UPDATE AND LP ADDITION COMPLETE ===");
     msg!("   🎯 Distribution rate: {} -> {} ({})", 
          old_rate, doge_btc_mining.current_dist_rate,
          if rate_changed { "CHANGED" } else { "unchanged" });
     msg!("   📊 Average price (4h): {} DOGE_BTC per SOL", new_avg_price);
-    msg!("   💰 DOGE_BTC received from swap: {}", dbtc_received);
-    msg!("   💎 SOL earnmarked for next POL: {} SOL", buybacks_account.sol_for_pol as f64 / 1e9);
-    msg!("   ⏱️  Next update available in: ~30 minutes");
-    msg!("=== END UPDATE DBTC DISTRIBUTION ===\n");
+    msg!("   💎 SOL remaining for POL: {} SOL", buybacks_account.sol_for_pol as f64 / 1e9);
+    msg!("   ⏱️  Next snapshot cycle starts in: ~30 minutes");
+    msg!("=== END RATE UPDATE ===\n");
     
     emit!(DistributionRateUpdated {
         old_rate,
         new_rate: doge_btc_mining.current_dist_rate,
         price_change_pct: price_change_pct as i32,
-        current_price,
+        current_price: new_avg_price,
         avg_price_4h: new_avg_price,
         track_price: doge_btc_mining.track_price,
         recent_price: doge_btc_mining.recent_price,
         rate_changed,
-        sol_received: sol_for_swap, // SOL used for swap (was swapped for DOGE_BTC)
+        sol_received: 0, // No swap in this instruction
         timestamp: current_time,
     });
     
@@ -1167,10 +1226,10 @@ fn calculate_price_change_pct(old_price: u64, new_price: u64) -> (i64, i64) {
 // ------------ DYNAMIC DISTRIBUTION ACCOUNT STRUCTS ------------------------------------
 // ----------------------------------------------------------------------------------------
 
- 
-
+/// Account struct for taking price snapshots (Instruction 1)
+/// Lighter weight - only needs swap-related accounts
 #[derive(Accounts)]
-pub struct UpdateMdogeDistPerSlot<'info> {
+pub struct SnapshotPrice<'info> {
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
@@ -1178,15 +1237,12 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
-    /// GlobalConfig for admin authority verification
+    /// GlobalConfig for pool validation
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
-    /// Authority (optional - only required when lp_token_amount > 0)
-    pub authority: Option<Signer<'info>>,
     
     /// CHECK: Raydium CP-Swap program
     pub raydium_program: UncheckedAccount<'info>,
@@ -1236,15 +1292,95 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     #[account(mut)]
     pub observation_state: UncheckedAccount<'info>,
     
-    /// CHECK: SOL treasury to receive swapped SOL
+    /// Token-2022 program for DOGE_BTC
+    pub token_program_2022: Program<'info, Token2022>,
+    
+    /// Standard token program for SOL
+    pub token_program: Program<'info, anchor_spl::token::Token>,
+    
+    /// CHECK: Buybacks SOL vault PDA (System Account - source of SOL for swaps)
     #[account(
         mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
+        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+    
+    /// Buybacks tracking account (required)
+    #[account(
+        mut,
+        seeds = [BUYBACKS_SEED.as_ref()],
         bump,
     )]
-    pub sol_treasury: UncheckedAccount<'info>,
+    pub buybacks_account: Account<'info, BuybacksAccount>,
     
-    /// CHECK: LP token account for receiving and burning LP tokens (can be any valid token account)
+    /// System program (required for SOL transfers)
+    pub system_program: Program<'info, System>,
+}
+
+/// Account struct for updating rate and adding LP (Instruction 2)
+/// Heavier weight - needs LP-related accounts and main vault
+#[derive(Accounts)]
+pub struct UpdateRateAndAddLp<'info> {
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump,
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    
+    /// GlobalConfig for admin authority verification
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// Authority (optional - only required when lp_token_amount > 0)
+    pub authority: Option<Signer<'info>>,
+    
+    /// CHECK: Raydium CP-Swap program
+    pub raydium_program: UncheckedAccount<'info>,
+    
+    /// CHECK: Raydium pool state
+    #[account(mut)]
+    pub pool_state: UncheckedAccount<'info>,
+    
+    /// CHECK: Vault authority PDA (our program's authority for token accounts)
+    #[account(
+        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    pub authority_pda: UncheckedAccount<'info>,
+    
+    /// CHECK: Raydium's pool authority PDA (from Raydium program)
+    pub raydium_authority: UncheckedAccount<'info>,
+    
+    /// CHECK: DOGE_BTC vault in Raydium pool
+    #[account(mut)]
+    pub dbtc_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL vault in Raydium pool
+    #[account(mut)]
+    pub sol_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: DOGE_BTC token account for LP addition
+    #[account(mut)]
+    pub dbtc_token_account: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL token account for LP addition
+    #[account(mut)]
+    pub sol_token_account: UncheckedAccount<'info>,
+    
+    /// CHECK: DOGE_BTC mint
+    #[account(mut)]
+    pub dbtc_mint: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL mint (WSOL)
+    #[account(mut)]
+    pub sol_mint: UncheckedAccount<'info>,
+    
+    /// CHECK: LP token account for receiving and burning LP tokens
     #[account(mut)]
     pub lp_token_account: UncheckedAccount<'info>,
         
@@ -1258,7 +1394,7 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     /// Standard token program for SOL
     pub token_program: Program<'info, anchor_spl::token::Token>,
     
-    /// CHECK: Buybacks SOL vault PDA (System Account - source of SOL for swaps and POL)
+    /// CHECK: Buybacks SOL vault PDA (System Account - source of SOL for LP)
     #[account(
         mut,
         seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
@@ -1282,6 +1418,8 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     )]
     pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
     
-    /// System program (required for sync_native)
+    /// System program (required for SOL transfers)
     pub system_program: Program<'info, System>,
 }
+
+ 
