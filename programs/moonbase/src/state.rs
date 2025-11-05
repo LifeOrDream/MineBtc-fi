@@ -10,14 +10,14 @@ pub const PRICE_TIER_4: u64 = 4_200_000_000; // 4.20 SOL (has egg)
 
  
 pub const DBTC_DECIMALS: u8 = 6;
-pub const THIRTY_MINS: u64 = 1800; // 30 minutes in seconds
-pub const FOUR_HOURS: u64 = 14400; // 4 hours in seconds
+pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
+pub const FOUR_HOURS: u64 =  90; //  14400; // 4 hours in seconds
 pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
-/// Maximum safe value for u64 calculations to prevent overflow
-pub const MAX_SAFE_U64: u64 = u64::MAX / 1_000_000; // Leave headroom for calculations
+
+pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
 
 // ========== GLOBAL CONSTANTS ========== //
 pub const REFERRAL_FEE: u64 = 15; // 15%

@@ -316,10 +316,10 @@ pub fn mine_dbtc_for_user(
     
     let index_diff = doge_btc_mining.dbtc_tokens_minted_per_hashpower.saturating_sub(user_moonbase.dbtc_claim_index);
     
-    // Use u128 to prevent overflow: (index_diff * hashpower) / MAX_SAFE_U64
+    // Use u128 to prevent overflow: (index_diff * hashpower) / INDEX_PRECISION
     let claimable_amount = ((index_diff as u128)
         .saturating_mul(user_moonbase.active_hashpower as u128)
-        .saturating_div(MAX_SAFE_U64 as u128)) as u64;
+        .saturating_div(INDEX_PRECISION as u128)) as u64;
 
     user_moonbase.dbtc_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     user_moonbase.claimable_dbtc = user_moonbase.claimable_dbtc + claimable_amount;
@@ -357,9 +357,9 @@ pub fn update_global_mining_index(
     let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);    
     let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
 
-    // Use u128 to prevent overflow: (new_tokens_mined * MAX_SAFE_U64) / total_active_hashpower
+    // Use u128 to prevent overflow: (new_tokens_mined * INDEX_PRECISION) / total_active_hashpower
     let index_increment = ((new_tokens_mined as u128)
-        .saturating_mul(MAX_SAFE_U64 as u128)
+        .saturating_mul(INDEX_PRECISION as u128)
         .saturating_div(doge_btc_mining.total_active_hashpower as u128))  ;
     
     doge_btc_mining.dbtc_tokens_minted_per_hashpower = doge_btc_mining

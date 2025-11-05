@@ -280,32 +280,68 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     // Now distribute to respective vaults
     let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
+    
+    // Create signer seeds for fee_collector
+    let fee_collector_seeds = &[
+        FEE_COLLECTOR_SEED.as_ref(),
+        &[ctx.bumps.fee_collector],
+    ];
+    let signer_seeds = &[&fee_collector_seeds[..]];
 
-    if dogebtc_vault.weighted_dbtc_locked > 0 {
+    if dogebtc_vault.weighted_dbtc_locked > 0 && sol_for_dbtc_stakers > 0 {
         let sol_per_point = (sol_for_dbtc_stakers as u128 * PRECISION_FACTOR as u128) / dogebtc_vault.weighted_dbtc_locked as u128;
         dogebtc_vault.accumulated_sol_per_point += sol_per_point;
-        **fee_collector.try_borrow_mut_lamports()? -= sol_for_dbtc_stakers;
-        **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? += sol_for_dbtc_stakers;
-        msg!("💰 Sent {} to DogeBtc vault", sol_for_dbtc_stakers);
+        
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: fee_collector.to_account_info(),
+                    to: ctx.accounts.dbtc_sol_vault.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_dbtc_stakers,
+        )?;
+        msg!("💰 Sent {} SOL to DogeBtc vault", sol_for_dbtc_stakers as f64 / 1e9);
     } else {
         sol_for_dbtc_stakers = 0;
     }
 
-    if liquidity_vault.weighted_lp_locked > 0 {
+    if liquidity_vault.weighted_lp_locked > 0 && sol_for_lp_stakers > 0 {
         let sol_per_point = (sol_for_lp_stakers as u128 * PRECISION_FACTOR as u128) / liquidity_vault.weighted_lp_locked as u128;
         liquidity_vault.accumulated_sol_per_point += sol_per_point;
-        **fee_collector.try_borrow_mut_lamports()? -= sol_for_lp_stakers;
-        **ctx.accounts.liquidity_sol_vault.try_borrow_mut_lamports()? += sol_for_lp_stakers;
-        msg!("💰 Sent {} to Liquidity vault", sol_for_lp_stakers);
+        
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: fee_collector.to_account_info(),
+                    to: ctx.accounts.liquidity_sol_vault.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_lp_stakers,
+        )?;
+        msg!("💰 Sent {} SOL to Liquidity vault", sol_for_lp_stakers as f64 / 1e9);
     } else {
         sol_for_lp_stakers = 0;
     }
 
     let dev_earnings = sol_for_distribution.saturating_sub(sol_for_dbtc_stakers + sol_for_lp_stakers);
     if dev_earnings > 0 {
-        **fee_collector.try_borrow_mut_lamports()? -= dev_earnings;
-        **ctx.accounts.dev_earnings_collector.try_borrow_mut_lamports()? += dev_earnings;
-        msg!("👨‍💻 Sent {} to Dev Earnings", dev_earnings);
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: fee_collector.to_account_info(),
+                    to: ctx.accounts.dev_earnings_collector.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            dev_earnings,
+        )?;
+        msg!("👨‍💻 Sent {} SOL to Dev Earnings", dev_earnings as f64 / 1e9);
     }
 
     emit!(SolDistributed {
@@ -340,10 +376,28 @@ pub fn withdraw_dev_earnings(ctx: Context<WithdrawDevEarnings>) -> Result<()> {
     let rent = Rent::get()?.minimum_balance(dev_earnings_collector.data_len());
     let withdraw_amount = dev_earnings_collector_balance.saturating_sub(rent);
 
-    // Transfer SOL from dev_earnings_collector to dev_address
-    let receiver = &ctx.accounts.authority;
-    **dev_earnings_collector.try_borrow_mut_lamports()? = rent;
-    **receiver.try_borrow_mut_lamports()? += withdraw_amount;
+    // Transfer SOL from dev_earnings_collector to dev_address using system transfer
+    if withdraw_amount > 0 {
+        let dev_vault_seeds = &[
+            DEV_EARNINGS_SEED.as_ref(),
+            &[ctx.bumps.dev_earnings_collector],
+        ];
+        let signer_seeds = &[&dev_vault_seeds[..]];
+        
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: dev_earnings_collector.to_account_info(),
+                    to: ctx.accounts.authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            withdraw_amount,
+        )?;
+        
+        msg!("👨‍💻 Withdrew {} SOL to dev address", withdraw_amount as f64 / 1e9);
+    }
 
     emit!(AdminEarningsWithdrawn { amount: withdraw_amount });
 
@@ -385,23 +439,25 @@ pub struct InitializeGlobalConfig<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
     
-    /// CHECK: This is a PDA owned by the program that will collect admin fees which the devs can withdraw
+    /// CHECK: This is a System Account PDA that will collect admin fees which the devs can withdraw
     #[account(
         init,
         payer = authority,
-        space = 8,
+        space = 0,  // 0-byte for System Account holding only lamports
         seeds = [DEV_EARNINGS_SEED.as_ref()],
-        bump
+        bump,
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub dev_earnings_collector: UncheckedAccount<'info>,
 
-    /// CHECK: This is a PDA owned by the program that will collect total SOL fees
+    /// CHECK: This is a System Account PDA that will collect total SOL fees
     #[account(
         init,
         payer = authority,
-        space = 8,
+        space = 0,  // 0-byte for System Account holding only lamports
         seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump
+        bump,
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub fee_collector: UncheckedAccount<'info>,
     
@@ -436,13 +492,14 @@ pub struct InitializeDbtcVault<'info> {
 
     // ------ SOL Storage Accounts ------
 
-    /// CHECK: This is a 0-byte PDA owned by the program that will store SOL to be distributed to the DogeBtc vault
+    /// CHECK: This is a 0-byte System Account PDA that will store SOL to be distributed to the DogeBtc vault
     #[account(
         init,
         payer = authority,
         space = 0,
         seeds = [DBTC_SOL_VAULT_SEED.as_ref()],
-        bump
+        bump,
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub dbtc_sol_vault: UncheckedAccount<'info>,
 
@@ -501,13 +558,14 @@ pub struct InitializeLiquidityVault<'info> {
 
     // ------ SOL Storage Accounts ------
 
-    /// CHECK: This is a 0-byte PDA owned by the program that will store SOL to be distributed to the Liquidity vault
+    /// CHECK: This is a 0-byte System Account PDA that will store SOL to be distributed to the Liquidity vault
     #[account(
         init,
         payer = authority,
         space = 0,
         seeds = [LP_SOL_VAULT_SEED.as_ref()],
-        bump
+        bump,
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub liquidity_sol_vault: UncheckedAccount<'info>,
 

@@ -997,32 +997,68 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     electricity_ac.moondoge_reward_debt = dogebtc_vault.accumulated_sol_per_point;
     electricity_ac.lp_reward_debt = liquidity_vault.accumulated_sol_per_point;
     
-    // Transfer pending rewards to user
-    let receiver = &ctx.accounts.authority;
+    let moondoge_rewards = electricity_ac.pending_moondoge_rewards;
+    let lp_rewards = electricity_ac.pending_lp_rewards;
+    
+    // Transfer DOGE_BTC staking rewards to user using system transfer
+    if moondoge_rewards > 0 {
+        let dbtc_vault_seeds = &[
+            DBTC_SOL_VAULT_SEED.as_ref(),
+            &[ctx.bumps.dbtc_sol_vault],
+        ];
+        let signer_seeds = &[&dbtc_vault_seeds[..]];
+        
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.dbtc_sol_vault.to_account_info(),
+                    to: ctx.accounts.authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            moondoge_rewards,
+        )?;
+        
+        msg!("💰 Transferred {} SOL from DOGE_BTC staking vault", moondoge_rewards as f64 / 1e9);
+    }
 
-    // Transfer DOGE_BTC staking rewards to user
-    **ctx.accounts.dbtc_sol_vault.try_borrow_mut_lamports()? -= electricity_ac.pending_moondoge_rewards;
-    **receiver.try_borrow_mut_lamports()? += electricity_ac.pending_moondoge_rewards;
-
-    // Transfer LP staking rewards to user
-    **ctx.accounts.liquidity_sol_vault.try_borrow_mut_lamports()? -= electricity_ac.pending_lp_rewards;
-    **receiver.try_borrow_mut_lamports()? += electricity_ac.pending_lp_rewards;
+    // Transfer LP staking rewards to user using system transfer
+    if lp_rewards > 0 {
+        let lp_vault_seeds = &[
+            LP_SOL_VAULT_SEED.as_ref(),
+            &[ctx.bumps.liquidity_sol_vault],
+        ];
+        let signer_seeds = &[&lp_vault_seeds[..]];
+        
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.liquidity_sol_vault.to_account_info(),
+                    to: ctx.accounts.authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            lp_rewards,
+        )?;
+        
+        msg!("💰 Transferred {} SOL from LP staking vault", lp_rewards as f64 / 1e9);
+    }
 
     emit!(SolRewardsClaimed {
         owner: ctx.accounts.authority.key(),
-        moondoge_rewards: electricity_ac.pending_moondoge_rewards,  
-        lp_rewards: electricity_ac.pending_lp_rewards,
+        moondoge_rewards,  
+        lp_rewards,
     });
 
     // Add pending rewards to total rewards
-    electricity_ac.total_sol_claimed = electricity_ac.total_sol_claimed.checked_add(electricity_ac.pending_moondoge_rewards).unwrap();
-    electricity_ac.total_sol_claimed = electricity_ac.total_sol_claimed.checked_add(electricity_ac.pending_lp_rewards).unwrap();
+    electricity_ac.total_sol_claimed = electricity_ac.total_sol_claimed.checked_add(moondoge_rewards).unwrap();
+    electricity_ac.total_sol_claimed = electricity_ac.total_sol_claimed.checked_add(lp_rewards).unwrap();
 
     // Reset pending rewards to 0
     electricity_ac.pending_moondoge_rewards = 0;
     electricity_ac.pending_lp_rewards = 0;
-     
-
 
     msg!("✅ Claimed SOL rewards");        
     Ok(())
@@ -1594,7 +1630,10 @@ pub struct ClaimSolRewards<'info> {
 
     /// User who is unstaking tokens
     #[account(mut)]
-    pub authority: Signer<'info>
+    pub authority: Signer<'info>,
+    
+    /// System program for SOL transfers
+    pub system_program: Program<'info, System>
 }
 
 /// Account struct for updating pending rewards

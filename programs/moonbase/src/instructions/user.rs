@@ -852,9 +852,52 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_e
              rewards_account.total_sol_earned, rewards_account.sol_claimed_for_xp);
     }
 
-    // Transfer SOL from the rewards account to the user
-    **rewards_account.to_account_info().try_borrow_mut_lamports()? -= claimable_amount;
-    **user.to_account_info().try_borrow_mut_lamports()? += claimable_amount;
+    // Transfer SOL from the rewards account to the user using system transfer
+    if claimable_amount > 0 {
+        // Store user key to avoid temporary value issues
+        let user_key = user.key();
+        let user_key_ref = user_key.as_ref();
+        
+        // Derive referral rewards PDA seeds
+        let referral_rewards_seeds = &[
+            REFERRAL_REWARDS_SEED.as_ref(),
+            user_key_ref,
+        ];
+        
+        // Get the bump seed for the referral rewards account
+        let (expected_rewards_pda, rewards_bump) = Pubkey::find_program_address(
+            referral_rewards_seeds,
+            &crate::ID,
+        );
+        
+        // Validate that the provided account matches the derived PDA
+        require!(
+            rewards_account.key() == expected_rewards_pda,
+            ErrorCode::InvalidReferralAccount
+        );
+        
+        let bump_array = [rewards_bump];
+        let signer_seeds_inner = [
+            REFERRAL_REWARDS_SEED.as_ref(),
+            user_key_ref,
+            &bump_array[..],
+        ];
+        let signer_seeds = &[&signer_seeds_inner[..]];
+        
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: rewards_account.to_account_info(),
+                    to: user.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            claimable_amount,
+        )?;
+        
+        msg!("✅ Transferred {} SOL from referral rewards to user", claimable_amount as f64 / 1e9);
+    }
         
     // Emit event
     emit!(ReferralRewardsClaimed {

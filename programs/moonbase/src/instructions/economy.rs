@@ -132,10 +132,22 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
         
         msg!("   🔑 Using buybacks vault PDA seeds with bump: {}", ctx.bumps.buybacks_sol_vault);
         
-        // Manually transfer lamports from the program-owned PDA
-        // by debiting its lamports and crediting the destination.
-        **ctx.accounts.buybacks_sol_vault.try_borrow_mut_lamports()? -= sol_for_swap;
-        **ctx.accounts.sol_token_account.try_borrow_mut_lamports()? += sol_for_swap;
+        // Transfer SOL using system program with PDA as signer
+        // This ensures proper account balancing
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                    to: ctx.accounts.sol_token_account.to_account_info(),
+                },
+                &[&[
+                    BUYBACKS_SOL_VAULT_SEED.as_ref(),
+                    &[ctx.bumps.buybacks_sol_vault],
+                ]],
+            ),
+            sol_for_swap,
+        )?;
         msg!("   ✅ SOL transfer completed");
         
         // Then sync the native SOL balance with the token account
@@ -198,19 +210,14 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     // Final: Price = (sol_for_swap * 10^6 * 10^9) / (dbtc_received * 10^9) = (sol_for_swap * 10^6) / dbtc_received
     let current_price = if dbtc_received > 0 {
         // Prevent overflow by checking limits
-        if sol_for_swap > crate::state::MAX_SAFE_U64 || dbtc_received > crate::state::MAX_SAFE_U64 {
-            msg!("⚠️ Price calculation values too large, using fallback");
-            0
-        } else {
-            // Calculate: (sol_for_swap * 10^9) / dbtc_received
-            // This gives us SOL per DOGE_BTC stored with 9-decimal precision
+        // Calculate: (sol_for_swap * 10^9) / dbtc_received
+       // This gives us SOL per DOGE_BTC stored with 9-decimal precision
             (sol_for_swap as u128)
                 .checked_mul(1_000_000_000) // Scale by 10^9 for full precision
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(dbtc_received as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .min(u64::MAX as u128) as u64
-        }
     } else {
         0
     };
@@ -407,11 +414,23 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
         msg!("   📤 From: Buybacks vault ({})", ctx.accounts.buybacks_sol_vault.key());
         msg!("   📥 To: SOL token account ({})", ctx.accounts.sol_token_account.key());
         msg!("   💵 Amount: {} lamports ({} SOL)", total_sol_for_lp, total_sol_for_lp as f64 / 1e9);
-
-        // Manually transfer lamports from the program-owned PDA
-        // by debiting its lamports and crediting the destination.
-        **ctx.accounts.buybacks_sol_vault.try_borrow_mut_lamports()? -= total_sol_for_lp;
-        **ctx.accounts.sol_token_account.try_borrow_mut_lamports()? += total_sol_for_lp;
+        
+        // Transfer SOL using system program
+        // This ensures proper account balancing
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                    to: ctx.accounts.sol_token_account.to_account_info(),
+                },
+                &[&[
+                    BUYBACKS_SOL_VAULT_SEED.as_ref(),
+                    &[ctx.bumps.buybacks_sol_vault],
+                ]],
+            ),
+            total_sol_for_lp,
+        )?;
         
         // Then sync the native SOL balance with the token account
         // This is required for wrapped SOL (WSOL) token accounts
@@ -1249,12 +1268,11 @@ pub struct UpdateMdogeDistPerSlot<'info> {
     /// Standard token program for SOL
     pub token_program: Program<'info, anchor_spl::token::Token>,
     
-    /// CHECK: Buybacks SOL vault PDA (source of SOL for swaps and POL)
+    /// CHECK: Buybacks SOL vault PDA (System Account - source of SOL for swaps and POL)
     #[account(
         mut,
         seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
-        bump,
-        owner = crate::ID
+        bump
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
     

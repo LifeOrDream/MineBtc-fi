@@ -17,8 +17,7 @@ use anchor_spl::token_interface::{
 };
 use anchor_spl::token_2022::Token2022;          // ← the PROGRAM-ID wrapper (implements Id)
 
-// Import Raydium CP-Swap for CPI calls
-use raydium_cp_swap;
+// Import Raydium CP-Swap for CPI calls (actual CPI calls are in economy.rs)
 
 // constants
 pub const MAX_MODULE_CONFIGS: usize = 50; // ≈ 8.2 kB
@@ -831,46 +830,86 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     // Remaining amount goes to fee collector (for distribution to stakers and dev)
     let fee_collector_amount = available_solana.checked_sub(sol_for_loots).unwrap().checked_sub(sol_for_buybacks).unwrap();
 
+    // Create signer seeds for sol_treasury
+    let treasury_seeds = &[
+        SOL_TREASURY_SEED.as_ref(),
+        &[ctx.bumps.sol_treasury],
+    ];
+    let signer_seeds = &[&treasury_seeds[..]];
+
     // Transfer loot rewards to loot SOL vault
-    **sol_treasury.try_borrow_mut_lamports()? = current_balance.checked_sub(sol_for_loots).unwrap();
-    **ctx.accounts.loot_sol_vault.try_borrow_mut_lamports()? += sol_for_loots;
+    if sol_for_loots > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.loot_sol_vault.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_loots,
+        )?;
 
-    // Update loot rewards tracking
-    ctx.accounts.loot_rewards.total_sol_accumulated = ctx.accounts.loot_rewards.total_sol_accumulated.checked_add(sol_for_loots).unwrap();
-    
-    emit!(LootRewardsAccumulated {
-        dbtc_amount: 0,
-        sol_amount: sol_for_loots,
-        total_dbtc_accumulated: ctx.accounts.loot_rewards.total_dbtc_accumulated,
-        total_sol_accumulated: ctx.accounts.loot_rewards.total_sol_accumulated,
-    });
+        // Update loot rewards tracking
+        ctx.accounts.loot_rewards.total_sol_accumulated = ctx.accounts.loot_rewards.total_sol_accumulated
+            .checked_add(sol_for_loots).unwrap();
+        
+        emit!(LootRewardsAccumulated {
+            dbtc_amount: 0,
+            sol_amount: sol_for_loots,
+            total_dbtc_accumulated: ctx.accounts.loot_rewards.total_dbtc_accumulated,
+            total_sol_accumulated: ctx.accounts.loot_rewards.total_sol_accumulated,
+        });
 
-    msg!("🎁 Transferred {} SOL to loot rewards vault ({}%)", sol_for_loots, loot_percentage);
+        msg!("🎁 Transferred {} SOL to loot rewards vault ({}%)", sol_for_loots, loot_percentage);
+    }
     
     // Transfer buybacks amount to buybacks SOL vault
-    let balance_after_loot = current_balance.checked_sub(sol_for_loots).unwrap();
-    **sol_treasury.try_borrow_mut_lamports()? = balance_after_loot.checked_sub(sol_for_buybacks).unwrap();
-    **ctx.accounts.buybacks_sol_vault.try_borrow_mut_lamports()? += sol_for_buybacks;
-    
-    // Update buybacks tracking
-    ctx.accounts.buybacks_account.total_sol_accumulated = ctx.accounts.buybacks_account.total_sol_accumulated.checked_add(sol_for_buybacks).unwrap();
-    
-    msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks, buyback_percentage);
+    if sol_for_buybacks > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_buybacks,
+        )?;
+
+        // Update buybacks tracking
+        ctx.accounts.buybacks_account.total_sol_accumulated = ctx.accounts.buybacks_account.total_sol_accumulated
+            .checked_add(sol_for_buybacks).unwrap();
+        
+        msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks, buyback_percentage);
+    }
     
     // Transfer remaining amount to fee collector
-    let remaining_balance = current_balance.saturating_sub(available_solana);
-    **sol_treasury.try_borrow_mut_lamports()? = remaining_balance;
-    **fee_collector.try_borrow_mut_lamports()? += fee_collector_amount;
+    if fee_collector_amount > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.fee_collector.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            fee_collector_amount,
+        )?;
 
-    // Emit event
-    emit!(SolFeesWithdrawn {
-        fee_collector: fee_collector.key(),
-        amount: fee_collector_amount,
-        loot_amount: sol_for_loots,
-        buyback_amount: sol_for_buybacks,
-    });
+        // Emit event
+        emit!(SolFeesWithdrawn {
+            fee_collector: fee_collector.key(),
+            amount: fee_collector_amount,
+            loot_amount: sol_for_loots,
+            buyback_amount: sol_for_buybacks,
+        });
 
-    msg!("Withdrew {} lamports from treasury (Available balance now: {})", fee_collector_amount, remaining_balance.saturating_sub(reserved_amount));
+        msg!("Withdrew {} lamports from treasury", fee_collector_amount);
+    }
 
     Ok(())
 }
@@ -964,14 +1003,14 @@ pub struct Initialize<'info> {
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
-    /// CHECK: 0-byte PDA that only stores lamports
+    /// CHECK: 0-byte PDA that only stores lamports (System Account)
     #[account(
         init,
         payer = authority,
         space = 0,
         seeds = [SOL_TREASURY_SEED.as_ref()],
         bump,
-        owner   = crate::ID 
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
@@ -1176,14 +1215,14 @@ pub struct InitializeLootRewards<'info> {
     )]
     pub loot_rewards: Account<'info, LootRewards>,
     
-    /// CHECK: SOL vault for loot rewards (0-byte PDA)
+    /// CHECK: SOL vault for loot rewards (0-byte PDA, System Account)
     #[account(
         init,
         payer = authority,
         space = 0,
         seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
         bump,
-        owner = crate::ID
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub loot_sol_vault: UncheckedAccount<'info>,
     
@@ -1239,14 +1278,14 @@ pub struct InitializeBuybacks<'info> {
     )]
     pub buybacks_account: Account<'info, BuybacksAccount>,
     
-    /// CHECK: SOL vault for buybacks (0-byte PDA)
+    /// CHECK: SOL vault for buybacks (0-byte PDA, System Account)
     #[account(
         init,
         payer = authority,
         space = 0,
         seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
         bump,
-        owner = crate::ID
+        owner = system_program.key()  // System-owned account for native SOL
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
     
@@ -1418,24 +1457,22 @@ pub struct WithdrawSolFees<'info> {
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
-    /// CHECK: safe PDA used as vault authority
+    /// CHECK: SOL treasury PDA (System Account)
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump,  // Let Anchor find the correct bump
-        owner = crate::ID  // Use program_id for clarity
+        bump  // Let Anchor find the correct bump
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
     #[account(mut, signer, address = global_config.ext_fee_collector)]
     pub fee_collector: Signer<'info>,
 
-    /// CHECK: Loot SOL vault PDA (required)
+    /// CHECK: Loot SOL vault PDA (System Account)
     #[account(
         mut,
         seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
-        bump,
-        owner = crate::ID
+        bump
     )]
     pub loot_sol_vault: UncheckedAccount<'info>,
 
@@ -1447,12 +1484,11 @@ pub struct WithdrawSolFees<'info> {
     )]
     pub loot_rewards: Account<'info, LootRewards>,
     
-    /// CHECK: Buybacks SOL vault PDA (required)
+    /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(
         mut,
         seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
-        bump,
-        owner = crate::ID
+        bump
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
     
@@ -1490,11 +1526,10 @@ pub struct QueryTreasuryInfo<'info> {
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
-    /// CHECK: SOL treasury PDA
+    /// CHECK: SOL treasury PDA (System Account)
     #[account(
         seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump,
-        owner = crate::ID
+        bump
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 }
