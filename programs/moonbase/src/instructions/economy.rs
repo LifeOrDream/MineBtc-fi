@@ -300,10 +300,6 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     // ----------------------------------------------------
     msg!("\n⏱️ === CHECKING DISTRIBUTION RATE UPDATE CONDITIONS ===");
     let four_hours = FOUR_HOURS as i64;
-    let time_since_last_update = current_time - doge_btc_mining.last_rate_update;
-    msg!("   📊 Price history entries: {}/8", doge_btc_mining.price_history.len());
-    msg!("   ⏰ Time since last distribution update: {}s ({}h)", 
-         time_since_last_update, time_since_last_update as f64 / 3600.0);
     msg!("   🎯 4-hour threshold: {}s", four_hours);
     let time_since_last = doge_btc_mining.price_history.first()
         .map(|e| current_time - e.timestamp)
@@ -333,22 +329,16 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     
     let new_avg_price = current_weighted_avg;
     
-    // Initialize track_price if first time
-    if doge_btc_mining.track_price == 0 {
-        doge_btc_mining.track_price = new_avg_price;
-        msg!("   🎯 Initialized track_price: {}", doge_btc_mining.track_price);
-    }
-    
     // Calculate price change percentage from BOTH recent and track prices
     // Use the LARGER change to determine if we should update
     let change_from_track = calculate_price_change_pct(doge_btc_mining.track_price, new_avg_price);
-    
+
     // For recent_price, use the oldest entry in history (4 hours ago)
     let recent_comparison_price = doge_btc_mining.price_history.first()
         .map(|e| e.price)
         .unwrap_or(new_avg_price);
     let change_from_recent = calculate_price_change_pct(recent_comparison_price, new_avg_price);
-    
+
     msg!("   📊 Price changes: from track_price ({}): {}%, from 4h ago ({}): {}%", 
          doge_btc_mining.track_price, change_from_track.0,
          recent_comparison_price, change_from_recent.0);
@@ -397,7 +387,7 @@ pub fn update_dbtc_dist_per_slot_internal(ctx: Context<UpdateMdogeDistPerSlot>, 
     if rate_changed {
         doge_btc_mining.track_price = new_avg_price;
         msg!("   🎯 Updated track_price to: {}", doge_btc_mining.track_price);
-    }
+    }    
     
     // Calculate amounts for LP addition using UPDATED distribution rate
     // Use earnmarked SOL from buybacks account
