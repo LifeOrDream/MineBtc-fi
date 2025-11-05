@@ -1,19 +1,21 @@
 use anchor_lang::prelude::*;
 
-use crate::state::*;
-use crate::events::*;
 use crate::errors::ErrorCode;
+use crate::events::*;
 use crate::instructions::helper::{self, transfer_to_sol_treasury};
+use crate::state::*;
 
-use anchor_spl::token_interface::{ Mint as Mint2022 };
-
+use anchor_spl::token_interface::Mint as Mint2022;
 
 // ----------------------------------------------------------------------------------------
 // -------------- HELPER :: EGG MULTIPLIER CALCULATIONS -----------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Get the egg multiplier for a moonbase (100 = 1.0x if no egg, or egg's multiplier if incubated)
-fn get_egg_multiplier(user_moonbase: &UserMoonBaseInstance, dragon_egg_metadata: Option<&Account<DragonEggMetadata>>) -> Result<u32> {
+fn get_egg_multiplier(
+    user_moonbase: &UserMoonBaseInstance,
+    dragon_egg_metadata: Option<&Account<DragonEggMetadata>>,
+) -> Result<u32> {
     if user_moonbase.incubated_dragon_egg.is_some() {
         if let Some(egg) = dragon_egg_metadata {
             Ok(egg.multiplier)
@@ -40,7 +42,6 @@ fn apply_egg_multiplier(hashpower: u64, multiplier: u32) -> Result<u64> {
         Ok(boosted)
     }
 }
-
 
 // ----------------------------------------------------------------------------------------
 // -------------- USER FUNCTIONS :: CREATE MOON-BASE, EXPAND MOONBASE ----------------
@@ -69,28 +70,33 @@ fn initialize_moonbase_common<'info>(
     // Increment total moonbases created and total sol spent
     global_config.total_moonbases_created = global_config.total_moonbases_created.saturating_add(1);
     global_config.total_sol_spent = global_config.total_sol_spent.saturating_add(sol_cost);
-    
+
     // Validate faction_id
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
-    
-    msg!("Creating moonbase for user {} with faction: {} ({})", 
-         user.key(), 
-         faction_id, 
-         global_config.supported_factions.get(faction_id as usize).unwrap_or(&"Unknown".to_string()));
-    
+
+    msg!(
+        "Creating moonbase for user {} with faction: {} ({})",
+        user.key(),
+        faction_id,
+        global_config
+            .supported_factions
+            .get(faction_id as usize)
+            .unwrap_or(&"Unknown".to_string())
+    );
+
     // --- Initialize the new user's referral rewards account ---
     new_rewards.owner = user.key();
     new_rewards.total_sol_earned = 0;
     new_rewards.sol_claimed_for_xp = 0;
     new_rewards.referrals_count = 0;
- 
+
     // Charge the creation fee with 50/50 split
     let fee_recipient_amount = sol_cost / 2; // 50% goes to creation fee recipient
     let remaining_amount = sol_cost - fee_recipient_amount; // 50% goes through existing system
-    
+
     // Transfer 50% directly to creation fee recipient
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -102,41 +108,54 @@ fn initialize_moonbase_common<'info>(
         ),
         fee_recipient_amount,
     )?;
-    
-    msg!("💰 Transferred {} SOL directly to creation fee recipient: {}", 
-         fee_recipient_amount, global_config.creation_fee_recipient);
-    
+
+    msg!(
+        "💰 Transferred {} SOL directly to creation fee recipient: {}",
+        fee_recipient_amount,
+        global_config.creation_fee_recipient
+    );
+
     // Initialize the user's moonbase
     user_moonbase.owner = user.key();
-    
+
     // Initialize referral - make sure referrer is not the same as owner
     if let Some(ref_pubkey) = referrer {
-        require!(ref_pubkey != user.key(), ErrorCode::ReferralCannotBeSameAsOwner);        
+        require!(
+            ref_pubkey != user.key(),
+            ErrorCode::ReferralCannotBeSameAsOwner
+        );
         user_moonbase.referral = ref_pubkey;
-        
+
         // Handle referral payment with remaining 50%
         let (_, _) = helper::process_referral_payment(
             remaining_amount,
             &ref_pubkey,
             &user.key(),
             &user.to_account_info(),
-            referrer_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+            referrer_rewards
+                .as_ref()
+                .map(|acc| acc.to_account_info())
+                .as_ref(),
             global_config,
             sol_treasury,
             system_program,
         )?;
-        
+
         // Process new referral (increment count) if referrer rewards account exists
         if let Some(referrer_rewards_account) = referrer_rewards {
-            referrer_rewards_account.referrals_count = referrer_rewards_account.referrals_count.saturating_add(1);
-            
-            msg!("🤝 New referral processed: {} total referrals for {}", 
-                 referrer_rewards_account.referrals_count, ref_pubkey);
+            referrer_rewards_account.referrals_count =
+                referrer_rewards_account.referrals_count.saturating_add(1);
+
+            msg!(
+                "🤝 New referral processed: {} total referrals for {}",
+                referrer_rewards_account.referrals_count,
+                ref_pubkey
+            );
         }
     } else {
         // If no referrer, set to default (system program is a common default)
         user_moonbase.referral = anchor_lang::solana_program::system_program::ID;
-        
+
         // If no referrer, remaining 50% goes directly to treasury
         transfer_to_sol_treasury(
             &user.to_account_info(),
@@ -153,17 +172,17 @@ fn initialize_moonbase_common<'info>(
     user_moonbase.used_electricity = 0;
     user_moonbase.dbtc_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
     user_moonbase.faction_id = faction_id;
-    
+
     // Initialize XP, level, and tier system
     user_moonbase.level = 0;
     user_moonbase.init_type = init_type;
     user_moonbase.xp = 0;
     user_moonbase.last_login_ts = Clock::get()?.unix_timestamp;
     user_moonbase.daily_login_streak = 0;
-    
+
     // Initialize grid bitmap
     user_moonbase.occupied_bitmap = [0u8; BITMAP_SIZE];
-    
+
     // Initialize moonbase expansion system
     helper::initialize_moonbase_dimensions(user_moonbase)?;
 
@@ -183,7 +202,12 @@ fn initialize_moonbase_common<'info>(
 /// Creates a new moon base for a user
 /// This can only be called once per user
 /// pricing_tier: PRICE_TIER_1 (0.5 SOL, no NFT)
-pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+pub fn initialize_user_moonbase(
+    ctx: Context<CreateUserMoonbase>,
+    referrer: Option<Pubkey>,
+    faction_id: u8,
+    pricing_tier: u64,
+) -> Result<()> {
     require!(pricing_tier == PRICE_TIER_1, ErrorCode::InvalidParameters);
 
     let (sol_cost, init_type) = (PRICE_TIER_1, 1u8);
@@ -215,19 +239,23 @@ pub fn initialize_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Opti
         referrer,
     });
 
-    msg!("Created new moon base for user {} - Tier {}: {} SOL (no NFT)",
-         ctx.accounts.user.key(), init_type, sol_cost as f64 / 1_000_000_000.0);
+    msg!(
+        "Created new moon base for user {} - Tier {}: {} SOL (no NFT)",
+        ctx.accounts.user.key(),
+        init_type,
+        sol_cost as f64 / 1_000_000_000.0
+    );
 
     Ok(())
 }
 
-
-
-
-
-
 /// Creates a new moon base for a user with Dragon Egg NFT (tiers 2-4)
-pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+pub fn initialize_user_moonbase_w_egg(
+    ctx: Context<CreateUserMoonbaseWithEgg>,
+    referrer: Option<Pubkey>,
+    faction_id: u8,
+    pricing_tier: u64,
+) -> Result<()> {
     // Determine pricing and NFT minting based on tier
     let (sol_cost, init_type): (u64, u8) = match pricing_tier {
         PRICE_TIER_2 => (PRICE_TIER_2, 2),
@@ -237,9 +265,7 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     };
 
     // Get moonbase count before mutable borrow
-    let egg_count = {
-        ctx.accounts.global_config.total_dragon_eggs_minted
-    };
+    let egg_count = { ctx.accounts.global_config.total_dragon_eggs_minted };
 
     // Initialize common moonbase fields
     initialize_moonbase_common(
@@ -266,9 +292,15 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     msg!("🥚 ========== MINTING DRAGON EGG NFT ==========");
     let dragon_egg_asset_signer = &ctx.accounts.dragon_egg_asset.as_ref();
     msg!("📍 Dragon Egg Asset: {}", dragon_egg_asset_signer.key());
-    msg!("   Asset owner BEFORE CPI: {}", ctx.accounts.dragon_egg_asset.owner);
-    msg!("   Asset data length BEFORE CPI: {}", ctx.accounts.dragon_egg_asset.data_len());
-    
+    msg!(
+        "   Asset owner BEFORE CPI: {}",
+        ctx.accounts.dragon_egg_asset.owner
+    );
+    msg!(
+        "   Asset data length BEFORE CPI: {}",
+        ctx.accounts.dragon_egg_asset.data_len()
+    );
+
     let dragon_egg_collection = &ctx.accounts.dragon_egg_collection;
     msg!("📚 Dragon Egg Collection: {}", dragon_egg_collection.key());
     let mpl_core_program = &ctx.accounts.mpl_core_program;
@@ -287,16 +319,16 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     let dna = crate::genescience::generate_genesis_dna_with_tier(
         egg_count,
         &ctx.accounts.user.key(),
-            Clock::get()?.slot,
+        Clock::get()?.slot,
         family_type,
     )?;
 
-        // Get URI from global config or use fallback
-    let uri = ctx.accounts.global_config.get_random_dragon_egg_uri(
-            Clock::get()?.slot,
-        egg_count,
-            &dna,
-    ).unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_count));
+    // Get URI from global config or use fallback
+    let uri = ctx
+        .accounts
+        .global_config
+        .get_random_dragon_egg_uri(Clock::get()?.slot, egg_count, &dna)
+        .unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_count));
 
     // Get the collection authority bump for signing
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -308,44 +340,50 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     msg!("🎨 Creating Dragon Egg NFT via Metaplex Core CPI");
     msg!("   Name: {}", name);
     msg!("   URI: {}", uri);
-    
-        // Create Dragon Egg NFT with MPL Core
-        crate::mpl_core_helpers::create_mpl_core_asset(
+
+    // Create Dragon Egg NFT with MPL Core
+    crate::mpl_core_helpers::create_mpl_core_asset(
         &dragon_egg_asset_signer.to_account_info(),
         Some(&dragon_egg_collection.to_account_info()),
         collection_authority,
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            mpl_core_program,
-            name.clone(),
-            uri.clone(),
+        &ctx.accounts.system_program.to_account_info(),
+        mpl_core_program,
+        name.clone(),
+        uri.clone(),
         Some(&[collection_authority_seeds]),
-        )?;
-    
+    )?;
+
     msg!("✅ Metaplex Core CPI completed");
-    msg!("   Asset owner AFTER CPI: {}", ctx.accounts.dragon_egg_asset.owner);
-    msg!("   Asset data length AFTER CPI: {}", ctx.accounts.dragon_egg_asset.data_len());
+    msg!(
+        "   Asset owner AFTER CPI: {}",
+        ctx.accounts.dragon_egg_asset.owner
+    );
+    msg!(
+        "   Asset data length AFTER CPI: {}",
+        ctx.accounts.dragon_egg_asset.data_len()
+    );
 
     // Calculate multiplier based on pricing tier (basis points)
     // Tier 2 (1.42 SOL): 150 = 1.5x
     // Tier 3 (2.42 SOL): 200 = 2.0x
     // Tier 4 (4.20 SOL): 300 = 3.0x
     let multiplier = match init_type {
-        2 => 150,  // 1.5x multiplier
-        3 => 200,  // 2.0x multiplier
-        4 => 300,  // 3.0x multiplier
-        _ => 100,  // 1.0x fallback (shouldn't happen)
+        2 => 150, // 1.5x multiplier
+        3 => 200, // 2.0x multiplier
+        4 => 300, // 3.0x multiplier
+        _ => 100, // 1.0x fallback (shouldn't happen)
     };
-    
+
     // Initialize Dragon Egg metadata with DNA
     egg_metadata.mint = dragon_egg_asset_signer.key();
-        egg_metadata.power = BASE_EGG_POWER;
-        egg_metadata.dna = dna;
-        egg_metadata.incubated_moonbase = None;
+    egg_metadata.power = BASE_EGG_POWER;
+    egg_metadata.dna = dna;
+    egg_metadata.incubated_moonbase = None;
     egg_metadata.multiplier = multiplier;
-        egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-        egg_metadata.created_at = Clock::get()?.unix_timestamp;
+    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    egg_metadata.created_at = Clock::get()?.unix_timestamp;
     egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
 
     msg!("Egg Metadata: {}", egg_metadata.key());
@@ -357,34 +395,45 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
     msg!("Created At: {}", egg_metadata.created_at);
     msg!("Bump: {}", egg_metadata.bump);
 
-        // Update global dragon egg counter
-    ctx.accounts.global_config.total_dragon_eggs_minted = ctx.accounts.global_config.total_dragon_eggs_minted.saturating_add(1);
-    
+    // Update global dragon egg counter
+    ctx.accounts.global_config.total_dragon_eggs_minted = ctx
+        .accounts
+        .global_config
+        .total_dragon_eggs_minted
+        .saturating_add(1);
+
     // Update global dragon egg power
-    ctx.accounts.global_config.global_dragon_egg_power = ctx.accounts.global_config.global_dragon_egg_power
+    ctx.accounts.global_config.global_dragon_egg_power = ctx
+        .accounts
+        .global_config
+        .global_dragon_egg_power
         .saturating_add(BASE_EGG_POWER as u64);
 
     // Log DNA info for debugging
     let family = crate::genescience::get_family_type(&dna);
     let stage = crate::genescience::get_evolutionary_stage(&dna);
-    msg!("Dragon Egg DNA - Family: {}, Evolution Stage: {}, Multiplier: {}x", 
-         family, stage, multiplier as f64 / 100.0);
+    msg!(
+        "Dragon Egg DNA - Family: {}, Evolution Stage: {}, Multiplier: {}x",
+        family,
+        stage,
+        multiplier as f64 / 100.0
+    );
 
-        // Emit events
-        emit!(DragonEggMinted {
-            egg_metadata_account: egg_metadata.key(),
-            dragon_egg_asset_signer: dragon_egg_asset_signer.key(),
-            owner: ctx.accounts.user.key(),
-            mint: egg_metadata.mint,
-            name,
-            uri,
-            dna,
-            initial_power: BASE_EGG_POWER,
-            multiplier: multiplier,
-        });
+    // Emit events
+    emit!(DragonEggMinted {
+        egg_metadata_account: egg_metadata.key(),
+        dragon_egg_asset_signer: dragon_egg_asset_signer.key(),
+        owner: ctx.accounts.user.key(),
+        mint: egg_metadata.mint,
+        name,
+        uri,
+        dna,
+        initial_power: BASE_EGG_POWER,
+        multiplier: multiplier,
+    });
 
-        msg!("✅ Dragon Egg minted for moonbase creation");
-        msg!("   Egg: {}", egg_metadata.mint);
+    msg!("✅ Dragon Egg minted for moonbase creation");
+    msg!("   Egg: {}", egg_metadata.mint);
     msg!("   DNA Family/Tier: {}", family);
 
     // Emit event
@@ -393,8 +442,12 @@ pub fn initialize_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, r
         referrer,
     });
 
-    msg!("Created new moon base for user {} - Tier {}: {} SOL (includes Dragon Egg)",
-         ctx.accounts.user.key(), init_type, sol_cost as f64 / 1_000_000_000.0);
+    msg!(
+        "Created new moon base for user {} - Tier {}: {} SOL (includes Dragon Egg)",
+        ctx.accounts.user.key(),
+        init_type,
+        sol_cost as f64 / 1_000_000_000.0
+    );
 
     Ok(())
 }
@@ -412,32 +465,40 @@ fn get_command_center_config_id(init_type: u8) -> Result<u16> {
 
 /// Install the free command center module for a moonbase
 /// This can only be called once per moonbase and must be called after moonbase creation
-pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos_y: u8) -> Result<()> {
+pub fn install_command_center(
+    ctx: Context<InstallCommandCenter>,
+    pos_x: u8,
+    pos_y: u8,
+) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let module_instance = &mut ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
-    
+
     msg!("🏗️ Installing command center for user {}", user.key());
     msg!("   Position: ({}, {})", pos_x, pos_y);
-    
+
     // Check if command center is already installed
     require!(
         user_moonbase.command_center_module.is_none(),
         ErrorCode::ModuleAlreadyActive
     );
-    
+
     // Command center must be installed before any modules are bought
     // This ensures clean index allocation (command center = index 0)
     require!(
         user_moonbase.modules_count == 0,
         ErrorCode::InvalidParameters
     );
-    
+
     // Get command center config ID based on init_type
     let config_id = get_command_center_config_id(user_moonbase.init_type)?;
-    msg!("   Command Center Config ID: {} (Tier {})", config_id, user_moonbase.init_type);
-    
+    msg!(
+        "   Command Center Config ID: {} (Tier {})",
+        config_id,
+        user_moonbase.init_type
+    );
+
     // Derive and validate the module config account PDA
     let expected_config_account = Pubkey::find_program_address(
         &[
@@ -445,50 +506,57 @@ pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos
             &config_id.to_le_bytes(),
         ],
         ctx.program_id,
-    ).0;
-    
+    )
+    .0;
+
     require!(
         ctx.accounts.module_config_account.key() == expected_config_account,
         ErrorCode::InvalidAccount
     );
-    
+
     // Validate config_id matches
     require!(
         module_config_account.data.id == config_id,
         ErrorCode::ModuleConfigMismatch
     );
-    
+
     let module_config = &module_config_account.data;
-    
+
     // Validate module is active
     require!(module_config.is_active, ErrorCode::ModuleNotActive);
-    
+
     // Calculate electricity cost
     let electricity_cost = match &module_config.stats {
         ModuleStats::Mining(stats) => stats.power_consumption as u64,
         ModuleStats::Attraction(stats) => stats.power_consumption as u64,
     };
-    
-    msg!("📊 Command Center electricity requirement: {} units", electricity_cost);
-    
+
+    msg!(
+        "📊 Command Center electricity requirement: {} units",
+        electricity_cost
+    );
+
     // Check electricity availability
     if electricity_cost > 0 {
-        let new_used_electricity = user_moonbase.used_electricity
+        let new_used_electricity = user_moonbase
+            .used_electricity
             .checked_add(electricity_cost)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
+
         require!(
             new_used_electricity <= user_moonbase.available_electricity,
             ErrorCode::ElectricityCapacityExceeded
         );
-        
-        msg!("✅ Electricity check passed: {} + {} = {} <= {}", 
-             user_moonbase.used_electricity, 
-             electricity_cost,
-             new_used_electricity,
-             user_moonbase.available_electricity);
+
+        msg!(
+            "✅ Electricity check passed: {} + {} = {} <= {}",
+            user_moonbase.used_electricity,
+            electricity_cost,
+            new_used_electricity,
+            user_moonbase.available_electricity
+        );
     }
-    
+
     // Check placement within moonbase bounds and no collision
     require!(
         helper::can_place_module_in_moonbase(
@@ -500,17 +568,23 @@ pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos
         )?,
         ErrorCode::PlacementOutsideMoonbaseArea
     );
-    
-    msg!("✅ Command Center placement validated at ({}, {}) with size {}x{}", 
-         pos_x, pos_y, module_config.width, module_config.height);
-    
+
+    msg!(
+        "✅ Command Center placement validated at ({}, {}) with size {}x{}",
+        pos_x,
+        pos_y,
+        module_config.width,
+        module_config.height
+    );
+
     // Initialize runtime state based on module type
-    let runtime_state = helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
-    
+    let runtime_state =
+        helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
+
     // Get width and height before mutable borrow
     let module_width = module_config.width;
     let module_height = module_config.height;
-    
+
     // Initialize module instance (command center is always index 0)
     module_instance.config_id = config_id;
     module_instance.upgrade_level = 0;
@@ -523,7 +597,7 @@ pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos
     module_instance.created_at = Clock::get()?.unix_timestamp;
     module_instance.last_updated = Clock::get()?.unix_timestamp;
     module_instance.bump = ctx.bumps.module_instance;
-    
+
     // Place the module on the grid
     helper::place_module(
         user_moonbase,
@@ -533,65 +607,78 @@ pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos
         module_width,
         module_height,
     )?;
-    
+
     msg!("📍 Command Center placed successfully on grid");
-    
+
     // Update electricity usage
     if electricity_cost > 0 {
-        user_moonbase.used_electricity = user_moonbase.used_electricity
+        user_moonbase.used_electricity = user_moonbase
+            .used_electricity
             .checked_add(electricity_cost)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("⚡ Updated electricity usage: {} -> {} / {}", 
-             user_moonbase.used_electricity - electricity_cost,
-             user_moonbase.used_electricity,
-             user_moonbase.available_electricity);
+
+        msg!(
+            "⚡ Updated electricity usage: {} -> {} / {}",
+            user_moonbase.used_electricity - electricity_cost,
+            user_moonbase.used_electricity,
+            user_moonbase.available_electricity
+        );
     }
-    
+
     // Update modules_count (command center is the first module)
     user_moonbase.modules_count = 1;
-    
+
     // Update total moonbase HP
     let module_max_hp = match &module_config.stats {
         ModuleStats::Mining(stats) => stats.max_hp,
         ModuleStats::Attraction(stats) => stats.max_hp,
     };
-    
+
     user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_add(module_max_hp);
-    msg!("🛡️ Updated moonbase HP: added {} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
-    
+    msg!(
+        "🛡️ Updated moonbase HP: added {} HP, total now: {}",
+        module_max_hp,
+        user_moonbase.pvp_hp
+    );
+
     // Update hashpower if this is a mining module
     if let ModuleStats::Mining(mining_stats) = &module_config.stats {
         let hashpower_increase = mining_stats.current_hashpower(0) as u64; // Level 0
-        
-        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+
+        user_moonbase.active_hashpower = user_moonbase
+            .active_hashpower
             .checked_add(hashpower_increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("⛏️ Updated hashpower: {} -> {} (+{})", 
-             user_moonbase.active_hashpower - hashpower_increase, 
-             user_moonbase.active_hashpower, 
-             hashpower_increase);
-        
+
+        msg!(
+            "⛏️ Updated hashpower: {} -> {} (+{})",
+            user_moonbase.active_hashpower - hashpower_increase,
+            user_moonbase.active_hashpower,
+            hashpower_increase
+        );
+
         // Update global hashpower
         let mining_state = &mut ctx.accounts.doge_btc_mining;
-        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+        mining_state.total_active_hashpower = mining_state
+            .total_active_hashpower
             .checked_add(hashpower_increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
-             mining_state.total_active_hashpower - hashpower_increase,
-             mining_state.total_active_hashpower,
-             hashpower_increase);
+
+        msg!(
+            "🌐 Updated global hashpower: {} -> {} (+{})",
+            mining_state.total_active_hashpower - hashpower_increase,
+            mining_state.total_active_hashpower,
+            hashpower_increase
+        );
     }
-    
+
     // Track command center module
     user_moonbase.command_center_module = Some(module_instance.key());
-    
+
     // Process daily login and award XP for installing command center
     let installation_xp = 50; // Bonus XP for installing command center
     process_daily_login_and_xp(user_moonbase, installation_xp, "Install Command Center")?;
-    
+
     // Emit event
     emit!(ModuleInstalled {
         owner: user.key(),
@@ -600,13 +687,19 @@ pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos
         pos_x,
         pos_y,
     });
-    
+
     msg!("🎉 Command Center installation completed successfully!");
     msg!("   User: {}", user.key());
     msg!("   Config ID: {}, Module Index: 0", config_id);
-    msg!("   Position: ({}, {}), Size: {}x{}", pos_x, pos_y, module_config.width, module_config.height);
+    msg!(
+        "   Position: ({}, {}), Size: {}x{}",
+        pos_x,
+        pos_y,
+        module_config.width,
+        module_config.height
+    );
     msg!("   Command Center is now active and cannot be removed!");
-    
+
     Ok(())
 }
 
@@ -614,95 +707,123 @@ pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos
 pub fn expand_moonbase_internal(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let user = &ctx.accounts.user;
-    
+
     msg!("🚀 Starting moonbase expansion for user {}", user.key());
     msg!("   Requested expansion ID: {}", expansion_id);
-    msg!("   Current moonbase size: {}x{}", user_moonbase.current_width, user_moonbase.current_height);
+    msg!(
+        "   Current moonbase size: {}x{}",
+        user_moonbase.current_width,
+        user_moonbase.current_height
+    );
     msg!("   Current level: {}", user_moonbase.level);
-        
+
     // Find the expansion configuration and clone it to avoid borrowing issues
-    let expansion = ctx.accounts.global_config.expansions
+    let expansion = ctx
+        .accounts
+        .global_config
+        .expansions
         .iter()
         .find(|e| e.id == expansion_id)
         .cloned()
         .ok_or(ErrorCode::ExpansionNotFound)?;
-    
-    msg!("✅ Found expansion: '{}' (ID: {})", expansion.name, expansion.id);
+
+    msg!(
+        "✅ Found expansion: '{}' (ID: {})",
+        expansion.name,
+        expansion.id
+    );
     msg!("   Required level: {}", expansion.required_level);
     msg!("   Cost: {} SOL", expansion.cost_sol);
-    msg!("   New dimensions: {}x{}", expansion.new_width, expansion.new_height);
+    msg!(
+        "   New dimensions: {}x{}",
+        expansion.new_width,
+        expansion.new_height
+    );
     msg!("   Is active: {}", expansion.is_active);
-    
+
     // Validate the expansion can be purchased using helper function
     require!(
         helper::can_purchase_expansion(user_moonbase, &expansion)?,
         ErrorCode::ExpansionNotAvailable
     );
-    
+
     msg!("✅ Expansion validation passed");
-    
+
     // Get the cost
     let cost = expansion.cost_sol;
-    
+
     msg!("💰 Processing payment of {} SOL", cost);
-    
+
     // Handle referral payment for expansions
     let referrer = user_moonbase.referral;
     msg!("🤝 Processing referral payment to: {}", referrer);
-    
+
     let (referral_fee, treasury_amount) = helper::process_referral_payment(
         cost,
         &referrer,
         &user.key(),
         &user.to_account_info(),
-        ctx.accounts.referrer_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        ctx.accounts
+            .referrer_rewards
+            .as_ref()
+            .map(|acc| acc.to_account_info())
+            .as_ref(),
         &mut ctx.accounts.global_config,
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
-    
-    msg!("💰 Payment processed: {} SOL to referrer, {} SOL to treasury", 
-         referral_fee, treasury_amount);
-    
+
+    msg!(
+        "💰 Payment processed: {} SOL to referrer, {} SOL to treasury",
+        referral_fee,
+        treasury_amount
+    );
+
     // Add expansion to purchased list
     msg!("📝 Adding expansion {} to purchased list", expansion.id);
     user_moonbase.purchased_expansions.push(expansion.id);
-    msg!("   Total expansions purchased: {}", user_moonbase.purchased_expansions.len());
-    
+    msg!(
+        "   Total expansions purchased: {}",
+        user_moonbase.purchased_expansions.len()
+    );
+
     // Update moonbase dimensions
     let old_width = user_moonbase.current_width;
     let old_height = user_moonbase.current_height;
-    
+
     msg!("📐 Updating moonbase dimensions:");
     msg!("   Old size: {}x{}", old_width, old_height);
-    
+
     user_moonbase.current_width = expansion.new_width;
     user_moonbase.current_height = expansion.new_height;
-    
-    msg!("   New size: {}x{}", user_moonbase.current_width, user_moonbase.current_height);
-    
+
+    msg!(
+        "   New size: {}x{}",
+        user_moonbase.current_width,
+        user_moonbase.current_height
+    );
+
     // Calculate new usable area
     let old_area = (old_width as u32) * (old_height as u32);
     let new_area = (expansion.new_width as u32) * (expansion.new_height as u32);
     let area_increase = new_area - old_area;
-    
+
     msg!("📊 Area calculations:");
     msg!("   Old area: {} tiles", old_area);
     msg!("   New area: {} tiles", new_area);
     msg!("   Area increase: {} tiles", area_increase);
-    
+
     // Process daily login and award XP for expansion
     let expansion_xp = 100 + (expansion.required_level as u32 * 10); // More XP for higher level expansions
-    
-    msg!("🌟 Awarding expansion XP: {} (base 100 + {} * 10 for level requirement)", 
-         expansion_xp, expansion.required_level);
-    
-    process_daily_login_and_xp(
-        user_moonbase,
+
+    msg!(
+        "🌟 Awarding expansion XP: {} (base 100 + {} * 10 for level requirement)",
         expansion_xp,
-        "Moonbase Expansion",
-    )?;
-    
+        expansion.required_level
+    );
+
+    process_daily_login_and_xp(user_moonbase, expansion_xp, "Moonbase Expansion")?;
+
     emit!(MoonbaseExpanded {
         owner: user_moonbase.owner,
         expansion_id: expansion.id,
@@ -715,18 +836,21 @@ pub fn expand_moonbase_internal(ctx: Context<ExpandMoonbase>, expansion_id: u8) 
         xp_gained: expansion_xp,
         cost_paid: expansion.cost_sol,
     });
-    
+
     msg!("🎉 Moonbase expansion completed successfully!");
     msg!("   User: {}", user.key());
     msg!("   Expansion: '{}' (ID: {})", expansion.name, expansion_id);
     msg!("   Cost paid: {} SOL", cost);
-    msg!("   New size: {}x{} (+{} tiles)", 
-         expansion.new_width, expansion.new_height, area_increase);
+    msg!(
+        "   New size: {}x{} (+{} tiles)",
+        expansion.new_width,
+        expansion.new_height,
+        area_increase
+    );
     msg!("   XP awarded: {}", expansion_xp);
-    
+
     Ok(())
 }
-
 
 // ----------------------------------------------------------------------------------------
 // -------------- HELPER :: UPDATE ELECTRICITY FROM MOONECONOMY CPI ----------------------
@@ -746,52 +870,66 @@ fn update_electricity_from_mooneconomy(
         *caller_authority == global_config.ext_fee_collector,
         ErrorCode::Unauthorized
     );
-    
+
     msg!("⚡ Updating electricity from mooneconomy CPI call");
     msg!("   Caller authority verified: {}", caller_authority);
-    msg!("   Old electricity: {}", user_moonbase.available_electricity);
+    msg!(
+        "   Old electricity: {}",
+        user_moonbase.available_electricity
+    );
     msg!("   New electricity: {}", new_electricity);
     msg!("   Used electricity: {}", user_moonbase.used_electricity);
-    
+
     // Calculate electricity change for global update
     if new_electricity > user_moonbase.available_electricity {
         let increase = new_electricity - user_moonbase.available_electricity;
-        doge_btc_mining.total_active_electricity = doge_btc_mining.total_active_electricity
+        doge_btc_mining.total_active_electricity = doge_btc_mining
+            .total_active_electricity
             .checked_add(increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!("   Global electricity increased by: {}", increase);
     } else {
         let decrease = user_moonbase.available_electricity - new_electricity;
-        doge_btc_mining.total_active_electricity = doge_btc_mining.total_active_electricity
+        doge_btc_mining.total_active_electricity = doge_btc_mining
+            .total_active_electricity
             .saturating_sub(decrease);
         msg!("   Global electricity decreased by: {}", decrease);
     };
-    
+
     // Update user's available electricity
     user_moonbase.available_electricity = new_electricity;
-    
+
     // Log if user is over-utilizing (used > available) - this is okay, means profit
     if user_moonbase.used_electricity > user_moonbase.available_electricity {
         msg!("⚠️ User is over-utilizing electricity (profit mode):");
-        msg!("   Used: {} > Available: {}", user_moonbase.used_electricity, user_moonbase.available_electricity);
-        msg!("   Over-utilization: {} units", user_moonbase.used_electricity - user_moonbase.available_electricity);
+        msg!(
+            "   Used: {} > Available: {}",
+            user_moonbase.used_electricity,
+            user_moonbase.available_electricity
+        );
+        msg!(
+            "   Over-utilization: {} units",
+            user_moonbase.used_electricity - user_moonbase.available_electricity
+        );
     }
-    
+
     Ok(())
 }
 
 // ----------------------------------------------------------------------------------------
 // -------------- USER FUNCTIONS :: CLAIM REFERRAL REWARDS ----------------
 // ----------------------------------------------------------------------------------------
- 
 
 /// Claim referral rewards
 /// This function can only be called via CPI from mooneconomy program
-pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_electricity: u64) -> Result<()> {
+pub fn claim_referral_rewards_internal(
+    ctx: Context<ClaimReferralRewards>,
+    new_electricity: u64,
+) -> Result<()> {
     let rewards_account = &mut ctx.accounts.referral_rewards;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let user = &ctx.accounts.user;
-    
+
     // Update electricity from mooneconomy
     update_electricity_from_mooneconomy(
         user_moonbase,
@@ -800,42 +938,49 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_e
         &ctx.accounts.caller_program.key(),
         new_electricity,
     )?;
-        
+
     // Calculate actual available balance in the account (this is real SOL)
     let account_balance = rewards_account.to_account_info().lamports();
 
     // Calculate minimum required for rent exemption
     let rent = Rent::get()?;
     let min_rent = rent.minimum_balance(rewards_account.to_account_info().data_len());
-    
+
     // Calculate claimable amount, ensuring we maintain rent-exemption
     let claimable_amount = account_balance.saturating_sub(min_rent);
-    msg!("💰 REFERRAL REWARDS: Claimable amount: {} SOL", claimable_amount);
+    msg!(
+        "💰 REFERRAL REWARDS: Claimable amount: {} SOL",
+        claimable_amount
+    );
 
-    // Calculate NEW SOL earned since last XP claim 
-    let new_sol_for_xp = rewards_account.total_sol_earned.saturating_sub(rewards_account.sol_claimed_for_xp);
-    msg!("💰 REFERRAL REWARDS: New SOL for XP: {} SOL", new_sol_for_xp);
-    
+    // Calculate NEW SOL earned since last XP claim
+    let new_sol_for_xp = rewards_account
+        .total_sol_earned
+        .saturating_sub(rewards_account.sol_claimed_for_xp);
+    msg!(
+        "💰 REFERRAL REWARDS: New SOL for XP: {} SOL",
+        new_sol_for_xp
+    );
+
     // Calculate XP for new SOL earned: 500 XP per SOL (sqrt scaling)
     let sol_bonus_xp = if new_sol_for_xp > 0 {
         let sqrt_lamports = helper::integer_sqrt(new_sol_for_xp);
-        sqrt_lamports * 500 / 1_000_000_000  // 500 XP per SOL (sqrt'ed)
+        sqrt_lamports * 500 / 1_000_000_000 // 500 XP per SOL (sqrt'ed)
     } else {
         0
     };
     msg!("💰 REFERRAL REWARDS: XP for new SOL: {} XP", sol_bonus_xp);
 
     // Process daily login and award XP for new SOL earnings
-    process_daily_login_and_xp(
-        user_moonbase,
-        sol_bonus_xp,
-        "Referral SOL Earnings",
-    )?;
+    process_daily_login_and_xp(user_moonbase, sol_bonus_xp, "Referral SOL Earnings")?;
 
     // Update the tracked amount so this SOL won't give XP again (if XP was awarded)
     if sol_bonus_xp > 0 {
         rewards_account.sol_claimed_for_xp = rewards_account.total_sol_earned;
-        msg!("💰 REFERRAL REWARDS: Updated SOL claimed for XP: {} SOL", rewards_account.sol_claimed_for_xp);
+        msg!(
+            "💰 REFERRAL REWARDS: Updated SOL claimed for XP: {} SOL",
+            rewards_account.sol_claimed_for_xp
+        );
 
         // Emit enhanced referral success event
         emit!(ReferralSuccess {
@@ -848,8 +993,11 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_e
         msg!("🤝 Referral XP awarded: {} XP for {} new SOL earned (Total tracked: {}, Previously claimed: {})", 
              sol_bonus_xp, new_sol_for_xp, rewards_account.total_sol_earned, rewards_account.sol_claimed_for_xp);
     } else {
-        msg!("🤝 No new referral earnings for XP - {} SOL total, {} already claimed for XP", 
-             rewards_account.total_sol_earned, rewards_account.sol_claimed_for_xp);
+        msg!(
+            "🤝 No new referral earnings for XP - {} SOL total, {} already claimed for XP",
+            rewards_account.total_sol_earned,
+            rewards_account.sol_claimed_for_xp
+        );
     }
 
     // Transfer SOL from the rewards account to the user using system transfer
@@ -857,25 +1005,20 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_e
         // Store user key to avoid temporary value issues
         let user_key = user.key();
         let user_key_ref = user_key.as_ref();
-        
+
         // Derive referral rewards PDA seeds
-        let referral_rewards_seeds = &[
-            REFERRAL_REWARDS_SEED.as_ref(),
-            user_key_ref,
-        ];
-        
+        let referral_rewards_seeds = &[REFERRAL_REWARDS_SEED.as_ref(), user_key_ref];
+
         // Get the bump seed for the referral rewards account
-        let (expected_rewards_pda, rewards_bump) = Pubkey::find_program_address(
-            referral_rewards_seeds,
-            &crate::ID,
-        );
-        
+        let (expected_rewards_pda, rewards_bump) =
+            Pubkey::find_program_address(referral_rewards_seeds, &crate::ID);
+
         // Validate that the provided account matches the derived PDA
         require!(
             rewards_account.key() == expected_rewards_pda,
             ErrorCode::InvalidReferralAccount
         );
-        
+
         let bump_array = [rewards_bump];
         let signer_seeds_inner = [
             REFERRAL_REWARDS_SEED.as_ref(),
@@ -883,7 +1026,7 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_e
             &bump_array[..],
         ];
         let signer_seeds = &[&signer_seeds_inner[..]];
-        
+
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.system_program.to_account_info(),
@@ -895,77 +1038,126 @@ pub fn claim_referral_rewards_internal(ctx: Context<ClaimReferralRewards>, new_e
             ),
             claimable_amount,
         )?;
-        
-        msg!("✅ Transferred {} SOL from referral rewards to user", claimable_amount as f64 / 1e9);
+
+        msg!(
+            "✅ Transferred {} SOL from referral rewards to user",
+            claimable_amount as f64 / 1e9
+        );
     }
-        
+
     // Emit event
     emit!(ReferralRewardsClaimed {
         owner: user.key(),
         amount: claimable_amount,
     });
-    
-    msg!("Claimed {} lamports in referral rewards for {}", claimable_amount, user.key());
-    
+
+    msg!(
+        "Claimed {} lamports in referral rewards for {}",
+        claimable_amount,
+        user.key()
+    );
+
     Ok(())
 }
-
 
 // ----------------------------------------------------------------------------------------
 // -------------- USER FUNCTIONS :: UPDATE USER ELECTRICITY ----------------
 // ----------------------------------------------------------------------------------------
- 
-
 
 /// Update user's available electricity based on DogeBtc staking
-pub fn update_user_electricity_internal(ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
-    msg!("⚡ Updating user electricity - Increase: {}, Amount: {}", to_increase, amount);
+pub fn update_user_electricity_internal(
+    ctx: Context<UpdateUserElectricity>,
+    to_increase: bool,
+    amount: u64,
+) -> Result<()> {
+    msg!(
+        "⚡ Updating user electricity - Increase: {}, Amount: {}",
+        to_increase,
+        amount
+    );
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let mining_state = &mut ctx.accounts.mining_state;
-    
+
     // Process daily login automatically (no loot/level stats for this admin function)
     let (_xp_gained, _streak) = helper::process_daily_login(user_moonbase)?;
 
-    // Check if the authority is the fee_collector 
-    require!(ctx.accounts.authority.key() == ctx.accounts.global_config.ext_fee_collector, ErrorCode::Unauthorized);
-    
+    // Check if the authority is the fee_collector
+    require!(
+        ctx.accounts.authority.key() == ctx.accounts.global_config.ext_fee_collector,
+        ErrorCode::Unauthorized
+    );
+
     // Update user's available electricity
     if to_increase {
         msg!("📈 Increasing user electricity by {}", amount);
-        msg!("   Current electricity: {}", user_moonbase.available_electricity);
-        user_moonbase.available_electricity = user_moonbase.available_electricity
+        msg!(
+            "   Current electricity: {}",
+            user_moonbase.available_electricity
+        );
+        user_moonbase.available_electricity = user_moonbase
+            .available_electricity
             .checked_add(amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("   New electricity: {}", user_moonbase.available_electricity);
-    } else {        
+        msg!(
+            "   New electricity: {}",
+            user_moonbase.available_electricity
+        );
+    } else {
         msg!("📉 Decreasing user electricity by {}", amount);
-        msg!("   Current electricity: {}", user_moonbase.available_electricity);
-        user_moonbase.available_electricity = user_moonbase.available_electricity
+        msg!(
+            "   Current electricity: {}",
+            user_moonbase.available_electricity
+        );
+        user_moonbase.available_electricity = user_moonbase
+            .available_electricity
             .checked_sub(amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("   New electricity: {}", user_moonbase.available_electricity);
-        
+        msg!(
+            "   New electricity: {}",
+            user_moonbase.available_electricity
+        );
+
         // Check if the user has enough available electricity to cover the used electricity
         msg!("   Used electricity: {}", user_moonbase.used_electricity);
-        require!(user_moonbase.available_electricity >= user_moonbase.used_electricity, ErrorCode::ElectricityInUse);
-        msg!("   Remaining available electricity: {}", user_moonbase.available_electricity - user_moonbase.used_electricity);
+        require!(
+            user_moonbase.available_electricity >= user_moonbase.used_electricity,
+            ErrorCode::ElectricityInUse
+        );
+        msg!(
+            "   Remaining available electricity: {}",
+            user_moonbase.available_electricity - user_moonbase.used_electricity
+        );
     }
-        
+
     // Update global electricity
     if to_increase {
-        msg!("🌐 Updating global electricity statistics - Current total: {}", mining_state.total_active_electricity);
-        mining_state.total_active_electricity = mining_state.total_active_electricity
+        msg!(
+            "🌐 Updating global electricity statistics - Current total: {}",
+            mining_state.total_active_electricity
+        );
+        mining_state.total_active_electricity = mining_state
+            .total_active_electricity
             .checked_add(amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("   New total active electricity: {}", mining_state.total_active_electricity);
+        msg!(
+            "   New total active electricity: {}",
+            mining_state.total_active_electricity
+        );
     } else {
-        msg!("🌐 Updating global electricity statistics - Current total: {}", mining_state.total_active_electricity);
-        mining_state.total_active_electricity = mining_state.total_active_electricity
+        msg!(
+            "🌐 Updating global electricity statistics - Current total: {}",
+            mining_state.total_active_electricity
+        );
+        mining_state.total_active_electricity = mining_state
+            .total_active_electricity
             .checked_sub(amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("   New total active electricity: {}", mining_state.total_active_electricity);
+        msg!(
+            "   New total active electricity: {}",
+            mining_state.total_active_electricity
+        );
     }
-        
+
     emit!(ElectricityUpdated {
         owner: user_moonbase.owner,
         to_increase,
@@ -973,11 +1165,10 @@ pub fn update_user_electricity_internal(ctx: Context<UpdateUserElectricity>, to_
         new_available_electricity: user_moonbase.available_electricity,
         new_total_electricity: mining_state.total_active_electricity,
     });
-    
+
     msg!("✅ Electricity update completed successfully");
     Ok(())
 }
-
 
 // ----------------------------------------------------------------------------------------
 // INTERNAL :: SIMPLE DAILY LOGIN AND XP FUNCTIONS ----------------
@@ -985,13 +1176,17 @@ pub fn update_user_electricity_internal(ctx: Context<UpdateUserElectricity>, to_
 
 /// Simple daily login processing with XP award - no loot transfers
 /// This can be called from any user function without complex account dependencies
-fn process_daily_login_and_xp(user_moonbase: &mut UserMoonBaseInstance, activity_xp: u32, activity_source: &str) -> Result<()> {
+fn process_daily_login_and_xp(
+    user_moonbase: &mut UserMoonBaseInstance,
+    activity_xp: u32,
+    activity_source: &str,
+) -> Result<()> {
     // Process daily login first
     let (daily_login_xp, _streak) = helper::process_daily_login(user_moonbase)?;
-    
+
     // Calculate total XP to award
     let total_xp = daily_login_xp + activity_xp;
-    
+
     if total_xp > 0 {
         // Determine XP source description
         let xp_source = if daily_login_xp > 0 && activity_xp > 0 {
@@ -1001,37 +1196,42 @@ fn process_daily_login_and_xp(user_moonbase: &mut UserMoonBaseInstance, activity
         } else {
             activity_source.to_string()
         };
-        
+
         // Award XP using simple helper (no loot transfers)
         helper::add_xp_simple(user_moonbase, total_xp, &xp_source)?;
-        
+
         if daily_login_xp > 0 && activity_xp > 0 {
-            msg!("🗓️ Combined XP awarded: {} Daily Login + {} {} = {} total (Streak: {})", 
-                 daily_login_xp, activity_xp, activity_source, total_xp, user_moonbase.daily_login_streak);
+            msg!(
+                "🗓️ Combined XP awarded: {} Daily Login + {} {} = {} total (Streak: {})",
+                daily_login_xp,
+                activity_xp,
+                activity_source,
+                total_xp,
+                user_moonbase.daily_login_streak
+            );
         } else if daily_login_xp > 0 {
-            msg!("🗓️ Daily login processed: {} XP gained (Streak: {})", 
-                 daily_login_xp, user_moonbase.daily_login_streak);
+            msg!(
+                "🗓️ Daily login processed: {} XP gained (Streak: {})",
+                daily_login_xp,
+                user_moonbase.daily_login_streak
+            );
         }
     }
-    
+
     Ok(())
 }
 
- 
 // ------------------------------------------------------------------------------------------
 // -------------- USER :: MINING FUNCTIONS ---------------------------------------------------
 // ------------------------------------------------------------------------------------------
 
 /// Claim DogeBtc tokens that the user has mined
 /// This function can only be called via CPI from mooneconomy program
-pub fn claim_dbtc_tokens_internal(
-    ctx: Context<ClaimDogeBtc>,
-    new_electricity: u64,
-) -> Result<()> {
+pub fn claim_dbtc_tokens_internal(ctx: Context<ClaimDogeBtc>, new_electricity: u64) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
     let user = &ctx.accounts.user;
-    
+
     // Update electricity from mooneconomy
     update_electricity_from_mooneconomy(
         user_moonbase,
@@ -1040,7 +1240,7 @@ pub fn claim_dbtc_tokens_internal(
         &ctx.accounts.caller_program.key(),
         new_electricity,
     )?;
-    
+
     // Ensure mining has been initialized
     require!(
         doge_btc_mining.mining_start_timestamp > 0,
@@ -1055,7 +1255,7 @@ pub fn claim_dbtc_tokens_internal(
         DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
         &[doge_btc_mining.vault_auth_bump],
     ];
-    
+
     // Claim tokens
     let claimed_amount = helper::claim_dogebtc_tokens(
         user_moonbase,
@@ -1073,9 +1273,15 @@ pub fn claim_dbtc_tokens_internal(
     // Update Dragon Egg power if one is incubated
     if let Some(egg_metadata_pubkey) = user_moonbase.incubated_dragon_egg {
         // If moonbase has an incubated egg, egg accounts MUST be provided
-        let egg_metadata = ctx.accounts.dragon_egg_metadata.as_mut()
+        let egg_metadata = ctx
+            .accounts
+            .dragon_egg_metadata
+            .as_mut()
             .ok_or(ErrorCode::InvalidAccount)?;
-        let incubation_state = ctx.accounts.incubation_state.as_mut()
+        let incubation_state = ctx
+            .accounts
+            .incubation_state
+            .as_mut()
             .ok_or(ErrorCode::InvalidAccount)?;
 
         // Verify this is the correct egg
@@ -1083,29 +1289,40 @@ pub fn claim_dbtc_tokens_internal(
             egg_metadata.key() == egg_metadata_pubkey,
             ErrorCode::InvalidAccount
         );
-        
+
         let current_time = Clock::get()?.unix_timestamp;
-        
+
         // Calculate power increase based on claimed amount
         // Formula: power_increase = claimed_amount / POWER_RATE_MULTIPLIER
         let power_increase = (claimed_amount / POWER_RATE_MULTIPLIER) as u32;
-        
+
         let old_power = egg_metadata.power;
         let new_power = old_power.saturating_add(power_increase);
         let actual_increase = new_power.saturating_sub(old_power);
-        
+
         egg_metadata.power = new_power;
         egg_metadata.last_update_ts = current_time;
-        
+
         incubation_state.total_power = new_power as u64;
         incubation_state.last_update_ts = current_time;
-        
+
         // Update global dragon egg power
-        ctx.accounts.global_config.global_dragon_egg_power = ctx.accounts.global_config.global_dragon_egg_power
+        ctx.accounts.global_config.global_dragon_egg_power = ctx
+            .accounts
+            .global_config
+            .global_dragon_egg_power
             .saturating_add(actual_increase as u64);
-        
-        msg!("🥚 Dragon Egg power updated: {} -> {} (+{})", old_power, new_power, actual_increase);
-        msg!("🌐 Global egg power: {}", ctx.accounts.global_config.global_dragon_egg_power);
+
+        msg!(
+            "🥚 Dragon Egg power updated: {} -> {} (+{})",
+            old_power,
+            new_power,
+            actual_increase
+        );
+        msg!(
+            "🌐 Global egg power: {}",
+            ctx.accounts.global_config.global_dragon_egg_power
+        );
     }
 
     // Process daily login and award XP based on tokens mined
@@ -1113,27 +1330,26 @@ pub fn claim_dbtc_tokens_internal(
     process_daily_login_and_xp(user_moonbase, mining_xp, "Mining")?;
 
     // Emit event
-    emit!(DogeBtcTokensClaimed { owner: user.key(), amount: claimed_amount });
+    emit!(DogeBtcTokensClaimed {
+        owner: user.key(),
+        amount: claimed_amount
+    });
 
-    msg!("User {} claimed {} DogeBtc tokens", user.key(), claimed_amount);
+    msg!(
+        "User {} claimed {} DogeBtc tokens",
+        user.key(),
+        claimed_amount
+    );
 
     Ok(())
 }
 
-
-
- 
 // ----------------------------------------------------------------------------------------
 // -------------- USER :: MODULE MANAGEMENT FUNCTIONS -------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-
-
 /// Buy a module - purchase and create undeployed ModuleInstance
-pub fn buy_module(
-    ctx: Context<BuyModule>,
-    config_id: u16,
-) -> Result<()> {
+pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
@@ -1141,89 +1357,114 @@ pub fn buy_module(
 
     msg!("🛒 Starting module purchase for user {}", user.key());
     msg!("   Config ID: {}", config_id);
-    
+
     // Command center must be installed before buying other modules
     require!(
         user_moonbase.command_center_module.is_some(),
         ErrorCode::InvalidParameters
     );
-    
+
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
-    
+
     // Validate module is active
     require!(module_config.is_active, ErrorCode::ModuleNotActive);
     msg!("✅ Module config {} is active", config_id);
-    
+
     // Validate user level requirement
-    require!(  user_moonbase.level >= module_config.min_level,  ErrorCode::UserLevelTooLow);
-    msg!("✅ User level {} meets requirement of {}", user_moonbase.level, module_config.min_level);
-    
+    require!(
+        user_moonbase.level >= module_config.min_level,
+        ErrorCode::UserLevelTooLow
+    );
+    msg!(
+        "✅ User level {} meets requirement of {}",
+        user_moonbase.level,
+        module_config.min_level
+    );
+
     // Validate faction access (if faction restrictions exist)
     if !module_config.faction_ids.is_empty() {
-        require!(  module_config.faction_ids.contains(&user_moonbase.faction_id),  ErrorCode::FactionNotAllowed);
-        msg!("✅ User faction {} is allowed for this module", user_moonbase.faction_id);
+        require!(
+            module_config
+                .faction_ids
+                .contains(&user_moonbase.faction_id),
+            ErrorCode::FactionNotAllowed
+        );
+        msg!(
+            "✅ User faction {} is allowed for this module",
+            user_moonbase.faction_id
+        );
     }
-    
+
     // Check if user has enough SOL for the module cost
     let cost = module_config.mint_cost;
     msg!("💰 Module cost: {} SOL", cost as f64 / 1e9);
-    
+
     // Process the payment, handle referral if applicable
     let referrer = user_moonbase.referral;
-    
+
     // Handle the referral payment
     let (referral_fee, _) = helper::process_referral_payment(
         cost,
         &referrer,
         &user.key(),
         &user.to_account_info(),
-        ctx.accounts.referral_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        ctx.accounts
+            .referral_rewards
+            .as_ref()
+            .map(|acc| acc.to_account_info())
+            .as_ref(),
         &mut ctx.accounts.global_config,
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
-    
-    msg!("💰 Payment processed: {} SOL cost, {} SOL referral fee", 
-         cost as f64 / 1e9, referral_fee as f64 / 1e9);
-    
+
+    msg!(
+        "💰 Payment processed: {} SOL cost, {} SOL referral fee",
+        cost as f64 / 1e9,
+        referral_fee as f64 / 1e9
+    );
+
     // Update available modules count
-    let found_entry = user_moonbase.available_modules.iter_mut()
+    let found_entry = user_moonbase
+        .available_modules
+        .iter_mut()
         .find(|entry| entry.config_id == config_id);
-    
+
     if let Some(entry) = found_entry {
         // Increment count for existing entry
         entry.count += 1;
     } else {
         // Create new entry
-        let new_entry = AvailableModuleEntry { 
-            config_id, 
-            count: 1 
+        let new_entry = AvailableModuleEntry {
+            config_id,
+            count: 1,
         };
         user_moonbase.available_modules.push(new_entry);
     }
-    
+
     // Calculate electricity cost based on module type and stats
     let electricity_cost = match &module_config.stats {
         ModuleStats::Mining(stats) => stats.power_consumption as u32,
         ModuleStats::Attraction(stats) => stats.power_consumption as u32,
     };
-    
+
     // Initialize runtime state based on module type (at full HP but not deployed)
-    let runtime_state = helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
-    
+    let runtime_state =
+        helper::initialize_module_runtime_state(&module_config.module_type, &module_config.stats);
+
     // Create the ModuleInstance (undeployed)
     let module_instance = &mut ctx.accounts.module_instance;
     let module_index = user_moonbase.modules_count;
-    
+
     // Initialize module instance fields (NOT DEPLOYED YET)
     module_instance.config_id = config_id;
     module_instance.upgrade_level = 0; // Start at level 0
     module_instance.index = module_index;
     module_instance.module_type = module_config.module_type.clone();
     module_instance.runtime_state = runtime_state;
-    module_instance.pos_x = 0;     // Not placed yet
-    module_instance.pos_y = 0;     // Not placed yet
+    module_instance.pos_x = 0; // Not placed yet
+    module_instance.pos_y = 0; // Not placed yet
     module_instance.width = module_config.width;
     module_instance.height = module_config.height;
 
@@ -1233,8 +1474,7 @@ pub fn buy_module(
     module_instance.last_updated = current_timestamp;
     module_instance.is_removable = true; // All purchased modules are removable
     module_instance.bump = ctx.bumps.module_instance;
-    
-  
+
     // Update user_moonbase counters
     user_moonbase.modules_count += 1;
 
@@ -1245,7 +1485,7 @@ pub fn buy_module(
         purchase_xp,
         &format!("Purchase Module ({} SOL)", cost as f64 / 1e9),
     )?;
-    
+
     // Emit event
     emit!(ModulePurchased {
         owner: user.key(),
@@ -1254,16 +1494,23 @@ pub fn buy_module(
         cost,
         referral_fee,
     });
-    
+
     msg!("🎉 Module purchase completed successfully!");
     msg!("   User: {}", user.key());
-    msg!("   Config ID: {}, Module Index: {}", config_id, module_index);
-    msg!("   Cost: {} SOL, Referral Fee: {} SOL", cost as f64 / 1e9, referral_fee as f64 / 1e9);
+    msg!(
+        "   Config ID: {}, Module Index: {}",
+        config_id,
+        module_index
+    );
+    msg!(
+        "   Cost: {} SOL, Referral Fee: {} SOL",
+        cost as f64 / 1e9,
+        referral_fee as f64 / 1e9
+    );
     msg!("   Module created but not deployed (is_active: false)");
-    
+
     Ok(())
 }
-
 
 /// Install/deploy an existing undeployed module to specific coordinates
 pub fn install_module(
@@ -1276,48 +1523,59 @@ pub fn install_module(
     let module_instance = &mut ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
-    
+
     msg!("🏗️ Starting module installation for user {}", user.key());
-    msg!("   Module Index: {}, Position: ({}, {})", module_index, pos_x, pos_y);
-    
+    msg!(
+        "   Module Index: {}, Position: ({}, {})",
+        module_index,
+        pos_x,
+        pos_y
+    );
+
     // Validate module is not already deployed
     require!(!module_instance.is_active, ErrorCode::ModuleAlreadyActive);
     msg!("✅ Module is undeployed and ready for installation");
-    
+
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
-    
+
     // Validate config_id matches the module instance
     require!(
         module_config.id == module_instance.config_id,
         ErrorCode::ModuleConfigMismatch
     );
-    
+
     msg!("✅ Installing module at position ({}, {})", pos_x, pos_y);
-    
+
     // Calculate electricity cost based on current upgrade level
     let electricity_cost = module_instance.electricity_cost as u64;
-    
-    msg!("📊 Module electricity requirement: {} units", electricity_cost);
-    
+
+    msg!(
+        "📊 Module electricity requirement: {} units",
+        electricity_cost
+    );
+
     // Check electricity availability BEFORE placement
     if electricity_cost > 0 {
-        let new_used_electricity = user_moonbase.used_electricity
+        let new_used_electricity = user_moonbase
+            .used_electricity
             .checked_add(electricity_cost)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
+
         require!(
             new_used_electricity <= user_moonbase.available_electricity,
             ErrorCode::ElectricityCapacityExceeded
         );
-        
-        msg!("✅ Electricity check passed: {} + {} = {} <= {}", 
-             user_moonbase.used_electricity, 
-             electricity_cost,
-             new_used_electricity,
-             user_moonbase.available_electricity);
+
+        msg!(
+            "✅ Electricity check passed: {} + {} = {} <= {}",
+            user_moonbase.used_electricity,
+            electricity_cost,
+            new_used_electricity,
+            user_moonbase.available_electricity
+        );
     }
-    
+
     // Check placement within moonbase bounds and no collision
     require!(
         helper::can_place_module_in_moonbase(
@@ -1329,14 +1587,19 @@ pub fn install_module(
         )?,
         ErrorCode::PlacementOutsideMoonbaseArea
     );
-    
-    msg!("✅ Module placement validated at ({}, {}) with size {}x{}", 
-         pos_x, pos_y, module_instance.width, module_instance.height);
-    
+
+    msg!(
+        "✅ Module placement validated at ({}, {}) with size {}x{}",
+        pos_x,
+        pos_y,
+        module_instance.width,
+        module_instance.height
+    );
+
     // Get width and height before the mutable borrow
     let module_width = module_instance.width;
     let module_height = module_instance.height;
-    
+
     // Place the module on the grid using the placement system
     helper::place_module(
         user_moonbase,
@@ -1346,75 +1609,95 @@ pub fn install_module(
         module_width,
         module_height,
     )?;
-    
+
     msg!("📍 Module placed successfully on grid");
-    
+
     // Update module instance to be deployed
     module_instance.is_active = true;
     module_instance.last_updated = Clock::get()?.unix_timestamp;
-    
+
     // Update electricity usage
     if electricity_cost > 0 {
-        user_moonbase.used_electricity = user_moonbase.used_electricity
+        user_moonbase.used_electricity = user_moonbase
+            .used_electricity
             .checked_add(electricity_cost)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("⚡ Updated electricity usage: {} -> {} / {}", 
-             user_moonbase.used_electricity - electricity_cost,
-             user_moonbase.used_electricity,
-             user_moonbase.available_electricity);
+
+        msg!(
+            "⚡ Updated electricity usage: {} -> {} / {}",
+            user_moonbase.used_electricity - electricity_cost,
+            user_moonbase.used_electricity,
+            user_moonbase.available_electricity
+        );
     }
-    
+
     // Update total moonbase HP (add module's HP to moonbase) based on current level
     let module_max_hp = match &module_config.stats {
         ModuleStats::Mining(stats) => stats.max_hp,
         ModuleStats::Attraction(stats) => stats.max_hp,
     };
-    
+
     user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_add(module_max_hp);
-    msg!("🛡️ Updated moonbase HP: added {} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
-    
+    msg!(
+        "🛡️ Updated moonbase HP: added {} HP, total now: {}",
+        module_max_hp,
+        user_moonbase.pvp_hp
+    );
+
     // Update hashpower if this is a mining module (based on current upgrade level)
     if let ModuleStats::Mining(mining_stats) = &module_config.stats {
         // Mine pending rewards BEFORE changing hashpower
         helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
-        
-        let base_hashpower_increase = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
-        
+
+        let base_hashpower_increase =
+            mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+
         // Apply egg multiplier if an egg is incubated
-        let egg_multiplier = get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
+        let egg_multiplier =
+            get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
         let hashpower_increase = apply_egg_multiplier(base_hashpower_increase, egg_multiplier)?;
-        
+
         let old_hashpower = user_moonbase.active_hashpower;
-        
-        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+
+        user_moonbase.active_hashpower = user_moonbase
+            .active_hashpower
             .checked_add(hashpower_increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
+
         if egg_multiplier > 100 {
             msg!("⛏️ Updated hashpower: {} -> {} (+{} base, +{} with {}x egg multiplier) at level {}", 
                  old_hashpower, user_moonbase.active_hashpower, base_hashpower_increase, hashpower_increase, 
                  egg_multiplier as f64 / 100.0, module_instance.upgrade_level);
         } else {
-        msg!("⛏️ Updated hashpower: {} -> {} (+{}) at level {}", 
-             old_hashpower, user_moonbase.active_hashpower, hashpower_increase, module_instance.upgrade_level);
+            msg!(
+                "⛏️ Updated hashpower: {} -> {} (+{}) at level {}",
+                old_hashpower,
+                user_moonbase.active_hashpower,
+                hashpower_increase,
+                module_instance.upgrade_level
+            );
         }
-        
+
         // Update global hashpower
         let mining_state = &mut ctx.accounts.doge_btc_mining;
         let old_global_hashpower = mining_state.total_active_hashpower;
-        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+        mining_state.total_active_hashpower = mining_state
+            .total_active_hashpower
             .checked_add(hashpower_increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
-             old_global_hashpower, mining_state.total_active_hashpower, hashpower_increase);
+
+        msg!(
+            "🌐 Updated global hashpower: {} -> {} (+{})",
+            old_global_hashpower,
+            mining_state.total_active_hashpower,
+            hashpower_increase
+        );
     }
-    
+
     // Process daily login and award XP for installing module
     let installation_xp = 25; // Fixed XP for installation
-    process_daily_login_and_xp(  user_moonbase,  installation_xp, "Install Module")?;
-    
+    process_daily_login_and_xp(user_moonbase, installation_xp, "Install Module")?;
+
     // Emit event
     emit!(ModuleInstalled {
         owner: user.key(),
@@ -1423,181 +1706,244 @@ pub fn install_module(
         pos_x,
         pos_y,
     });
-    
+
     msg!("🎉 Module installation completed successfully!");
     msg!("   User: {}", user.key());
-    msg!("   Module Index: {}, Config ID: {}", module_index, module_instance.config_id);
-    msg!("   Position: ({}, {}), Size: {}x{}", pos_x, pos_y, module_instance.width, module_instance.height);
-    msg!("   Upgrade Level: {}, Electricity Used: {} / {}", 
-         module_instance.upgrade_level, user_moonbase.used_electricity, user_moonbase.available_electricity);
+    msg!(
+        "   Module Index: {}, Config ID: {}",
+        module_index,
+        module_instance.config_id
+    );
+    msg!(
+        "   Position: ({}, {}), Size: {}x{}",
+        pos_x,
+        pos_y,
+        module_instance.width,
+        module_instance.height
+    );
+    msg!(
+        "   Upgrade Level: {}, Electricity Used: {} / {}",
+        module_instance.upgrade_level,
+        user_moonbase.used_electricity,
+        user_moonbase.available_electricity
+    );
     msg!("   Module is now deployed and active!");
-    
+
     Ok(())
 }
 
 /// Delete a specific undeployed module instance permanently
-pub fn delete_module(
-    ctx: Context<DeleteModule>,
-    module_index: u8,
-) -> Result<()> {
+pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let module_instance = &ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
-    
+
     msg!("🗑️ Starting module deletion for user {}", user.key());
-    msg!("   Module Index: {}, Config ID: {}", module_index, module_instance.config_id);
-    
+    msg!(
+        "   Module Index: {}, Config ID: {}",
+        module_index,
+        module_instance.config_id
+    );
+
     // Verify module is undeployed before deletion
     require!(!module_instance.is_active, ErrorCode::ModuleAlreadyActive);
     msg!("✅ Module is undeployed and can be deleted");
-    
+
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
     let config_id = module_instance.config_id;
-    
+
     // Find the available module entry
-    let available_entry_index = user_moonbase.available_modules.iter()
+    let available_entry_index = user_moonbase
+        .available_modules
+        .iter()
         .position(|entry| entry.config_id == config_id)
         .ok_or(ErrorCode::ModuleInstanceNotFound)?;
-    
+
     // Validate there's at least one available module of this type
     require!(
         user_moonbase.available_modules[available_entry_index].count > 0,
         ErrorCode::ModuleInstanceNotFound
     );
-    
+
     msg!("✅ Module deletion validation passed");
-    msg!("   Available modules of this type: {}", user_moonbase.available_modules[available_entry_index].count);
-    
+    msg!(
+        "   Available modules of this type: {}",
+        user_moonbase.available_modules[available_entry_index].count
+    );
+
     // Decrement the available modules count
     let count = &mut user_moonbase.available_modules[available_entry_index].count;
     *count -= 1;
     if *count == 0 {
-        user_moonbase.available_modules.remove(available_entry_index);
-        msg!("🗑️ Removed module config {} from available modules (count reached 0)", config_id);
+        user_moonbase
+            .available_modules
+            .remove(available_entry_index);
+        msg!(
+            "🗑️ Removed module config {} from available modules (count reached 0)",
+            config_id
+        );
     } else {
-        msg!("🗑️ Decremented module config {} count: {} -> {}", config_id, *count + 1, *count);
+        msg!(
+            "🗑️ Decremented module config {} count: {} -> {}",
+            config_id,
+            *count + 1,
+            *count
+        );
     }
-    
+
     // Process daily login (no XP for deletion)
     let (daily_login_xp, _streak) = helper::process_daily_login(user_moonbase)?;
     if daily_login_xp > 0 {
         helper::add_xp_simple(user_moonbase, daily_login_xp, "Daily Login")?;
         msg!("🗓️ Daily login processed: {} XP gained", daily_login_xp);
     }
-    
+
     // Emit event
     emit!(ModuleDeleted {
         owner: user.key(),
         config_id,
-        remaining_count: user_moonbase.available_modules.iter().find(|entry| entry.config_id == config_id).map(|entry| entry.count).unwrap_or(0),
+        remaining_count: user_moonbase
+            .available_modules
+            .iter()
+            .find(|entry| entry.config_id == config_id)
+            .map(|entry| entry.count)
+            .unwrap_or(0),
     });
-    
+
     msg!("🎉 Module deletion completed successfully!");
     msg!("   User: {}", user.key());
-    msg!("   Module Index: {}, Config ID: {}", module_index, config_id);
+    msg!(
+        "   Module Index: {}, Config ID: {}",
+        module_index,
+        config_id
+    );
     msg!("   Module type: {} permanently deleted", module_config.name);
     msg!("   ModuleInstance account will be closed and rent returned to user");
-    
-    Ok(())
-} 
 
+    Ok(())
+}
 
 /// Remove/undeploy a module instance from the moonbase (makes it undeployed but keeps it owned)
-pub fn remove_module_internal(
-    ctx: Context<RemoveModuleInstance>,
-    module_index: u8,
-) -> Result<()> {
+pub fn remove_module_internal(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let module_instance = &mut ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
-    
+
     msg!("🗑️ Starting module removal for user {}", user.key());
-    msg!("   Module index: {}, Type: {:?}", module_index, module_instance.module_type);
-    
+    msg!(
+        "   Module index: {}, Type: {:?}",
+        module_index,
+        module_instance.module_type
+    );
+
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
-    
+
     // Verify module is deployed before removal
     require!(module_instance.is_active, ErrorCode::ModuleNotActive);
-    
+
     // Check if module is removable (command center cannot be removed)
     require!(module_instance.is_removable, ErrorCode::ModuleNotRemovable);
-    
+
     msg!("✅ Module is deployed and can be removed");
-    
+
     // Clear the module's position on the grid
     helper::remove_module(user_moonbase, module_instance)?;
-    
+
     // Set module as undeployed but keep the instance
     let module_instance = &mut ctx.accounts.module_instance;
     module_instance.is_active = false;
     module_instance.pos_x = 0; // Reset position
     module_instance.pos_y = 0; // Reset position
     module_instance.last_updated = Clock::get()?.unix_timestamp;
-    
+
     // Reduce electricity consumption
     let electricity_reduction = module_instance.electricity_cost as u64;
     if electricity_reduction > 0 {
-        user_moonbase.used_electricity = user_moonbase.used_electricity
+        user_moonbase.used_electricity = user_moonbase
+            .used_electricity
             .saturating_sub(electricity_reduction);
-        
-        msg!("⚡ Reduced electricity usage: -{} units (new usage: {} / {})", 
-             electricity_reduction, 
-             user_moonbase.used_electricity, 
-             user_moonbase.available_electricity);
+
+        msg!(
+            "⚡ Reduced electricity usage: -{} units (new usage: {} / {})",
+            electricity_reduction,
+            user_moonbase.used_electricity,
+            user_moonbase.available_electricity
+        );
     }
-    
+
     // Update hashpower if this is a mining module
     let hashpower_reduced = if let ModuleStats::Mining(mining_stats) = &module_config.stats {
         // Mine pending rewards BEFORE changing hashpower
         helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
-        
-        let base_hashpower_reduction = mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
-        
+
+        let base_hashpower_reduction =
+            mining_stats.current_hashpower(module_instance.upgrade_level) as u64;
+
         // Apply egg multiplier if an egg is incubated
-        let egg_multiplier = get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
+        let egg_multiplier =
+            get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
         let hashpower_reduction = apply_egg_multiplier(base_hashpower_reduction, egg_multiplier)?;
-        
+
         let old_hashpower = user_moonbase.active_hashpower;
-        
-        user_moonbase.active_hashpower = user_moonbase.active_hashpower
+
+        user_moonbase.active_hashpower = user_moonbase
+            .active_hashpower
             .saturating_sub(hashpower_reduction);
-        
+
         if egg_multiplier > 100 {
-            msg!("⛏️ Reduced hashpower: {} -> {} (-{} base, -{} with {}x egg multiplier)", 
-                 old_hashpower, user_moonbase.active_hashpower, base_hashpower_reduction, hashpower_reduction,
-                 egg_multiplier as f64 / 100.0);
+            msg!(
+                "⛏️ Reduced hashpower: {} -> {} (-{} base, -{} with {}x egg multiplier)",
+                old_hashpower,
+                user_moonbase.active_hashpower,
+                base_hashpower_reduction,
+                hashpower_reduction,
+                egg_multiplier as f64 / 100.0
+            );
         } else {
-        msg!("⛏️ Reduced hashpower: {} -> {} (-{})", 
-             old_hashpower, user_moonbase.active_hashpower, hashpower_reduction);
+            msg!(
+                "⛏️ Reduced hashpower: {} -> {} (-{})",
+                old_hashpower,
+                user_moonbase.active_hashpower,
+                hashpower_reduction
+            );
         }
-        
+
         // Update global hashpower
         let mining_state = &mut ctx.accounts.doge_btc_mining;
         let old_global_hashpower = mining_state.total_active_hashpower;
-        mining_state.total_active_hashpower = mining_state.total_active_hashpower
+        mining_state.total_active_hashpower = mining_state
+            .total_active_hashpower
             .saturating_sub(hashpower_reduction);
-        
-        msg!("🌐 Reduced global hashpower: {} -> {} (-{})", 
-             old_global_hashpower, mining_state.total_active_hashpower, hashpower_reduction);
-        
+
+        msg!(
+            "🌐 Reduced global hashpower: {} -> {} (-{})",
+            old_global_hashpower,
+            mining_state.total_active_hashpower,
+            hashpower_reduction
+        );
+
         hashpower_reduction
     } else {
         0
     };
-    
+
     // Update total moonbase HP (subtract module's HP from moonbase)
     let module_max_hp = match &module_config.stats {
         ModuleStats::Mining(stats) => stats.max_hp,
         ModuleStats::Attraction(stats) => stats.max_hp,
     };
-    
+
     user_moonbase.pvp_hp = user_moonbase.pvp_hp.saturating_sub(module_max_hp);
-    msg!("🛡️ Reduced moonbase HP: -{} HP, total now: {}", module_max_hp, user_moonbase.pvp_hp);
-    
+    msg!(
+        "🛡️ Reduced moonbase HP: -{} HP, total now: {}",
+        module_max_hp,
+        user_moonbase.pvp_hp
+    );
+
     // Emit event
     emit!(ModuleInstanceRemoved {
         owner: user.key(),
@@ -1608,51 +1954,56 @@ pub fn remove_module_internal(
         electricity_freed: electricity_reduction,
         hashpower_lost: hashpower_reduced,
     });
-    
+
     msg!("🎉 Module removal completed successfully!");
     msg!("   User: {}", user.key());
     msg!("   Module Index: {}", module_index);
     msg!("   Module is now undeployed but still owned (is_active: false)");
     msg!("   Can be redeployed later or deleted permanently");
-    
+
     Ok(())
 }
- 
+
 /// Upgrade a module instance (deployed or undeployed)
-pub fn upgrade_module_internal (
-    ctx: Context<UpdateModuleInstance>,
-    module_index: u8,
-) -> Result<()> {
+pub fn upgrade_module_internal(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let module_instance = &mut ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
-    
+
     msg!("⬆️ Starting module upgrade for user {}", user.key());
-    msg!("   Module index: {}, Current level: {}, Deployed: {}", 
-         module_index, module_instance.upgrade_level, module_instance.is_active);
-    
+    msg!(
+        "   Module index: {}, Current level: {}, Deployed: {}",
+        module_index,
+        module_instance.upgrade_level,
+        module_instance.is_active
+    );
+
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
-    
+
     // Make sure the module is not already at max level
     require!(
         module_instance.upgrade_level < module_config.max_upgrades(),
         ErrorCode::ModuleInstanceMaxLevel
     );
-    
+
     // Calculate new upgrade level
     let new_upgrade_level = module_instance.upgrade_level + 1;
-    
+
     // Check moonbase level requirement for this upgrade
     if let Some(required_level) = module_config.get_upgrade_level_requirement(new_upgrade_level) {
         require!(
             user_moonbase.level >= required_level,
             ErrorCode::UserLevelTooLow
         );
-        msg!("✅ User level {} meets upgrade requirement of {}", user_moonbase.level, required_level);
+        msg!(
+            "✅ User level {} meets upgrade requirement of {}",
+            user_moonbase.level,
+            required_level
+        );
     }
-    
+
     // Calculate hashpower difference for mining modules BEFORE upgrade (only if deployed)
     let old_hashpower = if module_instance.is_active {
         if let ModuleStats::Mining(mining_stats) = &module_config.stats {
@@ -1667,67 +2018,81 @@ pub fn upgrade_module_internal (
     } else {
         None
     };
-    
+
     // Get the cost to upgrade this module (progressive pricing)
     let cost = module_config.next_upgrade_cost(module_instance.upgrade_level);
-    
-    msg!("💰 Progressive upgrade cost: {} SOL (base: {} SOL, level {} -> {})", 
-         cost as f64 / 1e9, 
-         module_config.upgrade_cost as f64 / 1e9,
-         module_instance.upgrade_level,
-         new_upgrade_level);
-    
+
+    msg!(
+        "💰 Progressive upgrade cost: {} SOL (base: {} SOL, level {} -> {})",
+        cost as f64 / 1e9,
+        module_config.upgrade_cost as f64 / 1e9,
+        module_instance.upgrade_level,
+        new_upgrade_level
+    );
+
     // Process the payment, handle referral if applicable
     let referrer = user_moonbase.referral;
-    
+
     // Handle the referral payment
     let (referral_fee, _) = helper::process_referral_payment(
         cost,
         &referrer,
         &user.key(),
         &user.to_account_info(),
-        ctx.accounts.referral_rewards.as_ref().map(|acc| acc.to_account_info()).as_ref(),
+        ctx.accounts
+            .referral_rewards
+            .as_ref()
+            .map(|acc| acc.to_account_info())
+            .as_ref(),
         &mut ctx.accounts.global_config,
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
-    
-    msg!("💰 Payment processed: {} SOL cost, {} SOL referral fee", 
-         cost as f64 / 1e9, referral_fee as f64 / 1e9);
-    
+
+    msg!(
+        "💰 Payment processed: {} SOL cost, {} SOL referral fee",
+        cost as f64 / 1e9,
+        referral_fee as f64 / 1e9
+    );
+
     // Update the module instance
     module_instance.upgrade_level = new_upgrade_level;
     module_instance.last_updated = Clock::get()?.unix_timestamp;
-    
+
     // Update electricity cost for the new level
     let new_electricity_cost = match &module_config.stats {
         ModuleStats::Mining(stats) => stats.power_consumption as u32,
         ModuleStats::Attraction(stats) => stats.power_consumption as u32,
     };
     module_instance.electricity_cost = new_electricity_cost;
-    
+
     // If module is deployed, update user and global stats
     if module_instance.is_active {
         msg!("🔄 Module is deployed - updating user and global stats");
-        
+
         // Update hashpower if this is a mining module
-        if let (Some(old_hp), ModuleStats::Mining(mining_stats)) = (old_hashpower, &module_config.stats) {
+        if let (Some(old_hp), ModuleStats::Mining(mining_stats)) =
+            (old_hashpower, &module_config.stats)
+        {
             if let ModuleRuntimeState::Mining { .. } = &module_instance.runtime_state {
                 // Mine pending rewards BEFORE changing hashpower
                 helper::mine_dbtc_for_user(user_moonbase, &mut ctx.accounts.doge_btc_mining)?;
-                
+
                 let new_base_hashpower = mining_stats.current_hashpower(new_upgrade_level) as u64;
                 let base_hashpower_increase = new_base_hashpower.saturating_sub(old_hp);
-                
+
                 // Apply egg multiplier if an egg is incubated
-                let egg_multiplier = get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
-                let hashpower_increase = apply_egg_multiplier(base_hashpower_increase, egg_multiplier)?;
-                
+                let egg_multiplier =
+                    get_egg_multiplier(user_moonbase, ctx.accounts.dragon_egg_metadata.as_ref())?;
+                let hashpower_increase =
+                    apply_egg_multiplier(base_hashpower_increase, egg_multiplier)?;
+
                 if hashpower_increase > 0 {
-                    user_moonbase.active_hashpower = user_moonbase.active_hashpower
+                    user_moonbase.active_hashpower = user_moonbase
+                        .active_hashpower
                         .checked_add(hashpower_increase)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
-                    
+
                     if egg_multiplier > 100 {
                         msg!("⛏️ Updated hashpower: {} -> {} (+{} base, +{} with {}x egg multiplier)", 
                              user_moonbase.active_hashpower - hashpower_increase, 
@@ -1736,28 +2101,35 @@ pub fn upgrade_module_internal (
                              hashpower_increase,
                              egg_multiplier as f64 / 100.0);
                     } else {
-                    msg!("⛏️ Updated hashpower: {} -> {} (+{})", 
-                         user_moonbase.active_hashpower - hashpower_increase, 
-                         user_moonbase.active_hashpower, 
-                         hashpower_increase);
+                        msg!(
+                            "⛏️ Updated hashpower: {} -> {} (+{})",
+                            user_moonbase.active_hashpower - hashpower_increase,
+                            user_moonbase.active_hashpower,
+                            hashpower_increase
+                        );
                     }
-                         
+
                     // Update global hashpower for upgrades
                     let mining_state = &mut ctx.accounts.doge_btc_mining;
                     let old_global_hashpower = mining_state.total_active_hashpower;
-                    mining_state.total_active_hashpower = mining_state.total_active_hashpower
+                    mining_state.total_active_hashpower = mining_state
+                        .total_active_hashpower
                         .checked_add(hashpower_increase)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
-                    
-                    msg!("🌐 Updated global hashpower: {} -> {} (+{})", 
-                         old_global_hashpower, mining_state.total_active_hashpower, hashpower_increase);
+
+                    msg!(
+                        "🌐 Updated global hashpower: {} -> {} (+{})",
+                        old_global_hashpower,
+                        mining_state.total_active_hashpower,
+                        hashpower_increase
+                    );
                 }
             }
         }
     } else {
         msg!("⚠️ Module is undeployed - stats will be applied when deployed");
     }
-    
+
     // Process daily login and award XP for upgrading module (based on SOL spent)
     let upgrade_xp = helper::calculate_sol_based_xp(cost);
     process_daily_login_and_xp(
@@ -1765,7 +2137,7 @@ pub fn upgrade_module_internal (
         upgrade_xp,
         &format!("Upgrade Module ({} SOL)", cost as f64 / 1e9),
     )?;
-    
+
     // Emit event
     emit!(ModuleInstanceUpgraded {
         owner: user.key(),
@@ -1774,17 +2146,23 @@ pub fn upgrade_module_internal (
         cost,
         referral_fee,
     });
-    
+
     msg!("🎉 Module upgrade completed successfully!");
     msg!("   User: {}", user.key());
-    msg!("   Module Index: {}, New Level: {}", module_index, new_upgrade_level);
-    msg!("   Cost: {} SOL, Referral Fee: {} SOL", cost as f64 / 1e9, referral_fee as f64 / 1e9);
+    msg!(
+        "   Module Index: {}, New Level: {}",
+        module_index,
+        new_upgrade_level
+    );
+    msg!(
+        "   Cost: {} SOL, Referral Fee: {} SOL",
+        cost as f64 / 1e9,
+        referral_fee as f64 / 1e9
+    );
     msg!("   Deployed: {}", module_instance.is_active);
-    
+
     Ok(())
 }
- 
-
 
 /// Claim accumulated XP from Attraction modules
 /// This function can only be called via CPI from mooneconomy program
@@ -1797,7 +2175,7 @@ pub fn claim_attraction_xp_internal(
     let module_instance = &mut ctx.accounts.module_instance;
     let module_config_account = &ctx.accounts.module_config_account;
     let user = &ctx.accounts.user;
-    
+
     // Update electricity from mooneconomy
     update_electricity_from_mooneconomy(
         user_moonbase,
@@ -1806,98 +2184,127 @@ pub fn claim_attraction_xp_internal(
         &ctx.accounts.caller_program.key(),
         new_electricity,
     )?;
-    
+
     msg!("🎯 Starting Attraction XP claim for user {}", user.key());
     msg!("   Module index: {}", module_index);
-    
+
     // Get the module config from the individual PDA
     let module_config = &module_config_account.data;
-    
+
     // Ensure this is an Attraction module
     require!(
         module_config.module_type == ModuleType::Attraction,
         ErrorCode::InvalidModuleType
     );
-    
+
     // Get attraction stats
     let attraction_stats = match &module_config.stats {
         ModuleStats::Attraction(stats) => stats,
         _ => return Err(ErrorCode::ModuleTypeMismatch.into()),
     };
-    
+
     // Get runtime state for Attraction module
     let (current_hp, last_xp_claim) = match &module_instance.runtime_state {
-        ModuleRuntimeState::Attraction { current_hp, last_xp_claim, .. } => (*current_hp, *last_xp_claim),
+        ModuleRuntimeState::Attraction {
+            current_hp,
+            last_xp_claim,
+            ..
+        } => (*current_hp, *last_xp_claim),
         _ => return Err(ErrorCode::ModuleTypeMismatch.into()),
     };
-    
-    msg!("✅ Module validation passed - Attraction module with {} HP", current_hp);
-    
+
+    msg!(
+        "✅ Module validation passed - Attraction module with {} HP",
+        current_hp
+    );
+
     // Check if module is active and has HP
     require!(module_instance.is_active, ErrorCode::ModuleNotActive);
     require!(current_hp > 0, ErrorCode::ModuleDamaged);
-    
+
     // Calculate time elapsed since last claim
     let current_time = Clock::get()?.unix_timestamp;
     let time_elapsed = current_time.saturating_sub(last_xp_claim);
-    
+
     // Convert seconds to hours (with precision)
     let hours_elapsed = time_elapsed as f64 / 3600.0;
-    
+
     msg!("⏰ Time calculation:");
     msg!("   Last claim: {}", last_xp_claim);
     msg!("   Current time: {}", current_time);
-    msg!("   Time elapsed: {} seconds ({:.2} hours)", time_elapsed, hours_elapsed);
-    
+    msg!(
+        "   Time elapsed: {} seconds ({:.2} hours)",
+        time_elapsed,
+        hours_elapsed
+    );
+
     // Return early if less than 1 minute has passed (prevent spam)
     if time_elapsed < 60 {
         msg!("⚠️ Must wait at least 1 minute between claims");
         return Ok(());
     }
-    
+
     // Calculate current XP per hour based on upgrade level
     let base_xp_per_hour = attraction_stats.current_xp_per_hour(module_instance.upgrade_level);
-    
+
     // Apply HP efficiency multiplier (damaged modules generate less XP)
     let hp_efficiency = module_instance.hp_efficiency_multiplier(attraction_stats.max_hp);
     let effective_xp_per_hour = (base_xp_per_hour as f64 * hp_efficiency) as u32;
-    
+
     // Calculate total XP accumulated
     let accumulated_xp = (effective_xp_per_hour as f64 * hours_elapsed) as u32;
-    
+
     msg!("💫 XP calculation:");
-    msg!("   Base XP/hour (level {}): {}", module_instance.upgrade_level, base_xp_per_hour);
-    msg!("   HP efficiency: {:.2}% ({} / {} HP)", hp_efficiency * 100.0, current_hp, attraction_stats.max_hp);
+    msg!(
+        "   Base XP/hour (level {}): {}",
+        module_instance.upgrade_level,
+        base_xp_per_hour
+    );
+    msg!(
+        "   HP efficiency: {:.2}% ({} / {} HP)",
+        hp_efficiency * 100.0,
+        current_hp,
+        attraction_stats.max_hp
+    );
     msg!("   Effective XP/hour: {}", effective_xp_per_hour);
     msg!("   Accumulated XP: {}", accumulated_xp);
-    
+
     // Return early if no XP to claim
     if accumulated_xp == 0 {
         msg!("⚠️ No XP accumulated yet");
         return Ok(());
     }
-    
+
     // Update module's runtime state
-    if let ModuleRuntimeState::Attraction { total_xp_generated, last_xp_claim, .. } = &mut module_instance.runtime_state {
+    if let ModuleRuntimeState::Attraction {
+        total_xp_generated,
+        last_xp_claim,
+        ..
+    } = &mut module_instance.runtime_state
+    {
         *total_xp_generated = total_xp_generated.saturating_add(accumulated_xp as u64);
         *last_xp_claim = current_time;
     }
-    
+
     module_instance.last_updated = current_time;
-    
-    msg!("📊 Updated module state - new total XP generated: {}", 
-         match &module_instance.runtime_state {
-             ModuleRuntimeState::Attraction { total_xp_generated, .. } => *total_xp_generated,
-             _ => 0,
-         });
-    
+
+    msg!(
+        "📊 Updated module state - new total XP generated: {}",
+        match &module_instance.runtime_state {
+            ModuleRuntimeState::Attraction {
+                total_xp_generated, ..
+            } => *total_xp_generated,
+            _ => 0,
+        }
+    );
+
     // Process daily login and award the accumulated XP
     process_daily_login_and_xp(
         user_moonbase,
         accumulated_xp,
         &format!("Attraction Module ({:.1}h)", hours_elapsed),
     )?;
-    
+
     // Emit event
     emit!(AttractionXPClaimed {
         owner: user.key(),
@@ -1906,26 +2313,33 @@ pub fn claim_attraction_xp_internal(
         hours_elapsed: hours_elapsed,
         effective_xp_per_hour,
     });
-    
+
     msg!("🎉 Attraction XP claim completed successfully!");
     msg!("   User: {}", user.key());
     msg!("   Module Index: {}", module_index);
-    msg!("   XP Claimed: {} ({:.2} hours at {}/hour)", accumulated_xp, hours_elapsed, effective_xp_per_hour);
-    
+    msg!(
+        "   XP Claimed: {} ({:.2} hours at {}/hour)",
+        accumulated_xp,
+        hours_elapsed,
+        effective_xp_per_hour
+    );
+
     Ok(())
 }
-
-
 
 /// Claim level-up rewards based on accumulated XP (with loot transfers)
 /// This function processes any pending level-ups and awards loot rewards
 pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
     let user_moonbase = &mut ctx.accounts.user_moonbase;
     let old_level = user_moonbase.level;
-    
-    msg!("🎉 Processing level-ups for user {} (Level: {}, XP: {})", 
-         ctx.accounts.user.key(), old_level, user_moonbase.xp);
-    
+
+    msg!(
+        "🎉 Processing level-ups for user {} (Level: {}, XP: {})",
+        ctx.accounts.user.key(),
+        old_level,
+        user_moonbase.xp
+    );
+
     // Process any pending level-ups with loot system
     process_auto_daily_login_and_activity_xp(
         user_moonbase,
@@ -1938,19 +2352,34 @@ pub fn claim_level_up_rewards_internal(ctx: Context<ClaimLevelUpRewards>) -> Res
         &ctx.accounts.loot_dbtc_vault,
         &ctx.accounts.loot_dbtc_vault_authority,
         &ctx.accounts.user.to_account_info(),
-        ctx.accounts.user_dbtc_token_account.as_ref().map(|acc| acc.to_account_info()).as_ref(),
-        ctx.accounts.dbtc_token_mint.as_ref().map(|mint| mint.to_account_info()).as_ref(),
-        ctx.accounts.token_program_2022.as_ref().map(|prog| prog.to_account_info()).as_ref(),
+        ctx.accounts
+            .user_dbtc_token_account
+            .as_ref()
+            .map(|acc| acc.to_account_info())
+            .as_ref(),
+        ctx.accounts
+            .dbtc_token_mint
+            .as_ref()
+            .map(|mint| mint.to_account_info())
+            .as_ref(),
+        ctx.accounts
+            .token_program_2022
+            .as_ref()
+            .map(|prog| prog.to_account_info())
+            .as_ref(),
         &ctx.accounts.system_program,
     )?;
-    
+
     let levels_gained = user_moonbase.level.saturating_sub(old_level);
-    msg!("✅ Level-up complete: {} -> {} (+{} levels)", old_level, user_moonbase.level, levels_gained);
-    
+    msg!(
+        "✅ Level-up complete: {} -> {} (+{} levels)",
+        old_level,
+        user_moonbase.level,
+        levels_gained
+    );
+
     Ok(())
 }
-
-
 
 // ----------------------------------------------------------------------------------------
 // INTERNAL :: PROCESS DAILY LOGIN AND ACTIVITY XP ----------------
@@ -1977,10 +2406,10 @@ fn process_auto_daily_login_and_activity_xp<'info>(
 ) -> Result<()> {
     // Process daily login first
     let (daily_login_xp, _streak) = helper::process_daily_login(user_moonbase)?;
-    
+
     // Calculate total XP to award
     let total_xp = daily_login_xp + activity_xp;
-    
+
     if total_xp > 0 {
         // Determine XP source description
         let xp_source = if daily_login_xp > 0 && activity_xp > 0 {
@@ -1990,7 +2419,7 @@ fn process_auto_daily_login_and_activity_xp<'info>(
         } else {
             activity_source.to_string()
         };
-        
+
         // Award all XP using enhanced system with transfers
         helper::add_xp_with_loot_transfers(
             user_moonbase,
@@ -2008,27 +2437,31 @@ fn process_auto_daily_login_and_activity_xp<'info>(
             token_program,
             system_program,
         )?;
-        
+
         if daily_login_xp > 0 && activity_xp > 0 {
-            msg!("🗓️ Combined XP awarded: {} Daily Login + {} {} = {} total (Streak: {})", 
-                 daily_login_xp, activity_xp, activity_source, total_xp, user_moonbase.daily_login_streak);
+            msg!(
+                "🗓️ Combined XP awarded: {} Daily Login + {} {} = {} total (Streak: {})",
+                daily_login_xp,
+                activity_xp,
+                activity_source,
+                total_xp,
+                user_moonbase.daily_login_streak
+            );
         } else if daily_login_xp > 0 {
-            msg!("🗓️ Daily login processed: {} XP gained (Streak: {})", 
-                 daily_login_xp, user_moonbase.daily_login_streak);
+            msg!(
+                "🗓️ Daily login processed: {} XP gained (Streak: {})",
+                daily_login_xp,
+                user_moonbase.daily_login_streak
+            );
         }
     }
-    
+
     Ok(())
 }
-
- 
 
 // ------------------------------------------------------------------------------------------
 // -------------- ACCOUNT VALIDATION STRUCTURES ----------------------------------------------
 // ------------------------------------------------------------------------------------------
-
-
-
 
 #[derive(Accounts)]
 #[instruction(referrer: Option<Pubkey>, faction_id: u8)]
@@ -2041,8 +2474,8 @@ pub struct CreateUserMoonbase<'info> {
         bump
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
-    // Create rewards account for the new user 
+
+    // Create rewards account for the new user
     #[account(
         init,
         payer = user,
@@ -2051,7 +2484,7 @@ pub struct CreateUserMoonbase<'info> {
         bump
     )]
     pub new_user_rewards: Account<'info, ReferralRewards>,
-    
+
     // Only require this account if referrer is provided
     #[account(
         mut,
@@ -2091,11 +2524,9 @@ pub struct CreateUserMoonbase<'info> {
 
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
 
 #[derive(Accounts)]
 #[instruction(referrer: Option<Pubkey>, faction_id: u8)]
@@ -2108,8 +2539,8 @@ pub struct CreateUserMoonbaseWithEgg<'info> {
         bump
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
-    // Create rewards account for the new user 
+
+    // Create rewards account for the new user
     #[account(
         init,
         payer = user,
@@ -2118,7 +2549,7 @@ pub struct CreateUserMoonbaseWithEgg<'info> {
         bump
     )]
     pub new_user_rewards: Account<'info, ReferralRewards>,
-    
+
     // Only require this account if referrer is provided
     #[account(
         mut,
@@ -2191,12 +2622,9 @@ pub struct CreateUserMoonbaseWithEgg<'info> {
 
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
-
 
 /// Account struct for purchasing an expansion
 #[derive(Accounts)]
@@ -2208,14 +2636,14 @@ pub struct ExpandMoonbase<'info> {
         constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED.as_ref()],
@@ -2231,13 +2659,12 @@ pub struct ExpandMoonbase<'info> {
         bump,
     )]
     pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 pub struct ClaimReferralRewards<'info> {
@@ -2255,30 +2682,28 @@ pub struct ClaimReferralRewards<'info> {
         constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// CHECK: Caller program (verified to be mooneconomy via global_config)
     pub caller_program: UncheckedAccount<'info>,
-        
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
 
 #[derive(Accounts)]
 pub struct UpdateUserElectricity<'info> {
@@ -2288,31 +2713,27 @@ pub struct UpdateUserElectricity<'info> {
         bump,
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
     )]
     pub mining_state: Account<'info, DogeBtcMining>,
-    
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump  
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
-    pub authority: Signer<'info>, 
-    
+
+    pub authority: Signer<'info>,
+
     /// CHECK: User wallet (used for moonbase PDA)
     pub user: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
-
-
-
- 
 
 #[derive(Accounts)]
 pub struct ClaimDogeBtc<'info> {
@@ -2323,14 +2744,14 @@ pub struct ClaimDogeBtc<'info> {
         constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     /// Vault authority PDA for signing token transfers
     #[account(
         seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
@@ -2338,18 +2759,18 @@ pub struct ClaimDogeBtc<'info> {
     )]
     /// CHECK: Vault authority PDA (needed to sign token transfers)
     pub vault_authority: UncheckedAccount<'info>,
-    
+
     #[account(mut)]
     /// CHECK: This is the token vault that holds all the DogeBtc tokens
     pub token_vault: UncheckedAccount<'info>,
-    
+
     #[account(mut)]
     /// CHECK: This is the user's token account that will receive DogeBtc tokens
     pub user_token_account: UncheckedAccount<'info>,
 
     // Mint created under Token-2022
     #[account(mut, owner = token_program.key())]
-    pub token_mint: InterfaceAccount<'info, Mint2022>,    
+    pub token_mint: InterfaceAccount<'info, Mint2022>,
 
     /// Loot DOGE_BTC vault for distributing loot tokens (10% of mining rewards)
     #[account(
@@ -2380,29 +2801,27 @@ pub struct ClaimDogeBtc<'info> {
     #[account(mut)]
     /// CHECK: Optional incubation state PDA
     pub incubation_state: Option<Account<'info, IncubationState>>,
-    
+
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// CHECK: Caller program (verified to be mooneconomy via global_config)
     pub caller_program: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
-    
+
     /// SPL Token program
     /// CHECK: We know this is the correct address
     #[account(address = anchor_spl::token_2022::spl_token_2022::ID)]
     pub token_program: UncheckedAccount<'info>,
 }
-
-
 
 #[derive(Accounts)]
 #[instruction(pos_x: u8, pos_y: u8)]
@@ -2414,7 +2833,7 @@ pub struct InstallCommandCenter<'info> {
         constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     // Create the command center module instance (always index 0)
     #[account(
         init,
@@ -2428,22 +2847,22 @@ pub struct InstallCommandCenter<'info> {
         bump
     )]
     pub module_instance: Account<'info, ModuleInstance>,
-    
+
     // Command center module config account (will be validated against init_type in instruction)
     #[account(mut)]
     /// CHECK: Validated in instruction to match command center config for this tier
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
@@ -2457,14 +2876,14 @@ pub struct BuyModule<'info> {
         constraint = user_moonbase.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     // Access the specific module config directly via PDA
     #[account(
         seeds = [MODULE_CONFIG_SEED.as_ref(), config_id.to_le_bytes().as_ref()],
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     // Create the module instance with proper size calculation
     #[account(
         init,
@@ -2485,7 +2904,7 @@ pub struct BuyModule<'info> {
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED.as_ref()],
@@ -2493,15 +2912,15 @@ pub struct BuyModule<'info> {
     )]
     /// CHECK: This is the PDA that holds collected SOL fees
     pub sol_treasury: UncheckedAccount<'info>,
-    
+
     #[account(
         constraint = referral_rewards.owner == user_moonbase.referral @ ErrorCode::InvalidReferralAccount,
     )]
     pub referral_rewards: Option<Account<'info, ReferralRewards>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
@@ -2516,7 +2935,7 @@ pub struct InstallModule<'info> {
         constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [
@@ -2527,32 +2946,30 @@ pub struct InstallModule<'info> {
         bump,
     )]
     pub module_instance: Account<'info, ModuleInstance>,
-    
+
     // Access the specific module config directly via PDA using the config_id from module_instance
     #[account(
         seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     /// Optional Dragon Egg metadata (for applying multiplier to hashpower changes)
     /// Only required if user has an incubated egg
     pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
 
 #[derive(Accounts)]
 #[instruction(module_index: u8)]
@@ -2565,7 +2982,7 @@ pub struct RemoveModuleInstance<'info> {
         constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [
@@ -2576,33 +2993,30 @@ pub struct RemoveModuleInstance<'info> {
         bump,
     )]
     pub module_instance: Account<'info, ModuleInstance>,
-    
+
     // Access the specific module config directly via PDA using the config_id from module_instance
     #[account(
         seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     /// Optional Dragon Egg metadata (for applying multiplier to hashpower changes)
     /// Only required if user has an incubated egg
     pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
-
 
 #[derive(Accounts)]
 #[instruction(module_index: u8)]
@@ -2615,7 +3029,7 @@ pub struct DeleteModule<'info> {
         constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [
@@ -2627,20 +3041,19 @@ pub struct DeleteModule<'info> {
         close = user  // Close the module instance account and return lamports to user
     )]
     pub module_instance: Account<'info, ModuleInstance>,
-    
+
     // Access the specific module config directly via PDA using the config_id from module_instance
     #[account(
         seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 #[instruction(module_index: u8)]
@@ -2653,7 +3066,7 @@ pub struct ClaimAttractionXP<'info> {
         constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [
@@ -2664,38 +3077,35 @@ pub struct ClaimAttractionXP<'info> {
         bump,
     )]
     pub module_instance: Account<'info, ModuleInstance>,
-    
+
     // Access the specific module config directly via PDA using the config_id from module_instance
     #[account(
         seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// CHECK: Caller program (verified to be mooneconomy via global_config)
     pub caller_program: UncheckedAccount<'info>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
- 
 
 #[derive(Accounts)]
 #[instruction(module_index: u8)]
@@ -2708,7 +3118,7 @@ pub struct UpdateModuleInstance<'info> {
         constraint = module_index < user_moonbase.modules_count @ ErrorCode::ModuleInstanceNotFound
     )]
     pub user_moonbase: Account<'info, UserMoonBaseInstance>,
-    
+
     #[account(
         mut,
         seeds = [
@@ -2719,28 +3129,28 @@ pub struct UpdateModuleInstance<'info> {
         bump,
     )]
     pub module_instance: Account<'info, ModuleInstance>,
-    
+
     // Access the specific module config directly via PDA using the config_id from module_instance
     #[account(
         seeds = [MODULE_CONFIG_SEED.as_ref(), module_instance.config_id.to_le_bytes().as_ref()],
         bump = module_config_account.bump,
     )]
     pub module_config_account: Account<'info, ModuleConfigAccount>,
-    
+
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(
         mut,
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump = doge_btc_mining.bump,
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED.as_ref()],
@@ -2748,25 +3158,21 @@ pub struct UpdateModuleInstance<'info> {
     )]
     /// CHECK: This is the PDA that holds collected SOL fees
     pub sol_treasury: UncheckedAccount<'info>,
-    
+
     #[account(
         constraint = referral_rewards.owner == user_moonbase.referral @ ErrorCode::InvalidReferralAccount,
     )]
     pub referral_rewards: Option<Account<'info, ReferralRewards>>,
-    
+
     /// Optional Dragon Egg metadata (for applying multiplier to hashpower changes)
     /// Only required if user has an incubated egg
     pub dragon_egg_metadata: Option<Account<'info, DragonEggMetadata>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
- 
-
-
-
 
 #[derive(Accounts)]
 pub struct ClaimLevelUpRewards<'info> {
@@ -2793,7 +3199,7 @@ pub struct ClaimLevelUpRewards<'info> {
         bump = level_stats.bump,
     )]
     pub level_stats: Account<'info, LevelStats>,
-    
+
     #[account(
         seeds = [DOGE_BTC_MINING_SEED.as_ref()],
         bump
@@ -2836,22 +3242,19 @@ pub struct ClaimLevelUpRewards<'info> {
 
     /// SPL Token-2022 program (optional)
     pub token_program_2022: Option<Program<'info, anchor_spl::token_2022::Token2022>>,
-    
+
     #[account(mut)]
     pub user: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
-pub fn incubate_dragon_egg_internal(
-    ctx: Context<IncubateDragonEgg>,
-) -> Result<()> {
+pub fn incubate_dragon_egg_internal(ctx: Context<IncubateDragonEgg>) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
@@ -2859,7 +3262,10 @@ pub fn incubate_dragon_egg_internal(
 
     // Verify ownership from Metaplex Core asset
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
-    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+    require!(
+        nft_owner == ctx.accounts.user.key(),
+        ErrorCode::NftNotOwnedByUser
+    );
 
     // Validation
     require!(
@@ -2874,11 +3280,15 @@ pub fn incubate_dragon_egg_internal(
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!("🔒 Transferring NFT to custody PDA (locking)");
-    
+
     // Transfer NFT from user to custody PDA (this locks the NFT)
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        ctx.accounts
+            .dragon_egg_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(), // User is current owner/authority
         &ctx.accounts.egg_custody_pda.to_account_info(), // Transfer to custody PDA
@@ -2886,17 +3296,23 @@ pub fn incubate_dragon_egg_internal(
         None, // No signer seeds needed - user is signing
     )?;
 
-    msg!("✅ NFT locked in custody PDA: {}", ctx.accounts.egg_custody_pda.key());
+    msg!(
+        "✅ NFT locked in custody PDA: {}",
+        ctx.accounts.egg_custody_pda.key()
+    );
 
     // Apply egg multiplier to hashpower (if user has active hashpower)
     if user_moonbase.active_hashpower > 0 {
         msg!("⛏️ Applying Dragon Egg multiplier to hashpower");
         msg!("   Current hashpower: {}", user_moonbase.active_hashpower);
-        msg!("   Egg multiplier: {}x", egg_metadata.multiplier as f64 / 100.0);
-        
+        msg!(
+            "   Egg multiplier: {}x",
+            egg_metadata.multiplier as f64 / 100.0
+        );
+
         // Mine pending rewards BEFORE changing hashpower
         helper::mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
-        
+
         // Calculate new hashpower with multiplier applied
         // multiplier is in basis points (150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
         let current_hashpower = user_moonbase.active_hashpower;
@@ -2906,21 +3322,26 @@ pub fn incubate_dragon_egg_internal(
             .checked_div(100)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .min(u64::MAX as u128) as u64;
-        
+
         let hashpower_increase = new_hashpower
             .checked_sub(current_hashpower)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("   New hashpower: {} (+{})", new_hashpower, hashpower_increase);
-        
+
+        msg!(
+            "   New hashpower: {} (+{})",
+            new_hashpower,
+            hashpower_increase
+        );
+
         // Update user hashpower
         user_moonbase.active_hashpower = new_hashpower;
-        
+
         // Update global hashpower
-        doge_btc_mining.total_active_hashpower = doge_btc_mining.total_active_hashpower
+        doge_btc_mining.total_active_hashpower = doge_btc_mining
+            .total_active_hashpower
             .checked_add(hashpower_increase)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
+
         msg!("🌐 Updated global hashpower: +{}", hashpower_increase);
     } else {
         msg!("⚠️ No active hashpower - multiplier will apply when modules are installed");
@@ -2944,15 +3365,16 @@ pub fn incubate_dragon_egg_internal(
     msg!("✅ Dragon Egg incubated in moonbase");
     msg!("   Egg: {}", egg_metadata.mint);
     msg!("   Moonbase: {}", user_moonbase.owner);
-    msg!("   Multiplier applied: {}x", egg_metadata.multiplier as f64 / 100.0);
+    msg!(
+        "   Multiplier applied: {}x",
+        egg_metadata.multiplier as f64 / 100.0
+    );
 
     Ok(())
 }
 
 /// Remove Dragon Egg from moonbase incubation
-pub fn remove_dragon_egg_internal(
-    ctx: Context<RemoveDragonEgg>,
-) -> Result<()> {
+pub fn remove_dragon_egg_internal(ctx: Context<RemoveDragonEgg>) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let incubation_state = &mut ctx.accounts.incubation_state;
     let user_moonbase = &mut ctx.accounts.user_moonbase;
@@ -2960,7 +3382,10 @@ pub fn remove_dragon_egg_internal(
 
     // Verify NFT is in custody PDA (it should be locked there)
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
-    require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::EggNotIncubated);
+    require!(
+        nft_owner == ctx.accounts.egg_custody_pda.key(),
+        ErrorCode::EggNotIncubated
+    );
 
     require!(
         egg_metadata.incubated_moonbase.is_some(),
@@ -2973,12 +3398,18 @@ pub fn remove_dragon_egg_internal(
     // Remove egg multiplier from hashpower (if user has active hashpower)
     if user_moonbase.active_hashpower > 0 {
         msg!("⛏️ Removing Dragon Egg multiplier from hashpower");
-        msg!("   Current hashpower (with multiplier): {}", user_moonbase.active_hashpower);
-        msg!("   Egg multiplier: {}x", egg_metadata.multiplier as f64 / 100.0);
-        
+        msg!(
+            "   Current hashpower (with multiplier): {}",
+            user_moonbase.active_hashpower
+        );
+        msg!(
+            "   Egg multiplier: {}x",
+            egg_metadata.multiplier as f64 / 100.0
+        );
+
         // Mine pending rewards BEFORE changing hashpower
         helper::mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
-        
+
         // Calculate original hashpower (reverse the multiplier)
         // current_hashpower = original * multiplier / 100
         // original = current_hashpower * 100 / multiplier
@@ -2989,50 +3420,56 @@ pub fn remove_dragon_egg_internal(
             .checked_div(egg_metadata.multiplier as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .min(u64::MAX as u128) as u64;
-        
+
         let hashpower_decrease = current_hashpower
             .checked_sub(original_hashpower)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("   Original hashpower (without multiplier): {} (-{})", original_hashpower, hashpower_decrease);
-        
+
+        msg!(
+            "   Original hashpower (without multiplier): {} (-{})",
+            original_hashpower,
+            hashpower_decrease
+        );
+
         // Update user hashpower
         user_moonbase.active_hashpower = original_hashpower;
-        
+
         // Update global hashpower
-        doge_btc_mining.total_active_hashpower = doge_btc_mining.total_active_hashpower
+        doge_btc_mining.total_active_hashpower = doge_btc_mining
+            .total_active_hashpower
             .checked_sub(hashpower_decrease)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
+
         msg!("🌐 Updated global hashpower: -{}", hashpower_decrease);
     } else {
         msg!("⚠️ No active hashpower - no multiplier to remove");
     }
 
     msg!("🔓 Transferring NFT back to user (unlocking)");
-    
+
     // Get PDA signer seeds for custody PDA
-    let custody_seeds = &[
-        DRAGON_EGG_CUSTODY_SEED,
-        &[ctx.bumps.egg_custody_pda],
-    ];
+    let custody_seeds = &[DRAGON_EGG_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     // Transfer NFT back from custody PDA to user (unlock)
-    let mut cpi_builder = mpl_core::instructions::TransferV1CpiBuilder::new(&ctx.accounts.mpl_core_program);
+    let mut cpi_builder =
+        mpl_core::instructions::TransferV1CpiBuilder::new(&ctx.accounts.mpl_core_program);
     cpi_builder
         .asset(&ctx.accounts.dragon_egg_asset)
         .payer(&ctx.accounts.user)
         .authority(Some(&ctx.accounts.egg_custody_pda)) // Custody PDA is authority
         .new_owner(&ctx.accounts.user);
-    
+
     if let Some(collection) = &ctx.accounts.dragon_egg_collection {
         cpi_builder.collection(Some(collection));
     }
-    
+
     cpi_builder.invoke_signed(signer_seeds)?;
 
-    msg!("✅ NFT unlocked and returned to user: {}", ctx.accounts.user.key());
+    msg!(
+        "✅ NFT unlocked and returned to user: {}",
+        ctx.accounts.user.key()
+    );
 
     // Update moonbase state
     user_moonbase.incubated_dragon_egg = None;
@@ -3048,11 +3485,13 @@ pub fn remove_dragon_egg_internal(
     msg!("✅ Dragon Egg removed from incubation");
     msg!("   Egg: {}", egg_metadata.mint);
     msg!("   Final Power: {}", final_power);
-    msg!("   Multiplier removed: {}x", egg_metadata.multiplier as f64 / 100.0);
+    msg!(
+        "   Multiplier removed: {}x",
+        egg_metadata.multiplier as f64 / 100.0
+    );
 
     Ok(())
 }
- 
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG ACCOUNT CONTEXTS ---------------------------------------------

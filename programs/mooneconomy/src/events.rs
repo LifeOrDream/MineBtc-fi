@@ -10,7 +10,7 @@ pub struct ProgramInitialized {
     pub dev_earnings_collector: Pubkey,
     pub fee_collector: Pubkey,
     pub dogebtc_allocation: u8,
-    pub liquidity_allocation: u8
+    pub liquidity_allocation: u8,
 }
 
 #[event]
@@ -27,22 +27,19 @@ pub struct LiquidityVaultsInitialized {
     pub liquidity_custodian: Pubkey,
 }
 
-
 #[event]
 pub struct ConfigUpdated {
     pub authority: Pubkey,
     pub electricity_per_weighted_sol: u64,
     pub dogebtc_allocation: u8,
-    pub liquidity_allocation: u8
+    pub liquidity_allocation: u8,
 }
-
 
 #[event]
 pub struct AdminEarningsWithdrawn {
     pub amount: u64,
 }
 
- 
 // ------------------------------
 // SOL distribution events
 // ------------------------------
@@ -55,7 +52,7 @@ pub struct SolDistributed {
     pub dev_earnings: u64,
     pub timestamp: i64,
 }
- 
+
 #[event]
 pub struct GameSolFeesWithdrawn {
     pub sol_claimer: Pubkey,
@@ -108,7 +105,6 @@ pub struct DogeBtcUnstakedEvent {
     pub amount: u64,
     pub weighted_amount: u64,
 }
- 
 
 // ------------------------------
 // Global position events

@@ -1,19 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::System;
 
-use crate::state::*;
 use crate::errors::ErrorCode;
 use crate::events::*;
+use crate::state::*;
 
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-use anchor_spl::token_interface::{
-    Mint as Mint2022,
-    TokenAccount as TokenAccount2022
-};
 use anchor_spl::token_2022::Token2022;
-
-
+use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
 // ----------------------------------------------------------------------------------------
 // ------------ INITIALIZATION & UPDATES :: GLOBAL_CONFIG and VAULTS ------------
@@ -30,22 +25,28 @@ pub fn initialize_global_config(
     max_lockup_days: u64,
     base_multiplier: u16,
     max_multiplier: u16,
-    ) -> Result<()> {
+) -> Result<()> {
     // Validate multipliers
     require!(min_lockup_days > 0, ErrorCode::InvalidLockupPeriod);
-    require!(max_lockup_days > min_lockup_days, ErrorCode::InvalidLockupPeriod);
+    require!(
+        max_lockup_days > min_lockup_days,
+        ErrorCode::InvalidLockupPeriod
+    );
     require!(base_multiplier > 0, ErrorCode::InvalidMultiplier);
-    require!(max_multiplier > base_multiplier, ErrorCode::InvalidMultiplier);
+    require!(
+        max_multiplier > base_multiplier,
+        ErrorCode::InvalidMultiplier
+    );
 
     let global_config = &mut ctx.accounts.global_config;
-    
+
     // Address which can claim the dev earnings
     global_config.dev_address = dev_address;
-    
+
     // Initialize GlobalConfig
     global_config.authority = ctx.accounts.authority.key();
     global_config.fee_collector = ctx.accounts.fee_collector.key();
-    
+
     global_config.dogebtc_allocation = dogebtc_allocation;
     global_config.liquidity_allocation = liquidity_allocation;
 
@@ -54,15 +55,15 @@ pub fn initialize_global_config(
 
     global_config.base_multiplier = base_multiplier;
     global_config.max_multiplier = max_multiplier;
-    
+
     global_config.last_claim_slot = Clock::get()?.slot;
-    
+
     // Initialize SOL distribution as disabled to prevent early stakers from capturing all initial SOL
     global_config.sol_distribution_enabled = false;
-    
+
     // Initialize price to 0 (must be set by admin via set_dbtc_sol_price function)
     global_config.dbtc_sol_price = 0;
-    
+
     global_config.bump = ctx.bumps.global_config;
 
     emit!(ProgramInitialized {
@@ -77,16 +78,13 @@ pub fn initialize_global_config(
 
 /// Initialize the global program configuration
 /// This function can only be called once as it creates the program's configuration accounts
-pub fn initialize_dbtc_vault(
-    ctx: Context<InitializeDbtcVault>,
-    dbtc_mint: Pubkey,
-) -> Result<()> {
+pub fn initialize_dbtc_vault(ctx: Context<InitializeDbtcVault>, dbtc_mint: Pubkey) -> Result<()> {
     let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
 
     // Initialize DogeBtc Vault
     dogebtc_vault.authority = ctx.accounts.authority.key();
     dogebtc_vault.dbtc_mint = dbtc_mint;
-    dogebtc_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();    
+    dogebtc_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();
     dogebtc_vault.dbtc_custodian = ctx.accounts.dbtc_custodian.key();
 
     dogebtc_vault.dbtc_locked = 0;
@@ -101,7 +99,7 @@ pub fn initialize_dbtc_vault(
         dbtc_mint: dbtc_mint,
         dbtc_custodian: ctx.accounts.dbtc_custodian.key(),
     });
-    
+
     Ok(())
 }
 
@@ -131,11 +129,9 @@ pub fn initialize_liquidity_vault(
         lp_token_mint: lp_token_mint,
         liquidity_custodian: ctx.accounts.liquidity_custodian.key(),
     });
-    
+
     Ok(())
 }
-
-
 
 /// Update the global configuration parameters
 /// Can only be called by the current authority
@@ -144,14 +140,14 @@ pub fn internal_update_configuration(
     new_authority: Option<Pubkey>,
     new_dev_address: Option<Pubkey>,
     new_dogebtc_allocation: Option<u8>,
-    new_liquidity_allocation: Option<u8>, 
+    new_liquidity_allocation: Option<u8>,
     new_electricity_per_weighted_sol: Option<u64>,
     new_emergency_tax: Option<u8>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
     let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
-    
+
     // Update authority if provided
     if let Some(new_authority) = new_authority {
         global_config.authority = new_authority;
@@ -179,9 +175,12 @@ pub fn internal_update_configuration(
     // if electricity_per_weighted_sol is provided, update it
     if let Some(electricity_per_weighted_sol) = new_electricity_per_weighted_sol {
         global_config.electricity_per_weighted_sol = electricity_per_weighted_sol;
-        msg!("Updated electricity per weighted SOL to {}", electricity_per_weighted_sol);
+        msg!(
+            "Updated electricity per weighted SOL to {}",
+            electricity_per_weighted_sol
+        );
     }
-    
+
     // if emergency_tax is provided, update it (ensuring it's not more than 100%)
     if let Some(emergency_tax) = new_emergency_tax {
         require!(emergency_tax <= (M_HUNDRED as u8), ErrorCode::InvalidAmount);
@@ -189,7 +188,7 @@ pub fn internal_update_configuration(
         liquidity_vault.emergency_tax = emergency_tax;
         msg!("Updated emergency withdrawal tax to {}%", emergency_tax);
     }
-         
+
     // Emit update event
     emit!(ConfigUpdated {
         authority: global_config.authority,
@@ -197,29 +196,29 @@ pub fn internal_update_configuration(
         dogebtc_allocation: global_config.dogebtc_allocation,
         liquidity_allocation: global_config.liquidity_allocation
     });
-    
+
     Ok(())
 }
 
 /// Set DOGE_BTC to SOL price (admin only)
 /// Price is stored with 9-decimal precision (same as MoonBase)
 /// Example: 0.001 SOL per DOGE_BTC = 1_000_000 (9-decimal precision)
-pub fn set_dbtc_sol_price_internal(
-    ctx: Context<UpdateConfig>,
-    price: u64,
-) -> Result<()> {
+pub fn set_dbtc_sol_price_internal(ctx: Context<UpdateConfig>, price: u64) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
-    
-    require!(
-        price > 0,
-        ErrorCode::InvalidAmount
-    );
-    
+
+    require!(price > 0, ErrorCode::InvalidAmount);
+
     global_config.dbtc_sol_price = price;
-    
-    msg!("✅ Set DOGE_BTC to SOL price: {} (9-decimal precision)", price);
-    msg!("   Actual price: {:.9} SOL per DOGE_BTC", price as f64 / 1_000_000_000.0);
-    
+
+    msg!(
+        "✅ Set DOGE_BTC to SOL price: {} (9-decimal precision)",
+        price
+    );
+    msg!(
+        "   Actual price: {:.9} SOL per DOGE_BTC",
+        price as f64 / 1_000_000_000.0
+    );
+
     Ok(())
 }
 
@@ -229,8 +228,6 @@ pub fn set_dbtc_sol_price_internal(
 
 /// Distribute SOL fromMoonBaseto respective vaults
 pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()> {
- 
-
     // CPI: Call MoonBase.withdraw_sol_fees, fee_collector must sign
     msg!("🚀 Performing CPI call to MoonBase::withdraw_sol_fees...");
     let cpi_program = ctx.accounts.moonbase_program.to_account_info();
@@ -248,10 +245,10 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
 
     // Derive PDA seeds for fee_collector signer
     let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];    
-    
+    let signer_seeds = &[&fee_collector_seeds[..]];
+
     let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-    
+
     // Perform CPI call
     moonbase::cpi::withdraw_sol_fees(cpi_ctx)?;
     msg!("✅ CPI withdrawal successful, proceeding with vault distributions");
@@ -261,37 +258,51 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
     let fee_collector = &ctx.accounts.fee_collector;
     let fee_collector_rent = Rent::get()?.minimum_balance(fee_collector.data_len());
     let sol_for_distribution = fee_collector.lamports().saturating_sub(fee_collector_rent);
-    msg!("🔍 SOL for distribution from fee collector: {}", sol_for_distribution);
+    msg!(
+        "🔍 SOL for distribution from fee collector: {}",
+        sol_for_distribution
+    );
 
     // Get allocation percentages from global config
     let global_config = &ctx.accounts.global_config;
     // Check if SOL distribution is enabled
-    require!( global_config.sol_distribution_enabled, ErrorCode::SolDistributionDisabled );
-        
+    require!(
+        global_config.sol_distribution_enabled,
+        ErrorCode::SolDistributionDisabled
+    );
+
     // Calculate amounts for each vault based on what we actually have
-    let mut sol_for_dbtc_stakers = (sol_for_distribution as u128).checked_mul(global_config.dogebtc_allocation as u128)
-                                                        .unwrap().checked_div(M_HUNDRED as u128).unwrap() as u64;
-        
-    let mut sol_for_lp_stakers = (sol_for_distribution as u128).checked_mul(global_config.liquidity_allocation as u128)
-                                                        .unwrap().checked_div(M_HUNDRED as u128).unwrap() as u64;
-        
-    msg!("📊 Allocations - DogeBtc: {}, Liquidity: {}", sol_for_dbtc_stakers, sol_for_lp_stakers);
+    let mut sol_for_dbtc_stakers = (sol_for_distribution as u128)
+        .checked_mul(global_config.dogebtc_allocation as u128)
+        .unwrap()
+        .checked_div(M_HUNDRED as u128)
+        .unwrap() as u64;
+
+    let mut sol_for_lp_stakers = (sol_for_distribution as u128)
+        .checked_mul(global_config.liquidity_allocation as u128)
+        .unwrap()
+        .checked_div(M_HUNDRED as u128)
+        .unwrap() as u64;
+
+    msg!(
+        "📊 Allocations - DogeBtc: {}, Liquidity: {}",
+        sol_for_dbtc_stakers,
+        sol_for_lp_stakers
+    );
 
     // Now distribute to respective vaults
     let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
     let liquidity_vault = &mut ctx.accounts.liquidity_vault;
-    
+
     // Create signer seeds for fee_collector
-    let fee_collector_seeds = &[
-        FEE_COLLECTOR_SEED.as_ref(),
-        &[ctx.bumps.fee_collector],
-    ];
+    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
     let signer_seeds = &[&fee_collector_seeds[..]];
 
     if dogebtc_vault.weighted_dbtc_locked > 0 && sol_for_dbtc_stakers > 0 {
-        let sol_per_point = (sol_for_dbtc_stakers as u128 * PRECISION_FACTOR as u128) / dogebtc_vault.weighted_dbtc_locked as u128;
+        let sol_per_point = (sol_for_dbtc_stakers as u128 * PRECISION_FACTOR as u128)
+            / dogebtc_vault.weighted_dbtc_locked as u128;
         dogebtc_vault.accumulated_sol_per_point += sol_per_point;
-        
+
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.system_program.to_account_info(),
@@ -303,15 +314,19 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
             ),
             sol_for_dbtc_stakers,
         )?;
-        msg!("💰 Sent {} SOL to DogeBtc vault", sol_for_dbtc_stakers as f64 / 1e9);
+        msg!(
+            "💰 Sent {} SOL to DogeBtc vault",
+            sol_for_dbtc_stakers as f64 / 1e9
+        );
     } else {
         sol_for_dbtc_stakers = 0;
     }
 
     if liquidity_vault.weighted_lp_locked > 0 && sol_for_lp_stakers > 0 {
-        let sol_per_point = (sol_for_lp_stakers as u128 * PRECISION_FACTOR as u128) / liquidity_vault.weighted_lp_locked as u128;
+        let sol_per_point = (sol_for_lp_stakers as u128 * PRECISION_FACTOR as u128)
+            / liquidity_vault.weighted_lp_locked as u128;
         liquidity_vault.accumulated_sol_per_point += sol_per_point;
-        
+
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.system_program.to_account_info(),
@@ -323,12 +338,16 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
             ),
             sol_for_lp_stakers,
         )?;
-        msg!("💰 Sent {} SOL to Liquidity vault", sol_for_lp_stakers as f64 / 1e9);
+        msg!(
+            "💰 Sent {} SOL to Liquidity vault",
+            sol_for_lp_stakers as f64 / 1e9
+        );
     } else {
         sol_for_lp_stakers = 0;
     }
 
-    let dev_earnings = sol_for_distribution.saturating_sub(sol_for_dbtc_stakers + sol_for_lp_stakers);
+    let dev_earnings =
+        sol_for_distribution.saturating_sub(sol_for_dbtc_stakers + sol_for_lp_stakers);
     if dev_earnings > 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
@@ -354,7 +373,6 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
 
     Ok(())
 }
- 
 
 // ----------------------------------------------------------------------------------------
 // ------------ WITHDRAW COLLECTED SOL FEES (admin can only call this) ------------
@@ -367,8 +385,11 @@ pub fn withdraw_dev_earnings(ctx: Context<WithdrawDevEarnings>) -> Result<()> {
     let dev_address = &ctx.accounts.global_config.dev_address;
 
     // check if the fee collector is the same as the authority which is the only one allowed to call this
-    require!(dev_address.key() == ctx.accounts.authority.key(), ErrorCode::Unauthorized);
-    
+    require!(
+        dev_address.key() == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+
     // Get the current balance of dev_earnings_collector, leaving rent exempt amount
     let dev_earnings_collector_balance = dev_earnings_collector.lamports();
 
@@ -383,7 +404,7 @@ pub fn withdraw_dev_earnings(ctx: Context<WithdrawDevEarnings>) -> Result<()> {
             &[ctx.bumps.dev_earnings_collector],
         ];
         let signer_seeds = &[&dev_vault_seeds[..]];
-        
+
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.system_program.to_account_info(),
@@ -395,26 +416,30 @@ pub fn withdraw_dev_earnings(ctx: Context<WithdrawDevEarnings>) -> Result<()> {
             ),
             withdraw_amount,
         )?;
-        
-        msg!("👨‍💻 Withdrew {} SOL to dev address", withdraw_amount as f64 / 1e9);
+
+        msg!(
+            "👨‍💻 Withdrew {} SOL to dev address",
+            withdraw_amount as f64 / 1e9
+        );
     }
 
-    emit!(AdminEarningsWithdrawn { amount: withdraw_amount });
+    emit!(AdminEarningsWithdrawn {
+        amount: withdraw_amount
+    });
 
-    msg!("Withdrew {} lamports from admin fee collector", withdraw_amount);
+    msg!(
+        "Withdrew {} lamports from admin fee collector",
+        withdraw_amount
+    );
     Ok(())
 }
-
- 
-
-
 
 // ----------------------------------------------------------------------------------------
 // ------------ ACCOUNT STRUCTS ----------------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --- INITIALIZE GLOBAL CONFIG ------ 
+// --- INITIALIZE GLOBAL CONFIG ------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 /// Initialize the global config and other program state
@@ -438,7 +463,7 @@ pub struct InitializeGlobalConfig<'info> {
         bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// CHECK: This is a System Account PDA that will collect admin fees which the devs can withdraw
     #[account(
         init,
@@ -460,27 +485,21 @@ pub struct InitializeGlobalConfig<'info> {
         owner = system_program.key()  // System-owned account for native SOL
     )]
     pub fee_collector: UncheckedAccount<'info>,
-    
+
     #[account(mut)]
-    pub authority: Signer<'info>,    
-    
+    pub authority: Signer<'info>,
+
     pub system_program: Program<'info, System>,
 }
 
- 
-
-
-
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --- INITIALIZE VAULTS ------------ 
+// --- INITIALIZE VAULTS ------------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 /// Initialize the DogeBtc vault
 #[derive(Accounts)]
 pub struct InitializeDbtcVault<'info> {
-
     // ------ Data Storage Accounts ------
-
     #[account(
         init,
         payer = authority,
@@ -491,7 +510,6 @@ pub struct InitializeDbtcVault<'info> {
     pub dogebtc_vault: Account<'info, DogeBtcVault>,
 
     // ------ SOL Storage Accounts ------
-
     /// CHECK: This is a 0-byte System Account PDA that will store SOL to be distributed to the DogeBtc vault
     #[account(
         init,
@@ -504,7 +522,6 @@ pub struct InitializeDbtcVault<'info> {
     pub dbtc_sol_vault: UncheckedAccount<'info>,
 
     // ------ DOGE_BTC Token Storage Account and Signer-Only PDA ------
-
     /// CHECK: This is the authority of the custodian of the moonDoge tokens pda
     #[account(
         init,
@@ -527,14 +544,14 @@ pub struct InitializeDbtcVault<'info> {
         bump
     )]
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
-   
+
     // -------- Signer & Mints --------
     #[account(mut)]
     pub authority: Signer<'info>,
 
     /// DOGE_BTC mint (SPL-2022)
     pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
-    
+
     // -------- Programs & Sysvars --------
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token2022>, // SPL-2022 program
@@ -544,9 +561,7 @@ pub struct InitializeDbtcVault<'info> {
 /// Initialize the Liquidity vault
 #[derive(Accounts)]
 pub struct InitializeLiquidityVault<'info> {
-
     // ------ Data Storage Accounts ------
-
     #[account(
         init,
         payer = authority,
@@ -557,7 +572,6 @@ pub struct InitializeLiquidityVault<'info> {
     pub liquidity_vault: Account<'info, LiquidityVault>,
 
     // ------ SOL Storage Accounts ------
-
     /// CHECK: This is a 0-byte System Account PDA that will store SOL to be distributed to the Liquidity vault
     #[account(
         init,
@@ -570,7 +584,6 @@ pub struct InitializeLiquidityVault<'info> {
     pub liquidity_sol_vault: UncheckedAccount<'info>,
 
     // ------ LP Token Storage Account and Signer-Only PDA ------
-
     /// CHECK: This is the authority of the custodian of the LP tokens pda
     #[account(
         init,
@@ -593,23 +606,22 @@ pub struct InitializeLiquidityVault<'info> {
         bump
     )]
     pub liquidity_custodian: Account<'info, TokenAccount>,
-        
+
     // -------- Signer & Mints --------
     #[account(mut)]
     pub authority: Signer<'info>,
 
     /// LP token mint (standard SPL)
     pub lp_token_mint: Account<'info, Mint>,
-    
+
     // -------- Programs & Sysvars --------
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,      // SPL token program
+    pub token_program: Program<'info, Token>, // SPL token program
     pub rent: Sysvar<'info, Rent>,
 }
 
-
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --- UPDATE CONFIG ---------------- 
+// --- UPDATE CONFIG ----------------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 /// Update the global config parameters
@@ -639,14 +651,14 @@ pub struct UpdateConfig<'info> {
 
     #[account(mut)]
     pub authority: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --- WITHDRAW ADMIN EARNINGS -------- 
+// --- WITHDRAW ADMIN EARNINGS --------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
- 
+
 /// Account struct for withdrawing game SOL fees
 #[derive(Accounts)]
 pub struct WithdrawDevEarnings<'info> {
@@ -664,7 +676,7 @@ pub struct WithdrawDevEarnings<'info> {
     )]
     /// CHECK: This is the PDA that holds SOL which the devs can withdraw
     pub dev_earnings_collector: UncheckedAccount<'info>,
- 
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -672,9 +684,9 @@ pub struct WithdrawDevEarnings<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --- CLAIM MOONBASE SOL ------------ 
+// --- CLAIM MOONBASE SOL ------------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
- 
+
 /// Account struct for distributing SOL from MoonFacility
 #[derive(Accounts)]
 pub struct ClaimMoonBaseSOL<'info> {
@@ -776,18 +788,22 @@ pub fn set_sol_distribution_enabled(
     enabled: bool,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
-    
+
     let old_value = global_config.sol_distribution_enabled;
     global_config.sol_distribution_enabled = enabled;
-    
-    msg!("🔄 SOL distribution status changed: {} -> {}", old_value, enabled);
-    
+
+    msg!(
+        "🔄 SOL distribution status changed: {} -> {}",
+        old_value,
+        enabled
+    );
+
     if enabled {
         msg!("✅ SOL distribution ENABLED - stakers can now claim SOL rewards");
     } else {
         msg!("⏸️  SOL distribution DISABLED - SOL will accumulate but not be claimable");
     }
-    
+
     Ok(())
 }
 
@@ -800,8 +816,6 @@ pub struct SetSolDistributionEnabled<'info> {
         constraint = global_config.authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
-    pub authority: Signer<'info>,
-} 
- 
 
+    pub authority: Signer<'info>,
+}

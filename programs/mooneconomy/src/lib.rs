@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 
 mod errors;
 mod events;
-mod state;
 pub mod instructions;
+mod state;
 
 use instructions::admin::*;
 use instructions::user::*;
@@ -36,7 +36,7 @@ pub mod mooneconomy {
             min_lockup_days,
             max_lockup_days,
             base_multiplier,
-            max_multiplier
+            max_multiplier,
         )
     }
 
@@ -45,31 +45,27 @@ pub mod mooneconomy {
         new_authority: Option<Pubkey>,
         new_dev_address: Option<Pubkey>,
         new_dogebtc_allocation: Option<u8>,
-        new_liquidity_allocation: Option<u8>, 
+        new_liquidity_allocation: Option<u8>,
         new_electricity_per_weighted_sol: Option<u64>,
         new_emergency_tax: Option<u8>,
-        
     ) -> Result<()> {
         admin::internal_update_configuration(
-            ctx, 
-            new_authority, 
-            new_dev_address, 
-            new_dogebtc_allocation, 
-            new_liquidity_allocation, 
+            ctx,
+            new_authority,
+            new_dev_address,
+            new_dogebtc_allocation,
+            new_liquidity_allocation,
             new_electricity_per_weighted_sol,
-            new_emergency_tax
+            new_emergency_tax,
         )
     }
 
     /// Set DOGE_BTC to SOL price (admin only)
     /// Price is stored with 9-decimal precision (same as MoonBase)
-    pub fn set_dbtc_sol_price(
-        ctx: Context<UpdateConfig>,
-        price: u64,
-    ) -> Result<()> {
+    pub fn set_dbtc_sol_price(ctx: Context<UpdateConfig>, price: u64) -> Result<()> {
         admin::set_dbtc_sol_price_internal(ctx, price)
     }
- 
+
     // ----------------------------------------------------------------------------------------
     // ------------ INITIALIZE VAULTS ------------
     // ----------------------------------------------------------------------------------------
@@ -88,7 +84,6 @@ pub mod mooneconomy {
         admin::initialize_liquidity_vault(ctx, lp_token_mint)
     }
 
- 
     // ----------------------------------------------------------------------------------------
     // ------------ WITHDRAW COLLECTED SOL FEES (admin can only call this) ------------
     // ----------------------------------------------------------------------------------------
@@ -96,7 +91,6 @@ pub mod mooneconomy {
     pub fn withdraw_dev_earnings(ctx: Context<WithdrawDevEarnings>) -> Result<()> {
         admin::withdraw_dev_earnings(ctx)
     }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ DISTRIBUTE SOL FEES FROM MOONFACILITY TO RESPECTIVE VAULTS ------------
@@ -110,7 +104,10 @@ pub mod mooneconomy {
     // ------------ ENABLE/DISABLE SOL DISTRIBUTION (admin only) ------------
     // ----------------------------------------------------------------------------------------
 
-    pub fn set_sol_distribution_enabled(ctx: Context<SetSolDistributionEnabled>, enabled: bool) -> Result<()> {
+    pub fn set_sol_distribution_enabled(
+        ctx: Context<SetSolDistributionEnabled>,
+        enabled: bool,
+    ) -> Result<()> {
         instructions::admin::set_sol_distribution_enabled(ctx, enabled)
     }
 
@@ -122,7 +119,12 @@ pub mod mooneconomy {
         instructions::user::initialize_electricity_account(ctx)
     }
 
-    pub fn stake_moondoge(ctx: Context<StakeDogeBtc>, amount: u64, lockup_duration: u64, lockup_index: u8) -> Result<()> {
+    pub fn stake_moondoge(
+        ctx: Context<StakeDogeBtc>,
+        amount: u64,
+        lockup_duration: u64,
+        lockup_index: u8,
+    ) -> Result<()> {
         instructions::user::stake_moondoge(ctx, amount, lockup_duration, lockup_index)
     }
 
@@ -130,7 +132,12 @@ pub mod mooneconomy {
         instructions::user::unstake_moondoge(ctx, position_index)
     }
 
-    pub fn stake_lp_tokens(ctx: Context<StakeLpTokens>, amount: u64, lockup_duration: u64, lockup_index: u8) -> Result<()> {
+    pub fn stake_lp_tokens(
+        ctx: Context<StakeLpTokens>,
+        amount: u64,
+        lockup_duration: u64,
+        lockup_index: u8,
+    ) -> Result<()> {
         instructions::user::stake_lp_tokens(ctx, amount, lockup_duration, lockup_index)
     }
 
@@ -157,10 +164,10 @@ pub mod mooneconomy {
     }
 
     /// Claim attraction XP (calculates electricity and calls MoonBase via CPI)
-    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXpWrapper>, module_index: u8) -> Result<()> {
+    pub fn claim_attraction_xp(
+        ctx: Context<ClaimAttractionXpWrapper>,
+        module_index: u8,
+    ) -> Result<()> {
         instructions::user::claim_attraction_xp_wrapper(ctx, module_index)
     }
- 
-
 }
- 

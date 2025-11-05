@@ -131,9 +131,7 @@ pub struct InitializeWithPermission<'info> {
     pub token_1_vault: UncheckedAccount<'info>,
 
     /// create pool fee account
-    #[account(
-        mut,
-    )]
+    #[account(mut)]
     pub create_pool_fee: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// an account to store oracle observations

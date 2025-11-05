@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 use mpl_core::{
+    accounts::BaseAssetV1,
     instructions::{CreateV1CpiBuilder, TransferV1CpiBuilder},
     ID as MPL_CORE_PROGRAM_ID,
-    accounts::BaseAssetV1,
 };
 
 /// Create a Metaplex Core NFT asset via CPI
@@ -23,13 +23,16 @@ pub fn create_mpl_core_asset<'info>(
     msg!("   Owner: {}", owner.key());
     msg!("   Authority: {}", authority.key());
     msg!("   Name: {}", name);
-    
+
     // Validate Metaplex Core program
     require!(
         mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
         crate::errors::ErrorCode::InvalidMplCoreProgram
     );
-    msg!("✅ Metaplex Core program validated: {}", mpl_core_program.key());
+    msg!(
+        "✅ Metaplex Core program validated: {}",
+        mpl_core_program.key()
+    );
 
     // Build CreateV1 CPI
     let mut cpi_builder = CreateV1CpiBuilder::new(mpl_core_program);
@@ -42,8 +45,8 @@ pub fn create_mpl_core_asset<'info>(
         .uri(uri.clone())
         .owner(Some(owner))
         // Set the signer authority. This fixes the compiler error.
-        .authority(Some(authority)); 
-        // DO NOT set .update_authority(). This fixes the 0x1d runtime error.
+        .authority(Some(authority));
+    // DO NOT set .update_authority(). This fixes the 0x1d runtime error.
 
     // Add collection if provided
     if let Some(collection_account) = collection {
@@ -58,7 +61,7 @@ pub fn create_mpl_core_asset<'info>(
     } else {
         cpi_builder.invoke()?;
     }
-    
+
     msg!("✅ Metaplex Core asset created successfully");
 
     Ok(())
@@ -78,7 +81,7 @@ pub fn transfer_mpl_core_asset<'info>(
     msg!("   Asset: {}", asset.key());
     msg!("   From authority: {}", authority.key());
     msg!("   To new owner: {}", new_owner.key());
-    
+
     // Validate Metaplex Core program
     require!(
         mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
@@ -110,7 +113,7 @@ pub fn transfer_mpl_core_asset<'info>(
         msg!("   Using regular signer");
         cpi_builder.invoke()?;
     }
-    
+
     msg!("✅ NFT transferred successfully");
 
     Ok(())
@@ -121,7 +124,7 @@ pub fn get_mpl_core_owner(asset_account: &AccountInfo) -> Result<Pubkey> {
     msg!("🔍 Getting MPL Core owner");
     msg!("   Asset account: {}", asset_account.key());
     msg!("   Owner: {}", asset_account.owner);
-    
+
     // Ensure you're actually looking at a Core account
     require_keys_eq!(
         *asset_account.owner,

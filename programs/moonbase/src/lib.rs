@@ -1,14 +1,14 @@
 use anchor_lang::prelude::*;
-mod state;
 mod errors;
 mod events;
 mod genescience;
-mod mpl_core_helpers;
 pub mod instructions;
+mod mpl_core_helpers;
+mod state;
 
 pub use instructions::admin::*;
-pub use instructions::user::*;
 pub use instructions::economy::*;
+pub use instructions::user::*;
 
 declare_id!("CAxbTfWPZKw6zfDUBzPoV48Qz7ruFJsx5UkzZScRfufh");
 
@@ -16,8 +16,8 @@ declare_id!("CAxbTfWPZKw6zfDUBzPoV48Qz7ruFJsx5UkzZScRfufh");
 pub mod moonbase {
     use super::*;
     use crate::instructions::admin::{self, CreateDragonEggCollection};
-    use crate::instructions::user::{self};
     use crate::instructions::economy::{self};
+    use crate::instructions::user::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -27,17 +27,23 @@ pub mod moonbase {
     /// This function can only be called once as it creates the program's configuration accounts
     /// It will fail if the accounts already exist
     pub fn initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
-        admin::internal_initialize(ctx, creation_fee_recipient)         
+        admin::internal_initialize(ctx, creation_fee_recipient)
     }
-    
+
     /// Set the Dragon Egg collection address (admin only)
-    pub fn set_dragon_egg_collection(ctx: Context<UpdateConfigAc>, dragon_egg_collection: Pubkey) -> Result<()> {
+    pub fn set_dragon_egg_collection(
+        ctx: Context<UpdateConfigAc>,
+        dragon_egg_collection: Pubkey,
+    ) -> Result<()> {
         admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
     }
 
     /// Set the Raydium pool state address (admin only)
     /// Security: Prevents using malicious pools for swaps
-    pub fn set_raydium_pool_state(ctx: Context<UpdateConfigAc>, raydium_pool_state: Pubkey) -> Result<()> {
+    pub fn set_raydium_pool_state(
+        ctx: Context<UpdateConfigAc>,
+        raydium_pool_state: Pubkey,
+    ) -> Result<()> {
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
@@ -65,7 +71,6 @@ pub mod moonbase {
     ) -> Result<()> {
         admin::create_dragon_egg_collection_internal(ctx, name, uri)
     }
-
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
@@ -105,14 +110,20 @@ pub mod moonbase {
         new_width: u8,
         new_height: u8,
     ) -> Result<()> {
-        admin::add_expansion_internal(ctx, id, name, required_level, cost_sol, new_width, new_height)
+        admin::add_expansion_internal(
+            ctx,
+            id,
+            name,
+            required_level,
+            cost_sol,
+            new_width,
+            new_height,
+        )
     }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
-
 
     /// Initialize mining by setting the token vault and starting timestamp
     /// Can only be called once when mining_start_timestamp is 0
@@ -120,7 +131,7 @@ pub mod moonbase {
         ctx: Context<InitializeMining>,
         start_timestamp: u64,
         doge_btc_per_slot: u64,
-        pool_state: Pubkey
+        pool_state: Pubkey,
     ) -> Result<()> {
         admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
     }
@@ -130,13 +141,12 @@ pub mod moonbase {
         admin::deposit_doge_btc_tokens_internal(ctx, amount)
     }
 
-
     // ----------------------------------------------------------------------------------------
     // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
-   /// Create a new moon base for a user
-   pub fn create_system_referral_account(ctx: Context<CreateSystemReferralAccount>) -> Result<()> {
+    /// Create a new moon base for a user
+    pub fn create_system_referral_account(ctx: Context<CreateSystemReferralAccount>) -> Result<()> {
         let rewards_acct = &mut ctx.accounts.referrer_rewards;
         // 1) Set the owner field to the system program key
         rewards_acct.owner = ctx.accounts.system_program.key();
@@ -147,13 +157,11 @@ pub mod moonbase {
         rewards_acct.referrals_count = 0;
 
         Ok(())
-    }    
+    }
 
-
-    // ---------------------------------------------------------- 
+    // ----------------------------------------------------------
     // ------------ LOOT REWARDS (ADMIN) --------------------------------
-    // ---------------------------------------------------------- 
-
+    // ----------------------------------------------------------
 
     /// Initialize the loot rewards system
     pub fn initialize_loot_rewards(ctx: Context<InitializeLootRewards>) -> Result<()> {
@@ -169,7 +177,6 @@ pub mod moonbase {
     pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
         admin::initialize_level_stats_internal(ctx)
     }
-    
 
     // ----------------------------------------------------------------------------------------
     // ------------ MOONBASE EXPANSION FUNCTIONS :: MANAGE EXPANSIONS & PURCHASE -----------
@@ -180,7 +187,7 @@ pub mod moonbase {
     pub fn initialize_config_stores(ctx: Context<InitializeConfigStore>) -> Result<()> {
         admin::initialize_config_stores_internal(ctx)
     }
-    
+
     /// Initialize a new module configuration (basic info only)
     pub fn add_module_to_base(
         ctx: Context<AddModuleToConfigStore>,
@@ -196,9 +203,17 @@ pub mod moonbase {
         upgrade_level_requirements: Vec<u8>,
     ) -> Result<()> {
         admin::add_module_to_base_internal(
-            ctx, name, image_url, module_type, 
-            faction_ids, min_level, width, height,
-            mint_cost, upgrade_cost, upgrade_level_requirements
+            ctx,
+            name,
+            image_url,
+            module_type,
+            faction_ids,
+            min_level,
+            width,
+            height,
+            mint_cost,
+            upgrade_cost,
+            upgrade_level_requirements,
         )
     }
 
@@ -212,9 +227,17 @@ pub mod moonbase {
         upgrade_level_requirements: Option<Vec<u8>>,
         is_active: Option<bool>,
     ) -> Result<()> {
-        admin::update_module_internal(ctx, id, image_url, faction_ids, mint_cost, upgrade_cost, upgrade_level_requirements, is_active)
+        admin::update_module_internal(
+            ctx,
+            id,
+            image_url,
+            faction_ids,
+            mint_cost,
+            upgrade_cost,
+            upgrade_level_requirements,
+            is_active,
+        )
     }
-
 
     /// Update module stats (required before module can be used)
     pub fn update_module_stats(
@@ -226,23 +249,28 @@ pub mod moonbase {
         base_xp_per_hour: u32,
     ) -> Result<()> {
         admin::update_module_stats_internal(
-            ctx, id, max_hp, power_consumption, base_hashpower, base_xp_per_hour)
+            ctx,
+            id,
+            max_hp,
+            power_consumption,
+            base_hashpower,
+            base_xp_per_hour,
+        )
     }
 
-    // ---------------------------------------------------------- 
-    // ------------ WITHDRAW SOL FEES (ANYONE) ------------------ 
-    // ---------------------------------------------------------- 
-
+    // ----------------------------------------------------------
+    // ------------ WITHDRAW SOL FEES (ANYONE) ------------------
+    // ----------------------------------------------------------
 
     /// Withdraw collected SOL fees from the treasury
-    /// 
+    ///
     /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
     /// 1. For DOGE_BTC stakers
     /// 2. For liquidity providers
     /// 3. For devs
-    /// 
-    /// Internally, 10% is sent to loot rewards. 
-    /// 
+    ///
+    /// Internally, 10% is sent to loot rewards.
+    ///
     pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
         admin::withdraw_sol_fees_internal(ctx)
     }
@@ -263,7 +291,6 @@ pub mod moonbase {
         admin::query_token_prices_internal(ctx)
     }
 
-
     // ----------------------------------------------------------------------------------------
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------
@@ -277,17 +304,18 @@ pub mod moonbase {
 
     /// INSTRUCTION 2: Update distribution rate and add liquidity (can be called after 4 hours)
     /// Checks if 8 snapshots collected, updates distribution rate, and adds liquidity to pool
-    /// 
+    ///
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
-    pub fn update_rate_and_add_lp(ctx: Context<UpdateRateAndAddLp>, lp_token_amount: u64) -> Result<()> {
+    pub fn update_rate_and_add_lp(
+        ctx: Context<UpdateRateAndAddLp>,
+        lp_token_amount: u64,
+    ) -> Result<()> {
         economy::update_rate_and_add_lp_internal(ctx, lp_token_amount)
     }
-    
- 
 
     // ----------------------------------------------------------------------------------------
-    // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ---------------- 
+    // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ----------------
     // ----------------------------------------------------------------------------------------
 
     /// Create a new moon base for a user
@@ -296,12 +324,22 @@ pub mod moonbase {
     /// - PRICE_TIER_2 (1.42 SOL): Moonbase + Dragon Egg + 10k electricity
     /// - PRICE_TIER_3 (2.42 SOL): Moonbase + Dragon Egg + 30k electricity
     /// - PRICE_TIER_4 (4.20 SOL): Moonbase + Dragon Egg + 75k electricity
-    pub fn create_user_moonbase(ctx: Context<CreateUserMoonbase>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+    pub fn create_user_moonbase(
+        ctx: Context<CreateUserMoonbase>,
+        referrer: Option<Pubkey>,
+        faction_id: u8,
+        pricing_tier: u64,
+    ) -> Result<()> {
         user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
     }
 
     /// Create user moonbase with Dragon Egg NFT (tiers 2-4)
-    pub fn create_user_moonbase_w_egg(ctx: Context<CreateUserMoonbaseWithEgg>, referrer: Option<Pubkey>, faction_id: u8, pricing_tier: u64) -> Result<()> {
+    pub fn create_user_moonbase_w_egg(
+        ctx: Context<CreateUserMoonbaseWithEgg>,
+        referrer: Option<Pubkey>,
+        faction_id: u8,
+        pricing_tier: u64,
+    ) -> Result<()> {
         user::initialize_user_moonbase_w_egg(ctx, referrer, faction_id, pricing_tier)
     }
 
@@ -311,14 +349,20 @@ pub mod moonbase {
     }
 
     /// Claim referral rewards (CPI only from mooneconomy)
-    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>, new_electricity: u64) -> Result<()> {
+    pub fn claim_referral_rewards(
+        ctx: Context<ClaimReferralRewards>,
+        new_electricity: u64,
+    ) -> Result<()> {
         user::claim_referral_rewards_internal(ctx, new_electricity)
     }
 
-    pub fn update_user_electricity(  ctx: Context<UpdateUserElectricity>, to_increase: bool, amount: u64) -> Result<()> {
+    pub fn update_user_electricity(
+        ctx: Context<UpdateUserElectricity>,
+        to_increase: bool,
+        amount: u64,
+    ) -> Result<()> {
         user::update_user_electricity_internal(ctx, to_increase, amount)
     }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
@@ -328,14 +372,23 @@ pub mod moonbase {
     pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
         user::buy_module(ctx, config_id)
     }
-    
+
     /// Install the free command center module (can only be called once per moonbase)
-    pub fn install_command_center(ctx: Context<InstallCommandCenter>, pos_x: u8, pos_y: u8) -> Result<()> {
+    pub fn install_command_center(
+        ctx: Context<InstallCommandCenter>,
+        pos_x: u8,
+        pos_y: u8,
+    ) -> Result<()> {
         user::install_command_center(ctx, pos_x, pos_y)
     }
-    
+
     /// Install/deploy an existing undeployed module
-    pub fn install_module(ctx: Context<InstallModule>, module_index: u8, pos_x: u8, pos_y: u8) -> Result<()> {
+    pub fn install_module(
+        ctx: Context<InstallModule>,
+        module_index: u8,
+        pos_x: u8,
+        pos_y: u8,
+    ) -> Result<()> {
         user::install_module(ctx, module_index, pos_x, pos_y)
     }
 
@@ -357,14 +410,18 @@ pub mod moonbase {
     // ----------------------------------------------------------------------------------------
     // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
     // ----------------------------------------------------------------------------------------
-    
+
     /// Claim DogeBtc tokens based on user's hashpower contribution (CPI only from mooneconomy)
     pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>, new_electricity: u64) -> Result<()> {
         user::claim_dbtc_tokens_internal(ctx, new_electricity)
     }
 
     /// Claim accumulated XP from Attraction modules (CPI only from mooneconomy)
-    pub fn claim_attraction_xp(ctx: Context<ClaimAttractionXP>, module_index: u8, new_electricity: u64) -> Result<()> {
+    pub fn claim_attraction_xp(
+        ctx: Context<ClaimAttractionXP>,
+        module_index: u8,
+        new_electricity: u64,
+    ) -> Result<()> {
         user::claim_attraction_xp_internal(ctx, module_index, new_electricity)
     }
 
@@ -377,7 +434,6 @@ pub mod moonbase {
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-
     /// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
     pub fn incubate_dragon_egg(ctx: Context<IncubateDragonEgg>) -> Result<()> {
         user::incubate_dragon_egg_internal(ctx)
@@ -387,9 +443,4 @@ pub mod moonbase {
     pub fn remove_dragon_egg(ctx: Context<RemoveDragonEgg>) -> Result<()> {
         user::remove_dragon_egg_internal(ctx)
     }
-
- 
 }
-
-
- 

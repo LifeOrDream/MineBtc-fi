@@ -3,19 +3,17 @@ use anchor_lang::prelude::*;
 use crate::errors::ErrorCode;
 
 // Moonbase pricing tiers
-pub const PRICE_TIER_1: u64 = 500_000_000;   // 0.5 SOL (no egg)
+pub const PRICE_TIER_1: u64 = 500_000_000; // 0.5 SOL (no egg)
 pub const PRICE_TIER_2: u64 = 1_420_000_000; // 1.42 SOL (has egg)
 pub const PRICE_TIER_3: u64 = 2_420_000_000; // 2.42 SOL (has egg)
 pub const PRICE_TIER_4: u64 = 4_200_000_000; // 4.20 SOL (has egg)
 
- 
 pub const DBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
-pub const FOUR_HOURS: u64 =  90; //  14400; // 4 hours in seconds
+pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
 pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
-
 
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
 
@@ -40,15 +38,14 @@ pub const XP_DAILY_LOGIN: u32 = 10;
 pub const XP_MINING_1000_MDOGE: u32 = 15;
 
 // New exponential XP curve: required_xp = 120 × (1.35^level)
-pub const XP_CURVE_NUM: u64 = 135;   // 1.35 in Q0.2 fixed-point
+pub const XP_CURVE_NUM: u64 = 135; // 1.35 in Q0.2 fixed-point
 pub const XP_CURVE_DEN: u64 = 100;
-pub const XP_BASE: u64 = 120;        // Base XP for level 1
+pub const XP_BASE: u64 = 120; // Base XP for level 1
 
 // ========== UPGRADE SCALING CONSTANTS ========== //
 // Using fixed-point math: 115 = +15% per upgrade step (Power Curve)
 pub const GROWTH_NUM: u64 = 115;
 pub const GROWTH_DEN: u64 = 100;
- 
 
 // ========== UPGRADE COST SCALING CONSTANTS ========== //
 // Using moderate curve for upgrade costs: 125 = +25% per upgrade level (Cost Curve)
@@ -68,8 +65,6 @@ fn growth_factor(level: u8) -> u64 {
     // Return Q32 fixed-point: (numerator << 32) / denominator
     (num << 32) / den.max(1) // Prevent division by zero
 }
-
- 
 
 // ----- [SEEDS] -----
 
@@ -101,8 +96,6 @@ pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
 pub const INCUBATION_STATE_SEED: &[u8] = b"incubation-state";
 pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
 
-
-
 // PDAs for loot rewards system
 pub const LOOT_REWARDS_SEED: &[u8] = b"loot-rewards";
 pub const LOOT_SOL_VAULT_SEED: &[u8] = b"loot-sol-vault";
@@ -112,7 +105,6 @@ pub const BUYBACKS_SEED: &[u8] = b"buybacks";
 pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
 pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
 
- 
 // ========== MODULE SYSTEM CONSTANTS ========== //
 pub const MAX_MODULE_UPGRADES: u8 = 10; // Maximum upgrade level for any module
 
@@ -164,11 +156,11 @@ impl ExpansionConfig {
 
 /// Global configuration for the Moon Facility program
 #[account]
-pub struct GlobalConfig {    
+pub struct GlobalConfig {
     /// Authority that can update config parameters
-    pub ext_authority: Pubkey,                  
+    pub ext_authority: Pubkey,
     /// External account that can withdraw collected SOL
-    pub ext_fee_collector: Pubkey,                 
+    pub ext_fee_collector: Pubkey,
     /// Direct recipient for 50% of creation fees
     pub creation_fee_recipient: Pubkey,
     /// PDA account that holds collected SOL fees
@@ -210,7 +202,7 @@ pub struct GlobalConfig {
     /// Global total power across all Dragon Eggs (sum of all egg powers)
     pub global_dragon_egg_power: u64,
 }
- 
+
 impl GlobalConfig {
     // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury +  total_moonbases_created + total_sol_spent + total_referral_sol_paid + loot_percentage + buyback_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + expansions (vec) + dragon_egg_collection + total_dragon_eggs_minted + dragon_egg_uris + egg_limits + raydium_pool_state
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
@@ -235,14 +227,22 @@ impl GlobalConfig {
         4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH)) +    // dragon_egg_uris vec
         (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
         32 +                    // raydium_pool_state
-        8;                      // global_dragon_egg_power
+        8; // global_dragon_egg_power
 
     /// Select random Dragon Egg URI based on slot, index, and DNA
-    pub fn get_random_dragon_egg_uri(&self, slot: u64, index: u64, dna: &[u8; 32]) -> Result<String> {
+    pub fn get_random_dragon_egg_uri(
+        &self,
+        slot: u64,
+        index: u64,
+        dna: &[u8; 32],
+    ) -> Result<String> {
         require!(!self.dragon_egg_uris.is_empty(), ErrorCode::InvalidMetadata);
 
-        let dna_seed = u64::from_le_bytes([dna[0], dna[1], dna[2], dna[3], dna[4], dna[5], dna[6], dna[7]]);
-        let random_index = (slot.wrapping_add(index).wrapping_add(dna_seed)) as usize % self.dragon_egg_uris.len();
+        let dna_seed = u64::from_le_bytes([
+            dna[0], dna[1], dna[2], dna[3], dna[4], dna[5], dna[6], dna[7],
+        ]);
+        let random_index =
+            (slot.wrapping_add(index).wrapping_add(dna_seed)) as usize % self.dragon_egg_uris.len();
         Ok(self.dragon_egg_uris[random_index].clone())
     }
 }
@@ -278,39 +278,39 @@ pub struct ProtocolOwnedLiquidity {
 
 impl ProtocolOwnedLiquidity {
     pub const LEN: usize = 8 + 8 + 8 + 4; // 28 bytes
-    
+
     /// Update POL stats after a successful LP addition and burn
     pub fn update_after_lp_operation(
         &mut self,
         lp_tokens_burnt: u64,
         sol_added: u64,
-        dbtc_added: u64
+        dbtc_added: u64,
     ) {
         // Update cumulative totals
         self.total_lp_burnt = self.total_lp_burnt.saturating_add(lp_tokens_burnt);
         self.total_sol_added = self.total_sol_added.saturating_add(sol_added);
         self.total_dbtc_added = self.total_dbtc_added.saturating_add(dbtc_added);
         self.lp_operations_count = self.lp_operations_count.saturating_add(1);
-    }    
+    }
 }
 
 /// Moon Doge Mining status and parameters
 #[account]
 pub struct DogeBtcMining {
     /// Token vault that holds all pre-minted tokens
-    pub dbtc_token_vault: Pubkey,         
+    pub dbtc_token_vault: Pubkey,
     /// Timestamp of the mining start
-    pub mining_start_timestamp: u64,        
+    pub mining_start_timestamp: u64,
     /// DogeBtc mined per slot (original base rate)
     pub doge_btc_per_slot: u64,
     /// Last slot when moondoge were mined
     pub last_slot: u64,
     /// Total active hashpower across all facilities
-    pub total_active_hashpower: u64,        
+    pub total_active_hashpower: u64,
     /// Total active electricity across all facilities
-    pub total_active_electricity: u64,      
+    pub total_active_electricity: u64,
     /// Total tokens mined so far
-    pub total_tokens_mined: u64,       
+    pub total_tokens_mined: u64,
 
     /// dBTC tokens minted per hashpower (index for tracking distirbution)
     pub dbtc_tokens_minted_per_hashpower: u128,
@@ -319,7 +319,7 @@ pub struct DogeBtcMining {
     pub bump: u8,
     /// Bump for vault authority PDA derivation
     pub vault_auth_bump: u8,
-    
+
     // ===== DYNAMIC DISTRIBUTION FIELDS =====
     /// Raydium pool state for DOGE_BTC-SOL trading
     pub raydium_pool_state: Pubkey,
@@ -345,11 +345,30 @@ impl DogeBtcMining {
     // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 16 + 1 + 1 + 32 + 8 + 8 + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) + 8 + 8 + 8 + ProtocolOwnedLiquidity::LEN + 8;
+    pub const LEN: usize = DISCRIMINATOR_SIZE
+        + 32
+        + 8
+        + 8
+        + 8
+        + 8
+        + 8
+        + 8
+        + 16
+        + 1
+        + 1
+        + 32
+        + 8
+        + 8
+        + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN)
+        + 8
+        + 8
+        + 8
+        + ProtocolOwnedLiquidity::LEN
+        + 8;
 }
 
 /// ------------ USER MOON-BASE INSTANCES ------------
- 
+
 /// Entry for tracking available modules by config ID
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct AvailableModuleEntry {
@@ -367,9 +386,9 @@ impl AvailableModuleEntry {
 pub struct UserMoonBaseInstance {
     /// Module instances
     pub owner: Pubkey,
-    pub referral: Pubkey,    
+    pub referral: Pubkey,
     pub modules_count: u8,
-    pub active_hashpower: u64,    
+    pub active_hashpower: u64,
     pub available_electricity: u64,
     pub used_electricity: u64,
 
@@ -402,7 +421,7 @@ pub struct UserMoonBaseInstance {
 
     // ========== PVP SUPPORT ========== //
     pub pvp_hp: u32,
-    
+
     /// Pubkey of currently active PvP game (None if not in a match)
     pub active_game: Option<Pubkey>,
     /// Timestamp when the last PvP game ended (for cooldown / repair)
@@ -413,7 +432,7 @@ pub struct UserMoonBaseInstance {
     // ========== DRAGON EGG INTEGRATION ========== //
     /// Incubated Dragon Egg metadata address (max 1 per moonbase)
     pub incubated_dragon_egg: Option<Pubkey>,
-    
+
     // ========== COMMAND CENTER MODULE ========== //
     /// Command center module instance (always index 0, non-removable)
     pub command_center_module: Option<Pubkey>,
@@ -427,7 +446,33 @@ impl UserMoonBaseInstance {
     // active_game = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
     // incubated_dragon_egg = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
     // command_center_module = Option<Pubkey> = 1 byte flag + 32 bytes pubkey = 33 bytes
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1 + 1 + 4 + 8 + 2 + 1 + 1 + (4 + MAX_EXPANSIONS) + BITMAP_SIZE + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN) + 4 + 33 + 8 + 1 + 33 + 33;
+    pub const LEN: usize = DISCRIMINATOR_SIZE
+        + 32
+        + 32
+        + 1
+        + 8
+        + 8
+        + 8
+        + 16
+        + 8
+        + 1
+        + 1
+        + 1
+        + 1
+        + 4
+        + 8
+        + 2
+        + 1
+        + 1
+        + (4 + MAX_EXPANSIONS)
+        + BITMAP_SIZE
+        + (4 + MAX_BOUGHT_MODULES * AvailableModuleEntry::LEN)
+        + 4
+        + 33
+        + 8
+        + 1
+        + 33
+        + 33;
 }
 
 /// Stores referral rewards that a user has earned from referrals
@@ -526,18 +571,17 @@ impl LevelStats {
     // We track top 25 levels dynamically
     pub const MAX_TRACKED_LEVELS: usize = 10;
     // discriminator + tracked_levels (vec) + total_users + max_level_achieved + min_tracked_level + last_update_timestamp + bump
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 4 + (Self::MAX_TRACKED_LEVELS * LevelEntry::LEN) + 4 + 1 + 1 + 8 + 1;
+    pub const LEN: usize =
+        DISCRIMINATOR_SIZE + 4 + (Self::MAX_TRACKED_LEVELS * LevelEntry::LEN) + 4 + 1 + 1 + 8 + 1;
 }
-
-
 
 /// ------------ MODULE CONFIGS ------------
 
 /// Module type enumeration for different gameplay mechanics
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
 pub enum ModuleType {
-    Mining,      // Generates hashpower → DOGE_BTC
-    Attraction,  // Grants passive XP / social score
+    Mining,     // Generates hashpower → DOGE_BTC
+    Attraction, // Grants passive XP / social score
 }
 
 impl ModuleType {
@@ -548,19 +592,18 @@ impl ModuleType {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct MiningStats {
     pub max_hp: u32,
-    pub base_hashpower: u32,           // Base hashpower at level 0
-    pub power_consumption: u16,        // Electricity consumed per hour
+    pub base_hashpower: u32,    // Base hashpower at level 0
+    pub power_consumption: u16, // Electricity consumed per hour
 }
 
 impl MiningStats {
     pub const LEN: usize = 4 + 4 + 2; // 10 bytes
-    
+
     /// Calculate current hashpower using exponential growth curve (Power Curve)
     /// Each upgrade provides ~15% multiplicative increase
     pub fn current_hashpower(&self, upgrade_level: u8) -> u32 {
         let q32 = growth_factor(upgrade_level);
-        ((self.base_hashpower as u64 * q32) >> 32)
-            .min(u32::MAX as u64) as u32
+        ((self.base_hashpower as u64 * q32) >> 32).min(u32::MAX as u64) as u32
     }
 }
 
@@ -568,22 +611,20 @@ impl MiningStats {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct AttractionStats {
     pub max_hp: u32,
-    pub base_xp_per_hour: u32,         // Base XP generation at level 0
-    pub power_consumption: u16,        // Electricity consumed per hour
+    pub base_xp_per_hour: u32,  // Base XP generation at level 0
+    pub power_consumption: u16, // Electricity consumed per hour
 }
 
 impl AttractionStats {
     pub const LEN: usize = 4 + 4 + 2; // 10 bytes
-    
+
     /// Calculate current XP generation using exponential growth curve (Power Curve)
     /// Each upgrade provides ~15% multiplicative increase
     pub fn current_xp_per_hour(&self, upgrade_level: u8) -> u32 {
         let q32 = growth_factor(upgrade_level);
-        ((self.base_xp_per_hour as u64 * q32) >> 32)
-            .min(u32::MAX as u64) as u32
+        ((self.base_xp_per_hour as u64 * q32) >> 32).min(u32::MAX as u64) as u32
     }
 }
-
 
 /// Type-safe stats union for different module types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
@@ -601,23 +642,22 @@ impl ModuleStats {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct ModuleConfig {
     pub id: u16,
-    pub name: String,               // Max 32 chars
-    pub image_url: String,          // Max 64 chars
+    pub name: String,      // Max 32 chars
+    pub image_url: String, // Max 64 chars
     pub module_type: ModuleType,
     pub stats: ModuleStats,
-    pub faction_ids: Vec<u8>,       // Which factions can use this module (empty = all)
-    pub min_level: u8,              // Minimum moonbase level required to build
-    pub width: u8,                  // Grid width
-    pub height: u8,                 // Grid height
-    pub mint_cost: u64,             // Base SOL cost to mint
-    pub upgrade_cost: u64,          // Base SOL cost per upgrade
+    pub faction_ids: Vec<u8>, // Which factions can use this module (empty = all)
+    pub min_level: u8,        // Minimum moonbase level required to build
+    pub width: u8,            // Grid width
+    pub height: u8,           // Grid height
+    pub mint_cost: u64,       // Base SOL cost to mint
+    pub upgrade_cost: u64,    // Base SOL cost per upgrade
     pub upgrade_level_requirements: Vec<u8>, // Moonbase levels required for each upgrade [level_for_upgrade_1, level_for_upgrade_2, ...]
-    pub is_active: bool,            // Whether this config is currently available
+    pub is_active: bool,                     // Whether this config is currently available
 }
 
 impl ModuleConfig {
-    pub const LEN: usize = 
-        2 +                         // id
+    pub const LEN: usize = 2 +                         // id
         4 + 32 +                    // name (String with length prefix)
         4 + 64 +                    // image_url (String with length prefix)
         1 +                         // module_type
@@ -629,7 +669,7 @@ impl ModuleConfig {
         8 +                         // mint_cost
         8 +                         // upgrade_cost
         4 + (MAX_MODULE_UPGRADES as usize * 1) + // upgrade_level_requirements (Vec with length prefix)
-        1;                          // is_active
+        1; // is_active
 
     /// Get maximum upgrade level (derived from upgrade_level_requirements length)
     pub fn max_upgrades(&self) -> u8 {
@@ -641,71 +681,71 @@ impl ModuleConfig {
         if upgrade_level == 0 {
             return true; // Base level always available if module can be built
         }
-        
+
         let upgrade_index = (upgrade_level - 1) as usize;
         if upgrade_index >= self.upgrade_level_requirements.len() {
             return false; // Upgrade doesn't exist
         }
-        
+
         moonbase_level >= self.upgrade_level_requirements[upgrade_index]
     }
-    
+
     /// Get the moonbase level required for a specific upgrade
     pub fn get_upgrade_level_requirement(&self, upgrade_level: u8) -> Option<u8> {
         if upgrade_level == 0 {
             return Some(self.min_level); // Base level requirement
         }
-        
+
         let upgrade_index = (upgrade_level - 1) as usize;
         self.upgrade_level_requirements.get(upgrade_index).copied()
     }
-    
+
     /// Calculate total upgrade cost up to a specific level using progressive pricing
     /// Uses the moderate 1.25x multiplier per level for balanced upgrade progression
     pub fn total_upgrade_cost(&self, target_upgrade_level: u8) -> u64 {
         if target_upgrade_level == 0 {
             return 0;
         }
-        
+
         let mut total_cost = 0u64;
-        
+
         // Sum up the cost of each upgrade level (1.25x progression)
         for level in 1..=target_upgrade_level {
             let mut num: u64 = 1;
             let mut den: u64 = 1;
-            
+
             // Calculate (1.25)^level
             for _ in 0..level {
                 num = num.saturating_mul(UPGRADE_COST_NUM);
                 den = den.saturating_mul(UPGRADE_COST_DEN);
             }
-            
+
             // Apply scaling to base cost
             let level_cost = (self.upgrade_cost as u128 * num as u128) / den as u128;
             total_cost = total_cost.saturating_add(level_cost.min(u64::MAX as u128) as u64);
         }
-        
+
         total_cost
     }
-    
+
     /// Calculate the cost for upgrading from current level to next level
     /// This is what the user pays for a single upgrade step
     pub fn next_upgrade_cost(&self, current_upgrade_level: u8) -> u64 {
         let next_level = current_upgrade_level + 1;
-        
+
         if next_level > self.max_upgrades() {
             return 0; // Can't upgrade beyond max
         }
-        
+
         let mut num: u64 = 1;
         let mut den: u64 = 1;
-        
+
         // Calculate (1.25)^next_level
         for _ in 0..next_level {
             num = num.saturating_mul(UPGRADE_COST_NUM);
             den = den.saturating_mul(UPGRADE_COST_DEN);
         }
-        
+
         // Apply scaling to base cost
         let scaled_cost = (self.upgrade_cost as u128 * num as u128) / den as u128;
         scaled_cost.min(u64::MAX as u128) as u64
@@ -774,36 +814,51 @@ pub struct ModuleInstance {
     pub index: u8,
     /// Module type (cached from config for efficiency)
     pub module_type: ModuleType,
-    
+
     /// Position on the grid
-    pub pos_x: u8,      // left-most tile (0..GRID_WIDTH-1)
-    pub pos_y: u8,      // top-most tile (0..GRID_HEIGHT-1)
-    pub width: u8,      // tiles wide
-    pub height: u8,     // tiles tall
+    pub pos_x: u8, // left-most tile (0..GRID_WIDTH-1)
+    pub pos_y: u8,  // top-most tile (0..GRID_HEIGHT-1)
+    pub width: u8,  // tiles wide
+    pub height: u8, // tiles tall
     /// Runtime state specific to module type
     pub runtime_state: ModuleRuntimeState,
-    
+
     /// Current electricity cost (calculated from base + upgrades)
     pub electricity_cost: u32,
     /// Whether this module is currently active
     pub is_active: bool,
-    
+
     /// Creation timestamp
     pub created_at: i64,
     /// Last update timestamp
     pub last_updated: i64,
-    
+
     /// Whether this module can be removed (command center is non-removable)
     pub is_removable: bool,
-    
+
     /// Bump for PDA derivation
     pub bump: u8,
 }
 
 impl ModuleInstance {
-    // discriminator + config_id + upgrade_level + index + module_type + pos_x + pos_y + width + height + runtime_state + 
+    // discriminator + config_id + upgrade_level + index + module_type + pos_x + pos_y + width + height + runtime_state +
     // electricity_cost + is_active + created_at + last_updated + is_removable + bump
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 2 + 1 + 1 + ModuleType::LEN + 1 + 1 + 1 + 1 + ModuleRuntimeState::LEN + 4 + 1 + 8 + 8 + 1 + 1;
+    pub const LEN: usize = DISCRIMINATOR_SIZE
+        + 2
+        + 1
+        + 1
+        + ModuleType::LEN
+        + 1
+        + 1
+        + 1
+        + 1
+        + ModuleRuntimeState::LEN
+        + 4
+        + 1
+        + 8
+        + 8
+        + 1
+        + 1;
 
     /// Calculate current HP from runtime state
     pub fn current_hp(&self) -> u32 {
@@ -820,7 +875,7 @@ impl ModuleInstance {
         if max_hp == 0 {
             return 1.0;
         }
-        
+
         let efficiency = (current_hp as f64) / (max_hp as f64);
         efficiency.max(0.1).min(1.0) // Minimum 10% efficiency even when heavily damaged
     }
@@ -844,7 +899,7 @@ impl ModuleInstance {
         if self.upgrade_level >= config.max_upgrades() {
             return false; // Already at max level
         }
-        
+
         let next_level = self.upgrade_level + 1;
         config.is_upgrade_available(next_level, moonbase_level)
     }
@@ -854,14 +909,11 @@ impl ModuleInstance {
         if self.upgrade_level >= config.max_upgrades() {
             return None; // Already at max level
         }
-        
+
         // Use the new progressive cost calculation
         Some(config.next_upgrade_cost(self.upgrade_level))
     }
-
- 
 }
-
 
 // ========== DRAGON EGG NFT CONSTANTS ========== //
 pub const BASE_EGG_POWER: u32 = 100;
@@ -875,31 +927,31 @@ pub const MAX_URI_LENGTH: usize = 200;
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 
 // Safety rails for loot payouts
-pub const MIN_SOL_PAYOUT_LAMPORTS: u64 = 10_000_000;                // 0.01 SOL
-pub const MAX_SOL_PAYOUT_LAMPORTS: u64 = 100 * LAMPORTS_PER_SOL;    // 100 SOL
+pub const MIN_SOL_PAYOUT_LAMPORTS: u64 = 10_000_000; // 0.01 SOL
+pub const MAX_SOL_PAYOUT_LAMPORTS: u64 = 100 * LAMPORTS_PER_SOL; // 100 SOL
 
 // Jackpot wheel pots (fixed SOL amounts)
 pub const JACKPOT_POTS_SOL: [u64; 5] = [
-    1_000 * LAMPORTS_PER_SOL,   // 1,000 SOL
-    750 * LAMPORTS_PER_SOL,     // 750 SOL
-    690 * LAMPORTS_PER_SOL,     // 690 SOL
-    510 * LAMPORTS_PER_SOL,     // 510 SOL
-    420 * LAMPORTS_PER_SOL,     // 420 SOL
+    1_000 * LAMPORTS_PER_SOL, // 1,000 SOL
+    750 * LAMPORTS_PER_SOL,   // 750 SOL
+    690 * LAMPORTS_PER_SOL,   // 690 SOL
+    510 * LAMPORTS_PER_SOL,   // 510 SOL
+    420 * LAMPORTS_PER_SOL,   // 420 SOL
 ];
 
 // Jackpot probability (0.20% = 20 out of 10,000)
 pub const JACKPOT_CHANCE_BP: u16 = 20;
 
 // Exclusivity bonus multipliers (in percentage) - DEGEN EDITION ✦✦✦
-pub const LOOT_FIRST_CHANCE_MULT: u32 = 150;      // 1.5x chance (global max level)
-pub const LOOT_FIRST_VAULT_MULT: u64 = 300;       // 3.0x vault (global max level)
+pub const LOOT_FIRST_CHANCE_MULT: u32 = 150; // 1.5x chance (global max level)
+pub const LOOT_FIRST_VAULT_MULT: u64 = 300; // 3.0x vault (global max level)
 
-pub const LOOT_TOP10_CHANCE_MULT: u32 = 120;      // 1.2x chance (≤10 users at level)
-pub const LOOT_TOP10_VAULT_MULT: u64 = 150;       // 1.5x vault (≤10 users at level)
-pub const LOOT_TOP25_CHANCE_MULT: u32 = 110;      // 1.1x chance (≤25 users at level)
-pub const LOOT_TOP25_VAULT_MULT: u64 = 120;       // 1.2x vault (≤25 users at level)
- 
-pub const MAX_VAULT_SLICE_BP: u64 = 1_000;          // 10 %
+pub const LOOT_TOP10_CHANCE_MULT: u32 = 120; // 1.2x chance (≤10 users at level)
+pub const LOOT_TOP10_VAULT_MULT: u64 = 150; // 1.5x vault (≤10 users at level)
+pub const LOOT_TOP25_CHANCE_MULT: u32 = 110; // 1.1x chance (≤25 users at level)
+pub const LOOT_TOP25_VAULT_MULT: u64 = 120; // 1.2x vault (≤25 users at level)
+
+pub const MAX_VAULT_SLICE_BP: u64 = 1_000; // 10 %
 
 // ========================================================================================
 // =============================== DRAGON EGG DNA UTILITIES ===============================
@@ -968,9 +1020,7 @@ impl DragonEggMetadata {
         4 +     // multiplier
         8 +     // last_update_ts
         8 +     // created_at
-        1;      // bump
-
- 
+        1; // bump
 }
 
 // ========================================================================================
@@ -1002,6 +1052,5 @@ impl IncubationState {
         33 +    // incubated_egg (Option<Pubkey>)
         8 +     // last_update_ts
         8 +     // total_power
-        1;      // bump
+        1; // bump
 }
- 

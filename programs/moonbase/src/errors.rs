@@ -15,7 +15,7 @@ pub enum ErrorCode {
     FacilityAlreadyMaxSize,
 
     #[msg("The facility already has the maximum number of doges")]
-    MaxDogesReached,    
+    MaxDogesReached,
 
     #[msg("Invalid mint")]
     InvalidMint,
@@ -23,12 +23,10 @@ pub enum ErrorCode {
     #[msg("Cannot set max doges less than current")]
     MaxDogesLessThanCurrent,
 
-
-
     #[msg("Cannot set max tiles less than current")]
     MaxTilesLessThanCurrent,
 
-    #[msg("Arithmetic overflow")] 
+    #[msg("Arithmetic overflow")]
     ArithmeticOverflow,
 
     #[msg("Cannot set max upgrades less than current")]
@@ -36,22 +34,22 @@ pub enum ErrorCode {
 
     #[msg("Insufficient electricity capacity")]
     InsufficientElectricity,
-    
+
     #[msg("Mining already initialized")]
     MiningAlreadyInitialized,
-    
+
     #[msg("Config ID already exists")]
     ConfigIdAlreadyExists,
-    
+
     #[msg("Config not found")]
     ConfigNotFound,
-    
+
     #[msg("ID counter overflow")]
     IdOverflow,
-    
+
     #[msg("Module config store not provided")]
     ModuleConfigStoreMissing,
-        
+
     #[msg("Moon doge mining account not provided")]
     DogeBtcMiningSAccountMissing,
 
@@ -85,27 +83,23 @@ pub enum ErrorCode {
     #[msg("Module already has maximum doges")]
     ModuleMaxDogesReached,
 
-
-
     #[msg("Insufficient SOL for operation")]
     InsufficientSOL,
 
     #[msg("Invalid parameters provided for operation")]
-    InvalidParameters,    
-    
+    InvalidParameters,
+
     #[msg("Module does not have any more space for doges")]
     ModuleFullOfDoges,
-    
+
     #[msg("Insufficient funds in treasury")]
     InsufficientTreasuryFunds,
-    
+
     #[msg("Amount overflow")]
     AmountOverflow,
-    
+
     #[msg("Invalid attribute value")]
     InvalidAttributeValue,
-
-
 
     #[msg("Mining not initialized yet")]
     MiningNotInitialized,
@@ -121,7 +115,7 @@ pub enum ErrorCode {
 
     #[msg("Cannot reduce electricity below what is currently in use")]
     ElectricityInUse,
-    
+
     #[msg("Electricity consumption exceeds available capacity")]
     ElectricityCapacityExceeded,
 
@@ -220,10 +214,10 @@ pub enum ErrorCode {
     #[msg("LP token burn was incomplete - final balance doesn't match expected")]
     IncompleteTokenBurn,
 
-    #[msg("Runtime state does not match module stats type")] 
+    #[msg("Runtime state does not match module stats type")]
     StateMismatch,
 
-    #[msg("Module is already at full HP")] 
+    #[msg("Module is already at full HP")]
     ModuleFullyRepaired,
 
     // ========== PVP GAME ERRORS ========== //
@@ -314,4 +308,7 @@ pub enum ErrorCode {
 
     #[msg("NFT is not owned by the user")]
     NftNotOwnedByUser,
-} 
+
+    #[msg("Update dist rate first")]
+    UpdateDistRateFirst,
+}

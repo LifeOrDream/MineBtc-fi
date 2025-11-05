@@ -11,7 +11,6 @@ pub const LP_SOL_VAULT_SEED: &[u8] = b"lp-sol-vault";
 pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dogewifbtc-custodian";
 pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dogewifbtc-custodian-authority";
 
-
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"liquidity-custodian";
 pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"liquidity-custodian-authority";
 
@@ -22,14 +21,13 @@ pub const USER_ELECTRICITY_SEED: &[u8] = b"user-electricity";
 pub const DBTC_POSITION_SEED: &[u8] = b"dogewifbtc-position";
 pub const LP_POSITION_SEED: &[u8] = b"liquidity-position";
 
-
 /// ------------ CONSTANTS ------------
 
 pub const DAY_IN_SECONDS: u64 = 86400;
 pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
 
 pub const MAX_ALLOWED_POSITIONS: u8 = 7;
-pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8  = 10;
+pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 10;
 
 pub const PRECISION_FACTOR: u128 = 1_000_000;
 pub const M_HUNDRED: u64 = 100;
@@ -50,8 +48,8 @@ pub struct GlobalConfig {
     /// Minimum lockup period in days
     pub min_lockup_days: u64,
     /// Maximum lockup period in days
-    pub max_lockup_days: u64,    
-    
+    pub max_lockup_days: u64,
+
     /// Base multiplier (100 = 1x)
     pub base_multiplier: u16,
     /// Maximum multiplier for longest lockup (e.g., 900 = 9x for 3 years)
@@ -62,22 +60,22 @@ pub struct GlobalConfig {
     pub dogebtc_allocation: u8,
     /// Percentage of SOL distributed to LP token stakers
     pub liquidity_allocation: u8,
-    
+
     /// Last claim slot
     pub last_claim_slot: u64,
-    
+
     /// Electricity per weighted SOL staked (used for both dBTC and LP staking)
     pub electricity_per_weighted_sol: u64,
-    
+
     /// Whether SOL distribution from fee collector is enabled (prevents early stakers from capturing all initial SOL)
     pub sol_distribution_enabled: bool,
-    
+
     /// Current DOGE_BTC to SOL price (9-decimal precision, same as MoonBase)
     /// Used for electricity calculations when MoonBase price is 0 or unavailable
     pub dbtc_sol_price: u64,
-    
+
     /// Bump for PDA derivation
-    pub bump: u8
+    pub bump: u8,
 }
 
 // For GlobalConfig
@@ -96,10 +94,8 @@ impl GlobalConfig {
         8 +  // electricity_per_weighted_sol
         1 +  // sol_distribution_enabled
         8 +  // dbtc_sol_price (u64)
-        1;   // bump
+        1; // bump
 }
-
-
 
 /// ------------ VAULTS :: MOON-DOGE and LP TOKEN VAULTs------------
 
@@ -115,23 +111,23 @@ pub struct DogeBtcVault {
     pub dbtc_mint: Pubkey,
     /// Custodian that holds the staked tokens
     pub dbtc_custodian: Pubkey,
-    
+
     /// Total DogeBtc tokens locked in the vault
     pub dbtc_locked: u64,
     /// Total weighted DogeBtc points (including time multipliers)
     pub weighted_dbtc_locked: u64,
-    
+
     /// Accumulated SOL per weighted DogeBtc point (precision factor applied)
     pub accumulated_sol_per_point: u128,
-    
+
     /// Total SOL distributed to DogeBtc stakers
     pub total_sol_distributed: u64,
-    
+
     /// Emergency withdrawal tax percentage (0-100)
     pub emergency_tax: u8,
-    
+
     /// Bump for PDA derivation
-    pub bump: u8
+    pub bump: u8,
 }
 
 // For DogeBtcVault
@@ -146,7 +142,7 @@ impl DogeBtcVault {
         16 + // accumulated_sol_per_point
         8 +  // total_sol_distributed
         1 +  // emergency_tax
-        1;   // bump
+        1; // bump
 }
 
 /// Liquidity Pool Vault configuration and state
@@ -175,9 +171,9 @@ pub struct LiquidityVault {
 
     /// Emergency withdrawal tax percentage (0-100)
     pub emergency_tax: u8,
-    
+
     /// Bump for PDA derivation
-    pub bump: u8
+    pub bump: u8,
 }
 
 impl LiquidityVault {
@@ -191,7 +187,7 @@ impl LiquidityVault {
         16 + // accumulated_sol_per_point
         8 +  // total_sol_distributed
         1 +  // emergency_tax
-        1;   // bump
+        1; // bump
 }
 
 /// ------------ USER POSITIONS :: MOON-DOGE and LP TOKEN POSITIONS------------
@@ -199,39 +195,39 @@ impl LiquidityVault {
 /// User DogeBtc staking position
 #[account]
 pub struct UserMoonElectricity {
-        /// User's wallet address
-        pub owner: Pubkey,
-        
-        /// Total DogeBtc staking stats
-        pub total_moondoge_staked: u64,
-        pub total_weighted_moondoge: u64,
-        pub active_moondoge_positions: u8,  // Max 7
-        
-        /// Total Liquidity staking stats
-        pub total_lp_tokens_staked: u64,
-        pub total_weighted_lp: u64,
-        pub active_lp_positions: u8,  // Max 7
-        
-        /// Electricity stats
-        pub electricity_earned: u64,
-        pub free_electricity: u64,  // Free electricity from init tier bonus
-            
-        /// SOL rewards tracking
-        pub moondoge_reward_debt: u128,     // Last checkpoint for DogeBtc rewards
-        pub lp_reward_debt: u128,           // Last checkpoint for LP rewards
-        pub pending_moondoge_rewards: u64,  // Unclaimed DogeBtc staking rewards
-        pub pending_lp_rewards: u64,        // Unclaimed LP staking rewards
-        pub total_sol_claimed: u64,     // Total SOL rewards claimed
-        
-        /// Position indices tracking (max 7 elements each)
-        pub moondoge_position_indices: Vec<u8>,  // Store actual indices
-        pub lp_position_indices: Vec<u8>,        // Store actual indices
-        
-        pub bump: u8
-    }
-    
-    impl UserMoonElectricity {
-        pub const LEN: usize = 8 +  // discriminator
+    /// User's wallet address
+    pub owner: Pubkey,
+
+    /// Total DogeBtc staking stats
+    pub total_moondoge_staked: u64,
+    pub total_weighted_moondoge: u64,
+    pub active_moondoge_positions: u8, // Max 7
+
+    /// Total Liquidity staking stats
+    pub total_lp_tokens_staked: u64,
+    pub total_weighted_lp: u64,
+    pub active_lp_positions: u8, // Max 7
+
+    /// Electricity stats
+    pub electricity_earned: u64,
+    pub free_electricity: u64, // Free electricity from init tier bonus
+
+    /// SOL rewards tracking
+    pub moondoge_reward_debt: u128, // Last checkpoint for DogeBtc rewards
+    pub lp_reward_debt: u128,          // Last checkpoint for LP rewards
+    pub pending_moondoge_rewards: u64, // Unclaimed DogeBtc staking rewards
+    pub pending_lp_rewards: u64,       // Unclaimed LP staking rewards
+    pub total_sol_claimed: u64,        // Total SOL rewards claimed
+
+    /// Position indices tracking (max 7 elements each)
+    pub moondoge_position_indices: Vec<u8>, // Store actual indices
+    pub lp_position_indices: Vec<u8>, // Store actual indices
+
+    pub bump: u8,
+}
+
+impl UserMoonElectricity {
+    pub const LEN: usize = 8 +  // discriminator
             32 + // owner
             8 +  // total_moondoge_staked
             8 +  // total_weighted_moondoge
@@ -248,24 +244,23 @@ pub struct UserMoonElectricity {
             8 +  // total_sol_claimed
             4 + 7 +  // vec length + max 7 indices for moondoge
             4 + 7 +  // vec length + max 7 indices for lp
-            1;   // bump
-    }
-    
-    
+            1; // bump
+}
+
 /// Individual DogeBtc staking position
 #[account]
 pub struct DogeBtcPosition {
-    pub position_index: u8,   
-    
+    pub position_index: u8,
+
     /// Staking details
     pub staked_amount: u64,
     pub weighted_amount: u64,
     pub start_timestamp: i64,
     pub lockup_end_timestamp: i64,
-    pub lockup_duration: u64,  // in days
-    pub multiplier: u16,       // 100 = 1x
+    pub lockup_duration: u64, // in days
+    pub multiplier: u16,      // 100 = 1x
     pub electricity_per_day: u64,
-    pub bump: u8
+    pub bump: u8,
 }
 
 impl DogeBtcPosition {
@@ -278,25 +273,25 @@ impl DogeBtcPosition {
         8 +  // lockup_duration
         2 +  // multiplier
         8 +  // electricity_per_day
-        1;   // bump
+        1; // bump
 }
 
 /// Individual Liquidity staking position
 #[account]
 pub struct LiquidityPosition {
-    pub position_index: u8,  // 0-6
-    
+    pub position_index: u8, // 0-6
+
     /// Staking details
     pub staked_amount: u64,
     pub weighted_amount: u64,
     pub start_timestamp: i64,
     pub lockup_end_timestamp: i64,
-    pub lockup_duration: u64,  // in days
-    pub multiplier: u16,       // 100 = 1x
+    pub lockup_duration: u64, // in days
+    pub multiplier: u16,      // 100 = 1x
     pub electricity_per_day: u64,
-    pub bump: u8
+    pub bump: u8,
 }
 
 impl LiquidityPosition {
-    pub const LEN: usize = DogeBtcPosition::LEN;  // Same structure
+    pub const LEN: usize = DogeBtcPosition::LEN; // Same structure
 }

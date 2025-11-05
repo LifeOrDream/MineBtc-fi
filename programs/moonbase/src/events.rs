@@ -1,5 +1,5 @@
-use anchor_lang::prelude::*;
 use crate::state::ModuleType;
+use anchor_lang::prelude::*;
 
 // ------------------------------
 // User management events
@@ -147,7 +147,6 @@ pub struct MiningRigPurchased {
     pub rig_type: u8,
     pub rig_id: u32,
     pub price: u64,
-    
 }
 
 #[event]
@@ -159,7 +158,6 @@ pub struct MiningRigDeployed {
     pub rig_type: u8,
     pub x: u8,
     pub y: u8,
-    
 }
 
 #[event]
@@ -170,7 +168,6 @@ pub struct MiningRigListed {
     pub position: u8,
     pub rig_id: u32,
     pub price: u64,
-    
 }
 
 #[event]
@@ -180,7 +177,6 @@ pub struct MiningRigUnlisted {
     pub facility: Pubkey,
     pub position: u8,
     pub rig_id: u32,
-    
 }
 
 #[event]
@@ -192,7 +188,6 @@ pub struct MiningRigSold {
     pub position: u8,
     pub rig_id: u32,
     pub price: u64,
-    
 }
 
 #[event]
@@ -201,7 +196,6 @@ pub struct MiningInitialized {
     pub initial_reward_per_block: u64,
     pub halving_interval: i64,
     pub reward_period: i64,
-    
 }
 
 #[event]
@@ -219,15 +213,14 @@ pub struct SolFeesWithdrawn {
 #[event]
 pub struct NewModuleConfigCreated {
     pub id: u16,
-    pub name: String,    
+    pub name: String,
 }
 
 #[event]
 pub struct ModuleConfigUpdated {
     pub id: u16,
-    pub name: String,    
+    pub name: String,
 }
-
 
 #[event]
 pub struct MiningTokenVaultSet {
@@ -247,7 +240,7 @@ pub struct ConfigUpdated {
     pub authority: Pubkey,
     pub sol_claimer: Pubkey,
 }
- 
+
 #[event]
 pub struct DogeBtcTokensClaimed {
     pub owner: Pubkey,
@@ -276,8 +269,6 @@ pub struct UserElectricityUpdated {
     pub is_increase: bool,
 }
 
-
-
 // ------------------------------
 // Dynamic distribution events
 // ------------------------------
@@ -301,7 +292,7 @@ pub struct DistributionRateUpdated {
     pub sol_received: u64,
     pub timestamp: i64,
 }
- 
+
 #[event]
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
@@ -346,7 +337,6 @@ pub struct LootRewardsAccumulated {
     pub total_dbtc_accumulated: u64,
     pub total_sol_accumulated: u64,
 }
- 
 
 #[event]
 pub struct LootRewardsInitialized {
@@ -354,7 +344,6 @@ pub struct LootRewardsInitialized {
     pub sol_vault_pda: Pubkey,
     pub dbtc_vault_pda: Pubkey,
 }
- 
 
 #[event]
 pub struct LevelStatsUpdated {
@@ -433,9 +422,9 @@ pub struct LootWon {
     pub level: u8,
     pub sol: u64,
     pub mdoge: u64,
-    pub loot_tier: String,        // "minor", "rare", "legendary"
-    pub exclusivity_rank: u8,     // 0 = first, 1-2 = top3, etc.
-    pub chance_percentage: u32,   // Actual chance they had (in basis points)
+    pub loot_tier: String,      // "minor", "rare", "legendary"
+    pub exclusivity_rank: u8,   // 0 = first, 1-2 = top3, etc.
+    pub chance_percentage: u32, // Actual chance they had (in basis points)
 }
 
 #[event]
@@ -443,11 +432,11 @@ pub struct ReferralSuccess {
     pub referrer: Pubkey,
     pub referee: Pubkey,
     pub xp_bonus: u32,
-    pub sol_earned_bonus: u32,    // Additional XP from total SOL earned
+    pub sol_earned_bonus: u32, // Additional XP from total SOL earned
 }
 
 // ========== PVP GAME EVENTS ========== //
- 
+
 #[event]
 pub struct AttractionXPClaimed {
     pub owner: Pubkey,
@@ -456,5 +445,3 @@ pub struct AttractionXPClaimed {
     pub hours_elapsed: f64,
     pub effective_xp_per_hour: u32,
 }
-
- 
