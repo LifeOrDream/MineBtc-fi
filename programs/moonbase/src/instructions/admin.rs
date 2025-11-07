@@ -860,7 +860,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
     msg!("Withdrawing SOL from treasury");
     msg!("SOL Treasury: {}", sol_treasury.key());
-    msg!("Treasury balance: {}", sol_treasury.lamports());
+    msg!("Treasury balance: {} SOL", sol_treasury.lamports() as f64 / 1e9);
     msg!("Fee collector: {}", fee_collector.key());
 
     let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
@@ -873,16 +873,16 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     // Check if we have enough available balance
     if available_solana == 0 {
         msg!(
-            "⚠️ No SOL balance to withdraw. Available: {}",
-            available_solana
-        );
-        msg!(
-            "   Total balance: {}, Rent: {}",
-            current_balance,
-            rent_exempt_amount
-        );
+            "⚠️ No SOL balance to withdraw. Available: {} SOL",
+            available_solana as f64 / 1e9
+        );        
         return Ok(());
     }
+    msg!(
+        "   Total balance: {} SOL, Rent: {} SOL",
+        current_balance as f64 / 1e9,
+        rent_exempt_amount as f64 / 1e9
+    );
 
     // Calculate loot rewards amount using configurable percentage
     let loot_percentage = global_config.loot_percentage as u64;
@@ -942,7 +942,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
         msg!(
             "🎁 Transferred {} SOL to loot rewards vault ({}%)",
-            sol_for_loots,
+            sol_for_loots  as f64 / 1e9,
             loot_percentage
         );
     }
@@ -971,7 +971,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
         msg!(
             "💰 Transferred {} SOL to buybacks vault ({}%)",
-            sol_for_buybacks,
+            sol_for_buybacks as f64 / 1e9,
             buyback_percentage
         );
     }
@@ -998,7 +998,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
             buyback_amount: sol_for_buybacks,
         });
 
-        msg!("Withdrew {} lamports from treasury", fee_collector_amount);
+        msg!("Withdrew {} SOL from treasury", fee_collector_amount as f64 / 1e9);
     }
 
     Ok(())

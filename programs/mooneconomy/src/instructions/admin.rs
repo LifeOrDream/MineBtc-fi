@@ -286,8 +286,8 @@ pub fn internal_claim_moonbase_sol(ctx: Context<ClaimMoonBaseSOL>) -> Result<()>
 
     msg!(
         "📊 Allocations - DogeBtc: {}, Liquidity: {}",
-        sol_for_dbtc_stakers,
-        sol_for_lp_stakers
+        sol_for_dbtc_stakers  as f64 / 1e9,
+        sol_for_lp_stakers  as f64 / 1e9
     );
 
     // Now distribute to respective vaults
