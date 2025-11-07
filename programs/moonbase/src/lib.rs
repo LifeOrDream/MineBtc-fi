@@ -10,7 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::economy::*;
 pub use instructions::user::*;
 
-declare_id!("CAxbTfWPZKw6zfDUBzPoV48Qz7ruFJsx5UkzZScRfufh");
+declare_id!("4w5bZ3LLbQSyhmyoW1QCE3c6KHpxZ2vPQFnrYuoDBZEP");
 
 #[program]
 pub mod moonbase {
@@ -321,9 +321,9 @@ pub mod moonbase {
     /// Create a new moon base for a user
     /// pricing_tier options:
     /// - PRICE_TIER_1 (0.5 SOL): Basic moonbase, no Dragon Egg
-    /// - PRICE_TIER_2 (1.42 SOL): Moonbase + Dragon Egg + 10k electricity
-    /// - PRICE_TIER_3 (2.42 SOL): Moonbase + Dragon Egg + 30k electricity
-    /// - PRICE_TIER_4 (4.20 SOL): Moonbase + Dragon Egg + 75k electricity
+    /// - PRICE_TIER_2 (2.42 SOL): Moonbase + Dragon Egg + 5k electricity
+    /// - PRICE_TIER_3 (4.20 SOL): Moonbase + Dragon Egg + 10k electricity
+    /// - PRICE_TIER_4 (6.9 SOL): Moonbase + Dragon Egg + 15k electricity
     pub fn create_user_moonbase(
         ctx: Context<CreateUserMoonbase>,
         referrer: Option<Pubkey>,

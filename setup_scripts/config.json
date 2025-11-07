@@ -53,28 +53,48 @@
     },
     "factions": [
         {
-            "name": "United States",
-            "description": "Advanced space technology and military supremacy doctrine"
+            "name": "USA",
+            "description": "Tech innovators and marketing masters. Wielding high-tech gear and 'to the moon' hype."
         },
         {
             "name": "China",
-            "description": "Mass production efficiency and systematic expansion strategy"
+            "description": "The industrial powerhouse. Unmatched mining efficiency and a 'Great Wall' of digital defenses."
         },
         {
             "name": "Russia",
-            "description": "Heavy-duty engineering and military-first approach"
+            "description": "Bear-market survivors. Wielding heavy-duty mining rigs and a legendary 'crypto-winter' resilience."
         },
         {
-            "name": "Israel",
-            "description": "Cutting-edge defense systems and intelligence operations"
+            "name": "India",
+            "description": "The tech wizards. Fusing ancient spiritual power with a massive, decentralized dev army."
         },
         {
-            "name": "Iran",
-            "description": "Resource extraction focus and asymmetric warfare tactics"
+            "name": "Japan",
+            "description": "Cyber-samurai coders. Honed by tradition, masters of high-speed, precision mining operations."
         },
         {
-            "name": "Ukraine",
-            "description": "Resilient defensive technology and freedom preservation"
+            "name": "South Korea",
+            "description": "The essential gaming & degen hub. High-APM strategies and K-Pop-fueled crypto frenzies."
+        },
+        {
+            "name": "Vietnam",
+            "description": "The essential gaming & degen hub. Masters of guerilla tactics and grinding for high-yield rewards."
+        },
+        {
+            "name": "The Philippines",
+            "description": "The #1 Web3 gaming faction. Unmatched community-driven power and a 'play-to-hatch' warrior spirit."
+        },
+        {
+            "name": "North Korea",
+            "description": "The 'wildcard' hacker faction. Shrouded in mystery, masters of 'liberating' digital assets."
+        },
+        {
+            "name": "France",
+            "description": "Cultural connoisseurs. Wielding high-fashion tech and building 'haute couture' crypto portfolios."
+        },
+        {
+            "name": "Brazil",
+            "description": "The party faction. Powered by carnival energy, high-octane hype, and a legendary passion for the 'Joga Bonito' of crypto."
         }
     ],
     "expansions": [
@@ -121,7 +141,7 @@
                 "baseHashpower": 1200,
                 "powerConsumption": 90
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,
@@ -140,7 +160,7 @@
                 "probability": 6000,
                 "powerConsumption": 140
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 3,
             "height": 2,
@@ -157,7 +177,7 @@
                 "baseXpPerHour": 120,
                 "powerConsumption": 45
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,
@@ -176,7 +196,7 @@
                 "reloadTimeSeconds": 25,
                 "powerConsumption": 85
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,
@@ -197,7 +217,7 @@
                 "baseHashpower": 500,
                 "powerConsumption": 500
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,
@@ -216,7 +236,7 @@
                 "baseHashpower": 2400,
                 "powerConsumption": 1500
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,
@@ -235,7 +255,7 @@
                 "baseHashpower": 4200,
                 "powerConsumption": 3000
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,
@@ -254,7 +274,7 @@
                 "baseHashpower": 6900,
                 "powerConsumption": 5100
             },
-            "faction_ids": [0, 1, 2, 3, 4, 5],
+            "faction_ids": [],
             "min_level": 0,
             "width": 2,
             "height": 2,

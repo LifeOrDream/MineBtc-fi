@@ -202,9 +202,9 @@ pub fn add_factions_internal(ctx: Context<UpdateConfigAc>, factions: Vec<String>
         );
     }
 
-    // Check we don't exceed max factions (10)
+    // Check we don't exceed max factions
     require!(
-        global_config.supported_factions.len() + factions.len() <= 10,
+        global_config.supported_factions.len() + factions.len() <= MAX_FACTIONS,
         ErrorCode::MaxFactionsReached
     );
 
@@ -216,6 +216,13 @@ pub fn add_factions_internal(ctx: Context<UpdateConfigAc>, factions: Vec<String>
         "   Total factions: {}",
         global_config.supported_factions.len()
     );
+
+    // Emit event for off-chain indexing
+    emit!(FactionsAdded {
+        authority: ctx.accounts.authority.key(),
+        factions: factions.clone(),
+        total_factions: global_config.supported_factions.len() as u8,
+    });
 
     Ok(())
 }

@@ -51,9 +51,9 @@ async function main() {
         console.error(COLOR_ERROR, '❌ Usage: node 5_create_user_moonbase.js <pricing_tier> [referrer_address]');
         console.error(COLOR_WARNING, 'Pricing tiers:');
         console.error(COLOR_WARNING, '  1 = 0.5 SOL (no Dragon Egg)');
-        console.error(COLOR_WARNING, '  2 = 1.42 SOL (with Dragon Egg + 10k electricity)');
-        console.error(COLOR_WARNING, '  3 = 2.42 SOL (with Dragon Egg + 30k electricity)');
-        console.error(COLOR_WARNING, '  4 = 4.20 SOL (with Dragon Egg + 75k electricity)');
+        console.error(COLOR_WARNING, '  2 = 2.42 SOL (with Dragon Egg + 5k electricity)');
+        console.error(COLOR_WARNING, '  3 = 4.20 SOL (with Dragon Egg + 10k electricity)');
+        console.error(COLOR_WARNING, '  4 = 6.9 SOL (with Dragon Egg + 15k electricity)');
         process.exit(1);
     }
 
@@ -68,9 +68,9 @@ async function main() {
     // Tier prices in lamports
     const TIER_PRICES = {
         1: 0.5 * LAMPORTS_PER_SOL,
-        2: 1.42 * LAMPORTS_PER_SOL,
-        3: 2.42 * LAMPORTS_PER_SOL,
-        4: 4.20 * LAMPORTS_PER_SOL
+        2: 2.42 * LAMPORTS_PER_SOL,
+        3: 4.20 * LAMPORTS_PER_SOL,
+        4: 6.9 * LAMPORTS_PER_SOL
     };
 
     const tierPrice = TIER_PRICES[pricingTier];

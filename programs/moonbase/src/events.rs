@@ -9,6 +9,8 @@ use anchor_lang::prelude::*;
 pub struct UserMoonBaseCreated {
     pub owner: Pubkey,
     pub referrer: Option<Pubkey>,
+    pub faction_id: u8,
+    pub init_type: u8, // Pricing tier: 1 = 0.5 SOL, 2 = 2.42 SOL, 3 = 4.20 SOL, 4 = 6.9 SOL
 }
 
 #[event]
@@ -242,6 +244,13 @@ pub struct ConfigUpdated {
 }
 
 #[event]
+pub struct FactionsAdded {
+    pub authority: Pubkey,
+    pub factions: Vec<String>,
+    pub total_factions: u8, // Changed from usize to u8 for Anchor event compatibility
+}
+
+#[event]
 pub struct DogeBtcTokensClaimed {
     pub owner: Pubkey,
     pub amount: u64,
@@ -369,6 +378,7 @@ pub struct DragonEggMinted {
     pub dna: [u8; 32],
     pub multiplier: u32,
     pub initial_power: u32,
+    pub faction_id: u8, // Faction/country the egg belongs to
 }
 
 #[event]
@@ -390,6 +400,7 @@ pub struct LevelStatsInitialized {
 #[event]
 pub struct MoonbaseExpanded {
     pub owner: Pubkey,
+    pub faction_id: u8,
     pub expansion_id: u8,
     pub expansion_name: String,
     pub old_width: u8,

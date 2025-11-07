@@ -200,7 +200,7 @@ async function main() {
 
         
         // 9.5. Add Regular Modules
-        await addModules(moonbaseProgram);
+        // await addModules(moonbaseProgram);
         // return;
         
         // 10. Deposit Mining Tokens
@@ -215,7 +215,7 @@ async function main() {
         // return;
         
         // // // 12. Update DOGE_BTC Distribution Rate
-        await updateDistributionRate(moonbaseProgram);
+        // await updateDistributionRate(moonbaseProgram);
         // return;
 
         // Print completion summary

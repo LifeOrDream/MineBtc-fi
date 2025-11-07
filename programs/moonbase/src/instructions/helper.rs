@@ -31,8 +31,9 @@ pub fn transfer_to_sol_treasury<'info>(
 /// Helper function to process referral payments
 ///
 /// Takes a cost amount, calculates referral fee (if applicable),
-/// transfers SOL to referrer's rewards account and treasury,
-/// increments referral count, and returns the referral fee and treasury amount
+/// transfers SOL to referrer's rewards account, refunds discount to user,
+/// transfers remaining to treasury, increments referral count,
+/// and returns the referral fee, discount, and treasury amount
 pub fn process_referral_payment<'info>(
     cost: u64,
     referrer: &Pubkey,
@@ -42,19 +43,30 @@ pub fn process_referral_payment<'info>(
     global_config: &mut GlobalConfig,
     sol_treasury: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
-) -> Result<(u64, u64)> {
+    treasury_bump: u8,
+) -> Result<(u64, u64, u64)> {
     let mut referral_fee = 0;
+    let mut discount = 0;
     let mut treasury_amount = cost;
 
     // Check if we have a referral that's not the default (system program)
     if referrer != &system_program::ID {
-        // Calculate referral fee (15% of cost) & treasury amount
+        // Calculate referral fee (15% of cost)
         referral_fee = cost
             .checked_mul(REFERRAL_FEE)
             .unwrap()
             .checked_div(100)
             .unwrap();
-        treasury_amount = cost.checked_sub(referral_fee).unwrap();
+        
+        // Calculate discount (5% of cost) - refunded to user
+        discount = cost
+            .checked_mul(REFERRAL_DISCOUNT)
+            .unwrap()
+            .checked_div(100)
+            .unwrap();
+        
+        // Treasury gets: cost - referral_fee (we'll refund discount separately)
+        treasury_amount = cost.checked_sub(referral_fee + discount).unwrap();
 
         // If referrer rewards account is provided, update and transfer
         if let Some(rewards_account_info) = referrer_rewards {
@@ -99,9 +111,10 @@ pub fn process_referral_payment<'info>(
                 referral_fee
             );
         } else {
-            // No referrer rewards account found, all goes to treasury
+            // No referrer rewards account found, all goes to treasury (no discount)
             treasury_amount = cost;
             referral_fee = 0;
+            discount = 0;
             msg!("Referrer rewards account not found, all fees go to treasury");
         }
     }
@@ -113,14 +126,14 @@ pub fn process_referral_payment<'info>(
         system_program,
         treasury_amount,
     )?;
-
-    // Track total SOL spent by users
+ 
     global_config.total_sol_spent = global_config
         .total_sol_spent
-        .checked_add(cost)
+        .checked_add(treasury_amount)
         .unwrap_or(global_config.total_sol_spent);
 
-    Ok((referral_fee, treasury_amount))
+    // Return final treasury amount (after refund)
+    Ok((referral_fee, discount, treasury_amount))
 }
 
 // -----------------------------------------------------

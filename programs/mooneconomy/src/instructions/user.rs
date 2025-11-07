@@ -92,9 +92,9 @@ fn get_moonbase_init_type(moonbase_data: &[u8]) -> Result<u8> {
 fn calculate_initial_electricity_bonus(init_type: u8) -> u64 {
     match init_type {
         1 => 1000,   // 0.5 SOL tier: 1k electricity
-        2 => 5_000,  // 1.42 SOL tier: 5k electricity
-        3 => 10_000, // 2.42 SOL tier: 10k electricity
-        4 => 15_000, // 4.20 SOL tier: 15k electricity
+        2 => 5_000,  // 2.42 SOL tier: 5k electricity
+        3 => 10_000, // 4.20 SOL tier: 10k electricity
+        4 => 15_000, // 6.9 SOL tier: 15k electricity
         _ => 0,      // fallback
     }
 }

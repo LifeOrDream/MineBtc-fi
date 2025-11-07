@@ -4,9 +4,9 @@ use crate::errors::ErrorCode;
 
 // Moonbase pricing tiers
 pub const PRICE_TIER_1: u64 = 500_000_000; // 0.5 SOL (no egg)
-pub const PRICE_TIER_2: u64 = 1_420_000_000; // 1.42 SOL (has egg)
-pub const PRICE_TIER_3: u64 = 2_420_000_000; // 2.42 SOL (has egg)
-pub const PRICE_TIER_4: u64 = 4_200_000_000; // 4.20 SOL (has egg)
+pub const PRICE_TIER_2: u64 = 2_420_000_000; // 2.42 SOL (has egg)
+pub const PRICE_TIER_3: u64 = 4_200_000_000; // 4.20 SOL (has egg)
+pub const PRICE_TIER_4: u64 = 6_900_000_000; // 6.9 SOL (has egg)
 
 pub const DBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
@@ -18,7 +18,8 @@ pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
 
 // ========== GLOBAL CONSTANTS ========== //
-pub const REFERRAL_FEE: u64 = 15; // 15%
+pub const REFERRAL_FEE: u64 = 10; // 10%
+pub const REFERRAL_DISCOUNT: u64 = 5; // 5% discount for users who use a referral code
 pub const LOOT_REWARDS_PERCENTAGE: u64 = 15; // 15% of distributions/collections go to loot rewards (increased for sustainability)
 pub const DISCRIMINATOR_SIZE: usize = 8;
 
@@ -27,7 +28,7 @@ pub const LOOT_TARGET_SOL_VAULT: u64 = 1_000_000_000_000; // 1,000 SOL target fo
 pub const LOOT_TARGET_DBTC_VAULT: u64 = 100_000_000_000; // 100,000 DBTC target for healthy vault
 
 // ========== FACTION CONSTANTS ========== //
-pub const MAX_FACTIONS: usize = 25; // Maximum number of supported factions
+pub const MAX_FACTIONS: usize = 15; // Maximum number of supported factions
 pub const MAX_FACTION_NAME_LENGTH: usize = 32; // Maximum characters in faction name
 pub const MAX_FACTION_IDS_PER_MODULE: usize = 8; // Maximum faction restrictions per module
 pub const MAX_EXPANSIONS: usize = 20; // Maximum number of expansion configs
@@ -184,7 +185,7 @@ pub struct GlobalConfig {
     /// Bump for SOL treasury PDA derivation
     pub treasury_bump: u8,
     /// List of supported factions (e.g., "USA", "China", "Russia")
-    /// Maximum 10 factions, each with max 16 characters
+    /// Maximum 15 factions, each with max 16 characters
     pub supported_factions: Vec<String>,
     /// Available moonbase expansions (level requirements and costs)
     pub expansions: Vec<ExpansionConfig>,
@@ -917,7 +918,6 @@ impl ModuleInstance {
 
 // ========== DRAGON EGG NFT CONSTANTS ========== //
 pub const BASE_EGG_POWER: u32 = 100;
-pub const MAX_EGG_POWER: u32 = 1_000_000;
 pub const POWER_RATE_MULTIPLIER: u64 = 1000; // Divisor for balance
 
 pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
@@ -1001,6 +1001,9 @@ pub struct DragonEggMetadata {
     /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
     pub multiplier: u32,
 
+    /// Faction ID (country) that the egg belongs to (matches moonbase faction)
+    pub faction_id: u8,
+
     /// Last power update timestamp
     pub last_update_ts: i64,
 
@@ -1018,6 +1021,7 @@ impl DragonEggMetadata {
         32 +    // dna
         33 +    // incubated_moonbase (Option<Pubkey>)
         4 +     // multiplier
+        1 +     // faction_id
         8 +     // last_update_ts
         8 +     // created_at
         1; // bump
