@@ -311,4 +311,7 @@ pub enum ErrorCode {
 
     #[msg("Update dist rate first")]
     UpdateDistRateFirst,
+
+    #[msg("dogeBtc needed for POl cannot be more than 5% of vault balance")]
+    MaxLimitError,
 }

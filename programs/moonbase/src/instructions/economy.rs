@@ -663,7 +663,8 @@ pub fn update_rate_and_add_lp_internal(
         
         // Check available DOGE_BTC in main vault (direct access since it's InterfaceAccount)
         let available_dbtc = ctx.accounts.dbtc_token_account.amount;
-        
+        msg!("   💰 Available DOGE_BTC: {} DBTC", available_dbtc as f64 / 1e6);
+
         // Create signer seeds for vault authority
         let authority_seeds = &[DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(), &[doge_btc_mining.vault_auth_bump]];
         let signer_seeds = &[&authority_seeds[..]];
@@ -674,6 +675,7 @@ pub fn update_rate_and_add_lp_internal(
             let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &lp_account_data[..])?;
             lp_account.amount
         };
+        msg!("   💰 LP token balance before deposit: {} LP", lp_balance_before as f64 / 1e6);
         
         // Read pool vault balances
         let sol_vault_balance = {
@@ -681,12 +683,14 @@ pub fn update_rate_and_add_lp_internal(
             let token_account = anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
-        
+        msg!("   💰 SOL LP pool balance: {} SOL", sol_vault_balance as f64 / 1e9);
+
         let dbtc_vault_balance = {
             let account_data = ctx.accounts.dbtc_vault.try_borrow_data()?;
             let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
+        msg!("   💰 DOGE_BTC LP pool balance: {} DBTC", dbtc_vault_balance as f64 / 1e6);
         
         // Read LP supply from LP mint (more reliable than parsing pool_state)
         let lp_supply = {
@@ -694,6 +698,7 @@ pub fn update_rate_and_add_lp_internal(
             let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
             mint.supply
         };
+        msg!("   💰 LP supply: {} LP", lp_supply as f64 / 1e6);
         
         // Calculate deposit amounts
         let sol_buffer = total_sol_for_lp / 50;
@@ -716,11 +721,16 @@ pub fn update_rate_and_add_lp_internal(
             let required_mdoge = (lp_from_sol as u128 * dbtc_vault_balance as u128 / lp_supply as u128) as u64;
             (lp_from_sol, available_sol, required_mdoge + 100)
         };
+        msg!("   💰 Estimated LP amount: {} LP", estimated_lp_amount as f64 / 1e6);
+        msg!("   💰 Adjusted SOL amount: {} SOL", adjusted_sol_amount as f64 / 1e9);
+        msg!("   💰 Adjusted DOGE_BTC amount: {} DBTC", adjusted_dbtc_amount as f64 / 1e6);
         
         let max_dbtc_with_buffer = adjusted_dbtc_amount.saturating_add(adjusted_dbtc_amount / 50);
+        msg!("   💰 Max DOGE_BTC with buffer: {} DBTC", max_dbtc_with_buffer as f64 / 1e6);
         
         // Validate sufficient DOGE_BTC
         require!(available_dbtc >= max_dbtc_with_buffer, ErrorCode::InsufficientTokensInVault);
+        require!(max_dbtc_with_buffer < available_dbtc / 20, ErrorCode::MaxLimitError);
         
         // Build and execute Raydium deposit CPI
         raydium_cp_swap::cpi::deposit(
@@ -754,8 +764,11 @@ pub fn update_rate_and_add_lp_internal(
             let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &lp_account_data[..])?;
             lp_account.amount
         };
+        msg!("   💰 LP token balance after deposit: {} LP", lp_balance_after as f64 / 1e6);
+
         let lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
-        
+        msg!("   💰 LP tokens minted: {} LP", lp_tokens_minted as f64 / 1e6);
+
         // Burn LP tokens
         if lp_tokens_minted > 0 {
             use anchor_spl::token;
@@ -778,6 +791,7 @@ pub fn update_rate_and_add_lp_internal(
                 let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
                 total_sol_for_lp.saturating_sub(sol_token_data.amount)
             };
+            msg!("   💰 SOL consumed: {} SOL", sol_consumed as f64 / 1e9);
             
             doge_btc_mining.pol_stats.update_after_lp_operation(lp_tokens_minted, sol_consumed, adjusted_dbtc_amount);
             
@@ -869,8 +883,6 @@ pub fn update_rate_and_add_lp_internal(
         "   💎 SOL remaining for POL: {} SOL",
         buybacks_account.sol_for_pol as f64 / 1e9
     );
-    msg!("   ⏱️  Next snapshot cycle starts in: ~30 minutes");
-    msg!("=== END RATE UPDATE ===\n");
 
     emit!(DistributionRateUpdated {
         old_rate,
