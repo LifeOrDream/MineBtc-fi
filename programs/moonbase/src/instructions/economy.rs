@@ -367,6 +367,19 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     );
     msg!("   ⏱️  Next snapshot available in: ~30 minutes");
 
+    // Emit price snapshot event for off-chain indexing
+    emit!(PriceSnapshotTaken {
+        snapshot_number: doge_btc_mining.price_history.len() as u8,
+        sol_swapped: sol_for_swap,
+        dbtc_received,
+        current_price,
+        weighted_avg_price: current_weighted_avg,
+        sol_earnmarked_for_pol: sol_for_pol_earnmark,
+        total_pol_balance: buybacks_account.sol_for_pol,
+        price_history_count: doge_btc_mining.price_history.len() as u8,
+        timestamp: current_time,
+    });
+
     Ok(())
 }
 
@@ -656,12 +669,14 @@ pub fn update_rate_and_add_lp_internal(
 
     // Perform actual LP addition and burn (INLINED to avoid stack overflow)
     // DOGE_BTC will be taken from the main token vault (dbtc_token_account)
+    let mut lp_tokens_minted = 0u64;
+    let mut sol_consumed = 0u64;
+    let mut dbtc_consumed = 0u64;
+    
     if total_sol_for_lp > 0 {
         msg!("\n   🎯 === ADDING LIQUIDITY TO POOL ===");
-        msg!("   📊 Using DOGE_BTC from main token vault");
-        msg!("🏦 === STARTING LP ADDITION AND BURN ===");
         
-        // Check available DOGE_BTC in main vault (direct access since it's InterfaceAccount)
+        // Check available DOGE_BTC in main vault
         let available_dbtc = ctx.accounts.dbtc_token_account.amount;
         msg!("   💰 Available DOGE_BTC: {} DBTC", available_dbtc as f64 / 1e6);
 
@@ -669,36 +684,33 @@ pub fn update_rate_and_add_lp_internal(
         let authority_seeds = &[DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(), &[doge_btc_mining.vault_auth_bump]];
         let signer_seeds = &[&authority_seeds[..]];
         
-        // Get LP token balance before deposit (need to deserialize UncheckedAccount)
+        // Read pool state once
         let lp_balance_before = {
             let lp_account_data = ctx.accounts.lp_token_account.try_borrow_data()?;
             let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &lp_account_data[..])?;
             lp_account.amount
         };
-        msg!("   💰 LP token balance before deposit: {} LP", lp_balance_before as f64 / 1e6);
         
-        // Read pool vault balances
         let sol_vault_balance = {
             let account_data = ctx.accounts.sol_vault.try_borrow_data()?;
             let token_account = anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
-        msg!("   💰 SOL LP pool balance: {} SOL", sol_vault_balance as f64 / 1e9);
 
         let dbtc_vault_balance = {
             let account_data = ctx.accounts.dbtc_vault.try_borrow_data()?;
             let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
-        msg!("   💰 DOGE_BTC LP pool balance: {} DBTC", dbtc_vault_balance as f64 / 1e6);
         
-        // Read LP supply from LP mint (more reliable than parsing pool_state)
         let lp_supply = {
             let data = ctx.accounts.lp_mint.try_borrow_data()?;
             let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
             mint.supply
         };
-        msg!("   💰 LP supply: {} LP", lp_supply as f64 / 1e6);
+        
+        msg!("   📊 Pool state: SOL={} SOL, DBTC={} DBTC, LP supply={} LP", 
+             sol_vault_balance as f64 / 1e9, dbtc_vault_balance as f64 / 1e6, lp_supply as f64 / 1e6);
         
         // Calculate deposit amounts
         let sol_buffer = total_sol_for_lp / 50;
@@ -721,18 +733,16 @@ pub fn update_rate_and_add_lp_internal(
             let required_mdoge = (lp_from_sol as u128 * dbtc_vault_balance as u128 / lp_supply as u128) as u64;
             (lp_from_sol, available_sol, required_mdoge + 100)
         };
-        msg!("   💰 Estimated LP amount: {} LP", estimated_lp_amount as f64 / 1e6);
-        msg!("   💰 Adjusted SOL amount: {} SOL", adjusted_sol_amount as f64 / 1e9);
-        msg!("   💰 Adjusted DOGE_BTC amount: {} DBTC", adjusted_dbtc_amount as f64 / 1e6);
         
         let max_dbtc_with_buffer = adjusted_dbtc_amount.saturating_add(adjusted_dbtc_amount / 50);
-        msg!("   💰 Max DOGE_BTC with buffer: {} DBTC", max_dbtc_with_buffer as f64 / 1e6);
+        msg!("   💰 Deposit amounts: SOL={} SOL, DBTC={} DBTC (max with buffer)", 
+             adjusted_sol_amount as f64 / 1e9, max_dbtc_with_buffer as f64 / 1e6);
         
-        // Validate sufficient DOGE_BTC
+        // Validate: DOGE_BTC needed must be less than 5% of vault balance
         require!(available_dbtc >= max_dbtc_with_buffer, ErrorCode::InsufficientTokensInVault);
         require!(max_dbtc_with_buffer < available_dbtc / 20, ErrorCode::MaxLimitError);
         
-        // Build and execute Raydium deposit CPI
+        // Execute Raydium deposit CPI
         raydium_cp_swap::cpi::deposit(
             CpiContext::new_with_signer(
                 ctx.accounts.raydium_program.to_account_info(),
@@ -758,16 +768,72 @@ pub fn update_rate_and_add_lp_internal(
             max_dbtc_with_buffer,
         )?;
         
-        // Calculate LP tokens minted (need to deserialize UncheckedAccount)
+        // Calculate LP tokens minted
         let lp_balance_after = {
             let lp_account_data = ctx.accounts.lp_token_account.try_borrow_data()?;
             let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &lp_account_data[..])?;
             lp_account.amount
         };
-        msg!("   💰 LP token balance after deposit: {} LP", lp_balance_after as f64 / 1e6);
+        lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
+        msg!("   ✅ LP tokens minted: {} LP", lp_tokens_minted as f64 / 1e6);
 
-        let lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
-        msg!("   💰 LP tokens minted: {} LP", lp_tokens_minted as f64 / 1e6);
+        // Calculate actual amounts consumed from deposit
+        let sol_balance_after_deposit = {
+            let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
+            let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+            sol_token_data.amount
+        };
+        sol_consumed = total_sol_for_lp.saturating_sub(sol_balance_after_deposit);
+        
+        // Read actual DOGE_BTC consumed (difference in vault balance)
+        let dbtc_vault_balance_after = {
+            let account_data = ctx.accounts.dbtc_vault.try_borrow_data()?;
+            let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
+            token_account.amount
+        };
+        dbtc_consumed = dbtc_vault_balance_after.saturating_sub(dbtc_vault_balance);
+        
+        msg!("   💰 Actual consumption: SOL={} SOL, DBTC={} DBTC", 
+             sol_consumed as f64 / 1e9, dbtc_consumed as f64 / 1e6);
+
+        // Emit LiquidityAdded event (before burn)
+        if lp_tokens_minted > 0 {
+            // Calculate LP token price: (sol_deposited + dbtc_deposited * price) / lp_tokens_minted
+            let lp_token_price = if lp_tokens_minted > 0 {
+                let dbtc_price = doge_btc_mining.recent_price; // 9 decimals SOL per DBTC
+                let dbtc_value_in_sol = if dbtc_price > 0 {
+                    (dbtc_consumed as u128)
+                        .checked_mul(dbtc_price as u128)
+                        .ok_or(ErrorCode::ArithmeticOverflow)?
+                        .checked_div(1_000_000) // DBTC has 6 decimals
+                        .ok_or(ErrorCode::ArithmeticOverflow)?
+                        .min(u64::MAX as u128) as u64
+                } else {
+                    0
+                };
+                let total_value_sol = sol_consumed.checked_add(dbtc_value_in_sol).ok_or(ErrorCode::ArithmeticOverflow)?;
+                (total_value_sol as u128)
+                    .checked_mul(1_000_000_000)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?
+                    .checked_div(lp_tokens_minted as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?
+                    .min(u64::MAX as u128) as u64
+            } else {
+                0
+            };
+
+            if lp_token_price > 0 {
+                doge_btc_mining.lp_token_price_in_sol = lp_token_price;
+            }
+            
+            emit!(LiquidityAdded {
+                sol_amount: sol_consumed,
+                dbtc_amount: dbtc_consumed,
+                lp_tokens_minted,
+                lp_token_price,
+                timestamp: Clock::get()?.unix_timestamp,
+            });
+        }
 
         // Burn LP tokens
         if lp_tokens_minted > 0 {
@@ -786,74 +852,75 @@ pub fn update_rate_and_add_lp_internal(
             )?;
             
             // Update POL stats
-            let sol_consumed = {
-                let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
-                let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
-                total_sol_for_lp.saturating_sub(sol_token_data.amount)
-            };
-            msg!("   💰 SOL consumed: {} SOL", sol_consumed as f64 / 1e9);
+            doge_btc_mining.pol_stats.update_after_lp_operation(lp_tokens_minted, sol_consumed, dbtc_consumed);
             
-            doge_btc_mining.pol_stats.update_after_lp_operation(lp_tokens_minted, sol_consumed, adjusted_dbtc_amount);
+            msg!("   💰 LP token price: {} SOL per LP", doge_btc_mining.lp_token_price_in_sol as f64 / 1e9);
             
-            emit!(LpTokensBurned {
-                lp_tokens_burned: lp_tokens_minted,
-                total_lp_burnt: doge_btc_mining.pol_stats.total_lp_burnt,
-                dbtc_amount_added: adjusted_dbtc_amount,
-                sol_amount_added: sol_consumed,
-                timestamp: Clock::get()?.unix_timestamp,
-            });
-        }
-        
-        // Update LP token price using actual token balances
-        if lp_supply > 0 {
-            // Read SOL vault token balance (9 decimals)
+            // Read final vault balances for event
             let sol_vault_balance_final = {
                 let data = ctx.accounts.sol_vault.try_borrow_data()?;
                 let ta = anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?;
                 ta.amount
             };
-            
-            // Read DOGE_BTC vault token balance (6 decimals)
             let dbtc_vault_balance_final = {
                 let data = ctx.accounts.dbtc_vault.try_borrow_data()?;
                 let ta = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?;
                 ta.amount
             };
-            
-            let dbtc_price = doge_btc_mining.recent_price; // 9-decimals SOL per DBTC
-            let sol_value = sol_vault_balance_final;       // 9-decimals (lamports)
-            let dbtc_value_in_sol = if dbtc_price > 0 {
-                (dbtc_vault_balance_final as u128)
-                    .checked_mul(dbtc_price as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(1_000_000) // DBTC has 6 decimals
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .min(u64::MAX as u128) as u64
-            } else {
-                0
+            let lp_supply_after_burn = {
+                let data = ctx.accounts.lp_mint.try_borrow_data()?;
+                let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
+                mint.supply
             };
             
-            let total_pool_value_sol = sol_value.checked_add(dbtc_value_in_sol).ok_or(ErrorCode::ArithmeticOverflow)?;
-            doge_btc_mining.lp_token_price_in_sol = (total_pool_value_sol as u128)
-                .checked_mul(1_000_000_000)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(lp_supply as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .min(u64::MAX as u128) as u64;
+            emit!(LpTokensBurned {
+                lp_tokens_burned: lp_tokens_minted,
+                total_lp_burnt: doge_btc_mining.pol_stats.total_lp_burnt,
+                dbtc_amount_added: dbtc_consumed,
+                sol_amount_added: sol_consumed,
+                sol_vault_balance: sol_vault_balance_final,
+                dbtc_vault_balance: dbtc_vault_balance_final,
+                lp_supply: lp_supply_after_burn,
+                lp_token_price: doge_btc_mining.lp_token_price_in_sol,
+                timestamp: Clock::get()?.unix_timestamp,
+            });
         }
         
-        msg!("   ✅ LP addition and burn completed successfully");
-        
-        // Update buybacks POL tracking
-        let wsol_balance_remaining = {
+        // Send remaining SOL back to buybacks vault
+        let sol_remaining = {
             let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
             let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
             sol_token_data.amount
         };
-        buybacks_account.sol_for_pol = wsol_balance_remaining;
+        
+        if sol_remaining > 0 {
+            msg!("   💸 Returning {} SOL to buybacks vault", sol_remaining as f64 / 1e9);
+            
+            // Close WSOL account - this unwraps SOL and sends it to destination
+            // The account will be recreated with init_if_needed next time
+            anchor_spl::token::close_account(CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::CloseAccount {
+                    account: ctx.accounts.sol_token_account.to_account_info(),
+                    destination: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                    authority: ctx.accounts.authority_pda.to_account_info(),
+                },
+                signer_seeds,
+            ))?;
+            
+            msg!("   ✅ Closed WSOL account and returned {} SOL to buybacks vault", sol_remaining as f64 / 1e9);
+        }
+        
+        // Update sol_for_pol: subtract consumed SOL (remaining SOL was already returned)
+        buybacks_account.sol_for_pol = buybacks_account.sol_for_pol.saturating_sub(sol_consumed);
+        msg!("   ✅ Updated sol_for_pol: {} SOL (consumed {} SOL)", 
+             buybacks_account.sol_for_pol as f64 / 1e9, sol_consumed as f64 / 1e9);
+        
+        msg!("   ✅ LP addition and burn completed successfully");
     }
 
     // Clear price history to restart the 4-hour cycle
+    let price_history_count = doge_btc_mining.price_history.len() as u8;
     doge_btc_mining.price_history.clear();
 
     msg!("\n🧹 === FINALIZING UPDATE ===");
@@ -884,6 +951,9 @@ pub fn update_rate_and_add_lp_internal(
         buybacks_account.sol_for_pol as f64 / 1e9
     );
 
+    // Calculate SOL used for POL (total before minus remaining after)
+    let sol_for_pol_used = total_sol_for_lp.saturating_sub(buybacks_account.sol_for_pol);
+
     emit!(DistributionRateUpdated {
         old_rate,
         new_rate: doge_btc_mining.current_dist_rate,
@@ -894,6 +964,10 @@ pub fn update_rate_and_add_lp_internal(
         recent_price: doge_btc_mining.recent_price,
         rate_changed,
         sol_received: 0, // No swap in this instruction
+        price_history_count,
+        sol_for_pol_used,
+        sol_for_pol_remaining: buybacks_account.sol_for_pol,
+        lp_tokens_burned: lp_tokens_minted,
         timestamp: current_time,
     });
 

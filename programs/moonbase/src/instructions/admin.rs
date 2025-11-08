@@ -993,17 +993,15 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
         // Emit event
         emit!(SolFeesWithdrawn {
             fee_collector: fee_collector.key(),
-            amount: fee_collector_amount,
+            economy_program_amount: fee_collector_amount,
             loot_amount: sol_for_loots,
             buyback_amount: sol_for_buybacks,
         });
-
-        msg!("Withdrew {} SOL from treasury", fee_collector_amount as f64 / 1e9);
     }
 
+    msg!("Withdrew {} SOL from treasury", fee_collector_amount as f64 / 1e9);
     Ok(())
 }
-
 // ----------------------------------------------------------------------------------------
 // ------------ QUERY FUNCTIONS FOR EXTERNAL PROGRAMS ------------
 // ----------------------------------------------------------------------------------------

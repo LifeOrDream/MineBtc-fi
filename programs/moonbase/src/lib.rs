@@ -10,7 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::economy::*;
 pub use instructions::user::*;
 
-declare_id!("99Ms7oZJkaVWq2HaPjfwDenuvg3SMG99jTDnqj37HWXH");
+declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
 
 #[program]
 pub mod moonbase {

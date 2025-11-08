@@ -203,7 +203,7 @@ pub struct MiningInitialized {
 #[event]
 pub struct SolFeesWithdrawn {
     pub fee_collector: Pubkey,
-    pub amount: u64,
+    pub economy_program_amount: u64,
     pub loot_amount: u64,
     pub buyback_amount: u64,
 }
@@ -288,6 +288,30 @@ pub struct RaydiumPoolSet {
     pub pool_state: Pubkey,
 }
 
+/// Price snapshot taken every 30 minutes (1-8 snapshots per 4-hour cycle)
+#[event]
+pub struct PriceSnapshotTaken {
+    pub snapshot_number: u8,           // 1-8 (which snapshot in the cycle)
+    pub sol_swapped: u64,              // SOL amount swapped (lamports)
+    pub dbtc_received: u64,           // DOGE_BTC received from swap (6 decimals)
+    pub current_price: u64,           // Calculated price (9 decimals: SOL per DOGE_BTC)
+    pub weighted_avg_price: u64,      // Weighted average price so far (9 decimals)
+    pub sol_earnmarked_for_pol: u64,  // SOL earnmarked for POL this snapshot (lamports)
+    pub total_pol_balance: u64,       // Total SOL earnmarked for POL (lamports)
+    pub price_history_count: u8,      // Number of entries in price history (1-8)
+    pub timestamp: i64,               // Unix timestamp
+}
+
+/// Liquidity added to Raydium pool (before burning LP tokens)
+#[event]
+pub struct LiquidityAdded {
+    pub sol_amount: u64,              // SOL added to pool (lamports)
+    pub dbtc_amount: u64,             // DOGE_BTC added to pool (6 decimals)
+    pub lp_tokens_minted: u64,        // LP tokens minted (6 decimals)
+    pub lp_token_price: u64,          // LP token price in SOL (9 decimals)
+    pub timestamp: i64,               // Unix timestamp
+}
+
 #[event]
 pub struct DistributionRateUpdated {
     pub old_rate: u64,
@@ -299,6 +323,10 @@ pub struct DistributionRateUpdated {
     pub recent_price: u64,
     pub rate_changed: bool,
     pub sol_received: u64,
+    pub price_history_count: u8,      // Number of price snapshots used (should be 8)
+    pub sol_for_pol_used: u64,        // SOL used for POL (lamports)
+    pub sol_for_pol_remaining: u64,  // SOL remaining for POL (lamports)
+    pub lp_tokens_burned: u64,        // LP tokens burned (0 if no LP added)
     pub timestamp: i64,
 }
 
@@ -308,6 +336,10 @@ pub struct LpTokensBurned {
     pub total_lp_burnt: u64,
     pub dbtc_amount_added: u64,
     pub sol_amount_added: u64,
+    pub sol_vault_balance: u64,       // SOL vault balance after LP addition (lamports)
+    pub dbtc_vault_balance: u64,     // DOGE_BTC vault balance after LP addition (6 decimals)
+    pub lp_supply: u64,               // LP token supply after burn (6 decimals)
+    pub lp_token_price: u64,          // LP token price in SOL (9 decimals)
     pub timestamp: i64,
 }
 
