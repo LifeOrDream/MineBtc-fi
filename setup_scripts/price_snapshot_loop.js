@@ -15,7 +15,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress 
 } from '@solana/spl-token';
-import * as anchorPkg from '@coral-xyz/anchor';
+import anchorPkg from '@coral-xyz/anchor';
 const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
 import fs from 'fs';
 import path from 'path';
@@ -33,20 +33,32 @@ const deploymentPath = path.join(__dirname, 'deployments', `${config.network.clu
 const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
 
 // Load IDL
-const idlPath = path.join(__dirname, config.deployment.paths.moonbase_idl);
+const idlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
+if (!fs.existsSync(idlPath)) {
+  console.error(`❌ MoonBase IDL not found at: ${idlPath}`);
+  process.exit(1);
+}
 const idl = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
 
 // Load wallet keypair
-const walletPath = path.join(__dirname, config.deployment.paths.deployer_key);
+const walletPath = path.resolve(__dirname, config.deployment.paths.deployer_key);
+if (!fs.existsSync(walletPath)) {
+  console.error(`❌ Wallet keypair not found at: ${walletPath}`);
+  process.exit(1);
+}
 const walletKeypair = Keypair.fromSecretKey(
   new Uint8Array(JSON.parse(fs.readFileSync(walletPath, 'utf8')))
 );
 
 const connection = new Connection(config.network.rpc_url, config.network.commitment);
-const moonBaseProgramId = new PublicKey(deployment.MOON_BASE_PROGRAM_ID);
 
 // Create wallet object
 const wallet = new Wallet(walletKeypair);
+
+// Initialize program (programId comes from IDL)
+const provider = new AnchorProvider(connection, wallet, { commitment: config.network.commitment });
+const moonBaseProgram = new Program(idl, provider);
+const moonBaseProgramId = moonBaseProgram.programId;
 
 // Seeds
 const GLOBAL_CONFIG_SEED = "global-config";
@@ -56,10 +68,6 @@ const BUYBACKS_SEED = "buybacks";
 const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
 const DOGE_BTC_VAULT_SEED = "dbtc_vault";
 const VAULT_AUTHORITY_SEED = "mdoge-vault-authority";
-
-// Initialize program
-const provider = new AnchorProvider(connection, wallet, { commitment: config.network.commitment });
-const moonBaseProgram = new Program(idl, moonBaseProgramId, provider);
 
 // Derive PDAs
 const [globalConfigPDA] = PublicKey.findProgramAddressSync(
@@ -146,7 +154,8 @@ async function sendSolToTreasury() {
 async function getPriceHistoryLength() {
   try {
     const miningAccount = await moonBaseProgram.account.dogeBtcMining.fetch(dogeBtcMiningPDA);
-    const priceHistory = miningAccount.price_history || [];
+    // console.log(miningAccount)
+    const priceHistory = miningAccount.priceHistory || [];
     const length = priceHistory.length;
     
     console.log(`📊 Price history length: ${length}/8`);
@@ -324,6 +333,7 @@ async function runLoop() {
 
       // Step 2: Get price history length
       const priceHistoryLength = await getPriceHistoryLength();
+    //   console.log(priceHistoryLength)
 
       // Step 3: Execute appropriate transaction
       if (priceHistoryLength < 8) {
