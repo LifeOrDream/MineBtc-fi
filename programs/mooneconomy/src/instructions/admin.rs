@@ -85,11 +85,13 @@ pub fn initialize_dbtc_vault(ctx: Context<InitializeDbtcVault>, dbtc_mint: Pubke
     dogebtc_vault.authority = ctx.accounts.authority.key();
     dogebtc_vault.dbtc_mint = dbtc_mint;
     dogebtc_vault.dbtc_sol_vault = ctx.accounts.dbtc_sol_vault.key();
+    dogebtc_vault.dbtc_staker_reward_vault = ctx.accounts.dbtc_staker_reward_vault.key();
     dogebtc_vault.dbtc_custodian = ctx.accounts.dbtc_custodian.key();
 
     dogebtc_vault.dbtc_locked = 0;
     dogebtc_vault.weighted_dbtc_locked = 0;
     dogebtc_vault.accumulated_sol_per_point = 0;
+    dogebtc_vault.accumulated_dbtc_per_point = 0;
     dogebtc_vault.total_sol_distributed = 0;
     dogebtc_vault.emergency_tax = EMERGENCY_WITHDRAWAL_PENALTY_PCT; // Default 10% tax for emergency withdrawals
     dogebtc_vault.bump = ctx.bumps.dogebtc_vault;
@@ -544,6 +546,30 @@ pub struct InitializeDbtcVault<'info> {
         bump
     )]
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+
+    // ------ DOGE_BTC Staker Reward Vault and Authority ------
+    /// CHECK: This is the authority of the staker reward vault PDA
+    #[account(
+        init,
+        payer = authority,
+        space = 0,                              // no data needed
+        seeds = [DBTC_STAKER_REWARD_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: signer-only PDA, no data or lamports required    
+    pub dbtc_staker_reward_vault_authority: UncheckedAccount<'info>,
+
+    /// Token-2022 account to hold DOGE_BTC rewards for stakers
+    #[account(
+        init,
+        payer = authority,
+        owner = token_program.key(),
+        seeds = [DBTC_STAKER_REWARD_VAULT_SEED.as_ref()],
+        token::mint = dbtc_mint,
+        token::authority = dbtc_staker_reward_vault_authority,
+        bump
+    )]
+    pub dbtc_staker_reward_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     // -------- Signer & Mints --------
     #[account(mut)]

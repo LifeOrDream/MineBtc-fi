@@ -1,4 +1,3 @@
-use crate::state::ModuleType;
 use anchor_lang::prelude::*;
 
 // ------------------------------
@@ -36,75 +35,7 @@ pub struct ElectricityUpdated {
     pub new_total_electricity: u64,
 }
 
-// ------------------------------
-// Module management events
-// ------------------------------
-
-#[event]
-pub struct ModuleInstanceCreated {
-    pub owner: Pubkey,
-    pub config_id: u16,
-    pub module_index: u8,
-    pub cost: u64,
-    pub referral_fee: u64,
-}
-
-#[event]
-pub struct ModuleInstanceUpgraded {
-    pub owner: Pubkey,
-    pub module_index: u8,
-    pub new_upgrade_level: u8,
-    pub cost: u64,
-    pub referral_fee: u64,
-}
-
-#[event]
-pub struct ModuleInstanceRemoved {
-    pub owner: Pubkey,
-    pub module_index: u8,
-    pub module_type: ModuleType,
-    pub position_x: u8,
-    pub position_y: u8,
-    pub electricity_freed: u64,
-    pub hashpower_lost: u64,
-}
-
-#[event]
-pub struct ModuleInstanceReinstalled {
-    pub owner: Pubkey,
-    pub module_index: u8,
-    pub config_id: u16,
-    pub position_x: u8,
-    pub position_y: u8,
-    pub electricity_used: u64,
-    pub hashpower_restored: u64,
-    pub upgrade_level: u8,
-}
-
-#[event]
-pub struct ModulePurchased {
-    pub owner: Pubkey,
-    pub config_id: u16,
-    pub module_index: u8,
-    pub cost: u64,
-    pub referral_fee: u64,
-}
-
-#[event]
-pub struct ModuleInstalled {
-    pub owner: Pubkey,
-    pub config_id: u16,
-    pub module_index: u8,
-    pub pos_x: u8,
-    pub pos_y: u8,
-}
-
-#[event]
-pub struct ModuleDeleted {
-    pub owner: Pubkey,
-    pub config_id: u16,
-    pub remaining_count: u8,
-}
+ 
 
 // ------------------------------
 // Mining and facility events

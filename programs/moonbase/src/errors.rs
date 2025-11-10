@@ -314,4 +314,38 @@ pub enum ErrorCode {
 
     #[msg("dogeBtc needed for POl cannot be more than 5% of vault balance")]
     MaxLimitError,
+
+    // ========== FACTION SURGE ERRORS ========== //
+    #[msg("Round has already ended")]
+    RoundEnded,
+
+    #[msg("Round has not ended yet")]
+    RoundNotEnded,
+
+    #[msg("Invalid round ID")]
+    InvalidRound,
+
+    #[msg("No factions provided")]
+    NoFactions,
+
+    #[msg("No bets placed in this round")]
+    NoBets,
+
+    #[msg("Faction not found")]
+    FactionNotFound,
+
+    #[msg("No rounds remaining in autominer")]
+    NoRoundsRemaining,
+
+    #[msg("Invalid owner")]
+    InvalidOwner,
+
+    #[msg("Invalid amount")]
+    InvalidAmount,
+
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
+
+    #[msg("Invalid init type")]
+    InvalidInitType,
 }

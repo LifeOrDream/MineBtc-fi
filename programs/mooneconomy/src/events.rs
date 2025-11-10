@@ -175,10 +175,11 @@ pub struct EarlyLiquidityUnstakePenalty {
 }
 
 #[event]
-pub struct SolRewardsClaimed {
+pub struct PassiveRewardsClaimed {
     pub owner: Pubkey,
-    pub moondoge_rewards: u64,
-    pub lp_rewards: u64,
+    pub moondoge_sol_rewards: u64,
+    pub lp_sol_rewards: u64,
+    pub moondoge_dbtc_rewards: u64,
 }
 
 #[event]

@@ -15,89 +15,9 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // ---- INITIALIZE A USER'S ELECTRICITY ACCOUNT ------------------------ ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
- 
-/// Initialize a user's electricity account with tier-based bonuses
-pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> Result<()> {
-    msg!("🔒 Initializing electricity account");
-  
-    let electricity_ac = &mut ctx.accounts.electricity_ac;
 
-    // Initialize owner if this is a new account
-    if electricity_ac.owner == Pubkey::default() {
-        electricity_ac.owner = ctx.accounts.authority.key();
-        electricity_ac.moondoge_position_indices =
-            Vec::with_capacity(MAX_ALLOWED_POSITIONS as usize);
-        electricity_ac.lp_position_indices = Vec::with_capacity(MAX_ALLOWED_POSITIONS as usize);
-
-        // Query moonbase init_type and calculate initial electricity bonus
-        // Scope the borrow to release it before CPI call
-        let (init_type, initial_electricity) = {
-            let moonbase_data = ctx.accounts.facility_user_moonbase.try_borrow_data()?;
-            let init_type = get_moonbase_init_type(&moonbase_data)?;
-            let initial_electricity = calculate_initial_electricity_bonus(init_type);
-            (init_type, initial_electricity)
-        }; // moonbase_data is dropped here, releasing the borrow
-
-        msg!(
-            "🎁 Tier {} - Initial electricity bonus: {}",
-            init_type,
-            initial_electricity
-        );
-
-        // Store free electricity amount
-        electricity_ac.free_electricity = initial_electricity;
-
-        // Grant electricity to moonbase via proper CPI call
-        helper::update_user_electricity_cpi(
-            &ctx.accounts.moonbase_program.to_account_info(),
-            &ctx.accounts.authority.to_account_info(),
-            &ctx.accounts.facility_user_moonbase.to_account_info(),
-            &ctx.accounts.facility_mining_state.to_account_info(),
-            &ctx.accounts.moonbase_global_config.to_account_info(),
-            &ctx.accounts.fee_collector.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.fee_collector,
-            true,
-            initial_electricity,
-        )?;
-
-        msg!("👤 Initializing new user electricity account");
-        msg!(
-            "🎁 Tier {} bonus: {} free electricity granted",
-            init_type,
-            initial_electricity
-        );
-    }
-   
-    msg!("✅ Electricity account initialized");
-    Ok(())
-}
-
-/// Extract init_type from moonbase account data
-fn get_moonbase_init_type(moonbase_data: &[u8]) -> Result<u8> {
-    // UserMoonBaseInstance layout:
-    // discriminator(8) + owner(32) + referral(32) + modules_count(1) + active_hashpower(8)
-    // + available_electricity(8) + used_electricity(8) + dbtc_claim_index(16) + claimable_dbtc(8)
-    // + bump(1) + faction_id(1) + level(1) + init_type(1)
-    const INIT_TYPE_OFFSET: usize = 8 + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 8 + 1 + 1 + 1;
-
-    if moonbase_data.len() <= INIT_TYPE_OFFSET {
-        return Err(ErrorCode::InvalidInitType.into());
-    }
-
-    Ok(moonbase_data[INIT_TYPE_OFFSET])
-}
-
-/// Calculate initial electricity bonus based on tier
-fn calculate_initial_electricity_bonus(init_type: u8) -> u64 {
-    match init_type {
-        1 => 1000,   // 0.5 SOL tier: 1k electricity
-        2 => 5_000,  // 2.42 SOL tier: 5k electricity
-        3 => 10_000, // 4.20 SOL tier: 10k electricity
-        4 => 15_000, // 6.9 SOL tier: 15k electricity
-        _ => 0,      // fallback
-    }
-}
+// Old initialize_electricity_account function removed - no longer needed for Faction Surge system
+// Users now initialize via initialize_player in moonbase program
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // ---- STAKE MOONDOGE TOKENS :: User gets electricity and SOL rewards ------
@@ -353,95 +273,40 @@ pub fn stake_moondoge(
         .checked_add(weighted_amount)
         .unwrap();
 
-    msg!("⚡ Calculating electricity earnings based on SOL value");        
-    
-    // Query dBTC price from moonbase mining state using CPI
-    let cpi_program_query = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts_query = moonbase::cpi::accounts::QueryTokenPrices {
-        doge_btc_mining: ctx.accounts.doge_btc_mining_state.to_account_info(),
-    };
-    let cpi_ctx_query = CpiContext::new(cpi_program_query, cpi_accounts_query);
-    let token_prices = moonbase::cpi::query_token_prices(cpi_ctx_query)?;
-    let moonbase_price = token_prices.get().dbtc_price_in_sol;
-
-    // Use MoonBase price if available, otherwise use stored price
-    let dbtc_price_in_sol = if moonbase_price > 0 {
-        // Update stored price with MoonBase price
-        ctx.accounts.global_config.dbtc_sol_price = moonbase_price;
-        msg!(
-            "   Updated stored price from MoonBase: {} (9-decimal precision)",
-            moonbase_price
-        );
-        moonbase_price
+    // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
+    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        egg_metadata.multiplier as u128
     } else {
-        // Use stored price (fallback to default if MoonBase price is 0)
-        let stored_price = ctx.accounts.global_config.dbtc_sol_price;
-        require!(stored_price > 0, ErrorCode::InvalidAmount);
-        msg!(
-            "   MoonBase price is 0, using stored price: {} (9-decimal precision)",
-            stored_price
-        );
-        stored_price
+        100u128 // Default 1.0x multiplier
     };
-
-    msg!(
-        "   Final DOGE_BTC price used: {} (9-decimal precision)",
-        dbtc_price_in_sol
-    );
     
-    // Convert weighted dBTC amount to SOL value
-    // weighted_amount is in DOGE_BTC base units (6 decimals)
-    // dbtc_price_in_sol is SOL per DOGE_BTC with 9-decimal precision
-    // sol_value = (weighted_amount * dbtc_price_in_sol) / 10^6 / 10^9 * 10^9 = (weighted_amount * dbtc_price_in_sol) / 10^6
-    let sol_value = (weighted_amount as u128)
-        .checked_mul(dbtc_price_in_sol as u128)
+    msg!("🥚 Dragon Egg multiplier: {} ({}x)", egg_multiplier, egg_multiplier as f64 / 100.0);
+    
+    // Calculate final weighted stake with egg multiplier
+    // final_weighted_stake = (weighted_amount * egg_multiplier) / 100
+    let final_weighted_stake = (weighted_amount as u128)
+        .checked_mul(egg_multiplier)
         .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(1_000_000) // Divide by 10^6 to convert from DOGE_BTC base units
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .min(u64::MAX as u128) as u64;
+        .checked_div(100)
+        .ok_or(ErrorCode::ArithmeticOverflow)? as u128;
     
     msg!(
-        "   SOL value of staked weighted DOGE_BTC: {} lamports",
-        sol_value
+        "⚖️ Final weighted stake with egg multiplier: {} (base: {} × egg: {}%)",
+        final_weighted_stake,
+        weighted_amount,
+        egg_multiplier
     );
     
-    // Calculate electricity based on SOL value
-    // electricity_per_weighted_sol is configured in global config
-    let electricity_increase = sol_value
-        .checked_mul(ctx.accounts.global_config.electricity_per_weighted_sol)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(1_000_000_000) // Divide by 10^9 since sol_value is in lamports
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    // Update personal hashpower in moonbase program via CPI
+    msg!("🔌 Calling MoonBase to update personal hashpower");
     
-    msg!("   Electricity increase: {}", electricity_increase);
-
-    // Update user's position electricity per day and total electricity earned
-    user_position.electricity_per_day += electricity_increase;
-    electricity_ac.electricity_earned = electricity_ac
-        .electricity_earned
-        .checked_add(electricity_increase)
-        .unwrap();
-    msg!(
-        "   Position electricity per day: {}",
-        user_position.electricity_per_day
-    );
-    msg!(
-        "   Total electricity earned: {}",
-        electricity_ac.electricity_earned
-    );
-    msg!("🔌 Calling MoonBase to update user electricity");
-    
-    helper::update_user_electricity_cpi(
+    helper::update_personal_hashpower_cpi(
         &ctx.accounts.moonbase_program.to_account_info(),
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.facility_user_moonbase.to_account_info(),
-        &ctx.accounts.facility_mining_state.to_account_info(),
-        &ctx.accounts.moonbase_global_config.to_account_info(),
-        &ctx.accounts.fee_collector.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.fee_collector,
-        true,
-        electricity_increase,
+        &ctx.accounts.player_data.to_account_info(),
+        &ctx.accounts.faction_state.to_account_info(),
+        &ctx.accounts.mooneconomy_program.to_account_info(),
+        final_weighted_stake as i128,
+        ctx.accounts.authority.key(),
     )?;
 
     msg!("✅ DogeBtc staking successful");    
@@ -451,7 +316,7 @@ pub fn stake_moondoge(
         lockup_duration,
         multiplier,
         weighted_amount,
-        electricity_earned: electricity_increase,
+        electricity_earned: 0, // Electricity system removed
         position_index,
     });
     
@@ -604,34 +469,40 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         msg!("✅ Normal unstake - lockup period has ended");
     }
     
-    // Update electricity management
-    msg!("⚡ Updating electricity");
+    // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
+    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        egg_metadata.multiplier as u128
+    } else {
+        100u128 // Default 1.0x multiplier
+    };
     
-    // Calculate electricity decrease
-    let electricity_decrease = user_position.electricity_per_day;
-    msg!("   Electricity decrease: {}", electricity_decrease);    
-    // Update user's electricity earned
-    electricity_ac.electricity_earned = electricity_ac
-        .electricity_earned
-        .checked_sub(electricity_decrease)
-        .unwrap_or(0);
+    msg!("🥚 Dragon Egg multiplier: {} ({}x)", egg_multiplier, egg_multiplier as f64 / 100.0);
+    
+    // Calculate final weighted stake being removed with egg multiplier
+    // final_weighted_stake = (weighted_amount * egg_multiplier) / 100
+    let final_weighted_stake = (user_position.weighted_amount as u128)
+        .checked_mul(egg_multiplier)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(100)
+        .ok_or(ErrorCode::ArithmeticOverflow)? as u128;
+    
     msg!(
-        "   Updated electricity earned: {}",
-        electricity_ac.electricity_earned
+        "⚖️ Final weighted stake being removed with egg multiplier: {} (base: {} × egg: {}%)",
+        final_weighted_stake,
+        user_position.weighted_amount,
+        egg_multiplier
     );
     
-    // Update CPI to decrease electricity in MoonFacility
-    helper::update_user_electricity_cpi(
+    // Update personal hashpower in moonbase program via CPI (negative amount for unstaking)
+    msg!("🔌 Calling MoonBase to decrease personal hashpower");
+    
+    helper::update_personal_hashpower_cpi(
         &ctx.accounts.moonbase_program.to_account_info(),
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.facility_user_moonbase.to_account_info(),
-        &ctx.accounts.facility_mining_state.to_account_info(),
-        &ctx.accounts.moonbase_global_config.to_account_info(),
-        &ctx.accounts.fee_collector.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.fee_collector,
-        false,
-        electricity_decrease,
+        &ctx.accounts.player_data.to_account_info(),
+        &ctx.accounts.faction_state.to_account_info(),
+        &ctx.accounts.mooneconomy_program.to_account_info(),
+        -(final_weighted_stake as i128),
+        ctx.accounts.authority.key(),
     )?;
     
     // Update vault totals
@@ -947,82 +818,42 @@ pub fn stake_lp_tokens(
         .checked_add(weighted_amount)
         .unwrap();
 
-    msg!("⚡ Calculating electricity earnings based on SOL value with 50% LP bonus");        
+    msg!("⚡ Calculating hashpower with egg multiplier");
     
-    // Query LP token price from moonbase mining state using CPI
-    let cpi_program_query = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts_query = moonbase::cpi::accounts::QueryTokenPrices {
-        doge_btc_mining: ctx.accounts.doge_btc_mining_state.to_account_info(),
+    // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
+    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        egg_metadata.multiplier as u128
+    } else {
+        100u128 // Default 1.0x multiplier
     };
-    let cpi_ctx_query = CpiContext::new(cpi_program_query, cpi_accounts_query);
-    let token_prices = moonbase::cpi::query_token_prices(cpi_ctx_query)?;
-    let lp_token_price_in_sol = token_prices.get().lp_token_price_in_sol;
     
-    msg!(
-        "   LP token price: {} (9-decimal precision)",
-        lp_token_price_in_sol
-    );
+    msg!("🥚 Dragon Egg multiplier: {} ({}x)", egg_multiplier, egg_multiplier as f64 / 100.0);
     
-    // Convert weighted LP amount to SOL value
-    // weighted_amount is in LP token base units (9 decimals, same as standard SPL)
-    // lp_token_price_in_sol is SOL per LP token with 9-decimal precision
-    // sol_value = (weighted_amount * lp_token_price_in_sol) / 10^9 / 10^9 * 10^9 = (weighted_amount * lp_token_price_in_sol) / 10^9
-    let sol_value = (weighted_amount as u128)
-        .checked_mul(lp_token_price_in_sol as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(1_000_000_000) // Divide by 10^9 to convert from LP base units
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .min(u64::MAX as u128) as u64;
-    
-    msg!("   SOL value of staked weighted LP: {} lamports", sol_value);
-    
-    // Calculate base electricity based on SOL value
-    let base_electricity = sol_value
-        .checked_mul(ctx.accounts.global_config.electricity_per_weighted_sol)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(1_000_000_000) // Divide by 10^9 since sol_value is in lamports
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-    // Apply 50% bonus for LP staking: multiply by 150 and divide by 100
-    let electricity_increase = base_electricity
-        .checked_mul(150)
+    // Calculate final weighted stake with egg multiplier
+    // final_weighted_stake = (weighted_amount * egg_multiplier) / 100
+    let final_weighted_stake = (weighted_amount as u128)
+        .checked_mul(egg_multiplier)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+        .ok_or(ErrorCode::ArithmeticOverflow)? as u128;
     
     msg!(
-        "   Base electricity: {}, with 50% LP bonus: {}",
-        base_electricity,
-        electricity_increase
+        "⚖️ Final weighted stake with egg multiplier: {} (base: {} × egg: {}%)",
+        final_weighted_stake,
+        weighted_amount,
+        egg_multiplier
     );
-
-    // Update user's position electricity per day and total electricity earned
-    user_position.electricity_per_day += electricity_increase;
-    electricity_ac.electricity_earned = electricity_ac
-        .electricity_earned
-        .checked_add(electricity_increase)
-        .unwrap();
-    msg!(
-        "   Position electricity per day: {}",
-        user_position.electricity_per_day
-    );
-    msg!(
-        "   Total electricity earned: {}",
-        electricity_ac.electricity_earned
-    );
-    msg!("🔌 Calling MoonBase to update user electricity");
     
-    helper::update_user_electricity_cpi(
+    // Update personal hashpower in moonbase program via CPI
+    msg!("🔌 Calling MoonBase to update personal hashpower");
+    
+    helper::update_personal_hashpower_cpi(
         &ctx.accounts.moonbase_program.to_account_info(),
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.facility_user_moonbase.to_account_info(),
-        &ctx.accounts.facility_mining_state.to_account_info(),
-        &ctx.accounts.moonbase_global_config.to_account_info(),
-        &ctx.accounts.fee_collector.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.fee_collector,
-        true,
-        electricity_increase,
+        &ctx.accounts.player_data.to_account_info(),
+        &ctx.accounts.faction_state.to_account_info(),
+        &ctx.accounts.mooneconomy_program.to_account_info(),
+        final_weighted_stake as i128,
+        ctx.accounts.authority.key(),
     )?;
 
     msg!("✅ LP token staking successful");    
@@ -1032,7 +863,7 @@ pub fn stake_lp_tokens(
         lockup_duration,
         multiplier,
         weighted_amount,
-        electricity_earned: electricity_increase,
+        electricity_earned: 0, // Electricity system removed
         position_index,
     });
     
@@ -1178,30 +1009,40 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         msg!("✅ Normal unstake - lockup period has ended");
     }
     
-    // Update electricity management
-    msg!("⚡ Updating electricity");
+    // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
+    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        egg_metadata.multiplier as u128
+    } else {
+        100u128 // Default 1.0x multiplier
+    };
     
-    // Calculate electricity decrease
-    let electricity_decrease = user_position.electricity_per_day;
-    msg!("   Electricity decrease: {}", electricity_decrease);    
-    // Update user's electricity earned
-    electricity_ac.electricity_earned = electricity_ac
-        .electricity_earned
-        .checked_sub(electricity_decrease)
-        .unwrap_or(0);
+    msg!("🥚 Dragon Egg multiplier: {} ({}x)", egg_multiplier, egg_multiplier as f64 / 100.0);
     
-    // Update CPI to decrease electricity in MoonFacility
-    helper::update_user_electricity_cpi(
+    // Calculate final weighted stake being removed with egg multiplier
+    // final_weighted_stake = (weighted_amount * egg_multiplier) / 100
+    let final_weighted_stake = (user_position.weighted_amount as u128)
+        .checked_mul(egg_multiplier)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(100)
+        .ok_or(ErrorCode::ArithmeticOverflow)? as u128;
+    
+    msg!(
+        "⚖️ Final weighted stake being removed with egg multiplier: {} (base: {} × egg: {}%)",
+        final_weighted_stake,
+        user_position.weighted_amount,
+        egg_multiplier
+    );
+    
+    // Update personal hashpower in moonbase program via CPI (negative amount for unstaking)
+    msg!("🔌 Calling MoonBase to decrease personal hashpower");
+    
+    helper::update_personal_hashpower_cpi(
         &ctx.accounts.moonbase_program.to_account_info(),
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.facility_user_moonbase.to_account_info(),
-        &ctx.accounts.facility_mining_state.to_account_info(),
-        &ctx.accounts.moonbase_global_config.to_account_info(),
-        &ctx.accounts.fee_collector.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.fee_collector,
-        false,
-        electricity_decrease,
+        &ctx.accounts.player_data.to_account_info(),
+        &ctx.accounts.faction_state.to_account_info(),
+        &ctx.accounts.mooneconomy_program.to_account_info(),
+        -(final_weighted_stake as i128),
+        ctx.accounts.authority.key(),
     )?;
     
     // Update vault totals
@@ -1289,9 +1130,9 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 // ---- CLAIM SOL REWARDS :: User earns SOL rewards from staking mDoge and LP tokens ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- --------- ---------
 
-/// Claim SOL rewards from staking mDoge and LP tokens
-pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-    msg!("🔒 Starting claim SOL rewards");
+/// Claim passive rewards (SOL and DogeBtc) from staking mDoge and LP tokens
+pub fn claim_passive_rewards(ctx: Context<ClaimPassiveRewards>) -> Result<()> {
+    msg!("🔒 Starting claim passive rewards (SOL + DogeBtc)");
 
     // Global moondoge vault
     let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
@@ -1371,12 +1212,52 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
         );
     }
 
+    // Process any pending DogeBtc token rewards before claim (DOGE_BTC staking)
+    if electricity_ac.total_weighted_moondoge > 0 {
+        msg!("💰 Processing pending DogeBtc token rewards before claim");
+        
+        // Calculate reward diff since last update
+        let dbtc_reward_diff = dogebtc_vault
+            .accumulated_dbtc_per_point
+            .checked_sub(electricity_ac.moondoge_dbtc_reward_debt)
+            .unwrap_or(0);
+        msg!(
+            "   Previous DogeBtc reward debt: {}",
+            electricity_ac.moondoge_dbtc_reward_debt
+        );
+        msg!(
+            "   New accumulated dbtc per point: {}",
+            dogebtc_vault.accumulated_dbtc_per_point
+        );
+        msg!("   DogeBtc reward diff: {}", dbtc_reward_diff);
+
+        // DogeBtc rewards earned = total weighted moondoge * accumulated dbtc per point - reward debt
+        let new_dbtc_rewards = (electricity_ac.total_weighted_moondoge as u128)
+            .checked_mul(dbtc_reward_diff)
+            .unwrap_or(0)
+            .checked_div(PRECISION_FACTOR)
+            .unwrap_or(0) as u64;
+        msg!("   New DogeBtc rewards: {}", new_dbtc_rewards);
+
+        // Add DogeBtc rewards to pending rewards
+        electricity_ac.pending_moondoge_dbtc_rewards = electricity_ac
+            .pending_moondoge_dbtc_rewards
+            .checked_add(new_dbtc_rewards)
+            .unwrap();
+        msg!(
+            "   Updated pending DogeBtc token rewards: {}",
+            electricity_ac.pending_moondoge_dbtc_rewards
+        );
+    }
+    
     // Update reward debt to current rate
     electricity_ac.moondoge_reward_debt = dogebtc_vault.accumulated_sol_per_point;
     electricity_ac.lp_reward_debt = liquidity_vault.accumulated_sol_per_point;
+    electricity_ac.moondoge_dbtc_reward_debt = dogebtc_vault.accumulated_dbtc_per_point;
     
     let moondoge_rewards = electricity_ac.pending_moondoge_rewards;
     let lp_rewards = electricity_ac.pending_lp_rewards;
+    let moondoge_dbtc_rewards = electricity_ac.pending_moondoge_dbtc_rewards;
 
     // Transfer DOGE_BTC staking rewards to user using system transfer
     if moondoge_rewards > 0 {
@@ -1424,10 +1305,43 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
         );
     }
 
-    emit!(SolRewardsClaimed {
+    // Transfer DogeBtc token rewards to user
+    if moondoge_dbtc_rewards > 0 {
+        msg!("💰 Transferring {} DogeBtc tokens to user", moondoge_dbtc_rewards);
+        
+        // Get PDA signer seeds for the dbtc_staker_reward_vault_authority
+        let dbtc_staker_vault_authority_seeds = &[DBTC_STAKER_REWARD_VAULT_AUTHORITY_SEED.as_ref(), &[ctx.bumps.dbtc_staker_reward_vault_authority]];
+        let signer_seeds = &[&dbtc_staker_vault_authority_seeds[..]];
+        
+        // Transfer DogeBtc tokens from staker reward vault to user
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            token_interface::TransferChecked {
+                from: ctx.accounts.dbtc_staker_reward_vault.to_account_info(),
+                to: ctx.accounts.user_dbtc_token_account.to_account_info(),
+                authority: ctx.accounts.dbtc_staker_reward_vault_authority.to_account_info(),
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
+            },
+            signer_seeds,
+        );
+        
+        token_interface::transfer_checked(
+            transfer_ctx,
+            moondoge_dbtc_rewards,
+            ctx.accounts.dbtc_mint.decimals,
+        )?;
+        
+        msg!(
+            "💰 Transferred {} DogeBtc tokens from staker reward vault",
+            moondoge_dbtc_rewards
+        );
+    }
+    
+    emit!(PassiveRewardsClaimed {
         owner: ctx.accounts.authority.key(),
-        moondoge_rewards,
-        lp_rewards,
+        moondoge_sol_rewards: moondoge_rewards,
+        lp_sol_rewards: lp_rewards,
+        moondoge_dbtc_rewards,
     });
 
     // Add pending rewards to total rewards
@@ -1443,8 +1357,9 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     // Reset pending rewards to 0
     electricity_ac.pending_moondoge_rewards = 0;
     electricity_ac.pending_lp_rewards = 0;
+    electricity_ac.pending_moondoge_dbtc_rewards = 0;
 
-    msg!("✅ Claimed SOL rewards");        
+    msg!("✅ Claimed passive rewards (SOL + DogeBtc)");        
     Ok(())
 }
 
@@ -1498,60 +1413,6 @@ pub fn update_pending_rewards(ctx: Context<UpdatePendingRewards>) -> Result<()> 
 // ----------------------------------------------------------------------------------------
 // ------------ ACCOUNT STRUCTS ----------------------------------------------------------
 // ----------------------------------------------------------------------------------------
-
-// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- CREATE ELECTRICITY ACCOUNT ---------
-// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-#[derive(Accounts)]
-pub struct InitializeElectricityAc<'info> {
-    // Global config and vaults
-    #[account(
-        seeds = [ME_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    // User accounts
-    #[account(
-        init,
-        payer = authority,
-        space = UserMoonElectricity::LEN,
-        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
-        bump
-    )]
-    pub electricity_ac: Account<'info, UserMoonElectricity>,
-     
-    #[account(mut)]
-    /// CHECK: User instance in MoonFacility - will be updated via CPI
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: MoonFacility mining state - will be updated via CPI
-    pub facility_mining_state: UncheckedAccount<'info>,
-
-    /// CHECK: MoonFacility global config
-    pub moonbase_global_config: UncheckedAccount<'info>,
-
-    /// Fee collector PDA for CPI authority
-    #[account(
-        seeds = [b"fee_collector"],
-        bump
-    )]
-    /// CHECK: Fee collector PDA
-    pub fee_collector: UncheckedAccount<'info>,
-
-    /// MoonBase program for CPI
-    /// CHECK: MoonBase program
-    pub moonbase_program: UncheckedAccount<'info>,
-
-    /// User who is initializing electricity account
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    
-    /// System program for creating accounts
-    pub system_program: Program<'info, System>,    
-}
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 // --------- STAKE MOONDOGE ---------
@@ -1647,6 +1508,20 @@ pub struct StakeDogeBtc<'info> {
     
     /// MoonBase program that handles mining operations
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
+    
+    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
+    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    
+    /// CHECK: Player data account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub player_data: UncheckedAccount<'info>,
+    
+    /// CHECK: Faction state account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub faction_state: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonEconomy program (for CPI verification)
+    pub mooneconomy_program: AccountInfo<'info>,
     
     /// User who is staking tokens
     #[account(mut)]
@@ -1755,6 +1630,20 @@ pub struct UnstakeDogeBtc<'info> {
     /// MoonBase program that handles mining operations
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
     
+    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
+    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    
+    /// CHECK: Player data account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub player_data: UncheckedAccount<'info>,
+    
+    /// CHECK: Faction state account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub faction_state: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonEconomy program (for CPI verification)
+    pub mooneconomy_program: AccountInfo<'info>,
+    
     /// User who is unstaking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1853,6 +1742,20 @@ pub struct StakeLpTokens<'info> {
     
     /// MoonBase program that handles mining operations
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
+    
+    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
+    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    
+    /// CHECK: Player data account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub player_data: UncheckedAccount<'info>,
+    
+    /// CHECK: Faction state account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub faction_state: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonEconomy program (for CPI verification)
+    pub mooneconomy_program: AccountInfo<'info>,
     
     /// User who is staking tokens
     #[account(mut)]
@@ -1957,6 +1860,20 @@ pub struct UnstakeLpTokens<'info> {
     /// MoonBase program that handles mining operations
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
     
+    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
+    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    
+    /// CHECK: Player data account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub player_data: UncheckedAccount<'info>,
+    
+    /// CHECK: Faction state account in MoonBase (for hashpower tracking)
+    #[account(mut)]
+    pub faction_state: UncheckedAccount<'info>,
+    
+    /// CHECK: MoonEconomy program (for CPI verification)
+    pub mooneconomy_program: AccountInfo<'info>,
+    
     /// User who is unstaking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1973,7 +1890,7 @@ pub struct UnstakeLpTokens<'info> {
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
-pub struct ClaimSolRewards<'info> {
+pub struct ClaimPassiveRewards<'info> {
     // Global config and vaults
     #[account(
         seeds = [ME_CONFIG_SEED.as_ref()],
@@ -2018,13 +1935,42 @@ pub struct ClaimSolRewards<'info> {
     )]
     /// CHECK: This is the PDA that custodies SOL for LP stakers
     pub liquidity_sol_vault: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [DBTC_STAKER_REWARD_VAULT_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: This is the PDA that custodies DogeBtc tokens for stakers
+    pub dbtc_staker_reward_vault: UncheckedAccount<'info>,
+    
+    #[account(
+        seeds = [DBTC_STAKER_REWARD_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: This is the PDA authority for the staker reward vault
+    pub dbtc_staker_reward_vault_authority: UncheckedAccount<'info>,
+    
+    /// CHECK: User's DogeBtc token account to receive rewards
+    #[account(
+        mut,
+        constraint = user_dbtc_token_account.owner == authority.key() @ ErrorCode::InvalidTokenOwner,
+        constraint = user_dbtc_token_account.mint == dogebtc_vault.dbtc_mint @ ErrorCode::InvalidTokenMint,
+    )]
+    pub user_dbtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// CHECK: DogeBtc mint
+    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
 
-    /// User who is unstaking tokens
+    /// User who is claiming rewards
     #[account(mut)]
     pub authority: Signer<'info>,
 
     /// System program for SOL transfers
     pub system_program: Program<'info, System>,
+    
+    /// Token-2022 program for DogeBtc token transfers
+    pub token_program: Program<'info, Token2022>,
 }
 
 /// Account struct for updating pending rewards
@@ -2062,389 +2008,5 @@ pub struct UpdatePendingRewards<'info> {
     pub authority: Signer<'info>,
 }
 
-// ----------------------------------------------------------------------------------------
-// ------------ CPI WRAPPERS :: MOONBASE CLAIM FUNCTIONS WITH ELECTRICITY UPDATES --------
-// ----------------------------------------------------------------------------------------
-
-/// Claim DOGE_BTC mining rewards - calculates electricity and calls MoonBase
-pub fn claim_dbtc_tokens_wrapper(ctx: Context<ClaimDbtcTokens>) -> Result<()> {
-    msg!("💰 Claim DOGE_BTC tokens - calculating electricity");
-
-    // Calculate current total electricity from all positions
-    let new_electricity = helper::calculate_total_electricity(
-        &ctx.accounts.electricity_ac,
-        &ctx.accounts.global_config,
-        &ctx.accounts.dogebtc_vault,
-        &ctx.accounts.liquidity_vault,
-    )?;
-
-    msg!("⚡ Total electricity: {}", new_electricity);
-
-    // Derive and validate vault authority PDA
-    let vault_authority_seed = b"mdoge-vault-authority";
-    let (expected_vault_authority, _bump) = Pubkey::find_program_address(
-        &[vault_authority_seed],
-        &ctx.accounts.moonbase_program.key(),
-    );
-
-    msg!("Expected vault authority: {}", expected_vault_authority);
-    msg!("Vault authority: {}", ctx.accounts.vault_authority.key());
-
-    require_keys_eq!(
-        ctx.accounts.vault_authority.key(),
-        expected_vault_authority,
-        ErrorCode::InvalidAccount
-    );
-
-    msg!(
-        "✅ Vault authority validated: {}",
-        ctx.accounts.vault_authority.key()
-    );
-
-    // CPI to MoonBase claim_dbtc_tokens
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::ClaimDogeBtc {
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
-        vault_authority: ctx.accounts.vault_authority.to_account_info(),
-        token_vault: ctx.accounts.dbtc_token_vault.to_account_info(),
-        user_token_account: ctx.accounts.user_dbtc_account.to_account_info(),
-        token_mint: ctx.accounts.dbtc_mint.to_account_info(),
-        loot_dbtc_vault: ctx.accounts.loot_dbtc_vault.to_account_info(),
-        loot_rewards: ctx.accounts.loot_rewards.to_account_info(),
-        dragon_egg_asset: ctx
-            .accounts
-            .dragon_egg_asset
-            .as_ref()
-            .map(|a| a.to_account_info()),
-        dragon_egg_metadata: ctx
-            .accounts
-            .dragon_egg_metadata
-            .as_ref()
-            .map(|a| a.to_account_info()),
-        incubation_state: ctx
-            .accounts
-            .incubation_state
-            .as_ref()
-            .map(|a| a.to_account_info()),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        caller_program: ctx.accounts.fee_collector.to_account_info(),
-        user: ctx.accounts.authority.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-        token_program: ctx.accounts.token_program.to_account_info(),
-    };
-
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];
-
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-    moonbase::cpi::claim_dbtc_tokens(cpi_ctx, new_electricity)?;
-
-    msg!("✅ DOGE_BTC tokens claimed successfully");
-
-    Ok(())
-}
-
-/// Claim referral rewards - calculates electricity and calls MoonBase
-pub fn claim_referral_rewards_wrapper(ctx: Context<ClaimReferralRewardsWrapper>) -> Result<()> {
-    msg!("🤝 Claim referral rewards - calculating electricity");
-
-    // Calculate current total electricity from all positions
-    let new_electricity = helper::calculate_total_electricity(
-        &ctx.accounts.electricity_ac,
-        &ctx.accounts.global_config,
-        &ctx.accounts.dogebtc_vault,
-        &ctx.accounts.liquidity_vault,
-    )?;
-
-    msg!("⚡ Total electricity: {}", new_electricity);
-
-    // CPI to MoonBase claim_referral_rewards
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::ClaimReferralRewards {
-        referral_rewards: ctx.accounts.referral_rewards.to_account_info(),
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        caller_program: ctx.accounts.fee_collector.to_account_info(),
-        user: ctx.accounts.authority.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-    };
-
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];
-
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-    moonbase::cpi::claim_referral_rewards(cpi_ctx, new_electricity)?;
-
-    msg!("✅ Referral rewards claimed successfully");
-
-    Ok(())
-}
-
-/// Claim attraction XP - calculates electricity and calls MoonBase
-pub fn claim_attraction_xp_wrapper(
-    ctx: Context<ClaimAttractionXpWrapper>,
-    module_index: u8,
-) -> Result<()> {
-    msg!("🎯 Claim attraction XP - calculating electricity");
-
-    // Calculate current total electricity from all positions
-    let new_electricity = helper::calculate_total_electricity(
-        &ctx.accounts.electricity_ac,
-        &ctx.accounts.global_config,
-        &ctx.accounts.dogebtc_vault,
-        &ctx.accounts.liquidity_vault,
-    )?;
-
-    msg!("⚡ Total electricity: {}", new_electricity);
-
-    // CPI to MoonBase claim_attraction_xp
-    let cpi_program = ctx.accounts.moonbase_program.to_account_info();
-    let cpi_accounts = moonbase::cpi::accounts::ClaimAttractionXP {
-        user_moonbase: ctx.accounts.facility_user_moonbase.to_account_info(),
-        module_instance: ctx.accounts.module_instance.to_account_info(),
-        module_config_account: ctx.accounts.module_config_account.to_account_info(),
-        doge_btc_mining: ctx.accounts.facility_mining_state.to_account_info(),
-        global_config: ctx.accounts.moonbase_global_config.to_account_info(),
-        caller_program: ctx.accounts.fee_collector.to_account_info(),
-        user: ctx.accounts.authority.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
-    };
-
-    let fee_collector_seeds = &[FEE_COLLECTOR_SEED.as_ref(), &[ctx.bumps.fee_collector]];
-    let signer_seeds = &[&fee_collector_seeds[..]];
-
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-    moonbase::cpi::claim_attraction_xp(cpi_ctx, module_index, new_electricity)?;
-
-    msg!("✅ Attraction XP claimed successfully");
-
-    Ok(())
-}
-
-// ----------------------------------------------------------------------------------------
-// ------------ ACCOUNT STRUCTS :: CPI WRAPPER FUNCTIONS ----------------------------------
-// ----------------------------------------------------------------------------------------
-
-#[derive(Accounts)]
-pub struct ClaimDbtcTokens<'info> {
-    #[account(
-        seeds = [ME_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub dogebtc_vault: Account<'info, DogeBtcVault>,
-
-    #[account(
-        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub liquidity_vault: Account<'info, LiquidityVault>,
-
-    #[account(
-        mut,
-        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
-        bump
-    )]
-    pub electricity_ac: Account<'info, UserMoonElectricity>,
-
-    // MoonBase accounts for CPI
-    #[account(mut)]
-    /// CHECK: User moonbase instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner
-    )]
-    /// CHECK: MoonBase global config (mutable for updating global_dragon_egg_power)
-    pub moonbase_global_config: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: DOGE_BTC token vault
-    pub dbtc_token_vault: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: User's DOGE_BTC token account
-    pub user_dbtc_account: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: DOGE_BTC mint (mutable for CPI)
-    pub dbtc_mint: UncheckedAccount<'info>,
-
-    /// CHECK: Vault authority PDA (derived from MoonBase program, needed for token transfers)
-    pub vault_authority: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: Loot DOGE_BTC vault
-    pub loot_dbtc_vault: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: Loot rewards account
-    pub loot_rewards: UncheckedAccount<'info>,
-
-    /// Optional Dragon Egg accounts (required if user has incubated egg for power updates)
-    #[account(mut)]
-    /// CHECK: Optional Dragon Egg NFT asset
-    pub dragon_egg_asset: Option<UncheckedAccount<'info>>,
-
-    #[account(mut)]
-    /// CHECK: Optional Dragon Egg metadata
-    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
-
-    #[account(mut)]
-    /// CHECK: Optional incubation state
-    pub incubation_state: Option<UncheckedAccount<'info>>,
-
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Fee collector PDA (used as caller_program signer)
-    pub fee_collector: UncheckedAccount<'info>,
-
-    pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-
-    /// CHECK: Token program
-    pub token_program: UncheckedAccount<'info>,
-}
-
-#[derive(Accounts)]
-pub struct ClaimReferralRewardsWrapper<'info> {
-    #[account(
-        seeds = [ME_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub dogebtc_vault: Account<'info, DogeBtcVault>,
-
-    #[account(
-        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub liquidity_vault: Account<'info, LiquidityVault>,
-
-    #[account(
-        mut,
-        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
-        bump
-    )]
-    pub electricity_ac: Account<'info, UserMoonElectricity>,
-
-    // MoonBase accounts for CPI
-    #[account(mut)]
-    /// CHECK: Referral rewards account in MoonFacility
-    pub referral_rewards: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: User moonbase instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: MoonBase global config
-    pub moonbase_global_config: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Fee collector PDA (used as caller_program signer)
-    pub fee_collector: UncheckedAccount<'info>,
-
-    pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(module_index: u8)]
-pub struct ClaimAttractionXpWrapper<'info> {
-    #[account(
-        seeds = [ME_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        seeds = [DOGE_BTC_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub dogebtc_vault: Account<'info, DogeBtcVault>,
-
-    #[account(
-        seeds = [LIQUIDITY_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub liquidity_vault: Account<'info, LiquidityVault>,
-
-    #[account(
-        mut,
-        seeds = [USER_ELECTRICITY_SEED, authority.key().as_ref()],
-        bump
-    )]
-    pub electricity_ac: Account<'info, UserMoonElectricity>,
-
-    // MoonBase accounts for CPI
-    #[account(mut)]
-    /// CHECK: User moonbase instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: MoonBase global config
-    pub moonbase_global_config: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: Module instance
-    pub module_instance: UncheckedAccount<'info>,
-
-    /// CHECK: Module config account
-    pub module_config_account: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Fee collector PDA (used as caller_program signer)
-    pub fee_collector: UncheckedAccount<'info>,
-
-    pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
+// Old CPI wrapper functions removed - no longer needed for Faction Surge system
+// (claim_dbtc_tokens_wrapper, claim_referral_rewards_wrapper, claim_attraction_xp_wrapper)

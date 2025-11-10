@@ -115,10 +115,6 @@ pub mod mooneconomy {
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MOONDOGE / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
 
-    pub fn initialize_electricity_account(ctx: Context<InitializeElectricityAc>) -> Result<()> {
-        instructions::user::initialize_electricity_account(ctx)
-    }
-
     pub fn stake_moondoge(
         ctx: Context<StakeDogeBtc>,
         amount: u64,
@@ -145,29 +141,7 @@ pub mod mooneconomy {
         instructions::user::unstake_lp_tokens(ctx, lockup_index)
     }
 
-    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-        instructions::user::claim_sol_rewards(ctx)
-    }
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ CPI WRAPPERS :: MOONBASE FUNCTIONS WITH ELECTRICITY UPDATES --------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Claim DOGE_BTC mining rewards (calculates electricity and calls MoonBase via CPI)
-    pub fn claim_dbtc_tokens(ctx: Context<ClaimDbtcTokens>) -> Result<()> {
-        instructions::user::claim_dbtc_tokens_wrapper(ctx)
-    }
-
-    /// Claim referral rewards (calculates electricity and calls MoonBase via CPI)
-    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewardsWrapper>) -> Result<()> {
-        instructions::user::claim_referral_rewards_wrapper(ctx)
-    }
-
-    /// Claim attraction XP (calculates electricity and calls MoonBase via CPI)
-    pub fn claim_attraction_xp(
-        ctx: Context<ClaimAttractionXpWrapper>,
-        module_index: u8,
-    ) -> Result<()> {
-        instructions::user::claim_attraction_xp_wrapper(ctx, module_index)
+    pub fn claim_passive_rewards(ctx: Context<ClaimPassiveRewards>) -> Result<()> {
+        instructions::user::claim_passive_rewards(ctx)
     }
 }

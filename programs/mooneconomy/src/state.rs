@@ -7,6 +7,8 @@ pub const LIQUIDITY_VAULT_SEED: &[u8] = b"liquidity_vault";
 
 pub const DBTC_SOL_VAULT_SEED: &[u8] = b"dogewifbtc-sol-vault";
 pub const LP_SOL_VAULT_SEED: &[u8] = b"lp-sol-vault";
+pub const DBTC_STAKER_REWARD_VAULT_SEED: &[u8] = b"dbtc-staker-reward-vault";
+pub const DBTC_STAKER_REWARD_VAULT_AUTHORITY_SEED: &[u8] = b"dbtc-staker-reward-vault-authority";
 
 pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dogewifbtc-custodian";
 pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dogewifbtc-custodian-authority";
@@ -106,6 +108,8 @@ pub struct DogeBtcVault {
     pub authority: Pubkey,
     /// PDA account that holds SOL to be distributed to DogeBtc stakers
     pub dbtc_sol_vault: Pubkey,
+    /// PDA account that holds DogeBtc tokens to be distributed to stakers
+    pub dbtc_staker_reward_vault: Pubkey,
 
     /// Token mint for DogeBtc
     pub dbtc_mint: Pubkey,
@@ -119,6 +123,8 @@ pub struct DogeBtcVault {
 
     /// Accumulated SOL per weighted DogeBtc point (precision factor applied)
     pub accumulated_sol_per_point: u128,
+    /// Accumulated DogeBtc per weighted DogeBtc point (precision factor applied)
+    pub accumulated_dbtc_per_point: u128,
 
     /// Total SOL distributed to DogeBtc stakers
     pub total_sol_distributed: u64,
@@ -135,11 +141,13 @@ impl DogeBtcVault {
     pub const LEN: usize = 8 + // discriminator
         32 + // authority
         32 + // dbtc_sol_vault
+        32 + // dbtc_staker_reward_vault
         32 + // dbtc_mint
         32 + // dbtc_custodian
         8 +  // dbtc_locked
         8 +  // weighted_dbtc_locked
         16 + // accumulated_sol_per_point
+        16 + // accumulated_dbtc_per_point
         8 +  // total_sol_distributed
         1 +  // emergency_tax
         1; // bump
@@ -213,11 +221,15 @@ pub struct UserMoonElectricity {
     pub free_electricity: u64, // Free electricity from init tier bonus
 
     /// SOL rewards tracking
-    pub moondoge_reward_debt: u128, // Last checkpoint for DogeBtc rewards
+    pub moondoge_reward_debt: u128, // Last checkpoint for DogeBtc SOL rewards
     pub lp_reward_debt: u128,          // Last checkpoint for LP rewards
-    pub pending_moondoge_rewards: u64, // Unclaimed DogeBtc staking rewards
+    pub pending_moondoge_rewards: u64, // Unclaimed DogeBtc staking SOL rewards
     pub pending_lp_rewards: u64,       // Unclaimed LP staking rewards
     pub total_sol_claimed: u64,        // Total SOL rewards claimed
+    
+    /// DogeBtc rewards tracking
+    pub moondoge_dbtc_reward_debt: u128, // Last checkpoint for DogeBtc token rewards
+    pub pending_moondoge_dbtc_rewards: u64, // Unclaimed DogeBtc staking token rewards
 
     /// Position indices tracking (max 7 elements each)
     pub moondoge_position_indices: Vec<u8>, // Store actual indices
@@ -242,6 +254,8 @@ impl UserMoonElectricity {
             8 +  // pending_moondoge_rewards
             8 +  // pending_lp_rewards
             8 +  // total_sol_claimed
+            16 + // moondoge_dbtc_reward_debt
+            8 +  // pending_moondoge_dbtc_rewards
             4 + 7 +  // vec length + max 7 indices for moondoge
             4 + 7 +  // vec length + max 7 indices for lp
             1; // bump
