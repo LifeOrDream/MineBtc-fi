@@ -135,7 +135,6 @@ pub struct MiningInitialized {
 pub struct SolFeesWithdrawn {
     pub fee_collector: Pubkey,
     pub economy_program_amount: u64,
-    pub loot_amount: u64,
     pub buyback_amount: u64,
 }
 
@@ -301,21 +300,7 @@ pub struct DailyLoginReward {
 }
 
 // ========== LOOT REWARDS EVENTS ========== //
-
-#[event]
-pub struct LootRewardsAccumulated {
-    pub dbtc_amount: u64,
-    pub sol_amount: u64,
-    pub total_dbtc_accumulated: u64,
-    pub total_sol_accumulated: u64,
-}
-
-#[event]
-pub struct LootRewardsInitialized {
-    pub loot_rewards_pda: Pubkey,
-    pub sol_vault_pda: Pubkey,
-    pub dbtc_vault_pda: Pubkey,
-}
+// Removed - loot system no longer used
 
 #[event]
 pub struct LevelStatsUpdated {
@@ -386,20 +371,8 @@ pub struct ExpansionAdded {
     pub new_height: u8,
 }
 
-// ------------------------------
 // Enhanced Loot System Events
-// ------------------------------
-
-#[event]
-pub struct LootWon {
-    pub owner: Pubkey,
-    pub level: u8,
-    pub sol: u64,
-    pub mdoge: u64,
-    pub loot_tier: String,      // "minor", "rare", "legendary"
-    pub exclusivity_rank: u8,   // 0 = first, 1-2 = top3, etc.
-    pub chance_percentage: u32, // Actual chance they had (in basis points)
-}
+// Removed - loot system no longer used
 
 #[event]
 pub struct ReferralSuccess {

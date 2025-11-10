@@ -42,24 +42,31 @@ pub fn mint_dragon_egg(
         cost_per_egg,
     )?;
     
-    // Get egg count
-    let egg_count = global_config.total_dragon_eggs_minted;
+    // Use slot and user key as seed for egg count (no global counter needed)
+    let clock = Clock::get()?;
+    let slot = clock.slot;
+    let user_key = ctx.accounts.user.key();
+    let egg_seed = slot.wrapping_add(u64::from_le_bytes([
+        user_key.as_ref()[0], user_key.as_ref()[1], user_key.as_ref()[2], user_key.as_ref()[3],
+        user_key.as_ref()[4], user_key.as_ref()[5], user_key.as_ref()[6], user_key.as_ref()[7],
+    ]));
+    
     let family_type = (tier - 1) as u8; // Tier 2->Family 1, Tier 3->Family 2, Tier 4->Family 3
     
     // Generate DNA
     let dna = crate::genescience::generate_genesis_dna_with_tier(
-        egg_count,
-        &ctx.accounts.user.key(),
-            Clock::get()?.slot,
+        egg_seed,
+        &user_key,
+        slot,
         family_type,
     )?;
 
     // Get URI
     let uri = global_config
-        .get_random_dragon_egg_uri(Clock::get()?.slot, egg_count, &dna)
-        .unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_count));
+        .get_random_dragon_egg_uri(slot, egg_seed, &dna)
+        .unwrap_or_else(|_| format!("https://arweave.net/dragonegg/{}", egg_seed));
 
-    let name = format!("Dragon Egg #{}", egg_count);
+    let name = format!("Dragon Egg #{}", egg_seed);
     
     // Calculate multiplier based on tier
     let multiplier = match tier {
@@ -110,11 +117,7 @@ pub fn mint_dragon_egg(
         egg_metadata.created_at = Clock::get()?.unix_timestamp;
     egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
 
-    // Update global counters
-    global_config.total_dragon_eggs_minted = global_config
-        .total_dragon_eggs_minted
-        .saturating_add(1);
-
+    // Update global dragon egg power
     global_config.global_dragon_egg_power = global_config
         .global_dragon_egg_power
         .saturating_add(BASE_EGG_POWER as u64);
@@ -132,7 +135,7 @@ pub fn mint_dragon_egg(
         faction_id,
     });
     
-    msg!("✅ Minted Dragon Egg #{} for faction {} (Tier {})", egg_count, faction_id, tier);
+    msg!("✅ Minted Dragon Egg #{} for faction {} (Tier {})", egg_seed, faction_id, tier);
     Ok(())
 }
 

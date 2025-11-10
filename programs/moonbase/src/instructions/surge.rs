@@ -81,7 +81,8 @@ pub fn update_personal_hashpower(
 
 /// Join a surge round by betting SOL
 pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
-    let global_state = &ctx.accounts.global_surge_state;
+    let global_state = &ctx.accounts.global_game_state;
+    let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
     
     // Check round is active
@@ -95,9 +96,9 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
     let player_data = &ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     
-    // Calculate fees (10% total)
+    // Calculate fees using protocol_fee_pct from GlobalConfig
     let fee = amount
-        .checked_mul(SURGE_FEE_PERCENTAGE)
+        .checked_mul(global_config.protocol_fee_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -106,15 +107,15 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
         .checked_sub(fee)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    // Split fee: 40% buybacks, 40% stakers, 20% admin
+    // Split fee: buyback_pct%, stakers_pct%, remainder to admin
     let buyback_fee = fee
-        .checked_mul(SURGE_FEE_BUYBACK_PERCENTAGE)
+        .checked_mul(global_config.buyback_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
     let staker_fee = fee
-        .checked_mul(SURGE_FEE_STAKER_PERCENTAGE)
+        .checked_mul(global_config.stakers_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -135,7 +136,7 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
     **ctx.accounts.admin_treasury.to_account_info().try_borrow_mut_lamports()? += admin_fee;
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= admin_fee;
     
-    // Transfer 90% to prize pot
+    // Transfer net amount to prize pot
     **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? += net_amount;
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= net_amount;
     
@@ -159,10 +160,12 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
         .checked_add(net_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    faction_state.total_active_sol_bets = faction_state
-        .total_active_sol_bets
+    // Update both total_sol_bets and total_active_sol_bets (keep them in sync)
+    faction_state.total_sol_bets = faction_state
+        .total_sol_bets
         .checked_add(net_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_state.total_active_sol_bets = faction_state.total_sol_bets;
     
     msg!(
         "User {} bet {} SOL (net) on faction {} in round {}",
@@ -177,7 +180,8 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
 
 /// Crank end surge - determines winner and distributes rewards
 pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
-    let global_state = &mut ctx.accounts.global_surge_state;
+    let global_state = &mut ctx.accounts.global_game_state;
+    let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
     
     // Check round has ended
@@ -237,28 +241,28 @@ pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
         }
     }
     
-    // Split DogeBtc emission (50/30/10/10)
-    // Note: dbtc_50_stakers will be transferred via CPI to mooneconomy
-    let _dbtc_50_stakers = EMISSION_PER_ROUND
+    // Split DogeBtc emission using emission_per_round from GlobalConfig (50/30/10/10)
+    let emission_per_round = global_config.emission_per_round;
+    let _dbtc_50_stakers = emission_per_round
         .checked_mul(50)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    let dbtc_30_winners = EMISSION_PER_ROUND
+    let dbtc_30_winners = emission_per_round
         .checked_mul(30)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    let dbtc_10_losers = EMISSION_PER_ROUND
+    let dbtc_10_losers = emission_per_round
         .checked_mul(10)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
     // Note: dbtc_10_motherlode will be transferred to motherlode pot
-    let _dbtc_10_motherlode = EMISSION_PER_ROUND
+    let _dbtc_10_motherlode = emission_per_round
         .checked_mul(10)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
@@ -315,9 +319,9 @@ pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
         global_state.motherlode_pot_size_on_hit = ctx.accounts.motherlode_pot_vault.lamports();
     }
     
-    // Reset for next round
+    // Reset for next round using round_duration_seconds from GlobalGameSate
     global_state.current_round_id = global_state.current_round_id.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
-    global_state.round_end_timestamp = clock.unix_timestamp.checked_add(ROUND_DURATION_SECONDS).ok_or(ErrorCode::ArithmeticOverflow)?;
+    global_state.round_end_timestamp = clock.unix_timestamp.checked_add(global_state.round_duration_seconds).ok_or(ErrorCode::ArithmeticOverflow)?;
     
     // Reset all faction active bets (faction states passed as remaining_accounts should be mutable)
     // Note: In production, faction states should be explicitly passed as mutable accounts
@@ -335,7 +339,7 @@ pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
 
 /// Claim surge rewards for a user
 pub fn claim_surge_rewards(ctx: Context<ClaimSurgeRewards>) -> Result<()> {
-    let global_state = &ctx.accounts.global_surge_state;
+    let global_state = &ctx.accounts.global_game_state;
     let user_bet = &mut ctx.accounts.user_surge_bet;
     
     // Check user bet is for the last completed round
@@ -569,9 +573,15 @@ pub struct JoinSurge<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_SURGE_STATE_SEED.as_ref()],
-        bump = global_surge_state.bump
+        bump = global_game_state.bump
     )]
-    pub global_surge_state: Account<'info, GlobalSurgeState>,
+    pub global_game_state: Account<'info, GlobalGameSate>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
     
     #[account(
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
@@ -590,7 +600,7 @@ pub struct JoinSurge<'info> {
         init_if_needed,
         payer = authority,
         space = UserSurgeBet::LEN,
-        seeds = [USER_SURGE_BET_SEED.as_ref(), authority.key().as_ref(), &global_surge_state.current_round_id.to_le_bytes()],
+        seeds = [USER_SURGE_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
     pub user_surge_bet: Account<'info, UserSurgeBet>,
@@ -637,9 +647,15 @@ pub struct CrankEndSurge<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_SURGE_STATE_SEED.as_ref()],
-        bump = global_surge_state.bump
+        bump = global_game_state.bump
     )]
-    pub global_surge_state: Account<'info, GlobalSurgeState>,
+    pub global_game_state: Account<'info, GlobalGameSate>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
     
     /// CHECK: All 11 faction states passed as remaining_accounts
     /// CHECK: SOL prize pot vault
@@ -680,14 +696,14 @@ pub struct CrankEndSurge<'info> {
 pub struct ClaimSurgeRewards<'info> {
     #[account(
         seeds = [GLOBAL_SURGE_STATE_SEED.as_ref()],
-        bump = global_surge_state.bump
+        bump = global_game_state.bump
     )]
-    pub global_surge_state: Account<'info, GlobalSurgeState>,
+    pub global_game_state: Account<'info, GlobalGameSate>,
     
     #[account(
         mut,
         close = signer,
-        seeds = [USER_SURGE_BET_SEED.as_ref(), signer.key().as_ref(), &global_surge_state.last_round_id.to_le_bytes()],
+        seeds = [USER_SURGE_BET_SEED.as_ref(), signer.key().as_ref(), &global_game_state.last_round_id.to_le_bytes()],
         bump = user_surge_bet.bump
     )]
     pub user_surge_bet: Account<'info, UserSurgeBet>,
@@ -765,9 +781,9 @@ pub struct ExecuteAutominerBet<'info> {
     
     #[account(
         seeds = [GLOBAL_SURGE_STATE_SEED.as_ref()],
-        bump = global_surge_state.bump
+        bump = global_game_state.bump
     )]
-    pub global_surge_state: Account<'info, GlobalSurgeState>,
+    pub global_game_state: Account<'info, GlobalGameSate>,
     
     /// CHECK: Faction state for the vault's faction
     #[account(
@@ -782,7 +798,7 @@ pub struct ExecuteAutominerBet<'info> {
         init_if_needed,
         payer = autominer_vault,
         space = UserSurgeBet::LEN,
-        seeds = [USER_SURGE_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_surge_state.current_round_id.to_le_bytes()],
+        seeds = [USER_SURGE_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
     pub user_surge_bet: Account<'info, UserSurgeBet>,
