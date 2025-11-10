@@ -58,20 +58,7 @@ pub const GROWTH_DEN: u64 = 100;
 // This gives reasonable progression: 1x -> 1.25x -> 1.56x -> 1.95x -> 2.44x -> 3.05x -> 3.81x -> 4.77x -> 5.96x -> 7.45x at level 10
 pub const UPGRADE_COST_NUM: u64 = 125;
 pub const UPGRADE_COST_DEN: u64 = 100;
-
-/// Calculate growth factor for power scaling (damage, hashpower, shield HP)
-/// Returns Q32 fixed-point representation of (1.15)^level
-fn growth_factor(level: u8) -> u64 {
-    let mut num: u64 = 1;
-    let mut den: u64 = 1;
-    for _ in 0..level {
-        num = num.saturating_mul(GROWTH_NUM);
-        den = den.saturating_mul(GROWTH_DEN);
-    }
-    // Return Q32 fixed-point: (numerator << 32) / denominator
-    (num << 32) / den.max(1) // Prevent division by zero
-}
-
+ 
 // ----- [SEEDS] -----
 
 // PDAs which hold GlobalConfig / DogeBtcMining state

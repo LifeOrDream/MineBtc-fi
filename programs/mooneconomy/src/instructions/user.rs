@@ -274,7 +274,11 @@ pub fn stake_moondoge(
         .unwrap();
 
     // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
-    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+    let egg_multiplier = if let Some(egg_account) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        // Manually deserialize DragonEggMetadata to get multiplier
+        let egg_data = egg_account.try_borrow_data()?;
+        let egg_metadata: moonbase::state::DragonEggMetadata = 
+            AccountDeserialize::try_deserialize(&mut &egg_data[..])?;
         egg_metadata.multiplier as u128
     } else {
         100u128 // Default 1.0x multiplier
@@ -470,7 +474,11 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     }
     
     // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
-    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+    let egg_multiplier = if let Some(egg_account) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        // Manually deserialize DragonEggMetadata to get multiplier
+        let egg_data = egg_account.try_borrow_data()?;
+        let egg_metadata: moonbase::state::DragonEggMetadata = 
+            AccountDeserialize::try_deserialize(&mut &egg_data[..])?;
         egg_metadata.multiplier as u128
     } else {
         100u128 // Default 1.0x multiplier
@@ -821,7 +829,11 @@ pub fn stake_lp_tokens(
     msg!("⚡ Calculating hashpower with egg multiplier");
     
     // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
-    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+    let egg_multiplier = if let Some(egg_account) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        // Manually deserialize DragonEggMetadata to get multiplier
+        let egg_data = egg_account.try_borrow_data()?;
+        let egg_metadata: moonbase::state::DragonEggMetadata = 
+            AccountDeserialize::try_deserialize(&mut &egg_data[..])?;
         egg_metadata.multiplier as u128
     } else {
         100u128 // Default 1.0x multiplier
@@ -1010,7 +1022,11 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     }
     
     // Calculate egg multiplier (100 = 1.0x if no egg, or egg's multiplier if provided)
-    let egg_multiplier = if let Some(egg_metadata) = ctx.accounts.dragon_egg_metadata.as_ref() {
+    let egg_multiplier = if let Some(egg_account) = ctx.accounts.dragon_egg_metadata.as_ref() {
+        // Manually deserialize DragonEggMetadata to get multiplier
+        let egg_data = egg_account.try_borrow_data()?;
+        let egg_metadata: moonbase::state::DragonEggMetadata = 
+            AccountDeserialize::try_deserialize(&mut &egg_data[..])?;
         egg_metadata.multiplier as u128
     } else {
         100u128 // Default 1.0x multiplier
@@ -1479,38 +1495,12 @@ pub struct StakeDogeBtc<'info> {
     )]
     /// Token-2022 account that holds staked DOGE_BTC
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
-        
-    //MoonBase accounts
-    /// MoonBase global configuration
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: Verified in CPI
-    pub moonbase_global_config: UncheckedAccount<'info>,
     
-    #[account(mut)]
-    /// CHECK: User instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-    
-    /// CHECK: DogeBtc mining state for querying token prices
-    #[account(constraint = *doge_btc_mining_state.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    pub doge_btc_mining_state: UncheckedAccount<'info>,
-    
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Used for CPI to MoonFacility
-    pub fee_collector: UncheckedAccount<'info>,
-    
-    /// MoonBase program that handles mining operations
+    /// MoonBase program that handles hashpower updates
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
     
     /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
     
     /// CHECK: Player data account in MoonBase (for hashpower tracking)
     #[account(mut)]
@@ -1605,33 +1595,11 @@ pub struct UnstakeDogeBtc<'info> {
     /// CHECK: This is a PDA that acts as the authority for the token account
     pub dbtc_custodian_authority: UncheckedAccount<'info>,
     
-    // MoonBase accounts
-    /// MoonBase global configuration
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: Verified in CPI
-    pub moonbase_global_config: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: User instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-    
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Used for CPI to MoonFacility
-    pub fee_collector: UncheckedAccount<'info>,
-    
-    /// MoonBase program that handles mining operations
+    /// MoonBase program that handles hashpower updates
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
     
     /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
     
     /// CHECK: Player data account in MoonBase (for hashpower tracking)
     #[account(mut)]
@@ -1713,38 +1681,12 @@ pub struct StakeLpTokens<'info> {
     )]
     /// Token account that holds staked LP tokens
     pub liquidity_custodian: Account<'info, token::TokenAccount>,
-        
-    //MoonBase accounts
-    /// MoonBase global configuration
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: Verified in CPI
-    pub moonbase_global_config: UncheckedAccount<'info>,
     
-    #[account(mut)]
-    /// CHECK: User instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-    
-    /// CHECK: DogeBtc mining state for querying token prices
-    #[account(constraint = *doge_btc_mining_state.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    pub doge_btc_mining_state: UncheckedAccount<'info>,
-    
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Used for CPI to MoonFacility
-    pub fee_collector: UncheckedAccount<'info>,
-    
-    /// MoonBase program that handles mining operations
+    /// MoonBase program that handles hashpower updates
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
     
     /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
     
     /// CHECK: Player data account in MoonBase (for hashpower tracking)
     #[account(mut)]
@@ -1835,33 +1777,11 @@ pub struct UnstakeLpTokens<'info> {
     #[account(mut)]
     pub lp_mint: Account<'info, token::Mint>,
     
-    // MoonBase accounts
-    /// MoonBase global configuration
-    #[account(constraint = *moonbase_global_config.owner == moonbase_program.key() @ ErrorCode::InvalidProgramOwner)]
-    /// CHECK: Verified in CPI
-    pub moonbase_global_config: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: User instance in MoonFacility
-    pub facility_user_moonbase: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: Mining state in MoonFacility
-    pub facility_mining_state: UncheckedAccount<'info>,
-    
-    #[account(
-        mut,
-        seeds = [FEE_COLLECTOR_SEED.as_ref()],
-        bump,
-    )]
-    /// CHECK: Used for CPI to MoonFacility
-    pub fee_collector: UncheckedAccount<'info>,
-    
-    /// MoonBase program that handles mining operations
+    /// MoonBase program that handles hashpower updates
     pub moonbase_program: Program<'info, moonbase::program::Moonbase>,
     
     /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<Account<'info, moonbase::state::DragonEggMetadata>>,
+    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
     
     /// CHECK: Player data account in MoonBase (for hashpower tracking)
     #[account(mut)]
