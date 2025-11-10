@@ -7,7 +7,8 @@ import {
   SystemProgram, 
   Transaction, 
   sendAndConfirmTransaction,
-  LAMPORTS_PER_SOL
+  LAMPORTS_PER_SOL,
+  ComputeBudgetProgram
 } from '@solana/web3.js';
 import { 
   TOKEN_PROGRAM_ID, 
@@ -32,13 +33,21 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const deploymentPath = path.join(__dirname, 'deployments', `${config.network.cluster}.json`);
 const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
 
-// Load IDL
-const idlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
-if (!fs.existsSync(idlPath)) {
-  console.error(`❌ MoonBase IDL not found at: ${idlPath}`);
+// Load MoonBase IDL
+const moonbaseIdlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
+if (!fs.existsSync(moonbaseIdlPath)) {
+  console.error(`❌ MoonBase IDL not found at: ${moonbaseIdlPath}`);
   process.exit(1);
 }
-const idl = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
+const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
+
+// Load MoonEconomy IDL
+const moonEconomyIdlPath = path.resolve(__dirname, config.deployment.paths.moon_economy_idl);
+if (!fs.existsSync(moonEconomyIdlPath)) {
+  console.error(`❌ MoonEconomy IDL not found at: ${moonEconomyIdlPath}`);
+  process.exit(1);
+}
+const moonEconomyIdl = JSON.parse(fs.readFileSync(moonEconomyIdlPath, 'utf8'));
 
 // Load wallet keypair
 const walletPath = path.resolve(__dirname, config.deployment.paths.deployer_key);
@@ -55,10 +64,13 @@ const connection = new Connection(config.network.rpc_url, config.network.commitm
 // Create wallet object
 const wallet = new Wallet(walletKeypair);
 
-// Initialize program (programId comes from IDL)
+// Initialize programs (programId comes from IDL)
 const provider = new AnchorProvider(connection, wallet, { commitment: config.network.commitment });
-const moonBaseProgram = new Program(idl, provider);
+const moonBaseProgram = new Program(moonbaseIdl, provider);
 const moonBaseProgramId = moonBaseProgram.programId;
+
+const moonEconomyProgram = new Program(moonEconomyIdl, provider);
+const moonEconomyProgramId = moonEconomyProgram.programId;
 
 // Seeds
 const GLOBAL_CONFIG_SEED = "global-config";
@@ -117,6 +129,58 @@ const raydiumToken1Vault = new PublicKey(deployment.dbtc_sol_pool_created.token1
 // Determine vault assignment (token0 = WSOL, token1 = DBTC)
 const solVaultPDA = raydiumToken0Vault;
 const dbtcVaultPDA = raydiumToken1Vault;
+
+// MoonEconomy seeds
+const MOON_ECONOMY_GLOBAL_CONFIG_SEED = "global_config";
+const MOON_ECONOMY_DOGE_BTC_VAULT_SEED = "dogebtc_vault";
+const MOON_ECONOMY_LIQUIDITY_VAULT_SEED = "liquidity_vault";
+const MOON_ECONOMY_DBTC_SOL_VAULT_SEED = "dogewifbtc-sol-vault";
+const MOON_ECONOMY_LP_SOL_VAULT_SEED = "lp-sol-vault";
+const MOON_ECONOMY_DEV_EARNINGS_SEED = "dev_earnings_collector";
+const MOON_ECONOMY_FEE_COLLECTOR_SEED = "fee_collector";
+
+// Derive MoonEconomy PDAs
+const [moonEconomyGlobalConfigPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_GLOBAL_CONFIG_SEED)],
+  moonEconomyProgramId
+);
+
+const [moonEconomyDogebtcVaultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_DOGE_BTC_VAULT_SEED)],
+  moonEconomyProgramId
+);
+
+const [moonEconomyLiquidityVaultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_LIQUIDITY_VAULT_SEED)],
+  moonEconomyProgramId
+);
+
+const [moonEconomyDbtcSolVaultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_DBTC_SOL_VAULT_SEED)],
+  moonEconomyProgramId
+);
+
+const [moonEconomyLiquiditySolVaultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_LP_SOL_VAULT_SEED)],
+  moonEconomyProgramId
+);
+
+const [moonEconomyDevEarningsPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_DEV_EARNINGS_SEED)],
+  moonEconomyProgramId
+);
+
+const [moonEconomyFeeCollectorPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(MOON_ECONOMY_FEE_COLLECTOR_SEED)],
+  moonEconomyProgramId
+);
+
+// MoonBase addresses from deployment
+const moonbaseGlobalConfigPDA = new PublicKey(deployment.moonbase_program_initialized.globalConfig_address);
+const moonbaseMiningStatePDA = new PublicKey(deployment.moonbase_program_initialized.dogeBtcMining_address);
+const moonbaseTreasuryPDA = new PublicKey(deployment.moonbase_program_initialized.solTreasury_address);
+const lootSolVaultPDA = new PublicKey(deployment.loot_rewards_initialized.sol_vault);
+const lootRewardsPDA = new PublicKey(deployment.loot_rewards_initialized.loot_rewards_pda);
 
 /**
  * Send 1 SOL to sol_treasury account
@@ -214,6 +278,11 @@ async function executeSnapshotPrice() {
       })
       .transaction();
 
+    // Add compute unit limit instruction at the beginning
+    snapshotTx.instructions.unshift(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 })
+    );
+
     const signature = await sendAndConfirmTransaction(
       connection,
       snapshotTx,
@@ -225,6 +294,59 @@ async function executeSnapshotPrice() {
     return { success: true, signature };
   } catch (error) {
     console.error(`❌ Error executing price snapshot:`, error.message);
+    if (error.logs) {
+      console.error('Transaction logs:', error.logs);
+    }
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Execute claim moonbase SOL transaction
+ */
+async function executeClaimMoonbaseSol() {
+  try {
+    console.log('\n💰 Executing claim moonbase SOL...');
+
+    const claimMoonbaseSolTx = await moonEconomyProgram.methods
+      .claimMoonbaseSol()
+      .accounts({
+        globalConfig: moonEconomyGlobalConfigPDA,
+        dogebtcVault: moonEconomyDogebtcVaultPDA,
+        liquidityVault: moonEconomyLiquidityVaultPDA,
+        dbtcSolVault: moonEconomyDbtcSolVaultPDA,
+        liquiditySolVault: moonEconomyLiquiditySolVaultPDA,
+        devEarningsCollector: moonEconomyDevEarningsPDA,
+        moonbaseGlobalConfig: moonbaseGlobalConfigPDA,
+        moonbaseMiningState: moonbaseMiningStatePDA,
+        moonbaseTreasury: moonbaseTreasuryPDA,
+        feeCollector: moonEconomyFeeCollectorPDA,
+        lootSolVault: lootSolVaultPDA,
+        lootRewards: lootRewardsPDA,
+        buybacksSolVault: buybacksSolVaultPDA,
+        buybacksAccount: buybacksAccountPDA,
+        moonFacilityProgram: moonBaseProgramId,
+        authority: walletKeypair.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .transaction();
+
+    // Add compute unit limit instruction at the beginning
+    claimMoonbaseSolTx.instructions.unshift(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 })
+    );
+
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      claimMoonbaseSolTx,
+      [walletKeypair],
+      { commitment: 'confirmed' }
+    );
+
+    console.log(`✅ Claim moonbase SOL executed: ${signature}`);
+    return { success: true, signature };
+  } catch (error) {
+    console.error(`❌ Error executing claim moonbase SOL:`, error.message);
     if (error.logs) {
       console.error('Transaction logs:', error.logs);
     }
@@ -287,6 +409,11 @@ async function executeUpdateRateAndAddLp() {
       })
       .transaction();
 
+    // Add compute unit limit instruction at the beginning
+    updateRateTx.instructions.unshift(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 })
+    );
+
     const signature = await sendAndConfirmTransaction(
       connection,
       updateRateTx,
@@ -331,11 +458,17 @@ async function runLoop() {
         console.log('⚠️  Continuing despite SOL send failure...');
       }
 
-      // Step 2: Get price history length
+      // Step 2: Claim moonbase SOL for distribution
+      const claimResult = await executeClaimMoonbaseSol();
+      if (!claimResult.success) {
+        console.log('⚠️  Claim moonbase SOL failed, will retry next iteration');
+      }
+
+      // Step 3: Get price history length
       const priceHistoryLength = await getPriceHistoryLength();
     //   console.log(priceHistoryLength)
 
-      // Step 3: Execute appropriate transaction
+      // Step 4: Execute appropriate transaction based on price history
       if (priceHistoryLength < 8) {
         console.log(`📸 Price history < 8, executing snapshot...`);
         const snapshotResult = await executeSnapshotPrice();
