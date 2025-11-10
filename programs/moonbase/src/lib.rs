@@ -59,9 +59,9 @@ pub mod moonbase {
         admin::clear_dragon_egg_uris_internal(ctx)
     }
 
-    /// Add factions to the global config (admin only)
-    pub fn add_factions(ctx: Context<UpdateConfigAc>, factions: Vec<String>) -> Result<()> {
-        admin::add_factions_internal(ctx, factions)
+    /// Add a single faction to the global config (admin only)
+    pub fn add_faction(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
+        admin::add_faction_internal(ctx, faction_name)
     }
 
     /// Create Dragon Egg collection with program PDA as authority
@@ -81,14 +81,18 @@ pub mod moonbase {
         new_authority: Option<Pubkey>,
         new_fee_collector: Option<Pubkey>,
         new_creation_fee_recipient: Option<Pubkey>,
-        new_loot_percentage: Option<u8>,
+        new_buyback_pct: Option<u8>,
+        new_stakers_pct: Option<u8>,
+        new_emission_per_round: Option<u64>,
     ) -> Result<()> {
         admin::update_config_internal(
             ctx,
             new_authority,
             new_fee_collector,
             new_creation_fee_recipient,
-            new_loot_percentage,
+            new_buyback_pct,
+            new_stakers_pct,
+            new_emission_per_round,
         )
     }
 
@@ -126,22 +130,8 @@ pub mod moonbase {
     // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
-    // Old referral system removed - no longer needed for Faction Surge
-
-    // ----------------------------------------------------------
-    // ------------ LOOT REWARDS (ADMIN) --------------------------------
-    // ----------------------------------------------------------
-
-    /// Initialize the loot rewards system
-    pub fn initialize_loot_rewards(ctx: Context<InitializeLootRewards>) -> Result<()> {
-        admin::initialize_loot_rewards_internal(ctx)
-    }
-
-    /// Initialize buybacks account system (admin only)
-    pub fn initialize_buybacks(ctx: Context<InitializeBuybacks>) -> Result<()> {
-        admin::initialize_buybacks_internal(ctx)
-    }
-
+ 
+    /// Initialize the loot rewards system 
     // ----------------------------------------------------------
     // ------------ WITHDRAW SOL FEES (ANYONE) ------------------
     // ----------------------------------------------------------
@@ -173,6 +163,22 @@ pub mod moonbase {
     /// Query function to get token prices (dBTC and LP) for external programs
     pub fn query_token_prices(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
         admin::query_token_prices_internal(ctx)
+    }
+
+    /// Initialize the global game state for Faction Surge
+    pub fn initialize_game_state(
+        ctx: Context<InitializeGameState>,
+        round_duration_seconds: i64,
+    ) -> Result<()> {
+        admin::initialize_game_state_internal(ctx, round_duration_seconds)
+    }
+
+    /// Initialize a faction state account
+    pub fn initialize_faction_state(
+        ctx: Context<InitializeFactionState>,
+        faction_id: u8,
+    ) -> Result<()> {
+        admin::initialize_faction_state_internal(ctx, faction_id)
     }
 
     // ----------------------------------------------------------------------------------------

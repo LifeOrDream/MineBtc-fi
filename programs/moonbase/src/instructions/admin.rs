@@ -25,12 +25,10 @@ pub struct TreasuryInfo {
     pub pol_reserves: u64,
     pub rent_exempt_amount: u64,
     pub available_for_withdrawal: u64,
-    pub loot_percentage: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct GlobalConfigInfo {
-    pub loot_percentage: u8,
     pub is_game_active: bool,
     pub ext_authority: Pubkey,
     pub ext_fee_collector: Pubkey,
@@ -59,10 +57,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
     global_config.treasury_bump = ctx.bumps.sol_treasury;
 
-    global_config.total_moonbases_created = 0;
-    global_config.total_sol_spent = 0;
-    global_config.total_referral_sol_paid = 0;
-    global_config.total_dragon_eggs_minted = 0;
+    global_config.total_sol_bets = 0;
 
     // Initialize egg limits: [unused, tier2_limit, tier3_limit, tier4_limit]
     global_config.egg_limits = [0, 5000, 5000, 5000];
@@ -74,9 +69,12 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     global_config.global_dragon_egg_power = 0;
 
     global_config.bump = ctx.bumps.global_config;
-    global_config.loot_percentage = 15; // Default 15% for loot rewards
-    global_config.buyback_percentage = 20; // Default 20% for buybacks
-    global_config.is_game_active = false; // Default to false
+
+    global_config.protocol_fee_pct = 10;
+    global_config.buyback_pct = 40; // Default 40% for buybacks
+    global_config.stakers_pct = 40; // Default 40% for stakers
+    global_config.emission_per_round = 10_000_000_000; // 10k DogeBtc per round (default)
+    global_config.is_game_active = false; // Game starts inactive until initialized
 
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
@@ -96,8 +94,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     // Initialize DogeBtcMining
     doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
-    doge_btc_mining.total_active_hashpower = 0;
-    doge_btc_mining.total_active_electricity = 0;
     doge_btc_mining.doge_btc_per_slot = 0;
     doge_btc_mining.last_slot = 0;
     doge_btc_mining.total_tokens_mined = 0;
@@ -112,6 +108,10 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
     doge_btc_mining.track_price = 0;
     doge_btc_mining.sol_for_pol = 0;
+
+    //--------------------------------- Global Game State ---------------------------------
+    // Note: GlobalGameSate should be initialized separately via initialize_game_state function
+    // We don't initialize it here to keep Initialize simple
 
     msg!(
         "SOL Treasury PDA created at: {} with bump: {}",
@@ -190,37 +190,80 @@ pub fn set_dragon_egg_collection_internal(
     Ok(())
 }
 
-/// Add factions to the global config (admin only)
-pub fn add_factions_internal(ctx: Context<UpdateConfigAc>, factions: Vec<String>) -> Result<()> {
+/// Add a single faction to the global config (admin only)
+/// Also initializes the faction state account for the new faction
+pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
-    // Validate faction names
-    for faction in &factions {
-        require!(
-            faction.len() > 0 && faction.len() <= 16,
-            ErrorCode::InvalidFactionName
-        );
-    }
+    // Validate faction name
+    require!(
+        faction_name.len() > 0 && faction_name.len() <= MAX_FACTION_NAME_LENGTH,
+        ErrorCode::InvalidFactionName
+    );
 
     // Check we don't exceed max factions
+    let current_faction_count = global_config.supported_factions.len();
     require!(
-        global_config.supported_factions.len() + factions.len() <= MAX_FACTIONS,
+        current_faction_count < MAX_FACTIONS,
         ErrorCode::MaxFactionsReached
     );
 
-    // Add new factions
-    global_config.supported_factions.extend(factions.clone());
+    let faction_id = current_faction_count as u8;
 
-    msg!("✅ Added {} factions", factions.len());
-    msg!(
-        "   Total factions: {}",
-        global_config.supported_factions.len()
+    // Derive expected PDA and verify
+    let (expected_pda, bump) = Pubkey::find_program_address(
+        &[FACTION_STATE_SEED.as_ref(), &[faction_id]],
+        ctx.program_id,
     );
+    require!(
+        ctx.accounts.faction_state.key() == expected_pda,
+        ErrorCode::InvalidAccount
+    );
+
+    // Initialize faction state account if needed
+    let rent = Rent::get()?;
+    let rent_lamports = rent.minimum_balance(FactionState::LEN);
+    
+    if ctx.accounts.faction_state.lamports() == 0 {
+        // Create account
+        anchor_lang::system_program::create_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::CreateAccount {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.faction_state.to_account_info(),
+                },
+                &[&[FACTION_STATE_SEED.as_ref(), &[faction_id], &[bump]]],
+            ),
+            rent_lamports,
+            FactionState::LEN as u64,
+            ctx.program_id,
+        )?;
+    }
+
+    // Initialize faction state data
+    let mut faction_state_data = ctx.accounts.faction_state.try_borrow_mut_data()?;
+    let mut faction_state = FactionState {
+        bump,
+        faction_id,
+        total_passive_hashpower: 0,
+        total_sol_bets: 0,
+        total_active_sol_bets: 0,
+        active_sol_reward_index: 0,
+        active_dbtc_reward_index: 0,
+    };
+    faction_state.try_serialize(&mut &mut faction_state_data[..])?;
+
+    // Add faction to config
+    global_config.supported_factions.push(faction_name.clone());
+
+    msg!("✅ Added faction: {} (ID: {})", faction_name, faction_id);
+    msg!("   Total factions: {}", global_config.supported_factions.len());
 
     // Emit event for off-chain indexing
     emit!(FactionsAdded {
         authority: ctx.accounts.authority.key(),
-        factions: factions.clone(),
+        factions: vec![faction_name.clone()],
         total_factions: global_config.supported_factions.len() as u8,
     });
 
@@ -234,7 +277,9 @@ pub fn update_config_internal(
     new_authority: Option<Pubkey>,
     new_fee_collector: Option<Pubkey>,
     new_creation_fee_recipient: Option<Pubkey>,
-    new_loot_percentage: Option<u8>,
+    new_buyback_pct: Option<u8>,
+    new_stakers_pct: Option<u8>,
+    new_emission_per_round: Option<u64>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
@@ -259,12 +304,32 @@ pub fn update_config_internal(
         );
     }
 
-    // Update loot percentage if provided
-    if let Some(loot_percentage) = new_loot_percentage {
-        require!(loot_percentage <= 100, ErrorCode::InvalidParameters);
-        global_config.loot_percentage = loot_percentage;
-        msg!("Updated loot percentage to {}%", loot_percentage);
+    // Update buyback percentage if provided
+    if let Some(buyback_pct) = new_buyback_pct {
+        require!(buyback_pct <= 100, ErrorCode::InvalidParameters);
+        global_config.buyback_pct = buyback_pct;
+        msg!("Updated buyback percentage to {}%", buyback_pct);
     }
+
+    // Update stakers percentage if provided
+    if let Some(stakers_pct) = new_stakers_pct {
+        require!(stakers_pct <= 100, ErrorCode::InvalidParameters);
+        global_config.stakers_pct = stakers_pct;
+        msg!("Updated stakers percentage to {}%", stakers_pct);
+    }
+
+    // Update emission per round if provided
+    if let Some(emission_per_round) = new_emission_per_round {
+        require!(emission_per_round > 0, ErrorCode::InvalidParameters);
+        global_config.emission_per_round = emission_per_round;
+        msg!("Updated emission per round to {}", emission_per_round);
+    }
+
+    // Validate fee percentages don't exceed 100% combined
+    require!(
+        global_config.buyback_pct as u16 + global_config.stakers_pct as u16 <= 100,
+        ErrorCode::InvalidParameters
+    );
 
     Ok(())
 }
@@ -292,6 +357,79 @@ pub fn update_egg_limits_internal(
         global_config.egg_limits[3] = limit; // Tier 4 is at index 3
         msg!("Updated Tier 4 egg limit to {}", limit);
     }
+
+    Ok(())
+}
+
+// --------------------------------------------------------------------------------
+// ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
+// --------------------------------------------------------------------------------
+
+/// Initialize the global game state for Faction Surge
+pub fn initialize_game_state_internal(
+    ctx: Context<InitializeGameState>,
+    round_duration_seconds: i64,
+) -> Result<()> {
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    let clock = Clock::get()?;
+
+    // Initialize game state
+    global_game_state.bump = ctx.bumps.global_game_state;
+    global_game_state.is_active = true;
+    global_game_state.current_round_id = 1;
+    global_game_state.round_end_timestamp = clock.unix_timestamp + round_duration_seconds;
+    global_game_state.round_duration_seconds = round_duration_seconds;
+    
+    // Initialize previous round data
+    global_game_state.last_round_id = 0;
+    global_game_state.winning_faction_id = 0;
+    global_game_state.total_sol_pot_net = 0;
+    global_game_state.total_sol_bet_on_winner = 0;
+    global_game_state.total_sol_bet_on_losers = 0;
+    global_game_state.total_sol_bet_all_factions = 0;
+    global_game_state.dbtc_winner_pool = 0;
+    global_game_state.dbtc_loser_pool = 0;
+    global_game_state.motherlode_hit = false;
+    global_game_state.motherlode_pot_size_on_hit = 0;
+    
+    // Initialize reward pools
+    global_game_state.motherlode_pot = 0;
+    global_game_state.passive_dbtc_reward_index = 0;
+    global_game_state.passive_sol_reward_index = 0;
+    global_game_state.total_global_passive_hashpower = 0;
+
+    msg!("✅ Global game state initialized");
+    msg!("   Round duration: {} seconds", round_duration_seconds);
+    msg!("   First round ends at: {}", global_game_state.round_end_timestamp);
+
+    Ok(())
+}
+
+/// Initialize a faction state account
+pub fn initialize_faction_state_internal(
+    ctx: Context<InitializeFactionState>,
+    faction_id: u8,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let faction_state = &mut ctx.accounts.faction_state;
+
+    // Validate faction_id exists
+    require!(
+        (faction_id as usize) < global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+
+    // Initialize faction state
+    faction_state.bump = ctx.bumps.faction_state;
+    faction_state.faction_id = faction_id;
+    faction_state.total_passive_hashpower = 0;
+    faction_state.total_sol_bets = 0;
+    faction_state.total_active_sol_bets = 0;
+    faction_state.active_sol_reward_index = 0;
+    faction_state.active_dbtc_reward_index = 0;
+
+    msg!("✅ Faction state initialized for faction {}", faction_id);
+    msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);
 
     Ok(())
 }
@@ -379,63 +517,7 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
     Ok(())
 }
 
-// ----------------------------------------------------------------------------------------
-// ------------  LOOT REWARDS --------------------------------
-// ----------------------------------------------------------------------------------------
-
-/// Initialize the loot rewards system
-pub fn initialize_loot_rewards_internal(ctx: Context<InitializeLootRewards>) -> Result<()> {
-    let loot_rewards = &mut ctx.accounts.loot_rewards;
-    let _clock = Clock::get()?;
-
-    // Initialize loot rewards state
-    loot_rewards.total_dbtc_accumulated = 0;
-    loot_rewards.total_sol_accumulated = 0;
-    loot_rewards.total_dbtc_distributed = 0;
-    loot_rewards.total_sol_distributed = 0;
-    loot_rewards.bump = ctx.bumps.loot_rewards;
-    loot_rewards.sol_vault_bump = ctx.bumps.loot_sol_vault;
-    loot_rewards.dbtc_vault_bump = ctx.bumps.loot_dbtc_vault;
-    loot_rewards.dbtc_vault_authority_bump = ctx.bumps.loot_dbtc_vault_authority;
-
-    emit!(LootRewardsInitialized {
-        loot_rewards_pda: loot_rewards.key(),
-        sol_vault_pda: ctx.accounts.loot_sol_vault.key(),
-        dbtc_vault_pda: ctx.accounts.loot_dbtc_vault.key(),
-    });
-
-    msg!("🎁 Loot rewards system initialized");
-    msg!("   Loot Rewards PDA: {}", loot_rewards.key());
-    msg!("   SOL Vault: {}", ctx.accounts.loot_sol_vault.key());
-    msg!("   DOGE_BTC Vault: {}", ctx.accounts.loot_dbtc_vault.key());
-    msg!(
-        "   DOGE_BTC Vault Authority: {}",
-        ctx.accounts.loot_dbtc_vault_authority.key()
-    );
-
-    Ok(())
-}
-
-/// Initialize buybacks account system
-pub fn initialize_buybacks_internal(ctx: Context<InitializeBuybacks>) -> Result<()> {
-    let buybacks_account = &mut ctx.accounts.buybacks_account;
-
-    // Initialize buybacks state
-    buybacks_account.total_sol_accumulated = 0;
-    buybacks_account.total_sol_used = 0;
-    buybacks_account.sol_for_pol = 0;
-    buybacks_account.bump = ctx.bumps.buybacks_account;
-    buybacks_account.sol_vault_bump = ctx.bumps.buybacks_sol_vault;
-
-    msg!("💰 Buybacks system initialized");
-    msg!("   Buybacks Account PDA: {}", buybacks_account.key());
-    msg!(
-        "   SOL Vault PDA: {}",
-        ctx.accounts.buybacks_sol_vault.key()
-    );
-
-    Ok(())
-}
+ 
 
 // ----------------------------------------------------------------------------------------
 // ------------ WITHDRAW SOL FEES ----------------------------------
@@ -475,16 +557,8 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
         rent_exempt_amount as f64 / 1e9
     );
 
-    // Calculate loot rewards amount using configurable percentage
-    let loot_percentage = global_config.loot_percentage as u64;
-    let sol_for_loots = available_solana
-        .checked_mul(loot_percentage)
-        .unwrap()
-        .checked_div(100)
-        .unwrap();
-
     // Calculate buybacks amount using configurable percentage
-    let buyback_percentage = global_config.buyback_percentage as u64;
+    let buyback_percentage = global_config.buyback_pct as u64;
     let sol_for_buybacks = available_solana
         .checked_mul(buyback_percentage)
         .unwrap()
@@ -493,50 +567,12 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
     // Remaining amount goes to fee collector (for distribution to stakers and dev)
     let fee_collector_amount = available_solana
-        .checked_sub(sol_for_loots)
-        .unwrap()
         .checked_sub(sol_for_buybacks)
         .unwrap();
 
     // Create signer seeds for sol_treasury
     let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
     let signer_seeds = &[&treasury_seeds[..]];
-
-    // Transfer loot rewards to loot SOL vault
-    if sol_for_loots > 0 {
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.loot_sol_vault.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            sol_for_loots,
-        )?;
-
-        // Update loot rewards tracking
-        ctx.accounts.loot_rewards.total_sol_accumulated = ctx
-            .accounts
-            .loot_rewards
-            .total_sol_accumulated
-            .checked_add(sol_for_loots)
-            .unwrap();
-
-        emit!(LootRewardsAccumulated {
-            dbtc_amount: 0,
-            sol_amount: sol_for_loots,
-            total_dbtc_accumulated: ctx.accounts.loot_rewards.total_dbtc_accumulated,
-            total_sol_accumulated: ctx.accounts.loot_rewards.total_sol_accumulated,
-        });
-
-        msg!(
-            "🎁 Transferred {} SOL to loot rewards vault ({}%)",
-            sol_for_loots  as f64 / 1e9,
-            loot_percentage
-        );
-    }
 
     // Transfer buybacks amount to buybacks SOL vault
     if sol_for_buybacks > 0 {
@@ -585,7 +621,6 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
         emit!(SolFeesWithdrawn {
             fee_collector: fee_collector.key(),
             economy_program_amount: fee_collector_amount,
-            loot_amount: sol_for_loots,
             buyback_amount: sol_for_buybacks,
         });
     }
@@ -628,7 +663,6 @@ pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<T
         pol_reserves,
         rent_exempt_amount,
         available_for_withdrawal,
-        loot_percentage: global_config.loot_percentage,
     })
 }
 
@@ -638,14 +672,12 @@ pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<G
     let global_config = &ctx.accounts.global_config;
 
     msg!(
-        "📊 Config: loot={}%, active={}, authority={}",
-        global_config.loot_percentage,
+        "📊 Config: active={}, authority={}",
         global_config.is_game_active,
         global_config.ext_authority
     );
 
     Ok(GlobalConfigInfo {
-        loot_percentage: global_config.loot_percentage,
         is_game_active: global_config.is_game_active,
         ext_authority: global_config.ext_authority,
         ext_fee_collector: global_config.ext_fee_collector,
@@ -845,67 +877,7 @@ pub struct CreateSystemReferralAccount<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
-/// Account struct for initializing loot rewards system
-#[derive(Accounts)]
-pub struct InitializeLootRewards<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = LootRewards::LEN,
-        seeds = [LOOT_REWARDS_SEED.as_ref()],
-        bump
-    )]
-    pub loot_rewards: Account<'info, LootRewards>,
-
-    /// CHECK: SOL vault for loot rewards (0-byte PDA, System Account)
-    #[account(
-        init,
-        payer = authority,
-        space = 0,
-        seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
-        bump,
-        owner = system_program.key()  // System-owned account for native SOL
-    )]
-    pub loot_sol_vault: UncheckedAccount<'info>,
-
-    /// DOGE_BTC vault for loot rewards
-    #[account(
-        init,
-        payer = authority,
-        owner = token_program.key(),
-        seeds = [LOOT_DOGE_BTC_VAULT_SEED.as_ref()],
-        token::mint = dbtc_mint,
-        token::authority = loot_dbtc_vault_authority,
-        bump
-    )]
-    pub loot_dbtc_vault: InterfaceAccount<'info, TokenAccount2022>,
-
-    /// CHECK: Authority for loot DOGE_BTC vault (0-byte PDA)
-    #[account(
-        seeds = [LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
-    )]
-    pub loot_dbtc_vault_authority: UncheckedAccount<'info>,
-
-    /// DOGE_BTC mint (Token-2022)
-    #[account(owner = token_program.key())]
-    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token2022>,
-    pub rent: Sysvar<'info, Rent>,
-}
+ 
 
 /// Account struct for initializing buybacks system
 #[derive(Accounts)]
@@ -967,22 +939,6 @@ pub struct WithdrawSolFees<'info> {
 
     #[account(mut, signer, address = global_config.ext_fee_collector)]
     pub fee_collector: Signer<'info>,
-
-    /// CHECK: Loot SOL vault PDA (System Account)
-    #[account(
-        mut,
-        seeds = [LOOT_SOL_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub loot_sol_vault: UncheckedAccount<'info>,
-
-    /// Loot rewards tracking account (required)
-    #[account(
-        mut,
-        seeds = [LOOT_REWARDS_SEED.as_ref()],
-        bump,
-    )]
-    pub loot_rewards: Account<'info, LootRewards>,
 
     /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(
@@ -1125,6 +1081,75 @@ pub struct CreateDragonEggCollection<'info> {
     /// CHECK: Metaplex Core program
     #[account(address = MPL_CORE_PROGRAM_ID)]
     pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AddFaction<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// CHECK: Faction state PDA (validated in instruction)
+    #[account(mut)]
+    pub faction_state: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeGameState<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = GlobalGameSate::LEN,
+        seeds = [GLOBAL_SURGE_STATE_SEED.as_ref()],
+        bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(faction_id: u8)]
+pub struct InitializeFactionState<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = FactionState::LEN,
+        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
+        bump
+    )]
+    pub faction_state: Account<'info, FactionState>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
