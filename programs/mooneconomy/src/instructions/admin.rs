@@ -143,7 +143,7 @@ pub fn internal_update_configuration(
     new_dev_address: Option<Pubkey>,
     new_dogebtc_allocation: Option<u8>,
     new_liquidity_allocation: Option<u8>,
-    new_electricity_per_weighted_sol: Option<u64>,
+    new_hashpower_per_weighted_sol: Option<u64>,
     new_emergency_tax: Option<u8>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
@@ -174,12 +174,12 @@ pub fn internal_update_configuration(
         msg!("Updated liquidity allocation to {}", liquidity_allocation);
     }
 
-    // if electricity_per_weighted_sol is provided, update it
-    if let Some(electricity_per_weighted_sol) = new_electricity_per_weighted_sol {
-        global_config.electricity_per_weighted_sol = electricity_per_weighted_sol;
+    // if hashpower_per_weighted_sol is provided, update it
+    if let Some(hashpower_per_weighted_sol) = new_hashpower_per_weighted_sol {
+        global_config.hashpower_per_weighted_sol = hashpower_per_weighted_sol;
         msg!(
             "Updated electricity per weighted SOL to {}",
-            electricity_per_weighted_sol
+            hashpower_per_weighted_sol
         );
     }
 
@@ -194,7 +194,7 @@ pub fn internal_update_configuration(
     // Emit update event
     emit!(ConfigUpdated {
         authority: global_config.authority,
-        electricity_per_weighted_sol: global_config.electricity_per_weighted_sol,
+        hashpower_per_weighted_sol: global_config.hashpower_per_weighted_sol,
         dogebtc_allocation: global_config.dogebtc_allocation,
         liquidity_allocation: global_config.liquidity_allocation
     });

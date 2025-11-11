@@ -1366,7 +1366,7 @@ export async function setDbtcSolPrice(
 
 /**
  * Update MoonEconomy global configuration
- * Used to set electricity_per_weighted_sol and other config parameters
+ * Used to set hashpower_per_weighted_sol and other config parameters
  */
 export async function updateMoonEconomyConfiguration(
   connection,

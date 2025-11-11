@@ -46,7 +46,7 @@ pub mod mooneconomy {
         new_dev_address: Option<Pubkey>,
         new_dogebtc_allocation: Option<u8>,
         new_liquidity_allocation: Option<u8>,
-        new_electricity_per_weighted_sol: Option<u64>,
+        new_hashpower_per_weighted_sol: Option<u64>,
         new_emergency_tax: Option<u8>,
     ) -> Result<()> {
         admin::internal_update_configuration(
@@ -55,7 +55,7 @@ pub mod mooneconomy {
             new_dev_address,
             new_dogebtc_allocation,
             new_liquidity_allocation,
-            new_electricity_per_weighted_sol,
+            new_hashpower_per_weighted_sol,
             new_emergency_tax,
         )
     }

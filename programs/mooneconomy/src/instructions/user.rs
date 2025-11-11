@@ -320,7 +320,7 @@ pub fn stake_moondoge(
         lockup_duration,
         multiplier,
         weighted_amount,
-        electricity_earned: 0, // Electricity system removed
+        total_hashpower_contribution: 0, // Electricity system removed
         position_index,
     });
     
@@ -585,7 +585,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     // Reset position data
     user_position.staked_amount = 0;
     user_position.weighted_amount = 0;
-    user_position.electricity_per_day = 0;
+    user_position.hashpower_contribution = 0;
     
     emit!(DogeBtcUnstaked {
         owner: ctx.accounts.authority.key(),
@@ -875,7 +875,7 @@ pub fn stake_lp_tokens(
         lockup_duration,
         multiplier,
         weighted_amount,
-        electricity_earned: 0, // Electricity system removed
+        total_hashpower_contribution: 0, // Electricity system removed
         position_index,
     });
     
@@ -1128,7 +1128,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     // Reset position data
     user_position.staked_amount = 0;
     user_position.weighted_amount = 0;
-    user_position.electricity_per_day = 0;
+    user_position.hashpower_contribution = 0;
     
     emit!(LiquidityUnstaked {
         owner: ctx.accounts.authority.key(),

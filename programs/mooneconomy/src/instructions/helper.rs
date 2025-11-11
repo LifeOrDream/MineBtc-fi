@@ -156,7 +156,7 @@ pub fn calculate_total_electricity(
     _dogebtc_vault: &DogeBtcVault,
     _liquidity_vault: &LiquidityVault,
 ) -> Result<u64> {
-    // electricity_earned already includes electricity from all DOGE_BTC and LP positions
+    // total_hashpower_contribution already includes electricity from all DOGE_BTC and LP positions
     // It's updated whenever user stakes/unstakes
-    Ok(electricity_ac.electricity_earned)
+    Ok(electricity_ac.total_hashpower_contribution)
 }

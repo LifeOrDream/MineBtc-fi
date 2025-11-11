@@ -175,7 +175,7 @@ async function main() {
         // 3.5. Set initial DOGE_BTC to SOL price (default price for electricity calculations)
         await setInitialDbtcSolPrice(moonEconomyProgram);
         
-        // 3.6. Set electricity_per_weighted_sol configuration
+        // 3.6. Set hashpower_per_weighted_sol configuration
         await setElectricityPerWeightedSol(moonEconomyProgram);
         
         // 3.7. Set SOL distribution enabled status (disabled by default, admin will enable later)
@@ -644,7 +644,7 @@ async function setElectricityPerWeightedSol(moonEconomyProgram) {
 
         // Default: 1000 electricity per weighted SOL (1 SOL = 1000 electricity)
         // This can be adjusted in config.json if needed
-        const defaultElectricityPerWeightedSol = config.moonEconomy?.electricity_per_weighted_sol || 1000;
+        const defaultElectricityPerWeightedSol = config.moonEconomy?.hashpower_per_weighted_sol || 1000;
         
         console.log('\x1b[36m%s\x1b[0m', `📝 Setting electricity per weighted SOL: ${defaultElectricityPerWeightedSol}`);
         console.log('\x1b[36m%s\x1b[0m', `   Meaning: 1 SOL staked = ${defaultElectricityPerWeightedSol} electricity`);
@@ -671,7 +671,7 @@ async function setElectricityPerWeightedSol(moonEconomyProgram) {
             
             deploymentFile.moonEconomy_program_initialized = {
                 ...deploymentFile.moonEconomy_program_initialized,
-                electricity_per_weighted_sol: {
+                hashpower_per_weighted_sol: {
                     value: defaultElectricityPerWeightedSol,
                     set_tx: result.data.updateTxid,
                     timestamp: new Date().toISOString()

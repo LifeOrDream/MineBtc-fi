@@ -9,7 +9,7 @@ pub mod state;
 pub use instructions::admin::*;
 pub use instructions::economy::*;
 pub use instructions::user::*;
-pub use instructions::surge::*;
+pub use state::{SolFeeConfig, DogeBtcDistConfig};
 
 declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
 
@@ -19,7 +19,6 @@ pub mod moonbase {
     use crate::instructions::admin::{self, CreateDragonEggCollection};
     use crate::instructions::economy::{self};
     use crate::instructions::user::{self};
-    use crate::instructions::surge::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -49,9 +48,14 @@ pub mod moonbase {
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
-    /// Add Dragon Egg URIs to the pool (admin only)
-    pub fn add_dragon_egg_uris(ctx: Context<UpdateConfigAc>, uris: Vec<String>) -> Result<()> {
-        admin::add_dragon_egg_uris_internal(ctx, uris)
+    /// Set Dragon Egg URIs for a specific tier (admin only)
+    /// uris: Vec of URIs, one per faction (must match number of factions)
+    pub fn set_dragon_egg_uris_for_tier(
+        ctx: Context<UpdateConfigAc>,
+        tier: u8,
+        uris: Vec<String>,
+    ) -> Result<()> {
+        admin::set_dragon_egg_uris_for_tier_internal(ctx, tier, uris)
     }
 
     /// Clear all Dragon Egg URIs (admin only)
@@ -81,8 +85,6 @@ pub mod moonbase {
         new_authority: Option<Pubkey>,
         new_fee_collector: Option<Pubkey>,
         new_creation_fee_recipient: Option<Pubkey>,
-        new_buyback_pct: Option<u8>,
-        new_stakers_pct: Option<u8>,
         new_emission_per_round: Option<u64>,
     ) -> Result<()> {
         admin::update_config_internal(
@@ -90,10 +92,18 @@ pub mod moonbase {
             new_authority,
             new_fee_collector,
             new_creation_fee_recipient,
-            new_buyback_pct,
-            new_stakers_pct,
             new_emission_per_round,
         )
+    }
+
+    /// Update fee configuration (admin only)
+    /// Validates that percentages sum correctly
+    pub fn update_fees(
+        ctx: Context<UpdateConfigAc>,
+        new_sol_fee_config: Option<SolFeeConfig>,
+        new_dbtc_dist_config: Option<DogeBtcDistConfig>,
+    ) -> Result<()> {
+        admin::update_fees_internal(ctx, new_sol_fee_config, new_dbtc_dist_config)
     }
 
     /// Update egg limits for tiers (admin only)
@@ -216,7 +226,7 @@ pub mod moonbase {
 
     /// Initialize a player account for the Faction Surge game
     pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8) -> Result<()> {
-        surge::initialize_player(ctx, faction_id)
+        user::initialize_player(ctx, faction_id)
     }
 
     /// Update personal hashpower (CPI-only, called by mooneconomy program)
@@ -225,22 +235,22 @@ pub mod moonbase {
         amount: i128,
         user_pubkey: Pubkey,
     ) -> Result<()> {
-        surge::update_personal_hashpower(ctx, amount, user_pubkey)
+        user::update_personal_hashpower(ctx, amount, user_pubkey)
     }
 
     /// Join a surge round by betting SOL
     pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
-        surge::join_surge(ctx, amount)
+        user::join_surge(ctx, amount)
     }
 
     /// Crank end surge - determines winner and distributes rewards
     pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
-        surge::crank_end_surge(ctx)
+        user::crank_end_surge(ctx)
     }
 
     /// Claim surge rewards for a user
     pub fn claim_surge_rewards(ctx: Context<ClaimSurgeRewards>) -> Result<()> {
-        surge::claim_surge_rewards(ctx)
+        user::claim_surge_rewards(ctx)
     }
 
     /// Initialize autominer vault
@@ -249,17 +259,17 @@ pub mod moonbase {
         sol_per_round: u64,
         num_rounds: u32,
     ) -> Result<()> {
-        surge::init_autominer(ctx, sol_per_round, num_rounds)
+        user::init_autominer(ctx, sol_per_round, num_rounds)
     }
 
     /// Execute autominer bet (keeper instruction)
     pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
-        surge::execute_autominer_bet(ctx)
+        user::execute_autominer_bet(ctx)
     }
 
     /// Cancel autominer vault
     pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
-        surge::cancel_autominer(ctx)
+        user::cancel_autominer(ctx)
     }
 
     // ----------------------------------------------------------------------------------------

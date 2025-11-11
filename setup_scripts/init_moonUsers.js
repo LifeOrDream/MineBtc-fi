@@ -194,7 +194,7 @@ async function main() {
     //     userMoonElectricity.total_lp_tokens_staked = userMoonElectricity.total_lp_tokens_staked.toNumber();
     //     userMoonElectricity.total_weighted_lp = userMoonElectricity.total_weighted_lp.toNumber();
 
-    //     userMoonElectricity.electricity_earned = userMoonElectricity.electricity_earned.toNumber();
+    //     userMoonElectricity.total_hashpower_contribution = userMoonElectricity.total_hashpower_contribution.toNumber();
     //     userMoonElectricity.moondoge_reward_debt = userMoonElectricity.moondoge_reward_debt.toNumber();
     //     userMoonElectricity.lp_reward_debt = userMoonElectricity.lp_reward_debt.toNumber();
     //     userMoonElectricity.pending_moondoge_rewards = userMoonElectricity.pending_moondoge_rewards.toNumber();
@@ -215,7 +215,7 @@ async function main() {
     //     userDogeBtcPosition.start_timestamp = userDogeBtcPosition.start_timestamp.toNumber();
     //     userDogeBtcPosition.lockup_end_timestamp = userDogeBtcPosition.lockup_end_timestamp.toNumber();
     //     userDogeBtcPosition.lockup_duration = userDogeBtcPosition.lockup_duration.toNumber();
-    //     userDogeBtcPosition.electricity_per_day = userDogeBtcPosition.electricity_per_day.toNumber();
+    //     userDogeBtcPosition.hashpower_contribution = userDogeBtcPosition.hashpower_contribution.toNumber();
     //     console.log(userDogeBtcPosition);
     // // return;
 

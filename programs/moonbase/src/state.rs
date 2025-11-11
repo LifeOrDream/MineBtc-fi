@@ -104,6 +104,10 @@ pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 /// Global configuration for the Moon Facility program
 #[account]
 pub struct GlobalConfig {
+
+    /// Whether the game is currently active
+    pub is_game_active: bool,
+
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
     /// External account that can withdraw collected SOL
@@ -113,79 +117,193 @@ pub struct GlobalConfig {
     /// PDA account that holds collected SOL fees
     pub pda_sol_treasury: Pubkey,
 
+    /// List of supported factions (e.g., "USA", "China", "Russia")
+    /// Maximum 15 factions, each with max 16 characters
+    pub supported_factions: Vec<String>,
 
+    /// Total SOL bets since start of game
     pub total_sol_bets: u128,
 
-    /// ------------------------------------------------------------           
-    pub protocol_fee_pct: u8,
-    /// Percentage of SOL fees that go to buybacks (default 40%)
-    pub buyback_pct: u8,
-    /// Percentage of SOL fees that go to stakers (default 40%)
-    pub stakers_pct: u8,
-    /// DogeBtc emission per round (in smallest units)
+    /// SOL fee distribution configuration
+    pub sol_fee_config: SolFeeConfig,
+
+    /// DogeBtc distribution configuration
+    pub dbtc_dist_config: DogeBtcDistConfig,
+
+    /// Emission per round (DogeBtc tokens)
     pub emission_per_round: u64,
-    /// Whether the game is currently active
-    pub is_game_active: bool,
+
+    /// Authorized Raydium pool state address (security: prevents using malicious pools)
+    pub raydium_pool_state: Pubkey,
 
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
     pub bump: u8,
     /// Bump for SOL treasury PDA derivation
     pub treasury_bump: u8,
-    /// List of supported factions (e.g., "USA", "China", "Russia")
-    /// Maximum 15 factions, each with max 16 characters
-    pub supported_factions: Vec<String>,
+
     /// Dragon Egg collection address (Metaplex Core)
     pub dragon_egg_collection: Pubkey,
-    /// Available Dragon Egg URIs (randomly selected on mint)
-    pub dragon_egg_uris: Vec<String>,
+    /// Dragon Egg URIs organized by tier and faction
+    /// Structure: [tier][faction_id] = URI
+    /// 3 tiers (2, 3, 4), each with URIs for each faction
+    pub dragon_egg_uris: Vec<Vec<String>>, // [tier_index][faction_index] = URI
     /// Egg limits per tier: [unused, tier2_limit, tier3_limit, tier4_limit]
     /// Tier 2: 5000 eggs, Tier 3: 5000 eggs, Tier 4: 5000 eggs
     pub egg_limits: [u64; 4],
-    /// Authorized Raydium pool state address (security: prevents using malicious pools)
-    pub raydium_pool_state: Pubkey,
     /// Global total power across all Dragon Eggs (sum of all egg powers)
     pub global_dragon_egg_power: u64,
 }
 
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct SolFeeConfig {
+    /// Percentage of SOL fees that go to protocol  
+    pub protocol_fee_pct: u8,
+    /// Percentage of SOL fees that go to buybacks 
+    pub buyback_pct: u8,
+    /// Percentage of SOL fees that go to stakers 
+    pub stakers_pct: u8,
+}
+
+impl SolFeeConfig {
+    pub const LEN: usize = 1 + 1 + 1; // protocol_fee_pct + buyback_pct + stakers_pct
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct DogeBtcDistConfig {
+    /// Percentage of DogeBtc emission that goes to stakers
+    pub dbtc_stakers_pct: u8,
+    /// Percentage of DogeBtc emission that goes to winning block bettors
+    pub dbtc_winners_pct: u8,
+    /// Percentage of DogeBtc emission that goes to losing block bettors
+    pub dbtc_losers_pct: u8,
+    /// Percentage of DogeBtc emission that goes to motherlode
+    pub dbtc_motherlode_pct: u8,
+}
+
+impl DogeBtcDistConfig {
+    pub const LEN: usize = 1 + 1 + 1 + 1; // All 4 percentages
+}
+ 
+ 
+
+
+// /// Global "clock" for the game. Stores round info and global reward pools.
+// #[account]
+// pub struct GlobalGameState {
+//     pub bump: u8,
+//     pub is_active: bool,
+
+//     /// The currently active round (e.g., 48636).
+//     pub current_round_id: u64,
+//     /// The timestamp when the current round ends.
+//     pub round_end_timestamp: i64,
+//     /// Round duration in seconds (configurable)
+//     pub round_duration_seconds: i64,
+    
+//     // --- Data from the *previous* round (for claiming) ---
+//     pub last_round_id: u64,
+//     pub winning_faction_id: u8,
+    
+//     // --- SOL Payout Data ---
+//     /// The 90% pot for winning block bettors
+//     pub total_sol_pot_net: u64,
+//     /// For pro-rata SOL payout to winners
+//     pub total_sol_bet_on_winner: u64,
+//     /// For pro-rata DogeBtc loser payout
+//     pub total_sol_bet_on_losers: u64,
+//     /// For Motherlode payout
+//     pub total_sol_bet_all_factions: u64,
+    
+//     // --- DogeBtc Payout Data ---
+//     /// 30% of emission for winning faction bettors
+//     pub dbtc_winner_pool: u64,
+//     /// 10% of emission for losing faction bettors
+//     pub dbtc_loser_pool: u64,
+    
+//     // --- Motherlode Data ---
+//     pub motherlode_hit: bool,
+//     pub motherlode_pot_size_on_hit: u64,
+    
+//     // --- Global Reward Pools (for passive stakers) ---
+//     /// Accumulated DOGE_BTC per hashpower share (for passive stakers)
+//     pub passive_dbtc_reward_index: u128,
+//     /// Accumulated SOL per hashpower share (for passive stakers)  
+//     pub passive_sol_reward_index: u128,
+//     /// Total hashpower across all passive stakers
+//     pub total_global_passive_hashpower: u128,
+    
+//     // --- Unrefined Reward Pools (ORE-style refining mechanic) ---
+//     /// 10% fees from unclaimed rewards accumulate here
+//     pub unrefined_sol_pool: u64,
+//     pub unrefined_dbtc_pool: u64,
+//     /// True during motherlode rounds (higher refining fee)
+//     pub motherlode_active: bool,
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury + total_sol_bets + protocol_fee_pct + buyback_pct + stakers_pct + emission_per_round + loot_percentage + is_game_active + bump + treasury_bump + supported_factions (vec) + dragon_egg_collection + dragon_egg_uris + egg_limits + raydium_pool_state + global_dragon_egg_power
+    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury + total_sol_bets + sol_fee_config + dbtc_dist_config + emission_per_round + is_game_active + bump + treasury_bump + supported_factions (vec) + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + raydium_pool_state + global_dragon_egg_power
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
+    // Vec<Vec<String>> = 4 bytes (outer vec length) + 3 tiers * (4 bytes inner vec length + MAX_FACTIONS * (4 + MAX_URI_LENGTH))
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
         32 +                    // ext_authority
         32 +                    // ext_fee_collector  
         32 +                    // creation_fee_recipient
         32 +                    // pda_sol_treasury
         16 +                    // total_sol_bets (u128)
-        1 +                     // protocol_fee_pct
-        1 +                     // buyback_pct
-        1 +                     // stakers_pct
+        SolFeeConfig::LEN +     // sol_fee_config
+        DogeBtcDistConfig::LEN + // dbtc_dist_config
         8 +                     // emission_per_round
         1 +                     // is_game_active
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)) + // supported_factions vec
         32 +                    // dragon_egg_collection
-        4 + (MAX_DRAGON_EGG_URIS * (4 + MAX_URI_LENGTH)) +    // dragon_egg_uris vec
+        4 + (3 * (4 + MAX_FACTIONS * (4 + MAX_URI_LENGTH))) + // dragon_egg_uris: 3 tiers × factions
         (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
         32 +                    // raydium_pool_state
         8;                      // global_dragon_egg_power
 
-    /// Select random Dragon Egg URI based on slot, index, and DNA
-    pub fn get_random_dragon_egg_uri(
-        &self,
-        slot: u64,
-        index: u64,
-        dna: &[u8; 32],
-    ) -> Result<String> {
-        require!(!self.dragon_egg_uris.is_empty(), ErrorCode::InvalidMetadata);
-
-        let dna_seed = u64::from_le_bytes([
-            dna[0], dna[1], dna[2], dna[3], dna[4], dna[5], dna[6], dna[7],
-        ]);
-        let random_index =
-            (slot.wrapping_add(index).wrapping_add(dna_seed)) as usize % self.dragon_egg_uris.len();
-        Ok(self.dragon_egg_uris[random_index].clone())
+    /// Get Dragon Egg URI for a specific tier and faction
+    pub fn get_dragon_egg_uri(&self, tier: u8, faction_id: u8) -> Result<String> {
+        require!(tier >= 2 && tier <= 4, ErrorCode::InvalidParameters);
+        require!(
+            (faction_id as usize) < self.supported_factions.len(),
+            ErrorCode::InvalidFactionId
+        );
+        
+        let tier_index = (tier - 2) as usize; // tier 2->0, 3->1, 4->2
+        require!(
+            tier_index < self.dragon_egg_uris.len(),
+            ErrorCode::InvalidMetadata
+        );
+        
+        let faction_uris = &self.dragon_egg_uris[tier_index];
+        require!(
+            (faction_id as usize) < faction_uris.len(),
+            ErrorCode::InvalidMetadata
+        );
+        
+        Ok(faction_uris[faction_id as usize].clone())
     }
 }
 

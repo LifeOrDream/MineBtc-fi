@@ -30,7 +30,7 @@ pub struct LiquidityVaultsInitialized {
 #[event]
 pub struct ConfigUpdated {
     pub authority: Pubkey,
-    pub electricity_per_weighted_sol: u64,
+    pub hashpower_per_weighted_sol: u64,
     pub dogebtc_allocation: u8,
     pub liquidity_allocation: u8,
 }
@@ -74,7 +74,7 @@ pub struct DogeBtcStaked {
     pub owner: Pubkey,
     pub position_index: u8,
     pub amount: u64,
-    pub electricity_earned: u64,
+    pub total_hashpower_contribution: u64,
     pub weighted_amount: u64,
     pub lockup_duration: u64,
     pub multiplier: u16,
@@ -149,7 +149,7 @@ pub struct LiquidityStaked {
     pub owner: Pubkey,
     pub position_index: u8,
     pub amount: u64,
-    pub electricity_earned: u64,
+    pub total_hashpower_contribution: u64,
     pub weighted_amount: u64,
     pub lockup_duration: u64,
     pub multiplier: u16,

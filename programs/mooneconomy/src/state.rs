@@ -67,10 +67,7 @@ pub struct GlobalConfig {
     pub last_claim_slot: u64,
 
     /// Electricity per weighted SOL staked (used for both dBTC and LP staking)
-    pub electricity_per_weighted_sol: u64,
-
-    /// Whether SOL distribution from fee collector is enabled (prevents early stakers from capturing all initial SOL)
-    pub sol_distribution_enabled: bool,
+    pub hashpower_per_weighted_sol: u64,
 
     /// Current DOGE_BTC to SOL price (9-decimal precision, same as MoonBase)
     /// Used for electricity calculations when MoonBase price is 0 or unavailable
@@ -93,7 +90,7 @@ impl GlobalConfig {
         1 +  // dogebtc_allocation
         1 +  // liquidity_allocation
         8 +  // last_claim_slot
-        8 +  // electricity_per_weighted_sol
+        8 +  // hashpower_per_weighted_sol
         1 +  // sol_distribution_enabled
         8 +  // dbtc_sol_price (u64)
         1; // bump
@@ -128,6 +125,8 @@ pub struct DogeBtcVault {
 
     /// Total SOL distributed to DogeBtc stakers
     pub total_sol_distributed: u64,
+    /// Total DogeBtc distributed to stakers
+    pub total_dbtc_distributed: u64,
 
     /// Emergency withdrawal tax percentage (0-100)
     pub emergency_tax: u8,
@@ -171,11 +170,15 @@ pub struct LiquidityVault {
     /// Total weighted LP points (including time multipliers)
     pub weighted_lp_locked: u64,
 
-    /// Accumulated SOL per weighted LP point (precision factor applied)
+    /// Accumulated SOL per weighted DogeBtc point (precision factor applied)
     pub accumulated_sol_per_point: u128,
+    /// Accumulated DogeBtc per weighted DogeBtc point (precision factor applied)
+    pub accumulated_dbtc_per_point: u128,
 
-    /// Total SOL distributed to LP stakers
+    /// Total SOL distributed to DogeBtc stakers
     pub total_sol_distributed: u64,
+    /// Total DogeBtc distributed to stakers
+    pub total_dbtc_distributed: u64,
 
     /// Emergency withdrawal tax percentage (0-100)
     pub emergency_tax: u8,
@@ -217,19 +220,14 @@ pub struct UserMoonElectricity {
     pub active_lp_positions: u8, // Max 7
 
     /// Electricity stats
-    pub electricity_earned: u64,
-    pub free_electricity: u64, // Free electricity from init tier bonus
+    pub total_hashpower_contribution: u64,
 
     /// SOL rewards tracking
-    pub moondoge_reward_debt: u128, // Last checkpoint for DogeBtc SOL rewards
-    pub lp_reward_debt: u128,          // Last checkpoint for LP rewards
-    pub pending_moondoge_rewards: u64, // Unclaimed DogeBtc staking SOL rewards
-    pub pending_lp_rewards: u64,       // Unclaimed LP staking rewards
-    pub total_sol_claimed: u64,        // Total SOL rewards claimed
+    pub dbtc_dbtc_reward_debt: u128, // Last checkpoint for DogeBtc SOL rewards
+    pub dbtc_sol_reward_debt: u128, // Last checkpoint for DogeBtc SOL rewards
     
-    /// DogeBtc rewards tracking
-    pub moondoge_dbtc_reward_debt: u128, // Last checkpoint for DogeBtc token rewards
-    pub pending_moondoge_dbtc_rewards: u64, // Unclaimed DogeBtc staking token rewards
+    pub lp_sol_reward_debt: u128, // Last checkpoint for LP SOL rewards
+    pub lp_dbtc_reward_debt: u128, // Last checkpoint for LP DogeBtc rewards
 
     /// Position indices tracking (max 7 elements each)
     pub moondoge_position_indices: Vec<u8>, // Store actual indices
@@ -247,7 +245,7 @@ impl UserMoonElectricity {
             8 +  // total_lp_tokens_staked
             8 +  // total_weighted_lp
             1 +  // active_lp_positions
-            8 +  // electricity_earned
+            8 +  // total_hashpower_contribution
             8 +  // free_electricity
             16 + // moondoge_reward_debt
             16 + // lp_reward_debt
@@ -273,7 +271,7 @@ pub struct DogeBtcPosition {
     pub lockup_end_timestamp: i64,
     pub lockup_duration: u64, // in days
     pub multiplier: u16,      // 100 = 1x
-    pub electricity_per_day: u64,
+    pub hashpower_contribution: u64,
     pub bump: u8,
 }
 
@@ -286,7 +284,7 @@ impl DogeBtcPosition {
         8 +  // lockup_end_timestamp
         8 +  // lockup_duration
         2 +  // multiplier
-        8 +  // electricity_per_day
+        8 +  // hashpower_contribution
         1; // bump
 }
 
@@ -302,7 +300,7 @@ pub struct LiquidityPosition {
     pub lockup_end_timestamp: i64,
     pub lockup_duration: u64, // in days
     pub multiplier: u16,      // 100 = 1x
-    pub electricity_per_day: u64,
+    pub hashpower_contribution: u64,
     pub bump: u8,
 }
 

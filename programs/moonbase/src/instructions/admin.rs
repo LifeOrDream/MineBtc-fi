@@ -59,6 +59,23 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
 
     global_config.total_sol_bets = 0;
 
+    // Initialize SOL fee config with defaults
+    global_config.sol_fee_config = SolFeeConfig {
+        protocol_fee_pct: 10,
+        buyback_pct: 40,
+        stakers_pct: 40,
+    };
+
+    // Initialize DogeBtc distribution config with defaults
+    global_config.dbtc_dist_config = DogeBtcDistConfig {
+        dbtc_stakers_pct: 50,
+        dbtc_winners_pct: 30,
+        dbtc_losers_pct: 10,
+        dbtc_motherlode_pct: 10,
+    };
+
+    global_config.emission_per_round = 10_000_000_000; // 10k DogeBtc per round (default)
+
     // Initialize egg limits: [unused, tier2_limit, tier3_limit, tier4_limit]
     global_config.egg_limits = [0, 5000, 5000, 5000];
 
@@ -69,15 +86,13 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     global_config.global_dragon_egg_power = 0;
 
     global_config.bump = ctx.bumps.global_config;
-
-    global_config.protocol_fee_pct = 10;
-    global_config.buyback_pct = 40; // Default 40% for buybacks
-    global_config.stakers_pct = 40; // Default 40% for stakers
-    global_config.emission_per_round = 10_000_000_000; // 10k DogeBtc per round (default)
     global_config.is_game_active = false; // Game starts inactive until initialized
 
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
+
+    // Initialize dragon egg URIs as empty vec of vecs (3 tiers, will be populated per faction)
+    global_config.dragon_egg_uris = Vec::new();
 
     // Optionally drop 1 lamport into the vault for future-proof rent-exempt status
     anchor_lang::system_program::transfer(
@@ -126,23 +141,38 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
 // -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Add Dragon Egg URIs to the pool (admin only)
-pub fn add_dragon_egg_uris_internal(ctx: Context<UpdateConfigAc>, uris: Vec<String>) -> Result<()> {
+/// Set Dragon Egg URIs for a specific tier and all factions (admin only)
+/// uris: Vec of URIs, one per faction (must match number of factions)
+pub fn set_dragon_egg_uris_for_tier_internal(
+    ctx: Context<UpdateConfigAc>,
+    tier: u8,
+    uris: Vec<String>,
+) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
+
+    require!(tier >= 2 && tier <= 4, ErrorCode::InvalidParameters);
+    require!(
+        uris.len() == global_config.supported_factions.len(),
+        ErrorCode::InvalidParameters
+    );
 
     // Validate URIs
     for uri in &uris {
         require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
     }
 
-    // Add new URIs
-    global_config.dragon_egg_uris.extend(uris.clone());
+    let tier_index = (tier - 2) as usize; // tier 2->0, 3->1, 4->2
 
-    msg!("✅ Added {} Dragon Egg URIs", uris.len());
-    msg!(
-        "   Total Dragon Egg URIs: {}",
-        global_config.dragon_egg_uris.len()
-    );
+    // Ensure we have 3 tiers initialized
+    while global_config.dragon_egg_uris.len() <= tier_index {
+        global_config.dragon_egg_uris.push(Vec::new());
+    }
+
+    // Set URIs for this tier
+    global_config.dragon_egg_uris[tier_index] = uris.clone();
+
+    msg!("✅ Set {} Dragon Egg URIs for tier {}", uris.len(), tier);
+    msg!("   Factions: {}", global_config.supported_factions.len());
 
     Ok(())
 }
@@ -277,8 +307,6 @@ pub fn update_config_internal(
     new_authority: Option<Pubkey>,
     new_fee_collector: Option<Pubkey>,
     new_creation_fee_recipient: Option<Pubkey>,
-    new_buyback_pct: Option<u8>,
-    new_stakers_pct: Option<u8>,
     new_emission_per_round: Option<u64>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
@@ -304,20 +332,6 @@ pub fn update_config_internal(
         );
     }
 
-    // Update buyback percentage if provided
-    if let Some(buyback_pct) = new_buyback_pct {
-        require!(buyback_pct <= 100, ErrorCode::InvalidParameters);
-        global_config.buyback_pct = buyback_pct;
-        msg!("Updated buyback percentage to {}%", buyback_pct);
-    }
-
-    // Update stakers percentage if provided
-    if let Some(stakers_pct) = new_stakers_pct {
-        require!(stakers_pct <= 100, ErrorCode::InvalidParameters);
-        global_config.stakers_pct = stakers_pct;
-        msg!("Updated stakers percentage to {}%", stakers_pct);
-    }
-
     // Update emission per round if provided
     if let Some(emission_per_round) = new_emission_per_round {
         require!(emission_per_round > 0, ErrorCode::InvalidParameters);
@@ -325,11 +339,55 @@ pub fn update_config_internal(
         msg!("Updated emission per round to {}", emission_per_round);
     }
 
-    // Validate fee percentages don't exceed 100% combined
-    require!(
-        global_config.buyback_pct as u16 + global_config.stakers_pct as u16 <= 100,
-        ErrorCode::InvalidParameters
-    );
+    Ok(())
+}
+
+/// Update fee configuration (admin only)
+/// Validates that percentages sum correctly
+pub fn update_fees_internal(
+    ctx: Context<UpdateConfigAc>,
+    new_sol_fee_config: Option<SolFeeConfig>,
+    new_dbtc_dist_config: Option<DogeBtcDistConfig>,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+
+    // Update SOL fee config if provided
+    if let Some(sol_fee_config) = new_sol_fee_config {
+        require!(
+            sol_fee_config.protocol_fee_pct as u16
+                + sol_fee_config.buyback_pct as u16
+                + sol_fee_config.stakers_pct as u16
+                == 100,
+            ErrorCode::InvalidParameters
+        );
+        global_config.sol_fee_config = sol_fee_config.clone();
+        msg!(
+            "Updated SOL fee config: protocol={}%, buyback={}%, stakers={}%",
+            sol_fee_config.protocol_fee_pct,
+            sol_fee_config.buyback_pct,
+            sol_fee_config.stakers_pct
+        );
+    }
+
+    // Update DogeBtc distribution config if provided
+    if let Some(dbtc_dist_config) = new_dbtc_dist_config {
+        require!(
+            dbtc_dist_config.dbtc_stakers_pct as u16
+                + dbtc_dist_config.dbtc_winners_pct as u16
+                + dbtc_dist_config.dbtc_losers_pct as u16
+                + dbtc_dist_config.dbtc_motherlode_pct as u16
+                == 100,
+            ErrorCode::InvalidParameters
+        );
+        global_config.dbtc_dist_config = dbtc_dist_config.clone();
+        msg!(
+            "Updated DogeBtc dist config: stakers={}%, winners={}%, losers={}%, motherlode={}%",
+            dbtc_dist_config.dbtc_stakers_pct,
+            dbtc_dist_config.dbtc_winners_pct,
+            dbtc_dist_config.dbtc_losers_pct,
+            dbtc_dist_config.dbtc_motherlode_pct
+        );
+    }
 
     Ok(())
 }
@@ -558,7 +616,7 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     );
 
     // Calculate buybacks amount using configurable percentage
-    let buyback_percentage = global_config.buyback_pct as u64;
+    let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
     let sol_for_buybacks = available_solana
         .checked_mul(buyback_percentage)
         .unwrap()
