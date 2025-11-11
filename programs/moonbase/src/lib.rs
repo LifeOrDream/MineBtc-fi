@@ -85,14 +85,12 @@ pub mod moonbase {
         new_authority: Option<Pubkey>,
         new_fee_collector: Option<Pubkey>,
         new_creation_fee_recipient: Option<Pubkey>,
-        new_emission_per_round: Option<u64>,
     ) -> Result<()> {
         admin::update_config_internal(
             ctx,
             new_authority,
             new_fee_collector,
             new_creation_fee_recipient,
-            new_emission_per_round,
         )
     }
 
@@ -100,20 +98,35 @@ pub mod moonbase {
     /// Validates that percentages sum correctly
     pub fn update_fees(
         ctx: Context<UpdateConfigAc>,
-        new_sol_fee_config: Option<SolFeeConfig>,
-        new_dbtc_dist_config: Option<DogeBtcDistConfig>,
+        new_protocol_fee_pct: Option<u8>,
+        new_buyback_pct: Option<u8>,
+        new_stakers_pct: Option<u8>,
+        new_dbtc_stakers_pct: Option<u8>,
+        new_dbtc_winners_pct: Option<u8>,
+        new_dbtc_same_faction_pct: Option<u8>,
+        new_dbtc_motherlode_pct: Option<u8>,
     ) -> Result<()> {
-        admin::update_fees_internal(ctx, new_sol_fee_config, new_dbtc_dist_config)
+        admin::update_fees_internal(
+            ctx,
+            new_protocol_fee_pct,
+            new_buyback_pct,
+            new_stakers_pct,
+            new_dbtc_stakers_pct,
+            new_dbtc_winners_pct,
+            new_dbtc_same_faction_pct,
+            new_dbtc_motherlode_pct,
+        )
     }
 
     /// Update egg limits for tiers (admin only)
     pub fn update_egg_limits(
         ctx: Context<UpdateConfigAc>,
+        tier1_limit: Option<u64>,
         tier2_limit: Option<u64>,
         tier3_limit: Option<u64>,
         tier4_limit: Option<u64>,
     ) -> Result<()> {
-        admin::update_egg_limits_internal(ctx, tier2_limit, tier3_limit, tier4_limit)
+        admin::update_egg_limits_internal(ctx, tier1_limit, tier2_limit, tier3_limit, tier4_limit)
     }
 
     // ----------------------------------------------------------------------------------------

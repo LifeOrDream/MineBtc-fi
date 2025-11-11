@@ -168,6 +168,7 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
 pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
     let global_state = &mut ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
+    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let clock = Clock::get()?;
     
     // Check round has ended
@@ -228,7 +229,15 @@ pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
     }
     
     // Split DogeBtc emission using configurable percentages from GlobalConfig
-    let emission_per_round = global_config.emission_per_round;
+    // Calculate emission_per_round from mining state: current_dist_rate * slots_per_round
+    // Solana has ~2 slots per second, so slots_per_round = round_duration_seconds * 2
+    let slots_per_round = (global_state.round_duration_seconds as u64)
+        .checked_mul(2)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let emission_per_round = doge_btc_mining.current_dist_rate
+        .checked_mul(slots_per_round)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
     let dbtc_stakers = emission_per_round
         .checked_mul(global_config.dbtc_dist_config.dbtc_stakers_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -241,8 +250,8 @@ pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    let dbtc_losers = emission_per_round
-        .checked_mul(global_config.dbtc_dist_config.dbtc_losers_pct as u64)
+    let dbtc_same_faction = emission_per_round
+        .checked_mul(global_config.dbtc_dist_config.dbtc_same_faction_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -514,9 +523,9 @@ pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
 pub fn mint_dragon_egg(
     ctx: Context<MintDragonEgg>,
     faction_id: u8,
-    tier: u8, // 2, 3, or 4
+    tier: u8, // 1, 2, 3, or 4
 ) -> Result<()> {
-    require!(tier >= 2 && tier <= 4, ErrorCode::InvalidParameters);
+    require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
     
     let global_config = &mut ctx.accounts.global_config;
     
@@ -528,6 +537,7 @@ pub fn mint_dragon_egg(
     
     // Calculate cost per egg based on tier
     let cost_per_egg = match tier {
+        1 => PRICE_TIER_1,
         2 => PRICE_TIER_2,
         3 => PRICE_TIER_3,
         4 => PRICE_TIER_4,
@@ -1110,6 +1120,12 @@ pub struct CrankEndSurge<'info> {
         bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     /// CHECK: All 11 faction states passed as remaining_accounts
     /// CHECK: SOL prize pot vault

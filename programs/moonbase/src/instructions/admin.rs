@@ -70,14 +70,12 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     global_config.dbtc_dist_config = DogeBtcDistConfig {
         dbtc_stakers_pct: 50,
         dbtc_winners_pct: 30,
-        dbtc_losers_pct: 10,
+        dbtc_same_faction_pct: 10,
         dbtc_motherlode_pct: 10,
     };
 
-    global_config.emission_per_round = 10_000_000_000; // 10k DogeBtc per round (default)
-
-    // Initialize egg limits: [unused, tier2_limit, tier3_limit, tier4_limit]
-    global_config.egg_limits = [0, 5000, 5000, 5000];
+    // Initialize egg limits: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
+    global_config.egg_limits = [5000, 5000, 5000, 5000];
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
@@ -143,6 +141,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
 
 /// Set Dragon Egg URIs for a specific tier and all factions (admin only)
 /// uris: Vec of URIs, one per faction (must match number of factions)
+/// tier: 1, 2, 3, or 4
 pub fn set_dragon_egg_uris_for_tier_internal(
     ctx: Context<UpdateConfigAc>,
     tier: u8,
@@ -150,7 +149,7 @@ pub fn set_dragon_egg_uris_for_tier_internal(
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
-    require!(tier >= 2 && tier <= 4, ErrorCode::InvalidParameters);
+    require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
     require!(
         uris.len() == global_config.supported_factions.len(),
         ErrorCode::InvalidParameters
@@ -161,9 +160,9 @@ pub fn set_dragon_egg_uris_for_tier_internal(
         require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
     }
 
-    let tier_index = (tier - 2) as usize; // tier 2->0, 3->1, 4->2
+    let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
 
-    // Ensure we have 3 tiers initialized
+    // Ensure we have 4 tiers initialized
     while global_config.dragon_egg_uris.len() <= tier_index {
         global_config.dragon_egg_uris.push(Vec::new());
     }
@@ -307,7 +306,6 @@ pub fn update_config_internal(
     new_authority: Option<Pubkey>,
     new_fee_collector: Option<Pubkey>,
     new_creation_fee_recipient: Option<Pubkey>,
-    new_emission_per_round: Option<u64>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
@@ -332,12 +330,7 @@ pub fn update_config_internal(
         );
     }
 
-    // Update emission per round if provided
-    if let Some(emission_per_round) = new_emission_per_round {
-        require!(emission_per_round > 0, ErrorCode::InvalidParameters);
-        global_config.emission_per_round = emission_per_round;
-        msg!("Updated emission per round to {}", emission_per_round);
-    }
+ 
 
     Ok(())
 }
@@ -346,46 +339,74 @@ pub fn update_config_internal(
 /// Validates that percentages sum correctly
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
-    new_sol_fee_config: Option<SolFeeConfig>,
-    new_dbtc_dist_config: Option<DogeBtcDistConfig>,
+    new_protocol_fee_pct: Option<u8>,
+    new_buyback_pct: Option<u8>,
+    new_stakers_pct: Option<u8>,
+    new_dbtc_stakers_pct: Option<u8>,
+    new_dbtc_winners_pct: Option<u8>,
+    new_dbtc_same_faction_pct: Option<u8>,
+    new_dbtc_motherlode_pct: Option<u8>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
-    // Update SOL fee config if provided
-    if let Some(sol_fee_config) = new_sol_fee_config {
+    // Update SOL fee config if any values provided
+    if new_protocol_fee_pct.is_some() || new_buyback_pct.is_some() || new_stakers_pct.is_some() {
+        let protocol_fee_pct = new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
+        let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
+        let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
+
         require!(
-            sol_fee_config.protocol_fee_pct as u16
-                + sol_fee_config.buyback_pct as u16
-                + sol_fee_config.stakers_pct as u16
-                == 100,
+            protocol_fee_pct as u16 + buyback_pct as u16 + stakers_pct as u16 == 100,
             ErrorCode::InvalidParameters
         );
-        global_config.sol_fee_config = sol_fee_config.clone();
+
+        global_config.sol_fee_config = SolFeeConfig {
+            protocol_fee_pct,
+            buyback_pct,
+            stakers_pct,
+        };
+
         msg!(
             "Updated SOL fee config: protocol={}%, buyback={}%, stakers={}%",
-            sol_fee_config.protocol_fee_pct,
-            sol_fee_config.buyback_pct,
-            sol_fee_config.stakers_pct
+            protocol_fee_pct,
+            buyback_pct,
+            stakers_pct
         );
     }
 
-    // Update DogeBtc distribution config if provided
-    if let Some(dbtc_dist_config) = new_dbtc_dist_config {
+    // Update DogeBtc distribution config if any values provided
+    if new_dbtc_stakers_pct.is_some() 
+        || new_dbtc_winners_pct.is_some() 
+        || new_dbtc_same_faction_pct.is_some() 
+        || new_dbtc_motherlode_pct.is_some() 
+    {
+        let dbtc_stakers_pct = new_dbtc_stakers_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_stakers_pct);
+        let dbtc_winners_pct = new_dbtc_winners_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_winners_pct);
+        let dbtc_same_faction_pct = new_dbtc_same_faction_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_same_faction_pct);
+        let dbtc_motherlode_pct = new_dbtc_motherlode_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_motherlode_pct);
+
         require!(
-            dbtc_dist_config.dbtc_stakers_pct as u16
-                + dbtc_dist_config.dbtc_winners_pct as u16
-                + dbtc_dist_config.dbtc_losers_pct as u16
-                + dbtc_dist_config.dbtc_motherlode_pct as u16
+            dbtc_stakers_pct as u16
+                + dbtc_winners_pct as u16
+                + dbtc_same_faction_pct as u16
+                + dbtc_motherlode_pct as u16
                 == 100,
             ErrorCode::InvalidParameters
         );
-        global_config.dbtc_dist_config = dbtc_dist_config.clone();
+
+        global_config.dbtc_dist_config = DogeBtcDistConfig {
+            dbtc_stakers_pct,
+            dbtc_winners_pct,
+            dbtc_same_faction_pct,
+            dbtc_motherlode_pct,
+        };
+
         msg!(
-            "Updated DogeBtc dist config: stakers={}%, winners={}%, losers={}%, motherlode={}%",
-            dbtc_dist_config.dbtc_stakers_pct,
-            dbtc_dist_config.dbtc_winners_pct,
-            dbtc_dist_config.dbtc_losers_pct,
-            dbtc_dist_config.dbtc_motherlode_pct
+            "Updated DogeBtc dist config: stakers={}%, winners={}%, same_faction={}%, motherlode={}%",
+            dbtc_stakers_pct,
+            dbtc_winners_pct,
+            dbtc_same_faction_pct,
+            dbtc_motherlode_pct
         );
     }
 
@@ -395,24 +416,30 @@ pub fn update_fees_internal(
 /// Update egg limits for tiers (admin only)
 pub fn update_egg_limits_internal(
     ctx: Context<UpdateConfigAc>,
+    tier1_limit: Option<u64>,
     tier2_limit: Option<u64>,
     tier3_limit: Option<u64>,
     tier4_limit: Option<u64>,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
+    if let Some(limit) = tier1_limit {
+        global_config.egg_limits[0] = limit;
+        msg!("Updated Tier 1 egg limit to {}", limit);
+    }
+
     if let Some(limit) = tier2_limit {
-        global_config.egg_limits[1] = limit; // Tier 2 is at index 1
+        global_config.egg_limits[1] = limit;
         msg!("Updated Tier 2 egg limit to {}", limit);
     }
 
     if let Some(limit) = tier3_limit {
-        global_config.egg_limits[2] = limit; // Tier 3 is at index 2
+        global_config.egg_limits[2] = limit;
         msg!("Updated Tier 3 egg limit to {}", limit);
     }
 
     if let Some(limit) = tier4_limit {
-        global_config.egg_limits[3] = limit; // Tier 4 is at index 3
+        global_config.egg_limits[3] = limit;
         msg!("Updated Tier 4 egg limit to {}", limit);
     }
 
@@ -1042,6 +1069,19 @@ pub struct QueryTreasuryInfo<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 }
+ 
+
+ 
+
+
+
+
+
+
+
+
+
+
 
 #[derive(Accounts)]
 pub struct QueryGlobalConfig<'info> {
