@@ -57,8 +57,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
     global_config.treasury_bump = ctx.bumps.sol_treasury;
 
-    global_config.total_sol_bets = 0;
-
     // Initialize SOL fee config with defaults
     global_config.sol_fee_config = SolFeeConfig {
         protocol_fee_pct: 10,
@@ -89,7 +87,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
 
-    // Initialize dragon egg URIs as empty vec of vecs (3 tiers, will be populated per faction)
+    // Initialize dragon egg URIs as empty vec of vecs (4 tiers, will be populated per faction)
     global_config.dragon_egg_uris = Vec::new();
 
     // Optionally drop 1 lamport into the vault for future-proof rent-exempt status
@@ -509,9 +507,10 @@ pub fn initialize_faction_state_internal(
     faction_state.faction_id = faction_id;
     faction_state.total_passive_hashpower = 0;
     faction_state.total_sol_bets = 0;
-    faction_state.total_active_sol_bets = 0;
-    faction_state.active_sol_reward_index = 0;
-    faction_state.active_dbtc_reward_index = 0;
+    faction_state.total_wins = 0;
+    faction_state.sol_reward_index = 0;
+    faction_state.dbtc_reward_index = 0;
+    faction_state.motherlode_pot_size = 0;
 
     msg!("✅ Faction state initialized for faction {}", faction_id);
     msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);

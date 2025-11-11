@@ -33,27 +33,7 @@ pub const MOTHERLODE_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 pub const MAX_FACTIONS: usize = 11; // 11 factions for the raffle
 pub const NUM_FACTIONS: usize = 11; // Same as MAX_FACTIONS, used for array sizes
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
-
-// ========== XP SYSTEM CONSTANTS ========== //
-pub const XP_DAILY_LOGIN: u32 = 10;
-pub const XP_MINING_1000_MDOGE: u32 = 15;
-
-// New exponential XP curve: required_xp = 120 × (1.35^level)
-pub const XP_CURVE_NUM: u64 = 135; // 1.35 in Q0.2 fixed-point
-pub const XP_CURVE_DEN: u64 = 100;
-pub const XP_BASE: u64 = 120; // Base XP for level 1
-
-// ========== UPGRADE SCALING CONSTANTS ========== //
-// Using fixed-point math: 115 = +15% per upgrade step (Power Curve)
-pub const GROWTH_NUM: u64 = 115;
-pub const GROWTH_DEN: u64 = 100;
-
-// ========== UPGRADE COST SCALING CONSTANTS ========== //
-// Using moderate curve for upgrade costs: 125 = +25% per upgrade level (Cost Curve)
-// This gives reasonable progression: 1x -> 1.25x -> 1.56x -> 1.95x -> 2.44x -> 3.05x -> 3.81x -> 4.77x -> 5.96x -> 7.45x at level 10
-pub const UPGRADE_COST_NUM: u64 = 125;
-pub const UPGRADE_COST_DEN: u64 = 100;
-
+ 
 // ----- [SEEDS] -----
 
 // PDAs which hold GlobalConfig / DogeBtcMining state
@@ -66,18 +46,9 @@ pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"mdoge-vault-authority";
 pub const DOGE_BTC_VAULT_SEED: &[u8] = b"dbtc_vault";
-
-// PDAs which hold ModuleConfigStore  state
-pub const MODULE_CONFIG_STORE_SEED: &[u8] = b"module-config-store";
-pub const MODULE_CONFIG_SEED: &[u8] = b"module-config"; // For individual module config PDAs
-
-// PDAs which hold UserMoonBaseInstance / ReferralRewards state
-pub const USER_MOONBASE_SEED: &[u8] = b"user-moonbase";
+ 
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
-
-// PDAs which hold GearInstance / ModuleInstance state
-pub const MODULE_INSTANCE_SEED: &[u8] = b"module-instance";
 
 // PDAs for Dragon Egg NFT system
 pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
@@ -86,13 +57,13 @@ pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that ho
 
 pub const BUYBACKS_SEED: &[u8] = b"buybacks";
 pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
-pub const LEVEL_STATS_SEED: &[u8] = b"level-stats";
 
-// PDAs for Faction Surge raffle system
-pub const GLOBAL_SURGE_STATE_SEED: &[u8] = b"global-surge-state";
+// PDAs for Game system
+pub const GLOBAL_GAME_STATE_SEED: &[u8] = b"global-game-state";
 pub const FACTION_STATE_SEED: &[u8] = b"faction";
 pub const PLAYER_DATA_SEED: &[u8] = b"player";
-pub const USER_SURGE_BET_SEED: &[u8] = b"bet";
+pub const GAME_SESSION_SEED: &[u8] = b"game-session"; // Seed: [b"game-session", round_id_u64]
+pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_pubkey, round_id_u64]
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
 pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
@@ -183,25 +154,24 @@ impl DogeBtcDistConfig {
 
 
 impl GlobalConfig {
-    // discriminator + authority + fee_collector + creation_fee_recipient + sol_treasury + total_sol_bets + sol_fee_config + dbtc_dist_config + is_game_active + bump + treasury_bump + supported_factions (vec) + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + raydium_pool_state + global_dragon_egg_power
+    // discriminator + is_game_active + ext_authority + ext_fee_collector + creation_fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + bump + treasury_bump + supported_factions (vec) + raydium_pool_state + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + global_dragon_egg_power
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<Vec<String>> = 4 bytes (outer vec length) + 4 tiers * (4 bytes inner vec length + MAX_FACTIONS * (4 + MAX_URI_LENGTH))
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
+        1 +                     // is_game_active
         32 +                    // ext_authority
         32 +                    // ext_fee_collector  
         32 +                    // creation_fee_recipient
         32 +                    // pda_sol_treasury
-        16 +                    // total_sol_bets (u128)
         SolFeeConfig::LEN +     // sol_fee_config
         DogeBtcDistConfig::LEN + // dbtc_dist_config
-        1 +                     // is_game_active
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)) + // supported_factions vec
+        32 +                    // raydium_pool_state
         32 +                    // dragon_egg_collection
         4 + (4 * (4 + MAX_FACTIONS * (4 + MAX_URI_LENGTH))) + // dragon_egg_uris: 4 tiers × factions
         (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
-        32 +                    // raydium_pool_state
         8;                      // global_dragon_egg_power
 
     /// Get Dragon Egg URI for a specific tier and faction
@@ -368,76 +338,76 @@ impl BuybacksAccount {
 // ========================== 1. GLOBAL & ORACLE ACCOUNTS =================================
 // ========================================================================================
 
-/// Global "clock" for the game. Stores round info and global reward pools.
+/// Global game state PDA (Seed: `[b"global-surge-state"]`)
+/// Tracks global game statistics and the currently active round.
+/// Each individual round has its own GameSession PDA.
 #[account]
 pub struct GlobalGameSate {
     pub bump: u8,
 
+    /// Whether the game is currently active
     pub is_active: bool,
 
-    /// Total SOL bets since start of game
+    /// Total SOL bets since start of game (cumulative across all rounds)
     pub total_sol_bets: u128,
 
     /// The total "shares" (hashpower) across all passive stakers.
     pub total_global_passive_hashpower: u128,
 
-    /// The currently active round (e.g., 48636).
+    /// The currently active round ID (e.g., 48636).
     pub current_round_id: u64,
     /// The timestamp when the current round ends.
     pub round_end_timestamp: i64,
+    /// Round duration in seconds (configurable)
     pub round_duration_seconds: i64,
     
     // --- Data from the *previous* round (for claiming) ---
+    /// The last completed round ID
     pub last_round_id: u64,
+    /// The winning faction ID from the last completed round
     pub winning_faction_id: u8,   
-    
 }
 
 impl GlobalGameSate {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // is_active
+        16 +    // total_sol_bets (u128)
+        16 +    // total_global_passive_hashpower (u128)
         8 +     // current_round_id
         8 +     // round_end_timestamp
         8 +     // round_duration_seconds
         8 +     // last_round_id
-        1 +     // winning_faction_id
-        8 +     // total_sol_pot_net
-        8 +     // total_sol_bet_on_winner
-        8 +     // total_sol_bet_on_losers
-        8 +     // total_sol_bet_all_factions
-        8 +     // dbtc_winner_pool
-        8 +     // dbtc_loser_pool
-        1 +     // motherlode_hit (bool)
-        8 +     // motherlode_pot_size_on_hit
-        8 +     // motherlode_pot
-        16 +    // passive_dbtc_reward_index
-        16 +    // passive_sol_reward_index
-        16;     // total_global_passive_hashpower
+        1;      // winning_faction_id
 }
 
 
 /// Faction State PDA (Seed: `[b"faction", faction_id_u8]`)
-/// This is our "Block" account from ORE. We will have 11 of these.
-/// It stores the total bets and the "cumulative reward index" for active players.
+/// Tracks cumulative statistics and reward indexes for a specific faction.
+/// One account per faction (up to MAX_FACTIONS factions).
+/// Used for calculating staker rewards based on faction performance.
 #[account]
 pub struct FactionState {
     pub bump: u8,
+    /// The faction ID (0-10, matching index in supported_factions)
     pub faction_id: u8,
 
-    // --- Passive Hashpower (from stakers) ---
-    /// Total passive hashpower from stakers in this faction
+    /// Total passive hashpower from stakers in this faction (cumulative)
     pub total_passive_hashpower: u128,
 
-    /// Total SOL bet on this faction 
+    /// Total SOL bet on this faction across all rounds (cumulative)
     pub total_sol_bets: u64,
+    /// Total number of rounds this faction has won (cumulative)
     pub total_wins: u64,
     
     /// Cumulative SOL-per-share this faction has earned for stakers
+    /// Used for calculating staker rewards
     pub sol_reward_index: u128,
     /// Cumulative DogeBtc-per-share this faction has earned for stakers
+    /// Used for calculating staker rewards
     pub dbtc_reward_index: u128,
 
+    /// Current motherlode pot size for this faction
     pub motherlode_pot_size: u64
 }
 
@@ -445,46 +415,92 @@ impl FactionState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // faction_id
-        16 +    // total_passive_hashpower
+        16 +    // total_passive_hashpower (u128)
         8 +     // total_sol_bets
-        8 +     // total_active_sol_bets (alias, kept in sync)
-        16 +    // active_sol_reward_index
-        16;     // active_dbtc_reward_index
+        8 +     // total_wins
+        16 +    // sol_reward_index (u128)
+        16 +    // dbtc_reward_index (u128)
+        8;      // motherlode_pot_size
 }
 
 
 // ========================================================================================
-// ========================== 1. GLOBAL & ORACLE ACCOUNTS =================================
+// ========================== GAME SESSION ACCOUNTS =================================
 // ========================================================================================
 
-/// Global "clock" for the game. Stores round info and global reward pools.
+/// Game Session PDA (Seed: `[b"game-session", round_id_u64]`)
+/// Each raffle round has its own GameSession PDA that tracks:
+/// - Round timing (start/end timestamps)
+/// - Total bets placed in this round
+/// - Bet indexes for tracking individual bets
+/// - Winning block and faction
+/// - Round-specific reward pools and payout data
+/// This account is created when a round starts and finalized when the round ends.
 #[account]
 pub struct GameSession {
     pub bump: u8,
 
+    /// The round ID this session belongs to
     pub round_id: u64,
 
+    /// Timestamp when this round started
     pub round_start_timestamp: i64,
+    /// Timestamp when this round ends
     pub round_end_timestamp: i64,
 
+    /// Total SOL bets placed in this round
     pub total_sol_bets: u64,
+    /// Total points bets placed in this round
     pub total_points_bets: u64,
 
+    /// Indexes of UserGameBet PDAs for SOL bets in this round
+    /// Used to track all bets and calculate rewards
     pub sol_bets_indexes: Vec<u64>,
+    /// Indexes of UserGameBet PDAs for points bets in this round
     pub points_bets_indexes: Vec<u64>,
 
+    /// The winning block number for this round
     pub winning_block: u64,
+    /// The winning faction ID for this round
     pub winning_faction_id: u8,
+
+    // --- Round-specific payout data ---
+    /// Total SOL pot for winners (net after fees)
+    pub total_sol_pot_net: u64,
+    /// Total SOL bet on the winning faction (for pro-rata distribution)
+    pub total_sol_bet_on_winner: u64,
+    /// Total SOL bet on losing factions (for pro-rata distribution)
+    pub total_sol_bet_on_losers: u64,
+    /// Total SOL bet across all factions (for motherlode distribution)
+    pub total_sol_bet_all_factions: u64,
+
+    // --- DogeBtc reward pools for this round ---
+    /// DogeBtc allocated for winners in this round
+    pub dbtc_winner_pool: u64,
+    /// DogeBtc allocated for same-faction bettors in this round
+    pub dbtc_loser_pool: u64,
+
+    // --- Motherlode data for this round ---
+    /// Whether motherlode was hit in this round
+    pub motherlode_hit: bool,
+    /// Motherlode pot size when hit (if applicable)
+    pub motherlode_pot_size_on_hit: u64,
 }
 
 impl GameSession {
+    // Maximum number of bets per round (for Vec sizing)
+    pub const MAX_BETS_PER_ROUND: usize = 10000; // Reasonable limit per round
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        1 +     // is_active
-        8 +     // current_round_id
+        8 +     // round_id
+        8 +     // round_start_timestamp
         8 +     // round_end_timestamp
-        8 +     // round_duration_seconds
-        8 +     // last_round_id
+        8 +     // total_sol_bets
+        8 +     // total_points_bets
+        4 + (Self::MAX_BETS_PER_ROUND * 8) + // sol_bets_indexes Vec<u64>
+        4 + (Self::MAX_BETS_PER_ROUND * 8) + // points_bets_indexes Vec<u64>
+        8 +     // winning_block
         1 +     // winning_faction_id
         8 +     // total_sol_pot_net
         8 +     // total_sol_bet_on_winner
@@ -493,11 +509,7 @@ impl GameSession {
         8 +     // dbtc_winner_pool
         8 +     // dbtc_loser_pool
         1 +     // motherlode_hit (bool)
-        8 +     // motherlode_pot_size_on_hit
-        8 +     // motherlode_pot
-        16 +    // passive_dbtc_reward_index
-        16 +    // passive_sol_reward_index
-        16;     // total_global_passive_hashpower
+        8;      // motherlode_pot_size_on_hit
 }
 
  
@@ -508,54 +520,70 @@ impl GameSession {
 // ========================================================================================
 
 /// Player Data PDA (Seed: `[b"player", user_pubkey]`)
-/// This is our "Miner" account from ORE. It's the *only* persistent
-/// account a user needs for our game.
+/// Persistent account for each player that tracks:
+/// - Player statistics (rounds played, won, total bets/winnings)
+/// - List of rounds the player participated in (for tracking unclaimed rewards)
+/// - Passive staking data (hashpower, reward indexes)
+/// Each user bet in a round has its own UserGameBet PDA, referenced here via round IDs.
 #[account]
 pub struct PlayerData {
     pub bump: u8,
 
-    /// The user's wallet address.
+    /// The user's wallet address
     pub owner: Pubkey,
 
+    /// Referral code used by this player
     pub referral_code: Pubkey,
 
-    /// The faction this player is assigned to.
+    /// The faction this player is assigned to
     pub faction_id: u8,
 
+    /// List of round IDs where the player has placed bets
+    /// Used to track rounds with unclaimed rewards or unclosed sessions
     pub sol_bets_rounds: Vec<u64>,
+    /// Corresponding SOL bet amounts for each round in sol_bets_rounds
+    /// Index matches sol_bets_rounds (e.g., sol_bets_amounts[0] is the bet for sol_bets_rounds[0])
     pub sol_bets_amounts: Vec<u64>,
 
-    pub winning_block: u64,
-    pub winning_faction_id: u8,
-    
-    // --- Passive Staker Data (Updated by `mooneconomy` CPI) ---
-    /// The user's "shares" in the passive global pool.
+    /// Cumulative statistics
+    pub rounds_played: u64,
+    pub rounds_won: u64,
+    pub total_sol_bet: u64,
+    pub total_points_bet: u64,
+    pub total_sol_won: u64,
+    pub total_dbtc_won: u64,
+
+    /// The user's "shares" (hashpower) in the passive global pool
+    /// Updated by mooneconomy program via CPI
     pub personal_passive_hashpower: u128,
 
-    // --- "REWARD DEBT" (The ORE `cumulative` array) ---
-    // This tracks what the user has *already been paid for* to prevent double-claiming.
-
-    // --- Passive Reward Debt ---
-    /// The last `passive_dbtc_reward_index` they claimed up to.
+    /// Reward debt tracking (prevents double-claiming)
+    /// The last passive_dbtc_reward_index the user claimed up to
     pub last_claimed_passive_dbtc_index: u128,
-    /// The last `passive_sol_reward_index` they claimed up to.
+    /// The last passive_sol_reward_index the user claimed up to
     pub last_claimed_passive_sol_index: u128,    
 }
 
 impl PlayerData {
+    // Maximum number of active rounds a player can track (for Vec sizing)
+    pub const MAX_ACTIVE_ROUNDS: usize = 100; // Reasonable limit for unclaimed rounds
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
+        32 +    // referral_code
         1 +     // faction_id
-        8 +     // sol_bet_in_current_round
-        8 +     // current_bet_round_id
-        8 +     // autominer_sol_per_round
-        4 +     // autominer_rounds_remaining
-        16 +    // personal_passive_hashpower
-        16 +    // last_claimed_passive_dbtc_index
-        16 +    // last_claimed_passive_sol_index
-        (16 * NUM_FACTIONS) + // last_claimed_active_sol_index
-        (16 * NUM_FACTIONS);  // last_claimed_active_dbtc_index
+        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // sol_bets_rounds Vec<u64>
+        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // sol_bets_amounts Vec<u64>
+        8 +     // rounds_played
+        8 +     // rounds_won
+        8 +     // total_sol_bet
+        8 +     // total_points_bet
+        8 +     // total_sol_won
+        8 +     // total_dbtc_won
+        16 +    // personal_passive_hashpower (u128)
+        16 +    // last_claimed_passive_dbtc_index (u128)
+        16;     // last_claimed_passive_sol_index (u128)
 }
 
 
@@ -640,14 +668,19 @@ impl DragonEggMetadata {
 // ============================= FACTION SURGE ACCOUNTS ==============================
 // ========================================================================================
 
-/// User Surge Bet PDA (Seed: `[b"bet", user_pubkey, round_id_u64]`)
-/// Stores a user's bet for a specific round
+/// User Game Bet PDA (Seed: `[b"user-bet", user_pubkey, round_id_u64]`)
+/// Each user bet in a round has its own PDA account.
+/// This allows tracking individual bets and calculating rewards per bet.
+/// The round_id links this bet to its GameSession PDA.
 #[account]
 pub struct UserGameBet {
+    /// The user who placed this bet
     pub owner: Pubkey,
+    /// The round ID this bet belongs to
     pub round_id: u64,
+    /// The faction this bet is placed on
     pub faction_id: u8,
-    /// The 90% (net) amount bet
+    /// The net SOL amount bet (after protocol fee deduction)
     pub sol_bet_amount: u64,
     pub bump: u8,
 }

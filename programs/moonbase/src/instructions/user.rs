@@ -144,12 +144,11 @@ pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
         .checked_add(net_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    // Update both total_sol_bets and total_active_sol_bets (keep them in sync)
+    // Update total_sol_bets (cumulative)
     faction_state.total_sol_bets = faction_state
         .total_sol_bets
         .checked_add(net_amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-    faction_state.total_active_sol_bets = faction_state.total_sol_bets;
     
         msg!(
         "User {} bet {} SOL (net) on faction {} in round {}",
@@ -306,7 +305,7 @@ pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
     global_state.total_sol_bet_all_factions = total_all_bets;
     
     global_state.dbtc_winner_pool = dbtc_winners;
-    global_state.dbtc_loser_pool = dbtc_losers;
+    global_state.dbtc_loser_pool = dbtc_same_faction;
     global_state.motherlode_hit = motherlode_hit;
     
     if motherlode_hit {
@@ -396,7 +395,7 @@ pub fn claim_surge_rewards(ctx: Context<ClaimSurgeRewards>) -> Result<()> {
     
     // Close bet account
     let signer_key = ctx.accounts.signer.key();
-    let rent = Rent::get()?.minimum_balance(UserSurgeBet::LEN);
+    let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
     **ctx.accounts.signer.to_account_info().try_borrow_mut_lamports()? += rent;
     
     msg!(
@@ -620,7 +619,7 @@ pub fn mint_dragon_egg(
     egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
         egg_metadata.power = BASE_EGG_POWER;
         egg_metadata.dna = dna;
-        egg_metadata.incubated_moonbase = None;
+        egg_metadata.incubated_player_data = None;
     egg_metadata.multiplier = multiplier;
     egg_metadata.faction_id = faction_id;
         egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
@@ -665,7 +664,7 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
 
     // Validation
     require!(
-        egg_metadata.incubated_moonbase.is_none(),
+        egg_metadata.incubated_player_data.is_none(),
         ErrorCode::EggAlreadyIncubated
     );
     
@@ -734,7 +733,7 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
     }
     
     // Update egg metadata
-    egg_metadata.incubated_moonbase = Some(player_owner);
+    egg_metadata.incubated_player_data = Some(player_owner);
     egg_metadata.last_update_ts = current_time;
     
     msg!("✅ Dragon Egg staked for player {}", player_owner);
@@ -758,12 +757,12 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     );
     
     require!(
-        egg_metadata.incubated_moonbase.is_some(),
+        egg_metadata.incubated_player_data.is_some(),
         ErrorCode::EggNotIncubated
     );
     
     require!(
-        egg_metadata.incubated_moonbase.unwrap() == player_data.owner,
+        egg_metadata.incubated_player_data.unwrap() == player_data.owner,
         ErrorCode::Unauthorized
         );
         
@@ -826,7 +825,7 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     )?;
     
     // Update egg metadata
-    egg_metadata.incubated_moonbase = None;
+    egg_metadata.incubated_player_data = None;
     egg_metadata.last_update_ts = current_time;
     
     msg!("✅ Dragon Egg unstaked");
@@ -1075,11 +1074,11 @@ pub struct JoinSurge<'info> {
     #[account(
         init_if_needed,
         payer = authority,
-        space = UserSurgeBet::LEN,
-        seeds = [USER_SURGE_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        space = UserGameBet::LEN,
+        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
-    pub user_surge_bet: Account<'info, UserSurgeBet>,
+    pub user_surge_bet: Account<'info, UserGameBet>,
     
     /// CHECK: SOL treasury PDA (fees go here)
     #[account(
@@ -1173,10 +1172,10 @@ pub struct ClaimSurgeRewards<'info> {
     #[account(
         mut,
         close = signer,
-        seeds = [USER_SURGE_BET_SEED.as_ref(), signer.key().as_ref(), &global_game_state.last_round_id.to_le_bytes()],
+        seeds = [USER_GAME_BET_SEED.as_ref(), signer.key().as_ref(), &global_game_state.last_round_id.to_le_bytes()],
         bump = user_surge_bet.bump
     )]
-    pub user_surge_bet: Account<'info, UserSurgeBet>,
+    pub user_surge_bet: Account<'info, UserGameBet>,
     
     /// CHECK: SOL prize pot vault
     #[account(
@@ -1267,11 +1266,11 @@ pub struct ExecuteAutominerBet<'info> {
     #[account(
         init_if_needed,
         payer = autominer_vault,
-        space = UserSurgeBet::LEN,
-        seeds = [USER_SURGE_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        space = UserGameBet::LEN,
+        seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
-    pub user_surge_bet: Account<'info, UserSurgeBet>,
+    pub user_surge_bet: Account<'info, UserGameBet>,
     
     /// CHECK: All other accounts needed for join_surge
     #[account(mut)]
