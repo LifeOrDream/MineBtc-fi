@@ -30,9 +30,13 @@ pub const HASHPOWER_PER_SOL_CONSTANT: u128 = 1_000_000; // 1 SOL = 1M hashpower 
 
 pub const MOTHERLODE_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
-pub const MAX_FACTIONS: usize = 11; // 11 factions for the raffle
-pub const NUM_FACTIONS: usize = 11; // Same as MAX_FACTIONS, used for array sizes
+pub const MAX_FACTIONS: usize = 12; // 12 factions for the raffle
+pub const NUM_FACTIONS: usize = 12; // Same as MAX_FACTIONS, used for array sizes
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
+
+// ========== BLOCK RAFFLE CONSTANTS ========== //
+pub const NUM_BLOCKS: usize = 24; // 24 blocks total
+pub const BLOCKS_PER_FACTION: usize = 2; // Each faction gets 2 blocks
  
 // ----- [SEEDS] -----
 
@@ -78,6 +82,9 @@ pub struct GlobalConfig {
 
     /// Whether the game is currently active
     pub is_game_active: bool,
+
+    /// total number of players in the game
+    pub total_players: u64,
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
@@ -145,6 +152,8 @@ pub struct DogeBtcDistConfig {
     pub dbtc_same_faction_pct: u8,
     /// Percentage of DogeBtc emission that goes to motherlode
     pub dbtc_motherlode_pct: u8,
+    /// Refining fee
+    pub refining_fee: u8,
 }
 
 impl DogeBtcDistConfig {
@@ -459,9 +468,14 @@ pub struct GameSession {
     /// Indexes of UserGameBet PDAs for points bets in this round
     pub points_bets_indexes: Vec<u64>,
 
-    /// The winning block number for this round
-    pub winning_block: u64,
-    /// The winning faction ID for this round
+    /// Block assignments: [block_0, block_1, ..., block_23]
+    /// Each element is the faction_id assigned to that block (0-indexed, blocks are 1-24)
+    /// Set at round start when factions are randomly assigned to blocks
+    pub block_assignments: [u8; NUM_BLOCKS],
+
+    /// The winning block number for this round (1-24)
+    pub winning_block: u8,
+    /// The winning faction ID for this round (derived from winning_block)
     pub winning_faction_id: u8,
 
     // --- Round-specific payout data ---
@@ -500,7 +514,8 @@ impl GameSession {
         8 +     // total_points_bets
         4 + (Self::MAX_BETS_PER_ROUND * 8) + // sol_bets_indexes Vec<u64>
         4 + (Self::MAX_BETS_PER_ROUND * 8) + // points_bets_indexes Vec<u64>
-        8 +     // winning_block
+        (NUM_BLOCKS * 1) + // block_assignments [u8; NUM_BLOCKS]
+        1 +     // winning_block (u8)
         1 +     // winning_faction_id
         8 +     // total_sol_pot_net
         8 +     // total_sol_bet_on_winner
@@ -665,21 +680,43 @@ impl DragonEggMetadata {
 }
 
 // ========================================================================================
+// ============================= BET TYPE ENUM ==============================
+// ========================================================================================
+
+/// Bet type enum for user bets
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub enum BetType {
+    /// Direct block selection (block_id: 1-24)
+    Block { block_id: u8 },
+    /// Faction + highest/lowest selection (faction_id + is_highest)
+    FactionHighestLowest { faction_id: u8, is_highest: bool },
+}
+
+impl BetType {
+    // Anchor enum serialization: 1 byte discriminator + max variant size
+    // Block variant: 1 byte discriminator + 1 byte block_id = 2 bytes
+    // FactionHighestLowest variant: 1 byte discriminator + 1 byte faction_id + 1 byte is_highest = 3 bytes
+    // Max size is 3 bytes
+    pub const LEN: usize = 3;
+}
+
+// ========================================================================================
 // ============================= FACTION SURGE ACCOUNTS ==============================
 // ========================================================================================
 
 /// User Game Bet PDA (Seed: `[b"user-bet", user_pubkey, round_id_u64]`)
 /// Each user bet in a round has its own PDA account.
-/// This allows tracking individual bets and calculating rewards per bet.
-/// The round_id links this bet to its GameSession PDA.
+/// Users can bet on either:
+/// - A specific block (1-24)
+/// - A faction + highest/lowest option (which maps to one of the faction's 2 blocks)
 #[account]
 pub struct UserGameBet {
     /// The user who placed this bet
     pub owner: Pubkey,
     /// The round ID this bet belongs to
     pub round_id: u64,
-    /// The faction this bet is placed on
-    pub faction_id: u8,
+    /// The bet type (Block or FactionHighestLowest)
+    pub bet_type: BetType,
     /// The net SOL amount bet (after protocol fee deduction)
     pub sol_bet_amount: u64,
     pub bump: u8,
@@ -689,9 +726,42 @@ impl UserGameBet {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        1 +     // faction_id
+        BetType::LEN + // bet_type (enum)
         8 +     // sol_bet_amount
         1;      // bump
+    
+    /// Get the target block ID for this bet based on GameSession block assignments
+    /// Returns None if bet is invalid or block assignments not set
+    pub fn get_target_block(&self, block_assignments: &[u8; NUM_BLOCKS]) -> Option<u8> {
+        match &self.bet_type {
+            BetType::Block { block_id } => {
+                if *block_id >= 1 && *block_id <= NUM_BLOCKS as u8 {
+                    Some(*block_id)
+                } else {
+                    None
+                }
+            }
+            BetType::FactionHighestLowest { faction_id, is_highest } => {
+                // Find the two blocks assigned to this faction
+                let mut faction_blocks: Vec<u8> = Vec::new();
+                for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
+                    if *assigned_faction == *faction_id {
+                        faction_blocks.push((block_idx + 1) as u8); // block_id is 1-indexed
+                    }
+                }
+                
+                if faction_blocks.len() == BLOCKS_PER_FACTION {
+                    if *is_highest {
+                        Some(*faction_blocks.iter().max().unwrap())
+                    } else {
+                        Some(*faction_blocks.iter().min().unwrap())
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }
 
 /// Autominer Vault PDA (Seed: `[b"autominer", user_pubkey]`)
