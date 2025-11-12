@@ -998,20 +998,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moonEconomy"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "constant_time_eq",
- "moonbase",
- "mpl-core",
- "mpl-token-metadata",
- "spl-token 8.0.0",
- "subtle",
-]
-
-[[package]]
 name = "moonbase"
 version = "1.0.0"
 dependencies = [
