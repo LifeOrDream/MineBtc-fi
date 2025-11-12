@@ -374,7 +374,18 @@ pub struct GlobalGameSate {
     /// The last completed round ID
     pub last_round_id: u64,
     /// The winning faction ID from the last completed round
-    pub winning_faction_id: u8,   
+    pub winning_faction_id: u8,
+    
+    // --- Commit-Reveal Randomness (ORE-style) ---
+    /// Committed hash for the current round (set before round starts)
+    /// This is hash(secret_seed) - the secret is revealed after betting closes
+    pub current_round_commit: [u8; 32],
+    /// Revealed seed for the current round (set after betting closes)
+    /// Must verify: hash(revealed_seed) == current_round_commit
+    pub current_round_seed: Option<[u8; 32]>,
+    /// Committed hash for the next round (set during end_round)
+    /// This allows continuous rounds without gaps
+    pub next_round_commit: [u8; 32],
 }
 
 impl GlobalGameSate {
@@ -387,7 +398,10 @@ impl GlobalGameSate {
         8 +     // round_end_timestamp
         8 +     // round_duration_seconds
         8 +     // last_round_id
-        1;      // winning_faction_id
+        1 +     // winning_faction_id
+        32 +    // current_round_commit [u8; 32]
+        33 +    // current_round_seed Option<[u8; 32]> (1 byte discriminator + 32 bytes)
+        32;     // next_round_commit [u8; 32]
 }
 
 
@@ -766,20 +780,29 @@ impl UserGameBet {
 
 /// Autominer Vault PDA (Seed: `[b"autominer", user_pubkey]`)
 /// This PDA also acts as a SOL vault by holding lamports
+/// Allows users to configure automatic betting on multiple blocks/bet types
 #[account]
 pub struct AutominerVault {
     pub owner: Pubkey,
-    pub faction_id: u8,
-    pub sol_per_round: u64,
+    /// Bet types to place automatically (can be multiple blocks or faction+highest/lowest)
+    pub bet_types: Vec<BetType>,
+    /// SOL amount to bet per bet type
+    pub bet_amount_per_bet: u64,
+    /// Number of rounds remaining (decremented after each round)
     pub rounds_remaining: u32,
+    /// Last round ID where bets were placed (to prevent duplicate bets)
+    pub last_bet_round_id: u64,
     pub vault_bump: u8,
 }
 
 impl AutominerVault {
+    pub const MAX_BET_TYPES: usize = 24; // Max 24 different bet types (one per block)
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
-        1 +     // faction_id
-        8 +     // sol_per_round
+        4 + (Self::MAX_BET_TYPES * BetType::LEN) + // bet_types Vec<BetType>
+        8 +     // bet_amount_per_bet
         4 +     // rounds_remaining
+        8 +     // last_bet_round_id
         1;      // vault_bump
 }

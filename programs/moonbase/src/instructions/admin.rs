@@ -70,6 +70,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
         dbtc_winners_pct: 30,
         dbtc_same_faction_pct: 10,
         dbtc_motherlode_pct: 10,
+        refining_fee: 5,
     };
 
     // Initialize egg limits: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
@@ -270,14 +271,15 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
 
     // Initialize faction state data
     let mut faction_state_data = ctx.accounts.faction_state.try_borrow_mut_data()?;
-    let mut faction_state = FactionState {
+    let faction_state = FactionState {
         bump,
         faction_id,
         total_passive_hashpower: 0,
         total_sol_bets: 0,
-        total_active_sol_bets: 0,
-        active_sol_reward_index: 0,
-        active_dbtc_reward_index: 0,
+        total_wins: 0,
+        sol_reward_index: 0,
+        dbtc_reward_index: 0,
+        motherlode_pot_size: 0,
     };
     faction_state.try_serialize(&mut &mut faction_state_data[..])?;
 
@@ -392,11 +394,15 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
 
+        // Get current refining_fee to preserve it
+        let current_refining_fee = global_config.dbtc_dist_config.refining_fee;
+        
         global_config.dbtc_dist_config = DogeBtcDistConfig {
             dbtc_stakers_pct,
             dbtc_winners_pct,
             dbtc_same_faction_pct,
             dbtc_motherlode_pct,
+            refining_fee: current_refining_fee,
         };
 
         msg!(
@@ -459,26 +465,21 @@ pub fn initialize_game_state_internal(
     // Initialize game state
     global_game_state.bump = ctx.bumps.global_game_state;
     global_game_state.is_active = true;
-    global_game_state.current_round_id = 1;
+    global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
     global_game_state.round_end_timestamp = clock.unix_timestamp + round_duration_seconds;
     global_game_state.round_duration_seconds = round_duration_seconds;
     
     // Initialize previous round data
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
-    global_game_state.total_sol_pot_net = 0;
-    global_game_state.total_sol_bet_on_winner = 0;
-    global_game_state.total_sol_bet_on_losers = 0;
-    global_game_state.total_sol_bet_all_factions = 0;
-    global_game_state.dbtc_winner_pool = 0;
-    global_game_state.dbtc_loser_pool = 0;
-    global_game_state.motherlode_hit = false;
-    global_game_state.motherlode_pot_size_on_hit = 0;
     
-    // Initialize reward pools
-    global_game_state.motherlode_pot = 0;
-    global_game_state.passive_dbtc_reward_index = 0;
-    global_game_state.passive_sol_reward_index = 0;
+    // Initialize commit-reveal randomness fields
+    global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
+    global_game_state.current_round_seed = None;
+    global_game_state.next_round_commit = [0u8; 32]; // Should be set before first start_round
+    
+    // Initialize cumulative stats
+    global_game_state.total_sol_bets = 0;
     global_game_state.total_global_passive_hashpower = 0;
 
     msg!("✅ Global game state initialized");
@@ -1208,7 +1209,7 @@ pub struct InitializeGameState<'info> {
         init,
         payer = authority,
         space = GlobalGameSate::LEN,
-        seeds = [GLOBAL_SURGE_STATE_SEED.as_ref()],
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump
     )]
     pub global_game_state: Account<'info, GlobalGameSate>,

@@ -8,8 +8,9 @@ pub mod state;
 
 pub use instructions::admin::*;
 pub use instructions::economy::*;
+pub use instructions::game::*;
 pub use instructions::user::*;
-pub use state::{SolFeeConfig, DogeBtcDistConfig};
+pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType};
 
 declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
 
@@ -18,6 +19,7 @@ pub mod moonbase {
     use super::*;
     use crate::instructions::admin::{self, CreateDragonEggCollection};
     use crate::instructions::economy::{self};
+    use crate::instructions::game::{self};
     use crate::instructions::user::{self};
 
     // ----------------------------------------------------------------------------------------
@@ -251,28 +253,53 @@ pub mod moonbase {
         user::update_personal_hashpower(ctx, amount, user_pubkey)
     }
 
-    /// Join a surge round by betting SOL
-    pub fn join_surge(ctx: Context<JoinSurge>, amount: u64) -> Result<()> {
-        user::join_surge(ctx, amount)
+    /// Join a round by betting SOL
+    /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
+    pub fn join_round(
+        ctx: Context<JoinRound>, 
+        amount: u64,
+        bet_type: BetType,
+    ) -> Result<()> {
+        user::join_round(ctx, amount, bet_type)
     }
 
-    /// Crank end surge - determines winner and distributes rewards
-    pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
-        user::crank_end_surge(ctx)
+    // ----------------------------------------------------------------------------------------
+    // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Start a new round by committing a hash and initializing GameSession
+    /// This commits randomness hash and randomly assigns factions to blocks
+    /// If commit_hash is None, uses next_round_commit from global_state
+    pub fn start_round(
+        ctx: Context<StartRound>,
+        commit_hash: Option<[u8; 32]>,
+    ) -> Result<()> {
+        game::start_round(ctx, commit_hash)
     }
 
-    /// Claim surge rewards for a user
-    pub fn claim_surge_rewards(ctx: Context<ClaimSurgeRewards>) -> Result<()> {
-        user::claim_surge_rewards(ctx)
+    /// End the current round by revealing seed, selecting winner, and starting next round
+    /// Verifies commit-reveal, generates final randomness, selects winning block
+    pub fn end_round(
+        ctx: Context<EndRound>,
+        revealed_seed: [u8; 32],
+        next_round_commit: [u8; 32],
+    ) -> Result<()> {
+        game::end_round(ctx, revealed_seed, next_round_commit)
     }
 
-    /// Initialize autominer vault
+    /// Claim rewards for a user after round ends
+    pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+        user::claim_rewards(ctx)
+    }
+
+    /// Initialize autominer vault with bet types and amounts
     pub fn init_autominer(
         ctx: Context<InitAutominer>,
-        sol_per_round: u64,
+        bet_types: Vec<BetType>,
+        bet_amount_per_bet: u64,
         num_rounds: u32,
     ) -> Result<()> {
-        user::init_autominer(ctx, sol_per_round, num_rounds)
+        user::init_autominer(ctx, bet_types, bet_amount_per_bet, num_rounds)
     }
 
     /// Execute autominer bet (keeper instruction)

@@ -260,6 +260,348 @@ pub fn join_round(
 
 
 
+ 
+/// Claim rewards for a user after round ends
+/// Checks if user won based on their bet type and the winning block
+pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+    let global_state = &ctx.accounts.global_game_state;
+    let game_session = &ctx.accounts.game_session;
+    let user_bet = &ctx.accounts.user_game_bet;
+    
+    // Check user bet is for the last completed round
+    require!(
+        user_bet.round_id == global_state.last_round_id,
+        ErrorCode::InvalidRound
+    );
+    
+    require!(
+        game_session.round_id == global_state.last_round_id,
+        ErrorCode::InvalidRound
+    );
+    
+    // Determine if user won by checking if their target block matches winning block
+    let target_block = user_bet
+        .get_target_block(&game_session.block_assignments)
+        .ok_or(ErrorCode::InvalidParameters)?;
+    
+    let is_winner = target_block == game_session.winning_block;
+    
+    // Find the other block with the same faction (for same-faction distribution)
+    let winning_faction_id = game_session.winning_faction_id;
+    let mut same_faction_other_block = 0u8;
+    for (block_idx, &assigned_faction) in game_session.block_assignments.iter().enumerate() {
+        if assigned_faction == winning_faction_id && (block_idx + 1) as u8 != game_session.winning_block {
+            same_faction_other_block = (block_idx + 1) as u8;
+            break;
+        }
+    }
+    
+    // Determine if user bet on the same-faction other block
+    let is_same_faction_other_block = !is_winner && target_block == same_faction_other_block;
+    
+    // Calculate SOL payout (winners only)
+    let mut sol_reward = 0u64;
+    if is_winner && game_session.total_sol_bet_on_winner > 0 {
+        sol_reward = (user_bet.sol_bet_amount as u128)
+            .checked_mul(game_session.total_sol_pot_net as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(game_session.total_sol_bet_on_winner as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+        
+        // Transfer SOL reward
+        **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += sol_reward;
+        **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? -= sol_reward;
+    }
+    
+    // Calculate DogeBtc payout according to ORE tokenomics
+    let mut dbtc_reward = 0u64;
+    let global_config = &ctx.accounts.global_config;
+    
+    if is_winner {
+        // Winners get dbtc_winners_pct (pro-rata to SOL bet amount)
+        if game_session.total_sol_bet_on_winner > 0 {
+            dbtc_reward = (user_bet.sol_bet_amount as u128)
+                .checked_mul(game_session.dbtc_winner_pool as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(game_session.total_sol_bet_on_winner as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+        }
+        
+        // Add motherlode payout if hit (only winners get motherlode)
+        if game_session.motherlode_hit && game_session.total_sol_bet_on_winner > 0 {
+            let motherlode_share = (user_bet.sol_bet_amount as u128)
+                .checked_mul(game_session.motherlode_pot_size_on_hit as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(game_session.total_sol_bet_on_winner as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+            
+            dbtc_reward = dbtc_reward
+                .checked_add(motherlode_share)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+    } else if is_same_faction_other_block {
+        // Same-faction other block bettors get dbtc_same_faction_pct (pro-rata to SOL bet amount)
+        if game_session.total_sol_bet_on_losers > 0 {
+            dbtc_reward = (user_bet.sol_bet_amount as u128)
+                .checked_mul(game_session.dbtc_loser_pool as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(game_session.total_sol_bet_on_losers as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+        }
+    }
+    // Other bettors get nothing
+    
+    // Apply refining fee (charged on claim, distributed to other unclaimed users)
+    let refining_fee_pct = global_config.dbtc_dist_config.refining_fee;
+    let refining_fee = if dbtc_reward > 0 && refining_fee_pct > 0 {
+        (dbtc_reward as u128)
+            .checked_mul(refining_fee_pct as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)? as u64
+    } else {
+        0
+    };
+    
+    let dbtc_reward_after_fee = dbtc_reward
+        .checked_sub(refining_fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Transfer DogeBtc if reward > 0
+    if dbtc_reward_after_fee > 0 {
+        // TODO: Implement token transfer with proper PDA signing
+        // Transfer from dbtc_emission_vault to user's token account
+        msg!("DogeBtc reward: {} (after refining fee: {}), refining fee: {} (to be distributed)", 
+            dbtc_reward_after_fee, refining_fee, refining_fee);
+    }
+    
+    // TODO: Distribute refining_fee to other users with unclaimed rewards
+    // This requires tracking all unclaimed rewards globally and distributing proportionally
+    // For now, refining fee is calculated but distribution is deferred
+    
+    // Update player stats
+    let player_data = &mut ctx.accounts.player_data;
+    if is_winner {
+        player_data.rounds_won = player_data.rounds_won
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        player_data.total_sol_won = player_data.total_sol_won
+            .checked_add(sol_reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    player_data.total_dbtc_won = player_data.total_dbtc_won
+        .checked_add(dbtc_reward_after_fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Remove round from player's active rounds list
+    if let Some(index) = player_data.sol_bets_rounds.iter().position(|&r| r == user_bet.round_id) {
+        player_data.sol_bets_rounds.remove(index);
+        player_data.sol_bets_amounts.remove(index);
+    }
+    
+    // Close bet account and return rent
+    let signer_key = ctx.accounts.user_wallet.key();
+    let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
+    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += rent;
+    
+    msg!(
+        "User {} claimed rewards: {} SOL, {} DogeBtc (after {} refining fee) (Round {}, Target Block: {}, Winning Block: {}, Winner: {}, Same-Faction Other Block: {})",
+        signer_key,
+        sol_reward,
+        dbtc_reward_after_fee,
+        refining_fee,
+        user_bet.round_id,
+        target_block,
+        game_session.winning_block,
+        is_winner,
+        is_same_faction_other_block
+    );
+    
+    Ok(())
+}
+
+/// Initialize autominer vault with bet types and amounts
+/// Users can specify multiple bet types (blocks or faction+highest/lowest) and bet amount per bet
+/// Bot can then call execute_autominer_bet to automatically place bets
+pub fn init_autominer(
+    ctx: Context<InitAutominer>,
+    bet_types: Vec<BetType>,
+    bet_amount_per_bet: u64,
+    num_rounds: u32,
+) -> Result<()> {
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    let global_config = &ctx.accounts.global_config;
+    
+    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
+    require!(
+        bet_types.len() <= AutominerVault::MAX_BET_TYPES,
+        ErrorCode::InvalidParameters
+    );
+    require!(bet_amount_per_bet > 0, ErrorCode::InvalidAmount);
+    require!(num_rounds > 0, ErrorCode::InvalidAmount);
+    
+    // Validate bet types
+    for bet_type in &bet_types {
+        match bet_type {
+            BetType::Block { block_id } => {
+                require!(
+                    *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
+                    ErrorCode::InvalidParameters
+                );
+            }
+            BetType::FactionHighestLowest { faction_id, .. } => {
+                require!(
+                    (*faction_id as usize) < global_config.supported_factions.len(),
+                    ErrorCode::InvalidFactionId
+                );
+            }
+        }
+    }
+    
+    autominer_vault.owner = ctx.accounts.authority.key();
+    autominer_vault.bet_types = bet_types.clone();
+    autominer_vault.bet_amount_per_bet = bet_amount_per_bet;
+    autominer_vault.rounds_remaining = num_rounds;
+    autominer_vault.last_bet_round_id = 0;
+    autominer_vault.vault_bump = ctx.bumps.autominer_vault;
+    
+    // Calculate total SOL needed: (bet_amount_per_bet * num_bet_types) * num_rounds + rent
+    let sol_per_round = bet_amount_per_bet
+        .checked_mul(bet_types.len() as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let total_sol = sol_per_round
+        .checked_mul(num_rounds as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    let total_transfer = total_sol
+        .checked_add(rent)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Transfer SOL to vault
+    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
+    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
+    
+    msg!(
+        "Autominer initialized: {} bet types, {} SOL per bet, {} rounds ({} SOL total)",
+        bet_types.len(),
+        bet_amount_per_bet,
+        num_rounds,
+        total_sol
+    );
+    
+    Ok(())
+}
+
+/// Execute autominer bets (keeper instruction - bot can call this)
+/// Places bets for all configured bet types in the current round
+/// Can be called once per round to place all bets automatically
+pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+    let global_state = &ctx.accounts.global_game_state;
+    let clock = Clock::get()?;
+    
+    // Read values before mutable borrow
+    let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
+    let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
+    let num_bets = ctx.accounts.autominer_vault.bet_types.len();
+    let bet_amount_per_bet = ctx.accounts.autominer_vault.bet_amount_per_bet;
+    
+    require!(
+        rounds_remaining > 0,
+        ErrorCode::NoRoundsRemaining
+    );
+    
+    // Check round hasn't ended
+    require!(
+        clock.unix_timestamp < global_state.round_end_timestamp,
+        ErrorCode::RoundEnded
+    );
+    
+    // Check bets haven't been placed for this round already
+    require!(
+        last_bet_round_id != global_state.current_round_id,
+        ErrorCode::InvalidRound
+    );
+    
+    // Calculate total SOL needed for this round
+    let sol_per_round = bet_amount_per_bet
+        .checked_mul(num_bets as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Check vault has enough SOL
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    let available_sol = vault_lamports
+        .checked_sub(rent)
+        .ok_or(ErrorCode::InsufficientFunds)?;
+    
+    require!(
+        available_sol >= sol_per_round,
+        ErrorCode::InsufficientFunds
+    );
+    
+    // Deduct SOL for bets (protocol fee will be deducted in join_round)
+    // For now, we'll deduct the full amount - actual implementation should call join_round
+    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= sol_per_round;
+    
+    // Now borrow mutably to update state
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    
+    // Mark bets as placed for this round
+    let current_round_id = global_state.current_round_id;
+    autominer_vault.last_bet_round_id = current_round_id;
+    
+    // Decrement rounds remaining
+    let new_rounds_remaining = rounds_remaining
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    autominer_vault.rounds_remaining = new_rounds_remaining;
+    
+    // If no rounds remaining, close vault and return remaining SOL
+    if new_rounds_remaining == 0 {
+        let remaining_sol = ctx.accounts.autominer_vault.to_account_info().lamports()
+            .checked_sub(rent)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
+        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
+    }
+    
+    msg!(
+        "Autominer bets executed: {} bets of {} SOL each for round {}. Rounds remaining: {}",
+        num_bets,
+        bet_amount_per_bet,
+        current_round_id,
+        new_rounds_remaining
+    );
+    
+    // TODO: In production, implement CPI calls to join_round for each bet type:
+    // for bet_type in &autominer_vault.bet_types {
+    //     join_round_cpi(ctx, autominer_vault.bet_amount_per_bet, bet_type.clone())?;
+    // }
+    
+    Ok(())
+}
+
+/// Cancel autominer vault
+pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
+    let autominer_vault = &ctx.accounts.autominer_vault;
+    
+    require!(
+        autominer_vault.owner == ctx.accounts.owner.key(),
+        ErrorCode::Unauthorized
+    );
+    
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    
+    // Return all SOL to owner
+    **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += vault_lamports;
+    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= vault_lamports;
+    
+    msg!("Autominer cancelled. {} SOL returned to owner", vault_lamports);
+    
+    Ok(())
+} 
+
 
 
 
@@ -325,358 +667,7 @@ pub fn join_round(
 //     Ok(())
 // }
 
-
-
-
-// /// Crank end surge - determines winner and distributes rewards
-// pub fn crank_end_surge(ctx: Context<CrankEndSurge>) -> Result<()> {
-//     let global_state = &mut ctx.accounts.global_game_state;
-//     let global_config = &ctx.accounts.global_config;
-//     let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-//     let clock = Clock::get()?;
-    
-//     // Check round has ended
-//     require!(
-//         clock.unix_timestamp > global_state.round_end_timestamp,
-//         ErrorCode::RoundNotEnded
-//     );
-    
-//     // Collect all faction states and calculate scores
-//     let mut faction_scores: Vec<(u8, u128)> = Vec::new();
-//     let mut total_score: u128 = 0;
-//     let mut winning_faction_total_bets = 0u64;
-    
-//     for faction_account in ctx.remaining_accounts.iter() {
-//         let faction_data = faction_account.try_borrow_data()?;
-//         let faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_data[..])?;
-        
-//         // Calculate score: passive hashpower + (active SOL bets * HASHPOWER_PER_SOL)
-//         let sol_hashpower = (faction_state.total_active_sol_bets as u128)
-//             .checked_mul(HASHPOWER_PER_SOL_CONSTANT)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-//         let score = faction_state
-//             .total_passive_hashpower
-//             .checked_add(sol_hashpower)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-//         faction_scores.push((faction_state.faction_id, score));
-//         total_score = total_score
-//             .checked_add(score)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-//     }
-    
-//     require!(!faction_scores.is_empty(), ErrorCode::NoFactions);
-//     require!(total_score > 0, ErrorCode::NoBets);
-    
-//     // Select winner using slot as RNG
-//     let slot = clock.slot;
-//     let mut random_value = (slot % (total_score.min(u64::MAX as u128) as u64)) as u128;
-//     let mut winning_faction_id = faction_scores[0].0;
-    
-//     for (faction_id, score) in faction_scores.iter() {
-//         if random_value < *score {
-//             winning_faction_id = *faction_id;
-//             break;
-//         }
-//         random_value = random_value.saturating_sub(*score);
-//     }
-    
-//     // Get winning faction total bets
-//     for faction_account in ctx.remaining_accounts.iter() {
-//         let faction_data = faction_account.try_borrow_data()?;
-//         let faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_data[..])?;
-//         if faction_state.faction_id == winning_faction_id {
-//             winning_faction_total_bets = faction_state.total_active_sol_bets;
-//             break;
-//         }
-//     }
-    
-//     // Split DogeBtc emission using configurable percentages from GlobalConfig
-//     // Calculate emission_per_round from mining state: current_dist_rate * slots_per_round
-//     // Solana has ~2 slots per second, so slots_per_round = round_duration_seconds * 2
-//     let slots_per_round = (global_state.round_duration_seconds as u64)
-//         .checked_mul(2)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?;
-//     let emission_per_round = doge_btc_mining.current_dist_rate
-//         .checked_mul(slots_per_round)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     let dbtc_stakers = emission_per_round
-//         .checked_mul(global_config.dbtc_dist_config.dbtc_stakers_pct as u64)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?
-//         .checked_div(100)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     let dbtc_winners = emission_per_round
-//         .checked_mul(global_config.dbtc_dist_config.dbtc_winners_pct as u64)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?
-//         .checked_div(100)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     let dbtc_same_faction = emission_per_round
-//         .checked_mul(global_config.dbtc_dist_config.dbtc_same_faction_pct as u64)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?
-//         .checked_div(100)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     let dbtc_motherlode = emission_per_round
-//         .checked_mul(global_config.dbtc_dist_config.dbtc_motherlode_pct as u64)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?
-//         .checked_div(100)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     // Transfer to staker reward vault via CPI (will be implemented in mooneconomy)
-//     // For now, we'll store the amounts in global state
-    
-//     // Transfer motherlode portion
-//     let _motherlode_pot_vault = &ctx.accounts.motherlode_pot_vault;
-//     let _dbtc_emission_vault = &ctx.accounts.dbtc_emission_vault;
-    
-//     // Note: Token transfers will need to be implemented with proper PDA signing
-    
-//     // Check motherlode hit
-//     let motherlode_roll = clock.slot % MOTHERLODE_CHANCE;
-//     let motherlode_hit = motherlode_roll == 0;
-    
-//     // Save results to global state
-//     global_state.last_round_id = global_state.current_round_id;
-//     global_state.winning_faction_id = winning_faction_id;
-//     global_state.total_sol_pot_net = ctx.accounts.sol_prize_pot_vault.lamports();
-//     global_state.total_sol_bet_on_winner = winning_faction_total_bets;
-    
-//     // Calculate total bets on losers
-//     let mut total_loser_bets = 0u64;
-//     for faction_account in ctx.remaining_accounts.iter() {
-//         let faction_data = faction_account.try_borrow_data()?;
-//         let faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_data[..])?;
-//         if faction_state.faction_id != winning_faction_id {
-//             total_loser_bets = total_loser_bets
-//                 .checked_add(faction_state.total_active_sol_bets)
-//                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-//         }
-//     }
-//     global_state.total_sol_bet_on_losers = total_loser_bets;
-    
-//     // Calculate total bets across all factions
-//     let mut total_all_bets = 0u64;
-//     for faction_account in ctx.remaining_accounts.iter() {
-//         let faction_data = faction_account.try_borrow_data()?;
-//         let faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_data[..])?;
-//         total_all_bets = total_all_bets
-//             .checked_add(faction_state.total_active_sol_bets)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-//     }
-//     global_state.total_sol_bet_all_factions = total_all_bets;
-    
-//     global_state.dbtc_winner_pool = dbtc_winners;
-//     global_state.dbtc_loser_pool = dbtc_same_faction;
-//     global_state.motherlode_hit = motherlode_hit;
-    
-//     if motherlode_hit {
-//         global_state.motherlode_pot_size_on_hit = ctx.accounts.motherlode_pot_vault.lamports();
-//     }
-    
-//     // Reset for next round using round_duration_seconds from GlobalGameSate
-//     global_state.current_round_id = global_state.current_round_id.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
-//     global_state.round_end_timestamp = clock.unix_timestamp.checked_add(global_state.round_duration_seconds).ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     // Reset all faction active bets (faction states passed as remaining_accounts should be mutable)
-//     // Note: In production, faction states should be explicitly passed as mutable accounts
-//     // For now, we'll skip the reset here and handle it in the account context
-
-//     msg!(
-//         "Round {} ended. Winner: Faction {}, Motherlode: {}",
-//         global_state.last_round_id,
-//         winning_faction_id,
-//         if motherlode_hit { "HIT!" } else { "miss" }
-//     );
-
-//     Ok(())
-// }
  
-// /// Claim surge rewards for a user
-// pub fn claim_surge_rewards(ctx: Context<ClaimSurgeRewards>) -> Result<()> {
-//     let global_state = &ctx.accounts.global_game_state;
-//     let user_bet = &mut ctx.accounts.user_surge_bet;
-    
-//     // Check user bet is for the last completed round
-//     require!(
-//         user_bet.round_id == global_state.last_round_id,
-//         ErrorCode::InvalidRound
-//     );
-    
-//     let is_winner = user_bet.faction_id == global_state.winning_faction_id;
-    
-//     // Calculate SOL payout (winners only)
-//     let mut sol_reward = 0u64;
-//     if is_winner && global_state.total_sol_bet_on_winner > 0 {
-//         sol_reward = (user_bet.sol_bet_amount as u128)
-//             .checked_mul(global_state.total_sol_pot_net as u128)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?
-//             .checked_div(global_state.total_sol_bet_on_winner as u128)
-//             .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-        
-//         // Transfer SOL reward
-//         **ctx.accounts.signer.to_account_info().try_borrow_mut_lamports()? += sol_reward;
-//         **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? -= sol_reward;
-//     }
-    
-//     // Calculate DogeBtc payout
-//     let mut dbtc_reward = 0u64;
-//     if is_winner {
-//         if global_state.total_sol_bet_on_winner > 0 {
-//             dbtc_reward = (user_bet.sol_bet_amount as u128)
-//                 .checked_mul(global_state.dbtc_winner_pool as u128)
-//                 .ok_or(ErrorCode::ArithmeticOverflow)?
-//                 .checked_div(global_state.total_sol_bet_on_winner as u128)
-//                 .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-//         }
-//     } else {
-//         if global_state.total_sol_bet_on_losers > 0 {
-//             dbtc_reward = (user_bet.sol_bet_amount as u128)
-//                 .checked_mul(global_state.dbtc_loser_pool as u128)
-//                 .ok_or(ErrorCode::ArithmeticOverflow)?
-//                 .checked_div(global_state.total_sol_bet_on_losers as u128)
-//                 .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-//         }
-//     }
-    
-//     // Add motherlode payout if hit
-//     if global_state.motherlode_hit && global_state.total_sol_bet_all_factions > 0 {
-//         let motherlode_share = (user_bet.sol_bet_amount as u128)
-//             .checked_mul(global_state.motherlode_pot_size_on_hit as u128)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?
-//             .checked_div(global_state.total_sol_bet_all_factions as u128)
-//             .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-        
-//         dbtc_reward = dbtc_reward
-//             .checked_add(motherlode_share)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-//     }
-    
-//     // Transfer DogeBtc (token transfer will be implemented with proper PDA signing)
-//     // For now, we'll need to implement token transfers
-    
-//     // Close bet account
-//     let signer_key = ctx.accounts.signer.key();
-//     let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
-//     **ctx.accounts.signer.to_account_info().try_borrow_mut_lamports()? += rent;
-    
-//     msg!(
-//         "User {} claimed rewards: {} SOL, {} DogeBtc (Round {}, Winner: {})",
-//         signer_key,
-//         sol_reward,
-//         dbtc_reward,
-//         user_bet.round_id,
-//         is_winner
-//     );
-    
-//     Ok(())
-// }
-
-// /// Initialize autominer vault
-// pub fn init_autominer(
-//     ctx: Context<InitAutominer>,
-//     sol_per_round: u64,
-//     num_rounds: u32,
-// ) -> Result<()> {
-//     let autominer_vault = &mut ctx.accounts.autominer_vault;
-//     let player_data = &ctx.accounts.player_data;
-    
-//     require!(sol_per_round > 0, ErrorCode::InvalidAmount);
-//     require!(num_rounds > 0, ErrorCode::InvalidAmount);
-    
-//     autominer_vault.owner = ctx.accounts.authority.key();
-//     autominer_vault.faction_id = player_data.faction_id;
-//     autominer_vault.sol_per_round = sol_per_round;
-//     autominer_vault.rounds_remaining = num_rounds;
-//     autominer_vault.vault_bump = ctx.bumps.autominer_vault;
-    
-//     // Transfer SOL to vault
-//     let total_sol = sol_per_round
-//         .checked_mul(num_rounds as u64)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?;
-//     let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-//     let total_transfer = total_sol
-//         .checked_add(rent)
-//         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-//     **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
-//     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
-    
-//     msg!(
-//         "Autominer initialized: {} SOL per round for {} rounds",
-//         sol_per_round,
-//         num_rounds
-//     );
-    
-//     Ok(())
-// }
-
-// /// Execute autominer bet (keeper instruction)
-// pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
-//         require!(
-//         ctx.accounts.autominer_vault.rounds_remaining > 0,
-//         ErrorCode::NoRoundsRemaining
-//     );
-    
-//     // Check vault has enough SOL
-//     let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
-//     let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-//     let available_sol = vault_lamports
-//         .checked_sub(rent)
-//         .ok_or(ErrorCode::InsufficientFunds)?;
-    
-//     let sol_per_round = ctx.accounts.autominer_vault.sol_per_round;
-//     require!(
-//         available_sol >= sol_per_round,
-//         ErrorCode::InsufficientFunds
-//     );
-    
-//     // Execute bet logic (similar to join_surge but from vault)
-//     // This is simplified - full implementation would call join_surge logic
-    
-//     let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
-//     ctx.accounts.autominer_vault.rounds_remaining = rounds_remaining
-//         .checked_sub(1)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-//     // If no rounds remaining, close vault and return remaining SOL
-//     if ctx.accounts.autominer_vault.rounds_remaining == 0 {
-//         let remaining_sol = vault_lamports
-//             .checked_sub(rent)
-//             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-//         **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
-//         **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
-//     }
-    
-//     msg!("Autominer bet executed. Rounds remaining: {}", ctx.accounts.autominer_vault.rounds_remaining);
-    
-//     Ok(())
-// }
-
-// /// Cancel autominer vault
-// pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
-//     let autominer_vault = &ctx.accounts.autominer_vault;
-    
-//     require!(
-//         autominer_vault.owner == ctx.accounts.owner.key(),
-//         ErrorCode::Unauthorized
-//     );
-    
-//     let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
-    
-//     // Return all SOL to owner
-//     **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += vault_lamports;
-//     **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= vault_lamports;
-    
-//     msg!("Autominer cancelled. {} SOL returned to owner", vault_lamports);
-    
-//     Ok(())
-// } 
-
  
 // // ----------------------------------------------------------------------------------------
 // // -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
@@ -1345,7 +1336,7 @@ pub struct CrankEndSurge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct ClaimSurgeRewards<'info> {
+pub struct ClaimRewards<'info> {
     #[account(
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
@@ -1353,12 +1344,31 @@ pub struct ClaimSurgeRewards<'info> {
     pub global_game_state: Account<'info, GlobalGameSate>,
     
     #[account(
-        mut,
-        close = signer,
-        seeds = [USER_GAME_BET_SEED.as_ref(), signer.key().as_ref(), &global_game_state.last_round_id.to_le_bytes()],
-        bump = user_surge_bet.bump
+        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.last_round_id.to_le_bytes()],
+        bump = game_session.bump
     )]
-    pub user_surge_bet: Account<'info, UserGameBet>,
+    pub game_session: Account<'info, GameSession>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
+        bump = player_data.bump
+    )]
+    pub player_data: Account<'info, PlayerData>,
+    
+    #[account(
+        mut,
+        close = user_wallet,
+        seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &global_game_state.last_round_id.to_le_bytes()],
+        bump = user_game_bet.bump
+    )]
+    pub user_game_bet: Account<'info, UserGameBet>,
     
     /// CHECK: SOL prize pot vault
     #[account(
@@ -1389,14 +1399,14 @@ pub struct ClaimSurgeRewards<'info> {
     pub user_token_account: UncheckedAccount<'info>,
     
     #[account(mut)]
-    pub signer: Signer<'info>,
+    pub user_wallet: Signer<'info>,
     
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-#[instruction(sol_per_round: u64, num_rounds: u32)]
+#[instruction(bet_types: Vec<BetType>, bet_amount_per_bet: u64, num_rounds: u32)]
 pub struct InitAutominer<'info> {
     #[account(
         init,
@@ -1408,10 +1418,10 @@ pub struct InitAutominer<'info> {
     pub autominer_vault: Account<'info, AutominerVault>,
 
     #[account(
-        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub global_config: Account<'info, GlobalConfig>,
     
     #[account(mut)]
     pub user_wallet: Signer<'info>,
@@ -1437,40 +1447,13 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub global_game_state: Account<'info, GlobalGameSate>,
     
-    /// CHECK: Faction state for the vault's faction
+    /// CHECK: Owner account (to receive remaining SOL when vault closes)
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[autominer_vault.faction_id]],
-        bump
+        constraint = owner.key() == autominer_vault.owner @ ErrorCode::Unauthorized
     )]
-    pub faction_state: UncheckedAccount<'info>,
-
-    /// CHECK: User surge bet account
-    #[account(
-        init_if_needed,
-        payer = autominer_vault,
-        space = UserGameBet::LEN,
-        seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
-        bump
-    )]
-    pub user_surge_bet: Account<'info, UserGameBet>,
-    
-    /// CHECK: All other accounts needed for join_surge
-    #[account(mut)]
-    pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: SOL treasury PDA (fees go here)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-    
-    /// CHECK: Owner account for returning SOL when vault closes
-    #[account(mut)]
     pub owner: UncheckedAccount<'info>,
-
+    
     pub system_program: Program<'info, System>,
 }
 
