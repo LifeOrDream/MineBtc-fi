@@ -109,6 +109,7 @@ pub mod moonbase {
         new_dbtc_winners_pct: Option<u8>,
         new_dbtc_same_faction_pct: Option<u8>,
         new_dbtc_motherlode_pct: Option<u8>,
+        new_refining_fee: Option<u8>,
     ) -> Result<()> {
         admin::update_fees_internal(
             ctx,
@@ -119,6 +120,7 @@ pub mod moonbase {
             new_dbtc_winners_pct,
             new_dbtc_same_faction_pct,
             new_dbtc_motherlode_pct,
+            new_refining_fee,
         )
     }
 
@@ -259,8 +261,8 @@ pub mod moonbase {
     // ----------------------------------------------------------------------------------------
 
     /// Initialize a player account for the Faction Surge game
-    pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8) -> Result<()> {
-        user::initialize_player(ctx, faction_id)
+    pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
+        user::initialize_player(ctx, faction_id, referral_code)
     }
 
     /// Update personal hashpower (CPI-only, called by mooneconomy program)

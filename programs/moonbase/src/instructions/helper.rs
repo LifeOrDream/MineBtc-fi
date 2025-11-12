@@ -55,7 +55,7 @@ pub fn add_dogebtc_position(
     position_index: u8,
 ) -> Result<()> {
     if position_index >= MAX_ALLOWED_POSITIONS {
-        return Err(ErrorCode::InvalidPositionIndex.into());
+        return Err(ErrorCode::InvalidParameters.into());
     }
 
     // If this position index is not already active
@@ -65,7 +65,7 @@ pub fn add_dogebtc_position(
     {
         // Ensure we're not exceeding the max allowed positions
         if player_ac.active_moondoge_positions >= MAX_ALLOWED_POSITIONS {
-            return Err(ErrorCode::MaxPositionsReached.into());
+            return Err(ErrorCode::InvalidParameters.into());
         }
 
         // Add position index to the vector
@@ -99,7 +99,7 @@ pub fn remove_moondoge_position(
             player_ac.active_moondoge_positions -= 1;
         }
     } else {
-        return Err(ErrorCode::PositionNotFound.into());
+        return Err(ErrorCode::InvalidParameters.into());
     }
 
     Ok(())
@@ -108,14 +108,14 @@ pub fn remove_moondoge_position(
 /// Add position index to user's LP positions
 pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     if position_index >= MAX_ALLOWED_POSITIONS {
-        return Err(ErrorCode::InvalidPositionIndex.into());
+        return Err(ErrorCode::InvalidParameters.into());
     }
 
     // If this position index is not already active
     if !player_ac.lp_position_indices.contains(&position_index) {
         // Ensure we're not exceeding the max allowed positions
         if player_ac.active_lp_positions >= MAX_ALLOWED_POSITIONS {
-            return Err(ErrorCode::MaxPositionsReached.into());
+            return Err(ErrorCode::InvalidParameters.into());
         }
 
         // Add position index to the vector
@@ -147,7 +147,7 @@ pub fn remove_lp_position(
             player_ac.active_lp_positions -= 1;
         }
     } else {
-        return Err(ErrorCode::PositionNotFound.into());
+        return Err(ErrorCode::InvalidParameters.into());
     }
 
     Ok(())
@@ -186,8 +186,8 @@ pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_ind
     position.start_timestamp = current_ts;
     position.multiplier = multiplier;
 
-    let seconds_to_add = lockup_duration.checked_mul(DAY_IN_SECONDS).unwrap();
-    position.lockup_end_timestamp = current_ts + seconds_to_add;
+    let seconds_to_add = lockup_duration * DAY_IN_SECONDS;
+    position.lockup_end_timestamp = current_ts + seconds_to_add as i64;
 
     Ok(())
 }

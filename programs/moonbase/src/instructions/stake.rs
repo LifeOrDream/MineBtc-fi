@@ -72,7 +72,7 @@ pub fn stake_moondoge(
     
     // Get or create position
     let user_position = &mut ctx.accounts.user_position;
-    
+
     // Add position index to player data
     helper::add_dogebtc_position(player_data, position_index)?;
 
@@ -94,7 +94,7 @@ pub fn stake_moondoge(
     // Process pending rewards before updating position
     if player_data.dogebtc_hashpower > 0 {
         msg!("💰 Processing pending rewards before position update");
-        
+                
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
         let sol_reward_index_u64 = faction_state.dbtc_sol_reward_index.min(u64::MAX as u128) as u64;
         let sol_reward_debt_u64 = player_data.dbtc_sol_reward_debt.min(u64::MAX as u128) as u64;
@@ -221,7 +221,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     // Process pending rewards before updating position
     if player_data.dogebtc_hashpower > 0 {
         msg!("💰 Processing pending rewards before unstaking");
-        
+                    
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
         let sol_reward_index_u64 = faction_state.dbtc_sol_reward_index.min(u64::MAX as u128) as u64;
         let sol_reward_debt_u64 = player_data.dbtc_sol_reward_debt.min(u64::MAX as u128) as u64;
@@ -930,8 +930,8 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     msg!("✅ [claim_dbtc_rewards] Claimed {} dbtc (fee: {})", claimable_amount, refining_fee);
     Ok(())
 }
-  
-  
+
+
 // ----------------------------------------------------------------------------------------
 // ------------ ACCOUNT STRUCTS ----------------------------------------------------------
 // ----------------------------------------------------------------------------------------
@@ -1265,4 +1265,3 @@ pub struct UnstakeLpTokens<'info> {
     pub token_program: Program<'info, Token>,
 }
 
- 

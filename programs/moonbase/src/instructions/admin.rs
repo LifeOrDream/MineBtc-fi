@@ -700,11 +700,11 @@ pub fn initialize_faction_state_internal(
     faction_state.lp_dbtc_reward_index = 0;
     faction_state.motherlode_pot_size = 0;
     msg!("     Bump: {}", faction_state.bump);
-    msg!("     Total passive hashpower: {}", faction_state.total_passive_hashpower);
+    msg!("     Total DogeBtc hashpower: {}", faction_state.total_dbtc_hashpower);
+    msg!("     Total LP hashpower: {}", faction_state.total_lp_hashpower);
     msg!("     Total SOL bets: {}", faction_state.total_sol_bets);
     msg!("     Total wins: {}", faction_state.total_wins);
     msg!("     SOL reward index: {}", faction_state.sol_reward_index);
-    msg!("     DogeBtc reward index: {}", faction_state.dbtc_reward_index);
     msg!("     Motherlode pot size: {}", faction_state.motherlode_pot_size);
 
     msg!("✅ [initialize_faction_state_internal] Faction state initialized successfully");
@@ -875,10 +875,14 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
 // ------------ WITHDRAW SOL FEES ----------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Withdraw SOL fees from the treasury (excluding POL reserves)
-/// This function allows the authorized fee_collector to withdraw SOL fees
-/// but respects the sol_for_pol reserve for Protocol Owned Liquidity
-pub fn distribute_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
+/// TODO: Disabled - needs migration from mooneconomy vaults
+pub fn distribute_sol_fees_internal(_ctx: Context<WithdrawSolFees>) -> Result<()> {
+    msg!("⚠️ Function disabled pending staking migration");
+    Ok(())
+}
+
+/*
+pub fn distribute_sol_fees_internal_OLD(ctx: Context<WithdrawSolFees>) -> Result<()> {
     let sol_treasury = &ctx.accounts.sol_treasury;
     let fee_collector = &ctx.accounts.fee_collector;
     let global_config = &ctx.accounts.global_config;
@@ -1006,6 +1010,8 @@ pub fn distribute_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()>
     msg!("Withdrew {} SOL from treasury", available_solana as f64 / 1e9);
     Ok(())
 }
+*/
+
 // ----------------------------------------------------------------------------------------
 // ------------ QUERY FUNCTIONS FOR EXTERNAL PROGRAMS ------------
 // ----------------------------------------------------------------------------------------
