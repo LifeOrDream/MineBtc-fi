@@ -336,30 +336,46 @@ pub mod moonbase {
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MOONDOGE / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
 
+    /// Stake DogeBtc tokens to earn SOL and dbtc rewards
     pub fn stake_moondoge(
         ctx: Context<StakeDogeBtc>,
+        faction_id: u8,
         amount: u64,
         lockup_duration: u64,
-        lockup_index: u8,
+        position_index: u8,
     ) -> Result<()> {
-        instructions::user::stake_moondoge(ctx, amount, lockup_duration, lockup_index)
+        stake::stake_moondoge(ctx, faction_id, amount, lockup_duration, position_index)
     }
 
+    /// Unstake DogeBtc tokens from a position
     pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
-        instructions::user::unstake_moondoge(ctx, position_index)
+        stake::unstake_moondoge(ctx, position_index)
     }
 
+    /// Stake LP tokens to earn SOL and dbtc rewards
     pub fn stake_lp_tokens(
         ctx: Context<StakeLpTokens>,
+        faction_id: u8,
         amount: u64,
         lockup_duration: u64,
-        lockup_index: u8,
+        position_index: u8,
     ) -> Result<()> {
-        instructions::user::stake_lp_tokens(ctx, amount, lockup_duration, lockup_index)
+        stake::stake_lp_tokens(ctx, faction_id, amount, lockup_duration, position_index)
     }
 
-    pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, lockup_index: u8) -> Result<()> {
-        instructions::user::unstake_lp_tokens(ctx, lockup_index)
+    /// Unstake LP tokens from a position
+    pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+        stake::unstake_lp_tokens(ctx, position_index)
+    }
+    
+    /// Claim SOL rewards from DogeBtc and LP staking
+    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
+        stake::claim_sol_rewards(ctx)
+    }
+    
+    /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
+    pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+        stake::claim_dbtc_rewards(ctx)
     }
 
 

@@ -77,6 +77,13 @@ pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
 pub const GLOBAL_GAME_STATE_SEED: &[u8] = b"global-game-state";
 pub const FACTION_STATE_SEED: &[u8] = b"faction";
 pub const PLAYER_DATA_SEED: &[u8] = b"player";
+
+// PDAs for Staking system
+pub const STAKED_POSITION_SEED: &[u8] = b"staked-position";
+pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dbtc-custodian";
+pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dbtc-custodian-authority";
+pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";
+pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
 pub const GAME_SESSION_SEED: &[u8] = b"game-session"; // Seed: [b"game-session", round_id_u64]
 pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_pubkey, round_id_u64]
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
@@ -518,12 +525,17 @@ impl FactionState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // faction_id
-        16 +    // total_passive_hashpower (u128)
-        8 +     // total_sol_bets
-        8 +     // total_wins
+        8 +     // total_dbtc_hashpower (u64)
+        8 +     // dbtc_staked (u64)
+        16 +    // dbtc_dbtc_reward_index (u128)
+        16 +    // dbtc_sol_reward_index (u128)
+        8 +     // total_lp_hashpower (u64)
+        16 +    // lp_sol_reward_index (u128)
+        16 +    // lp_dbtc_reward_index (u128)
+        8 +     // total_sol_bets (u64)
+        8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
-        16 +    // dbtc_reward_index (u128)
-        8;      // motherlode_pot_size
+        8;      // motherlode_pot_size (u64)
 }
 
 
@@ -673,6 +685,11 @@ pub struct PlayerData {
     pub dbtc_dbtc_reward_debt: u128,
     pub dbtc_sol_reward_debt: u128,
 
+    pub lp_hashpower: u64,
+    pub lp_staked: u64,
+    pub lp_sol_reward_debt: u128,
+    pub lp_dbtc_reward_debt: u128,
+
     pub pending_sol_rewards: u64,
 
     /// Reward debt tracking (prevents double-claiming)
@@ -703,6 +720,9 @@ impl PlayerData {
     // Maximum number of ticket types (max 5 ticket types)
     pub const MAX_TICKET_TYPES: usize = 5;
     
+    // Maximum number of staking positions per user
+    pub const MAX_POSITIONS: usize = 7; // 0-6 positions
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
@@ -716,11 +736,54 @@ impl PlayerData {
         8 +     // total_points_bet
         8 +     // total_sol_won
         8 +     // total_dbtc_won
-        16 +    // personal_passive_hashpower (u128)
+        8 +     // dogebtc_hashpower (u64)
+        8 +     // dogebtc_staked (u64)
+        16 +    // dbtc_dbtc_reward_debt (u128)
+        16 +    // dbtc_sol_reward_debt (u128)
+        8 +     // lp_hashpower (u64)
+        8 +     // lp_staked (u64)
+        16 +    // lp_sol_reward_debt (u128)
+        16 +    // lp_dbtc_reward_debt (u128)
+        8 +     // pending_sol_rewards (u64)
         16 +    // hashpower_dbtc_reward_debt (u128)
         16 +    // hashpower_sol_reward_debt (u128)
+        4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
+        4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
+        1 +     // active_moondoge_positions (u8)
+        1 +     // active_lp_positions (u8)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8);  // free_tickets_remaining Vec<u64>
+}
+
+
+
+/// Individual DogeBtc staking position
+#[account]
+pub struct StakedPosition {
+    pub position_index: u8,
+    pub faction_id: u8,
+
+    /// Staking details
+    pub staked_amount: u64,
+    pub weighted_amount: u64,
+    pub start_timestamp: i64,
+    pub lockup_end_timestamp: i64,
+    pub lockup_duration: u64, // in days
+    pub multiplier: u16,      // 100 = 1x
+    pub bump: u8,
+}
+
+impl StakedPosition {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +  // position_index
+        1 +  // faction_id
+        8 +  // staked_amount
+        8 +  // weighted_amount
+        8 +  // start_timestamp
+        8 +  // lockup_end_timestamp
+        8 +  // lockup_duration
+        2 +  // multiplier
+        1;   // bump
 }
 
 

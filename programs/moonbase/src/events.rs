@@ -392,3 +392,58 @@ pub struct AttractionXPClaimed {
     pub hours_elapsed: f64,
     pub effective_xp_per_hour: u32,
 }
+
+// ========================================================================================
+// =============================== STAKING EVENTS ========================================
+// ========================================================================================
+
+#[event]
+pub struct DogeBtcStaked {
+    pub owner: Pubkey,
+    pub amount: u64,
+    pub lockup_duration: u64,
+    pub multiplier: u16,
+    pub weighted_amount: u64,
+    pub total_hashpower_contribution: u64,
+    pub position_index: u8,
+}
+
+#[event]
+pub struct DogeBtcUnstaked {
+    pub owner: Pubkey,
+    pub position_index: u8,
+    pub amount: u64,
+    pub weighted_amount: u64,
+    pub early_withdrawal: bool,
+}
+
+#[event]
+pub struct LiquidityStaked {
+    pub owner: Pubkey,
+    pub amount: u64,
+    pub lockup_duration: u64,
+    pub multiplier: u16,
+    pub weighted_amount: u64,
+    pub total_hashpower_contribution: u64,
+    pub position_index: u8,
+}
+
+#[event]
+pub struct LiquidityUnstaked {
+    pub owner: Pubkey,
+    pub position_index: u8,
+    pub amount: u64,
+    pub weighted_amount: u64,
+    pub early_withdrawal: bool,
+}
+
+#[event]
+pub struct EmergencyWithdrawal {
+    pub owner: Pubkey,
+    pub position_index: u8,
+    pub original_amount: u64,
+    pub penalty_amount: u64,
+    pub returned_amount: u64,
+    pub penalty_tax_pct: u64,
+    pub timestamp: i64,
+}

@@ -100,10 +100,35 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.total_dbtc_won = 0;
     msg!("     Statistics initialized to 0");
     
+    // Initialize DogeBtc staking fields
+    player_data.dogebtc_hashpower = 0;
+    player_data.dogebtc_staked = 0;
+    player_data.dbtc_dbtc_reward_debt = 0;
+    player_data.dbtc_sol_reward_debt = 0;
+    msg!("     DogeBtc staking fields initialized");
+    
+    // Initialize LP staking fields
+    player_data.lp_hashpower = 0;
+    player_data.lp_staked = 0;
+    player_data.lp_sol_reward_debt = 0;
+    player_data.lp_dbtc_reward_debt = 0;
+    msg!("     LP staking fields initialized");
+    
+    // Initialize pending rewards
+    player_data.pending_sol_rewards = 0;
+    msg!("     Pending rewards initialized");
+    
     // Initialize reward debt tracking
     player_data.hashpower_dbtc_reward_debt = 0;
     player_data.hashpower_sol_reward_debt = 0;
     msg!("     Reward debt tracking initialized");
+    
+    // Initialize position tracking vectors
+    player_data.moondoge_position_indices = Vec::new();
+    player_data.lp_position_indices = Vec::new();
+    player_data.active_moondoge_positions = 0;
+    player_data.active_lp_positions = 0;
+    msg!("     Position tracking initialized");
     
     // Initialize free tickets vectors
     player_data.free_tickets = Vec::new();
