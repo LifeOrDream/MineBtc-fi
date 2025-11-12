@@ -539,12 +539,13 @@ impl GameSession {
         4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64> (24-sized array)
         (NUM_BLOCKS * 1) + // block_assignments [u8; NUM_BLOCKS]
         1 +     // winning_block (u8)
-        1 +     // winning_faction_id
-        8 +     // total_sol_pot_net
-        8 +     // total_sol_bet_on_winner
-        8 +     // total_sol_bet_on_losers
+        1 +     // winning_faction_id (u8)
+        1 +     // same_faction_other_block (u8)
         8 +     // dbtc_winner_pool
         8 +     // dbtc_loser_pool
+        16 +    // sol_rewards_index (u128)
+        16 +    // dbtc_rewards_index (u128)
+        16 +    // same_faction_dbtc_rewards_index (u128)
         1 +     // motherlode_hit_faction_id (u8)
         1 +     // motherlode_hit (bool)
         8;      // motherlode_pot_size_on_hit
