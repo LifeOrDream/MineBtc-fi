@@ -206,6 +206,23 @@ pub mod moonbase {
         admin::initialize_faction_state_internal(ctx, faction_id)
     }
 
+    /// Add a cranker bot to the whitelist (admin only)
+    /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
+    pub fn add_cranker_bot(
+        ctx: Context<UpdateGameState>,
+        bot_pubkey: Pubkey,
+    ) -> Result<()> {
+        admin::add_cranker_bot_internal(ctx, bot_pubkey)
+    }
+
+    /// Remove a cranker bot from the whitelist (admin only)
+    pub fn remove_cranker_bot(
+        ctx: Context<UpdateGameState>,
+        bot_pubkey: Pubkey,
+    ) -> Result<()> {
+        admin::remove_cranker_bot_internal(ctx, bot_pubkey)
+    }
+
     // ----------------------------------------------------------------------------------------
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------

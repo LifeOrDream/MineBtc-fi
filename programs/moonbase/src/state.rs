@@ -37,6 +37,7 @@ pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 // ========== BLOCK RAFFLE CONSTANTS ========== //
 pub const NUM_BLOCKS: usize = 24; // 24 blocks total
 pub const BLOCKS_PER_FACTION: usize = 2; // Each faction gets 2 blocks
+pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker bots
  
 // ----- [SEEDS] -----
 
@@ -386,6 +387,10 @@ pub struct GlobalGameSate {
     /// Committed hash for the next round (set during end_round)
     /// This allows continuous rounds without gaps
     pub next_round_commit: [u8; 32],
+    
+    /// Whitelisted cranker bots that can call start_round and end_round
+    /// Maximum MAX_CRANKER_BOTS bots
+    pub cranker_bots: Vec<Pubkey>,
 }
 
 impl GlobalGameSate {
@@ -401,7 +406,8 @@ impl GlobalGameSate {
         1 +     // winning_faction_id
         32 +    // current_round_commit [u8; 32]
         33 +    // current_round_seed Option<[u8; 32]> (1 byte discriminator + 32 bytes)
-        32;     // next_round_commit [u8; 32]
+        32 +    // next_round_commit [u8; 32]
+        4 + (MAX_CRANKER_BOTS * 32); // cranker_bots Vec<Pubkey> (4 bytes length + MAX_CRANKER_BOTS * 32 bytes)
 }
 
 
@@ -499,8 +505,6 @@ pub struct GameSession {
     pub total_sol_bet_on_winner: u64,
     /// Total SOL bet on losing factions (for pro-rata distribution)
     pub total_sol_bet_on_losers: u64,
-    /// Total SOL bet across all factions (for motherlode distribution)
-    pub total_sol_bet_all_factions: u64,
 
     // --- DogeBtc reward pools for this round ---
     /// DogeBtc allocated for winners in this round
@@ -509,6 +513,8 @@ pub struct GameSession {
     pub dbtc_loser_pool: u64,
 
     // --- Motherlode data for this round ---
+    /// The faction ID that hit motherlode in this round
+    pub motherlode_hit_faction_id: u8,
     /// Whether motherlode was hit in this round
     pub motherlode_hit: bool,
     /// Motherlode pot size when hit (if applicable)

@@ -14,17 +14,26 @@ use crate::instructions::helper;
 
 /// Initialize a player account for the Faction Surge game
 pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
+    msg!("👤 [initialize_player] Initializing player account");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Faction ID: {}", faction_id);
+    
     let player_data = &mut ctx.accounts.player_data;
     let global_config = &mut ctx.accounts.global_config;
     
+    msg!("   Total players before: {}", global_config.total_players);
     // Increment total players count
     global_config.total_players = global_config.total_players.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   Total players after: {}", global_config.total_players);
     
     // Validate faction_id
+    msg!("   Validating faction_id...");
+    msg!("   Supported factions count: {}", global_config.supported_factions.len());
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
+    msg!("   ✓ Faction ID {} is valid", faction_id);
     
     // Initialize player data
     player_data.owner = ctx.accounts.authority.key();
@@ -33,43 +42,54 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.personal_passive_hashpower = 0;
     
     // Handle referral code logic
+    msg!("   Processing referral code...");
     let referrer_pubkey = if let Some(ref_code) = referral_code {
+        msg!("     Referral code provided: {}", ref_code);
         // Validate referral code is not the same as owner
         require!(
             ref_code != ctx.accounts.authority.key(),
             ErrorCode::ReferralCannotBeSameAsOwner
         );
+        msg!("     ✓ Referral code is different from owner");
         
         // Update referrer's referral count if referrer_rewards account is provided
         if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
+            msg!("     Referrer rewards account provided");
             // Validate that the referrer_rewards account belongs to the referral_code
             require!(
                 referrer_rewards.owner == ref_code,
                 ErrorCode::InvalidReferralAccount
             );
+            msg!("     ✓ Referrer rewards account validated");
             
+            let old_count = referrer_rewards.referrals_count;
             referrer_rewards.referrals_count = referrer_rewards
                 .referrals_count
                 .checked_add(1)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            
-            msg!("Referral recorded: {} referred by {}", ctx.accounts.authority.key(), ref_code);
+            msg!("     Referrals count: {} -> {}", old_count, referrer_rewards.referrals_count);
+        } else {
+            msg!("     ⚠️ Referrer rewards account not provided (optional)");
         }
         
         // Set player's referral code
         player_data.referral_code = ref_code;
         ref_code
     } else {
+        msg!("     No referral code provided, using system referral account");
         // No referral code provided, use system referral account
         // System referral account PDA: [REFERRAL_REWARDS_SEED, system_program.key()]
         let system_referral_pubkey = ctx.accounts.system_program.key();
         player_data.referral_code = system_referral_pubkey;
+        msg!("     System referral: {}", system_referral_pubkey);
         system_referral_pubkey
     };
     
     // Initialize empty vectors for tracking rounds
+    msg!("   Initializing player data fields...");
     player_data.sol_bets_rounds = Vec::new();
     player_data.sol_bets_amounts = Vec::new();
+    msg!("     Initialized empty vectors for round tracking");
     
     // Initialize statistics
     player_data.rounds_played = 0;
@@ -78,23 +98,28 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.total_points_bet = 0;
     player_data.total_sol_won = 0;
     player_data.total_dbtc_won = 0;
+    msg!("     Statistics initialized to 0");
     
     // Initialize reward debt tracking
     player_data.last_claimed_passive_dbtc_index = 0;
     player_data.last_claimed_passive_sol_index = 0;
+    msg!("     Reward debt tracking initialized");
     
     // Initialize new player's referral rewards account
+    msg!("   Initializing new player's referral rewards account...");
     let new_player_rewards = &mut ctx.accounts.new_player_rewards;
     new_player_rewards.owner = ctx.accounts.authority.key();
     new_player_rewards.total_sol_earned = 0;
     new_player_rewards.referrals_count = 0;
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
+    msg!("     Referral rewards account initialized");
     
-    msg!("Player initialized: {} for faction {}", ctx.accounts.authority.key(), faction_id);
+    msg!("✅ [initialize_player] Player initialized successfully");
+    msg!("   Player: {} for faction {}", ctx.accounts.authority.key(), faction_id);
     if referral_code.is_some() {
-        msg!("  Referral code: {}", referrer_pubkey);
+        msg!("   Referral code: {}", referrer_pubkey);
     } else {
-        msg!("  Using system referral account: {}", referrer_pubkey);
+        msg!("   Using system referral account: {}", referrer_pubkey);
     }
     
     Ok(())
@@ -111,31 +136,46 @@ pub fn join_round(
     amount: u64,
     bet_type: BetType,
 ) -> Result<()> {
+    msg!("🎲 [join_round] User joining round");
+    msg!("   User: {}", ctx.accounts.authority.key());
+    msg!("   Bet amount: {} lamports", amount);
+    
     let global_state = &mut ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
+    
+    msg!("   Current round ID: {}", global_state.current_round_id);
+    msg!("   Current timestamp: {}", clock.unix_timestamp);
+    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
     
     // Check round is active
     require!(
         clock.unix_timestamp < global_state.round_end_timestamp,
         ErrorCode::RoundEnded
     );
+    msg!("   ✓ Round is still active");
     
     require!(amount > 0, ErrorCode::InvalidAmount);
+    msg!("   ✓ Bet amount is valid");
     
     // Validate bet type
+    msg!("   Validating bet type...");
     match &bet_type {
         BetType::Block { block_id } => {
+            msg!("     Bet type: Block {}", block_id);
             require!(
                 *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
                 ErrorCode::InvalidParameters
             );
+            msg!("     ✓ Block ID {} is valid (1-{})", block_id, NUM_BLOCKS);
         }
-        BetType::FactionHighestLowest { faction_id, .. } => {
+        BetType::FactionHighestLowest { faction_id, is_highest } => {
+            msg!("     Bet type: Faction {} ({})", faction_id, if *is_highest { "highest" } else { "lowest" });
             require!(
                 (*faction_id as usize) < global_config.supported_factions.len(),
                 ErrorCode::InvalidFactionId
             );
+            msg!("     ✓ Faction ID {} is valid", faction_id);
         }
     }
     
@@ -143,8 +183,10 @@ pub fn join_round(
     let game_session = &mut ctx.accounts.game_session;
     
     // Calculate fees using protocol_fee_pct from GlobalConfig
+    msg!("   Calculating fees...");
+    let protocol_fee_pct = global_config.sol_fee_config.protocol_fee_pct;
     let fee = amount
-        .checked_mul(global_config.sol_fee_config.protocol_fee_pct as u64)
+        .checked_mul(protocol_fee_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -152,89 +194,118 @@ pub fn join_round(
     let net_amount = amount
         .checked_sub(fee)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Protocol fee ({}%): {} lamports", protocol_fee_pct, fee);
+    msg!("     Net amount (after fee): {} lamports", net_amount);
     
     // Transfer all fees to sol_treasury (will be distributed via withdraw_sol_fees_internal)
+    msg!("   Transferring protocol fee to SOL treasury...");
     helper::transfer_to_sol_treasury(
         &ctx.accounts.user_wallet.to_account_info(),
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         fee,
     )?;
+    msg!("     ✓ Fee transferred");
     
     // Transfer net amount to prize pot
+    msg!("   Transferring net amount to prize pot vault...");
+    let prize_pot_before = ctx.accounts.sol_prize_pot_vault.lamports();
     **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? += net_amount;
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= net_amount;
+    let prize_pot_after = ctx.accounts.sol_prize_pot_vault.lamports();
+    msg!("     Prize pot: {} -> {} lamports (+{})", prize_pot_before, prize_pot_after, net_amount);
     
     // Initialize or update UserGameBet PDA
+    msg!("   Processing user bet account...");
     let user_bet = &mut ctx.accounts.user_game_bet;
     let is_new_bet = user_bet.owner == Pubkey::default();
     
     if is_new_bet {
+        msg!("     Creating new bet account");
         user_bet.owner = ctx.accounts.authority.key();
         user_bet.round_id = global_state.current_round_id;
         user_bet.bet_type = bet_type.clone();
         user_bet.sol_bet_amount = 0;
         user_bet.bump = ctx.bumps.user_game_bet;
+        msg!("       Bet account initialized for round {}", global_state.current_round_id);
     } else {
+        msg!("     Updating existing bet account");
         // Validate that bet type matches (users can't change bet type for existing bet)
         require!(
             user_bet.bet_type == bet_type,
             ErrorCode::InvalidParameters
         );
+        msg!("       ✓ Bet type matches existing bet");
     }
     
     require!(
         user_bet.round_id == global_state.current_round_id,
         ErrorCode::InvalidRound
     );
+    msg!("     ✓ Round ID matches");
     
     // Update bet amount
+    let old_bet_amount = user_bet.sol_bet_amount;
     user_bet.sol_bet_amount = user_bet
         .sol_bet_amount
         .checked_add(net_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Bet amount: {} -> {} lamports (+{})", old_bet_amount, user_bet.sol_bet_amount, net_amount);
     
     // Validate GameSession exists and matches current round
+    msg!("   Validating GameSession...");
     require!(
         game_session.round_id == global_state.current_round_id,
         ErrorCode::InvalidRound
     );
+    msg!("     ✓ GameSession round ID matches");
     
     // Validate that block assignments are set (round has been initialized by crank)
     require!(
         game_session.block_assignments.iter().any(|&f| f != 0),
         ErrorCode::InvalidParameters
     );
+    msg!("     ✓ Block assignments are set");
     
     // Add this bet to the round's bet indexes if it's a new bet
     if is_new_bet {
+        let old_count = game_session.sol_bets_indexes.len();
         game_session.sol_bets_indexes.push(user_bet.round_id);
+        msg!("     Added to bet indexes (count: {} -> {})", old_count, game_session.sol_bets_indexes.len());
     }
     
     // Update GameSession total bets for this round
+    let old_total = game_session.total_sol_bets;
     game_session.total_sol_bets = game_session
         .total_sol_bets
         .checked_add(net_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     GameSession total bets: {} -> {} lamports (+{})", old_total, game_session.total_sol_bets, net_amount);
     
     // Update PlayerData to track this round (if not already tracked)
     let round_id = global_state.current_round_id;
+    msg!("   Updating PlayerData for round {}...", round_id);
     if !player_data.sol_bets_rounds.contains(&round_id) {
         player_data.sol_bets_rounds.push(round_id);
         player_data.sol_bets_amounts.push(0);
+        msg!("     Added round {} to player's active rounds", round_id);
     }
     
     // Update the bet amount for this round in PlayerData
     if let Some(index) = player_data.sol_bets_rounds.iter().position(|&r| r == round_id) {
+        let old_amount = player_data.sol_bets_amounts[index];
         player_data.sol_bets_amounts[index] = player_data.sol_bets_amounts[index]
             .checked_add(net_amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!("     Player bet amount for round {}: {} -> {} lamports (+{})", round_id, old_amount, player_data.sol_bets_amounts[index], net_amount);
     }
     
     // Update cumulative statistics
+    let old_total_bet = player_data.total_sol_bet;
     player_data.total_sol_bet = player_data.total_sol_bet
         .checked_add(net_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Player total SOL bet: {} -> {} lamports (+{})", old_total_bet, player_data.total_sol_bet, net_amount);
     
     // Update faction state (cumulative) - only if betting on a faction
     // Note: Faction state updates should be handled separately based on the bet faction
@@ -243,12 +314,14 @@ pub fn join_round(
     // that processes all bets and updates faction states accordingly
     
     // Update global state (cumulative)
+    let old_global_total = global_state.total_sol_bets;
     global_state.total_sol_bets = global_state.total_sol_bets
         .checked_add(net_amount as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Global total SOL bets: {} -> {} lamports (+{})", old_global_total, global_state.total_sol_bets, net_amount);
     
-    msg!(
-        "User {} bet {} SOL (net) in round {} with bet type: {:?}",
+    msg!("✅ [join_round] Bet placed successfully");
+    msg!("   User: {} bet {} SOL (net) in round {} with bet type: {:?}",
         ctx.accounts.authority.key(),
         net_amount,
         round_id,
@@ -264,30 +337,45 @@ pub fn join_round(
 /// Claim rewards for a user after round ends
 /// Checks if user won based on their bet type and the winning block
 pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+    msg!("💰 [claim_rewards] User claiming rewards");
+    msg!("   User: {}", ctx.accounts.user_wallet.key());
+    
     let global_state = &ctx.accounts.global_game_state;
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
+    
+    msg!("   User bet round ID: {}", user_bet.round_id);
+    msg!("   Last completed round ID: {}", global_state.last_round_id);
+    msg!("   GameSession round ID: {}", game_session.round_id);
     
     // Check user bet is for the last completed round
     require!(
         user_bet.round_id == global_state.last_round_id,
         ErrorCode::InvalidRound
     );
+    msg!("   ✓ User bet is for last completed round");
     
     require!(
         game_session.round_id == global_state.last_round_id,
         ErrorCode::InvalidRound
     );
+    msg!("   ✓ GameSession matches last completed round");
     
     // Determine if user won by checking if their target block matches winning block
+    msg!("   Determining user's target block from bet type...");
     let target_block = user_bet
         .get_target_block(&game_session.block_assignments)
         .ok_or(ErrorCode::InvalidParameters)?;
+    msg!("     Target block: {}", target_block);
+    msg!("     Winning block: {}", game_session.winning_block);
     
     let is_winner = target_block == game_session.winning_block;
+    msg!("     Is winner: {}", is_winner);
     
     // Find the other block with the same faction (for same-faction distribution)
+    msg!("   Finding same-faction other block...");
     let winning_faction_id = game_session.winning_faction_id;
+    msg!("     Winning faction ID: {}", winning_faction_id);
     let mut same_faction_other_block = 0u8;
     for (block_idx, &assigned_faction) in game_session.block_assignments.iter().enumerate() {
         if assigned_faction == winning_faction_id && (block_idx + 1) as u8 != game_session.winning_block {
@@ -295,127 +383,190 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
             break;
         }
     }
+    msg!("     Same-faction other block: {}", same_faction_other_block);
     
     // Determine if user bet on the same-faction other block
     let is_same_faction_other_block = !is_winner && target_block == same_faction_other_block;
+    msg!("     Is same-faction other block: {}", is_same_faction_other_block);
     
     // Calculate SOL payout (winners only)
+    msg!("   Calculating SOL rewards...");
     let mut sol_reward = 0u64;
     if is_winner && game_session.total_sol_bet_on_winner > 0 {
+        msg!("     User is winner, calculating pro-rata SOL reward...");
+        msg!("       User bet amount: {} lamports", user_bet.sol_bet_amount);
+        msg!("       Total SOL pot (net): {} lamports", game_session.total_sol_pot_net);
+        msg!("       Total SOL bet on winner: {} lamports", game_session.total_sol_bet_on_winner);
+        
         sol_reward = (user_bet.sol_bet_amount as u128)
             .checked_mul(game_session.total_sol_pot_net as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(game_session.total_sol_bet_on_winner as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
         
+        msg!("       Calculated SOL reward: {} lamports", sol_reward);
+        
         // Transfer SOL reward
+        let prize_pot_before = ctx.accounts.sol_prize_pot_vault.lamports();
         **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += sol_reward;
         **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? -= sol_reward;
+        let prize_pot_after = ctx.accounts.sol_prize_pot_vault.lamports();
+        msg!("       ✓ SOL transferred: prize pot {} -> {} lamports (-{})", prize_pot_before, prize_pot_after, sol_reward);
+    } else if is_winner {
+        msg!("     User is winner but no SOL reward (total_sol_bet_on_winner = 0)");
+    } else {
+        msg!("     User is not winner - no SOL reward");
     }
     
     // Calculate DogeBtc payout according to ORE tokenomics
+    msg!("   Calculating DogeBtc rewards...");
     let mut dbtc_reward = 0u64;
     let global_config = &ctx.accounts.global_config;
     
     if is_winner {
+        msg!("     User is winner - calculating winner pool reward...");
         // Winners get dbtc_winners_pct (pro-rata to SOL bet amount)
         if game_session.total_sol_bet_on_winner > 0 {
+            msg!("       Winner pool: {} tokens", game_session.dbtc_winner_pool);
+            msg!("       Total SOL bet on winner: {} lamports", game_session.total_sol_bet_on_winner);
             dbtc_reward = (user_bet.sol_bet_amount as u128)
                 .checked_mul(game_session.dbtc_winner_pool as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(game_session.total_sol_bet_on_winner as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+            msg!("       Winner pool reward: {} tokens", dbtc_reward);
+        } else {
+            msg!("       No winner pool reward (total_sol_bet_on_winner = 0)");
         }
         
         // Add motherlode payout if hit (only winners get motherlode)
         if game_session.motherlode_hit && game_session.total_sol_bet_on_winner > 0 {
+            msg!("     🎰 Motherlode was hit - calculating motherlode share...");
+            msg!("       Motherlode pot size: {} tokens", game_session.motherlode_pot_size_on_hit);
             let motherlode_share = (user_bet.sol_bet_amount as u128)
                 .checked_mul(game_session.motherlode_pot_size_on_hit as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(game_session.total_sol_bet_on_winner as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
             
+            msg!("       Motherlode share: {} tokens", motherlode_share);
             dbtc_reward = dbtc_reward
                 .checked_add(motherlode_share)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!("       Total DogeBtc reward (with motherlode): {} tokens", dbtc_reward);
+        } else if game_session.motherlode_hit {
+            msg!("     Motherlode was hit but no reward (total_sol_bet_on_winner = 0)");
+        } else {
+            msg!("     Motherlode was not hit this round");
         }
     } else if is_same_faction_other_block {
+        msg!("     User bet on same-faction other block - calculating same-faction pool reward...");
         // Same-faction other block bettors get dbtc_same_faction_pct (pro-rata to SOL bet amount)
         if game_session.total_sol_bet_on_losers > 0 {
+            msg!("       Same-faction pool: {} tokens", game_session.dbtc_loser_pool);
+            msg!("       Total SOL bet on same-faction: {} lamports", game_session.total_sol_bet_on_losers);
             dbtc_reward = (user_bet.sol_bet_amount as u128)
                 .checked_mul(game_session.dbtc_loser_pool as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(game_session.total_sol_bet_on_losers as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+            msg!("       Same-faction reward: {} tokens", dbtc_reward);
+        } else {
+            msg!("       No same-faction reward (total_sol_bet_on_losers = 0)");
         }
+    } else {
+        msg!("     User is not winner or same-faction other block - no DogeBtc reward");
     }
     // Other bettors get nothing
     
+    msg!("   Total DogeBtc reward before refining fee: {} tokens", dbtc_reward);
+    
     // Apply refining fee (charged on claim, distributed to other unclaimed users)
+    msg!("   Applying refining fee...");
     let refining_fee_pct = global_config.dbtc_dist_config.refining_fee;
+    msg!("     Refining fee percentage: {}%", refining_fee_pct);
     let refining_fee = if dbtc_reward > 0 && refining_fee_pct > 0 {
-        (dbtc_reward as u128)
+        let fee = (dbtc_reward as u128)
             .checked_mul(refining_fee_pct as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
-            .ok_or(ErrorCode::ArithmeticOverflow)? as u64
+            .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+        msg!("     Refining fee: {} tokens", fee);
+        fee
     } else {
+        msg!("     No refining fee (reward = 0 or fee_pct = 0)");
         0
     };
     
     let dbtc_reward_after_fee = dbtc_reward
         .checked_sub(refining_fee)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   DogeBtc reward after refining fee: {} tokens", dbtc_reward_after_fee);
     
     // Transfer DogeBtc if reward > 0
     if dbtc_reward_after_fee > 0 {
+        msg!("   ⚠️ TODO: Transfer {} DogeBtc tokens to user (token transfer not yet implemented)", dbtc_reward_after_fee);
         // TODO: Implement token transfer with proper PDA signing
         // Transfer from dbtc_emission_vault to user's token account
-        msg!("DogeBtc reward: {} (after refining fee: {}), refining fee: {} (to be distributed)", 
-            dbtc_reward_after_fee, refining_fee, refining_fee);
+    } else {
+        msg!("   No DogeBtc reward to transfer");
     }
     
     // TODO: Distribute refining_fee to other users with unclaimed rewards
     // This requires tracking all unclaimed rewards globally and distributing proportionally
     // For now, refining fee is calculated but distribution is deferred
+    if refining_fee > 0 {
+        msg!("   ⚠️ TODO: Distribute {} refining fee tokens to other unclaimed users", refining_fee);
+    }
     
     // Update player stats
+    msg!("   Updating player statistics...");
     let player_data = &mut ctx.accounts.player_data;
     if is_winner {
+        let old_wins = player_data.rounds_won;
         player_data.rounds_won = player_data.rounds_won
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!("     Rounds won: {} -> {}", old_wins, player_data.rounds_won);
+        
+        let old_sol_won = player_data.total_sol_won;
         player_data.total_sol_won = player_data.total_sol_won
             .checked_add(sol_reward)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!("     Total SOL won: {} -> {} lamports (+{})", old_sol_won, player_data.total_sol_won, sol_reward);
     }
+    
+    let old_dbtc_won = player_data.total_dbtc_won;
     player_data.total_dbtc_won = player_data.total_dbtc_won
         .checked_add(dbtc_reward_after_fee)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Total DogeBtc won: {} -> {} tokens (+{})", old_dbtc_won, player_data.total_dbtc_won, dbtc_reward_after_fee);
     
     // Remove round from player's active rounds list
+    msg!("   Removing round from player's active rounds list...");
     if let Some(index) = player_data.sol_bets_rounds.iter().position(|&r| r == user_bet.round_id) {
+        let old_count = player_data.sol_bets_rounds.len();
         player_data.sol_bets_rounds.remove(index);
         player_data.sol_bets_amounts.remove(index);
+        msg!("     Removed round {} from active rounds (count: {} -> {})", user_bet.round_id, old_count, player_data.sol_bets_rounds.len());
+    } else {
+        msg!("     ⚠️ Round {} not found in active rounds list", user_bet.round_id);
     }
     
     // Close bet account and return rent
+    msg!("   Closing bet account and returning rent...");
     let signer_key = ctx.accounts.user_wallet.key();
     let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += rent;
+    msg!("     Returned {} lamports rent to user", rent);
     
-    msg!(
-        "User {} claimed rewards: {} SOL, {} DogeBtc (after {} refining fee) (Round {}, Target Block: {}, Winning Block: {}, Winner: {}, Same-Faction Other Block: {})",
-        signer_key,
-        sol_reward,
-        dbtc_reward_after_fee,
-        refining_fee,
-        user_bet.round_id,
-        target_block,
-        game_session.winning_block,
-        is_winner,
-        is_same_faction_other_block
-    );
+    msg!("✅ [claim_rewards] Rewards claimed successfully");
+    msg!("   User: {}", signer_key);
+    msg!("   Round: {}", user_bet.round_id);
+    msg!("   Target Block: {}, Winning Block: {}", target_block, game_session.winning_block);
+    msg!("   Winner: {}, Same-Faction Other Block: {}", is_winner, is_same_faction_other_block);
+    msg!("   SOL reward: {} lamports", sol_reward);
+    msg!("   DogeBtc reward: {} tokens (after {} refining fee)", dbtc_reward_after_fee, refining_fee);
     
     Ok(())
 }
@@ -429,60 +580,93 @@ pub fn init_autominer(
     bet_amount_per_bet: u64,
     num_rounds: u32,
 ) -> Result<()> {
+    msg!("🤖 [init_autominer] Initializing autominer vault");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Bet types count: {}", bet_types.len());
+    msg!("   Bet amount per bet: {} lamports", bet_amount_per_bet);
+    msg!("   Number of rounds: {}", num_rounds);
+    
     let autominer_vault = &mut ctx.accounts.autominer_vault;
     let global_config = &ctx.accounts.global_config;
     
+    msg!("   Validating parameters...");
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
+    msg!("     ✓ Bet types not empty");
+    
     require!(
         bet_types.len() <= AutominerVault::MAX_BET_TYPES,
         ErrorCode::InvalidParameters
     );
+    msg!("     ✓ Bet types count <= MAX_BET_TYPES ({})", AutominerVault::MAX_BET_TYPES);
+    
     require!(bet_amount_per_bet > 0, ErrorCode::InvalidAmount);
+    msg!("     ✓ Bet amount per bet > 0");
+    
     require!(num_rounds > 0, ErrorCode::InvalidAmount);
+    msg!("     ✓ Number of rounds > 0");
     
     // Validate bet types
-    for bet_type in &bet_types {
+    msg!("   Validating bet types...");
+    for (idx, bet_type) in bet_types.iter().enumerate() {
         match bet_type {
             BetType::Block { block_id } => {
                 require!(
                     *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
                     ErrorCode::InvalidParameters
                 );
+                msg!("     Bet type {}: Block {} ✓", idx, block_id);
             }
-            BetType::FactionHighestLowest { faction_id, .. } => {
+            BetType::FactionHighestLowest { faction_id, is_highest } => {
                 require!(
                     (*faction_id as usize) < global_config.supported_factions.len(),
                     ErrorCode::InvalidFactionId
                 );
+                msg!("     Bet type {}: Faction {} ({}) ✓", idx, faction_id, if *is_highest { "highest" } else { "lowest" });
             }
         }
     }
     
+    msg!("   Initializing autominer vault...");
     autominer_vault.owner = ctx.accounts.authority.key();
     autominer_vault.bet_types = bet_types.clone();
     autominer_vault.bet_amount_per_bet = bet_amount_per_bet;
     autominer_vault.rounds_remaining = num_rounds;
     autominer_vault.last_bet_round_id = 0;
     autominer_vault.vault_bump = ctx.bumps.autominer_vault;
+    msg!("     Vault initialized for owner: {}", autominer_vault.owner);
     
     // Calculate total SOL needed: (bet_amount_per_bet * num_bet_types) * num_rounds + rent
+    msg!("   Calculating total SOL needed...");
     let sol_per_round = bet_amount_per_bet
         .checked_mul(bet_types.len() as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, bet_types.len(), bet_amount_per_bet);
+    
     let total_sol = sol_per_round
         .checked_mul(num_rounds as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Total SOL for all rounds: {} lamports ({} rounds × {} lamports)", total_sol, num_rounds, sol_per_round);
+    
     let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
     let total_transfer = total_sol
         .checked_add(rent)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Rent: {} lamports", rent);
+    msg!("     Total transfer: {} lamports", total_transfer);
     
     // Transfer SOL to vault
+    msg!("   Transferring SOL to vault...");
+    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let wallet_before = ctx.accounts.user_wallet.lamports();
     **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
+    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let wallet_after = ctx.accounts.user_wallet.lamports();
+    msg!("     Vault: {} -> {} lamports (+{})", vault_before, vault_after, total_transfer);
+    msg!("     Wallet: {} -> {} lamports (-{})", wallet_before, wallet_after, total_transfer);
     
-    msg!(
-        "Autominer initialized: {} bet types, {} SOL per bet, {} rounds ({} SOL total)",
+    msg!("✅ [init_autominer] Autominer initialized successfully");
+    msg!("   {} bet types, {} SOL per bet, {} rounds ({} SOL total)",
         bet_types.len(),
         bet_amount_per_bet,
         num_rounds,
@@ -496,6 +680,9 @@ pub fn init_autominer(
 /// Places bets for all configured bet types in the current round
 /// Can be called once per round to place all bets automatically
 pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+    msg!("🤖 [execute_autominer_bet] Executing autominer bets");
+    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
+    
     let global_state = &ctx.accounts.global_game_state;
     let clock = Clock::get()?;
     
@@ -505,43 +692,67 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     let num_bets = ctx.accounts.autominer_vault.bet_types.len();
     let bet_amount_per_bet = ctx.accounts.autominer_vault.bet_amount_per_bet;
     
+    msg!("   Vault state:");
+    msg!("     Rounds remaining: {}", rounds_remaining);
+    msg!("     Last bet round ID: {}", last_bet_round_id);
+    msg!("     Number of bet types: {}", num_bets);
+    msg!("     Bet amount per bet: {} lamports", bet_amount_per_bet);
+    msg!("   Current round ID: {}", global_state.current_round_id);
+    msg!("   Current timestamp: {}", clock.unix_timestamp);
+    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    
+    msg!("   Validating execution conditions...");
     require!(
         rounds_remaining > 0,
         ErrorCode::NoRoundsRemaining
     );
+    msg!("     ✓ Rounds remaining > 0");
     
     // Check round hasn't ended
     require!(
         clock.unix_timestamp < global_state.round_end_timestamp,
         ErrorCode::RoundEnded
     );
+    msg!("     ✓ Round hasn't ended");
     
     // Check bets haven't been placed for this round already
     require!(
         last_bet_round_id != global_state.current_round_id,
         ErrorCode::InvalidRound
     );
+    msg!("     ✓ Bets not yet placed for this round");
     
     // Calculate total SOL needed for this round
+    msg!("   Calculating SOL needed for this round...");
     let sol_per_round = bet_amount_per_bet
         .checked_mul(num_bets as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, num_bets, bet_amount_per_bet);
     
     // Check vault has enough SOL
+    msg!("   Checking vault balance...");
     let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
     let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
     let available_sol = vault_lamports
         .checked_sub(rent)
         .ok_or(ErrorCode::InsufficientFunds)?;
+    msg!("     Vault lamports: {}", vault_lamports);
+    msg!("     Rent: {}", rent);
+    msg!("     Available SOL: {}", available_sol);
     
     require!(
         available_sol >= sol_per_round,
         ErrorCode::InsufficientFunds
     );
+    msg!("     ✓ Vault has sufficient SOL");
     
     // Deduct SOL for bets (protocol fee will be deducted in join_round)
     // For now, we'll deduct the full amount - actual implementation should call join_round
+    msg!("   Deducting SOL from vault for bets...");
+    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
     **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= sol_per_round;
+    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
+    msg!("     Vault: {} -> {} lamports (-{})", vault_before, vault_after, sol_per_round);
     
     // Now borrow mutably to update state
     let autominer_vault = &mut ctx.accounts.autominer_vault;
@@ -549,55 +760,71 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     // Mark bets as placed for this round
     let current_round_id = global_state.current_round_id;
     autominer_vault.last_bet_round_id = current_round_id;
+    msg!("   Updated last_bet_round_id: {} -> {}", last_bet_round_id, current_round_id);
     
     // Decrement rounds remaining
     let new_rounds_remaining = rounds_remaining
         .checked_sub(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     autominer_vault.rounds_remaining = new_rounds_remaining;
+    msg!("   Updated rounds_remaining: {} -> {}", rounds_remaining, new_rounds_remaining);
     
     // If no rounds remaining, close vault and return remaining SOL
     if new_rounds_remaining == 0 {
+        msg!("   No rounds remaining - closing vault and returning remaining SOL...");
         let remaining_sol = ctx.accounts.autominer_vault.to_account_info().lamports()
             .checked_sub(rent)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         
+        let owner_before = ctx.accounts.owner.lamports();
         **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
         **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
+        let owner_after = ctx.accounts.owner.lamports();
+        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
+        msg!("     Vault closed");
     }
     
-    msg!(
-        "Autominer bets executed: {} bets of {} SOL each for round {}. Rounds remaining: {}",
-        num_bets,
-        bet_amount_per_bet,
-        current_round_id,
-        new_rounds_remaining
-    );
+    msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
+    msg!("   {} bets of {} SOL each for round {}", num_bets, bet_amount_per_bet, current_round_id);
+    msg!("   Rounds remaining: {}", new_rounds_remaining);
     
     // TODO: In production, implement CPI calls to join_round for each bet type:
     // for bet_type in &autominer_vault.bet_types {
     //     join_round_cpi(ctx, autominer_vault.bet_amount_per_bet, bet_type.clone())?;
     // }
+    msg!("   ⚠️ TODO: Implement CPI calls to join_round for each bet type");
     
     Ok(())
 }
 
 /// Cancel autominer vault
 pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
+    msg!("🤖 [cancel_autominer] Cancelling autominer vault");
+    msg!("   Owner: {}", ctx.accounts.owner.key());
+    
     let autominer_vault = &ctx.accounts.autominer_vault;
     
+    msg!("   Validating ownership...");
     require!(
         autominer_vault.owner == ctx.accounts.owner.key(),
         ErrorCode::Unauthorized
     );
+    msg!("     ✓ Owner matches vault owner");
     
     let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    msg!("   Vault lamports: {}", vault_lamports);
+    msg!("   Rounds remaining: {}", autominer_vault.rounds_remaining);
     
     // Return all SOL to owner
+    msg!("   Returning SOL to owner...");
+    let owner_before = ctx.accounts.owner.lamports();
     **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += vault_lamports;
     **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= vault_lamports;
+    let owner_after = ctx.accounts.owner.lamports();
+    msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, vault_lamports);
     
-    msg!("Autominer cancelled. {} SOL returned to owner", vault_lamports);
+    msg!("✅ [cancel_autominer] Autominer cancelled successfully");
+    msg!("   {} SOL returned to owner", vault_lamports);
     
     Ok(())
 } 

@@ -45,26 +45,40 @@ pub struct TokenPricesInfo {
 // --------------------------------------------------------------------------------
 
 pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
+    msg!("🔧 [internal_initialize] Initializing global config");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Creation fee recipient: {}", creation_fee_recipient);
+    
     let global_config = &mut ctx.accounts.global_config;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
 
     // Initialize GlobalConfig
+    msg!("   Initializing GlobalConfig...");
     global_config.ext_authority = ctx.accounts.authority.key();
     global_config.ext_fee_collector = ctx.accounts.authority.key(); // Initially set to authority, can be updated later
     global_config.creation_fee_recipient = creation_fee_recipient;
+    msg!("     Authority: {}", global_config.ext_authority);
+    msg!("     Fee collector: {}", global_config.ext_fee_collector);
+    msg!("     Creation fee recipient: {}", global_config.creation_fee_recipient);
 
     // Store both PDA bumps for future derivation
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
     global_config.treasury_bump = ctx.bumps.sol_treasury;
+    msg!("     SOL treasury PDA: {} (bump: {})", global_config.pda_sol_treasury, global_config.treasury_bump);
 
     // Initialize SOL fee config with defaults
+    msg!("   Initializing SOL fee config...");
     global_config.sol_fee_config = SolFeeConfig {
         protocol_fee_pct: 10,
         buyback_pct: 40,
         stakers_pct: 40,
     };
+    msg!("     Protocol fee: {}%", global_config.sol_fee_config.protocol_fee_pct);
+    msg!("     Buyback: {}%", global_config.sol_fee_config.buyback_pct);
+    msg!("     Stakers: {}%", global_config.sol_fee_config.stakers_pct);
 
     // Initialize DogeBtc distribution config with defaults
+    msg!("   Initializing DogeBtc distribution config...");
     global_config.dbtc_dist_config = DogeBtcDistConfig {
         dbtc_stakers_pct: 50,
         dbtc_winners_pct: 30,
@@ -72,26 +86,44 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
         dbtc_motherlode_pct: 10,
         refining_fee: 5,
     };
+    msg!("     Stakers: {}%", global_config.dbtc_dist_config.dbtc_stakers_pct);
+    msg!("     Winners: {}%", global_config.dbtc_dist_config.dbtc_winners_pct);
+    msg!("     Same-faction: {}%", global_config.dbtc_dist_config.dbtc_same_faction_pct);
+    msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
+    msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
 
     // Initialize egg limits: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
     global_config.egg_limits = [5000, 5000, 5000, 5000];
+    msg!("   Egg limits: tier1={}, tier2={}, tier3={}, tier4={}", 
+        global_config.egg_limits[0], 
+        global_config.egg_limits[1], 
+        global_config.egg_limits[2], 
+        global_config.egg_limits[3]
+    );
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
+    msg!("   Raydium pool state: {} (default, must be set via admin)", global_config.raydium_pool_state);
 
     // Initialize global dragon egg power tracker
     global_config.global_dragon_egg_power = 0;
+    msg!("   Global dragon egg power: {}", global_config.global_dragon_egg_power);
 
     global_config.bump = ctx.bumps.global_config;
     global_config.is_game_active = false; // Game starts inactive until initialized
+    msg!("   Global config bump: {}", global_config.bump);
+    msg!("   Game active: {} (starts inactive)", global_config.is_game_active);
 
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
+    msg!("   Supported factions: {} (empty, must be added via admin)", global_config.supported_factions.len());
 
     // Initialize dragon egg URIs as empty vec of vecs (4 tiers, will be populated per faction)
     global_config.dragon_egg_uris = Vec::new();
+    msg!("   Dragon egg URIs: {} (empty, must be set via admin)", global_config.dragon_egg_uris.len());
 
     // Optionally drop 1 lamport into the vault for future-proof rent-exempt status
+    msg!("   Transferring 1 lamport to SOL treasury for rent-exempt status...");
     anchor_lang::system_program::transfer(
         CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
@@ -102,8 +134,10 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
         ),
         1,
     )?;
+    msg!("     ✓ 1 lamport transferred");
 
     // Initialize DogeBtcMining
+    msg!("   Initializing DogeBtcMining...");
     doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
     doge_btc_mining.doge_btc_per_slot = 0;
@@ -111,8 +145,13 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     doge_btc_mining.total_tokens_mined = 0;
     doge_btc_mining.bump = ctx.bumps.doge_btc_mining;
     doge_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
+    msg!("     DogeBtc token vault: {} (default, will be set during initialize_mining)", doge_btc_mining.dbtc_token_vault);
+    msg!("     Mining start timestamp: {} (0 = not started)", doge_btc_mining.mining_start_timestamp);
+    msg!("     DogeBtc per slot: {}", doge_btc_mining.doge_btc_per_slot);
+    msg!("     Bump: {}", doge_btc_mining.bump);
 
     // Initialize dynamic distribution fields with defaults
+    msg!("   Initializing dynamic distribution fields...");
     doge_btc_mining.raydium_pool_state = Pubkey::default();
     doge_btc_mining.last_rate_update = 0;
     doge_btc_mining.current_dist_rate = 0;
@@ -120,13 +159,17 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
     doge_btc_mining.track_price = 0;
     doge_btc_mining.sol_for_pol = 0;
+    msg!("     Raydium pool state: {} (default)", doge_btc_mining.raydium_pool_state);
+    msg!("     Current dist rate: {}", doge_btc_mining.current_dist_rate);
+    msg!("     Recent price: {}", doge_btc_mining.recent_price);
 
     //--------------------------------- Global Game State ---------------------------------
     // Note: GlobalGameSate should be initialized separately via initialize_game_state function
     // We don't initialize it here to keep Initialize simple
+    msg!("   ⚠️ Note: GlobalGameSate must be initialized separately via initialize_game_state");
 
-    msg!(
-        "SOL Treasury PDA created at: {} with bump: {}",
+    msg!("✅ [internal_initialize] Global config initialized successfully");
+    msg!("   SOL Treasury PDA: {} (bump: {})",
         ctx.accounts.sol_treasury.key(),
         ctx.bumps.sol_treasury
     );
@@ -221,13 +264,20 @@ pub fn set_dragon_egg_collection_internal(
 /// Add a single faction to the global config (admin only)
 /// Also initializes the faction state account for the new faction
 pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
+    msg!("🏛️ [add_faction_internal] Adding faction");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Faction name: {}", faction_name);
+    
     let global_config = &mut ctx.accounts.global_config;
 
+    msg!("   Current factions count: {}", global_config.supported_factions.len());
+    msg!("   Validating faction name...");
     // Validate faction name
     require!(
         faction_name.len() > 0 && faction_name.len() <= MAX_FACTION_NAME_LENGTH,
         ErrorCode::InvalidFactionName
     );
+    msg!("     ✓ Faction name length valid ({} chars, max: {})", faction_name.len(), MAX_FACTION_NAME_LENGTH);
 
     // Check we don't exceed max factions
     let current_faction_count = global_config.supported_factions.len();
@@ -235,24 +285,32 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
         current_faction_count < MAX_FACTIONS,
         ErrorCode::MaxFactionsReached
     );
+    msg!("     ✓ Factions count < MAX_FACTIONS ({})", MAX_FACTIONS);
 
     let faction_id = current_faction_count as u8;
+    msg!("   Faction ID will be: {}", faction_id);
 
     // Derive expected PDA and verify
+    msg!("   Deriving faction state PDA...");
     let (expected_pda, bump) = Pubkey::find_program_address(
         &[FACTION_STATE_SEED.as_ref(), &[faction_id]],
         ctx.program_id,
     );
+    msg!("     Expected PDA: {} (bump: {})", expected_pda, bump);
     require!(
         ctx.accounts.faction_state.key() == expected_pda,
         ErrorCode::InvalidAccount
     );
+    msg!("     ✓ Faction state PDA matches");
 
     // Initialize faction state account if needed
+    msg!("   Checking if faction state account exists...");
     let rent = Rent::get()?;
     let rent_lamports = rent.minimum_balance(FactionState::LEN);
+    msg!("     Rent required: {} lamports", rent_lamports);
     
     if ctx.accounts.faction_state.lamports() == 0 {
+        msg!("     Account doesn't exist - creating...");
         // Create account
         anchor_lang::system_program::create_account(
             CpiContext::new_with_signer(
@@ -267,9 +325,13 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
             FactionState::LEN as u64,
             ctx.program_id,
         )?;
+        msg!("     ✓ Faction state account created");
+    } else {
+        msg!("     Account already exists");
     }
 
     // Initialize faction state data
+    msg!("   Initializing faction state data...");
     let mut faction_state_data = ctx.accounts.faction_state.try_borrow_mut_data()?;
     let faction_state = FactionState {
         bump,
@@ -282,11 +344,22 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
         motherlode_pot_size: 0,
     };
     faction_state.try_serialize(&mut &mut faction_state_data[..])?;
+    msg!("     Faction state initialized:");
+    msg!("       Bump: {}", bump);
+    msg!("       Total passive hashpower: 0");
+    msg!("       Total SOL bets: 0");
+    msg!("       Total wins: 0");
+    msg!("       SOL reward index: 0");
+    msg!("       DogeBtc reward index: 0");
+    msg!("       Motherlode pot size: 0");
 
     // Add faction to config
+    msg!("   Adding faction to supported_factions list...");
     global_config.supported_factions.push(faction_name.clone());
+    msg!("     New factions count: {}", global_config.supported_factions.len());
 
-    msg!("✅ Added faction: {} (ID: {})", faction_name, faction_id);
+    msg!("✅ [add_faction_internal] Faction added successfully");
+    msg!("   Faction: {} (ID: {})", faction_name, faction_id);
     msg!("   Total factions: {}", global_config.supported_factions.len());
 
     // Emit event for off-chain indexing
@@ -307,31 +380,44 @@ pub fn update_config_internal(
     new_fee_collector: Option<Pubkey>,
     new_creation_fee_recipient: Option<Pubkey>,
 ) -> Result<()> {
+    msg!("🔧 [update_config_internal] Updating global config");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
     let global_config = &mut ctx.accounts.global_config;
+
+    msg!("   Current config:");
+    msg!("     Authority: {}", global_config.ext_authority);
+    msg!("     Fee collector: {}", global_config.ext_fee_collector);
+    msg!("     Creation fee recipient: {}", global_config.creation_fee_recipient);
 
     // Update fields if provided
     if let Some(authority) = new_authority {
+        let old_authority = global_config.ext_authority;
         global_config.ext_authority = authority;
-        msg!("Updated authority to {}", authority);
+        msg!("   Updated authority: {} -> {}", old_authority, authority);
+    } else {
+        msg!("   Authority: not updated");
     }
 
     // Update SOL claimer if provided
     if let Some(fee_collector) = new_fee_collector {
+        let old_collector = global_config.ext_fee_collector;
         global_config.ext_fee_collector = fee_collector;
-        msg!("Updated SOL claimer to {}", fee_collector);
+        msg!("   Updated fee collector: {} -> {}", old_collector, fee_collector);
+    } else {
+        msg!("   Fee collector: not updated");
     }
 
     // Update creation fee recipient if provided
     if let Some(creation_fee_recipient) = new_creation_fee_recipient {
+        let old_recipient = global_config.creation_fee_recipient;
         global_config.creation_fee_recipient = creation_fee_recipient;
-        msg!(
-            "Updated creation fee recipient to {}",
-            creation_fee_recipient
-        );
+        msg!("   Updated creation fee recipient: {} -> {}", old_recipient, creation_fee_recipient);
+    } else {
+        msg!("   Creation fee recipient: not updated");
     }
 
- 
-
+    msg!("✅ [update_config_internal] Config updated successfully");
     Ok(())
 }
 
@@ -346,32 +432,54 @@ pub fn update_fees_internal(
     new_dbtc_winners_pct: Option<u8>,
     new_dbtc_same_faction_pct: Option<u8>,
     new_dbtc_motherlode_pct: Option<u8>,
+    new_refining_fee: Option<u8>,
 ) -> Result<()> {
+    msg!("💰 [update_fees_internal] Updating fee configuration");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
     let global_config = &mut ctx.accounts.global_config;
+    
+    msg!("   Current SOL fee config:");
+    msg!("     Protocol fee: {}%", global_config.sol_fee_config.protocol_fee_pct);
+    msg!("     Buyback: {}%", global_config.sol_fee_config.buyback_pct);
+    msg!("     Stakers: {}%", global_config.sol_fee_config.stakers_pct);
+    msg!("   Current DogeBtc dist config:");
+    msg!("     Stakers: {}%", global_config.dbtc_dist_config.dbtc_stakers_pct);
+    msg!("     Winners: {}%", global_config.dbtc_dist_config.dbtc_winners_pct);
+    msg!("     Same-faction: {}%", global_config.dbtc_dist_config.dbtc_same_faction_pct);
+    msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
+    msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
 
     // Update SOL fee config if any values provided
     if new_protocol_fee_pct.is_some() || new_buyback_pct.is_some() || new_stakers_pct.is_some() {
+        msg!("   Updating SOL fee config...");
         let protocol_fee_pct = new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
 
+        msg!("     New values: protocol={}%, buyback={}%, stakers={}%", protocol_fee_pct, buyback_pct, stakers_pct);
+        let total = protocol_fee_pct as u16 + buyback_pct as u16 + stakers_pct as u16;
+        msg!("     Total: {}%", total);
+        
         require!(
-            protocol_fee_pct as u16 + buyback_pct as u16 + stakers_pct as u16 == 100,
+            total == 100,
             ErrorCode::InvalidParameters
         );
+        msg!("     ✓ Percentages sum to 100%");
 
+        let old_config = global_config.sol_fee_config.clone();
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
         };
-
-        msg!(
-            "Updated SOL fee config: protocol={}%, buyback={}%, stakers={}%",
-            protocol_fee_pct,
-            buyback_pct,
-            stakers_pct
+        msg!("     Updated: protocol {}% -> {}%, buyback {}% -> {}%, stakers {}% -> {}%",
+            old_config.protocol_fee_pct, protocol_fee_pct,
+            old_config.buyback_pct, buyback_pct,
+            old_config.stakers_pct, stakers_pct
         );
+    } else {
+        msg!("   SOL fee config: not updated");
     }
 
     // Update DogeBtc distribution config if any values provided
@@ -380,23 +488,31 @@ pub fn update_fees_internal(
         || new_dbtc_same_faction_pct.is_some() 
         || new_dbtc_motherlode_pct.is_some() 
     {
+        msg!("   Updating DogeBtc distribution config...");
         let dbtc_stakers_pct = new_dbtc_stakers_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_stakers_pct);
         let dbtc_winners_pct = new_dbtc_winners_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_winners_pct);
         let dbtc_same_faction_pct = new_dbtc_same_faction_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_same_faction_pct);
         let dbtc_motherlode_pct = new_dbtc_motherlode_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_motherlode_pct);
 
+        msg!("     New values: stakers={}%, winners={}%, same_faction={}%, motherlode={}%",
+            dbtc_stakers_pct, dbtc_winners_pct, dbtc_same_faction_pct, dbtc_motherlode_pct);
+        let total = dbtc_stakers_pct as u16
+            + dbtc_winners_pct as u16
+            + dbtc_same_faction_pct as u16
+            + dbtc_motherlode_pct as u16;
+        msg!("     Total: {}%", total);
+        
         require!(
-            dbtc_stakers_pct as u16
-                + dbtc_winners_pct as u16
-                + dbtc_same_faction_pct as u16
-                + dbtc_motherlode_pct as u16
-                == 100,
+            total == 100,
             ErrorCode::InvalidParameters
         );
+        msg!("     ✓ Percentages sum to 100%");
 
         // Get current refining_fee to preserve it
         let current_refining_fee = global_config.dbtc_dist_config.refining_fee;
+        msg!("     Preserving refining_fee: {}%", current_refining_fee);
         
+        let old_config = global_config.dbtc_dist_config.clone();
         global_config.dbtc_dist_config = DogeBtcDistConfig {
             dbtc_stakers_pct,
             dbtc_winners_pct,
@@ -404,16 +520,26 @@ pub fn update_fees_internal(
             dbtc_motherlode_pct,
             refining_fee: current_refining_fee,
         };
-
-        msg!(
-            "Updated DogeBtc dist config: stakers={}%, winners={}%, same_faction={}%, motherlode={}%",
-            dbtc_stakers_pct,
-            dbtc_winners_pct,
-            dbtc_same_faction_pct,
-            dbtc_motherlode_pct
+        msg!("     Updated: stakers {}% -> {}%, winners {}% -> {}%, same_faction {}% -> {}%, motherlode {}% -> {}%",
+            old_config.dbtc_stakers_pct, dbtc_stakers_pct,
+            old_config.dbtc_winners_pct, dbtc_winners_pct,
+            old_config.dbtc_same_faction_pct, dbtc_same_faction_pct,
+            old_config.dbtc_motherlode_pct, dbtc_motherlode_pct
         );
+    } else {
+        msg!("   DogeBtc dist config: not updated");
+    }
+    
+    // Update refining fee if provided
+    if let Some(refining_fee) = new_refining_fee {
+        let old_refining_fee = global_config.dbtc_dist_config.refining_fee;
+        global_config.dbtc_dist_config.refining_fee = refining_fee;
+        msg!("   Updated refining fee: {}% -> {}%", old_refining_fee, refining_fee);
+    } else {
+        msg!("   Refining fee: {}% (not updated)", global_config.dbtc_dist_config.refining_fee);
     }
 
+    msg!("✅ [update_fees_internal] Fee configuration updated successfully");
     Ok(())
 }
 
@@ -425,28 +551,50 @@ pub fn update_egg_limits_internal(
     tier3_limit: Option<u64>,
     tier4_limit: Option<u64>,
 ) -> Result<()> {
+    msg!("🥚 [update_egg_limits_internal] Updating egg limits");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
     let global_config = &mut ctx.accounts.global_config;
 
+    msg!("   Current egg limits:");
+    msg!("     Tier 1: {}", global_config.egg_limits[0]);
+    msg!("     Tier 2: {}", global_config.egg_limits[1]);
+    msg!("     Tier 3: {}", global_config.egg_limits[2]);
+    msg!("     Tier 4: {}", global_config.egg_limits[3]);
+
     if let Some(limit) = tier1_limit {
+        let old_limit = global_config.egg_limits[0];
         global_config.egg_limits[0] = limit;
-        msg!("Updated Tier 1 egg limit to {}", limit);
+        msg!("   Updated Tier 1: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 1: not updated");
     }
 
     if let Some(limit) = tier2_limit {
+        let old_limit = global_config.egg_limits[1];
         global_config.egg_limits[1] = limit;
-        msg!("Updated Tier 2 egg limit to {}", limit);
+        msg!("   Updated Tier 2: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 2: not updated");
     }
 
     if let Some(limit) = tier3_limit {
+        let old_limit = global_config.egg_limits[2];
         global_config.egg_limits[2] = limit;
-        msg!("Updated Tier 3 egg limit to {}", limit);
+        msg!("   Updated Tier 3: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 3: not updated");
     }
 
     if let Some(limit) = tier4_limit {
+        let old_limit = global_config.egg_limits[3];
         global_config.egg_limits[3] = limit;
-        msg!("Updated Tier 4 egg limit to {}", limit);
+        msg!("   Updated Tier 4: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 4: not updated");
     }
 
+    msg!("✅ [update_egg_limits_internal] Egg limits updated successfully");
     Ok(())
 }
 
@@ -459,30 +607,53 @@ pub fn initialize_game_state_internal(
     ctx: Context<InitializeGameState>,
     round_duration_seconds: i64,
 ) -> Result<()> {
+    msg!("🎮 [initialize_game_state_internal] Initializing global game state");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Round duration: {} seconds", round_duration_seconds);
+    
     let global_game_state = &mut ctx.accounts.global_game_state;
     let clock = Clock::get()?;
 
+    msg!("   Current timestamp: {}", clock.unix_timestamp);
+
     // Initialize game state
+    msg!("   Initializing game state fields...");
     global_game_state.bump = ctx.bumps.global_game_state;
     global_game_state.is_active = true;
     global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
     global_game_state.round_end_timestamp = clock.unix_timestamp + round_duration_seconds;
     global_game_state.round_duration_seconds = round_duration_seconds;
+    msg!("     Bump: {}", global_game_state.bump);
+    msg!("     Is active: {}", global_game_state.is_active);
+    msg!("     Current round ID: {} (will be incremented to 1 in start_round)", global_game_state.current_round_id);
+    msg!("     Round duration: {} seconds", global_game_state.round_duration_seconds);
+    msg!("     Round end timestamp: {}", global_game_state.round_end_timestamp);
     
     // Initialize previous round data
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
+    msg!("     Last round ID: {}", global_game_state.last_round_id);
+    msg!("     Winning faction ID: {} (no rounds completed yet)", global_game_state.winning_faction_id);
     
     // Initialize commit-reveal randomness fields
     global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
     global_game_state.current_round_seed = None;
     global_game_state.next_round_commit = [0u8; 32]; // Should be set before first start_round
+    msg!("     Current round commit: {:?} (will be set in start_round)", global_game_state.current_round_commit);
+    msg!("     Current round seed: {:?} (will be set in end_round)", global_game_state.current_round_seed);
+    msg!("     Next round commit: {:?} (should be set before first start_round)", global_game_state.next_round_commit);
     
     // Initialize cumulative stats
     global_game_state.total_sol_bets = 0;
     global_game_state.total_global_passive_hashpower = 0;
+    msg!("     Total SOL bets: {}", global_game_state.total_sol_bets);
+    msg!("     Total global passive hashpower: {}", global_game_state.total_global_passive_hashpower);
+    
+    // Initialize empty cranker bots whitelist
+    global_game_state.cranker_bots = Vec::new();
+    msg!("     Cranker bots whitelist: {} (empty, must be added via admin)", global_game_state.cranker_bots.len());
 
-    msg!("✅ Global game state initialized");
+    msg!("✅ [initialize_game_state_internal] Global game state initialized successfully");
     msg!("   Round duration: {} seconds", round_duration_seconds);
     msg!("   First round ends at: {}", global_game_state.round_end_timestamp);
 
@@ -494,16 +665,25 @@ pub fn initialize_faction_state_internal(
     ctx: Context<InitializeFactionState>,
     faction_id: u8,
 ) -> Result<()> {
+    msg!("🏛️ [initialize_faction_state_internal] Initializing faction state");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Faction ID: {}", faction_id);
+    
     let global_config = &ctx.accounts.global_config;
     let faction_state = &mut ctx.accounts.faction_state;
+    
+    msg!("   Validating faction ID...");
 
     // Validate faction_id exists
+    msg!("     Supported factions count: {}", global_config.supported_factions.len());
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
+    msg!("     ✓ Faction ID {} is valid", faction_id);
 
     // Initialize faction state
+    msg!("   Initializing faction state fields...");
     faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
     faction_state.total_passive_hashpower = 0;
@@ -512,10 +692,90 @@ pub fn initialize_faction_state_internal(
     faction_state.sol_reward_index = 0;
     faction_state.dbtc_reward_index = 0;
     faction_state.motherlode_pot_size = 0;
+    msg!("     Bump: {}", faction_state.bump);
+    msg!("     Total passive hashpower: {}", faction_state.total_passive_hashpower);
+    msg!("     Total SOL bets: {}", faction_state.total_sol_bets);
+    msg!("     Total wins: {}", faction_state.total_wins);
+    msg!("     SOL reward index: {}", faction_state.sol_reward_index);
+    msg!("     DogeBtc reward index: {}", faction_state.dbtc_reward_index);
+    msg!("     Motherlode pot size: {}", faction_state.motherlode_pot_size);
 
-    msg!("✅ Faction state initialized for faction {}", faction_id);
+    msg!("✅ [initialize_faction_state_internal] Faction state initialized successfully");
+    msg!("   Faction ID: {}", faction_id);
     msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);
 
+    Ok(())
+}
+
+/// Add a cranker bot to the whitelist (admin only)
+/// Maximum MAX_CRANKER_BOTS bots can be whitelisted
+pub fn add_cranker_bot_internal(
+    ctx: Context<UpdateGameState>,
+    bot_pubkey: Pubkey,
+) -> Result<()> {
+    msg!("🤖 [add_cranker_bot_internal] Adding cranker bot to whitelist");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Bot pubkey: {}", bot_pubkey);
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    
+    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
+    msg!("   Maximum allowed: {}", MAX_CRANKER_BOTS);
+    
+    // Check if bot is already whitelisted
+    require!(
+        !global_game_state.cranker_bots.contains(&bot_pubkey),
+        ErrorCode::InvalidParameters // Bot already whitelisted
+    );
+    msg!("     ✓ Bot not already whitelisted");
+    
+    // Check if we've reached the maximum
+    require!(
+        global_game_state.cranker_bots.len() < MAX_CRANKER_BOTS,
+        ErrorCode::InvalidParameters // Max cranker bots reached
+    );
+    msg!("     ✓ Under maximum limit");
+    
+    // Add bot to whitelist
+    global_game_state.cranker_bots.push(bot_pubkey);
+    msg!("   Added bot to whitelist");
+    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
+    
+    msg!("✅ [add_cranker_bot_internal] Cranker bot added successfully");
+    msg!("   Bot: {}", bot_pubkey);
+    msg!("   Total whitelisted bots: {}", global_game_state.cranker_bots.len());
+    
+    Ok(())
+}
+
+/// Remove a cranker bot from the whitelist (admin only)
+pub fn remove_cranker_bot_internal(
+    ctx: Context<UpdateGameState>,
+    bot_pubkey: Pubkey,
+) -> Result<()> {
+    msg!("🤖 [remove_cranker_bot_internal] Removing cranker bot from whitelist");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Bot pubkey: {}", bot_pubkey);
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    
+    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
+    
+    // Find and remove bot
+    let initial_count = global_game_state.cranker_bots.len();
+    global_game_state.cranker_bots.retain(|&bot| bot != bot_pubkey);
+    
+    require!(
+        global_game_state.cranker_bots.len() < initial_count,
+        ErrorCode::InvalidParameters // Bot not found in whitelist
+    );
+    msg!("     ✓ Bot removed from whitelist");
+    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
+    
+    msg!("✅ [remove_cranker_bot_internal] Cranker bot removed successfully");
+    msg!("   Bot: {}", bot_pubkey);
+    msg!("   Remaining whitelisted bots: {}", global_game_state.cranker_bots.len());
+    
     Ok(())
 }
 
@@ -1224,6 +1484,28 @@ pub struct InitializeGameState<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateGameState<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump = global_game_state.bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
     pub system_program: Program<'info, System>,
 }
 
