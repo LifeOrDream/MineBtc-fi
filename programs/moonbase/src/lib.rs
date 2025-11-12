@@ -276,8 +276,9 @@ pub mod moonbase {
         ctx: Context<JoinRound>, 
         amount: u64,
         bet_type: BetType,
+        use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::join_round(ctx, amount, bet_type)
+        user::join_round(ctx, amount, bet_type, use_ticket)
     }
 
     // ----------------------------------------------------------------------------------------

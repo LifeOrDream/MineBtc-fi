@@ -91,8 +91,12 @@ pub fn start_round(
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
-    game_session.sol_bets_indexes = Vec::new();
-    game_session.points_bets_indexes = Vec::new();
+    
+    // Initialize 24-sized arrays for block tracking
+    game_session.user_block_indexes = vec![0u64; NUM_BLOCKS];
+    game_session.sol_bets_indexes = vec![0u64; NUM_BLOCKS];
+    game_session.points_bets_indexes = vec![0u64; NUM_BLOCKS];
+    msg!("   Initialized block tracking arrays (24 blocks)");
     msg!("   Round duration: {} seconds", global_state.round_duration_seconds);
     msg!("   Round starts at: {}", game_session.round_start_timestamp);
     msg!("   Round ends at: {}", game_session.round_end_timestamp);
@@ -320,7 +324,6 @@ pub fn end_round(
     msg!("   ⚠️ TODO: Calculating total bets on winner and same-faction (currently placeholder)");
     game_session.total_sol_bet_on_winner = 0; // TODO: Calculate from UserGameBet accounts
     game_session.total_sol_bet_on_losers = 0; // TODO: Calculate from UserGameBet accounts (same-faction other block)
-    game_session.total_sol_bet_all_factions = game_session.total_sol_bets;
     msg!("   Total SOL bets this round: {}", game_session.total_sol_bets);
     
     // Set DogeBtc pools for winners and same-faction bettors

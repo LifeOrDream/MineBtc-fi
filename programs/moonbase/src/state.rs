@@ -533,17 +533,18 @@ impl GameSession {
         8 +     // round_end_timestamp
         8 +     // total_sol_bets
         8 +     // total_points_bets
-        4 + (Self::MAX_BETS_PER_ROUND * 8) + // sol_bets_indexes Vec<u64>
-        4 + (Self::MAX_BETS_PER_ROUND * 8) + // points_bets_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64> (24-sized array)
+        4 + (NUM_BLOCKS * 8) + // sol_bets_indexes Vec<u64> (24-sized array)
+        4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64> (24-sized array)
         (NUM_BLOCKS * 1) + // block_assignments [u8; NUM_BLOCKS]
         1 +     // winning_block (u8)
         1 +     // winning_faction_id
         8 +     // total_sol_pot_net
         8 +     // total_sol_bet_on_winner
         8 +     // total_sol_bet_on_losers
-        8 +     // total_sol_bet_all_factions
         8 +     // dbtc_winner_pool
         8 +     // dbtc_loser_pool
+        1 +     // motherlode_hit_faction_id (u8)
         1 +     // motherlode_hit (bool)
         8;      // motherlode_pot_size_on_hit
 }
@@ -584,8 +585,10 @@ pub struct PlayerData {
     /// Cumulative statistics
     pub rounds_played: u64,
     pub rounds_won: u64,
+
     pub total_sol_bet: u64,
     pub total_points_bet: u64,
+
     pub total_sol_won: u64,
     pub total_dbtc_won: u64,
 
@@ -599,13 +602,20 @@ pub struct PlayerData {
     /// The last passive_sol_reward_index the user claimed up to
     pub last_claimed_passive_sol_index: u128,    
 
-    pub free_tickets: [],
-    pub free_tickets_remaining: []
+    /// Free tickets: points size of each ticket type (max 5 ticket types)
+    /// Example: [10000000, 100000000, ...] where 1 point = 1 SOL lamport
+    /// So 10000000 = 0.01 SOL, 100000000 = 0.1 SOL
+    pub free_tickets: Vec<u64>,
+    /// Free tickets remaining: count of each ticket type remaining
+    /// Index matches free_tickets (e.g., free_tickets_remaining[0] is count for free_tickets[0])
+    pub free_tickets_remaining: Vec<u64>,
 }
 
 impl PlayerData {
     // Maximum number of active rounds a player can track (for Vec sizing)
     pub const MAX_ACTIVE_ROUNDS: usize = 100; // Reasonable limit for unclaimed rounds
+    // Maximum number of ticket types (max 5 ticket types)
+    pub const MAX_TICKET_TYPES: usize = 5;
     
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
@@ -622,7 +632,9 @@ impl PlayerData {
         8 +     // total_dbtc_won
         16 +    // personal_passive_hashpower (u128)
         16 +    // last_claimed_passive_dbtc_index (u128)
-        16;     // last_claimed_passive_sol_index (u128)
+        16 +    // last_claimed_passive_sol_index (u128)
+        4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
+        4 + (Self::MAX_TICKET_TYPES * 8);  // free_tickets_remaining Vec<u64>
 }
 
 
