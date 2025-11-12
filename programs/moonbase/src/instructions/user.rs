@@ -39,7 +39,6 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.owner = ctx.accounts.authority.key();
     player_data.bump = ctx.bumps.player_data;
     player_data.faction_id = faction_id;
-    player_data.personal_passive_hashpower = 0;
     
     // Handle referral code logic
     msg!("   Processing referral code...");
@@ -116,6 +115,7 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     
     // Initialize pending rewards
     player_data.pending_sol_rewards = 0;
+    player_data.pending_dbtc_rewards = 0;
     msg!("     Pending rewards initialized");
     
     // Initialize reward debt tracking
@@ -185,9 +185,9 @@ pub fn join_round(
 
     let global_state = &ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
-    let faction_state = &mut ctx.accounts.faction_state;
     
     let player_data = &mut ctx.accounts.player_data;
+    let faction_state = &mut ctx.accounts.faction_state;
     let game_session = &mut ctx.accounts.game_session;    
     require!(  game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
     msg!("   Validated GameSession...");
@@ -238,12 +238,13 @@ pub fn join_round(
         let (net, fee_amount) = handle_fee(amount, global_config.sol_fee_config.protocol_fee_pct as u64)?;
         msg!("     ✓ Fees calculated (net: {} lamports, fee: {} lamports)", net, fee_amount);
 
-        let faction_fee = fee_amount * global_config.sol_fee_config.faction_fee_pct as u64 / M_HUNDRED;
-        let dbtc_reward_inc = helper::mul_div(faction_fee / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-        faction_state.dbtc_sol_reward_index = faction_state.dbtc_sol_reward_index + dbtc_reward_inc;
+        // Calculate faction staker fees (split between dbtc and LP stakers)
+        let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
+        let dbtc_reward_inc = helper::mul_div(stakers_fee / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        faction_state.dbtc_sol_reward_index += dbtc_reward_inc;
 
-        let lp_reward_inc = helper::mul_div(faction_fee / 2, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_sol_reward_index = faction_state.lp_sol_reward_index + lp_reward_inc;
+        let lp_reward_inc = helper::mul_div(stakers_fee / 2, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_sol_reward_index += lp_reward_inc;
 
         // Transfer all fees to sol_treasury (will be distributed via distribute_sol_fees_internal)
         helper::transfer_to_sol_treasury(
@@ -474,158 +475,85 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     let is_same_faction_other_block = !is_winner && target_block == same_faction_other_block;
     msg!("     Is same-faction other block: {}", is_same_faction_other_block);
     
-    // Calculate SOL payout (winners only)
+    // Calculate SOL payout (winners only, using reward index)
     msg!("   Calculating SOL rewards...");
     let mut sol_reward = 0u64;
-    if is_winner && game_session.total_sol_bet_on_winner > 0 {
-        msg!("     User is winner, calculating pro-rata SOL reward...");
-        msg!("       User bet amount: {} lamports", user_bet.sol_bet_amount);
-        msg!("       Total SOL pot (net): {} lamports", game_session.total_sol_pot_net);
-        msg!("       Total SOL bet on winner: {} lamports", game_session.total_sol_bet_on_winner);
-        
-        sol_reward = (user_bet.sol_bet_amount as u128)
-            .checked_mul(game_session.total_sol_pot_net as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(game_session.total_sol_bet_on_winner as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-        
-        msg!("       Calculated SOL reward: {} lamports", sol_reward);
-        
-        // Transfer SOL reward
-        let prize_pot_before = ctx.accounts.sol_prize_pot_vault.lamports();
-        **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += sol_reward;
-        **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? -= sol_reward;
-        let prize_pot_after = ctx.accounts.sol_prize_pot_vault.lamports();
-        msg!("       ✓ SOL transferred: prize pot {} -> {} lamports (-{})", prize_pot_before, prize_pot_after, sol_reward);
-    } else if is_winner {
-        msg!("     User is winner but no SOL reward (total_sol_bet_on_winner = 0)");
+    let user_points = user_bet.sol_bet_amount; // points_amount tracked in sol_bet_amount for historical rounds
+    
+    if is_winner {
+        msg!("     User is winner - calculating SOL reward using reward index...");
+        // Winners get SOL based on reward index
+        if game_session.sol_rewards_index > 0 && user_points > 0 {
+            msg!("       SOL reward index: {}", game_session.sol_rewards_index);
+            msg!("       User points: {}", user_points);
+            sol_reward = helper::mul_div(user_points, game_session.sol_rewards_index as u64, INDEX_PRECISION)? as u64;
+            msg!("       Calculated SOL reward: {} lamports", sol_reward);
+            
+            // Transfer SOL reward
+            let prize_pot_before = ctx.accounts.sol_prize_pot_vault.lamports();
+            **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += sol_reward;
+            **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? -= sol_reward;
+            let prize_pot_after = ctx.accounts.sol_prize_pot_vault.lamports();
+            msg!("       ✓ SOL transferred: prize pot {} -> {} lamports (-{})", prize_pot_before, prize_pot_after, sol_reward);
+        } else {
+            msg!("       No SOL reward (index = 0 or user_points = 0)");
+        }
     } else {
         msg!("     User is not winner - no SOL reward");
     }
     
-    // Calculate DogeBtc payout according to ORE tokenomics
+    // Calculate DogeBtc payout using reward indexes from GameSession
     msg!("   Calculating DogeBtc rewards...");
     let mut dbtc_reward = 0u64;
-    let global_config = &ctx.accounts.global_config;
+    let user_points = user_bet.sol_bet_amount; // points_amount tracked in sol_bet_amount for historical rounds
     
     if is_winner {
-        msg!("     User is winner - calculating winner pool reward...");
-        // Winners get dbtc_winners_pct (pro-rata to SOL bet amount)
-        if game_session.total_sol_bet_on_winner > 0 {
-            msg!("       Winner pool: {} tokens", game_session.dbtc_winner_pool);
-            msg!("       Total SOL bet on winner: {} lamports", game_session.total_sol_bet_on_winner);
-            dbtc_reward = (user_bet.sol_bet_amount as u128)
-                .checked_mul(game_session.dbtc_winner_pool as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(game_session.total_sol_bet_on_winner as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+        msg!("     User is winner - calculating winner pool reward using reward index...");
+        // Winners get dbtc based on reward index
+        if game_session.dbtc_rewards_index > 0 && user_points > 0 {
+            msg!("       Winner reward index: {}", game_session.dbtc_rewards_index);
+            msg!("       User points: {}", user_points);
+            dbtc_reward = helper::mul_div(user_points, game_session.dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
             msg!("       Winner pool reward: {} tokens", dbtc_reward);
         } else {
-            msg!("       No winner pool reward (total_sol_bet_on_winner = 0)");
-        }
-        
-        // Add motherlode payout if hit (only winners get motherlode)
-        if game_session.motherlode_hit && game_session.total_sol_bet_on_winner > 0 {
-            msg!("     🎰 Motherlode was hit - calculating motherlode share...");
-            msg!("       Motherlode pot size: {} tokens", game_session.motherlode_pot_size_on_hit);
-            let motherlode_share = (user_bet.sol_bet_amount as u128)
-                .checked_mul(game_session.motherlode_pot_size_on_hit as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(game_session.total_sol_bet_on_winner as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-            
-            msg!("       Motherlode share: {} tokens", motherlode_share);
-            dbtc_reward = dbtc_reward
-                .checked_add(motherlode_share)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("       Total DogeBtc reward (with motherlode): {} tokens", dbtc_reward);
-        } else if game_session.motherlode_hit {
-            msg!("     Motherlode was hit but no reward (total_sol_bet_on_winner = 0)");
-        } else {
-            msg!("     Motherlode was not hit this round");
+            msg!("       No winner pool reward (index = 0 or user_points = 0)");
         }
     } else if is_same_faction_other_block {
         msg!("     User bet on same-faction other block - calculating same-faction pool reward...");
-        // Same-faction other block bettors get dbtc_same_faction_pct (pro-rata to SOL bet amount)
-        if game_session.total_sol_bet_on_losers > 0 {
-            msg!("       Same-faction pool: {} tokens", game_session.dbtc_loser_pool);
-            msg!("       Total SOL bet on same-faction: {} lamports", game_session.total_sol_bet_on_losers);
-            dbtc_reward = (user_bet.sol_bet_amount as u128)
-                .checked_mul(game_session.dbtc_loser_pool as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(game_session.total_sol_bet_on_losers as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
+        // Same-faction other block bettors get dbtc based on same-faction reward index
+        if game_session.same_faction_dbtc_rewards_index > 0 && user_points > 0 {
+            msg!("       Same-faction reward index: {}", game_session.same_faction_dbtc_rewards_index);
+            msg!("       User points: {}", user_points);
+            dbtc_reward = helper::mul_div(user_points, game_session.same_faction_dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
             msg!("       Same-faction reward: {} tokens", dbtc_reward);
         } else {
-            msg!("       No same-faction reward (total_sol_bet_on_losers = 0)");
+            msg!("       No same-faction reward (index = 0 or user_points = 0)");
         }
     } else {
         msg!("     User is not winner or same-faction other block - no DogeBtc reward");
     }
-    // Other bettors get nothing
     
-    msg!("   Total DogeBtc reward before refining fee: {} tokens", dbtc_reward);
+    msg!("   Total DogeBtc reward: {} tokens", dbtc_reward);
     
-    // Apply refining fee (charged on claim, distributed to other unclaimed users)
-    msg!("   Applying refining fee...");
-    let refining_fee_pct = global_config.dbtc_dist_config.refining_fee;
-    msg!("     Refining fee percentage: {}%", refining_fee_pct);
-    let refining_fee = if dbtc_reward > 0 && refining_fee_pct > 0 {
-        let fee = (dbtc_reward as u128)
-            .checked_mul(refining_fee_pct as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(100)
-            .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-        msg!("     Refining fee: {} tokens", fee);
-        fee
+    // Add DogeBtc reward to pending_dbtc_rewards (user will claim later via claim_dbtc_rewards with refining fee)
+    if dbtc_reward > 0 {
+        msg!("   Adding {} DogeBtc tokens to pending_dbtc_rewards", dbtc_reward);
+        player_data.pending_dbtc_rewards += dbtc_reward;
+        msg!("     Pending DogeBtc rewards: {} tokens", player_data.pending_dbtc_rewards);
     } else {
-        msg!("     No refining fee (reward = 0 or fee_pct = 0)");
-        0
-    };
-    
-    let dbtc_reward_after_fee = dbtc_reward
-        .checked_sub(refining_fee)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   DogeBtc reward after refining fee: {} tokens", dbtc_reward_after_fee);
-    
-    // Transfer DogeBtc if reward > 0
-    if dbtc_reward_after_fee > 0 {
-        msg!("   ⚠️ TODO: Transfer {} DogeBtc tokens to user (token transfer not yet implemented)", dbtc_reward_after_fee);
-        // TODO: Implement token transfer with proper PDA signing
-        // Transfer from dbtc_emission_vault to user's token account
-    } else {
-        msg!("   No DogeBtc reward to transfer");
-    }
-    
-    // TODO: Distribute refining_fee to other users with unclaimed rewards
-    // This requires tracking all unclaimed rewards globally and distributing proportionally
-    // For now, refining fee is calculated but distribution is deferred
-    if refining_fee > 0 {
-        msg!("   ⚠️ TODO: Distribute {} refining fee tokens to other unclaimed users", refining_fee);
+        msg!("   No DogeBtc reward to add to pending rewards");
     }
     
     // Update player stats
     msg!("   Updating player statistics...");
     let player_data = &mut ctx.accounts.player_data;
     if is_winner {
-        let old_wins = player_data.rounds_won;
-        player_data.rounds_won = player_data.rounds_won
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("     Rounds won: {} -> {}", old_wins, player_data.rounds_won);
+        player_data.rounds_won += 1;
+        msg!("     Rounds won: {}", player_data.rounds_won);
         
-        let old_sol_won = player_data.total_sol_won;
-        player_data.total_sol_won = player_data.total_sol_won
-            .checked_add(sol_reward)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("     Total SOL won: {} -> {} lamports (+{})", old_sol_won, player_data.total_sol_won, sol_reward);
+        player_data.total_sol_won += sol_reward;
+        msg!("     Total SOL won: {} lamports (+{})", player_data.total_sol_won, sol_reward);
     }
-    
-    let old_dbtc_won = player_data.total_dbtc_won;
-    player_data.total_dbtc_won = player_data.total_dbtc_won
-        .checked_add(dbtc_reward_after_fee)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     Total DogeBtc won: {} -> {} tokens (+{})", old_dbtc_won, player_data.total_dbtc_won, dbtc_reward_after_fee);
     
     // Remove round from player's active rounds list
     msg!("   Removing round from player's active rounds list...");
@@ -650,8 +578,8 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     msg!("   Round: {}", user_bet.round_id);
     msg!("   Target Block: {}, Winning Block: {}", target_block, game_session.winning_block);
     msg!("   Winner: {}, Same-Faction Other Block: {}", is_winner, is_same_faction_other_block);
-    msg!("   SOL reward: {} lamports", sol_reward);
-    msg!("   DogeBtc reward: {} tokens (after {} refining fee)", dbtc_reward_after_fee, refining_fee);
+    msg!("   SOL reward: {} lamports (transferred)", sol_reward);
+    msg!("   DogeBtc reward: {} tokens (added to pending_dbtc_rewards, claim via claim_dbtc_rewards)", dbtc_reward);
     
     Ok(())
 }
@@ -1546,6 +1474,13 @@ pub struct JoinRound<'info> {
         bump = player_data.bump
     )]
     pub player_data: Account<'info, PlayerData>,
+    
+    #[account(
+        mut,
+        seeds = [FACTION_STATE_SEED.as_ref(), &[player_data.faction_id]],
+        bump
+    )]
+    pub faction_state: Account<'info, FactionState>,
     
     /// GameSession PDA for the current round (must be initialized by crank function)
     #[account(

@@ -336,11 +336,16 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
     let faction_state = FactionState {
         bump,
         faction_id,
-        total_passive_hashpower: 0,
+        total_dbtc_hashpower: 0,
+        dbtc_staked: 0,
+        dbtc_dbtc_reward_index: 0,
+        dbtc_sol_reward_index: 0,
+        total_lp_hashpower: 0,
+        lp_sol_reward_index: 0,
+        lp_dbtc_reward_index: 0,
         total_sol_bets: 0,
         total_wins: 0,
         sol_reward_index: 0,
-        dbtc_reward_index: 0,
         motherlode_pot_size: 0,
     };
     faction_state.try_serialize(&mut &mut faction_state_data[..])?;
@@ -686,11 +691,13 @@ pub fn initialize_faction_state_internal(
     msg!("   Initializing faction state fields...");
     faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
-    faction_state.total_passive_hashpower = 0;
+    faction_state.total_dbtc_hashpower = 0;
+    faction_state.total_lp_hashpower = 0;
     faction_state.total_sol_bets = 0;
     faction_state.total_wins = 0;
     faction_state.sol_reward_index = 0;
-    faction_state.dbtc_reward_index = 0;
+    faction_state.dbtc_dbtc_reward_index = 0;
+    faction_state.lp_dbtc_reward_index = 0;
     faction_state.motherlode_pot_size = 0;
     msg!("     Bump: {}", faction_state.bump);
     msg!("     Total passive hashpower: {}", faction_state.total_passive_hashpower);
