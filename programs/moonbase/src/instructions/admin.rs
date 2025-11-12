@@ -871,10 +871,11 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
 /// Withdraw SOL fees from the treasury (excluding POL reserves)
 /// This function allows the authorized fee_collector to withdraw SOL fees
 /// but respects the sol_for_pol reserve for Protocol Owned Liquidity
-pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
+pub fn distribute_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
     let sol_treasury = &ctx.accounts.sol_treasury;
     let fee_collector = &ctx.accounts.fee_collector;
     let global_config = &ctx.accounts.global_config;
+    let buybacks_ac = &mut ctx.accounts.buybacks_account;
 
     msg!("Withdrawing SOL from treasury");
     msg!("SOL Treasury: {}", sol_treasury.key());
@@ -890,30 +891,14 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
 
     // Check if we have enough available balance
     if available_solana == 0 {
-        msg!(
-            "⚠️ No SOL balance to withdraw. Available: {} SOL",
-            available_solana as f64 / 1e9
-        );        
+        msg!( "⚠️ No SOL balance to withdraw. Available: {} SOL", available_solana as f64 / 1e9);        
         return Ok(());
     }
-    msg!(
-        "   Total balance: {} SOL, Rent: {} SOL",
-        current_balance as f64 / 1e9,
-        rent_exempt_amount as f64 / 1e9
-    );
+    msg!( "   Total balance: {} SOL, Rent: {} SOL", current_balance as f64 / 1e9, rent_exempt_amount as f64 / 1e9);
 
     // Calculate buybacks amount using configurable percentage
     let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
-    let sol_for_buybacks = available_solana
-        .checked_mul(buyback_percentage)
-        .unwrap()
-        .checked_div(100)
-        .unwrap();
-
-    // Remaining amount goes to fee collector (for distribution to stakers and dev)
-    let fee_collector_amount = available_solana
-        .checked_sub(sol_for_buybacks)
-        .unwrap();
+    let sol_for_buybacks = available_solana * buyback_percentage / M_HUNDRED;
 
     // Create signer seeds for sol_treasury
     let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
@@ -934,22 +919,23 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
         )?;
 
         // Update buybacks tracking
-        ctx.accounts.buybacks_account.total_sol_accumulated = ctx
-            .accounts
-            .buybacks_account
-            .total_sol_accumulated
-            .checked_add(sol_for_buybacks)
-            .unwrap();
+        buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + sol_for_buybacks;
 
-        msg!(
-            "💰 Transferred {} SOL to buybacks vault ({}%)",
-            sol_for_buybacks as f64 / 1e9,
-            buyback_percentage
-        );
+        msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks as f64 / 1e9,  buyback_percentage);
     }
 
-    // Transfer remaining amount to fee collector
-    if fee_collector_amount > 0 {
+    let mut sol_for_dbtc_stakers = available_solana * global_config.sol_fee_config.dbtc_stakers_pct / M_HUNDRED;
+    let mut sol_for_lp_stakers = available_solana * global_config.sol_fee_config.lp_stakers_pct / M_HUNDRED;
+
+    // Now distribute to respective vaults
+    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
+    let liquidity_vault = &mut ctx.accounts.liquidity_vault;
+
+    if dogebtc_vault.weighted_dbtc_locked > 0 && sol_for_dbtc_stakers > 0 {
+        let sol_per_point = (sol_for_dbtc_stakers as u128 * PRECISION_FACTOR as u128)
+            / dogebtc_vault.weighted_dbtc_locked as u128;
+        dogebtc_vault.accumulated_sol_per_point += sol_per_point;
+
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.system_program.to_account_info(),
@@ -959,18 +945,58 @@ pub fn withdraw_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
                 },
                 signer_seeds,
             ),
-            fee_collector_amount,
+            sol_for_dbtc_stakers,
         )?;
-
-        // Emit event
-        emit!(SolFeesWithdrawn {
-            fee_collector: fee_collector.key(),
-            economy_program_amount: fee_collector_amount,
-            buyback_amount: sol_for_buybacks,
-        });
+    } else {
+        sol_for_dbtc_stakers = 0;
     }
 
-    msg!("Withdrew {} SOL from treasury", fee_collector_amount as f64 / 1e9);
+    if liquidity_vault.weighted_lp_locked > 0 && sol_for_lp_stakers > 0 {
+        let sol_per_point = (sol_for_lp_stakers as u128 * PRECISION_FACTOR as u128)
+            / liquidity_vault.weighted_lp_locked as u128;
+        liquidity_vault.accumulated_sol_per_point += sol_per_point;
+
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.fee_collector.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_lp_stakers,
+        )?;
+    } else {
+        sol_for_lp_stakers = 0;
+    }
+ 
+    let dev_earnings = available_solana.saturating_sub(sol_for_dbtc_stakers + sol_for_lp_stakers);
+    if dev_earnings > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: fee_collector.to_account_info(),
+                    to: ctx.accounts.dev_earnings_collector.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            dev_earnings,
+        )?;
+        msg!("👨‍💻 Sent {} SOL to Dev Earnings", dev_earnings as f64 / 1e9);
+    }
+
+    // Emit event
+    emit!(SolFeesWithdrawn {
+        available_solana: available_solana,
+        buyback_amount: sol_for_buybacks,
+        dbtc_stakers_amount: sol_for_dbtc_stakers,
+        lp_stakers_amount: sol_for_lp_stakers,
+        dev_earnings_amount: dev_earnings,
+    });
+
+    msg!("Withdrew {} SOL from treasury", available_solana as f64 / 1e9);
     Ok(())
 }
 // ----------------------------------------------------------------------------------------

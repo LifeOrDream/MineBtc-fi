@@ -10,6 +10,7 @@ pub use instructions::admin::*;
 pub use instructions::economy::*;
 pub use instructions::game::*;
 pub use instructions::user::*;
+pub use instructions::stake::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType};
 
 declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
@@ -21,6 +22,7 @@ pub mod moonbase {
     use crate::instructions::economy::{self};
     use crate::instructions::game::{self};
     use crate::instructions::user::{self};
+    use crate::instructions::stake::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -171,7 +173,7 @@ pub mod moonbase {
     /// Internally, 10% is sent to loot rewards.
     ///
     pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
-        admin::withdraw_sol_fees_internal(ctx)
+        admin::distribute_sol_fees_internal(ctx)
     }
 
     /// Query function to get treasury info for external programs
@@ -329,6 +331,38 @@ pub mod moonbase {
     pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
         user::cancel_autominer(ctx)
     }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MOONDOGE / LP TOKENs  ------------
+    // ----------------------------------------------------------------------------------------
+
+    pub fn stake_moondoge(
+        ctx: Context<StakeDogeBtc>,
+        amount: u64,
+        lockup_duration: u64,
+        lockup_index: u8,
+    ) -> Result<()> {
+        instructions::user::stake_moondoge(ctx, amount, lockup_duration, lockup_index)
+    }
+
+    pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
+        instructions::user::unstake_moondoge(ctx, position_index)
+    }
+
+    pub fn stake_lp_tokens(
+        ctx: Context<StakeLpTokens>,
+        amount: u64,
+        lockup_duration: u64,
+        lockup_index: u8,
+    ) -> Result<()> {
+        instructions::user::stake_lp_tokens(ctx, amount, lockup_duration, lockup_index)
+    }
+
+    pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, lockup_index: u8) -> Result<()> {
+        instructions::user::unstake_lp_tokens(ctx, lockup_index)
+    }
+
+
 
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------

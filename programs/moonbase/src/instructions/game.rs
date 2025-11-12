@@ -6,6 +6,7 @@ use anchor_lang::AccountSerialize;
 
 use crate::errors::ErrorCode;
 use crate::state::*;
+use crate::instructions::helper;
 
 // ========================================================================================
 // =============================== GAME ROUND MANAGEMENT ============================
@@ -330,38 +331,20 @@ pub fn end_round(
     
     if winning_block_pts > 0 {
         // Calculate reward indexes (only if there are points bet on winning block)
-        let sol_rewards_delta = (game_session.total_sol_bets as u128)
-            .checked_mul(INDEX_PRECISION as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(winning_block_pts as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        game_session.sol_rewards_index = game_session.sol_rewards_index
-            .checked_add(sol_rewards_delta)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let sol_rewards_delta = helper::mul_div(game_session.total_sol_bets, INDEX_PRECISION, winning_block_pts)?;        
+        game_session.sol_rewards_index = game_session.sol_rewards_index+ sol_rewards_delta;
         msg!("   SOL rewards index: {} -> {} (+{})", game_session.sol_rewards_index - sol_rewards_delta, game_session.sol_rewards_index, sol_rewards_delta);
         
         // Calculate DogeBtc rewards index for winning block
-        let dbtc_rewards_delta = (winning_block_rewards as u128)
-            .checked_mul(INDEX_PRECISION as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(winning_block_pts as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        game_session.dbtc_rewards_index = game_session.dbtc_rewards_index
-            .checked_add(dbtc_rewards_delta)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let dbtc_rewards_delta = helper::mul_div(winning_block_rewards, INDEX_PRECISION, winning_block_pts)?;
+        game_session.dbtc_rewards_index = game_session.dbtc_rewards_index + dbtc_rewards_delta;
         msg!("   DogeBtc rewards index (winning block): {} -> {} (+{})", game_session.dbtc_rewards_index - dbtc_rewards_delta, game_session.dbtc_rewards_index, dbtc_rewards_delta);
         
         // Calculate DogeBtc rewards index for same-faction other block
         let same_faction_pts = game_session.points_bets_indexes[(same_faction_other_block - 1) as usize];
         if same_faction_pts > 0 {
-            let same_faction_dbtc_delta = (same_faction_rewards as u128)
-                .checked_mul(INDEX_PRECISION as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(same_faction_pts as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            game_session.same_faction_dbtc_rewards_index = game_session.same_faction_dbtc_rewards_index
-                .checked_add(same_faction_dbtc_delta)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            let same_faction_dbtc_delta = helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_pts)?;
+            game_session.same_faction_dbtc_rewards_index = game_session.same_faction_dbtc_rewards_index + same_faction_dbtc_delta;
             msg!("   DogeBtc rewards index (same-faction): {} -> {} (+{})", game_session.same_faction_dbtc_rewards_index - same_faction_dbtc_delta, game_session.same_faction_dbtc_rewards_index, same_faction_dbtc_delta);
         } else {
             msg!("   ⚠️ No points bet on same-faction block {}, skipping same-faction rewards index", same_faction_other_block);
@@ -371,27 +354,21 @@ pub fn end_round(
     }
     
     // dBTC distribution to stakers of the winning faction
-    if faction_state.total_passive_hashpower > 0 {
-        let dbtc_per_share = (faction_stakers as u128)
-            .checked_mul(INDEX_PRECISION as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(faction_state.total_passive_hashpower)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        let old_dbtc_index = faction_state.dbtc_reward_index;
-        faction_state.dbtc_reward_index = faction_state.dbtc_reward_index
-            .checked_add(dbtc_per_share)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("   Faction stakers reward index: {} -> {} (+{})", old_dbtc_index, faction_state.dbtc_reward_index, dbtc_per_share);
-        msg!("     Total passive hashpower: {}", faction_state.total_passive_hashpower);
-        msg!("     Stakers rewards: {}", faction_stakers);
-    } else {
-        msg!("   ⚠️ No stakers in winning faction (total_passive_hashpower = 0), skipping staker rewards");
+    if faction_state.total_dbtc_hashpower > 0 {
+        let dbtc_per_share = helper::mul_div(faction_stakers / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + dbtc_per_share;
+        msg!("   Faction stakers reward index: {} -> {} (+{})", faction_state.dbtc_dbtc_reward_index - dbtc_per_share, faction_state.dbtc_dbtc_reward_index, dbtc_per_share);
+    }
+
+    // LP distribution to stakers of the winning faction
+    if faction_state.total_lp_hashpower > 0 {
+        let lp_per_share = helper::mul_div(faction_stakers / 2, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index + lp_per_share;
+        msg!("   Faction stakers reward index: {} -> {} (+{})", faction_state.lp_dbtc_reward_index - lp_per_share, faction_state.lp_dbtc_reward_index, lp_per_share);
     }
     
-    // Increment motherlode pot size (always, regardless of hit)
-    faction_state.motherlode_pot_size = faction_state.motherlode_pot_size
-        .checked_add(motherlode_rewards)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    // Increment motherlode pot size (always, regardless of hit)    
+    faction_state.motherlode_pot_size = faction_state.motherlode_pot_size + motherlode_rewards;
     msg!("   Motherlode pot: {} -> {} (+{})", old_motherlode, faction_state.motherlode_pot_size, motherlode_rewards);
 
 
@@ -558,37 +535,7 @@ fn calculate_dbtc_split( dbtc_rewards: u64, dbtc_stakers_pct: u8, dbtc_winners_p
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ 
 
 // ========================================================================================
 // =============================== ACCOUNT CONTEXTS ======================================

@@ -25,7 +25,7 @@ pub fn calculate_multiplier(
 }
 
 /// Add position index to user's moondoge positions
-pub fn add_moondoge_position(
+pub fn add_dogebtc_position(
     electricity_ac: &mut UserMoonElectricity,
     position_index: u8,
 ) -> Result<()> {

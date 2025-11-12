@@ -211,7 +211,7 @@ pub struct UserMoonElectricity {
 
     /// Total DogeBtc staking stats
     pub total_moondoge_staked: u64,
-    pub total_weighted_moondoge: u64,
+    pub total_weighted_dogebtc: u64,
     pub active_moondoge_positions: u8, // Max 7
 
     /// Total Liquidity staking stats
@@ -240,7 +240,7 @@ impl UserMoonElectricity {
     pub const LEN: usize = 8 +  // discriminator
             32 + // owner
             8 +  // total_moondoge_staked
-            8 +  // total_weighted_moondoge
+            8 +  // total_weighted_dogebtc
             1 +  // active_moondoge_positions
             8 +  // total_lp_tokens_staked
             8 +  // total_weighted_lp
@@ -249,7 +249,7 @@ impl UserMoonElectricity {
             8 +  // free_electricity
             16 + // moondoge_reward_debt
             16 + // lp_reward_debt
-            8 +  // pending_moondoge_rewards
+            8 +  // pending_dogebtc_rewards
             8 +  // pending_lp_rewards
             8 +  // total_sol_claimed
             16 + // moondoge_dbtc_reward_debt

@@ -189,7 +189,7 @@ async function main() {
     // const userMoonElectricity = moonEconomyCoder.decode('UserMoonElectricity', userElectricityAccountInfo.data);
     //     userMoonElectricity.owner = userMoonElectricity.owner.toBase58();
     //     userMoonElectricity.total_moondoge_staked = userMoonElectricity.total_moondoge_staked.toNumber();
-    //     userMoonElectricity.total_weighted_moondoge = userMoonElectricity.total_weighted_moondoge.toNumber();
+    //     userMoonElectricity.total_weighted_dogebtc = userMoonElectricity.total_weighted_dogebtc.toNumber();
 
     //     userMoonElectricity.total_lp_tokens_staked = userMoonElectricity.total_lp_tokens_staked.toNumber();
     //     userMoonElectricity.total_weighted_lp = userMoonElectricity.total_weighted_lp.toNumber();
@@ -197,7 +197,7 @@ async function main() {
     //     userMoonElectricity.total_hashpower_contribution = userMoonElectricity.total_hashpower_contribution.toNumber();
     //     userMoonElectricity.moondoge_reward_debt = userMoonElectricity.moondoge_reward_debt.toNumber();
     //     userMoonElectricity.lp_reward_debt = userMoonElectricity.lp_reward_debt.toNumber();
-    //     userMoonElectricity.pending_moondoge_rewards = userMoonElectricity.pending_moondoge_rewards.toNumber();
+    //     userMoonElectricity.pending_dogebtc_rewards = userMoonElectricity.pending_dogebtc_rewards.toNumber();
     //     userMoonElectricity.pending_lp_rewards = userMoonElectricity.pending_lp_rewards.toNumber();
     //     userMoonElectricity.total_sol_claimed = userMoonElectricity.total_sol_claimed.toNumber();
     //     // Decode Vec<u8> fields

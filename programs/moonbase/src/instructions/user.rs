@@ -101,8 +101,8 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     msg!("     Statistics initialized to 0");
     
     // Initialize reward debt tracking
-    player_data.last_claimed_passive_dbtc_index = 0;
-    player_data.last_claimed_passive_sol_index = 0;
+    player_data.hashpower_dbtc_reward_debt = 0;
+    player_data.hashpower_sol_reward_debt = 0;
     msg!("     Reward debt tracking initialized");
     
     // Initialize free tickets vectors
@@ -160,9 +160,10 @@ pub fn join_round(
 
     let global_state = &ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
+    let faction_state = &mut ctx.accounts.faction_state;
     
     let player_data = &mut ctx.accounts.player_data;
-    let game_session = &mut ctx.accounts.game_session;
+    let game_session = &mut ctx.accounts.game_session;    
     require!(  game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
     msg!("   Validated GameSession...");
     require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
@@ -174,9 +175,18 @@ pub fn join_round(
     require!(amount > 0, ErrorCode::InvalidAmount);
     msg!("   ✓ Bet amount is valid");
     
+    // Validate bet type
+    msg!("   Validating bet type...");
+    let target_block = get_target_block_from_bet_type( &bet_type, &game_session.block_assignments)?;
+    msg!("     ✓ Bet type is valid");
+    let target_faction = game_session.block_assignments[target_block as usize];
+    msg!("     ✓ Target faction {}", target_faction);
+
+    assert!(target_faction == faction_state.faction_id);
+
     // Determine if using ticket or SOL
     let is_ticket_bet = use_ticket.is_some();
-    let (net_amount, _fee, points_amount) = if let Some(ticket_type_index) = use_ticket {
+    let (net_amount, fee, points_amount) = if let Some(ticket_type_index) = use_ticket {
         msg!("   Using ticket type index: {}", ticket_type_index);
         require!(  (ticket_type_index as usize) < player_data.free_tickets.len() && (ticket_type_index as usize) < player_data.free_tickets_remaining.len(), ErrorCode::InvalidParameters );
         
@@ -203,7 +213,14 @@ pub fn join_round(
         let (net, fee_amount) = handle_fee(amount, global_config.sol_fee_config.protocol_fee_pct as u64)?;
         msg!("     ✓ Fees calculated (net: {} lamports, fee: {} lamports)", net, fee_amount);
 
-        // Transfer all fees to sol_treasury (will be distributed via withdraw_sol_fees_internal)
+        let faction_fee = fee_amount * global_config.sol_fee_config.faction_fee_pct as u64 / M_HUNDRED;
+        let dbtc_reward_inc = helper::mul_div(faction_fee / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        faction_state.dbtc_sol_reward_index = faction_state.dbtc_sol_reward_index + dbtc_reward_inc;
+
+        let lp_reward_inc = helper::mul_div(faction_fee / 2, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_sol_reward_index = faction_state.lp_sol_reward_index + lp_reward_inc;
+
+        // Transfer all fees to sol_treasury (will be distributed via distribute_sol_fees_internal)
         helper::transfer_to_sol_treasury(
             &ctx.accounts.user_wallet.to_account_info(),
             &ctx.accounts.sol_treasury.to_account_info(),
@@ -219,11 +236,6 @@ pub fn join_round(
         
         (net, fee_amount, net)
     };
-    
-    // Validate bet type
-    msg!("   Validating bet type...");
-    let target_block = get_target_block_from_bet_type( &bet_type, &game_session.block_assignments)?;
-    msg!("     ✓ Bet type is valid");
 
     // Initialize or update UserGameBet PDA
     msg!("   Processing user bet account...");
@@ -337,14 +349,8 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
 }
 
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
-    let fee = amount
-        .checked_mul(protocol_fee_pct as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let net_amount = amount
-        .checked_sub(fee)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let fee = amount * protocol_fee_pct / M_HUNDRED;
+    let net_amount = amount - fee;
 
     msg!("     Protocol fee ({}%): {} lamports", protocol_fee_pct, fee);
     msg!("     Net amount (after fee): {} lamports", net_amount);

@@ -13,6 +13,16 @@ pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
 pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
 
+/// ------------ CONSTANTS ------------
+
+pub const DAY_IN_SECONDS: u64 = 86400;
+pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
+
+pub const MAX_ALLOWED_POSITIONS: u8 = 7;
+pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 10;
+pub const M_HUNDRED: u64 = 100;
+
+
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
@@ -344,6 +354,66 @@ impl BuybacksAccount {
 
 
 
+
+/// ------------ HASHPOWER CONFIG ------------
+
+/// Hashpower configuration for the Moonbase program
+#[account]
+pub struct HashpowerConfig {
+    /// Authority that can update config parameters
+    pub authority: Pubkey,
+    /// Address which can withdraw dev earnings from the program
+    pub dev_address: Pubkey,
+
+    /// Minimum lockup period in days
+    pub min_lockup_days: u64,
+    /// Maximum lockup period in days
+    pub max_lockup_days: u64,
+
+    /// Base multiplier (100 = 1x)
+    pub base_multiplier: u16,
+    /// Maximum multiplier for longest lockup (e.g., 900 = 9x for 3 years)
+    pub max_multiplier: u16,
+
+    /// Distribution percentages (out of 100)
+    /// Percentage of SOL distributed to DogeBtc stakers
+    pub dogebtc_allocation: u8,
+    /// Percentage of SOL distributed to LP token stakers
+    pub liquidity_allocation: u8,
+
+    /// Electricity per weighted SOL staked (used for both dBTC and LP staking)
+    pub hashpower_per_weighted_sol: u64,
+
+    /// Current DOGE_BTC to SOL price (9-decimal precision, same as MoonBase)
+    /// Used for electricity calculations when MoonBase price is 0 or unavailable
+    pub dbtc_sol_price: u64,
+
+    /// Bump for PDA derivation
+    pub bump: u8,
+}
+
+// For HashpowerConfig
+impl HashpowerConfig {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // authority
+        32 + // dev_address
+        32 + // fee_collector
+        8 +  // min_lockup_days
+        8 +  // max_lockup_days
+        2 +  // base_multiplier
+        2 +  // max_multiplier
+        1 +  // dogebtc_allocation
+        1 +  // liquidity_allocation
+        8 +  // last_claim_slot
+        8 +  // hashpower_per_weighted_sol
+        1 +  // sol_distribution_enabled
+        8 +  // dbtc_sol_price (u64)
+        1; // bump
+}
+
+ 
+
+
 // ========================================================================================
 // ========================== 1. GLOBAL & ORACLE ACCOUNTS =================================
 // ========================================================================================
@@ -422,7 +492,14 @@ pub struct FactionState {
     pub faction_id: u8,
 
     /// Total passive hashpower from stakers in this faction (cumulative)
-    pub total_passive_hashpower: u128,
+    pub total_dbtc_hashpower: u64,
+    pub dbtc_staked: u64,
+    pub dbtc_dbtc_reward_index: u128,
+    pub dbtc_sol_reward_index: u128,
+
+    pub total_lp_hashpower: u64,
+    pub lp_sol_reward_index: u128,
+    pub lp_dbtc_reward_index: u128,
 
     /// Total SOL bet on this faction across all rounds (cumulative)
     pub total_sol_bets: u64,
@@ -432,9 +509,6 @@ pub struct FactionState {
     /// Cumulative SOL-per-share this faction has earned for stakers
     /// Used for calculating staker rewards
     pub sol_reward_index: u128,
-    /// Cumulative DogeBtc-per-share this faction has earned for stakers
-    /// Used for calculating staker rewards
-    pub dbtc_reward_index: u128,
 
     /// Current motherlode pot size for this faction
     pub motherlode_pot_size: u64
@@ -594,15 +668,25 @@ pub struct PlayerData {
     pub total_sol_won: u64,
     pub total_dbtc_won: u64,
 
-    /// The user's "shares" (hashpower) in the passive global pool
-    /// Updated by mooneconomy program via CPI
-    pub personal_passive_hashpower: u128,
+    pub dogebtc_hashpower: u64,
+    pub dogebtc_staked: u64,
+    pub dbtc_dbtc_reward_debt: u128,
+    pub dbtc_sol_reward_debt: u128,
+
+    pub pending_sol_rewards: u64,
 
     /// Reward debt tracking (prevents double-claiming)
     /// The last passive_dbtc_reward_index the user claimed up to
-    pub last_claimed_passive_dbtc_index: u128,
+    pub hashpower_dbtc_reward_debt: u128,
     /// The last passive_sol_reward_index the user claimed up to
-    pub last_claimed_passive_sol_index: u128,    
+    pub hashpower_sol_reward_debt: u128,    
+
+
+
+    pub moondoge_position_indices: Vec<u8>,
+    pub lp_position_indices: Vec<u8>,
+    pub active_moondoge_positions: u8,
+    pub active_lp_positions: u8,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
     /// Example: [10000000, 100000000, ...] where 1 point = 1 SOL lamport
@@ -633,8 +717,8 @@ impl PlayerData {
         8 +     // total_sol_won
         8 +     // total_dbtc_won
         16 +    // personal_passive_hashpower (u128)
-        16 +    // last_claimed_passive_dbtc_index (u128)
-        16 +    // last_claimed_passive_sol_index (u128)
+        16 +    // hashpower_dbtc_reward_debt (u128)
+        16 +    // hashpower_sol_reward_debt (u128)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8);  // free_tickets_remaining Vec<u64>
 }
