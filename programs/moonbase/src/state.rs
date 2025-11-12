@@ -484,6 +484,7 @@ pub struct GameSession {
 
     /// Indexes of UserGameBet PDAs for SOL bets in this round
     /// Used to track all bets and calculate rewards
+    pub user_block_indexes: Vec<u64>,
     pub sol_bets_indexes: Vec<u64>,
     /// Indexes of UserGameBet PDAs for points bets in this round
     pub points_bets_indexes: Vec<u64>,
@@ -597,6 +598,9 @@ pub struct PlayerData {
     pub last_claimed_passive_dbtc_index: u128,
     /// The last passive_sol_reward_index the user claimed up to
     pub last_claimed_passive_sol_index: u128,    
+
+    pub free_tickets: [],
+    pub free_tickets_remaining: []
 }
 
 impl PlayerData {

@@ -140,132 +140,58 @@ pub fn join_round(
     msg!("   User: {}", ctx.accounts.authority.key());
     msg!("   Bet amount: {} lamports", amount);
     
-    let global_state = &mut ctx.accounts.global_game_state;
-    let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
+
+    let global_state = &ctx.accounts.global_game_state;
+    let global_config = &ctx.accounts.global_config;
     
-    msg!("   Current round ID: {}", global_state.current_round_id);
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    let player_data = &mut ctx.accounts.player_data;
+    let game_session = &mut ctx.accounts.game_session;
+    require!(  game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
+    msg!("   Validated GameSession...");
+    require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
+    msg!("     ✓ Block assignments are set");
+
+    msg!("   Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", global_state.current_round_id, clock.unix_timestamp, global_state.round_end_timestamp);
     
-    // Check round is active
-    require!(
-        clock.unix_timestamp < global_state.round_end_timestamp,
-        ErrorCode::RoundEnded
-    );
-    msg!("   ✓ Round is still active");
     
     require!(amount > 0, ErrorCode::InvalidAmount);
     msg!("   ✓ Bet amount is valid");
     
     // Validate bet type
     msg!("   Validating bet type...");
-    match &bet_type {
-        BetType::Block { block_id } => {
-            msg!("     Bet type: Block {}", block_id);
-            require!(
-                *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
-                ErrorCode::InvalidParameters
-            );
-            msg!("     ✓ Block ID {} is valid (1-{})", block_id, NUM_BLOCKS);
-        }
-        BetType::FactionHighestLowest { faction_id, is_highest } => {
-            msg!("     Bet type: Faction {} ({})", faction_id, if *is_highest { "highest" } else { "lowest" });
-            require!(
-                (*faction_id as usize) < global_config.supported_factions.len(),
-                ErrorCode::InvalidFactionId
-            );
-            msg!("     ✓ Faction ID {} is valid", faction_id);
-        }
-    }
-    
-    let player_data = &mut ctx.accounts.player_data;
-    let game_session = &mut ctx.accounts.game_session;
+    validate_bet_type(global_config.supported_factions.len(), bet_type, game_session)?;
+    msg!("     ✓ Bet type is valid");
     
     // Calculate fees using protocol_fee_pct from GlobalConfig
-    msg!("   Calculating fees...");
-    let protocol_fee_pct = global_config.sol_fee_config.protocol_fee_pct;
-    let fee = amount
-        .checked_mul(protocol_fee_pct as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-    let net_amount = amount
-        .checked_sub(fee)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     Protocol fee ({}%): {} lamports", protocol_fee_pct, fee);
-    msg!("     Net amount (after fee): {} lamports", net_amount);
-    
+    let (net_amount, fee) = handle_fee(amount, global_config.sol_fee_config.protocol_fee_pct as u64)?;
+    msg!("     ✓ Fees calculated (net: {} lamports, fee: {} lamports)", net_amount, fee);
+
     // Transfer all fees to sol_treasury (will be distributed via withdraw_sol_fees_internal)
-    msg!("   Transferring protocol fee to SOL treasury...");
     helper::transfer_to_sol_treasury(
         &ctx.accounts.user_wallet.to_account_info(),
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         fee,
     )?;
-    msg!("     ✓ Fee transferred");
-    
+    msg!("     ✓ Fee transferred");    
+
     // Transfer net amount to prize pot
-    msg!("   Transferring net amount to prize pot vault...");
-    let prize_pot_before = ctx.accounts.sol_prize_pot_vault.lamports();
     **ctx.accounts.sol_prize_pot_vault.to_account_info().try_borrow_mut_lamports()? += net_amount;
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= net_amount;
-    let prize_pot_after = ctx.accounts.sol_prize_pot_vault.lamports();
-    msg!("     Prize pot: {} -> {} lamports (+{})", prize_pot_before, prize_pot_after, net_amount);
-    
+    msg!("     ✓ Net amount transferred to prize pot");
+
     // Initialize or update UserGameBet PDA
     msg!("   Processing user bet account...");
     let user_bet = &mut ctx.accounts.user_game_bet;
-    let is_new_bet = user_bet.owner == Pubkey::default();
-    
-    if is_new_bet {
-        msg!("     Creating new bet account");
-        user_bet.owner = ctx.accounts.authority.key();
-        user_bet.round_id = global_state.current_round_id;
-        user_bet.bet_type = bet_type.clone();
-        user_bet.sol_bet_amount = 0;
-        user_bet.bump = ctx.bumps.user_game_bet;
-        msg!("       Bet account initialized for round {}", global_state.current_round_id);
-    } else {
-        msg!("     Updating existing bet account");
-        // Validate that bet type matches (users can't change bet type for existing bet)
-        require!(
-            user_bet.bet_type == bet_type,
-            ErrorCode::InvalidParameters
-        );
-        msg!("       ✓ Bet type matches existing bet");
-    }
-    
-    require!(
-        user_bet.round_id == global_state.current_round_id,
-        ErrorCode::InvalidRound
-    );
-    msg!("     ✓ Round ID matches");
+    let is_new_bet = user_bet.owner == Pubkey::default();    
+    init_user_bet(global_state.current_round_id, is_new_bet, user_bet, bet_type, &ctx.accounts.authority, ctx.bumps.user_game_bet)?;
+    msg!("     ✓ User bet account initialized");
     
     // Update bet amount
-    let old_bet_amount = user_bet.sol_bet_amount;
-    user_bet.sol_bet_amount = user_bet
-        .sol_bet_amount
-        .checked_add(net_amount)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     Bet amount: {} -> {} lamports (+{})", old_bet_amount, user_bet.sol_bet_amount, net_amount);
+    user_bet.sol_bet_amount = user_bet.sol_bet_amount.checked_add(net_amount).ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("User amount: {}", user_bet.sol_bet_amount);
     
-    // Validate GameSession exists and matches current round
-    msg!("   Validating GameSession...");
-    require!(
-        game_session.round_id == global_state.current_round_id,
-        ErrorCode::InvalidRound
-    );
-    msg!("     ✓ GameSession round ID matches");
-    
-    // Validate that block assignments are set (round has been initialized by crank)
-    require!(
-        game_session.block_assignments.iter().any(|&f| f != 0),
-        ErrorCode::InvalidParameters
-    );
-    msg!("     ✓ Block assignments are set");
     
     // Add this bet to the round's bet indexes if it's a new bet
     if is_new_bet {
@@ -275,12 +201,8 @@ pub fn join_round(
     }
     
     // Update GameSession total bets for this round
-    let old_total = game_session.total_sol_bets;
-    game_session.total_sol_bets = game_session
-        .total_sol_bets
-        .checked_add(net_amount)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     GameSession total bets: {} -> {} lamports (+{})", old_total, game_session.total_sol_bets, net_amount);
+    game_session.total_sol_bets = game_session.total_sol_bets.checked_add(net_amount).ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("GameSession total bets: {}", game_session.total_sol_bets);
     
     // Update PlayerData to track this round (if not already tracked)
     let round_id = global_state.current_round_id;
@@ -330,6 +252,69 @@ pub fn join_round(
     
     Ok(())
 }
+
+
+
+fn validate_bet_type(supported_factions_len: usize, bet_type: BetType, game_session: &GameSession) -> Result<()> {
+    match bet_type {
+        BetType::Block { block_id } => {
+            require!( (*block_id as u8) >= 1 && (*block_id as u8) <= NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
+            return Ok(());
+        }
+        BetType::FactionHighestLowest { faction_id, is_highest } => {
+            require!(((*faction_id as u8) as usize) < supported_factions_len, ErrorCode::InvalidParameters);
+            return Ok(());
+        }
+    }
+}
+
+fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
+    let fee = amount
+        .checked_mul(protocol_fee_pct as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(100)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let net_amount = amount
+        .checked_sub(fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    msg!("     Protocol fee ({}%): {} lamports", protocol_fee_pct, fee);
+    msg!("     Net amount (after fee): {} lamports", net_amount);
+
+    return Ok((net_amount, fee));
+}
+
+fn init_user_bet(current_round_id: u64, is_new_bet: bool, user_bet: &mut UserGameBet, bet_type: BetType, authority: &Signer,  bumps: u8) -> Result<()> {
+    if is_new_bet {
+        msg!("     Creating new bet account for round {}", current_round_id);
+        user_bet.owner = authority.key();
+        user_bet.round_id = current_round_id;
+        user_bet.bet_type = bet_type.clone();
+        user_bet.sol_bet_amount = 0;
+        user_bet.bump = bumps;
+    } else {
+        msg!("     Updating existing bet account for round {}", current_round_id);
+        require!(
+            user_bet.bet_type == bet_type,
+            ErrorCode::InvalidParameters
+        );
+    }
+    return Ok(());
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1444,7 +1429,6 @@ pub struct UpdatePersonalHashpower<'info> {
 #[derive(Accounts)]
 pub struct JoinRound<'info> {
     #[account(
-        mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
