@@ -167,8 +167,9 @@ pub fn join_round(
     msg!("   Validated GameSession...");
     require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
     msg!("     ✓ Block assignments are set");
+    let round_id = global_state.current_round_id;
 
-    msg!("   Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", global_state.current_round_id, clock.unix_timestamp, global_state.round_end_timestamp);
+    msg!("   Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", round_id, clock.unix_timestamp, global_state.round_end_timestamp);
     
     require!(amount > 0, ErrorCode::InvalidAmount);
     msg!("   ✓ Bet amount is valid");
@@ -228,7 +229,7 @@ pub fn join_round(
     msg!("   Processing user bet account...");
     let user_bet = &mut ctx.accounts.user_game_bet;
     let is_new_bet = user_bet.owner == Pubkey::default();    
-    init_user_bet(global_state.current_round_id, is_new_bet, user_bet, bet_type.clone(), &ctx.accounts.authority, ctx.bumps.user_game_bet)?;
+    init_user_bet(round_id, is_new_bet, user_bet, bet_type.clone(), &ctx.accounts.authority, ctx.bumps.user_game_bet)?;
     msg!("     ✓ User bet account initialized");
     
     // Update bet amount (SOL bet amount only, points tracked separately)
@@ -262,7 +263,7 @@ pub fn join_round(
     msg!("     Total points bets this round: {}", game_session.total_points_bets);
 
     // Update PlayerData to track this round (if not already tracked)
-    let round_id = global_state.current_round_id;
+    let round_id = round_id;
     msg!("   Updating PlayerData for round {}...", round_id);
     if !player_data.sol_bets_rounds.contains(&round_id) {
         player_data.rounds_played = player_data.rounds_played.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -300,9 +301,7 @@ pub fn join_round(
     Ok(())
 }
 
- 
- 
-
+  
 
 /// Get the target block ID from bet_type
 /// For Block bets, returns the block_id directly
@@ -352,16 +351,7 @@ fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
 
     return Ok((net_amount, fee));
 }
-
-
-
-
-
-
-
-
-
-
+ 
 
 fn init_user_bet(current_round_id: u64, is_new_bet: bool, user_bet: &mut UserGameBet, bet_type: BetType, authority: &Signer,  bumps: u8) -> Result<()> {
     if is_new_bet {

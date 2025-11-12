@@ -498,20 +498,21 @@ pub struct GameSession {
     pub winning_block: u8,
     /// The winning faction ID for this round (derived from winning_block)
     pub winning_faction_id: u8,
-
-    // --- Round-specific payout data ---
-    /// Total SOL pot for winners (net after fees)
-    pub total_sol_pot_net: u64,
-    /// Total SOL bet on the winning faction (for pro-rata distribution)
-    pub total_sol_bet_on_winner: u64,
-    /// Total SOL bet on losing factions (for pro-rata distribution)
-    pub total_sol_bet_on_losers: u64,
+    pub same_faction_other_block: u8,
 
     // --- DogeBtc reward pools for this round ---
     /// DogeBtc allocated for winners in this round
     pub dbtc_winner_pool: u64,
     /// DogeBtc allocated for same-faction bettors in this round
     pub dbtc_loser_pool: u64,
+
+    /// SOL rewards index for this round
+    pub sol_rewards_index: u128,
+    /// DogeBtc rewards index for this round
+    pub dbtc_rewards_index: u128,
+    /// DogeBtc rewards index for same-faction bettors in this round
+    pub same_faction_dbtc_rewards_index: u128,
+
 
     // --- Motherlode data for this round ---
     /// The faction ID that hit motherlode in this round
