@@ -1,7 +1,17 @@
 {
-  "RAYDIUM_CP_PROGRAM_ID": "5V8t8SG3bSdMmCcJeAW5Xv1n1r8uUsukn48x4NPVkgKH",
+  "RAYDIUM_CP_PROGRAM_ID": "6zikXsFvct323zhvBVpDKVoWbwGP4hY6mUhFKtFZR3Cy",
+  "raydium_last_deployment": {
+    "timestamp": "2025-11-12T08:43:15.260Z",
+    "cluster": "devnet"
+  },
+  "MOON_BASE_PROGRAM_ID": "EAJaPU6L3dDbhydfkwyzD4fLj1dVPvWcFLdA87XYcBJZ",
+  "MOON_ECONOMY_PROGRAM_ID": "AXDoen9KXArDwmvvxGcHqScrYrUdqc2ByqV4eYRGdGZA",
+  "game_programs_deployment": {
+    "timestamp": "2025-11-12T08:47:20.815Z",
+    "cluster": "devnet"
+  },
   "dbtc_mint_created": {
-    "mint_address": "7k9km4iWysqHwDGNwXtLNPAjWiHF5opH9zyjvPPU8Yky",
+    "mint_address": "F5dm4dJ6my6xUd9TReK4JJb81gr7wyCrFpbXhnPnLa81",
     "mint_authority": null,
     "freeze_authority": null,
     "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -10,171 +20,331 @@
     "burn_tax_bps": 100,
     "max_burn_amount": 1000000,
     "metadata_included": true,
-    "metadata_name": "DogeBtc",
-    "metadata_symbol": "MDOGE",
-    "metadata_uri": "https://arweave.net/dogewifbtc-logo",
-    "creation_signature": "rjBXd2SS3BZBKaeUvdUVCX1ALhrSRWLxvYZGGUe9unDC8ukNgPiwfXJW1QkBXCQ7EP7b47furqHvTjhDXwnnHfR",
-    "timestamp": "2025-06-22T07:01:38.674Z",
+    "metadata_name": "DogeWifBTC",
+    "metadata_symbol": "DBTC",
+    "metadata_uri": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
+    "creation_signature": "5FNF4bgnC174q21CfTFecyozfav4pKBE6gb2VUScQo7MXhKUPWuVfYrpprEa53BMYF4azM3vy7ig7w22d7x31zP5",
+    "timestamp": "2025-11-12T08:49:01.425Z",
     "mint_authority_status": "removed",
     "withdraw_withheld_authority_status": "removed",
     "transfer_fee_config_authority_status": "transferred"
   },
   "dbtc_token_account_created": {
-    "token_account_address": "4shj5SHz8s6XoksRLLdm3TyyZdaoVjVDzA5udCEQG7YH",
+    "token_account_address": "49dTHGC2mZ8eLxYuCVUzUUmPDhjjFiet5Rf3rn4rPELi",
     "owner_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "mint_address": "7k9km4iWysqHwDGNwXtLNPAjWiHF5opH9zyjvPPU8Yky",
-    "timestamp": "2025-06-22T07:01:39.671Z"
+    "mint_address": "F5dm4dJ6my6xUd9TReK4JJb81gr7wyCrFpbXhnPnLa81",
+    "timestamp": "2025-11-12T08:49:02.371Z"
   },
   "initial_supply_minted": {
     "amount": "21000000000000000",
     "actual_minted_amount": "21000000000000000",
-    "amount_readable": "21,000,000,000 MDOGE",
-    "token_account_address": "4shj5SHz8s6XoksRLLdm3TyyZdaoVjVDzA5udCEQG7YH",
-    "mint_signature": "3b6gTerRrfxaa5NDAu1HhG3orN6DfPQV7CGdedkysPcz8w36oZRQgGnKGaNwpyVP88RQwE5Egym2xYjZui7sM3xJ",
+    "amount_readable": "21,000,000,000 DBTC",
+    "token_account_address": "49dTHGC2mZ8eLxYuCVUzUUmPDhjjFiet5Rf3rn4rPELi",
+    "mint_signature": "e5GLeahPoqxGqDGRbe74KooRCgNLcTZJxtAS2zK6Bxuyc3gBuXebfNjyvNkg3AaPs7YbYZcjemtXB5j4yDB9KWK",
     "bigint_verification": {
       "expected": "21000000000000000",
       "actual": "21000000000000000",
       "match": true
     },
-    "timestamp": "2025-06-22T07:01:41.805Z"
+    "timestamp": "2025-11-12T08:49:03.306Z"
   },
-  "dbtc_mint_address": "7k9km4iWysqHwDGNwXtLNPAjWiHF5opH9zyjvPPU8Yky",
+  "dbtc_mint_address": "F5dm4dJ6my6xUd9TReK4JJb81gr7wyCrFpbXhnPnLa81",
   "mint_authority_removed": {
     "previous_mint_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_mint_authority": null,
-    "removal_signature": "5PziX4VbqjiJ9ZZFZFEmNpjmPcYQZZwpcnXCouTNybnkw8effUXKQTWHoLohijf9aKEXzsrEGa1HgJKeZxPvT9Te",
-    "timestamp": "2025-06-22T07:01:43.068Z",
-    "total_supply_locked": "21,000,000,000 MDOGE"
+    "removal_signature": "2k5G6CykdNfqRdaqsTQ9KSLk9C4PeS26WB8CveGYvKB6qp9fuBxwChukGwW9bidZwgBVQ16eyYsbddRhRDVGzcjy",
+    "timestamp": "2025-11-12T08:49:04.211Z",
+    "total_supply_locked": "21,000,000,000 DBTC"
   },
   "withdraw_withheld_authority_removed": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_withdraw_withheld_authority": null,
-    "removal_signature": "2qMR8fauHmSKrtUweKvteRtjJkdBhXneDGJW24xhGir9oNQNj2iduBvySoWNRvt6WbPgjMu4cKFEuuh1gUnzbgBF",
-    "timestamp": "2025-06-22T07:01:43.770Z"
+    "removal_signature": "5K1DMRw1Xcr8BE2C57J86LeLC5kGCzWWeV7QnkiB4Ytwedj9anRNvBhheEY2PBLYmGykXmEhXcb7eayrX9fx4Juu",
+    "timestamp": "2025-11-12T08:49:04.941Z"
   },
   "transfer_fee_config_authority_transferred": {
     "previous_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "transfer_signature": "4AYL8y7v5SECL8bKKzUGMgTfJ8GjLAdN8NtTnJRFZVAQBJXUUxoEqb22ST8Lu7PJ21iJ9vkWSMkCTJHkYtzoMvb3",
-    "timestamp": "2025-06-22T07:01:44.956Z"
+    "transfer_signature": "56JDXQiaaYyPucebqDVp2BVZatGUG4F3qqpb9woQaZmqATaA3XZLQzG9dnZUu8VvXbcuns4NXozyAiKniuTKFBRW",
+    "timestamp": "2025-11-12T08:49:05.715Z"
   },
   "raydium_amm_config_created": {
-    "amm_config_pda": "HdAWwKJkyxwAVwWcVv6r1QKL3o8jAkcqdKth6EA7p3dv",
-    "raydium_program_id": "5V8t8SG3bSdMmCcJeAW5Xv1n1r8uUsukn48x4NPVkgKH",
+    "amm_config_pda": "AAWa1jxFVm6JyNQi2tL2JBpdGq2H1zrYNUVzb29BPby3",
+    "raydium_program_id": "6zikXsFvct323zhvBVpDKVoWbwGP4hY6mUhFKtFZR3Cy",
     "config_index": 0,
     "trade_fee_rate": 25,
     "protocol_fee_rate": 5,
     "fund_fee_rate": 25000,
     "create_pool_fee": "40000000",
+    "creator_fee_rate": 0,
     "trade_fee_readable": "0.0025%",
     "protocol_fee_readable": "0.0005%",
     "fund_fee_readable": "2.5%",
+    "creator_fee_readable": "0%",
     "create_pool_fee_readable": "0.04 SOL",
-    "creation_signature": "SfoXn8Ab6piSb4UymUZPMyjQwRMirkqFVKXHAQUThCZEzpJfHKTM428TsUAo1FDeXo9Wqg1t9cDvGA6ZniXf9Pw",
+    "creation_signature": "bn7EtZJZXxR1dm7c7mGyjqm5G2Z4ZUzWrMB2a81TvGK4Ex3Qc7jT9rYiTHBgQoEJycT7c8xHnUnYS8t7LYLUifT",
     "pda_bump": 253,
     "status": "created",
-    "timestamp": "2025-06-22T07:05:56.149Z"
+    "timestamp": "2025-11-12T08:49:21.181Z"
   },
   "dbtc_sol_pool_created": {
-    "poolStatePDA": "3qte2o2E44PDJ7PdwrtiB19W2Gd4XXGncxwHVA85WK3s",
-    "lpMintPDA": "6e7nkKZvD1fGYL9GbZaZtdFjPk9PiZPZHda3qbK11Mg7",
-    "token0VaultPDA": "A4cV21YYzrre1i2e373GrFh7L5vRmZSx3hJCTCBTVjqh",
-    "token1VaultPDA": "JCwQpGFh7jZfjyExSHshgZVWMpQGFCQxppQLBHRZris5",
-    "authorityPDA": "9H6do8Tr9ofWQYNKxdnJm7BCmAPpNmZVjuNN6kqipzXL",
-    "observationStatePDA": "4UTfrmw3hpSiwZnh9vGTRrntU3dvJS3v4E386yaBeZaz",
+    "poolStatePDA": "DDgsT1BtfoaoFA5e4V7EpxTCWm1BkFW6JcpeHJcycqrD",
+    "lpMintPDA": "EWfAGbT5Rs9yD5gsUoEpTeUjY8JTD69Sz2u8doQB8WrW",
+    "token0VaultPDA": "DpcDMJZeVmsdJUbkLpz7sKAvrorCNprYHhaeGc1rux96",
+    "token1VaultPDA": "6i5tfC7toe23c297rxvttg39FbHCopdPoQxA3p4YC6S9",
+    "authorityPDA": "CtkWG27ouNA94zrdunToT3ua8ZR25pGBpD636o9w3prn",
+    "observationStatePDA": "6wNieyeF4CzBRbXKe1Fqk15KsEC2TVb6odSLfxPZy3pu",
     "token0Mint": "So11111111111111111111111111111111111111112",
-    "token1Mint": "7k9km4iWysqHwDGNwXtLNPAjWiHF5opH9zyjvPPU8Yky",
+    "token1Mint": "F5dm4dJ6my6xUd9TReK4JJb81gr7wyCrFpbXhnPnLa81",
     "isMdogeToken0": false,
-    "txid": "5iW7xte1Astt2s5tVhe5BabVM7haNMkn4tNiW7ccmFDZziQwaPWgefUrko3dY15nxBRH9FDofKABQgHzUtQFVkmk",
-    "wrapTxid": "4Xe6VurSiN8uwtZfLbT8XYBCXvSs92GfNGc9sDWG8UcVvxaP3vp1TDb7vyUGLLPpXuDBoytSqWG9zD62P2bNPP8U",
+    "txid": "5NV3sK7vGSgoHf5bVLQecJkt7syP91xe1XitET4bEjQbuA4CRWn3FM86jfqphXJBtgVRbsHnwTCqR16hA1gis6qn",
+    "wrapTxid": "5HsfhRtMsZwHWue8sZrNJMiaP3eHKsRwcnxt9pabyRYuVRUcL8BPkZyhxGhFQmtphVbMSmjcNa8VAT8rZtiN1XU1",
     "initialMdogeAmount": "210000000000000",
     "initialSolAmount": "100000000",
-    "openTime": 0
+    "openTime": 0,
+    "timestamp": "2025-11-12T08:49:26.016Z"
   },
-  "MOON_BASE_PROGRAM_ID": "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD",
-  "MOON_ECONOMY_PROGRAM_ID": "CG6btG2MbTDXR2Ws6Kqn24HG6VqWWFJBrfxAK7NJVyNA",
-  "last_deployment": {
-    "timestamp": "2025-06-25T07:00:38.253Z",
-    "cluster": "devnet",
-    "programs_deployed": [
-      "moon_base",
-      "moon_economy"
-    ]
+  "lp_tokens_burned": {
+    "pool_state": "DDgsT1BtfoaoFA5e4V7EpxTCWm1BkFW6JcpeHJcycqrD",
+    "lp_mint": "EWfAGbT5Rs9yD5gsUoEpTeUjY8JTD69Sz2u8doQB8WrW",
+    "deployer_lp_account": "BPbQ2LK53tRtMPzGdEEGaccHwFjTbYeXjdsJ5WRygmuz",
+    "burn_all_lp_tokens": true,
+    "burned_amount": "144568322848",
+    "burned_amount_readable": "144.568322848 LP",
+    "burn_signature": "5phNkym7Smw4nfsiG7nGFgEj3ar3SYGUxbXtdn9MzjYEcq9KCrqY2WEjugwCo6tJURqz82GP71isXqznSs9GCoz4",
+    "burn_purpose": "Permanent liquidity lock - cannot remove initial liquidity",
+    "dbtc_locked_amount": "210000000000000",
+    "sol_locked_amount": "100000000",
+    "status": "burned_successfully",
+    "permanent_lock": true,
+    "timestamp": "2025-11-12T08:49:27.121Z"
   },
   "moonbase_program_initialized": {
-    "globalConfig_address": "9k6ZhNmLkqi3tJkL4VgmrJ4ozw491aZXfgNtp3vvQZ44",
-    "dogeBtcMining_address": "4fZQ2W96MiHC4A2J8oPyKEdbZ58LjVK4SpmNZYdsvFV1",
-    "solTreasury_address": "ASzfncPh7BYAWHYobc3qSZkaT2W3zDGm5XD3uq5fMuyz",
-    "timestamp": "2025-06-25T07:13:21.412Z"
+    "globalConfig_address": "3MTYBgQFhUe3oLSjw6wHAY72eRuJNCjtcbPunEZa3N2Z",
+    "dogeBtcMining_address": "63u3neUasYoXLk9xYLvtd9SDSsTvemDu5g5E2yaJBPC2",
+    "solTreasury_address": "H1sMjRgQMwTv6oNncKf1wcKyyUYbPLpZj36Qnb46oHz1",
+    "timestamp": "2025-11-12T08:50:08.455Z",
+    "moonbase_fee_collector": "4QnnN7ATWt2k14opqYqRNjv5hqhTJ9vhaHMuwCmxpAUD"
   },
   "mining_vault_initialized": {
-    "vault_address": "2vY7GDcYB5zAvr4YH4TPaSHP11ChkGZnUDJxfHKkb1xM",
-    "vault_authority": "2PDg82uXpy341qN1pYiZGoWnwsPY69CJH1YE7WUXQBhb",
-    "start_timestamp": 1750835599,
+    "vault_address": "GDnkXkt1yzaK2TKANRf32yRJZtKboA9ExQdRtjP7aZmY",
+    "vault_authority": "4JNNxB7BQm1gBLxrnp4nrZsvugRVQF2z6QWwRG9xfsdF",
+    "start_timestamp": 1762937405,
     "doge_btc_per_slot": "1000000",
-    "init_tx": "2JTLzcpKek5CfEPXEHe6EMEaX9GChc2rKA8Fys8TUWrgT2Dv56YS8FoWhLpzZvqxmVsfMCX5ajTXPFZU3EaWfksC",
-    "timestamp": "2025-06-25T07:13:23.389Z"
+    "init_tx": "5XdujEbzGCZQgMjybW8XDPdvgbCvtwcRBdhfp8scJWaMw2CtWURkiwdJG7uHEWkhx2WE9LFVN2DvVucDsxJPTQzD",
+    "timestamp": "2025-11-12T08:50:10.158Z"
   },
   "referral_system_initialized": {
-    "system_referral_pda": "HKvN2PeMEdBmKZWFZEjKuuL6M4mgwri5ZS27vqCjetps",
-    "timestamp": "2025-06-25T07:13:24.722Z"
+    "system_referral_pda": "E1WBMmnDpv3W22KU56R746qrSWczEBoH3gJnU94rQDqd",
+    "timestamp": "2025-11-12T08:50:10.860Z"
   },
   "config_stores_initialized": {
-    "module_config_store": "Brn8QUgVat3zdkYtQvFKLFxH7NBYByfuFsA6h7X6T9pR",
-    "timestamp": "2025-06-25T07:13:25.770Z"
+    "module_config_store": "Fgt1T6Aubctw93aoLgjpT1CB9pgC2RcMDM84ge7unCqp",
+    "timestamp": "2025-11-12T08:50:11.661Z"
+  },
+  "raydium_pool_state_set": {
+    "pool_state_address": "DDgsT1BtfoaoFA5e4V7EpxTCWm1BkFW6JcpeHJcycqrD",
+    "tx_signature": "5fCcpFVspVaTRAEF1njC3BYQLAC31LMXoBYmcZDQMAkW9uDpYc9FWwD2P2r2dQMiWYnCLpe12uKtMsYx7A38y9Pz",
+    "timestamp": "2025-11-12T08:50:12.865Z"
   },
   "loot_rewards_initialized": {
-    "loot_rewards_pda": "Hn6TYESLQcpq4wgn6xZrVwVQTPA4gVgidoF2jHxz9r8p",
-    "sol_vault": "3QdNSj6hFCyTgugWuBp1uQJm9MXHZcJt1meHkYCYHrmq",
-    "dbtc_vault": "JByKoqsKezBDdMGWUbaMQfqnz7bC35G9qmetcHSX5dbG",
-    "loot_dbtc_vault_authority": "6vqnghQu1L1YrQtDq8q93YdcMY3TjaRr6bD6yt4XnnVf",
-    "initTxid": "2hjQzVcE6UbZHggUBNCwHWZzQsFMCqdTJo1rrk6szK1xLM5AXVT19ydTpUeUKnoU9fVf4a6nfLLs6YRVHsp7jNdV",
-    "timestamp": "2025-06-25T07:13:26.677Z"
+    "loot_rewards_pda": "8eR9ajT1LPgA21knsSZW4gNWPiYSmVhBB3UNcyKz4LYm",
+    "sol_vault": "Fxeb9m8Vm43sxvQfivBvM1F7h6ujTb1JisVhvaGXugAb",
+    "dbtc_vault": "5P3kLsB2CmSZ11wHurfhAfKhdkhahCxazK9M4UQ3R6fG",
+    "loot_dbtc_vault_authority": "8ZTmcZGqi7KE7gHmMo7Lu78AJtBhLe6b8eRFB5UhDdou",
+    "initTxid": "vAYeBFsyQTutUM6cLGGdgbzuhLZgDGTRpKdMCUVsUUgBxubQTsaLsFiBoHYqi3gLxa9oKNHwngwsFVMgdRWt27y",
+    "timestamp": "2025-11-12T08:50:13.609Z"
   },
   "level_stats_initialized": {
-    "level_stats_pda": "G61wnWy8UovcFwLiAGqMrakxYrbTQnGe1KgWJjaeoahT",
-    "initTxid": "3uzBDA1gEGeiGTb3ARjpGi3HC8dKpDbgmRLTxx3TZ2cqnYBPyt3cNz8aQAd5A2KepLnkFssjF1q5ATNSZgNjCCZ5",
-    "timestamp": "2025-06-25T07:13:27.616Z"
+    "level_stats_pda": "ZLuhrNcUfahcQE81t39o6yfyjj4T2LGPPNGSoUoB6o3",
+    "initTxid": "THwRMS2WZWVWuZs7PfLrnbafpdpA1vptt7csnpqYsiCQbE8ziNaRoPGSwKZutgsVsrqXJnqYfVM58oHHyNj966z",
+    "timestamp": "2025-11-12T08:50:14.469Z"
   },
-  "pvp_matchmaker_initialized": {
-    "pvp_matchmaker_pda": "BF4WLgxpjfJ5UbbiV6ZC6LG6okhrLnxkLJrka78PWHSF",
-    "tx_signature": "4dmnxsHKHsSDfXPQdCokTwy1GT3HEjfTiG8d3JWvZwpVLtC6T2iJqzhEnGKKwpu21eEL11mCQ4MoDda9DV8679ZG",
-    "timestamp": "2025-06-25T07:13:28.977Z"
+  "dragon_egg_collection_created": {
+    "collection_address": "3tBijLtQj7uE4Y9SYa4m94jjmWi5YPXdYcMUdX1119WA",
+    "collection_name": "DogeTech Dragon Eggs",
+    "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+    "update_authority": "6ip7RsfQthmMMKmaTKg2LnSBNHpYurDSxMDL97Coo3KJ",
+    "tx_signature": "4wLWdRmj5Nkujszjua1V9dqiraxtQqG7HdvA5pnG8ymwxGgbR3RKqQyvAFNaqxnSbSHAmP7eTQpJJJbbERDYE5GS",
+    "timestamp": "2025-11-12T08:50:16.452Z"
+  },
+  "dragon_egg_uris_added": {
+    "uris": [
+      "https://arweave.net/dragon-egg-1.json",
+      "https://arweave.net/dragon-egg-2.json",
+      "https://arweave.net/dragon-egg-3.json",
+      "https://arweave.net/dragon-egg-4.json",
+      "https://arweave.net/dragon-egg-5.json"
+    ],
+    "tx_signature": "5CzNZ3DwANaxGiMdeudpmd6tufyMCtFt2qUVrdNGzLhWRzEWzrMRPxHZjx1q7GAiKFqjA63kDLYDQ7RLPwyRLvxd",
+    "timestamp": "2025-11-12T08:50:17.071Z"
   },
   "factions_added": {
     "factions": [
       {
-        "name": "United States",
-        "description": "Advanced space technology and military supremacy doctrine",
-        "tx": "41R8KBUrPy5sFoCTMVwT7bV6D5cJiXppqXr6QMNUB9xMEEEz8EjqPsvwLh4CRMX7GV4z5roRyaRR5SyzoVhysoKs"
+        "name": "USA",
+        "description": "Tech innovators and marketing masters. Wielding high-tech gear and 'to the moon' hype."
       },
       {
         "name": "China",
-        "description": "Mass production efficiency and systematic expansion strategy",
-        "tx": "3srg5i73z9KUNVwdKyGsHNTyuaijJMtyqKfoigf892pYttUoQUR3Eg3VyecJthfYJHFeGZWWLiyxWvmP2D92WQaz"
+        "description": "The industrial powerhouse. Unmatched mining efficiency and a 'Great Wall' of digital defenses."
       },
       {
         "name": "Russia",
-        "description": "Heavy-duty engineering and military-first approach",
-        "tx": "XUdaMydMAKHUAk4hUs6w1k9UcNJCTXAUq7kdocas7a9cp1mY7QjPp88LjauiYbUEdnTEtPrQ6WBSLL5K5Amt79B"
+        "description": "Bear-market survivors. Wielding heavy-duty mining rigs and a legendary 'crypto-winter' resilience."
       },
       {
-        "name": "Israel",
-        "description": "Cutting-edge defense systems and intelligence operations",
-        "tx": "4ntx1NLeFUX1TCmCFaCZGzhesE4tFqywTQZdMTMFfcMZm7zjytM9U7KFiKZJXRoPpVpmdNTMuUyP9KwWSoXF1Bs"
+        "name": "India",
+        "description": "The tech wizards. Fusing ancient spiritual power with a massive, decentralized dev army."
       },
       {
-        "name": "Iran",
-        "description": "Resource extraction focus and asymmetric warfare tactics",
-        "tx": "tNujdUVxs6fTmXJEeqi1vSkLuS8MsjnUEdFaKjeUTjiJhZ7mV6UmtSe9bTewtjM8g9D5amCMiczemhPjiPyzPsx"
+        "name": "Japan",
+        "description": "Cyber-samurai coders. Honed by tradition, masters of high-speed, precision mining operations."
       },
       {
-        "name": "Ukraine",
-        "description": "Resilient defensive technology and freedom preservation",
-        "tx": "4mLH4rpJNHbY6EjbPseYjWAarQ4wWB3bi4AyV5qbxCEdTHKHsD4jccJEy9hovisA65RDMdJS7s6q8vXCj7qTJZbE"
+        "name": "South Korea",
+        "description": "The essential gaming & degen hub. High-APM strategies and K-Pop-fueled crypto frenzies."
+      },
+      {
+        "name": "Vietnam",
+        "description": "The essential gaming & degen hub. Masters of guerilla tactics and grinding for high-yield rewards."
+      },
+      {
+        "name": "The Philippines",
+        "description": "The #1 Web3 gaming faction. Unmatched community-driven power and a 'play-to-hatch' warrior spirit."
+      },
+      {
+        "name": "North Korea",
+        "description": "The 'wildcard' hacker faction. Shrouded in mystery, masters of 'liberating' digital assets."
+      },
+      {
+        "name": "France",
+        "description": "Cultural connoisseurs. Wielding high-fashion tech and building 'haute couture' crypto portfolios."
+      },
+      {
+        "name": "Brazil",
+        "description": "The party faction. Powered by carnival energy, high-octane hype, and a legendary passion for the 'Joga Bonito' of crypto."
       }
     ],
-    "timestamp": "2025-06-25T07:13:34.542Z"
+    "tx": "4npgBH7unnJHRGJHRRt5DFSpUEwjrj8MtVJs8VXsJYAhgqHtiSp5vtvgkVHp22pBoRHVBRXmmUpNDvGtr5BNxNiT",
+    "timestamp": "2025-11-12T08:50:17.972Z"
+  },
+  "command_centers_added": {
+    "command_centers": [
+      {
+        "config_id": 1,
+        "tier": 1,
+        "name": "Command Center Tier 1",
+        "image_url": "https://arweave.net/command-center-tier-1",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 1000,
+          "baseHashpower": 500,
+          "powerConsumption": 500
+        },
+        "faction_ids": [],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 0,
+        "upgrade_cost": 0,
+        "upgrade_level_requirements": [
+          5,
+          10,
+          20,
+          50
+        ],
+        "expected_config_id": 1,
+        "create_tx": "5sdZM1URnqoQv7ZbYoTiwypi1QdRaDrVhGth4dgP9c4B6hhPoKSJm3CSTZS9givvbHg1EfM5gVt62Gy6kJFeR73n",
+        "stats_tx": "7kfhLS2WPQwYQikKsYRnD8EZ42ANdrG5Wu5o74KvmtxywWfV6JtSh3uJNWQmG2vgnRyVuDNTGTFuxfmVquj47ab",
+        "status": "completed"
+      },
+      {
+        "config_id": 2,
+        "tier": 2,
+        "name": "Command Center Tier 2",
+        "image_url": "https://arweave.net/command-center-tier-2",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 1500,
+          "baseHashpower": 2400,
+          "powerConsumption": 1500
+        },
+        "faction_ids": [],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 0,
+        "upgrade_cost": 0,
+        "upgrade_level_requirements": [
+          5,
+          10,
+          20,
+          50
+        ],
+        "expected_config_id": 2,
+        "create_tx": "ETVuqdFiS4sXYegmeXij4yhmRYXws9HvV8MAjD2LxhuouD72omwUZw44vDWgsZ6sY58wn1f1e64QUPvUyWJFAJ8",
+        "stats_tx": "5M2nxZp2qBQXLDjR9hwjhiYsCG34EmXMReiLGFoJabsLB9WBjRCPNtgcAJQt2ZsapMNc6NCBboi1yR49E1ws63W3",
+        "status": "completed"
+      },
+      {
+        "config_id": 3,
+        "tier": 3,
+        "name": "Command Center Tier 3",
+        "image_url": "https://arweave.net/command-center-tier-3",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 2000,
+          "baseHashpower": 4200,
+          "powerConsumption": 3000
+        },
+        "faction_ids": [],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 0,
+        "upgrade_cost": 0,
+        "upgrade_level_requirements": [
+          5,
+          10,
+          20,
+          50
+        ],
+        "expected_config_id": 3,
+        "create_tx": "2cDmPaCpxNt5oKFLvFk2g3Hxo2kEkRz9mMjXcVxswAEYrYxwd7kRrJrPxxxE2bcYXGu6d9uQL7kTadvXgERkMdZd",
+        "stats_tx": "48XAsZudEMh8wRxXL9neuRJtJQrhHLjriF1dRsAiGDY6ia97fF2inQ2BpmvzrzjNC5LowM1jGd5kU13PJRo8VWpx",
+        "status": "completed"
+      },
+      {
+        "config_id": 4,
+        "tier": 4,
+        "name": "Command Center Tier 4",
+        "image_url": "https://arweave.net/command-center-tier-4",
+        "module_type": "Mining",
+        "stats": {
+          "maxHp": 2500,
+          "baseHashpower": 6900,
+          "powerConsumption": 5100
+        },
+        "faction_ids": [],
+        "min_level": 0,
+        "width": 2,
+        "height": 2,
+        "mint_cost": 0,
+        "upgrade_cost": 0,
+        "upgrade_level_requirements": [
+          5,
+          10,
+          20,
+          50
+        ],
+        "expected_config_id": 4,
+        "create_tx": "KQhtxXNGKnadHC8f7pDhefz1YWH3JBUmeXALnsjDrysbmh2hf1RpsMErnuaWqW9yKPHkYTD6Y78gt6q7uYy3mfK",
+        "stats_tx": "2197YZ3ukSecDtkNYgvUTnKh68yYqtjH1GHh5Pq6YxR78zumLYhiQ2tg4cfumCzVhM5A4rg8BkBg4crs1SCjLxGg",
+        "status": "completed"
+      }
+    ],
+    "timestamp": "2025-11-12T08:50:27.493Z"
   },
   "expansions_added": {
     "expansions": [
@@ -185,7 +355,7 @@
         "cost_sol": 1000000000,
         "new_width": 10,
         "new_height": 8,
-        "tx": "37Gj3xu1MEYwV6JW5m5qZmYKn3rsvk9gDPvpXuGwiTBoex1T5WwbbneHZ8SKaBF8Urr7Vcej8mfuJGxJAJyKoWbr"
+        "tx": "3SK7kKuwZtMQPuTzMuCFX6PTxbSobKndDkzo7xyd29F4s5pgShQW6ggPUaeFZ9zemq3HJA8ur665tgssRuzyDhnu"
       },
       {
         "id": 2,
@@ -194,7 +364,7 @@
         "cost_sol": 2000000000,
         "new_width": 12,
         "new_height": 10,
-        "tx": "s9DktHoMTgd1QPURDUrNSfYLWiWVEkhw7q4fz4ogxur3u9h8gvvfeB4TQZGuP72Zh5CDA2UxqWeWqUpCvKvC2g4"
+        "tx": "3EVd5CJ8tfuHZjRkxwsKkECV3qPfzUmmkTGSxcUbyh1Yv3ZLXsPZ7oYsPCBXvcYSqSdwsNT7h42SUSUVuAZ7BvsC"
       },
       {
         "id": 3,
@@ -203,7 +373,7 @@
         "cost_sol": 5000000000,
         "new_width": 14,
         "new_height": 12,
-        "tx": "2JE3tt8jDJ65svPtGCzpf8p6kyZwHeJD5p2TtkcHHf67GmCjQWjXoEBi7avnjoUZC3T5Jd2s4cmMwDXYULxvpLEX"
+        "tx": "2njn5p9NCLmKWRDqUfsQwRKe4cxFHBJc3LXfWR9jEqBn6sX6au9UDjyjebBv5tox2D7Mgot9en5QTgTKk2BbHdFe"
       },
       {
         "id": 4,
@@ -212,740 +382,61 @@
         "cost_sol": 10000000000,
         "new_width": 16,
         "new_height": 12,
-        "tx": "2UXKCgt5LvUfp17BRgAazTsqD49tnMpJUP3rLEnGkLGtu52c9qmyZTpvLgVsTajDGFh9L4aoX6MAnhC7rgUNYtW4"
+        "tx": "4S1R71jNxSbCh6E6GGbauzECcSBNheHGaVykfgrJPfK7Gi2Y8PzEjPNy9eJnMaFrs6f9sTiUEAbApSgfWnenjtCY"
       }
     ],
-    "timestamp": "2025-06-25T07:13:38.953Z"
-  },
-  "modules_added": {
-    "modules": [
-      {
-        "name": "F",
-        "image_url": "FF ",
-        "module_type": "Mining",
-        "stats": {
-          "mining": {
-            "maxHp": 1100,
-            "baseHashpower": 1200,
-            "powerConsumption": 90
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 4,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 150000000,
-        "upgrade_cost": 75000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 1,
-        "create_tx": "4iLomvJLQa5eowEbJm12TTjAECnaWcDuC2n6KxrxaXbtQf6C17y5ggpBvnPQZ1NjjJ6WEqgLHS4iCrZUDa29i86Y",
-        "stats_tx": "iAYyG3cHdzwGaHXxZzPLKbfoxtZ8aqnmypeJ8nxM73MnERtgbWHftzgfXPddGmJFsS3ivEh7h7kDiaPtdSQ9aW6",
-        "status": "completed"
-      },
-      {
-        "name": "Red Dragon Extraction Facility",
-        "image_url": "https://arweave.net/china-extraction-facility",
-        "module_type": "Mining",
-        "stats": {
-          "Mining": {
-            "maxHp": 1600,
-            "baseHashpower": 2800,
-            "powerConsumption": 180
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 5,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 400000000,
-        "upgrade_cost": 150000000,
-        "upgrade_level_requirements": [
-          1,
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 2,
-        "create_tx": "3GvbvM7WJEn9Li3T9JhBCPiA3vQUhks8t4zmsttQ9NyPFzZAT13M4sSxwQggYK6gxrVLtE6B31pF6PYDK16ZgC6g",
-        "stats_tx": "26F1w2YfQn3LjYvt34hr698eAuHkoBtEXNmJkjs3EgB8n5P57Sez3vnij6x6F5Qw3ddjrfccgxA4e2MkEugEBRGA",
-        "status": "completed"
-      },
-      {
-        "name": "Siberian Deep Core Rig",
-        "image_url": "https://arweave.net/russia-deep-core-rig",
-        "module_type": "Mining",
-        "stats": {
-          "Mining": {
-            "maxHp": 2800,
-            "baseHashpower": 5500,
-            "powerConsumption": 350
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 3,
-        "mint_cost": 1800000000,
-        "upgrade_cost": 450000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 3,
-        "create_tx": "37YQBRW6iMegVERgRHrH26ivzB2NevunWjX5fEA86CDUH24VqsQWnJGxBCsXnHFGbS8UGUW1JtHvwftwCVeLHXGa",
-        "stats_tx": "5cnDZCyAa9nLAE5qMnobfQkPCKWeUbWYR7bBysyDrVyWBsuapm2b7UW3huKBCY9GX4LfbduDMTTUzTR2VxMnKVUX",
-        "status": "completed"
-      },
-      {
-        "name": "Persian Gulf Energy Harvester",
-        "image_url": "https://arweave.net/iran-energy-harvester",
-        "module_type": "Mining",
-        "stats": {
-          "Mining": {
-            "maxHp": 1400,
-            "baseHashpower": 3200,
-            "powerConsumption": 220
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 600000000,
-        "upgrade_cost": 200000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 4,
-        "create_tx": "3TSdyKmqqUDRbd5U2FyQUNahEztEjy2N9zrfNeZGfMsBWbUoShr1k96AtDvfzmzxirJ5H85SXfNpVBQ4D6LuthTs",
-        "stats_tx": "4Hc5aUmXsQGNX6a1L5DH6SdT8xFUKqUtaQ4ik5Us6fDj1d4obCsgLgM9DKQUKgKKBCRE2oGGHpadjMjd5iX76TYu",
-        "status": "completed"
-      },
-      {
-        "name": "Liberty Memorial Complex",
-        "image_url": "https://arweave.net/usa-memorial-complex",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 900,
-            "baseXpPerHour": 120,
-            "powerConsumption": 45
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 200000000,
-        "upgrade_cost": 90000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 5,
-        "create_tx": "52upmMH8sNxgRyGVxgbdD8pfLbvadghw7epUv4XhSgN9EtTXdYksPuFj4k1cJZVvAwC3bZfQx3KN2k3kFXopaqXV",
-        "stats_tx": "5uA7EkxirMNxw2MZW52iRg36PhMqFy1KGktrRJP2eA2KLy3FR1YSsk1mxv6xsi7RqyExGYLA9UDY1ajKpxTNHnnk",
-        "status": "completed"
-      },
-      {
-        "name": "Red Square Monument",
-        "image_url": "https://arweave.net/russia-red-square",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 1200,
-            "baseXpPerHour": 150,
-            "powerConsumption": 60
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 350000000,
-        "upgrade_cost": 140000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 6,
-        "create_tx": "453AvaFiySv5qhhzo4fhtBVRo46nEmkk4C38aezj3r4yvVpCv43tJH9qve29WPDbibtCwnyP9o5VKvTYE8hYUnnR",
-        "stats_tx": "36ECvDSFnDR3RdtXsn1hr8M39gq2BEU5knBkRwtybybU5Q5LRdFLG8SbgioqcGBecn7c31dHmyf7676sWqQ87Bdt",
-        "status": "completed"
-      },
-      {
-        "name": "Maidan Memorial",
-        "image_url": "https://arweave.net/ukraine-maidan-memorial",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 800,
-            "baseXpPerHour": 180,
-            "powerConsumption": 40
-          }
-        },
-        "faction_ids": [
-          5
-        ],
-        "min_level": 5,
-        "max_per_base": 4,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 180000000,
-        "upgrade_cost": 70000000,
-        "upgrade_level_requirements": [
-          7,
-          10,
-          14,
-          18,
-          23,
-          28,
-          34,
-          40,
-          47,
-          55
-        ],
-        "config_id": 7,
-        "create_tx": "5tn1DNnu11R6UV1VCHpyDQsNnE9zNmkmfBmXWmZDSEkW5tYQfHDLZo6pDpYzGdWmkq3Wnkghin6Wj7UVr86s4HkC",
-        "stats_tx": "4yazxwXaV2HTC2ABHBAhspSSbbFfAeTkSJwWAVGgVGSfZv2yGoDtb5HFoa3iTdrjrEPP2TJWAwMaz6bdRYwME5pG",
-        "status": "completed"
-      },
-      {
-        "name": "NASA Advanced Laboratory",
-        "image_url": "https://arweave.net/nasa-lab",
-        "module_type": "Research",
-        "stats": {
-          "Research": {
-            "maxHp": 1400,
-            "cooldownSec": 3200,
-            "maxReward": 1200000000,
-            "probability": 6000,
-            "powerConsumption": 140
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 450000000,
-        "upgrade_cost": 180000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 8,
-        "create_tx": "5pgawUVWqCmqY16Mf8qHr5LDm8yt6xkFcnSGfArxhYfA6duiwwEAHhXLaCFnMi7k8j6BG5uWuQVq3pvWEUDvAHZM",
-        "stats_tx": "3xxZ9nKAWQatXqXvvnSN7Wu7miWnHREHzcmtF4hdqkzWb7QVNaxQTB2LnjhknPyskMYoZZ8zrcXePKsupmA7CxvE",
-        "status": "completed"
-      },
-      {
-        "name": "Jade Rabbit Research Station",
-        "image_url": "https://arweave.net/china-jade-rabbit",
-        "module_type": "Research",
-        "stats": {
-          "Research": {
-            "maxHp": 1600,
-            "cooldownSec": 2800,
-            "maxReward": 1400000000,
-            "probability": 5500,
-            "powerConsumption": 160
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 500000000,
-        "upgrade_cost": 200000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 9,
-        "create_tx": "3vFoLiQK74z5s5vnJW7YGHSV39P1CEuHnbzpP1c8KXu7m4JVkWQBvPY3XmnXwxbjeVWnjWxQFRJdcQ9WPJ5ktYKw",
-        "stats_tx": "31sEGJiA8JKEAdehodniqXSnwFwbNf58xsMeUvv7h65DwJQhVYzbFvAsdAio1LdQtWwE9i53DYBK3VwHTLLQK1UB",
-        "status": "completed"
-      },
-      {
-        "name": "Mossad Intelligence Center",
-        "image_url": "https://arweave.net/israel-mossad-center",
-        "module_type": "Research",
-        "stats": {
-          "Research": {
-            "maxHp": 1100,
-            "cooldownSec": 2400,
-            "maxReward": 900000000,
-            "probability": 7500,
-            "powerConsumption": 120
-          }
-        },
-        "faction_ids": [
-          3
-        ],
-        "min_level": 10,
-        "max_per_base": 2,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 600000000,
-        "upgrade_cost": 250000000,
-        "upgrade_level_requirements": [
-          13,
-          16,
-          20,
-          25,
-          30,
-          36,
-          42,
-          49,
-          57,
-          66
-        ],
-        "config_id": 10,
-        "create_tx": "TiP1eBnbRH52asELLy6rx8EKQmF5cqAQ28Umh3Jeg5PDLAvn6Ywb7RoMux4H2R5pECHSfQHd47BNMiEG3LizLzV",
-        "stats_tx": "5RZN1hYEVE52fibFTJZvjsgkkFDneaYjatf6oHppbNHmawxGLXmLUuUNEJ89F7R74YgnGjNL1ctF1j1bwDWTSRTa",
-        "status": "completed"
-      },
-      {
-        "name": "Iron Dome Lunar Defense",
-        "image_url": "https://arweave.net/israel-iron-dome",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1300,
-            "baseDamage": 180,
-            "baseMissilesPerLoad": 12,
-            "reloadTimeSeconds": 25,
-            "powerConsumption": 85
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 4,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 400000000,
-        "upgrade_cost": 160000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 11,
-        "create_tx": "vfcAHMzi4CDoQKpqx3vgTFv3wcYi9SrDt19gk6HKGh8RARcYg4h4cthNaAVjmJxeSRvxqBnosB1aDZuzgTNmjeM",
-        "stats_tx": "4sQfwXQzKGH9da1JmyNg5CPHAq6XowCvJd2hiY1PHVgfnbaZ9pzHeeGHdQKhJqRo37icPuTFx2fnNS2neGergVeg",
-        "status": "completed"
-      },
-      {
-        "name": "Kalashnikov Orbital Platform",
-        "image_url": "https://arweave.net/russia-kalashnikov",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 2200,
-            "baseDamage": 320,
-            "baseMissilesPerLoad": 8,
-            "reloadTimeSeconds": 45,
-            "powerConsumption": 180
-          }
-        },
-        "faction_ids": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "min_level": 0,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 900000000,
-        "upgrade_cost": 350000000,
-        "upgrade_level_requirements": [
-          2,
-          3,
-          6,
-          9,
-          12,
-          42
-        ],
-        "config_id": 12,
-        "create_tx": "YpAKq7v6Sj2ri8H8jTRmbrwSaRAhCFXAmCvu9DfUETXRznrQ6cUaoaa7DLPPByyPfnDJxhXeD4y8BpsNmiGuKBG",
-        "stats_tx": "4PNVdXDz7k3VLJcybXtFkSFAVqxQ9qUHDe5ypSrNkhu6VznuCKQ1Rorewc4QNAbbd86SHv9cLeUQSCJx5CTHLh31",
-        "status": "completed"
-      },
-      {
-        "name": "Patriot Moon Battery",
-        "image_url": "https://arweave.net/usa-patriot-battery",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1800,
-            "baseDamage": 280,
-            "baseMissilesPerLoad": 6,
-            "reloadTimeSeconds": 35,
-            "powerConsumption": 150
-          }
-        },
-        "faction_ids": [
-          0
-        ],
-        "min_level": 12,
-        "max_per_base": 3,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 750000000,
-        "upgrade_cost": 280000000,
-        "upgrade_level_requirements": [
-          15,
-          19,
-          23,
-          28,
-          34,
-          40,
-          47,
-          55,
-          64,
-          74
-        ],
-        "config_id": 13,
-        "create_tx": "2GyLoCnjsVLvBoVqQQ5CiNnTh7jMDhz9z5FRTn4qo22iCxQQxXf3Lxjszf72TuH3QyZF4ChwcjvHX8nCvE9wDD6x",
-        "stats_tx": "5DXPnkP4pwAABd1Sv5py7ksyEjzZbcMVc9LhNC2QH3rLj7g3dfZr166kvXeRYDTUo5HdfWLJZWpf4MvKZaGscVbr",
-        "status": "completed"
-      },
-      {
-        "name": "Shaheed Drone Swarm Hub",
-        "image_url": "https://arweave.net/iran-drone-swarm",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1000,
-            "baseDamage": 140,
-            "baseMissilesPerLoad": 20,
-            "reloadTimeSeconds": 60,
-            "powerConsumption": 100
-          }
-        },
-        "faction_ids": [
-          4
-        ],
-        "min_level": 10,
-        "max_per_base": 3,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 500000000,
-        "upgrade_cost": 180000000,
-        "upgrade_level_requirements": [
-          13,
-          16,
-          20,
-          25,
-          30,
-          36,
-          42,
-          49,
-          57,
-          66
-        ],
-        "config_id": 14,
-        "create_tx": "pAunB9BoZzedKz2q3Xp213GKguSjz6WvGXzEnQpQtx1ytRWjZeNMRdSCkSn9Q382Y3bnrzgJpHsEPb4smnpgkkV",
-        "stats_tx": "2WobvLLjgxqPB4tE2DqM8HjPvTumGHpviJjf1qQJuytoKzqooYYXU3TdCSBnDBfgArMJecrtFotCsFmUYDoQ7wHm",
-        "status": "completed"
-      },
-      {
-        "name": "Javelin Defense System",
-        "image_url": "https://arweave.net/ukraine-javelin",
-        "module_type": "Attack",
-        "stats": {
-          "Attack": {
-            "maxHp": 1200,
-            "baseDamage": 220,
-            "baseMissilesPerLoad": 4,
-            "reloadTimeSeconds": 40,
-            "powerConsumption": 90
-          }
-        },
-        "faction_ids": [
-          5
-        ],
-        "min_level": 9,
-        "max_per_base": 4,
-        "width": 2,
-        "height": 2,
-        "mint_cost": 350000000,
-        "upgrade_cost": 140000000,
-        "upgrade_level_requirements": [
-          12,
-          15,
-          19,
-          24,
-          29,
-          35,
-          41,
-          48,
-          56,
-          65
-        ],
-        "config_id": 15,
-        "create_tx": "5CPeT38VSWdd4tM8yoNR7yBo9PeSf2GNuu6vnHUxpjk6T54PTpUxTsjFFKw3CD2EqqwUVMhFNbiuRei9LxkuP6Bz",
-        "stats_tx": "P7j2KdhAe6EcS1qG6NaBkiJKXL7npiYZdYCxhMaFeyJ46H13xruB5tM1QJvscp4qa7GciRCnbWs5jH1vpRwdFNJ",
-        "status": "completed"
-      },
-      {
-        "name": "Great Wall Observatory",
-        "image_url": "https://arweave.net/china-great-wall-observatory",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 1000,
-            "baseXpPerHour": 130,
-            "powerConsumption": 55
-          }
-        },
-        "faction_ids": [
-          1
-        ],
-        "min_level": 6,
-        "max_per_base": 3,
-        "width": 3,
-        "height": 2,
-        "mint_cost": 280000000,
-        "upgrade_cost": 110000000,
-        "upgrade_level_requirements": [
-          8,
-          11,
-          15,
-          19,
-          24,
-          29,
-          35,
-          41,
-          48,
-          56
-        ],
-        "config_id": 16,
-        "create_tx": "5ge4EmxaGztA4a2nbJHB7vEbzviBrQUxPU1ZMSPmJf1wHWUEYSqS7u6H63FtS7LexSVSG1DHDPSb43xuorvX24d9",
-        "stats_tx": "xenFtqkAyT6AxgGbepnLHXLTFPzAnkGgF3JUAxLRBdqjXDRC6aNsSQhQnfRwp69jLPCe3pwpEsVCpiysxBkEMVo",
-        "status": "completed"
-      },
-      {
-        "name": "Roscosmos Deep Space Lab",
-        "image_url": "https://arweave.net/russia-roscosmos-lab",
-        "module_type": "Research",
-        "stats": {
-          "Research": {
-            "maxHp": 1800,
-            "cooldownSec": 3600,
-            "maxReward": 1600000000,
-            "probability": 4500,
-            "powerConsumption": 200
-          }
-        },
-        "faction_ids": [
-          2
-        ],
-        "min_level": 12,
-        "max_per_base": 2,
-        "width": 3,
-        "height": 3,
-        "mint_cost": 750000000,
-        "upgrade_cost": 300000000,
-        "upgrade_level_requirements": [
-          15,
-          19,
-          24,
-          29,
-          35,
-          41,
-          48,
-          56,
-          65,
-          75
-        ],
-        "config_id": 17,
-        "create_tx": "2jZyKf1cN1k7K2uABtHjCwMMS2D6ZfqevGDpJy9xg5sB4GwKuT9KvG6DdWFKihgCNFPHLxyDn2NZosV6Y7GfX238",
-        "stats_tx": "2oTQSNKaZNirUUoqAmy1hpTgBFLjGm4cS6Zf1ZuaquUnx2LDaWeqkHTemy3YAYVfVvSufuTfgw5gJnqmhgdH373f",
-        "status": "completed"
-      },
-      {
-        "name": "Tehran Command Center",
-        "image_url": "https://arweave.net/iran-command-center",
-        "module_type": "Attraction",
-        "stats": {
-          "Attraction": {
-            "maxHp": 1100,
-            "baseXpPerHour": 140,
-            "powerConsumption": 70
-          }
-        },
-        "faction_ids": [
-          4
-        ],
-        "min_level": 8,
-        "max_per_base": 2,
-        "width": 2,
-        "height": 3,
-        "mint_cost": 320000000,
-        "upgrade_cost": 130000000,
-        "upgrade_level_requirements": [
-          11,
-          14,
-          18,
-          23,
-          28,
-          34,
-          40,
-          47,
-          55,
-          64
-        ],
-        "config_id": 18,
-        "create_tx": "CcdRXHQgHn9VTfdY19iaitKZ11JfERpcqLorh3KyjLTciVU3fbJPZoY6TXcKiNuuscUWWa2bmuLL7sWy5Lz2cxE",
-        "stats_tx": "5DkvviU1C7qUtxXs719yvGNpUdv65KgFAQo9mXkyFep2g6K1rZ1dSNmn6fGvCFMRHGgpPUxNc1bgV7JRX3vBdSWF",
-        "status": "completed"
-      }
-    ],
-    "timestamp": "2025-06-25T07:14:16.765Z"
+    "timestamp": "2025-11-12T08:50:31.804Z"
   },
   "mining_tokens_deposited": {
     "amount": "21000000000000",
-    "tx": "3oKNLEHC9P1Rp6vxGWFtApphvV8oyNZYHSZbXo8Gcsf52CdhuwfkJbG6SRXMz2rAimwQ9ibM7JZDWunjorYkkCR2",
-    "timestamp": "2025-06-25T07:14:17.694Z"
+    "tx": "45myFxmWXaKoat3u19AWSYJyR2tUEwve99mt5PwVX1CLHpJFTuUMzeSW2W8tt1KQZezbmziB38J2GeMtinSdiU1n",
+    "timestamp": "2025-11-12T08:50:32.609Z"
   },
   "lp_token_accounts_initialized": {
-    "lp_token_account": "4XUhNZT9nqkV7VVt6Udcp48gP3yX4GWa2cby9krzTBCR",
-    "lp_token_owner": "2PDg82uXpy341qN1pYiZGoWnwsPY69CJH1YE7WUXQBhb",
-    "lp_mint": "6e7nkKZvD1fGYL9GbZaZtdFjPk9PiZPZHda3qbK11Mg7",
-    "timestamp": "2025-06-25T07:14:19.631Z"
+    "lp_token_account": "2yje69fgba1VfCKawKikvj4bjMryRXWFq8536BAH4tXb",
+    "lp_token_owner": "4JNNxB7BQm1gBLxrnp4nrZsvugRVQF2z6QWwRG9xfsdF",
+    "lp_mint": "EWfAGbT5Rs9yD5gsUoEpTeUjY8JTD69Sz2u8doQB8WrW",
+    "timestamp": "2025-11-12T08:50:34.529Z"
   },
-  "dbtc_dist_per_slot_updated": {
-    "dogeBtcMiningPDA": "4fZQ2W96MiHC4A2J8oPyKEdbZ58LjVK4SpmNZYdsvFV1",
-    "vaultAuthorityPDA": "2PDg82uXpy341qN1pYiZGoWnwsPY69CJH1YE7WUXQBhb",
-    "solTreasuryPDA": "ASzfncPh7BYAWHYobc3qSZkaT2W3zDGm5XD3uq5fMuyz",
-    "poolStatePDA": "3qte2o2E44PDJ7PdwrtiB19W2Gd4XXGncxwHVA85WK3s",
-    "ammConfigPDA": "HdAWwKJkyxwAVwWcVv6r1QKL3o8jAkcqdKth6EA7p3dv",
-    "method": "raydium_integration",
-    "tx_signature": "28nyswfiGmtDobDrrQ4SnePPqvGM4vuGq7cJdab5RHLxmvo6gKg5UaLBpSwUSGLvi7Vg7iAoHzcyE1qrVLp56uGq",
-    "timestamp": "2025-06-25T07:14:22.918Z"
+  "buybacks_initialized": {
+    "buybacks_account_pda": "AXmM4pk2BzjvzqohzZoEN74LmyjeY5uHM6z2evoGzZNq",
+    "buybacks_sol_vault_pda": "B7xaLtJuWcSCZLARALUQ9Kuaa7F192HaFxeuFVSoX7En",
+    "init_tx": "2SFzWY2RHCoZSNh8qmLm6qb7tfioEXmKhQD7UpwAKBxiEf3kJfiu54HhxZB6biKFHvMn8Toukns4YRDpdNpGaKSV",
+    "timestamp": "2025-11-12T08:50:35.111Z"
   },
   "moonEconomy_program_initialized": {
-    "moonEconomy_globalConfig_data_ac": "BQ1zM6zMs5fyCECgB7yz43ViggBd7qMaAEHrrzbAYnLx",
-    "moonEconomy_devEarnings_data_ac": "EHFihcJn5ABJB6J2cJE7cGbDYr7exwsPiK453a25jq4E",
-    "moonEconomy_feeCollector_data_ac": "7T79uoCCv9idyStdxbNSbgJMuDuzdDK67PrJb8wdrA1S",
-    "timestamp": "2025-06-25T07:14:32.047Z"
+    "moonEconomy_globalConfig_data_ac": "HND9wLxb7uccbKkqU5CT9fLdpvY1KqzxutZk1KExo7Hf",
+    "moonEconomy_devEarnings_data_ac": "7DUYntos72wQrx6QdwmaCJjRdKEhdmcjfTV7r9cjakmT",
+    "moonEconomy_feeCollector_data_ac": "4QnnN7ATWt2k14opqYqRNjv5hqhTJ9vhaHMuwCmxpAUD",
+    "timestamp": "2025-11-12T08:50:57.425Z",
+    "initial_dbtc_sol_price": {
+      "price": 1000000,
+      "set_tx": "nERiBkeTbjDD3x7KGYKMW1tvzJmPKpWzMnecJvUK6DpwcgvgPdC5kkv2rMpshjqbCSjohrhRgFPiD2UHcZTMLbm",
+      "timestamp": "2025-11-12T08:51:00.861Z"
+    },
+    "electricity_per_weighted_sol": {
+      "value": 1000,
+      "set_tx": "5dZCQMewKenVBsmJgc9MQqU9cN5UYuDCQjrd82JPW2PuE6L37XvjP6smJHtCFcKc9t26P5YzHRgW3Rc4Pa1xjkpN",
+      "timestamp": "2025-11-12T08:51:01.957Z"
+    },
+    "sol_distribution_enabled": {
+      "enabled": true,
+      "set_tx": "qGHRzQBVwrXJYDTrGF7ZL4tL8dyvWjJ216WgvA722VeC3AnBqasdu5tYVL9E5oZKq9opG28WAJ6V3TEZP1MgCtP",
+      "timestamp": "2025-11-12T08:51:02.784Z"
+    }
   },
   "moonEconomy_mDogeVault_initialized": {
-    "dogebtcVault": "ESZkSySHDwxUcG5Y2wj4mmBurJbhLe9yVcFbyJbwYufi",
-    "dbtcSolVault": "7sD32KuhjL1sxw7UhBQSJ9LiG9STpVHF6XTZWgttjspz",
-    "dbtcCustodian": "3aLziGXwyUvZVnvdJKYF5rmpU3jaAd7SVPXnRshnbQ2j",
-    "dbtcCustodianAuthority": "135M6zqqiugFzEwRthRzKwSpZG43PgatFopby6rxjnUy",
-    "timestamp": "2025-06-25T07:14:33.927Z"
+    "dogebtcVault": "E11NhdGTEhJBKKTVGA52ZPq9W1CEgUvDrb3yon6cQtNH",
+    "dbtcSolVault": "Fk25fAywSa4Pxj3jcgp9kCbhwT3HKYoZAwSUUESrupJH",
+    "dbtcCustodian": "Eyz64vrT5bRiCDDhqiLXrkwSbcJajmm8miVnf1wBvdRM",
+    "dbtcCustodianAuthority": "4BdAAjvZp8vS5uJxBzi5WXHK68gY1FgvTfHbRk6Q9G8E",
+    "timestamp": "2025-11-12T08:50:58.357Z"
   },
   "moonEconomy_liquidityVault_initialized": {
-    "liquidityVault": "Hs6P5e14dkxCToVFnMV7AFMCgGN63t4poteEjBUL1FZz",
-    "liquiditySolVault": "8rdP8wdwKbncFiwQMJU88DpLGzXiiJMknxdE6oF8U67t",
-    "liquidityCustodian": "4RKUp6zXEyFcd8NuJk3kFaF7S83uZxp7yFaFfTs6X9dX",
-    "liquidityCustodianAuthority": "GmxG7moxLXSgMeC1FiKkGqy4nT8VmrLMxDfkc4vZjTxK",
-    "timestamp": "2025-06-25T07:14:35.187Z"
+    "liquidityVault": "4bqatCXbcFoWJokNTLhKgWDshgR3JsXUPgMyDprdRx45",
+    "liquiditySolVault": "Fqz87Dz9oNwzYbRA8Duo4goRUfCondyrMAxyMo8YGYkB",
+    "liquidityCustodian": "8rPjbVCpReD2VK6REKvmHruBoxGsUbcSoM2LKghgWGKs",
+    "liquidityCustodianAuthority": "BxoLGW78Ebhno7K6j5FTaAVTwvvyLfEQCPZ8wic1RjBU",
+    "timestamp": "2025-11-12T08:50:59.161Z"
   }
 }

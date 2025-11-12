@@ -219,6 +219,7 @@ async function main() {
     
     const deployerPubkey = getDeployerPublicKey();
     console.log(`\x1b[36m📝 Deployer: ${deployerPubkey}\x1b[0m`);
+    // return;
     
     resetArtifacts();
     const { programId, secretKey } = createNewKeypair();
