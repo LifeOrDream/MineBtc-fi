@@ -659,10 +659,48 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
 // ----------------------------------------------------------------------------------------
 
 
+/// Initialize EggConfig account (admin only)
+/// 
+/// Creates the EggConfig account that stores Dragon Egg collection configuration.
+/// This must be called before creating the Dragon Egg collection.
+/// 
+/// # Parameters
+/// - `base_price`: Base price for Dragon Eggs in SOL (lamports)
+/// - `curve_a`: Bonding curve parameter (controls price growth rate)
+/// - `max_supply`: Maximum number of Dragon Eggs that can be minted
+pub fn initialize_egg_config_internal(
+    ctx: Context<InitializeEggConfig>,
+    base_price: u64,
+    curve_a: u64,
+    max_supply: u64,
+) -> Result<()> {
+    msg!("🥚 [initialize_egg_config_internal] Initializing EggConfig");
+    
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    
+    eggs_config.bump = ctx.bumps.eggs_config;
+    eggs_config.dragon_egg_collection = Pubkey::default(); // Will be set when collection is created
+    eggs_config.eggs_minted = 0;
+    eggs_config.base_price = base_price;
+    eggs_config.curve_a = curve_a;
+    eggs_config.max_supply = max_supply;
+    eggs_config.dragon_egg_uris = Vec::new();
+    eggs_config.ticket_tiers = Vec::new();
+    eggs_config.global_dragon_egg_power = 0;
+    
+    msg!("   ✅ EggConfig initialized");
+    msg!("   Base Price: {} lamports", base_price);
+    msg!("   Curve A: {}", curve_a);
+    msg!("   Max Supply: {}", max_supply);
+    
+    Ok(())
+}
+
 /// Create Dragon Egg collection with program PDA as authority (admin only)
 /// 
 /// Creates a new Metaplex Core collection for Dragon Egg NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
+/// Requires EggConfig to be initialized first.
 /// 
 /// # Parameters
 /// - `name`: Collection name
@@ -1291,6 +1329,30 @@ pub struct DepositTokens<'info> {
     pub token_program: Program<'info, Token2022>,
 }
 
+
+#[derive(Accounts)]
+pub struct InitializeEggConfig<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = EggConfig::LEN,
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 pub struct CreateDragonEggCollection<'info> {

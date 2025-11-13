@@ -1,7 +1,5 @@
 use anchor_lang::prelude::*;
 
-use crate::errors::ErrorCode;
-
 
 pub const DBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds

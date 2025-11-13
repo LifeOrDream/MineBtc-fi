@@ -67,7 +67,6 @@ pub fn stake_moondoge(
     // Get player data
     let player_data = &mut ctx.accounts.player_data;
     let hashpower_config = &ctx.accounts.hashpower_config;
-    require!(player_data.owner == ctx.accounts.authority.key(), ErrorCode::InvalidOwner);
     let current_ts = Clock::get()?.unix_timestamp;
     
     // Get or create position
@@ -202,7 +201,6 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     // Validate the position exists and has funds
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
     require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);
-    require!(player_data.owner == ctx.accounts.authority.key(), ErrorCode::InvalidOwner);
     
     // Verify position index is in the user's active positions
     require!(
@@ -431,7 +429,6 @@ pub fn stake_lp_tokens(
 
     // Get player data
     let player_data = &mut ctx.accounts.player_data;
-    require!(player_data.owner == ctx.accounts.authority.key(), ErrorCode::InvalidOwner);
     let current_ts = Clock::get()?.unix_timestamp;
     
     // Get or create position
@@ -557,7 +554,6 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     // Validate the position exists and has funds
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
     require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);
-    require!(player_data.owner == ctx.accounts.authority.key(), ErrorCode::InvalidOwner);
     
     // Verify position index is in the user's active positions
     require!(
@@ -1087,7 +1083,8 @@ pub struct StakeDogeBtc<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
     
@@ -1167,7 +1164,8 @@ pub struct UnstakeDogeBtc<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
     
@@ -1248,7 +1246,8 @@ pub struct StakeLpTokens<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
     
@@ -1324,7 +1323,8 @@ pub struct UnstakeLpTokens<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
     
@@ -1401,7 +1401,8 @@ pub struct ClaimSolRewards<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
     
@@ -1454,7 +1455,8 @@ pub struct ClaimDbtcRewards<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
     

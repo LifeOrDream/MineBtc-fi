@@ -487,59 +487,97 @@ export async function createMintAccount_T22_TransferFeeOnly(
  * @param {Keypair} walletKeypair Wallet keypair for signing
  * @returns {Promise<Object>} Result object with success status and data
  */
-export async function createSystemReferralAccount(connection, program, wallet, walletKeypair, referralRewardsPDA) { 
+export async function initializeSystemAccounts(connection, program, wallet, walletKeypair, globalConfigPDA) { 
   try { 
-            console.log('\x1b[36m%s\x1b[0m', `🔑 Referral Rewards PDA: ${referralRewardsPDA.toString()}`);
-            
-            // Build transaction
-            const tx = await program.methods
-                .createSystemReferralAccount()
-                .accounts({
-                    referrerRewards: referralRewardsPDA,
-                    user: wallet.publicKey,
-                    systemProgram: web3.SystemProgram.programId,
-                })
-                .transaction();
-            
-            // Send and confirm transaction
-           console.log('\x1b[33m%s\x1b[0m', '📡 Sending create system referral account transaction...');
-            const txid = await web3.sendAndConfirmTransaction(
-                connection,
-                tx,
-                [walletKeypair]
-            );
-            
-            console.log('\x1b[32m%s\x1b[0m', `✅ System referral account created successfully!`);
-            console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${txid}`);
-            console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${txid}?cluster=devnet`);
+    console.log('\x1b[33m%s\x1b[0m', '📡 Initializing system accounts (referral + buybacks)...');
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA.toString()}`);
     
-            return {
-              success: true,
-              data: {
-              txid,
-              referralRewards_address: referralRewardsPDA.toString(),
-              }
+    // Derive PDAs
+    const [systemReferralRewardsPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(REFERRAL_REWARDS_SEED), SystemProgram.programId.toBuffer()], 
+      program.programId
+    );
+    
+    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SEED)], 
+      program.programId
+    );
+    
+    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
+      program.programId
+    );
+    
+    console.log('\x1b[36m%s\x1b[0m', `🔑 System Referral Rewards PDA: ${systemReferralRewardsPDA.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks Account PDA: ${buybacksAccountPDA.toString()}`);
+    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks SOL Vault PDA: ${buybacksSolVaultPDA.toString()}`);
+    
+    // Build transaction
+    const tx = await program.methods
+      .initializeSystemAccounts()
+      .accounts({
+        globalConfig: globalConfigPDA,
+        systemReferralRewards: systemReferralRewardsPDA,
+        buybacksAccount: buybacksAccountPDA,
+        buybacksSolVault: buybacksSolVaultPDA,
+        authority: wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .transaction();
+    
+    // Send and confirm transaction
+    console.log('\x1b[33m%s\x1b[0m', '📡 Sending initialize system accounts transaction...');
+    const txid = await web3.sendAndConfirmTransaction(
+      connection,
+      tx,
+      [walletKeypair]
+    );
+    
+    console.log('\x1b[32m%s\x1b[0m', `✅ System accounts initialized successfully!`);
+    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction ID: ${txid}`);
+    console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${txid}?cluster=devnet`);
+
+    return {
+      success: true,
+      data: {
+        txid,
+        systemReferralRewards_address: systemReferralRewardsPDA.toString(),
+        buybacksAccount_address: buybacksAccountPDA.toString(),
+        buybacksSolVault_address: buybacksSolVaultPDA.toString(),
+      }
     };
   } catch (error) {
-    if (error.toString().includes("already in use")) {
-      console.log('\x1b[34m%s\x1b[0m', `ℹ️ System referral account already created. Skipping creation.`);
+    if (error.toString().includes("already in use") || error.toString().includes("AccountAlreadyInUse")) {
+      console.log('\x1b[34m%s\x1b[0m', `ℹ️ System accounts already initialized. Skipping creation.`);
       
       // Still need to return the PDAs
-      const [referralRewardsPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(REFERRAL_REWARDS_SEED), Buffer.from(SystemProgram.key().toBase58())], 
+      const [systemReferralRewardsPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from(REFERRAL_REWARDS_SEED), SystemProgram.programId.toBuffer()], 
         program.programId
       );
-          
-                return {
-                  success: true,
-                  data: {
-                    referralRewards_address: referralRewardsPDA.toString(),
-                  }
+      
+      const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from(BUYBACKS_SEED)], 
+        program.programId
+      );
+      
+      const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
+        program.programId
+      );
+      
+      return {
+        success: true,
+        data: {
+          systemReferralRewards_address: systemReferralRewardsPDA.toString(),
+          buybacksAccount_address: buybacksAccountPDA.toString(),
+          buybacksSolVault_address: buybacksSolVaultPDA.toString(),
+        }
       };
-            } else {
-      console.error('\x1b[31m%s\x1b[0m', '❌ Error creating system referral account:', error);
-                return {
-                  success: false,
+    } else {
+      console.error('\x1b[31m%s\x1b[0m', '❌ Error initializing system accounts:', error);
+      return {
+        success: false,
         error: error.toString(),
       };
     }
@@ -3233,6 +3271,8 @@ export async function initializeLevelStats(
   }
 }
 
+// initializeBuybacks is now merged into initializeSystemAccounts
+// Keeping this function for backward compatibility but it calls initializeSystemAccounts
 export async function initializeBuybacks(
   connection,
   program,
@@ -3240,55 +3280,8 @@ export async function initializeBuybacks(
   walletKeypair,
   globalConfigPDA
 ) {
-  try {
-    console.log('\x1b[33m%s\x1b[0m', '📡 Initializing buybacks system...');
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Global Config PDA: ${globalConfigPDA}`);
-
-    // Derive buybacks PDAs
-    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(BUYBACKS_SEED)], 
-      program.programId
-    );
-    
-    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(BUYBACKS_SOL_VAULT_SEED)], 
-      program.programId
-    );
-
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks Account PDA: ${buybacksAccountPDA}`);
-    console.log('\x1b[36m%s\x1b[0m', `🔑 Buybacks SOL Vault PDA: ${buybacksSolVaultPDA}`);
-
-    const initTx = await program.methods.initializeBuybacks()
-      .accounts({
-        globalConfig: new PublicKey(globalConfigPDA),
-        buybacksAccount: buybacksAccountPDA,
-        buybacksSolVault: buybacksSolVaultPDA,
-        authority: wallet.publicKey,
-        systemProgram: web3.SystemProgram.programId,
-      })
-      .transaction();
-
-    const initTxid = await web3.sendAndConfirmTransaction(connection, initTx, [walletKeypair]);
-
-    console.log('\x1b[32m%s\x1b[0m', `✅ Buybacks system initialized`);
-    console.log('\x1b[90m%s\x1b[0m', `🔗 Transaction: ${initTxid}`);
-    console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${initTxid}?cluster=devnet`);
-
-    return {
-      success: true,
-      data: {
-        initTxid: initTxid,
-        buybacksAccountPDA: buybacksAccountPDA.toString(),
-        buybacksSolVaultPDA: buybacksSolVaultPDA.toString(),
-      }
-    };
-  } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '❌ Error initializing buybacks system:', error);
-    return {
-      success: false,
-      error: error.toString()
-    };
-  }
+  console.log('\x1b[33m%s\x1b[0m', '⚠️ initializeBuybacks is deprecated. Use initializeSystemAccounts instead.');
+  return initializeSystemAccounts(connection, program, wallet, walletKeypair, globalConfigPDA);
 }
   
 // ==================== [ ADMIN HELPER FUNCTIONS ] ====================

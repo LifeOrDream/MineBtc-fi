@@ -418,8 +418,9 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
         ErrorCode::EggNotIncubated
     );
     
+    let incubated_player = egg_metadata.incubated_player_data.unwrap();
     require!(
-        egg_metadata.incubated_player_data.unwrap() == player_data.owner,
+        incubated_player == player_data.owner,
         ErrorCode::Unauthorized
     );
         
@@ -512,12 +513,11 @@ pub fn admin_mint_dragon_egg(
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let egg_config = &mut ctx.accounts.egg_config;
-    let authority = &ctx.accounts.authority;
 
-    // Authority check
+    // Verify recipient matches instruction parameter
     require!(
-        global_config.ext_authority == authority.key(),
-        ErrorCode::Unauthorized
+        ctx.accounts.recipient.key() == recipient,
+        ErrorCode::InvalidAccount
     );
 
     // Validate faction_id
@@ -650,7 +650,8 @@ pub struct MintDragonEgg<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
 
@@ -762,6 +763,7 @@ pub struct AdminMintDragonEgg<'info> {
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
 

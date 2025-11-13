@@ -135,14 +135,28 @@ pub mod moonbase {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
+    // ------------ DRAGON EGG SYSTEM (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
+
+    /// Initialize EggConfig account (admin only)
+    /// 
+    /// Creates the EggConfig account that stores Dragon Egg configuration.
+    /// This must be called before creating the Dragon Egg collection.
+    pub fn initialize_egg_config(
+        ctx: Context<InitializeEggConfig>,
+        base_price: u64,
+        curve_a: u64,
+        max_supply: u64,
+    ) -> Result<()> {
+        admin::initialize_egg_config_internal(ctx, base_price, curve_a, max_supply)
+    }
 
     /// Create Dragon Egg collection with program PDA as authority (admin only)
     /// 
     /// Creates a new Metaplex Core collection for Dragon Egg NFTs.
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
+    /// Requires EggConfig to be initialized first.
     pub fn create_dragon_egg_collection(
         ctx: Context<CreateDragonEggCollection>,
         name: String,
