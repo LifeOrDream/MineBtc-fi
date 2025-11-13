@@ -1,132 +1,178 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
-use anchor_spl::token::{self, burn, Burn};
-use anchor_lang::solana_program::{
-    instruction::AccountMeta,
-    program::invoke_signed,
+use anchor_spl::token_2022::{self, TransferChecked, Burn};
+use anchor_spl::token_interface::{
+    Mint,
+    TokenAccount as TokenAccount2022,
+    TokenInterface,
 };
+use anchor_spl::token_2022::spl_token_2022::extension::{
+    transfer_fee::TransferFeeConfig,
+    BaseStateWithExtensions,
+    StateWithExtensions,
+};
+use anchor_spl::token_interface::{harvest_withheld_tokens_to_mint, HarvestWithheldTokensToMint, withdraw_withheld_tokens_from_mint, WithdrawWithheldTokensFromMint};
 
 use crate::errors::ErrorCode;
 use crate::state::*;
 use crate::instructions::helper;
 
 // ========================================================================================
-// ============================= TAX WITHDRAWAL =========================================
+// ============================= TAX HARVESTING & DISTRIBUTION ===========================
 // ========================================================================================
 
-/// Withdraw withheld tax from a token account and distribute it according to TaxConfig
+/// STEP 1: "Harvest" fees from user accounts to the mint
+/// 
+/// This is the "stupid crank." A keeper bot must find all token accounts
+/// with withheld fees (off-chain) and pass them into this function
+/// in batches using `ctx.remaining_accounts`.
+/// 
+/// This instruction "sucks" the fees from user accounts and deposits
+/// them into the dbtc_mint's own "withheld_amount" field.
+/// 
+/// Callable by anyone - designed to be called many times in batches
+pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
+    msg!("🌱 [crank_harvest_fees] Harvesting withheld fees to mint...");
+
+    // Get all the token accounts that were passed in by the keeper bot
+    msg!("   Harvesting from {} accounts...", ctx.remaining_accounts.len());
+
+    if ctx.remaining_accounts.is_empty() {
+        msg!("   No source accounts provided. Exiting.");
+        return Ok(());
+    }
+
+    // Get all the token accounts that were passed in by the keeper bot
+    // This is already a slice: &[AccountInfo<'info>]
+    let source_accounts = ctx.remaining_accounts;
+    msg!("   Harvesting from {} accounts...", source_accounts.len());
+
+    // Call `harvest_withheld_tokens_to_mint`
+    // This CPI will pull the fees from all `remaining_accounts`
+    // and aggregate them into `dbtc_mint.withheld_amount`.
+    harvest_withheld_tokens_to_mint(
+        CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            HarvestWithheldTokensToMint {
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                token_program_id: ctx.accounts.token_program_2022.to_account_info(),
+            },
+        ),
+        source_accounts.to_vec(),
+    )?;
+
+    msg!("   ✅ Harvest complete. Fees moved to mint.");
+    Ok(())
+}
+
+/// STEP 2: "Withdraw & Distribute" tax from the MINT
+/// 
+/// This function should be called *after* `crank_harvest_fees` has
+/// been run. It withdraws the *total* accumulated tax from the
+/// mint account and distributes it according to TaxConfig percentages.
+/// 
 /// Callable by anyone - program-controlled withdraw authority
-pub fn withdraw_withheld_tax(ctx: Context<WithdrawWithheldTax>) -> Result<()> {
-    msg!("💰 [withdraw_withheld_tax] Withdrawing withheld tax from token account");
+pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+    msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
+
+    // 1. Get the total amount of tax sitting on the mint account
+    // We must reload to get the most up-to-date data after harvesting
+    ctx.accounts.dbtc_mint.reload()?;
     
-    let tax_config = &ctx.accounts.tax_config;
+    // Read mint data and get TransferFeeConfig extension
+    let mint_account_info = ctx.accounts.dbtc_mint.to_account_info();
+    let mint_data = mint_account_info.try_borrow_data()?;
+    let mint = StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(&mint_data)?;
+    let transfer_fee_config = <StateWithExtensions<anchor_spl::token_2022::spl_token_2022::state::Mint> as BaseStateWithExtensions<anchor_spl::token_2022::spl_token_2022::state::Mint>>::get_extension::<TransferFeeConfig>(&mint)?;
+    let withheld_amount = u64::from(transfer_fee_config.withheld_amount);
+
+    if withheld_amount == 0 {
+        msg!("   ❌ No withheld tokens on mint to withdraw. Run harvest crank first.");
+        return Ok(());
+    }
     
-    msg!("   Withdrawing all withheld tokens from account");
-    
-    // Note: We'll calculate the withheld amount after withdrawal by comparing balances
-    // Distribution amounts will be calculated after we know the actual withdrawn amount
-    
-    // Withdraw all withheld tokens to withdraw authority's token account
+    msg!("   Mint has {} tokens to withdraw", (withheld_amount as f64) / 1e6);
+
+    // 2. Withdraw ALL tokens from Mint -> Authority's Temp Vault
     let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
     let withdraw_authority_seeds = &[
         WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
         &[withdraw_authority_bump],
     ];
     let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
-    
-    // Get balance before withdrawal to calculate withheld amount
-    let balance_before = ctx.accounts.withdraw_authority_token_account.amount;
-    
-    // Build instruction manually for Token-2022 withdraw_withheld_tokens_from_accounts
-    // Instruction discriminator: 20 (WithdrawWithheldTokensFromAccounts)
-    let instruction_data = vec![20u8]; // Instruction discriminator
-    
-    // Build accounts vector
-    let accounts = vec![
-        AccountMeta::new(ctx.accounts.withdraw_authority_token_account.key(), false),
-        AccountMeta::new_readonly(ctx.accounts.withdraw_withheld_authority.key(), true),
-        AccountMeta::new_readonly(ctx.accounts.token_program_2022.key(), false),
-        AccountMeta::new(ctx.accounts.token_account.key(), false),
-    ];
-    
-    let instruction = anchor_lang::solana_program::instruction::Instruction {
-        program_id: ctx.accounts.token_program_2022.key(),
-        accounts,
-        data: instruction_data,
-    };
-    
-    invoke_signed(
-        &instruction,
-        &[
-            ctx.accounts.withdraw_authority_token_account.to_account_info(),
-            ctx.accounts.withdraw_withheld_authority.to_account_info(),
+
+    withdraw_withheld_tokens_from_mint(
+        CpiContext::new_with_signer(
             ctx.accounts.token_program_2022.to_account_info(),
-            ctx.accounts.token_account.to_account_info(),
-        ],
-        withdraw_authority_signer,
+            WithdrawWithheldTokensFromMint {
+                destination: ctx.accounts.withdraw_authority_token_account.to_account_info(),
+                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                token_program_id: ctx.accounts.token_program_2022.to_account_info(),
+            },
+            withdraw_authority_signer
+        ),
     )?;
-    
-    // Get balance after withdrawal to calculate actual withdrawn amount
-    ctx.accounts.withdraw_authority_token_account.reload()?;
-    let balance_after = ctx.accounts.withdraw_authority_token_account.amount;
-    let withheld_amount = balance_after
-        .checked_sub(balance_before)
+
+    // 3. Calculate distribution amounts based on TaxConfig percentages
+    let tax_config = &ctx.accounts.tax_config;
+    let nft_floor_sweep_amount = helper::mul_div(withheld_amount, tax_config.nft_floor_sweep_pct as u64, 100)? as u64;
+    let faction_treasury_amount = helper::mul_div(withheld_amount, tax_config.faction_treasury_pct as u64, 100)? as u64;
+    // Burn amount is the remainder
+    let burn_amount = withheld_amount
+        .checked_sub(nft_floor_sweep_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_sub(faction_treasury_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-    if (withheld_amount == 0) {
-        msg!("   ❌ No withheld tokens to withdraw");
-        return Ok(());
-    }
-    
-    msg!("   ✅ Withdrawn {} tokens to authority account", (withheld_amount as f64) / 1e6);
-    
-    // Now calculate distribution amounts based on actual withdrawn amount
-    let nft_floor_sweep_amount = helper::mul_div(withheld_amount, tax_config.nft_floor_sweep_pct as u64, 100)? as u64;    
-    let faction_treasury_amount = helper::mul_div(withheld_amount, tax_config.faction_treasury_pct as u64, 100)? as u64;    
-    let burn_amount = withheld_amount - nft_floor_sweep_amount - faction_treasury_amount;
-    
-    msg!("   Distribution: NFT Floor Sweep: {} tokens ({}%), Burn: {} tokens ({}%), Faction Treasury: {} tokens ({}%)", (nft_floor_sweep_amount as f64) / 1e6, tax_config.nft_floor_sweep_pct, (burn_amount as f64) / 1e6, (M_HUNDRED - tax_config.nft_floor_sweep_pct - tax_config.faction_treasury_pct), (faction_treasury_amount as f64) / 1e6, tax_config.faction_treasury_pct);
-    // Transfer NFT floor sweep portion
+
+    msg!("   Splitting {} tokens:", (withheld_amount as f64) / 1e6);
+    msg!("   - NFT Floor Sweep: {} tokens ({}%)", (nft_floor_sweep_amount as f64) / 1e6, tax_config.nft_floor_sweep_pct);
+    msg!("   - Faction Treasury: {} tokens ({}%)", (faction_treasury_amount as f64) / 1e6, tax_config.faction_treasury_pct);
+    let burn_pct = M_HUNDRED as u8 - tax_config.nft_floor_sweep_pct - tax_config.faction_treasury_pct;
+    msg!("   - Burn: {} tokens ({}%)", (burn_amount as f64) / 1e6, burn_pct);
+
+    // 4. Distribute the funds (all signed by the same PDA)
+
+    // Transfer to NFT floor sweep
     if nft_floor_sweep_amount > 0 {
-        token::transfer(
-            CpiContext::new(
+        token_2022::transfer_checked(
+            CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
-                token::Transfer {
+                TransferChecked {
                     from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
+                    mint: ctx.accounts.dbtc_mint.to_account_info(),
                     to: ctx.accounts.nft_floor_sweep_vault.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
+                withdraw_authority_signer
             ),
             nft_floor_sweep_amount,
+            ctx.accounts.dbtc_mint.decimals,
         )?;
-        msg!("   ✅ Transferred {} tokens to NFT floor sweep vault", nft_floor_sweep_amount);
+        msg!("   ✅ Transferred {} tokens to NFT floor sweep vault", (nft_floor_sweep_amount as f64) / 1e6);
     }
     
-    // Transfer faction treasury portion
+    // Transfer to faction treasury
     if faction_treasury_amount > 0 {
-        token::transfer(
-            CpiContext::new(
+        token_2022::transfer_checked(
+            CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
-                token::Transfer {
+                TransferChecked {
                     from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
+                    mint: ctx.accounts.dbtc_mint.to_account_info(),
                     to: ctx.accounts.faction_treasury_vault.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
+                withdraw_authority_signer
             ),
             faction_treasury_amount,
+            ctx.accounts.dbtc_mint.decimals,
         )?;
-        msg!("   ✅ Transferred {} tokens to faction treasury vault", faction_treasury_amount);
+        msg!("   ✅ Transferred {} tokens to Faction treasury vault", (faction_treasury_amount as f64) / 1e6);
     }
     
-    // Burn the burn portion
+    // Burn the remainder
     if burn_amount > 0 {
-        let burn_seeds = &[
-            WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
-            &[withdraw_authority_bump],
-        ];
-        let burn_signer = &[&burn_seeds[..]];
-        
-        burn(
+        token_2022::burn(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
                 Burn {
@@ -134,21 +180,20 @@ pub fn withdraw_withheld_tax(ctx: Context<WithdrawWithheldTax>) -> Result<()> {
                     from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
-                burn_signer,
+                withdraw_authority_signer,
             ),
             burn_amount,
         )?;
         
-        // Update total burnt counter
-        let tax_config = &mut ctx.accounts.tax_config;
-        tax_config.total_burnt = tax_config.total_burnt
+        let tax_config_mut = &mut ctx.accounts.tax_config;
+        tax_config_mut.total_burnt = tax_config_mut.total_burnt
             .checked_add(burn_amount)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        msg!("   ✅ Burnt {} tokens (Total burnt: {})", burn_amount, tax_config.total_burnt);
+            
+        msg!("   ✅ Burnt {} tokens (Total burnt: {})", (burn_amount as f64) / 1e6, (tax_config_mut.total_burnt as f64) / 1e6);
     }
     
-    msg!("✅ [withdraw_withheld_tax] Tax withdrawal and distribution complete");
+    msg!("✅ [crank_distribute_tax] Tax distribution complete");
     Ok(())
 }
 
@@ -297,31 +342,10 @@ pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Resul
     // Rank 2 (3rd): 10%
     // Ranks 3-11: Randomly select one to get remaining 50%
     
-    let first_place_reward = (total_treasury as u128)
-        .checked_mul(25)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-    
-    let second_place_reward = (total_treasury as u128)
-        .checked_mul(15)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-    
-    let third_place_reward = (total_treasury as u128)
-        .checked_mul(10)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)? as u64;
-    
-    let remaining_amount = total_treasury
-        .checked_sub(first_place_reward)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_sub(second_place_reward)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_sub(third_place_reward)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let first_place_reward = total_treasury * 25 / M_HUNDRED;    
+    let second_place_reward = total_treasury * 15 / M_HUNDRED;    
+    let third_place_reward = total_treasury * 10 / M_HUNDRED;    
+    let remaining_amount = total_treasury - first_place_reward - second_place_reward - third_place_reward;
     
     // Randomly select one faction from ranks 3-11 to get remaining 50%
     // Use current timestamp as seed for pseudo-random selection
@@ -408,42 +432,30 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
     msg!("   Split: {} to dbtc stakers, {} to lp stakers", dbtc_reward, lp_reward);
     
     // Transfer tokens from treasury vault to emission vault
-    token::transfer(
+    token_2022::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program_2022.to_account_info(),
-            token::Transfer {
+            token_2022::TransferChecked {
                 from: ctx.accounts.faction_treasury_vault.to_account_info(),
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
                 to: ctx.accounts.dbtc_emission_vault.to_account_info(),
                 authority: ctx.accounts.dbtc_emission_vault_authority.to_account_info(),
             },
         ),
         reward_amount,
+        ctx.accounts.dbtc_mint.decimals,
     )?;
     
     // Update reward indexes for dbtc stakers
     if dbtc_reward > 0 && faction_state.total_dbtc_hashpower > 0 {
-        let index_increase = (dbtc_reward as u128)
-            .checked_mul(INDEX_PRECISION as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(faction_state.total_dbtc_hashpower as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index
-            .checked_add(index_increase)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let index_increase = helper::mul_div(dbtc_reward, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + index_increase;
     }
     
     // Update reward indexes for lp stakers
     if lp_reward > 0 && faction_state.total_lp_hashpower > 0 {
-        let index_increase = (lp_reward as u128)
-            .checked_mul(INDEX_PRECISION as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(faction_state.total_lp_hashpower as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index
-            .checked_add(index_increase)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let index_increase = helper::mul_div(lp_reward, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index + index_increase;
     }
     
     // Mark faction as claimed
@@ -515,7 +527,46 @@ pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Resul
 // ========================================================================================
 
 #[derive(Accounts)]
-pub struct WithdrawWithheldTax<'info> {
+pub struct CrankHarvestFees<'info> {
+    #[account(mut)]
+    /// CHECK: The mint account must be the one that is configured with the TransferFeeConfig extension
+    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+
+    /// CHECK: This is the Token-2022 Program.
+    /// We use AccountInfo<'info> instead of Interface<>
+    /// to solve the lifetime invariance error.
+    #[account(address = token_2022::ID @ ErrorCode::InvalidProgramId)]
+    pub token_program_2022: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CrankDistributeTax<'info> {
+    // Authority
+    /// CHECK: The PDA authority for withdrawing fees
+    #[account(
+        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub withdraw_withheld_authority: AccountInfo<'info>,
+
+    // The Mint
+    #[account(mut)]
+    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    
+    // Vaults
+    /// The temporary vault that receives the full tax amount before splitting
+    #[account(mut)]
+    pub withdraw_authority_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// NFT Floor Sweep vault
+    #[account(mut)]
+    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// Faction Treasury vault
+    #[account(mut)]
+    pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
+
+    // Config
     #[account(
         mut,
         seeds = [TAX_CONFIG_SEED.as_ref()],
@@ -523,33 +574,7 @@ pub struct WithdrawWithheldTax<'info> {
     )]
     pub tax_config: Account<'info, TaxConfig>,
     
-    /// CHECK: Token account with withheld tax
-    #[account(mut)]
-    pub token_account: InterfaceAccount<'info, TokenAccount2022>,
-    
-    #[account(
-        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
-        bump
-    )]
-    /// CHECK: Program-controlled withdraw withheld authority PDA
-    pub withdraw_withheld_authority: UncheckedAccount<'info>,
-    
-    #[account(mut)]
-    /// CHECK: Token account owned by withdraw authority (receives withdrawn tokens)
-    pub withdraw_authority_token_account: InterfaceAccount<'info, TokenAccount2022>,
-    
-    #[account(mut)]
-    /// CHECK: NFT floor sweep vault token account
-    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
-    
-    #[account(mut)]
-    /// CHECK: Faction treasury vault token account
-    pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
-    
-    #[account(mut)]
-    /// CHECK: DogeBtc mint (for burning)
-    pub dbtc_mint: InterfaceAccount<'info, Mint>,
-    
+    // Programs
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }
 
@@ -627,6 +652,9 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     )]
     /// CHECK: Emission vault authority PDA
     pub dbtc_emission_vault_authority: UncheckedAccount<'info>,
+    
+    /// CHECK: DogeBtc mint (for transfer decimals)
+    pub dbtc_mint: InterfaceAccount<'info, Mint>,
     
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }

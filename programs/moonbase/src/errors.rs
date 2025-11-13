@@ -351,4 +351,7 @@ pub enum ErrorCode {
 
     #[msg("Invalid state for this operation")]
     InvalidState,
+
+    #[msg("Invalid program ID")]
+    InvalidProgramId,
 }

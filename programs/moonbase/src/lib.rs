@@ -407,10 +407,16 @@ pub mod moonbase {
     // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Withdraw withheld tax from a token account and distribute it
+    /// STEP 1: Harvest fees from user token accounts to the mint
+    /// Callable by anyone - keeper bot should call this in batches
+    pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
+        tax::crank_harvest_fees(ctx)
+    }
+
+    /// STEP 2: Withdraw total tax from mint and distribute it
     /// Callable by anyone - program-controlled withdraw authority
-    pub fn withdraw_withheld_tax(ctx: Context<WithdrawWithheldTax>) -> Result<()> {
-        tax::withdraw_withheld_tax(ctx)
+    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+        tax::crank_distribute_tax(ctx)
     }
 
     /// Start a new distribution round (callable by anyone after 7-day cooldown)
