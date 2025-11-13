@@ -912,3 +912,53 @@ pub struct UpdateTaxConfig<'info> {
     pub authority: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct UpdateNftFloorSweepWhitelist<'info> {
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED.as_ref()],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Account<'info, TaxConfig>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawNftFloorSweepFunds<'info> {
+    #[account(
+        seeds = [TAX_CONFIG_SEED.as_ref()],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Account<'info, TaxConfig>,
+    
+    /// CHECK: Whitelisted address that can withdraw funds
+    pub whitelisted_address: Signer<'info>,
+    
+    /// CHECK: Withdraw withheld authority PDA (signs for transfers from vault)
+    #[account(
+        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub withdraw_withheld_authority: AccountInfo<'info>,
+    
+    #[account(mut)]
+    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    /// CHECK: Whitelisted address's token account (receives DogeBtc)
+    pub whitelisted_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    
+    pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
+}
+
