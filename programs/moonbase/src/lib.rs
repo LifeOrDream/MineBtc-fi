@@ -12,7 +12,8 @@ pub use instructions::user::*;
 pub use instructions::stake::*;
 pub use instructions::game::*;
 pub use instructions::eggs::*;
-pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier};
+pub use instructions::tax::*;
+pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
 
 declare_id!("G6sVLJTtBz2A1uVKtKxMmuT1PMehSiCu4go7jRk3numX");
 
@@ -25,6 +26,7 @@ pub mod moonbase {
     use instructions::stake::{self};
     use instructions::game::{self};
     use instructions::eggs::{self};
+    use instructions::tax::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -399,5 +401,43 @@ pub mod moonbase {
     /// Unstake a Dragon Egg (remove hashpower boost)
     pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
         eggs::unstake_dragon_egg(ctx)
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Withdraw withheld tax from a token account and distribute it
+    /// Callable by anyone - program-controlled withdraw authority
+    pub fn withdraw_withheld_tax(ctx: Context<WithdrawWithheldTax>) -> Result<()> {
+        tax::withdraw_withheld_tax(ctx)
+    }
+
+    /// Start a new distribution round (callable by anyone after 7-day cooldown)
+    pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
+        tax::start_distribution_round(ctx)
+    }
+
+    /// Calculate leaderboard position for one faction
+    /// Must be called 12 times to build complete leaderboard
+    pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
+        tax::calculate_faction_leaderboard_position(ctx)
+    }
+
+    /// Calculate rewards for all factions based on leaderboard
+    /// Can only be called after all 12 factions are on leaderboard
+    pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
+        tax::calculate_faction_rewards(ctx)
+    }
+
+    /// Claim treasury rewards for one faction
+    /// Adds rewards to staking reward indexes (50% each to dbtc and lp stakers)
+    pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
+        tax::claim_faction_treasury_rewards(ctx)
+    }
+
+    /// Finish distribution round (check all factions claimed and reset state)
+    pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
+        tax::finish_distribution_round(ctx)
     }
 }

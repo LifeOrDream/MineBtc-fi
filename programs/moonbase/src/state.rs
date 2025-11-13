@@ -82,6 +82,13 @@ pub const DBTC_EMISSION_VAULT_SEED: &[u8] = b"dbtc-emission-vault";
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const EGG_CONFIG_SEED: &[u8] = b"egg-config";
 
+// PDAs for Tax system
+pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
+pub const WITHDRAW_WITHHELD_AUTHORITY_SEED: &[u8] = b"withdraw-withheld-authority";
+pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
+pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
+pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
+
 /// ------------ GLOBAL CONFIG ------------
 
 /// Global configuration for the Moon Facility program
@@ -408,6 +415,81 @@ impl HashpowerConfig {
         1; // bump
 }
 
+
+// ========================================================================================
+// ============================= TAX CONFIG ACCOUNT ==============================
+// ========================================================================================
+
+/// Tax Configuration PDA (Seed: `[b"tax-config"]`)
+/// Manages tax distribution, faction treasury rewards, and NFT floor sweep operations
+#[account]
+pub struct TaxConfig {
+    pub bump: u8,
+    
+    /// Percentage of withheld tax that goes to NFT floor sweep
+    pub nft_floor_sweep_pct: u8,
+    /// Percentage of withheld tax that goes to faction treasury
+    pub faction_treasury_pct: u8,
+    
+    /// Total amount of DogeBtc burnt so far (cumulative)
+    pub total_burnt: u64,
+    
+    /// Current distribution round state
+    pub round_active: bool,
+    /// Timestamp when current distribution round started
+    pub start_timestamp: i64,
+    /// Timestamp when last distribution round ended (for 7-day cooldown)
+    pub end_timestamp: i64,
+    
+    /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)
+    /// Rank 0 = highest hashpower, Rank 11 = lowest hashpower
+    pub leaderboard_faction_ids: Vec<u8>,
+    /// Leaderboard hashpower values (index = rank, value = hashpower)
+    pub leaderboard_hashpower: Vec<u64>,
+    /// Number of factions added to leaderboard so far (0-12)
+    pub leaderboard_factions_count: u8,
+    
+    /// Faction rewards: DogeBtc amount each faction gets (index = rank, value = dbtc_amount)
+    pub faction_rewards: Vec<u64>,
+    /// Whether rewards have been calculated for current round
+    pub rewards_calculated: bool,
+    
+    /// Faction claim status: whether each faction has claimed rewards (index = faction_id, value = claimed)
+    pub faction_claimed: Vec<bool>,
+    /// Number of factions that have claimed rewards
+    pub factions_claimed_count: u8,
+    
+    /// PDA addresses for tax system
+    pub withdraw_withheld_authority: Pubkey,
+    pub faction_treasury_vault: Pubkey,
+    pub nft_floor_sweep_vault: Pubkey,
+    pub nft_sale_sol_vault: Pubkey,
+}
+
+impl TaxConfig {
+    pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
+    
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        1 +     // nft_floor_sweep_pct
+        1 +     // burn_tax_pct
+        1 +     // faction_treasury_pct
+        8 +     // total_burnt
+        1 +     // round_active (bool)
+        8 +     // start_timestamp
+        8 +     // end_timestamp
+        4 + (MAX_FACTIONS * 1) + // leaderboard_faction_ids Vec<u8>
+        4 + (MAX_FACTIONS * 8) + // leaderboard_hashpower Vec<u64>
+        1 +     // leaderboard_factions_count
+        4 + (MAX_FACTIONS * 8) + // faction_rewards Vec<u64>
+        1 +     // rewards_calculated (bool)
+        4 + (MAX_FACTIONS * 1) + // faction_claimed Vec<bool>
+        1 +     // factions_claimed_count
+        32 +    // withdraw_withheld_authority
+        32 +    // faction_treasury_vault
+        32 +    // nft_floor_sweep_vault
+        32;     // nft_sale_sol_vault
+}
  
 
 

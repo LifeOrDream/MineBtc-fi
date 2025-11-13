@@ -348,4 +348,7 @@ pub enum ErrorCode {
 
     #[msg("Invalid init type")]
     InvalidInitType,
+
+    #[msg("Invalid state for this operation")]
+    InvalidState,
 }
