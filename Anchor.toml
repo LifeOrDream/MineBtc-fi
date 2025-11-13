@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-moonbase = "9xwvYvnjA3TVRpPVUonvDQcchTxgo7dRi7zwi2zvoSAG"
+moonbase = "Fn2ub1DM5ZmYqyh9o1ir44onjABQRLq82HJ7YN2CZCCJ"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]

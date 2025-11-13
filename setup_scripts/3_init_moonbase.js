@@ -144,6 +144,7 @@ async function main() {
     try {
         // 1. Initialize MoonBase Program (GlobalConfig + DogeBtcMining + SOL Treasury)
         await initializeMoonbaseProgram(moonbaseProgram);
+        return;
 
         // 2. Initialize System Accounts (Referral + Buybacks)
         await initializeSystemAccounts(moonbaseProgram);
