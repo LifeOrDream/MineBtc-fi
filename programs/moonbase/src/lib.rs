@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
 pub use instructions::eggs::CreatorInput;
 
-declare_id!("G6sVLJTtBz2A1uVKtKxMmuT1PMehSiCu4go7jRk3numX");
+declare_id!("9xwvYvnjA3TVRpPVUonvDQcchTxgo7dRi7zwi2zvoSAG");
 
 #[program]
 pub mod moonbase {
@@ -86,6 +86,39 @@ pub mod moonbase {
     ) -> Result<()> {
         admin::create_dragon_egg_collection_internal(ctx, name, uri)
     }
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize royalties on the Dragon Egg collection (admin only)
+    pub fn init_dragon_egg_royalties(
+        ctx: Context<InitDragonEggRoyalties>,
+        basis_points: u16,
+        creators: Vec<CreatorInput>,
+    ) -> Result<()> {
+        eggs::init_dragon_egg_royalties(ctx, basis_points, creators)
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
@@ -164,40 +197,6 @@ pub mod moonbase {
     // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
- 
-    /// Initialize the loot rewards system 
-    // ----------------------------------------------------------
-    // ------------ WITHDRAW SOL FEES (ANYONE) ------------------
-    // ----------------------------------------------------------
-
-    /// Withdraw collected SOL fees from the treasury
-    ///
-    /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
-    /// 1. For DOGE_BTC stakers
-    /// 2. For liquidity providers
-    /// 3. For devs
-    ///
-    /// Internally, 10% is sent to loot rewards.
-    ///
-    pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
-        admin::distribute_sol_fees_internal(ctx)
-    }
-
-    /// Query function to get treasury info for external programs
-    /// Returns available balance after accounting for POL reserves and loot percentage
-    pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
-        admin::query_treasury_info_internal(ctx)
-    }
-
-    /// Query function to get global config values for external programs
-    pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
-        admin::query_global_config_internal(ctx)
-    }
-
-    /// Query function to get token prices (dBTC and LP) for external programs
-    pub fn query_token_prices(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
-        admin::query_token_prices_internal(ctx)
-    }
 
     /// Initialize the global game state for Faction Surge
     pub fn initialize_game_state(
@@ -232,6 +231,65 @@ pub mod moonbase {
         admin::remove_cranker_bot_internal(ctx, bot_pubkey)
     }
 
+
+    /// Initialize TaxConfig account and create vault token accounts (admin only)
+    pub fn initialize_tax_config(
+        ctx: Context<InitializeTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+        nft_floor_sweep_whitelisted_address: Pubkey,
+    ) -> Result<()> {
+        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, nft_floor_sweep_whitelisted_address)
+    }
+
+    /// Update tax distribution percentages (admin only)
+    pub fn update_tax_config(
+        ctx: Context<UpdateTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+    ) -> Result<()> {
+        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
+    }
+
+    /// Update NFT floor sweep whitelisted address (admin only)
+    pub fn update_nft_floor_sweep_whitelist(
+        ctx: Context<UpdateNftFloorSweepWhitelist>,
+        new_whitelisted_address: Pubkey,
+    ) -> Result<()> {
+        tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
+    }
+ 
+    // ----------------------------------------------------------
+    // ------------ WITHDRAW SOL FEES (ANYONE) ------------------
+    // ----------------------------------------------------------
+
+
+
+    /// Withdraw DogeBtc from NFT floor sweep vault (whitelisted address only)
+    pub fn withdraw_nft_floor_sweep_funds(
+        ctx: Context<WithdrawNftFloorSweepFunds>,
+        amount: u64,
+    ) -> Result<()> {
+        tax::withdraw_nft_floor_sweep_funds(ctx, amount)
+    }
+
+
+
+    /// Withdraw collected SOL fees from the treasury
+    ///
+    /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
+    /// 1. For DOGE_BTC stakers
+    /// 2. For liquidity providers
+    /// 3. For devs
+    ///
+    /// Internally, 10% is sent to loot rewards.
+    ///
+    pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
+        admin::distribute_sol_fees_internal(ctx)
+    }
+
+
+
     // ----------------------------------------------------------------------------------------
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------
@@ -261,25 +319,54 @@ pub mod moonbase {
     // All old moonbase builder functions have been removed as part of the Faction Surge pivot.
     // The new system uses PlayerData instead of UserMoonBaseInstance.
 
+
+
+
     // ----------------------------------------------------------------------------------------
-    // ------------ FACTION SURGE RAFFLE FUNCTIONS -------------------------------------------
+    // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize a player account for the Faction Surge game
-    pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
-        user::initialize_player(ctx, faction_id, referral_code)
+    /// STEP 1: Harvest fees from user token accounts to the mint
+    /// Callable by anyone - keeper bot should call this in batches
+    pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
+        tax::crank_harvest_fees(ctx)
     }
 
-    /// Join a round by betting SOL
-    /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
-    pub fn join_round(
-        ctx: Context<JoinRound>, 
-        amount: u64,
-        bet_type: BetType,
-        use_ticket: Option<u8>,
-    ) -> Result<()> {
-        user::join_round(ctx, amount, bet_type, use_ticket)
+    /// STEP 2: Withdraw total tax from mint and distribute it
+    /// Callable by anyone - program-controlled withdraw authority
+    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+        tax::crank_distribute_tax(ctx)
     }
+
+    /// Start a new distribution round (callable by anyone after 7-day cooldown)
+    pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
+        tax::start_distribution_round(ctx)
+    }
+
+    /// Calculate leaderboard position for one faction
+    /// Must be called 12 times to build complete leaderboard
+    pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
+        tax::calculate_faction_leaderboard_position(ctx)
+    }
+
+    /// Calculate rewards for all factions based on leaderboard
+    /// Can only be called after all 12 factions are on leaderboard
+    pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
+        tax::calculate_faction_rewards(ctx)
+    }
+
+    /// Claim treasury rewards for one faction
+    /// Adds rewards to staking reward indexes (50% each to dbtc and lp stakers)
+    pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
+        tax::claim_faction_treasury_rewards(ctx)
+    }
+
+    /// Finish distribution round (check all factions claimed and reset state)
+    pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
+        tax::finish_distribution_round(ctx)
+    }
+
+
 
     // ----------------------------------------------------------------------------------------
     // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
@@ -307,6 +394,29 @@ pub mod moonbase {
         game::end_round(ctx, revealed_seed, next_round_commit)
     }
 
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ FACTION SURGE RAFFLE FUNCTIONS -------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize a player account for the Faction Surge game
+    pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
+        user::initialize_player(ctx, faction_id, referral_code)
+    }
+
+    /// Join a round by betting SOL
+    /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
+    pub fn join_round(
+        ctx: Context<JoinRound>, 
+        amount: u64,
+        bet_type: BetType,
+        use_ticket: Option<u8>,
+    ) -> Result<()> {
+        user::join_round(ctx, amount, bet_type, use_ticket)
+    }
+
+
     /// Claim rewards for a user after round ends
     pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
         user::claim_rewards(ctx)
@@ -326,6 +436,7 @@ pub mod moonbase {
     pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         user::execute_autominer_bet(ctx)
     }
+
 
  
     // ----------------------------------------------------------------------------------------
@@ -379,8 +490,6 @@ pub mod moonbase {
         stake::claim_referral_rewards(ctx)
     }
 
-
-
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
@@ -404,97 +513,26 @@ pub mod moonbase {
         eggs::unstake_dragon_egg(ctx)
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
-    // ----------------------------------------------------------------------------------------
 
-    /// STEP 1: Harvest fees from user token accounts to the mint
-    /// Callable by anyone - keeper bot should call this in batches
-    pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
-        tax::crank_harvest_fees(ctx)
+
+
+    /// Query function to get treasury info for external programs
+    /// Returns available balance after accounting for POL reserves and loot percentage
+    pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
+        admin::query_treasury_info_internal(ctx)
     }
 
-    /// STEP 2: Withdraw total tax from mint and distribute it
-    /// Callable by anyone - program-controlled withdraw authority
-    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
-        tax::crank_distribute_tax(ctx)
+    /// Query function to get global config values for external programs
+    pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
+        admin::query_global_config_internal(ctx)
     }
 
-    /// Start a new distribution round (callable by anyone after 7-day cooldown)
-    pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
-        tax::start_distribution_round(ctx)
+    /// Query function to get token prices (dBTC and LP) for external programs
+    pub fn query_token_prices(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
+        admin::query_token_prices_internal(ctx)
     }
 
-    /// Calculate leaderboard position for one faction
-    /// Must be called 12 times to build complete leaderboard
-    pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
-        tax::calculate_faction_leaderboard_position(ctx)
-    }
 
-    /// Calculate rewards for all factions based on leaderboard
-    /// Can only be called after all 12 factions are on leaderboard
-    pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
-        tax::calculate_faction_rewards(ctx)
-    }
-
-    /// Claim treasury rewards for one faction
-    /// Adds rewards to staking reward indexes (50% each to dbtc and lp stakers)
-    pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
-        tax::claim_faction_treasury_rewards(ctx)
-    }
-
-    /// Finish distribution round (check all factions claimed and reset state)
-    pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
-        tax::finish_distribution_round(ctx)
-    }
-
-    /// Initialize TaxConfig account and create vault token accounts (admin only)
-    pub fn initialize_tax_config(
-        ctx: Context<InitializeTaxConfig>,
-        nft_floor_sweep_pct: u8,
-        faction_treasury_pct: u8,
-        nft_floor_sweep_whitelisted_address: Pubkey,
-    ) -> Result<()> {
-        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, nft_floor_sweep_whitelisted_address)
-    }
-
-    /// Update tax distribution percentages (admin only)
-    pub fn update_tax_config(
-        ctx: Context<UpdateTaxConfig>,
-        nft_floor_sweep_pct: u8,
-        faction_treasury_pct: u8,
-    ) -> Result<()> {
-        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
-    }
-
-    /// Update NFT floor sweep whitelisted address (admin only)
-    pub fn update_nft_floor_sweep_whitelist(
-        ctx: Context<UpdateNftFloorSweepWhitelist>,
-        new_whitelisted_address: Pubkey,
-    ) -> Result<()> {
-        tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
-    }
-
-    /// Withdraw DogeBtc from NFT floor sweep vault (whitelisted address only)
-    pub fn withdraw_nft_floor_sweep_funds(
-        ctx: Context<WithdrawNftFloorSweepFunds>,
-        amount: u64,
-    ) -> Result<()> {
-        tax::withdraw_nft_floor_sweep_funds(ctx, amount)
-    }
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Initialize royalties on the Dragon Egg collection (admin only)
-    pub fn init_dragon_egg_royalties(
-        ctx: Context<InitDragonEggRoyalties>,
-        basis_points: u16,
-        creators: Vec<CreatorInput>,
-    ) -> Result<()> {
-        eggs::init_dragon_egg_royalties(ctx, basis_points, creators)
-    }
 
    
 }

@@ -663,8 +663,8 @@ async function setWithdrawWithheldAuthorityToPDA(connection, deployer, deploymen
         const gameDeploymentPath = path.resolve(__dirname, config.deployment.paths.deployments_dir, `${CLUSTER}.json`);
         if (fs.existsSync(gameDeploymentPath)) {
             const gameDeploymentData = JSON.parse(fs.readFileSync(gameDeploymentPath, 'utf8'));
-            if (gameDeploymentData.moonbase_program_id) {
-                moonbaseProgramId = new PublicKey(gameDeploymentData.moonbase_program_id);
+            if (gameDeploymentData.MOON_BASE_PROGRAM_ID) {
+                moonbaseProgramId = new PublicKey(gameDeploymentData.MOON_BASE_PROGRAM_ID);
             }
         }
     } catch (error) {
