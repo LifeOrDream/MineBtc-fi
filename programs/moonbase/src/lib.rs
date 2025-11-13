@@ -24,6 +24,7 @@ pub mod moonbase {
     use crate::instructions::game::{self};
     use crate::instructions::user::{self};
     use crate::instructions::stake::{self};
+    use crate::instructions::eggs::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -266,14 +267,7 @@ pub mod moonbase {
         user::initialize_player(ctx, faction_id, referral_code)
     }
 
-    /// Update personal hashpower (CPI-only, called by mooneconomy program)
-    pub fn update_personal_hashpower(
-        ctx: Context<UpdatePersonalHashpower>,
-        amount: i128,
-        user_pubkey: Pubkey,
-    ) -> Result<()> {
-        user::update_personal_hashpower(ctx, amount, user_pubkey)
-    }
+    // Note: update_personal_hashpower function removed - no longer needed
 
     /// Join a round by betting SOL
     /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
@@ -392,23 +386,22 @@ pub mod moonbase {
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Mint a Dragon Egg NFT with specified faction, tier, and ticket selection
+    /// Mint a Dragon Egg NFT with specified faction and tier
     pub fn mint_dragon_egg(
         ctx: Context<MintDragonEgg>,
         faction_id: u8,
         tier: u8,
-        ticket_tier_index: u8,
     ) -> Result<()> {
-        user::mint_dragon_egg(ctx, faction_id, tier, ticket_tier_index)
+        eggs::mint_dragon_egg(ctx, faction_id, tier)
     }
 
     /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)
     pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
-        user::stake_dragon_egg(ctx)
+        eggs::stake_dragon_egg(ctx)
     }
 
     /// Unstake a Dragon Egg (remove hashpower boost)
     pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
-        user::unstake_dragon_egg(ctx)
+        eggs::unstake_dragon_egg(ctx)
     }
 }

@@ -1209,7 +1209,7 @@ pub struct UnstakeDogeBtc<'info> {
         seeds = [DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(), &[user_position.faction_id]],
         bump,
     )]
-    /// Authority of the custodian (PDA that signs for token transfers)
+    /// CHECK: Authority of the custodian (PDA that signs for token transfers)
     pub dbtc_custodian_authority: UncheckedAccount<'info>,
     
     /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
@@ -1366,7 +1366,7 @@ pub struct UnstakeLpTokens<'info> {
         seeds = [b"lp-custodian-authority", &[user_position.faction_id]],
         bump,
     )]
-    /// Authority of the custodian (PDA that signs for token transfers)
+    /// CHECK: Authority of the custodian (PDA that signs for token transfers)
     pub liquidity_custodian_authority: UncheckedAccount<'info>,
     
     /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
@@ -1490,7 +1490,7 @@ pub struct ClaimDbtcRewards<'info> {
         seeds = [b"dbtc-emission-vault-authority".as_ref()],
         bump
     )]
-    /// Authority of the emission vault (PDA that signs for token transfers)
+    /// CHECK: Authority of the emission vault (PDA that signs for token transfers)
     pub dbtc_emission_vault_authority: UncheckedAccount<'info>,
     
     /// User claiming rewards
@@ -1548,7 +1548,7 @@ pub struct ClaimReferralRewards<'info> {
         seeds = [b"dbtc-emission-vault-authority".as_ref()],
         bump
     )]
-    /// Authority of the emission vault (PDA that signs for token transfers)
+    /// CHECK: Authority of the emission vault (PDA that signs for token transfers)
     pub dbtc_emission_vault_authority: UncheckedAccount<'info>,
     
     /// Referrer claiming rewards

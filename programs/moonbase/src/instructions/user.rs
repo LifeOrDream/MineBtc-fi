@@ -228,14 +228,8 @@ fn internal_join_round<'info>(
     use_ticket: Option<u8>,
 ) -> Result<()> {
     let clock = Clock::get()?;
-
-    let global_state = global_state;
-    let global_config = global_config;
     
-    let player_data = &mut ctx.accounts.player_data;
-    let faction_state = &mut ctx.accounts.faction_state;
-    let game_session = &mut ctx.accounts.game_session;    
-    require!(  game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
+    require!(game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
     msg!("   Validated GameSession...");
     require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
     msg!("     ✓ Block assignments are set");
@@ -570,6 +564,7 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     msg!("   Total DogeBtc reward: {} tokens", dbtc_reward);
     
     // Add DogeBtc reward to pending_dbtc_rewards (user will claim later via claim_dbtc_rewards with refining fee)
+    let player_data = &mut ctx.accounts.player_data;
     if dbtc_reward > 0 {
         msg!("   Processing DogeBtc rewards...");
         
@@ -580,8 +575,7 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
             msg!("     Referral fee (5%): {} dbtc", fee);
             
             // Add fee to referrer's pending rewards
-            if let Some(referrer_rewards_acc) = &mut ctx.accounts.referrer_rewards {
-                let referrer_rewards = referrer_rewards_acc.as_mut();
+            if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
                 referrer_rewards.pending_dbtc_rewards += fee;
                 referrer_rewards.total_dbtc_earned += fee;
                 msg!("     Added {} dbtc to referrer's rewards", fee);
@@ -601,7 +595,6 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     
     // Update player stats
     msg!("   Updating player statistics...");
-    let player_data = &mut ctx.accounts.player_data;
     if is_winner {
         player_data.rounds_won += 1;
         msg!("     Rounds won: {}", player_data.rounds_won);
@@ -886,6 +879,34 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     msg!("   {} bets of {} SOL each for round {}", num_bets, bet_amount_per_bet, current_round_id);
     msg!("   Rounds remaining: {}", new_rounds_remaining);
     
+    Ok(())
+}
+
+/// Cancel autominer vault and return remaining SOL to owner
+pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
+    msg!("🤖 [cancel_autominer] Canceling autominer vault");
+    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
+    
+    require!(
+        ctx.accounts.authority.key() == ctx.accounts.autominer_vault.owner,
+        ErrorCode::Unauthorized
+    );
+    
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    let remaining_sol = vault_lamports.saturating_sub(rent);
+    
+    msg!("   Vault lamports: {}", vault_lamports);
+    msg!("   Rent exempt: {}", rent);
+    msg!("   Remaining SOL to return: {}", remaining_sol);
+    
+    if remaining_sol > 0 {
+        **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
+        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
+        msg!("   ✓ Transferred {} SOL to owner", remaining_sol);
+    }
+    
+    msg!("✅ [cancel_autominer] Autominer vault canceled successfully");
     Ok(())
 }
  
@@ -1266,6 +1287,22 @@ pub struct ExecuteAutominerBet<'info> {
     /// Caller (bot or anyone) - doesn't need to be owner
     #[account(mut)]
     pub caller: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CancelAutominer<'info> {
+    #[account(
+        mut,
+        close = authority,
+        seeds = [AUTOMINER_VAULT_SEED.as_ref(), autominer_vault.owner.as_ref()],
+        bump = autominer_vault.vault_bump
+    )]
+    pub autominer_vault: Account<'info, AutominerVault>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
     
     pub system_program: Program<'info, System>,
 }
