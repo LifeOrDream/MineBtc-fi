@@ -20,9 +20,8 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     let player_data = &mut ctx.accounts.player_data;
     let global_config = &mut ctx.accounts.global_config;
     
-    msg!("   Total players before: {}", global_config.total_players);
-    // Increment total players count
-    global_config.total_players = global_config.total_players.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   Total players before: {}", global_config.total_players);    // Increment total players count
+    global_config.total_players = global_config.total_players + 1;
     msg!("   Total players after: {}", global_config.total_players);
     
     // Validate faction_id

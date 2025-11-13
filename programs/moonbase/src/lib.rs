@@ -36,8 +36,8 @@ pub mod moonbase {
     /// Initialize the global program configuration
     /// This function can only be called once as it creates the program's configuration accounts
     /// It will fail if the accounts already exist
-    pub fn initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
-        admin::internal_initialize(ctx, creation_fee_recipient)
+    pub fn initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
+        admin::internal_initialize(ctx, fee_recipient)
     }
 
     /// Set the Raydium pool state address (admin only)
@@ -117,14 +117,12 @@ pub mod moonbase {
     pub fn update_config(
         ctx: Context<UpdateConfigAc>,
         new_authority: Option<Pubkey>,
-        new_fee_collector: Option<Pubkey>,
-        new_creation_fee_recipient: Option<Pubkey>,
+        new_fee_recipient: Option<Pubkey>,
     ) -> Result<()> {
         admin::update_config_internal(
             ctx,
             new_authority,
-            new_fee_collector,
-            new_creation_fee_recipient,
+            new_fee_recipient,
         )
     }
 
@@ -504,26 +502,7 @@ pub mod moonbase {
     pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
         eggs::unstake_dragon_egg(ctx)
     }
-
-
-
-
-    /// Query function to get treasury info for external programs
-    /// Returns available balance after accounting for POL reserves and loot percentage
-    pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
-        admin::query_treasury_info_internal(ctx)
-    }
-
-    /// Query function to get global config values for external programs
-    pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
-        admin::query_global_config_internal(ctx)
-    }
-
-    /// Query function to get token prices (dBTC and LP) for external programs
-    pub fn query_token_prices(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
-        admin::query_token_prices_internal(ctx)
-    }
-
+ 
 
 
    

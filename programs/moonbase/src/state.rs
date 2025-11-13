@@ -89,23 +89,26 @@ pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
 pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
+// ========== DRAGON EGG NFT CONSTANTS ========== //
+pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
+
+pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
+pub const MAX_URI_LENGTH: usize = 200;
+
 /// ------------ GLOBAL CONFIG ------------
 
 /// Global configuration for the Moon Facility program
 #[account]
 pub struct GlobalConfig {
 
-    /// Whether the game is currently active
-    pub is_game_active: bool,
-
     /// total number of players in the game
     pub total_players: u64,
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
+    /// Direct recipient for egg mints + dev earnings revenue
+    pub fee_recipient: Pubkey,
 
-    /// Direct recipient for egg mints revenue
-    pub creation_fee_recipient: Pubkey,
     /// PDA account that holds collected SOL fees
     pub pda_sol_treasury: Pubkey,
 
@@ -127,18 +130,6 @@ pub struct GlobalConfig {
     pub bump: u8,
     /// Bump for SOL treasury PDA derivation
     pub treasury_bump: u8,
-
-    /// Dragon Egg collection address (Metaplex Core)
-    pub dragon_egg_collection: Pubkey,
-    /// Dragon Egg URIs organized by tier and faction
-    /// Structure: [tier][faction_id] = URI
-    /// 4 tiers (1, 2, 3, 4), each with URIs for each faction
-    pub dragon_egg_uris: Vec<Vec<String>>, // [tier][faction_index] = URI (tier 1-4)
-    /// Egg limits per tier: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
-    /// All tiers: 5000 eggs each
-    pub egg_limits: [u64; 4],
-    /// Global total power across all Dragon Eggs (sum of all egg powers)
-    pub global_dragon_egg_power: u64,
 }
 
 
@@ -177,14 +168,13 @@ impl DogeBtcDistConfig {
 
 
 impl GlobalConfig {
-    // discriminator + is_game_active + ext_authority + ext_fee_collector + creation_fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + bump + treasury_bump + supported_factions (vec) + raydium_pool_state + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + global_dragon_egg_power
+    // discriminator + ext_authority + ext_fee_collector + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + bump + treasury_bump + supported_factions (vec) + raydium_pool_state + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + global_dragon_egg_power
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     // Vec<Vec<String>> = 4 bytes (outer vec length) + 4 tiers * (4 bytes inner vec length + MAX_FACTIONS * (4 + MAX_URI_LENGTH))
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
-        1 +                     // is_game_active
         32 +                    // ext_authority
         32 +                    // ext_fee_collector  
-        32 +                    // creation_fee_recipient
+        32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config
         DogeBtcDistConfig::LEN + // dbtc_dist_config
@@ -413,6 +403,75 @@ impl HashpowerConfig {
         8 +  // dbtc_sol_price (u64)
         1; // bump
 }
+
+
+ 
+
+ 
+// ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
+
+
+
+/// Ticket tier option for egg minting
+/// When users mint eggs, they choose a ticket tier which gives them free tickets
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct TicketTier {
+    /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
+    pub ticket_value: u64,
+    /// Number of tickets given with this tier (e.g., 200 tickets)
+    pub ticket_count: u16,
+}
+
+impl TicketTier {
+    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
+}
+
+/// Global egg configuration
+#[account]
+pub struct EggConfig {
+    pub bump: u8,
+
+    /// Dragon Egg collection address (Metaplex Core)
+    pub dragon_egg_collection: Pubkey,
+
+    /// Dragon Egg URIs organized by tier and faction
+    /// Structure: [tier][faction_id] = URI
+    /// 4 tiers (1, 2, 3, 4), each with URIs for each faction
+    pub dragon_egg_uris: Vec<Vec<String>>, // [tier][faction_index] = URI (tier 1-4)
+
+    /// Egg limits per tier: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
+    /// All tiers: 5000 eggs each
+    pub egg_limits: [u64; 4],
+
+    /// Global total power across all Dragon Eggs (sum of all egg powers)
+    pub global_dragon_egg_power: u64,
+        
+    /// Total supply of eggs across all tiers
+    pub total_supply: u64,
+    /// Number of eggs minted so far
+    pub eggs_minted: u64,
+    
+    /// Price per egg tier: [tier1, tier2, tier3, tier4]
+    pub prices: [u64; 4],
+    
+    /// Available ticket tiers users can choose when minting (max 5 options)
+    /// Example: 0.001 SOL × 2000, 0.01 SOL × 200, 0.1 SOL × 20
+    pub ticket_tiers: Vec<TicketTier>,
+}
+
+impl EggConfig {
+    pub const MAX_TICKET_TIERS: usize = 5;
+    
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // total_supply
+        8 +     // eggs_minted
+        (4 * 8) + // prices [u64; 4]
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+}
+
+
+
 
 
 // ========================================================================================
@@ -893,61 +952,6 @@ impl ReferralRewards {
         8 +     // pending_dbtc_rewards
         8 +     // total_sol_earned
         8;      // total_dbtc_earned
-}
-
- 
-
- 
-// ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
-
-// ========== DRAGON EGG NFT CONSTANTS ========== //
-pub const BASE_EGG_POWER: u32 = 100;
-pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
-
-pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
-pub const MAX_URI_LENGTH: usize = 200;
-
-/// Ticket tier option for egg minting
-/// When users mint eggs, they choose a ticket tier which gives them free tickets
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct TicketTier {
-    /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
-    pub ticket_value: u64,
-    /// Number of tickets given with this tier (e.g., 200 tickets)
-    pub ticket_count: u16,
-}
-
-impl TicketTier {
-    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
-}
-
-/// Global egg configuration
-#[account]
-pub struct EggConfig {
-    pub bump: u8,
-    
-    /// Total supply of eggs across all tiers
-    pub total_supply: u64,
-    /// Number of eggs minted so far
-    pub eggs_minted: u64,
-    
-    /// Price per egg tier: [tier1, tier2, tier3, tier4]
-    pub prices: [u64; 4],
-    
-    /// Available ticket tiers users can choose when minting (max 5 options)
-    /// Example: 0.001 SOL × 2000, 0.01 SOL × 200, 0.1 SOL × 20
-    pub ticket_tiers: Vec<TicketTier>,
-}
-
-impl EggConfig {
-    pub const MAX_TICKET_TIERS: usize = 5;
-    
-    pub const LEN: usize = DISCRIMINATOR_SIZE +
-        1 +     // bump
-        8 +     // total_supply
-        8 +     // eggs_minted
-        (4 * 8) + // prices [u64; 4]
-        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
 }
 
 

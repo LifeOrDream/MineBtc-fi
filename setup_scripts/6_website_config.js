@@ -131,7 +131,7 @@ function generateWebsiteConfig(config, deployment) {
       // "expansions": config.expansions || [],
             
       // ========== AUTHORITIES ==========
-      "creation_fee_recipient": config.deployment?.creation_fee_recipient,
+      "fee_recipient": config.deployment?.fee_recipient,
       "transfer_fee_config_authority": config.deployment?.transfer_fee_config_authority,
                   
             // ========== MOON ECONOMY (if deployed) ==========

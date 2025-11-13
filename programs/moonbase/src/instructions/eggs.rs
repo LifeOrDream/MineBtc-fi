@@ -138,7 +138,7 @@ pub fn mint_dragon_egg(
     // Initialize Dragon Egg metadata
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
-        egg_metadata.power = BASE_EGG_POWER;
+        egg_metadata.power = 0;
         egg_metadata.dna = dna;
         egg_metadata.incubated_player_data = None;
     egg_metadata.multiplier = multiplier;
@@ -146,9 +146,6 @@ pub fn mint_dragon_egg(
         egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
         egg_metadata.created_at = Clock::get()?.unix_timestamp;
     egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
-
-    // Update global dragon egg power
-    global_config.global_dragon_egg_power += BASE_EGG_POWER as u64;
     
     // Update egg config stats
     egg_config.eggs_minted += 1;
@@ -182,7 +179,7 @@ pub fn mint_dragon_egg(
             name,
             uri,
             dna,
-            initial_power: BASE_EGG_POWER,
+            initial_power: 0,
         multiplier,
         faction_id,
     });

@@ -1939,7 +1939,7 @@
           }
         },
         {
-          "name": "creation_fee_recipient",
+          "name": "fee_recipient",
           "writable": true
         },
         {
@@ -2327,7 +2327,7 @@
           "type": "u64"
         },
         {
-          "name": "creation_fee_recipient",
+          "name": "fee_recipient",
           "type": "pubkey"
         }
       ]
@@ -4129,7 +4129,7 @@
           }
         },
         {
-          "name": "new_creation_fee_recipient",
+          "name": "new_fee_recipient",
           "type": {
             "option": "pubkey"
           }
@@ -6872,7 +6872,7 @@
             "type": "pubkey"
           },
           {
-            "name": "creation_fee_recipient",
+            "name": "fee_recipient",
             "docs": [
               "Direct recipient for 50% of creation fees"
             ],

@@ -8,46 +8,20 @@ use crate::errors::ErrorCode;
 
 use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface::{
-    self as token_if, // gives you CPI helpers such as `token_if::transfer`
+    self as token_if,  
     Mint as Mint2022,
     TokenAccount as TokenAccount2022,
-}; // ← the PROGRAM-ID wrapper (implements Id)
+};  
 
-// Import Raydium CP-Swap for CPI calls (actual CPI calls are in economy.rs)
-
-// constants
-pub const MAX_MODULE_CONFIGS: usize = 50; // ≈ 8.2 kB
-
-// Query data structures for external programs
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct TreasuryInfo {
-    pub total_balance: u64,
-    pub pol_reserves: u64,
-    pub rent_exempt_amount: u64,
-    pub available_for_withdrawal: u64,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct GlobalConfigInfo {
-    pub is_game_active: bool,
-    pub ext_authority: Pubkey,
-    pub ext_fee_collector: Pubkey,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct TokenPricesInfo {
-    pub dbtc_price_in_sol: u64,
-    pub lp_token_price_in_sol: u64,
-}
-
+ 
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: UPDATES, ADDING EXPANSIONS ------------
 // --------------------------------------------------------------------------------
 
-pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
+pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
     msg!("🔧 [internal_initialize] Initializing global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Creation fee recipient: {}", creation_fee_recipient);
+    msg!("   Creation fee recipient: {}", fee_recipient);
     
     let global_config = &mut ctx.accounts.global_config;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
@@ -55,11 +29,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     // Initialize GlobalConfig
     msg!("   Initializing GlobalConfig...");
     global_config.ext_authority = ctx.accounts.authority.key();
-    global_config.ext_fee_collector = ctx.accounts.authority.key(); // Initially set to authority, can be updated later
-    global_config.creation_fee_recipient = creation_fee_recipient;
+    global_config.fee_recipient = fee_recipient;
     msg!("     Authority: {}", global_config.ext_authority);
-    msg!("     Fee collector: {}", global_config.ext_fee_collector);
-    msg!("     Creation fee recipient: {}", global_config.creation_fee_recipient);
+    msg!("     Creation fee recipient: {}", global_config.fee_recipient);
 
     // Store both PDA bumps for future derivation
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
@@ -92,35 +64,17 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
     msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
 
-    // Initialize egg limits: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
-    global_config.egg_limits = [5000, 5000, 5000, 5000];
-    msg!("   Egg limits: tier1={}, tier2={}, tier3={}, tier4={}", 
-        global_config.egg_limits[0], 
-        global_config.egg_limits[1], 
-        global_config.egg_limits[2], 
-        global_config.egg_limits[3]
-    );
-
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
     msg!("   Raydium pool state: {} (default, must be set via admin)", global_config.raydium_pool_state);
 
-    // Initialize global dragon egg power tracker
-    global_config.global_dragon_egg_power = 0;
-    msg!("   Global dragon egg power: {}", global_config.global_dragon_egg_power);
-
     global_config.bump = ctx.bumps.global_config;
-    global_config.is_game_active = false; // Game starts inactive until initialized
     msg!("   Global config bump: {}", global_config.bump);
-    msg!("   Game active: {} (starts inactive)", global_config.is_game_active);
 
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
     msg!("   Supported factions: {} (empty, must be added via admin)", global_config.supported_factions.len());
 
-    // Initialize dragon egg URIs as empty vec of vecs (4 tiers, will be populated per faction)
-    global_config.dragon_egg_uris = Vec::new();
-    msg!("   Dragon egg URIs: {} (empty, must be set via admin)", global_config.dragon_egg_uris.len());
 
     // Optionally drop 1 lamport into the vault for future-proof rent-exempt status
     msg!("   Transferring 1 lamport to SOL treasury for rent-exempt status...");
@@ -177,56 +131,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     Ok(())
 }
 
-// ----------------------------------------------------------------------------------------
-// -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
-// ----------------------------------------------------------------------------------------
-
-/// Set Dragon Egg URIs for a specific tier and all factions (admin only)
-/// uris: Vec of URIs, one per faction (must match number of factions)
-/// tier: 1, 2, 3, or 4
-pub fn set_dragon_egg_uris_for_tier_internal(
-    ctx: Context<UpdateConfigAc>,
-    tier: u8,
-    uris: Vec<String>,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-
-    require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
-    require!(
-        uris.len() == global_config.supported_factions.len(),
-        ErrorCode::InvalidParameters
-    );
-
-    // Validate URIs
-    for uri in &uris {
-        require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
-    }
-
-    let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
-
-    // Ensure we have 4 tiers initialized
-    while global_config.dragon_egg_uris.len() <= tier_index {
-        global_config.dragon_egg_uris.push(Vec::new());
-    }
-
-    // Set URIs for this tier
-    global_config.dragon_egg_uris[tier_index] = uris.clone();
-
-    msg!("✅ Set {} Dragon Egg URIs for tier {}", uris.len(), tier);
-    msg!("   Factions: {}", global_config.supported_factions.len());
-
-    Ok(())
-}
-
-/// Clear all Dragon Egg URIs (admin only)
-pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateConfigAc>) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    global_config.dragon_egg_uris.clear();
-
-    msg!("✅ Cleared all Dragon Egg URIs");
-
-    Ok(())
-}
 
 /// Set the Raydium pool state address (admin only)
 /// This is a security measure to prevent using malicious pools
@@ -365,13 +269,64 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
     Ok(())
 }
 
+
+
+/// Initialize a faction state account
+pub fn initialize_faction_state_internal(
+    ctx: Context<InitializeFactionState>,
+    faction_id: u8,
+) -> Result<()> {
+    msg!("🏛️ [initialize_faction_state_internal] Initializing faction state");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Faction ID: {}", faction_id);
+    
+    let global_config = &ctx.accounts.global_config;
+    let faction_state = &mut ctx.accounts.faction_state;
+    
+    msg!("   Validating faction ID...");
+
+    // Validate faction_id exists
+    msg!("     Supported factions count: {}", global_config.supported_factions.len());
+    require!(
+        (faction_id as usize) < global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+    msg!("     ✓ Faction ID {} is valid", faction_id);
+
+    // Initialize faction state
+    msg!("   Initializing faction state fields...");
+    faction_state.bump = ctx.bumps.faction_state;
+    faction_state.faction_id = faction_id;
+    faction_state.total_dbtc_hashpower = 0;
+    faction_state.total_lp_hashpower = 0;
+    faction_state.total_sol_bets = 0;
+    faction_state.total_wins = 0;
+    faction_state.sol_reward_index = 0;
+    faction_state.dbtc_dbtc_reward_index = 0;
+    faction_state.lp_dbtc_reward_index = 0;
+    faction_state.motherlode_pot_size = 0;
+    msg!("     Bump: {}", faction_state.bump);
+    msg!("     Total DogeBtc hashpower: {}", faction_state.total_dbtc_hashpower);
+    msg!("     Total LP hashpower: {}", faction_state.total_lp_hashpower);
+    msg!("     Total SOL bets: {}", faction_state.total_sol_bets);
+    msg!("     Total wins: {}", faction_state.total_wins);
+    msg!("     SOL reward index: {}", faction_state.sol_reward_index);
+    msg!("     Motherlode pot size: {}", faction_state.motherlode_pot_size);
+
+    msg!("✅ [initialize_faction_state_internal] Faction state initialized successfully");
+    msg!("   Faction ID: {}", faction_id);
+    msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);
+
+    Ok(())
+}
+
+
 /// Update the global configuration parameters
 /// Can only be called by the current authority
 pub fn update_config_internal(
     ctx: Context<UpdateConfigAc>,
     new_authority: Option<Pubkey>,
-    new_fee_collector: Option<Pubkey>,
-    new_creation_fee_recipient: Option<Pubkey>,
+    new_fee_recipient: Option<Pubkey>,
 ) -> Result<()> {
     msg!("🔧 [update_config_internal] Updating global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -380,8 +335,7 @@ pub fn update_config_internal(
 
     msg!("   Current config:");
     msg!("     Authority: {}", global_config.ext_authority);
-    msg!("     Fee collector: {}", global_config.ext_fee_collector);
-    msg!("     Creation fee recipient: {}", global_config.creation_fee_recipient);
+    msg!("     Creation fee recipient: {}", global_config.fee_recipient);
 
     // Update fields if provided
     if let Some(authority) = new_authority {
@@ -392,20 +346,12 @@ pub fn update_config_internal(
         msg!("   Authority: not updated");
     }
 
-    // Update SOL claimer if provided
-    if let Some(fee_collector) = new_fee_collector {
-        let old_collector = global_config.ext_fee_collector;
-        global_config.ext_fee_collector = fee_collector;
-        msg!("   Updated fee collector: {} -> {}", old_collector, fee_collector);
-    } else {
-        msg!("   Fee collector: not updated");
-    }
 
     // Update creation fee recipient if provided
-    if let Some(creation_fee_recipient) = new_creation_fee_recipient {
-        let old_recipient = global_config.creation_fee_recipient;
-        global_config.creation_fee_recipient = creation_fee_recipient;
-        msg!("   Updated creation fee recipient: {} -> {}", old_recipient, creation_fee_recipient);
+    if let Some(fee_recipient) = new_fee_recipient {
+        let old_recipient = global_config.fee_recipient;
+        global_config.fee_recipient = fee_recipient;
+        msg!("   Updated creation fee recipient: {} -> {}", old_recipient, fee_recipient);
     } else {
         msg!("   Creation fee recipient: not updated");
     }
@@ -536,249 +482,13 @@ pub fn update_fees_internal(
     Ok(())
 }
 
-/// Update egg limits for tiers (admin only)
-pub fn update_egg_limits_internal(
-    ctx: Context<UpdateConfigAc>,
-    tier1_limit: Option<u64>,
-    tier2_limit: Option<u64>,
-    tier3_limit: Option<u64>,
-    tier4_limit: Option<u64>,
-) -> Result<()> {
-    msg!("🥚 [update_egg_limits_internal] Updating egg limits");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    
-    let global_config = &mut ctx.accounts.global_config;
-
-    msg!("   Current egg limits:");
-    msg!("     Tier 1: {}", global_config.egg_limits[0]);
-    msg!("     Tier 2: {}", global_config.egg_limits[1]);
-    msg!("     Tier 3: {}", global_config.egg_limits[2]);
-    msg!("     Tier 4: {}", global_config.egg_limits[3]);
-
-    if let Some(limit) = tier1_limit {
-        let old_limit = global_config.egg_limits[0];
-        global_config.egg_limits[0] = limit;
-        msg!("   Updated Tier 1: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 1: not updated");
-    }
-
-    if let Some(limit) = tier2_limit {
-        let old_limit = global_config.egg_limits[1];
-        global_config.egg_limits[1] = limit;
-        msg!("   Updated Tier 2: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 2: not updated");
-    }
-
-    if let Some(limit) = tier3_limit {
-        let old_limit = global_config.egg_limits[2];
-        global_config.egg_limits[2] = limit;
-        msg!("   Updated Tier 3: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 3: not updated");
-    }
-
-    if let Some(limit) = tier4_limit {
-        let old_limit = global_config.egg_limits[3];
-        global_config.egg_limits[3] = limit;
-        msg!("   Updated Tier 4: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 4: not updated");
-    }
-
-    msg!("✅ [update_egg_limits_internal] Egg limits updated successfully");
-    Ok(())
-}
-
-// --------------------------------------------------------------------------------
-// ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
-// --------------------------------------------------------------------------------
-
-/// Initialize the global game state for Faction Surge
-pub fn initialize_game_state_internal(
-    ctx: Context<InitializeGameState>,
-    round_duration_seconds: i64,
-) -> Result<()> {
-    msg!("🎮 [initialize_game_state_internal] Initializing global game state");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Round duration: {} seconds", round_duration_seconds);
-    
-    let global_game_state = &mut ctx.accounts.global_game_state;
-    let clock = Clock::get()?;
-
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-
-    // Initialize game state
-    msg!("   Initializing game state fields...");
-    global_game_state.bump = ctx.bumps.global_game_state;
-    global_game_state.is_active = true;
-    global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
-    global_game_state.round_end_timestamp = clock.unix_timestamp + round_duration_seconds;
-    global_game_state.round_duration_seconds = round_duration_seconds;
-    msg!("     Bump: {}", global_game_state.bump);
-    msg!("     Is active: {}", global_game_state.is_active);
-    msg!("     Current round ID: {} (will be incremented to 1 in start_round)", global_game_state.current_round_id);
-    msg!("     Round duration: {} seconds", global_game_state.round_duration_seconds);
-    msg!("     Round end timestamp: {}", global_game_state.round_end_timestamp);
-    
-    // Initialize previous round data
-    global_game_state.last_round_id = 0;
-    global_game_state.winning_faction_id = 0;
-    msg!("     Last round ID: {}", global_game_state.last_round_id);
-    msg!("     Winning faction ID: {} (no rounds completed yet)", global_game_state.winning_faction_id);
-    
-    // Initialize commit-reveal randomness fields
-    global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
-    global_game_state.current_round_seed = None;
-    global_game_state.next_round_commit = [0u8; 32]; // Should be set before first start_round
-    msg!("     Current round commit: {:?} (will be set in start_round)", global_game_state.current_round_commit);
-    msg!("     Current round seed: {:?} (will be set in end_round)", global_game_state.current_round_seed);
-    msg!("     Next round commit: {:?} (should be set before first start_round)", global_game_state.next_round_commit);
-    
-    // Initialize cumulative stats
-    global_game_state.total_sol_bets = 0;
-    global_game_state.total_global_passive_hashpower = 0;
-    msg!("     Total SOL bets: {}", global_game_state.total_sol_bets);
-    msg!("     Total global passive hashpower: {}", global_game_state.total_global_passive_hashpower);
-    
-    // Initialize empty cranker bots whitelist
-    global_game_state.cranker_bots = Vec::new();
-    msg!("     Cranker bots whitelist: {} (empty, must be added via admin)", global_game_state.cranker_bots.len());
-
-    msg!("✅ [initialize_game_state_internal] Global game state initialized successfully");
-    msg!("   Round duration: {} seconds", round_duration_seconds);
-    msg!("   First round ends at: {}", global_game_state.round_end_timestamp);
-
-    Ok(())
-}
-
-/// Initialize a faction state account
-pub fn initialize_faction_state_internal(
-    ctx: Context<InitializeFactionState>,
-    faction_id: u8,
-) -> Result<()> {
-    msg!("🏛️ [initialize_faction_state_internal] Initializing faction state");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Faction ID: {}", faction_id);
-    
-    let global_config = &ctx.accounts.global_config;
-    let faction_state = &mut ctx.accounts.faction_state;
-    
-    msg!("   Validating faction ID...");
-
-    // Validate faction_id exists
-    msg!("     Supported factions count: {}", global_config.supported_factions.len());
-    require!(
-        (faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-    msg!("     ✓ Faction ID {} is valid", faction_id);
-
-    // Initialize faction state
-    msg!("   Initializing faction state fields...");
-    faction_state.bump = ctx.bumps.faction_state;
-    faction_state.faction_id = faction_id;
-    faction_state.total_dbtc_hashpower = 0;
-    faction_state.total_lp_hashpower = 0;
-    faction_state.total_sol_bets = 0;
-    faction_state.total_wins = 0;
-    faction_state.sol_reward_index = 0;
-    faction_state.dbtc_dbtc_reward_index = 0;
-    faction_state.lp_dbtc_reward_index = 0;
-    faction_state.motherlode_pot_size = 0;
-    msg!("     Bump: {}", faction_state.bump);
-    msg!("     Total DogeBtc hashpower: {}", faction_state.total_dbtc_hashpower);
-    msg!("     Total LP hashpower: {}", faction_state.total_lp_hashpower);
-    msg!("     Total SOL bets: {}", faction_state.total_sol_bets);
-    msg!("     Total wins: {}", faction_state.total_wins);
-    msg!("     SOL reward index: {}", faction_state.sol_reward_index);
-    msg!("     Motherlode pot size: {}", faction_state.motherlode_pot_size);
-
-    msg!("✅ [initialize_faction_state_internal] Faction state initialized successfully");
-    msg!("   Faction ID: {}", faction_id);
-    msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);
-
-    Ok(())
-}
-
-/// Add a cranker bot to the whitelist (admin only)
-/// Maximum MAX_CRANKER_BOTS bots can be whitelisted
-pub fn add_cranker_bot_internal(
-    ctx: Context<UpdateGameState>,
-    bot_pubkey: Pubkey,
-) -> Result<()> {
-    msg!("🤖 [add_cranker_bot_internal] Adding cranker bot to whitelist");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Bot pubkey: {}", bot_pubkey);
-    
-    let global_game_state = &mut ctx.accounts.global_game_state;
-    
-    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
-    msg!("   Maximum allowed: {}", MAX_CRANKER_BOTS);
-    
-    // Check if bot is already whitelisted
-    require!(
-        !global_game_state.cranker_bots.contains(&bot_pubkey),
-        ErrorCode::InvalidParameters // Bot already whitelisted
-    );
-    msg!("     ✓ Bot not already whitelisted");
-    
-    // Check if we've reached the maximum
-    require!(
-        global_game_state.cranker_bots.len() < MAX_CRANKER_BOTS,
-        ErrorCode::InvalidParameters // Max cranker bots reached
-    );
-    msg!("     ✓ Under maximum limit");
-    
-    // Add bot to whitelist
-    global_game_state.cranker_bots.push(bot_pubkey);
-    msg!("   Added bot to whitelist");
-    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
-    
-    msg!("✅ [add_cranker_bot_internal] Cranker bot added successfully");
-    msg!("   Bot: {}", bot_pubkey);
-    msg!("   Total whitelisted bots: {}", global_game_state.cranker_bots.len());
-    
-    Ok(())
-}
-
-/// Remove a cranker bot from the whitelist (admin only)
-pub fn remove_cranker_bot_internal(
-    ctx: Context<UpdateGameState>,
-    bot_pubkey: Pubkey,
-) -> Result<()> {
-    msg!("🤖 [remove_cranker_bot_internal] Removing cranker bot from whitelist");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Bot pubkey: {}", bot_pubkey);
-    
-    let global_game_state = &mut ctx.accounts.global_game_state;
-    
-    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
-    
-    // Find and remove bot
-    let initial_count = global_game_state.cranker_bots.len();
-    global_game_state.cranker_bots.retain(|&bot| bot != bot_pubkey);
-    
-    require!(
-        global_game_state.cranker_bots.len() < initial_count,
-        ErrorCode::InvalidParameters // Bot not found in whitelist
-    );
-    msg!("     ✓ Bot removed from whitelist");
-    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
-    
-    msg!("✅ [remove_cranker_bot_internal] Cranker bot removed successfully");
-    msg!("   Bot: {}", bot_pubkey);
-    msg!("   Remaining whitelisted bots: {}", global_game_state.cranker_bots.len());
-    
-    Ok(())
-}
 
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
 // ------------ doge_btc_MINING :: INITIALIZATION & UPDATES ------------
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
+
 
 /// Initialize mining by setting the token vault and starting timestamp
 /// Can only be called once when mining_start_timestamp is 0
@@ -856,7 +566,308 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
     msg!("Deposited {} MDOGE into mining vault", amount);
     Ok(())
 }
+ 
 
+// ----------------------------------------------------------------------------------------
+// -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Create Dragon Egg collection with program PDA as authority
+pub fn create_dragon_egg_collection_internal(
+    ctx: Context<CreateDragonEggCollection>,
+    name: String,
+    uri: String,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    let authority = &ctx.accounts.authority;
+
+    // Verify authority
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    msg!("Creating Dragon Egg collection with program PDA as update authority");
+    msg!("Collection: {}", ctx.accounts.collection.key());
+    msg!(
+        "Collection Authority PDA: {}",
+        ctx.accounts.collection_authority.key()
+    );
+
+    // Get the collection authority bump for signing
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let _collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
+
+    // Create the collection using CPI
+    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
+    let mut cpi_builder = CreateCollectionV1CpiBuilder::new(mpl_core_program);
+
+    cpi_builder
+        .collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.authority.to_account_info())
+        .update_authority(Some(&ctx.accounts.collection_authority.to_account_info()))
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        .name(name.clone())
+        .uri(uri.clone())
+        .invoke()?;
+
+    // Store the collection address in global config
+    eggs_config.dragon_egg_collection = ctx.accounts.collection.key();
+
+    emit!(DragonEggCollectionCreated {
+        collection: ctx.accounts.collection.key(),
+        update_authority: ctx.accounts.collection_authority.key(),
+        name,
+        uri,
+    });
+
+    Ok(())
+}
+
+
+/// Set Dragon Egg URIs for a specific tier and all factions (admin only)
+/// uris: Vec of URIs, one per faction (must match number of factions)
+/// tier: 1, 2, 3, or 4
+pub fn set_dragon_egg_uris_for_tier_internal(
+    ctx: Context<UpdateEggsConfig>,
+    tier: u8,
+    uris: Vec<String>,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let eggs_config = &mut ctx.accounts.eggs_config;
+
+    require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
+    require!(
+        uris.len() == global_config.supported_factions.len(),
+        ErrorCode::InvalidParameters
+    );
+
+    // Validate URIs
+    for uri in &uris {
+        require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
+    }
+
+    let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
+
+    // Ensure we have 4 tiers initialized
+    while eggs_config.dragon_egg_uris.len() <= tier_index {
+        eggs_config.dragon_egg_uris.push(Vec::new());
+    }
+
+    // Set URIs for this tier
+    eggs_config.dragon_egg_uris[tier_index] = uris.clone();
+
+    msg!("✅ Set {} Dragon Egg URIs for tier {}", uris.len(), tier);
+    msg!("   Factions: {}", global_config.supported_factions.len());
+
+    Ok(())
+}
+
+/// Clear all Dragon Egg URIs (admin only)
+pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    eggs_config.dragon_egg_uris.clear();
+
+    msg!("✅ Cleared all Dragon Egg URIs");
+
+    Ok(())
+}
+
+
+
+/// Update egg limits for tiers (admin only)
+pub fn update_egg_limits_internal(
+    ctx: Context<UpdateEggsConfig>,
+    tier1_limit: Option<u64>,
+    tier2_limit: Option<u64>,
+    tier3_limit: Option<u64>,
+    tier4_limit: Option<u64>,
+) -> Result<()> {
+    msg!("🥚 [update_egg_limits_internal] Updating egg limits");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
+    let eggs_config = &mut ctx.accounts.eggs_config;
+
+    msg!("   Current egg limits:");
+    msg!("     Tier 1: {}", eggs_config.egg_limits[0]);
+    msg!("     Tier 2: {}", eggs_config.egg_limits[1]);
+    msg!("     Tier 3: {}", eggs_config.egg_limits[2]);
+    msg!("     Tier 4: {}", eggs_config.egg_limits[3]);
+
+    if let Some(limit) = tier1_limit {
+        let old_limit = eggs_config.egg_limits[0];
+        eggs_config.egg_limits[0] = limit;
+        msg!("   Updated Tier 1: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 1: not updated");
+    }
+
+    if let Some(limit) = tier2_limit {
+        let old_limit = eggs_config.egg_limits[1];
+        eggs_config.egg_limits[1] = limit;
+        msg!("   Updated Tier 2: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 2: not updated");
+    }
+
+    if let Some(limit) = tier3_limit {
+        let old_limit = eggs_config.egg_limits[2];
+        eggs_config.egg_limits[2] = limit;
+        msg!("   Updated Tier 3: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 3: not updated");
+    }
+
+    if let Some(limit) = tier4_limit {
+        let old_limit = eggs_config.egg_limits[3];
+        eggs_config.egg_limits[3] = limit;
+        msg!("   Updated Tier 4: {} -> {}", old_limit, limit);
+    } else {
+        msg!("   Tier 4: not updated");
+    }
+
+    msg!("✅ [update_egg_limits_internal] Egg limits updated successfully");
+    Ok(())
+}
+
+// --------------------------------------------------------------------------------
+// ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
+// --------------------------------------------------------------------------------
+
+/// Initialize the global game state for Faction Surge
+pub fn initialize_game_state_internal(
+    ctx: Context<InitializeGameState>,
+    round_duration_seconds: i64,
+) -> Result<()> {
+    msg!("🎮 [initialize_game_state_internal] Initializing global game state");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Round duration: {} seconds", round_duration_seconds);
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    let clock = Clock::get()?;
+
+    msg!("   Current timestamp: {}", clock.unix_timestamp);
+
+    // Initialize game state
+    msg!("   Initializing game state fields...");
+    global_game_state.bump = ctx.bumps.global_game_state;
+    global_game_state.is_active = true;
+    global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
+    global_game_state.round_end_timestamp = clock.unix_timestamp + round_duration_seconds;
+    global_game_state.round_duration_seconds = round_duration_seconds;
+    msg!("     Bump: {}", global_game_state.bump);
+    msg!("     Is active: {}", global_game_state.is_active);
+    msg!("     Current round ID: {} (will be incremented to 1 in start_round)", global_game_state.current_round_id);
+    msg!("     Round duration: {} seconds", global_game_state.round_duration_seconds);
+    msg!("     Round end timestamp: {}", global_game_state.round_end_timestamp);
+    
+    // Initialize previous round data
+    global_game_state.last_round_id = 0;
+    global_game_state.winning_faction_id = 0;
+    msg!("     Last round ID: {}", global_game_state.last_round_id);
+    msg!("     Winning faction ID: {} (no rounds completed yet)", global_game_state.winning_faction_id);
+    
+    // Initialize commit-reveal randomness fields
+    global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
+    global_game_state.current_round_seed = None;
+    global_game_state.next_round_commit = [0u8; 32]; // Should be set before first start_round
+    msg!("     Current round commit: {:?} (will be set in start_round)", global_game_state.current_round_commit);
+    msg!("     Current round seed: {:?} (will be set in end_round)", global_game_state.current_round_seed);
+    msg!("     Next round commit: {:?} (should be set before first start_round)", global_game_state.next_round_commit);
+    
+    // Initialize cumulative stats
+    global_game_state.total_sol_bets = 0;
+    global_game_state.total_global_passive_hashpower = 0;
+    msg!("     Total SOL bets: {}", global_game_state.total_sol_bets);
+    msg!("     Total global passive hashpower: {}", global_game_state.total_global_passive_hashpower);
+    
+    // Initialize empty cranker bots whitelist
+    global_game_state.cranker_bots = Vec::new();
+    msg!("     Cranker bots whitelist: {} (empty, must be added via admin)", global_game_state.cranker_bots.len());
+
+    msg!("✅ [initialize_game_state_internal] Global game state initialized successfully");
+    msg!("   Round duration: {} seconds", round_duration_seconds);
+    msg!("   First round ends at: {}", global_game_state.round_end_timestamp);
+
+    Ok(())
+}
+
+
+/// Add a cranker bot to the whitelist (admin only)
+/// Maximum MAX_CRANKER_BOTS bots can be whitelisted
+pub fn add_cranker_bot_internal(
+    ctx: Context<UpdateGameState>,
+    bot_pubkey: Pubkey,
+) -> Result<()> {
+    msg!("🤖 [add_cranker_bot_internal] Adding cranker bot to whitelist");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Bot pubkey: {}", bot_pubkey);
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    
+    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
+    msg!("   Maximum allowed: {}", MAX_CRANKER_BOTS);
+    
+    // Check if bot is already whitelisted
+    require!(
+        !global_game_state.cranker_bots.contains(&bot_pubkey),
+        ErrorCode::InvalidParameters // Bot already whitelisted
+    );
+    msg!("     ✓ Bot not already whitelisted");
+    
+    // Check if we've reached the maximum
+    require!(
+        global_game_state.cranker_bots.len() < MAX_CRANKER_BOTS,
+        ErrorCode::InvalidParameters // Max cranker bots reached
+    );
+    msg!("     ✓ Under maximum limit");
+    
+    // Add bot to whitelist
+    global_game_state.cranker_bots.push(bot_pubkey);
+    msg!("   Added bot to whitelist");
+    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
+    
+    msg!("✅ [add_cranker_bot_internal] Cranker bot added successfully");
+    msg!("   Bot: {}", bot_pubkey);
+    msg!("   Total whitelisted bots: {}", global_game_state.cranker_bots.len());
+    
+    Ok(())
+}
+
+/// Remove a cranker bot from the whitelist (admin only)
+pub fn remove_cranker_bot_internal(
+    ctx: Context<UpdateGameState>,
+    bot_pubkey: Pubkey,
+) -> Result<()> {
+    msg!("🤖 [remove_cranker_bot_internal] Removing cranker bot from whitelist");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Bot pubkey: {}", bot_pubkey);
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    
+    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
+    
+    // Find and remove bot
+    let initial_count = global_game_state.cranker_bots.len();
+    global_game_state.cranker_bots.retain(|&bot| bot != bot_pubkey);
+    
+    require!(
+        global_game_state.cranker_bots.len() < initial_count,
+        ErrorCode::InvalidParameters // Bot not found in whitelist
+    );
+    msg!("     ✓ Bot removed from whitelist");
+    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
+    
+    msg!("✅ [remove_cranker_bot_internal] Cranker bot removed successfully");
+    msg!("   Bot: {}", bot_pubkey);
+    msg!("   Remaining whitelisted bots: {}", global_game_state.cranker_bots.len());
+    
+    Ok(())
+}
+
+ 
  
 
 // ----------------------------------------------------------------------------------------
@@ -922,7 +933,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()>
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: global_config.creation_fee_recipient.to_account_info(),
+                    to: ctx.accounts.fee_recipient.to_account_info(),
                 },
                 signer_seeds,
             ),
@@ -942,72 +953,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()>
     Ok(())
 }
 
-
-// ----------------------------------------------------------------------------------------
-// ------------ QUERY FUNCTIONS FOR EXTERNAL PROGRAMS ------------
-// ----------------------------------------------------------------------------------------
-
-/// Query treasury information for external programs
-pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
-    msg!("🔍 Querying treasury info");
-    let sol_treasury = &ctx.accounts.sol_treasury;
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-
-    let total_balance = sol_treasury.lamports();
-    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
-    let pol_reserves = doge_btc_mining.sol_for_pol;
-
-    // Calculate available balance (total - POL reserve - rent)
-    let reserved_amount = rent_exempt_amount
-        .checked_add(pol_reserves)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-    let available_for_withdrawal = total_balance.saturating_sub(reserved_amount);
-
-    msg!(
-        "📊 Treasury: total={}, POL={}, rent={}, available={}",
-        total_balance,
-        pol_reserves,
-        rent_exempt_amount,
-        available_for_withdrawal
-    );
-
-    Ok(TreasuryInfo {
-        total_balance,
-        pol_reserves,
-        rent_exempt_amount,
-        available_for_withdrawal,
-    })
-}
-
-/// Query global config information for external programs
-pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
-    msg!("🔍 Querying global config");
-    let global_config = &ctx.accounts.global_config;
-
-    msg!(
-        "📊 Config: active={}, authority={}",
-        global_config.is_game_active,
-        global_config.ext_authority
-    );
-
-    Ok(GlobalConfigInfo {
-        is_game_active: global_config.is_game_active,
-        ext_authority: global_config.ext_authority,
-        ext_fee_collector: global_config.ext_fee_collector,
-    })
-}
-
-/// Query token prices (dBTC and LP) for external programs
-pub fn query_token_prices_internal(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-
-    Ok(TokenPricesInfo {
-        dbtc_price_in_sol: doge_btc_mining.recent_price,
-        lp_token_price_in_sol: doge_btc_mining.lp_token_price_in_sol,
-    })
-}
-
+ 
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: INITIALIZE ------------
 // --------------------------------------------------------------------------------
@@ -1073,6 +1019,54 @@ pub struct UpdateConfigAc<'info> {
 }
 
 #[derive(Accounts)]
+pub struct AddFaction<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// CHECK: Faction state PDA (validated in instruction)
+    #[account(mut)]
+    pub faction_state: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+
+#[derive(Accounts)]
+#[instruction(faction_id: u8)]
+pub struct InitializeFactionState<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = FactionState::LEN,
+        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
+        bump
+    )]
+    pub faction_state: Account<'info, FactionState>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+
+
+#[derive(Accounts)]
 pub struct InitializeMining<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1119,27 +1113,7 @@ pub struct InitializeMining<'info> {
     pub token_program: Program<'info, Token2022>,
     pub rent: Sysvar<'info, Rent>,
 }
-
-#[derive(Accounts)]
-pub struct UpdateSlotsPerHour<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        mut,
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-}
+ 
 
 #[derive(Accounts)]
 pub struct DepositTokens<'info> {
@@ -1174,6 +1148,125 @@ pub struct DepositTokens<'info> {
 
     pub token_program: Program<'info, Token2022>,
 }
+
+
+#[derive(Accounts)]
+pub struct CreateDragonEggCollection<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [EGG_CONFIG_SEED],
+        bump = eggs_config.bump,
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
+
+    /// CHECK: Dragon Egg collection account (will be created by MPL Core)
+    #[account(mut, signer)]
+    pub collection: UncheckedAccount<'info>,
+
+    /// CHECK: Collection authority PDA that will be the update authority
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID)]
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+ 
+
+#[derive(Accounts)]
+pub struct UpdateEggsConfig<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut, 
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump = eggs_config.bump,
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump,
+    )]
+    pub doge_btc_mining: Option<Account<'info, DogeBtcMining>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+
+
+#[derive(Accounts)]
+pub struct InitializeGameState<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = GlobalGameSate::LEN,
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateGameState<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump = global_game_state.bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+
 
 #[derive(Accounts)]
 pub struct CreateSystemReferralAccount<'info> {
@@ -1253,6 +1346,13 @@ pub struct WithdrawSolFees<'info> {
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
 
+    /// CHECK: Creation fee recipient account (receives dev earnings)
+    #[account(
+        mut,
+        address = global_config.fee_recipient @ ErrorCode::InvalidAccount
+    )]
+    pub fee_recipient: UncheckedAccount<'info>,
+
     /// Buybacks tracking account (required)
     #[account(
         mut,
@@ -1263,233 +1363,9 @@ pub struct WithdrawSolFees<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
-// ----------------------------------------------------------------------------------------
-// ------------ QUERY ACCOUNT STRUCTS ------------
-// ----------------------------------------------------------------------------------------
-
-#[derive(Accounts)]
-pub struct QueryTreasuryInfo<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-
-    /// CHECK: SOL treasury PDA (System Account)
-    #[account(
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-}
  
-
+ 
  
 
 
 
-
-
-
-
-
-
-
-
-#[derive(Accounts)]
-pub struct QueryGlobalConfig<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-}
-
-#[derive(Accounts)]
-pub struct QueryTokenPrices<'info> {
-    #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-}
-
-/// Create Dragon Egg collection with program PDA as authority
-pub fn create_dragon_egg_collection_internal(
-    ctx: Context<CreateDragonEggCollection>,
-    name: String,
-    uri: String,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    let authority = &ctx.accounts.authority;
-
-    // Verify authority
-    require!(
-        global_config.ext_authority == authority.key(),
-        ErrorCode::Unauthorized
-    );
-
-    msg!("Creating Dragon Egg collection with program PDA as update authority");
-    msg!("Collection: {}", ctx.accounts.collection.key());
-    msg!(
-        "Collection Authority PDA: {}",
-        ctx.accounts.collection_authority.key()
-    );
-
-    // Get the collection authority bump for signing
-    let collection_authority_bump = ctx.bumps.collection_authority;
-    let _collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
-
-    // Create the collection using CPI
-    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
-    let mut cpi_builder = CreateCollectionV1CpiBuilder::new(mpl_core_program);
-
-    cpi_builder
-        .collection(&ctx.accounts.collection.to_account_info())
-        .payer(&ctx.accounts.authority.to_account_info())
-        .update_authority(Some(&ctx.accounts.collection_authority.to_account_info()))
-        .system_program(&ctx.accounts.system_program.to_account_info())
-        .name(name.clone())
-        .uri(uri.clone())
-        .invoke()?;
-
-    // Store the collection address in global config
-    global_config.dragon_egg_collection = ctx.accounts.collection.key();
-
-    emit!(DragonEggCollectionCreated {
-        collection: ctx.accounts.collection.key(),
-        update_authority: ctx.accounts.collection_authority.key(),
-        name,
-        uri,
-    });
-
-    Ok(())
-}
-
-#[derive(Accounts)]
-pub struct CreateDragonEggCollection<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    /// CHECK: Dragon Egg collection account (will be created by MPL Core)
-    #[account(mut, signer)]
-    pub collection: UncheckedAccount<'info>,
-
-    /// CHECK: Collection authority PDA that will be the update authority
-    #[account(
-        seeds = [COLLECTION_AUTHORITY_SEED],
-        bump
-    )]
-    pub collection_authority: UncheckedAccount<'info>,
-
-    /// CHECK: Metaplex Core program
-    #[account(address = MPL_CORE_PROGRAM_ID)]
-    pub mpl_core_program: UncheckedAccount<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct AddFaction<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    /// CHECK: Faction state PDA (validated in instruction)
-    #[account(mut)]
-    pub faction_state: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct InitializeGameState<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = GlobalGameSate::LEN,
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump
-    )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
-
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct UpdateGameState<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
-    
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-    
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(faction_id: u8)]
-pub struct InitializeFactionState<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = FactionState::LEN,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump
-    )]
-    pub faction_state: Account<'info, FactionState>,
-
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
