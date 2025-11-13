@@ -49,18 +49,17 @@ pub mod moonbase {
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
-    /// Set Dragon Egg URIs for a specific tier (admin only)
+    /// Set Dragon Egg URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_dragon_egg_uris_for_tier(
-        ctx: Context<UpdateConfigAc>,
-        tier: u8,
+    pub fn set_dragon_egg_uris(
+        ctx: Context<UpdateEggsConfig>,
         uris: Vec<String>,
     ) -> Result<()> {
-        admin::set_dragon_egg_uris_for_tier_internal(ctx, tier, uris)
+        admin::set_dragon_egg_uris_internal(ctx, uris)
     }
 
     /// Clear all Dragon Egg URIs (admin only)
-    pub fn clear_dragon_egg_uris(ctx: Context<UpdateConfigAc>) -> Result<()> {
+    pub fn clear_dragon_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
         admin::clear_dragon_egg_uris_internal(ctx)
     }
 
@@ -91,6 +90,26 @@ pub mod moonbase {
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
         eggs::init_dragon_egg_royalties(ctx, basis_points, creators)
+    }
+
+    /// Add or update ticket tier configs (admin only)
+    /// Max 4 ticket tier configs can be set
+    pub fn add_ticket_tier_config(
+        ctx: Context<UpdateEggsConfig>,
+        ticket_tier_index: u8,
+        ticket_value: u64,
+        ticket_count: u16,
+    ) -> Result<()> {
+        eggs::add_ticket_tier_config(ctx, ticket_tier_index, ticket_value, ticket_count)
+    }
+
+    /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
+    pub fn admin_mint_dragon_egg(
+        ctx: Context<AdminMintDragonEgg>,
+        recipient: Pubkey,
+        faction_id: u8,
+    ) -> Result<()> {
+        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id)
     }
 
 
@@ -152,16 +171,6 @@ pub mod moonbase {
         )
     }
 
-    /// Update egg limits for tiers (admin only)
-    pub fn update_egg_limits(
-        ctx: Context<UpdateConfigAc>,
-        tier1_limit: Option<u64>,
-        tier2_limit: Option<u64>,
-        tier3_limit: Option<u64>,
-        tier4_limit: Option<u64>,
-    ) -> Result<()> {
-        admin::update_egg_limits_internal(ctx, tier1_limit, tier2_limit, tier3_limit, tier4_limit)
-    }
 
     // ----------------------------------------------------------------------------------------
     // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
@@ -221,6 +230,11 @@ pub mod moonbase {
         admin::remove_cranker_bot_internal(ctx, bot_pubkey)
     }
 
+
+    /// Initialize system referral account and buybacks system (admin only)
+    pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+        admin::initialize_system_accounts_internal(ctx)
+    }
 
     /// Initialize TaxConfig account and create vault token accounts (admin only)
     pub fn initialize_tax_config(
@@ -484,13 +498,25 @@ pub mod moonbase {
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Mint a Dragon Egg NFT with specified faction, tier, and ticket selection
+    /// Mint a single Dragon Egg NFT
+    /// Uses bonding curve pricing based on current supply
+    /// Users can optionally choose a ticket tier to receive free tickets
     pub fn mint_dragon_egg(
         ctx: Context<MintDragonEgg>,
         faction_id: u8,
-        tier: u8,
+        ticket_tier_index: Option<u8>,
     ) -> Result<()> {
-        eggs::mint_dragon_egg(ctx, faction_id, tier)
+        eggs::mint_dragon_egg(ctx, faction_id, ticket_tier_index)
+    }
+
+    /// Batch mint multiple Dragon Eggs (max 10 per transaction)
+    /// Uses bonding curve pricing for each egg
+    pub fn batch_mint_dragon_eggs(
+        ctx: Context<BatchMintDragonEggs>,
+        faction_id: u8,
+        mint_count: u8,
+    ) -> Result<()> {
+        eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count)
     }
 
     /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)

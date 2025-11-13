@@ -627,18 +627,15 @@ pub fn create_dragon_egg_collection_internal(
 }
 
 
-/// Set Dragon Egg URIs for a specific tier and all factions (admin only)
+/// Set Dragon Egg URIs for all factions (admin only)
 /// uris: Vec of URIs, one per faction (must match number of factions)
-/// tier: 1, 2, 3, or 4
-pub fn set_dragon_egg_uris_for_tier_internal(
+pub fn set_dragon_egg_uris_internal(
     ctx: Context<UpdateEggsConfig>,
-    tier: u8,
     uris: Vec<String>,
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let eggs_config = &mut ctx.accounts.eggs_config;
 
-    require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
     require!(
         uris.len() == global_config.supported_factions.len(),
         ErrorCode::InvalidParameters
@@ -649,17 +646,10 @@ pub fn set_dragon_egg_uris_for_tier_internal(
         require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
     }
 
-    let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
+    // Set URIs for all factions
+    eggs_config.dragon_egg_uris = uris.clone();
 
-    // Ensure we have 4 tiers initialized
-    while eggs_config.dragon_egg_uris.len() <= tier_index {
-        eggs_config.dragon_egg_uris.push(Vec::new());
-    }
-
-    // Set URIs for this tier
-    eggs_config.dragon_egg_uris[tier_index] = uris.clone();
-
-    msg!("✅ Set {} Dragon Egg URIs for tier {}", uris.len(), tier);
+    msg!("✅ Set {} Dragon Egg URIs (one per faction)", uris.len());
     msg!("   Factions: {}", global_config.supported_factions.len());
 
     Ok(())
@@ -677,60 +667,6 @@ pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<
 
 
 
-/// Update egg limits for tiers (admin only)
-pub fn update_egg_limits_internal(
-    ctx: Context<UpdateEggsConfig>,
-    tier1_limit: Option<u64>,
-    tier2_limit: Option<u64>,
-    tier3_limit: Option<u64>,
-    tier4_limit: Option<u64>,
-) -> Result<()> {
-    msg!("🥚 [update_egg_limits_internal] Updating egg limits");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    
-    let eggs_config = &mut ctx.accounts.eggs_config;
-
-    msg!("   Current egg limits:");
-    msg!("     Tier 1: {}", eggs_config.egg_limits[0]);
-    msg!("     Tier 2: {}", eggs_config.egg_limits[1]);
-    msg!("     Tier 3: {}", eggs_config.egg_limits[2]);
-    msg!("     Tier 4: {}", eggs_config.egg_limits[3]);
-
-    if let Some(limit) = tier1_limit {
-        let old_limit = eggs_config.egg_limits[0];
-        eggs_config.egg_limits[0] = limit;
-        msg!("   Updated Tier 1: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 1: not updated");
-    }
-
-    if let Some(limit) = tier2_limit {
-        let old_limit = eggs_config.egg_limits[1];
-        eggs_config.egg_limits[1] = limit;
-        msg!("   Updated Tier 2: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 2: not updated");
-    }
-
-    if let Some(limit) = tier3_limit {
-        let old_limit = eggs_config.egg_limits[2];
-        eggs_config.egg_limits[2] = limit;
-        msg!("   Updated Tier 3: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 3: not updated");
-    }
-
-    if let Some(limit) = tier4_limit {
-        let old_limit = eggs_config.egg_limits[3];
-        eggs_config.egg_limits[3] = limit;
-        msg!("   Updated Tier 4: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 4: not updated");
-    }
-
-    msg!("✅ [update_egg_limits_internal] Egg limits updated successfully");
-    Ok(())
-}
 
 // --------------------------------------------------------------------------------
 // ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
@@ -869,6 +805,45 @@ pub fn remove_cranker_bot_internal(
 
  
  
+
+// ----------------------------------------------------------------------------------------
+// ------------ SYSTEM ACCOUNTS INITIALIZATION ----------------------------------
+// ----------------------------------------------------------------------------------------
+
+/// Initialize system referral account and buybacks system (admin only)
+/// This function initializes both the system referral rewards account and the buybacks system
+pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+    msg!("🔧 [initialize_system_accounts_internal] Initializing system accounts");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+
+    // Initialize system referral rewards account
+    msg!("   Initializing system referral rewards account...");
+    let system_referral = &mut ctx.accounts.system_referral_rewards;
+    system_referral.owner = ctx.accounts.system_program.key();
+    system_referral.bump = ctx.bumps.system_referral_rewards;
+    system_referral.referrals_count = 0;
+    system_referral.pending_sol_rewards = 0;
+    system_referral.pending_dbtc_rewards = 0;
+    system_referral.total_sol_earned = 0;
+    system_referral.total_dbtc_earned = 0;
+    msg!("     System referral account initialized");
+    msg!("     Owner: {}", system_referral.owner);
+    msg!("     Bump: {}", system_referral.bump);
+
+    // Initialize buybacks account
+    msg!("   Initializing buybacks account...");
+    let buybacks_ac = &mut ctx.accounts.buybacks_account;
+    buybacks_ac.total_sol_accumulated = 0;
+    msg!("     Buybacks account initialized");
+    msg!("     Total SOL accumulated: {}", buybacks_ac.total_sol_accumulated);
+
+    msg!("✅ [initialize_system_accounts_internal] System accounts initialized successfully");
+    msg!("   System referral rewards PDA: {}", ctx.accounts.system_referral_rewards.key());
+    msg!("   Buybacks account PDA: {}", ctx.accounts.buybacks_account.key());
+    msg!("   Buybacks SOL vault PDA: {}", ctx.accounts.buybacks_sol_vault.key());
+
+    Ok(())
+}
 
 // ----------------------------------------------------------------------------------------
 // ------------ WITHDRAW SOL FEES ----------------------------------
@@ -1268,27 +1243,9 @@ pub struct UpdateGameState<'info> {
 
 
 
+/// Merged account context for initializing system referral account and buybacks system
 #[derive(Accounts)]
-pub struct CreateSystemReferralAccount<'info> {
-    #[account(
-        init,
-        payer = user,
-        space = ReferralRewards::LEN,
-        seeds = [REFERRAL_REWARDS_SEED.as_ref(), system_program.key().as_ref()],
-        bump,
-    )]
-    pub referrer_rewards: Account<'info, ReferralRewards>,
-
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
- 
-
-/// Account struct for initializing buybacks system
-#[derive(Accounts)]
-pub struct InitializeBuybacks<'info> {
+pub struct InitializeSystemAccounts<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1296,6 +1253,17 @@ pub struct InitializeBuybacks<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
+    /// System referral rewards account (can be initialized by anyone)
+    #[account(
+        init,
+        payer = authority,
+        space = ReferralRewards::LEN,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), system_program.key().as_ref()],
+        bump,
+    )]
+    pub system_referral_rewards: Account<'info, ReferralRewards>,
+
+    /// Buybacks tracking account (admin only)
     #[account(
         init,
         payer = authority,

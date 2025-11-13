@@ -186,29 +186,6 @@ impl GlobalConfig {
         4 + (4 * (4 + MAX_FACTIONS * (4 + MAX_URI_LENGTH))) + // dragon_egg_uris: 4 tiers × factions
         (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
         8;                      // global_dragon_egg_power
-
-    /// Get Dragon Egg URI for a specific tier and faction
-    pub fn get_dragon_egg_uri(&self, tier: u8, faction_id: u8) -> Result<String> {
-        require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
-        require!(
-            (faction_id as usize) < self.supported_factions.len(),
-            ErrorCode::InvalidFactionId
-        );
-        
-        let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
-        require!(
-            tier_index < self.dragon_egg_uris.len(),
-            ErrorCode::InvalidMetadata
-        );
-        
-        let faction_uris = &self.dragon_egg_uris[tier_index];
-        require!(
-            (faction_id as usize) < faction_uris.len(),
-            ErrorCode::InvalidMetadata
-        );
-        
-        Ok(faction_uris[faction_id as usize].clone())
-    }
 }
 
 /// ------------ MOON DOGE MINING ------------
@@ -434,40 +411,45 @@ pub struct EggConfig {
     /// Dragon Egg collection address (Metaplex Core)
     pub dragon_egg_collection: Pubkey,
 
-    /// Dragon Egg URIs organized by tier and faction
-    /// Structure: [tier][faction_id] = URI
-    /// 4 tiers (1, 2, 3, 4), each with URIs for each faction
-    pub dragon_egg_uris: Vec<Vec<String>>, // [tier][faction_index] = URI (tier 1-4)
+    /// Dragon Egg URIs organized by faction
+    /// Structure: [faction_id] = URI
+    pub dragon_egg_uris: Vec<String>, // [faction_index] = URI
 
-    /// Egg limits per tier: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
-    /// All tiers: 5000 eggs each
-    pub egg_limits: [u64; 4],
-
-    /// Global total power across all Dragon Eggs (sum of all egg powers)
-    pub global_dragon_egg_power: u64,
-        
-    /// Total supply of eggs across all tiers
-    pub total_supply: u64,
+    /// Maximum supply of eggs that can be minted
+    pub max_supply: u64,
+    
     /// Number of eggs minted so far
     pub eggs_minted: u64,
     
-    /// Price per egg tier: [tier1, tier2, tier3, tier4]
-    pub prices: [u64; 4],
+    /// Base price for bonding curve (in lamports)
+    pub base_price: u64,
     
-    /// Available ticket tiers users can choose when minting (max 5 options)
-    /// Example: 0.001 SOL × 2000, 0.01 SOL × 200, 0.1 SOL × 20
+    /// Curve steepness parameter (controls price growth rate, typically >= 100)
+    pub curve_a: u64,
+    
+    /// Global total power across all Dragon Eggs (sum of all egg powers)
+    pub global_dragon_egg_power: u64,
+    
+    /// Available ticket tier configs users can choose when minting (max 4 options)
+    /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
     pub ticket_tiers: Vec<TicketTier>,
 }
 
 impl EggConfig {
-    pub const MAX_TICKET_TIERS: usize = 5;
+    pub const MAX_TICKET_TIERS: usize = 4;
     
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // total_supply
+        32 +    // dragon_egg_collection
+        4 +     // dragon_egg_uris Vec length
+        (32 * 20) + // dragon_egg_uris Vec<String> (max 20 factions, 32 chars each)
+        8 +     // max_supply
         8 +     // eggs_minted
-        (4 * 8) + // prices [u64; 4]
-        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+        8 +     // base_price
+        8 +     // curve_a
+        8 +     // global_dragon_egg_power
+        4 +     // ticket_tiers Vec length
+        (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
 }
 
 
