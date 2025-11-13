@@ -29,4 +29,3 @@ spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 raydium-cp-swap = { path = "../../raydium/programs/cp-swap", features = ["cpi"] }
 subtle = { version = "2", default-features = false }
 constant_time_eq = "0.3"
-tensor-marketplace = "0.5.0"

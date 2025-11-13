@@ -3,7 +3,6 @@ use anchor_spl::token_2022::{self, TransferChecked, Burn};
 use anchor_spl::token_interface::{
     Mint,
     TokenAccount as TokenAccount2022,
-    TokenInterface,
 };
 use anchor_spl::token_2022::spl_token_2022::extension::{
     transfer_fee::TransferFeeConfig,
@@ -523,6 +522,91 @@ pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Resul
 }
 
 // ========================================================================================
+// ============================= ADMIN FUNCTIONS ==========================================
+// ========================================================================================
+
+/// Initialize TaxConfig account and create vault token accounts
+/// Callable only by global config authority
+pub fn initialize_tax_config(
+    ctx: Context<InitializeTaxConfig>,
+    nft_floor_sweep_pct: u8,
+    faction_treasury_pct: u8,
+) -> Result<()> {
+    msg!("🔧 [initialize_tax_config] Initializing tax system");
+    
+    require!(
+        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) <= M_HUNDRED,
+        ErrorCode::InvalidAmount
+    );
+    
+    let tax_config = &mut ctx.accounts.tax_config;
+    let clock = Clock::get()?;
+    
+    // Initialize TaxConfig
+    tax_config.bump = ctx.bumps.tax_config;
+    tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
+    tax_config.faction_treasury_pct = faction_treasury_pct;
+    tax_config.total_burnt = 0;
+    tax_config.round_active = false;
+    tax_config.start_timestamp = 0;
+    tax_config.end_timestamp = clock.unix_timestamp;
+    tax_config.leaderboard_factions_count = 0;
+    tax_config.rewards_calculated = false;
+    tax_config.factions_claimed_count = 0;
+    
+    // Initialize vectors
+    tax_config.leaderboard_faction_ids = Vec::new();
+    tax_config.leaderboard_hashpower = Vec::new();
+    tax_config.faction_rewards = Vec::new();
+    tax_config.faction_claimed = Vec::new();
+    
+    // Store PDA addresses
+    tax_config.withdraw_withheld_authority = ctx.accounts.withdraw_withheld_authority.key();
+    tax_config.faction_treasury_vault = ctx.accounts.faction_treasury_vault.key();
+    tax_config.nft_floor_sweep_vault = ctx.accounts.nft_floor_sweep_vault.key();
+    tax_config.nft_sale_sol_vault = ctx.accounts.nft_sale_sol_vault.key();
+    
+    msg!("   ✅ TaxConfig initialized");
+    msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
+    msg!("   Faction Treasury: {}%", faction_treasury_pct);
+    let burn_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct;
+    msg!("   Burn: {}%", burn_pct);
+    msg!("   Withdraw Authority: {}", tax_config.withdraw_withheld_authority);
+    msg!("   Faction Treasury Vault: {}", tax_config.faction_treasury_vault);
+    msg!("   NFT Floor Sweep Vault: {}", tax_config.nft_floor_sweep_vault);
+    
+    Ok(())
+}
+
+/// Update tax distribution percentages
+/// Callable only by global config authority
+pub fn update_tax_config(
+    ctx: Context<UpdateTaxConfig>,
+    nft_floor_sweep_pct: u8,
+    faction_treasury_pct: u8,
+) -> Result<()> {
+    msg!("🔧 [update_tax_config] Updating tax distribution percentages");
+    
+    require!(
+        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) <= M_HUNDRED as u64,
+        ErrorCode::InvalidAmount
+    );
+    
+    let tax_config = &mut ctx.accounts.tax_config;
+    
+    tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
+    tax_config.faction_treasury_pct = faction_treasury_pct;
+    
+    msg!("   ✅ TaxConfig updated");
+    msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
+    msg!("   Faction Treasury: {}%", faction_treasury_pct);
+    let burn_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct;
+    msg!("   Burn: {}%", burn_pct);
+    
+    Ok(())
+}
+
+// ========================================================================================
 // ============================= ACCOUNT CONTEXTS =========================================
 // ========================================================================================
 
@@ -667,5 +751,94 @@ pub struct FinishDistributionRound<'info> {
         bump = tax_config.bump
     )]
     pub tax_config: Account<'info, TaxConfig>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeTaxConfig<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = TaxConfig::LEN,
+        seeds = [TAX_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub tax_config: Account<'info, TaxConfig>,
+    
+    /// CHECK: Withdraw withheld authority PDA (signer-only, no data)
+    #[account(
+        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub withdraw_withheld_authority: AccountInfo<'info>,
+    
+    /// CHECK: Faction treasury vault token account (will be created)
+    #[account(
+        init,
+        payer = authority,
+        token::mint = dbtc_mint,
+        token::authority = withdraw_withheld_authority,
+        token::token_program = token_program_2022,
+        seeds = [FACTION_TREASURY_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// CHECK: NFT floor sweep vault token account (will be created)
+    #[account(
+        init,
+        payer = authority,
+        token::mint = dbtc_mint,
+        token::authority = withdraw_withheld_authority,
+        token::token_program = token_program_2022,
+        seeds = [NFT_FLOOR_SWEEP_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// CHECK: NFT sale SOL vault PDA (system account for SOL)
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [NFT_SALE_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub nft_sale_sol_vault: UncheckedAccount<'info>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    
+    pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateTaxConfig<'info> {
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED.as_ref()],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Account<'info, TaxConfig>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
 }
 

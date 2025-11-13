@@ -446,4 +446,22 @@ pub mod moonbase {
     pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
         tax::finish_distribution_round(ctx)
     }
+
+    /// Initialize TaxConfig account and create vault token accounts (admin only)
+    pub fn initialize_tax_config(
+        ctx: Context<InitializeTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+    ) -> Result<()> {
+        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
+    }
+
+    /// Update tax distribution percentages (admin only)
+    pub fn update_tax_config(
+        ctx: Context<UpdateTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+    ) -> Result<()> {
+        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
+    }
 }
