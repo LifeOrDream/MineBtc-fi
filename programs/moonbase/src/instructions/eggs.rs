@@ -18,8 +18,6 @@ pub fn mint_dragon_egg(
     require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
     
     let global_config = &mut ctx.accounts.global_config;
-    let egg_config = &mut ctx.accounts.egg_config;
-    let player_data = &mut ctx.accounts.player_data;
     
     // Validate faction_id
     require!(
@@ -27,24 +25,17 @@ pub fn mint_dragon_egg(
         ErrorCode::InvalidFactionId
     );
     
-    // Calculate cost per egg based on tier from EggConfig
-    let tier_index = (tier - 1) as usize;
+    // Validate ticket tier index
     require!(
-        tier_index < egg_config.prices.len(),
+        (ticket_tier_index as usize) < egg_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
     );
-    let cost_per_egg = egg_config.prices[tier_index];
     
-    // Select ticket tier based on tier (tier 1 -> index 0, tier 2 -> index 1, etc.)
-    // Use tier - 1 as ticket tier index, but validate it exists
-    let ticket_tier_index = (tier - 1) as usize;
-    require!(
-        ticket_tier_index < egg_config.ticket_tiers.len(),
-        ErrorCode::InvalidParameters
-    );
+    // Calculate cost per egg based on tier from EggConfig
+    let cost_per_egg = egg_config.prices[(tier - 1) as usize];
     
     // Get selected ticket tier
-    let selected_ticket_tier = &egg_config.ticket_tiers[ticket_tier_index];
+    let selected_ticket_tier = &egg_config.ticket_tiers[ticket_tier_index as usize];
     msg!("   Selected ticket tier: {} tickets of {} SOL each", 
         selected_ticket_tier.ticket_count, 
         selected_ticket_tier.ticket_value as f64 / 1e9);
@@ -135,16 +126,14 @@ pub fn mint_dragon_egg(
     // Update global dragon egg power
     global_config.global_dragon_egg_power += BASE_EGG_POWER as u64;
     
-    // Extract ticket values before mutating egg_config
-    let ticket_value = selected_ticket_tier.ticket_value;
-    let ticket_count = selected_ticket_tier.ticket_count;
-    
     // Update egg config stats
     egg_config.eggs_minted += 1;
     msg!("   Total eggs minted: {} / {}", egg_config.eggs_minted, egg_config.total_supply);
     
     // Add free tickets to player based on selected tier
     msg!("   Adding free tickets to player...");
+    let ticket_value = selected_ticket_tier.ticket_value;
+    let ticket_count = selected_ticket_tier.ticket_count;
     
     // Check if this ticket value already exists in player's free_tickets
     if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {

@@ -24,7 +24,6 @@ pub mod moonbase {
     use crate::instructions::game::{self};
     use crate::instructions::user::{self};
     use crate::instructions::stake::{self};
-    use crate::instructions::eggs::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -267,7 +266,14 @@ pub mod moonbase {
         user::initialize_player(ctx, faction_id, referral_code)
     }
 
-    // Note: update_personal_hashpower function removed - no longer needed
+    /// Update personal hashpower (CPI-only, called by mooneconomy program)
+    pub fn update_personal_hashpower(
+        ctx: Context<UpdatePersonalHashpower>,
+        amount: i128,
+        user_pubkey: Pubkey,
+    ) -> Result<()> {
+        user::update_personal_hashpower(ctx, amount, user_pubkey)
+    }
 
     /// Join a round by betting SOL
     /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
@@ -286,12 +292,14 @@ pub mod moonbase {
 
     /// Start a new round by committing a hash and initializing GameSession
     /// This commits randomness hash and randomly assigns factions to blocks
+    /// round_id should be current_round_id + 1 (validated in the function)
     /// If commit_hash is None, uses next_round_commit from global_state
     pub fn start_round(
         ctx: Context<StartRound>,
+        round_id: u64,
         commit_hash: Option<[u8; 32]>,
     ) -> Result<()> {
-        game::start_round(ctx, commit_hash)
+        game::start_round(ctx, round_id, commit_hash)
     }
 
     /// End the current round by revealing seed, selecting winner, and starting next round
@@ -386,22 +394,23 @@ pub mod moonbase {
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Mint a Dragon Egg NFT with specified faction and tier
+    /// Mint a Dragon Egg NFT with specified faction, tier, and ticket selection
     pub fn mint_dragon_egg(
         ctx: Context<MintDragonEgg>,
         faction_id: u8,
         tier: u8,
+        ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::mint_dragon_egg(ctx, faction_id, tier)
+        user::mint_dragon_egg(ctx, faction_id, tier, ticket_tier_index)
     }
 
     /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)
     pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
-        eggs::stake_dragon_egg(ctx)
+        user::stake_dragon_egg(ctx)
     }
 
     /// Unstake a Dragon Egg (remove hashpower boost)
     pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
-        eggs::unstake_dragon_egg(ctx)
+        user::unstake_dragon_egg(ctx)
     }
 }

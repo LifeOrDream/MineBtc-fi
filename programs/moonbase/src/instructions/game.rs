@@ -22,6 +22,7 @@ use crate::instructions::helper;
 /// For the first round, use next_round_commit from global_state (set during initialization).
 pub fn start_round(
     ctx: Context<StartRound>,
+    round_id: u64,
     commit_hash: Option<[u8; 32]>, // Optional: if None, uses next_round_commit from global_state
 ) -> Result<()> {
     msg!("🎮 [start_round] Starting new round");
@@ -32,8 +33,19 @@ pub fn start_round(
     let clock = Clock::get()?;
     
     msg!("   Current round ID: {}", global_state.current_round_id);
+    msg!("   Requested round ID: {}", round_id);
     msg!("   Current timestamp: {}", clock.unix_timestamp);
     msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    
+    // Validate round_id matches expected value (current_round_id + 1)
+    let expected_round_id = global_state.current_round_id
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    require!(
+        round_id == expected_round_id,
+        ErrorCode::InvalidRound
+    );
+    msg!("   ✓ Round ID validated: {} (expected: {})", round_id, expected_round_id);
     
     // Validate caller is a whitelisted cranker bot
     msg!("   Validating cranker bot authorization...");
@@ -66,26 +78,20 @@ pub fn start_round(
         msg!("   Using next_round_commit from global_state");
     }
     
-    // Increment round ID
-    let new_round_id = global_state.current_round_id
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   New round ID: {}", new_round_id);
-    
     // Set commit hash for this round
     global_state.current_round_commit = commit;
     global_state.current_round_seed = None; // Will be set in end_round
-    msg!("   Commit hash set for round {}", new_round_id);
+    msg!("   Commit hash set for round {}", round_id);
 
     // Update global state
-    global_state.current_round_id = new_round_id;
+    global_state.current_round_id = round_id;
     global_state.round_end_timestamp = game_session.round_end_timestamp;
-    msg!("   Global state updated: current_round_id={}, round_end_timestamp={}", new_round_id, game_session.round_end_timestamp);
+    msg!("   Global state updated: current_round_id={}, round_end_timestamp={}", round_id, game_session.round_end_timestamp);
 
     // Initialize GameSession for the new round
-    msg!("   Initializing GameSession for round {}", new_round_id);
+    msg!("   Initializing GameSession for round {}", round_id);
     game_session.bump = ctx.bumps.game_session;
-    game_session.round_id = new_round_id;
+    game_session.round_id = round_id;
     game_session.round_start_timestamp = clock.unix_timestamp;
     game_session.round_end_timestamp = clock.unix_timestamp
         .checked_add(global_state.round_duration_seconds)
@@ -171,7 +177,7 @@ pub fn start_round(
     game_session.motherlode_pot_size_on_hit = 0;
     
     
-    msg!("✅ [start_round] Round {} started successfully", new_round_id);
+    msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);
     msg!("   Round ends at timestamp: {}", game_session.round_end_timestamp);
     
@@ -542,6 +548,7 @@ fn calculate_dbtc_split( dbtc_rewards: u64, dbtc_stakers_pct: u8, dbtc_winners_p
 // ========================================================================================
 
 #[derive(Accounts)]
+#[instruction(round_id: u64)]
 pub struct StartRound<'info> {
     #[account(
         mut,
@@ -554,7 +561,7 @@ pub struct StartRound<'info> {
         init,
         payer = authority,
         space = GameSession::LEN,
-        seeds = [GAME_SESSION_SEED.as_ref(), &(global_game_state.current_round_id.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?).to_le_bytes()],
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump
     )]
     pub game_session: Account<'info, GameSession>,
