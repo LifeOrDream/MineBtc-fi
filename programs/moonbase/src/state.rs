@@ -162,30 +162,25 @@ pub struct DogeBtcDistConfig {
 }
 
 impl DogeBtcDistConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1; // All 4 percentages
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_motherlode_pct + refining_fee
 }
  
 
 
 impl GlobalConfig {
-    // discriminator + ext_authority + ext_fee_collector + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + bump + treasury_bump + supported_factions (vec) + raydium_pool_state + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + global_dragon_egg_power
+    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + bump + treasury_bump + supported_factions (vec)
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
-    // Vec<Vec<String>> = 4 bytes (outer vec length) + 4 tiers * (4 bytes inner vec length + MAX_FACTIONS * (4 + MAX_URI_LENGTH))
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
+        8 +                     // total_players
         32 +                    // ext_authority
-        32 +                    // ext_fee_collector  
         32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config
         DogeBtcDistConfig::LEN + // dbtc_dist_config
+        32 +                    // raydium_pool_state
         1 +                     // bump
         1 +                     // treasury_bump
-        4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)) + // supported_factions vec
-        32 +                    // raydium_pool_state
-        32 +                    // dragon_egg_collection
-        4 + (4 * (4 + MAX_FACTIONS * (4 + MAX_URI_LENGTH))) + // dragon_egg_uris: 4 tiers × factions
-        (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
-        8;                      // global_dragon_egg_power
+        4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
 }
 
 /// ------------ MOON DOGE MINING ------------
@@ -276,29 +271,26 @@ pub struct DogeBtcMining {
 }
 
 impl DogeBtcMining {
-    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
+    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
-        + 32
-        + 8
-        + 8
-        + 8
-        + 8
-        + 8
-        + 8
-        + 16
-        + 1
-        + 1
-        + 32
-        + 8
-        + 8
-        + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN)
-        + 8
-        + 8
-        + 8
-        + ProtocolOwnedLiquidity::LEN
-        + 8;
+        + 32                    // dbtc_token_vault
+        + 8                     // mining_start_timestamp
+        + 8                     // doge_btc_per_slot
+        + 8                     // last_slot
+        + 8                     // total_tokens_mined
+        + 1                     // bump
+        + 1                     // vault_auth_bump
+        + 32                    // raydium_pool_state
+        + 8                     // last_rate_update (i64)
+        + 8                     // current_dist_rate
+        + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) // price_history Vec<PriceEntry>
+        + 8                     // recent_price
+        + 8                     // track_price
+        + 8                     // sol_for_pol
+        + ProtocolOwnedLiquidity::LEN // pol_stats
+        + 8;                    // lp_token_price_in_sol
 }
 
 
@@ -364,21 +356,18 @@ pub struct HashpowerConfig {
 
 // For HashpowerConfig
 impl HashpowerConfig {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // authority
-        32 + // dev_address
-        32 + // fee_collector
-        8 +  // min_lockup_days
-        8 +  // max_lockup_days
-        2 +  // base_multiplier
-        2 +  // max_multiplier
-        1 +  // dogebtc_allocation
-        1 +  // liquidity_allocation
-        8 +  // last_claim_slot
-        8 +  // hashpower_per_weighted_sol
-        1 +  // sol_distribution_enabled
-        8 +  // dbtc_sol_price (u64)
-        1; // bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        32 +    // authority
+        32 +    // dev_address
+        8 +     // min_lockup_days
+        8 +     // max_lockup_days
+        2 +     // base_multiplier (u16)
+        2 +     // max_multiplier (u16)
+        1 +     // dogebtc_allocation
+        1 +     // liquidity_allocation
+        8 +     // hashpower_per_weighted_sol
+        8 +     // dbtc_sol_price (u64)
+        1;      // bump
 }
 
 
@@ -438,18 +427,18 @@ pub struct EggConfig {
 impl EggConfig {
     pub const MAX_TICKET_TIERS: usize = 4;
     
+    // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_URI_LENGTH bytes)
+    // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // dragon_egg_collection
-        4 +     // dragon_egg_uris Vec length
-        (32 * 20) + // dragon_egg_uris Vec<String> (max 20 factions, 32 chars each)
+        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // dragon_egg_uris Vec<String> (max 12 factions)
         8 +     // max_supply
         8 +     // eggs_minted
         8 +     // base_price
         8 +     // curve_a
         8 +     // global_dragon_egg_power
-        4 +     // ticket_tiers Vec length
-        (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
 }
 
 
@@ -513,15 +502,15 @@ pub struct TaxConfig {
 impl TaxConfig {
     pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
     
+    // Note: burn_tax_pct is calculated as 100 - nft_floor_sweep_pct - faction_treasury_pct, not stored
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // nft_floor_sweep_pct
-        1 +     // burn_tax_pct
         1 +     // faction_treasury_pct
         8 +     // total_burnt
         1 +     // round_active (bool)
-        8 +     // start_timestamp
-        8 +     // end_timestamp
+        8 +     // start_timestamp (i64)
+        8 +     // end_timestamp (i64)
         4 + (MAX_FACTIONS * 1) + // leaderboard_faction_ids Vec<u8>
         4 + (MAX_FACTIONS * 8) + // leaderboard_hashpower Vec<u64>
         1 +     // leaderboard_factions_count

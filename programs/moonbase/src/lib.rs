@@ -54,7 +54,10 @@ pub mod moonbase {
         admin::add_faction_internal(ctx, faction_name)
     }
 
-    /// Initialize a faction state account
+    /// Initialize a faction state account (admin only)
+    /// 
+    /// Manually initializes a FactionState account for an existing faction.
+    /// Typically called automatically by `add_faction`, but can be used to re-initialize if needed.
     pub fn initialize_faction_state(
         ctx: Context<InitializeFactionState>,
         faction_id: u8,
@@ -123,7 +126,10 @@ pub mod moonbase {
         admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
     }
 
-    /// Deposit moon doge tokens to the mining vault
+    /// Deposit DogeBtc tokens to the mining vault (anyone can call)
+    /// 
+    /// Allows anyone to deposit DogeBtc tokens into the mining vault.
+    /// These tokens will be distributed as rewards to stakers over time.
     pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
         admin::deposit_doge_btc_tokens_internal(ctx, amount)
     }
@@ -132,8 +138,11 @@ pub mod moonbase {
     // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Create Dragon Egg collection with program PDA as authority
-    /// This allows the program to mint NFTs from the collection
+    /// Create Dragon Egg collection with program PDA as authority (admin only)
+    /// 
+    /// Creates a new Metaplex Core collection for Dragon Egg NFTs.
+    /// The collection's update authority is set to a program-controlled PDA,
+    /// allowing the program to mint NFTs from the collection.
     pub fn create_dragon_egg_collection(
         ctx: Context<CreateDragonEggCollection>,
         name: String,
@@ -183,7 +192,10 @@ pub mod moonbase {
     // ----------------------------------------------------------------------------------------
 
 
-    /// Initialize the global game state for Faction Surge
+    /// Initialize the global game state for Faction Surge (admin only)
+    /// 
+    /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
+    /// This must be called before any rounds can be started.
     pub fn initialize_game_state(
         ctx: Context<InitializeGameState>,
         round_duration_seconds: i64,
@@ -246,15 +258,14 @@ pub mod moonbase {
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Withdraw collected SOL fees from the treasury
+    /// Withdraw collected SOL fees from the treasury (anyone can call)
     ///
-    /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
-    /// 1. For DOGE_BTC stakers
-    /// 2. For liquidity providers
-    /// 3. For devs
+    /// Withdraws SOL from the treasury and distributes it according to configured percentages:
+    /// - Protocol fee percentage
+    /// - Buyback percentage (for token buybacks)
+    /// - Stakers percentage (distributed to stakers)
     ///
-    /// Internally, 10% is sent to loot rewards.
-    ///
+    /// The remaining amount goes to the fee recipient (dev earnings).
     pub fn withdraw_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
         economy::distribute_sol_fees_internal(ctx)
     }
@@ -463,6 +474,13 @@ pub mod moonbase {
 
 
     /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
+    /// 
+    /// Allows the admin to mint a Dragon Egg NFT without payment.
+    /// The NFT is minted directly to the specified recipient address.
+    /// 
+    /// # Parameters
+    /// - `recipient`: Address that will receive the minted NFT
+    /// - `faction_id`: Faction ID the egg belongs to
     pub fn admin_mint_dragon_egg(
         ctx: Context<AdminMintDragonEgg>,
         recipient: Pubkey,
@@ -472,9 +490,14 @@ pub mod moonbase {
     }
 
 
-    /// Mint a single Dragon Egg NFT
-    /// Uses bonding curve pricing based on current supply
-    /// Users can optionally choose a ticket tier to receive free tickets
+    /// Mint a single Dragon Egg NFT (anyone can call)
+    /// 
+    /// Mints a Dragon Egg NFT using bonding curve pricing based on current supply.
+    /// Users can optionally select a ticket tier to receive free tickets when minting.
+    /// 
+    /// # Parameters
+    /// - `faction_id`: Faction ID the egg belongs to
+    /// - `ticket_tier_index`: Optional ticket tier index (0-3) to receive free tickets
     pub fn mint_dragon_egg(
         ctx: Context<MintDragonEgg>,
         faction_id: u8,
@@ -483,8 +506,14 @@ pub mod moonbase {
         eggs::mint_dragon_egg(ctx, faction_id, ticket_tier_index)
     }
 
-    /// Batch mint multiple Dragon Eggs (max 10 per transaction)
-    /// Uses bonding curve pricing for each egg
+    /// Batch mint multiple Dragon Eggs (anyone can call, max 10 per transaction)
+    /// 
+    /// Mints multiple Dragon Egg NFTs in a single transaction.
+    /// Each egg uses bonding curve pricing based on the current supply at mint time.
+    /// 
+    /// # Parameters
+    /// - `faction_id`: Faction ID all eggs belong to
+    /// - `mint_count`: Number of eggs to mint (1-10)
     pub fn batch_mint_dragon_eggs(
         ctx: Context<BatchMintDragonEggs>,
         faction_id: u8,

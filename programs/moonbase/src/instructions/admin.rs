@@ -35,6 +35,18 @@ pub struct CreatorInput {
 // ------------ GLOBAL_CONFIG :: UPDATES, ADDING EXPANSIONS ------------
 // --------------------------------------------------------------------------------
 
+/// Initialize the global program configuration (admin only)
+/// 
+/// Creates the GlobalConfig and DogeBtcMining accounts and initializes default values.
+/// This function can only be called once during program deployment.
+/// 
+/// # Parameters
+/// - `fee_recipient`: Address that receives creation fees and dev earnings
+/// 
+/// # Initializes
+/// - GlobalConfig with default fee distributions
+/// - DogeBtcMining account
+/// - SOL treasury PDA
 pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
     msg!("🔧 [internal_initialize] Initializing global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -150,7 +162,12 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
 
 /// Set the Raydium pool state address (admin only)
-/// This is a security measure to prevent using malicious pools
+/// 
+/// Security measure to prevent using malicious pools for swaps.
+/// Only the authorized Raydium pool can be used for price discovery and liquidity operations.
+/// 
+/// # Parameters
+/// - `raydium_pool_state`: The authorized Raydium pool state address
 pub fn set_raydium_pool_state_internal(
     ctx: Context<UpdateConfigAc>,
     raydium_pool_state: Pubkey,
@@ -171,7 +188,17 @@ pub fn set_raydium_pool_state_internal(
 
  
 /// Add a single faction to the global config (admin only)
-/// Also initializes the faction state account for the new faction
+/// 
+/// Adds a new faction to the supported factions list and initializes its FactionState account.
+/// Maximum of MAX_FACTIONS (12) factions can be added.
+/// 
+/// # Parameters
+/// - `faction_name`: Name of the faction (max MAX_FACTION_NAME_LENGTH characters)
+/// 
+/// # Effects
+/// - Adds faction to `supported_factions` list
+/// - Creates and initializes FactionState PDA for the new faction
+/// - Faction ID is assigned based on current count (0-indexed)
 pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
     msg!("🏛️ [add_faction_internal] Adding faction");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -288,7 +315,14 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
 
 
 
-/// Initialize a faction state account
+/// Initialize a faction state account (admin only)
+/// 
+/// Manually initializes a FactionState account for an existing faction.
+/// This is typically called automatically by `add_faction_internal`, but can be used
+/// to re-initialize a faction state if needed.
+/// 
+/// # Parameters
+/// - `faction_id`: The faction ID to initialize (must exist in supported_factions)
 pub fn initialize_faction_state_internal(
     ctx: Context<InitializeFactionState>,
     faction_id: u8,
@@ -338,8 +372,14 @@ pub fn initialize_faction_state_internal(
 }
 
 
-/// Update the global configuration parameters
-/// Can only be called by the current authority
+/// Update the global configuration parameters (admin only)
+/// 
+/// Updates the program authority and/or fee recipient address.
+/// Only the current `ext_authority` can call this function.
+/// 
+/// # Parameters
+/// - `new_authority`: Optional new program authority (if None, authority unchanged)
+/// - `new_fee_recipient`: Optional new fee recipient (if None, fee recipient unchanged)
 pub fn update_config_internal(
     ctx: Context<UpdateConfigAc>,
     new_authority: Option<Pubkey>,
@@ -378,7 +418,23 @@ pub fn update_config_internal(
 }
 
 /// Update fee configuration (admin only)
-/// Validates that percentages sum correctly
+/// 
+/// Updates SOL fee distribution percentages and/or DogeBtc distribution percentages.
+/// All percentages must sum to 100% for their respective categories.
+/// 
+/// # Parameters
+/// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
+/// - `new_buyback_pct`: Optional new buyback percentage (SOL fees)
+/// - `new_stakers_pct`: Optional new stakers percentage (SOL fees)
+/// - `new_dbtc_stakers_pct`: Optional new DogeBtc stakers percentage
+/// - `new_dbtc_winners_pct`: Optional new DogeBtc winners percentage
+/// - `new_dbtc_same_faction_pct`: Optional new DogeBtc same-faction percentage
+/// - `new_dbtc_motherlode_pct`: Optional new DogeBtc motherlode percentage
+/// - `new_refining_fee`: Optional new refining fee percentage
+/// 
+/// # Validation
+/// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == 100
+/// - DogeBtc dist: dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_motherlode_pct == 100
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -507,8 +563,15 @@ pub fn update_fees_internal(
 // --------------------------------------------------------------------------------
 
 
-/// Initialize mining by setting the token vault and starting timestamp
-/// Can only be called once when mining_start_timestamp is 0
+/// Initialize mining by setting the token vault and starting timestamp (admin only)
+/// 
+/// Sets up the DogeBtc mining system with the token vault and initial mining parameters.
+/// Can only be called once when `mining_start_timestamp == 0`.
+/// 
+/// # Parameters
+/// - `start_timestamp`: Unix timestamp when mining should start
+/// - `doge_btc_per_slot`: Base DogeBtc emission rate per slot
+/// - `pool_state`: Raydium pool state address for price discovery
 pub fn initialize_mining_internal(
     ctx: Context<InitializeMining>,
     start_timestamp: u64,
@@ -564,7 +627,13 @@ pub fn initialize_mining_internal(
     Ok(())
 }
 
-/// Deposit moon doge tokens to the mining vault
+/// Deposit DogeBtc tokens to the mining vault (anyone can call)
+/// 
+/// Allows anyone to deposit DogeBtc tokens into the mining vault.
+/// These tokens will be distributed as rewards to stakers over time.
+/// 
+/// # Parameters
+/// - `amount`: Amount of DogeBtc tokens to deposit (in token's native decimals)
 pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
     token_if::transfer_checked(
         CpiContext::new(
@@ -590,21 +659,20 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
 // ----------------------------------------------------------------------------------------
 
 
-/// Create Dragon Egg collection with program PDA as authority
+/// Create Dragon Egg collection with program PDA as authority (admin only)
+/// 
+/// Creates a new Metaplex Core collection for Dragon Egg NFTs.
+/// The collection's update authority is set to a program-controlled PDA.
+/// 
+/// # Parameters
+/// - `name`: Collection name
+/// - `uri`: Collection metadata URI
 pub fn create_dragon_egg_collection_internal(
     ctx: Context<CreateDragonEggCollection>,
     name: String,
     uri: String,
 ) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
     let eggs_config = &mut ctx.accounts.eggs_config;
-    let authority = &ctx.accounts.authority;
-
-    // Verify authority
-    require!(
-        global_config.ext_authority == authority.key(),
-        ErrorCode::Unauthorized
-    );
 
     msg!("Creating Dragon Egg collection with program PDA as update authority");
     msg!("Collection: {}", ctx.accounts.collection.key());
@@ -645,7 +713,12 @@ pub fn create_dragon_egg_collection_internal(
 
 
 /// Set Dragon Egg URIs for all factions (admin only)
-/// uris: Vec of URIs, one per faction (must match number of factions)
+/// 
+/// Sets the metadata URIs for Dragon Eggs, one URI per faction.
+/// The number of URIs must match the number of supported factions.
+/// 
+/// # Parameters
+/// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
 pub fn set_dragon_egg_uris_internal(
     ctx: Context<UpdateEggsConfig>,
     uris: Vec<String>,
@@ -673,6 +746,9 @@ pub fn set_dragon_egg_uris_internal(
 }
 
 /// Clear all Dragon Egg URIs (admin only)
+/// 
+/// Removes all Dragon Egg metadata URIs from the configuration.
+/// This can be used to reset URIs before setting new ones.
 pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.dragon_egg_uris.clear();
@@ -683,9 +759,18 @@ pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<
 }
 
 
-/// Initialize royalties on the Dragon Egg collection.
-/// - basis_points: 500 = 5%
-/// - creators: list of (address, percentage) where sum(percentage) == 100
+/// Initialize royalties on the Dragon Egg collection (admin only)
+/// 
+/// Sets up royalty configuration for the Dragon Egg NFT collection using Metaplex Core.
+/// Initializes with an empty ProgramDenyList that can be updated later.
+/// 
+/// # Parameters
+/// - `basis_points`: Royalty percentage in basis points (e.g., 500 = 5%)
+/// - `creators`: List of creator addresses and their percentage shares
+/// 
+/// # Validation
+/// - At least one creator must be provided
+/// - Sum of creator percentages must equal 100
 pub fn init_dragon_egg_royalties(
     ctx: Context<InitDragonEggRoyalties>,
     basis_points: u16,
@@ -746,7 +831,18 @@ pub fn init_dragon_egg_royalties(
 }
  
 /// Add or update ticket tier configs (admin only)
-/// Max 4 ticket tier configs can be set
+/// 
+/// Configures ticket tier options that users can choose when minting Dragon Eggs.
+/// Users receive free tickets based on the selected tier when they mint.
+/// 
+/// # Parameters
+/// - `ticket_tier_index`: Index of the ticket tier (0-3, max 4 tiers)
+/// - `ticket_value`: Value of each ticket in lamports (e.g., 10_000_000 = 0.01 SOL)
+/// - `ticket_count`: Number of tickets given with this tier
+/// 
+/// # Example
+/// - Tier 0: 0.01 SOL × 1000 tickets
+/// - Tier 1: 0.1 SOL × 10 tickets
 pub fn add_ticket_tier_config(
     ctx: Context<UpdateEggsConfig>,
     ticket_tier_index: u8,
@@ -796,7 +892,13 @@ pub fn add_ticket_tier_config(
 // ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
 // --------------------------------------------------------------------------------
 
-/// Initialize the global game state for Faction Surge
+/// Initialize the global game state for Faction Surge (admin only)
+/// 
+/// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
+/// This must be called before any rounds can be started.
+/// 
+/// # Parameters
+/// - `round_duration_seconds`: Duration of each game round in seconds
 pub fn initialize_game_state_internal(
     ctx: Context<InitializeGameState>,
     round_duration_seconds: i64,
@@ -856,7 +958,13 @@ pub fn initialize_game_state_internal(
 
 
 /// Add a cranker bot to the whitelist (admin only)
-/// Maximum MAX_CRANKER_BOTS bots can be whitelisted
+/// 
+/// Adds a bot address to the whitelist of authorized cranker bots.
+/// Only whitelisted bots can call `start_round` and `end_round` functions.
+/// Maximum of MAX_CRANKER_BOTS (3) bots can be whitelisted.
+/// 
+/// # Parameters
+/// - `bot_pubkey`: Public key of the bot to whitelist
 pub fn add_cranker_bot_internal(
     ctx: Context<UpdateGameState>,
     bot_pubkey: Pubkey,
@@ -897,6 +1005,11 @@ pub fn add_cranker_bot_internal(
 }
 
 /// Remove a cranker bot from the whitelist (admin only)
+/// 
+/// Removes a bot address from the whitelist of authorized cranker bots.
+/// 
+/// # Parameters
+/// - `bot_pubkey`: Public key of the bot to remove from whitelist
 pub fn remove_cranker_bot_internal(
     ctx: Context<UpdateGameState>,
     bot_pubkey: Pubkey,
@@ -935,7 +1048,15 @@ pub fn remove_cranker_bot_internal(
 // ----------------------------------------------------------------------------------------
 
 /// Initialize system referral account and buybacks system (admin only)
-/// This function initializes both the system referral rewards account and the buybacks system
+/// 
+/// Creates and initializes both the system referral rewards account and the buybacks tracking account.
+/// The system referral account tracks rewards for the system referral code.
+/// The buybacks account tracks SOL accumulated for token buybacks.
+/// 
+/// # Initializes
+/// - System referral rewards PDA
+/// - Buybacks account PDA
+/// - Buybacks SOL vault PDA
 pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
     msg!("🔧 [initialize_system_accounts_internal] Initializing system accounts");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -1179,7 +1300,8 @@ pub struct CreateDragonEggCollection<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
