@@ -2,11 +2,6 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ErrorCode;
 
-// Moonbase pricing tiers
-pub const PRICE_TIER_1: u64 = 500_000_000; // 0.5 SOL (no egg)
-pub const PRICE_TIER_2: u64 = 2_420_000_000; // 2.42 SOL (has egg)
-pub const PRICE_TIER_3: u64 = 4_200_000_000; // 4.20 SOL (has egg)
-pub const PRICE_TIER_4: u64 = 6_900_000_000; // 6.9 SOL (has egg)
 
 pub const DBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
@@ -27,16 +22,10 @@ pub const M_HUNDRED: u64 = 100;
 
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
 
-// ========== GLOBAL CONSTANTS ========== //
-pub const REFERRAL_FEE: u64 = 10; // 10%
-pub const REFERRAL_DISCOUNT: u64 = 5; // 5% discount for users who use a referral code
 
 pub const DISCRIMINATOR_SIZE: usize = 8;
 
 // ========== FACTION SURGE RAFFLE CONSTANTS ========== //
-
-pub const ROUND_DURATION_SECONDS: i64 = 600; // 10 minutes
-pub const HASHPOWER_PER_SOL_CONSTANT: u128 = 1_000_000; // 1 SOL = 1M hashpower (adjustable)
 
 pub const MOTHERLODE_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
@@ -67,7 +56,6 @@ pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
 // PDAs for Dragon Egg NFT system
 pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
-pub const INCUBATION_STATE_SEED: &[u8] = b"incubation-state";
 pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
 
 pub const BUYBACKS_SEED: &[u8] = b"buybacks";
@@ -84,6 +72,7 @@ pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dbtc-custodian";
 pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dbtc-custodian-authority";
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";
 pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
+
 pub const GAME_SESSION_SEED: &[u8] = b"game-session"; // Seed: [b"game-session", round_id_u64]
 pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_pubkey, round_id_u64]
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
@@ -91,6 +80,7 @@ pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 pub const DBTC_EMISSION_VAULT_SEED: &[u8] = b"dbtc-emission-vault";
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
+pub const EGG_CONFIG_SEED: &[u8] = b"egg-config";
 
 /// ------------ GLOBAL CONFIG ------------
 
@@ -705,6 +695,13 @@ pub struct PlayerData {
     pub lp_position_indices: Vec<u8>,
     pub active_moondoge_positions: u8,
     pub active_lp_positions: u8,
+    
+    /// Staked dragon eggs (max 5 eggs)
+    /// Stores the mint addresses of staked eggs
+    pub staked_eggs: Vec<Pubkey>,
+    /// Current egg multiplier (100 = 1x, 150 = 1.5x, etc.)
+    /// Calculated based on number of staked eggs
+    pub egg_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
     /// Example: [10000000, 100000000, ...] where 1 point = 1 SOL lamport
@@ -753,6 +750,8 @@ impl PlayerData {
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         1 +     // active_moondoge_positions (u8)
         1 +     // active_lp_positions (u8)
+        4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
+        2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8);  // free_tickets_remaining Vec<u64>
 }
@@ -794,15 +793,30 @@ impl StakedPosition {
 #[account]
 pub struct ReferralRewards {
     pub owner: Pubkey,
-    pub total_sol_earned: u64,
     pub bump: u8,
     /// Number of users who have used this user's referral code
     pub referrals_count: u16,
+    
+    /// Pending SOL rewards from referrals (claimable)
+    pub pending_sol_rewards: u64,
+    /// Pending DogeBtc rewards from referrals (claimable)
+    pub pending_dbtc_rewards: u64,
+    
+    /// Total SOL earned from referrals (cumulative)
+    pub total_sol_earned: u64,
+    /// Total DogeBtc earned from referrals (cumulative)
+    pub total_dbtc_earned: u64,
 }
 
 impl ReferralRewards {
-    // discriminator + owner + total_sol_earned + sol_claimed_for_xp + bump + referrals_count
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 32 + 8 + 8 + 1 + 2;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 
+        32 +    // owner
+        1 +     // bump
+        2 +     // referrals_count
+        8 +     // pending_sol_rewards
+        8 +     // pending_dbtc_rewards
+        8 +     // total_sol_earned
+        8;      // total_dbtc_earned
 }
 
  
@@ -812,9 +826,53 @@ impl ReferralRewards {
 
 // ========== DRAGON EGG NFT CONSTANTS ========== //
 pub const BASE_EGG_POWER: u32 = 100;
+pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
 
 pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
+
+/// Ticket tier option for egg minting
+/// When users mint eggs, they choose a ticket tier which gives them free tickets
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct TicketTier {
+    /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
+    pub ticket_value: u64,
+    /// Number of tickets given with this tier (e.g., 200 tickets)
+    pub ticket_count: u16,
+}
+
+impl TicketTier {
+    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
+}
+
+/// Global egg configuration
+#[account]
+pub struct EggConfig {
+    pub bump: u8,
+    
+    /// Total supply of eggs across all tiers
+    pub total_supply: u64,
+    /// Number of eggs minted so far
+    pub eggs_minted: u64,
+    
+    /// Price per egg tier: [tier1, tier2, tier3, tier4]
+    pub prices: [u64; 4],
+    
+    /// Available ticket tiers users can choose when minting (max 5 options)
+    /// Example: 0.001 SOL × 2000, 0.01 SOL × 200, 0.1 SOL × 20
+    pub ticket_tiers: Vec<TicketTier>,
+}
+
+impl EggConfig {
+    pub const MAX_TICKET_TIERS: usize = 5;
+    
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // total_supply
+        8 +     // eggs_minted
+        (4 * 8) + // prices [u64; 4]
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+}
 
 
 

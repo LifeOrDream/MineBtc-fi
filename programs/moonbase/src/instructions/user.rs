@@ -130,6 +130,11 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.active_lp_positions = 0;
     msg!("     Position tracking initialized");
     
+    // Initialize egg staking
+    player_data.staked_eggs = Vec::new();
+    player_data.egg_multiplier = 100; // Default 1.0x (no eggs staked)
+    msg!("     Egg staking initialized (0 eggs, 1.0x multiplier)");
+    
     // Initialize free tickets vectors
     player_data.free_tickets = Vec::new();
     player_data.free_tickets_remaining = Vec::new();
@@ -139,9 +144,12 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     msg!("   Initializing new player's referral rewards account...");
     let new_player_rewards = &mut ctx.accounts.new_player_rewards;
     new_player_rewards.owner = ctx.accounts.authority.key();
-    new_player_rewards.total_sol_earned = 0;
-    new_player_rewards.referrals_count = 0;
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
+    new_player_rewards.referrals_count = 0;
+    new_player_rewards.pending_sol_rewards = 0;
+    new_player_rewards.pending_dbtc_rewards = 0;
+    new_player_rewards.total_sol_earned = 0;
+    new_player_rewards.total_dbtc_earned = 0;
     msg!("     Referral rewards account initialized");
     
     msg!("✅ [initialize_player] Player initialized successfully");
@@ -249,7 +257,7 @@ fn internal_join_round<'info>(
 
     // Determine if using ticket or SOL
     let is_ticket_bet = use_ticket.is_some();
-    let (net_amount, fee, points_amount) = if let Some(ticket_type_index) = use_ticket {
+    let (net_amount, points_amount) = if let Some(ticket_type_index) = use_ticket {
         msg!("   Using ticket type index: {}", ticket_type_index);
         require!(  (ticket_type_index as usize) < player_data.free_tickets.len() && (ticket_type_index as usize) < player_data.free_tickets_remaining.len(), ErrorCode::InvalidParameters );
         
@@ -268,7 +276,7 @@ fn internal_join_round<'info>(
         msg!("     ✓ Ticket deducted (remaining: {})", player_data.free_tickets_remaining[ticket_type_index as usize]);
         
         // Points bets don't have fees and don't go to prize pot
-        (0, 0, amount)
+        (0, amount)
     } else {
         msg!("   Using SOL bet. Bet amount: {} lamports", amount);
         
@@ -563,8 +571,29 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     
     // Add DogeBtc reward to pending_dbtc_rewards (user will claim later via claim_dbtc_rewards with refining fee)
     if dbtc_reward > 0 {
-        msg!("   Adding {} DogeBtc tokens to pending_dbtc_rewards", dbtc_reward);
-        player_data.pending_dbtc_rewards += dbtc_reward;
+        msg!("   Processing DogeBtc rewards...");
+        
+        // Check if user has a referrer (not system referral account)
+        let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
+        let referral_fee = if has_referrer {
+            let fee = dbtc_reward * 5 / 100; // 5% referral fee
+            msg!("     Referral fee (5%): {} dbtc", fee);
+            
+            // Add fee to referrer's pending rewards
+            if let Some(referrer_rewards_acc) = &mut ctx.accounts.referrer_rewards {
+                let referrer_rewards = referrer_rewards_acc.as_mut();
+                referrer_rewards.pending_dbtc_rewards += fee;
+                referrer_rewards.total_dbtc_earned += fee;
+                msg!("     Added {} dbtc to referrer's rewards", fee);
+            }
+            fee
+        } else {
+            0
+        };
+        
+        let player_dbtc = dbtc_reward - referral_fee;
+        player_data.pending_dbtc_rewards += player_dbtc;
+        msg!("   Added {} DogeBtc to player's pending_dbtc_rewards (after {} referral fee)", player_dbtc, referral_fee);
         msg!("     Pending DogeBtc rewards: {} tokens", player_data.pending_dbtc_rewards);
     } else {
         msg!("   No DogeBtc reward to add to pending rewards");
@@ -1087,6 +1116,14 @@ pub struct ClaimRewards<'info> {
         bump = user_game_bet.bump
     )]
     pub user_game_bet: Account<'info, UserGameBet>,
+    
+    /// Optional referrer rewards account (if player has a referrer)
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), player_data.referral_code.as_ref()],
+        bump
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
     
     /// CHECK: SOL prize pot vault
     #[account(

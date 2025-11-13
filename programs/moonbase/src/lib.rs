@@ -11,7 +11,8 @@ pub use instructions::economy::*;
 pub use instructions::game::*;
 pub use instructions::user::*;
 pub use instructions::stake::*;
-pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType};
+pub use instructions::eggs::*;
+pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier};
 
 declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
 
@@ -371,13 +372,18 @@ pub mod moonbase {
     }
     
     /// Claim SOL rewards from DogeBtc and LP staking
-    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-        stake::claim_sol_rewards(ctx)
+    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
+        stake::claim_sol_rewards(ctx, faction_id)
     }
     
     /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
-    pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-        stake::claim_dbtc_rewards(ctx)
+    pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Result<()> {
+        stake::claim_dbtc_rewards(ctx, faction_id)
+    }
+    
+    /// Claim referral rewards (SOL and DogeBtc earned from referrals)
+    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+        stake::claim_referral_rewards(ctx)
     }
 
 
@@ -386,13 +392,14 @@ pub mod moonbase {
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Mint a Dragon Egg NFT with specified faction and tier
+    /// Mint a Dragon Egg NFT with specified faction, tier, and ticket selection
     pub fn mint_dragon_egg(
         ctx: Context<MintDragonEgg>,
         faction_id: u8,
         tier: u8,
+        ticket_tier_index: u8,
     ) -> Result<()> {
-        user::mint_dragon_egg(ctx, faction_id, tier)
+        user::mint_dragon_egg(ctx, faction_id, tier, ticket_tier_index)
     }
 
     /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)
