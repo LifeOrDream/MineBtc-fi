@@ -40,14 +40,6 @@ pub mod moonbase {
         admin::internal_initialize(ctx, creation_fee_recipient)
     }
 
-    /// Set the Dragon Egg collection address (admin only)
-    pub fn set_dragon_egg_collection(
-        ctx: Context<UpdateConfigAc>,
-        dragon_egg_collection: Pubkey,
-    ) -> Result<()> {
-        admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
-    }
-
     /// Set the Raydium pool state address (admin only)
     /// Security: Prevents using malicious pools for swaps
     pub fn set_raydium_pool_state(

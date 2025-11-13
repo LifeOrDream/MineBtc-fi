@@ -133,9 +133,9 @@ pub struct MiningInitialized {
 
 #[event]
 pub struct SolFeesWithdrawn {
-    pub fee_collector: Pubkey,
-    pub economy_program_amount: u64,
+    pub available_solana: u64,
     pub buyback_amount: u64,
+    pub dev_earnings_amount: u64
 }
 
 // ------------------------------

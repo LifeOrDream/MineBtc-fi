@@ -103,8 +103,7 @@ pub struct GlobalConfig {
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
-    /// External account that can withdraw collected SOL
-    pub ext_fee_collector: Pubkey,
+
     /// Direct recipient for egg mints revenue
     pub creation_fee_recipient: Pubkey,
     /// PDA account that holds collected SOL fees
