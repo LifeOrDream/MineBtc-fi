@@ -25,14 +25,6 @@ const PROGRAMS = {
     soPath: path.join(ROOT_DIR, 'target', 'deploy', 'moonbase.so'),
     libPath: path.join(ROOT_DIR, 'programs', 'moonbase', 'src', 'lib.rs'),
     buildDir: ROOT_DIR
-  },
-  mooneconomy: {
-    name: 'mooneconomy',
-    displayName: 'MoonEconomy',
-    keypairPath: path.join(ROOT_DIR, 'target', 'deploy', 'mooneconomy-keypair.json'),
-    soPath: path.join(ROOT_DIR, 'target', 'deploy', 'mooneconomy.so'),
-    libPath: path.join(ROOT_DIR, 'programs', 'mooneconomy', 'src', 'lib.rs'),
-    buildDir: ROOT_DIR
   }
 };
 
@@ -107,7 +99,6 @@ function isProgramDeployed(programName, deploymentData) {
   
   const programIdKey = {
     'moonbase': 'MOON_BASE_PROGRAM_ID',
-    'mooneconomy': 'MOON_ECONOMY_PROGRAM_ID'
   }[programName];
   
   return deploymentData[programIdKey] && deploymentData[programIdKey] !== '';
@@ -120,7 +111,7 @@ function extractIdlFromBinary(programConfig) {
   ensureDirectoryExists(idlDir);
   
   try {
-    // For moonbase/mooneconomy, capture IDL output from anchor idl build
+    // For moonbase, capture IDL output from anchor idl build
     const idlOutput = runCommand(`anchor idl build -p ${programConfig.name}`, ROOT_DIR);
     
     // Extract JSON from output
@@ -376,7 +367,6 @@ function saveDeploymentInfo(programAddresses) {
   }
   
   deploymentData.MOON_BASE_PROGRAM_ID = programAddresses.moonbase;
-  deploymentData.MOON_ECONOMY_PROGRAM_ID = programAddresses.mooneconomy;
   deploymentData.game_programs_deployment = {
     timestamp: new Date().toISOString(),
     cluster: cluster
@@ -385,7 +375,6 @@ function saveDeploymentInfo(programAddresses) {
   fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
   console.log(`\x1b[32m✅ Saved deployment info\x1b[0m`);
   console.log(`\x1b[32m   🔗 MOON_BASE: ${programAddresses.moonbase}\x1b[0m`);
-  console.log(`\x1b[32m   🔗 MOON_ECONOMY: ${programAddresses.mooneconomy}\x1b[0m`);
 }
 
 async function main() {
@@ -398,17 +387,14 @@ async function main() {
     
     // Check if game programs are already deployed
     const allDeployed = existingDeployment && 
-      isProgramDeployed('moonbase', existingDeployment) &&
-      isProgramDeployed('mooneconomy', existingDeployment);
+      isProgramDeployed('moonbase', existingDeployment);
     
     if (allDeployed) {
       console.log(`\x1b[32m✅ Game programs already deployed!\x1b[0m`);
       console.log(`\x1b[36m   🔗 MOON_BASE: ${existingDeployment.MOON_BASE_PROGRAM_ID}\x1b[0m`);
-      console.log(`\x1b[36m   🔗 MOON_ECONOMY: ${existingDeployment.MOON_ECONOMY_PROGRAM_ID}\x1b[0m`);
       console.log(`\x1b[36m\n📋 Regenerating IDL files...\x1b[0m`);
       
       extractIdlFromBinary(PROGRAMS.moonbase);
-      extractIdlFromBinary(PROGRAMS.mooneconomy);
       
       console.log(`\x1b[32m\n✅ IDL files regenerated!\x1b[0m`);
       return;
@@ -448,7 +434,6 @@ async function main() {
     console.log(`\x1b[33m  1. Run 1_init_mdoge_token.js\x1b[0m`);
     console.log(`\x1b[33m  2. Run 2_init_mdoge_SOL_pool.js\x1b[0m`);
     console.log(`\x1b[33m  3. Run 4_init_moonbase.js\x1b[0m`);
-    console.log(`\x1b[33m  4. Run 5_init_mooneconomy.js\x1b[0m`);
     
   } catch (error) {
     console.error(`\x1b[31m\n💥 DEPLOYMENT FAILED! 💥\x1b[0m`);

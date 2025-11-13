@@ -14,7 +14,7 @@ pub use instructions::game::*;
 pub use instructions::eggs::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier};
 
-declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
+declare_id!("G6sVLJTtBz2A1uVKtKxMmuT1PMehSiCu4go7jRk3numX");
 
 #[program]
 pub mod moonbase {

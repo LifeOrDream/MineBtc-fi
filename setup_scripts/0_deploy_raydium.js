@@ -147,10 +147,49 @@ function deployRaydium(programId) {
 
 function generateIdl(programId) {
   console.log(`\x1b[36m📝 Updating IDL...\x1b[0m`);
-  const idlPath = path.join(ROOT_DIR, 'target', 'idl', 'raydium_cp_swap.json');
   
-  if (!fs.existsSync(idlPath)) {
-    console.log(`\x1b[31m❌ IDL template not found at ${idlPath}\x1b[0m`);
+  // Try multiple possible IDL locations
+  const possibleIdlPaths = [
+    path.join(ROOT_DIR, 'target', 'idl', 'raydium_cp_swap.json'),
+    path.join(RAYDIUM_DIR, 'target', 'idl', 'raydium_cp_swap.json'),
+  ];
+  
+  let idlPath = null;
+  for (const pathToCheck of possibleIdlPaths) {
+    if (fs.existsSync(pathToCheck)) {
+      idlPath = pathToCheck;
+      break;
+    }
+  }
+  
+  // If IDL doesn't exist, try generating it with anchor build
+  if (!idlPath) {
+    console.log(`\x1b[33m⚠️  IDL not found, attempting to generate with Anchor...\x1b[0m`);
+    try {
+      // Try anchor build to generate IDL (will build but we won't use the .so if deployment fails)
+      // Note: anchor build will try to deploy but we'll ignore that error
+      try {
+        runCommand('anchor build', RAYDIUM_DIR);
+      } catch (buildError) {
+        // Build might fail on deploy step, but IDL might still be generated
+        console.log(`\x1b[33m   Build/deploy step had issues (expected), checking for IDL...\x1b[0m`);
+      }
+      
+      // Check again after anchor build attempt
+      for (const pathToCheck of possibleIdlPaths) {
+        if (fs.existsSync(pathToCheck)) {
+          idlPath = pathToCheck;
+          break;
+        }
+      }
+    } catch (error) {
+      console.log(`\x1b[33m⚠️  Anchor build failed (this is OK if using cargo build-sbf): ${error.message}\x1b[0m`);
+    }
+  }
+  
+  if (!idlPath) {
+    console.log(`\x1b[33m⚠️  IDL not available (Raydium uses cargo build-sbf which doesn't generate IDL)\x1b[0m`);
+    console.log(`\x1b[33m   This is expected and deployment will continue without IDL\x1b[0m`);
     return;
   }
   
@@ -163,7 +202,7 @@ function generateIdl(programId) {
     fs.writeFileSync(idlPath, JSON.stringify(idlContent, null, 2));
     console.log(`\x1b[32m✅ IDL address updated: ${programId}\x1b[0m`);
   } catch (error) {
-    console.log(`\x1b[31m❌ Failed to update IDL: ${error.message}\x1b[0m`);
+    console.log(`\x1b[33m⚠️  Failed to update IDL: ${error.message}\x1b[0m`);
   }
 }
 
@@ -212,6 +251,50 @@ function resetArtifacts() {
   ensureDirectoryExists(RAYDIUM_DEPLOY_DIR);
 }
 
+function checkIfDeployed() {
+  const configPath = path.join(__dirname, 'config.json');
+  let cluster = 'localnet';
+  
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    cluster = config.network?.cluster || 'localnet';
+  } catch (error) {}
+  
+  const deploymentPath = path.join(DEPLOYMENTS_DIR, `${cluster}.json`);
+  
+  if (!fs.existsSync(deploymentPath)) {
+    return null;
+  }
+  
+  try {
+    const deploymentData = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+    const programId = deploymentData.RAYDIUM_CP_PROGRAM_ID;
+    
+    if (!programId) {
+      return null;
+    }
+    
+    // Check if program exists on-chain
+    let clusterUrl = 'http://127.0.0.1:8899';
+    
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      clusterUrl = config.network?.rpc_url || clusterUrl;
+    } catch (error) {}
+    
+    try {
+      const checkCommand = `solana program show ${programId} --url ${clusterUrl}`;
+      execSync(checkCommand, { stdio: 'pipe', encoding: 'utf8' });
+      return programId;
+    } catch (error) {
+      // Program not found on-chain, return null
+      return null;
+    }
+  } catch (error) {
+    return null;
+  }
+}
+
 async function main() {
   try {
     console.log(`\x1b[35m🚀 Raydium CP-Swap Program Deployment\x1b[0m`);
@@ -220,6 +303,22 @@ async function main() {
     const deployerPubkey = getDeployerPublicKey();
     console.log(`\x1b[36m📝 Deployer: ${deployerPubkey}\x1b[0m`);
     
+    // Check if program is already deployed
+    const existingProgramId = checkIfDeployed();
+    
+    if (existingProgramId) {
+      console.log(`\x1b[33m⚠️  Program already deployed at: ${existingProgramId}\x1b[0m`);
+      console.log(`\x1b[36m📝 Generating/updating IDL only...\x1b[0m`);
+      
+      // Only generate IDL for existing deployment
+      generateIdl(existingProgramId);
+      
+      console.log(`\x1b[32m\n✅ IDL generation complete!\x1b[0m`);
+      console.log(`\x1b[32m   Program ID: ${existingProgramId}\x1b[0m`);
+      return;
+    }
+    
+    // New deployment flow
     resetArtifacts();
     const { programId, secretKey } = createNewKeypair();
     updateRaydiumCode(programId, deployerPubkey);
@@ -231,7 +330,7 @@ async function main() {
     
     console.log(`\x1b[32m\n🎉 Raydium deployment complete!\x1b[0m`);
     console.log(`\x1b[32m   Program ID: ${programId}\x1b[0m`);
-    console.log(`\x1b[33m\n📋 Next: Run 0_deploy_game.js for moonbase/mooneconomy\x1b[0m`);
+    console.log(`\x1b[33m\n📋 Next: Run 0_deploy_game.js for moonbase\x1b[0m`);
     
   } catch (error) {
     console.error(`\x1b[31m💥 Deployment failed: ${error.message}\x1b[0m`);
