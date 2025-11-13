@@ -531,6 +531,7 @@ pub fn initialize_tax_config(
     ctx: Context<InitializeTaxConfig>,
     nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
+    nft_floor_sweep_whitelisted_address: Pubkey,
 ) -> Result<()> {
     msg!("🔧 [initialize_tax_config] Initializing tax system");
     
@@ -565,6 +566,7 @@ pub fn initialize_tax_config(
     tax_config.faction_treasury_vault = ctx.accounts.faction_treasury_vault.key();
     tax_config.nft_floor_sweep_vault = ctx.accounts.nft_floor_sweep_vault.key();
     tax_config.nft_sale_sol_vault = ctx.accounts.nft_sale_sol_vault.key();
+    tax_config.nft_floor_sweep_whitelisted_address = nft_floor_sweep_whitelisted_address;
     
     msg!("   ✅ TaxConfig initialized");
     msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
@@ -574,6 +576,7 @@ pub fn initialize_tax_config(
     msg!("   Withdraw Authority: {}", tax_config.withdraw_withheld_authority);
     msg!("   Faction Treasury Vault: {}", tax_config.faction_treasury_vault);
     msg!("   NFT Floor Sweep Vault: {}", tax_config.nft_floor_sweep_vault);
+    msg!("   NFT Floor Sweep Whitelisted Address: {}", nft_floor_sweep_whitelisted_address);
     
     Ok(())
 }
@@ -602,6 +605,73 @@ pub fn update_tax_config(
     msg!("   Faction Treasury: {}%", faction_treasury_pct);
     let burn_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct;
     msg!("   Burn: {}%", burn_pct);
+    
+    Ok(())
+}
+
+/// Update NFT floor sweep whitelisted address
+/// Callable only by global config authority
+pub fn update_nft_floor_sweep_whitelist(
+    ctx: Context<UpdateNftFloorSweepWhitelist>,
+    new_whitelisted_address: Pubkey,
+) -> Result<()> {
+    msg!("🔧 [update_nft_floor_sweep_whitelist] Updating whitelisted address");
+    
+    let tax_config = &mut ctx.accounts.tax_config;
+    tax_config.nft_floor_sweep_whitelisted_address = new_whitelisted_address;
+    
+    msg!("   ✅ Whitelisted address updated: {}", new_whitelisted_address);
+    
+    Ok(())
+}
+
+/// Withdraw DogeBtc from NFT floor sweep vault
+/// Callable only by the whitelisted address
+/// The whitelisted address will use this DogeBtc to swap for SOL off-chain,
+/// buy NFTs, re-list them at 1.2x, and transfer SOL proceeds to SOL treasury
+pub fn withdraw_nft_floor_sweep_funds(
+    ctx: Context<WithdrawNftFloorSweepFunds>,
+    amount: u64,
+) -> Result<()> {
+    msg!("💰 [withdraw_nft_floor_sweep_funds] Withdrawing {} DogeBtc", amount);
+    
+    let tax_config = &ctx.accounts.tax_config;
+    let whitelisted_address = &ctx.accounts.whitelisted_address;
+    
+    // Verify caller is the whitelisted address
+    require!(
+        tax_config.nft_floor_sweep_whitelisted_address == whitelisted_address.key(),
+        ErrorCode::Unauthorized
+    );
+    
+    // Verify vault has sufficient balance
+    let vault_balance = ctx.accounts.nft_floor_sweep_vault.amount;
+    require!(vault_balance >= amount, ErrorCode::InsufficientFunds);
+    
+    // Transfer DogeBtc from vault to whitelisted address's token account
+    let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
+    let withdraw_authority_seeds = &[
+        WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
+        &[withdraw_authority_bump],
+    ];
+    let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
+    
+    token_2022::transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.nft_floor_sweep_vault.to_account_info(),
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                to: ctx.accounts.whitelisted_token_account.to_account_info(),
+                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+            },
+            withdraw_authority_signer
+        ),
+        amount,
+        ctx.accounts.dbtc_mint.decimals,
+    )?;
+    
+    msg!("   ✅ Transferred {} DogeBtc to whitelisted address {}", amount, whitelisted_address.key());
     
     Ok(())
 }

@@ -464,6 +464,10 @@ pub struct TaxConfig {
     pub faction_treasury_vault: Pubkey,
     pub nft_floor_sweep_vault: Pubkey,
     pub nft_sale_sol_vault: Pubkey,
+    
+    /// Whitelisted address that can withdraw DogeBtc from NFT floor sweep vault
+    /// This address will swap DogeBtc for SOL off-chain, buy NFTs, and re-list them
+    pub nft_floor_sweep_whitelisted_address: Pubkey,
 }
 
 impl TaxConfig {
@@ -488,7 +492,8 @@ impl TaxConfig {
         32 +    // withdraw_withheld_authority
         32 +    // faction_treasury_vault
         32 +    // nft_floor_sweep_vault
-        32;     // nft_sale_sol_vault
+        32 +    // nft_sale_sol_vault
+        32;     // nft_floor_sweep_whitelisted_address
 }
  
 
