@@ -1,7 +1,10 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{self, transfer, Transfer};
+use anchor_lang::system_program::{transfer, Transfer};
 use crate::state::*;
 use crate::errors::ErrorCode;
+
+// WSOL mint address (Wrapped SOL)
+pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
  
 // -----------------------------------------------------
 // ------------ REFERRAL SYSTEM HELPERS ----------------
@@ -24,6 +27,54 @@ pub fn transfer_to_sol_treasury<'info>(
         ),
         amount,
     )
+}
+
+// Helper function to transfer WSOL to multisig token account
+// Wraps SOL to WSOL first, then transfers WSOL
+pub fn transfer_wsol_to_multisig<'info>(
+    from: &AccountInfo<'info>,
+    multisig_wsol_account: &AccountInfo<'info>,
+    from_wsol_account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    // Step 1: Transfer SOL to the from_wsol_account (this wraps it)
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: from_wsol_account.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    // Step 2: Sync native account to update WSOL balance
+    anchor_spl::token::sync_native(
+        CpiContext::new(
+            token_program.to_account_info(),
+            anchor_spl::token::SyncNative {
+                account: from_wsol_account.to_account_info(),
+            },
+        ),
+    )?;
+
+    // Step 3: Transfer WSOL from from_wsol_account to multisig_wsol_account
+    anchor_spl::token::transfer(
+        CpiContext::new(
+            token_program.to_account_info(),
+            anchor_spl::token::Transfer {
+                from: from_wsol_account.to_account_info(),
+                to: multisig_wsol_account.to_account_info(),
+                authority: from.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    Ok(())
 }
 
 

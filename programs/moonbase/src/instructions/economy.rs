@@ -6,8 +6,8 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface::TokenAccount as TokenAccount2022; // ← the PROGRAM-ID wrapper (implements Id)
 use anchor_spl::{
-    token::{self, Token, TokenAccount},           // <- gives you TokenAccount type
-    associated_token::{self, AssociatedToken},     // <- gives you AssociatedToken program type
+    token::{Token, TokenAccount},           // <- gives you TokenAccount type
+    associated_token::AssociatedToken,     // <- gives you AssociatedToken program type
 };
 
 // Import Raydium CP-Swap for CPI calls
@@ -68,18 +68,44 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
  
     let dev_earnings = available_solana.saturating_sub(sol_for_buybacks);
     if dev_earnings > 0 {
+        // Transfer SOL from treasury to treasury WSOL account (wraps it)
         anchor_lang::system_program::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.fee_recipient.to_account_info(),
+                    to: ctx.accounts.treasury_wsol_account.to_account_info(),
                 },
                 signer_seeds,
             ),
             dev_earnings,
         )?;
-        msg!("👨‍💻 Sent {} SOL to Dev Earnings", dev_earnings as f64 / 1e9);
+
+        // Sync native account to update WSOL balance
+        anchor_spl::token::sync_native(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::SyncNative {
+                    account: ctx.accounts.treasury_wsol_account.to_account_info(),
+                },
+                signer_seeds,
+            ),
+        )?;
+
+        // Transfer WSOL from treasury WSOL account to multisig WSOL account
+        anchor_spl::token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::Transfer {
+                    from: ctx.accounts.treasury_wsol_account.to_account_info(),
+                    to: ctx.accounts.multisig_wsol_account.to_account_info(),
+                    authority: ctx.accounts.sol_treasury.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            dev_earnings,
+        )?;
+        msg!("👨‍💻 Sent {} WSOL to Multisig (Dev Earnings)", dev_earnings as f64 / 1e9);
     }
 
     // Emit event
@@ -1319,6 +1345,21 @@ pub struct DistributeSolFees<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
+    /// Treasury's WSOL token account (authority is treasury PDA)
+    #[account(
+        mut,
+        constraint = treasury_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+    )]
+    /// CHECK: Token account owned by treasury PDA (verified via constraint)
+    pub treasury_wsol_account: Account<'info, TokenAccount>,
+
+    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
+    #[account(mut)]
+    pub multisig_wsol_account: UncheckedAccount<'info>,
+
+    /// CHECK: WSOL mint
+    pub wsol_mint: UncheckedAccount<'info>,
+
     /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(
         mut,
@@ -1326,13 +1367,6 @@ pub struct DistributeSolFees<'info> {
         bump
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
-
-    /// CHECK: Creation fee recipient account (receives dev earnings)
-    #[account(
-        mut,
-        address = global_config.fee_recipient @ ErrorCode::InvalidAccount
-    )]
-    pub fee_recipient: UncheckedAccount<'info>,
 
     /// Buybacks tracking account (required)
     #[account(
@@ -1342,6 +1376,7 @@ pub struct DistributeSolFees<'info> {
     )]
     pub buybacks_account: Account<'info, BuybacksAccount>,
 
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
  

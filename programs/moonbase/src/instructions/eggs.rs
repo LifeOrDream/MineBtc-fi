@@ -1,4 +1,6 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::Token;
+use anchor_spl::associated_token::AssociatedToken;
 use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::state::*;
@@ -78,11 +80,13 @@ pub fn mint_dragon_egg(
         egg_config.eggs_minted + 1, 
         cost_per_egg);
 
-    // Transfer SOL from user to treasury
-    helper::transfer_to_sol_treasury(
+    // Transfer WSOL from user to multisig account
+    helper::transfer_wsol_to_multisig(
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.multisig_wsol_account.to_account_info(),
+        &ctx.accounts.user_wsol_account.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.token_program.to_account_info(),
         cost_per_egg,
     )?;
     
@@ -236,11 +240,13 @@ pub fn batch_mint_dragon_eggs(
     
     msg!("   Batch minting {} eggs, total cost: {} lamports", mint_count, total_price);
 
-    // Transfer SOL from user to treasury
-    helper::transfer_to_sol_treasury(
+    // Transfer WSOL from user to multisig account
+    helper::transfer_wsol_to_multisig(
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.multisig_wsol_account.to_account_info(),
+        &ctx.accounts.user_wsol_account.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.token_program.to_account_info(),
         total_price,
     )?;
     
@@ -655,13 +661,21 @@ pub struct MintDragonEgg<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
+    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
+    #[account(mut)]
+    pub multisig_wsol_account: UncheckedAccount<'info>,
+
+    /// User's WSOL token account (for wrapping SOL to WSOL)
     #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
+        init_if_needed,
+        payer = user,
+        associated_token::mint = wsol_mint,
+        associated_token::authority = user,
     )]
-    /// CHECK: PDA that holds collected SOL fees
-    pub sol_treasury: UncheckedAccount<'info>,
+    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+
+    /// CHECK: WSOL mint
+    pub wsol_mint: UncheckedAccount<'info>,
 
     /// Metaplex Core asset (will be created)
     #[account(mut)]
@@ -691,6 +705,9 @@ pub struct MintDragonEgg<'info> {
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
 
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub token_program: Program<'info, Token>,
+
     #[account(mut)]
     pub user: Signer<'info>,
     
@@ -713,13 +730,21 @@ pub struct BatchMintDragonEggs<'info> {
     )]
     pub egg_config: Account<'info, EggConfig>,
 
+    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
+    #[account(mut)]
+    pub multisig_wsol_account: UncheckedAccount<'info>,
+
+    /// User's WSOL token account (for wrapping SOL to WSOL)
     #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
+        init_if_needed,
+        payer = user,
+        associated_token::mint = wsol_mint,
+        associated_token::authority = user,
     )]
-    /// CHECK: SOL treasury PDA
-    pub sol_treasury: UncheckedAccount<'info>,
+    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+
+    /// CHECK: WSOL mint
+    pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: Dragon Egg collection (Metaplex Core)
     pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
@@ -746,6 +771,9 @@ pub struct BatchMintDragonEggs<'info> {
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub token_program: Program<'info, Token>,
 
     #[account(mut)]
     pub user: Signer<'info>,
