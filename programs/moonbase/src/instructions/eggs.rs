@@ -3,10 +3,27 @@ use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::state::*;
 use crate::instructions::helper;
+use mpl_core::{
+    instructions::{
+        AddCollectionPluginV1CpiBuilder,
+        UpdateCollectionPluginV1CpiBuilder,
+    },
+    types::{Plugin, PluginAuthority, PluginType, Royalties, RuleSet, Creator},
+    RoyaltiesPlugin,
+};
+use borsh::BorshDeserialize;
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
+
+/// Helper type for passing creators from client
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct CreatorInput {
+    pub address: Pubkey,
+    /// Percentage share (0–100). Sum must be exactly 100.
+    pub percentage: u8,
+}
 
 /// Mint Dragon Egg NFT
 /// Allows users to mint an egg with specified faction and tier
@@ -372,7 +389,73 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     Ok(())
 }
 
+// ----------------------------------------------------------------------------------------
+// -------------- ROYALTY MANAGEMENT (ADMIN) ---------------------------------------------
+// ----------------------------------------------------------------------------------------
 
+/// Initialize royalties on the Dragon Egg collection.
+/// - basis_points: 500 = 5%
+/// - creators: list of (address, percentage) where sum(percentage) == 100
+pub fn init_dragon_egg_royalties(
+    ctx: Context<InitDragonEggRoyalties>,
+    basis_points: u16,
+    creators: Vec<CreatorInput>,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let authority = &ctx.accounts.authority;
+
+    // Authority check
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    // Basic creator validation
+    require!(!creators.is_empty(), ErrorCode::NoCreators);
+    let total_pct: u16 = creators.iter().map(|c| c.percentage as u16).sum();
+    require!(total_pct == 100, ErrorCode::InvalidCreatorShare);
+
+    // Convert to mpl-core creators
+    let creators_mpl: Vec<Creator> = creators
+        .into_iter()
+        .map(|c| Creator {
+            address: c.address,
+            percentage: c.percentage,
+        })
+        .collect();
+
+    // Royalties plugin data
+    let royalties = Royalties {
+        basis_points,
+        creators: creators_mpl,
+        // Start with an EMPTY ProgramDenyList so you can add later.
+        rule_set: RuleSet::ProgramDenyList(vec![]),
+    };
+
+    // PDA signer for collection authority (same PDA you used as update_authority)
+    let bump = ctx.bumps.collection_authority;
+    let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[&seeds];
+
+    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
+    let mut cpi = AddCollectionPluginV1CpiBuilder::new(mpl_core_program);
+
+    cpi.collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.authority.to_account_info())
+        // The authority that initializes the plugin is the collection update authority PDA.
+        .authority(Some(&ctx.accounts.collection_authority.to_account_info()))
+        .plugin(Plugin::Royalties(royalties))
+        // Plugin authority is "UpdateAuthority", i.e. the collection update authority PDA.
+        .init_authority(PluginAuthority::UpdateAuthority)
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        // No log_wrapper needed; pass no extra accounts.
+        .invoke_signed(signer_seeds)?;
+
+    msg!("✅ Initialized Dragon Egg royalties: {} basis points", basis_points);
+    Ok(())
+}
+
+ 
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG ACCOUNT CONTEXTS ---------------------------------------------
@@ -546,3 +629,36 @@ pub struct UnstakeDragonEgg<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct InitDragonEggRoyalties<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>, // ext authority EOA
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// CHECK: Dragon Egg collection (already created via MPL Core)
+    #[account(
+        mut,
+        address = global_config.dragon_egg_collection @ ErrorCode::InvalidAccount
+    )]
+    pub collection: UncheckedAccount<'info>,
+
+    /// CHECK: PDA that is update_authority for the collection
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    #[account(address = mpl_core::ID @ ErrorCode::InvalidMplCoreProgram)]
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+ 

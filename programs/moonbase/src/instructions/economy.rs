@@ -670,8 +670,8 @@ pub fn update_rate_and_add_lp_internal(
     // Perform actual LP addition and burn (INLINED to avoid stack overflow)
     // DOGE_BTC will be taken from the main token vault (dbtc_token_account)
     let mut lp_tokens_minted = 0u64;
-    let mut sol_consumed = 0u64;
-    let mut dbtc_consumed = 0u64;
+    let sol_consumed: u64;
+    let dbtc_consumed: u64;
     
     if total_sol_for_lp > 0 {
         msg!("\n   🎯 === ADDING LIQUIDITY TO POOL ===");

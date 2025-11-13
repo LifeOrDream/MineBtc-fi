@@ -14,6 +14,7 @@ pub use instructions::game::*;
 pub use instructions::eggs::*;
 pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
+pub use instructions::eggs::CreatorInput;
 
 declare_id!("G6sVLJTtBz2A1uVKtKxMmuT1PMehSiCu4go7jRk3numX");
 
@@ -464,4 +465,19 @@ pub mod moonbase {
     ) -> Result<()> {
         tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
     }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize royalties on the Dragon Egg collection (admin only)
+    pub fn init_dragon_egg_royalties(
+        ctx: Context<InitDragonEggRoyalties>,
+        basis_points: u16,
+        creators: Vec<CreatorInput>,
+    ) -> Result<()> {
+        eggs::init_dragon_egg_royalties(ctx, basis_points, creators)
+    }
+
+   
 }

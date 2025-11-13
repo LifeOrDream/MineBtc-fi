@@ -354,4 +354,17 @@ pub enum ErrorCode {
 
     #[msg("Invalid program ID")]
     InvalidProgramId,
+
+    // ========== ROYALTY MANAGEMENT ERRORS ========== //
+    #[msg("No creators specified")]
+    NoCreators,
+
+    #[msg("Sum of creator percentages must be 100")]
+    InvalidCreatorShare,
+
+    #[msg("Royalties plugin not found on collection")]
+    RoyaltiesPluginMissing,
+
+    #[msg("Royalties rule_set is not ProgramDenyList")]
+    UnexpectedRuleSetVariant,
 }
