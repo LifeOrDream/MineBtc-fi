@@ -8,6 +8,10 @@ pub mod state;
 
 pub use instructions::admin::*;
 pub use instructions::economy::*;
+pub use instructions::user::*;
+pub use instructions::stake::*;
+pub use instructions::game::*;
+pub use instructions::eggs::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier};
 
 declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
@@ -15,12 +19,12 @@ declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
 #[program]
 pub mod moonbase {
     use super::*;
-    use crate::instructions::admin::{self, CreateDragonEggCollection};
-    use crate::instructions::economy::{self};
-    use crate::instructions::game::{self};
-    use crate::instructions::user::{self};
-    use crate::instructions::stake::{self};
-    use crate::instructions::eggs::{self};
+    use instructions::admin::{self};
+    use instructions::economy::{self};
+    use instructions::user::{self};
+    use instructions::stake::{self};
+    use instructions::game::{self};
+    use instructions::eggs::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -261,15 +265,6 @@ pub mod moonbase {
     /// Initialize a player account for the Faction Surge game
     pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
         user::initialize_player(ctx, faction_id, referral_code)
-    }
-
-    /// Update personal hashpower (CPI-only, called by mooneconomy program)
-    pub fn update_personal_hashpower(
-        ctx: Context<UpdatePersonalHashpower>,
-        amount: i128,
-        user_pubkey: Pubkey,
-    ) -> Result<()> {
-        user::update_personal_hashpower(ctx, amount, user_pubkey)
     }
 
     /// Join a round by betting SOL

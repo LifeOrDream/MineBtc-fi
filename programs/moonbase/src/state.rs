@@ -683,14 +683,6 @@ pub struct PlayerData {
     pub pending_sol_rewards: u64,
     pub pending_dbtc_rewards: u64,
 
-    /// Reward debt tracking (prevents double-claiming)
-    /// The last passive_dbtc_reward_index the user claimed up to
-    pub hashpower_dbtc_reward_debt: u128,
-    /// The last passive_sol_reward_index the user claimed up to
-    pub hashpower_sol_reward_debt: u128,    
-
-
-
     pub moondoge_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
     pub active_moondoge_positions: u8,
@@ -744,8 +736,6 @@ impl PlayerData {
         16 +    // lp_dbtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         8 +     // pending_dbtc_rewards (u64)
-        16 +    // hashpower_dbtc_reward_debt (u128)
-        16 +    // hashpower_sol_reward_debt (u128)
         4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         1 +     // active_moondoge_positions (u8)

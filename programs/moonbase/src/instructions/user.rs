@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::Token;
 
 use crate::errors::ErrorCode;
 use crate::state::*;
@@ -118,11 +117,6 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.pending_dbtc_rewards = 0;
     msg!("     Pending rewards initialized");
     
-    // Initialize reward debt tracking
-    player_data.hashpower_dbtc_reward_debt = 0;
-    player_data.hashpower_sol_reward_debt = 0;
-    msg!("     Reward debt tracking initialized");
-    
     // Initialize position tracking vectors
     player_data.moondoge_position_indices = Vec::new();
     player_data.lp_position_indices = Vec::new();
@@ -228,14 +222,8 @@ fn internal_join_round<'info>(
     use_ticket: Option<u8>,
 ) -> Result<()> {
     let clock = Clock::get()?;
-
-    let global_state = global_state;
-    let global_config = global_config;
     
-    let player_data = &mut ctx.accounts.player_data;
-    let faction_state = &mut ctx.accounts.faction_state;
-    let game_session = &mut ctx.accounts.game_session;    
-    require!(  game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
+    require!(game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
     msg!("   Validated GameSession...");
     require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
     msg!("     ✓ Block assignments are set");
@@ -570,6 +558,7 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     msg!("   Total DogeBtc reward: {} tokens", dbtc_reward);
     
     // Add DogeBtc reward to pending_dbtc_rewards (user will claim later via claim_dbtc_rewards with refining fee)
+    let player_data = &mut ctx.accounts.player_data;
     if dbtc_reward > 0 {
         msg!("   Processing DogeBtc rewards...");
         

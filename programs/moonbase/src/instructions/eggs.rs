@@ -18,6 +18,11 @@ pub fn mint_dragon_egg(
     require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
     
     let global_config = &mut ctx.accounts.global_config;
+    let egg_config = &mut ctx.accounts.egg_config;
+    let player_data = &mut ctx.accounts.player_data;
+    
+    // Derive ticket tier index from tier (tier 1 -> index 0, tier 2 -> index 1, etc.)
+    let ticket_tier_index = (tier - 1) as usize;
     
     // Validate faction_id
     require!(
@@ -27,15 +32,17 @@ pub fn mint_dragon_egg(
     
     // Validate ticket tier index
     require!(
-        (ticket_tier_index as usize) < egg_config.ticket_tiers.len(),
+        ticket_tier_index < egg_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
     );
     
-    // Calculate cost per egg based on tier from EggConfig
-    let cost_per_egg = egg_config.prices[(tier - 1) as usize];
+    // Get selected ticket tier (extract before mutating egg_config)
+    let selected_ticket_tier = &egg_config.ticket_tiers[ticket_tier_index];
+    let ticket_value = selected_ticket_tier.ticket_value;
+    let ticket_count = selected_ticket_tier.ticket_count;
     
-    // Get selected ticket tier
-    let selected_ticket_tier = &egg_config.ticket_tiers[ticket_tier_index as usize];
+    // Calculate cost per egg based on tier from EggConfig
+    let cost_per_egg = egg_config.prices[ticket_tier_index];
     msg!("   Selected ticket tier: {} tickets of {} SOL each", 
         selected_ticket_tier.ticket_count, 
         selected_ticket_tier.ticket_value as f64 / 1e9);
@@ -132,8 +139,6 @@ pub fn mint_dragon_egg(
     
     // Add free tickets to player based on selected tier
     msg!("   Adding free tickets to player...");
-    let ticket_value = selected_ticket_tier.ticket_value;
-    let ticket_count = selected_ticket_tier.ticket_count;
     
     // Check if this ticket value already exists in player's free_tickets
     if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
