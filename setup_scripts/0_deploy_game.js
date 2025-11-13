@@ -431,11 +431,9 @@ async function main() {
     
     console.log(`\x1b[36m\n📋 Step 3: Building programs...\x1b[0m`);
     buildProgram(PROGRAMS.moonbase);
-    buildProgram(PROGRAMS.mooneconomy);
     
     console.log(`\x1b[36m\n📋 Step 4: Deploying programs...\x1b[0m`);
     deployProgram(PROGRAMS.moonbase, WALLET_KEYPAIR_PATH);
-    deployProgram(PROGRAMS.mooneconomy, WALLET_KEYPAIR_PATH);
     
     console.log(`\x1b[36m\n📋 Step 5: Saving deployment...\x1b[0m`);
     saveDeploymentInfo(programAddresses);
