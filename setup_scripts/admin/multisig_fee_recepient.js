@@ -1,24 +1,17 @@
 /**
- * Multisig Token Transfer Script (2-of-3)
- * 
- * This script transfers tokens from a multisig-controlled token account.
- * Requires 2 of 3 signatures to execute the transfer.
- * 
+ * Multisig WSOL (Wrapped SOL) Transfer Script (2-of-3)
+ *
+ * This script transfers WSOL from a token account owned by a multisig
+ * authority to a recipient's token account.
+ * Requires 2 of 3 signatures to execute.
+ *
  * Environment Variables Required:
  * - MULTISIG1: Mnemonic phrase for signer 1
- * - MULTISIG2: Mnemonic phrase for signer 2  
+ * - MULTISIG2: Mnemonic phrase for signer 2
  * - MULTISIG3: Mnemonic phrase for signer 3
- * - MULTISIG_ADDRESS: (Optional) Existing multisig account address
- * - MULTISIG_TOKEN_ACCOUNT: (Optional) Token account owned by multisig
- * - RECIPIENT_TOKEN_ACCOUNT: Destination token account address
- * - TRANSFER_AMOUNT: (Optional) Amount to transfer in smallest units (default: 100000000)
- * 
- * Usage:
- * 1. Set up .env file with MULTISIG1, MULTISIG2, MULTISIG3 mnemonics
- * 2. Set RECIPIENT_TOKEN_ACCOUNT to destination address
- * 3. Run: node setup_scripts/admin/multisig_fee_recepient.js
- * 
- * On first run, save the MULTISIG_ADDRESS and MULTISIG_TOKEN_ACCOUNT to .env
+ * - MULTISIG_ADDRESS: (Optional) Existing multisig authority address
+ * - RECIPIENT_OWNER_ADDRESS: The *wallet address* of the person you are sending to
+ * - TRANSFER_AMOUNT_SOL: (Optional) Amount to transfer in SOL (default: 1.0 SOL)
  */
 
 import {
@@ -27,15 +20,15 @@ import {
   Transaction,
   sendAndConfirmTransaction,
   Keypair,
-  SystemProgram,
+  LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import {
-  createTransferCheckedInstruction,
-  getMint,
-  getAccount,
   createMultisig,
   getMultisig,
-  getAssociatedTokenAddressSync,
+  createTransferCheckedInstruction,
+  getOrCreateAssociatedTokenAccount,
+  getAccount,
+  NATIVE_MINT,
 } from "@solana/spl-token";
 import * as bip39 from "bip39";
 import { derivePath } from "ed25519-hd-key";
@@ -44,10 +37,21 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Calculate project root (go up 2 levels from setup_scripts/admin/)
+const PROJECT_ROOT = path.resolve(__dirname, "../..");
+
+// Load .env file from project root
+const envPath = path.resolve(PROJECT_ROOT, ".env");
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log(`✓ Loaded .env from: ${envPath}`);
+} else {
+  dotenv.config();
+  console.log(`⚠️  .env not found at ${envPath}, using current working directory`);
+}
 
 // Load configuration
 const configPath = path.resolve(__dirname, "../config.json");
@@ -57,43 +61,27 @@ const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
 const CLUSTER = config.network.cluster;
 const RPC_URL = config.network.rpc_url;
 const COMMITMENT = config.network.commitment;
-const deploymentDir = path.resolve(__dirname, "../deployments");
-const deploymentPath = path.resolve(deploymentDir, `${CLUSTER}.json`);
-
-let deploymentFile = {};
-if (fs.existsSync(deploymentPath)) {
-  deploymentFile = JSON.parse(fs.readFileSync(deploymentPath, "utf-8"));
-} else {
-  throw new Error(`Deployment file not found: ${deploymentPath}`);
-}
-
-const TOKEN_MINT_ADDRESS = new PublicKey(
-  deploymentFile.dbtc_mint_created.mint_address
-);
 
 // ====================================================================
 // CONFIGURATION
 // ====================================================================
 
-// The token account owned by the multisig (source)
-// Set this to your multisig token account address, or leave null to create one
-const MULTISIG_TOKEN_ACCOUNT = process.env.MULTISIG_TOKEN_ACCOUNT
-  ? new PublicKey(process.env.MULTISIG_TOKEN_ACCOUNT)
+// The recipient's *main wallet address*
+const RECIPIENT_OWNER_ADDRESS = process.env.RECIPIENT_OWNER_ADDRESS
+  ? new PublicKey(process.env.RECIPIENT_OWNER_ADDRESS)
   : null;
 
-// The destination token account address
-const RECIPIENT_TOKEN_ACCOUNT = process.env.RECIPIENT_TOKEN_ACCOUNT
-  ? new PublicKey(process.env.RECIPIENT_TOKEN_ACCOUNT)
-  : null;
+// The amount to transfer (in SOL, converted to lamports)
+const TRANSFER_AMOUNT_SOL = process.env.TRANSFER_AMOUNT_SOL
+  ? parseFloat(process.env.TRANSFER_AMOUNT_SOL)
+  : 1.0; // Default: 1 SOL
 
-// The amount to transfer (in token units, will be converted to smallest unit)
-const TRANSFER_AMOUNT = process.env.TRANSFER_AMOUNT
-  ? BigInt(process.env.TRANSFER_AMOUNT)
-  : 100_000_000n; // 100 tokens (assuming 6 decimals)
+const TRANSFER_AMOUNT_LAMPORTS = BigInt(
+  Math.floor(TRANSFER_AMOUNT_SOL * LAMPORTS_PER_SOL)
+);
 
 // Multisig configuration (2-of-3)
 const MULTISIG_M = 2;
-const MULTISIG_N = 3;
 
 // ====================================================================
 // MNEMONIC LOADER
@@ -110,10 +98,6 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
   if (!trimmedMnemonic) {
     throw new Error(`${label} is empty after trimming`);
   }
-  
-//   if (!bip39.validateMnemonic(trimmedMnemonic)) {
-//     throw new Error(`Invalid ${label} phrase. Make sure it's a valid BIP39 mnemonic (12 or 24 words)`);
-//   }
   
   const seed = bip39.mnemonicToSeedSync(trimmedMnemonic);
   const hd = derivePath("m/44'/501'/0'/0'", seed.toString("hex"));
@@ -175,102 +159,112 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
     const connection = new Connection(RPC_URL, COMMITMENT);
     console.log(`\nConnecting to ${CLUSTER}...`);
 
-    // Get mint info
-    // const mintInfo = await getMint(connection, TOKEN_MINT_ADDRESS);
-    // console.log(
-    //   `Token Mint: ${TOKEN_MINT_ADDRESS.toBase58()} (Decimals: ${mintInfo.decimals})`
-    // );
-
     // --- 3. Create or Get Multisig Account ---
-    console.log("\nSetting up multisig account...");
-    
-    // Check if multisig already exists
-    let multisigAddress = process.env.MULTISIG_ADDRESS
-      ? new PublicKey(process.env.MULTISIG_ADDRESS)
+    console.log("\nSetting up multisig authority account...");
+    const multisigAddressEnv = process.env.MULTISIG_ADDRESS;
+    console.log(
+      `  MULTISIG_ADDRESS from .env: ${multisigAddressEnv || "Not set"}`
+    );
+
+    let multisigAddress = multisigAddressEnv
+      ? new PublicKey(multisigAddressEnv)
       : null;
 
+    let multisigInfo;
     if (!multisigAddress) {
-      console.log("Creating new multisig account...");
-      const signerPubkeys = [signer1.publicKey, signer2.publicKey, signer3.publicKey];
+      console.log("Creating new multisig authority...");
+      const signerPubkeys = [
+        signer1.publicKey,
+        signer2.publicKey,
+        signer3.publicKey,
+      ];
       multisigAddress = await createMultisig(
         connection,
         signer1, // payer
         signerPubkeys,
         MULTISIG_M
       );
-      console.log(`  Multisig Address: ${multisigAddress.toBase58()}`);
+      console.log(`  Multisig Authority Address: ${multisigAddress.toBase58()}`);
       console.log(
         `  ⚠️  Save this address to MULTISIG_ADDRESS in .env: ${multisigAddress.toBase58()}`
       );
+      multisigInfo = await getMultisig(connection, multisigAddress);
+      console.log(`  Threshold: ${multisigInfo.m} of ${multisigInfo.n}`);
     } else {
-      console.log(`Using existing multisig: ${multisigAddress.toBase58()}`);
-      const multisigInfo = await getMultisig(connection, multisigAddress);
+      console.log(
+        `Using existing multisig authority: ${multisigAddress.toBase58()}`
+      );
+      multisigInfo = await getMultisig(connection, multisigAddress);
       console.log(`  Threshold: ${multisigInfo.m} of ${multisigInfo.n}`);
     }
 
-    // --- 4. Get Token Account Owned by Multisig ---
-    console.log("\nSetting up token account...");
-    const multisigTokenAccount =
-      MULTISIG_TOKEN_ACCOUNT ||
-      getAssociatedTokenAddressSync(TOKEN_MINT_ADDRESS, multisigAddress);
-
-    if (!MULTISIG_TOKEN_ACCOUNT) {
-      console.log(
-        `  Multisig Token Account: ${multisigTokenAccount.toBase58()}`
+    // --- 4. Get/Create WSOL Token Accounts ---
+    if (!RECIPIENT_OWNER_ADDRESS) {
+      throw new Error(
+        "RECIPIENT_OWNER_ADDRESS not set in .env. Set it to the destination *wallet* address."
       );
-      console.log(
-        `  ⚠️  Save this address to MULTISIG_TOKEN_ACCOUNT in .env: ${multisigTokenAccount.toBase58()}`
-      );
+    }
+    console.log("\nSetting up WSOL token accounts...");
 
-      // Check if account exists
-      try {
-        await getAccount(connection, multisigTokenAccount);
-        console.log("  Token account already exists");
-      } catch (error) {
-        throw new Error(
-          `Token account does not exist. Create it first or fund the multisig account.`
-        );
+    // Get the multisig's own WSOL token account
+    const sourceAta = await getOrCreateAssociatedTokenAccount(
+      connection,
+      signer1, // Payer (pays rent if account needs to be created)
+      NATIVE_MINT, // Mint (WSOL)
+      multisigAddress, // Owner (the multisig authority)
+      true // allowOwnerOffCurve = true (multisig is a PDA, so yes)
+    );
+    console.log(`  Multisig WSOL Vault: ${sourceAta.address.toBase58()}`);
+
+    // Get the recipient's WSOL token account
+    const destinationAta = await getOrCreateAssociatedTokenAccount(
+      connection,
+      signer1, // Payer (pays rent if account needs to be created)
+      NATIVE_MINT, // Mint (WSOL)
+      RECIPIENT_OWNER_ADDRESS // Owner (the recipient's wallet)
+    );
+    console.log(`  Recipient WSOL Account: ${destinationAta.address.toBase58()}`);
+
+    // --- 5. Check Multisig WSOL Balance ---
+    console.log("\nChecking multisig WSOL balance...");
+    const sourceAccountInfo = await getAccount(connection, sourceAta.address);
+    const balance = sourceAccountInfo.amount;
+    const balanceSOL = Number(balance) / LAMPORTS_PER_SOL;
+
+    console.log(`  Current Balance: ${balanceSOL} WSOL`);
+
+    if (balance < TRANSFER_AMOUNT_LAMPORTS) {
+      console.error("\n❌ INSUFFICIENT FUNDS ❌");
+      console.error(`  Your multisig's WSOL vault has ${balanceSOL} WSOL.`);
+      console.error(`  You are trying to send ${TRANSFER_AMOUNT_SOL} WSOL.`);
+      console.error("\n  HOW TO FIX:");
+      console.error(`  1. Get the address of your multisig's WSOL vault:`);
+      console.error(`     ${sourceAta.address.toBase58()}`);
+      console.error(
+        `  2. Send ${TRANSFER_AMOUNT_SOL} SOL (or more) to this address.`
+      );
+      console.error(
+        `  3. Your wallet (Phantom, etc.) will automatically wrap it into WSOL.`
+      );
+      console.error("  4. Rerun this script.");
+      throw new Error("Insufficient WSOL balance.");
+    }
+
+    // --- 6. Build Signers Array from Multisig ---
+    const multisigSigners = [];
+    const EMPTY_PUBKEY = new PublicKey("11111111111111111111111111111111");
+    for (let i = 1; i <= multisigInfo.n; i++) {
+      const signer = multisigInfo[`signer${i}`];
+      if (signer && !signer.equals(EMPTY_PUBKEY)) {
+        multisigSigners.push(signer);
       }
     }
 
-    // Check balance
-    const sourceAccount = await getAccount(connection, multisigTokenAccount);
-    console.log(
-      `  Current Balance: ${Number(sourceAccount.amount) / 10 ** mintInfo.decimals} tokens`
-    );
-
-    if (sourceAccount.amount < TRANSFER_AMOUNT) {
-      throw new Error(
-        `Insufficient balance. Required: ${Number(TRANSFER_AMOUNT) / 10 ** mintInfo.decimals}, Available: ${Number(sourceAccount.amount) / 10 ** mintInfo.decimals}`
-      );
-    }
-
-    // --- 5. Get Recipient Token Account ---
-    if (!RECIPIENT_TOKEN_ACCOUNT) {
-      throw new Error(
-        "RECIPIENT_TOKEN_ACCOUNT not set in .env. Set it to the destination token account address."
-      );
-    }
-
-    // Verify recipient account exists
-    try {
-      await getAccount(connection, RECIPIENT_TOKEN_ACCOUNT);
-    } catch (error) {
-      throw new Error(
-        `Recipient token account does not exist: ${RECIPIENT_TOKEN_ACCOUNT.toBase58()}`
-      );
-    }
-
-    console.log(`  Recipient: ${RECIPIENT_TOKEN_ACCOUNT.toBase58()}`);
-
-    // --- 6. Get Multisig Info and Verify Signers ---
-    const multisigInfo = await getMultisig(connection, multisigAddress);
-    
     // Find the indices of our signers in the multisig
-    const signer1Index = multisigInfo.signers.findIndex(
+    const signer1Index = multisigSigners.findIndex(
       (pk) => pk.equals(signer1.publicKey)
     );
-    const signer2Index = multisigInfo.signers.findIndex(
+    const signer2Index = multisigSigners.findIndex(
       (pk) => pk.equals(signer2.publicKey)
     );
 
@@ -280,14 +274,13 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       );
     }
 
-    // --- 7. Build Transfer Instruction ---
-    console.log("\nBuilding transfer instruction...");
+    // --- 7. Build WSOL Transfer Instruction ---
+    console.log("\nBuilding WSOL transfer instruction...");
     console.log(
-      `  Amount: ${Number(TRANSFER_AMOUNT) / 10 ** mintInfo.decimals} tokens`
+      `  Amount: ${TRANSFER_AMOUNT_SOL} WSOL (${TRANSFER_AMOUNT_LAMPORTS} lamports)`
     );
 
-    // Create transfer instruction with multisig as authority
-    // Signers must be in the order they appear in the multisig account
+    // For multisig WSOL transfers, signers must be in the order they appear in the multisig account
     const multiSigners = [];
     if (signer1Index < signer2Index) {
       multiSigners.push(signer1.publicKey, signer2.publicKey);
@@ -296,12 +289,12 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
     }
 
     const transferInstruction = createTransferCheckedInstruction(
-      multisigTokenAccount, // source
-      TOKEN_MINT_ADDRESS, // mint
-      RECIPIENT_TOKEN_ACCOUNT, // destination
-      multisigAddress, // authority (multisig)
-      TRANSFER_AMOUNT, // amount
-      mintInfo.decimals, // decimals
+      sourceAta.address, // Source (the multisig's token vault)
+      NATIVE_MINT, // Mint (WSOL)
+      destinationAta.address, // Destination
+      multisigAddress, // Owner (the multisig authority account)
+      TRANSFER_AMOUNT_LAMPORTS, // Amount
+      9, // Decimals (WSOL always has 9)
       multiSigners // multisig signers in order
     );
 
@@ -330,6 +323,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
 
     console.log("\n✅ Transaction Successful!");
     console.log(`   Signature: ${signature}`);
+    console.log(`   Transferred: ${TRANSFER_AMOUNT_SOL} WSOL`);
     const explorerUrl =
       CLUSTER === "mainnet-beta"
         ? `https://explorer.solana.com/tx/${signature}`
