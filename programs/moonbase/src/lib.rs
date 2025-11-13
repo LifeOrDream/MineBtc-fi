@@ -8,10 +8,6 @@ pub mod state;
 
 pub use instructions::admin::*;
 pub use instructions::economy::*;
-pub use instructions::game::*;
-pub use instructions::user::*;
-pub use instructions::stake::*;
-pub use instructions::eggs::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier};
 
 declare_id!("35isCtM4mT84BFPQazwuu7PmN6hzwHVUZHkYeDqzLzTc");
@@ -24,6 +20,7 @@ pub mod moonbase {
     use crate::instructions::game::{self};
     use crate::instructions::user::{self};
     use crate::instructions::stake::{self};
+    use crate::instructions::eggs::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -332,11 +329,7 @@ pub mod moonbase {
         user::execute_autominer_bet(ctx)
     }
 
-    /// Cancel autominer vault
-    pub fn cancel_autominer(ctx: Context<CancelAutominer>) -> Result<()> {
-        user::cancel_autominer(ctx)
-    }
-
+ 
     // ----------------------------------------------------------------------------------------
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MOONDOGE / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
@@ -399,18 +392,17 @@ pub mod moonbase {
         ctx: Context<MintDragonEgg>,
         faction_id: u8,
         tier: u8,
-        ticket_tier_index: u8,
     ) -> Result<()> {
-        user::mint_dragon_egg(ctx, faction_id, tier, ticket_tier_index)
+        eggs::mint_dragon_egg(ctx, faction_id, tier)
     }
 
     /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)
     pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
-        user::stake_dragon_egg(ctx)
+        eggs::stake_dragon_egg(ctx)
     }
 
     /// Unstake a Dragon Egg (remove hashpower boost)
     pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
-        user::unstake_dragon_egg(ctx)
+        eggs::unstake_dragon_egg(ctx)
     }
 }

@@ -1268,5 +1268,4 @@ pub struct ExecuteAutominerBet<'info> {
     
     pub system_program: Program<'info, System>,
 }
-
  
