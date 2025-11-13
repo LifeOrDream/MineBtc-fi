@@ -16,9 +16,6 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use crate::errors::ErrorCode;
 
-/// Precision for exponential calculations (9 decimal places)
-const EXP_PRECISION: u64 = 1_000_000_000;
-
 /// Calculate dynamic pricing based on bonding curve
 /// Formula: price = base_price + curve_a * (items_minted^(2/3))
 /// This creates a diminishing returns curve where price increases slower as more items are minted

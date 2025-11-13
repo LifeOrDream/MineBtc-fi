@@ -13,6 +13,23 @@ use anchor_spl::token_interface::{
     TokenAccount as TokenAccount2022,
 };  
 
+use mpl_core::{
+    instructions::{
+        AddCollectionPluginV1CpiBuilder,
+    },
+    types::{Plugin, PluginAuthority, Royalties, RuleSet, Creator},
+};
+
+
+
+/// Helper type for passing creators from client
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct CreatorInput {
+    pub address: Pubkey,
+    /// Percentage share (0–100). Sum must be exactly 100.
+    pub percentage: u8,
+}
+
  
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: UPDATES, ADDING EXPANSIONS ------------
@@ -666,6 +683,113 @@ pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<
 }
 
 
+/// Initialize royalties on the Dragon Egg collection.
+/// - basis_points: 500 = 5%
+/// - creators: list of (address, percentage) where sum(percentage) == 100
+pub fn init_dragon_egg_royalties(
+    ctx: Context<InitDragonEggRoyalties>,
+    basis_points: u16,
+    creators: Vec<CreatorInput>,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let authority = &ctx.accounts.authority;
+
+    // Authority check
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    // Basic creator validation
+    require!(!creators.is_empty(), ErrorCode::NoCreators);
+    let total_pct: u16 = creators.iter().map(|c| c.percentage as u16).sum();
+    require!(total_pct == 100, ErrorCode::InvalidCreatorShare);
+
+    // Convert to mpl-core creators
+    let creators_mpl: Vec<Creator> = creators
+        .into_iter()
+        .map(|c| Creator {
+            address: c.address,
+            percentage: c.percentage,
+        })
+        .collect();
+
+    // Royalties plugin data
+    let royalties = Royalties {
+        basis_points,
+        creators: creators_mpl,
+        // Start with an EMPTY ProgramDenyList so you can add later.
+        rule_set: RuleSet::ProgramDenyList(vec![]),
+    };
+
+    // PDA signer for collection authority (same PDA you used as update_authority)
+    let bump = ctx.bumps.collection_authority;
+    let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[&seeds];
+
+    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
+    let mut cpi = AddCollectionPluginV1CpiBuilder::new(mpl_core_program);
+
+    cpi.collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.authority.to_account_info())
+        // The authority that initializes the plugin is the collection update authority PDA.
+        .authority(Some(&ctx.accounts.collection_authority.to_account_info()))
+        .plugin(Plugin::Royalties(royalties))
+        // Plugin authority is "UpdateAuthority", i.e. the collection update authority PDA.
+        .init_authority(PluginAuthority::UpdateAuthority)
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        // No log_wrapper needed; pass no extra accounts.
+        .invoke_signed(signer_seeds)?;
+
+    msg!("✅ Initialized Dragon Egg royalties: {} basis points", basis_points);
+    Ok(())
+}
+ 
+/// Add or update ticket tier configs (admin only)
+/// Max 4 ticket tier configs can be set
+pub fn add_ticket_tier_config(
+    ctx: Context<UpdateEggsConfig>,
+    ticket_tier_index: u8,
+    ticket_value: u64,
+    ticket_count: u16,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    let authority = &ctx.accounts.authority;
+
+    // Authority check
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    require!(
+        ticket_tier_index < EggConfig::MAX_TICKET_TIERS as u8,
+        ErrorCode::InvalidParameters
+    );
+
+    let tier_index = ticket_tier_index as usize;
+
+    // Ensure vector is large enough
+    while eggs_config.ticket_tiers.len() <= tier_index {
+        eggs_config.ticket_tiers.push(TicketTier {
+            ticket_value: 0,
+            ticket_count: 0,
+        });
+    }
+
+    // Update or add ticket tier
+    eggs_config.ticket_tiers[tier_index] = TicketTier {
+        ticket_value,
+        ticket_count,
+    };
+
+    msg!("✅ Updated ticket tier config #{}: {} tickets of {} SOL", 
+        ticket_tier_index, 
+        ticket_count, 
+        ticket_value as f64 / 1e9);
+    Ok(())
+}
 
 
 // --------------------------------------------------------------------------------
@@ -849,84 +973,6 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
 // ------------ WITHDRAW SOL FEES ----------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// TODO: Disabled - needs migration from mooneconomy vaults
-pub fn distribute_sol_fees_internal(ctx: Context<WithdrawSolFees>) -> Result<()> {
-    let sol_treasury = &ctx.accounts.sol_treasury;
-    let global_config = &ctx.accounts.global_config;
-    let buybacks_ac = &mut ctx.accounts.buybacks_account;
-
-    msg!("Withdrawing SOL from treasury");
-    msg!("SOL Treasury: {}", sol_treasury.key());
-    msg!("Treasury balance: {} SOL", sol_treasury.lamports() as f64 / 1e9);
-
-    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
-    let current_balance = sol_treasury.lamports();
-
-    // Calculate available balance (total - rent)
-    let reserved_amount = rent_exempt_amount;
-    let available_solana = current_balance.saturating_sub(reserved_amount);
-
-    // Check if we have enough available balance
-    if available_solana == 0 {
-        msg!( "⚠️ No SOL balance to withdraw. Available: {} SOL", available_solana as f64 / 1e9);        
-        return Ok(());
-    }
-    msg!( "   Total balance: {} SOL, Rent: {} SOL", current_balance as f64 / 1e9, rent_exempt_amount as f64 / 1e9);
-
-    // Calculate buybacks amount using configurable percentage
-    let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
-    let sol_for_buybacks = available_solana * buyback_percentage / M_HUNDRED;
-
-    // Create signer seeds for sol_treasury
-    let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
-    let signer_seeds = &[&treasury_seeds[..]];
-
-    // Transfer buybacks amount to buybacks SOL vault
-    if sol_for_buybacks > 0 {
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.buybacks_sol_vault.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            sol_for_buybacks,
-        )?;
-
-        // Update buybacks tracking
-        buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + sol_for_buybacks;
-
-        msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks as f64 / 1e9,  buyback_percentage);
-    }
- 
-    let dev_earnings = available_solana.saturating_sub(sol_for_buybacks);
-    if dev_earnings > 0 {
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.fee_recipient.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            dev_earnings,
-        )?;
-        msg!("👨‍💻 Sent {} SOL to Dev Earnings", dev_earnings as f64 / 1e9);
-    }
-
-    // Emit event
-    emit!(SolFeesWithdrawn {
-        available_solana: available_solana,
-        buyback_amount: sol_for_buybacks,
-        dev_earnings_amount: dev_earnings,
-    });
-
-    msg!("Withdrew {} SOL from treasury", available_solana as f64 / 1e9);
-    Ok(())
-}
 
  
 // --------------------------------------------------------------------------------
@@ -1192,6 +1238,46 @@ pub struct UpdateEggsConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct InitDragonEggRoyalties<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>, // ext authority EOA
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump = eggs_config.bump,
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
+
+    /// CHECK: Dragon Egg collection (already created via MPL Core)
+    #[account(
+        mut,
+        address = eggs_config.dragon_egg_collection @ ErrorCode::InvalidAccount
+    )]
+    pub collection: UncheckedAccount<'info>,
+
+    /// CHECK: PDA that is update_authority for the collection
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    #[account(address = mpl_core::ID @ ErrorCode::InvalidMplCoreProgram)]
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+ 
 
 
 #[derive(Accounts)]
@@ -1290,49 +1376,6 @@ pub struct InitializeSystemAccounts<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[derive(Accounts)]
-pub struct WithdrawSolFees<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    /// CHECK: SOL treasury PDA (System Account)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump  // Let Anchor find the correct bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-
-    /// CHECK: Buybacks SOL vault PDA (System Account)
-    #[account(
-        mut,
-        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub buybacks_sol_vault: UncheckedAccount<'info>,
-
-    /// CHECK: Creation fee recipient account (receives dev earnings)
-    #[account(
-        mut,
-        address = global_config.fee_recipient @ ErrorCode::InvalidAccount
-    )]
-    pub fee_recipient: UncheckedAccount<'info>,
-
-    /// Buybacks tracking account (required)
-    #[account(
-        mut,
-        seeds = [BUYBACKS_SEED.as_ref()],
-        bump,
-    )]
-    pub buybacks_account: Account<'info, BuybacksAccount>,
-
-    pub system_program: Program<'info, System>,
-}
- 
- 
  
 
 

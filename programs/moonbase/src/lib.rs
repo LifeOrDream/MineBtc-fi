@@ -14,7 +14,7 @@ pub use instructions::game::*;
 pub use instructions::eggs::*;
 pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
-pub use instructions::eggs::CreatorInput;
+pub use instructions::admin::CreatorInput;
 
 declare_id!("9xwvYvnjA3TVRpPVUonvDQcchTxgo7dRi7zwi2zvoSAG");
 
@@ -49,87 +49,18 @@ pub mod moonbase {
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
-    /// Set Dragon Egg URIs for all factions (admin only)
-    /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_dragon_egg_uris(
-        ctx: Context<UpdateEggsConfig>,
-        uris: Vec<String>,
-    ) -> Result<()> {
-        admin::set_dragon_egg_uris_internal(ctx, uris)
-    }
-
-    /// Clear all Dragon Egg URIs (admin only)
-    pub fn clear_dragon_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
-        admin::clear_dragon_egg_uris_internal(ctx)
-    }
-
     /// Add a single faction to the global config (admin only)
     pub fn add_faction(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
         admin::add_faction_internal(ctx, faction_name)
     }
 
-    /// Create Dragon Egg collection with program PDA as authority
-    /// This allows the program to mint NFTs from the collection
-    pub fn create_dragon_egg_collection(
-        ctx: Context<CreateDragonEggCollection>,
-        name: String,
-        uri: String,
-    ) -> Result<()> {
-        admin::create_dragon_egg_collection_internal(ctx, name, uri)
-    }
-
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Initialize royalties on the Dragon Egg collection (admin only)
-    pub fn init_dragon_egg_royalties(
-        ctx: Context<InitDragonEggRoyalties>,
-        basis_points: u16,
-        creators: Vec<CreatorInput>,
-    ) -> Result<()> {
-        eggs::init_dragon_egg_royalties(ctx, basis_points, creators)
-    }
-
-    /// Add or update ticket tier configs (admin only)
-    /// Max 4 ticket tier configs can be set
-    pub fn add_ticket_tier_config(
-        ctx: Context<UpdateEggsConfig>,
-        ticket_tier_index: u8,
-        ticket_value: u64,
-        ticket_count: u16,
-    ) -> Result<()> {
-        eggs::add_ticket_tier_config(ctx, ticket_tier_index, ticket_value, ticket_count)
-    }
-
-    /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
-    pub fn admin_mint_dragon_egg(
-        ctx: Context<AdminMintDragonEgg>,
-        recipient: Pubkey,
+    /// Initialize a faction state account
+    pub fn initialize_faction_state(
+        ctx: Context<InitializeFactionState>,
         faction_id: u8,
     ) -> Result<()> {
-        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id)
+        admin::initialize_faction_state_internal(ctx, faction_id)
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
@@ -171,6 +102,11 @@ pub mod moonbase {
         )
     }
 
+    /// Initialize system referral account and buybacks system (admin only)
+    pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+        admin::initialize_system_accounts_internal(ctx)
+    }
+
 
     // ----------------------------------------------------------------------------------------
     // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
@@ -193,7 +129,57 @@ pub mod moonbase {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ DRAGON EGG ROYALTY MANAGEMENT (ADMIN) ------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Create Dragon Egg collection with program PDA as authority
+    /// This allows the program to mint NFTs from the collection
+    pub fn create_dragon_egg_collection(
+        ctx: Context<CreateDragonEggCollection>,
+        name: String,
+        uri: String,
+    ) -> Result<()> {
+        admin::create_dragon_egg_collection_internal(ctx, name, uri)
+    }
+
+
+    /// Set Dragon Egg URIs for all factions (admin only)
+    /// uris: Vec of URIs, one per faction (must match number of factions)
+    pub fn set_dragon_egg_uris(
+        ctx: Context<UpdateEggsConfig>,
+        uris: Vec<String>,
+    ) -> Result<()> {
+        admin::set_dragon_egg_uris_internal(ctx, uris)
+    }
+
+    /// Clear all Dragon Egg URIs (admin only)
+    pub fn clear_dragon_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+        admin::clear_dragon_egg_uris_internal(ctx)
+    }
+
+    /// Initialize royalties on the Dragon Egg collection (admin only)
+    pub fn init_dragon_egg_royalties(
+        ctx: Context<InitDragonEggRoyalties>,
+        basis_points: u16,
+        creators: Vec<CreatorInput>,
+    ) -> Result<()> {
+        admin::init_dragon_egg_royalties(ctx, basis_points, creators)
+    }
+
+    /// Add or update ticket tier configs (admin only)
+    /// Max 4 ticket tier configs can be set
+    pub fn add_ticket_tier_config(
+        ctx: Context<UpdateEggsConfig>,
+        ticket_tier_index: u8,
+        ticket_value: u64,
+        ticket_count: u16,
+    ) -> Result<()> {
+        admin::add_ticket_tier_config(ctx, ticket_tier_index, ticket_value, ticket_count)
+    }
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
 
 
@@ -205,13 +191,6 @@ pub mod moonbase {
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
-    /// Initialize a faction state account
-    pub fn initialize_faction_state(
-        ctx: Context<InitializeFactionState>,
-        faction_id: u8,
-    ) -> Result<()> {
-        admin::initialize_faction_state_internal(ctx, faction_id)
-    }
 
     /// Add a cranker bot to the whitelist (admin only)
     /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
@@ -231,10 +210,9 @@ pub mod moonbase {
     }
 
 
-    /// Initialize system referral account and buybacks system (admin only)
-    pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
-        admin::initialize_system_accounts_internal(ctx)
-    }
+    // ----------------------------------------------------------------------------------------
+    // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ----------------------------------------------------------------------------------------
 
     /// Initialize TaxConfig account and create vault token accounts (admin only)
     pub fn initialize_tax_config(
@@ -263,21 +241,10 @@ pub mod moonbase {
         tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
     }
  
-    // ----------------------------------------------------------
-    // ------------ WITHDRAW SOL FEES (ANYONE) ------------------
-    // ----------------------------------------------------------
-
-
-
-    /// Withdraw DogeBtc from NFT floor sweep vault (whitelisted address only)
-    pub fn withdraw_nft_floor_sweep_funds(
-        ctx: Context<WithdrawNftFloorSweepFunds>,
-        amount: u64,
-    ) -> Result<()> {
-        tax::withdraw_nft_floor_sweep_funds(ctx, amount)
-    }
-
-
+ 
+    // ----------------------------------------------------------------------------------------
+    // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
+    // ----------------------------------------------------------------------------------------
 
     /// Withdraw collected SOL fees from the treasury
     ///
@@ -288,15 +255,10 @@ pub mod moonbase {
     ///
     /// Internally, 10% is sent to loot rewards.
     ///
-    pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
-        admin::distribute_sol_fees_internal(ctx)
+    pub fn withdraw_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
+        economy::distribute_sol_fees_internal(ctx)
     }
 
-
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
-    // ----------------------------------------------------------------------------------------
 
     /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
     /// Performs a small SOL → DOGE_BTC swap for price discovery and earnmarks SOL for POL
@@ -316,19 +278,20 @@ pub mod moonbase {
     ) -> Result<()> {
         economy::update_rate_and_add_lp_internal(ctx, lp_token_amount)
     }
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ USER FUNCTIONS :: OLD MOONBASE BUILDER (REMOVED) -------------------------
-    // ----------------------------------------------------------------------------------------
-    // All old moonbase builder functions have been removed as part of the Faction Surge pivot.
-    // The new system uses PlayerData instead of UserMoonBaseInstance.
-
-
+ 
 
 
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
+ 
+    /// Withdraw DogeBtc from NFT floor sweep vault (whitelisted address only)
+    pub fn withdraw_nft_floor_sweep_funds(
+        ctx: Context<WithdrawNftFloorSweepFunds>,
+        amount: u64,
+    ) -> Result<()> {
+        tax::withdraw_nft_floor_sweep_funds(ctx, amount)
+    }
 
     /// STEP 1: Harvest fees from user token accounts to the mint
     /// Callable by anyone - keeper bot should call this in batches
@@ -497,6 +460,17 @@ pub mod moonbase {
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
+
+
+    /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
+    pub fn admin_mint_dragon_egg(
+        ctx: Context<AdminMintDragonEgg>,
+        recipient: Pubkey,
+        faction_id: u8,
+    ) -> Result<()> {
+        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id)
+    }
+
 
     /// Mint a single Dragon Egg NFT
     /// Uses bonding curve pricing based on current supply
