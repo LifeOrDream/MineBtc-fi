@@ -698,6 +698,9 @@ pub struct InitializeTaxConfig<'info> {
     
     /// CHECK: Withdraw withheld authority PDA (signer-only, no data)
     #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
         seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
         bump
     )]

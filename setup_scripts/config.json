@@ -50,7 +50,44 @@
         "doge_btc_per_round": 1000000,
         "initial_deposit": "21000000000000"
     },
-
+    "eggs_config": {
+        "base_price": 1000000000,
+        "curve_a": 10000,
+        "max_supply": 15000,
+        "royalties": 420,
+        "creators": [
+            {
+                "identifier": "multisig_fee_recipient",
+                "percentage": 50
+            },
+            {
+                "identifier": "treasury",
+                "percentage": 50
+            }
+        ],
+        "ticket_tiers": [
+            {
+                "tier_index": 0,
+                "ticket_value": 1000000,
+                "ticket_count": 1000
+            },
+            {
+                "tier_index": 1,
+                "ticket_value": 10000000,
+                "ticket_count": 100
+            },
+            {
+                "tier_index": 2,
+                "ticket_value": 100000000,
+                "ticket_count": 50
+            },
+            {
+                "tier_index": 3,
+                "ticket_value": 100000000,
+                "ticket_count": 75
+            }
+        ]        
+    },
     "factions": [
         { "name": "USA" },
         { "name": "China" },
@@ -68,9 +105,6 @@
     "dragon_eggs": {
         "collection_name": "DogeTech Dragon Eggs",
         "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
-        "base_price": 100000000,
-        "curve_a": 10000,
-        "max_supply": 10000,
         "uris": [
             "https://arweave.net/dragon-egg-usa.json",
             "https://arweave.net/dragon-egg-china.json",
@@ -84,28 +118,7 @@
             "https://arweave.net/dragon-egg-france.json",
             "https://arweave.net/dragon-egg-brazil.json",
             "https://arweave.net/dragon-egg-argentina.json"
-        ],
-        "ticket_tiers": [
-            {
-                "tier_index": 0,
-                "ticket_value": 10000000,
-                "ticket_count": 1000
-            },
-            {
-                "tier_index": 1,
-                "ticket_value": 100000000,
-                "ticket_count": 100
-            }
-        ],
-        "royalties": {
-            "basis_points": 500,
-            "creators": [
-                {
-                    "address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-                    "percentage": 100
-                }
-            ]
-        }
+        ]
     },
     "tax": {
         "nft_floor_sweep_pct": 33,

@@ -1303,6 +1303,7 @@ pub struct InitDragonEggRoyalties<'info> {
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
 

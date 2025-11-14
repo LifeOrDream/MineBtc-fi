@@ -193,6 +193,39 @@ pub mod moonbase {
 
 
     // ----------------------------------------------------------------------------------------
+    // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize TaxConfig account and create vault token accounts (admin only)
+    pub fn initialize_tax_config(
+        ctx: Context<InitializeTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+        nft_floor_sweep_whitelisted_address: Pubkey,
+    ) -> Result<()> {
+        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, nft_floor_sweep_whitelisted_address)
+    }
+
+    /// Update tax distribution percentages (admin only)
+    pub fn update_tax_config(
+        ctx: Context<UpdateTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+    ) -> Result<()> {
+        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
+    }
+
+    /// Update NFT floor sweep whitelisted address (admin only)
+    pub fn update_nft_floor_sweep_whitelist(
+        ctx: Context<UpdateNftFloorSweepWhitelist>,
+        new_whitelisted_address: Pubkey,
+    ) -> Result<()> {
+        tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
+    }
+ 
+
+
+    // ----------------------------------------------------------------------------------------
     // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
 
@@ -227,37 +260,6 @@ pub mod moonbase {
     }
 
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Initialize TaxConfig account and create vault token accounts (admin only)
-    pub fn initialize_tax_config(
-        ctx: Context<InitializeTaxConfig>,
-        nft_floor_sweep_pct: u8,
-        faction_treasury_pct: u8,
-        nft_floor_sweep_whitelisted_address: Pubkey,
-    ) -> Result<()> {
-        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, nft_floor_sweep_whitelisted_address)
-    }
-
-    /// Update tax distribution percentages (admin only)
-    pub fn update_tax_config(
-        ctx: Context<UpdateTaxConfig>,
-        nft_floor_sweep_pct: u8,
-        faction_treasury_pct: u8,
-    ) -> Result<()> {
-        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
-    }
-
-    /// Update NFT floor sweep whitelisted address (admin only)
-    pub fn update_nft_floor_sweep_whitelist(
-        ctx: Context<UpdateNftFloorSweepWhitelist>,
-        new_whitelisted_address: Pubkey,
-    ) -> Result<()> {
-        tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
-    }
- 
  
     // ----------------------------------------------------------------------------------------
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------

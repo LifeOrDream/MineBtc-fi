@@ -167,7 +167,7 @@ async function main() {
         await createDragonEggCollection(moonbaseProgram);
 
         // 9. Set Dragon Egg URIs (one per faction)
-        await setDragonEggUris(moonbaseProgram);
+        // await setDragonEggUris(moonbaseProgram);
 
         // 10. Initialize Dragon Egg Royalties
         await initializeDragonEggRoyalties(moonbaseProgram);
@@ -603,9 +603,14 @@ async function initializeEggConfig(moonbaseProgram) {
     );
 
     // Get egg config values
-    const basePrice = config.dragon_eggs.base_price || new BN(100_000_000); // 0.1 SOL
-    const curveA = config.dragon_eggs.curve_a || new BN(10_000); // Curve steepness
-    const maxSupply = config.dragon_eggs.max_supply || new BN(10000); // Max 10k eggs
+    const basePrice = config.eggs_config.base_price; 
+    const curveA = config.eggs_config.curve_a; // Curve steepness
+    const maxSupply = config.eggs_config.max_supply; // Max 10k eggs
+
+    if (!basePrice || !curveA || !maxSupply) {
+        console.error(COLOR_ERROR, '❌ Egg config values not found in config.json');
+        throw new Error('Egg config values not found');
+    }
 
     console.log(COLOR_INFO, `🔑 EggConfig PDA: ${eggsConfigPDA.toString()}`);
     console.log(COLOR_INFO, `💰 Base Price: ${basePrice / 1e9} SOL`);
@@ -801,15 +806,26 @@ async function initializeDragonEggRoyalties(moonbaseProgram) {
     );
 
     // Configure royalties
-    const basisPoints = config.dragon_eggs.royalties?.basis_points || 500; // 5%
-    const creators = config.dragon_eggs.royalties?.creators || [
-        { address: walletKeypair.publicKey, percentage: 100 }
-    ];
+    const basisPoints = config.eggs_config.royalties;
+    let creators = [];
+    
+    // Convert addresses to PublicKey objects
+    const multisigAddress = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
+    const treasuryAddress = new PublicKey(deploymentFile.moonbase_program_initialized.solTreasury_address);
+    
+    creators.push({ 
+        address: multisigAddress, 
+        percentage: config.eggs_config.creators.find(creator => creator.identifier === "multisig_fee_recipient")?.percentage || 50
+    });
+    creators.push({ 
+        address: treasuryAddress, 
+        percentage: config.eggs_config.creators.find(creator => creator.identifier === "treasury")?.percentage || 50
+    });
 
     console.log(COLOR_INFO, `💎 Royalty: ${basisPoints / 100}%`);
     console.log(COLOR_INFO, `👥 Creators: ${creators.length}`);
     creators.forEach((creator, idx) => {
-        console.log(COLOR_DIM, `   ${idx + 1}. ${creator.address} (${creator.percentage}%)`);
+        console.log(COLOR_DIM, `   ${idx + 1}. ${creator.address.toBase58()} (${creator.percentage}%)`);
     });
 
     try {
@@ -861,7 +877,7 @@ async function configureTicketTiers(moonbaseProgram) {
         moonbaseProgram.programId
     );
 
-    const ticketTiers = config.dragon_eggs.ticket_tiers || [];
+    const ticketTiers = config.eggs_config.ticket_tiers || [];
 
     console.log(COLOR_INFO, `📝 Adding ${ticketTiers.length} ticket tier configs...`);
 

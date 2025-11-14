@@ -144,5 +144,89 @@
     "amount": "21000000000000",
     "tx_signature": "2ZsLTV9Pdvdev9KgnhSVp7Ap59FJuc62nr72EDDsXivk4iGTCaTGejQeew1F79ZKErhAFZaK43uvzNKzLdbeuPpX",
     "timestamp": "2025-11-14T09:17:41.415Z"
+  },
+  "egg_config_initialized": {
+    "eggs_config_pda": "9jznRH9mYkDC1eaz8bU5pXxfK66uve461Am4DKbybmfb",
+    "base_price": "1000000000",
+    "curve_a": "10000",
+    "max_supply": "15000",
+    "tx_signature": "32kPmdHyWZURTFGYfVAhbuxZwPmnzbJpryJqErNEuk86n5JFMtWv8P17492sJxsEseE8MLVP7fETUUkHTAQDZi4s",
+    "timestamp": "2025-11-14T10:24:47.026Z"
+  },
+  "dragon_egg_collection_created": {
+    "collection_address": "AoJVbD2q14DTn1JNd5wipxywNnKCGRjU8CPuaXvrQmLT",
+    "collection_name": "DogeTech Dragon Eggs",
+    "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+    "update_authority": "ExThSU787eB9KY4kBy9GvqrgCu82HavXKw8CBLpWn5PQ",
+    "tx_signature": "4Senc2jEQP2cuNKYCtKjama2HQeJYQCJsqbTA1DcVUzYn1D46FFnxd2mYhH3cpMv6c9dzahrZy1Y6JwmDwMETWvM",
+    "timestamp": "2025-11-14T10:24:47.495Z"
+  },
+  "dragon_egg_royalties_initialized": {
+    "basis_points": 420,
+    "creators": [
+      {
+        "address": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
+        "percentage": 50
+      },
+      {
+        "address": "EPhiJ2sxGviuUWALuzYcbLFDABtsYmTSnTj9ipVQRAZk",
+        "percentage": 50
+      }
+    ],
+    "tx_signature": "kcxv9hkPXrcmAQAaTb4hWEamr4q8dfGfEYSJjWjBpsb789CmmKNdaV3R7Zp5Unpp9P9RZ5i1iPsyU8rDZow6crW",
+    "timestamp": "2025-11-14T10:36:55.434Z"
+  },
+  "ticket_tier_configs_initialized": {
+    "ticket_tiers": [
+      {
+        "tier_index": 0,
+        "ticket_value": 1000000,
+        "ticket_count": 1000,
+        "tx_signature": "4CVXDVKQ6HsTKxZ39XKAHoGNAoP2uSMX3Ec9Lec5C3FpvpWL8ZucpEEGWjfTDnhb9gTXgZ94kw9c2GBPphMjJsS8"
+      },
+      {
+        "tier_index": 1,
+        "ticket_value": 10000000,
+        "ticket_count": 100,
+        "tx_signature": "3AytDPMP9UajGYbJxZNZJ1AuHVDbqkTmJ9hzAhnMk5WtfjrDSXFmaX88SWu9LDJWhS32RbY18UHTpviqcRcvHJGG"
+      },
+      {
+        "tier_index": 2,
+        "ticket_value": 100000000,
+        "ticket_count": 50,
+        "tx_signature": "3cgeSQdt8juTjmen3ZUPfx88bBZhGdtk6W6gPJ6fJMfjGKrXuALoKKL53Fypd51eBRLLC1J3kpmMCjF51xBRtnQ3"
+      },
+      {
+        "tier_index": 3,
+        "ticket_value": 100000000,
+        "ticket_count": 75,
+        "tx_signature": "32kMbsKU8pTXeyKKWuicanrY3oo2NRukU6M3XsF7S9BkBxb62gA2stoLda4TvzQvm3CHFqQjNRtaRG8wErqxKmkS"
+      }
+    ],
+    "timestamp": "2025-11-14T10:42:09.250Z"
+  },
+  "tax_config_initialized": {
+    "tax_config_pda": "77yFFfKin4dRfgbCN2UWB1HbAfuU8JbsDciiavY9YGaa",
+    "withdraw_withheld_authority": "3ShG3sXFFPxhLthXzMoomhXCQwPHuKzmN5QsPjj2NBFN",
+    "faction_treasury_vault": "BZHynJHutnHWysHkqJ8QDDUDqp1NDyZeZBhQQXLiwTyV",
+    "nft_floor_sweep_vault": "5f2ReKKvVB6v3GZEqrPNV7uYKKiiCe4r4oc3JSFQeZYL",
+    "nft_sale_sol_vault": "4fJ9dCNdzWgygsBPc4Rw7n5EWDcZhvycZMjDQUMAmDY4",
+    "nft_floor_sweep_pct": 33,
+    "faction_treasury_pct": 33,
+    "whitelisted_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "tx_signature": "5QUiAbcWWBNBWbcPbsr9MTrSr2SJSVBJDEpFGyMP25pTXaJfN88XaApTVuiYg6M9DSuEiPwLmecgwrqN9BjoAT6w",
+    "timestamp": "2025-11-14T10:42:09.758Z"
+  },
+  "game_state_initialized": {
+    "global_game_state_pda": "EhtsFwtDQ63tXPDyGrykenrJ7gKdcNAkSud2UhJRyUwk",
+    "round_duration_seconds": 3600,
+    "tx_signature": "4sZLgXii4CtS2sqTkhAdfRUmqGYrVutuY8UXHmTomFxYNgpMJ8TXLBTd1ufrhJDdLAFaQrRUfasa3mZAs5bifJgB",
+    "timestamp": "2025-11-14T10:42:10.268Z"
+  },
+  "lp_token_accounts_initialized": {
+    "lp_token_account": "9VDPXLfGETcHwt9H3RDVWXyEFxiNvS89Gu68xLGhoZMK",
+    "lp_token_owner": "DxQxkNbToozUxdHNPrKRCAdoKXU8vyisvusR853CrHYY",
+    "lp_mint": "6EAy5qPmkyHQxdNrrXhEnzzfpjTCGPrepBE57gifcSx5",
+    "timestamp": "2025-11-14T10:42:10.649Z"
   }
 }
