@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("Fn2ub1DM5ZmYqyh9o1ir44onjABQRLq82HJ7YN2CZCCJ");
+declare_id!("6ASNXduYgDJGY9JFK2NDe4dkdmhijeDaJLmrVjxcHRQy");
 
 #[program]
 pub mod moonbase {
@@ -50,20 +50,16 @@ pub mod moonbase {
     }
 
     /// Add a single faction to the global config (admin only)
-    pub fn add_faction(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
-        admin::add_faction_internal(ctx, faction_name)
+    pub fn add_faction(ctx: Context<AddFaction>, faction_name: String, faction_id: u8) -> Result<()> {
+        admin::add_faction_internal(ctx, faction_name, faction_id)
     }
 
-    /// Initialize a faction state account (admin only)
-    /// 
-    /// Manually initializes a FactionState account for an existing faction.
-    /// Typically called automatically by `add_faction`, but can be used to re-initialize if needed.
-    pub fn initialize_faction_state(
-        ctx: Context<InitializeFactionState>,
-        faction_id: u8,
-    ) -> Result<()> {
-        admin::initialize_faction_state_internal(ctx, faction_id)
+
+    /// Initialize system referral account and buybacks system (admin only)
+    pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+        admin::initialize_system_accounts_internal(ctx)
     }
+
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
@@ -105,11 +101,6 @@ pub mod moonbase {
         )
     }
 
-    /// Initialize system referral account and buybacks system (admin only)
-    pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
-        admin::initialize_system_accounts_internal(ctx)
-    }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
@@ -120,10 +111,10 @@ pub mod moonbase {
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
         start_timestamp: u64,
-        doge_btc_per_slot: u64,
+        doge_btc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
-        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
+        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_round, pool_state)
     }
 
     /// Deposit DogeBtc tokens to the mining vault (anyone can call)

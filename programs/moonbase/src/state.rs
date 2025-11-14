@@ -236,7 +236,7 @@ pub struct DogeBtcMining {
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,
     /// DogeBtc mined per slot (original base rate)
-    pub doge_btc_per_slot: u64,
+    pub doge_btc_per_round: u64,
     /// Last slot when moondoge were mined
     pub last_slot: u64,
     /// Total tokens mined so far
@@ -252,7 +252,7 @@ pub struct DogeBtcMining {
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
-    /// Current distribution rate (starts at doge_btc_per_slot)
+    /// Current distribution rate (starts at doge_btc_per_round)
     pub current_dist_rate: u64,
     /// Price history for 4-hour rolling average (8 entries, 1 per 30 mins)
     pub price_history: Vec<PriceEntry>,
@@ -269,13 +269,13 @@ pub struct DogeBtcMining {
 }
 
 impl DogeBtcMining {
-    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_tokens_mined + bump + vault_auth_bump +
+    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_round + last_slot + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
         + 32                    // dbtc_token_vault
         + 8                     // mining_start_timestamp
-        + 8                     // doge_btc_per_slot
+        + 8                     // doge_btc_per_round
         + 8                     // last_slot
         + 8                     // total_tokens_mined
         + 1                     // bump

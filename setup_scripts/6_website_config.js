@@ -83,7 +83,7 @@ function generateWebsiteConfig(config, deployment) {
       "dbtc_token_vault": deployment.mining_vault_initialized?.vault_address,
       "dbtc_vault_authority": deployment.mining_vault_initialized?.vault_authority,
       "mining_start_timestamp": deployment.mining_vault_initialized?.start_timestamp,
-      "doge_btc_per_slot": deployment.mining_vault_initialized?.doge_btc_per_slot,
+      "doge_btc_per_round": deployment.mining_vault_initialized?.doge_btc_per_round,
       
       // ========== LP TOKEN MANAGEMENT ==========
       "lp_token_account": deployment.lp_token_accounts_initialized?.lp_token_account,
@@ -108,7 +108,7 @@ function generateWebsiteConfig(config, deployment) {
       "loot_percentage": config.moonbase?.loot_percentage || 10,
       
       // ========== MINING CONFIGURATION ==========
-      "initial_distribution_rate": config.mining?.doge_btc_per_slot || 1000000,
+      "initial_distribution_rate": config.mining?.doge_btc_per_round || 1000000,
       
       // ========== PVP CONFIGURATION ==========
       "pvp_ticket_tiers": config.pvp?.ticket_tiers || [

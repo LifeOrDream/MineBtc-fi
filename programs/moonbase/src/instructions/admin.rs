@@ -123,14 +123,14 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("   Initializing DogeBtcMining...");
     doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
-    doge_btc_mining.doge_btc_per_slot = 0;
+    doge_btc_mining.doge_btc_per_round = 0;
     doge_btc_mining.last_slot = 0;
     doge_btc_mining.total_tokens_mined = 0;
     doge_btc_mining.bump = ctx.bumps.doge_btc_mining;
     doge_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
     msg!("     DogeBtc token vault: {} (default, will be set during initialize_mining)", doge_btc_mining.dbtc_token_vault);
     msg!("     Mining start timestamp: {} (0 = not started)", doge_btc_mining.mining_start_timestamp);
-    msg!("     DogeBtc per slot: {}", doge_btc_mining.doge_btc_per_slot);
+    msg!("     DogeBtc per slot: {}", doge_btc_mining.doge_btc_per_round);
     msg!("     Bump: {}", doge_btc_mining.bump);
 
     // Initialize dynamic distribution fields with defaults
@@ -199,12 +199,13 @@ pub fn set_raydium_pool_state_internal(
 /// - Adds faction to `supported_factions` list
 /// - Creates and initializes FactionState PDA for the new faction
 /// - Faction ID is assigned based on current count (0-indexed)
-pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
+pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, faction_id: u8) -> Result<()> {
     msg!("🏛️ [add_faction_internal] Adding faction");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Faction name: {}", faction_name);
     
     let global_config = &mut ctx.accounts.global_config;
+    let faction_state = &mut ctx.accounts.faction_state;
 
     msg!("   Current factions count: {}", global_config.supported_factions.len());
     msg!("   Validating faction name...");
@@ -223,76 +224,25 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
     );
     msg!("     ✓ Factions count < MAX_FACTIONS ({})", MAX_FACTIONS);
 
-    let faction_id = current_faction_count as u8;
-    msg!("   Faction ID will be: {}", faction_id);
-
-    // Derive expected PDA and verify
-    msg!("   Deriving faction state PDA...");
-    let (expected_pda, bump) = Pubkey::find_program_address(
-        &[FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        ctx.program_id,
-    );
-    msg!("     Expected PDA: {} (bump: {})", expected_pda, bump);
-    require!(
-        ctx.accounts.faction_state.key() == expected_pda,
-        ErrorCode::InvalidAccount
-    );
-    msg!("     ✓ Faction state PDA matches");
-
-    // Initialize faction state account if needed
-    msg!("   Checking if faction state account exists...");
-    let rent = Rent::get()?;
-    let rent_lamports = rent.minimum_balance(FactionState::LEN);
-    msg!("     Rent required: {} lamports", rent_lamports);
-    
-    if ctx.accounts.faction_state.lamports() == 0 {
-        msg!("     Account doesn't exist - creating...");
-        // Create account
-        anchor_lang::system_program::create_account(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::CreateAccount {
-                    from: ctx.accounts.authority.to_account_info(),
-                    to: ctx.accounts.faction_state.to_account_info(),
-                },
-                &[&[FACTION_STATE_SEED.as_ref(), &[faction_id], &[bump]]],
-            ),
-            rent_lamports,
-            FactionState::LEN as u64,
-            ctx.program_id,
-        )?;
-        msg!("     ✓ Faction state account created");
-    } else {
-        msg!("     Account already exists");
-    }
+    require!( faction_id ==  current_faction_count as u8, ErrorCode::InvalidFactionId );
+    msg!("     ✓ Faction ID matches current factions count ({})", current_faction_count);   
 
     // Initialize faction state data
     msg!("   Initializing faction state data...");
-    let mut faction_state_data = ctx.accounts.faction_state.try_borrow_mut_data()?;
-    let faction_state = FactionState {
-        bump,
-        faction_id,
-        total_dbtc_hashpower: 0,
-        dbtc_staked: 0,
-        dbtc_dbtc_reward_index: 0,
-        dbtc_sol_reward_index: 0,
-        total_lp_hashpower: 0,
-        lp_sol_reward_index: 0,
-        lp_dbtc_reward_index: 0,
-        total_sol_bets: 0,
-        total_wins: 0,
-        sol_reward_index: 0,
-        motherlode_pot_size: 0,
-    };
-    faction_state.try_serialize(&mut &mut faction_state_data[..])?;
+    faction_state.bump = ctx.bumps.faction_state;
+    faction_state.faction_id = faction_id;
+    faction_state.total_dbtc_hashpower = 0;
+    faction_state.dbtc_staked = 0;
+    faction_state.dbtc_dbtc_reward_index = 0;
+    faction_state.dbtc_sol_reward_index = 0;
+    faction_state.total_lp_hashpower = 0;
+    faction_state.lp_sol_reward_index = 0;
+    faction_state.lp_dbtc_reward_index = 0;
+    faction_state.total_sol_bets = 0;
+    faction_state.total_wins = 0;
+    faction_state.sol_reward_index = 0;
+    faction_state.motherlode_pot_size = 0;
     msg!("     Faction state initialized:");
-    msg!("       Bump: {}", bump);
-    msg!("       Total passive hashpower: 0");
-    msg!("       Total SOL bets: 0");
-    msg!("       Total wins: 0");
-    msg!("       SOL reward index: 0");
-    msg!("       DogeBtc reward index: 0");
-    msg!("       Motherlode pot size: 0");
 
     // Add faction to config
     msg!("   Adding faction to supported_factions list...");
@@ -309,64 +259,6 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
         factions: vec![faction_name.clone()],
         total_factions: global_config.supported_factions.len() as u8,
     });
-
-    Ok(())
-}
-
-
-
-/// Initialize a faction state account (admin only)
-/// 
-/// Manually initializes a FactionState account for an existing faction.
-/// This is typically called automatically by `add_faction_internal`, but can be used
-/// to re-initialize a faction state if needed.
-/// 
-/// # Parameters
-/// - `faction_id`: The faction ID to initialize (must exist in supported_factions)
-pub fn initialize_faction_state_internal(
-    ctx: Context<InitializeFactionState>,
-    faction_id: u8,
-) -> Result<()> {
-    msg!("🏛️ [initialize_faction_state_internal] Initializing faction state");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Faction ID: {}", faction_id);
-    
-    let global_config = &ctx.accounts.global_config;
-    let faction_state = &mut ctx.accounts.faction_state;
-    
-    msg!("   Validating faction ID...");
-
-    // Validate faction_id exists
-    msg!("     Supported factions count: {}", global_config.supported_factions.len());
-    require!(
-        (faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-    msg!("     ✓ Faction ID {} is valid", faction_id);
-
-    // Initialize faction state
-    msg!("   Initializing faction state fields...");
-    faction_state.bump = ctx.bumps.faction_state;
-    faction_state.faction_id = faction_id;
-    faction_state.total_dbtc_hashpower = 0;
-    faction_state.total_lp_hashpower = 0;
-    faction_state.total_sol_bets = 0;
-    faction_state.total_wins = 0;
-    faction_state.sol_reward_index = 0;
-    faction_state.dbtc_dbtc_reward_index = 0;
-    faction_state.lp_dbtc_reward_index = 0;
-    faction_state.motherlode_pot_size = 0;
-    msg!("     Bump: {}", faction_state.bump);
-    msg!("     Total DogeBtc hashpower: {}", faction_state.total_dbtc_hashpower);
-    msg!("     Total LP hashpower: {}", faction_state.total_lp_hashpower);
-    msg!("     Total SOL bets: {}", faction_state.total_sol_bets);
-    msg!("     Total wins: {}", faction_state.total_wins);
-    msg!("     SOL reward index: {}", faction_state.sol_reward_index);
-    msg!("     Motherlode pot size: {}", faction_state.motherlode_pot_size);
-
-    msg!("✅ [initialize_faction_state_internal] Faction state initialized successfully");
-    msg!("   Faction ID: {}", faction_id);
-    msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);
 
     Ok(())
 }
@@ -570,12 +462,12 @@ pub fn update_fees_internal(
 /// 
 /// # Parameters
 /// - `start_timestamp`: Unix timestamp when mining should start
-/// - `doge_btc_per_slot`: Base DogeBtc emission rate per slot
+/// - `doge_btc_per_round`: Base DogeBtc emission rate per slot
 /// - `pool_state`: Raydium pool state address for price discovery
 pub fn initialize_mining_internal(
     ctx: Context<InitializeMining>,
     start_timestamp: u64,
-    doge_btc_per_slot: u64,
+    doge_btc_per_round: u64,
     pool_state: Pubkey,
 ) -> Result<()> {
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
@@ -594,13 +486,13 @@ pub fn initialize_mining_internal(
 
     // Initialize mining parameters
     doge_btc_mining.mining_start_timestamp = start_timestamp;
-    doge_btc_mining.doge_btc_per_slot = doge_btc_per_slot;
+    doge_btc_mining.doge_btc_per_round = doge_btc_per_round;
     doge_btc_mining.last_slot = cur_slot;
 
     // Initialize dynamic distribution fields
     doge_btc_mining.raydium_pool_state = pool_state;
     doge_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
-    doge_btc_mining.current_dist_rate = doge_btc_per_slot;
+    doge_btc_mining.current_dist_rate = doge_btc_per_round;
 
     doge_btc_mining.price_history = Vec::with_capacity(8);
     doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
@@ -1199,6 +1091,7 @@ pub struct UpdateConfigAc<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(faction_id: u8)]
 pub struct AddFaction<'info> {
     #[account(
         mut,
@@ -1209,41 +1102,20 @@ pub struct AddFaction<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     /// CHECK: Faction state PDA (validated in instruction)
-    #[account(mut)]
-    pub faction_state: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-
-#[derive(Accounts)]
-#[instruction(faction_id: u8)]
-pub struct InitializeFactionState<'info> {
     #[account(
-        init,
+        init_if_needed,
         payer = authority,
         space = FactionState::LEN,
         seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump
+        bump,
     )]
     pub faction_state: Account<'info, FactionState>,
-
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
-
 
 
 #[derive(Accounts)]

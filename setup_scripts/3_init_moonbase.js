@@ -51,7 +51,7 @@ const RAYDIUM_PROGRAM_ID = deploymentFile.RAYDIUM_CP_PROGRAM_ID;
 
 // Mining configuration
 const MINING_START_TIMESTAMP = config.mining.start_timestamp || Math.floor(Date.now() / 1000);
-const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_slot);
+const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
 const DBTC_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 
 // Load MoonBase Program IDL
@@ -144,22 +144,21 @@ async function main() {
     try {
         // 1. Initialize MoonBase Program (GlobalConfig + DogeBtcMining + SOL Treasury)
         await initializeMoonbaseProgram(moonbaseProgram);
-        return;
+
+        // 6. Set Raydium Pool State (for price discovery and swaps)
+        await setRaydiumPoolState(moonbaseProgram);
+
+        // 3. Add Factions (12 factions for the raffle)
+        // await addFactions(moonbaseProgram);
 
         // 2. Initialize System Accounts (Referral + Buybacks)
         await initializeSystemAccounts(moonbaseProgram);
-
-        // 3. Add Factions (12 factions for the raffle)
-        await addFactions(moonbaseProgram);
 
         // 4. Initialize Mining System (Token Vault + Mining Parameters)
         await initializeMiningSystem(moonbaseProgram);
 
         // 5. Deposit Mining Tokens
         await depositMiningTokens(moonbaseProgram);
-
-        // 6. Set Raydium Pool State (for price discovery and swaps)
-        await setRaydiumPoolState(moonbaseProgram);
 
         // 7. Initialize EggConfig
         await initializeEggConfig(moonbaseProgram);
@@ -224,16 +223,16 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
         moonbaseProgram.programId
     );
 
-    const feeRecipient = new PublicKey(config.deployment.fee_recipient);
+    const FEE_RECIPIENT_MULTISIG = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
 
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPDA.toString()}`);
     console.log(COLOR_INFO, `🔑 DogeBtc Mining PDA: ${dogeBtcMiningPDA.toString()}`);
     console.log(COLOR_INFO, `🔑 SOL Treasury PDA: ${solTreasuryPDA.toString()}`);
-    console.log(COLOR_INFO, `🔑 Fee Recipient: ${feeRecipient.toString()}`);
+    console.log(COLOR_INFO, `🔑 Fee Recipient: ${FEE_RECIPIENT_MULTISIG.toString()}`);
 
     try {
         const tx = await moonbaseProgram.methods
-            .initialize(feeRecipient)
+            .initialize(FEE_RECIPIENT_MULTISIG)
             .accounts({
                 globalConfig: globalConfigPDA,
                 dogeBtcMining: dogeBtcMiningPDA,
@@ -251,6 +250,7 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
             globalConfig_address: globalConfigPDA.toString(),
             dogeBtcMining_address: dogeBtcMiningPDA.toString(),
             solTreasury_address: solTreasuryPDA.toString(),
+            FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
             tx_signature: tx,
             timestamp: new Date().toISOString()
         };
@@ -366,7 +366,7 @@ async function addFactions(moonbaseProgram) {
 
         try {
             const tx = await moonbaseProgram.methods
-                .addFaction(faction.name)
+                .addFaction(faction.name, factionId)
                 .accounts({
                     globalConfig: globalConfigPDA,
                     factionState: factionStatePDA,
@@ -467,7 +467,7 @@ async function initializeMiningSystem(moonbaseProgram) {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
             start_timestamp: MINING_START_TIMESTAMP,
-            doge_btc_per_slot: MINING_DOGE_BTC_PER_SLOT.toString(),
+            doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
             tx_signature: tx,
             timestamp: new Date().toISOString()
         };
@@ -479,7 +479,7 @@ async function initializeMiningSystem(moonbaseProgram) {
                 vault_address: vaultPDA.toString(),
                 vault_authority: vaultAuthorityPDA.toString(),
                 start_timestamp: MINING_START_TIMESTAMP,
-                doge_btc_per_slot: MINING_DOGE_BTC_PER_SLOT.toString(),
+                doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
             };
             saveDeploymentData();
         } else {

@@ -53,7 +53,7 @@ const ID_MOONBASE_PROGRAM = deploymentFile.MOON_BASE_PROGRAM_ID ?
 // Mining configuration
 const dbtc_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 const MINING_START_TIMESTAMP = config.mining.start_timestamp || Math.floor(Date.now() / 1000);
-const MINING_doge_btc_PER_SLOT = new BN(config.mining.doge_btc_per_slot);
+const MINING_doge_btc_PER_SLOT = new BN(config.mining.doge_btc_per_round);
 
 const RAYDIUM_PROGRAM_ID = deploymentFile.RAYDIUM_CP_PROGRAM_ID;
 
@@ -284,7 +284,7 @@ async function initializeMiningSystem(moonbaseProgram) {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
             start_timestamp: MINING_START_TIMESTAMP,
-            doge_btc_per_slot: MINING_doge_btc_PER_SLOT.toString(),
+            doge_btc_per_round: MINING_doge_btc_PER_SLOT.toString(),
             init_tx: result.data.initMiningTxid,
             timestamp: new Date().toISOString()
         };

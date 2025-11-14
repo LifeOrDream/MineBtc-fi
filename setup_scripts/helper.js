@@ -826,7 +826,7 @@ export async function setupMiningVault(
   tokenMint,
   token_program,
   start_timestamp,
-  doge_btc_per_slot,
+  doge_btc_per_round,
   raydium_pool_state
 ) {
   try {
@@ -837,7 +837,7 @@ export async function setupMiningVault(
     console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Token Mint: ${tokenMint.toString()}`);
     console.log('\x1b[36m%s\x1b[0m', `🔑 DOGE_BTC Token Program: ${token_program.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `⏰ Start Timestamp: ${start_timestamp}`);
-    console.log('\x1b[90m%s\x1b[0m', `💰 Moon Doge Per Slot: ${doge_btc_per_slot.toString()}`);
+    console.log('\x1b[90m%s\x1b[0m', `💰 Moon Doge Per Slot: ${doge_btc_per_round.toString()}`);
     console.log('\x1b[90m%s\x1b[0m', `🔄 Raydium Pool State: ${raydium_pool_state.toString()}`);
 
     const [globalConfigPDA] = PublicKey.findProgramAddressSync(
@@ -848,7 +848,7 @@ export async function setupMiningVault(
     const miningTx = await program.methods
       .initializeMining(
         new BN(start_timestamp),     // start_timestamp
-        new BN(doge_btc_per_slot),  // doge_btc_per_slot (tokens per slot)
+        new BN(doge_btc_per_round),  // doge_btc_per_round (tokens per slot)
         new PublicKey(raydium_pool_state)  // pool_state (Raydium pool state)
       )
       .accounts({

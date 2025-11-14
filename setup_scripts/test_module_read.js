@@ -188,7 +188,7 @@ async function getDogeBtcMining() {
       dbtc_token_vault: miningData.dbtc_token_vault?.toString() || 'N/A',
       raydium_pool_state: miningData.raydium_pool_state?.toString() || 'N/A',
       mining_start_timestamp: convertBNToString(miningData.mining_start_timestamp),
-      doge_btc_per_slot: convertBNToString(miningData.doge_btc_per_slot),
+      doge_btc_per_round: convertBNToString(miningData.doge_btc_per_round),
       last_slot: convertBNToString(miningData.last_slot),
       total_active_hashpower: convertBNToString(miningData.total_active_hashpower),
       total_active_electricity: convertBNToString(miningData.total_active_electricity),
