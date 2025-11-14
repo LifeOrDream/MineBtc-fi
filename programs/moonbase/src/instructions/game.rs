@@ -23,7 +23,7 @@ use crate::instructions::helper;
 pub fn start_round(
     ctx: Context<StartRound>,
     round_id: u64,
-    commit_hash: Option<[u8; 32]>, // Optional: if None, uses next_round_commit from global_state
+    commit: [u8; 32],
 ) -> Result<()> {
     msg!("🎮 [start_round] Starting new round");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -54,9 +54,6 @@ pub fn start_round(
     
     // Validate that previous round has ended (if not first round)
     require!( clock.unix_timestamp >= global_state.round_end_timestamp, ErrorCode::RoundNotEnded);
-
-        // Use provided commit_hash or next_round_commit from global_state
-    let commit = commit_hash.unwrap_or(global_state.next_round_commit);
     msg!("   Commit hash: {:?}", commit);
     
     // Set commit hash for this round

@@ -137,8 +137,7 @@ pub fn join_round(
     bet_type: BetType,
     use_ticket: Option<u8>,
 ) -> Result<()> {
-    msg!("🎲 [join_round] User joining round (single bet)");
-    msg!("   User: {}", ctx.accounts.authority.key());
+    msg!("🎲 [join_round] User joining round (single bet). User: {}", ctx.accounts.authority.key());
     msg!("   Bet type: {:?}", bet_type);
     
     // Call internal join_round with user as payer
@@ -289,20 +288,14 @@ fn internal_join_round<'info>(
     let clock = Clock::get()?;
     
     require!(game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
-    msg!("   Validated GameSession...");
     require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
-    msg!("     ✓ Block assignments are set");
     let round_id = global_state.current_round_id;
-
-    msg!("   Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", round_id, clock.unix_timestamp, global_state.round_end_timestamp);
-    
-    require!(amount > 0, ErrorCode::InvalidAmount);
-    msg!("   ✓ Bet amount is valid");
+    msg!("   Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", round_id, clock.unix_timestamp, global_state.round_end_timestamp);    
+    require!(amount > 0 || use_ticket.is_some(), ErrorCode::InvalidAmount);
     
     // Validate bet type
     msg!("   Validating bet type...");
     let target_block = get_target_block_from_bet_type( &bet_type, &game_session.block_assignments)?;
-    msg!("     ✓ Bet type is valid");
     let target_faction = game_session.block_assignments[target_block as usize];
     msg!("     ✓ Target faction {}", target_faction);
 
@@ -333,22 +326,32 @@ fn internal_join_round<'info>(
         // Points bets don't have fees and don't go to prize pot
         (0, amount)
     } else {
-        msg!("   Using SOL bet. Bet amount: {} lamports", amount);
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        msg!("   Using SOL bet. Bet amount: {} SOL", (amount as f64) / 1_000_000_000.0);
         
         // Calculate fees using protocol_fee_pct from GlobalConfig
         let (net, fee_amount) = handle_fee(amount, global_config.sol_fee_config.protocol_fee_pct as u64)?;
-        msg!("     ✓ Fees calculated (net: {} lamports, fee: {} lamports)", net, fee_amount);
 
         // Calculate faction staker fees (split between dbtc and LP stakers)
         let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
-        let dbtc_reward_inc = helper::mul_div(stakers_fee / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-        faction_state.dbtc_sol_reward_index += dbtc_reward_inc;
+        let mut dbtc_stakers_fee = 0;
+        let mut lp_stakers_fee = 0;
 
-        let lp_reward_inc = helper::mul_div(stakers_fee / 2, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_sol_reward_index += lp_reward_inc;
+        if faction_state.total_dbtc_hashpower > 0 {
+            dbtc_stakers_fee = stakers_fee / 2;
+            let dbtc_reward_inc = helper::mul_div(dbtc_stakers_fee, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+            faction_state.dbtc_sol_reward_index += dbtc_reward_inc;    
+        }
+        
+        if faction_state.total_lp_hashpower > 0 {
+            lp_stakers_fee = stakers_fee / 2;
+            let lp_reward_inc = helper::mul_div(lp_stakers_fee, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+            faction_state.lp_sol_reward_index += lp_reward_inc;
+        }
 
         // Transfer all fees to sol_treasury
-        helper::transfer_to_sol_treasury(payer, sol_treasury, system_program, fee_amount)?;
+        msg!("dbtc_stakers_fee: {}, lp_stakers_fee: {}, total_fee: {}, Transferring {} SOL to sol_treasury", (dbtc_stakers_fee as f64 / 1_000_000_000.0), (lp_stakers_fee as f64 / 1_000_000_000.0), (fee_amount as f64 / 1_000_000_000.0), (fee_amount - dbtc_stakers_fee - lp_stakers_fee) as f64 / 1_000_000_000.0);
+        helper::transfer_to_sol_treasury(payer, sol_treasury, system_program, fee_amount - dbtc_stakers_fee - lp_stakers_fee)?;
         msg!("     ✓ Fee transferred");    
 
         // Transfer net amount to prize pot
@@ -488,10 +491,7 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
     let fee = amount * protocol_fee_pct / M_HUNDRED;
     let net_amount = amount - fee;
-
-    msg!("     Protocol fee ({}%): {} lamports", protocol_fee_pct, fee);
-    msg!("     Net amount (after fee): {} lamports", net_amount);
-
+    msg!("     Net amount (after fee): {} SOL. Protocol fee ({}%): {} SOL", (net_amount as f64) / 1_000_000_000.0, protocol_fee_pct, (fee as f64) / 1_000_000_000.0);
     return Ok((net_amount, fee));
 }
  

@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("5iPy3dfCTqxzvBYrtNRpcCZDEDt44Q1AWSRxaGkRWb9p");
+declare_id!("8DKxcyBbVB67E2kG8kPV66fxYWXesRGmyV2GvwEu8ytP");
 
 #[program]
 pub mod moonbase {
@@ -373,9 +373,9 @@ pub mod moonbase {
     pub fn start_round(
         ctx: Context<StartRound>,
         round_id: u64,
-        commit_hash: Option<[u8; 32]>,
+        commit: [u8; 32],
     ) -> Result<()> {
-        game::start_round(ctx, round_id, commit_hash)
+        game::start_round(ctx, round_id, commit)
     }
 
     /// End the current round by revealing seed, selecting winner, and starting next round

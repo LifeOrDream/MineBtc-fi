@@ -17,13 +17,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-// Note: For keccak256 hashing (matching Rust's keccak::hash)
-// Install with: npm install js-sha3
-// Then import: import { keccak256 } from 'js-sha3';
-// For now using SHA256 as placeholder - MUST be changed to keccak256 for production
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ============================================================================
+// CONFIGURATION & INITIALIZATION
+// ============================================================================
+
+const STATE_FILE = path.join(__dirname, 'game_loop_state.json');
+const LOOP_INTERVAL_MS = 60000; // 60 seconds
 
 // Load config
 const configPath = path.join(__dirname, '../config.json');
@@ -42,7 +45,7 @@ if (!fs.existsSync(deploymentPath)) {
 const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
 
 // Load MoonBase IDL
-const moonbaseIdlPath = path.resolve(__dirname, "../../target/idl/moonbase.json",);
+const moonbaseIdlPath = path.resolve(__dirname, "../../target/idl/moonbase.json");
 if (!fs.existsSync(moonbaseIdlPath)) {
   console.error(`❌ MoonBase IDL not found at: ${moonbaseIdlPath}`);
   process.exit(1);
@@ -60,23 +63,15 @@ const walletKeypair = Keypair.fromSecretKey(
 );
 
 const connection = new Connection(config.network.rpc_url, config.network.commitment);
-
-// Create wallet object
 const wallet = new Wallet(walletKeypair);
-
-// Initialize program (programId comes from IDL)
 const provider = new AnchorProvider(connection, wallet, { commitment: config.network.commitment });
 const moonBaseProgram = new Program(moonbaseIdl, provider);
 const moonBaseProgramId = moonBaseProgram.programId;
-console.log(`moonBaseProgramId ${moonBaseProgramId.toString()}`);
 
 // Seeds
 const GLOBAL_CONFIG_SEED = "global-config";
 const GLOBAL_GAME_STATE_SEED = "global-game-state";
 const GAME_SESSION_SEED = "game-session";
-const DOGE_BTC_MINING_SEED = "moon-doge-mining";
-const SOL_PRIZE_POT_VAULT_SEED = "sol-prize-pot";
-const DBTC_EMISSION_VAULT_SEED = "dbtc-emission-vault";
 const FACTION_STATE_SEED = "faction";
 
 // Derive PDAs
@@ -91,98 +86,108 @@ const [globalGameStatePDA] = PublicKey.findProgramAddressSync(
 );
 
 const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from(DOGE_BTC_MINING_SEED)],
+  [Buffer.from("moon-doge-mining")],
   moonBaseProgramId
 );
 
 const [solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from(SOL_PRIZE_POT_VAULT_SEED)],
+  [Buffer.from("sol-prize-pot")],
   moonBaseProgramId
 );
 
 const [dbtcEmissionVaultPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from(DBTC_EMISSION_VAULT_SEED)],
+  [Buffer.from("dbtc-emission-vault")],
   moonBaseProgramId
 );
 
-/**
- * Generate a random 32-byte seed
- */
-function generateRandomSeed() {
-  return crypto.randomBytes(32);
-}
+// ============================================================================
+// STATE PERSISTENCE
+// ============================================================================
 
 /**
- * Hash a seed using keccak256 (for commit-reveal scheme)
- * IMPORTANT: Must match Rust's keccak::hash function
- * Install keccak library: npm install keccak
- * Then use: const keccak = require('keccak'); keccak('keccak256').update(seed).digest();
- * 
- * For now using SHA256 as placeholder - MUST be changed to keccak256!
+ * Load persisted state from file
  */
-function hashSeed(seed) {
-  // TODO: Replace with keccak256 to match Rust implementation
-  // const keccak = require('keccak');
-  // return keccak('keccak256').update(seed).digest();
-  
-  // Temporary: using SHA256 (WILL FAIL commit-reveal verification!)
-  return crypto.createHash('sha256').update(seed).digest();
-}
-
-/**
- * Get global game state and return decoded/human-readable format
- */
-async function getGlobalGameState() {
-  try {
-    const globalState = await moonBaseProgram.account.globalGameSate.fetch(globalGameStatePDA);
-    
-    // Decode to human-readable format
-    const decoded = {
-      bump: globalState.bump,
-      isActive: globalState.isActive,
-      totalSolBets: globalState.totalSolBets ? globalState.totalSolBets.toString() : '0',
-      totalSolBetsSOL: globalState.totalSolBets 
-        ? (Number(globalState.totalSolBets) / LAMPORTS_PER_SOL).toFixed(4)
-        : '0.0000',
-      totalGlobalPassiveHashpower: globalState.totalGlobalPassiveHashpower 
-        ? globalState.totalGlobalPassiveHashpower.toString() 
-        : '0',
-      currentRoundId: globalState.currentRoundId ? globalState.currentRoundId.toNumber() : 0,
-      roundEndTimestamp: globalState.roundEndTimestamp ? globalState.roundEndTimestamp.toNumber() : 0,
-      roundEndDate: globalState.roundEndTimestamp 
-        ? new Date(globalState.roundEndTimestamp.toNumber() * 1000).toISOString()
-        : null,
-      roundDurationSeconds: globalState.roundDurationSeconds ? globalState.roundDurationSeconds.toNumber() : 0,
-      roundDurationMinutes: globalState.roundDurationSeconds 
-        ? (globalState.roundDurationSeconds.toNumber() / 60).toFixed(2)
-        : '0.00',
-      lastRoundId: globalState.lastRoundId ? globalState.lastRoundId.toNumber() : 0,
-      winningFactionId: globalState.winningFactionId !== undefined ? globalState.winningFactionId : null,
-      currentRoundCommit: globalState.currentRoundCommit 
-        ? Buffer.from(globalState.currentRoundCommit).toString('hex')
-        : null,
-      currentRoundSeed: globalState.currentRoundSeed 
-        ? Buffer.from(globalState.currentRoundSeed).toString('hex')
-        : null,
-      nextRoundCommit: globalState.nextRoundCommit 
-        ? Buffer.from(globalState.nextRoundCommit).toString('hex')
-        : null,
-      crankerBots: globalState.crankerBots 
-        ? globalState.crankerBots.map(pk => pk.toString())
-        : [],
-      crankerBotsCount: globalState.crankerBots ? globalState.crankerBots.length : 0,
+function loadState() {
+  if (!fs.existsSync(STATE_FILE)) {
+    return {
+      seeds: {}, // roundId -> seed (hex string)
+      commits: {}, // roundId -> commit hash (hex string)
+      lastSyncedRound: 0
     };
-    
-    return decoded;
+  }
+  
+  try {
+    const data = fs.readFileSync(STATE_FILE, 'utf8');
+    return JSON.parse(data);
   } catch (error) {
-    console.error(`❌ Error fetching global game state:`, error.message);
-    throw error;
+    console.warn(`⚠️  Failed to load state file, starting fresh:`, error.message);
+    return {
+      seeds: {},
+      commits: {},
+      lastSyncedRound: 0
+    };
   }
 }
 
 /**
- * Derive game session PDA for a given round ID
+ * Save state to file
  */
+function saveState(state) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (error) {
+    console.error(`❌ Failed to save state:`, error.message);
+  }
+}
+
+/**
+ * Convert buffer to hex string for JSON storage
+ */
+function bufferToHex(buffer) {
+  return Buffer.from(buffer).toString('hex');
+}
+
+/**
+ * Convert hex string to buffer
+ */
+function hexToBuffer(hex) {
+  return Buffer.from(hex, 'hex');
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+function generateRandomSeed() {
+  return crypto.randomBytes(32);
+}
+
+function hashSeed(seed) {
+  // TODO: Replace with keccak256 to match Rust implementation
+  return crypto.createHash('sha256').update(seed).digest();
+}
+
+async function getGlobalGameState() {
+  const globalState = await moonBaseProgram.account.globalGameSate.fetch(globalGameStatePDA);
+  
+  return {
+    isActive: globalState.isActive,
+    currentRoundId: globalState.currentRoundId ? globalState.currentRoundId.toNumber() : 0,
+    lastRoundId: globalState.lastRoundId ? globalState.lastRoundId.toNumber() : 0,
+    roundEndTimestamp: globalState.roundEndTimestamp ? globalState.roundEndTimestamp.toNumber() : 0,
+    roundDurationSeconds: globalState.roundDurationSeconds ? globalState.roundDurationSeconds.toNumber() : 0,
+    currentRoundCommit: globalState.currentRoundCommit 
+      ? Buffer.from(globalState.currentRoundCommit).toString('hex')
+      : null,
+    currentRoundSeed: globalState.currentRoundSeed 
+      ? Buffer.from(globalState.currentRoundSeed).toString('hex')
+      : null,
+    nextRoundCommit: globalState.nextRoundCommit 
+      ? Buffer.from(globalState.nextRoundCommit).toString('hex')
+      : null,
+  };
+}
+
 function deriveGameSessionPDA(roundId) {
   const roundIdBuffer = Buffer.allocUnsafe(8);
   roundIdBuffer.writeBigUInt64LE(BigInt(roundId), 0);
@@ -195,9 +200,6 @@ function deriveGameSessionPDA(roundId) {
   return gameSessionPDA;
 }
 
-/**
- * Derive faction state PDA for a given faction ID
- */
 function deriveFactionStatePDA(factionId) {
   const factionIdBuffer = Buffer.from([factionId]);
   
@@ -209,64 +211,116 @@ function deriveFactionStatePDA(factionId) {
   return factionStatePDA;
 }
 
-/**
- * Execute start round transaction
- */
-async function executeStartRound(roundId, commitHash) {
+// ============================================================================
+// ROUND OPERATIONS
+// ============================================================================
+
+async function startRound(roundId, commitHash) {
+  console.log(`\n🎮 Starting round ${roundId}...`);
+  
+  const gameSessionPDA = deriveGameSessionPDA(roundId);
+  
+  const tx = await moonBaseProgram.methods
+    .startRound(new BN(roundId), commitHash ? Array.from(commitHash) : null)
+    .accounts({
+      globalGameState: globalGameStatePDA,
+      gameSession: gameSessionPDA,
+      authority: walletKeypair.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  tx.instructions.unshift(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 })
+  );
+
+  const signature = await sendAndConfirmTransaction(
+    connection,
+    tx,
+    [walletKeypair],
+    { commitment: 'confirmed' }
+  );
+
+  console.log(`✅ Round ${roundId} started: ${signature}`);
+  return { success: true, signature };
+}
+
+async function endRound(roundId, revealedSeed, nextRoundCommit) {
+  console.log(`\n🏁 Ending round ${roundId}...`);
+  
+  const gameSessionPDA = deriveGameSessionPDA(roundId);
+  
+  // Try to estimate winning faction
+  let winningFactionId = await estimateWinningFaction(roundId);
+  
+  // Try ending with estimated faction
   try {
-    console.log(`\n🎮 Starting round ${roundId}...`);
-    
-    const gameSessionPDA = deriveGameSessionPDA(roundId);
-    
-    const startRoundTx = await moonBaseProgram.methods
-      .startRound(new BN(roundId), commitHash ? Array.from(commitHash) : null)
-      .accounts({
-        globalGameState: globalGameStatePDA,
-        gameSession: gameSessionPDA,
-        authority: walletKeypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .transaction();
-
-    // Add compute unit limit instruction at the beginning
-    startRoundTx.instructions.unshift(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 })
-    );
-
-    const signature = await sendAndConfirmTransaction(
-      connection,
-      startRoundTx,
-      [walletKeypair],
-      { commitment: 'confirmed' }
-    );
-
-    console.log(`✅ Round ${roundId} started: ${signature}`);
-    return { success: true, signature };
+    return await tryEndRound(roundId, gameSessionPDA, revealedSeed, nextRoundCommit, winningFactionId);
   } catch (error) {
-    console.error(`❌ Error starting round:`, error.message);
-    if (error.logs) {
-      console.error('Transaction logs:', error.logs);
+    // If wrong faction, try all factions
+    if (error.message.includes('InvalidFactionId') || error.message.includes('faction')) {
+      console.log(`   Retrying with all factions...`);
+      for (let factionId = 0; factionId < 12; factionId++) {
+        try {
+          return await tryEndRound(roundId, gameSessionPDA, revealedSeed, nextRoundCommit, factionId);
+        } catch (retryError) {
+          if (!retryError.message.includes('InvalidFactionId')) {
+            throw retryError;
+          }
+        }
+      }
+      throw new Error('Failed to find correct winning faction');
     }
-    return { success: false, error: error.message };
+    throw error;
   }
 }
 
-/**
- * Try to determine winning faction from game session block assignments
- * This is an estimate - the actual winning faction is determined during end_round
- * Returns faction 0 as default (will be validated and retried if wrong)
- */
-async function estimateWinningFaction(currentRoundId) {
+async function tryEndRound(roundId, gameSessionPDA, revealedSeed, nextRoundCommit, factionId) {
+  const factionStatePDA = deriveFactionStatePDA(factionId);
+  
+  const tx = await moonBaseProgram.methods
+    .endRound(
+      Array.from(revealedSeed),
+      Array.from(nextRoundCommit)
+    )
+    .accounts({
+      globalGameState: globalGameStatePDA,
+      gameSession: gameSessionPDA,
+      globalConfig: globalConfigPDA,
+      dogeBtcMining: dogeBtcMiningPDA,
+      winningFactionState: factionStatePDA,
+      solPrizePotVault: solPrizePotVaultPDA,
+      dbtcEmissionVault: dbtcEmissionVaultPDA,
+      slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
+      authority: walletKeypair.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  tx.instructions.unshift(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 1000000 })
+  );
+
+  const signature = await sendAndConfirmTransaction(
+    connection,
+    tx,
+    [walletKeypair],
+    { commitment: 'confirmed' }
+  );
+
+  console.log(`✅ Round ${roundId} ended with faction ${factionId}: ${signature}`);
+  return { success: true, signature };
+}
+
+async function estimateWinningFaction(roundId) {
   try {
-    const gameSessionPDA = deriveGameSessionPDA(currentRoundId);
+    const gameSessionPDA = deriveGameSessionPDA(roundId);
     const gameSession = await moonBaseProgram.account.gameSession.fetch(gameSessionPDA);
     
-    // Find the block with the most bets (as a heuristic)
-    const blockAssignments = gameSession.blockAssignments;
     const userBlockIndexes = gameSession.userBlockIndexes;
-    
     let maxUsers = 0;
     let estimatedBlock = 0;
+    
     for (let i = 0; i < userBlockIndexes.length; i++) {
       if (userBlockIndexes[i] > maxUsers) {
         maxUsers = userBlockIndexes[i];
@@ -275,288 +329,214 @@ async function estimateWinningFaction(currentRoundId) {
     }
     
     if (maxUsers > 0) {
-      const estimatedFaction = blockAssignments[estimatedBlock];
-      console.log(`   Estimated winning faction: ${estimatedFaction} (from block ${estimatedBlock + 1} with ${maxUsers} users)`);
+      const estimatedFaction = gameSession.blockAssignments[estimatedBlock];
+      console.log(`   Estimated winning faction: ${estimatedFaction} (block ${estimatedBlock + 1})`);
       return estimatedFaction;
     }
     
-    return 0; // Fallback to faction 0
+    return 0;
   } catch (error) {
-    console.error(`   Error estimating winning faction:`, error.message);
-    return 0; // Fallback to faction 0
+    console.warn(`   Could not estimate faction:`, error.message);
+    return 0;
   }
 }
 
+// ============================================================================
+// STATE SYNCHRONIZATION
+// ============================================================================
+
 /**
- * Execute end round transaction
+ * Sync local state with on-chain state
+ * Ensures we have seeds and commits for all rounds we need
  */
-async function executeEndRound(revealedSeed, nextRoundCommit) {
-  try {
-    console.log(`\n🏁 Ending round...`);
-    
-    // Get current global state
-    const globalState = await getGlobalGameState();
-    const currentRoundId = globalState.currentRoundId.toNumber();
-    
-    const gameSessionPDA = deriveGameSessionPDA(currentRoundId);
-    
-    // Try to estimate winning faction from game session
-    // Note: The actual winning faction is determined during end_round execution,
-    // so this is just a best guess. If wrong, we'll retry with all factions.
-    let winningFactionId = await estimateWinningFaction(currentRoundId);
-    const winningFactionStatePDA = deriveFactionStatePDA(winningFactionId);
-    
-    console.log(`   Using estimated faction state for faction ${winningFactionId}`);
-    
-    const endRoundTx = await moonBaseProgram.methods
-      .endRound(
-        Array.from(revealedSeed),
-        Array.from(nextRoundCommit)
-      )
-      .accounts({
-        globalGameState: globalGameStatePDA,
-        gameSession: gameSessionPDA,
-        globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
-        winningFactionState: winningFactionStatePDA,
-        solPrizePotVault: solPrizePotVaultPDA,
-        dbtcEmissionVault: dbtcEmissionVaultPDA,
-        slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
-        authority: walletKeypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .transaction();
-
-    // Add compute unit limit instruction at the beginning
-    endRoundTx.instructions.unshift(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 1000000 })
-    );
-
-    const signature = await sendAndConfirmTransaction(
-      connection,
-      endRoundTx,
-      [walletKeypair],
-      { commitment: 'confirmed' }
-    );
-
-    console.log(`✅ Round ${currentRoundId} ended: ${signature}`);
-    return { success: true, signature };
-  } catch (error) {
-    console.error(`❌ Error ending round:`, error.message);
-    if (error.logs) {
-      console.error('Transaction logs:', error.logs);
-    }
-    
-    // If error is about invalid faction, try all factions
-    if (error.message.includes('InvalidFactionId') || error.message.includes('faction')) {
-      console.log('   Invalid faction detected, trying all factions...');
-      const globalState = await getGlobalGameState();
-      const currentRoundId = globalState.currentRoundId.toNumber();
-      const gameSessionPDA = deriveGameSessionPDA(currentRoundId);
-      
-      // Try each faction (0-11)
-      for (let factionId = 0; factionId < 12; factionId++) {
-        try {
-          console.log(`   Trying faction ${factionId}...`);
-          const factionStatePDA = deriveFactionStatePDA(factionId);
-          
-          const endRoundTx = await moonBaseProgram.methods
-            .endRound(
-              Array.from(revealedSeed),
-              Array.from(nextRoundCommit)
-            )
-            .accounts({
-              globalGameState: globalGameStatePDA,
-              gameSession: gameSessionPDA,
-              globalConfig: globalConfigPDA,
-              dogeBtcMining: dogeBtcMiningPDA,
-              winningFactionState: factionStatePDA,
-              solPrizePotVault: solPrizePotVaultPDA,
-              dbtcEmissionVault: dbtcEmissionVaultPDA,
-              slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
-              authority: walletKeypair.publicKey,
-              systemProgram: SystemProgram.programId,
-            })
-            .transaction();
-
-          endRoundTx.instructions.unshift(
-            ComputeBudgetProgram.setComputeUnitLimit({ units: 1000000 })
-          );
-
-          const signature = await sendAndConfirmTransaction(
-            connection,
-            endRoundTx,
-            [walletKeypair],
-            { commitment: 'confirmed' }
-          );
-
-          console.log(`✅ Round ${currentRoundId} ended with faction ${factionId}: ${signature}`);
-          return { success: true, signature };
-        } catch (retryError) {
-          // Continue to next faction
-          if (retryError.message.includes('InvalidFactionId')) {
-            continue;
-          }
-          // If it's a different error, break
-          throw retryError;
-        }
-      }
-      
-      console.error('   Failed to find correct winning faction after trying all 12 factions');
-    }
-    
-    return { success: false, error: error.message };
+async function syncStateWithChain(state, onChainState) {
+  const currentRoundId = onChainState.currentRoundId;
+  const lastRoundId = onChainState.lastRoundId;
+  
+  console.log(`\n🔄 Syncing state with chain...`);
+  console.log(`   On-chain: Round ${currentRoundId}, Last completed: ${lastRoundId}`);
+  console.log(`   Local: Last synced round ${state.lastSyncedRound}`);
+  
+  // If we have a current round commit on-chain, store it
+  if (onChainState.currentRoundCommit && currentRoundId > 0) {
+    state.commits[currentRoundId] = onChainState.currentRoundCommit;
+    console.log(`   ✓ Stored commit for round ${currentRoundId} from chain`);
   }
+  
+  // If we have a next round commit on-chain, store it
+  if (onChainState.nextRoundCommit) {
+    const nextRoundId = currentRoundId + 1;
+    state.commits[nextRoundId] = onChainState.nextRoundCommit;
+    console.log(`   ✓ Stored commit for round ${nextRoundId} from chain`);
+  }
+  
+  // If we have a revealed seed on-chain, store it
+  if (onChainState.currentRoundSeed && currentRoundId > 0) {
+    state.seeds[currentRoundId] = onChainState.currentRoundSeed;
+    console.log(`   ✓ Stored seed for round ${currentRoundId} from chain`);
+  }
+  
+  // Generate missing seeds/commits for future rounds
+  const roundsToPrepare = Math.max(currentRoundId + 2, state.lastSyncedRound + 1);
+  
+  for (let roundId = state.lastSyncedRound + 1; roundId <= roundsToPrepare; roundId++) {
+    if (!state.seeds[roundId]) {
+      const seed = generateRandomSeed();
+      state.seeds[roundId] = bufferToHex(seed);
+      console.log(`   ✓ Generated seed for round ${roundId}`);
+    }
+    
+    if (!state.commits[roundId + 1]) {
+      const seed = hexToBuffer(state.seeds[roundId]);
+      const commit = hashSeed(seed);
+      state.commits[roundId + 1] = bufferToHex(commit);
+      console.log(`   ✓ Generated commit for round ${roundId + 1}`);
+    }
+  }
+  
+  state.lastSyncedRound = roundsToPrepare;
+  saveState(state);
+  
+  return state;
 }
 
 /**
- * Main loop function
+ * Get seed for a round (from state or generate if missing)
  */
+function getSeedForRound(state, roundId) {
+  if (state.seeds[roundId]) {
+    return hexToBuffer(state.seeds[roundId]);
+  }
+  
+  // Generate if missing
+  const seed = generateRandomSeed();
+  state.seeds[roundId] = bufferToHex(seed);
+  saveState(state);
+  return seed;
+}
+
+/**
+ * Get commit hash for a round (from state or generate if missing)
+ */
+function getCommitForRound(state, roundId) {
+  if (state.commits[roundId]) {
+    return hexToBuffer(state.commits[roundId]);
+  }
+  
+  // Generate from seed if we have it
+  if (state.seeds[roundId - 1]) {
+    const seed = hexToBuffer(state.seeds[roundId - 1]);
+    const commit = hashSeed(seed);
+    state.commits[roundId] = bufferToHex(commit);
+    saveState(state);
+    return commit;
+  }
+  
+  // Generate new seed and commit
+  const seed = generateRandomSeed();
+  state.seeds[roundId - 1] = bufferToHex(seed);
+  const commit = hashSeed(seed);
+  state.commits[roundId] = bufferToHex(commit);
+  saveState(state);
+  return commit;
+}
+
+// ============================================================================
+// MAIN LOOP
+// ============================================================================
+
+async function processRound(state, onChainState) {
+  const currentRoundId = onChainState.currentRoundId;
+  const roundEndTimestamp = onChainState.roundEndTimestamp;
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const roundHasEnded = currentTimestamp >= roundEndTimestamp;
+  
+  console.log(`\n📊 Round Status:`);
+  console.log(`   Current Round: ${currentRoundId}`);
+  console.log(`   Round End: ${new Date(roundEndTimestamp * 1000).toISOString()}`);
+  console.log(`   Time Remaining: ${Math.max(0, roundEndTimestamp - currentTimestamp)} seconds`);
+  
+  // If round has ended or no round exists, end current round first
+  if (roundHasEnded && currentRoundId > 0) {
+    const revealedSeed = getSeedForRound(state, currentRoundId);
+    const nextRoundCommit = getCommitForRound(state, currentRoundId + 1);
+    
+    const result = await endRound(currentRoundId, revealedSeed, nextRoundCommit);
+    if (!result.success) {
+      console.log(`⚠️  Failed to end round, will retry`);
+      return false;
+    }
+    
+    console.log(`✅ Round ${currentRoundId} ended successfully`);
+  }
+  
+  // Start next round if needed
+  const nextRoundId = currentRoundId + 1;
+  const nextRoundCommit = getCommitForRound(state, nextRoundId);
+  
+  const result = await startRound(nextRoundId, nextRoundCommit);
+  if (!result.success) {
+    console.log(`⚠️  Failed to start round, will retry`);
+    return false;
+  }
+  
+  console.log(`✅ Round ${nextRoundId} started successfully`);
+  return true;
+}
+
 async function runLoop() {
   console.log('\n🎮 Starting game loop...');
   console.log(`📡 Network: ${config.network.cluster}`);
   console.log(`🔗 RPC: ${config.network.rpc_url}`);
   console.log(`👛 Wallet: ${walletKeypair.publicKey.toString()}`);
-  console.log(`⏰ Interval: 60 seconds\n`);
-//   return;
-
-  // Store seeds for commit-reveal scheme
-  // currentRevealedSeed: seed for current round (to reveal when ending current round)
-  // nextCommitHash: commit hash for next round (hash of seed for next round)
-  // nextRoundSeed: seed for next round (to reveal when ending next round)
-  let currentRevealedSeed = null;
-  let nextCommitHash = null;
-  let nextRoundSeed = null;
-
+  console.log(`⏰ Interval: ${LOOP_INTERVAL_MS / 1000} seconds\n`);
+  
+  // Load persisted state
+  let state = loadState();
+  console.log(`📁 Loaded state from ${STATE_FILE}`);
+  
+  // Sync with on-chain state
+  const onChainState = await getGlobalGameState();
+  state = await syncStateWithChain(state, onChainState);
+  
+  // Check if game is active
+  if (!onChainState.isActive) {
+    console.log(`\n⚠️  Game is not active. Waiting for activation...`);
+  }
+  
   let iteration = 0;
-
+  
   while (true) {
     iteration++;
     console.log(`\n${'='.repeat(60)}`);
     console.log(`🔄 Iteration #${iteration} - ${new Date().toISOString()}`);
     console.log(`${'='.repeat(60)}`);
-
+    
     try {
-      // Get current global game state
-      const globalState = await getGlobalGameState();
-      const currentRoundId = globalState.currentRoundId;
-      const roundEndTimestamp = globalState.roundEndTimestamp;
-      const roundDurationSeconds = globalState.roundDurationSeconds;
-      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const onChainState = await getGlobalGameState();
       
-      console.log(`📊 Global Game State:`);
-      console.log(`   Active: ${globalState.isActive ? '✅ Yes' : '❌ No'}`);
-      console.log(`   Current Round ID: ${currentRoundId}`);
-      console.log(`   Last Round ID: ${globalState.lastRoundId}`);
-      console.log(`   Winning Faction (last round): ${globalState.winningFactionId !== null ? globalState.winningFactionId : 'N/A'}`);
-      console.log(`   Total SOL Bets: ${globalState.totalSolBetsSOL} SOL (${globalState.totalSolBets} lamports)`);
-      console.log(`   Total Passive Hashpower: ${globalState.totalGlobalPassiveHashpower}`);
-      console.log(`   Round Duration: ${globalState.roundDurationMinutes} minutes (${roundDurationSeconds} seconds)`);
-      console.log(`   Round End: ${globalState.roundEndDate || 'N/A'}`);
-      console.log(`   Current Timestamp: ${new Date(currentTimestamp * 1000).toISOString()}`);
-      console.log(`   Cranker Bots: ${globalState.crankerBotsCount} whitelisted`);
-      if (globalState.crankerBotsCount > 0) {
-        globalState.crankerBots.forEach((bot, idx) => {
-          console.log(`     ${idx + 1}. ${bot}`);
-        });
+      if (!onChainState.isActive) {
+        console.log(`⏸️  Game is paused, waiting...`);
+        await new Promise(resolve => setTimeout(resolve, LOOP_INTERVAL_MS));
+        continue;
       }
-
-      // Check if round has ended or needs to be started
-      if (currentRoundId === 0 || currentTimestamp >= roundEndTimestamp) {
-        // Round has ended or no round started yet - end current round first (if exists)
-        if (currentRoundId > 0 && currentRevealedSeed) {
-          console.log(`\n🏁 Round ${currentRoundId} has ended, ending round...`);
-          
-          // Generate seed and commit hash for round N+2 (after the next round)
-          const seedForRoundNPlus2 = generateRandomSeed();
-          const commitForRoundNPlus2 = hashSeed(seedForRoundNPlus2);
-          
-          // End current round: reveal seed for current round, commit hash for next round
-          // currentRevealedSeed = seed for round N (to reveal)
-          // nextCommitHash = commit hash for round N+1 (hash of nextRoundSeed)
-          const endResult = await executeEndRound(currentRevealedSeed, nextCommitHash);
-          if (!endResult.success) {
-            console.log('⚠️  End round failed, will retry next iteration');
-            await new Promise(resolve => setTimeout(resolve, 60000));
-            continue;
-          }
-          
-          // After ending round N:
-          // - nextRoundSeed becomes the seed for round N+1 (to reveal when ending round N+1)
-          // - commitForRoundNPlus2 becomes the commit for round N+2 (to use when starting round N+2)
-          currentRevealedSeed = nextRoundSeed; // Seed for round N+1 (to reveal)
-          nextRoundSeed = seedForRoundNPlus2; // Seed for round N+2 (to reveal later)
-          nextCommitHash = commitForRoundNPlus2; // Commit for round N+2
-          
-          console.log(`🔐 Prepared: seed for round ${currentRoundId + 1} (to reveal), commit for round ${currentRoundId + 2}`);
-        } else {
-          // First round or no revealed seed - check if next_round_commit exists in global state
-          if (!nextCommitHash) {
-            // Use next_round_commit from global state if available
-            if (globalState.nextRoundCommit && Array.isArray(globalState.nextRoundCommit) && globalState.nextRoundCommit.length === 32) {
-              nextCommitHash = Buffer.from(globalState.nextRoundCommit);
-              console.log(`🔐 Using next_round_commit from global state`);
-              // We don't have the seed for this commit, so generate new seed for round 1
-              const seedForRound1 = generateRandomSeed();
-              currentRevealedSeed = seedForRound1;
-              // Generate seed and commit for round 2
-              const seedForRound2 = generateRandomSeed();
-              nextRoundSeed = seedForRound2;
-              nextCommitHash = hashSeed(seedForRound2);
-              console.log(`🔐 Generated seed for round 1 and commit for round 2`);
-            } else {
-              // Generate initial seed and commit for round 1
-              const seedForRound1 = generateRandomSeed();
-              currentRevealedSeed = seedForRound1;
-              nextCommitHash = hashSeed(seedForRound1);
-              // Generate seed for round 2
-              const seedForRound2 = generateRandomSeed();
-              nextRoundSeed = seedForRound2;
-              console.log(`🔐 Generated initial seed for round 1 and seed for round 2`);
-            }
-          }
-        }
-        
-        // Start next round
-        const nextRoundId = currentRoundId + 1;
-        console.log(`\n🎮 Starting round ${nextRoundId}...`);
-        // return;
-        
-        console.log(`🔐 Next commit hash: ${nextCommitHash ? Array.from(nextCommitHash) : null}`);
-        const startResult = await executeStartRound(nextRoundId, nextCommitHash ? Array.from(nextCommitHash) : null);
-        if (!startResult.success) {
-          console.log('⚠️  Start round failed, will retry next iteration');
-        } else {
-          // After starting round N+1:
-          // - We used nextCommitHash (commit for round N+1 = hash of nextRoundSeed)
-          // - currentRevealedSeed is the seed for round N+1 (to reveal when ending round N+1)
-          // - nextRoundSeed is already set (seed for round N+1, which we'll reveal)
-          // - We need to generate seed and commit for round N+2
-          const seedForRoundNPlus2 = generateRandomSeed();
-          const commitForRoundNPlus2 = hashSeed(seedForRoundNPlus2);
-          
-          // Update: currentRevealedSeed stays as seed for round N+1 (to reveal)
-          // nextRoundSeed becomes seed for round N+2 (to reveal when ending round N+2)
-          // nextCommitHash becomes commit for round N+2
-          nextRoundSeed = seedForRoundNPlus2;
-          nextCommitHash = commitForRoundNPlus2;
-          
-          console.log(`🔐 Prepared: seed for round ${nextRoundId} (to reveal), commit for round ${nextRoundId + 1}`);
-        }
-      } else {
-        // Round is still active
-        const timeRemaining = roundEndTimestamp - currentTimestamp;
-        console.log(`⏳ Round ${currentRoundId} is still active (${timeRemaining} seconds remaining)`);
-        console.log(`   Waiting for round to end...`);
-      }
-
+      
+      // Sync state
+      state = await syncStateWithChain(state, onChainState);
+      
+      // Process round
+      await processRound(state, onChainState);
+      
     } catch (error) {
       console.error(`❌ Error in loop iteration:`, error.message);
+      if (error.logs) {
+        console.error('Transaction logs:', error.logs);
+      }
     }
-
-    // Wait 60 seconds before next iteration
-    console.log(`\n⏳ Waiting 60 seconds before next iteration...`);
-    await new Promise(resolve => setTimeout(resolve, 60000));
+    
+    // Wait before next iteration
+    console.log(`\n⏳ Waiting ${LOOP_INTERVAL_MS / 1000} seconds...`);
+    await new Promise(resolve => setTimeout(resolve, LOOP_INTERVAL_MS));
   }
 }
 
@@ -576,4 +556,3 @@ runLoop().catch(error => {
   console.error('❌ Fatal error:', error);
   process.exit(1);
 });
-
