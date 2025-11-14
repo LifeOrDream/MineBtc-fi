@@ -769,10 +769,10 @@ pub struct PlayerData {
 
     /// List of round IDs where the player has placed bets
     /// Used to track rounds with unclaimed rewards or unclosed sessions
-    pub sol_bets_rounds: Vec<u64>,
-    /// Corresponding SOL bet amounts for each round in sol_bets_rounds
-    /// Index matches sol_bets_rounds (e.g., sol_bets_amounts[0] is the bet for sol_bets_rounds[0])
-    pub sol_bets_amounts: Vec<u64>,
+    pub bets_rounds: Vec<u64>,
+    /// Corresponding SOL bet amounts for each round in bets_rounds
+    /// Index matches bets_rounds (e.g., bets_points[0] is the bet for bets_rounds[0])
+    pub bets_points: Vec<u64>,
 
     /// Cumulative statistics
     pub rounds_played: u64,
@@ -830,8 +830,8 @@ impl PlayerData {
         32 +    // owner
         32 +    // referral_code
         1 +     // faction_id
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // sol_bets_rounds Vec<u64>
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // sol_bets_amounts Vec<u64>
+        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_rounds Vec<u64>
+        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_points Vec<u64>
         8 +     // rounds_played
         8 +     // rounds_won
         8 +     // total_sol_bet
@@ -1018,6 +1018,8 @@ pub struct UserGameBet {
     pub bet_type: BetType,
     /// The net SOL amount bet (after protocol fee deduction)
     pub sol_bet_amount: u64,
+    pub points_amount: u64,
+    pub fee_amount: u64,
     pub bump: u8,
 }
 
@@ -1027,6 +1029,8 @@ impl UserGameBet {
         8 +     // round_id
         BetType::LEN + // bet_type (enum)
         8 +     // sol_bet_amount
+        8 +     // points_amount
+        8 +     // fee_amount
         1;      // bump
     
     /// Get the target block ID for this bet based on GameSession block assignments

@@ -31,6 +31,7 @@ let _globalConfigPDA = null;
 let _globalGameStatePDA = null;
 let _solTreasuryPDA = null;
 let _solPrizePotVaultPDA = null;
+let _solRewardsVaultPDA = null;
 let _dbtcEmissionVaultPDA = null;
 let _config = null;
 
@@ -42,6 +43,7 @@ const PLAYER_DATA_SEED = "player";
 const USER_GAME_BET_SEED = "user-bet";
 const SOL_TREASURY_SEED = "sol-treasury";
 const SOL_PRIZE_POT_VAULT_SEED = "sol-prize-pot";
+const STAKER_SOL_REWARD_VAULT_SEED = "staker-sol-reward-vault";
 const DBTC_EMISSION_VAULT_SEED = "dbtc-emission-vault";
 const FACTION_STATE_SEED = "faction";
 const AUTOMINER_SEED = "autominer";
@@ -116,6 +118,11 @@ export async function init(walletPath, network = 'localnet') {
     
     [_solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from(SOL_PRIZE_POT_VAULT_SEED)],
+      _programId
+    );
+    
+    [_solRewardsVaultPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(STAKER_SOL_REWARD_VAULT_SEED)],
       _programId
     );
     
@@ -292,6 +299,7 @@ export async function joinRound(walletPath, amount, betType, useTicket = null) {
         userGameBet: userGameBetPDA,
         solTreasury: _solTreasuryPDA,
         solPrizePotVault: _solPrizePotVaultPDA,
+        solRewardsVault: _solRewardsVaultPDA,
         userWallet: walletKeypair.publicKey,
         authority: walletKeypair.publicKey,
         systemProgram: SystemProgram.programId,
@@ -374,6 +382,7 @@ export async function joinRoundBatch(walletPath, amountPerBet, betTypes, useTick
         userGameBet: userGameBetPDA,
         solTreasury: _solTreasuryPDA,
         solPrizePotVault: _solPrizePotVaultPDA,
+        solRewardsVault: _solRewardsVaultPDA,
         userWallet: walletKeypair.publicKey,
         authority: walletKeypair.publicKey,
         systemProgram: SystemProgram.programId,
@@ -566,7 +575,9 @@ export async function executeAutominerBet(walletPath) {
         userGameBet: userGameBetPDA,
         solTreasury: _solTreasuryPDA,
         solPrizePotVault: _solPrizePotVaultPDA,
+        solRewardsVault: _solRewardsVaultPDA,
         owner: walletKeypair.publicKey,
+        caller: walletKeypair.publicKey,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
