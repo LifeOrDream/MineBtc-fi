@@ -97,6 +97,35 @@ pub fn mint_dragon_egg(
             ErrorCode::InvalidParameters
         );
         
+        // Validate tier availability based on remaining eggs
+        let eggs_remaining = egg_config.max_supply.saturating_sub(egg_config.eggs_minted);
+        
+        // Tier 0 and 1: always available
+        // Tier 2: only available when eggs remaining < 10,000
+        // Tier 3: only available when eggs remaining < 5,000
+        match tier_index {
+            0 | 1 => {
+                // Tiers 0 and 1 are always available
+            },
+            2 => {
+                require!(
+                    eggs_remaining < 10_000,
+                    ErrorCode::InvalidParameters
+                );
+                msg!("   Tier 2 unlocked (eggs remaining: {})", eggs_remaining);
+            },
+            3 => {
+                require!(
+                    eggs_remaining < 5_000,
+                    ErrorCode::InvalidParameters
+                );
+                msg!("   Tier 3 unlocked (eggs remaining: {})", eggs_remaining);
+            },
+            _ => {
+                return Err(ErrorCode::InvalidParameters.into());
+            }
+        }
+        
         let selected_tier = &egg_config.ticket_tiers[tier_index as usize];
         let ticket_value = selected_tier.ticket_value;
         let ticket_count = selected_tier.ticket_count;

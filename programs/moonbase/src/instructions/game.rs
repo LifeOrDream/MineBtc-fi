@@ -261,21 +261,32 @@ pub fn end_round(
     let winning_block = find_valid_winning_block(initial_winning_block, &game_session.user_block_indexes)?;
     msg!("   Valid winning block selected: {} (has {} users)", winning_block, game_session.user_block_indexes[(winning_block - 1) as usize]);
     
+    // Finalize winning block: ensure it has at least 1 user AND non-zero points
+    let finalized_winning_block = finalize_winning_block(
+        winning_block,
+        &game_session.user_block_indexes,
+        &game_session.points_bets_indexes,
+    )?;
+    msg!("   Finalized winning block: {} (has {} users, {} points)", 
+        finalized_winning_block, 
+        game_session.user_block_indexes[(finalized_winning_block - 1) as usize],
+        game_session.points_bets_indexes[(finalized_winning_block - 1) as usize]);
+    
     // Get winning faction from block assignments
-    let winning_faction_id = game_session.block_assignments[(winning_block - 1) as usize];
+    let winning_faction_id = game_session.block_assignments[(finalized_winning_block - 1) as usize];
     
     // Find the other block with the same faction (0-indexed, convert to 1-indexed)
     let same_faction_other_block = game_session.block_assignments
         .iter()
         .enumerate()
-        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != winning_block as usize)
+        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != finalized_winning_block as usize)
         .map(|(idx, _)| (idx + 1) as u8)
         .ok_or(ErrorCode::InvalidParameters)?; // Should always find the other block
     
-    game_session.winning_block = winning_block;
+    game_session.winning_block = finalized_winning_block;
     game_session.winning_faction_id = winning_faction_id;
     game_session.same_faction_other_block = same_faction_other_block;
-    msg!("   🎯 Winning block selected: {} (Faction: {})", winning_block, winning_faction_id);
+    msg!("   🎯 Winning block selected: {} (Faction: {})", finalized_winning_block, winning_faction_id);
     msg!("   Same-faction other block: {}", same_faction_other_block);
     
     // Calculate DogeBtc emission for this round
@@ -332,7 +343,7 @@ pub fn end_round(
     let old_motherlode = faction_state.motherlode_pot_size;
     
     // Calculate SOL rewards index --> basically rewards claimable by a user = his points * sol_rewards_index / INDEX_PRECISION;
-    let winning_block_pts = game_session.points_bets_indexes[(winning_block - 1) as usize];
+    let winning_block_pts = game_session.points_bets_indexes[(finalized_winning_block - 1) as usize];
     msg!("   Winning block points: {}", winning_block_pts);
     
     if winning_block_pts > 0 {
@@ -356,7 +367,7 @@ pub fn end_round(
             msg!("   ⚠️ No points bet on same-faction block {}, skipping same-faction rewards index", same_faction_other_block);
         }
     } else {
-        msg!("   ⚠️ No points bet on winning block {}, skipping reward index calculations", winning_block);
+        msg!("   ⚠️ No points bet on winning block {}, skipping reward index calculations", finalized_winning_block);
     }
     
     // dBTC distribution to stakers of the winning faction
@@ -474,7 +485,7 @@ pub fn end_round(
         
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);
     msg!("   Winning block: {}, Winning faction: {}, Motherlode: {}",
-        winning_block,
+        finalized_winning_block,
         winning_faction_id,
         if motherlode_hit { "HIT!" } else { "miss" }
     );
@@ -515,6 +526,54 @@ fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Re
         // Decrement block (wrap around: 1 -> 24)
         if current_block == 1 {
             current_block = NUM_BLOCKS as u8;
+        } else {
+            current_block -= 1;
+        }
+        
+        attempts += 1;
+    }
+}
+
+/// Finalizes the winning block by ensuring it has at least 1 user AND non-zero points
+/// If the provided block doesn't meet both criteria, decrements and wraps around until finding a valid block
+/// Wraps around: if we reach block 0 (which doesn't exist), wraps to block 24 and continues decrementing
+fn finalize_winning_block(
+    initial_block: u8,
+    user_block_indexes: &[u64],
+    points_bets_indexes: &[u64],
+) -> Result<u8> {
+    msg!("   Finalizing winning block starting from block {}...", initial_block);
+    
+    let mut current_block = initial_block;
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u8 = NUM_BLOCKS as u8; // Maximum attempts = number of blocks
+    
+    loop {
+        if attempts >= MAX_ATTEMPTS {
+            msg!("   ✗ No block found with users and points after checking all {} blocks", MAX_ATTEMPTS);
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+        
+        let block_index = (current_block - 1) as usize;
+        let user_count = user_block_indexes[block_index];
+        let points = points_bets_indexes[block_index];
+        
+        // Check if block has at least 1 user AND non-zero points
+        if user_count > 0 && points > 0 {
+            msg!("   ✓ Finalized block {} with {} users and {} points", current_block, user_count, points);
+            return Ok(current_block);
+        }
+        
+        if user_count == 0 {
+            msg!("   Block {} has no users ({} points), decrementing...", current_block, points);
+        } else {
+            msg!("   Block {} has {} users but no points, decrementing...", current_block, user_count);
+        }
+        
+        // Decrement block (wrap around: 1 -> 24)
+        if current_block == 1 {
+            current_block = NUM_BLOCKS as u8;
+            msg!("   Wrapped around to block {}", current_block);
         } else {
             current_block -= 1;
         }
