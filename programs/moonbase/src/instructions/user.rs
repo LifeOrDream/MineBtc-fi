@@ -258,6 +258,8 @@ fn internal_join_round<'info>(
         require!(amount == ticket_value, ErrorCode::InvalidAmount);
         msg!("     ✓ Ticket amount matches ticket value");
         
+        validate_points_percentage_limit(game_session.total_points_bets, game_session.total_sol_bets, amount)?;
+        
         // Deduct ticket
         player_data.free_tickets_remaining[ticket_type_index as usize] -= 1;
         msg!("     ✓ Ticket deducted (remaining: {})", player_data.free_tickets_remaining[ticket_type_index as usize]);
@@ -877,6 +879,25 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
 }
  
  
+
+fn validate_points_percentage_limit(current_points_bets: u64, current_sol_bets: u64, amount: u64) -> Result<()> {
+        // Validate points percentage limit: points bets must stay at or below 25% of SOL bets for this session
+        // Tickets can only be used when: (total_points_bets + ticket_amount) <= (total_sol_bets * 25 / 100)
+        let new_points_bets = current_points_bets + amount;        
+        msg!("     Current session stats: SOL bets: {} lamports, Points bets: {} lamports, New points bets if allowed: {} lamports", current_sol_bets, current_points_bets, new_points_bets);
+        
+        // Require that SOL bets exist before allowing ticket bets -  This ensures points percentage can be calculated and stays within 25% limit
+        require!(  current_sol_bets > 0,  ErrorCode::InvalidParameters);
+        msg!("     ✓ SOL bets exist in session");
+        
+        // Calculate max allowed points bets (25% of SOL bets) -  This ensures points percentage can be calculated and stays within 25% limit
+        let max_allowed_points = current_sol_bets * 25 / 100;        
+        msg!("       Max allowed points (25% of SOL): {} lamports", max_allowed_points);
+        require!( new_points_bets <= max_allowed_points, ErrorCode::InvalidParameters);
+        msg!("     ✓ Points bets stay within 25% limit");
+        Ok(())
+}
+
 
 // ========================================================================================
 // =============================== ACCOUNT CONTEXTS ======================================
