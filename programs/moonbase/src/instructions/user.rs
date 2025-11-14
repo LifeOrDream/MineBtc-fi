@@ -954,8 +954,6 @@ pub struct UpdatePersonalHashpower<'info> {
 
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[player_data.faction_id]],
-        bump = faction_state.bump
     )]
     pub faction_state: Account<'info, FactionState>,
     
@@ -986,8 +984,6 @@ pub struct JoinRound<'info> {
     
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[player_data.faction_id]],
-        bump
     )]
     pub faction_state: Account<'info, FactionState>,
     
@@ -1224,11 +1220,7 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
     
-    #[account(
-        mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[player_data.faction_id]],
-        bump
-    )]
+    #[account()]
     pub faction_state: Account<'info, FactionState>,
     
     #[account(

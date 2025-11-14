@@ -878,8 +878,6 @@ pub struct StakeDragonEgg<'info> {
     
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[player_data.faction_id]],
-        bump = faction_state.bump
     )]
     pub faction_state: Account<'info, FactionState>,
 
@@ -929,8 +927,6 @@ pub struct UnstakeDragonEgg<'info> {
 
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[player_data.faction_id]],
-        bump = faction_state.bump
     )]
     pub faction_state: Account<'info, FactionState>,
 

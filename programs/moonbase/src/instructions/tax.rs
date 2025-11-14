@@ -905,10 +905,7 @@ pub struct CalculateFactionLeaderboard<'info> {
     )]
     pub tax_config: Account<'info, TaxConfig>,
     
-    #[account(
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_state.faction_id]],
-        bump = faction_state.bump
-    )]
+    #[account()]
     pub faction_state: Account<'info, FactionState>,
 }
 
@@ -937,8 +934,6 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_state.faction_id]],
-        bump = faction_state.bump
     )]
     pub faction_state: Account<'info, FactionState>,
     

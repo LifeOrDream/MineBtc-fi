@@ -29,6 +29,16 @@ solana-test-validator --reset \
   --url https://api.mainnet-beta.solana.com
 
 
+anchor build -p moonbase
+
+solana program deploy target/deploy/moonbase.so \
+  --program-id target/deploy/moonbase-keypair.json \
+  --keypair wallet-keypair.json \
+  --url http://127.0.0.1:8899
+
+anchor idl build -p moonbase
+
+
 ## System Overview
 
 **MoonBase** is a Solana-based game where players:

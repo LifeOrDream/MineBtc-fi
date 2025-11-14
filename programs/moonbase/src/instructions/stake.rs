@@ -1074,8 +1074,6 @@ pub struct StakeDogeBtc<'info> {
     // Faction state
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump
     )]
     pub faction_state: Account<'info, FactionState>,
     
@@ -1155,8 +1153,6 @@ pub struct UnstakeDogeBtc<'info> {
     // Faction state
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[user_position.faction_id]],
-        bump = faction_state.bump
     )]
     pub faction_state: Account<'info, FactionState>,
     
@@ -1237,8 +1233,6 @@ pub struct StakeLpTokens<'info> {
     // Faction state
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump
     )]
     pub faction_state: Account<'info, FactionState>,
     
@@ -1314,8 +1308,6 @@ pub struct UnstakeLpTokens<'info> {
     // Faction state
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[user_position.faction_id]],
-        bump
     )]
     pub faction_state: Account<'info, FactionState>,
     
@@ -1391,10 +1383,7 @@ pub struct UnstakeLpTokens<'info> {
 #[instruction(faction_id: u8)]
 pub struct ClaimSolRewards<'info> {
     // Faction state
-    #[account(
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump = faction_state.bump
-    )]
+    #[account()]
     pub faction_state: Account<'info, FactionState>,
     
     // Player data
@@ -1446,8 +1435,6 @@ pub struct ClaimDbtcRewards<'info> {
     // Faction state
     #[account(
         mut,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump = faction_state.bump
     )]
     pub faction_state: Account<'info, FactionState>,
     

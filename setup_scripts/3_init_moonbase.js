@@ -138,9 +138,7 @@ async function main() {
     console.log(COLOR_INFO, '🚀 MoonBase Program ID:', ID_MOONBASE_PROGRAM.toString());
     console.log(COLOR_INFO, '🪙 DOGE_BTC Token Mint:', MOONDOGE_TOKEN_MINT.toString());
 
-    // Initialize program with explicit program ID from deployment
-    // Note: Program constructor signature is: new Program(idl, programId, provider)
-    const moonbaseProgram = new Program(IDL_MOONBASE, ID_MOONBASE_PROGRAM, provider);
+    const moonbaseProgram = new Program(IDL_MOONBASE, provider);
     console.log(COLOR_SUCCESS, '✅ Connected to program:', moonbaseProgram.programId.toString());
     
     // Verify program ID matches deployment
@@ -167,6 +165,7 @@ async function main() {
 
         // 3. Add Factions (12 factions for the raffle)
         await addFactions(moonbaseProgram);
+        // return; 
 
         // 2. Initialize System Accounts (Referral + Buybacks)
         await initializeSystemAccounts(moonbaseProgram);
@@ -383,6 +382,8 @@ async function addFactions(moonbaseProgram) {
     for (let i = 0; i < config.factions.length; i++) {
         const faction = config.factions[i];
         const factionId = i;
+        console.log(COLOR_INFO, `Faction ID: ${factionId}`);
+        console.log(COLOR_INFO, `Current faction count: ${currentFactionCount}`);
 
         // CRITICAL: The faction_id must match the current faction count in GlobalConfig
         // This matches the Rust validation: require!(faction_id == current_faction_count as u8, ErrorCode::InvalidFactionId)
@@ -393,14 +394,11 @@ async function addFactions(moonbaseProgram) {
         }
 
         // Derive FactionState PDA
-        // Rust seeds: [FACTION_STATE_SEED.as_ref(), &[faction_id]]
-        // Where FACTION_STATE_SEED = b"faction" (7 bytes)
-        // Seeds: [b"faction", faction_id_u8]
+        // Rust seeds: [b"faction", faction_name.as_bytes()]
         const [factionStatePDA, bump] = PublicKey.findProgramAddressSync(
-            [Buffer.from('faction'), Buffer.from([factionId])],
+            [Buffer.from('faction'), Buffer.from(faction.name)],  
             moonbaseProgram.programId
         );
-        
         console.log(`   ${i + 1}. ${faction.name} (ID: ${factionId})`);
         console.log(`      FactionState PDA: ${factionStatePDA.toString()}`);
         console.log(`      Bump: ${bump}`);
@@ -479,14 +477,12 @@ async function addFactions(moonbaseProgram) {
         } catch (error) {
             // Check for specific error types
             const errorStr = error.toString();
+            console.log(errorStr);
             
             // Check if it's a ConstraintSeeds error - this means PDA mismatch
             if (errorStr.includes("ConstraintSeeds")) {
                 console.error(COLOR_ERROR, `      ❌ ConstraintSeeds error for ${faction.name}`);
                 console.error(COLOR_ERROR, `         This means the PDA derivation doesn't match what Anchor expects.`);
-                console.error(COLOR_ERROR, `         Expected PDA: ${factionStatePDA.toString()}`);
-                console.error(COLOR_ERROR, `         Program ID used: ${moonbaseProgram.programId.toString()}`);
-                console.error(COLOR_ERROR, `         Seeds used: ["faction", [${factionId}]]`);
                 
                 // Try to extract the "Right" PDA from error logs if available
                 if (error.logs) {

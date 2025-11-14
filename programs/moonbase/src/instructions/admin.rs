@@ -1123,7 +1123,7 @@ pub struct UpdateConfigAc<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(faction_id: u8)]
+#[instruction(faction_name: String, faction_id: u8)]
 pub struct AddFaction<'info> {
     #[account(
         mut,
@@ -1138,7 +1138,7 @@ pub struct AddFaction<'info> {
         init_if_needed,
         payer = authority,
         space = FactionState::LEN,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
+        seeds = [FACTION_STATE_SEED.as_ref(), faction_name.as_ref()],
         bump,
     )]
     pub faction_state: Account<'info, FactionState>,
