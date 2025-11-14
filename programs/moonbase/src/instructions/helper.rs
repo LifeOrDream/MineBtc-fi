@@ -1,7 +1,10 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{self, transfer, Transfer};
+use anchor_lang::system_program::{transfer, Transfer};
 use crate::state::*;
 use crate::errors::ErrorCode;
+
+// WSOL mint address (Wrapped SOL)
+pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
  
 // -----------------------------------------------------
 // ------------ REFERRAL SYSTEM HELPERS ----------------
@@ -24,6 +27,148 @@ pub fn transfer_to_sol_treasury<'info>(
         ),
         amount,
     )
+}
+
+// Helper function to transfer SOL to the sol_rewards_vault PDA
+pub fn transfer_to_sol_rewards_vault<'info>(
+    from: &AccountInfo<'info>,
+    sol_rewards_vault: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_rewards_vault.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL to the sol_prize_pot_vault PDA
+pub fn transfer_to_sol_prize_pot_vault<'info>(
+    from: &AccountInfo<'info>,
+    sol_prize_pot_vault: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_prize_pot_vault.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL FROM sol_rewards_vault to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_sol_rewards_vault<'info>(
+    sol_rewards_vault: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    let seeds = &[
+        STAKER_SOL_REWARD_VAULT_SEED.as_ref(),
+        &[vault_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: sol_rewards_vault.to_account_info(),
+                to: to.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL FROM sol_prize_pot_vault to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_sol_prize_pot_vault<'info>(
+    sol_prize_pot_vault: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    let seeds = &[
+        SOL_PRIZE_POT_VAULT_SEED.as_ref(),
+        &[vault_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: sol_prize_pot_vault.to_account_info(),
+                to: to.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer WSOL to multisig token account
+// Wraps SOL to WSOL first, then transfers WSOL
+pub fn transfer_wsol_to_multisig<'info>(
+    from: &AccountInfo<'info>,
+    multisig_wsol_account: &AccountInfo<'info>,
+    from_wsol_account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    // Step 1: Transfer SOL to the from_wsol_account (this wraps it)
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: from_wsol_account.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    // Step 2: Sync native account to update WSOL balance
+    anchor_spl::token::sync_native(
+        CpiContext::new(
+            token_program.to_account_info(),
+            anchor_spl::token::SyncNative {
+                account: from_wsol_account.to_account_info(),
+            },
+        ),
+    )?;
+
+    // Step 3: Transfer WSOL from from_wsol_account to multisig_wsol_account
+    anchor_spl::token::transfer(
+        CpiContext::new(
+            token_program.to_account_info(),
+            anchor_spl::token::Transfer {
+                from: from_wsol_account.to_account_info(),
+                to: multisig_wsol_account.to_account_info(),
+                authority: from.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    Ok(())
 }
 
 
@@ -64,17 +209,10 @@ pub fn add_dogebtc_position(
         .contains(&position_index)
     {
         // Ensure we're not exceeding the max allowed positions
-        if player_ac.active_moondoge_positions >= MAX_ALLOWED_POSITIONS {
+        if player_ac.moondoge_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
             return Err(ErrorCode::InvalidParameters.into());
         }
-
-        // Add position index to the vector
-        player_ac
-            .moondoge_position_indices
-            .push(position_index);
-
-        // Increment active positions counter
-        player_ac.active_moondoge_positions += 1;
+        player_ac.moondoge_position_indices.push(position_index);
     }
 
     Ok(())
@@ -86,18 +224,8 @@ pub fn remove_moondoge_position(
     position_index: u8,
 ) -> Result<()> {
     // Find the position index in the vector
-    if let Some(pos) = player_ac
-        .moondoge_position_indices
-        .iter()
-        .position(|&x| x == position_index)
-    {
-        // Remove the position index
+    if let Some(pos) = player_ac.moondoge_position_indices.iter().position(|&x| x == position_index) {
         player_ac.moondoge_position_indices.remove(pos);
-
-        // Decrement active positions counter
-        if player_ac.active_moondoge_positions > 0 {
-            player_ac.active_moondoge_positions -= 1;
-        }
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
@@ -113,16 +241,10 @@ pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result
 
     // If this position index is not already active
     if !player_ac.lp_position_indices.contains(&position_index) {
-        // Ensure we're not exceeding the max allowed positions
-        if player_ac.active_lp_positions >= MAX_ALLOWED_POSITIONS {
+        if player_ac.lp_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
             return Err(ErrorCode::InvalidParameters.into());
         }
-
-        // Add position index to the vector
         player_ac.lp_position_indices.push(position_index);
-
-        // Increment active positions counter
-        player_ac.active_lp_positions += 1;
     }
 
     Ok(())
@@ -133,19 +255,8 @@ pub fn remove_lp_position(
     player_ac: &mut PlayerData,
     position_index: u8,
 ) -> Result<()> {
-    // Find the position index in the vector
-    if let Some(pos) = player_ac
-        .lp_position_indices
-        .iter()
-        .position(|&x| x == position_index)
-    {
-        // Remove the position index
+    if let Some(pos) = player_ac.lp_position_indices.iter().position(|&x| x == position_index) {
         player_ac.lp_position_indices.remove(pos);
-
-        // Decrement active positions counter
-        if player_ac.active_lp_positions > 0 {
-            player_ac.active_lp_positions -= 1;
-        }
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }

@@ -23,7 +23,7 @@ use crate::instructions::helper;
 pub fn start_round(
     ctx: Context<StartRound>,
     round_id: u64,
-    commit_hash: Option<[u8; 32]>, // Optional: if None, uses next_round_commit from global_state
+    commit: [u8; 32],
 ) -> Result<()> {
     msg!("🎮 [start_round] Starting new round");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -31,52 +31,30 @@ pub fn start_round(
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
-    
-    msg!("   Current round ID: {}", global_state.current_round_id);
-    msg!("   Requested round ID: {}", round_id);
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    // Validate game is active
+    require!(global_state.is_active, ErrorCode::InvalidParameters);
+    msg!("   ✓ Game is active");
+
+    msg!("   Current round ID: {}, Requested round ID: {}", global_state.current_round_id, round_id);
+    msg!("   Current timestamp: {}, Round end timestamp: {}", clock.unix_timestamp, global_state.round_end_timestamp);
     
     // Validate round_id matches expected value (current_round_id + 1)
-    let expected_round_id = global_state.current_round_id
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let expected_round_id = global_state.current_round_id + 1;
     require!(
         round_id == expected_round_id,
         ErrorCode::InvalidRound
     );
-    msg!("   ✓ Round ID validated: {} (expected: {})", round_id, expected_round_id);
     
     // Validate caller is a whitelisted cranker bot
-    msg!("   Validating cranker bot authorization...");
     require!(
         global_state.cranker_bots.contains(&ctx.accounts.authority.key()),
         ErrorCode::Unauthorized
     );
     msg!("     ✓ Caller is whitelisted cranker bot");
     
-    // Validate game is active
-    require!(global_state.is_active, ErrorCode::InvalidParameters);
-    msg!("   ✓ Game is active");
-    
     // Validate that previous round has ended (if not first round)
-    if global_state.current_round_id > 0 {
-        require!(
-            clock.unix_timestamp >= global_state.round_end_timestamp,
-            ErrorCode::RoundNotEnded
-        );
-        msg!("   ✓ Previous round has ended");
-    } else {
-        msg!("   ✓ First round - no previous round to check");
-    }
-    
-    // Use provided commit_hash or next_round_commit from global_state
-    let commit = commit_hash.unwrap_or(global_state.next_round_commit);
-    if commit_hash.is_some() {
-        msg!("   Using provided commit hash");
-    } else {
-        msg!("   Using next_round_commit from global_state");
-    }
+    require!( clock.unix_timestamp >= global_state.round_end_timestamp, ErrorCode::RoundNotEnded);
+    msg!("   Commit hash: {:?}", commit);
     
     // Set commit hash for this round
     global_state.current_round_commit = commit;
@@ -93,9 +71,7 @@ pub fn start_round(
     game_session.bump = ctx.bumps.game_session;
     game_session.round_id = round_id;
     game_session.round_start_timestamp = clock.unix_timestamp;
-    game_session.round_end_timestamp = clock.unix_timestamp
-        .checked_add(global_state.round_duration_seconds)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.round_end_timestamp = clock.unix_timestamp + global_state.round_duration_seconds;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
     
@@ -103,16 +79,11 @@ pub fn start_round(
     game_session.user_block_indexes = vec![0u64; NUM_BLOCKS];
     game_session.sol_bets_indexes = vec![0u64; NUM_BLOCKS];
     game_session.points_bets_indexes = vec![0u64; NUM_BLOCKS];
-    msg!("   Initialized block tracking arrays (24 blocks)");
-    msg!("   Round duration: {} seconds", global_state.round_duration_seconds);
-    msg!("   Round starts at: {}", game_session.round_start_timestamp);
-    msg!("   Round ends at: {}", game_session.round_end_timestamp);
+    msg!("   Initialized block tracking arrays (24 blocks). Round starts at: {} and ends at: {}", game_session.round_start_timestamp, game_session.round_end_timestamp);
     
     // Randomly assign 12 factions to 24 blocks (2 blocks per faction)
     // Use commit hash + slot for deterministic but unpredictable randomness
     msg!("   Assigning {} factions to {} blocks ({} blocks per faction)", NUM_FACTIONS, NUM_BLOCKS, BLOCKS_PER_FACTION);
-    let mut block_assignments = [0u8; NUM_BLOCKS];
-    let mut faction_blocks_assigned = [0u8; NUM_FACTIONS]; // Track blocks assigned per faction
     
     // Create seed for randomness: commit_hash + current_slot
     let mut random_seed = Vec::new();
@@ -122,40 +93,45 @@ pub fn start_round(
     let hash_bytes = hash.to_bytes();
     msg!("   Generated randomness seed from commit hash + slot {}", clock.slot);
     
-    // Assign factions to blocks
-    let mut hash_offset = 0;
-    for block_idx in 0..NUM_BLOCKS {
-        // Find a faction that hasn't been assigned 2 blocks yet
-        let mut attempts = 0;
-        loop {
-            if attempts >= 100 {
-                msg!("   ✗ Failed to assign faction to block {} after 100 attempts", block_idx + 1);
-                return Err(ErrorCode::InvalidParameters.into()); // Safety check
-            }
-            
-            // Use hash bytes for randomness
-            let random_byte = hash_bytes[hash_offset % 32];
-            let faction_id = (random_byte % NUM_FACTIONS as u8) as usize;
-            
-            if faction_blocks_assigned[faction_id] < BLOCKS_PER_FACTION as u8 {
-                block_assignments[block_idx] = faction_id as u8;
-                faction_blocks_assigned[faction_id] += 1;
-                hash_offset += 1;
-                break;
-            }
-            
-            hash_offset += 1;
-            attempts += 1;
+    // Create a list with each faction appearing BLOCKS_PER_FACTION times
+    // This guarantees each faction gets exactly BLOCKS_PER_FACTION blocks
+    let mut faction_list = Vec::new();
+    for faction_id in 0..NUM_FACTIONS {
+        for _ in 0..BLOCKS_PER_FACTION {
+            faction_list.push(faction_id as u8);
         }
     }
+    msg!("   Created faction list with {} entries ({} factions × {} blocks each)", faction_list.len(), NUM_FACTIONS, BLOCKS_PER_FACTION);
     
-    // Verify all factions got exactly 2 blocks
+    // Shuffle the faction list using Fisher-Yates algorithm with hash bytes as randomness
+    let mut hash_offset = 0;
+    for i in (1..faction_list.len()).rev() {
+        // Use hash bytes for randomness (cycling through hash bytes)
+        let random_byte = hash_bytes[hash_offset % 32];
+        let j = (random_byte as usize) % (i + 1);
+        faction_list.swap(i, j);
+        hash_offset += 1;
+    }
+    msg!("   Shuffled faction list using hash-based randomness");
+    
+    // Assign shuffled factions to blocks
+    let mut block_assignments = [0u8; NUM_BLOCKS];
+    for (block_idx, &faction_id) in faction_list.iter().enumerate() {
+        block_assignments[block_idx] = faction_id;
+    }
+    
+    // Verify all factions got exactly BLOCKS_PER_FACTION blocks
     msg!("   Verifying block assignments...");
+    let mut faction_blocks_assigned = [0u8; NUM_FACTIONS];
+    for &faction_id in block_assignments.iter() {
+        faction_blocks_assigned[faction_id as usize] += 1;
+    }
     for (faction_idx, &count) in faction_blocks_assigned.iter().enumerate() {
         require!(count == BLOCKS_PER_FACTION as u8, ErrorCode::InvalidParameters);
         msg!("     Faction {}: {} blocks assigned", faction_idx, count);
     }
     msg!("   ✓ All factions assigned exactly {} blocks", BLOCKS_PER_FACTION);
+    msg!("   Block assignments: {:?}", block_assignments);
     
     game_session.block_assignments = block_assignments;
     game_session.winning_block = 0; // Will be set in end_round
@@ -175,7 +151,6 @@ pub fn start_round(
     game_session.motherlode_hit_faction_id = 0;
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
-    
     
     msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);
@@ -261,21 +236,32 @@ pub fn end_round(
     let winning_block = find_valid_winning_block(initial_winning_block, &game_session.user_block_indexes)?;
     msg!("   Valid winning block selected: {} (has {} users)", winning_block, game_session.user_block_indexes[(winning_block - 1) as usize]);
     
+    // Finalize winning block: ensure it has at least 1 user AND non-zero points
+    let finalized_winning_block = finalize_winning_block(
+        winning_block,
+        &game_session.user_block_indexes,
+        &game_session.points_bets_indexes,
+    )?;
+    msg!("   Finalized winning block: {} (has {} users, {} points)", 
+        finalized_winning_block, 
+        game_session.user_block_indexes[(finalized_winning_block - 1) as usize],
+        game_session.points_bets_indexes[(finalized_winning_block - 1) as usize]);
+    
     // Get winning faction from block assignments
-    let winning_faction_id = game_session.block_assignments[(winning_block - 1) as usize];
+    let winning_faction_id = game_session.block_assignments[(finalized_winning_block - 1) as usize];
     
     // Find the other block with the same faction (0-indexed, convert to 1-indexed)
     let same_faction_other_block = game_session.block_assignments
         .iter()
         .enumerate()
-        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != winning_block as usize)
+        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != finalized_winning_block as usize)
         .map(|(idx, _)| (idx + 1) as u8)
         .ok_or(ErrorCode::InvalidParameters)?; // Should always find the other block
     
-    game_session.winning_block = winning_block;
+    game_session.winning_block = finalized_winning_block;
     game_session.winning_faction_id = winning_faction_id;
     game_session.same_faction_other_block = same_faction_other_block;
-    msg!("   🎯 Winning block selected: {} (Faction: {})", winning_block, winning_faction_id);
+    msg!("   🎯 Winning block selected: {} (Faction: {})", finalized_winning_block, winning_faction_id);
     msg!("   Same-faction other block: {}", same_faction_other_block);
     
     // Calculate DogeBtc emission for this round
@@ -332,7 +318,7 @@ pub fn end_round(
     let old_motherlode = faction_state.motherlode_pot_size;
     
     // Calculate SOL rewards index --> basically rewards claimable by a user = his points * sol_rewards_index / INDEX_PRECISION;
-    let winning_block_pts = game_session.points_bets_indexes[(winning_block - 1) as usize];
+    let winning_block_pts = game_session.points_bets_indexes[(finalized_winning_block - 1) as usize];
     msg!("   Winning block points: {}", winning_block_pts);
     
     if winning_block_pts > 0 {
@@ -356,7 +342,7 @@ pub fn end_round(
             msg!("   ⚠️ No points bet on same-faction block {}, skipping same-faction rewards index", same_faction_other_block);
         }
     } else {
-        msg!("   ⚠️ No points bet on winning block {}, skipping reward index calculations", winning_block);
+        msg!("   ⚠️ No points bet on winning block {}, skipping reward index calculations", finalized_winning_block);
     }
     
     // dBTC distribution to stakers of the winning faction
@@ -474,7 +460,7 @@ pub fn end_round(
         
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);
     msg!("   Winning block: {}, Winning faction: {}, Motherlode: {}",
-        winning_block,
+        finalized_winning_block,
         winning_faction_id,
         if motherlode_hit { "HIT!" } else { "miss" }
     );
@@ -515,6 +501,54 @@ fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Re
         // Decrement block (wrap around: 1 -> 24)
         if current_block == 1 {
             current_block = NUM_BLOCKS as u8;
+        } else {
+            current_block -= 1;
+        }
+        
+        attempts += 1;
+    }
+}
+
+/// Finalizes the winning block by ensuring it has at least 1 user AND non-zero points
+/// If the provided block doesn't meet both criteria, decrements and wraps around until finding a valid block
+/// Wraps around: if we reach block 0 (which doesn't exist), wraps to block 24 and continues decrementing
+fn finalize_winning_block(
+    initial_block: u8,
+    user_block_indexes: &[u64],
+    points_bets_indexes: &[u64],
+) -> Result<u8> {
+    msg!("   Finalizing winning block starting from block {}...", initial_block);
+    
+    let mut current_block = initial_block;
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u8 = NUM_BLOCKS as u8; // Maximum attempts = number of blocks
+    
+    loop {
+        if attempts >= MAX_ATTEMPTS {
+            msg!("   ✗ No block found with users and points after checking all {} blocks", MAX_ATTEMPTS);
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+        
+        let block_index = (current_block - 1) as usize;
+        let user_count = user_block_indexes[block_index];
+        let points = points_bets_indexes[block_index];
+        
+        // Check if block has at least 1 user AND non-zero points
+        if user_count > 0 && points > 0 {
+            msg!("   ✓ Finalized block {} with {} users and {} points", current_block, user_count, points);
+            return Ok(current_block);
+        }
+        
+        if user_count == 0 {
+            msg!("   Block {} has no users ({} points), decrementing...", current_block, points);
+        } else {
+            msg!("   Block {} has {} users but no points, decrementing...", current_block, user_count);
+        }
+        
+        // Decrement block (wrap around: 1 -> 24)
+        if current_block == 1 {
+            current_block = NUM_BLOCKS as u8;
+            msg!("   Wrapped around to block {}", current_block);
         } else {
             current_block -= 1;
         }

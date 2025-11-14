@@ -8,46 +8,49 @@ use crate::errors::ErrorCode;
 
 use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface::{
-    self as token_if, // gives you CPI helpers such as `token_if::transfer`
+    self as token_if,  
     Mint as Mint2022,
     TokenAccount as TokenAccount2022,
-}; // ← the PROGRAM-ID wrapper (implements Id)
+};  
 
-// Import Raydium CP-Swap for CPI calls (actual CPI calls are in economy.rs)
+use mpl_core::{
+    instructions::{
+        AddCollectionPluginV1CpiBuilder,
+    },
+    types::{Plugin, PluginAuthority, Royalties, RuleSet, Creator},
+};
 
-// constants
-pub const MAX_MODULE_CONFIGS: usize = 50; // ≈ 8.2 kB
 
-// Query data structures for external programs
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct TreasuryInfo {
-    pub total_balance: u64,
-    pub pol_reserves: u64,
-    pub rent_exempt_amount: u64,
-    pub available_for_withdrawal: u64,
+
+/// Helper type for passing creators from client
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct CreatorInput {
+    pub address: Pubkey,
+    /// Percentage share (0–100). Sum must be exactly 100.
+    pub percentage: u8,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct GlobalConfigInfo {
-    pub is_game_active: bool,
-    pub ext_authority: Pubkey,
-    pub ext_fee_collector: Pubkey,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct TokenPricesInfo {
-    pub dbtc_price_in_sol: u64,
-    pub lp_token_price_in_sol: u64,
-}
-
+ 
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: UPDATES, ADDING EXPANSIONS ------------
 // --------------------------------------------------------------------------------
 
-pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
+/// Initialize the global program configuration (admin only)
+/// 
+/// Creates the GlobalConfig and DogeBtcMining accounts and initializes default values.
+/// This function can only be called once during program deployment.
+/// 
+/// # Parameters
+/// - `fee_recipient`: Address that receives creation fees and dev earnings
+/// 
+/// # Initializes
+/// - GlobalConfig with default fee distributions
+/// - DogeBtcMining account
+/// - SOL treasury PDA
+pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
     msg!("🔧 [internal_initialize] Initializing global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Creation fee recipient: {}", creation_fee_recipient);
+    msg!("   Creation fee recipient: {}", fee_recipient);
     
     let global_config = &mut ctx.accounts.global_config;
     let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
@@ -55,11 +58,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     // Initialize GlobalConfig
     msg!("   Initializing GlobalConfig...");
     global_config.ext_authority = ctx.accounts.authority.key();
-    global_config.ext_fee_collector = ctx.accounts.authority.key(); // Initially set to authority, can be updated later
-    global_config.creation_fee_recipient = creation_fee_recipient;
+    global_config.fee_recipient = fee_recipient;
     msg!("     Authority: {}", global_config.ext_authority);
-    msg!("     Fee collector: {}", global_config.ext_fee_collector);
-    msg!("     Creation fee recipient: {}", global_config.creation_fee_recipient);
+    msg!("     Creation fee recipient: {}", global_config.fee_recipient);
 
     // Store both PDA bumps for future derivation
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
@@ -92,35 +93,17 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
     msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
 
-    // Initialize egg limits: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
-    global_config.egg_limits = [5000, 5000, 5000, 5000];
-    msg!("   Egg limits: tier1={}, tier2={}, tier3={}, tier4={}", 
-        global_config.egg_limits[0], 
-        global_config.egg_limits[1], 
-        global_config.egg_limits[2], 
-        global_config.egg_limits[3]
-    );
-
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
     msg!("   Raydium pool state: {} (default, must be set via admin)", global_config.raydium_pool_state);
 
-    // Initialize global dragon egg power tracker
-    global_config.global_dragon_egg_power = 0;
-    msg!("   Global dragon egg power: {}", global_config.global_dragon_egg_power);
-
     global_config.bump = ctx.bumps.global_config;
-    global_config.is_game_active = false; // Game starts inactive until initialized
     msg!("   Global config bump: {}", global_config.bump);
-    msg!("   Game active: {} (starts inactive)", global_config.is_game_active);
 
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
     msg!("   Supported factions: {} (empty, must be added via admin)", global_config.supported_factions.len());
 
-    // Initialize dragon egg URIs as empty vec of vecs (4 tiers, will be populated per faction)
-    global_config.dragon_egg_uris = Vec::new();
-    msg!("   Dragon egg URIs: {} (empty, must be set via admin)", global_config.dragon_egg_uris.len());
 
     // Optionally drop 1 lamport into the vault for future-proof rent-exempt status
     msg!("   Transferring 1 lamport to SOL treasury for rent-exempt status...");
@@ -140,14 +123,14 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     msg!("   Initializing DogeBtcMining...");
     doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
-    doge_btc_mining.doge_btc_per_slot = 0;
+    doge_btc_mining.doge_btc_per_round = 0;
     doge_btc_mining.last_slot = 0;
     doge_btc_mining.total_tokens_mined = 0;
     doge_btc_mining.bump = ctx.bumps.doge_btc_mining;
     doge_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
     msg!("     DogeBtc token vault: {} (default, will be set during initialize_mining)", doge_btc_mining.dbtc_token_vault);
     msg!("     Mining start timestamp: {} (0 = not started)", doge_btc_mining.mining_start_timestamp);
-    msg!("     DogeBtc per slot: {}", doge_btc_mining.doge_btc_per_slot);
+    msg!("     DogeBtc per slot: {}", doge_btc_mining.doge_btc_per_round);
     msg!("     Bump: {}", doge_btc_mining.bump);
 
     // Initialize dynamic distribution fields with defaults
@@ -177,61 +160,17 @@ pub fn internal_initialize(ctx: Context<Initialize>, creation_fee_recipient: Pub
     Ok(())
 }
 
-// ----------------------------------------------------------------------------------------
-// -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
-// ----------------------------------------------------------------------------------------
-
-/// Set Dragon Egg URIs for a specific tier and all factions (admin only)
-/// uris: Vec of URIs, one per faction (must match number of factions)
-/// tier: 1, 2, 3, or 4
-pub fn set_dragon_egg_uris_for_tier_internal(
-    ctx: Context<UpdateConfigAc>,
-    tier: u8,
-    uris: Vec<String>,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-
-    require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
-    require!(
-        uris.len() == global_config.supported_factions.len(),
-        ErrorCode::InvalidParameters
-    );
-
-    // Validate URIs
-    for uri in &uris {
-        require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
-    }
-
-    let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
-
-    // Ensure we have 4 tiers initialized
-    while global_config.dragon_egg_uris.len() <= tier_index {
-        global_config.dragon_egg_uris.push(Vec::new());
-    }
-
-    // Set URIs for this tier
-    global_config.dragon_egg_uris[tier_index] = uris.clone();
-
-    msg!("✅ Set {} Dragon Egg URIs for tier {}", uris.len(), tier);
-    msg!("   Factions: {}", global_config.supported_factions.len());
-
-    Ok(())
-}
-
-/// Clear all Dragon Egg URIs (admin only)
-pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateConfigAc>) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    global_config.dragon_egg_uris.clear();
-
-    msg!("✅ Cleared all Dragon Egg URIs");
-
-    Ok(())
-}
 
 /// Set the Raydium pool state address (admin only)
-/// This is a security measure to prevent using malicious pools
+/// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
+/// 
+/// Security measure to prevent using malicious pools for swaps.
+/// Only the authorized Raydium pool can be used for price discovery and liquidity operations.
+/// 
+/// # Parameters
+/// - `raydium_pool_state`: The authorized Raydium pool state address
 pub fn set_raydium_pool_state_internal(
-    ctx: Context<UpdateConfigAc>,
+    ctx: Context<SetRaydiumPoolState>,
     raydium_pool_state: Pubkey,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
@@ -244,31 +183,70 @@ pub fn set_raydium_pool_state_internal(
     global_config.raydium_pool_state = raydium_pool_state;
 
     msg!("✅ Set Raydium pool state: {}", raydium_pool_state);
+    
+    // Initialize sol_rewards_vault if not already initialized
+    msg!("   Initializing sol_rewards_vault...");
+    let sol_rewards_vault_lamports = ctx.accounts.sol_rewards_vault.lamports();
+    if sol_rewards_vault_lamports == 0 {
+        // Transfer 1 lamport to make it rent-exempt
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.sol_rewards_vault.to_account_info(),
+                },
+            ),
+            1,
+        )?;
+        msg!("     ✓ sol_rewards_vault initialized (bump: {})", ctx.bumps.sol_rewards_vault);
+    } else {
+        msg!("     ℹ️ sol_rewards_vault already initialized");
+    }
+    
+    // Initialize sol_prize_pot_vault if not already initialized
+    msg!("   Initializing sol_prize_pot_vault...");
+    let sol_prize_pot_vault_lamports = ctx.accounts.sol_prize_pot_vault.lamports();
+    if sol_prize_pot_vault_lamports == 0 {
+        // Transfer 1 lamport to make it rent-exempt
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                },
+            ),
+            1,
+        )?;
+        msg!("     ✓ sol_prize_pot_vault initialized (bump: {})", ctx.bumps.sol_prize_pot_vault);
+    } else {
+        msg!("     ℹ️ sol_prize_pot_vault already initialized");
+    }
 
     Ok(())
 }
 
-/// Set the Dragon Egg collection address (admin only, should be called during initialize)
-pub fn set_dragon_egg_collection_internal(
-    ctx: Context<UpdateConfigAc>,
-    dragon_egg_collection: Pubkey,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    global_config.dragon_egg_collection = dragon_egg_collection;
-
-    msg!("✅ Set Dragon Egg collection: {}", dragon_egg_collection);
-
-    Ok(())
-}
-
+ 
 /// Add a single faction to the global config (admin only)
-/// Also initializes the faction state account for the new faction
-pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> Result<()> {
+/// 
+/// Adds a new faction to the supported factions list and initializes its FactionState account.
+/// Maximum of MAX_FACTIONS (12) factions can be added.
+/// 
+/// # Parameters
+/// - `faction_name`: Name of the faction (max MAX_FACTION_NAME_LENGTH characters)
+/// 
+/// # Effects
+/// - Adds faction to `supported_factions` list
+/// - Creates and initializes FactionState PDA for the new faction
+/// - Faction ID is assigned based on current count (0-indexed)
+pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, faction_id: u8) -> Result<()> {
     msg!("🏛️ [add_faction_internal] Adding faction");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Faction name: {}", faction_name);
     
     let global_config = &mut ctx.accounts.global_config;
+    let faction_state = &mut ctx.accounts.faction_state;
 
     msg!("   Current factions count: {}", global_config.supported_factions.len());
     msg!("   Validating faction name...");
@@ -287,76 +265,25 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
     );
     msg!("     ✓ Factions count < MAX_FACTIONS ({})", MAX_FACTIONS);
 
-    let faction_id = current_faction_count as u8;
-    msg!("   Faction ID will be: {}", faction_id);
-
-    // Derive expected PDA and verify
-    msg!("   Deriving faction state PDA...");
-    let (expected_pda, bump) = Pubkey::find_program_address(
-        &[FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        ctx.program_id,
-    );
-    msg!("     Expected PDA: {} (bump: {})", expected_pda, bump);
-    require!(
-        ctx.accounts.faction_state.key() == expected_pda,
-        ErrorCode::InvalidAccount
-    );
-    msg!("     ✓ Faction state PDA matches");
-
-    // Initialize faction state account if needed
-    msg!("   Checking if faction state account exists...");
-    let rent = Rent::get()?;
-    let rent_lamports = rent.minimum_balance(FactionState::LEN);
-    msg!("     Rent required: {} lamports", rent_lamports);
-    
-    if ctx.accounts.faction_state.lamports() == 0 {
-        msg!("     Account doesn't exist - creating...");
-        // Create account
-        anchor_lang::system_program::create_account(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::CreateAccount {
-                    from: ctx.accounts.authority.to_account_info(),
-                    to: ctx.accounts.faction_state.to_account_info(),
-                },
-                &[&[FACTION_STATE_SEED.as_ref(), &[faction_id], &[bump]]],
-            ),
-            rent_lamports,
-            FactionState::LEN as u64,
-            ctx.program_id,
-        )?;
-        msg!("     ✓ Faction state account created");
-    } else {
-        msg!("     Account already exists");
-    }
+    require!( faction_id ==  current_faction_count as u8, ErrorCode::InvalidFactionId );
+    msg!("     ✓ Faction ID matches current factions count ({})", current_faction_count);   
 
     // Initialize faction state data
     msg!("   Initializing faction state data...");
-    let mut faction_state_data = ctx.accounts.faction_state.try_borrow_mut_data()?;
-    let faction_state = FactionState {
-        bump,
-        faction_id,
-        total_dbtc_hashpower: 0,
-        dbtc_staked: 0,
-        dbtc_dbtc_reward_index: 0,
-        dbtc_sol_reward_index: 0,
-        total_lp_hashpower: 0,
-        lp_sol_reward_index: 0,
-        lp_dbtc_reward_index: 0,
-        total_sol_bets: 0,
-        total_wins: 0,
-        sol_reward_index: 0,
-        motherlode_pot_size: 0,
-    };
-    faction_state.try_serialize(&mut &mut faction_state_data[..])?;
+    faction_state.bump = ctx.bumps.faction_state;
+    faction_state.faction_id = faction_id;
+    faction_state.total_dbtc_hashpower = 0;
+    faction_state.dbtc_staked = 0;
+    faction_state.dbtc_dbtc_reward_index = 0;
+    faction_state.dbtc_sol_reward_index = 0;
+    faction_state.total_lp_hashpower = 0;
+    faction_state.lp_sol_reward_index = 0;
+    faction_state.lp_dbtc_reward_index = 0;
+    faction_state.total_sol_bets = 0;
+    faction_state.total_wins = 0;
+    faction_state.sol_reward_index = 0;
+    faction_state.motherlode_pot_size = 0;
     msg!("     Faction state initialized:");
-    msg!("       Bump: {}", bump);
-    msg!("       Total passive hashpower: 0");
-    msg!("       Total SOL bets: 0");
-    msg!("       Total wins: 0");
-    msg!("       SOL reward index: 0");
-    msg!("       DogeBtc reward index: 0");
-    msg!("       Motherlode pot size: 0");
 
     // Add faction to config
     msg!("   Adding faction to supported_factions list...");
@@ -377,13 +304,19 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String) -> R
     Ok(())
 }
 
-/// Update the global configuration parameters
-/// Can only be called by the current authority
+
+/// Update the global configuration parameters (admin only)
+/// 
+/// Updates the program authority and/or fee recipient address.
+/// Only the current `ext_authority` can call this function.
+/// 
+/// # Parameters
+/// - `new_authority`: Optional new program authority (if None, authority unchanged)
+/// - `new_fee_recipient`: Optional new fee recipient (if None, fee recipient unchanged)
 pub fn update_config_internal(
     ctx: Context<UpdateConfigAc>,
     new_authority: Option<Pubkey>,
-    new_fee_collector: Option<Pubkey>,
-    new_creation_fee_recipient: Option<Pubkey>,
+    new_fee_recipient: Option<Pubkey>,
 ) -> Result<()> {
     msg!("🔧 [update_config_internal] Updating global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -392,8 +325,7 @@ pub fn update_config_internal(
 
     msg!("   Current config:");
     msg!("     Authority: {}", global_config.ext_authority);
-    msg!("     Fee collector: {}", global_config.ext_fee_collector);
-    msg!("     Creation fee recipient: {}", global_config.creation_fee_recipient);
+    msg!("     Creation fee recipient: {}", global_config.fee_recipient);
 
     // Update fields if provided
     if let Some(authority) = new_authority {
@@ -404,20 +336,12 @@ pub fn update_config_internal(
         msg!("   Authority: not updated");
     }
 
-    // Update SOL claimer if provided
-    if let Some(fee_collector) = new_fee_collector {
-        let old_collector = global_config.ext_fee_collector;
-        global_config.ext_fee_collector = fee_collector;
-        msg!("   Updated fee collector: {} -> {}", old_collector, fee_collector);
-    } else {
-        msg!("   Fee collector: not updated");
-    }
 
     // Update creation fee recipient if provided
-    if let Some(creation_fee_recipient) = new_creation_fee_recipient {
-        let old_recipient = global_config.creation_fee_recipient;
-        global_config.creation_fee_recipient = creation_fee_recipient;
-        msg!("   Updated creation fee recipient: {} -> {}", old_recipient, creation_fee_recipient);
+    if let Some(fee_recipient) = new_fee_recipient {
+        let old_recipient = global_config.fee_recipient;
+        global_config.fee_recipient = fee_recipient;
+        msg!("   Updated creation fee recipient: {} -> {}", old_recipient, fee_recipient);
     } else {
         msg!("   Creation fee recipient: not updated");
     }
@@ -427,7 +351,23 @@ pub fn update_config_internal(
 }
 
 /// Update fee configuration (admin only)
-/// Validates that percentages sum correctly
+/// 
+/// Updates SOL fee distribution percentages and/or DogeBtc distribution percentages.
+/// All percentages must sum to 100% for their respective categories.
+/// 
+/// # Parameters
+/// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
+/// - `new_buyback_pct`: Optional new buyback percentage (SOL fees)
+/// - `new_stakers_pct`: Optional new stakers percentage (SOL fees)
+/// - `new_dbtc_stakers_pct`: Optional new DogeBtc stakers percentage
+/// - `new_dbtc_winners_pct`: Optional new DogeBtc winners percentage
+/// - `new_dbtc_same_faction_pct`: Optional new DogeBtc same-faction percentage
+/// - `new_dbtc_motherlode_pct`: Optional new DogeBtc motherlode percentage
+/// - `new_refining_fee`: Optional new refining fee percentage
+/// 
+/// # Validation
+/// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == 100
+/// - DogeBtc dist: dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_motherlode_pct == 100
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -548,66 +488,388 @@ pub fn update_fees_internal(
     Ok(())
 }
 
-/// Update egg limits for tiers (admin only)
-pub fn update_egg_limits_internal(
-    ctx: Context<UpdateConfigAc>,
-    tier1_limit: Option<u64>,
-    tier2_limit: Option<u64>,
-    tier3_limit: Option<u64>,
-    tier4_limit: Option<u64>,
+
+// --------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------
+// ------------ doge_btc_MINING :: INITIALIZATION & UPDATES ------------
+// --------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------
+
+
+/// Initialize mining by setting the token vault and starting timestamp (admin only)
+/// 
+/// Sets up the DogeBtc mining system with the token vault and initial mining parameters.
+/// Can only be called once when `mining_start_timestamp == 0`.
+/// 
+/// # Parameters
+/// - `start_timestamp`: Unix timestamp when mining should start
+/// - `doge_btc_per_round`: Base DogeBtc emission rate per slot
+/// - `pool_state`: Raydium pool state address for price discovery
+pub fn initialize_mining_internal(
+    ctx: Context<InitializeMining>,
+    start_timestamp: u64,
+    doge_btc_per_round: u64,
+    pool_state: Pubkey,
 ) -> Result<()> {
-    msg!("🥚 [update_egg_limits_internal] Updating egg limits");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    
-    let global_config = &mut ctx.accounts.global_config;
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
 
-    msg!("   Current egg limits:");
-    msg!("     Tier 1: {}", global_config.egg_limits[0]);
-    msg!("     Tier 2: {}", global_config.egg_limits[1]);
-    msg!("     Tier 3: {}", global_config.egg_limits[2]);
-    msg!("     Tier 4: {}", global_config.egg_limits[3]);
+    // Check mining hasn't been initialized yet
+    require!(
+        doge_btc_mining.mining_start_timestamp == 0,
+        ErrorCode::MiningAlreadyInitialized
+    );
 
-    if let Some(limit) = tier1_limit {
-        let old_limit = global_config.egg_limits[0];
-        global_config.egg_limits[0] = limit;
-        msg!("   Updated Tier 1: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 1: not updated");
-    }
+    let cur_slot = Clock::get()?.slot;
 
-    if let Some(limit) = tier2_limit {
-        let old_limit = global_config.egg_limits[1];
-        global_config.egg_limits[1] = limit;
-        msg!("   Updated Tier 2: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 2: not updated");
-    }
+    // ───── persist vault + bump(s) ─────
+    doge_btc_mining.dbtc_token_vault = ctx.accounts.token_vault.key();
+    doge_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
 
-    if let Some(limit) = tier3_limit {
-        let old_limit = global_config.egg_limits[2];
-        global_config.egg_limits[2] = limit;
-        msg!("   Updated Tier 3: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 3: not updated");
-    }
+    // Initialize mining parameters
+    doge_btc_mining.mining_start_timestamp = start_timestamp;
+    doge_btc_mining.doge_btc_per_round = doge_btc_per_round;
+    doge_btc_mining.last_slot = cur_slot;
 
-    if let Some(limit) = tier4_limit {
-        let old_limit = global_config.egg_limits[3];
-        global_config.egg_limits[3] = limit;
-        msg!("   Updated Tier 4: {} -> {}", old_limit, limit);
-    } else {
-        msg!("   Tier 4: not updated");
-    }
+    // Initialize dynamic distribution fields
+    doge_btc_mining.raydium_pool_state = pool_state;
+    doge_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
+    doge_btc_mining.current_dist_rate = doge_btc_per_round;
 
-    msg!("✅ [update_egg_limits_internal] Egg limits updated successfully");
+    doge_btc_mining.price_history = Vec::with_capacity(8);
+    doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
+    doge_btc_mining.track_price = 0; // Initialize with same default
+
+    doge_btc_mining.sol_for_pol = 0; // Initialize POL tracking
+    doge_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
+
+    msg!("Initialized dynamic distribution system (30min snapshots, 4hr cycles) with Raydium pool: {}", pool_state);
+
+    // Emit event
+    emit!(MiningTokenVaultSet {
+        authority: ctx.accounts.authority.key(),
+        token_vault: ctx.accounts.token_vault.key(),
+        token_vault_authority: ctx.accounts.vault_authority.key(),
+        mining_start_timestamp: start_timestamp,
+    });
+
+    msg!(
+        "Mining initialized with token vault: {}",
+        ctx.accounts.token_vault.key()
+    );
+
     Ok(())
 }
+
+/// Deposit DogeBtc tokens to the mining vault (anyone can call)
+/// 
+/// Allows anyone to deposit DogeBtc tokens into the mining vault.
+/// These tokens will be distributed as rewards to stakers over time.
+/// 
+/// # Parameters
+/// - `amount`: Amount of DogeBtc tokens to deposit (in token's native decimals)
+pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+    token_if::transfer_checked(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(), // TOKEN_2022_PROGRAM_ID
+            token_if::TransferChecked {
+                from: ctx.accounts.depositor_token_account.to_account_info(),
+                mint: ctx.accounts.token_mint.to_account_info(),
+                to: ctx.accounts.dbtc_token_vault.to_account_info(),
+                authority: ctx.accounts.depositor.to_account_info(),
+            },
+        ),
+        amount,
+        DBTC_DECIMALS,
+    )?;
+
+    msg!("Deposited {} MDOGE into mining vault", amount);
+    Ok(())
+}
+ 
+
+// ----------------------------------------------------------------------------------------
+// -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Initialize EggConfig account (admin only)
+/// 
+/// Creates the EggConfig account that stores Dragon Egg collection configuration.
+/// This must be called before creating the Dragon Egg collection.
+/// 
+/// # Parameters
+/// - `base_price`: Base price for Dragon Eggs in SOL (lamports)
+/// - `curve_a`: Bonding curve parameter (controls price growth rate)
+/// - `max_supply`: Maximum number of Dragon Eggs that can be minted
+pub fn initialize_egg_config_internal(
+    ctx: Context<InitializeEggConfig>,
+    base_price: u64,
+    curve_a: u64,
+    max_supply: u64,
+) -> Result<()> {
+    msg!("🥚 [initialize_egg_config_internal] Initializing EggConfig");
+    
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    
+    eggs_config.bump = ctx.bumps.eggs_config;
+    eggs_config.dragon_egg_collection = Pubkey::default(); // Will be set when collection is created
+    eggs_config.eggs_minted = 0;
+    eggs_config.base_price = base_price;
+    eggs_config.curve_a = curve_a;
+    eggs_config.max_supply = max_supply;
+    eggs_config.dragon_egg_uris = Vec::new();
+    eggs_config.ticket_tiers = Vec::new();
+    eggs_config.global_dragon_egg_power = 0;
+    
+    msg!("   ✅ EggConfig initialized");
+    msg!("   Base Price: {} lamports", base_price);
+    msg!("   Curve A: {}", curve_a);
+    msg!("   Max Supply: {}", max_supply);
+    
+    Ok(())
+}
+
+/// Create Dragon Egg collection with program PDA as authority (admin only)
+/// 
+/// Creates a new Metaplex Core collection for Dragon Egg NFTs.
+/// The collection's update authority is set to a program-controlled PDA.
+/// Requires EggConfig to be initialized first.
+/// 
+/// # Parameters
+/// - `name`: Collection name
+/// - `uri`: Collection metadata URI
+pub fn create_dragon_egg_collection_internal(
+    ctx: Context<CreateDragonEggCollection>,
+    name: String,
+    uri: String,
+) -> Result<()> {
+    let eggs_config = &mut ctx.accounts.eggs_config;
+
+    msg!("Creating Dragon Egg collection with program PDA as update authority");
+    msg!("Collection: {}", ctx.accounts.collection.key());
+    msg!(
+        "Collection Authority PDA: {}",
+        ctx.accounts.collection_authority.key()
+    );
+
+    // Get the collection authority bump for signing
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let _collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
+
+    // Create the collection using CPI
+    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
+    let mut cpi_builder = CreateCollectionV1CpiBuilder::new(mpl_core_program);
+
+    cpi_builder
+        .collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.authority.to_account_info())
+        .update_authority(Some(&ctx.accounts.collection_authority.to_account_info()))
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        .name(name.clone())
+        .uri(uri.clone())
+        .invoke()?;
+
+    // Store the collection address in global config
+    eggs_config.dragon_egg_collection = ctx.accounts.collection.key();
+
+    emit!(DragonEggCollectionCreated {
+        collection: ctx.accounts.collection.key(),
+        update_authority: ctx.accounts.collection_authority.key(),
+        name,
+        uri,
+    });
+
+    Ok(())
+}
+
+
+/// Set Dragon Egg URIs for all factions (admin only)
+/// 
+/// Sets the metadata URIs for Dragon Eggs, one URI per faction.
+/// The number of URIs must match the number of supported factions.
+/// 
+/// # Parameters
+/// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
+pub fn set_dragon_egg_uris_internal(
+    ctx: Context<UpdateEggsConfig>,
+    uris: Vec<String>,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let eggs_config = &mut ctx.accounts.eggs_config;
+
+    require!(
+        uris.len() == global_config.supported_factions.len(),
+        ErrorCode::InvalidParameters
+    );
+
+    // Validate URIs
+    for uri in &uris {
+        require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
+    }
+
+    // Set URIs for all factions
+    eggs_config.dragon_egg_uris = uris.clone();
+
+    msg!("✅ Set {} Dragon Egg URIs (one per faction)", uris.len());
+    msg!("   Factions: {}", global_config.supported_factions.len());
+
+    Ok(())
+}
+
+/// Clear all Dragon Egg URIs (admin only)
+/// 
+/// Removes all Dragon Egg metadata URIs from the configuration.
+/// This can be used to reset URIs before setting new ones.
+pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    eggs_config.dragon_egg_uris.clear();
+
+    msg!("✅ Cleared all Dragon Egg URIs");
+
+    Ok(())
+}
+
+
+/// Initialize royalties on the Dragon Egg collection (admin only)
+/// 
+/// Sets up royalty configuration for the Dragon Egg NFT collection using Metaplex Core.
+/// Initializes with an empty ProgramDenyList that can be updated later.
+/// 
+/// # Parameters
+/// - `basis_points`: Royalty percentage in basis points (e.g., 500 = 5%)
+/// - `creators`: List of creator addresses and their percentage shares
+/// 
+/// # Validation
+/// - At least one creator must be provided
+/// - Sum of creator percentages must equal 100
+pub fn init_dragon_egg_royalties(
+    ctx: Context<InitDragonEggRoyalties>,
+    basis_points: u16,
+    creators: Vec<CreatorInput>,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let authority = &ctx.accounts.authority;
+
+    // Authority check
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    // Basic creator validation
+    require!(!creators.is_empty(), ErrorCode::NoCreators);
+    let total_pct: u16 = creators.iter().map(|c| c.percentage as u16).sum();
+    require!(total_pct == 100, ErrorCode::InvalidCreatorShare);
+
+    // Convert to mpl-core creators
+    let creators_mpl: Vec<Creator> = creators
+        .into_iter()
+        .map(|c| Creator {
+            address: c.address,
+            percentage: c.percentage,
+        })
+        .collect();
+
+    // Royalties plugin data
+    let royalties = Royalties {
+        basis_points,
+        creators: creators_mpl,
+        // Start with an EMPTY ProgramDenyList so you can add later.
+        rule_set: RuleSet::ProgramDenyList(vec![]),
+    };
+
+    // PDA signer for collection authority (same PDA you used as update_authority)
+    let bump = ctx.bumps.collection_authority;
+    let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[&seeds];
+
+    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
+    let mut cpi = AddCollectionPluginV1CpiBuilder::new(mpl_core_program);
+
+    cpi.collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.authority.to_account_info())
+        // The authority that initializes the plugin is the collection update authority PDA.
+        .authority(Some(&ctx.accounts.collection_authority.to_account_info()))
+        .plugin(Plugin::Royalties(royalties))
+        // Plugin authority is "UpdateAuthority", i.e. the collection update authority PDA.
+        .init_authority(PluginAuthority::UpdateAuthority)
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        // No log_wrapper needed; pass no extra accounts.
+        .invoke_signed(signer_seeds)?;
+
+    msg!("✅ Initialized Dragon Egg royalties: {} basis points", basis_points);
+    Ok(())
+}
+ 
+/// Add or update ticket tier configs (admin only)
+/// 
+/// Configures ticket tier options that users can choose when minting Dragon Eggs.
+/// Users receive free tickets based on the selected tier when they mint.
+/// 
+/// # Parameters
+/// - `ticket_tier_index`: Index of the ticket tier (0-3, max 4 tiers)
+/// - `ticket_value`: Value of each ticket in lamports (e.g., 10_000_000 = 0.01 SOL)
+/// - `ticket_count`: Number of tickets given with this tier
+/// 
+/// # Example
+/// - Tier 0: 0.01 SOL × 1000 tickets
+/// - Tier 1: 0.1 SOL × 10 tickets
+pub fn add_ticket_tier_config(
+    ctx: Context<UpdateEggsConfig>,
+    ticket_tier_index: u8,
+    ticket_value: u64,
+    ticket_count: u16,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    let authority = &ctx.accounts.authority;
+
+    // Authority check
+    require!(
+        global_config.ext_authority == authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    require!(
+        ticket_tier_index < EggConfig::MAX_TICKET_TIERS as u8,
+        ErrorCode::InvalidParameters
+    );
+
+    let tier_index = ticket_tier_index as usize;
+
+    // Ensure vector is large enough
+    while eggs_config.ticket_tiers.len() <= tier_index {
+        eggs_config.ticket_tiers.push(TicketTier {
+            ticket_value: 0,
+            ticket_count: 0,
+        });
+    }
+
+    // Update or add ticket tier
+    eggs_config.ticket_tiers[tier_index] = TicketTier {
+        ticket_value,
+        ticket_count,
+    };
+
+    msg!("✅ Updated ticket tier config #{}: {} tickets of {} SOL", 
+        ticket_tier_index, 
+        ticket_count, 
+        ticket_value as f64 / 1e9);
+    Ok(())
+}
+
 
 // --------------------------------------------------------------------------------
 // ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
 // --------------------------------------------------------------------------------
 
-/// Initialize the global game state for Faction Surge
+/// Initialize the global game state for Faction Surge (admin only)
+/// 
+/// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
+/// This must be called before any rounds can be started.
+/// 
+/// # Parameters
+/// - `round_duration_seconds`: Duration of each game round in seconds
 pub fn initialize_game_state_internal(
     ctx: Context<InitializeGameState>,
     round_duration_seconds: i64,
@@ -626,7 +888,7 @@ pub fn initialize_game_state_internal(
     global_game_state.bump = ctx.bumps.global_game_state;
     global_game_state.is_active = true;
     global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
-    global_game_state.round_end_timestamp = clock.unix_timestamp + round_duration_seconds;
+    global_game_state.round_end_timestamp = 0;
     global_game_state.round_duration_seconds = round_duration_seconds;
     msg!("     Bump: {}", global_game_state.bump);
     msg!("     Is active: {}", global_game_state.is_active);
@@ -665,57 +927,15 @@ pub fn initialize_game_state_internal(
     Ok(())
 }
 
-/// Initialize a faction state account
-pub fn initialize_faction_state_internal(
-    ctx: Context<InitializeFactionState>,
-    faction_id: u8,
-) -> Result<()> {
-    msg!("🏛️ [initialize_faction_state_internal] Initializing faction state");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Faction ID: {}", faction_id);
-    
-    let global_config = &ctx.accounts.global_config;
-    let faction_state = &mut ctx.accounts.faction_state;
-    
-    msg!("   Validating faction ID...");
-
-    // Validate faction_id exists
-    msg!("     Supported factions count: {}", global_config.supported_factions.len());
-    require!(
-        (faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-    msg!("     ✓ Faction ID {} is valid", faction_id);
-
-    // Initialize faction state
-    msg!("   Initializing faction state fields...");
-    faction_state.bump = ctx.bumps.faction_state;
-    faction_state.faction_id = faction_id;
-    faction_state.total_dbtc_hashpower = 0;
-    faction_state.total_lp_hashpower = 0;
-    faction_state.total_sol_bets = 0;
-    faction_state.total_wins = 0;
-    faction_state.sol_reward_index = 0;
-    faction_state.dbtc_dbtc_reward_index = 0;
-    faction_state.lp_dbtc_reward_index = 0;
-    faction_state.motherlode_pot_size = 0;
-    msg!("     Bump: {}", faction_state.bump);
-    msg!("     Total DogeBtc hashpower: {}", faction_state.total_dbtc_hashpower);
-    msg!("     Total LP hashpower: {}", faction_state.total_lp_hashpower);
-    msg!("     Total SOL bets: {}", faction_state.total_sol_bets);
-    msg!("     Total wins: {}", faction_state.total_wins);
-    msg!("     SOL reward index: {}", faction_state.sol_reward_index);
-    msg!("     Motherlode pot size: {}", faction_state.motherlode_pot_size);
-
-    msg!("✅ [initialize_faction_state_internal] Faction state initialized successfully");
-    msg!("   Faction ID: {}", faction_id);
-    msg!("   Faction name: {}", global_config.supported_factions[faction_id as usize]);
-
-    Ok(())
-}
 
 /// Add a cranker bot to the whitelist (admin only)
-/// Maximum MAX_CRANKER_BOTS bots can be whitelisted
+/// 
+/// Adds a bot address to the whitelist of authorized cranker bots.
+/// Only whitelisted bots can call `start_round` and `end_round` functions.
+/// Maximum of MAX_CRANKER_BOTS (3) bots can be whitelisted.
+/// 
+/// # Parameters
+/// - `bot_pubkey`: Public key of the bot to whitelist
 pub fn add_cranker_bot_internal(
     ctx: Context<UpdateGameState>,
     bot_pubkey: Pubkey,
@@ -756,6 +976,11 @@ pub fn add_cranker_bot_internal(
 }
 
 /// Remove a cranker bot from the whitelist (admin only)
+/// 
+/// Removes a bot address from the whitelist of authorized cranker bots.
+/// 
+/// # Parameters
+/// - `bot_pubkey`: Public key of the bot to remove from whitelist
 pub fn remove_cranker_bot_internal(
     ctx: Context<UpdateGameState>,
     bot_pubkey: Pubkey,
@@ -786,298 +1011,94 @@ pub fn remove_cranker_bot_internal(
     Ok(())
 }
 
-// --------------------------------------------------------------------------------
-// --------------------------------------------------------------------------------
-// ------------ doge_btc_MINING :: INITIALIZATION & UPDATES ------------
-// --------------------------------------------------------------------------------
-// --------------------------------------------------------------------------------
-
-/// Initialize mining by setting the token vault and starting timestamp
-/// Can only be called once when mining_start_timestamp is 0
-pub fn initialize_mining_internal(
-    ctx: Context<InitializeMining>,
-    start_timestamp: u64,
-    doge_btc_per_slot: u64,
-    pool_state: Pubkey,
+/// Switch game state (toggle is_active) (admin only)
+/// 
+/// Toggles the `is_active` field in the global game state.
+/// When `is_active` is false, rounds cannot be started or ended.
+/// 
+/// This allows admins to pause/resume the game without losing state.
+pub fn switch_game_state_internal(
+    ctx: Context<UpdateGameState>,
 ) -> Result<()> {
-    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
-
-    // Check mining hasn't been initialized yet
-    require!(
-        doge_btc_mining.mining_start_timestamp == 0,
-        ErrorCode::MiningAlreadyInitialized
-    );
-
-    let cur_slot = Clock::get()?.slot;
-
-    // ───── persist vault + bump(s) ─────
-    doge_btc_mining.dbtc_token_vault = ctx.accounts.token_vault.key();
-    doge_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
-
-    // Initialize mining parameters
-    doge_btc_mining.mining_start_timestamp = start_timestamp;
-    doge_btc_mining.doge_btc_per_slot = doge_btc_per_slot;
-    doge_btc_mining.last_slot = cur_slot;
-
-    // Initialize dynamic distribution fields
-    doge_btc_mining.raydium_pool_state = pool_state;
-    doge_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
-    doge_btc_mining.current_dist_rate = doge_btc_per_slot;
-
-    doge_btc_mining.price_history = Vec::with_capacity(8);
-    doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
-    doge_btc_mining.track_price = 0; // Initialize with same default
-
-    doge_btc_mining.sol_for_pol = 0; // Initialize POL tracking
-    doge_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
-
-    msg!("Initialized dynamic distribution system (30min snapshots, 4hr cycles) with Raydium pool: {}", pool_state);
-
-    // Emit event
-    emit!(MiningTokenVaultSet {
-        authority: ctx.accounts.authority.key(),
-        token_vault: ctx.accounts.token_vault.key(),
-        token_vault_authority: ctx.accounts.vault_authority.key(),
-        mining_start_timestamp: start_timestamp,
-    });
-
-    msg!(
-        "Mining initialized with token vault: {}",
-        ctx.accounts.token_vault.key()
-    );
-
-    Ok(())
-}
-
-/// Deposit moon doge tokens to the mining vault
-pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-    token_if::transfer_checked(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(), // TOKEN_2022_PROGRAM_ID
-            token_if::TransferChecked {
-                from: ctx.accounts.depositor_token_account.to_account_info(),
-                mint: ctx.accounts.token_mint.to_account_info(),
-                to: ctx.accounts.dbtc_token_vault.to_account_info(),
-                authority: ctx.accounts.depositor.to_account_info(),
-            },
-        ),
-        amount,
-        DBTC_DECIMALS,
-    )?;
-
-    msg!("Deposited {} MDOGE into mining vault", amount);
+    msg!("🔄 [switch_game_state_internal] Switching game state");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    
+    let old_state = global_game_state.is_active;
+    global_game_state.is_active = !global_game_state.is_active;
+    let new_state = global_game_state.is_active;
+    
+    msg!("   Game state: {} -> {}", old_state, new_state);
+    
+    if new_state {
+        msg!("   ✅ Game is now ACTIVE - rounds can be started/ended");
+    } else {
+        msg!("   ⏸️  Game is now PAUSED - rounds cannot be started/ended");
+    }
+    
+    msg!("✅ [switch_game_state_internal] Game state switched successfully");
+    msg!("   New state: {}", if new_state { "ACTIVE" } else { "PAUSED" });
+    
     Ok(())
 }
 
  
+ 
+
+// ----------------------------------------------------------------------------------------
+// ------------ SYSTEM ACCOUNTS INITIALIZATION ----------------------------------
+// ----------------------------------------------------------------------------------------
+
+/// Initialize system referral account and buybacks system (admin only)
+/// 
+/// Creates and initializes both the system referral rewards account and the buybacks tracking account.
+/// The system referral account tracks rewards for the system referral code.
+/// The buybacks account tracks SOL accumulated for token buybacks.
+/// 
+/// # Initializes
+/// - System referral rewards PDA
+/// - Buybacks account PDA
+/// - Buybacks SOL vault PDA
+pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+    msg!("🔧 [initialize_system_accounts_internal] Initializing system accounts");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+
+    // Initialize system referral rewards account
+    msg!("   Initializing system referral rewards account...");
+    let system_referral = &mut ctx.accounts.system_referral_rewards;
+    system_referral.owner = ctx.accounts.system_program.key();
+    system_referral.bump = ctx.bumps.system_referral_rewards;
+    system_referral.referrals_count = 0;
+    system_referral.pending_sol_rewards = 0;
+    system_referral.pending_dbtc_rewards = 0;
+    system_referral.total_sol_earned = 0;
+    system_referral.total_dbtc_earned = 0;
+    msg!("     System referral account initialized");
+    msg!("     Owner: {}", system_referral.owner);
+    msg!("     Bump: {}", system_referral.bump);
+
+    // Initialize buybacks account
+    msg!("   Initializing buybacks account...");
+    let buybacks_ac = &mut ctx.accounts.buybacks_account;
+    buybacks_ac.total_sol_accumulated = 0;
+    msg!("     Buybacks account initialized");
+    msg!("     Total SOL accumulated: {}", buybacks_ac.total_sol_accumulated);
+
+    msg!("✅ [initialize_system_accounts_internal] System accounts initialized successfully");
+    msg!("   System referral rewards PDA: {}", ctx.accounts.system_referral_rewards.key());
+    msg!("   Buybacks account PDA: {}", ctx.accounts.buybacks_account.key());
+    msg!("   Buybacks SOL vault PDA: {}", ctx.accounts.buybacks_sol_vault.key());
+
+    Ok(())
+}
 
 // ----------------------------------------------------------------------------------------
 // ------------ WITHDRAW SOL FEES ----------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// TODO: Disabled - needs migration from mooneconomy vaults
-pub fn distribute_sol_fees_internal(_ctx: Context<WithdrawSolFees>) -> Result<()> {
-    msg!("⚠️ Function disabled pending staking migration");
-    Ok(())
-}
 
-/*
-pub fn distribute_sol_fees_internal_OLD(ctx: Context<WithdrawSolFees>) -> Result<()> {
-    let sol_treasury = &ctx.accounts.sol_treasury;
-    let fee_collector = &ctx.accounts.fee_collector;
-    let global_config = &ctx.accounts.global_config;
-    let buybacks_ac = &mut ctx.accounts.buybacks_account;
-
-    msg!("Withdrawing SOL from treasury");
-    msg!("SOL Treasury: {}", sol_treasury.key());
-    msg!("Treasury balance: {} SOL", sol_treasury.lamports() as f64 / 1e9);
-    msg!("Fee collector: {}", fee_collector.key());
-
-    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
-    let current_balance = sol_treasury.lamports();
-
-    // Calculate available balance (total - rent)
-    let reserved_amount = rent_exempt_amount;
-    let available_solana = current_balance.saturating_sub(reserved_amount);
-
-    // Check if we have enough available balance
-    if available_solana == 0 {
-        msg!( "⚠️ No SOL balance to withdraw. Available: {} SOL", available_solana as f64 / 1e9);        
-        return Ok(());
-    }
-    msg!( "   Total balance: {} SOL, Rent: {} SOL", current_balance as f64 / 1e9, rent_exempt_amount as f64 / 1e9);
-
-    // Calculate buybacks amount using configurable percentage
-    let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
-    let sol_for_buybacks = available_solana * buyback_percentage / M_HUNDRED;
-
-    // Create signer seeds for sol_treasury
-    let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
-    let signer_seeds = &[&treasury_seeds[..]];
-
-    // Transfer buybacks amount to buybacks SOL vault
-    if sol_for_buybacks > 0 {
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.buybacks_sol_vault.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            sol_for_buybacks,
-        )?;
-
-        // Update buybacks tracking
-        buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + sol_for_buybacks;
-
-        msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks as f64 / 1e9,  buyback_percentage);
-    }
-
-    let mut sol_for_dbtc_stakers = available_solana * global_config.sol_fee_config.dbtc_stakers_pct / M_HUNDRED;
-    let mut sol_for_lp_stakers = available_solana * global_config.sol_fee_config.lp_stakers_pct / M_HUNDRED;
-
-    // Now distribute to respective vaults
-    let dogebtc_vault = &mut ctx.accounts.dogebtc_vault;
-    let liquidity_vault = &mut ctx.accounts.liquidity_vault;
-
-    if dogebtc_vault.weighted_dbtc_locked > 0 && sol_for_dbtc_stakers > 0 {
-        let sol_per_point = (sol_for_dbtc_stakers as u128 * PRECISION_FACTOR as u128)
-            / dogebtc_vault.weighted_dbtc_locked as u128;
-        dogebtc_vault.accumulated_sol_per_point += sol_per_point;
-
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.fee_collector.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            sol_for_dbtc_stakers,
-        )?;
-    } else {
-        sol_for_dbtc_stakers = 0;
-    }
-
-    if liquidity_vault.weighted_lp_locked > 0 && sol_for_lp_stakers > 0 {
-        let sol_per_point = (sol_for_lp_stakers as u128 * PRECISION_FACTOR as u128)
-            / liquidity_vault.weighted_lp_locked as u128;
-        liquidity_vault.accumulated_sol_per_point += sol_per_point;
-
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.sol_treasury.to_account_info(),
-                    to: ctx.accounts.fee_collector.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            sol_for_lp_stakers,
-        )?;
-    } else {
-        sol_for_lp_stakers = 0;
-    }
  
-    let dev_earnings = available_solana.saturating_sub(sol_for_dbtc_stakers + sol_for_lp_stakers);
-    if dev_earnings > 0 {
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: fee_collector.to_account_info(),
-                    to: ctx.accounts.dev_earnings_collector.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            dev_earnings,
-        )?;
-        msg!("👨‍💻 Sent {} SOL to Dev Earnings", dev_earnings as f64 / 1e9);
-    }
-
-    // Emit event
-    emit!(SolFeesWithdrawn {
-        available_solana: available_solana,
-        buyback_amount: sol_for_buybacks,
-        dbtc_stakers_amount: sol_for_dbtc_stakers,
-        lp_stakers_amount: sol_for_lp_stakers,
-        dev_earnings_amount: dev_earnings,
-    });
-
-    msg!("Withdrew {} SOL from treasury", available_solana as f64 / 1e9);
-    Ok(())
-}
-*/
-
-// ----------------------------------------------------------------------------------------
-// ------------ QUERY FUNCTIONS FOR EXTERNAL PROGRAMS ------------
-// ----------------------------------------------------------------------------------------
-
-/// Query treasury information for external programs
-pub fn query_treasury_info_internal(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
-    msg!("🔍 Querying treasury info");
-    let sol_treasury = &ctx.accounts.sol_treasury;
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-    let global_config = &ctx.accounts.global_config;
-
-    let total_balance = sol_treasury.lamports();
-    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
-    let pol_reserves = doge_btc_mining.sol_for_pol;
-
-    // Calculate available balance (total - POL reserve - rent)
-    let reserved_amount = rent_exempt_amount
-        .checked_add(pol_reserves)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-    let available_for_withdrawal = total_balance.saturating_sub(reserved_amount);
-
-    msg!(
-        "📊 Treasury: total={}, POL={}, rent={}, available={}",
-        total_balance,
-        pol_reserves,
-        rent_exempt_amount,
-        available_for_withdrawal
-    );
-
-    Ok(TreasuryInfo {
-        total_balance,
-        pol_reserves,
-        rent_exempt_amount,
-        available_for_withdrawal,
-    })
-}
-
-/// Query global config information for external programs
-pub fn query_global_config_internal(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
-    msg!("🔍 Querying global config");
-    let global_config = &ctx.accounts.global_config;
-
-    msg!(
-        "📊 Config: active={}, authority={}",
-        global_config.is_game_active,
-        global_config.ext_authority
-    );
-
-    Ok(GlobalConfigInfo {
-        is_game_active: global_config.is_game_active,
-        ext_authority: global_config.ext_authority,
-        ext_fee_collector: global_config.ext_fee_collector,
-    })
-}
-
-/// Query token prices (dBTC and LP) for external programs
-pub fn query_token_prices_internal(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-
-    Ok(TokenPricesInfo {
-        dbtc_price_in_sol: doge_btc_mining.recent_price,
-        lp_token_price_in_sol: doge_btc_mining.lp_token_price_in_sol,
-    })
-}
-
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: INITIALIZE ------------
 // --------------------------------------------------------------------------------
@@ -1120,6 +1141,43 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SetRaydiumPoolState<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: SOL rewards vault for stakers (System Account, 0-byte PDA)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
+        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub sol_rewards_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL prize pot vault (System Account, 0-byte PDA)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
+        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateConfigAc<'info> {
     #[account(
         mut, 
@@ -1141,6 +1199,34 @@ pub struct UpdateConfigAc<'info> {
 
     pub system_program: Program<'info, System>,
 }
+
+#[derive(Accounts)]
+#[instruction(faction_name: String, faction_id: u8)]
+pub struct AddFaction<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// CHECK: Faction state PDA (validated in instruction)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = FactionState::LEN,
+        seeds = [FACTION_STATE_SEED.as_ref(), faction_name.as_ref()],
+        bump,
+    )]
+    pub faction_state: Account<'info, FactionState>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 
 #[derive(Accounts)]
 pub struct InitializeMining<'info> {
@@ -1189,27 +1275,7 @@ pub struct InitializeMining<'info> {
     pub token_program: Program<'info, Token2022>,
     pub rent: Sysvar<'info, Rent>,
 }
-
-#[derive(Accounts)]
-pub struct UpdateSlotsPerHour<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        mut,
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-}
+ 
 
 #[derive(Accounts)]
 pub struct DepositTokens<'info> {
@@ -1245,27 +1311,18 @@ pub struct DepositTokens<'info> {
     pub token_program: Program<'info, Token2022>,
 }
 
+
 #[derive(Accounts)]
-pub struct CreateSystemReferralAccount<'info> {
+pub struct InitializeEggConfig<'info> {
     #[account(
         init,
-        payer = user,
-        space = ReferralRewards::LEN,
-        seeds = [REFERRAL_REWARDS_SEED.as_ref(), system_program.key().as_ref()],
-        bump,
+        payer = authority,
+        space = EggConfig::LEN,
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump
     )]
-    pub referrer_rewards: Account<'info, ReferralRewards>,
+    pub eggs_config: Account<'info, EggConfig>,
 
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
- 
-
-/// Account struct for initializing buybacks system
-#[derive(Accounts)]
-pub struct InitializeBuybacks<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1273,183 +1330,10 @@ pub struct InitializeBuybacks<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    #[account(
-        init,
-        payer = authority,
-        space = BuybacksAccount::LEN,
-        seeds = [BUYBACKS_SEED.as_ref()],
-        bump
-    )]
-    pub buybacks_account: Account<'info, BuybacksAccount>,
-
-    /// CHECK: SOL vault for buybacks (0-byte PDA, System Account)
-    #[account(
-        init,
-        payer = authority,
-        space = 0,
-        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
-        bump,
-        owner = system_program.key()  // System-owned account for native SOL
-    )]
-    pub buybacks_sol_vault: UncheckedAccount<'info>,
-
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct WithdrawSolFees<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-
-    /// CHECK: SOL treasury PDA (System Account)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump  // Let Anchor find the correct bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-
-    #[account(mut, signer, address = global_config.ext_fee_collector)]
-    pub fee_collector: Signer<'info>,
-
-    /// CHECK: Buybacks SOL vault PDA (System Account)
-    #[account(
-        mut,
-        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub buybacks_sol_vault: UncheckedAccount<'info>,
-
-    /// Buybacks tracking account (required)
-    #[account(
-        mut,
-        seeds = [BUYBACKS_SEED.as_ref()],
-        bump,
-    )]
-    pub buybacks_account: Account<'info, BuybacksAccount>,
-
-    pub system_program: Program<'info, System>,
-}
-
-// ----------------------------------------------------------------------------------------
-// ------------ QUERY ACCOUNT STRUCTS ------------
-// ----------------------------------------------------------------------------------------
-
-#[derive(Accounts)]
-pub struct QueryTreasuryInfo<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-
-    /// CHECK: SOL treasury PDA (System Account)
-    #[account(
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-}
- 
-
- 
-
-
-
-
-
-
-
-
-
-
-
-#[derive(Accounts)]
-pub struct QueryGlobalConfig<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-}
-
-#[derive(Accounts)]
-pub struct QueryTokenPrices<'info> {
-    #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump,
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-}
-
-/// Create Dragon Egg collection with program PDA as authority
-pub fn create_dragon_egg_collection_internal(
-    ctx: Context<CreateDragonEggCollection>,
-    name: String,
-    uri: String,
-) -> Result<()> {
-    let global_config = &mut ctx.accounts.global_config;
-    let authority = &ctx.accounts.authority;
-
-    // Verify authority
-    require!(
-        global_config.ext_authority == authority.key(),
-        ErrorCode::Unauthorized
-    );
-
-    msg!("Creating Dragon Egg collection with program PDA as update authority");
-    msg!("Collection: {}", ctx.accounts.collection.key());
-    msg!(
-        "Collection Authority PDA: {}",
-        ctx.accounts.collection_authority.key()
-    );
-
-    // Get the collection authority bump for signing
-    let collection_authority_bump = ctx.bumps.collection_authority;
-    let _collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
-
-    // Create the collection using CPI
-    let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
-    let mut cpi_builder = CreateCollectionV1CpiBuilder::new(mpl_core_program);
-
-    cpi_builder
-        .collection(&ctx.accounts.collection.to_account_info())
-        .payer(&ctx.accounts.authority.to_account_info())
-        .update_authority(Some(&ctx.accounts.collection_authority.to_account_info()))
-        .system_program(&ctx.accounts.system_program.to_account_info())
-        .name(name.clone())
-        .uri(uri.clone())
-        .invoke()?;
-
-    // Store the collection address in global config
-    global_config.dragon_egg_collection = ctx.accounts.collection.key();
-
-    emit!(DragonEggCollectionCreated {
-        collection: ctx.accounts.collection.key(),
-        update_authority: ctx.accounts.collection_authority.key(),
-        name,
-        uri,
-    });
-
-    Ok(())
 }
 
 #[derive(Accounts)]
@@ -1459,10 +1343,18 @@ pub struct CreateDragonEggCollection<'info> {
 
     #[account(
         mut,
-        seeds = [GLOBAL_CONFIG_SEED],
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [EGG_CONFIG_SEED],
+        bump = eggs_config.bump,
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
 
     /// CHECK: Dragon Egg collection account (will be created by MPL Core)
     #[account(mut, signer)]
@@ -1481,9 +1373,42 @@ pub struct CreateDragonEggCollection<'info> {
 
     pub system_program: Program<'info, System>,
 }
+ 
 
 #[derive(Accounts)]
-pub struct AddFaction<'info> {
+pub struct UpdateEggsConfig<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    #[account(
+        mut, 
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump = eggs_config.bump,
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump,
+    )]
+    pub doge_btc_mining: Option<Account<'info, DogeBtcMining>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitDragonEggRoyalties<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>, // ext authority EOA
+
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1492,15 +1417,35 @@ pub struct AddFaction<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// CHECK: Faction state PDA (validated in instruction)
-    #[account(mut)]
-    pub faction_state: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump = eggs_config.bump,
+    )]
+    pub eggs_config: Account<'info, EggConfig>,
 
-    #[account(mut)]
-    pub authority: Signer<'info>,
+    /// CHECK: Dragon Egg collection (already created via MPL Core)
+    #[account(
+        mut,
+        address = eggs_config.dragon_egg_collection @ ErrorCode::InvalidAccount
+    )]
+    pub collection: UncheckedAccount<'info>,
+
+    /// CHECK: PDA that is update_authority for the collection
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    #[account(address = mpl_core::ID @ ErrorCode::InvalidMplCoreProgram)]
+    pub mpl_core_program: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
+ 
+
 
 #[derive(Accounts)]
 pub struct InitializeGameState<'info> {
@@ -1548,18 +1493,12 @@ pub struct UpdateGameState<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[derive(Accounts)]
-#[instruction(faction_id: u8)]
-pub struct InitializeFactionState<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = FactionState::LEN,
-        seeds = [FACTION_STATE_SEED.as_ref(), &[faction_id]],
-        bump
-    )]
-    pub faction_state: Account<'info, FactionState>,
 
+
+
+/// Merged account context for initializing system referral account and buybacks system
+#[derive(Accounts)]
+pub struct InitializeSystemAccounts<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1567,8 +1506,44 @@ pub struct InitializeFactionState<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
+    /// System referral rewards account (can be initialized by anyone)
+    #[account(
+        init,
+        payer = authority,
+        space = ReferralRewards::LEN,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), system_program.key().as_ref()],
+        bump,
+    )]
+    pub system_referral_rewards: Account<'info, ReferralRewards>,
+
+    /// Buybacks tracking account (admin only)
+    #[account(
+        init,
+        payer = authority,
+        space = BuybacksAccount::LEN,
+        seeds = [BUYBACKS_SEED.as_ref()],
+        bump
+    )]
+    pub buybacks_account: Account<'info, BuybacksAccount>,
+
+    /// CHECK: SOL vault for buybacks (0-byte PDA, System Account)
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()  // System-owned account for native SOL
+    )]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
+
+ 
+
+
+

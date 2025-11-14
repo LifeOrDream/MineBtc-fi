@@ -14,6 +14,67 @@
 /// 5. Reserved (25 bits): For future use
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
+use crate::errors::ErrorCode;
+
+/// Calculate dynamic pricing based on bonding curve
+/// Formula: price = base_price + curve_a * (items_minted^(2/3))
+/// This creates a diminishing returns curve where price increases slower as more items are minted
+///
+/// # Arguments
+/// * `base_price` - The starting base price in lamports
+/// * `curve_a` - Curve steepness parameter (controls price growth rate, typically >= 100)
+/// * `items_minted` - The number of NFTs already minted
+///
+/// # Returns
+/// * Current mint price in lamports
+pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> Result<u64> {
+    if items_minted == 0 {
+        return Ok(base_price);
+    }
+
+    // Calculate x^(2/3) using fixed-point arithmetic
+    // We'll approximate: x^(2/3) ≈ cube_root(x^2)
+    let items_minted_u128 = items_minted as u128;
+    
+    // Calculate x^2
+    let squared = items_minted_u128.checked_mul(items_minted_u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Find cube root of x^2 using binary search
+    // This gives us x^(2/3)
+    let mut low: u128 = 1;
+    let mut high = squared.min(1_000_000_000_000_000_000); // Cap to prevent overflow
+    let mut result: u128 = 0;
+    
+    while low <= high {
+        let mid = (low + high) / 2;
+        let cube = mid.checked_mul(mid)
+            .and_then(|x| x.checked_mul(mid))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        if cube <= squared {
+            result = mid;
+            low = mid + 1;
+        } else {
+            if mid == 0 {
+                break;
+            }
+            high = mid - 1;
+        }
+    }
+    
+    // result is approximately x^(2/3)
+    // Now multiply by curve_a and add to base_price
+    let exponent_component = result.min(u64::MAX as u128) as u64;
+    let exponent_price_factor = curve_a.checked_mul(exponent_component)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Final price = base_price + exponential component
+    let mint_price = base_price.checked_add(exponent_price_factor)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    Ok(mint_price)
+}
 
 #[allow(dead_code)] // Functions will be used when NFT minting is enabled
 

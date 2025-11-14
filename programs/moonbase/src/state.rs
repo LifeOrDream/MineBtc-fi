@@ -1,7 +1,5 @@
 use anchor_lang::prelude::*;
 
-use crate::errors::ErrorCode;
-
 
 pub const DBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
@@ -82,24 +80,33 @@ pub const DBTC_EMISSION_VAULT_SEED: &[u8] = b"dbtc-emission-vault";
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const EGG_CONFIG_SEED: &[u8] = b"egg-config";
 
+// PDAs for Tax system
+pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
+pub const WITHDRAW_WITHHELD_AUTHORITY_SEED: &[u8] = b"withdraw-withheld-authority";
+pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
+pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
+pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
+
+// ========== DRAGON EGG NFT CONSTANTS ========== //
+pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
+
+pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
+pub const MAX_URI_LENGTH: usize = 200;
+
 /// ------------ GLOBAL CONFIG ------------
 
 /// Global configuration for the Moon Facility program
 #[account]
 pub struct GlobalConfig {
 
-    /// Whether the game is currently active
-    pub is_game_active: bool,
-
     /// total number of players in the game
     pub total_players: u64,
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
-    /// External account that can withdraw collected SOL
-    pub ext_fee_collector: Pubkey,
-    /// Direct recipient for egg mints revenue
-    pub creation_fee_recipient: Pubkey,
+    /// Direct recipient for egg mints + dev earnings revenue
+    pub fee_recipient: Pubkey,
+
     /// PDA account that holds collected SOL fees
     pub pda_sol_treasury: Pubkey,
 
@@ -121,18 +128,6 @@ pub struct GlobalConfig {
     pub bump: u8,
     /// Bump for SOL treasury PDA derivation
     pub treasury_bump: u8,
-
-    /// Dragon Egg collection address (Metaplex Core)
-    pub dragon_egg_collection: Pubkey,
-    /// Dragon Egg URIs organized by tier and faction
-    /// Structure: [tier][faction_id] = URI
-    /// 4 tiers (1, 2, 3, 4), each with URIs for each faction
-    pub dragon_egg_uris: Vec<Vec<String>>, // [tier][faction_index] = URI (tier 1-4)
-    /// Egg limits per tier: [tier1_limit, tier2_limit, tier3_limit, tier4_limit]
-    /// All tiers: 5000 eggs each
-    pub egg_limits: [u64; 4],
-    /// Global total power across all Dragon Eggs (sum of all egg powers)
-    pub global_dragon_egg_power: u64,
 }
 
 
@@ -165,54 +160,25 @@ pub struct DogeBtcDistConfig {
 }
 
 impl DogeBtcDistConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1; // All 4 percentages
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_motherlode_pct + refining_fee
 }
  
 
 
 impl GlobalConfig {
-    // discriminator + is_game_active + ext_authority + ext_fee_collector + creation_fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + bump + treasury_bump + supported_factions (vec) + raydium_pool_state + dragon_egg_collection + dragon_egg_uris (vec of vec) + egg_limits + global_dragon_egg_power
+    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + bump + treasury_bump + supported_factions (vec)
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
-    // Vec<Vec<String>> = 4 bytes (outer vec length) + 4 tiers * (4 bytes inner vec length + MAX_FACTIONS * (4 + MAX_URI_LENGTH))
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
-        1 +                     // is_game_active
+        8 +                     // total_players
         32 +                    // ext_authority
-        32 +                    // ext_fee_collector  
-        32 +                    // creation_fee_recipient
+        32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config
         DogeBtcDistConfig::LEN + // dbtc_dist_config
+        32 +                    // raydium_pool_state
         1 +                     // bump
         1 +                     // treasury_bump
-        4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)) + // supported_factions vec
-        32 +                    // raydium_pool_state
-        32 +                    // dragon_egg_collection
-        4 + (4 * (4 + MAX_FACTIONS * (4 + MAX_URI_LENGTH))) + // dragon_egg_uris: 4 tiers × factions
-        (4 * 8) +               // egg_limits [u64; 4] = 32 bytes
-        8;                      // global_dragon_egg_power
-
-    /// Get Dragon Egg URI for a specific tier and faction
-    pub fn get_dragon_egg_uri(&self, tier: u8, faction_id: u8) -> Result<String> {
-        require!(tier >= 1 && tier <= 4, ErrorCode::InvalidParameters);
-        require!(
-            (faction_id as usize) < self.supported_factions.len(),
-            ErrorCode::InvalidFactionId
-        );
-        
-        let tier_index = (tier - 1) as usize; // tier 1->0, 2->1, 3->2, 4->3
-        require!(
-            tier_index < self.dragon_egg_uris.len(),
-            ErrorCode::InvalidMetadata
-        );
-        
-        let faction_uris = &self.dragon_egg_uris[tier_index];
-        require!(
-            (faction_id as usize) < faction_uris.len(),
-            ErrorCode::InvalidMetadata
-        );
-        
-        Ok(faction_uris[faction_id as usize].clone())
-    }
+        4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
 }
 
 /// ------------ MOON DOGE MINING ------------
@@ -270,7 +236,7 @@ pub struct DogeBtcMining {
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,
     /// DogeBtc mined per slot (original base rate)
-    pub doge_btc_per_slot: u64,
+    pub doge_btc_per_round: u64,
     /// Last slot when moondoge were mined
     pub last_slot: u64,
     /// Total tokens mined so far
@@ -286,7 +252,7 @@ pub struct DogeBtcMining {
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
-    /// Current distribution rate (starts at doge_btc_per_slot)
+    /// Current distribution rate (starts at doge_btc_per_round)
     pub current_dist_rate: u64,
     /// Price history for 4-hour rolling average (8 entries, 1 per 30 mins)
     pub price_history: Vec<PriceEntry>,
@@ -303,29 +269,26 @@ pub struct DogeBtcMining {
 }
 
 impl DogeBtcMining {
-    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_slot + last_slot + total_active_hashpower + total_active_electricity + total_tokens_mined + dbtc_tokens_minted_per_hashpower + bump + vault_auth_bump +
+    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_round + last_slot + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
-        + 32
-        + 8
-        + 8
-        + 8
-        + 8
-        + 8
-        + 8
-        + 16
-        + 1
-        + 1
-        + 32
-        + 8
-        + 8
-        + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN)
-        + 8
-        + 8
-        + 8
-        + ProtocolOwnedLiquidity::LEN
-        + 8;
+        + 32                    // dbtc_token_vault
+        + 8                     // mining_start_timestamp
+        + 8                     // doge_btc_per_round
+        + 8                     // last_slot
+        + 8                     // total_tokens_mined
+        + 1                     // bump
+        + 1                     // vault_auth_bump
+        + 32                    // raydium_pool_state
+        + 8                     // last_rate_update (i64)
+        + 8                     // current_dist_rate
+        + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) // price_history Vec<PriceEntry>
+        + 8                     // recent_price
+        + 8                     // track_price
+        + 8                     // sol_for_pol
+        + ProtocolOwnedLiquidity::LEN // pol_stats
+        + 8;                    // lp_token_price_in_sol
 }
 
 
@@ -391,23 +354,174 @@ pub struct HashpowerConfig {
 
 // For HashpowerConfig
 impl HashpowerConfig {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // authority
-        32 + // dev_address
-        32 + // fee_collector
-        8 +  // min_lockup_days
-        8 +  // max_lockup_days
-        2 +  // base_multiplier
-        2 +  // max_multiplier
-        1 +  // dogebtc_allocation
-        1 +  // liquidity_allocation
-        8 +  // last_claim_slot
-        8 +  // hashpower_per_weighted_sol
-        1 +  // sol_distribution_enabled
-        8 +  // dbtc_sol_price (u64)
-        1; // bump
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        32 +    // authority
+        32 +    // dev_address
+        8 +     // min_lockup_days
+        8 +     // max_lockup_days
+        2 +     // base_multiplier (u16)
+        2 +     // max_multiplier (u16)
+        1 +     // dogebtc_allocation
+        1 +     // liquidity_allocation
+        8 +     // hashpower_per_weighted_sol
+        8 +     // dbtc_sol_price (u64)
+        1;      // bump
 }
 
+
+ 
+
+ 
+// ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
+
+
+
+/// Ticket tier option for egg minting
+/// When users mint eggs, they choose a ticket tier which gives them free tickets
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct TicketTier {
+    /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
+    pub ticket_value: u64,
+    /// Number of tickets given with this tier (e.g., 200 tickets)
+    pub ticket_count: u16,
+}
+
+impl TicketTier {
+    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
+}
+
+/// Global egg configuration
+#[account]
+pub struct EggConfig {
+    pub bump: u8,
+
+    /// Dragon Egg collection address (Metaplex Core)
+    pub dragon_egg_collection: Pubkey,
+
+    /// Dragon Egg URIs organized by faction
+    /// Structure: [faction_id] = URI
+    pub dragon_egg_uris: Vec<String>, // [faction_index] = URI
+
+    /// Maximum supply of eggs that can be minted
+    pub max_supply: u64,
+    
+    /// Number of eggs minted so far
+    pub eggs_minted: u64,
+    
+    /// Base price for bonding curve (in lamports)
+    pub base_price: u64,
+    
+    /// Curve steepness parameter (controls price growth rate, typically >= 100)
+    pub curve_a: u64,
+    
+    /// Global total power across all Dragon Eggs (sum of all egg powers)
+    pub global_dragon_egg_power: u64,
+    
+    /// Available ticket tier configs users can choose when minting (max 4 options)
+    /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
+    pub ticket_tiers: Vec<TicketTier>,
+}
+
+impl EggConfig {
+    pub const MAX_TICKET_TIERS: usize = 4;
+    
+    // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_URI_LENGTH bytes)
+    // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        32 +    // dragon_egg_collection
+        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // dragon_egg_uris Vec<String> (max 12 factions)
+        8 +     // max_supply
+        8 +     // eggs_minted
+        8 +     // base_price
+        8 +     // curve_a
+        8 +     // global_dragon_egg_power
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+}
+
+
+
+
+
+// ========================================================================================
+// ============================= TAX CONFIG ACCOUNT ==============================
+// ========================================================================================
+
+/// Tax Configuration PDA (Seed: `[b"tax-config"]`)
+/// Manages tax distribution, faction treasury rewards, and NFT floor sweep operations
+#[account]
+pub struct TaxConfig {
+    pub bump: u8,
+    
+    /// Percentage of withheld tax that goes to NFT floor sweep
+    pub nft_floor_sweep_pct: u8,
+    /// Percentage of withheld tax that goes to faction treasury
+    pub faction_treasury_pct: u8,
+    
+    /// Total amount of DogeBtc burnt so far (cumulative)
+    pub total_burnt: u64,
+    
+    /// Current distribution round state
+    pub round_active: bool,
+    /// Timestamp when current distribution round started
+    pub start_timestamp: i64,
+    /// Timestamp when last distribution round ended (for 7-day cooldown)
+    pub end_timestamp: i64,
+    
+    /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)
+    /// Rank 0 = highest hashpower, Rank 11 = lowest hashpower
+    pub leaderboard_faction_ids: Vec<u8>,
+    /// Leaderboard hashpower values (index = rank, value = hashpower)
+    pub leaderboard_hashpower: Vec<u64>,
+    /// Number of factions added to leaderboard so far (0-12)
+    pub leaderboard_factions_count: u8,
+    
+    /// Faction rewards: DogeBtc amount each faction gets (index = rank, value = dbtc_amount)
+    pub faction_rewards: Vec<u64>,
+    /// Whether rewards have been calculated for current round
+    pub rewards_calculated: bool,
+    
+    /// Faction claim status: whether each faction has claimed rewards (index = faction_id, value = claimed)
+    pub faction_claimed: Vec<bool>,
+    /// Number of factions that have claimed rewards
+    pub factions_claimed_count: u8,
+    
+    /// PDA addresses for tax system
+    pub withdraw_withheld_authority: Pubkey,
+    pub faction_treasury_vault: Pubkey,
+    pub nft_floor_sweep_vault: Pubkey,
+    pub nft_sale_sol_vault: Pubkey,
+    
+    /// Whitelisted address that can withdraw DogeBtc from NFT floor sweep vault
+    /// This address will swap DogeBtc for SOL off-chain, buy NFTs, and re-list them
+    pub nft_floor_sweep_whitelisted_address: Pubkey,
+}
+
+impl TaxConfig {
+    pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
+    
+    // Note: burn_tax_pct is calculated as 100 - nft_floor_sweep_pct - faction_treasury_pct, not stored
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        1 +     // nft_floor_sweep_pct
+        1 +     // faction_treasury_pct
+        8 +     // total_burnt
+        1 +     // round_active (bool)
+        8 +     // start_timestamp (i64)
+        8 +     // end_timestamp (i64)
+        4 + (MAX_FACTIONS * 1) + // leaderboard_faction_ids Vec<u8>
+        4 + (MAX_FACTIONS * 8) + // leaderboard_hashpower Vec<u64>
+        1 +     // leaderboard_factions_count
+        4 + (MAX_FACTIONS * 8) + // faction_rewards Vec<u64>
+        1 +     // rewards_calculated (bool)
+        4 + (MAX_FACTIONS * 1) + // faction_claimed Vec<bool>
+        1 +     // factions_claimed_count
+        32 +    // withdraw_withheld_authority
+        32 +    // faction_treasury_vault
+        32 +    // nft_floor_sweep_vault
+        32 +    // nft_sale_sol_vault
+        32;     // nft_floor_sweep_whitelisted_address
+}
  
 
 
@@ -655,10 +769,10 @@ pub struct PlayerData {
 
     /// List of round IDs where the player has placed bets
     /// Used to track rounds with unclaimed rewards or unclosed sessions
-    pub sol_bets_rounds: Vec<u64>,
-    /// Corresponding SOL bet amounts for each round in sol_bets_rounds
-    /// Index matches sol_bets_rounds (e.g., sol_bets_amounts[0] is the bet for sol_bets_rounds[0])
-    pub sol_bets_amounts: Vec<u64>,
+    pub bets_rounds: Vec<u64>,
+    /// Corresponding SOL bet amounts for each round in bets_rounds
+    /// Index matches bets_rounds (e.g., bets_points[0] is the bet for bets_rounds[0])
+    pub bets_points: Vec<u64>,
 
     /// Cumulative statistics
     pub rounds_played: u64,
@@ -685,8 +799,6 @@ pub struct PlayerData {
 
     pub moondoge_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
-    pub active_moondoge_positions: u8,
-    pub active_lp_positions: u8,
     
     /// Staked dragon eggs (max 5 eggs)
     /// Stores the mint addresses of staked eggs
@@ -718,8 +830,8 @@ impl PlayerData {
         32 +    // owner
         32 +    // referral_code
         1 +     // faction_id
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // sol_bets_rounds Vec<u64>
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // sol_bets_amounts Vec<u64>
+        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_rounds Vec<u64>
+        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_points Vec<u64>
         8 +     // rounds_played
         8 +     // rounds_won
         8 +     // total_sol_bet
@@ -738,8 +850,6 @@ impl PlayerData {
         8 +     // pending_dbtc_rewards (u64)
         4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
-        1 +     // active_moondoge_positions (u8)
-        1 +     // active_lp_positions (u8)
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
         2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
@@ -809,61 +919,6 @@ impl ReferralRewards {
         8;      // total_dbtc_earned
 }
 
- 
-
- 
-// ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
-
-// ========== DRAGON EGG NFT CONSTANTS ========== //
-pub const BASE_EGG_POWER: u32 = 100;
-pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
-
-pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
-pub const MAX_URI_LENGTH: usize = 200;
-
-/// Ticket tier option for egg minting
-/// When users mint eggs, they choose a ticket tier which gives them free tickets
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct TicketTier {
-    /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
-    pub ticket_value: u64,
-    /// Number of tickets given with this tier (e.g., 200 tickets)
-    pub ticket_count: u16,
-}
-
-impl TicketTier {
-    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
-}
-
-/// Global egg configuration
-#[account]
-pub struct EggConfig {
-    pub bump: u8,
-    
-    /// Total supply of eggs across all tiers
-    pub total_supply: u64,
-    /// Number of eggs minted so far
-    pub eggs_minted: u64,
-    
-    /// Price per egg tier: [tier1, tier2, tier3, tier4]
-    pub prices: [u64; 4],
-    
-    /// Available ticket tiers users can choose when minting (max 5 options)
-    /// Example: 0.001 SOL × 2000, 0.01 SOL × 200, 0.1 SOL × 20
-    pub ticket_tiers: Vec<TicketTier>,
-}
-
-impl EggConfig {
-    pub const MAX_TICKET_TIERS: usize = 5;
-    
-    pub const LEN: usize = DISCRIMINATOR_SIZE +
-        1 +     // bump
-        8 +     // total_supply
-        8 +     // eggs_minted
-        (4 * 8) + // prices [u64; 4]
-        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
-}
-
 
 
 // ========================================================================================
@@ -924,13 +979,22 @@ pub enum BetType {
     /// Direct block selection (block_id: 1-24)
     Block { block_id: u8 },
     /// Faction + highest/lowest selection (faction_id + is_highest)
+    /// is_highest: true = highest block, false = lowest block
     FactionHighestLowest { faction_id: u8, is_highest: bool },
+    /// Faction with "both" option - bets on both blocks assigned to the faction
+    /// This creates 2 separate bets internally
+    FactionBoth { faction_id: u8 },
+    /// Random block selection (block_id will be randomly selected at bet time)
+    /// Note: For autominer use, this will be resolved when placing bets
+    RandomBlock,
 }
 
 impl BetType {
     // Anchor enum serialization: 1 byte discriminator + max variant size
     // Block variant: 1 byte discriminator + 1 byte block_id = 2 bytes
     // FactionHighestLowest variant: 1 byte discriminator + 1 byte faction_id + 1 byte is_highest = 3 bytes
+    // FactionBoth variant: 1 byte discriminator + 1 byte faction_id = 2 bytes
+    // RandomBlock variant: 1 byte discriminator = 1 byte
     // Max size is 3 bytes
     pub const LEN: usize = 3;
 }
@@ -954,6 +1018,8 @@ pub struct UserGameBet {
     pub bet_type: BetType,
     /// The net SOL amount bet (after protocol fee deduction)
     pub sol_bet_amount: u64,
+    pub points_amount: u64,
+    pub fee_amount: u64,
     pub bump: u8,
 }
 
@@ -963,6 +1029,8 @@ impl UserGameBet {
         8 +     // round_id
         BetType::LEN + // bet_type (enum)
         8 +     // sol_bet_amount
+        8 +     // points_amount
+        8 +     // fee_amount
         1;      // bump
     
     /// Get the target block ID for this bet based on GameSession block assignments
@@ -994,6 +1062,25 @@ impl UserGameBet {
                 } else {
                     None
                 }
+            }
+            BetType::FactionBoth { faction_id } => {
+                // For "both", return the highest block (used for validation)
+                let mut faction_blocks: Vec<u8> = Vec::new();
+                for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
+                    if *assigned_faction == *faction_id {
+                        faction_blocks.push((block_idx + 1) as u8);
+                    }
+                }
+                if faction_blocks.len() == BLOCKS_PER_FACTION {
+                    Some(*faction_blocks.iter().max().unwrap())
+                } else {
+                    None
+                }
+            }
+            BetType::RandomBlock => {
+                // Random block - cannot determine without runtime context
+                // This should not be stored in UserGameBet, only used during batch betting
+                None
             }
         }
     }

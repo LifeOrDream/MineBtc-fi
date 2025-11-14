@@ -124,8 +124,8 @@ const TOKEN_METADATA = {
         // 4. Remove mint authority (make token non-mintable)
         await removeMintAuthority(connection, deployer, deploymentData, deploymentPath);
 
-        // 5. Remove withdraw withheld authority
-        await removeWithdrawWithheldAuthority(connection, deployer, deploymentData, deploymentPath);
+        // 5. Set withdraw withheld authority to program-controlled PDA
+        await setWithdrawWithheldAuthorityToPDA(connection, deployer, deploymentData, deploymentPath);
 
         // 6. Transfer transfer fee config authority
         await transferTransferFeeConfigAuthority(connection, deployer, deploymentData, deploymentPath);
@@ -646,20 +646,50 @@ async function removeMintAuthority(connection, deployer, deploymentData, deploym
     }
 }
 
-async function removeWithdrawWithheldAuthority(connection, deployer, deploymentData, deploymentPath) {
-    if (deploymentData.withdraw_withheld_authority_removed) {
-        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Withdraw withheld authority already removed. Skipping...');
-        console.log('\x1b[36m%s\x1b[0m', '🔒 Withdraw withheld authority is null');
+async function setWithdrawWithheldAuthorityToPDA(connection, deployer, deploymentData, deploymentPath) {
+    if (deploymentData.withdraw_withheld_authority_set_to_pda) {
+        console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Withdraw withheld authority already set to PDA. Skipping...');
+        console.log('\x1b[36m%s\x1b[0m', '🔑 PDA Authority:', deploymentData.withdraw_withheld_authority_set_to_pda.pda_authority);
         return;
     }
 
-    console.log('\x1b[35m%s\x1b[0m', '\n=================== [ REMOVING WITHDRAW WITHHELD AUTHORITY ] ===================');
+    console.log('\x1b[35m%s\x1b[0m', '\n=================== [ SETTING WITHDRAW WITHHELD AUTHORITY TO PDA ] ===================');
     
     const mintPubkey = new PublicKey(deploymentData.dbtc_mint_created.mint_address);
     
-    console.log('\x1b[36m%s\x1b[0m', '🔒 Removing withdraw withheld authority...');
-    console.log('\x1b[36m%s\x1b[0m', `   • Current Withdraw Withheld Authority: ${deploymentData.dbtc_mint_created.withdraw_withheld_authority}`);
-    console.log('\x1b[36m%s\x1b[0m', `   • Action: Set withdraw withheld authority to null`);
+    // Load moonbase program ID from deployment data (should be set by 0_deploy_game.js)
+    let moonbaseProgramId;
+    try {
+        const gameDeploymentPath = path.resolve(__dirname, config.deployment.paths.deployments_dir, `${CLUSTER}.json`);
+        if (fs.existsSync(gameDeploymentPath)) {
+            const gameDeploymentData = JSON.parse(fs.readFileSync(gameDeploymentPath, 'utf8'));
+            if (gameDeploymentData.MOON_BASE_PROGRAM_ID) {
+                moonbaseProgramId = new PublicKey(gameDeploymentData.MOON_BASE_PROGRAM_ID);
+            }
+        }
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '⚠️ Could not load moonbase program ID. Please deploy moonbase first.');
+        throw error;
+    }
+    
+    if (!moonbaseProgramId) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Moonbase program ID not found. Please run 0_deploy_game.js first.');
+        throw new Error('Moonbase program ID required');
+    }
+    
+    // Derive PDA for withdraw_withheld_authority
+    const [withdrawAuthorityPDA, bump] = PublicKey.findProgramAddressSync(
+        [Buffer.from('withdraw-withheld-authority')],
+        moonbaseProgramId
+    );
+    
+    console.log('\x1b[36m%s\x1b[0m', '🔑 Deriving withdraw withheld authority PDA...');
+    console.log('\x1b[36m%s\x1b[0m', `   • Program ID: ${moonbaseProgramId.toBase58()}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Seed: "withdraw-withheld-authority"`);
+    console.log('\x1b[36m%s\x1b[0m', `   • PDA: ${withdrawAuthorityPDA.toBase58()}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Bump: ${bump}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Current Authority: ${deploymentData.dbtc_mint_created.withdraw_withheld_authority}`);
+    console.log('\x1b[36m%s\x1b[0m', `   • Action: Transfer authority to PDA`);
     
     try {
         const signature = await setAuthority(
@@ -668,34 +698,36 @@ async function removeWithdrawWithheldAuthority(connection, deployer, deploymentD
             mintPubkey, // mint
             deployer, // current authority
             AuthorityType.WithheldWithdraw, // authority type
-            null, // new authority (null removes it)
+            withdrawAuthorityPDA, // new authority (PDA)
             [], // multiSigners
             undefined, // confirmOptions
             TOKEN_2022_PROGRAM_ID // programId
         );
         
-        console.log('\x1b[32m%s\x1b[0m', '✅ Withdraw withheld authority removed successfully!');
-        console.log('\x1b[32m%s\x1b[0m', '🔒 Withheld tokens can no longer be withdrawn by anyone');
+        console.log('\x1b[32m%s\x1b[0m', '✅ Withdraw withheld authority set to PDA successfully!');
+        console.log('\x1b[32m%s\x1b[0m', `🔑 PDA can now withdraw withheld tokens via program`);
         console.log('\x1b[90m%s\x1b[0m', '🔗 Transaction:', signature);
         
         // Update deployment data
-        deploymentData.withdraw_withheld_authority_removed = {
+        deploymentData.withdraw_withheld_authority_set_to_pda = {
             previous_withdraw_withheld_authority: deploymentData.dbtc_mint_created.withdraw_withheld_authority,
-            new_withdraw_withheld_authority: null,
-            removal_signature: signature,
+            pda_authority: withdrawAuthorityPDA.toBase58(),
+            pda_bump: bump,
+            program_id: moonbaseProgramId.toBase58(),
+            transfer_signature: signature,
             timestamp: new Date().toISOString()
         };
         
-        // Update the mint creation data to reflect removed authority
-        deploymentData.dbtc_mint_created.withdraw_withheld_authority = null;
-        deploymentData.dbtc_mint_created.withdraw_withheld_authority_status = "removed";
+        // Update the mint creation data to reflect new authority
+        deploymentData.dbtc_mint_created.withdraw_withheld_authority = withdrawAuthorityPDA.toBase58();
+        deploymentData.dbtc_mint_created.withdraw_withheld_authority_status = "set_to_pda";
         
         // Save deployment data
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
         console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data saved');
         
     } catch (error) {
-        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to remove withdraw withheld authority:', error);
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to set withdraw withheld authority to PDA:', error);
         console.error('\x1b[31m%s\x1b[0m', 'Error details:', error.message);
         if (error.logs) {
             console.error('\x1b[31m%s\x1b[0m', 'Transaction logs:', error.logs);
@@ -793,7 +825,10 @@ function printCompletionSummary(deploymentData) {
         }
         
         // Withdraw Withheld Authority Status
-        if (deploymentData.withdraw_withheld_authority_removed) {
+        if (deploymentData.withdraw_withheld_authority_set_to_pda) {
+            console.log('\x1b[33m%s\x1b[0m', `   🔑 Withdraw Withheld Authority: SET TO PDA`);
+            console.log('\x1b[33m%s\x1b[0m', `   🔑 PDA Authority: ${deploymentData.withdraw_withheld_authority_set_to_pda.pda_authority}`);
+        } else if (deploymentData.withdraw_withheld_authority_removed) {
             console.log('\x1b[32m%s\x1b[0m', `   🔒 Withdraw Withheld Authority: REMOVED - Withheld tokens locked`);
         } else {
             console.log('\x1b[90m%s\x1b[0m', `   Withdraw Withheld Authority: ${deploymentData.dbtc_mint_created.withdraw_withheld_authority || 'None'}`);

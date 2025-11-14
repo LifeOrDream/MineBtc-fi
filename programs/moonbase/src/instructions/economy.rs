@@ -6,14 +6,119 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface::TokenAccount as TokenAccount2022; // ← the PROGRAM-ID wrapper (implements Id)
 use anchor_spl::{
-    token::{self, Token, TokenAccount},           // <- gives you TokenAccount type
-    associated_token::{self, AssociatedToken},     // <- gives you AssociatedToken program type
+    token::{Token, TokenAccount},           // <- gives you TokenAccount type
+    associated_token::AssociatedToken,     // <- gives you AssociatedToken program type
 };
-
-
 
 // Import Raydium CP-Swap for CPI calls
 use raydium_cp_swap;
+
+
+
+pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<()> {
+    let sol_treasury = &ctx.accounts.sol_treasury;
+    let global_config = &ctx.accounts.global_config;
+    let buybacks_ac = &mut ctx.accounts.buybacks_account;
+
+    msg!("Withdrawing SOL from treasury");
+    msg!("SOL Treasury: {}", sol_treasury.key());
+    msg!("Treasury balance: {} SOL", sol_treasury.lamports() as f64 / 1e9);
+
+    let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
+    let current_balance = sol_treasury.lamports();
+
+    // Calculate available balance (total - rent)
+    let reserved_amount = rent_exempt_amount;
+    let available_solana = current_balance.saturating_sub(reserved_amount);
+
+    // Check if we have enough available balance
+    if available_solana == 0 {
+        msg!( "⚠️ No SOL balance to withdraw. Available: {} SOL", available_solana as f64 / 1e9);        
+        return Ok(());
+    }
+    msg!( "   Total balance: {} SOL, Rent: {} SOL", current_balance as f64 / 1e9, rent_exempt_amount as f64 / 1e9);
+
+    // Calculate buybacks amount using configurable percentage
+    let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
+    let sol_for_buybacks = available_solana * buyback_percentage / M_HUNDRED;
+
+    // Create signer seeds for sol_treasury
+    let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
+    let signer_seeds = &[&treasury_seeds[..]];
+
+    // Transfer buybacks amount to buybacks SOL vault
+    if sol_for_buybacks > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_buybacks,
+        )?;
+
+        // Update buybacks tracking
+        buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + sol_for_buybacks;
+
+        msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks as f64 / 1e9,  buyback_percentage);
+    }
+ 
+    let dev_earnings = available_solana.saturating_sub(sol_for_buybacks);
+    if dev_earnings > 0 {
+        // Transfer SOL from treasury to treasury WSOL account (wraps it)
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.treasury_wsol_account.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            dev_earnings,
+        )?;
+
+        // Sync native account to update WSOL balance
+        anchor_spl::token::sync_native(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::SyncNative {
+                    account: ctx.accounts.treasury_wsol_account.to_account_info(),
+                },
+                signer_seeds,
+            ),
+        )?;
+
+        // Transfer WSOL from treasury WSOL account to multisig WSOL account
+        anchor_spl::token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::Transfer {
+                    from: ctx.accounts.treasury_wsol_account.to_account_info(),
+                    to: ctx.accounts.multisig_wsol_account.to_account_info(),
+                    authority: ctx.accounts.sol_treasury.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            dev_earnings,
+        )?;
+        msg!("👨‍💻 Sent {} WSOL to Multisig (Dev Earnings)", dev_earnings as f64 / 1e9);
+    }
+
+    // Emit event
+    emit!(SolFeesWithdrawn {
+        available_solana: available_solana,
+        buyback_amount: sol_for_buybacks,
+        dev_earnings_amount: dev_earnings,
+    });
+
+    msg!("Withdrew {} SOL from treasury", available_solana as f64 / 1e9);
+    Ok(())
+}
+
 
 /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
 /// Performs a small SOL → DOGE_BTC swap for price discovery and earnmarks SOL for POL
@@ -670,8 +775,8 @@ pub fn update_rate_and_add_lp_internal(
     // Perform actual LP addition and burn (INLINED to avoid stack overflow)
     // DOGE_BTC will be taken from the main token vault (dbtc_token_account)
     let mut lp_tokens_minted = 0u64;
-    let mut sol_consumed = 0u64;
-    let mut dbtc_consumed = 0u64;
+    let sol_consumed: u64;
+    let dbtc_consumed: u64;
     
     if total_sol_for_lp > 0 {
         msg!("\n   🎯 === ADDING LIQUIDITY TO POOL ===");
@@ -1222,6 +1327,61 @@ fn calculate_price_change_pct(old_price: u64, new_price: u64) -> (i64, i64) {
 // ----------------------------------------------------------------------------------------
 // ------------ DYNAMIC DISTRIBUTION ACCOUNT STRUCTS ------------------------------------
 // ----------------------------------------------------------------------------------------
+
+
+#[derive(Accounts)]
+pub struct DistributeSolFees<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// CHECK: SOL treasury PDA (System Account)
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump  // Let Anchor find the correct bump
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+
+    /// Treasury's WSOL token account (authority is treasury PDA)
+    #[account(
+        mut,
+        constraint = treasury_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+    )]
+    /// CHECK: Token account owned by treasury PDA (verified via constraint)
+    pub treasury_wsol_account: Account<'info, TokenAccount>,
+
+    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
+    #[account(mut)]
+    pub multisig_wsol_account: UncheckedAccount<'info>,
+
+    /// CHECK: WSOL mint
+    pub wsol_mint: UncheckedAccount<'info>,
+
+    /// CHECK: Buybacks SOL vault PDA (System Account)
+    #[account(
+        mut,
+        seeds = [BUYBACKS_SOL_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub buybacks_sol_vault: UncheckedAccount<'info>,
+
+    /// Buybacks tracking account (required)
+    #[account(
+        mut,
+        seeds = [BUYBACKS_SEED.as_ref()],
+        bump,
+    )]
+    pub buybacks_account: Account<'info, BuybacksAccount>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+ 
+ 
+
 
 /// Account struct for taking price snapshots (Instruction 1)
 /// Lighter weight - only needs swap-related accounts

@@ -29,6 +29,16 @@ solana-test-validator --reset \
   --url https://api.mainnet-beta.solana.com
 
 
+anchor build -p moonbase
+
+solana program deploy target/deploy/moonbase.so \
+  --program-id target/deploy/moonbase-keypair.json \
+  --keypair wallet-keypair.json \
+  --url http://127.0.0.1:8899
+
+anchor idl build -p moonbase
+
+
 ## System Overview
 
 **MoonBase** is a Solana-based game where players:
@@ -75,7 +85,7 @@ solana-test-validator --reset \
 ```rust
 // 1. PAY CREATION FEE
 // - Cost: 0.1 SOL (configurable)
-// - Split: 50% to creation_fee_recipient, 50% processed normally
+// - Split: 50% to fee_recipient, 50% processed normally
 // - Of the 50%: 15% to referrer (if any), rest to treasury
 
 // 2. CREATE YOUR MOONBASE ACCOUNT
@@ -1015,7 +1025,7 @@ User A creates moonbase with no referrer
 
 User B creates moonbase with User A's code
   → Pays 0.1 SOL creation fee
-  → Split: 50% to creation_fee_recipient, 50% processed
+  → Split: 50% to fee_recipient, 50% processed
   → Of 50%: 15% to User A, 85% to treasury
   → User A earns 0.0075 SOL
 

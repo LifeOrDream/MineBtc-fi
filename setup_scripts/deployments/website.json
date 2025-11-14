@@ -27,7 +27,7 @@
     "dbtc_token_vault": "2xjvkk15MLYQXETBExtxzmdHfhAEegieKLuv3TiiVnPM",
     "dbtc_vault_authority": "GpqgErBUVCUSeowfKgozH11z6k72mv4G8mdUUyu6of9q",
     "mining_start_timestamp": 1762596306,
-    "doge_btc_per_slot": "1000000",
+    "doge_btc_per_round": "1000000",
     "lp_token_account": "H9zNTRvwDRYsDfdWb8eTNFnTqzn3i8Ha6Ycf1LpnhXeJ",
     "lp_token_mint": "Be6CazANhkxZhgY9fnvPH8F5dzP1Pn7N8fMW5Ac9wf8G",
     "referral_rewards_pda": "8wnr5rukuDFFuf6z46DdVVXrQc7wfoV4Rutr4tccj1Jx",
@@ -63,7 +63,7 @@
       "France",
       "Brazil"
     ],
-    "creation_fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "moon_economy_enabled": true,
     "dogebtc_allocation": 33,

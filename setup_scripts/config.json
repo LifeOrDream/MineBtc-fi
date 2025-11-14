@@ -11,7 +11,7 @@
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
-        "creation_fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+        "FEE_RECIPIENT_MULTISIG": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
         "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
     },
     "token": {
@@ -25,19 +25,6 @@
         "burn_tax_bps": 100,
         "max_burn_amount": 1000000
     },
-    "moonbase": {
-        "base_creation_cost": 100000000,
-        "loot_percentage": 10,
-        "default_width": 8,
-        "default_height": 6,
-        "grid_max_width": 16,
-        "grid_max_height": 12
-    },
-    "mining": {
-        "start_timestamp": 0,
-        "doge_btc_per_slot": 1000000,
-        "initial_deposit": "21000000000000"
-    },
     "raydium": {
         "amm_config_index": 0,
         "trade_fee_rate": 25,
@@ -49,272 +36,97 @@
         "initial_dbtc_percentage": 1,
         "open_time": 0,
         "burn_lp_tokens": true
+    },    
+    "moonbase": {
+        "base_creation_cost": 100000000,
+        "loot_percentage": 10,
+        "default_width": 8,
+        "default_height": 6,
+        "grid_max_width": 16,
+        "grid_max_height": 12
+    },
+    "mining": {
+        "start_timestamp": 0,
+        "doge_btc_per_round": 1000000,
+        "initial_deposit": "21000000000000"
+    },
+    "eggs_config": {
+        "base_price": 1000000000,
+        "curve_a": 10000,
+        "max_supply": 15000,
+        "royalties": 420,
+        "creators": [
+            {
+                "identifier": "multisig_fee_recipient",
+                "percentage": 50
+            },
+            {
+                "identifier": "treasury",
+                "percentage": 50
+            }
+        ],
+        "ticket_tiers": [
+            {
+                "tier_index": 0,
+                "ticket_value": 1000000,
+                "ticket_count": 1000
+            },
+            {
+                "tier_index": 1,
+                "ticket_value": 10000000,
+                "ticket_count": 100
+            },
+            {
+                "tier_index": 2,
+                "ticket_value": 100000000,
+                "ticket_count": 50
+            },
+            {
+                "tier_index": 3,
+                "ticket_value": 100000000,
+                "ticket_count": 75
+            }
+        ]        
     },
     "factions": [
-        {
-            "name": "USA",
-            "description": "Tech innovators and marketing masters. Wielding high-tech gear and 'to the moon' hype."
-        },
-        {
-            "name": "China",
-            "description": "The industrial powerhouse. Unmatched mining efficiency and a 'Great Wall' of digital defenses."
-        },
-        {
-            "name": "Russia",
-            "description": "Bear-market survivors. Wielding heavy-duty mining rigs and a legendary 'crypto-winter' resilience."
-        },
-        {
-            "name": "India",
-            "description": "The tech wizards. Fusing ancient spiritual power with a massive, decentralized dev army."
-        },
-        {
-            "name": "Japan",
-            "description": "Cyber-samurai coders. Honed by tradition, masters of high-speed, precision mining operations."
-        },
-        {
-            "name": "South Korea",
-            "description": "The essential gaming & degen hub. High-APM strategies and K-Pop-fueled crypto frenzies."
-        },
-        {
-            "name": "Vietnam",
-            "description": "The essential gaming & degen hub. Masters of guerilla tactics and grinding for high-yield rewards."
-        },
-        {
-            "name": "The Philippines",
-            "description": "The #1 Web3 gaming faction. Unmatched community-driven power and a 'play-to-hatch' warrior spirit."
-        },
-        {
-            "name": "North Korea",
-            "description": "The 'wildcard' hacker faction. Shrouded in mystery, masters of 'liberating' digital assets."
-        },
-        {
-            "name": "France",
-            "description": "Cultural connoisseurs. Wielding high-fashion tech and building 'haute couture' crypto portfolios."
-        },
-        {
-            "name": "Brazil",
-            "description": "The party faction. Powered by carnival energy, high-octane hype, and a legendary passion for the 'Joga Bonito' of crypto."
-        }
+        { "name": "USA" },
+        { "name": "China" },
+        { "name": "Russia" },
+        { "name": "India" },
+        { "name": "Japan" },
+        { "name": "South Korea" },
+        { "name": "Vietnam" },
+        { "name": "The Philippines" },
+        { "name": "North Korea" },
+        { "name": "France" },
+        { "name": "Brazil" },
+        { "name": "Argentina" }
     ],
-    "expansions": [
-        {
-            "id": 1,
-            "name": "Forward Operating Base",
-            "required_level": 5,
-            "cost_sol": 1000000000,
-            "new_width": 10,
-            "new_height": 8
-        },
-        {
-            "id": 2,
-            "name": "Strategic Command Center",
-            "required_level": 10,
-            "cost_sol": 2000000000,
-            "new_width": 12,
-            "new_height": 10
-        },
-        {
-            "id": 3,
-            "name": "Military Industrial Complex",
-            "required_level": 20,
-            "cost_sol": 5000000000,
-            "new_width": 14,
-            "new_height": 12
-        },
-        {
-            "id": 4,
-            "name": "Lunar Superbase",
-            "required_level": 35,
-            "cost_sol": 10000000000,
-            "new_width": 16,
-            "new_height": 12
-        }
-    ],
-    "modules": [
-        {
-            "name": "Basic Mining Rig",
-            "image_url": "https://arweave.net/basic-mining-rig",
-            "module_type": "Mining",
-            "stats": {
-                "maxHp": 1100,
-                "baseHashpower": 1200,
-                "powerConsumption": 90
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 150000000,
-            "upgrade_cost": 75000000,
-            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
-        },
-        {
-            "name": "Advanced Mining Lab",
-            "image_url": "https://arweave.net/advanced-research-lab",
-            "module_type": "Mining",
-            "stats": {
-                "maxHp": 1400,
-                "cooldownSec": 3200,
-                "maxReward": 1200000000,
-                "probability": 6000,
-                "powerConsumption": 140
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 3,
-            "height": 2,
-            "mint_cost": 450000000,
-            "upgrade_cost": 180000000,
-            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
-        },
-        {
-            "name": "Cultural Monument",
-            "image_url": "https://arweave.net/cultural-monument",
-            "module_type": "Attraction",
-            "stats": {
-                "maxHp": 900,
-                "baseXpPerHour": 120,
-                "powerConsumption": 45
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 200000000,
-            "upgrade_cost": 90000000,
-            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
-        },
-        {
-            "name": "Defense Battery",
-            "image_url": "https://arweave.net/defense-battery",
-            "module_type": "Attraction",
-            "stats": {
-                "maxHp": 1300,
-                "baseDamage": 180,
-                "baseMissilesPerLoad": 12,
-                "reloadTimeSeconds": 25,
-                "powerConsumption": 85
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 400000000,
-            "upgrade_cost": 160000000,
-            "upgrade_level_requirements": [2, 3, 6, 9, 12, 42]
-        }
-    ],
-    "command_centers": [
-        {
-            "config_id": 1,
-            "tier": 1,
-            "name": "Command Center Tier 1",
-            "image_url": "https://arweave.net/command-center-tier-1",
-            "module_type": "Mining",
-            "stats": {
-                "maxHp": 1000,
-                "baseHashpower": 500,
-                "powerConsumption": 500
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 0,
-            "upgrade_cost": 0,
-            "upgrade_level_requirements": [5, 10, 20, 50]
-        },
-        {
-            "config_id": 2,
-            "tier": 2,
-            "name": "Command Center Tier 2",
-            "image_url": "https://arweave.net/command-center-tier-2",
-            "module_type": "Mining",
-            "stats": {
-                "maxHp": 1500,
-                "baseHashpower": 2400,
-                "powerConsumption": 1500
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 0,
-            "upgrade_cost": 0,
-            "upgrade_level_requirements": [5, 10, 20, 50]
-        },
-        {
-            "config_id": 3,
-            "tier": 3,
-            "name": "Command Center Tier 3",
-            "image_url": "https://arweave.net/command-center-tier-3",
-            "module_type": "Mining",
-            "stats": {
-                "maxHp": 2000,
-                "baseHashpower": 4200,
-                "powerConsumption": 3000
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 0,
-            "upgrade_cost": 0,
-            "upgrade_level_requirements": [5, 10, 20, 50]
-        },
-        {
-            "config_id": 4,
-            "tier": 4,
-            "name": "Command Center Tier 4",
-            "image_url": "https://arweave.net/command-center-tier-4",
-            "module_type": "Mining",
-            "stats": {
-                "maxHp": 2500,
-                "baseHashpower": 6900,
-                "powerConsumption": 5100
-            },
-            "faction_ids": [],
-            "min_level": 0,
-            "width": 2,
-            "height": 2,
-            "mint_cost": 0,
-            "upgrade_cost": 0,
-            "upgrade_level_requirements": [5, 10, 20, 50]
-        }
-    ],
-    "moonEconomy": {
-        "dogebtc_allocation": 33,
-        "liquidity_allocation": 33,
-        "min_lockup_days": 1,
-        "max_lockup_days": 365,
-        "base_multiplier": 100,
-        "max_multiplier": 700,
-        "electricity_per_weighted_mdoge": 100,
-        "electricity_per_weighted_lp_tokens": 400
-    },
-    "pvp": {
-        "min_hp_required": 1000,
-        "turn_timeout_seconds": 300,
-        "max_turns": 15,
-        "max_hash_leech_percent": 50,
-        "ticket_tiers": [
-            100000000,
-            1000000000,
-            10000000000,
-            100000000000,
-            500000000000
-        ]
-    },
     "dragon_eggs": {
         "collection_name": "DogeTech Dragon Eggs",
         "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
         "uris": [
-            "https://arweave.net/dragon-egg-1.json",
-            "https://arweave.net/dragon-egg-2.json",
-            "https://arweave.net/dragon-egg-3.json",
-            "https://arweave.net/dragon-egg-4.json",
-            "https://arweave.net/dragon-egg-5.json"
+            "https://arweave.net/dragon-egg-usa.json",
+            "https://arweave.net/dragon-egg-china.json",
+            "https://arweave.net/dragon-egg-russia.json",
+            "https://arweave.net/dragon-egg-india.json",
+            "https://arweave.net/dragon-egg-japan.json",
+            "https://arweave.net/dragon-egg-korea.json",
+            "https://arweave.net/dragon-egg-vietnam.json",
+            "https://arweave.net/dragon-egg-philippines.json",
+            "https://arweave.net/dragon-egg-northkorea.json",
+            "https://arweave.net/dragon-egg-france.json",
+            "https://arweave.net/dragon-egg-brazil.json",
+            "https://arweave.net/dragon-egg-argentina.json"
         ]
+    },
+    "tax": {
+        "nft_floor_sweep_pct": 33,
+        "faction_treasury_pct": 33,
+        "nft_floor_sweep_whitelisted_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
+    },
+    "game": {
+        "round_duration_seconds": 3600
     }
 
 }
