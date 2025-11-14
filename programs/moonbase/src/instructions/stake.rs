@@ -339,7 +339,6 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     
     // Remove position from user's active positions
     helper::remove_moondoge_position(player_data, position_index)?;
-    msg!("   Updated active positions: {}", player_data.active_moondoge_positions);
     
     // Transfer remaining tokens back to user
     if return_amount > 0 {
@@ -686,7 +685,6 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     
     // Remove position from user's active positions
     helper::remove_lp_position(player_data, position_index)?;
-    msg!("   Updated active positions: {}", player_data.active_lp_positions);
     
     // Transfer remaining tokens back to user
     if return_amount > 0 {

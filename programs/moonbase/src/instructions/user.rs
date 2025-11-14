@@ -13,25 +13,17 @@ use crate::instructions::helper;
 
 /// Initialize a player account for the Faction Surge game
 pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
-    msg!("👤 [initialize_player] Initializing player account");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Faction ID: {}", faction_id);
+    msg!("👤 [initialize_player] Initializing player account. Authority: {}. Faction ID: {}", ctx.accounts.authority.key(), faction_id);
     
     let player_data = &mut ctx.accounts.player_data;
-    let global_config = &mut ctx.accounts.global_config;
-    
-    msg!("   Total players before: {}", global_config.total_players);    // Increment total players count
+    let global_config = &mut ctx.accounts.global_config;    
     global_config.total_players = global_config.total_players + 1;
-    msg!("   Total players after: {}", global_config.total_players);
     
     // Validate faction_id
-    msg!("   Validating faction_id...");
-    msg!("   Supported factions count: {}", global_config.supported_factions.len());
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
-    msg!("   ✓ Faction ID {} is valid", faction_id);
     
     // Initialize player data
     player_data.owner = ctx.accounts.authority.key();
@@ -39,63 +31,37 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.faction_id = faction_id;
     
     // Handle referral code logic
-    msg!("   Processing referral code...");
     let referrer_pubkey = if let Some(ref_code) = referral_code {
         msg!("     Referral code provided: {}", ref_code);
-        // Validate referral code is not the same as owner
-        require!(
-            ref_code != ctx.accounts.authority.key(),
-            ErrorCode::ReferralCannotBeSameAsOwner
-        );
-        msg!("     ✓ Referral code is different from owner");
+        require!( ref_code != ctx.accounts.authority.key(), ErrorCode::ReferralCannotBeSameAsOwner);
         
         // Update referrer's referral count if referrer_rewards account is provided
         if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
-            msg!("     Referrer rewards account provided");
-            // Validate that the referrer_rewards account belongs to the referral_code
-            require!(
-                referrer_rewards.owner == ref_code,
-                ErrorCode::InvalidReferralAccount
-            );
-            msg!("     ✓ Referrer rewards account validated");
-            
-            let old_count = referrer_rewards.referrals_count;
-            referrer_rewards.referrals_count = referrer_rewards
-                .referrals_count
-                .checked_add(1)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("     Referrals count: {} -> {}", old_count, referrer_rewards.referrals_count);
-        } else {
-            msg!("     ⚠️ Referrer rewards account not provided (optional)");
-        }
+            require!( referrer_rewards.owner == ref_code, ErrorCode::InvalidReferralAccount);            
+            referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+        } 
         
         // Set player's referral code
         player_data.referral_code = ref_code;
         ref_code
     } else {
         msg!("     No referral code provided, using system referral account");
-        // No referral code provided, use system referral account
-        // System referral account PDA: [REFERRAL_REWARDS_SEED, system_program.key()]
         let system_referral_pubkey = ctx.accounts.system_program.key();
         player_data.referral_code = system_referral_pubkey;
-        msg!("     System referral: {}", system_referral_pubkey);
         system_referral_pubkey
     };
-    
-    // Initialize empty vectors for tracking rounds
-    msg!("   Initializing player data fields...");
+
     player_data.sol_bets_rounds = Vec::new();
     player_data.sol_bets_amounts = Vec::new();
-    msg!("     Initialized empty vectors for round tracking");
-    
+
     // Initialize statistics
     player_data.rounds_played = 0;
     player_data.rounds_won = 0;
+
     player_data.total_sol_bet = 0;
     player_data.total_points_bet = 0;
     player_data.total_sol_won = 0;
     player_data.total_dbtc_won = 0;
-    msg!("     Statistics initialized to 0");
     
     // Initialize DogeBtc staking fields
     player_data.dogebtc_hashpower = 0;
@@ -119,8 +85,6 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     // Initialize position tracking vectors
     player_data.moondoge_position_indices = Vec::new();
     player_data.lp_position_indices = Vec::new();
-    player_data.active_moondoge_positions = 0;
-    player_data.active_lp_positions = 0;
     msg!("     Position tracking initialized");
     
     // Initialize egg staking
@@ -158,7 +122,7 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
 
 
 
-/// Join a round by betting SOL or using free tickets
+/// Join a round by betting SOL or using free tickets (single bet)
 /// Users can bet on either:
 /// - A specific block (block_id: 1-24)
 /// - A faction + highest/lowest option (faction_id + is_highest)
@@ -173,7 +137,7 @@ pub fn join_round(
     bet_type: BetType,
     use_ticket: Option<u8>,
 ) -> Result<()> {
-    msg!("🎲 [join_round] User joining round");
+    msg!("🎲 [join_round] User joining round (single bet)");
     msg!("   User: {}", ctx.accounts.authority.key());
     msg!("   Bet type: {:?}", bet_type);
     
@@ -197,6 +161,108 @@ pub fn join_round(
     )?;
     
     msg!("✅ [join_round] Bet placed successfully");
+    Ok(())
+}
+
+/// Join a round with multiple bets in a single transaction
+/// Users can bet on:
+/// - Multiple blocks (e.g., [1, 5, 10, 15])
+/// - Multiple factions with settings: "low", "high", "both", or "random"
+/// 
+/// Parameters:
+/// - bet_types: Vector of bet types to place
+/// - amount_per_bet: Bet amount per bet type in lamports (for SOL) or points (for tickets)
+/// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
+pub fn join_round_batch(
+    ctx: Context<JoinRoundBatch>,
+    bet_types: Vec<BetType>,
+    amount_per_bet: u64,
+    use_ticket: Option<u8>,
+) -> Result<()> {
+    msg!("🎲 [join_round_batch] User joining round with {} bets", bet_types.len());
+    msg!("   User: {}", ctx.accounts.authority.key());
+    msg!("   Amount per bet: {} lamports", amount_per_bet);
+    
+    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
+    require!(bet_types.len() <= 24, ErrorCode::InvalidParameters); // Max 24 bets (one per block)
+    
+    // Expand bet types (handle FactionBoth and RandomBlock)
+    let mut expanded_bet_types = Vec::new();
+    for bet_type in bet_types.iter() {
+        match bet_type {
+            BetType::FactionBoth { faction_id } => {
+                // Expand to both highest and lowest
+                expanded_bet_types.push(BetType::FactionHighestLowest { 
+                    faction_id: *faction_id, 
+                    is_highest: true 
+                });
+                expanded_bet_types.push(BetType::FactionHighestLowest { 
+                    faction_id: *faction_id, 
+                    is_highest: false 
+                });
+            }
+            BetType::RandomBlock => {
+                // For random block, we need to select a random block at runtime
+                // Use slot hash or similar for randomness
+                let clock = Clock::get()?;
+                let slot_bytes = clock.slot.to_le_bytes();
+                let random_block = ((slot_bytes[0] % 24) + 1) as u8; // 1-24
+                expanded_bet_types.push(BetType::Block { block_id: random_block });
+                msg!("   Random block selected: {}", random_block);
+            }
+            _ => {
+                expanded_bet_types.push(bet_type.clone());
+            }
+        }
+    }
+    
+    msg!("   Expanded to {} bet types", expanded_bet_types.len());
+    
+    // Place each bet
+    for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
+        msg!("   Placing bet {} of {}: {:?}", idx + 1, expanded_bet_types.len(), bet_type);
+        
+        // For each bet, we need to derive the correct faction_state and user_game_bet
+        // Since we can only have one user_game_bet per round, we'll update it for each bet
+        // But we need different faction_states for different factions
+        
+        // Get target block and faction for this bet
+        let target_block = get_target_block_from_bet_type(bet_type, &ctx.accounts.game_session.block_assignments)?;
+        let target_faction = ctx.accounts.game_session.block_assignments[target_block as usize - 1];
+        
+        // We need to use the correct faction_state - but we only have one in the context
+        // For now, we'll require all bets to be for the same faction, or we need to restructure
+        // Let's check if faction matches
+        if idx > 0 {
+            let prev_target_block = get_target_block_from_bet_type(&expanded_bet_types[idx - 1], &ctx.accounts.game_session.block_assignments)?;
+            let prev_target_faction = ctx.accounts.game_session.block_assignments[prev_target_block as usize - 1];
+            require!(
+                target_faction == prev_target_faction,
+                ErrorCode::InvalidParameters // All bets must be for same faction in batch
+            );
+        }
+        
+        // Call internal join_round for each bet
+        internal_join_round(
+            &ctx.accounts.global_game_state,
+            &ctx.accounts.global_config,
+            &mut ctx.accounts.player_data,
+            &mut ctx.accounts.faction_state,
+            &mut ctx.accounts.game_session,
+            &mut ctx.accounts.user_game_bet,
+            &ctx.accounts.user_wallet.to_account_info(),
+            &ctx.accounts.sol_treasury.to_account_info(),
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            ctx.bumps.user_game_bet,
+            ctx.accounts.authority.key(),
+            amount_per_bet,
+            bet_type.clone(),
+            use_ticket,
+        )?;
+    }
+    
+    msg!("✅ [join_round_batch] All {} bets placed successfully", expanded_bet_types.len());
     Ok(())
 }
 
@@ -367,7 +433,7 @@ fn internal_join_round<'info>(
 /// Get the target block ID from bet_type
 /// For Block bets, returns the block_id directly
 /// For FactionHighestLowest bets, finds the faction's blocks and returns highest/lowest
-fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; NUM_BLOCKS],) -> Result<u8> {
+fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; NUM_BLOCKS]) -> Result<u8> {
     match bet_type {
         BetType::Block { block_id } => {
             require!(*block_id >= 1 && *block_id <= NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
@@ -393,6 +459,28 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
             } else {
                 Ok(*faction_blocks.iter().min().unwrap())
             }
+        }
+        BetType::FactionBoth { faction_id } => {
+            // For "both", return the highest block (will be expanded in batch function)
+            require!((*faction_id as usize) < block_assignments.len(), ErrorCode::InvalidParameters);
+            let mut faction_blocks: Vec<u8> = Vec::new();
+            for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
+                if *assigned_faction == *faction_id {
+                    faction_blocks.push((block_idx + 1) as u8);
+                }
+            }
+            require!(
+                faction_blocks.len() == BLOCKS_PER_FACTION as usize,
+                ErrorCode::InvalidParameters
+            );
+            Ok(*faction_blocks.iter().max().unwrap()) // Return highest, but will be expanded
+        }
+        BetType::RandomBlock => {
+            // Random block - use clock slot for randomness
+            let clock = Clock::get()?;
+            let slot_bytes = clock.slot.to_le_bytes();
+            let random_block = ((slot_bytes[0] % 24) + 1) as u8; // 1-24
+            Ok(random_block)
         }
     }
 }
@@ -679,6 +767,16 @@ pub fn init_autominer(
                     ErrorCode::InvalidFactionId
                 );
                 msg!("     Bet type {}: Faction {} ({}) ✓", idx, faction_id, if *is_highest { "highest" } else { "lowest" });
+            }
+            BetType::FactionBoth { faction_id } => {
+                require!(
+                    (*faction_id as usize) < global_config.supported_factions.len(),
+                    ErrorCode::InvalidFactionId
+                );
+                msg!("     Bet type {}: Faction {} (both) ✓", idx, faction_id);
+            }
+            BetType::RandomBlock => {
+                msg!("     Bet type {}: Random block ✓", idx);
             }
         }
     }
@@ -996,6 +1094,78 @@ pub struct JoinRound<'info> {
     pub game_session: Account<'info, GameSession>,
     
     /// UserGameBet PDA for this user's bet in this round
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = UserGameBet::LEN,
+        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        bump
+    )]
+    pub user_game_bet: Account<'info, UserGameBet>,
+    
+    /// CHECK: SOL treasury PDA (fees go here)
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL prize pot vault (PDA)
+    #[account(
+        mut,
+        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub user_wallet: Signer<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+/// Account struct for batch betting
+/// Note: All bets must be for the same faction (same faction_state account)
+#[derive(Accounts)]
+pub struct JoinRoundBatch<'info> {
+    #[account(
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump = global_game_state.bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
+        bump = player_data.bump
+    )]
+    pub player_data: Account<'info, PlayerData>,
+    
+    /// Faction state for the bets (all bets must be for same faction)
+    #[account(
+        mut,
+    )]
+    pub faction_state: Account<'info, FactionState>,
+    
+    /// GameSession PDA for the current round
+    #[account(
+        mut,
+        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        bump = game_session.bump
+    )]
+    pub game_session: Account<'info, GameSession>,
+    
+    /// UserGameBet PDA (shared across all bets in batch)
     #[account(
         init_if_needed,
         payer = authority,

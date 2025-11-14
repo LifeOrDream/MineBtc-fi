@@ -410,6 +410,16 @@ pub mod moonbase {
         user::join_round(ctx, amount, bet_type, use_ticket)
     }
 
+    /// Join a round with multiple bets in a single transaction
+    pub fn join_round_batch(
+        ctx: Context<JoinRoundBatch>,
+        bet_types: Vec<BetType>,
+        amount_per_bet: u64,
+        use_ticket: Option<u8>,
+    ) -> Result<()> {
+        user::join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
+    }
+
 
     /// Claim rewards for a user after round ends
     pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {

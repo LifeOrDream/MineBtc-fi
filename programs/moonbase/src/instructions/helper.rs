@@ -115,17 +115,10 @@ pub fn add_dogebtc_position(
         .contains(&position_index)
     {
         // Ensure we're not exceeding the max allowed positions
-        if player_ac.active_moondoge_positions >= MAX_ALLOWED_POSITIONS {
+        if player_ac.moondoge_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
             return Err(ErrorCode::InvalidParameters.into());
         }
-
-        // Add position index to the vector
-        player_ac
-            .moondoge_position_indices
-            .push(position_index);
-
-        // Increment active positions counter
-        player_ac.active_moondoge_positions += 1;
+        player_ac.moondoge_position_indices.push(position_index);
     }
 
     Ok(())
@@ -137,18 +130,8 @@ pub fn remove_moondoge_position(
     position_index: u8,
 ) -> Result<()> {
     // Find the position index in the vector
-    if let Some(pos) = player_ac
-        .moondoge_position_indices
-        .iter()
-        .position(|&x| x == position_index)
-    {
-        // Remove the position index
+    if let Some(pos) = player_ac.moondoge_position_indices.iter().position(|&x| x == position_index) {
         player_ac.moondoge_position_indices.remove(pos);
-
-        // Decrement active positions counter
-        if player_ac.active_moondoge_positions > 0 {
-            player_ac.active_moondoge_positions -= 1;
-        }
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
@@ -164,16 +147,10 @@ pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result
 
     // If this position index is not already active
     if !player_ac.lp_position_indices.contains(&position_index) {
-        // Ensure we're not exceeding the max allowed positions
-        if player_ac.active_lp_positions >= MAX_ALLOWED_POSITIONS {
+        if player_ac.lp_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
             return Err(ErrorCode::InvalidParameters.into());
         }
-
-        // Add position index to the vector
         player_ac.lp_position_indices.push(position_index);
-
-        // Increment active positions counter
-        player_ac.active_lp_positions += 1;
     }
 
     Ok(())
@@ -184,19 +161,8 @@ pub fn remove_lp_position(
     player_ac: &mut PlayerData,
     position_index: u8,
 ) -> Result<()> {
-    // Find the position index in the vector
-    if let Some(pos) = player_ac
-        .lp_position_indices
-        .iter()
-        .position(|&x| x == position_index)
-    {
-        // Remove the position index
+    if let Some(pos) = player_ac.lp_position_indices.iter().position(|&x| x == position_index) {
         player_ac.lp_position_indices.remove(pos);
-
-        // Decrement active positions counter
-        if player_ac.active_lp_positions > 0 {
-            player_ac.active_lp_positions -= 1;
-        }
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }

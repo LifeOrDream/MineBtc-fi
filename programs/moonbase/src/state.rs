@@ -799,8 +799,6 @@ pub struct PlayerData {
 
     pub moondoge_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
-    pub active_moondoge_positions: u8,
-    pub active_lp_positions: u8,
     
     /// Staked dragon eggs (max 5 eggs)
     /// Stores the mint addresses of staked eggs
@@ -852,8 +850,6 @@ impl PlayerData {
         8 +     // pending_dbtc_rewards (u64)
         4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
-        1 +     // active_moondoge_positions (u8)
-        1 +     // active_lp_positions (u8)
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
         2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
@@ -983,13 +979,22 @@ pub enum BetType {
     /// Direct block selection (block_id: 1-24)
     Block { block_id: u8 },
     /// Faction + highest/lowest selection (faction_id + is_highest)
+    /// is_highest: true = highest block, false = lowest block
     FactionHighestLowest { faction_id: u8, is_highest: bool },
+    /// Faction with "both" option - bets on both blocks assigned to the faction
+    /// This creates 2 separate bets internally
+    FactionBoth { faction_id: u8 },
+    /// Random block selection (block_id will be randomly selected at bet time)
+    /// Note: For autominer use, this will be resolved when placing bets
+    RandomBlock,
 }
 
 impl BetType {
     // Anchor enum serialization: 1 byte discriminator + max variant size
     // Block variant: 1 byte discriminator + 1 byte block_id = 2 bytes
     // FactionHighestLowest variant: 1 byte discriminator + 1 byte faction_id + 1 byte is_highest = 3 bytes
+    // FactionBoth variant: 1 byte discriminator + 1 byte faction_id = 2 bytes
+    // RandomBlock variant: 1 byte discriminator = 1 byte
     // Max size is 3 bytes
     pub const LEN: usize = 3;
 }
@@ -1053,6 +1058,25 @@ impl UserGameBet {
                 } else {
                     None
                 }
+            }
+            BetType::FactionBoth { faction_id } => {
+                // For "both", return the highest block (used for validation)
+                let mut faction_blocks: Vec<u8> = Vec::new();
+                for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
+                    if *assigned_faction == *faction_id {
+                        faction_blocks.push((block_idx + 1) as u8);
+                    }
+                }
+                if faction_blocks.len() == BLOCKS_PER_FACTION {
+                    Some(*faction_blocks.iter().max().unwrap())
+                } else {
+                    None
+                }
+            }
+            BetType::RandomBlock => {
+                // Random block - cannot determine without runtime context
+                // This should not be stored in UserGameBet, only used during batch betting
+                None
             }
         }
     }
