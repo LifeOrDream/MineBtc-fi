@@ -705,27 +705,44 @@ async function setRaydiumPoolState(moonbaseProgram) {
     }
 
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-    const dogeBtcMiningPDA = new PublicKey(deploymentFile.moonbase_program_initialized.dogeBtcMining_address);
     const poolStatePubkey = new PublicKey(raydiumPoolState);
 
+    // Derive vault PDAs
+    const [solRewardsVaultPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('staker-sol-reward-vault')],
+        moonbaseProgram.programId
+    );
+
+    const [solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('sol-prize-pot')],
+        moonbaseProgram.programId
+    );
+
     console.log(COLOR_INFO, `🔑 Pool State Address: ${poolStatePubkey.toString()}`);
+    console.log(COLOR_INFO, `🔑 SOL Rewards Vault: ${solRewardsVaultPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 SOL Prize Pot Vault: ${solPrizePotVaultPDA.toString()}`);
 
     try {
         const tx = await moonbaseProgram.methods
             .setRaydiumPoolState(poolStatePubkey)
             .accounts({
                 globalConfig: globalConfigPDA,
-                dogeBtcMining: dogeBtcMiningPDA,
+                solRewardsVault: solRewardsVaultPDA,
+                solPrizePotVault: solPrizePotVaultPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
             .rpc();
 
         console.log(COLOR_SUCCESS, '✅ Raydium pool state set successfully!');
+        console.log(COLOR_SUCCESS, '✅ SOL rewards vault initialized!');
+        console.log(COLOR_SUCCESS, '✅ SOL prize pot vault initialized!');
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.raydium_pool_state_set = {
             pool_state_address: poolStatePubkey.toString(),
+            sol_rewards_vault: solRewardsVaultPDA.toString(),
+            sol_prize_pot_vault: solPrizePotVaultPDA.toString(),
             tx_signature: tx,
             timestamp: new Date().toISOString()
         };

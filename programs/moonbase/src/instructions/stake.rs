@@ -793,8 +793,15 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Resul
     };
     
     // Transfer SOL rewards to user (after referral fee)
-    **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += player_sol;
-    **ctx.accounts.sol_rewards_vault.to_account_info().try_borrow_mut_lamports()? -= total_pending;
+    msg!("   Transferring {} SOL from sol_rewards_vault to user", (player_sol as f64 / 1e9));
+    helper::transfer_from_sol_rewards_vault(
+        &ctx.accounts.sol_rewards_vault.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        player_sol,
+        ctx.bumps.sol_rewards_vault,
+    )?;
+    msg!("     ✓ SOL rewards transferred to user");
     
     // Update reward debts to prevent double-claiming
     player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
@@ -1003,9 +1010,15 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
     
     // Transfer SOL if any
     if pending_sol > 0 {
-        **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += pending_sol;
-        **ctx.accounts.sol_rewards_vault.to_account_info().try_borrow_mut_lamports()? -= pending_sol;
-        msg!("   ✓ Transferred {} SOL", pending_sol as f64 / 1e9);
+        msg!("   Transferring {} SOL from sol_rewards_vault to referrer", (pending_sol as f64 / 1e9));
+        helper::transfer_from_sol_rewards_vault(
+            &ctx.accounts.sol_rewards_vault.to_account_info(),
+            &ctx.accounts.authority.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            pending_sol,
+            ctx.bumps.sol_rewards_vault,
+        )?;
+        msg!("     ✓ Transferred {} SOL", pending_sol as f64 / 1e9);
     }
     
     // Transfer DogeBtc if any
@@ -1541,6 +1554,8 @@ pub struct ClaimReferralRewards<'info> {
     /// Referrer claiming rewards
     #[account(mut)]
     pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
     
     /// Token-2022 program for SPL-22 token operations
     pub token_program: Program<'info, Token2022>,

@@ -162,6 +162,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
 
 /// Set the Raydium pool state address (admin only)
+/// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
 /// 
 /// Security measure to prevent using malicious pools for swaps.
 /// Only the authorized Raydium pool can be used for price discovery and liquidity operations.
@@ -169,7 +170,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 /// # Parameters
 /// - `raydium_pool_state`: The authorized Raydium pool state address
 pub fn set_raydium_pool_state_internal(
-    ctx: Context<UpdateConfigAc>,
+    ctx: Context<SetRaydiumPoolState>,
     raydium_pool_state: Pubkey,
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
@@ -182,6 +183,46 @@ pub fn set_raydium_pool_state_internal(
     global_config.raydium_pool_state = raydium_pool_state;
 
     msg!("✅ Set Raydium pool state: {}", raydium_pool_state);
+    
+    // Initialize sol_rewards_vault if not already initialized
+    msg!("   Initializing sol_rewards_vault...");
+    let sol_rewards_vault_lamports = ctx.accounts.sol_rewards_vault.lamports();
+    if sol_rewards_vault_lamports == 0 {
+        // Transfer 1 lamport to make it rent-exempt
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.sol_rewards_vault.to_account_info(),
+                },
+            ),
+            1,
+        )?;
+        msg!("     ✓ sol_rewards_vault initialized (bump: {})", ctx.bumps.sol_rewards_vault);
+    } else {
+        msg!("     ℹ️ sol_rewards_vault already initialized");
+    }
+    
+    // Initialize sol_prize_pot_vault if not already initialized
+    msg!("   Initializing sol_prize_pot_vault...");
+    let sol_prize_pot_vault_lamports = ctx.accounts.sol_prize_pot_vault.lamports();
+    if sol_prize_pot_vault_lamports == 0 {
+        // Transfer 1 lamport to make it rent-exempt
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                },
+            ),
+            1,
+        )?;
+        msg!("     ✓ sol_prize_pot_vault initialized (bump: {})", ctx.bumps.sol_prize_pot_vault);
+    } else {
+        msg!("     ℹ️ sol_prize_pot_vault already initialized");
+    }
 
     Ok(())
 }
@@ -1096,6 +1137,43 @@ pub struct Initialize<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetRaydiumPoolState<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: SOL rewards vault for stakers (System Account, 0-byte PDA)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
+        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub sol_rewards_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL prize pot vault (System Account, 0-byte PDA)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
+        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
     pub system_program: Program<'info, System>,
 }
 

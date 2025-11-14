@@ -305,7 +305,6 @@ fn internal_join_round<'info>(
     assert!(target_faction == faction_state.faction_id);
 
     // Determine if using ticket or SOL
-    let is_ticket_bet = use_ticket.is_some();
     let (fee_amount, net_amount, points_amount) = if let Some(ticket_type_index) = use_ticket {
         msg!("   Using ticket type index: {}", ticket_type_index);
         require!(  (ticket_type_index as usize) < player_data.free_tickets.len() && (ticket_type_index as usize) < player_data.free_tickets_remaining.len(), ErrorCode::InvalidParameters );
@@ -344,16 +343,18 @@ fn internal_join_round<'info>(
             dbtc_stakers_fee = stakers_fee / 2;
             let dbtc_reward_inc = helper::mul_div(dbtc_stakers_fee, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
             faction_state.dbtc_sol_reward_index += dbtc_reward_inc;    
-            **sol_rewards_vault.try_borrow_mut_lamports()? += dbtc_stakers_fee;
-            **payer.try_borrow_mut_lamports()? -= dbtc_stakers_fee;
+            msg!("   Transferring dbtc stakers fee ({} SOL) to sol_rewards_vault", (dbtc_stakers_fee as f64 / 1_000_000_000.0));
+            helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, dbtc_stakers_fee)?;
+            msg!("     ✓ DBTC stakers fee transferred to sol_rewards_vault");
         }
         
         if stakers_fee > 0 && faction_state.total_lp_hashpower > 0 {
             lp_stakers_fee = stakers_fee / 2;
             let lp_reward_inc = helper::mul_div(lp_stakers_fee, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
             faction_state.lp_sol_reward_index += lp_reward_inc;
-            **sol_rewards_vault.try_borrow_mut_lamports()? += lp_stakers_fee;
-            **payer.try_borrow_mut_lamports()? -= lp_stakers_fee;
+            msg!("   Transferring lp stakers fee ({} SOL) to sol_rewards_vault", (lp_stakers_fee as f64 / 1_000_000_000.0));
+            helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, lp_stakers_fee)?;
+            msg!("     ✓ LP stakers fee transferred to sol_rewards_vault");
         }
 
         // Transfer remaining protocol fees to sol_treasury
@@ -365,8 +366,8 @@ fn internal_join_round<'info>(
         }    
 
         // Transfer net amount to prize pot
-        **sol_prize_pot_vault.try_borrow_mut_lamports()? += net;
-        **payer.try_borrow_mut_lamports()? -= net;
+        msg!("   Transferring net amount ({} SOL) to sol_prize_pot_vault", (net as f64 / 1_000_000_000.0));
+        helper::transfer_to_sol_prize_pot_vault(payer, sol_prize_pot_vault, system_program, net)?;
         msg!("     ✓ Net amount transferred to prize pot");
         
         (fee_amount, net, net)

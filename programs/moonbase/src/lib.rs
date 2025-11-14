@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("8DKxcyBbVB67E2kG8kPV66fxYWXesRGmyV2GvwEu8ytP");
+declare_id!("CHDRVyhzHN1eNU2hzzSKrDgGo8UpVqzvwq9TKWKiKATD");
 
 #[program]
 pub mod moonbase {
@@ -42,8 +42,9 @@ pub mod moonbase {
 
     /// Set the Raydium pool state address (admin only)
     /// Security: Prevents using malicious pools for swaps
+    /// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
     pub fn set_raydium_pool_state(
-        ctx: Context<UpdateConfigAc>,
+        ctx: Context<SetRaydiumPoolState>,
         raydium_pool_state: Pubkey,
     ) -> Result<()> {
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)

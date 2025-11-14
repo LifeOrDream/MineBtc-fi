@@ -29,6 +29,100 @@ pub fn transfer_to_sol_treasury<'info>(
     )
 }
 
+// Helper function to transfer SOL to the sol_rewards_vault PDA
+pub fn transfer_to_sol_rewards_vault<'info>(
+    from: &AccountInfo<'info>,
+    sol_rewards_vault: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_rewards_vault.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL to the sol_prize_pot_vault PDA
+pub fn transfer_to_sol_prize_pot_vault<'info>(
+    from: &AccountInfo<'info>,
+    sol_prize_pot_vault: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_prize_pot_vault.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL FROM sol_rewards_vault to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_sol_rewards_vault<'info>(
+    sol_rewards_vault: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    let seeds = &[
+        STAKER_SOL_REWARD_VAULT_SEED.as_ref(),
+        &[vault_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: sol_rewards_vault.to_account_info(),
+                to: to.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL FROM sol_prize_pot_vault to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_sol_prize_pot_vault<'info>(
+    sol_prize_pot_vault: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    let seeds = &[
+        SOL_PRIZE_POT_VAULT_SEED.as_ref(),
+        &[vault_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: sol_prize_pot_vault.to_account_info(),
+                to: to.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )
+}
+
 // Helper function to transfer WSOL to multisig token account
 // Wraps SOL to WSOL first, then transfers WSOL
 pub fn transfer_wsol_to_multisig<'info>(
