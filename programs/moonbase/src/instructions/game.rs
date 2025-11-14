@@ -84,8 +84,6 @@ pub fn start_round(
     // Randomly assign 12 factions to 24 blocks (2 blocks per faction)
     // Use commit hash + slot for deterministic but unpredictable randomness
     msg!("   Assigning {} factions to {} blocks ({} blocks per faction)", NUM_FACTIONS, NUM_BLOCKS, BLOCKS_PER_FACTION);
-    let mut block_assignments = [0u8; NUM_BLOCKS];
-    let mut faction_blocks_assigned = [0u8; NUM_FACTIONS]; // Track blocks assigned per faction
     
     // Create seed for randomness: commit_hash + current_slot
     let mut random_seed = Vec::new();
@@ -95,35 +93,39 @@ pub fn start_round(
     let hash_bytes = hash.to_bytes();
     msg!("   Generated randomness seed from commit hash + slot {}", clock.slot);
     
-    // Assign factions to blocks
-    let mut hash_offset = 0;
-    for block_idx in 0..NUM_BLOCKS {
-        // Find a faction that hasn't been assigned 2 blocks yet
-        let mut attempts = 0;
-        loop {
-            if attempts >= 100 {
-                msg!("   ✗ Failed to assign faction to block {} after 100 attempts", block_idx + 1);
-                return Err(ErrorCode::InvalidParameters.into()); // Safety check
-            }
-            
-            // Use hash bytes for randomness
-            let random_byte = hash_bytes[hash_offset % 32];
-            let faction_id = (random_byte % NUM_FACTIONS as u8) as usize;
-            
-            if faction_blocks_assigned[faction_id] < BLOCKS_PER_FACTION as u8 {
-                block_assignments[block_idx] = faction_id as u8;
-                faction_blocks_assigned[faction_id] += 1;
-                hash_offset += 1;
-                break;
-            }
-            
-            hash_offset += 1;
-            attempts += 1;
+    // Create a list with each faction appearing BLOCKS_PER_FACTION times
+    // This guarantees each faction gets exactly BLOCKS_PER_FACTION blocks
+    let mut faction_list = Vec::new();
+    for faction_id in 0..NUM_FACTIONS {
+        for _ in 0..BLOCKS_PER_FACTION {
+            faction_list.push(faction_id as u8);
         }
     }
+    msg!("   Created faction list with {} entries ({} factions × {} blocks each)", faction_list.len(), NUM_FACTIONS, BLOCKS_PER_FACTION);
     
-    // Verify all factions got exactly 2 blocks
+    // Shuffle the faction list using Fisher-Yates algorithm with hash bytes as randomness
+    let mut hash_offset = 0;
+    for i in (1..faction_list.len()).rev() {
+        // Use hash bytes for randomness (cycling through hash bytes)
+        let random_byte = hash_bytes[hash_offset % 32];
+        let j = (random_byte as usize) % (i + 1);
+        faction_list.swap(i, j);
+        hash_offset += 1;
+    }
+    msg!("   Shuffled faction list using hash-based randomness");
+    
+    // Assign shuffled factions to blocks
+    let mut block_assignments = [0u8; NUM_BLOCKS];
+    for (block_idx, &faction_id) in faction_list.iter().enumerate() {
+        block_assignments[block_idx] = faction_id;
+    }
+    
+    // Verify all factions got exactly BLOCKS_PER_FACTION blocks
     msg!("   Verifying block assignments...");
+    let mut faction_blocks_assigned = [0u8; NUM_FACTIONS];
+    for &faction_id in block_assignments.iter() {
+        faction_blocks_assigned[faction_id as usize] += 1;
+    }
     for (faction_idx, &count) in faction_blocks_assigned.iter().enumerate() {
         require!(count == BLOCKS_PER_FACTION as u8, ErrorCode::InvalidParameters);
         msg!("     Faction {}: {} blocks assigned", faction_idx, count);

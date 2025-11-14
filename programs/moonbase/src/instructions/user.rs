@@ -453,7 +453,7 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
             let mut faction_blocks: Vec<u8> = Vec::new();
             for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
                 if *assigned_faction == *faction_id {
-                    faction_blocks.push((block_idx + 1) as u8); // block_id is 1-indexed
+                    faction_blocks.push(block_idx as u8); // block_id is 1-indexed
                 }
             }
             
@@ -474,7 +474,7 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
             let mut faction_blocks: Vec<u8> = Vec::new();
             for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
                 if *assigned_faction == *faction_id {
-                    faction_blocks.push((block_idx + 1) as u8);
+                    faction_blocks.push( block_idx as u8);
                 }
             }
             require!(
@@ -487,7 +487,7 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
             // Random block - use clock slot for randomness
             let clock = Clock::get()?;
             let slot_bytes = clock.slot.to_le_bytes();
-            let random_block = ((slot_bytes[0] % 24) + 1) as u8; // 1-24
+            let random_block = ((slot_bytes[0] % 24)) as u8; // 0-23
             Ok(random_block)
         }
     }

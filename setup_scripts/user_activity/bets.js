@@ -152,10 +152,10 @@ async function main() {
     // Run tests (uncomment the ones you want to test)
     
     // await testInitializePlayer();
-    await testJoinRoundBlock();
-
+    // await testJoinRoundBlock();
     // await testJoinRoundFaction();
-    // await testJoinRoundBatch();
+
+    await testJoinRoundBatch();
     // await testJoinRoundBatchFactions();
 
     // await testClaimRewards();

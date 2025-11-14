@@ -279,6 +279,7 @@ export async function joinRound(walletPath, amount, betType, useTicket = null) {
       );
     } else if (betType.factionHighestLowest) {
       const factionName = getFactionName(betType.factionHighestLowest.factionId);
+      console.log(`factionName ${factionName}`)
       factionStatePDA = derivePDA(
         [Buffer.from(FACTION_STATE_SEED), Buffer.from(factionName)],
         _programId
@@ -354,7 +355,7 @@ export async function joinRoundBatch(walletPath, amountPerBet, betTypes, useTick
     const gameSession = await _program.account.gameSession.fetch(gameSessionPDA);
     let factionId;
     if (betTypes[0].block) {
-      const blockIndex = betTypes[0].block.blockId - 1;
+      const blockIndex = betTypes[0].block.blockId;
       factionId = gameSession.blockAssignments[blockIndex];
     } else if (betTypes[0].factionHighestLowest) {
       factionId = betTypes[0].factionHighestLowest.factionId;
@@ -365,6 +366,8 @@ export async function joinRoundBatch(walletPath, amountPerBet, betTypes, useTick
     }
     
     const factionName = getFactionName(factionId);
+    console.log(`factionName ${factionName}`)
+    console.log(`factionId ${factionId}`)
     const factionStatePDA = derivePDA(
       [Buffer.from(FACTION_STATE_SEED), Buffer.from(factionName)],
       _programId
@@ -392,6 +395,7 @@ export async function joinRoundBatch(walletPath, amountPerBet, betTypes, useTick
     console.log(`✅ Joined round (batch): ${tx}`);
     return true;
   } catch (error) {
+    console.error(error)
     console.error(`❌ Failed to join round (batch):`, error.message);
     return false;
   }
