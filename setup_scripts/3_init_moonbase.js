@@ -138,8 +138,25 @@ async function main() {
     console.log(COLOR_INFO, '🚀 MoonBase Program ID:', ID_MOONBASE_PROGRAM.toString());
     console.log(COLOR_INFO, '🪙 DOGE_BTC Token Mint:', MOONDOGE_TOKEN_MINT.toString());
 
-    const moonbaseProgram = new Program(IDL_MOONBASE, provider);
+    // Initialize program with explicit program ID from deployment
+    // Note: Program constructor signature is: new Program(idl, programId, provider)
+    const moonbaseProgram = new Program(IDL_MOONBASE, ID_MOONBASE_PROGRAM, provider);
     console.log(COLOR_SUCCESS, '✅ Connected to program:', moonbaseProgram.programId.toString());
+    
+    // Verify program ID matches deployment
+    const programIdFromIdl = IDL_MOONBASE.metadata?.address || IDL_MOONBASE.programId;
+    if (programIdFromIdl && programIdFromIdl !== ID_MOONBASE_PROGRAM.toString()) {
+        console.log(COLOR_WARNING, `⚠️ IDL program ID (${programIdFromIdl}) differs from deployment (${ID_MOONBASE_PROGRAM.toString()})`);
+        console.log(COLOR_INFO, `   Using deployment program ID: ${ID_MOONBASE_PROGRAM.toString()}`);
+    }
+    
+    // Double-check the program ID is correct
+    if (!moonbaseProgram.programId.equals(ID_MOONBASE_PROGRAM)) {
+        console.error(COLOR_ERROR, `❌ Program ID mismatch!`);
+        console.error(COLOR_ERROR, `   Program instance ID: ${moonbaseProgram.programId.toString()}`);
+        console.error(COLOR_ERROR, `   Deployment Program ID: ${ID_MOONBASE_PROGRAM.toString()}`);
+        throw new Error('Program ID mismatch between program instance and deployment file');
+    }
 
     try {
         // 1. Initialize MoonBase Program (GlobalConfig + DogeBtcMining + SOL Treasury)
@@ -149,7 +166,7 @@ async function main() {
         await setRaydiumPoolState(moonbaseProgram);
 
         // 3. Add Factions (12 factions for the raffle)
-        // await addFactions(moonbaseProgram);
+        await addFactions(moonbaseProgram);
 
         // 2. Initialize System Accounts (Referral + Buybacks)
         await initializeSystemAccounts(moonbaseProgram);
@@ -350,21 +367,95 @@ async function addFactions(moonbaseProgram) {
     const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
     const addedFactions = [];
 
+    // First, fetch the current global config to get the current faction count
+    let currentFactionCount = 0;
+    try {
+        const globalConfig = await moonbaseProgram.account.globalConfig.fetch(globalConfigPDA);
+        currentFactionCount = globalConfig.supportedFactions?.length || 0;
+        console.log(COLOR_INFO, `📊 Current factions in GlobalConfig: ${currentFactionCount}`);
+    } catch (error) {
+        console.log(COLOR_WARNING, `⚠️ Could not fetch GlobalConfig, assuming 0 factions`);
+        currentFactionCount = 0;
+    }
+
     console.log(COLOR_INFO, `📝 Adding ${config.factions.length} factions...`);
 
     for (let i = 0; i < config.factions.length; i++) {
         const faction = config.factions[i];
         const factionId = i;
 
+        // CRITICAL: The faction_id must match the current faction count in GlobalConfig
+        // This matches the Rust validation: require!(faction_id == current_faction_count as u8, ErrorCode::InvalidFactionId)
+        if (factionId !== currentFactionCount) {
+            console.log(COLOR_WARNING, `   ⚠️ Skipping faction ${factionId} - expected faction ID ${currentFactionCount} (current count: ${currentFactionCount})`);
+            console.log(COLOR_WARNING, `      Factions must be added sequentially starting from ${currentFactionCount}`);
+            continue;
+        }
+
         // Derive FactionState PDA
-        const [factionStatePDA] = PublicKey.findProgramAddressSync(
+        // Rust seeds: [FACTION_STATE_SEED.as_ref(), &[faction_id]]
+        // Where FACTION_STATE_SEED = b"faction" (7 bytes)
+        // Seeds: [b"faction", faction_id_u8]
+        const [factionStatePDA, bump] = PublicKey.findProgramAddressSync(
             [Buffer.from('faction'), Buffer.from([factionId])],
             moonbaseProgram.programId
         );
-
+        
         console.log(`   ${i + 1}. ${faction.name} (ID: ${factionId})`);
+        console.log(`      FactionState PDA: ${factionStatePDA.toString()}`);
+        console.log(`      Bump: ${bump}`);
+
+        // Check if faction state already exists and verify it matches
+        let factionStateExists = false;
+        let existingFactionId = null;
+        let shouldSkip = false;
+        
+        try {
+            const existingFactionState = await moonbaseProgram.account.factionState.fetch(factionStatePDA);
+            if (existingFactionState) {
+                factionStateExists = true;
+                // Handle BN conversion if needed
+                existingFactionId = typeof existingFactionState.factionId === 'object' && existingFactionState.factionId?.toNumber 
+                    ? existingFactionState.factionId.toNumber()
+                    : existingFactionState.factionId;
+                    
+                console.log(COLOR_WARNING, `      ⚠️ FactionState already exists for faction ${factionId}`);
+                console.log(COLOR_DIM, `         Existing faction ID in account: ${existingFactionId}`);
+                
+                // If the faction ID matches, we can skip adding it
+                if (existingFactionId === factionId) {
+                    console.log(COLOR_INFO, `      ℹ️ Skipping - faction ${factionId} already initialized correctly`);
+                    addedFactions.push({
+                        faction_id: factionId,
+                        name: faction.name,
+                        faction_state_pda: factionStatePDA.toString(),
+                        status: 'already_exists',
+                        existing_faction_id: existingFactionId
+                    });
+                    shouldSkip = true;
+                } else {
+                    console.log(COLOR_WARNING, `      ⚠️ Faction ID mismatch! Account has ${existingFactionId}, trying to set ${factionId}`);
+                    console.log(COLOR_WARNING, `         This may cause a ConstraintSeeds error. Account may need to be closed first.`);
+                }
+            }
+        } catch (error) {
+            // Account doesn't exist, which is fine - we'll create it
+            factionStateExists = false;
+        }
+        
+        if (shouldSkip) {
+            continue;
+        }
 
         try {
+            // Verify the PDA derivation matches what Anchor expects
+            // Anchor will derive: [b"faction", faction_id] with the program ID
+            console.log(COLOR_DIM, `      Verifying PDA derivation...`);
+            console.log(COLOR_DIM, `         Program ID: ${moonbaseProgram.programId.toString()}`);
+            console.log(COLOR_DIM, `         Seeds: ["faction" (7 bytes), [${factionId}] (1 byte)]`);
+            console.log(COLOR_DIM, `         Expected PDA: ${factionStatePDA.toString()}`);
+            console.log(COLOR_DIM, `         Bump: ${bump}`);
+
             const tx = await moonbaseProgram.methods
                 .addFaction(faction.name, factionId)
                 .accounts({
@@ -382,16 +473,59 @@ async function addFactions(moonbaseProgram) {
                 faction_state_pda: factionStatePDA.toString(),
                 tx_signature: tx
             });
+            
+            // Increment the faction count for next iteration
+            currentFactionCount++;
         } catch (error) {
-            if (error.toString().includes("already in use") || error.toString().includes("MaxFactionsReached")) {
+            // Check for specific error types
+            const errorStr = error.toString();
+            
+            // Check if it's a ConstraintSeeds error - this means PDA mismatch
+            if (errorStr.includes("ConstraintSeeds")) {
+                console.error(COLOR_ERROR, `      ❌ ConstraintSeeds error for ${faction.name}`);
+                console.error(COLOR_ERROR, `         This means the PDA derivation doesn't match what Anchor expects.`);
+                console.error(COLOR_ERROR, `         Expected PDA: ${factionStatePDA.toString()}`);
+                console.error(COLOR_ERROR, `         Program ID used: ${moonbaseProgram.programId.toString()}`);
+                console.error(COLOR_ERROR, `         Seeds used: ["faction", [${factionId}]]`);
+                
+                // Try to extract the "Right" PDA from error logs if available
+                if (error.logs) {
+                    const logs = error.logs.join('\n');
+                    const rightMatch = logs.match(/Right:\s*([A-Za-z0-9]{32,44})/);
+                    if (rightMatch) {
+                        const rightPDA = rightMatch[1];
+                        console.error(COLOR_ERROR, `         Anchor derived PDA: ${rightPDA}`);
+                        console.error(COLOR_ERROR, `         Mismatch detected! Check program ID and seeds.`);
+                    }
+                }
+                
+                throw new Error(`ConstraintSeeds error: PDA derivation mismatch for faction ${factionId}. Check program ID and seeds.`);
+            }
+            
+            if (errorStr.includes("already in use") || 
+                errorStr.includes("MaxFactionsReached") ||
+                errorStr.includes("already exists")) {
                 console.log(COLOR_WARNING, `      ⚠️ ${faction.name} may already exist`);
+                console.log(COLOR_DIM, `         Error: ${errorStr.substring(0, 200)}`);
+                
                 addedFactions.push({
                     faction_id: factionId,
                     name: faction.name,
                     faction_state_pda: factionStatePDA.toString(),
-                    status: 'already_exists'
+                    status: 'error_or_exists',
+                    error: errorStr.substring(0, 200)
                 });
+                
+                // Still increment count if it already exists
+                currentFactionCount++;
+            } else if (errorStr.includes("InvalidFactionId")) {
+                console.error(COLOR_ERROR, `      ❌ InvalidFactionId error for ${faction.name}`);
+                console.error(COLOR_ERROR, `         Expected faction ID: ${currentFactionCount}, but got: ${factionId}`);
+                console.error(COLOR_ERROR, `         Factions must be added sequentially.`);
+                throw error;
             } else {
+                console.error(COLOR_ERROR, `      ❌ Failed to add ${faction.name}:`);
+                console.error(COLOR_ERROR, `         ${errorStr}`);
                 throw error;
             }
         }

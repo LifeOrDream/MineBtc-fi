@@ -50,7 +50,7 @@ if (!fs.existsSync(moonbaseIdlPath)) {
 const moonbaseIdl = JSON.parse(fs.readFileSync(moonbaseIdlPath, 'utf8'));
 
 // Load wallet keypair
-const walletPath = path.resolve(__dirname, "../../wallet-keypair.json");
+const walletPath = path.resolve(__dirname, "../../game_keypair.json");
 if (!fs.existsSync(walletPath)) {
   console.error(`❌ Wallet keypair not found at: ${walletPath}`);
   process.exit(1);
@@ -68,6 +68,7 @@ const wallet = new Wallet(walletKeypair);
 const provider = new AnchorProvider(connection, wallet, { commitment: config.network.commitment });
 const moonBaseProgram = new Program(moonbaseIdl, provider);
 const moonBaseProgramId = moonBaseProgram.programId;
+console.log(`moonBaseProgramId ${moonBaseProgramId.toString()}`);
 
 // Seeds
 const GLOBAL_CONFIG_SEED = "global-config";
@@ -129,12 +130,50 @@ function hashSeed(seed) {
 }
 
 /**
- * Get global game state
+ * Get global game state and return decoded/human-readable format
  */
 async function getGlobalGameState() {
   try {
     const globalState = await moonBaseProgram.account.globalGameSate.fetch(globalGameStatePDA);
-    return globalState;
+    
+    // Decode to human-readable format
+    const decoded = {
+      bump: globalState.bump,
+      isActive: globalState.isActive,
+      totalSolBets: globalState.totalSolBets ? globalState.totalSolBets.toString() : '0',
+      totalSolBetsSOL: globalState.totalSolBets 
+        ? (Number(globalState.totalSolBets) / LAMPORTS_PER_SOL).toFixed(4)
+        : '0.0000',
+      totalGlobalPassiveHashpower: globalState.totalGlobalPassiveHashpower 
+        ? globalState.totalGlobalPassiveHashpower.toString() 
+        : '0',
+      currentRoundId: globalState.currentRoundId ? globalState.currentRoundId.toNumber() : 0,
+      roundEndTimestamp: globalState.roundEndTimestamp ? globalState.roundEndTimestamp.toNumber() : 0,
+      roundEndDate: globalState.roundEndTimestamp 
+        ? new Date(globalState.roundEndTimestamp.toNumber() * 1000).toISOString()
+        : null,
+      roundDurationSeconds: globalState.roundDurationSeconds ? globalState.roundDurationSeconds.toNumber() : 0,
+      roundDurationMinutes: globalState.roundDurationSeconds 
+        ? (globalState.roundDurationSeconds.toNumber() / 60).toFixed(2)
+        : '0.00',
+      lastRoundId: globalState.lastRoundId ? globalState.lastRoundId.toNumber() : 0,
+      winningFactionId: globalState.winningFactionId !== undefined ? globalState.winningFactionId : null,
+      currentRoundCommit: globalState.currentRoundCommit 
+        ? Buffer.from(globalState.currentRoundCommit).toString('hex')
+        : null,
+      currentRoundSeed: globalState.currentRoundSeed 
+        ? Buffer.from(globalState.currentRoundSeed).toString('hex')
+        : null,
+      nextRoundCommit: globalState.nextRoundCommit 
+        ? Buffer.from(globalState.nextRoundCommit).toString('hex')
+        : null,
+      crankerBots: globalState.crankerBots 
+        ? globalState.crankerBots.map(pk => pk.toString())
+        : [],
+      crankerBotsCount: globalState.crankerBots ? globalState.crankerBots.length : 0,
+    };
+    
+    return decoded;
   } catch (error) {
     console.error(`❌ Error fetching global game state:`, error.message);
     throw error;
@@ -379,7 +418,7 @@ async function runLoop() {
   console.log(`🔗 RPC: ${config.network.rpc_url}`);
   console.log(`👛 Wallet: ${walletKeypair.publicKey.toString()}`);
   console.log(`⏰ Interval: 60 seconds\n`);
-  return;
+//   return;
 
   // Store seeds for commit-reveal scheme
   // currentRevealedSeed: seed for current round (to reveal when ending current round)
@@ -400,15 +439,29 @@ async function runLoop() {
     try {
       // Get current global game state
       const globalState = await getGlobalGameState();
-      const currentRoundId = globalState.currentRoundId.toNumber();
-      const roundEndTimestamp = globalState.roundEndTimestamp.toNumber();
-      const roundDurationSeconds = globalState.roundDurationSeconds.toNumber();
+      const currentRoundId = globalState.currentRoundId;
+      const roundEndTimestamp = globalState.roundEndTimestamp;
+      const roundDurationSeconds = globalState.roundDurationSeconds;
       const currentTimestamp = Math.floor(Date.now() / 1000);
       
-      console.log(`📊 Current round ID: ${currentRoundId}`);
-      console.log(`⏰ Round end timestamp: ${roundEndTimestamp}`);
-      console.log(`⏰ Current timestamp: ${currentTimestamp}`);
-      console.log(`⏰ Round duration: ${roundDurationSeconds} seconds`);
+      console.log(`📊 Global Game State:`);
+      console.log(`   Active: ${globalState.isActive ? '✅ Yes' : '❌ No'}`);
+      console.log(`   Current Round ID: ${currentRoundId}`);
+      console.log(`   Last Round ID: ${globalState.lastRoundId}`);
+      console.log(`   Winning Faction (last round): ${globalState.winningFactionId !== null ? globalState.winningFactionId : 'N/A'}`);
+      console.log(`   Total SOL Bets: ${globalState.totalSolBetsSOL} SOL (${globalState.totalSolBets} lamports)`);
+      console.log(`   Total Passive Hashpower: ${globalState.totalGlobalPassiveHashpower}`);
+      console.log(`   Round Duration: ${globalState.roundDurationMinutes} minutes (${roundDurationSeconds} seconds)`);
+      console.log(`   Round End: ${globalState.roundEndDate || 'N/A'}`);
+      console.log(`   Current Timestamp: ${new Date(currentTimestamp * 1000).toISOString()}`);
+      console.log(`   Cranker Bots: ${globalState.crankerBotsCount} whitelisted`);
+      if (globalState.crankerBotsCount > 0) {
+        globalState.crankerBots.forEach((bot, idx) => {
+          console.log(`     ${idx + 1}. ${bot}`);
+        });
+      }
+
+      return;
 
       // Check if round has ended or needs to be started
       if (currentRoundId === 0 || currentTimestamp >= roundEndTimestamp) {

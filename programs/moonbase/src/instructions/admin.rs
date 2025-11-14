@@ -970,6 +970,38 @@ pub fn remove_cranker_bot_internal(
     Ok(())
 }
 
+/// Switch game state (toggle is_active) (admin only)
+/// 
+/// Toggles the `is_active` field in the global game state.
+/// When `is_active` is false, rounds cannot be started or ended.
+/// 
+/// This allows admins to pause/resume the game without losing state.
+pub fn switch_game_state_internal(
+    ctx: Context<UpdateGameState>,
+) -> Result<()> {
+    msg!("🔄 [switch_game_state_internal] Switching game state");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    
+    let old_state = global_game_state.is_active;
+    global_game_state.is_active = !global_game_state.is_active;
+    let new_state = global_game_state.is_active;
+    
+    msg!("   Game state: {} -> {}", old_state, new_state);
+    
+    if new_state {
+        msg!("   ✅ Game is now ACTIVE - rounds can be started/ended");
+    } else {
+        msg!("   ⏸️  Game is now PAUSED - rounds cannot be started/ended");
+    }
+    
+    msg!("✅ [switch_game_state_internal] Game state switched successfully");
+    msg!("   New state: {}", if new_state { "ACTIVE" } else { "PAUSED" });
+    
+    Ok(())
+}
+
  
  
 

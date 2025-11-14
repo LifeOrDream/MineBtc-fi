@@ -259,6 +259,15 @@ pub mod moonbase {
         admin::remove_cranker_bot_internal(ctx, bot_pubkey)
     }
 
+    /// Switch game state (toggle is_active) (admin only)
+    /// 
+    /// Toggles the game's active state. When paused, rounds cannot be started or ended.
+    pub fn switch_game_state(
+        ctx: Context<UpdateGameState>,
+    ) -> Result<()> {
+        admin::switch_game_state_internal(ctx)
+    }
+
 
  
     // ----------------------------------------------------------------------------------------
