@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("6ASNXduYgDJGY9JFK2NDe4dkdmhijeDaJLmrVjxcHRQy");
+declare_id!("JD4heFhbxgsFjz4ULGGPc7P4nAnQiH42p1Lyd8uQYxXc");
 
 #[program]
 pub mod moonbase {
@@ -273,7 +273,7 @@ pub mod moonbase {
     /// - Stakers percentage (distributed to stakers)
     ///
     /// The remaining amount goes to the fee recipient (dev earnings).
-    pub fn withdraw_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
+    pub fn distribute_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
         economy::distribute_sol_fees_internal(ctx)
     }
 

@@ -28,6 +28,7 @@ pub struct SolFeesWithdrawn {
     pub dev_earnings_amount: u64
 }
  
+#[event]
 pub struct MiningTokenVaultSet {
     /// The authority that set the token vault
     pub authority: Pubkey,
