@@ -313,5 +313,12 @@
     "lp_token_owner": "9jXnJN4jLnxrZyEJMotgJ9uSR9sQbcJ9AQhMxCHR5ogA",
     "lp_mint": "AeB5q5NBcZa25eM5qcqLNmfNDSEQniRizEboZaWmyx4G",
     "timestamp": "2025-11-14T15:59:17.813Z"
+  },
+  "cranker_bots_added": {
+    "bots": [
+      "2pCfgTRU8whawAbmrSzAaWMEM2pNvcbNMqkb1zPYAS6K"
+    ],
+    "tx_signature": "3cfJ7ALccFdve5dfDNEYU4DRwwy1kgXx8qwQYdNXgEmrkNvxPKM3gj6Mv4BAU5zvbBAEfK7Ri2eJZ8Qbw6YG713G",
+    "timestamp": "2025-11-14T16:44:08.430Z"
   }
 }

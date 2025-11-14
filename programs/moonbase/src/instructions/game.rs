@@ -31,52 +31,33 @@ pub fn start_round(
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
-    
-    msg!("   Current round ID: {}", global_state.current_round_id);
-    msg!("   Requested round ID: {}", round_id);
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    // Validate game is active
+    require!(global_state.is_active, ErrorCode::InvalidParameters);
+    msg!("   ✓ Game is active");
+
+    msg!("   Current round ID: {}, Requested round ID: {}", global_state.current_round_id, round_id);
+    msg!("   Current timestamp: {}, Round end timestamp: {}", clock.unix_timestamp, global_state.round_end_timestamp);
     
     // Validate round_id matches expected value (current_round_id + 1)
-    let expected_round_id = global_state.current_round_id
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let expected_round_id = global_state.current_round_id + 1;
     require!(
         round_id == expected_round_id,
         ErrorCode::InvalidRound
     );
-    msg!("   ✓ Round ID validated: {} (expected: {})", round_id, expected_round_id);
     
     // Validate caller is a whitelisted cranker bot
-    msg!("   Validating cranker bot authorization...");
     require!(
         global_state.cranker_bots.contains(&ctx.accounts.authority.key()),
         ErrorCode::Unauthorized
     );
     msg!("     ✓ Caller is whitelisted cranker bot");
     
-    // Validate game is active
-    require!(global_state.is_active, ErrorCode::InvalidParameters);
-    msg!("   ✓ Game is active");
-    
     // Validate that previous round has ended (if not first round)
-    if global_state.current_round_id > 0 {
-        require!(
-            clock.unix_timestamp >= global_state.round_end_timestamp,
-            ErrorCode::RoundNotEnded
-        );
-        msg!("   ✓ Previous round has ended");
-    } else {
-        msg!("   ✓ First round - no previous round to check");
-    }
-    
-    // Use provided commit_hash or next_round_commit from global_state
+    require!( clock.unix_timestamp >= global_state.round_end_timestamp, ErrorCode::RoundNotEnded);
+
+        // Use provided commit_hash or next_round_commit from global_state
     let commit = commit_hash.unwrap_or(global_state.next_round_commit);
-    if commit_hash.is_some() {
-        msg!("   Using provided commit hash");
-    } else {
-        msg!("   Using next_round_commit from global_state");
-    }
+    msg!("   Commit hash: {:?}", commit);
     
     // Set commit hash for this round
     global_state.current_round_commit = commit;
@@ -93,9 +74,7 @@ pub fn start_round(
     game_session.bump = ctx.bumps.game_session;
     game_session.round_id = round_id;
     game_session.round_start_timestamp = clock.unix_timestamp;
-    game_session.round_end_timestamp = clock.unix_timestamp
-        .checked_add(global_state.round_duration_seconds)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.round_end_timestamp = clock.unix_timestamp + global_state.round_duration_seconds;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
     
@@ -103,10 +82,7 @@ pub fn start_round(
     game_session.user_block_indexes = vec![0u64; NUM_BLOCKS];
     game_session.sol_bets_indexes = vec![0u64; NUM_BLOCKS];
     game_session.points_bets_indexes = vec![0u64; NUM_BLOCKS];
-    msg!("   Initialized block tracking arrays (24 blocks)");
-    msg!("   Round duration: {} seconds", global_state.round_duration_seconds);
-    msg!("   Round starts at: {}", game_session.round_start_timestamp);
-    msg!("   Round ends at: {}", game_session.round_end_timestamp);
+    msg!("   Initialized block tracking arrays (24 blocks). Round starts at: {} and ends at: {}", game_session.round_start_timestamp, game_session.round_end_timestamp);
     
     // Randomly assign 12 factions to 24 blocks (2 blocks per faction)
     // Use commit hash + slot for deterministic but unpredictable randomness
@@ -156,6 +132,7 @@ pub fn start_round(
         msg!("     Faction {}: {} blocks assigned", faction_idx, count);
     }
     msg!("   ✓ All factions assigned exactly {} blocks", BLOCKS_PER_FACTION);
+    msg!("   Block assignments: {:?}", block_assignments);
     
     game_session.block_assignments = block_assignments;
     game_session.winning_block = 0; // Will be set in end_round
@@ -175,7 +152,6 @@ pub fn start_round(
     game_session.motherlode_hit_faction_id = 0;
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
-    
     
     msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);

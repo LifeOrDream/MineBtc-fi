@@ -47,8 +47,6 @@ const MOONDOGE_TOKEN_MINT = deploymentFile.dbtc_mint_address ?
 const ID_MOONBASE_PROGRAM = deploymentFile.MOON_BASE_PROGRAM_ID ? 
     new PublicKey(deploymentFile.MOON_BASE_PROGRAM_ID) : null;
 
-const RAYDIUM_PROGRAM_ID = deploymentFile.RAYDIUM_CP_PROGRAM_ID;
-
 // Mining configuration
 const MINING_START_TIMESTAMP = config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
@@ -75,6 +73,21 @@ const walletKeypair = (() => {
         throw e;
     }
 })();
+
+
+const gameKeypair = (() => {
+    try {
+        const gameKeypairPath = path.resolve(__dirname, "../game_keypair.json");
+        return Keypair.fromSecretKey(
+            new Uint8Array(JSON.parse(fs.readFileSync(gameKeypairPath, 'utf-8')))
+        );
+    } catch (e) {
+        console.error(COLOR_ERROR, "❌ Failed to load game wallet keypair:", e);
+        console.error(COLOR_ERROR, `   Expected path: ${path.resolve(__dirname, config.deployment.paths.game_keypair || 'undefined')}`);
+        throw e;
+    }
+})();
+
 
 // Create wallet interface
 const wallet = {
@@ -199,9 +212,15 @@ async function main() {
 
         // 14. Initialize LP Token Accounts (for Raydium integration)
         await initializeLpTokenAccounts(moonbaseProgram);
+        // return;
+
+        console.log(COLOR_STEP, '\n================ [ ADDING GAME CRANKER BOT ] ================');
+        console.log(COLOR_INFO, `🔑 Game Cranker Bot: ${gameKeypair.publicKey.toString()}`);
+
+        await addGameCrankerBot(moonbaseProgram, gameKeypair.publicKey.toString());
 
         // Print completion summary
-        printCompletionSummary();
+        // printCompletionSummary();
 
     } catch (error) {
         console.error(COLOR_ERROR, '❌ Initialization failed:', error);
@@ -1272,6 +1291,99 @@ async function initializeLpTokenAccounts(moonbaseProgram) {
         console.log(COLOR_WARNING, '   This may not be critical - LP accounts can be created on-demand');
     }
 }
+
+
+async function addGameCrankerBot(moonbaseProgram, botWalletAddress) {
+    // Check if cranker bots are already added
+    if (deploymentFile.cranker_bots_added) {
+        console.log(COLOR_INFO, 'ℹ️ Cranker bots already added. Skipping...');
+        return;
+    }
+
+    console.log(COLOR_STEP, '\n================ [ ADDING CRANKER BOTS ] ================');
+
+    // Check if game state is initialized
+    if (!deploymentFile.game_state_initialized) {
+        console.log(COLOR_WARNING, '⚠️ Game state not initialized. Skipping cranker bot addition...');
+        return;
+    }
+
+    const botPubkey = new PublicKey(botWalletAddress);
+    console.log(COLOR_INFO, `🤖 Adding cranker bot: ${botPubkey.toString()}`);
+    // return;
+
+    try {
+        // Load PDAs
+        const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+        const globalGameStatePDA = new PublicKey(deploymentFile.game_state_initialized.global_game_state_pda);
+
+        console.log(COLOR_INFO, `   Global Config PDA: ${globalConfigPDA.toString()}`);
+        console.log(COLOR_INFO, `   Global Game State PDA: ${globalGameStatePDA.toString()}`);
+        console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
+
+        // Check if bot is already added
+        try {
+            const gameState = await moonbaseProgram.account.globalGameSate.fetch(globalGameStatePDA);
+            if (gameState.crankerBots && gameState.crankerBots.some(bot => bot.equals(botPubkey))) {
+                console.log(COLOR_WARNING, `   ⚠️ Bot ${botPubkey.toString()} is already whitelisted`);
+                deploymentFile.cranker_bots_added = {
+                    bots: [botPubkey.toString()],
+                    timestamp: new Date().toISOString(),
+                    status: 'already_exists'
+                };
+                saveDeploymentData();
+                return;
+            }
+        } catch (error) {
+            // Game state might not exist yet, continue
+        }
+
+        // Build and send transaction
+        const tx = await moonbaseProgram.methods
+            .addCrankerBot(botPubkey)
+            .accounts({
+                globalGameState: globalGameStatePDA,
+                globalConfig: globalConfigPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+
+        console.log(COLOR_SUCCESS, `✅ Cranker bot added successfully!`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`);
+
+        deploymentFile.cranker_bots_added = {
+            bots: [botPubkey.toString()],
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        saveDeploymentData();
+    } catch (error) {
+        const errorStr = error.toString();
+        if (errorStr.includes("already") || errorStr.includes("InvalidParameters")) {
+            console.log(COLOR_WARNING, `   ⚠️ Bot may already be whitelisted or max bots reached`);
+            console.log(COLOR_DIM, `   Error: ${errorStr.substring(0, 200)}`);
+            
+            deploymentFile.cranker_bots_added = {
+                bots: [botPubkey.toString()],
+                status: 'error_or_exists',
+                error: errorStr.substring(0, 200),
+                timestamp: new Date().toISOString()
+            };
+            saveDeploymentData();
+        } else {
+            console.error(COLOR_ERROR, '❌ Failed to add cranker bot:', error);
+            throw error;
+        }
+    }
+}
+
+
+
+
+
+
 
 function printCompletionSummary() {
     console.log(COLOR_STEP, '\n🎉 ================================ INITIALIZATION COMPLETE ================================');

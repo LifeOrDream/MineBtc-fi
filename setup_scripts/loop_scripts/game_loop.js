@@ -461,8 +461,6 @@ async function runLoop() {
         });
       }
 
-      return;
-
       // Check if round has ended or needs to be started
       if (currentRoundId === 0 || currentTimestamp >= roundEndTimestamp) {
         // Round has ended or no round started yet - end current round first (if exists)
@@ -522,7 +520,9 @@ async function runLoop() {
         // Start next round
         const nextRoundId = currentRoundId + 1;
         console.log(`\n🎮 Starting round ${nextRoundId}...`);
+        // return;
         
+        console.log(`🔐 Next commit hash: ${nextCommitHash ? Array.from(nextCommitHash) : null}`);
         const startResult = await executeStartRound(nextRoundId, nextCommitHash ? Array.from(nextCommitHash) : null);
         if (!startResult.success) {
           console.log('⚠️  Start round failed, will retry next iteration');
