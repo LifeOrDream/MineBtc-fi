@@ -182,12 +182,17 @@ pub struct DragonEggCollectionCreated {
 #[event]
 pub struct DogeBtcStaked {
     pub owner: Pubkey,
+    pub faction_id: u8,
     pub amount: u64,
+    pub burn_amount: u64,
+    pub actual_amount: u64,
     pub lockup_duration: u64,
     pub multiplier: u16,
-    pub weighted_amount: u64,
-    pub total_hashpower_contribution: u64,
+    pub hashpower_contribution: u64,
     pub position_index: u8,
+    pub new_sol_rewards: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
 }
 
 #[event]

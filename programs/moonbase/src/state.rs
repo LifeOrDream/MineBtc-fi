@@ -12,7 +12,7 @@ pub const DAY_IN_SECONDS: u64 = 86400;
 pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
 
 pub const MAX_ALLOWED_POSITIONS: u8 = 7;
-pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 10;
+pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;
 pub const M_HUNDRED: u64 = 100;
 
 

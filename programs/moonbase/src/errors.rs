@@ -139,4 +139,7 @@ pub enum ErrorCode {
 
     #[msg("Cannot begin round")]
     CannotBeginRound,
+
+    #[msg("Position not unlocked")]
+    PositionNotLocked,
 }

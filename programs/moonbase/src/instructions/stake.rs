@@ -41,36 +41,24 @@ pub fn stake_moondoge(
         position_index,
         faction_id
     );
+
+    let current_ts = Clock::get()?.unix_timestamp;
+    let faction_state = &mut ctx.accounts.faction_state;
+    let player_data = &mut ctx.accounts.player_data;
+    let user_position = &mut ctx.accounts.user_position;
+
+    let hashpower_config = &ctx.accounts.hashpower_config;
     
     // Validate inputs
+    require!(faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
     require!(amount > 0, ErrorCode::InvalidAmount);
-    require!(
-        lockup_duration >= ctx.accounts.hashpower_config.min_lockup_days
-            && lockup_duration <= ctx.accounts.hashpower_config.max_lockup_days,
-        ErrorCode::InvalidParameters
-    );
-    require!(faction_id < NUM_FACTIONS as u8, ErrorCode::InvalidFactionId);
+    require!(lockup_duration >= hashpower_config.min_lockup_days && lockup_duration <= hashpower_config.max_lockup_days, ErrorCode::InvalidParameters);
     
     // Calculate actual amount after burn tax
     let burn_amount = amount * BURN_TAX_PERCENTAGE / M_HUNDRED;
     let actual_amount = amount - burn_amount;
-    
-    msg!("🔥 mDoge burn tax: {}% - Amount: {}, Burn: {}, Actual amount: {}", 
-        BURN_TAX_PERCENTAGE, amount, burn_amount, actual_amount);  
-    
-    // Get faction state
-    let faction_state = &mut ctx.accounts.faction_state;
-    require!(faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
-    msg!("📊 Current faction state - Total staked: {}, Total hashpower: {}", 
-        faction_state.dbtc_staked, faction_state.total_dbtc_hashpower);
-
-    // Get player data
-    let player_data = &mut ctx.accounts.player_data;
-    let hashpower_config = &ctx.accounts.hashpower_config;
-    let current_ts = Clock::get()?.unix_timestamp;
-    
-    // Get or create position
-    let user_position = &mut ctx.accounts.user_position;
+    msg!("🔥 mDoge burn tax: {}% - Amount: {}, Burn: {}, Actual amount: {}", BURN_TAX_PERCENTAGE, amount as f64 / 1e6, burn_amount as f64 / 1e6, actual_amount as f64 / 1e6);  
+    msg!("📊 Current faction state - Total staked: {}, Total hashpower: {}", faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
 
     // Add position index to player data
     helper::add_dogebtc_position(player_data, position_index)?;
@@ -86,42 +74,40 @@ pub fn stake_moondoge(
     msg!("🔢 Multiplier for {} days lockup: {} ({}x)", lockup_duration, multiplier, multiplier as f64 / 100.0);
     
     // Calculate weighted amount for this position
-    let weighted_amount = actual_amount * multiplier as u64 / M_HUNDRED;
-    msg!("⚖️ Weighted amount: {} (actual amount: {} × multiplier: {}%)", 
-        weighted_amount, actual_amount, multiplier);
+    let weighted_amount = (actual_amount * multiplier as u64) / M_HUNDRED;
+    msg!("⚖️ Weighted amount: {} (actual amount: {} × multiplier: {}%)", weighted_amount as f64 / 1e6, actual_amount as f64 / 1e6, multiplier as f64 / 100.0);
+
+    // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
+    let mut new_dbtc_rewards = 0;
+    let mut new_sol_rewards = 0;
+    let mut accrued_dbtc_rewards = 0;
     if player_data.dogebtc_hashpower > 0 {
         msg!("💰 Processing pending rewards before position update");
                 
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
-        let sol_reward_index_u64 = faction_state.dbtc_sol_reward_index.min(u64::MAX as u128) as u64;
-        let sol_reward_debt_u64 = player_data.dbtc_sol_reward_debt.min(u64::MAX as u128) as u64;
-        let new_sol_rewards = helper::calculate_staking_rewards(
-            player_data.dogebtc_hashpower,
-            sol_reward_index_u64,
-            sol_reward_debt_u64
-        )?;
+        new_sol_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_sol_reward_index, player_data.dbtc_sol_reward_debt)?;
         player_data.pending_sol_rewards += new_sol_rewards;
-        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, new_sol_rewards);
+        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
-        // Calculate dbtc rewards (using u128 indexes)
-        let dbtc_reward_diff = faction_state.dbtc_dbtc_reward_index
-            .saturating_sub(player_data.dbtc_dbtc_reward_debt);
-        msg!("   Calculated dbtc reward diff: {} (will be claimable separately)", dbtc_reward_diff);
+        new_dbtc_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_dbtc_reward_index, player_data.dbtc_dbtc_reward_debt)?;
+        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.global_game_state, player_data, new_dbtc_rewards);
+        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
     }
     
+    // -------------- UPDATE POSITION -------------- //
+
     // If position exists, validate and update
     if user_position.staked_amount > 0 {    
         msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount);
         require!(user_position.faction_id == faction_id, ErrorCode::InvalidFactionId);
-        require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::InvalidParameters);
+        require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionNotLocked);
 
         // Update staked amount with actual_amount (post-tax)
         user_position.staked_amount += actual_amount;
         user_position.weighted_amount += weighted_amount;        
-        msg!("   Position updated - staked: {}, weighted: {}", 
-            user_position.staked_amount, user_position.weighted_amount);
+        msg!("   Position updated - staked: {}, weighted: {} mDoge", user_position.staked_amount as f64 / 1e6, user_position.weighted_amount as f64 / 1e6);
     } else {
         msg!("🆕 Creating new position {}", position_index);
         // Initialize new position
@@ -133,9 +119,11 @@ pub fn stake_moondoge(
             weighted_amount, 
             lockup_duration, 
             current_ts, 
-            multiplier
+            multiplier,
         )?;                
     }
+
+    // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
     
     // Update player data state
     player_data.dogebtc_hashpower += weighted_amount;
@@ -144,14 +132,16 @@ pub fn stake_moondoge(
     // Update reward debt to current indexes
     player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
     player_data.dbtc_dbtc_reward_debt = faction_state.dbtc_dbtc_reward_index;
-    msg!("   Updated player reward debts - SOL: {}, dbtc: {}", 
-        player_data.dbtc_sol_reward_debt, player_data.dbtc_dbtc_reward_debt);
 
-    msg!("💱 Transferring {} DOGE_BTC tokens from user to custodian", amount);
-    msg!("   From: {}", ctx.accounts.user_dbtc_account.key());
-    msg!("   To: {}", ctx.accounts.dbtc_custodian.key());
+    // Update faction state with actual_amount (post-tax) and weighted_amount
+    faction_state.dbtc_staked += actual_amount;
+    faction_state.total_dbtc_hashpower += weighted_amount;
+    msg!("   Updated faction state - Total staked: {}, Total hashpower: {}",  faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+
+    // -------------- TRANSFER TOKENS -------------- //
 
     // Transfer tokens from user to custodian
+    msg!("💱 Transferring {} mDoge tokens from user to custodian", actual_amount as f64 / 1e6);
     let transfer_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         token_interface::TransferChecked {
@@ -162,22 +152,21 @@ pub fn stake_moondoge(
         },
     );
     token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.dbtc_mint.decimals)?;
-    
-    // Update faction state with actual_amount (post-tax) and weighted_amount
-    faction_state.dbtc_staked += actual_amount;
-    faction_state.total_dbtc_hashpower += weighted_amount;
-    msg!("   Updated faction state - Total staked: {}, Total hashpower: {}", 
-        faction_state.dbtc_staked, faction_state.total_dbtc_hashpower);
-
     msg!("✅ [stake_moondoge] DogeBtc staking successful");    
+
     emit!(DogeBtcStaked {
         owner: ctx.accounts.authority.key(),
-        amount: actual_amount,
+        faction_id,
+        amount: amount,
+        burn_amount: burn_amount,
+        actual_amount: actual_amount,
         lockup_duration,
         multiplier,
-        weighted_amount,
-        total_hashpower_contribution: weighted_amount,
+        hashpower_contribution: weighted_amount,
         position_index,
+        new_sol_rewards,
+        new_dbtc_rewards,
+        unrefined_dbtc: accrued_dbtc_rewards
     });
     
     Ok(())
@@ -199,147 +188,87 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     msg!("🔓 [unstake_moondoge] Processing unstake for position {}", position_index);
     
     // Validate the position exists and has funds
+    require!(faction_state.faction_id == user_position.faction_id, ErrorCode::InvalidFactionId);
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
-    require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);
-    
-    // Verify position index is in the user's active positions
-    require!(
-        player_data.moondoge_position_indices.contains(&position_index),
-        ErrorCode::InvalidParameters
-    );
+    require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);    
+    require!( player_data.moondoge_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
     
     msg!(
         "📊 Position details - Staked: {}, Weighted: {}, Faction: {}, Lockup ends: {}",
-        user_position.staked_amount, 
-        user_position.weighted_amount,
+        user_position.staked_amount as f64 / 1e6 , 
+        user_position.weighted_amount as f64 / 1e6,
         user_position.faction_id,
         user_position.lockup_end_timestamp
     );
     
+    // -------------- ACCRUE PENDING REWARDS -------------- //
+    
     // Process pending rewards before updating position
+    let mut new_dbtc_rewards = 0;
+    let mut new_sol_rewards = 0;
+    let mut accrued_dbtc_rewards = 0;
     if player_data.dogebtc_hashpower > 0 {
-        msg!("💰 Processing pending rewards before unstaking");
-                    
+        msg!("💰 Processing pending rewards before position update");
+                
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
-        let sol_reward_index_u64 = faction_state.dbtc_sol_reward_index.min(u64::MAX as u128) as u64;
-        let sol_reward_debt_u64 = player_data.dbtc_sol_reward_debt.min(u64::MAX as u128) as u64;
-        let new_sol_rewards = helper::calculate_staking_rewards(
-            player_data.dogebtc_hashpower,
-            sol_reward_index_u64,
-            sol_reward_debt_u64
-        )?;
+        new_sol_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_sol_reward_index, player_data.dbtc_sol_reward_debt)?;
         player_data.pending_sol_rewards += new_sol_rewards;
-        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, new_sol_rewards);
+        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
-        // Calculate dbtc rewards (using u128 indexes)
-        let dbtc_reward_diff = faction_state.dbtc_dbtc_reward_index
-            .saturating_sub(player_data.dbtc_dbtc_reward_debt);
-        msg!("   Calculated dbtc reward diff: {} (will be claimable separately)", dbtc_reward_diff);
+        new_dbtc_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_dbtc_reward_index, player_data.dbtc_dbtc_reward_debt)?;
+        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.global_game_state, player_data, new_dbtc_rewards);
+        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
     }
    
     // Update reward debt to current indexes
     player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
     player_data.dbtc_dbtc_reward_debt = faction_state.dbtc_dbtc_reward_index;
     
+    // -------------- CHARGE EMERGENCY TAX -------------- //
+
     // Calculate return amount based on early withdrawal status
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
-    let original_amount = user_position.staked_amount;
+    let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let mut return_amount = original_amount;
+    let mut return_amount = staked_amount;
     
     // Handle early withdrawal if needed
     if is_early_withdrawal {
-        msg!(
-            "⚠️ Early unstake detected! Current time: {}, Lockup end: {}",
-            current_ts,
-            user_position.lockup_end_timestamp
-        );
+        msg!(  "⚠️ Early unstake detected! Current time: {}, Lockup end: {}", current_ts, user_position.lockup_end_timestamp);
         
-        // Calculate remaining lockup percentage
-        let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
-        let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
-        let remaining_seconds_pct = if total_lockup_seconds > 0 {
-            (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64
-        } else {
-            0
-        };
-        msg!("   Lockup remaining: {}%", remaining_seconds_pct);
-        
-        // Apply emergency tax for early withdrawal (if configured in global_config)
-        // Note: emergency_tax might not exist in GlobalConfig, using 0 for now
-        let emergency_tax = 0u64; // TODO: Add emergency_tax to GlobalConfig if needed
-        let calc_penalty_pct = emergency_tax * remaining_seconds_pct / M_HUNDRED;
-        let penalty_amount = original_amount * calc_penalty_pct / M_HUNDRED;
-        return_amount = original_amount - penalty_amount;
-        msg!(
-            "   Total Staked: {}, Returned: {}, Penalty: {}",
-            original_amount,
-            return_amount,
-            penalty_amount
-        );
+        // Calculate remaining lockup percentage        
+        let penalty_amount = helper::calculate_emergency_tax(user_position, current_ts, EMERGENCY_WITHDRAWAL_PENALTY_PCT);
+        return_amount = staked_amount - penalty_amount;
+        msg!( "   Total Staked: {}, Returned: {}, Penalty: {}", staked_amount, return_amount, penalty_amount);
         
         // Burn penalty tokens if any
         if penalty_amount > 0 {
-            msg!("🔥 Burning {} penalty tokens", penalty_amount);
-            
-            // Get PDA signer seeds for the dbtc_custodian authority
-            let custodian_authority_seeds = &[
-                DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
-                &[faction_state.faction_id],
-                &[ctx.bumps.dbtc_custodian_authority],
-            ];
-            let signer = &[&custodian_authority_seeds[..]];
-            
-            // Use proper Token-2022 burn instruction
-            let burn_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                token_interface::Burn {
-                    mint: ctx.accounts.dbtc_mint.to_account_info(),
-                    from: ctx.accounts.dbtc_custodian.to_account_info(),
-                    authority: ctx.accounts.dbtc_custodian_authority.to_account_info(),
-                },
-                signer,
-            );            
-            token_interface::burn(burn_ctx, penalty_amount)?;
-            
-            // Emit emergency withdrawal event
-            emit!(EmergencyWithdrawal {
-                owner: ctx.accounts.authority.key(),
-                position_index,
-                original_amount,
-                penalty_amount,
-                returned_amount: return_amount,
-                penalty_tax_pct: calc_penalty_pct,
-                timestamp: current_ts,
-            });
+            // Charge emergency tax, 50% to burn, 50% to withheld a/c
+            helper::charge_emergency_tax(user_position, current_ts, penalty_amount);
         }
     } else {
         msg!("✅ Normal unstake - lockup period has ended");
     }
     
+    // -------------- UPDATE FACTION AND PLAYER DATA -------------- //
+
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
-    faction_state.dbtc_staked -= original_amount;
+    faction_state.dbtc_staked -= staked_amount;
     faction_state.total_dbtc_hashpower -= original_weighted;
-    msg!(
-        "   New faction totals - Staked: {}, Hashpower: {}",
-        faction_state.dbtc_staked,
-        faction_state.total_dbtc_hashpower
-    );
+    msg!("   New faction totals - Staked: {}, Hashpower: {}", faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
     
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
     player_data.dogebtc_hashpower -= original_weighted;
-    player_data.dogebtc_staked -= original_amount;
-    msg!(
-        "   New player totals - Hashpower: {}, Staked: {}",
-        player_data.dogebtc_hashpower,
-        player_data.dogebtc_staked
-    );
+    player_data.dogebtc_staked -= staked_amount;
+    msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.dogebtc_hashpower as f64 / 1e6, player_data.dogebtc_staked as f64 / 1e6);
     
     // Remove position from user's active positions
     helper::remove_moondoge_position(player_data, position_index)?;
     
+    // -------------- TRANSFER TOKENS -------------- //
+
     // Transfer remaining tokens back to user
     if return_amount > 0 {
         msg!("💱 Transferring {} DOGE_BTC tokens to user", return_amount);
@@ -412,7 +341,7 @@ pub fn stake_lp_tokens(
     
     // Validate inputs
     require!(amount > 0, ErrorCode::InvalidAmount);
-    let hashpower_config = &ctx.accounts.hashpower_config;
+    let hashpower_config = &hashpower_config;
     require!(
         lockup_duration >= hashpower_config.min_lockup_days
             && lockup_duration <= hashpower_config.max_lockup_days,

@@ -889,20 +889,6 @@ pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>) -> Result<()> {
 
 
 
-/// Add to total claimable and pending rewards
-fn add_to_total_claimable(game_state: &mut GlobalGameSate, player_data: &mut PlayerData, dbtc_rewards: u64) {
-
-    // Calculate extra dogeBtc rewards due to unrefining
-    let index_dif = game_state.unrefining_index - player_data.unrefining_index;
-    let accrued_rewards = helper::mul_div_u128( player_data.pending_dbtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
-    msg!("     Accrued DogeBtc rewards: {}", accrued_rewards );
-
-    game_state.total_dbtc_claimable += dbtc_rewards + accrued_rewards;
-    player_data.unrefining_index = game_state.unrefining_index;
-    player_data.pending_dbtc_rewards += dbtc_rewards + accrued_rewards;
-    player_data.total_dbtc_won += dbtc_rewards + accrued_rewards;
-    player_data.unrefined_dbtc_rewards += accrued_rewards;
-}
 
 
 

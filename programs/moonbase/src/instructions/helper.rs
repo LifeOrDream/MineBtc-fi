@@ -267,11 +267,11 @@ pub fn remove_lp_position(
  
 pub fn calculate_staking_rewards(
     user_weighted_amt: u64,
-    accumulated_sol_per_point: u64,
-    reward_debt: u64,
+    accumulated_sol_per_point: u128,
+    reward_debt: u128,
 ) -> Result<u64> {
     let reward_diff = accumulated_sol_per_point.checked_sub(reward_debt).unwrap_or(0);
-    let new_rewards = mul_div(user_weighted_amt, reward_diff, INDEX_PRECISION)?;
+    let new_rewards = mul_div_u128(user_weighted_amt as u128, reward_diff, INDEX_PRECISION as u128)?;
     Ok(new_rewards as u64)
 }
 
@@ -292,6 +292,7 @@ pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
 }
 
 
+
 pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_index: u8, staked_amount: u64, weighted_amount: u64, 
                     lockup_duration: u64, current_ts: i64, multiplier: u16) -> Result<()> {
     position.position_index = position_index;
@@ -308,4 +309,96 @@ pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_ind
     position.lockup_end_timestamp = current_ts + seconds_to_add as i64;
 
     Ok(())
+}
+
+/// Add to total claimable and pending rewards
+pub fn add_to_total_claimable(game_state: &mut GlobalGameSate, player_data: &mut PlayerData, dbtc_rewards: u64) -> u64 {
+
+    // Calculate extra dogeBtc rewards due to unrefining
+    let index_dif = game_state.unrefining_index - player_data.unrefining_index;
+    let accrued_rewards = mul_div_u128( player_data.pending_dbtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
+    msg!("     Accrued DogeBtc rewards: {}", accrued_rewards );
+
+    game_state.total_dbtc_claimable += dbtc_rewards + accrued_rewards;
+    player_data.unrefining_index = game_state.unrefining_index;
+    player_data.pending_dbtc_rewards += dbtc_rewards + accrued_rewards;
+    player_data.total_dbtc_won += dbtc_rewards + accrued_rewards;
+    player_data.unrefined_dbtc_rewards += accrued_rewards;
+
+    return accrued_rewards;
+}
+
+
+pub fn calculate_emergency_tax(user_position: &StakedPosition, current_ts: i64, emergency_tax: u64) -> u64 {
+
+    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
+    let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+
+    let mut remaining_seconds_pct = 0;
+    if total_lockup_seconds > 0 {
+        remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds;
+    }
+    msg!("   Lockup remaining: {}%", remaining_seconds_pct);
+
+    let calc_penalty_pct = (emergency_tax * (remaining_seconds_pct as u64)) / M_HUNDRED;
+    let penalty_amount = (user_position.staked_amount * calc_penalty_pct) / M_HUNDRED;
+
+    return penalty_amount;
+}
+
+
+pub fn charge_emergency_tax(user_position: &StakedPosition, current_ts: i64, emergency_tax: u64) {
+
+    let burn_amt = penalty_amount / 2;
+    let withheld_amt = penalty_amount - burn_amt;
+
+
+    token_2022::transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
+                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                to: ctx.accounts.faction_treasury_vault.to_account_info(),
+                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+            },
+            withdraw_authority_signer
+        ),
+        withheld_amt,
+        ctx.accounts.dbtc_mint.decimals,
+    )?;
+    msg!("   ✅ Transferred {} tokens to Faction treasury vault", (faction_treasury_amount as f64) / 1e6);    
+
+            // Get PDA signer seeds for the dbtc_custodian authority
+            let custodian_authority_seeds = &[
+                DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+                &[faction_state.faction_id],
+                &[ctx.bumps.dbtc_custodian_authority],
+            ];
+            let signer = &[&custodian_authority_seeds[..]];
+            
+            // Use proper Token-2022 burn instruction
+            let burn_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token_interface::Burn {
+                    mint: ctx.accounts.dbtc_mint.to_account_info(),
+                    from: ctx.accounts.dbtc_custodian.to_account_info(),
+                    authority: ctx.accounts.dbtc_custodian_authority.to_account_info(),
+                },
+                signer,
+            );            
+            token_interface::burn(burn_ctx, burn_amt)?;
+
+            // Emit emergency withdrawal event
+            emit!(EmergencyWithdrawal {
+                owner: ctx.accounts.authority.key(),
+                position_index,
+                staked_amount,
+                penalty_amount,
+                returned_amount: return_amount,
+                penalty_tax_pct: calc_penalty_pct,
+                timestamp: current_ts,
+            });
+
+
 }
