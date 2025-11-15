@@ -136,4 +136,7 @@ pub enum ErrorCode {
 
     #[msg("Invalid stage")]
     InvalidStage,
+
+    #[msg("Cannot begin round")]
+    CannotBeginRound,
 }

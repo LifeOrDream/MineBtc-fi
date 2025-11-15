@@ -30,7 +30,8 @@ pub fn start_round(
     let clock = Clock::get()?;
     // Validate game is active
     require!(global_state.is_active, ErrorCode::InvalidParameters);
-    msg!("   ✓ Game is active");
+    require!(global_state.can_begin_round, ErrorCode::CannotBeginRound);
+    msg!("   ✓ Game is active and can begin round");
 
     msg!("   Current round ID: {}, Requested round ID: {}", global_state.current_round_id, round_id);
     msg!("   Current timestamp: {}, Round end timestamp: {}", clock.unix_timestamp, global_state.round_end_timestamp);
@@ -148,6 +149,9 @@ pub fn start_round(
     // Initialize motherlode fields
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
+
+    // Cannot start new round till this on-going round is ended
+    global_state.can_begin_round = false;
     
     msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);
@@ -526,6 +530,10 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
     msg!("   Updated global state. Total SOL bets: {}", global_state.total_sol_bets as f64 / 1_000_000_000.0);
     
     game_session.stage = 2;
+
+    // Can start new round now
+    global_state.can_begin_round = true;
+    msg!("   Can begin new round: {}", global_state.can_begin_round);
 
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);    
     Ok(())

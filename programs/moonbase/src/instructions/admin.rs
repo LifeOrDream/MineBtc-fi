@@ -887,6 +887,9 @@ pub fn initialize_game_state_internal(
     msg!("   Initializing game state fields...");
     global_game_state.bump = ctx.bumps.global_game_state;
     global_game_state.is_active = true;
+    global_game_state.can_begin_round = true;
+
+
     global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
     global_game_state.round_end_timestamp = 0;
     global_game_state.round_duration_seconds = round_duration_seconds;

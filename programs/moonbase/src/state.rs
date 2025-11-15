@@ -322,8 +322,6 @@ impl BuybacksAccount {
 pub struct HashpowerConfig {
     /// Authority that can update config parameters
     pub authority: Pubkey,
-    /// Address which can withdraw dev earnings from the program
-    pub dev_address: Pubkey,
 
     /// Minimum lockup period in days
     pub min_lockup_days: u64,
@@ -335,19 +333,6 @@ pub struct HashpowerConfig {
     /// Maximum multiplier for longest lockup (e.g., 900 = 9x for 3 years)
     pub max_multiplier: u16,
 
-    /// Distribution percentages (out of 100)
-    /// Percentage of SOL distributed to DogeBtc stakers
-    pub dogebtc_allocation: u8,
-    /// Percentage of SOL distributed to LP token stakers
-    pub liquidity_allocation: u8,
-
-    /// Electricity per weighted SOL staked (used for both dBTC and LP staking)
-    pub hashpower_per_weighted_sol: u64,
-
-    /// Current DOGE_BTC to SOL price (9-decimal precision, same as MoonBase)
-    /// Used for electricity calculations when MoonBase price is 0 or unavailable
-    pub dbtc_sol_price: u64,
-
     /// Bump for PDA derivation
     pub bump: u8,
 }
@@ -356,15 +341,10 @@ pub struct HashpowerConfig {
 impl HashpowerConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // authority
-        32 +    // dev_address
         8 +     // min_lockup_days
         8 +     // max_lockup_days
         2 +     // base_multiplier (u16)
         2 +     // max_multiplier (u16)
-        1 +     // dogebtc_allocation
-        1 +     // liquidity_allocation
-        8 +     // hashpower_per_weighted_sol
-        8 +     // dbtc_sol_price (u64)
         1;      // bump
 }
 
@@ -538,6 +518,7 @@ pub struct GlobalGameSate {
 
     /// Whether the game is currently active
     pub is_active: bool,
+    pub can_begin_round: bool,
 
     /// Total SOL bets since start of game (cumulative across all rounds)
     pub total_sol_bets: u128,
@@ -582,6 +563,7 @@ impl GlobalGameSate {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // is_active
+        1 +     // can_begin_round
         16 +    // total_sol_bets (u128)
         16 +    // total_global_passive_hashpower (u128)
         8 +     // current_round_id
