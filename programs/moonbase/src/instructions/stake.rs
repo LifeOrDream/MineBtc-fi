@@ -744,7 +744,13 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Res
 
     // update total claimable dbtc amount 
     unrefined_dbtc.total_dbtc_claimable = unrefined_dbtc.total_dbtc_claimable - player_data.pending_dbtc_rewards;
+
     player_data.pending_dbtc_rewards = 0;
+
+    // Update total tokens distributed
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
+    doge_btc_mining.total_tokens_distributed += claimable_by_user;
+    msg!("   Updated total tokens distributed: {} (+{})", doge_btc_mining.total_tokens_distributed as f64 / 1e6, claimable_by_user as f64 / 1e6);
     
     // Redistribute refining fee to all other stakers who haven't claimed
     // This is done by increasing the reward index, which benefits all stakers proportionally
@@ -828,6 +834,11 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
         )?;
         msg!("   ✓ Transferred {} dbtc", pending_dbtc);
     }
+    
+    // Update total tokens distributed
+    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
+    doge_btc_mining.total_tokens_distributed += pending_dbtc;
+    msg!("   Updated total tokens distributed: {} (+{})", doge_btc_mining.total_tokens_distributed as f64 / 1e6, pending_dbtc as f64 / 1e6);
     
     // Reset pending rewards
     referral_rewards.pending_sol_rewards = 0;

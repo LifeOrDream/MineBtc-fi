@@ -245,6 +245,8 @@ pub struct DogeBtcMining {
     pub last_slot: u64,
     /// Total tokens mined so far
     pub total_tokens_mined: u64,
+    /// Total tokens distributed so far
+    pub total_tokens_distributed: u64,
 
     /// Bump for PDA derivation
     pub bump: u8,
@@ -282,6 +284,7 @@ impl DogeBtcMining {
         + 8                     // doge_btc_per_round
         + 8                     // last_slot
         + 8                     // total_tokens_mined
+        + 8                     // total_tokens_distributed
         + 1                     // bump
         + 1                     // vault_auth_bump
         + 32                    // raydium_pool_state
