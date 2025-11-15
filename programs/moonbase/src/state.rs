@@ -575,7 +575,7 @@ impl GlobalGameSate {
 }
 
 
-
+#[account]
 pub struct UnrefinedRewards {
     pub unrefining_index: u128,
     pub total_dbtc_claimable: u64
@@ -584,7 +584,7 @@ pub struct UnrefinedRewards {
 impl UnrefinedRewards {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         16 +    // unrefining_index (u128)
-        8      // total_dbtc_claimable (u64)
+        8;      // total_dbtc_claimable (u64)
 }
 
 
