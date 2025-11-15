@@ -10,20 +10,14 @@ use crate::instructions::helper;
 // -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-
-
 /// Simulate mint costs for multiple eggs accounting for bonding curve pricing
 /// Returns (total_price, individual_prices)
 pub fn simulate_mint_cost(
     egg_config: &EggConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>)> {
-    require!(mint_count > 0, ErrorCode::InvalidParameters);
-    require!(mint_count <= 10, ErrorCode::InvalidParameters); // Max 10 per batch
-    require!(
-        egg_config.eggs_minted + mint_count <= egg_config.max_supply,
-        ErrorCode::InvalidParameters
-    );
+    require!(mint_count > 0 && mint_count <= 10, ErrorCode::InvalidParameters);
+    require!(  egg_config.eggs_minted + mint_count <= egg_config.max_supply, ErrorCode::InvalidParameters);
 
     let mut prices = Vec::new();
     let mut total_price = 0u64;
@@ -48,37 +42,27 @@ pub fn simulate_mint_cost(
 /// Mint a single Dragon Egg NFT
 /// Uses bonding curve pricing based on current supply
 /// Users can choose a ticket tier to receive free tickets
-pub fn mint_dragon_egg(
-    ctx: Context<MintDragonEgg>,
-    faction_id: u8,
-    ticket_tier_index: Option<u8>,
-) -> Result<()> {
+pub fn mint_dragon_egg( ctx: Context<MintDragonEgg>, faction_id: u8, ticket_tier_index: Option<u8>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let egg_config = &mut ctx.accounts.egg_config;
     let player_data = &mut ctx.accounts.player_data;
     
-    // Validate faction_id
-    require!(
-        (faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-    
-    // Check supply limit
-    require!(
-        egg_config.eggs_minted < egg_config.max_supply,
-        ErrorCode::InvalidParameters
-    );
+    require!(   (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId);
+    require!(   egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
     
     // Calculate cost using bonding curve
-    let cost_per_egg = crate::genescience::compute_gene_price(
-        egg_config.base_price,
-        egg_config.curve_a,
-        egg_config.eggs_minted,
-    )?;
+    let cost_per_egg = crate::genescience::compute_gene_price(egg_config.base_price, egg_config.curve_a, egg_config.eggs_minted)?;
     
-    msg!("   Minting egg #{} at price: {} lamports", 
-        egg_config.eggs_minted + 1, 
-        cost_per_egg);
+    msg!("   Minting egg #{} at price: {} lamports", egg_config.eggs_minted + 1, cost_per_egg as f64 / 1e9);
+    let treasury_amt = cost_per_egg * 20 / 100;
+    let dev_amt =  cost_per_egg - treasury_amt;
+
+    helper::transfer_to_sol_treasury(
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        treasury_amt,
+    )?;
 
     // Transfer WSOL from user to multisig account
     helper::transfer_wsol_to_multisig(
@@ -87,15 +71,12 @@ pub fn mint_dragon_egg(
         &ctx.accounts.user_wsol_account.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         &ctx.accounts.token_program.to_account_info(),
-        cost_per_egg,
+        dev_amt,
     )?;
     
     // Handle ticket tier selection and add free tickets
     if let Some(tier_index) = ticket_tier_index {
-        require!(
-            (tier_index as usize) < egg_config.ticket_tiers.len(),
-            ErrorCode::InvalidParameters
-        );
+        require!(  (tier_index as usize) < egg_config.ticket_tiers.len(), ErrorCode::InvalidParameters );
         
         // Validate tier availability based on remaining eggs
         let eggs_remaining = egg_config.max_supply.saturating_sub(egg_config.eggs_minted);
@@ -136,16 +117,10 @@ pub fn mint_dragon_egg(
         
         // Add free tickets to player
         if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
-            // Ticket type exists, increment count
             player_data.free_tickets_remaining[index] += ticket_count as u64;
-            msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", 
-                ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
+            msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
         } else {
-            // New ticket type, add to vectors
-            require!(
-                player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES,
-                ErrorCode::InvalidParameters
-            );
+            require!(  player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters );
             player_data.free_tickets.push(ticket_value);
             player_data.free_tickets_remaining.push(ticket_count as u64);
             msg!("     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
@@ -158,45 +133,18 @@ pub fn mint_dragon_egg(
     let user_key = ctx.accounts.user.key();
     
     // Generate DNA (no tier, use faction as family type)
-    let family_type = faction_id.min(15); // Max 15 for family type
-    let dna = crate::genescience::generate_genesis_dna(
-        egg_config.eggs_minted + 1,
-        &user_key,
-        slot,
-        family_type,
-    )?;
+    let family_type = faction_id;
+    let dna = crate::genescience::generate_genesis_dna(egg_config.eggs_minted + 1, &user_key, slot, family_type)?;
 
     // Get URI for this faction
-    let uri = if (faction_id as usize) < egg_config.dragon_egg_uris.len() {
-        egg_config.dragon_egg_uris[faction_id as usize].clone()
-    } else {
-        format!("https://arweave.net/dragonegg/{}", faction_id)
-    };
-
+    let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
     let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
     
-    // Fixed multiplier (no tiers)
-    let multiplier = 100; // 1.0x base multiplier
-    
-    // Get collection authority seeds
+    let multiplier = 100;
     let collection_authority_bump = ctx.bumps.collection_authority;
-    let collection_authority_seeds = &[
-        crate::state::COLLECTION_AUTHORITY_SEED,
-        &[collection_authority_bump],
-    ];
+    let collection_authority_seeds = &[crate::state::COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
 
-    // Create NFT via MPL Core CPI
-    msg!("🎨 Creating Dragon Egg NFT via Metaplex Core CPI");
-    msg!("   Name: {}", name);
-    msg!("   URI: {}", uri);
-
-    crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts
-            .dragon_egg_collection
-            .as_ref()
-            .map(|c| c.to_account_info())
-            .as_ref(),
+    crate::mpl_core_helpers::create_mpl_core_asset(&ctx.accounts.dragon_egg_asset.to_account_info(), ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.collection_authority.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
@@ -252,44 +200,30 @@ pub fn batch_mint_dragon_eggs(
     let global_config = &ctx.accounts.global_config;
     let egg_config = &mut ctx.accounts.egg_config;
     
-    // Validate faction_id
-    require!(
-        (faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
+    require!(  (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId );
+    require!(  egg_config.eggs_minted + mint_count as u64 <= egg_config.max_supply, ErrorCode::InvalidParameters );
     
-    // Check supply limit
-    require!(
-        egg_config.eggs_minted + mint_count as u64 <= egg_config.max_supply,
-        ErrorCode::InvalidParameters
-    );
-    
-    // Calculate total cost using bonding curve
     let (total_price, _prices) = simulate_mint_cost(egg_config, mint_count as u64)?;
-    
     msg!("   Batch minting {} eggs, total cost: {} lamports", mint_count, total_price);
 
-    // Transfer WSOL from user to multisig account
+    let dev_amt = total_price * 80 / 100;
+    let treasury_amt = total_price - dev_amt;
+
+    helper::transfer_to_sol_treasury(
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        treasury_amt,
+    )?;
+
     helper::transfer_wsol_to_multisig(
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.multisig_wsol_account.to_account_info(),
         &ctx.accounts.user_wsol_account.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         &ctx.accounts.token_program.to_account_info(),
-        total_price,
+        dev_amt,
     )?;
-    
-    let clock = Clock::get()?;
-    let slot = clock.slot;
-    let user_key = ctx.accounts.user.key();
-    let family_type = faction_id.min(15);
-    
-    // Get URI for this faction
-    let uri = if (faction_id as usize) < egg_config.dragon_egg_uris.len() {
-        egg_config.dragon_egg_uris[faction_id as usize].clone()
-    } else {
-        format!("https://arweave.net/dragonegg/{}", faction_id)
-    };
     
     let multiplier = 100; // Fixed multiplier
     
@@ -298,18 +232,23 @@ pub fn batch_mint_dragon_eggs(
         let current_mint_number = egg_config.eggs_minted + 1;
         
         // Generate DNA
-        let dna = crate::genescience::generate_genesis_dna(
-            current_mint_number,
-            &user_key,
-            slot + i as u64,
-            family_type,
-        )?;
-        
+        let dna = crate::genescience::generate_genesis_dna(  current_mint_number,&ctx.accounts.user.key(),Clock::get()?.slot + i as u64, faction_id)?;        
         let name = format!("Dragon Egg #{}", current_mint_number);
+        let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
         
-        // Note: In a real implementation, you'd need to create multiple NFT assets
-        // For now, we'll just update the metadata account and emit events
-        // The actual NFT creation would need to be done via CPI for each egg
+        let collection_authority_bump = ctx.bumps.collection_authority;
+        let collection_authority_seeds = &[crate::state::COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
+    
+        crate::mpl_core_helpers::create_mpl_core_asset(&ctx.accounts.dragon_egg_asset.to_account_info(), ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+            &ctx.accounts.collection_authority.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            name.clone(),
+            uri.clone(),
+            Some(&[collection_authority_seeds]),
+        )?;
         
         emit!(DragonEggMinted {
             egg_metadata_account: ctx.accounts.dragon_egg_metadata.key(),
@@ -332,6 +271,107 @@ pub fn batch_mint_dragon_eggs(
     Ok(())
 }
  
+// ----------------------------------------------------------------------------------------
+// -------------- ADMIN FREE MINT FUNCTION ------------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+/// Admin function to mint a Dragon Egg NFT for free to a specified recipient
+pub fn admin_mint_dragon_egg(
+    ctx: Context<AdminMintDragonEgg>,
+    recipient: Pubkey,
+    faction_id: u8,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let egg_config = &mut ctx.accounts.egg_config;
+
+    // Verify recipient matches instruction parameter
+    require!(  ctx.accounts.recipient.key() == recipient, ErrorCode::InvalidAccount);
+    require!(  (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId);
+    require!(  egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
+
+    msg!("🎁 [admin_mint_dragon_egg] Admin minting free egg to recipient: {}", recipient);
+    msg!("   Faction ID: {}", faction_id);
+    msg!("   Egg number: {}", egg_config.eggs_minted + 1);
+
+    // Use slot and recipient key as seed
+    let recipient_key = recipient;
+    
+    // Generate DNA (use faction as family type)    
+    let dna = crate::genescience::generate_genesis_dna(  egg_config.eggs_minted + 1,&recipient_key,Clock::get()?.slot, faction_id)?;
+    let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
+    let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
+    
+    // Fixed multiplier (no tiers)
+    let multiplier = 100; // 1.0x base multiplier
+    
+    // Get collection authority seeds
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let collection_authority_seeds = &[
+        crate::state::COLLECTION_AUTHORITY_SEED,
+        &[collection_authority_bump],
+    ];
+
+    // Create NFT via MPL Core CPI (paid by admin, sent to recipient)
+    msg!("🎨 Creating Dragon Egg NFT via Metaplex Core CPI");
+    msg!("   Name: {}", name);
+    msg!("   URI: {}", uri);
+    msg!("   Recipient: {}", recipient);
+
+    crate::mpl_core_helpers::create_mpl_core_asset(
+        &ctx.accounts.dragon_egg_asset.to_account_info(),
+        ctx.accounts
+            .dragon_egg_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
+        &ctx.accounts.collection_authority.to_account_info(),
+        &ctx.accounts.authority.to_account_info(), // Payer is admin
+        &ctx.accounts.recipient.to_account_info(), // Owner is recipient
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        name.clone(),
+        uri.clone(),
+        Some(&[collection_authority_seeds]),
+    )?;
+
+    // Initialize Dragon Egg metadata
+    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
+    egg_metadata.power = 0;
+    egg_metadata.dna = dna;
+    egg_metadata.incubated_player_data = None;
+    egg_metadata.multiplier = multiplier;
+    egg_metadata.faction_id = faction_id;
+    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    egg_metadata.created_at = Clock::get()?.unix_timestamp;
+    egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
+    
+    // Update egg config stats
+    egg_config.eggs_minted += 1;
+    msg!("   Total eggs minted: {} / {}", egg_config.eggs_minted, egg_config.max_supply);
+
+    emit!(DragonEggMinted {
+        egg_metadata_account: egg_metadata.key(),
+        dragon_egg_asset_signer: ctx.accounts.dragon_egg_asset.key(),
+        owner: recipient,
+        mint: egg_metadata.mint,
+        name,
+        uri,
+        dna,
+        initial_power: 0,
+        multiplier,
+        faction_id,
+    });
+    
+    msg!("✅ Admin minted Dragon Egg #{} for faction {} to recipient {}", 
+        egg_config.eggs_minted, faction_id, recipient);
+    Ok(())
+}
+
+
+
+
+
 /// Stake a Dragon Egg to boost hashpower (multiplier applies to staked dbtc and LP)
 /// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
 /// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
@@ -528,136 +568,6 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     msg!("   Egg: {}", egg_metadata.mint);
     msg!("   Remaining eggs staked: {}/{}", num_staked_eggs, MAX_STAKED_EGGS);
     
-    Ok(())
-}
-
-// ----------------------------------------------------------------------------------------
-// -------------- ROYALTY MANAGEMENT (ADMIN) ---------------------------------------------
-// ----------------------------------------------------------------------------------------
-
-
-// ----------------------------------------------------------------------------------------
-// -------------- ADMIN FREE MINT FUNCTION ------------------------------------------------
-// ----------------------------------------------------------------------------------------
-
-/// Admin function to mint a Dragon Egg NFT for free to a specified recipient
-pub fn admin_mint_dragon_egg(
-    ctx: Context<AdminMintDragonEgg>,
-    recipient: Pubkey,
-    faction_id: u8,
-) -> Result<()> {
-    let global_config = &ctx.accounts.global_config;
-    let egg_config = &mut ctx.accounts.egg_config;
-
-    // Verify recipient matches instruction parameter
-    require!(
-        ctx.accounts.recipient.key() == recipient,
-        ErrorCode::InvalidAccount
-    );
-
-    // Validate faction_id
-    require!(
-        (faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-
-    // Check supply limit
-    require!(
-        egg_config.eggs_minted < egg_config.max_supply,
-        ErrorCode::InvalidParameters
-    );
-
-    msg!("🎁 [admin_mint_dragon_egg] Admin minting free egg to recipient: {}", recipient);
-    msg!("   Faction ID: {}", faction_id);
-    msg!("   Egg number: {}", egg_config.eggs_minted + 1);
-
-    // Use slot and recipient key as seed
-    let clock = Clock::get()?;
-    let slot = clock.slot;
-    let recipient_key = recipient;
-    
-    // Generate DNA (use faction as family type)
-    let family_type = faction_id.min(15); // Max 15 for family type
-    let dna = crate::genescience::generate_genesis_dna(
-        egg_config.eggs_minted + 1,
-        &recipient_key,
-        slot,
-        family_type,
-    )?;
-
-    // Get URI for this faction
-    let uri = if (faction_id as usize) < egg_config.dragon_egg_uris.len() {
-        egg_config.dragon_egg_uris[faction_id as usize].clone()
-    } else {
-        format!("https://arweave.net/dragonegg/{}", faction_id)
-    };
-
-    let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
-    
-    // Fixed multiplier (no tiers)
-    let multiplier = 100; // 1.0x base multiplier
-    
-    // Get collection authority seeds
-    let collection_authority_bump = ctx.bumps.collection_authority;
-    let collection_authority_seeds = &[
-        crate::state::COLLECTION_AUTHORITY_SEED,
-        &[collection_authority_bump],
-    ];
-
-    // Create NFT via MPL Core CPI (paid by admin, sent to recipient)
-    msg!("🎨 Creating Dragon Egg NFT via Metaplex Core CPI");
-    msg!("   Name: {}", name);
-    msg!("   URI: {}", uri);
-    msg!("   Recipient: {}", recipient);
-
-    crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts
-            .dragon_egg_collection
-            .as_ref()
-            .map(|c| c.to_account_info())
-            .as_ref(),
-        &ctx.accounts.collection_authority.to_account_info(),
-        &ctx.accounts.authority.to_account_info(), // Payer is admin
-        &ctx.accounts.recipient.to_account_info(), // Owner is recipient
-        &ctx.accounts.system_program.to_account_info(),
-        &ctx.accounts.mpl_core_program.to_account_info(),
-        name.clone(),
-        uri.clone(),
-        Some(&[collection_authority_seeds]),
-    )?;
-
-    // Initialize Dragon Egg metadata
-    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
-    egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
-    egg_metadata.power = 0;
-    egg_metadata.dna = dna;
-    egg_metadata.incubated_player_data = None;
-    egg_metadata.multiplier = multiplier;
-    egg_metadata.faction_id = faction_id;
-    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    egg_metadata.created_at = Clock::get()?.unix_timestamp;
-    egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
-    
-    // Update egg config stats
-    egg_config.eggs_minted += 1;
-    msg!("   Total eggs minted: {} / {}", egg_config.eggs_minted, egg_config.max_supply);
-
-    emit!(DragonEggMinted {
-        egg_metadata_account: egg_metadata.key(),
-        dragon_egg_asset_signer: ctx.accounts.dragon_egg_asset.key(),
-        owner: recipient,
-        mint: egg_metadata.mint,
-        name,
-        uri,
-        dna,
-        initial_power: 0,
-        multiplier,
-        faction_id,
-    });
-    
-    msg!("✅ Admin minted Dragon Egg #{} for faction {} to recipient {}", 
-        egg_config.eggs_minted, faction_id, recipient);
     Ok(())
 }
 
