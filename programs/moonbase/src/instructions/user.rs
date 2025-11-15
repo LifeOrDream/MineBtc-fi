@@ -792,8 +792,9 @@ fn validate_points_percentage_limit(current_points_bets: u64, current_sol_bets: 
  
 /// Claim rewards for a user after round ends
 /// Checks if user won based on their bet type and the winning block
-pub fn claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
+pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
     msg!("💰 [claim_rewards] User claiming rewards. User: {}", ctx.accounts.user_wallet.key());
+    msg!("   Round ID: {}", round_id);
     
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
@@ -1105,11 +1106,10 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
         
+    /// CHECK: UserGameBet PDA (validated in instruction)
     #[account(
         mut,
-        close = user_wallet,
-        seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &round_id.to_le_bytes()],
-        bump = user_game_bet.bump
+        close = user_wallet
     )]
     pub user_game_bet: Account<'info, UserGameBet>,
     

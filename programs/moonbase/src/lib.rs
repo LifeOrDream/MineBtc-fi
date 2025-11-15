@@ -445,8 +445,8 @@ pub mod moonbase {
 
 
     /// Claim rewards for a user after round ends
-    pub fn claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
-        user::claim_round_rewards(round_id, ctx)
+    pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>, round_id: u64) -> Result<()> {
+        user::internal_claim_round_rewards(round_id, ctx)
     }
 
  
