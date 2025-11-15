@@ -67,6 +67,9 @@ pub const PLAYER_DATA_SEED: &[u8] = b"player";
 
 // PDAs for Staking system
 pub const STAKED_POSITION_SEED: &[u8] = b"staked-position";
+pub const LP_STAKED_POSITION_SEED: &[u8] = b"lp-staked-position";
+
+
 pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dbtc-custodian";
 pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dbtc-custodian-authority";
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";

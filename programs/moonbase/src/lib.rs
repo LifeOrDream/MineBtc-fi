@@ -486,20 +486,20 @@ pub mod moonbase {
         stake::unstake_lp_tokens(ctx, position_index)
     }
     
-    /// Claim SOL rewards from DogeBtc and LP staking
-    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
-        stake::claim_sol_rewards(ctx, faction_id)
-    }
+    // /// Claim SOL rewards from DogeBtc and LP staking
+    // pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
+    //     stake::claim_sol_rewards(ctx, faction_id)
+    // }
     
-    /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
-    pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Result<()> {
-        stake::claim_dbtc_rewards(ctx, faction_id)
-    }
+    // /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
+    // pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Result<()> {
+    //     stake::claim_dbtc_rewards(ctx, faction_id)
+    // }
     
-    /// Claim referral rewards (SOL and DogeBtc earned from referrals)
-    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-        stake::claim_referral_rewards(ctx)
-    }
+    // /// Claim referral rewards (SOL and DogeBtc earned from referrals)
+    // pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+    //     stake::claim_referral_rewards(ctx)
+    // }
 
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------

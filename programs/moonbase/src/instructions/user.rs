@@ -803,7 +803,7 @@ pub fn claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Re
     require!( game_session.stage == 2, ErrorCode::InvalidStage );
     
     msg!("   User bet round ID: {}. GameSession round ID: {}", user_bet.round_id, game_session.round_id);    
-    require!( user_bet.round_id == game_session.round_id, ErrorCode::InvalidRound);
+    require!( round_id == user_bet.round_id && round_id == game_session.round_id, ErrorCode::InvalidRound);
         
     // Check which blocks user bet on and calculate rewards
     msg!("   User bet on {} blocks: {:?}", user_bet.block_ids.len(), user_bet.block_ids);
@@ -860,7 +860,7 @@ pub fn claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Re
     msg!("     Total DogeBtc won: {} (+{})", player_data.total_dbtc_won, total_dbtc_reward);
 
     player_data.pending_sol_rewards += total_sol_reward;
-    helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, total_dbtc_reward)?;
+    helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, total_dbtc_reward);
     msg!("     Pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, total_sol_reward);
     msg!("     Pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards, total_dbtc_reward);
         

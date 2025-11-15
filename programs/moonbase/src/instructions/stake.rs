@@ -1200,13 +1200,20 @@ pub struct StakeLpTokens<'info> {
         payer = authority,
         space = StakedPosition::LEN,
         seeds = [
-            STAKED_POSITION_SEED.as_ref(),
+            LP_STAKED_POSITION_SEED.as_ref(),
             authority.key().as_ref(),
             &[position_index]
         ],
         bump
     )]
     pub user_position: Account<'info, StakedPosition>,
+
+    #[account(
+        mut,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,    
     
     /// CHECK: LP Mint (validated manually)
     pub lp_mint: Account<'info, token::Mint>,
@@ -1270,7 +1277,7 @@ pub struct UnstakeLpTokens<'info> {
     #[account(
         mut,
         seeds = [
-            STAKED_POSITION_SEED.as_ref(),
+            LP_STAKED_POSITION_SEED.as_ref(),
             authority.key().as_ref(),
             &[position_index]
         ],
@@ -1279,6 +1286,13 @@ pub struct UnstakeLpTokens<'info> {
     )]
     pub user_position: Account<'info, StakedPosition>,
     
+    #[account(
+        mut,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
     /// CHECK: LP Mint (validated manually)
     pub lp_mint: Account<'info, token::Mint>,
     
