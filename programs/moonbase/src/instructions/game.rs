@@ -62,7 +62,7 @@ pub fn start_round(
 
     // Update global state
     global_state.current_round_id = round_id;
-    global_state.round_end_timestamp = game_session.round_end_timestamp;
+    global_state.round_end_timestamp = game_session.round_end_timestamp + global_state.round_duration_seconds;
     msg!("   Global state updated: current_round_id={}, round_end_timestamp={}", round_id, game_session.round_end_timestamp);
 
     // Initialize GameSession for the new round
@@ -132,6 +132,7 @@ pub fn start_round(
     msg!("   ✓ All factions assigned exactly {} blocks", BLOCKS_PER_FACTION);
     msg!("   Block assignments: {:?}", block_assignments);
     
+    game_session.stage = 0;
     game_session.block_assignments = block_assignments;
     game_session.winning_block = 0; // Will be set in end_round
     game_session.winning_faction_id = 0; // Will be set in end_round
@@ -173,14 +174,16 @@ pub fn end_round(
     msg!("🏁 [end_round] Ending current round");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     
-    let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
+
+    let global_state = &ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
     let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let clock = Clock::get()?;
     
     // Validate round has ended
-    require!( clock.unix_timestamp >= game_session.round_end_timestamp,ErrorCode::RoundNotEnded);
+    require!( clock.unix_timestamp >= game_session.round_end_timestamp, ErrorCode::RoundNotEnded);
+    require!( game_session.stage == 0, ErrorCode::InvalidStage);
     msg!("   ✓ Round has ended. Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", game_session.round_id, clock.unix_timestamp, game_session.round_end_timestamp);
     
     // Validate caller is a whitelisted cranker bot
@@ -229,37 +232,31 @@ pub fn end_round(
     let winning_block = find_valid_winning_block(initial_winning_block, &game_session.user_block_indexes)?;
     msg!("   Valid winning block selected: {} (has {} users)", winning_block, game_session.user_block_indexes[(winning_block - 1) as usize]);
     
-    // Finalize winning block: ensure it has at least 1 user AND non-zero points
-    let finalized_winning_block = finalize_winning_block(
-        winning_block,
-        &game_session.user_block_indexes,
-        &game_session.points_bets_indexes,
-    )?;
     msg!("   Finalized winning block: {} (has {} users, {} points)", 
-        finalized_winning_block, 
-        game_session.user_block_indexes[(finalized_winning_block - 1) as usize],
-        game_session.points_bets_indexes[(finalized_winning_block - 1) as usize]);
+        winning_block, 
+        game_session.user_block_indexes[winning_block as usize],
+        game_session.points_bets_indexes[winning_block as usize]);
     
     // Get winning faction from block assignments
-    let winning_faction_id = game_session.block_assignments[(finalized_winning_block - 1) as usize];
+    let winning_faction_id = game_session.block_assignments[winning_block as usize];
     
     // Find the other block with the same faction (0-indexed, convert to 1-indexed)
     let same_faction_other_block = game_session.block_assignments
         .iter()
         .enumerate()
-        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != finalized_winning_block as usize)
+        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != winning_block as usize)
         .map(|(idx, _)| (idx + 1) as u8)
         .ok_or(ErrorCode::InvalidParameters)?; // Should always find the other block
     
-    game_session.winning_block = finalized_winning_block;
+    game_session.winning_block = winning_block;
     game_session.winning_faction_id = winning_faction_id;
     game_session.same_faction_other_block = same_faction_other_block;
-    msg!("   🎯 Winning block selected: {} (Faction: {})", finalized_winning_block, winning_faction_id);
-    msg!("   Same-faction other block: {}", same_faction_other_block);
+    msg!("   🎯 Winning block selected: {} (Faction: {}). Same-faction other block: {}", winning_block, winning_faction_id, same_faction_other_block);
+
+    // ================= REWARDS CALCULATION ======================
     
     // Calculate DogeBtc emission for this round
     let dbtc_rewards = doge_btc_mining.current_dist_rate;
-    msg!("   Calculating DogeBtc emission for round...");
     msg!("   Current dist rate: {}", dbtc_rewards);
     
     // Calculate DogeBtc distribution pools according to ORE tokenomics
@@ -273,90 +270,61 @@ pub fn end_round(
     );
     game_session.dbtc_winner_pool = winning_block_rewards;
     game_session.dbtc_loser_pool = same_faction_rewards;
-    msg!("   Set DogeBtc pools: winner_pool={}, same_faction_pool={}", winning_block_rewards, same_faction_rewards);
+    game_session.faction_stakers = faction_stakers;
+    game_session.motherlode_rewards = motherlode_rewards;
+    msg!("   Set DogeBtc pools: winner_pool={}, same_faction_pool={}, faction_stakers={}, motherlode_pool={}", winning_block_rewards, same_faction_rewards, faction_stakers, motherlode_rewards);
     
-    // Update total_tokens_mined in DogeBtcMining account
-    // This tracks cumulative tokens distributed across all rounds
     let doge_btc_mining_mut = &mut ctx.accounts.doge_btc_mining;
-    let old_total_mined = doge_btc_mining_mut.total_tokens_mined;
-    let total_distributed_this_round = winning_block_rewards
-        .checked_add(same_faction_rewards)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_add(faction_stakers)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_add(motherlode_rewards)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    doge_btc_mining_mut.total_tokens_mined = doge_btc_mining_mut.total_tokens_mined
-        .checked_add(total_distributed_this_round)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   Updated DogeBtcMining.total_tokens_mined: {} -> {} (+{} this round)", 
-        old_total_mined, 
-        doge_btc_mining_mut.total_tokens_mined,
-        total_distributed_this_round
-    );
+    let total_distributed_this_round = winning_block_rewards + same_faction_rewards + faction_stakers + motherlode_rewards;
+    doge_btc_mining_mut.total_tokens_mined += total_distributed_this_round;
+    msg!("   Updated DogeBtcMining.total_tokens_mined: {} (+{} this round)", doge_btc_mining_mut.total_tokens_mined, total_distributed_this_round);
     
-    // Deserialize winning faction state
-    msg!("   Loading winning faction state (faction {})...", winning_faction_id);
-    let mut faction_state_data = ctx.accounts.winning_faction_state.try_borrow_mut_data()?;
-    let mut faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_state_data[..])?;
+    // // Deserialize winning faction state
+    // msg!("   Loading winning faction state (faction {})...", winning_faction_id);
+    // let mut faction_state_data = ctx.accounts.winning_faction_state.try_borrow_mut_data()?;
+    // let mut faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_state_data[..])?;
     
-    // Validate faction_id matches winning faction
-    require!(
-        faction_state.faction_id == winning_faction_id,
-        ErrorCode::InvalidFactionId
-    );
-    msg!("   ✓ Faction state matches winning faction");
-    
-    let old_wins = faction_state.total_wins;
-    let old_motherlode = faction_state.motherlode_pot_size;
-    
+    // // Validate faction_id matches winning faction
+    // require!(
+    //     faction_state.faction_id == winning_faction_id,
+    //     ErrorCode::InvalidFactionId
+    // );
+    // msg!("   ✓ Faction state matches winning faction");
+        
     // Calculate SOL rewards index --> basically rewards claimable by a user = his points * sol_rewards_index / INDEX_PRECISION;
-    let winning_block_pts = game_session.points_bets_indexes[(finalized_winning_block - 1) as usize];
+    let winning_block_pts = game_session.points_bets_indexes[winning_block as usize];
     msg!("   Winning block points: {}", winning_block_pts);
     
     if winning_block_pts > 0 {
         // Calculate reward indexes (only if there are points bet on winning block)
         let sol_rewards_delta = helper::mul_div(game_session.total_sol_bets, INDEX_PRECISION, winning_block_pts)?;        
-        game_session.sol_rewards_index = game_session.sol_rewards_index+ sol_rewards_delta;
-        msg!("   SOL rewards index: {} -> {} (+{})", game_session.sol_rewards_index - sol_rewards_delta, game_session.sol_rewards_index, sol_rewards_delta);
+        game_session.sol_rewards_index = game_session.sol_rewards_index + sol_rewards_delta;
+        msg!("   SOL rewards index: {}", game_session.sol_rewards_index);
         
         // Calculate DogeBtc rewards index for winning block
         let dbtc_rewards_delta = helper::mul_div(winning_block_rewards, INDEX_PRECISION, winning_block_pts)?;
         game_session.dbtc_rewards_index = game_session.dbtc_rewards_index + dbtc_rewards_delta;
-        msg!("   DogeBtc rewards index (winning block): {} -> {} (+{})", game_session.dbtc_rewards_index - dbtc_rewards_delta, game_session.dbtc_rewards_index, dbtc_rewards_delta);
+        msg!("   DogeBtc rewards index (winning block): {}", game_session.dbtc_rewards_index);
         
         // Calculate DogeBtc rewards index for same-faction other block
-        let same_faction_pts = game_session.points_bets_indexes[(same_faction_other_block - 1) as usize];
+        let same_faction_pts = game_session.points_bets_indexes[same_faction_other_block as usize];
         if same_faction_pts > 0 {
             let same_faction_dbtc_delta = helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_pts)?;
             game_session.same_faction_dbtc_rewards_index = game_session.same_faction_dbtc_rewards_index + same_faction_dbtc_delta;
-            msg!("   DogeBtc rewards index (same-faction): {} -> {} (+{})", game_session.same_faction_dbtc_rewards_index - same_faction_dbtc_delta, game_session.same_faction_dbtc_rewards_index, same_faction_dbtc_delta);
+            msg!("   DogeBtc rewards index (same-faction): {}", game_session.same_faction_dbtc_rewards_index);
         } else {
-            msg!("   ⚠️ No points bet on same-faction block {}, skipping same-faction rewards index", same_faction_other_block);
+            msg!("   ⚠️ No points bet on same-faction block {}, distributing rewards to winning block");
+
+            // Calculate DogeBtc rewards index for winning block
+            let dbtc_rewards_delta = helper::mul_div(same_faction_rewards, INDEX_PRECISION, winning_block_pts)?;
+            game_session.dbtc_rewards_index = game_session.dbtc_rewards_index + dbtc_rewards_delta;
+            msg!("   DogeBtc rewards index (winning block: after adding dbtc rewards from same-faction which has no points bet): {}", game_session.dbtc_rewards_index);
         }
     } else {
-        msg!("   ⚠️ No points bet on winning block {}, skipping reward index calculations", finalized_winning_block);
+        msg!("   ⚠️ No points bet on winning block {}, skipping reward index calculations", winning_block);
     }
     
-    // dBTC distribution to stakers of the winning faction
-    if faction_state.total_dbtc_hashpower > 0 {
-        let dbtc_per_share = helper::mul_div(faction_stakers / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-        faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + dbtc_per_share;
-        msg!("   Faction stakers reward index: {} -> {} (+{})", faction_state.dbtc_dbtc_reward_index - dbtc_per_share, faction_state.dbtc_dbtc_reward_index, dbtc_per_share);
-    }
-
-    // LP distribution to stakers of the winning faction
-    if faction_state.total_lp_hashpower > 0 {
-        let lp_per_share = helper::mul_div(faction_stakers / 2, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index + lp_per_share;
-        msg!("   Faction stakers reward index: {} -> {} (+{})", faction_state.lp_dbtc_reward_index - lp_per_share, faction_state.lp_dbtc_reward_index, lp_per_share);
-    }
-    
-    // Increment motherlode pot size (always, regardless of hit)    
-    faction_state.motherlode_pot_size = faction_state.motherlode_pot_size + motherlode_rewards;
-    msg!("   Motherlode pot: {} -> {} (+{})", old_motherlode, faction_state.motherlode_pot_size, motherlode_rewards);
-
-
+ 
     // Check for motherlode (random chance)
     msg!("   Checking for motherlode hit (1 in {} chance)...", MOTHERLODE_CHANCE);
     let motherlode_random = u64::from_le_bytes([
@@ -369,90 +337,9 @@ pub fn end_round(
     let motherlode_hit = motherlode_random == 0;
     
     game_session.motherlode_hit = motherlode_hit;
-    game_session.motherlode_hit_faction_id = winning_faction_id;
-    
-    if motherlode_hit {
-        msg!("   🎰 MOTHERLODE HIT! Random value: {} (mod {})", motherlode_random, MOTHERLODE_CHANCE);
-        
-        // Split motherlode pot between winners and same-faction bettors
-        let motherlode_split = motherlode_rewards / 2;
-        let old_winner_pool = game_session.dbtc_winner_pool;
-        let old_loser_pool = game_session.dbtc_loser_pool;
-        
-        game_session.dbtc_winner_pool = game_session.dbtc_winner_pool
-            .checked_add(motherlode_split)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        game_session.dbtc_loser_pool = game_session.dbtc_loser_pool
-            .checked_add(motherlode_split)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("   DogeBtc pools updated: winner {} -> {}, same_faction {} -> {}", 
-            old_winner_pool, game_session.dbtc_winner_pool,
-            old_loser_pool, game_session.dbtc_loser_pool);
-        
-        // Record the full motherlode pot size that was hit
-        game_session.motherlode_pot_size_on_hit = faction_state.motherlode_pot_size;
-        msg!("   🎰 Motherlode pot size on hit: {}", game_session.motherlode_pot_size_on_hit);
-        
-        // Update reward indexes with motherlode split (only if there are points bet)
-        if winning_block_pts > 0 {
-            let motherlode_winner_delta = (motherlode_split as u128)
-                .checked_mul(INDEX_PRECISION as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(winning_block_pts as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            game_session.dbtc_rewards_index = game_session.dbtc_rewards_index
-                .checked_add(motherlode_winner_delta)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("   DogeBtc rewards index (winning block) updated with motherlode: +{}", motherlode_winner_delta);
-            
-            let same_faction_pts = game_session.points_bets_indexes[(same_faction_other_block - 1) as usize];
-            if same_faction_pts > 0 {
-                let motherlode_same_faction_delta = (motherlode_split as u128)
-                    .checked_mul(INDEX_PRECISION as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(same_faction_pts as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-                game_session.same_faction_dbtc_rewards_index = game_session.same_faction_dbtc_rewards_index
-                    .checked_add(motherlode_same_faction_delta)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-                msg!("   DogeBtc rewards index (same-faction) updated with motherlode: +{}", motherlode_same_faction_delta);
-            }
-        }
-    } else {
-        msg!("   Motherlode miss. Random value: {} (mod {})", motherlode_random, MOTHERLODE_CHANCE);
-        game_session.motherlode_pot_size_on_hit = 0;
-    }
-    
-    // Update faction wins
-    faction_state.total_wins = faction_state.total_wins
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   Faction wins: {} -> {}", old_wins, faction_state.total_wins);
-    
-    // Serialize updated faction state back
-    faction_state.try_serialize(&mut &mut faction_state_data[..])?;
-    msg!("   ✓ Faction state updated and serialized");
-        
-    // Update global state with previous round results
-    global_state.last_round_id = game_session.round_id;
-    global_state.winning_faction_id = winning_faction_id;
-    
-    // Update total SOL bets in global state (cumulative)
-    let old_global_total = global_state.total_sol_bets;
-    global_state.total_sol_bets = global_state.total_sol_bets
-        .checked_add(game_session.total_sol_bets as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   Updated global state:");
-    msg!("     last_round_id: {}", global_state.last_round_id);
-    msg!("     winning_faction_id: {}", global_state.winning_faction_id);
-    msg!("     total_sol_bets: {} -> {} (+{})", old_global_total, global_state.total_sol_bets, game_session.total_sol_bets);
-            
+         
+    game_session.stage = 1;
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);
-    msg!("   Winning block: {}, Winning faction: {}, Motherlode: {}",
-        finalized_winning_block,
-        winning_faction_id,
-        if motherlode_hit { "HIT!" } else { "miss" }
-    );
     
     Ok(())
 }
@@ -488,8 +375,8 @@ fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Re
         msg!("   Block {} has no users, trying next block...", current_block);
         
         // Decrement block (wrap around: 1 -> 24)
-        if current_block == 1 {
-            current_block = NUM_BLOCKS as u8;
+        if current_block == 0 {
+            current_block = (NUM_BLOCKS - 1) as u8;
         } else {
             current_block -= 1;
         }
@@ -497,55 +384,7 @@ fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Re
         attempts += 1;
     }
 }
-
-/// Finalizes the winning block by ensuring it has at least 1 user AND non-zero points
-/// If the provided block doesn't meet both criteria, decrements and wraps around until finding a valid block
-/// Wraps around: if we reach block 0 (which doesn't exist), wraps to block 24 and continues decrementing
-fn finalize_winning_block(
-    initial_block: u8,
-    user_block_indexes: &[u64],
-    points_bets_indexes: &[u64],
-) -> Result<u8> {
-    msg!("   Finalizing winning block starting from block {}...", initial_block);
-    
-    let mut current_block = initial_block;
-    let mut attempts = 0;
-    const MAX_ATTEMPTS: u8 = NUM_BLOCKS as u8; // Maximum attempts = number of blocks
-    
-    loop {
-        if attempts >= MAX_ATTEMPTS {
-            msg!("   ✗ No block found with users and points after checking all {} blocks", MAX_ATTEMPTS);
-            return Err(ErrorCode::InvalidParameters.into());
-        }
-        
-        let block_index = (current_block - 1) as usize;
-        let user_count = user_block_indexes[block_index];
-        let points = points_bets_indexes[block_index];
-        
-        // Check if block has at least 1 user AND non-zero points
-        if user_count > 0 && points > 0 {
-            msg!("   ✓ Finalized block {} with {} users and {} points", current_block, user_count, points);
-            return Ok(current_block);
-        }
-        
-        if user_count == 0 {
-            msg!("   Block {} has no users ({} points), decrementing...", current_block, points);
-        } else {
-            msg!("   Block {} has {} users but no points, decrementing...", current_block, user_count);
-        }
-        
-        // Decrement block (wrap around: 1 -> 24)
-        if current_block == 1 {
-            current_block = NUM_BLOCKS as u8;
-            msg!("   Wrapped around to block {}", current_block);
-        } else {
-            current_block -= 1;
-        }
-        
-        attempts += 1;
-    }
-}
-
+ 
 fn calculate_dbtc_split( dbtc_rewards: u64, dbtc_stakers_pct: u8, dbtc_winners_pct: u8, dbtc_same_faction_pct: u8, dbtc_motherlode_pct: u8) -> (u64, u64, u64, u64) {
 
     let winning_block_rewards = (dbtc_rewards as u128 * dbtc_winners_pct as u128 / 100) as u64;
@@ -562,6 +401,142 @@ fn calculate_dbtc_split( dbtc_rewards: u64, dbtc_stakers_pct: u8, dbtc_winners_p
     
     (winning_block_rewards, same_faction_rewards, faction_stakers, motherlode_rewards)
 }
+
+
+/// End the current round by revealing seed, selecting winner, and starting next round
+/// This function:
+/// 1. Verifies revealed seed matches commit hash
+/// 2. Generates final randomness using seed + blockhash
+/// 3. Selects winning block
+/// 4. Calculates winners and updates payout data
+/// 5. Commits hash for next round
+pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Result<()> {
+    msg!("🏁 [end_round_faction_rewards] Ending current round");
+    
+    let game_session = &mut ctx.accounts.game_session;
+    let faction_state = &mut ctx.accounts.faction_state;
+
+    let global_state = &mut ctx.accounts.global_game_state;
+    let global_config = &ctx.accounts.global_config;
+    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
+    let clock = Clock::get()?;
+    
+    // Validate round has ended
+    require!( game_session.stage == 1, ErrorCode::InvalidStage);
+            
+    // Get winning faction from block assignments
+    let winning_faction_id = game_session.winning_faction_id;
+    require!( faction_state.faction_id == winning_faction_id, ErrorCode::InvalidFactionId);
+
+    let mut dbtc_staker_rewards = game_session.faction_stakers;
+    let mut sol_staker_fees = game_session.stakers_fee;
+    msg!("   Dbtc staker rewards: {} SOL. Sol staker fees: {} SOL", (dbtc_staker_rewards as f64 / 1_000_000.0), (sol_staker_fees as f64 / 1_000_000_000.0));
+            
+    // dBTC + SOL distribution to dBTC stakers of the winning faction
+    if faction_state.total_dbtc_hashpower > 0 {
+        let dbtc_per_share = helper::mul_div(dbtc_staker_rewards / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + dbtc_per_share;
+        msg!("   Faction stakers DBTC reward index: {} -> {} (+{})", faction_state.dbtc_dbtc_reward_index - dbtc_per_share, faction_state.dbtc_dbtc_reward_index, dbtc_per_share);
+        dbtc_staker_rewards -= dbtc_staker_rewards / 2;
+
+        let sol_reward_inc = helper::mul_div(sol_staker_fees / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        faction_state.dbtc_sol_reward_index += sol_reward_inc;    
+        msg!("   Faction stakers SOL reward index: {} -> {} (+{})", faction_state.dbtc_sol_reward_index - sol_reward_inc, faction_state.dbtc_sol_reward_index, sol_reward_inc);
+        sol_staker_fees -= sol_staker_fees / 2;
+    }
+
+    // dBTC + SOL distribution to LP stakers of the winning faction
+    if faction_state.total_lp_hashpower > 0 {
+        let lp_per_share = helper::mul_div(dbtc_staker_rewards, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index + lp_per_share;
+        msg!("   Faction stakers reward index: {} -> {} (+{})", faction_state.lp_dbtc_reward_index - lp_per_share, faction_state.lp_dbtc_reward_index, lp_per_share);
+        dbtc_staker_rewards = 0;
+
+        let sol_reward_inc = helper::mul_div(sol_staker_fees, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_sol_reward_index += sol_reward_inc;    
+        msg!("   Faction stakers SOL reward index: {} -> {} (+{})", faction_state.lp_sol_reward_index - sol_reward_inc, faction_state.lp_sol_reward_index, sol_reward_inc);
+        sol_staker_fees = 0;
+    }
+    
+    let payer = &ctx.accounts.authority.to_account_info();
+    let sol_rewards_vault = &ctx.accounts.sol_rewards_vault.to_account_info();
+    let system_program = &ctx.accounts.system_program.to_account_info();
+    helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, sol_staker_fees)?;
+    msg!("     ✓ DBTC stakers fee transferred to sol_rewards_vault");
+ 
+
+    // Increment motherlode pot size (always, regardless of hit)    
+    faction_state.motherlode_pot_size = faction_state.motherlode_pot_size + game_session.motherlode_rewards;
+    msg!("   Motherlode pot: {} -> {} (+{})", (faction_state.motherlode_pot_size - game_session.motherlode_rewards) as f64 / 1_000_000.0, faction_state.motherlode_pot_size as f64 / 1_000_000.0, game_session.motherlode_rewards as f64 / 1_000_000.0);
+
+
+    // boolean to check if motherlode was hit
+    let motherlode_hit = game_session.motherlode_hit;
+    let winning_block_pts = game_session.points_bets_indexes[game_session.winning_block as usize];
+    let same_faction_pts = game_session.points_bets_indexes[(game_session.same_faction_other_block) as usize];
+    msg!("   Winning block points: {}, Same-faction points: {}", winning_block_pts, same_faction_pts);
+    
+    if motherlode_hit && faction_state.motherlode_pot_size > 0 {
+        msg!("   🎰 MOTHERLODE HIT!");
+
+        let wining_block_rewards = 0;
+        let same_faction_rewards = 0;
+        
+        if game_session.dbtc_winner_pool > 0 && game_session.dbtc_loser_pool > 0 {
+            wining_block_rewards = faction_state.motherlode_pot_size / 2;
+            same_faction_rewards = faction_state.motherlode_pot_size - wining_block_rewards;
+            faction_state.motherlode_pot_size = 0;
+        } else if game_session.dbtc_winner_pool > 0 {
+            wining_block_rewards = faction_state.motherlode_pot_size;
+            faction_state.motherlode_pot_size = 0;
+        } else if game_session.dbtc_loser_pool > 0 {
+            same_faction_rewards = faction_state.motherlode_pot_size;
+            faction_state.motherlode_pot_size = 0;
+        }
+        msg!("   Motherlode split: winner block: {} DBTC, same_faction block: {} DBTC", (wining_block_rewards as f64 / 1_000_000.0), (same_faction_rewards as f64 / 1_000_000.0));
+
+        game_session.dbtc_winner_pool =  game_session.dbtc_winner_pool + wining_block_rewards;
+        game_session.dbtc_loser_pool = game_session.dbtc_loser_pool + same_faction_rewards;
+        
+        // Record the full motherlode pot size that was hit
+        game_session.motherlode_pot_size_on_hit = wining_block_rewards + same_faction_rewards;
+        msg!("   🎰 Motherlode pot size on hit: {}", game_session.motherlode_pot_size_on_hit);
+        
+        // Update reward indexes with motherlode split (only if there are points bet)
+        if wining_block_rewards > 0 {
+            let dbtc_rewards_delta = helper::mul_div(wining_block_rewards, INDEX_PRECISION, winning_block_pts)?;
+            game_session.dbtc_rewards_index += dbtc_rewards_delta;
+            msg!("   DogeBtc rewards index (winning block) updated with motherlode: +{}. (Total: {})", dbtc_rewards_delta, game_session.dbtc_rewards_index);
+        }
+
+        if same_faction_rewards > 0 {
+            let dbtc_rewards_delta = helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_pts)?;
+            game_session.same_faction_dbtc_rewards_index += dbtc_rewards_delta;
+            msg!("   DogeBtc rewards index (same-faction) updated with motherlode: +{}. (Total: {})", dbtc_rewards_delta, game_session.same_faction_dbtc_rewards_index);
+        }
+
+    } else {
+        msg!("   Motherlode miss.");
+    }
+    
+    // Update faction wins
+    faction_state.total_wins = faction_state.total_wins + 1;
+    
+    // Update global state with previous round results
+    global_state.last_round_id = game_session.round_id;
+    global_state.winning_faction_id = winning_faction_id;
+    msg!("   Global state updated: last_round_id: {}, winning_faction_id: {}", global_state.last_round_id, global_state.winning_faction_id);
+    
+    // Update total SOL bets in global state (cumulative)
+    global_state.total_sol_bets = global_state.total_sol_bets + (game_session.total_sol_bets as u128);
+    msg!("   Updated global state. Total SOL bets: {}", global_state.total_sol_bets as f64 / 1_000_000_000.0);
+    
+    game_session.stage = 2;
+
+    msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);    
+    Ok(())
+}
+
 
 
  
@@ -599,6 +574,41 @@ pub struct StartRound<'info> {
 pub struct EndRound<'info> {
     #[account(
         mut,
+        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        bump = game_session.bump
+    )]
+    pub game_session: Account<'info, GameSession>,
+    
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+
+    #[account(
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump = global_game_state.bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+        
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+                        
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+
+#[derive(Accounts)]
+pub struct EndRoundFactionRewards<'info> {
+    #[account(
+        mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
@@ -627,27 +637,16 @@ pub struct EndRound<'info> {
     /// Winning faction state (for updating staker rewards and motherlode)
     /// CHECK: Validated manually that faction_id matches winning_faction_id
     #[account(mut)]
-    pub winning_faction_state: UncheckedAccount<'info>,
-    
-    /// CHECK: SOL prize pot vault
+    pub faction_state: Account<'info, FactionState>,
+        
+    /// CHECK: SOL rewards vault for stakers (PDA)
     #[account(
         mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
         bump
     )]
-    pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: DogeBtc emission vault (holds tokens for distribution)
-    #[account(
-        mut,
-        seeds = [DBTC_EMISSION_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub dbtc_emission_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: SlotHashes sysvar for recent blockhash (optional, using clock as fallback)
-    /// CHECK: Not strictly required - using clock slot + timestamp for randomness
-    pub slot_hashes: UncheckedAccount<'info>,
+    pub sol_rewards_vault: UncheckedAccount<'info>,
+
     
     #[account(mut)]
     pub authority: Signer<'info>,

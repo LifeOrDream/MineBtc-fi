@@ -323,23 +323,7 @@ fn internal_join_round<'info>(
         let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
         game_session.stakers_fee += stakers_fee;
 
-        // if stakers_fee > 0 && faction_state.total_dbtc_hashpower > 0 {
-        //     dbtc_stakers_fee = stakers_fee / 2;
-        //     let dbtc_reward_inc = helper::mul_div(dbtc_stakers_fee, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-        //     faction_state.dbtc_sol_reward_index += dbtc_reward_inc;    
-        //     msg!("   Transferring dbtc stakers fee ({} SOL) to sol_rewards_vault", (dbtc_stakers_fee as f64 / 1_000_000_000.0));
-        //     helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, dbtc_stakers_fee)?;
-        //     msg!("     ✓ DBTC stakers fee transferred to sol_rewards_vault");
-        // }
-        
-        // if stakers_fee > 0 && faction_state.total_lp_hashpower > 0 {
-        //     lp_stakers_fee = stakers_fee / 2;
-        //     let lp_reward_inc = helper::mul_div(lp_stakers_fee, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        //     faction_state.lp_sol_reward_index += lp_reward_inc;
-        //     msg!("   Transferring lp stakers fee ({} SOL) to sol_rewards_vault", (lp_stakers_fee as f64 / 1_000_000_000.0));
-        //     helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, lp_stakers_fee)?;
-        //     msg!("     ✓ LP stakers fee transferred to sol_rewards_vault");
-        // }
+
 
         // Transfer remaining protocol fees to sol_treasury
         let protocol_fee = fee_amount - stakers_fee;
@@ -1082,15 +1066,7 @@ pub struct JoinRound<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
-    // /// CHECK: SOL rewards vault for stakers (PDA)
-    // #[account(
-    //     mut,
-    //     seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-    //     bump
-    // )]
-    // pub sol_rewards_vault: UncheckedAccount<'info>,
-    
+        
     #[account(mut)]
     pub user_wallet: Signer<'info>,
     

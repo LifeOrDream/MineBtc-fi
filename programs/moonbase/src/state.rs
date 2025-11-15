@@ -659,6 +659,11 @@ impl FactionState {
 pub struct GameSession {
     pub bump: u8,
 
+    // 0 = Not ended yet
+    // 1 = ended and winning block finalized, need to claim faction rewards
+    // 2 = Faction rewards also finalized
+    pub stage: u8,
+
     /// The round ID this session belongs to
     pub round_id: u64,
 
@@ -697,6 +702,9 @@ pub struct GameSession {
     pub dbtc_winner_pool: u64,
     /// DogeBtc allocated for same-faction bettors in this round
     pub dbtc_loser_pool: u64,
+    pub faction_stakers: u64,
+    pub motherlode_rewards: u64,
+
 
     /// SOL rewards index for this round
     pub sol_rewards_index: u128,
@@ -707,8 +715,6 @@ pub struct GameSession {
 
 
     // --- Motherlode data for this round ---
-    /// The faction ID that hit motherlode in this round
-    pub motherlode_hit_faction_id: u8,
     /// Whether motherlode was hit in this round
     pub motherlode_hit: bool,
     /// Motherlode pot size when hit (if applicable)
