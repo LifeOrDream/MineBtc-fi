@@ -667,35 +667,30 @@ pub struct GameSession {
     /// The round ID this session belongs to
     pub round_id: u64,
 
-    /// Timestamp when this round started
     pub round_start_timestamp: i64,
-    /// Timestamp when this round ends
     pub round_end_timestamp: i64,
-
-    pub stakers_fee: u64,
 
     /// Total SOL bets placed in this round
     pub total_sol_bets: u64,
     /// Total points bets placed in this round
     pub total_points_bets: u64,
-
-    /// Indexes of UserGameBet PDAs for SOL bets in this round
-    /// Used to track all bets and calculate rewards
-    pub user_block_indexes: Vec<u64>,
-    pub sol_bets_indexes: Vec<u64>,
-    /// Indexes of UserGameBet PDAs for points bets in this round
-    pub points_bets_indexes: Vec<u64>,
+    /// Total stakers fee paid in this round
+    pub stakers_fee: u64,
 
     /// Block assignments: [block_0, block_1, ..., block_23]
     /// Each element is the faction_id assigned to that block (0-indexed: blocks 0-23)
     /// Set at round start when factions are randomly assigned to blocks
     pub block_assignments: [u8; NUM_BLOCKS],
 
-    /// The winning block number for this round (0-indexed: 0-23)
+    /// Number of users who bet on each block, SOL bet placed on that block and points bet placed on that block
+    /// Used to track all bets and calculate rewards
+    pub user_block_indexes: Vec<u64>,
+    pub sol_bets_indexes: Vec<u64>,
+    pub points_bets_indexes: Vec<u64>,
+
+    /// The winning block and faction ID for this round (0-indexed: 0-23), and the 2nd block with same faction ID
     pub winning_block: u8,
-    /// The winning faction ID for this round (derived from winning_block)
     pub winning_faction_id: u8,
-    /// The other block with the same faction as winning_block (0-indexed: 0-23)
     pub same_faction_other_block: u8,
 
     // --- DogeBtc reward pools for this round ---
@@ -703,9 +698,10 @@ pub struct GameSession {
     pub dbtc_winner_pool: u64,
     /// DogeBtc allocated for same-faction bettors in this round
     pub dbtc_loser_pool: u64,
+    /// DogeBtc allocated for stakers in this round
     pub faction_stakers: u64,
+    /// DogeBtc allocated for motherlode in this round
     pub motherlode_rewards: u64,
-
 
     /// SOL rewards index for this round
     pub sol_rewards_index: u128,
@@ -713,7 +709,6 @@ pub struct GameSession {
     pub dbtc_rewards_index: u128,
     /// DogeBtc rewards index for same-faction bettors in this round
     pub same_faction_dbtc_rewards_index: u128,
-
 
     // --- Motherlode data for this round ---
     /// Whether motherlode was hit in this round
@@ -786,7 +781,6 @@ pub struct PlayerData {
 
     /// Cumulative statistics
     pub rounds_played: u64,
-    pub rounds_won: u64,
 
     pub total_sol_bet: u64,
     pub total_points_bet: u64,
@@ -843,7 +837,6 @@ impl PlayerData {
         4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_rounds Vec<u64>
         4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_points Vec<u64>
         8 +     // rounds_played
-        8 +     // rounds_won
         8 +     // total_sol_bet
         8 +     // total_points_bet
         8 +     // total_sol_won
@@ -1015,86 +1008,55 @@ impl BetType {
 
 /// User Game Bet PDA (Seed: `[b"user-bet", user_pubkey, round_id_u64]`)
 /// Each user bet in a round has its own PDA account.
-/// Users can bet on either:
-/// - A specific block (1-24)
-/// - A faction + highest/lowest option (which maps to one of the faction's 2 blocks)
+/// Users can bet on multiple blocks in a single round.
+/// 
+/// Structure:
+/// - `block_ids`: List of blocks user bet on (0-indexed: 0-23)
+/// - `sol_bets`: SOL bets for each block (index matches block_ids)
+/// - `points_bets`: Points bets for each block (index matches block_ids)
+/// - `total_sol_bet`: Total SOL bet across all blocks
+/// - `total_points_bet`: Total points bet across all blocks
+/// - `total_fee`: Total fees paid
 #[account]
 pub struct UserGameBet {
     /// The user who placed this bet
     pub owner: Pubkey,
     /// The round ID this bet belongs to
     pub round_id: u64,
-    /// The bet type (Block or FactionHighestLowest)
-    pub bet_type: BetType,
-    /// The net SOL amount bet (after protocol fee deduction)
-    pub sol_bet_amount: u64,
-    pub points_amount: u64,
-    pub fee_amount: u64,
+    
+    /// List of block IDs user bet on (0-indexed: 0-23)
+    /// Index position corresponds to same index in sol_bets and points_bets
+    pub block_ids: Vec<u8>,
+
+    /// SOL bets for each block (index matches block_ids)
+    pub sol_bets: Vec<u64>,
+    /// Points bets for each block (index matches block_ids)
+    pub points_bets: Vec<u64>,
+
+    /// Total SOL amount bet across all blocks (after protocol fee deduction)
+    pub total_sol_bet: u64,
+    /// Total points amount bet across all blocks
+    pub total_points_bet: u64,
+
+    /// Total fees paid across all bets
+    pub total_fee: u64,
     pub bump: u8,
 }
 
 impl UserGameBet {
+    // Maximum number of blocks a user can bet on in a single round
+    pub const MAX_BLOCKS_PER_BET: usize = 24; // One per block maximum
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        BetType::LEN + // bet_type (enum)
-        8 +     // sol_bet_amount
-        8 +     // points_amount
-        8 +     // fee_amount
+        4 + (Self::MAX_BLOCKS_PER_BET * 1) + // block_ids Vec<u8> (4 bytes length + MAX_BLOCKS_PER_BET * 1 byte)
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // sol_bets Vec<u64> (4 bytes length + MAX_BLOCKS_PER_BET * 8 bytes)
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // points_bets Vec<u64> (4 bytes length + MAX_BLOCKS_PER_BET * 8 bytes)
+        8 +     // total_sol_bet
+        8 +     // total_points_bet
+        8 +     // total_fee
         1;      // bump
-    
-    /// Get the target block ID for this bet based on GameSession block assignments
-    /// Returns 0-indexed block number (0-23)
-    /// Returns None if bet is invalid or block assignments not set
-    pub fn get_target_block(&self, block_assignments: &[u8; NUM_BLOCKS]) -> Option<u8> {
-        match &self.bet_type {
-            BetType::Block { block_id } => {
-                if *block_id < NUM_BLOCKS as u8 {
-                    Some(*block_id) // 0-indexed (0-23)
-                } else {
-                    None
-                }
-            }
-            BetType::FactionHighestLowest { faction_id, is_highest } => {
-                // Find the two blocks assigned to this faction (0-indexed: 0-23)
-                let mut faction_blocks: Vec<u8> = Vec::new();
-                for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
-                    if *assigned_faction == *faction_id {
-                        faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
-                    }
-                }
-                
-                if faction_blocks.len() == BLOCKS_PER_FACTION {
-                    if *is_highest {
-                        Some(*faction_blocks.iter().max().unwrap())
-                    } else {
-                        Some(*faction_blocks.iter().min().unwrap())
-                    }
-                } else {
-                    None
-                }
-            }
-            BetType::FactionBoth { faction_id } => {
-                // For "both", return the highest block (used for validation, 0-indexed: 0-23)
-                let mut faction_blocks: Vec<u8> = Vec::new();
-                for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
-                    if *assigned_faction == *faction_id {
-                        faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
-                    }
-                }
-                if faction_blocks.len() == BLOCKS_PER_FACTION {
-                    Some(*faction_blocks.iter().max().unwrap())
-                } else {
-                    None
-                }
-            }
-            BetType::RandomBlock => {
-                // Random block - cannot determine without runtime context
-                // This should not be stored in UserGameBet, only used during batch betting
-                None
-            }
-        }
-    }
 }
 
 /// Autominer Vault PDA (Seed: `[b"autominer", user_pubkey]`)

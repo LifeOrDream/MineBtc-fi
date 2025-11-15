@@ -451,6 +451,7 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
         msg!("   Faction stakers SOL reward index: {} -> {} (+{})", faction_state.lp_sol_reward_index - sol_reward_inc, faction_state.lp_sol_reward_index, sol_reward_inc);
     }
     
+    // Transfer SOL staker fees to sol_rewards_vault
     let payer = &ctx.accounts.authority.to_account_info();
     let sol_rewards_vault = &ctx.accounts.sol_rewards_vault.to_account_info();
     let system_program = &ctx.accounts.system_program.to_account_info();
