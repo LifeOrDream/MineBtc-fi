@@ -1,8 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use anchor_lang::solana_program::sysvar::Sysvar;
-use anchor_lang::AccountDeserialize;
-use anchor_lang::AccountSerialize;
 
 use crate::errors::ErrorCode;
 use crate::state::*;
@@ -227,24 +225,24 @@ pub fn end_round(
     ]) % NUM_BLOCKS as u64)) as u8; // 0-indexed blocks
     msg!("   Initial winning block from hash: {}", initial_winning_block);
     
-    // Find a valid winning block (must have at least 1 user who bet on it)
+    // Find a valid winning block (must have at least 1 user who bet on it, 0-indexed: 0-23)
     let winning_block = find_valid_winning_block(initial_winning_block, &game_session.user_block_indexes)?;
-    msg!("   Valid winning block selected: {} (has {} users)", winning_block, game_session.user_block_indexes[(winning_block - 1) as usize]);
+    msg!("   Valid winning block selected: {} (has {} users)", winning_block, game_session.user_block_indexes[winning_block as usize]);
     
     msg!("   Finalized winning block: {} (has {} users, {} points)", 
         winning_block, 
         game_session.user_block_indexes[winning_block as usize],
         game_session.points_bets_indexes[winning_block as usize]);
     
-    // Get winning faction from block assignments
+    // Get winning faction from block assignments (0-indexed: 0-23)
     let winning_faction_id = game_session.block_assignments[winning_block as usize];
     
-    // Find the other block with the same faction (0-indexed, convert to 1-indexed)
+    // Find the other block with the same faction (0-indexed: 0-23)
     let same_faction_other_block = game_session.block_assignments
         .iter()
         .enumerate()
-        .find(|(idx, &faction)| faction == winning_faction_id && (*idx + 1) != winning_block as usize)
-        .map(|(idx, _)| (idx + 1) as u8)
+        .find(|(idx, &faction)| faction == winning_faction_id && *idx != winning_block as usize)
+        .map(|(idx, _)| idx as u8)
         .ok_or(ErrorCode::InvalidParameters)?; // Should always find the other block
     
     game_session.winning_block = winning_block;
@@ -305,7 +303,7 @@ pub fn end_round(
         game_session.dbtc_rewards_index = game_session.dbtc_rewards_index + dbtc_rewards_delta;
         msg!("   DogeBtc rewards index (winning block): {}", game_session.dbtc_rewards_index);
         
-        // Calculate DogeBtc rewards index for same-faction other block
+        // Calculate DogeBtc rewards index for same-faction other block (0-indexed: 0-23)
         let same_faction_pts = game_session.points_bets_indexes[same_faction_other_block as usize];
         if same_faction_pts > 0 {
             let same_faction_dbtc_delta = helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_pts)?;
@@ -347,12 +345,13 @@ pub fn end_round(
 
 
 /// Find a valid winning block that has at least 1 user who bet on it
-/// Starts from the initial_block and decrements until finding a block with users
-/// Wraps around if needed (24 -> 23 -> ... -> 1 -> 24 -> ...)
+/// Starts from the initial_block (0-indexed: 0-23) and decrements until finding a block with users
+/// Wraps around if needed (23 -> 22 -> ... -> 0 -> 23 -> ...)
+/// Returns 0-indexed block number (0-23)
 fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Result<u8> {
     msg!("   Finding valid winning block starting from block {}...", initial_block);
     
-    // Start from initial block and check if it has users
+    // Start from initial block and check if it has users (0-indexed: 0-23)
     let mut current_block = initial_block;
     let mut attempts = 0;
     const MAX_ATTEMPTS: u8 = NUM_BLOCKS as u8; // Maximum attempts = number of blocks
@@ -363,7 +362,7 @@ fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Re
             return Err(ErrorCode::InvalidParameters.into());
         }
         
-        let block_index = (current_block - 1) as usize;
+        let block_index = current_block as usize;
         let user_count = user_block_indexes[block_index];
         
         if user_count > 0 {
@@ -373,7 +372,7 @@ fn find_valid_winning_block(initial_block: u8, user_block_indexes: &[u64]) -> Re
         
         msg!("   Block {} has no users, trying next block...", current_block);
         
-        // Decrement block (wrap around: 1 -> 24)
+        // Decrement block (wrap around: 0 -> 23)
         if current_block == 0 {
             current_block = (NUM_BLOCKS - 1) as u8;
         } else {
@@ -433,12 +432,12 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
         let dbtc_per_share = helper::mul_div(dbtc_staker_rewards / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
         faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + dbtc_per_share;
         msg!("   Faction stakers DBTC reward index: {} -> {} (+{})", faction_state.dbtc_dbtc_reward_index - dbtc_per_share, faction_state.dbtc_dbtc_reward_index, dbtc_per_share);
-        dbtc_staker_rewards -= dbtc_staker_rewards / 2;
+        dbtc_staker_rewards = dbtc_staker_rewards - (dbtc_staker_rewards / 2);
 
         let sol_reward_inc = helper::mul_div(sol_staker_fees / 2, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
         faction_state.dbtc_sol_reward_index += sol_reward_inc;    
         msg!("   Faction stakers SOL reward index: {} -> {} (+{})", faction_state.dbtc_sol_reward_index - sol_reward_inc, faction_state.dbtc_sol_reward_index, sol_reward_inc);
-        sol_staker_fees -= sol_staker_fees / 2;
+        sol_staker_fees = sol_staker_fees - (sol_staker_fees / 2);
     }
 
     // dBTC + SOL distribution to LP stakers of the winning faction
@@ -446,12 +445,10 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
         let lp_per_share = helper::mul_div(dbtc_staker_rewards, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
         faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index + lp_per_share;
         msg!("   Faction stakers reward index: {} -> {} (+{})", faction_state.lp_dbtc_reward_index - lp_per_share, faction_state.lp_dbtc_reward_index, lp_per_share);
-        dbtc_staker_rewards = 0;
 
         let sol_reward_inc = helper::mul_div(sol_staker_fees, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
         faction_state.lp_sol_reward_index += sol_reward_inc;    
         msg!("   Faction stakers SOL reward index: {} -> {} (+{})", faction_state.lp_sol_reward_index - sol_reward_inc, faction_state.lp_sol_reward_index, sol_reward_inc);
-        sol_staker_fees = 0;
     }
     
     let payer = &ctx.accounts.authority.to_account_info();
@@ -469,7 +466,7 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
     // boolean to check if motherlode was hit
     let motherlode_hit = game_session.motherlode_hit;
     let winning_block_pts = game_session.points_bets_indexes[game_session.winning_block as usize];
-    let same_faction_pts = game_session.points_bets_indexes[(game_session.same_faction_other_block) as usize];
+    let same_faction_pts = game_session.points_bets_indexes[game_session.same_faction_other_block as usize];
     msg!("   Winning block points: {}, Same-faction points: {}", winning_block_pts, same_faction_pts);
     
     if motherlode_hit && faction_state.motherlode_pot_size > 0 {

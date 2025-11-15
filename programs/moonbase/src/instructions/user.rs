@@ -124,13 +124,16 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
 
 /// Join a round by betting SOL or using free tickets (single bet)
 /// Users can bet on either:
-/// - A specific block (block_id: 1-24)
+/// - A specific block (block_id: 0-23, 0-indexed)
 /// - A faction + highest/lowest option (faction_id + is_highest)
 /// 
 /// Parameters:
 /// - amount: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
-/// - bet_type: The bet type (Block or FactionHighestLowest)
+/// - bet_type: The bet type (Block, FactionHighestLowest, FactionBoth, or RandomBlock)
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
+/// 
+/// Note: Faction accounts are not required for user betting functions. Faction-related calculations
+/// are handled in end_round_faction_rewards by cranker bots.
 pub fn join_round(
     ctx: Context<JoinRound>, 
     amount: u64,
@@ -164,13 +167,16 @@ pub fn join_round(
 
 /// Join a round with multiple bets in a single transaction
 /// Users can bet on:
-/// - Multiple blocks (e.g., [1, 5, 10, 15])
+/// - Multiple blocks (e.g., [0, 4, 9, 14] - 0-indexed: 0-23)
 /// - Multiple factions with settings: "low", "high", "both", or "random"
 /// 
 /// Parameters:
-/// - bet_types: Vector of bet types to place
+/// - bet_types: Vector of bet types to place (all must be for the same faction)
 /// - amount_per_bet: Bet amount per bet type in lamports (for SOL) or points (for tickets)
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
+/// 
+/// Note: Faction accounts are not required for user betting functions. Faction-related calculations
+/// are handled in end_round_faction_rewards by cranker bots.
 pub fn join_round_batch(
     ctx: Context<JoinRoundBatch>,
     bet_types: Vec<BetType>,
@@ -220,13 +226,13 @@ pub fn join_round_batch(
     for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
         msg!("   Placing bet {} of {}: {:?}", idx + 1, expanded_bet_types.len(), bet_type);
                 
-        // Get target block and faction for this bet
+        // Get target block and faction for this bet (0-indexed: 0-23)
         let target_block = get_target_block_from_bet_type(bet_type, &ctx.accounts.game_session.block_assignments)?;
-        let target_faction = ctx.accounts.game_session.block_assignments[target_block as usize - 1];
+        let target_faction = ctx.accounts.game_session.block_assignments[target_block as usize];
         
         if idx > 0 {
             let prev_target_block = get_target_block_from_bet_type(&expanded_bet_types[idx - 1], &ctx.accounts.game_session.block_assignments)?;
-            let prev_target_faction = ctx.accounts.game_session.block_assignments[prev_target_block as usize - 1];
+            let prev_target_faction = ctx.accounts.game_session.block_assignments[prev_target_block as usize];
             require!(
                 target_faction == prev_target_faction,
                 ErrorCode::InvalidParameters // All bets must be for same faction in batch
@@ -361,7 +367,7 @@ fn internal_join_round<'info>(
     user_game_bet.fee_amount += fee_amount;
     msg!("     User SOL bet amount: {} SOL. Points bet amount: {} SOL. Fee amount: {} SOL", (user_game_bet.sol_bet_amount as f64) / 1_000_000_000.0, (user_game_bet.points_amount as f64) / 1_000_000_000.0, (user_game_bet.fee_amount as f64) / 1_000_000_000.0);
     
-    // Update block tracking arrays (0-indexed: block 1-24 -> index 0-23)
+    // Update block tracking arrays (0-indexed: blocks 0-23)
     let block_index = target_block as usize;
     require!(block_index < NUM_BLOCKS, ErrorCode::InvalidParameters);
     
@@ -406,22 +412,22 @@ fn internal_join_round<'info>(
  
   
 
-/// Get the target block ID from bet_type
-/// For Block bets, returns the block_id directly
-/// For FactionHighestLowest bets, finds the faction's blocks and returns highest/lowest
+/// Get the target block ID from bet_type (0-indexed: 0-23)
+/// For Block bets, returns the block_id directly (0-indexed)
+/// For FactionHighestLowest bets, finds the faction's blocks and returns highest/lowest (0-indexed)
 fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; NUM_BLOCKS]) -> Result<u8> {
     match bet_type {
         BetType::Block { block_id } => {
-            require!(*block_id >= 1 && *block_id <= NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
+            require!(*block_id < NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
             Ok(*block_id)
         }
         BetType::FactionHighestLowest { faction_id, is_highest } => {
             require!((*faction_id as usize) < block_assignments.len(), ErrorCode::InvalidParameters);
-            // Find the two blocks assigned to this faction
+            // Find the two blocks assigned to this faction (0-indexed)
             let mut faction_blocks: Vec<u8> = Vec::new();
             for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
                 if *assigned_faction == *faction_id {
-                    faction_blocks.push(block_idx as u8); // block_id is 1-indexed
+                    faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
                 }
             }
             
@@ -442,7 +448,7 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
             let mut faction_blocks: Vec<u8> = Vec::new();
             for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
                 if *assigned_faction == *faction_id {
-                    faction_blocks.push( block_idx as u8);
+                    faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
                 }
             }
             require!(
@@ -452,7 +458,7 @@ fn get_target_block_from_bet_type(bet_type: &BetType, block_assignments: &[u8; N
             Ok(*faction_blocks.iter().max().unwrap()) // Return highest, but will be expanded
         }
         BetType::RandomBlock => {
-            // Random block - use clock slot for randomness
+            // Random block - use clock slot for randomness (0-indexed: 0-23)
             let clock = Clock::get()?;
             let slot_bytes = clock.slot.to_le_bytes();
             let random_block = ((slot_bytes[0] % 24)) as u8; // 0-23
@@ -469,23 +475,6 @@ fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
 }
  
 
-fn init_user_bet(current_round_id: u64, is_new_bet: bool, user_bet: &mut UserGameBet, bet_type: BetType, authority: &Signer,  bumps: u8) -> Result<()> {
-    if is_new_bet {
-        msg!("     Creating new bet account for round {}", current_round_id);
-        user_bet.owner = authority.key();
-        user_bet.round_id = current_round_id;
-        user_bet.bet_type = bet_type.clone();
-        user_bet.sol_bet_amount = 0;
-        user_bet.bump = bumps;
-    } else {
-        msg!("     Updating existing bet account for round {}", current_round_id);
-        require!(
-            user_bet.bet_type == bet_type,
-            ErrorCode::InvalidParameters
-        );
-    }
-    return Ok(());
-}
 
 
 
@@ -542,14 +531,14 @@ pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
     let is_winner = target_block == game_session.winning_block;
     msg!("     Is winner: {}", is_winner);
     
-    // Find the other block with the same faction (for same-faction distribution)
+    // Find the other block with the same faction (for same-faction distribution, 0-indexed: 0-23)
     msg!("   Finding same-faction other block...");
     let winning_faction_id = game_session.winning_faction_id;
     msg!("     Winning faction ID: {}", winning_faction_id);
     let mut same_faction_other_block = 0u8;
     for (block_idx, &assigned_faction) in game_session.block_assignments.iter().enumerate() {
-        if assigned_faction == winning_faction_id && (block_idx + 1) as u8 != game_session.winning_block {
-            same_faction_other_block = (block_idx + 1) as u8;
+        if assigned_faction == winning_faction_id && block_idx as u8 != game_session.winning_block {
+            same_faction_other_block = block_idx as u8; // 0-indexed (0-23)
             break;
         }
     }

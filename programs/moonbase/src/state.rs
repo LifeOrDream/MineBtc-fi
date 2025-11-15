@@ -687,14 +687,15 @@ pub struct GameSession {
     pub points_bets_indexes: Vec<u64>,
 
     /// Block assignments: [block_0, block_1, ..., block_23]
-    /// Each element is the faction_id assigned to that block (0-indexed, blocks are 1-24)
+    /// Each element is the faction_id assigned to that block (0-indexed: blocks 0-23)
     /// Set at round start when factions are randomly assigned to blocks
     pub block_assignments: [u8; NUM_BLOCKS],
 
-    /// The winning block number for this round (1-24)
+    /// The winning block number for this round (0-indexed: 0-23)
     pub winning_block: u8,
     /// The winning faction ID for this round (derived from winning_block)
     pub winning_faction_id: u8,
+    /// The other block with the same faction as winning_block (0-indexed: 0-23)
     pub same_faction_other_block: u8,
 
     // --- DogeBtc reward pools for this round ---
@@ -742,10 +743,10 @@ impl GameSession {
         1 +     // same_faction_other_block (u8)
         8 +     // dbtc_winner_pool
         8 +     // dbtc_loser_pool
+        8 +     // faction_stakers (u64)
         16 +    // sol_rewards_index (u128)
         16 +    // dbtc_rewards_index (u128)
         16 +    // same_faction_dbtc_rewards_index (u128)
-        1 +     // motherlode_hit_faction_id (u8)
         1 +     // motherlode_hit (bool)
         8;      // motherlode_pot_size_on_hit
 }
@@ -1043,22 +1044,23 @@ impl UserGameBet {
         1;      // bump
     
     /// Get the target block ID for this bet based on GameSession block assignments
+    /// Returns 0-indexed block number (0-23)
     /// Returns None if bet is invalid or block assignments not set
     pub fn get_target_block(&self, block_assignments: &[u8; NUM_BLOCKS]) -> Option<u8> {
         match &self.bet_type {
             BetType::Block { block_id } => {
-                if *block_id >= 1 && *block_id <= NUM_BLOCKS as u8 {
-                    Some(*block_id)
+                if *block_id < NUM_BLOCKS as u8 {
+                    Some(*block_id) // 0-indexed (0-23)
                 } else {
                     None
                 }
             }
             BetType::FactionHighestLowest { faction_id, is_highest } => {
-                // Find the two blocks assigned to this faction
+                // Find the two blocks assigned to this faction (0-indexed: 0-23)
                 let mut faction_blocks: Vec<u8> = Vec::new();
                 for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
                     if *assigned_faction == *faction_id {
-                        faction_blocks.push((block_idx + 1) as u8); // block_id is 1-indexed
+                        faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
                     }
                 }
                 
@@ -1073,11 +1075,11 @@ impl UserGameBet {
                 }
             }
             BetType::FactionBoth { faction_id } => {
-                // For "both", return the highest block (used for validation)
+                // For "both", return the highest block (used for validation, 0-indexed: 0-23)
                 let mut faction_blocks: Vec<u8> = Vec::new();
                 for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
                     if *assigned_faction == *faction_id {
-                        faction_blocks.push((block_idx + 1) as u8);
+                        faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
                     }
                 }
                 if faction_blocks.len() == BLOCKS_PER_FACTION {
