@@ -522,9 +522,9 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
-    let new_dbtc_rewards : u64;
-    let new_sol_rewards : u64;
-    let accrued_dbtc_rewards : u64;
+    let mut new_dbtc_rewards = 0;
+    let mut new_sol_rewards = 0;
+    let mut accrued_dbtc_rewards = 0;
     if player_data.lp_hashpower > 0 {
         msg!("💰 Processing pending rewards before position update");
                 
@@ -638,6 +638,9 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         amount: return_amount,
         weighted_amount: original_weighted,
         early_withdrawal: is_early_withdrawal,
+        new_sol_rewards,
+        new_dbtc_rewards,
+        unrefined_dbtc: accrued_dbtc_rewards        
     });
     
     // Emit emergency withdrawal event if early withdrawal
@@ -666,87 +669,103 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 }
 
 
-// // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// // ---- CLAIM SOL REWARDS :: User earns SOL rewards from staking ------
-// // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+// ---- CLAIM SOL REWARDS :: User earns SOL rewards from staking ------
+// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-// /// Claim SOL rewards from staking DogeBtc and LP tokens
-// pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
-//     msg!("💰 [claim_sol_rewards] Claiming SOL rewards from staking");
+/// Claim SOL rewards from staking DogeBtc and LP tokens
+pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
+    msg!("💰 [claim_sol_rewards] Claiming SOL rewards from staking");
     
-//     require!(faction_id < NUM_FACTIONS as u8, ErrorCode::InvalidFactionId);
-//     require!(ctx.accounts.faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
+    require!(faction_id < NUM_FACTIONS as u8, ErrorCode::InvalidFactionId);
+    require!(ctx.accounts.faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
     
-//     let faction_state = &ctx.accounts.faction_state;
-//     let player_data = &mut ctx.accounts.player_data;
+    let faction_state = &ctx.accounts.faction_state;
+    let player_data = &mut ctx.accounts.player_data;
     
-//     // Process DogeBtc staking SOL rewards
-//     if player_data.dogebtc_hashpower > 0 {
-//         msg!("   Processing DogeBtc staking SOL rewards");
-//         let rewards = helper::calculate_staking_rewards(
-//             player_data.dogebtc_hashpower,
-//             faction_state.dbtc_sol_reward_index,
-//             player_data.dbtc_sol_reward_debt
-//         )?;
-//         player_data.pending_sol_rewards += rewards;
-//         msg!("     DogeBtc staking SOL rewards: {} (+{})", player_data.pending_sol_rewards, rewards);
-//     }
+    // Process DogeBtc staking SOL rewards
+    let mut st_dbtc_new_sol_rewards = 0;
+    let mut st_dbtc_accrued_dbtc_rewards = 0;
+    let mut st_dbtc_new_dbtc_rewards = 0;
+
+    if player_data.dogebtc_hashpower > 0 {
+        // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
+        st_dbtc_new_sol_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_sol_reward_index, player_data.dbtc_sol_reward_debt)?;
+        player_data.pending_sol_rewards += st_dbtc_new_sol_rewards;
+        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, st_dbtc_new_sol_rewards as f64 / 1e9);
+
+
+        msg!("   Processing DogeBtc staking SOL rewards");
+        st_dbtc_new_dbtc_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_dbtc_reward_index,  player_data.dbtc_dbtc_reward_debt)?;
+        st_dbtc_accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, st_dbtc_new_dbtc_rewards);
+        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, st_dbtc_new_dbtc_rewards as f64 / 1e6);
+    }
+
+    let mut st_lp_new_sol_rewards = 0;
+    let mut st_lp_accrued_dbtc_rewards = 0;
+    let mut st_lp_new_dbtc_rewards = 0;
     
-//     // Process LP staking SOL rewards
-//     if player_data.lp_hashpower > 0 {
-//         msg!("   Processing LP staking SOL rewards");
-//         let rewards = helper::calculate_staking_rewards(
-//             player_data.lp_hashpower,
-//             faction_state.lp_sol_reward_index,
-//             player_data.lp_sol_reward_debt
-//         )?;
-//         player_data.pending_sol_rewards += rewards;
-//         msg!("     LP staking SOL rewards: {} (+{})", player_data.pending_sol_rewards, rewards);
-//     }
+    // Process LP staking SOL rewards
+    if player_data.lp_hashpower > 0 {
+        msg!("💰 Processing pending rewards before position update");
+                
+        // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
+        st_lp_new_sol_rewards = helper::calculate_staking_rewards( player_data.lp_hashpower,faction_state.lp_sol_reward_index, player_data.lp_sol_reward_debt)?;
+        player_data.pending_sol_rewards += st_lp_new_sol_rewards;
+        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, st_lp_new_sol_rewards as f64 / 1e9);
+
+        st_lp_new_dbtc_rewards = helper::calculate_staking_rewards( player_data.lp_hashpower,faction_state.lp_dbtc_reward_index, player_data.lp_dbtc_reward_debt)?;
+        st_lp_accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, st_lp_new_dbtc_rewards);
+        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, st_lp_new_dbtc_rewards as f64 / 1e6);
+    }
     
-//     let total_pending = player_data.pending_sol_rewards;
-//     require!(total_pending > 0, ErrorCode::InsufficientFunds);
+    // Update reward debts to prevent double-claiming
+    player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
+    player_data.dbtc_dbtc_reward_debt = faction_state.dbtc_dbtc_reward_index;
+    player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
+    player_data.lp_dbtc_reward_debt = faction_state.lp_dbtc_reward_index;
+
+    let total_pending_sol_rewards = player_data.pending_sol_rewards;
+    let total_pending_dbtc_rewards = player_data.pending_dbtc_rewards;
+    require!(total_pending_sol_rewards > 0 && total_pending_dbtc_rewards > 0, ErrorCode::InsufficientFunds);    
+    msg!("   Total claimable SOL rewards: {} lamports", total_pending_sol_rewards as f64 / 1e9);
+    msg!("   Total claimable DogeBtc rewards: {} dbtc", total_pending_dbtc_rewards as f64 / 1e6);
     
-//     msg!("   Total claimable SOL rewards: {} lamports", total_pending);
-    
-//     // Check if user has a referrer (not system referral account)
-//     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
-//     let (referral_fee, player_sol) = if has_referrer {
-//         let fee = total_pending * 5 / 100; // 5% referral fee
-//         msg!("     Referral fee (5%): {} lamports", fee);
+    // Check if user has a referrer (not system referral account)
+    let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
+    let (referral_fee, player_sol) = if has_referrer {
+        let fee = total_pending_sol_rewards * 5 / 100; // 5% referral fee
+        msg!("     Referral fee (5%): {} lamports", fee);
         
-//         // Add fee to referrer's pending SOL rewards
-//         if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
-//             referrer_rewards.pending_sol_rewards += fee;
-//             referrer_rewards.total_sol_earned += fee;
-//             msg!("     Added {} SOL to referrer's rewards", fee);
-//         }
-//         (fee, total_pending - fee)
-//     } else {
-//         (0, total_pending)
-//     };
+        // Add fee to referrer's pending SOL rewards
+        if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
+            referrer_rewards.pending_sol_rewards += fee;
+            referrer_rewards.total_sol_earned += fee;
+            msg!("     Added {} SOL to referrer's rewards", fee);
+        }
+        (fee, total_pending - fee)
+    } else {
+        (0, total_pending)
+    };
     
-//     // Transfer SOL rewards to user (after referral fee)
-//     msg!("   Transferring {} SOL from sol_rewards_vault to user", (player_sol as f64 / 1e9));
-//     helper::transfer_from_sol_rewards_vault(
-//         &ctx.accounts.sol_rewards_vault.to_account_info(),
-//         &ctx.accounts.authority.to_account_info(),
-//         &ctx.accounts.system_program.to_account_info(),
-//         player_sol,
-//         ctx.bumps.sol_rewards_vault,
-//     )?;
-//     msg!("     ✓ SOL rewards transferred to user");
+    // Transfer SOL rewards to user (after referral fee)
+    msg!("   Transferring {} SOL from sol_rewards_vault to user", (player_sol as f64 / 1e9));
+    helper::transfer_from_sol_rewards_vault(
+        &ctx.accounts.sol_rewards_vault.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        player_sol,
+        ctx.bumps.sol_rewards_vault,
+    )?;
+    msg!("     ✓ SOL rewards transferred to user");
     
-//     // Update reward debts to prevent double-claiming
-//     player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
-//     player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
     
-//     // Reset pending rewards
-//     player_data.pending_sol_rewards = 0;
+    // Reset pending rewards
+    player_data.pending_sol_rewards = 0;
     
-//     msg!("✅ [claim_sol_rewards] Claimed {} SOL (fee: {} to referrer)", player_sol as f64 / 1e9, referral_fee as f64 / 1e9);
-//     Ok(())
-// }
+    msg!("✅ [claim_sol_rewards] Claimed {} SOL (fee: {} to referrer)", player_sol as f64 / 1e9, referral_fee as f64 / 1e9);
+    Ok(())
+}
 
 // // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // // ---- CLAIM DBTC REWARDS :: User earns dbtc rewards from staking ------

@@ -202,6 +202,9 @@ pub struct DogeBtcUnstaked {
     pub amount: u64,
     pub weighted_amount: u64,
     pub early_withdrawal: bool,
+    pub new_sol_rewards: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
 }
 
 #[event]
