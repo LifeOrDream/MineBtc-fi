@@ -428,12 +428,6 @@ pub mod moonbase {
         user::join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
     }
 
-
-    /// Claim rewards for a user after round ends
-    pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
-        user::claim_rewards(ctx)
-    }
-
     /// Initialize autominer vault with bet types and amounts
     pub fn init_autominer(
         ctx: Context<InitAutominer>,
@@ -449,6 +443,11 @@ pub mod moonbase {
         user::execute_autominer_bet(ctx)
     }
 
+
+    /// Claim rewards for a user after round ends
+    pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>) -> Result<()> {
+        user::claim_round_rewards(ctx)
+    }
 
  
     // ----------------------------------------------------------------------------------------

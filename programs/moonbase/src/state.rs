@@ -572,6 +572,10 @@ pub struct GlobalGameSate {
     /// Whitelisted cranker bots that can call start_round and end_round
     /// Maximum MAX_CRANKER_BOTS bots
     pub cranker_bots: Vec<Pubkey>,
+
+    pub unrefining_index: u128,
+    pub total_dbtc_claimable: u64
+
 }
 
 impl GlobalGameSate {
@@ -799,7 +803,9 @@ pub struct PlayerData {
     pub lp_dbtc_reward_debt: u128,
 
     pub pending_sol_rewards: u64,
+    pub unrefining_index: u128,
     pub pending_dbtc_rewards: u64,
+    pub unrefined_dbtc_rewards: u64,
 
     pub moondoge_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,

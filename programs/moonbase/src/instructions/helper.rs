@@ -285,6 +285,13 @@ pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
     Ok(result)
 }
 
+
+pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
+    let result = a.checked_mul(b).ok_or(ErrorCode::ArithmeticOverflow)?.checked_div(c).ok_or(ErrorCode::ArithmeticOverflow)?;
+    Ok(result)
+}
+
+
 pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_index: u8, staked_amount: u64, weighted_amount: u64, 
                     lockup_duration: u64, current_ts: i64, multiplier: u16) -> Result<()> {
     position.position_index = position_index;

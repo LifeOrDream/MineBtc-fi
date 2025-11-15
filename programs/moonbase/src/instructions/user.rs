@@ -504,109 +504,6 @@ fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
     msg!("     Net amount (after fee): {} SOL. Protocol fee ({}%): {} SOL", (net_amount as f64) / 1_000_000_000.0, protocol_fee_pct, (fee as f64) / 1_000_000_000.0);
     return Ok((net_amount, fee));
 }
- 
-
-
- 
-
- 
-/// Claim rewards for a user after round ends
-/// Checks if user won based on their bet type and the winning block
-pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
-    msg!("💰 [claim_rewards] User claiming rewards. User: {}", ctx.accounts.user_wallet.key());
-    
-    let game_session = &ctx.accounts.game_session;
-    let user_bet = &ctx.accounts.user_game_bet;
-    let player_data = &mut ctx.accounts.player_data;
-
-    // Round should be completely over before user can claim rewards
-    require!( game_session.stage == 2, ErrorCode::InvalidStage );
-    
-    msg!("   User bet round ID: {}. GameSession round ID: {}", user_bet.round_id, game_session.round_id);    
-    require!( user_bet.round_id == game_session.round_id, ErrorCode::InvalidRound);
-        
-    // Check which blocks user bet on and calculate rewards
-    msg!("   User bet on {} blocks: {:?}", user_bet.block_ids.len(), user_bet.block_ids);
-    msg!("   Winning block: {}. Follow-up block: {}", game_session.winning_block, game_session.same_faction_other_block);
-    msg!("     Winning faction ID: {}", game_session.winning_faction_id);
-        
-    // Calculate rewards for each block user bet on
-    let mut total_sol_reward = 0u64;
-    let mut total_dbtc_reward = 0u64;
-    
-    for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
-        let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
-        
-        msg!("     Block {}: Points bet: {} SOL", block_id, points_bet_on_block as f64 / 1_000_000_000.0);
-        
-        let is_winning_block = block_id == game_session.winning_block;
-        let is_same_faction_block = block_id == game_session.same_faction_other_block;
-        
-        if is_winning_block {
-            msg!("       ✓ Winning block - calculating rewards...");
-            
-            // SOL rewards (only for winning block)
-            if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
-                let sol_reward = helper::mul_div(points_bet_on_block, game_session.sol_rewards_index as u64, INDEX_PRECISION)? as u64;
-                total_sol_reward += sol_reward;
-                msg!("         SOL reward: {} lamports", sol_reward);
-            }
-            
-            // DogeBtc rewards (winning block)
-            if game_session.dbtc_rewards_index > 0 && points_bet_on_block > 0 {
-                let dbtc_reward = helper::mul_div(points_bet_on_block, game_session.dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
-                total_dbtc_reward += dbtc_reward;
-                msg!("         DogeBtc reward: {} tokens", dbtc_reward);
-            }
-        } else if is_same_faction_block {
-            msg!("       ✓ Same-faction other block - calculating DogeBtc rewards...");
-            
-            // DogeBtc rewards (same-faction other block)
-            if game_session.same_faction_dbtc_rewards_index > 0 && points_bet_on_block > 0 {
-                let dbtc_reward = helper::mul_div(points_bet_on_block, game_session.same_faction_dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
-                total_dbtc_reward += dbtc_reward;
-                msg!("         DogeBtc reward: {} tokens", dbtc_reward);
-            }
-        } else {
-            msg!("       ✗ Not a winning or same-faction block - no rewards");
-        }
-    }
-    
-    msg!("   Total SOL reward: {} lamports", total_sol_reward);
-    msg!("   Total DogeBtc reward: {} tokens", total_dbtc_reward);
-
-    player_data.total_sol_won += total_sol_reward;
-    player_data.total_dbtc_won += total_dbtc_reward;
-    msg!("     Total SOL won: {} (+{})", player_data.total_sol_won, total_sol_reward);
-    msg!("     Total DogeBtc won: {} (+{})", player_data.total_dbtc_won, total_dbtc_reward);
-
-    player_data.pending_sol_rewards += total_sol_reward;
-    player_data.pending_dbtc_rewards += total_dbtc_reward;
-    msg!("     Pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, total_sol_reward);
-    msg!("     Pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards, total_dbtc_reward);
-        
-    // Remove round from player's active rounds list
-    msg!("   Removing round from player's active rounds list...");
-    if let Some(index) = player_data.bets_rounds.iter().position(|&r| r == user_bet.round_id) {
-        let old_count = player_data.bets_rounds.len();
-        player_data.bets_rounds.remove(index);
-        player_data.bets_points.remove(index);
-        msg!("     Removed round {} from active rounds (count: {} -> {})", user_bet.round_id, old_count, player_data.bets_rounds.len());
-    }
-    
-    // Close bet account and return rent
-    msg!("   Closing bet account and returning rent...");
-    let signer_key = ctx.accounts.user_wallet.key();
-    let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
-    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += rent;
-    msg!("     Returned {} lamports rent to user", rent);
-    
-    msg!("✅ [claim_rewards] Rewards claimed successfully");
-    msg!("   User: {}", signer_key);
-    msg!("   Round: {}", user_bet.round_id);
-    
-    Ok(())
-}
 
 /// Initialize autominer vault with bet types and amounts
 /// Users can specify multiple bet types (blocks or faction+highest/lowest) and bet amount per bet
@@ -887,6 +784,137 @@ fn validate_points_percentage_limit(current_points_bets: u64, current_sol_bets: 
         Ok(())
 }
 
+ 
+
+
+ 
+
+ 
+/// Claim rewards for a user after round ends
+/// Checks if user won based on their bet type and the winning block
+pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>) -> Result<()> {
+    msg!("💰 [claim_rewards] User claiming rewards. User: {}", ctx.accounts.user_wallet.key());
+    
+    let game_session = &ctx.accounts.game_session;
+    let user_bet = &ctx.accounts.user_game_bet;
+    let player_data = &mut ctx.accounts.player_data;
+
+    // Round should be completely over before user can claim rewards
+    require!( game_session.stage == 2, ErrorCode::InvalidStage );
+    
+    msg!("   User bet round ID: {}. GameSession round ID: {}", user_bet.round_id, game_session.round_id);    
+    require!( user_bet.round_id == game_session.round_id, ErrorCode::InvalidRound);
+        
+    // Check which blocks user bet on and calculate rewards
+    msg!("   User bet on {} blocks: {:?}", user_bet.block_ids.len(), user_bet.block_ids);
+    msg!("   Winning block: {}. Follow-up block: {}", game_session.winning_block, game_session.same_faction_other_block);
+    msg!("     Winning faction ID: {}", game_session.winning_faction_id);
+        
+    // Calculate rewards for each block user bet on
+    let mut total_sol_reward = 0u64;
+    let mut total_dbtc_reward = 0u64;
+    
+    for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
+        let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
+        
+        msg!("     Block {}: Points bet: {} SOL", block_id, points_bet_on_block as f64 / 1_000_000_000.0);
+        
+        let is_winning_block = block_id == game_session.winning_block;
+        let is_same_faction_block = block_id == game_session.same_faction_other_block;
+        
+        if is_winning_block {
+            msg!("       ✓ Winning block - calculating rewards...");
+            
+            // SOL rewards (only for winning block)
+            if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
+                let sol_reward = helper::mul_div(points_bet_on_block, game_session.sol_rewards_index as u64, INDEX_PRECISION)? as u64;
+                total_sol_reward += sol_reward;
+                msg!("         SOL reward: {} lamports", sol_reward);
+            }
+            
+            // DogeBtc rewards (winning block)
+            if game_session.dbtc_rewards_index > 0 && points_bet_on_block > 0 {
+                let dbtc_reward = helper::mul_div(points_bet_on_block, game_session.dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
+                total_dbtc_reward += dbtc_reward;
+                msg!("         DogeBtc reward: {} tokens", dbtc_reward);
+            }
+        } else if is_same_faction_block {
+            msg!("       ✓ Same-faction other block - calculating DogeBtc rewards...");
+            
+            // DogeBtc rewards (same-faction other block)
+            if game_session.same_faction_dbtc_rewards_index > 0 && points_bet_on_block > 0 {
+                let dbtc_reward = helper::mul_div(points_bet_on_block, game_session.same_faction_dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
+                total_dbtc_reward += dbtc_reward;
+                msg!("         DogeBtc reward: {} tokens", dbtc_reward);
+            }
+        } else {
+            msg!("       ✗ Not a winning or same-faction block - no rewards");
+        }
+    }
+    
+    msg!("   Total SOL reward: {} lamports", total_sol_reward);
+    msg!("   Total DogeBtc reward: {} tokens", total_dbtc_reward);
+
+    player_data.total_sol_won += total_sol_reward;
+    msg!("     Total SOL won: {} (+{})", player_data.total_sol_won, total_sol_reward);
+    msg!("     Total DogeBtc won: {} (+{})", player_data.total_dbtc_won, total_dbtc_reward);
+
+    player_data.pending_sol_rewards += total_sol_reward;
+    add_to_total_claimable(&mut ctx.accounts.global_game_state, player_data, total_dbtc_reward);
+    msg!("     Pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, total_sol_reward);
+    msg!("     Pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards, total_dbtc_reward);
+        
+    // Remove round from player's active rounds list
+    msg!("   Removing round from player's active rounds list...");
+    if let Some(index) = player_data.bets_rounds.iter().position(|&r| r == user_bet.round_id) {
+        let old_count = player_data.bets_rounds.len();
+        player_data.bets_rounds.remove(index);
+        player_data.bets_points.remove(index);
+        msg!("     Removed round {} from active rounds (count: {} -> {})", user_bet.round_id, old_count, player_data.bets_rounds.len());
+    }
+    
+    // Close bet account and return rent
+    msg!("   Closing bet account and returning rent...");
+    let signer_key = ctx.accounts.user_wallet.key();
+    let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
+    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? += rent;
+    msg!("     Returned {} lamports rent to user", rent);
+    
+    msg!("✅ [claim_rewards] Rewards claimed successfully");
+    msg!("   User: {}", signer_key);
+    msg!("   Round: {}", user_bet.round_id);
+    
+    Ok(())
+}
+
+
+
+/// Add to total claimable and pending rewards
+fn add_to_total_claimable(game_state: &mut GlobalGameSate, player_data: &mut PlayerData, dbtc_rewards: u64) {
+
+    // Calculate extra dogeBtc rewards due to unrefining
+    let index_dif = game_state.unrefining_index - player_data.unrefining_index;
+    let accrued_rewards = helper::mul_div_u128( player_data.pending_dbtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
+    msg!("     Accrued DogeBtc rewards: {}", accrued_rewards );
+
+    game_state.total_dbtc_claimable += dbtc_rewards + accrued_rewards;
+    player_data.unrefining_index = game_state.unrefining_index;
+    player_data.pending_dbtc_rewards += dbtc_rewards + accrued_rewards;
+    player_data.total_dbtc_won += dbtc_rewards + accrued_rewards;
+    player_data.unrefined_dbtc_rewards += accrued_rewards;
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ========================================================================================
 // =============================== ACCOUNT CONTEXTS ======================================
@@ -1063,7 +1091,7 @@ pub struct JoinRoundBatch<'info> {
 
 
 #[derive(Accounts)]
-pub struct ClaimRewards<'info> {
+pub struct ClaimRoundRewards<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
@@ -1072,6 +1100,7 @@ pub struct ClaimRewards<'info> {
     pub player_data: Account<'info, PlayerData>,
 
     #[account(
+        mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
