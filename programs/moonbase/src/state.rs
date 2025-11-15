@@ -605,6 +605,7 @@ pub struct FactionState {
     pub dbtc_sol_reward_index: u128,
 
     pub total_lp_hashpower: u64,
+    pub lp_staked: u64,
     pub lp_sol_reward_index: u128,
     pub lp_dbtc_reward_index: u128,
 

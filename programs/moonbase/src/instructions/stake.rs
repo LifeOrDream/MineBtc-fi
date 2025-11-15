@@ -368,29 +368,22 @@ pub fn stake_lp_tokens(
         position_index,
         faction_id
     );
-    
-    // Validate inputs
-    require!(amount > 0, ErrorCode::InvalidAmount);
-    let hashpower_config = &ctx.accounts.hashpower_config;
-    require!(
-        lockup_duration >= hashpower_config.min_lockup_days
-            && lockup_duration <= hashpower_config.max_lockup_days,
-        ErrorCode::InvalidParameters
-    );
-    require!(faction_id < NUM_FACTIONS as u8, ErrorCode::InvalidFactionId);
-    
-    // Get faction state
-    let faction_state = &mut ctx.accounts.faction_state;
-    require!(faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
-    msg!("📊 Current faction state - Total LP staked: {}, Total LP hashpower: {}", 
-        faction_state.total_lp_hashpower, faction_state.total_lp_hashpower);
 
-    // Get player data
-    let player_data = &mut ctx.accounts.player_data;
     let current_ts = Clock::get()?.unix_timestamp;
-    
-    // Get or create position
+    let faction_state = &mut ctx.accounts.faction_state;
+    let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
+
+    let hashpower_config = &ctx.accounts.hashpower_config;
+
+    // Validate inputs
+    require!(faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
+    require!(amount > 0, ErrorCode::InvalidAmount);
+    require!(lockup_duration >= hashpower_config.min_lockup_days && lockup_duration <= hashpower_config.max_lockup_days, ErrorCode::InvalidParameters);
+    
+    // Calculate actual amount after burn tax
+    let actual_amount = amount;
+    msg!(" Current faction state - Total LP staked: {}, Total LP hashpower: {}", faction_state.total_lp_hashpower, faction_state.total_lp_hashpower);
     
     // Add position index to player data
     helper::add_lp_position(player_data, position_index)?;
@@ -406,40 +399,40 @@ pub fn stake_lp_tokens(
     msg!("🔢 Multiplier for {} days lockup: {} ({}x)", lockup_duration, multiplier, multiplier as f64 / 100.0);
     
     // Calculate weighted amount for this position
-    let weighted_amount = amount * multiplier as u64 / M_HUNDRED;
-    msg!("⚖️ Weighted amount: {} (amount: {} × multiplier: {}%)", 
-        weighted_amount, amount, multiplier);
+    let weighted_amount = actual_amount * multiplier as u64 / M_HUNDRED;
+    msg!("⚖️ Weighted amount: {} (amount: {} × multiplier: {}%)",  weighted_amount as f64 / 1e6, actual_amount as f64 / 1e6, multiplier as f64 / 100.0);
+    
+    // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
+    let mut new_dbtc_rewards = 0;
+    let mut new_sol_rewards = 0;
+    let mut accrued_dbtc_rewards = 0;
     if player_data.lp_hashpower > 0 {
         msg!("💰 Processing pending rewards before position update");
-        
-        // Calculate SOL rewards using helper function
-        let new_sol_rewards = helper::calculate_staking_rewards(
-            player_data.lp_hashpower,
-            faction_state.lp_sol_reward_index,
-            player_data.lp_sol_reward_debt
-        )?;
+                
+        // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
+        new_sol_rewards = helper::calculate_staking_rewards( player_data.lp_hashpower,faction_state.lp_sol_reward_index, player_data.lp_sol_reward_debt)?;
         player_data.pending_sol_rewards += new_sol_rewards;
-        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, new_sol_rewards);
+        msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
-        // Calculate dbtc rewards (using u128 indexes)
-        let dbtc_reward_diff = faction_state.lp_dbtc_reward_index
-            .saturating_sub(player_data.lp_dbtc_reward_debt);
-        msg!("   Calculated dbtc reward diff: {} (will be claimable separately)", dbtc_reward_diff);
+        new_dbtc_rewards = helper::calculate_staking_rewards( player_data.lp_hashpower,faction_state.lp_dbtc_reward_index, player_data.lp_dbtc_reward_debt)?;
+        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, new_dbtc_rewards);
+        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
     }
-    
+
+    // -------------- UPDATE POSITION -------------- //
+
     // If position exists, validate and update
     if user_position.staked_amount > 0 {    
-        msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount);
+        msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount as f64 / 1e6);
         require!(user_position.faction_id == faction_id, ErrorCode::InvalidFactionId);
-        require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::InvalidParameters);
+        require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionNotLocked);
 
-        // Update staked amount
-        user_position.staked_amount += amount;
+        // Update staked amount with actual_amount (post-tax)
+        user_position.staked_amount += actual_amount;
         user_position.weighted_amount += weighted_amount;        
-        msg!("   Position updated - staked: {}, weighted: {}", 
-            user_position.staked_amount, user_position.weighted_amount);
+        msg!("   Position updated - staked: {}, weighted: {} mDoge", user_position.staked_amount as f64 / 1e6, user_position.weighted_amount as f64 / 1e6);
     } else {
         msg!("🆕 Creating new position {}", position_index);
         // Initialize new position
@@ -447,27 +440,32 @@ pub fn stake_lp_tokens(
             user_position, 
             faction_id, 
             position_index, 
-            amount, 
+            actual_amount, 
             weighted_amount, 
             lockup_duration, 
             current_ts, 
-            multiplier
+            multiplier,
         )?;                
     }
+
+    // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
     
     // Update player data state
     player_data.lp_hashpower += weighted_amount;
-    player_data.lp_staked += amount;
+    player_data.lp_staked += actual_amount;
     
     // Update reward debt to current indexes
     player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
     player_data.lp_dbtc_reward_debt = faction_state.lp_dbtc_reward_index;
-    msg!("   Updated player reward debts - SOL: {}, dbtc: {}", 
-        player_data.lp_sol_reward_debt, player_data.lp_dbtc_reward_debt);
 
-    msg!("💱 Transferring {} LP tokens from user to custodian", amount);
-    msg!("   From: {}", ctx.accounts.user_lp_account.key());
-    msg!("   To: {}", ctx.accounts.liquidity_custodian.key());
+    // Update faction state with actual_amount (post-tax) and weighted_amount
+    faction_state.lp_staked += actual_amount;
+    faction_state.total_lp_hashpower += weighted_amount;
+    msg!("   Updated faction state - Total staked: {}, Total hashpower: {}",  faction_state.lp_staked as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
+
+    // -------------- TRANSFER TOKENS -------------- //
+
+    msg!("💱 Transferring {} LP tokens from user to custodian", actual_amount as f64 / 1e6);
 
     // Transfer tokens from user to custodian
     let transfer_ctx = CpiContext::new(
@@ -479,20 +477,20 @@ pub fn stake_lp_tokens(
         },
     );
     token::transfer(transfer_ctx, amount)?;
+    msg!("   ✓ Transferred {} LP tokens", actual_amount as f64 / 1e6);
     
-    // Update faction state with amount and weighted_amount
-    faction_state.total_lp_hashpower += weighted_amount;
-    msg!("   Updated faction state - Total LP hashpower: {}", faction_state.total_lp_hashpower);
-
-    msg!("✅ [stake_lp_tokens] LP token staking successful");    
     emit!(LiquidityStaked {
         owner: ctx.accounts.authority.key(),
-        amount,
+        faction_id,
+        amount: actual_amount,
         lockup_duration,
         multiplier,
         weighted_amount,
-        total_hashpower_contribution: weighted_amount,
+        hashpower_contribution: weighted_amount,
         position_index,
+        new_sol_rewards,
+        new_dbtc_rewards,
+        unrefined_dbtc: accrued_dbtc_rewards        
     });
     
     Ok(())
