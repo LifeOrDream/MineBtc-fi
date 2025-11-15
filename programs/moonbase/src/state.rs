@@ -80,7 +80,7 @@ pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_p
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
 pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
-pub const DBTC_EMISSION_VAULT_SEED: &[u8] = b"dbtc-emission-vault";
+
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const EGG_CONFIG_SEED: &[u8] = b"egg-config";
 

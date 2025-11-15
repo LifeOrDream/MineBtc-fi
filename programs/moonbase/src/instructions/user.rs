@@ -1112,31 +1112,7 @@ pub struct ClaimRoundRewards<'info> {
         close = user_wallet
     )]
     pub user_game_bet: Account<'info, UserGameBet>,
-    
-    /// Optional referrer rewards account (if player has a referrer)
-    #[account(
-        mut,
-        seeds = [REFERRAL_REWARDS_SEED.as_ref(), player_data.referral_code.as_ref()],
-        bump
-    )]
-    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
-    
-    /// CHECK: SOL prize pot vault
-    #[account(
-        mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: DogeBtc emission vault
-    #[account(
-        mut,
-        seeds = [DBTC_EMISSION_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub dbtc_emission_vault: UncheckedAccount<'info>,
-        
+                    
     /// User whose bet this is (doesn't need to be signer - anyone can claim for them)
     /// CHECK: Validated via player_data.owner matching user_wallet
     #[account(mut)]
