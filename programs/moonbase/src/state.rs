@@ -667,6 +667,8 @@ pub struct GameSession {
     /// Timestamp when this round ends
     pub round_end_timestamp: i64,
 
+    pub stakers_fee: u64,
+
     /// Total SOL bets placed in this round
     pub total_sol_bets: u64,
     /// Total points bets placed in this round
@@ -722,6 +724,7 @@ impl GameSession {
         8 +     // round_id
         8 +     // round_start_timestamp
         8 +     // round_end_timestamp
+        8 +     // stakers_fee
         8 +     // total_sol_bets
         8 +     // total_points_bets
         4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64> (24-sized array)

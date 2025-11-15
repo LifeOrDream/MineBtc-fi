@@ -145,13 +145,11 @@ pub fn join_round(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
         &mut ctx.accounts.player_data,
-        &mut ctx.accounts.faction_state,
         &mut ctx.accounts.game_session,
         &mut ctx.accounts.user_game_bet,
         &ctx.accounts.user_wallet.to_account_info(),
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-        &ctx.accounts.sol_rewards_vault.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         ctx.bumps.user_game_bet,
         ctx.accounts.authority.key(),
@@ -221,18 +219,11 @@ pub fn join_round_batch(
     // Place each bet
     for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
         msg!("   Placing bet {} of {}: {:?}", idx + 1, expanded_bet_types.len(), bet_type);
-        
-        // For each bet, we need to derive the correct faction_state and user_game_bet
-        // Since we can only have one user_game_bet per round, we'll update it for each bet
-        // But we need different faction_states for different factions
-        
+                
         // Get target block and faction for this bet
         let target_block = get_target_block_from_bet_type(bet_type, &ctx.accounts.game_session.block_assignments)?;
         let target_faction = ctx.accounts.game_session.block_assignments[target_block as usize - 1];
         
-        // We need to use the correct faction_state - but we only have one in the context
-        // For now, we'll require all bets to be for the same faction, or we need to restructure
-        // Let's check if faction matches
         if idx > 0 {
             let prev_target_block = get_target_block_from_bet_type(&expanded_bet_types[idx - 1], &ctx.accounts.game_session.block_assignments)?;
             let prev_target_faction = ctx.accounts.game_session.block_assignments[prev_target_block as usize - 1];
@@ -247,13 +238,11 @@ pub fn join_round_batch(
             &ctx.accounts.global_game_state,
             &ctx.accounts.global_config,
             &mut ctx.accounts.player_data,
-            &mut ctx.accounts.faction_state,
             &mut ctx.accounts.game_session,
             &mut ctx.accounts.user_game_bet,
             &ctx.accounts.user_wallet.to_account_info(),
             &ctx.accounts.sol_treasury.to_account_info(),
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-            &ctx.accounts.sol_rewards_vault.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.user_game_bet,
             ctx.accounts.authority.key(),
@@ -274,13 +263,11 @@ fn internal_join_round<'info>(
     global_state: &Account<'info, GlobalGameSate>,
     global_config: &Account<'info, GlobalConfig>,
     player_data: &mut Account<'info, PlayerData>,
-    faction_state: &mut Account<'info, FactionState>,
     game_session: &mut Account<'info, GameSession>,
     user_game_bet: &mut Account<'info, UserGameBet>,
     payer: &AccountInfo<'info>,
     sol_treasury: &AccountInfo<'info>,
     sol_prize_pot_vault: &AccountInfo<'info>,
-    sol_rewards_vault: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     user_game_bet_bump: u8,
     owner_key: Pubkey,
@@ -301,8 +288,6 @@ fn internal_join_round<'info>(
     let target_block = get_target_block_from_bet_type( &bet_type, &game_session.block_assignments)?;
     let target_faction = game_session.block_assignments[target_block as usize];
     msg!("     ✓ Target faction {}", target_faction);
-
-    assert!(target_faction == faction_state.faction_id);
 
     // Determine if using ticket or SOL
     let (fee_amount, net_amount, points_amount) = if let Some(ticket_type_index) = use_ticket {
@@ -336,29 +321,28 @@ fn internal_join_round<'info>(
 
         // Calculate faction staker fees (split between dbtc and LP stakers)
         let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
-        let mut dbtc_stakers_fee = 0;
-        let mut lp_stakers_fee = 0;
+        game_session.stakers_fee += stakers_fee;
 
-        if stakers_fee > 0 && faction_state.total_dbtc_hashpower > 0 {
-            dbtc_stakers_fee = stakers_fee / 2;
-            let dbtc_reward_inc = helper::mul_div(dbtc_stakers_fee, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-            faction_state.dbtc_sol_reward_index += dbtc_reward_inc;    
-            msg!("   Transferring dbtc stakers fee ({} SOL) to sol_rewards_vault", (dbtc_stakers_fee as f64 / 1_000_000_000.0));
-            helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, dbtc_stakers_fee)?;
-            msg!("     ✓ DBTC stakers fee transferred to sol_rewards_vault");
-        }
+        // if stakers_fee > 0 && faction_state.total_dbtc_hashpower > 0 {
+        //     dbtc_stakers_fee = stakers_fee / 2;
+        //     let dbtc_reward_inc = helper::mul_div(dbtc_stakers_fee, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+        //     faction_state.dbtc_sol_reward_index += dbtc_reward_inc;    
+        //     msg!("   Transferring dbtc stakers fee ({} SOL) to sol_rewards_vault", (dbtc_stakers_fee as f64 / 1_000_000_000.0));
+        //     helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, dbtc_stakers_fee)?;
+        //     msg!("     ✓ DBTC stakers fee transferred to sol_rewards_vault");
+        // }
         
-        if stakers_fee > 0 && faction_state.total_lp_hashpower > 0 {
-            lp_stakers_fee = stakers_fee / 2;
-            let lp_reward_inc = helper::mul_div(lp_stakers_fee, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-            faction_state.lp_sol_reward_index += lp_reward_inc;
-            msg!("   Transferring lp stakers fee ({} SOL) to sol_rewards_vault", (lp_stakers_fee as f64 / 1_000_000_000.0));
-            helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, lp_stakers_fee)?;
-            msg!("     ✓ LP stakers fee transferred to sol_rewards_vault");
-        }
+        // if stakers_fee > 0 && faction_state.total_lp_hashpower > 0 {
+        //     lp_stakers_fee = stakers_fee / 2;
+        //     let lp_reward_inc = helper::mul_div(lp_stakers_fee, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        //     faction_state.lp_sol_reward_index += lp_reward_inc;
+        //     msg!("   Transferring lp stakers fee ({} SOL) to sol_rewards_vault", (lp_stakers_fee as f64 / 1_000_000_000.0));
+        //     helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, lp_stakers_fee)?;
+        //     msg!("     ✓ LP stakers fee transferred to sol_rewards_vault");
+        // }
 
         // Transfer remaining protocol fees to sol_treasury
-        let protocol_fee = fee_amount - dbtc_stakers_fee - lp_stakers_fee;
+        let protocol_fee = fee_amount - stakers_fee;
         if protocol_fee > 0 {
             msg!("   Transferring protocol fees ({} SOL) to sol_treasury", (protocol_fee as f64 / 1_000_000_000.0));
             helper::transfer_to_sol_treasury(payer, sol_treasury, system_program, protocol_fee)?;
@@ -957,13 +941,11 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             &ctx.accounts.global_game_state,
             &ctx.accounts.global_config,
             &mut ctx.accounts.player_data,
-            &mut ctx.accounts.faction_state,
             &mut ctx.accounts.game_session,
             &mut ctx.accounts.user_game_bet,
             &ctx.accounts.autominer_vault.to_account_info(),
             &ctx.accounts.sol_treasury.to_account_info(),
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-            &ctx.accounts.sol_rewards_vault.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.user_game_bet,
             owner_key,
@@ -1047,25 +1029,6 @@ pub struct InitializePlayer<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: i128, user_pubkey: Pubkey)]
-pub struct UpdatePersonalHashpower<'info> {
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), user_pubkey.as_ref()],
-        bump = player_data.bump
-    )]
-    pub player_data: Account<'info, PlayerData>,
-
-    #[account(
-        mut,
-    )]
-    pub faction_state: Account<'info, FactionState>,
-    
-    /// CHECK: Verified via constraint that this is the mooneconomy program
-    pub mooneconomy_program: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
 pub struct JoinRound<'info> {
     #[account(
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
@@ -1085,12 +1048,7 @@ pub struct JoinRound<'info> {
         bump = player_data.bump
     )]
     pub player_data: Account<'info, PlayerData>,
-    
-    #[account(
-        mut,
-    )]
-    pub faction_state: Account<'info, FactionState>,
-    
+        
     /// GameSession PDA for the current round (must be initialized by crank function)
     #[account(
         mut,
@@ -1125,13 +1083,13 @@ pub struct JoinRound<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
     
-    /// CHECK: SOL rewards vault for stakers (PDA)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
+    // /// CHECK: SOL rewards vault for stakers (PDA)
+    // #[account(
+    //     mut,
+    //     seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+    //     bump
+    // )]
+    // pub sol_rewards_vault: UncheckedAccount<'info>,
     
     #[account(mut)]
     pub user_wallet: Signer<'info>,
@@ -1164,13 +1122,7 @@ pub struct JoinRoundBatch<'info> {
         bump = player_data.bump
     )]
     pub player_data: Account<'info, PlayerData>,
-    
-    /// Faction state for the bets (all bets must be for same faction)
-    #[account(
-        mut,
-    )]
-    pub faction_state: Account<'info, FactionState>,
-    
+        
     /// GameSession PDA for the current round
     #[account(
         mut,
@@ -1204,15 +1156,7 @@ pub struct JoinRoundBatch<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: SOL rewards vault for stakers (PDA)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
-    
+        
     #[account(mut)]
     pub user_wallet: Signer<'info>,
     
@@ -1411,10 +1355,7 @@ pub struct ExecuteAutominerBet<'info> {
         bump
     )]
     pub player_data: Account<'info, PlayerData>,
-    
-    #[account()]
-    pub faction_state: Account<'info, FactionState>,
-    
+        
     #[account(
         mut,
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
@@ -1447,15 +1388,7 @@ pub struct ExecuteAutominerBet<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
-    /// CHECK: SOL rewards vault for stakers (PDA)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
-    
+        
     /// CHECK: Owner account (to receive remaining SOL when vault closes)
     #[account(
         mut,

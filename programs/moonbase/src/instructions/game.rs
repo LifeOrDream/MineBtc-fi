@@ -19,7 +19,6 @@ use crate::instructions::helper;
 /// 3. Initializes GameSession for the new round
 /// 
 /// The commit hash should be hash(secret_seed) where secret_seed will be revealed in end_round.
-/// For the first round, use next_round_commit from global_state (set during initialization).
 pub fn start_round(
     ctx: Context<StartRound>,
     round_id: u64,
@@ -170,7 +169,6 @@ pub fn start_round(
 pub fn end_round(
     ctx: Context<EndRound>,
     revealed_seed: [u8; 32], // The secret seed that was hashed to create commit_hash
-    next_round_commit: [u8; 32], // hash(secret_seed_for_next_round)
 ) -> Result<()> {
     msg!("🏁 [end_round] Ending current round");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -183,14 +181,9 @@ pub fn end_round(
     
     // Validate round has ended
     require!( clock.unix_timestamp >= game_session.round_end_timestamp,ErrorCode::RoundNotEnded);
-    msg!("   ✓ Round has ended");
-
-    msg!("   Current round ID: {}", game_session.round_id);
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-    msg!("   Round end timestamp: {}", game_session.round_end_timestamp);
+    msg!("   ✓ Round has ended. Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", game_session.round_id, clock.unix_timestamp, game_session.round_end_timestamp);
     
     // Validate caller is a whitelisted cranker bot
-    msg!("   Validating cranker bot authorization...");
     require!( global_state.cranker_bots.contains(&ctx.accounts.authority.key()), ErrorCode::Unauthorized);
     msg!("     ✓ Caller is whitelisted cranker bot");
         
@@ -222,14 +215,14 @@ pub fn end_round(
     let final_hash_bytes = final_hash.to_bytes();
     msg!("   Final hash generated from seed + slot {} + timestamp {}", clock.slot, clock.unix_timestamp);
     
-    // Select initial winning block (1-24) using final hash
+    // Select initial winning block (0-23) using final hash
     let initial_winning_block = ((u64::from_le_bytes([
         final_hash_bytes[0],
         final_hash_bytes[1],
         final_hash_bytes[2],
         final_hash_bytes[3],
         0, 0, 0, 0,
-    ]) % NUM_BLOCKS as u64) + 1) as u8; // 1-indexed blocks
+    ]) % NUM_BLOCKS as u64)) as u8; // 0-indexed blocks
     msg!("   Initial winning block from hash: {}", initial_winning_block);
     
     // Find a valid winning block (must have at least 1 user who bet on it)
@@ -453,11 +446,7 @@ pub fn end_round(
     msg!("     last_round_id: {}", global_state.last_round_id);
     msg!("     winning_faction_id: {}", global_state.winning_faction_id);
     msg!("     total_sol_bets: {} -> {} (+{})", old_global_total, global_state.total_sol_bets, game_session.total_sol_bets);
-    
-    // Set commit hash for next round
-    global_state.next_round_commit = next_round_commit;
-    msg!("   Set next round commit hash");
-        
+            
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);
     msg!("   Winning block: {}, Winning faction: {}, Motherlode: {}",
         finalized_winning_block,
