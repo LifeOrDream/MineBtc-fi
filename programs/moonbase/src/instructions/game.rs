@@ -148,7 +148,6 @@ pub fn start_round(
     game_session.dbtc_loser_pool = 0;
     
     // Initialize motherlode fields
-    game_session.motherlode_hit_faction_id = 0;
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
     
@@ -175,8 +174,8 @@ pub fn end_round(
     msg!("   Authority: {}", ctx.accounts.authority.key());
     
     let game_session = &mut ctx.accounts.game_session;
+    let global_state = &mut ctx.accounts.global_game_state;
 
-    let global_state = &ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
     let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let clock = Clock::get()?;
@@ -417,9 +416,6 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
     let faction_state = &mut ctx.accounts.faction_state;
 
     let global_state = &mut ctx.accounts.global_game_state;
-    let global_config = &ctx.accounts.global_config;
-    let doge_btc_mining = &ctx.accounts.doge_btc_mining;
-    let clock = Clock::get()?;
     
     // Validate round has ended
     require!( game_session.stage == 1, ErrorCode::InvalidStage);
@@ -479,8 +475,8 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
     if motherlode_hit && faction_state.motherlode_pot_size > 0 {
         msg!("   🎰 MOTHERLODE HIT!");
 
-        let wining_block_rewards = 0;
-        let same_faction_rewards = 0;
+        let mut wining_block_rewards = 0;
+        let mut same_faction_rewards = 0;
         
         if game_session.dbtc_winner_pool > 0 && game_session.dbtc_loser_pool > 0 {
             wining_block_rewards = faction_state.motherlode_pot_size / 2;
@@ -593,6 +589,7 @@ pub struct EndRound<'info> {
     pub global_game_state: Account<'info, GlobalGameSate>,
         
     #[account(
+        mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
@@ -620,12 +617,6 @@ pub struct EndRoundFactionRewards<'info> {
         bump = game_session.bump
     )]
     pub game_session: Account<'info, GameSession>,
-    
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
     
     #[account(
         mut,

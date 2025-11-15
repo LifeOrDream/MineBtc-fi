@@ -384,9 +384,16 @@ pub mod moonbase {
     pub fn end_round(
         ctx: Context<EndRound>,
         revealed_seed: [u8; 32],
-        next_round_commit: [u8; 32],
     ) -> Result<()> {
-        game::end_round(ctx, revealed_seed, next_round_commit)
+        game::end_round(ctx, revealed_seed)
+    }
+    
+    /// End the current round by revealing seed, selecting winner, and starting next round
+    /// Verifies commit-reveal, generates final randomness, selects winning block
+    pub fn end_round_faction_rewards(
+        ctx: Context<EndRoundFactionRewards>
+    ) -> Result<()> {
+        game::end_round_faction_rewards(ctx)
     }
 
 
