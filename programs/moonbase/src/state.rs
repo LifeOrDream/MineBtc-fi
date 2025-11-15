@@ -41,6 +41,7 @@ pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker 
 // PDAs which hold GlobalConfig / DogeBtcMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 pub const DOGE_BTC_MINING_SEED: &[u8] = b"moon-doge-mining";
+pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
@@ -553,10 +554,6 @@ pub struct GlobalGameSate {
     /// Whitelisted cranker bots that can call start_round and end_round
     /// Maximum MAX_CRANKER_BOTS bots
     pub cranker_bots: Vec<Pubkey>,
-
-    pub unrefining_index: u128,
-    pub total_dbtc_claimable: u64
-
 }
 
 impl GlobalGameSate {
@@ -575,6 +572,19 @@ impl GlobalGameSate {
         33 +    // current_round_seed Option<[u8; 32]> (1 byte discriminator + 32 bytes)
         32 +    // next_round_commit [u8; 32]
         4 + (MAX_CRANKER_BOTS * 32); // cranker_bots Vec<Pubkey> (4 bytes length + MAX_CRANKER_BOTS * 32 bytes)
+}
+
+
+
+pub struct UnrefinedRewards {
+    pub unrefining_index: u128,
+    pub total_dbtc_claimable: u64
+}
+
+impl UnrefinedRewards {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        16 +    // unrefining_index (u128)
+        8      // total_dbtc_claimable (u64)
 }
 
 

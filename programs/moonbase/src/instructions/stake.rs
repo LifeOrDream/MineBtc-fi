@@ -92,7 +92,7 @@ pub fn stake_moondoge(
         msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
         new_dbtc_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_dbtc_reward_index, player_data.dbtc_dbtc_reward_debt)?;
-        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.global_game_state, player_data, new_dbtc_rewards);
+        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, new_dbtc_rewards);
         msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
     }
     
@@ -204,9 +204,9 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
-    let mut new_dbtc_rewards = 0;
-    let mut new_sol_rewards = 0;
-    let mut accrued_dbtc_rewards = 0;
+    let new_dbtc_rewards : u64;
+    let new_sol_rewards : u64;
+    let accrued_dbtc_rewards : u64;
     if player_data.dogebtc_hashpower > 0 {
         msg!("💰 Processing pending rewards before position update");
                 
@@ -216,7 +216,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
         new_dbtc_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_dbtc_reward_index, player_data.dbtc_dbtc_reward_debt)?;
-        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.global_game_state, player_data, new_dbtc_rewards);
+        accrued_dbtc_rewards = helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, new_dbtc_rewards);
         msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
     }
    
@@ -224,34 +224,15 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
     player_data.dbtc_dbtc_reward_debt = faction_state.dbtc_dbtc_reward_index;
     
-    // -------------- CHARGE EMERGENCY TAX -------------- //
+    // -------------- UPDATE FACTION AND PLAYER DATA -------------- //
 
     // Calculate return amount based on early withdrawal status
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
     let mut return_amount = staked_amount;
-    
-    // Handle early withdrawal if needed
-    if is_early_withdrawal {
-        msg!(  "⚠️ Early unstake detected! Current time: {}, Lockup end: {}", current_ts, user_position.lockup_end_timestamp);
+    let mut penalty_amount = 0u64;
         
-        // Calculate remaining lockup percentage        
-        let penalty_amount = helper::calculate_emergency_tax(user_position, current_ts, EMERGENCY_WITHDRAWAL_PENALTY_PCT);
-        return_amount = staked_amount - penalty_amount;
-        msg!( "   Total Staked: {}, Returned: {}, Penalty: {}", staked_amount, return_amount, penalty_amount);
-        
-        // Burn penalty tokens if any
-        if penalty_amount > 0 {
-            // Charge emergency tax, 50% to burn, 50% to withheld a/c
-            helper::charge_emergency_tax(user_position, current_ts, penalty_amount);
-        }
-    } else {
-        msg!("✅ Normal unstake - lockup period has ended");
-    }
-    
-    // -------------- UPDATE FACTION AND PLAYER DATA -------------- //
-
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
     faction_state.dbtc_staked -= staked_amount;
@@ -266,17 +247,44 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     
     // Remove position from user's active positions
     helper::remove_moondoge_position(player_data, position_index)?;
-    
+
+    // -------------- CHARGE EMERGENCY TAX -------------- //
+
+    // Handle early withdrawal if needed
+    if is_early_withdrawal {
+        msg!(  "⚠️ Early unstake detected! Current time: {}, Lockup end: {}", current_ts, user_position.lockup_end_timestamp);
+        
+        // Calculate remaining lockup percentage        
+        penalty_amount = helper::calculate_emergency_tax(user_position, current_ts, EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64);
+        return_amount = staked_amount - penalty_amount;
+        msg!( "   Total Staked: {}, Returned: {}, Penalty: {}", staked_amount, return_amount, penalty_amount);
+        
+        // Charge emergency tax if any penalty
+        if penalty_amount > 0 {
+            // Charge emergency tax: 50% to burn, 50% to faction staking rewards
+            helper::charge_emergency_tax(
+                &ctx.accounts.dbtc_custodian.to_account_info(),
+                &ctx.accounts.dbtc_custodian_authority.to_account_info(),
+                &ctx.accounts.dbtc_mint.to_account_info(),
+                faction_state,
+                &ctx.accounts.token_program.to_account_info(),
+                ctx.bumps.dbtc_custodian_authority,
+                penalty_amount,
+            )?;
+        }
+    } else {
+        msg!("✅ Normal unstake - lockup period has ended");
+    }
+       
     // -------------- TRANSFER TOKENS -------------- //
 
     // Transfer remaining tokens back to user
     if return_amount > 0 {
         msg!("💱 Transferring {} DOGE_BTC tokens to user", return_amount);
         
-        // Get PDA signer seeds for the dbtc_custodian authority
+        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
             DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
-            &[user_position.faction_id],
             &[ctx.bumps.dbtc_custodian_authority],
         ];
         let signer = &[&custodian_authority_seeds[..]];
@@ -304,6 +312,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     user_position.staked_amount = 0;
     user_position.weighted_amount = 0;
     
+    // Emit events
     emit!(DogeBtcUnstaked {
         owner: ctx.accounts.authority.key(),
         position_index,
@@ -311,6 +320,27 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         weighted_amount: original_weighted,
         early_withdrawal: is_early_withdrawal,
     });
+    
+    // Emit emergency withdrawal event if early withdrawal
+    if is_early_withdrawal && penalty_amount > 0 {
+        let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
+        let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+        let mut remaining_seconds_pct = 0u64;
+        if total_lockup_seconds > 0 {
+            remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
+        }
+        let calc_penalty_pct = (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED;
+        
+        emit!(EmergencyWithdrawal {
+            owner: ctx.accounts.authority.key(),
+            position_index,
+            original_amount: staked_amount,
+            penalty_amount,
+            returned_amount: return_amount,
+            penalty_tax_pct: calc_penalty_pct,
+            timestamp: current_ts,
+        });
+    }
     
     msg!("✅ [unstake_moondoge] Unstake completed successfully");
     Ok(())
@@ -341,7 +371,7 @@ pub fn stake_lp_tokens(
     
     // Validate inputs
     require!(amount > 0, ErrorCode::InvalidAmount);
-    let hashpower_config = &hashpower_config;
+    let hashpower_config = &ctx.accounts.hashpower_config;
     require!(
         lockup_duration >= hashpower_config.min_lockup_days
             && lockup_duration <= hashpower_config.max_lockup_days,
@@ -384,13 +414,11 @@ pub fn stake_lp_tokens(
     if player_data.lp_hashpower > 0 {
         msg!("💰 Processing pending rewards before position update");
         
-        // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
-        let sol_reward_index_u64 = faction_state.lp_sol_reward_index.min(u64::MAX as u128) as u64;
-        let sol_reward_debt_u64 = player_data.lp_sol_reward_debt.min(u64::MAX as u128) as u64;
+        // Calculate SOL rewards using helper function
         let new_sol_rewards = helper::calculate_staking_rewards(
             player_data.lp_hashpower,
-            sol_reward_index_u64,
-            sol_reward_debt_u64
+            faction_state.lp_sol_reward_index,
+            player_data.lp_sol_reward_debt
         )?;
         player_data.pending_sol_rewards += new_sol_rewards;
         msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, new_sol_rewards);
@@ -501,13 +529,11 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     if player_data.lp_hashpower > 0 {
         msg!("💰 Processing pending rewards before unstaking");
         
-        // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
-        let sol_reward_index_u64 = faction_state.lp_sol_reward_index.min(u64::MAX as u128) as u64;
-        let sol_reward_debt_u64 = player_data.lp_sol_reward_debt.min(u64::MAX as u128) as u64;
+        // Calculate SOL rewards using helper function
         let new_sol_rewards = helper::calculate_staking_rewards(
             player_data.lp_hashpower,
-            sol_reward_index_u64,
-            sol_reward_debt_u64
+            faction_state.lp_sol_reward_index,
+            player_data.lp_sol_reward_debt
         )?;
         player_data.pending_sol_rewards += new_sol_rewards;
         msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, new_sol_rewards);
@@ -674,12 +700,10 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Resul
     // Process DogeBtc staking SOL rewards
     if player_data.dogebtc_hashpower > 0 {
         msg!("   Processing DogeBtc staking SOL rewards");
-        let sol_reward_index_u64 = faction_state.dbtc_sol_reward_index.min(u64::MAX as u128) as u64;
-        let sol_reward_debt_u64 = player_data.dbtc_sol_reward_debt.min(u64::MAX as u128) as u64;
         let rewards = helper::calculate_staking_rewards(
             player_data.dogebtc_hashpower,
-            sol_reward_index_u64,
-            sol_reward_debt_u64
+            faction_state.dbtc_sol_reward_index,
+            player_data.dbtc_sol_reward_debt
         )?;
         player_data.pending_sol_rewards += rewards;
         msg!("     DogeBtc staking SOL rewards: {} (+{})", player_data.pending_sol_rewards, rewards);
@@ -688,12 +712,10 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Resul
     // Process LP staking SOL rewards
     if player_data.lp_hashpower > 0 {
         msg!("   Processing LP staking SOL rewards");
-        let sol_reward_index_u64 = faction_state.lp_sol_reward_index.min(u64::MAX as u128) as u64;
-        let sol_reward_debt_u64 = player_data.lp_sol_reward_debt.min(u64::MAX as u128) as u64;
         let rewards = helper::calculate_staking_rewards(
             player_data.lp_hashpower,
-            sol_reward_index_u64,
-            sol_reward_debt_u64
+            faction_state.lp_sol_reward_index,
+            player_data.lp_sol_reward_debt
         )?;
         player_data.pending_sol_rewards += rewards;
         msg!("     LP staking SOL rewards: {} (+{})", player_data.pending_sol_rewards, rewards);
@@ -763,12 +785,10 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Res
     // Calculate DogeBtc rewards from DogeBtc staking
     let dbtc_from_dbtc_staking = if player_data.dogebtc_hashpower > 0 {
         msg!("   Calculating DogeBtc rewards from DogeBtc staking");
-        let dbtc_reward_index_u64 = faction_state.dbtc_dbtc_reward_index.min(u64::MAX as u128) as u64;
-        let dbtc_reward_debt_u64 = player_data.dbtc_dbtc_reward_debt.min(u64::MAX as u128) as u64;
         let rewards = helper::calculate_staking_rewards(
             player_data.dogebtc_hashpower,
-            dbtc_reward_index_u64,
-            dbtc_reward_debt_u64
+            faction_state.dbtc_dbtc_reward_index,
+            player_data.dbtc_dbtc_reward_debt
         )?;
         msg!("     DogeBtc from DogeBtc staking: {}", rewards);
         rewards
@@ -779,12 +799,10 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Res
     // Calculate DogeBtc rewards from LP staking
     let dbtc_from_lp_staking = if player_data.lp_hashpower > 0 {
         msg!("   Calculating DogeBtc rewards from LP staking");
-        let dbtc_reward_index_u64 = faction_state.lp_dbtc_reward_index.min(u64::MAX as u128) as u64;
-        let dbtc_reward_debt_u64 = player_data.lp_dbtc_reward_debt.min(u64::MAX as u128) as u64;
         let rewards = helper::calculate_staking_rewards(
             player_data.lp_hashpower,
-            dbtc_reward_index_u64,
-            dbtc_reward_debt_u64
+            faction_state.lp_dbtc_reward_index,
+            player_data.lp_dbtc_reward_debt
         )?;
         msg!("     DogeBtc from LP staking: {}", rewards);
         rewards
@@ -1062,8 +1080,12 @@ pub struct StakeDogeBtc<'info> {
     /// Token-2022 account that holds staked DOGE_BTC for this faction
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
     
-    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
+    #[account(
+        mut,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
     
     /// User who is staking tokens
     #[account(mut)]
@@ -1132,22 +1154,26 @@ pub struct UnstakeDogeBtc<'info> {
     
     #[account(
         mut,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), &[user_position.faction_id]],
+        seeds = [DBTC_CUSTODIAN_SEED.as_ref()],
         bump,
         constraint = dbtc_custodian.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
-    /// Token-2022 account that holds staked DOGE_BTC for this faction
+    /// Token-2022 account that holds staked DOGE_BTC (global for all factions)
     pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(), &[user_position.faction_id]],
+        seeds = [DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Authority of the custodian (PDA that signs for token transfers)
+    /// CHECK: Authority of the custodian (PDA that signs for token transfers, global for all factions)
     pub dbtc_custodian_authority: UncheckedAccount<'info>,
     
-    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
+    #[account(
+        mut,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
     
     /// User who is unstaking tokens
     #[account(mut)]
@@ -1220,9 +1246,6 @@ pub struct StakeLpTokens<'info> {
     )]
     /// Token account that holds staked LP tokens for this faction
     pub liquidity_custodian: Account<'info, token::TokenAccount>,
-    
-    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
     
     /// User who is staking tokens
     #[account(mut)]
@@ -1300,9 +1323,6 @@ pub struct UnstakeLpTokens<'info> {
     )]
     /// CHECK: Authority of the custodian (PDA that signs for token transfers)
     pub liquidity_custodian_authority: UncheckedAccount<'info>,
-    
-    /// CHECK: Optional Dragon Egg metadata account (for multiplier calculation)
-    pub dragon_egg_metadata: Option<UncheckedAccount<'info>>,
     
     /// User who is unstaking tokens
     #[account(mut)]

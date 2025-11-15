@@ -792,7 +792,7 @@ fn validate_points_percentage_limit(current_points_bets: u64, current_sol_bets: 
  
 /// Claim rewards for a user after round ends
 /// Checks if user won based on their bet type and the winning block
-pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>) -> Result<()> {
+pub fn claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
     msg!("💰 [claim_rewards] User claiming rewards. User: {}", ctx.accounts.user_wallet.key());
     
     let game_session = &ctx.accounts.game_session;
@@ -860,7 +860,7 @@ pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>) -> Result<()> {
     msg!("     Total DogeBtc won: {} (+{})", player_data.total_dbtc_won, total_dbtc_reward);
 
     player_data.pending_sol_rewards += total_sol_reward;
-    add_to_total_claimable(&mut ctx.accounts.global_game_state, player_data, total_dbtc_reward);
+    helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, total_dbtc_reward)?;
     msg!("     Pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, total_sol_reward);
     msg!("     Pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards, total_dbtc_reward);
         
@@ -1077,6 +1077,7 @@ pub struct JoinRoundBatch<'info> {
 
 
 #[derive(Accounts)]
+#[instruction(round_id: u64)]
 pub struct ClaimRoundRewards<'info> {
     #[account(
         mut,
@@ -1087,13 +1088,13 @@ pub struct ClaimRoundRewards<'info> {
 
     #[account(
         mut,
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
-    
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
     #[account(
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.last_round_id.to_le_bytes()],
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump = game_session.bump
     )]
     pub game_session: Account<'info, GameSession>,
@@ -1107,7 +1108,7 @@ pub struct ClaimRoundRewards<'info> {
     #[account(
         mut,
         close = user_wallet,
-        seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &game_session.round_id.to_le_bytes()],
+        seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &round_id.to_le_bytes()],
         bump = user_game_bet.bump
     )]
     pub user_game_bet: Account<'info, UserGameBet>,
