@@ -261,6 +261,276 @@ pub fn join_round_batch(
     Ok(())
 }
 
+
+
+/// Initialize autominer vault with bet types and amounts
+/// Users can specify multiple bet types (blocks or faction+highest/lowest) and bet amount per bet
+/// Bot can then call execute_autominer_bet to automatically place bets
+pub fn init_autominer(
+    ctx: Context<InitAutominer>,
+    bet_types: Vec<BetType>,
+    bet_amount_per_bet: u64,
+    num_rounds: u32,
+) -> Result<()> {
+    msg!("🤖 [init_autominer] Initializing autominer vault");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    msg!("   Bet types count: {}", bet_types.len());
+    msg!("   Bet amount per bet: {} lamports", bet_amount_per_bet);
+    msg!("   Number of rounds: {}", num_rounds);
+    
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    let global_config = &ctx.accounts.global_config;
+    
+    msg!("   Validating parameters...");
+    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
+    msg!("     ✓ Bet types not empty");
+    
+    require!( bet_types.len() <= AutominerVault::MAX_BET_TYPES,  ErrorCode::InvalidParameters);
+    msg!("     ✓ Bet types count <= MAX_BET_TYPES ({})", AutominerVault::MAX_BET_TYPES);
+    
+    require!(bet_amount_per_bet > 0, ErrorCode::InvalidAmount);    
+    require!(num_rounds > 0, ErrorCode::InvalidAmount);
+    
+    // Validate bet types
+    msg!("   Validating bet types...");
+    for (idx, bet_type) in bet_types.iter().enumerate() {
+        match bet_type {
+            BetType::Block { block_id } => {
+                require!(
+                    *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
+                    ErrorCode::InvalidParameters
+                );
+                msg!("     Bet type {}: Block {} ✓", idx, block_id);
+            }
+            BetType::FactionHighestLowest { faction_id, is_highest } => {
+                require!(
+                    (*faction_id as usize) < global_config.supported_factions.len(),
+                    ErrorCode::InvalidFactionId
+                );
+                msg!("     Bet type {}: Faction {} ({}) ✓", idx, faction_id, if *is_highest { "highest" } else { "lowest" });
+            }
+            BetType::FactionBoth { faction_id } => {
+                require!(
+                    (*faction_id as usize) < global_config.supported_factions.len(),
+                    ErrorCode::InvalidFactionId
+                );
+                msg!("     Bet type {}: Faction {} (both) ✓", idx, faction_id);
+            }
+            BetType::RandomBlock => {
+                msg!("     Bet type {}: Random block ✓", idx);
+            }
+        }
+    }
+    
+    msg!("   Initializing autominer vault...");
+    autominer_vault.owner = ctx.accounts.authority.key();
+    autominer_vault.bet_types = bet_types.clone();
+    autominer_vault.bet_amount_per_bet = bet_amount_per_bet;
+    autominer_vault.rounds_remaining = num_rounds;
+    autominer_vault.last_bet_round_id = 0;
+    autominer_vault.vault_bump = ctx.bumps.autominer_vault;
+    msg!("     Vault initialized for owner: {}", autominer_vault.owner);
+    
+    // Calculate total SOL needed: (bet_amount_per_bet * num_bet_types) * num_rounds + rent
+    msg!("   Calculating total SOL needed...");
+    let sol_per_round = bet_amount_per_bet
+        .checked_mul(bet_types.len() as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, bet_types.len(), bet_amount_per_bet);
+    
+    let total_sol = sol_per_round
+        .checked_mul(num_rounds as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Total SOL for all rounds: {} lamports ({} rounds × {} lamports)", total_sol, num_rounds, sol_per_round);
+    
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    let total_transfer = total_sol
+        .checked_add(rent)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     Rent: {} lamports", rent);
+    msg!("     Total transfer: {} lamports", total_transfer);
+    
+    // Transfer SOL to vault
+    msg!("   Transferring SOL to vault...");
+    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let wallet_before = ctx.accounts.user_wallet.lamports();
+    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
+    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
+    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let wallet_after = ctx.accounts.user_wallet.lamports();
+    msg!("     Vault: {} -> {} lamports (+{})", vault_before, vault_after, total_transfer);
+    msg!("     Wallet: {} -> {} lamports (-{})", wallet_before, wallet_after, total_transfer);
+    
+    msg!("✅ [init_autominer] Autominer initialized successfully");
+    msg!("   {} bet types, {} SOL per bet, {} rounds ({} SOL total)",
+        bet_types.len(),
+        bet_amount_per_bet,
+        num_rounds,
+        total_sol
+    );
+    
+    Ok(())
+}
+
+
+/// Execute autominer bets (keeper instruction - bot can call this)
+/// Places bets for all configured bet types in the current round
+/// Can be called once per round to place all bets automatically
+pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+    msg!("🤖 [execute_autominer_bet] Executing autominer bets");
+    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
+    
+    let global_state = &ctx.accounts.global_game_state;
+    let clock = Clock::get()?;
+    
+    // Read values before mutable borrow
+    let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
+    let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
+    let num_bets = ctx.accounts.autominer_vault.bet_types.len();
+    let bet_amount_per_bet = ctx.accounts.autominer_vault.bet_amount_per_bet;
+    
+    msg!("   Vault state:");
+    msg!("     Rounds remaining: {}", rounds_remaining);
+    msg!("     Last bet round ID: {}", last_bet_round_id);
+    msg!("     Number of bet types: {}", num_bets);
+    msg!("     Bet amount per bet: {} lamports", bet_amount_per_bet);
+    msg!("   Current round ID: {}", global_state.current_round_id);
+    msg!("   Current timestamp: {}", clock.unix_timestamp);
+    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    
+    msg!("   Validating execution conditions...");
+    require!(
+        rounds_remaining > 0,
+        ErrorCode::NoRoundsRemaining
+    );
+    msg!("     ✓ Rounds remaining > 0");
+    
+    // Check round hasn't ended
+    require!(
+        clock.unix_timestamp < global_state.round_end_timestamp,
+        ErrorCode::RoundEnded
+    );
+    msg!("     ✓ Round hasn't ended");
+    
+    // Check bets haven't been placed for this round already
+    require!(
+        last_bet_round_id != global_state.current_round_id,
+        ErrorCode::InvalidRound
+    );
+    msg!("     ✓ Bets not yet placed for this round");
+    
+    // Calculate total SOL needed for this round
+    msg!("   Calculating SOL needed for this round...");
+    let sol_per_round = bet_amount_per_bet
+        .checked_mul(num_bets as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, num_bets, bet_amount_per_bet);
+    
+    // Check vault has enough SOL
+    msg!("   Checking vault balance...");
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    let available_sol = vault_lamports
+        .checked_sub(rent)
+        .ok_or(ErrorCode::InsufficientFunds)?;
+    msg!("     Vault lamports: {}", vault_lamports);
+    msg!("     Rent: {}", rent);
+    msg!("     Available SOL: {}", available_sol);
+    
+    require!(
+        available_sol >= sol_per_round,
+        ErrorCode::InsufficientFunds
+    );
+    msg!("     ✓ Vault has sufficient SOL");
+    
+    // Deduct SOL for bets (protocol fee will be deducted in join_round)
+    // For now, we'll deduct the full amount - actual implementation should call join_round
+    msg!("   Deducting SOL from vault for bets...");
+    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
+    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= sol_per_round;
+    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
+    msg!("     Vault: {} -> {} lamports (-{})", vault_before, vault_after, sol_per_round);
+    
+    // Now borrow mutably to update state
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    
+    // Mark bets as placed for this round
+    let current_round_id = global_state.current_round_id;
+    autominer_vault.last_bet_round_id = current_round_id;
+    msg!("   Updated last_bet_round_id: {} -> {}", last_bet_round_id, current_round_id);
+    
+    // Decrement rounds remaining
+    let new_rounds_remaining = rounds_remaining
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    autominer_vault.rounds_remaining = new_rounds_remaining;
+    msg!("   Updated rounds_remaining: {} -> {}", rounds_remaining, new_rounds_remaining);
+    
+    // If no rounds remaining, close vault and return remaining SOL
+    if new_rounds_remaining == 0 {
+        msg!("   No rounds remaining - closing vault and returning remaining SOL...");
+        let remaining_sol = ctx.accounts.autominer_vault.to_account_info().lamports()
+            .checked_sub(rent)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        let owner_before = ctx.accounts.owner.lamports();
+        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
+        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
+        let owner_after = ctx.accounts.owner.lamports();
+        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
+        msg!("     Vault closed");
+    }
+    
+    // Place bets for each bet type using internal_join_round
+    msg!("   Placing {} bets for round {}...", num_bets, current_round_id);
+    let bet_types = ctx.accounts.autominer_vault.bet_types.clone();
+    let owner_key = ctx.accounts.autominer_vault.owner;
+    
+    for (idx, bet_type) in bet_types.iter().enumerate() {
+        msg!("     Placing bet #{}: {:?} for {} lamports", idx + 1, bet_type, bet_amount_per_bet);
+        
+        // Call internal_join_round with autominer vault as payer
+        internal_join_round(
+            &ctx.accounts.global_game_state,
+            &ctx.accounts.global_config,
+            &mut ctx.accounts.player_data,
+            &mut ctx.accounts.game_session,
+            &mut ctx.accounts.user_game_bet,
+            &ctx.accounts.autominer_vault.to_account_info(),
+            &ctx.accounts.sol_treasury.to_account_info(),
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            ctx.bumps.user_game_bet,
+            owner_key,
+            bet_amount_per_bet,
+            bet_type.clone(),
+            None, // autominer always uses SOL, not tickets
+        )?;
+        
+        msg!("       ✓ Bet #{} placed successfully", idx + 1);
+    }
+    
+    msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
+    msg!("   {} bets of {} SOL each for round {}", num_bets, bet_amount_per_bet, current_round_id);
+    msg!("   Rounds remaining: {}", new_rounds_remaining);
+    
+    Ok(())
+}
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /// Internal join_round logic that can be called by both user and autominer
 /// Payer can be either user wallet or autominer vault PDA
 #[allow(clippy::too_many_arguments)]
@@ -505,265 +775,7 @@ fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
     return Ok((net_amount, fee));
 }
 
-/// Initialize autominer vault with bet types and amounts
-/// Users can specify multiple bet types (blocks or faction+highest/lowest) and bet amount per bet
-/// Bot can then call execute_autominer_bet to automatically place bets
-pub fn init_autominer(
-    ctx: Context<InitAutominer>,
-    bet_types: Vec<BetType>,
-    bet_amount_per_bet: u64,
-    num_rounds: u32,
-) -> Result<()> {
-    msg!("🤖 [init_autominer] Initializing autominer vault");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Bet types count: {}", bet_types.len());
-    msg!("   Bet amount per bet: {} lamports", bet_amount_per_bet);
-    msg!("   Number of rounds: {}", num_rounds);
-    
-    let autominer_vault = &mut ctx.accounts.autominer_vault;
-    let global_config = &ctx.accounts.global_config;
-    
-    msg!("   Validating parameters...");
-    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
-    msg!("     ✓ Bet types not empty");
-    
-    require!(
-        bet_types.len() <= AutominerVault::MAX_BET_TYPES,
-        ErrorCode::InvalidParameters
-    );
-    msg!("     ✓ Bet types count <= MAX_BET_TYPES ({})", AutominerVault::MAX_BET_TYPES);
-    
-    require!(bet_amount_per_bet > 0, ErrorCode::InvalidAmount);
-    msg!("     ✓ Bet amount per bet > 0");
-    
-    require!(num_rounds > 0, ErrorCode::InvalidAmount);
-    msg!("     ✓ Number of rounds > 0");
-    
-    // Validate bet types
-    msg!("   Validating bet types...");
-    for (idx, bet_type) in bet_types.iter().enumerate() {
-        match bet_type {
-            BetType::Block { block_id } => {
-                require!(
-                    *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
-                    ErrorCode::InvalidParameters
-                );
-                msg!("     Bet type {}: Block {} ✓", idx, block_id);
-            }
-            BetType::FactionHighestLowest { faction_id, is_highest } => {
-                require!(
-                    (*faction_id as usize) < global_config.supported_factions.len(),
-                    ErrorCode::InvalidFactionId
-                );
-                msg!("     Bet type {}: Faction {} ({}) ✓", idx, faction_id, if *is_highest { "highest" } else { "lowest" });
-            }
-            BetType::FactionBoth { faction_id } => {
-                require!(
-                    (*faction_id as usize) < global_config.supported_factions.len(),
-                    ErrorCode::InvalidFactionId
-                );
-                msg!("     Bet type {}: Faction {} (both) ✓", idx, faction_id);
-            }
-            BetType::RandomBlock => {
-                msg!("     Bet type {}: Random block ✓", idx);
-            }
-        }
-    }
-    
-    msg!("   Initializing autominer vault...");
-    autominer_vault.owner = ctx.accounts.authority.key();
-    autominer_vault.bet_types = bet_types.clone();
-    autominer_vault.bet_amount_per_bet = bet_amount_per_bet;
-    autominer_vault.rounds_remaining = num_rounds;
-    autominer_vault.last_bet_round_id = 0;
-    autominer_vault.vault_bump = ctx.bumps.autominer_vault;
-    msg!("     Vault initialized for owner: {}", autominer_vault.owner);
-    
-    // Calculate total SOL needed: (bet_amount_per_bet * num_bet_types) * num_rounds + rent
-    msg!("   Calculating total SOL needed...");
-    let sol_per_round = bet_amount_per_bet
-        .checked_mul(bet_types.len() as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, bet_types.len(), bet_amount_per_bet);
-    
-    let total_sol = sol_per_round
-        .checked_mul(num_rounds as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     Total SOL for all rounds: {} lamports ({} rounds × {} lamports)", total_sol, num_rounds, sol_per_round);
-    
-    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let total_transfer = total_sol
-        .checked_add(rent)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     Rent: {} lamports", rent);
-    msg!("     Total transfer: {} lamports", total_transfer);
-    
-    // Transfer SOL to vault
-    msg!("   Transferring SOL to vault...");
-    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
-    let wallet_before = ctx.accounts.user_wallet.lamports();
-    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
-    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
-    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
-    let wallet_after = ctx.accounts.user_wallet.lamports();
-    msg!("     Vault: {} -> {} lamports (+{})", vault_before, vault_after, total_transfer);
-    msg!("     Wallet: {} -> {} lamports (-{})", wallet_before, wallet_after, total_transfer);
-    
-    msg!("✅ [init_autominer] Autominer initialized successfully");
-    msg!("   {} bet types, {} SOL per bet, {} rounds ({} SOL total)",
-        bet_types.len(),
-        bet_amount_per_bet,
-        num_rounds,
-        total_sol
-    );
-    
-    Ok(())
-}
 
-/// Execute autominer bets (keeper instruction - bot can call this)
-/// Places bets for all configured bet types in the current round
-/// Can be called once per round to place all bets automatically
-pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
-    msg!("🤖 [execute_autominer_bet] Executing autominer bets");
-    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
-    
-    let global_state = &ctx.accounts.global_game_state;
-    let clock = Clock::get()?;
-    
-    // Read values before mutable borrow
-    let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
-    let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
-    let num_bets = ctx.accounts.autominer_vault.bet_types.len();
-    let bet_amount_per_bet = ctx.accounts.autominer_vault.bet_amount_per_bet;
-    
-    msg!("   Vault state:");
-    msg!("     Rounds remaining: {}", rounds_remaining);
-    msg!("     Last bet round ID: {}", last_bet_round_id);
-    msg!("     Number of bet types: {}", num_bets);
-    msg!("     Bet amount per bet: {} lamports", bet_amount_per_bet);
-    msg!("   Current round ID: {}", global_state.current_round_id);
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
-    
-    msg!("   Validating execution conditions...");
-    require!(
-        rounds_remaining > 0,
-        ErrorCode::NoRoundsRemaining
-    );
-    msg!("     ✓ Rounds remaining > 0");
-    
-    // Check round hasn't ended
-    require!(
-        clock.unix_timestamp < global_state.round_end_timestamp,
-        ErrorCode::RoundEnded
-    );
-    msg!("     ✓ Round hasn't ended");
-    
-    // Check bets haven't been placed for this round already
-    require!(
-        last_bet_round_id != global_state.current_round_id,
-        ErrorCode::InvalidRound
-    );
-    msg!("     ✓ Bets not yet placed for this round");
-    
-    // Calculate total SOL needed for this round
-    msg!("   Calculating SOL needed for this round...");
-    let sol_per_round = bet_amount_per_bet
-        .checked_mul(num_bets as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, num_bets, bet_amount_per_bet);
-    
-    // Check vault has enough SOL
-    msg!("   Checking vault balance...");
-    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
-    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let available_sol = vault_lamports
-        .checked_sub(rent)
-        .ok_or(ErrorCode::InsufficientFunds)?;
-    msg!("     Vault lamports: {}", vault_lamports);
-    msg!("     Rent: {}", rent);
-    msg!("     Available SOL: {}", available_sol);
-    
-    require!(
-        available_sol >= sol_per_round,
-        ErrorCode::InsufficientFunds
-    );
-    msg!("     ✓ Vault has sufficient SOL");
-    
-    // Deduct SOL for bets (protocol fee will be deducted in join_round)
-    // For now, we'll deduct the full amount - actual implementation should call join_round
-    msg!("   Deducting SOL from vault for bets...");
-    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
-    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= sol_per_round;
-    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
-    msg!("     Vault: {} -> {} lamports (-{})", vault_before, vault_after, sol_per_round);
-    
-    // Now borrow mutably to update state
-    let autominer_vault = &mut ctx.accounts.autominer_vault;
-    
-    // Mark bets as placed for this round
-    let current_round_id = global_state.current_round_id;
-    autominer_vault.last_bet_round_id = current_round_id;
-    msg!("   Updated last_bet_round_id: {} -> {}", last_bet_round_id, current_round_id);
-    
-    // Decrement rounds remaining
-    let new_rounds_remaining = rounds_remaining
-        .checked_sub(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    autominer_vault.rounds_remaining = new_rounds_remaining;
-    msg!("   Updated rounds_remaining: {} -> {}", rounds_remaining, new_rounds_remaining);
-    
-    // If no rounds remaining, close vault and return remaining SOL
-    if new_rounds_remaining == 0 {
-        msg!("   No rounds remaining - closing vault and returning remaining SOL...");
-        let remaining_sol = ctx.accounts.autominer_vault.to_account_info().lamports()
-            .checked_sub(rent)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        let owner_before = ctx.accounts.owner.lamports();
-        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
-        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
-        let owner_after = ctx.accounts.owner.lamports();
-        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
-        msg!("     Vault closed");
-    }
-    
-    // Place bets for each bet type using internal_join_round
-    msg!("   Placing {} bets for round {}...", num_bets, current_round_id);
-    let bet_types = ctx.accounts.autominer_vault.bet_types.clone();
-    let owner_key = ctx.accounts.autominer_vault.owner;
-    
-    for (idx, bet_type) in bet_types.iter().enumerate() {
-        msg!("     Placing bet #{}: {:?} for {} lamports", idx + 1, bet_type, bet_amount_per_bet);
-        
-        // Call internal_join_round with autominer vault as payer
-        internal_join_round(
-            &ctx.accounts.global_game_state,
-            &ctx.accounts.global_config,
-            &mut ctx.accounts.player_data,
-            &mut ctx.accounts.game_session,
-            &mut ctx.accounts.user_game_bet,
-            &ctx.accounts.autominer_vault.to_account_info(),
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.user_game_bet,
-            owner_key,
-            bet_amount_per_bet,
-            bet_type.clone(),
-            None, // autominer always uses SOL, not tickets
-        )?;
-        
-        msg!("       ✓ Bet #{} placed successfully", idx + 1);
-    }
-    
-    msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
-    msg!("   {} bets of {} SOL each for round {}", num_bets, bet_amount_per_bet, current_round_id);
-    msg!("   Rounds remaining: {}", new_rounds_remaining);
-    
-    Ok(())
-}
- 
  
 
 fn validate_points_percentage_limit(current_points_bets: u64, current_sol_bets: u64, amount: u64) -> Result<()> {
