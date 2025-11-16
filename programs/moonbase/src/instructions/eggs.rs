@@ -12,13 +12,15 @@ use crate::instructions::stake;
 // ----------------------------------------------------------------------------------------
 
 /// Simulate mint costs for multiple eggs accounting for bonding curve pricing
-/// Returns (total_price, individual_prices)
+/// Returns (total_price, individual_prices, ticket_amounts_per_tier)
+/// ticket_amounts_per_tier: Vec of (ticket_value, ticket_count) for each of the 3 ticket tiers
 pub fn simulate_mint_cost(
     egg_config: &EggConfig,
     mint_count: u64,
-) -> Result<(u64, Vec<u64>)> {
+) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
     require!(mint_count > 0 && mint_count <= 10, ErrorCode::InvalidParameters);
     require!(  egg_config.eggs_minted + mint_count <= egg_config.max_supply, ErrorCode::InvalidParameters);
+    require!(  egg_config.ticket_tiers.len() == 3, ErrorCode::InvalidParameters); // Must have exactly 3 ticket tiers
 
     let mut prices = Vec::new();
     let mut total_price = 0u64;
@@ -37,7 +39,17 @@ pub fn simulate_mint_cost(
         current_minted += 1;
     }
 
-    Ok((total_price, prices))
+    // Calculate ticket amounts for each tier: sol_price / ticket_value * 1.5
+    // This gives users tickets worth 1.5x the SOL they spent
+    let mut ticket_amounts = Vec::new();
+    for tier in &egg_config.ticket_tiers {
+        // Calculate: (total_price / ticket_value) * 1.5
+        // Using fixed-point math: multiply by 150, then divide by 100
+        let ticket_count = helper::calc_tickets_count( total_price, tier.ticket_value);
+        ticket_amounts.push((tier.ticket_value, ticket_count));
+    }
+
+    Ok((total_price, prices, ticket_amounts))
 }
 
 /// Mint a single Dragon Egg NFT
@@ -58,9 +70,10 @@ pub fn mint_dragon_egg( ctx: Context<MintDragonEgg>, faction_id: u8, ticket_tier
     let treasury_amt = cost_per_egg * 20 / 100;
     let dev_amt =  cost_per_egg - treasury_amt;
 
-    helper::transfer_to_sol_treasury(
+    // Transfer to eggs treasury  
+    helper::transfer_to_eggs_treasury(
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.eggs_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         treasury_amt,
     )?;
@@ -75,55 +88,33 @@ pub fn mint_dragon_egg( ctx: Context<MintDragonEgg>, faction_id: u8, ticket_tier
         dev_amt,
     )?;
     
-    // Handle ticket tier selection and add free tickets
+    // Handle ticket tier selection and add free tickets (dynamic calculation)
     if let Some(tier_index) = ticket_tier_index {
         require!(  (tier_index as usize) < egg_config.ticket_tiers.len(), ErrorCode::InvalidParameters );
-        
-        // Validate tier availability based on remaining eggs
-        let eggs_remaining = egg_config.max_supply.saturating_sub(egg_config.eggs_minted);
-        
-        // Tier 0 and 1: always available
-        // Tier 2: only available when eggs remaining < 10,000
-        // Tier 3: only available when eggs remaining < 5,000
-        match tier_index {
-            0 | 1 => {
-                // Tiers 0 and 1 are always available
-            },
-            2 => {
-                require!(
-                    eggs_remaining < 10_000,
-                    ErrorCode::InvalidParameters
-                );
-                msg!("   Tier 2 unlocked (eggs remaining: {})", eggs_remaining);
-            },
-            3 => {
-                require!(
-                    eggs_remaining < 5_000,
-                    ErrorCode::InvalidParameters
-                );
-                msg!("   Tier 3 unlocked (eggs remaining: {})", eggs_remaining);
-            },
-            _ => {
-                return Err(ErrorCode::InvalidParameters.into());
-            }
-        }
+        require!(  egg_config.ticket_tiers.len() == 3, ErrorCode::InvalidParameters ); // Must have exactly 3 tiers
         
         let selected_tier = &egg_config.ticket_tiers[tier_index as usize];
         let ticket_value = selected_tier.ticket_value;
-        let ticket_count = selected_tier.ticket_count;
         
-        msg!("   Selected ticket tier: {} tickets of {} SOL each", 
+        // Calculate ticket count dynamically: (cost_per_egg / ticket_value) * 1.5
+        // This gives users tickets worth 1.5x the SOL they spent
+        let ticket_count = helper::calc_tickets_count( cost_per_egg, ticket_value);
+        
+        msg!("   Selected ticket tier: {} tickets of {} SOL each (calculated from {} SOL spent)", 
             ticket_count, 
-            ticket_value as f64 / 1e9);
+            ticket_value as f64 / 1e9,
+            cost_per_egg as f64 / 1e9);
         
         // Add free tickets to player
         if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
-            player_data.free_tickets_remaining[index] += ticket_count as u64;
+            player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
+                .checked_add(ticket_count)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
         } else {
             require!(  player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters );
             player_data.free_tickets.push(ticket_value);
-            player_data.free_tickets_remaining.push(ticket_count as u64);
+            player_data.free_tickets_remaining.push(ticket_count);
             msg!("     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
         }
     }
@@ -196,24 +187,27 @@ pub fn batch_mint_dragon_eggs(
     ctx: Context<BatchMintDragonEggs>,
     faction_id: u8,
     mint_count: u8,
+    ticket_tier_index: Option<u8>,
 ) -> Result<()> {
     require!(mint_count > 0 && mint_count <= 10, ErrorCode::InvalidParameters);
     
     let global_config = &ctx.accounts.global_config;
     let egg_config = &mut ctx.accounts.egg_config;
+    let player_data = &mut ctx.accounts.player_data;
     
     require!(  (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId );
     require!(  egg_config.eggs_minted + mint_count as u64 <= egg_config.max_supply, ErrorCode::InvalidParameters );
     
-    let (total_price, _prices) = simulate_mint_cost(egg_config, mint_count as u64)?;
+    let (total_price, _prices, ticket_amounts) = simulate_mint_cost(egg_config, mint_count as u64)?;
     msg!("   Batch minting {} eggs, total cost: {} lamports", mint_count, total_price);
 
     let dev_amt = total_price * 80 / 100;
     let treasury_amt = total_price - dev_amt;
 
-    helper::transfer_to_sol_treasury(
+    // Transfer to eggs treasury  
+    helper::transfer_to_eggs_treasury(
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.eggs_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         treasury_amt,
     )?;
@@ -226,6 +220,32 @@ pub fn batch_mint_dragon_eggs(
         &ctx.accounts.token_program.to_account_info(),
         dev_amt,
     )?;
+    
+    // Handle ticket tier selection and add free tickets (using pre-calculated ticket_amounts)
+    if let Some(tier_index) = ticket_tier_index {
+        require!(  (tier_index as usize) < ticket_amounts.len(), ErrorCode::InvalidParameters );
+        require!(  ticket_amounts.len() == 3, ErrorCode::InvalidParameters ); // Must have exactly 3 tiers
+        
+        let (ticket_value, ticket_count) = ticket_amounts[tier_index as usize];
+        
+        msg!("   Selected ticket tier: {} tickets of {} SOL each (calculated from {} SOL spent)", 
+            ticket_count, 
+            ticket_value as f64 / 1e9,
+            total_price as f64 / 1e9);
+        
+        // Add free tickets to player
+        if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
+            player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
+                .checked_add(ticket_count)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
+        } else {
+            require!(  player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters );
+            player_data.free_tickets.push(ticket_value);
+            player_data.free_tickets_remaining.push(ticket_count);
+            msg!("     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
+        }
+    }
     
     // Mint each egg
     for i in 0..mint_count {
@@ -660,13 +680,13 @@ pub struct MintDragonEgg<'info> {
     )]
     pub egg_config: Account<'info, EggConfig>,
     
-    /// CHECK: SOL treasury PDA
+    /// CHECK: Eggs treasury PDA (for egg minting fees)
     #[account(
         mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
+        seeds = [EGGS_TREASURY_SEED.as_ref()],
         bump
     )]
-    pub sol_treasury: UncheckedAccount<'info>,
+    pub eggs_treasury: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -750,13 +770,21 @@ pub struct BatchMintDragonEggs<'info> {
     )]
     pub egg_config: Account<'info, EggConfig>,
 
-    /// CHECK: SOL treasury PDA
     #[account(
         mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    /// CHECK: Eggs treasury PDA (for egg minting fees)
+    #[account(
+        mut,
+        seeds = [EGGS_TREASURY_SEED.as_ref()],
         bump
     )]
-    pub sol_treasury: UncheckedAccount<'info>,
+    pub eggs_treasury: UncheckedAccount<'info>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
     /// MUST be owned by global_config.fee_recipient (the multisig address)

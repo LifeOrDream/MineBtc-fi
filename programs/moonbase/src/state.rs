@@ -43,6 +43,7 @@ pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
+pub const EGGS_TREASURY_SEED: &[u8] = b"eggs-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"mdoge-vault-authority";
@@ -410,7 +411,7 @@ pub struct EggConfig {
 }
 
 impl EggConfig {
-    pub const MAX_TICKET_TIERS: usize = 4;
+    pub const MAX_TICKET_TIERS: usize = 3; // Only 3 ticket options now
     
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_URI_LENGTH bytes)
     // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN

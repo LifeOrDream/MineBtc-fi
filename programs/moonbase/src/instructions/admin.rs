@@ -105,7 +105,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("   Supported factions: {} (empty, must be added via admin)", global_config.supported_factions.len());
 
 
-    // Optionally drop 1 lamport into the vault for future-proof rent-exempt status
+    // Optionally drop 1 lamport into the vaults for future-proof rent-exempt status
     msg!("   Transferring 1 lamport to SOL treasury for rent-exempt status...");
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -117,7 +117,20 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         ),
         1,
     )?;
-    msg!("     ✓ 1 lamport transferred");
+    msg!("     ✓ 1 lamport transferred to SOL treasury");
+    
+    msg!("   Transferring 1 lamport to Eggs treasury for rent-exempt status...");
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: ctx.accounts.authority.to_account_info(),
+                to: ctx.accounts.eggs_treasury.to_account_info(),
+            },
+        ),
+        1,
+    )?;
+    msg!("     ✓ 1 lamport transferred to Eggs treasury");
 
     // Initialize DogeBtcMining
     msg!("   Initializing DogeBtcMining...");
@@ -1136,6 +1149,17 @@ pub struct Initialize<'info> {
         owner = system_program.key()  // System-owned account for native SOL
     )]
     pub sol_treasury: UncheckedAccount<'info>,
+
+    /// CHECK: 0-byte PDA that only stores lamports (System Account) for egg minting fees
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        bump,
+        owner = system_program.key()  // System-owned account for native SOL
+    )]
+    pub eggs_treasury: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

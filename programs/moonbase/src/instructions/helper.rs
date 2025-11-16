@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
-use anchor_spl::token_2022::{self, TransferChecked, Burn};
-use anchor_spl::token_interface::Mint;
+use anchor_spl::token_2022::{self, Burn};
 use crate::state::*;
 use crate::errors::ErrorCode;
 
@@ -25,6 +24,25 @@ pub fn transfer_to_sol_treasury<'info>(
             Transfer {
                 from: from.to_account_info(),
                 to: sol_treasury.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL to the program's eggs_treasury PDA
+pub fn transfer_to_eggs_treasury<'info>(
+    from: &AccountInfo<'info>,
+    eggs_treasury: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: eggs_treasury.to_account_info(),
             },
         ),
         amount,
@@ -399,4 +417,10 @@ pub fn charge_emergency_tax<'info>(
     msg!("   ✅ Emergency tax charged successfully");
     
     Ok(())
+}
+
+
+/// Calculate number of tickets given minting price
+pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
+    return ((total_price * 150) / ticket_value) / 100
 }

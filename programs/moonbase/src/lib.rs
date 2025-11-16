@@ -555,8 +555,9 @@ pub mod moonbase {
         ctx: Context<BatchMintDragonEggs>,
         faction_id: u8,
         mint_count: u8,
+        ticket_tier_index: Option<u8>,
     ) -> Result<()> {
-        eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count)
+        eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
     /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)

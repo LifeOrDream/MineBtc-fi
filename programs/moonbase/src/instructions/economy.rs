@@ -108,10 +108,43 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         msg!("👨‍💻 Sent {} WSOL to Multisig (Dev Earnings)", dev_earnings as f64 / 1e9);
     }
 
+    // Transfer from eggs treasury to buybacks (1% of 10x buyback amount, whichever is lower)
+    let eggs_treasury_balance = ctx.accounts.eggs_treasury.lamports();
+    let eggs_treasury_rent = Rent::get()?.minimum_balance(0);
+    let eggs_treasury_available = eggs_treasury_balance.saturating_sub(eggs_treasury_rent);
+    let mut egg_treasury_amt = 0;
+    
+    if eggs_treasury_available > 0 && sol_for_buybacks > 0 {
+
+        // Transfer whichever is lower: 1% of available eggs treasury balance or 10x of buyback amount
+        egg_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);        
+        if egg_treasury_amt > 0 {
+                 
+            let eggs_treasury_seeds = &[EGGS_TREASURY_SEED.as_ref(), &[ctx.bumps.eggs_treasury]];
+            let eggs_treasury_signer_seeds = &[&eggs_treasury_seeds[..]];
+            
+            anchor_lang::system_program::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.eggs_treasury.to_account_info(),
+                        to: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                    },
+                    eggs_treasury_signer_seeds,
+                ),
+                egg_treasury_amt,
+            )?;
+            
+            buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + egg_treasury_amt;            
+            msg!("🥚 Transferred {} SOL from Eggs Treasury to Buybacks (1% of 10x buyback)", egg_treasury_amt as f64 / 1e9);
+        }
+    }
+
     // Emit event
     emit!(SolFeesWithdrawn {
         available_solana: available_solana,
         buyback_amount: sol_for_buybacks,
+        egg_treasury_amt,
         dev_earnings_amount: dev_earnings,
     });
 
@@ -1364,6 +1397,14 @@ pub struct DistributeSolFees<'info> {
 
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
+
+    /// CHECK: Eggs treasury PDA (System Account) - holds egg minting fees
+    #[account(
+        mut,
+        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        bump
+    )]
+    pub eggs_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(
