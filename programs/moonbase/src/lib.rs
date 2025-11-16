@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("9xWNMuh7ovan6qr7tHAgaMeWHHKfxKFCDH5V4AzVanyv");
+declare_id!("7r11BE6wvvctiB8V7mn2JqSYzGKCi5Qj1eeLxb1TK2ai");
 
 #[program]
 pub mod moonbase {
@@ -127,6 +127,34 @@ pub mod moonbase {
     pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
         admin::deposit_doge_btc_tokens_internal(ctx, amount)
     }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ HASHPOWER CONFIG (ADMIN) ------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize HashpowerConfig account (admin only)
+    pub fn initialize_hashpower_config(
+        ctx: Context<InitializeHashpowerConfig>,
+        min_lockup_days: u64,
+        max_lockup_days: u64,
+        base_multiplier: u16,
+        max_multiplier: u16,
+    ) -> Result<()> {
+        admin::initialize_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
+    }
+
+
+    /// Update HashpowerConfig account (admin only)
+    pub fn update_hashpower_config(
+        ctx: Context<UpdateHashpowerConfig>,
+        min_lockup_days: u64,
+        max_lockup_days: u64,
+        base_multiplier: u16,
+        max_multiplier: u16,
+    ) -> Result<()> {
+        admin::update_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
+    }
+
 
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG SYSTEM (ADMIN) ------------------------------------------------

@@ -122,6 +122,12 @@
     },
     "game": {
         "round_duration_seconds": 3600
+    },
+    "hashpower": {
+        "min_lockup_days": 7,
+        "max_lockup_days": 365,
+        "base_multiplier": 100,
+        "max_multiplier": 420
     }
 
 }

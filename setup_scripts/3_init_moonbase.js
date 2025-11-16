@@ -170,7 +170,7 @@ async function main() {
     }
 
     try {
-        // 1. Initialize MoonBase Program (GlobalConfig + DogeBtcMining + SOL Treasury)
+        // 1. Initialize MoonBase Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Eggs Treasury)
         await initializeMoonbaseProgram(moonbaseProgram);
 
         // 6. Set Raydium Pool State (for price discovery and swaps)
@@ -187,6 +187,9 @@ async function main() {
 
         // 5. Deposit Mining Tokens
         await depositMiningTokens(moonbaseProgram);
+
+        await initializeHashpowerConfig(moonbaseProgram);
+        // return;
 
         // 7. Initialize EggConfig
         await initializeEggConfig(moonbaseProgram);
@@ -280,6 +283,7 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
             .accounts({
                 globalConfig: globalConfigPDA,
                 dogeBtcMining: dogeBtcMiningPDA,
+                unrefinedRewards: unrefinedRewardsPDA,
                 solTreasury: solTreasuryPDA,
                 eggs_treasury: eggsTreasuryPDA,
                 authority: wallet.publicKey,
@@ -701,6 +705,63 @@ async function depositMiningTokens(moonbaseProgram) {
         throw error;
     }
 }
+
+
+async function initializeHashpowerConfig(moonbaseProgram) {
+    if (deploymentFile.hashpower_config_initialized) {
+        console.log(COLOR_INFO, 'ℹ️ Hashpower config already initialized. Skipping...');
+        return;
+    }
+
+    const minLockupDays = config.hashpower.min_lockup_days;
+    const maxLockupDays = config.hashpower.max_lockup_days;
+    const baseMultiplier = config.hashpower.base_multiplier;
+    const maxMultiplier = config.hashpower.max_multiplier;
+        
+    console.log(COLOR_STEP, '\n=================== [ INITIALIZING HASHPOWER CONFIG ] ===================');
+
+    const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+
+    const [hashpowerConfigPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('hashpower-config')],
+        moonbaseProgram.programId
+    );
+    
+    console.log(COLOR_INFO, `🔑 Hashpower Config PDA: ${hashpowerConfigPDA.toString()}`);
+
+    try {
+        const tx = await moonbaseProgram.methods
+            .initializeHashpowerConfig(
+                new BN(minLockupDays),
+                new BN(maxLockupDays),
+                new BN(baseMultiplier),
+                new BN(maxMultiplier)
+            )
+            .accounts({
+                globalConfig: globalConfigPDA,
+                hashpowerConfig: hashpowerConfigPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+
+        console.log(COLOR_SUCCESS, '✅ Hashpower config initialized successfully!');
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+        deploymentFile.hashpower_config_initialized = {
+            hashpower_config_pda: hashpowerConfigPDA.toString(),
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        saveDeploymentData();
+    } catch (error) {
+        console.error(COLOR_ERROR, '❌ Failed to initialize hashpower config:', error);
+        throw error;
+    }    
+}
+
+
+
 
 async function setRaydiumPoolState(moonbaseProgram) {
     if (deploymentFile.raydium_pool_state_set) {
