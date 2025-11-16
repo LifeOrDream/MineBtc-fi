@@ -139,7 +139,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
     doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
     doge_btc_mining.doge_btc_per_round = 0;
-    doge_btc_mining.last_slot = 0;
+
     doge_btc_mining.total_tokens_mined = 0;
     doge_btc_mining.bump = ctx.bumps.doge_btc_mining;
     doge_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
@@ -152,14 +152,17 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("   Initializing dynamic distribution fields...");
     doge_btc_mining.raydium_pool_state = Pubkey::default();
     doge_btc_mining.last_rate_update = 0;
-    doge_btc_mining.current_dist_rate = 0;
     doge_btc_mining.price_history = Vec::new();
     doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
     doge_btc_mining.track_price = 0;
     doge_btc_mining.sol_for_pol = 0;
     msg!("     Raydium pool state: {} (default)", doge_btc_mining.raydium_pool_state);
-    msg!("     Current dist rate: {}", doge_btc_mining.current_dist_rate);
     msg!("     Recent price: {}", doge_btc_mining.recent_price);
+
+    // ---------------------------- Unrefined Rewards ---------------------------------
+    let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
+    unrefined_rewards.unrefining_index = INDEX_PRECISION as u128;
+    unrefined_rewards.total_dbtc_claimable = 0;
 
     //--------------------------------- Global Game State ---------------------------------
     // Note: GlobalGameSate should be initialized separately via initialize_game_state function
@@ -552,12 +555,10 @@ pub fn initialize_mining_internal(
     // Initialize mining parameters
     doge_btc_mining.mining_start_timestamp = start_timestamp;
     doge_btc_mining.doge_btc_per_round = doge_btc_per_round;
-    doge_btc_mining.last_slot = cur_slot;
 
     // Initialize dynamic distribution fields
     doge_btc_mining.raydium_pool_state = pool_state;
     doge_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
-    doge_btc_mining.current_dist_rate = doge_btc_per_round;
 
     doge_btc_mining.price_history = Vec::with_capacity(8);
     doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
@@ -610,6 +611,59 @@ pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
     Ok(())
 }
  
+
+// ----------------------------------------------------------------------------------------
+// -------------- HASHPOWER CONFIG (ADMIN) -------------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+pub fn initialize_hashpower_config_internal(
+    ctx: Context<InitializeHashpowerConfig>,
+    min_lockup_days: u64,
+    max_lockup_days: u64,
+    base_multiplier: u16,
+    max_multiplier: u16,
+) -> Result<()> {
+    let hashpower_config = &mut ctx.accounts.hashpower_config;
+
+    hashpower_config.min_lockup_days = min_lockup_days;
+    hashpower_config.max_lockup_days = max_lockup_days;
+    hashpower_config.base_multiplier = base_multiplier;
+    hashpower_config.max_multiplier = max_multiplier;
+    hashpower_config.bump = ctx.bumps.hashpower_config;
+
+    msg!("✅ [initialize_hashpower_config_internal] Hashpower config initialized successfully");
+    Ok(())
+}
+
+pub fn update_hashpower_config_internal(    
+    ctx: Context<UpdateHashpowerConfig>,
+    min_lockup_days: u64,
+    max_lockup_days: u64,
+    base_multiplier: u16,
+    max_multiplier: u16,
+) -> Result<()> {
+    let hashpower_config = &mut ctx.accounts.hashpower_config;
+
+    hashpower_config.min_lockup_days = min_lockup_days;
+    hashpower_config.max_lockup_days = max_lockup_days;
+    hashpower_config.base_multiplier = base_multiplier;
+    hashpower_config.max_multiplier = max_multiplier;
+    hashpower_config.bump = ctx.bumps.hashpower_config;
+    msg!("✅ [update_hashpower_config_internal] Hashpower config updated successfully");
+    Ok(())
+}
+
+
+
+
+    // // Hashpower config (contains lockup and multiplier settings)
+    // #[account(
+    //     seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
+    //     bump
+    // )]
+    // pub hashpower_config: Account<'info, HashpowerConfig>,
+
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
@@ -1150,6 +1204,15 @@ pub struct Initialize<'info> {
     )]
     pub doge_btc_mining: Account<'info, DogeBtcMining>,
 
+    #[account(
+        init,
+        payer = authority,
+        space = UnrefinedRewards::LEN,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,    
+
     /// CHECK: 0-byte PDA that only stores lamports (System Account)
     #[account(
         init,
@@ -1348,6 +1411,56 @@ pub struct DepositTokens<'info> {
 
     pub token_program: Program<'info, Token2022>,
 }
+
+
+#[derive(Accounts)]
+pub struct InitializeHashpowerConfig<'info> {
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = HashpowerConfig::LEN,
+        seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub hashpower_config: Account<'info, HashpowerConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateHashpowerConfig<'info> {
+    #[account(
+        mut,
+        seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub hashpower_config: Account<'info, HashpowerConfig>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+
 
 
 #[derive(Accounts)]

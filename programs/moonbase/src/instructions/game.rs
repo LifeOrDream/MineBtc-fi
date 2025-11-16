@@ -257,7 +257,7 @@ pub fn end_round(
     // ================= REWARDS CALCULATION ======================
     
     // Calculate DogeBtc emission for this round
-    let dbtc_rewards = doge_btc_mining.current_dist_rate;
+    let dbtc_rewards = doge_btc_mining.doge_btc_per_round;
     msg!("   Current dist rate: {}", dbtc_rewards);
     
     // Calculate DogeBtc distribution pools according to ORE tokenomics

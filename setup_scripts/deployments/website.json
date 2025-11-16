@@ -146,11 +146,7 @@
       }
     ],
     "fee_recipient": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
-    "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "max_modules_per_base": 50,
-    "grid_width": 20,
-    "grid_height": 15,
-    "max_upgrade_level": 10
+    "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
   },
   "devnet": {}
 }

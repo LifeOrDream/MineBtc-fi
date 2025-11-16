@@ -931,7 +931,7 @@ pub struct StakeDogeBtc<'info> {
     
     // Hashpower config (contains lockup and multiplier settings)
     #[account(
-        seeds = [b"hashpower-config"],
+        seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
         bump
     )]
     pub hashpower_config: Account<'info, HashpowerConfig>,
@@ -1098,7 +1098,7 @@ pub struct UnstakeDogeBtc<'info> {
 pub struct StakeLpTokens<'info> {
     // Hashpower config (contains lockup and multiplier settings)
     #[account(
-        seeds = [b"hashpower-config"],
+        seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
         bump
     )]
     pub hashpower_config: Account<'info, HashpowerConfig>,

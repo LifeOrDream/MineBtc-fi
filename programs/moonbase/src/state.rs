@@ -38,6 +38,7 @@ pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker 
 
 // PDAs which hold GlobalConfig / DogeBtcMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
+pub const HASHPOWER_CONFIG_SEED: &[u8] = b"hashpower-config";
 pub const DOGE_BTC_MINING_SEED: &[u8] = b"moon-doge-mining";
 pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
@@ -246,8 +247,7 @@ pub struct DogeBtcMining {
     pub mining_start_timestamp: u64,
     /// DogeBtc mined per slot (original base rate)
     pub doge_btc_per_round: u64,
-    /// Last slot when moondoge were mined
-    pub last_slot: u64,
+
     /// Total tokens mined so far
     pub total_tokens_mined: u64,
     /// Total tokens distributed so far
@@ -263,8 +263,6 @@ pub struct DogeBtcMining {
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
-    /// Current distribution rate (starts at doge_btc_per_round)
-    pub current_dist_rate: u64,
     /// Price history for 4-hour rolling average (8 entries, 1 per 30 mins)
     pub price_history: Vec<PriceEntry>,
     /// Recent price (last snapshot, used for comparison)
@@ -280,21 +278,19 @@ pub struct DogeBtcMining {
 }
 
 impl DogeBtcMining {
-    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_round + last_slot + total_tokens_mined + bump + vault_auth_bump +
-    // raydium_pool_state + last_rate_update + current_dist_rate + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
+    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_round + total_tokens_mined + bump + vault_auth_bump +
+    // raydium_pool_state + last_rate_update + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
         + 32                    // dbtc_token_vault
         + 8                     // mining_start_timestamp
         + 8                     // doge_btc_per_round
-        + 8                     // last_slot
         + 8                     // total_tokens_mined
         + 8                     // total_tokens_distributed
         + 1                     // bump
         + 1                     // vault_auth_bump
         + 32                    // raydium_pool_state
         + 8                     // last_rate_update (i64)
-        + 8                     // current_dist_rate
         + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) // price_history Vec<PriceEntry>
         + 8                     // recent_price
         + 8                     // track_price
@@ -332,8 +328,6 @@ impl BuybacksAccount {
 /// Hashpower configuration for the Moonbase program
 #[account]
 pub struct HashpowerConfig {
-    /// Authority that can update config parameters
-    pub authority: Pubkey,
 
     /// Minimum lockup period in days
     pub min_lockup_days: u64,
@@ -352,7 +346,6 @@ pub struct HashpowerConfig {
 // For HashpowerConfig
 impl HashpowerConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
-        32 +    // authority
         8 +     // min_lockup_days
         8 +     // max_lockup_days
         2 +     // base_multiplier (u16)

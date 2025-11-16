@@ -202,7 +202,6 @@ async function main() {
 
         // 11. Configure Ticket Tiers (for Dragon Egg minting)
         await configureTicketTiers(moonbaseProgram);
-        // return;
 
         // 12. Initialize Tax Config (for tax distribution)
         await initializeTaxConfig(moonbaseProgram);
@@ -263,6 +262,11 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
         moonbaseProgram.programId
     );
 
+    const [unrefinedRewardsPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('unrefined-rewards')],
+        moonbaseProgram.programId
+    );
+
     const FEE_RECIPIENT_MULTISIG = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
 
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPDA.toString()}`);
@@ -291,6 +295,8 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
             globalConfig_address: globalConfigPDA.toString(),
             dogeBtcMining_address: dogeBtcMiningPDA.toString(),
             solTreasury_address: solTreasuryPDA.toString(),
+            eggsTreasury_address: eggsTreasuryPDA.toString(),
+            unrefinedRewards_address: unrefinedRewardsPDA.toString(),
             FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
             tx_signature: tx,
             timestamp: new Date().toISOString()
@@ -302,6 +308,7 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
             deploymentFile.moonbase_program_initialized = {
                 globalConfig_address: globalConfigPDA.toString(),
                 dogeBtcMining_address: dogeBtcMiningPDA.toString(),
+                unrefinedRewards: unrefinedRewardsPDA.toString(),
                 solTreasury_address: solTreasuryPDA.toString(),
                 eggsTreasury_address: eggsTreasuryPDA.toString(),
             };

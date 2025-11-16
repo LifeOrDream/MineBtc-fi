@@ -85,6 +85,9 @@ function generateWebsiteConfig(config, deployment) {
       "dbtc_vault_authority": deployment.mining_vault_initialized?.vault_authority,
       "mining_start_timestamp": deployment.mining_vault_initialized?.start_timestamp,
       "doge_btc_per_round": deployment.mining_vault_initialized?.doge_btc_per_round,
+
+      // ========== HASHPOWER CONFIG ==========
+      "hashpower_config_pda": deployment.hashpower_config_initialized?.hashpower_config_pda,
       
       // ========== GAME STATE ==========
       "global_game_state_pda": deployment.game_state_initialized?.global_game_state_pda,

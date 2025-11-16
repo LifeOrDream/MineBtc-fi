@@ -535,8 +535,8 @@ pub fn update_rate_and_add_lp_internal(
 
     msg!("   📅 Current timestamp: {}", current_time);
     msg!(
-        "   ⚙️  Current distribution rate: {} DOGE_BTC per slot",
-        doge_btc_mining.current_dist_rate
+        "   ⚙️  Current distribution rate: {} DOGE_BTC per round",
+        doge_btc_mining.doge_btc_per_round
     );
     msg!("   🎯 Admin LP override: {}", lp_token_amount);
 
@@ -691,7 +691,7 @@ pub fn update_rate_and_add_lp_internal(
     );
 
     // Check if change exceeds 3% threshold
-    let old_rate = doge_btc_mining.current_dist_rate;
+    let old_rate = doge_btc_mining.doge_btc_per_round;
     let mut rate_changed = false;
 
     if price_change_pct.abs() < PRICE_CHANGE_THRESHOLD as i64 {
@@ -702,8 +702,8 @@ pub fn update_rate_and_add_lp_internal(
         // Don't update track_price, keep monitoring
     } else if direction > 0 {
         // Price increased by >3% - increase distribution by 1%
-        doge_btc_mining.current_dist_rate = doge_btc_mining
-            .current_dist_rate
+        doge_btc_mining.doge_btc_per_round = doge_btc_mining
+            .doge_btc_per_round
             .checked_mul(101)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
@@ -716,8 +716,8 @@ pub fn update_rate_and_add_lp_internal(
         rate_changed = true;
     } else {
         // Price decreased by >3% - decrease distribution by 3%
-        doge_btc_mining.current_dist_rate = doge_btc_mining
-            .current_dist_rate
+        doge_btc_mining.doge_btc_per_round = doge_btc_mining
+            .doge_btc_per_round
             .checked_mul(97)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
@@ -1077,7 +1077,7 @@ pub fn update_rate_and_add_lp_internal(
     msg!(
         "   🎯 Distribution rate: {} -> {} ({})",
         old_rate,
-        doge_btc_mining.current_dist_rate,
+        doge_btc_mining.doge_btc_per_round,
         if rate_changed { "CHANGED" } else { "unchanged" }
     );
     msg!(
@@ -1094,7 +1094,7 @@ pub fn update_rate_and_add_lp_internal(
 
     emit!(DistributionRateUpdated {
         old_rate,
-        new_rate: doge_btc_mining.current_dist_rate,
+        new_rate: doge_btc_mining.doge_btc_per_round,
         price_change_pct: price_change_pct as i32,
         current_price: new_avg_price,
         avg_price_4h: new_avg_price,
