@@ -431,7 +431,7 @@ pub mod moonbase {
     /// Initialize autominer vault with flexible block/faction configuration
     pub fn init_autominer(
         ctx: Context<InitAutominer>,
-        blocks_config: BlocksConfig,
+        blocks_config: Option<BlocksConfig>,
         factions_config: Option<FactionsConfig>,
         sol_per_round: u64,
         num_rounds: u32,

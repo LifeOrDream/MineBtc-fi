@@ -95,7 +95,7 @@ pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x
 pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
 
-const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL
+pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
 
 /// ------------ GLOBAL CONFIG ------------
 
