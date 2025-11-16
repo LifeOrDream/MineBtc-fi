@@ -93,6 +93,8 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
     msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
 
+    global_config.change_faction_fee = 4_200_000_000; // 4.2 SOL
+
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
     msg!("   Raydium pool state: {} (default, must be set via admin)", global_config.raydium_pool_state);
@@ -391,6 +393,7 @@ pub fn update_fees_internal(
     new_dbtc_same_faction_pct: Option<u8>,
     new_dbtc_motherlode_pct: Option<u8>,
     new_refining_fee: Option<u8>,
+    change_faction_fee: Option<u64>,
 ) -> Result<()> {
     msg!("💰 [update_fees_internal] Updating fee configuration");
     msg!("   Authority: {}", ctx.accounts.authority.key());
@@ -495,6 +498,14 @@ pub fn update_fees_internal(
         msg!("   Updated refining fee: {}% -> {}%", old_refining_fee, refining_fee);
     } else {
         msg!("   Refining fee: {}% (not updated)", global_config.dbtc_dist_config.refining_fee);
+    }
+
+    // Update change faction fee if provided
+    if let Some(change_faction_fee) = change_faction_fee {
+        global_config.change_faction_fee = change_faction_fee;
+        msg!("   Updated change faction fee: {} SOL -> {} SOL", global_config.change_faction_fee, change_faction_fee);
+    } else {
+        msg!("   Change faction fee: {} SOL (not updated)", global_config.change_faction_fee);
     }
 
     msg!("✅ [update_fees_internal] Fee configuration updated successfully");

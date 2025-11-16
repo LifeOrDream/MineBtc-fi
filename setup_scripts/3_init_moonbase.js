@@ -181,7 +181,6 @@ async function main() {
 
         // 2. Initialize System Accounts (Referral + Buybacks)
         await initializeSystemAccounts(moonbaseProgram);
-        return;
 
         // 4. Initialize Mining System (Token Vault + Mining Parameters)
         await initializeMiningSystem(moonbaseProgram);
@@ -196,13 +195,14 @@ async function main() {
         await createDragonEggCollection(moonbaseProgram);
 
         // 9. Set Dragon Egg URIs (one per faction)
-        // await setDragonEggUris(moonbaseProgram);
+        await setDragonEggUris(moonbaseProgram);
 
         // 10. Initialize Dragon Egg Royalties
         await initializeDragonEggRoyalties(moonbaseProgram);
 
         // 11. Configure Ticket Tiers (for Dragon Egg minting)
         await configureTicketTiers(moonbaseProgram);
+        // return;
 
         // 12. Initialize Tax Config (for tax distribution)
         await initializeTaxConfig(moonbaseProgram);
