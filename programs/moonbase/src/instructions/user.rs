@@ -573,21 +573,29 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
 /// Refunds all remaining SOL (after rent) and resets rounds_remaining to 0
 pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     msg!("🛑 [stop_autominer] Stopping autominer");
-    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
     
-    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    // Read values before mutable borrow
+    let owner_key = ctx.accounts.autominer_vault.owner;
+    let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    
+    msg!("   Owner: {}", owner_key);
     
     // Verify caller is owner
-    require!( ctx.accounts.authority.key() == autominer_vault.owner, ErrorCode::Unauthorized);
+    require!(
+        ctx.accounts.authority.key() == owner_key,
+        ErrorCode::Unauthorized
+    );
     msg!("     ✓ Caller is owner");
     
     // Calculate remaining SOL (after rent)
-    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
     let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let remaining_sol = vault_lamports.checked_sub(rent).ok_or(ErrorCode::InsufficientFunds)?;
+    let remaining_sol = vault_lamports
+        .checked_sub(rent)
+        .ok_or(ErrorCode::InsufficientFunds)?;
     
     msg!("   Vault state:");
-    msg!("     Rounds remaining: {}", autominer_vault.rounds_remaining);
+    msg!("     Rounds remaining: {}", rounds_remaining);
     msg!("     Vault lamports: {}", vault_lamports);
     msg!("     Rent: {}", rent);
     msg!("     Remaining SOL to refund: {}", remaining_sol);
@@ -601,6 +609,9 @@ pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
         let owner_after = ctx.accounts.owner.lamports();
         msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
     }
+    
+    // Now borrow mutably to update state
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
     
     // Reset vault state
     autominer_vault.rounds_remaining = 0;
