@@ -52,8 +52,8 @@
     },
     "eggs_config": {
         "base_price": 1000000000,
-        "curve_a": 10000,
-        "max_supply": 15000,
+        "curve_a": 1111111,
+        "max_supply": 24690,
         "royalties": 420,
         "creators": [
             {
