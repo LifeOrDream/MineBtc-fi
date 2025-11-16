@@ -639,8 +639,10 @@ impl FactionState {
         16 +    // dbtc_dbtc_reward_index (u128)
         16 +    // dbtc_sol_reward_index (u128)
         8 +     // total_lp_hashpower (u64)
+        8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_index (u128)
         16 +    // lp_dbtc_reward_index (u128)
+        8 +     // eggs_staked (u64)
         8 +     // total_sol_bets (u64)
         8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
@@ -728,12 +730,13 @@ impl GameSession {
     
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
+        1 +     // stage (u8)
         8 +     // round_id
-        8 +     // round_start_timestamp
-        8 +     // round_end_timestamp
-        8 +     // stakers_fee
+        8 +     // round_start_timestamp (i64)
+        8 +     // round_end_timestamp (i64)
         8 +     // total_sol_bets
         8 +     // total_points_bets
+        8 +     // stakers_fee
         4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64> (24-sized array)
         4 + (NUM_BLOCKS * 8) + // sol_bets_indexes Vec<u64> (24-sized array)
         4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64> (24-sized array)
@@ -744,6 +747,7 @@ impl GameSession {
         8 +     // dbtc_winner_pool
         8 +     // dbtc_loser_pool
         8 +     // faction_stakers (u64)
+        8 +     // motherlode_rewards (u64)
         16 +    // sol_rewards_index (u128)
         16 +    // dbtc_rewards_index (u128)
         16 +    // same_faction_dbtc_rewards_index (u128)
@@ -861,7 +865,9 @@ impl PlayerData {
         16 +    // lp_sol_reward_debt (u128)
         16 +    // lp_dbtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
+        16 +    // unrefining_index (u128)
         8 +     // pending_dbtc_rewards (u64)
+        8 +     // unrefined_dbtc_rewards (u64)
         8 +     // claimable_power (u64)
         4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
@@ -1128,10 +1134,16 @@ impl AutominerVault {
     
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
-        1 + (1 + 4 + (Self::MAX_BLOCKS * 1)) + // blocks_config Option<BlocksConfig> (1 byte Option + enum discriminator + Vec<u8>)
-        1 + (1 + 4 + (Self::MAX_FACTIONS * 1) + 1) + // factions_config Option<FactionsConfig> (1 byte Option + enum + strategy)
+        // blocks_config Option<BlocksConfig>
+        // Option discriminator: 1 byte
+        // Max variant: Specific { blocks: Vec<u8> } = 1 byte enum discriminator + 4 bytes Vec length + MAX_BLOCKS * 1 byte
+        1 + (1 + 4 + (Self::MAX_BLOCKS * 1)) + // blocks_config Option<BlocksConfig>
+        // factions_config Option<FactionsConfig>
+        // Option discriminator: 1 byte
+        // Max variant: Specific { factions: Vec<u8>, strategy: FactionStrategy } = 1 byte enum discriminator + 4 bytes Vec length + MAX_FACTIONS * 1 byte + 1 byte strategy
+        1 + (1 + 4 + (Self::MAX_FACTIONS * 1) + 1) + // factions_config Option<FactionsConfig>
         8 +     // sol_per_round
-        4 +     // rounds_remaining
+        4 +     // rounds_remaining (u32)
         8 +     // last_bet_round_id
         1;      // vault_bump
 }
