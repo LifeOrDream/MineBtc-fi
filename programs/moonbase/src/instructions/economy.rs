@@ -1353,9 +1353,14 @@ pub struct DistributeSolFees<'info> {
     /// CHECK: Token account owned by treasury PDA (verified via constraint)
     pub treasury_wsol_account: Account<'info, TokenAccount>,
 
-    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
-    #[account(mut)]
-    pub multisig_wsol_account: UncheckedAccount<'info>,
+    /// Multisig WSOL token account (destination for WSOL transfers)
+    /// MUST be owned by global_config.fee_recipient (the multisig address)
+    #[account(
+        mut,
+        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
+    )]
+    pub multisig_wsol_account: Account<'info, TokenAccount>,
 
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,

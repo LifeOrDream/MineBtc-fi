@@ -676,9 +676,14 @@ pub struct MintDragonEgg<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
-    #[account(mut)]
-    pub multisig_wsol_account: UncheckedAccount<'info>,
+    /// Multisig WSOL token account (destination for WSOL transfers)
+    /// MUST be owned by global_config.fee_recipient (the multisig address)
+    #[account(
+        mut,
+        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
+    )]
+    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
 
     /// User's WSOL token account (for wrapping SOL to WSOL)
     #[account(
@@ -753,9 +758,14 @@ pub struct BatchMintDragonEggs<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
-    /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
-    #[account(mut)]
-    pub multisig_wsol_account: UncheckedAccount<'info>,
+    /// Multisig WSOL token account (destination for WSOL transfers)
+    /// MUST be owned by global_config.fee_recipient (the multisig address)
+    #[account(
+        mut,
+        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
+    )]
+    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
 
     /// User's WSOL token account (for wrapping SOL to WSOL)
     #[account(
