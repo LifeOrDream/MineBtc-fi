@@ -16,6 +16,24 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use crate::errors::ErrorCode;
 
+
+// DNA field offsets
+const FAMILY_TYPE_BITS: u8 = 4;
+const EVOLUTIONARY_STAGE_BITS: u8 = 3;
+const APPEARANCE_TRAIT_BITS: u8 = 5;
+const POWER_TRAIT_BITS: u8 = 4;
+
+const APPEARANCE_TRAITS_OFFSET: u8 = FAMILY_TYPE_BITS + EVOLUTIONARY_STAGE_BITS;
+const POWER_TRAITS_OFFSET: u8 = APPEARANCE_TRAITS_OFFSET + (28 * APPEARANCE_TRAIT_BITS); // 7 groups × 4 traits
+
+// Constants
+const APPEARANCE_TRAIT_GROUPS: usize = 7;
+const APPEARANCE_TRAITS_PER_GROUP: usize = 4;
+const POWER_TRAIT_GROUPS: usize = 7;
+const POWER_TRAITS_PER_GROUP: usize = 3;
+
+
+
 /// Calculate dynamic pricing based on bonding curve
 /// Formula: price = base_price + curve_a * (items_minted^(2/3))
 /// This creates a diminishing returns curve where price increases slower as more items are minted
@@ -78,20 +96,42 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
 
 #[allow(dead_code)] // Functions will be used when NFT minting is enabled
 
-// DNA field offsets
-const FAMILY_TYPE_BITS: u8 = 4;
-const EVOLUTIONARY_STAGE_BITS: u8 = 3;
-const APPEARANCE_TRAIT_BITS: u8 = 5;
-const POWER_TRAIT_BITS: u8 = 4;
 
-const APPEARANCE_TRAITS_OFFSET: u8 = FAMILY_TYPE_BITS + EVOLUTIONARY_STAGE_BITS;
-const POWER_TRAITS_OFFSET: u8 = APPEARANCE_TRAITS_OFFSET + (28 * APPEARANCE_TRAIT_BITS); // 7 groups × 4 traits
+pub fn calculate_progressive_multiplier(
+    current_egg_count: u64, max_supply: u64
+) -> Result<u32> {
+    
+    // The multiplier for the very first egg (mint #1)
+    let start_multiplier = 100;
+    let end_multiplier = 420;
+    
+    // The multiplier for the very last egg (mint #20,000)
+    let multiplier_range = (end_multiplier - start_multiplier) as u128;
+    let mint_range = (max_supply - 1) as u128;
+    
+    // Ensure we don't go over the max supply
+    if current_egg_count >= max_supply {
+        return Ok(end_multiplier as u32);
+    }
+    
+    // --- Linear Interpolation (y = mx + b) using u128 math ---
+    
+    // 1. Calculate the "progress" (x) as a u128
+    // This is how many eggs have already been minted (0 to 19,999)
+    let progress = current_egg_count as u128;
 
-// Constants
-const APPEARANCE_TRAIT_GROUPS: usize = 7;
-const APPEARANCE_TRAITS_PER_GROUP: usize = 4;
-const POWER_TRAIT_GROUPS: usize = 7;
-const POWER_TRAITS_PER_GROUP: usize = 3;
+    // 2. Calculate the "slope" (m) part: (progress / mint_range)
+    // We multiply first to avoid losing precision
+    // `increase = (progress * multiplier_range) / mint_range`
+    let multiplier_increase = (progress * multiplier_range) / mint_range;
+    let new_multiplier = start_multiplier as u128 + multiplier_increase;
+    Ok(new_multiplier as u32)
+}
+
+
+
+
+
 
 /// Generate unique DNA for a genesis Dragon Egg
 ///
@@ -138,87 +178,7 @@ pub fn generate_genesis_dna(
     Ok(dna)
 }
 
-/// Generate DNA with progressive gene windows based on tier (family)
-/// Each tier gets progressively better gene value ranges
-///
-/// # Arguments
-/// * `mint_number` - The sequential mint number
-/// * `minter` - Address of minter
-/// * `slot` - Current slot
-/// * `gene_tier` - Tier/family (0-15)
-///
-/// # Returns
-/// * 32-byte array representing 256-bit DNA with tier-based gene windows
-pub fn generate_genesis_dna_with_tier(
-    mint_number: u64,
-    minter: &Pubkey,
-    slot: u64,
-    gene_tier: u8,
-) -> Result<[u8; 32]> {
-    require!(gene_tier < 16, crate::errors::ErrorCode::InvalidParameters);
-
-    // Create seed for randomness
-    let mut seed_data = Vec::new();
-    seed_data.extend_from_slice(&mint_number.to_le_bytes());
-    seed_data.extend_from_slice(&minter.to_bytes());
-    seed_data.extend_from_slice(&slot.to_le_bytes());
-
-    let hash = keccak::hash(&seed_data);
-    let hash_bytes = hash.to_bytes();
-
-    let mut dna = [0u8; 32];
-
-    // Set family type (first 4 bits)
-    dna[0] = gene_tier & 0x0F;
-
-    // Set evolutionary stage to 0 (bits 4-6)
-    // Already 0 from initialization
-
-    // Generate appearance traits with progressive windows
-    // Tier 0: [0,3], Tier 1: [0,4], Tier 2: [2,5], ..., Tier 15: [13,18]
-    let appearance_min = if gene_tier >= 2 { gene_tier - 2 } else { 0 };
-    let appearance_max = 3 + gene_tier;
-
-    for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
-        let hash_index = (i * 3) % 32;
-        let random_byte = hash_bytes[hash_index];
-        let range = appearance_max - appearance_min + 1;
-        let trait_value = appearance_min + (random_byte % range);
-        let trait_value = trait_value.min(15); // Cap at half of max (31/2 ≈ 15)
-
-        set_trait_value(
-            &mut dna,
-            APPEARANCE_TRAITS_OFFSET,
-            APPEARANCE_TRAIT_BITS,
-            i as u8,
-            trait_value,
-        );
-    }
-
-    // Generate power traits with progressive windows
-    // Tier 0: [0,2], Tier 1: [1,3], Tier 2: [2,4], ..., Tier 15: [14,16]
-    let power_min = if gene_tier >= 1 { gene_tier - 1 } else { 0 };
-    let power_max = 2 + gene_tier;
-
-    for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
-        let hash_index = ((28 + i) * 3) % 32;
-        let random_byte = hash_bytes[hash_index];
-        let range = power_max - power_min + 1;
-        let trait_value = power_min + (random_byte % range);
-        let trait_value = trait_value.min(7); // Cap at half of max (15/2 ≈ 7)
-
-        set_trait_value(
-            &mut dna,
-            POWER_TRAITS_OFFSET,
-            POWER_TRAIT_BITS,
-            i as u8,
-            trait_value,
-        );
-    }
-
-    Ok(dna)
-}
-
+ 
 /// Limit trait ranges to lower half of possible values
 /// Appearance traits: 0-15 (instead of 0-31)
 /// Power traits: 0-7 (instead of 0-15)
@@ -512,3 +472,4 @@ fn set_trait_value(
 //         assert_eq!(get_evolutionary_stage(&dna), 1);
 //     }
 // }
+

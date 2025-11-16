@@ -140,7 +140,8 @@ pub fn mint_dragon_egg( ctx: Context<MintDragonEgg>, faction_id: u8, ticket_tier
     let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
     let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
     
-    let multiplier = 100;
+    // Calculate progressive multiplier based on current egg count
+    let multiplier = crate::genescience::calculate_progressive_multiplier(egg_config.eggs_minted, egg_config.max_supply)?;
     let collection_authority_bump = ctx.bumps.collection_authority;
     let collection_authority_seeds = &[crate::state::COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
 
@@ -225,11 +226,12 @@ pub fn batch_mint_dragon_eggs(
         dev_amt,
     )?;
     
-    let multiplier = 100; // Fixed multiplier
-    
     // Mint each egg
     for i in 0..mint_count {
         let current_mint_number = egg_config.eggs_minted + 1;
+        
+        // Calculate progressive multiplier based on current egg count (before this mint)
+        let multiplier = crate::genescience::calculate_progressive_multiplier(egg_config.eggs_minted + i as u64, egg_config.max_supply)?;
         
         // Generate DNA
         let dna = crate::genescience::generate_genesis_dna(  current_mint_number,&ctx.accounts.user.key(),Clock::get()?.slot + i as u64, faction_id)?;        
@@ -301,8 +303,8 @@ pub fn admin_mint_dragon_egg(
     let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
     let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
     
-    // Fixed multiplier (no tiers)
-    let multiplier = 100; // 1.0x base multiplier
+    // Calculate progressive multiplier based on current egg count
+    let multiplier = crate::genescience::calculate_progressive_multiplier(egg_config.eggs_minted, egg_config.max_supply)?;
     
     // Get collection authority seeds
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -376,131 +378,98 @@ pub fn admin_mint_dragon_egg(
 /// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
 /// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
 pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
+
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
+    let current_time = Clock::get()?.unix_timestamp;
+    let egg_mint = egg_metadata.mint;
+    let egg_multiplier = egg_metadata.multiplier;
     
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
-    require!(
-        nft_owner == ctx.accounts.user.key(),
-        ErrorCode::NftNotOwnedByUser
-    );
 
-    // Validation
-    require!(
-        egg_metadata.incubated_player_data.is_none(),
-        ErrorCode::EggAlreadyIncubated
-    );
-    
-    // Check if egg faction matches player faction (required for boosting)
-    require!(
-        egg_metadata.faction_id == player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
-    
-    // Check user hasn't reached max staked eggs
-    require!(
-        player_data.staked_eggs.len() < MAX_STAKED_EGGS,
-        ErrorCode::InvalidParameters
-    );
-    
-    let current_time = Clock::get()?.unix_timestamp;
-    let egg_mint = egg_metadata.mint;
-    
+    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser );
+    require!( egg_metadata.incubated_player_data.is_none(), ErrorCode::EggAlreadyIncubated);    
+    require!( egg_metadata.faction_id == player_data.faction_id && egg_metadata.faction_id == faction_state.faction_id, ErrorCode::InvalidFactionId);
+    require!( player_data.staked_eggs.len() < MAX_STAKED_EGGS, ErrorCode::InvalidParameters);
+        
     // Transfer NFT to custody PDA (lock it)
     msg!("🔒 Transferring NFT to custody PDA (locking)");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts
-            .dragon_egg_collection
-            .as_ref()
-            .map(|c| c.to_account_info())
-            .as_ref(),
+        ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.egg_custody_pda.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         None,
     )?;
-    
+        
+    // Process pending rewards before updating position
+    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+
     // Add egg to player's staked eggs list
     player_data.staked_eggs.push(egg_mint);
-    let num_staked_eggs = player_data.staked_eggs.len();
-    msg!("   Added egg to staked eggs. Total staked: {}", num_staked_eggs);
-    
+
     // Calculate new multiplier based on number of staked eggs
-    // 1 egg = 150 (1.5x), 2 eggs = 200 (2.0x), 3 eggs = 250 (2.5x), 4 eggs = 300 (3.0x), 5 eggs = 350 (3.5x)
-    let old_multiplier = player_data.egg_multiplier;
-    let new_multiplier = 100 + (num_staked_eggs as u16 * 50); // Base 100 + 50 per egg
-    player_data.egg_multiplier = new_multiplier;
-    msg!("⚡ Updated egg multiplier: {} ({}x) -> {} ({}x)", 
-        old_multiplier, old_multiplier as f64 / 100.0,
-        new_multiplier, new_multiplier as f64 / 100.0);
-    
-    // Recalculate total hashpower with new multiplier
-    // hashpower = (dogebtc_staked * lockup_multiplier / 100) * egg_multiplier / 100
-    // Since positions already have weighted_amount, we need to recalculate player totals
-    let old_dbtc_hashpower = player_data.dogebtc_hashpower;
-    let old_lp_hashpower = player_data.lp_hashpower;
-    
-    // Apply multiplier difference
-    let multiplier_increase = new_multiplier - old_multiplier;
-    if multiplier_increase > 0 && (old_dbtc_hashpower > 0 || old_lp_hashpower > 0) {
-        let dbtc_boost = old_dbtc_hashpower * multiplier_increase as u64 / 100;
-        let lp_boost = old_lp_hashpower * multiplier_increase as u64 / 100;
+    let old_multiplier = player_data.egg_multiplier as u64;
+    let new_multiplier = calc_player_multiplier(old_multiplier as u16, egg_multiplier as u16, true) as u64;
+    player_data.egg_multiplier = new_multiplier as u16;
+    msg!("⚡ Updated egg multiplier: ({})x", player_data.egg_multiplier as f64 / 100.0);    
+
+    // Calculate new hashpower based on new multiplier and UPDATE
+    let existing_dbtc_hashpower = player_data.dogebtc_hashpower;
+    let existing_lp_hashpower = player_data.lp_hashpower;
+    player_data.dogebtc_hashpower = (existing_dbtc_hashpower / old_multiplier) * new_multiplier;
+    player_data.lp_hashpower = (existing_lp_hashpower / old_multiplier) * new_multiplier;
+    msg!("   DogeBtc hashpower: {} -> {}", existing_dbtc_hashpower as f64 / 1e6, player_data.dogebtc_hashpower as f64 / 1e6);
+    msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
+
+    // Update faction state totals
+    faction_state.total_dbtc_hashpower = faction_state.total_dbtc_hashpower - existing_dbtc_hashpower + player_data.dogebtc_hashpower;
+    faction_state.total_lp_hashpower = faction_state.total_lp_hashpower - existing_lp_hashpower + player_data.lp_hashpower;
+    msg!("   Faction dbtc hashpower: {} -> {}", faction_state.total_dbtc_hashpower as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    msg!("   Faction LP hashpower: {} -> {}", faction_state.total_lp_hashpower as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
+
+    faction_state.eggs_staked += 1;
+    msg!("   Faction eggs staked: {} ", faction_state.eggs_staked);
         
-        player_data.dogebtc_hashpower += dbtc_boost;
-        player_data.lp_hashpower += lp_boost;
-        
-        faction_state.total_dbtc_hashpower += dbtc_boost;
-        faction_state.total_lp_hashpower += lp_boost;
-        
-        msg!("   DogeBtc hashpower boost: {} (+{})", player_data.dogebtc_hashpower, dbtc_boost);
-        msg!("   LP hashpower boost: {} (+{})", player_data.lp_hashpower, lp_boost);
-        msg!("   Faction dbtc hashpower: {}", faction_state.total_dbtc_hashpower);
-        msg!("   Faction LP hashpower: {}", faction_state.total_lp_hashpower);
-    }
-    
     // Update egg metadata
     egg_metadata.incubated_player_data = Some(player_data.owner);
     egg_metadata.last_update_ts = current_time;
-    
-    msg!("✅ Dragon Egg staked for player {}", player_data.owner);
-    msg!("   Egg: {}", egg_metadata.mint);
-    msg!("   Faction: {}", egg_metadata.faction_id);
-    msg!("   Total eggs staked: {}/{}", num_staked_eggs, MAX_STAKED_EGGS);
-    
+    msg!("   Egg metadata updated");
+
     Ok(())
 }
 
+
+
+
 /// Unstake a Dragon Egg (reduces multiplier and recalculates hashpower)
 pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
+
     let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let egg_mint = egg_metadata.mint;
+    let incubated_by_player = egg_metadata.incubated_player_data.unwrap();
+    let current_time = Clock::get()?.unix_timestamp;
+    let egg_multiplier = egg_metadata.multiplier;
     
     // Verify NFT is in custody PDA
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
-    require!(
-        nft_owner == ctx.accounts.egg_custody_pda.key(),
-        ErrorCode::EggNotIncubated
-    );
-    
-    require!(
-        egg_metadata.incubated_player_data.is_some(),
-        ErrorCode::EggNotIncubated
-    );
-    
-    let incubated_player = egg_metadata.incubated_player_data.unwrap();
-    require!(
-        incubated_player == player_data.owner,
-        ErrorCode::Unauthorized
-    );
+    require!( nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::EggNotIncubated);
+    require!( egg_metadata.incubated_player_data.is_some(), ErrorCode::EggNotIncubated);
+    require!( egg_metadata.faction_id == player_data.faction_id && egg_metadata.faction_id == faction_state.faction_id, ErrorCode::InvalidFactionId);
+    require!( player_data.staked_eggs.contains(&egg_mint), ErrorCode::InvalidParameters);    
+    require!( incubated_by_player == player_data.owner,  ErrorCode::Unauthorized);
         
-    let current_time = Clock::get()?.unix_timestamp;
-    
+    // Process pending rewards before updating position
+    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+
     // Remove egg from player's staked eggs list
     if let Some(index) = player_data.staked_eggs.iter().position(|&mint| mint == egg_mint) {
         player_data.staked_eggs.remove(index);
@@ -508,38 +477,34 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
-    
-    let num_staked_eggs = player_data.staked_eggs.len();
-    
-    // Calculate new multiplier based on remaining staked eggs
-    let old_multiplier = player_data.egg_multiplier;
-    let new_multiplier = 100 + (num_staked_eggs as u16 * 50); // Base 100 + 50 per egg
-    player_data.egg_multiplier = new_multiplier;
-    msg!("⚡ Updated egg multiplier: {} ({}x) -> {} ({}x)", 
-        old_multiplier, old_multiplier as f64 / 100.0,
-        new_multiplier, new_multiplier as f64 / 100.0);
-    
-    // Recalculate total hashpower with new multiplier
-    let old_dbtc_hashpower = player_data.dogebtc_hashpower;
-    let old_lp_hashpower = player_data.lp_hashpower;
-    
-    // Apply multiplier decrease
-    let multiplier_decrease = old_multiplier - new_multiplier;
-    if multiplier_decrease > 0 && (old_dbtc_hashpower > 0 || old_lp_hashpower > 0) {
-        let dbtc_reduction = old_dbtc_hashpower * multiplier_decrease as u64 / 100;
-        let lp_reduction = old_lp_hashpower * multiplier_decrease as u64 / 100;
-        
-        player_data.dogebtc_hashpower -= dbtc_reduction;
-        player_data.lp_hashpower -= lp_reduction;
-        
-        faction_state.total_dbtc_hashpower -= dbtc_reduction;
-        faction_state.total_lp_hashpower -= lp_reduction;
-        
-        msg!("   DogeBtc hashpower reduction: {} (-{})", player_data.dogebtc_hashpower, dbtc_reduction);
-        msg!("   LP hashpower reduction: {} (-{})", player_data.lp_hashpower, lp_reduction);
-        msg!("   Faction dbtc hashpower: {}", faction_state.total_dbtc_hashpower);
-        msg!("   Faction LP hashpower: {}", faction_state.total_lp_hashpower);
-    }
+
+    // Calculate new multiplier based on number of staked eggs
+    let old_multiplier = player_data.egg_multiplier as u64;
+    let new_multiplier = calc_player_multiplier(old_multiplier as u16, egg_multiplier as u16, false) as u64;
+    player_data.egg_multiplier = new_multiplier as u16;
+    msg!("⚡ Updated egg multiplier: ({})x", player_data.egg_multiplier as f64 / 100.0);    
+
+    // Calculate new hashpower based on new multiplier and UPDATE
+    let existing_dbtc_hashpower = player_data.dogebtc_hashpower;
+    let existing_lp_hashpower = player_data.lp_hashpower;
+    player_data.dogebtc_hashpower = (existing_dbtc_hashpower / old_multiplier) * new_multiplier;
+    player_data.lp_hashpower = (existing_lp_hashpower / old_multiplier) * new_multiplier;
+    msg!("   DogeBtc hashpower: {} -> {}", existing_dbtc_hashpower as f64 / 1e6, player_data.dogebtc_hashpower as f64 / 1e6);
+    msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
+
+    // Update faction state totals
+    faction_state.total_dbtc_hashpower = faction_state.total_dbtc_hashpower - existing_dbtc_hashpower + player_data.dogebtc_hashpower;
+    faction_state.total_lp_hashpower = faction_state.total_lp_hashpower - existing_lp_hashpower + player_data.lp_hashpower;
+    msg!("   Faction dbtc hashpower: {} -> {}", faction_state.total_dbtc_hashpower as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    msg!("   Faction LP hashpower: {} -> {}", faction_state.total_lp_hashpower as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
+
+    faction_state.eggs_staked -= 1;
+    msg!("   Faction eggs staked: {} -> {}", faction_state.eggs_staked, faction_state.eggs_staked);
+
+    // Update egg metadata
+    egg_metadata.incubated_player_data = None;
+    egg_metadata.last_update_ts = current_time;
+    msg!("   Egg metadata updated");
     
     // Transfer NFT back to user (unlock it)
     msg!("🔓 Transferring NFT back to user (unlocking)");
@@ -548,11 +513,7 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts
-            .dragon_egg_collection
-            .as_ref()
-            .map(|c| c.to_account_info())
-            .as_ref(),
+        ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.egg_custody_pda.to_account_info(),
         &ctx.accounts.egg_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
@@ -560,16 +521,31 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
         Some(signer_seeds),
     )?;
     
-    // Update egg metadata
-    egg_metadata.incubated_player_data = None;
-    egg_metadata.last_update_ts = current_time;
-    
-    msg!("✅ Dragon Egg unstaked");
-    msg!("   Egg: {}", egg_metadata.mint);
-    msg!("   Remaining eggs staked: {}/{}", num_staked_eggs, MAX_STAKED_EGGS);
     
     Ok(())
 }
+
+
+
+
+
+fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add: bool) -> u16 {
+
+    if to_add {
+        let new_multiplier = existing_multiplier + egg_multiplier;
+        if new_multiplier > MAX_MULTIPLIER {
+            return MAX_MULTIPLIER;
+        }
+        return new_multiplier;
+    } else {
+        let new_multiplier = existing_multiplier - egg_multiplier;
+        if new_multiplier < 100 {
+            return 100;
+        }
+        return new_multiplier;
+    }
+}
+
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG ACCOUNT CONTEXTS ---------------------------------------------

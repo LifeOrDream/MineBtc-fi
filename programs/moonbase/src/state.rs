@@ -19,8 +19,6 @@ pub const M_HUNDRED: u64 = 100;
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
-
-
 pub const DISCRIMINATOR_SIZE: usize = 8;
 
 // ========== FACTION SURGE RAFFLE CONSTANTS ========== //
@@ -69,7 +67,6 @@ pub const PLAYER_DATA_SEED: &[u8] = b"player";
 pub const STAKED_POSITION_SEED: &[u8] = b"staked-position";
 pub const LP_STAKED_POSITION_SEED: &[u8] = b"lp-staked-position";
 
-
 pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dbtc-custodian";
 pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dbtc-custodian-authority";
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";
@@ -93,6 +90,7 @@ pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
 // ========== DRAGON EGG NFT CONSTANTS ========== //
 pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
+pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x)
 
 pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
@@ -615,6 +613,8 @@ pub struct FactionState {
     pub lp_sol_reward_index: u128,
     pub lp_dbtc_reward_index: u128,
 
+    pub eggs_staked: u64,
+
     /// Total SOL bet on this faction across all rounds (cumulative)
     pub total_sol_bets: u64,
     /// Total number of rounds this faction has won (cumulative)
@@ -939,6 +939,15 @@ pub struct DragonEggMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
 
+    /// Creation timestamp
+    pub created_at: i64,
+
+    /// Faction ID (country) that the egg belongs to (matches moonbase faction)
+    pub faction_id: u8,
+
+    /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
+    pub multiplier: u32,
+
     /// Current power level
     pub power: u32,
 
@@ -948,17 +957,8 @@ pub struct DragonEggMetadata {
     /// Moonbase this egg is incubated in (if any)
     pub incubated_player_data: Option<Pubkey>,
 
-    /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
-    pub multiplier: u32,
-
-    /// Faction ID (country) that the egg belongs to (matches moonbase faction)
-    pub faction_id: u8,
-
     /// Last power update timestamp
     pub last_update_ts: i64,
-
-    /// Creation timestamp
-    pub created_at: i64,
 
     /// PDA bump
     pub bump: u8,

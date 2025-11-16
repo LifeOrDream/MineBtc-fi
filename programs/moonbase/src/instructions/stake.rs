@@ -31,17 +31,15 @@ const REFERRAL_FEE_PCT: u64 = 5; // 5% referral fee
 /// dbtc rewards are distributed per round via end_round function
 pub fn stake_moondoge(
     ctx: Context<StakeDogeBtc>,
-    faction_id: u8,
     amount: u64,
     lockup_duration: u64,
     position_index: u8,
 ) -> Result<()> {
     msg!(
-        "🔒 [stake_moondoge] Starting DogeBtc staking - Amount: {}, Lockup: {} days, Position: {}, Faction: {}",
+        "🔒 [stake_moondoge] Starting DogeBtc staking - Amount: {}, Lockup: {} days, Position: {}",
         amount,
         lockup_duration,
-        position_index,
-        faction_id
+        position_index
     );
 
     let current_ts = Clock::get()?.unix_timestamp;
@@ -52,7 +50,7 @@ pub fn stake_moondoge(
     let hashpower_config = &ctx.accounts.hashpower_config;
     
     // Validate inputs
-    require!(faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
+    require!(faction_state.faction_id == player_data.faction_id , ErrorCode::InvalidFactionId);
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(lockup_duration >= hashpower_config.min_lockup_days && lockup_duration <= hashpower_config.max_lockup_days, ErrorCode::InvalidParameters);
     
@@ -89,7 +87,6 @@ pub fn stake_moondoge(
     // If position exists, validate and update
     if user_position.staked_amount > 0 {    
         msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount);
-        require!(user_position.faction_id == faction_id, ErrorCode::InvalidFactionId);
         require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionNotLocked);
 
         // Update staked amount with actual_amount (post-tax)
@@ -101,7 +98,7 @@ pub fn stake_moondoge(
         // Initialize new position
         helper::init_position(
             user_position, 
-            faction_id, 
+            player_data.faction_id, 
             position_index, 
             actual_amount, 
             weighted_amount, 
@@ -140,7 +137,7 @@ pub fn stake_moondoge(
 
     emit!(DogeBtcStaked {
         owner: ctx.accounts.authority.key(),
-        faction_id,
+        faction_id: player_data.faction_id,
         amount: amount,
         burn_amount: burn_amount,
         actual_amount: actual_amount,
@@ -325,17 +322,15 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
 /// dbtc rewards are distributed per round via end_round function
 pub fn stake_lp_tokens(
     ctx: Context<StakeLpTokens>,
-    faction_id: u8,
     amount: u64,
     lockup_duration: u64,
     position_index: u8,
 ) -> Result<()> {
     msg!(
-        "🔒 [stake_lp_tokens] Starting LP token staking - Amount: {}, Lockup: {} days, Position: {}, Faction: {}",
+        "🔒 [stake_lp_tokens] Starting LP token staking - Amount: {}, Lockup: {} days, Position: {}",
         amount,
         lockup_duration,
         position_index,
-        faction_id
     );
 
     let current_ts = Clock::get()?.unix_timestamp;
@@ -346,7 +341,7 @@ pub fn stake_lp_tokens(
     let hashpower_config = &ctx.accounts.hashpower_config;
 
     // Validate inputs
-    require!(faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
+    require!(faction_state.faction_id == player_data.faction_id, ErrorCode::InvalidFactionId);
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(lockup_duration >= hashpower_config.min_lockup_days && lockup_duration <= hashpower_config.max_lockup_days, ErrorCode::InvalidParameters);
     
@@ -381,7 +376,7 @@ pub fn stake_lp_tokens(
     // If position exists, validate and update
     if user_position.staked_amount > 0 {    
         msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount as f64 / 1e6);
-        require!(user_position.faction_id == faction_id, ErrorCode::InvalidFactionId);
+        require!(user_position.faction_id == player_data.faction_id, ErrorCode::InvalidFactionId);
         require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionNotLocked);
 
         // Update staked amount with actual_amount (post-tax)
@@ -393,7 +388,7 @@ pub fn stake_lp_tokens(
         // Initialize new position
         helper::init_position(
             user_position, 
-            faction_id, 
+            player_data.faction_id, 
             position_index, 
             actual_amount, 
             weighted_amount, 
@@ -432,7 +427,7 @@ pub fn stake_lp_tokens(
     
     emit!(LiquidityStaked {
         owner: ctx.accounts.authority.key(),
-        faction_id,
+        faction_id: player_data.faction_id,
         amount: actual_amount,
         lockup_duration,
         multiplier,
@@ -607,11 +602,10 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Claim SOL rewards from staking DogeBtc and LP tokens
-pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
+pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     msg!("💰 [claim_sol_rewards] Claiming SOL rewards from staking");
     
-    require!(faction_id < NUM_FACTIONS as u8, ErrorCode::InvalidFactionId);
-    require!(ctx.accounts.faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
+    require!(ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id, ErrorCode::InvalidFactionId);
     
     let faction_state = &ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
@@ -670,11 +664,10 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Resul
 /// Claim DogeBtc token rewards from staking DogeBtc and LP tokens
 /// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
 /// Also increases power of all staked eggs proportionally to claimed amount
-pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Result<()> {
+pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     msg!("💰 [claim_dbtc_rewards] Claiming DogeBtc token rewards with refining fee");
     
-    require!(faction_id < NUM_FACTIONS as u8, ErrorCode::InvalidFactionId);
-    require!(ctx.accounts.faction_state.faction_id == faction_id, ErrorCode::InvalidFactionId);
+    require!(ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id, ErrorCode::InvalidFactionId);
     
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
@@ -902,15 +895,7 @@ fn update_lp_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &
     Ok((new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards))
 }
 
-
-
-
-
-
-
-
-
-
+ 
 
 
 // ----------------------------------------------------------------------------------------
