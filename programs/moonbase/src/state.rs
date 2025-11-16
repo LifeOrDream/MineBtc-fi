@@ -805,6 +805,10 @@ pub struct PlayerData {
     pub unrefining_index: u128,
     pub pending_dbtc_rewards: u64,
     pub unrefined_dbtc_rewards: u64,
+    
+    /// Claimable power points (distributed to staked eggs via claim_power)
+    /// Power is accumulated when claiming dbtc rewards
+    pub claimable_power: u64,
 
     pub moondoge_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
@@ -856,6 +860,7 @@ impl PlayerData {
         16 +    // lp_dbtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         8 +     // pending_dbtc_rewards (u64)
+        8 +     // claimable_power (u64)
         4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>

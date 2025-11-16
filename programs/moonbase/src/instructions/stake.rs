@@ -717,6 +717,12 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     let claimable_by_user = claimable_amount - referral_fee;
     msg!("Claimable by user: {} dbtc", claimable_by_user as f64 / 1e6);
     
+    // Accumulate power points (1 power per 1000 dbtc claimed, minimum 1 power)
+
+    let power_points = calculate_power_points(claimable_by_user);
+    player_data.claimable_power += power_points;
+    msg!("   Accumulated {} power points (total claimable: {})", power_points, player_data.claimable_power);
+    
     // Transfer claimable DogeBtc to user
     if claimable_by_user > 0 {
         msg!("💱 Transferring {} DogeBtc tokens to user", claimable_amount as f64 / 1e6);
@@ -747,7 +753,6 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
 
     // update total claimable dbtc amount 
     unrefined_dbtc.total_dbtc_claimable = unrefined_dbtc.total_dbtc_claimable - player_data.pending_dbtc_rewards;
-
     player_data.pending_dbtc_rewards = 0;
 
     // Update total tokens distributed
@@ -763,20 +768,6 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         unrefined_dbtc.unrefining_index += increment;
         msg!("   Updated unrefining index: {} (+{})", unrefined_dbtc.unrefining_index, increment);        
     }
-        
-    
-    // // Increase power of all staked eggs proportionally to claimed amount
-    // // Power increase = claimable_amount / 1000 (configurable ratio)
-    // if !player_data.staked_eggs.is_empty() && claimable_by_user > 0 {
-    //     msg!("   Increasing power of {} staked eggs...", player_data.staked_eggs.len());
-    //     let power_increase_per_egg = (claimable_by_user / 1000) as u32; // 1 token = 0.001 power per egg
-    //     if power_increase_per_egg > 0 {
-    //         msg!("     Power increase per egg: {}", power_increase_per_egg);
-    //         // Note: Actual egg metadata update would require passing all staked egg accounts
-    //         // For now, we track this in the claim event
-    //         msg!("     ⚠️ TODO: Update egg metadata power (requires egg accounts in context)");
-    //     }
-    // }
     
     Ok(())
 }
@@ -905,7 +896,19 @@ pub fn update_lp_staking_rewards( player_data: &mut PlayerData, unrefined_reward
     Ok((new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards))
 }
 
- 
+fn calculate_power_points(claimable_by_user: u64) -> u64 {
+    let power_points = if claimable_by_user > 0 {
+        let power = claimable_by_user / 10_000; // 100 power per 1 dbtc (with 6 decimals)
+        if power == 0 && claimable_by_user > 0 {
+            1 // Minimum 1 power if any dbtc claimed
+        } else {
+            power
+        }
+    } else {
+        0
+    };
+    return power_points;
+}
 
 
 // ----------------------------------------------------------------------------------------

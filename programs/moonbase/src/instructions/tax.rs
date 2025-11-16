@@ -946,7 +946,7 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     pub dbtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [DBTC_EMISSION_VAULT_SEED.as_ref()],
+        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: Emission vault authority PDA

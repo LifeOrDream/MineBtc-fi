@@ -457,12 +457,11 @@ pub mod moonbase {
     /// Stake DogeBtc tokens to earn SOL and dbtc rewards
     pub fn stake_moondoge(
         ctx: Context<StakeDogeBtc>,
-        faction_id: u8,
         amount: u64,
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        stake::stake_moondoge(ctx, faction_id, amount, lockup_duration, position_index)
+        stake::stake_moondoge(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake DogeBtc tokens from a position
@@ -473,12 +472,11 @@ pub mod moonbase {
     /// Stake LP tokens to earn SOL and dbtc rewards
     pub fn stake_lp_tokens(
         ctx: Context<StakeLpTokens>,
-        faction_id: u8,
         amount: u64,
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        stake::stake_lp_tokens(ctx, faction_id, amount, lockup_duration, position_index)
+        stake::stake_lp_tokens(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake LP tokens from a position
@@ -564,7 +562,12 @@ pub mod moonbase {
     pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
         eggs::unstake_dragon_egg(ctx)
     }
- 
+
+    /// Claim power points and distribute them to staked eggs
+    /// Power is accumulated when claiming dbtc rewards
+    pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
+        eggs::claim_power(ctx)
+    }
 
 
    

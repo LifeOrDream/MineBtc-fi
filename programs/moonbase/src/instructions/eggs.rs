@@ -408,8 +408,8 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
     )?;
         
     // Process pending rewards before updating position
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
 
     // Add egg to player's staked eggs list
     player_data.staked_eggs.push(egg_mint);
@@ -423,8 +423,17 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
     // Calculate new hashpower based on new multiplier and UPDATE
     let existing_dbtc_hashpower = player_data.dogebtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
-    player_data.dogebtc_hashpower = (existing_dbtc_hashpower / old_multiplier) * new_multiplier;
-    player_data.lp_hashpower = (existing_lp_hashpower / old_multiplier) * new_multiplier;
+    
+    // Recalculate hashpower with new multiplier (multiply first to avoid precision loss)
+    // Formula: new_hashpower = old_hashpower * (new_multiplier / old_multiplier)
+    if old_multiplier > 0 {
+        player_data.dogebtc_hashpower = (existing_dbtc_hashpower / old_multiplier) * new_multiplier;
+        player_data.lp_hashpower = (existing_lp_hashpower / old_multiplier) * new_multiplier;
+    } else {
+        // If old_multiplier is 0 (shouldn't happen), use new_multiplier directly
+        player_data.dogebtc_hashpower = (existing_dbtc_hashpower * new_multiplier) / M_HUNDRED;
+        player_data.lp_hashpower = (existing_lp_hashpower * new_multiplier) / M_HUNDRED;
+    }
     msg!("   DogeBtc hashpower: {} -> {}", existing_dbtc_hashpower as f64 / 1e6, player_data.dogebtc_hashpower as f64 / 1e6);
     msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
 
@@ -468,8 +477,8 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     require!( incubated_by_player == player_data.owner,  ErrorCode::Unauthorized);
         
     // Process pending rewards before updating position
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
 
     // Remove egg from player's staked eggs list
     if let Some(index) = player_data.staked_eggs.iter().position(|&mint| mint == egg_mint) {
@@ -529,6 +538,88 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
 
 
 
+
+/// Claim power points and distribute them evenly to all staked eggs
+/// Power is accumulated when claiming dbtc rewards via claim_dbtc_rewards
+pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    require!(player_data.claimable_power > 0, ErrorCode::InsufficientFunds);
+    require!(player_data.staked_eggs.len() > 0, ErrorCode::InvalidParameters);
+    
+    let total_power = player_data.claimable_power;
+    let num_eggs = player_data.staked_eggs.len() as u64;
+    
+    // Distribute power evenly among all staked eggs
+    let power_per_egg = total_power / num_eggs;
+    let remainder = total_power % num_eggs;
+    
+    msg!("⚡ [claim_power] Distributing {} power points to {} staked eggs", total_power, num_eggs);
+    msg!("   Power per egg: {}", power_per_egg);
+    
+    // Update each egg's power
+    let mut eggs_updated = 0;
+    
+    // Update egg 1 if provided
+    if let Some(egg1) = &mut ctx.accounts.egg1_metadata {
+        require!(player_data.staked_eggs.contains(&egg1.mint), ErrorCode::InvalidParameters);
+        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
+        egg1.power += (power_per_egg + extra) as u32;
+        egg1.last_update_ts = current_time;
+        eggs_updated += 1;
+        msg!("   Egg 1: +{} power (total: {})", power_per_egg + extra, egg1.power);
+    }
+    
+    // Update egg 2 if provided
+    if let Some(egg2) = &mut ctx.accounts.egg2_metadata {
+        require!(player_data.staked_eggs.contains(&egg2.mint), ErrorCode::InvalidParameters);
+        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
+        egg2.power += (power_per_egg + extra) as u32;
+        egg2.last_update_ts = current_time;
+        eggs_updated += 1;
+        msg!("   Egg 2: +{} power (total: {})", power_per_egg + extra, egg2.power);
+    }
+    
+    // Update egg 3 if provided
+    if let Some(egg3) = &mut ctx.accounts.egg3_metadata {
+        require!(player_data.staked_eggs.contains(&egg3.mint), ErrorCode::InvalidParameters);
+        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
+        egg3.power += (power_per_egg + extra) as u32;
+        egg3.last_update_ts = current_time;
+        eggs_updated += 1;
+        msg!("   Egg 3: +{} power (total: {})", power_per_egg + extra, egg3.power);
+    }
+    
+    // Update egg 4 if provided
+    if let Some(egg4) = &mut ctx.accounts.egg4_metadata {
+        require!(player_data.staked_eggs.contains(&egg4.mint), ErrorCode::InvalidParameters);
+        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
+        egg4.power += (power_per_egg + extra) as u32;
+        egg4.last_update_ts = current_time;
+        eggs_updated += 1;
+        msg!("   Egg 4: +{} power (total: {})", power_per_egg + extra, egg4.power);
+    }
+    
+    // Update egg 5 if provided
+    if let Some(egg5) = &mut ctx.accounts.egg5_metadata {
+        require!(player_data.staked_eggs.contains(&egg5.mint), ErrorCode::InvalidParameters);
+        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
+        egg5.power += (power_per_egg + extra) as u32;
+        egg5.last_update_ts = current_time;
+        eggs_updated += 1;
+        msg!("   Egg 5: +{} power (total: {})", power_per_egg + extra, egg5.power);
+    }
+    
+    require!(eggs_updated == num_eggs as usize, ErrorCode::InvalidParameters);
+    
+    // Reset claimable power
+    player_data.claimable_power = 0;
+    
+    msg!("✅ [claim_power] Successfully distributed {} power points to {} eggs", total_power, num_eggs);
+    
+    Ok(())
+}
 
 fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add: bool) -> u16 {
 
@@ -881,3 +972,33 @@ pub struct UnstakeDragonEgg<'info> {
     pub system_program: Program<'info, System>,
 }
 
+
+#[derive(Accounts)]
+pub struct ClaimPower<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+    
+    /// User claiming power
+    pub user: Signer<'info>,
+    
+    /// Optional egg metadata accounts (1-5 eggs can be staked)
+    #[account(mut)]
+    pub egg1_metadata: Option<Account<'info, DragonEggMetadata>>,
+    
+    #[account(mut)]
+    pub egg2_metadata: Option<Account<'info, DragonEggMetadata>>,
+    
+    #[account(mut)]
+    pub egg3_metadata: Option<Account<'info, DragonEggMetadata>>,
+    
+    #[account(mut)]
+    pub egg4_metadata: Option<Account<'info, DragonEggMetadata>>,
+    
+    #[account(mut)]
+    pub egg5_metadata: Option<Account<'info, DragonEggMetadata>>,
+}
