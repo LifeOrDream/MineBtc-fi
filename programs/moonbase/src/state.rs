@@ -95,6 +95,8 @@ pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x
 pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
 
+const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL
+
 /// ------------ GLOBAL CONFIG ------------
 
 /// Global configuration for the Moon Facility program
@@ -1069,16 +1071,50 @@ impl UserGameBet {
         1;      // bump
 }
 
+/// Autominer configuration for blocks
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub enum BlocksConfig {
+    /// Specific list of blocks to bet on (0-indexed: 0-23)
+    Specific { blocks: Vec<u8> },
+    /// Random number of blocks to bet on
+    Random { count: u8 },
+}
+
+/// Autominer configuration for factions
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub enum FactionsConfig {
+    /// Specific list of factions with strategy
+    Specific { 
+        factions: Vec<u8>,
+        strategy: FactionStrategy, // highest, lowest, or both
+    },
+    /// Random number of factions with strategy
+    Random { 
+        count: u8,
+        strategy: FactionStrategy,
+    },
+}
+
+/// Strategy for faction betting
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub enum FactionStrategy {
+    Highest,
+    Lowest,
+    Both,
+}
+
 /// Autominer Vault PDA (Seed: `[b"autominer", user_pubkey]`)
 /// This PDA also acts as a SOL vault by holding lamports
-/// Allows users to configure automatic betting on multiple blocks/bet types
+/// Allows users to configure automatic betting with flexible block/faction selection
 #[account]
 pub struct AutominerVault {
     pub owner: Pubkey,
-    /// Bet types to place automatically (can be multiple blocks or faction+highest/lowest)
-    pub bet_types: Vec<BetType>,
-    /// SOL amount to bet per bet type
-    pub bet_amount_per_bet: u64,
+    /// Blocks configuration (specific list or random count) - optional
+    pub blocks_config: Option<BlocksConfig>,
+    /// Factions configuration (specific list or random count with strategy) - optional
+    pub factions_config: Option<FactionsConfig>,
+    /// SOL amount to bet per round (distributed across all blocks)
+    pub sol_per_round: u64,
     /// Number of rounds remaining (decremented after each round)
     pub rounds_remaining: u32,
     /// Last round ID where bets were placed (to prevent duplicate bets)
@@ -1087,12 +1123,14 @@ pub struct AutominerVault {
 }
 
 impl AutominerVault {
-    pub const MAX_BET_TYPES: usize = 24; // Max 24 different bet types (one per block)
+    pub const MAX_BLOCKS: usize = 24; // Max 24 blocks
+    pub const MAX_FACTIONS: usize = 12; // Max 12 factions
     
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
-        4 + (Self::MAX_BET_TYPES * BetType::LEN) + // bet_types Vec<BetType>
-        8 +     // bet_amount_per_bet
+        1 + (1 + 4 + (Self::MAX_BLOCKS * 1)) + // blocks_config Option<BlocksConfig> (1 byte Option + enum discriminator + Vec<u8>)
+        1 + (1 + 4 + (Self::MAX_FACTIONS * 1) + 1) + // factions_config Option<FactionsConfig> (1 byte Option + enum + strategy)
+        8 +     // sol_per_round
         4 +     // rounds_remaining
         8 +     // last_bet_round_id
         1;      // vault_bump

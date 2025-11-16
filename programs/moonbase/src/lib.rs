@@ -13,7 +13,7 @@ pub use instructions::stake::*;
 pub use instructions::game::*;
 pub use instructions::eggs::*;
 pub use instructions::tax::*;
-pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig};
+pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
 declare_id!("CHDRVyhzHN1eNU2hzzSKrDgGo8UpVqzvwq9TKWKiKATD");
@@ -428,19 +428,25 @@ pub mod moonbase {
         user::join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
     }
 
-    /// Initialize autominer vault with bet types and amounts
+    /// Initialize autominer vault with flexible block/faction configuration
     pub fn init_autominer(
         ctx: Context<InitAutominer>,
-        bet_types: Vec<BetType>,
-        bet_amount_per_bet: u64,
+        blocks_config: BlocksConfig,
+        factions_config: Option<FactionsConfig>,
+        sol_per_round: u64,
         num_rounds: u32,
     ) -> Result<()> {
-        user::init_autominer(ctx, bet_types, bet_amount_per_bet, num_rounds)
+        user::init_autominer(ctx, blocks_config, factions_config, sol_per_round, num_rounds)
     }
 
     /// Execute autominer bet (keeper instruction)
     pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         user::execute_autominer_bet(ctx)
+    }
+
+    /// Stop autominer and refund remaining SOL
+    pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+        user::stop_autominer(ctx)
     }
 
 

@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::keccak;
 
 use crate::errors::ErrorCode;
 use crate::state::*;
@@ -263,231 +264,260 @@ pub fn join_round_batch(
 
 
 
-/// Initialize autominer vault with bet types and amounts
-/// Users can specify multiple bet types (blocks or faction+highest/lowest) and bet amount per bet
-/// Bot can then call execute_autominer_bet to automatically place bets
+/// Initialize autominer vault with flexible block/faction configuration
+/// Users configure either blocks OR factions (at least one required)
+/// Can be called multiple times, but only when rounds_remaining == 0
+/// Total SOL = sol_per_round × num_rounds
+/// Bet size per bet = sol_per_round / total_bets_per_round
 pub fn init_autominer(
     ctx: Context<InitAutominer>,
-    bet_types: Vec<BetType>,
-    bet_amount_per_bet: u64,
+    blocks_config: Option<BlocksConfig>,
+    factions_config: Option<FactionsConfig>,
+    sol_per_round: u64,
     num_rounds: u32,
 ) -> Result<()> {
     msg!("🤖 [init_autominer] Initializing autominer vault");
-    msg!("   Authority: {}", ctx.accounts.authority.key());
-    msg!("   Bet types count: {}", bet_types.len());
-    msg!("   Bet amount per bet: {} lamports", bet_amount_per_bet);
+    msg!("   Owner: {}", ctx.accounts.user_wallet.key());
+    msg!("   SOL per round: {} lamports", sol_per_round);
     msg!("   Number of rounds: {}", num_rounds);
     
     let autominer_vault = &mut ctx.accounts.autominer_vault;
     let global_config = &ctx.accounts.global_config;
     
     msg!("   Validating parameters...");
-    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
-    msg!("     ✓ Bet types not empty");
+    require!(sol_per_round > 0 && num_rounds > 0, ErrorCode::InvalidAmount);    
+    require!( blocks_config.is_some() || factions_config.is_some(), ErrorCode::InvalidParameters);
+    require!( !(blocks_config.is_some() && factions_config.is_some()), ErrorCode::InvalidParameters); // Only one config allowed
     
-    require!( bet_types.len() <= AutominerVault::MAX_BET_TYPES,  ErrorCode::InvalidParameters);
-    msg!("     ✓ Bet types count <= MAX_BET_TYPES ({})", AutominerVault::MAX_BET_TYPES);
+    // Check if vault already exists and has remaining rounds
+    // Only allow initialization if rounds_remaining == 0 (must stop first if in progress)
+    require!( autominer_vault.rounds_remaining == 0,  ErrorCode::InvalidParameters);
+    let mut bets_per_round = 0;
     
-    require!(bet_amount_per_bet > 0, ErrorCode::InvalidAmount);    
-    require!(num_rounds > 0, ErrorCode::InvalidAmount);
-    
-    // Validate bet types
-    msg!("   Validating bet types...");
-    for (idx, bet_type) in bet_types.iter().enumerate() {
-        match bet_type {
-            BetType::Block { block_id } => {
-                require!(
-                    *block_id >= 1 && *block_id <= NUM_BLOCKS as u8,
-                    ErrorCode::InvalidParameters
-                );
-                msg!("     Bet type {}: Block {} ✓", idx, block_id);
+    // Validate blocks_config if provided
+    if let Some(ref blocks_cfg) = blocks_config {
+        match blocks_cfg {
+            BlocksConfig::Specific { blocks } => {
+                require!(!blocks.is_empty(), ErrorCode::InvalidParameters);
+                require!(blocks.len() <= AutominerVault::MAX_BLOCKS, ErrorCode::InvalidParameters);
+                for &block_id in blocks.iter() {
+                    require!(block_id < NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
+                }
+                bets_per_round = blocks.len() as u64;
+                msg!("     ✓ Blocks: {} specific blocks", blocks.len());
             }
-            BetType::FactionHighestLowest { faction_id, is_highest } => {
-                require!(
-                    (*faction_id as usize) < global_config.supported_factions.len(),
-                    ErrorCode::InvalidFactionId
-                );
-                msg!("     Bet type {}: Faction {} ({}) ✓", idx, faction_id, if *is_highest { "highest" } else { "lowest" });
-            }
-            BetType::FactionBoth { faction_id } => {
-                require!(
-                    (*faction_id as usize) < global_config.supported_factions.len(),
-                    ErrorCode::InvalidFactionId
-                );
-                msg!("     Bet type {}: Faction {} (both) ✓", idx, faction_id);
-            }
-            BetType::RandomBlock => {
-                msg!("     Bet type {}: Random block ✓", idx);
+            BlocksConfig::Random { count } => {
+                require!(*count > 0 && *count <= NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
+                msg!("     ✓ Blocks: {} random blocks", count);
+                bets_per_round = *count as u64;
             }
         }
     }
     
+    // Validate factions_config if provided
+    if let Some(ref factions_cfg) = factions_config {
+        match factions_cfg {
+            FactionsConfig::Specific { factions, strategy } => {
+                require!(!factions.is_empty(), ErrorCode::InvalidParameters);
+                require!(factions.len() <= AutominerVault::MAX_FACTIONS, ErrorCode::InvalidParameters);
+                for &faction_id in factions.iter() {
+                    require!( (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId);
+                }
+                let strategy_multiplier = get_strategy_multiplier(strategy.clone());
+                bets_per_round = factions.len() as u64 * strategy_multiplier;
+                msg!("     ✓ Factions: {} specific factions", factions.len());
+            }
+            FactionsConfig::Random { count, strategy } => {
+                require!(*count > 0 && *count <= global_config.supported_factions.len() as u8, ErrorCode::InvalidParameters);
+                msg!("     ✓ Factions: {} random factions", count);
+                let strategy_multiplier = get_strategy_multiplier(strategy.clone());
+                bets_per_round = *count as u64 * strategy_multiplier;
+            }
+        }
+    }
+
+    require!(bets_per_round > 0, ErrorCode::InvalidParameters);
+    msg!("     ✓ Bets per round: {}", bets_per_round);
+     
+    // Calculate bet size per bet
+    let bet_size_per_bet = sol_per_round / bets_per_round;
+    require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
+    msg!("     Bet size per bet:{} SOL per bet ({} SOL / {} bets)", (bet_size_per_bet as f64 / 1e9), (sol_per_round as f64 / 1e9), bets_per_round);
+    
     msg!("   Initializing autominer vault...");
-    autominer_vault.owner = ctx.accounts.authority.key();
-    autominer_vault.bet_types = bet_types.clone();
-    autominer_vault.bet_amount_per_bet = bet_amount_per_bet;
+
+    autominer_vault.owner = ctx.accounts.user_wallet.key();
+    autominer_vault.blocks_config = blocks_config;
+    autominer_vault.factions_config = factions_config;
+    autominer_vault.sol_per_round = sol_per_round;
     autominer_vault.rounds_remaining = num_rounds;
     autominer_vault.last_bet_round_id = 0;
     autominer_vault.vault_bump = ctx.bumps.autominer_vault;
     msg!("     Vault initialized for owner: {}", autominer_vault.owner);
     
-    // Calculate total SOL needed: (bet_amount_per_bet * num_bet_types) * num_rounds + rent
+    // Calculate total SOL needed: sol_per_round × num_rounds + rent (if new account)
     msg!("   Calculating total SOL needed...");
-    let sol_per_round = bet_amount_per_bet
-        .checked_mul(bet_types.len() as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, bet_types.len(), bet_amount_per_bet);
-    
-    let total_sol = sol_per_round
-        .checked_mul(num_rounds as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     Total SOL for all rounds: {} lamports ({} rounds × {} lamports)", total_sol, num_rounds, sol_per_round);
+    let total_sol = sol_per_round * num_rounds as u64;
+    msg!("     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)", (total_sol as f64 / 1e9), num_rounds, (sol_per_round as f64 / 1e9));
     
     let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let total_transfer = total_sol
-        .checked_add(rent)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    
+    // If vault already exists, only transfer the SOL needed
+    // If new vault, also need rent
+    let total_transfer = if vault_lamports == 0 {
+        total_sol + rent
+    } else {
+        total_sol
+    };
+    
     msg!("     Rent: {} lamports", rent);
     msg!("     Total transfer: {} lamports", total_transfer);
     
     // Transfer SOL to vault
     msg!("   Transferring SOL to vault...");
-    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
-    let wallet_before = ctx.accounts.user_wallet.lamports();
     **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
     **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
-    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
-    let wallet_after = ctx.accounts.user_wallet.lamports();
-    msg!("     Vault: {} -> {} lamports (+{})", vault_before, vault_after, total_transfer);
-    msg!("     Wallet: {} -> {} lamports (-{})", wallet_before, wallet_after, total_transfer);
-    
+
     msg!("✅ [init_autominer] Autominer initialized successfully");
-    msg!("   {} bet types, {} SOL per bet, {} rounds ({} SOL total)",
-        bet_types.len(),
-        bet_amount_per_bet,
-        num_rounds,
-        total_sol
-    );
+    msg!("   {} SOL per round, {} rounds ({} SOL total)", (sol_per_round as f64 / 1e9), num_rounds, (total_sol as f64 / 1e9));
     
     Ok(())
 }
 
 
-/// Execute autominer bets (keeper instruction - bot can call this)
-/// Places bets for all configured bet types in the current round
-/// Can be called once per round to place all bets automatically
+fn get_strategy_multiplier(strategy: FactionStrategy) -> u64 {
+    match strategy {
+        FactionStrategy::Both => 2,
+        _ => 1,
+    }
+}
+
+
+/// Execute autominer bets (keeper instruction - callable by anyone)
+/// Generates bet types dynamically from blocks_config and factions_config
+/// Pays caller 1% of bet size (max 0.005 SOL) per bet for tx costs
+/// Uses join_round_batch to place all bets efficiently
 pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
+    msg!("   Caller: {}", ctx.accounts.caller.key());
     
     let global_state = &ctx.accounts.global_game_state;
+    let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
     
     // Read values before mutable borrow
     let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
     let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
-    let num_bets = ctx.accounts.autominer_vault.bet_types.len();
-    let bet_amount_per_bet = ctx.accounts.autominer_vault.bet_amount_per_bet;
+    let sol_per_round = ctx.accounts.autominer_vault.sol_per_round;
+    let blocks_config = ctx.accounts.autominer_vault.blocks_config.clone(); // Already Option<BlocksConfig>
+    let factions_config = ctx.accounts.autominer_vault.factions_config.clone();
     
     msg!("   Vault state:");
-    msg!("     Rounds remaining: {}", rounds_remaining);
-    msg!("     Last bet round ID: {}", last_bet_round_id);
-    msg!("     Number of bet types: {}", num_bets);
-    msg!("     Bet amount per bet: {} lamports", bet_amount_per_bet);
-    msg!("   Current round ID: {}", global_state.current_round_id);
-    msg!("   Current timestamp: {}", clock.unix_timestamp);
-    msg!("   Round end timestamp: {}", global_state.round_end_timestamp);
+    msg!("     Rounds remaining: {}. Last bet round ID: {}. SOL per round: {} SOL", rounds_remaining, last_bet_round_id, (sol_per_round as f64 / 1e9));
+    msg!("   Current round ID: {}. Current timestamp: {}. Round end timestamp: {}", global_state.current_round_id, clock.unix_timestamp, global_state.round_end_timestamp);
     
-    msg!("   Validating execution conditions...");
-    require!(
-        rounds_remaining > 0,
-        ErrorCode::NoRoundsRemaining
-    );
-    msg!("     ✓ Rounds remaining > 0");
+    require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
+    require!(clock.unix_timestamp < global_state.round_end_timestamp, ErrorCode::RoundEnded);
+    require!(last_bet_round_id != global_state.current_round_id, ErrorCode::InvalidRound);
     
-    // Check round hasn't ended
-    require!(
-        clock.unix_timestamp < global_state.round_end_timestamp,
-        ErrorCode::RoundEnded
-    );
-    msg!("     ✓ Round hasn't ended");
+    // Generate bet types dynamically from configuration
+    msg!("   Generating bet types from configuration...");
+    let mut bet_types = Vec::new();
     
-    // Check bets haven't been placed for this round already
-    require!(
-        last_bet_round_id != global_state.current_round_id,
-        ErrorCode::InvalidRound
-    );
-    msg!("     ✓ Bets not yet placed for this round");
+    // Determine blocks to bet on (if blocks_config provided)
+    let blocks_to_bet = compute_blocks_to_bet(blocks_config, &clock)?;    
+    let bet_types = make_bets_vec(factions_config.clone(), blocks_to_bet.clone(), &clock, &global_config)?;
+    msg!("     Generated {} bet types: {:?}", bet_types.len(), bet_types);
     
-    // Calculate total SOL needed for this round
-    msg!("   Calculating SOL needed for this round...");
-    let sol_per_round = bet_amount_per_bet
-        .checked_mul(num_bets as u64)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("     SOL per round: {} lamports ({} bets × {} lamports)", sol_per_round, num_bets, bet_amount_per_bet);
+    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
     
-    // Check vault has enough SOL
-    msg!("   Checking vault balance...");
-    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
-    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let available_sol = vault_lamports
-        .checked_sub(rent)
-        .ok_or(ErrorCode::InsufficientFunds)?;
-    msg!("     Vault lamports: {}", vault_lamports);
-    msg!("     Rent: {}", rent);
-    msg!("     Available SOL: {}", available_sol);
+    // Calculate bet size per bet (distributed across all bets)
+    let bet_size_per_bet = sol_per_round / bet_types.len() as u64;
+    require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
+    msg!("     Bet size per bet: {} lamports ({} SOL / {} bets)", bet_size_per_bet as f64 / 1e9, (sol_per_round as f64 / 1e9), bet_types.len());
     
-    require!(
-        available_sol >= sol_per_round,
-        ErrorCode::InsufficientFunds
-    );
-    msg!("     ✓ Vault has sufficient SOL");
+    // Calculate caller compensation: 1% of bet size per bet, max 0.005 SOL per bet
+    let total_caller_compensation = get_caller_compensation(sol_per_round)?;
+    msg!("     Caller compensation: {} SOL  ", (total_caller_compensation as f64 / 1e9));
     
-    // Deduct SOL for bets (protocol fee will be deducted in join_round)
-    // For now, we'll deduct the full amount - actual implementation should call join_round
-    msg!("   Deducting SOL from vault for bets...");
-    let vault_before = ctx.accounts.autominer_vault.to_account_info().lamports();
-    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= sol_per_round;
-    let vault_after = ctx.accounts.autominer_vault.to_account_info().lamports();
-    msg!("     Vault: {} -> {} lamports (-{})", vault_before, vault_after, sol_per_round);
+    // Pay caller compensation
+    if total_caller_compensation > 0 {
+        msg!("   Paying caller compensation...");
+        **ctx.accounts.caller.to_account_info().try_borrow_mut_lamports()? += total_caller_compensation;
+        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= total_caller_compensation;
+    }
     
     // Now borrow mutably to update state
     let autominer_vault = &mut ctx.accounts.autominer_vault;
+    let current_round_id = global_state.current_round_id;
     
     // Mark bets as placed for this round
-    let current_round_id = global_state.current_round_id;
     autominer_vault.last_bet_round_id = current_round_id;
     msg!("   Updated last_bet_round_id: {} -> {}", last_bet_round_id, current_round_id);
     
     // Decrement rounds remaining
-    let new_rounds_remaining = rounds_remaining
-        .checked_sub(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    autominer_vault.rounds_remaining = new_rounds_remaining;
-    msg!("   Updated rounds_remaining: {} -> {}", rounds_remaining, new_rounds_remaining);
+    autominer_vault.rounds_remaining = rounds_remaining - 1;
+    msg!("   Updated rounds_remaining: {}", autominer_vault.rounds_remaining);
     
     // If no rounds remaining, close vault and return remaining SOL
     if new_rounds_remaining == 0 {
         msg!("   No rounds remaining - closing vault and returning remaining SOL...");
-        let remaining_sol = ctx.accounts.autominer_vault.to_account_info().lamports()
-            .checked_sub(rent)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        
-        let owner_before = ctx.accounts.owner.lamports();
+        let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+        let remaining_sol = ctx.accounts.autominer_vault.to_account_info().lamports().checked_sub(rent).ok_or(ErrorCode::InsufficientFunds)?;
         **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
         **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
-        let owner_after = ctx.accounts.owner.lamports();
-        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
         msg!("     Vault closed");
     }
     
-    // Place bets for each bet type using internal_join_round
-    msg!("   Placing {} bets for round {}...", num_bets, current_round_id);
-    let bet_types = ctx.accounts.autominer_vault.bet_types.clone();
+    // Place bets using join_round_batch
+    msg!("   Placing {} bets for round {} using join_round_batch...", bet_types.len(), current_round_id);
+    
+    // Use internal join_round_batch logic but with autominer vault as payer
     let owner_key = ctx.accounts.autominer_vault.owner;
     
-    for (idx, bet_type) in bet_types.iter().enumerate() {
-        msg!("     Placing bet #{}: {:?} for {} lamports", idx + 1, bet_type, bet_amount_per_bet);
+    // Expand bet types (handle FactionBoth and RandomBlock)
+    let mut expanded_bet_types = Vec::new();
+    for bet_type in bet_types.iter() {
+        match bet_type {
+            BetType::FactionBoth { faction_id } => {
+                expanded_bet_types.push(BetType::FactionHighestLowest { 
+                    faction_id: *faction_id, 
+                    is_highest: true 
+                });
+                expanded_bet_types.push(BetType::FactionHighestLowest { 
+                    faction_id: *faction_id, 
+                    is_highest: false 
+                });
+            }
+            BetType::RandomBlock => {
+                let slot_bytes = clock.slot.to_le_bytes();
+                let random_block = (slot_bytes[0] % 24) as u8;
+                expanded_bet_types.push(BetType::Block { block_id: random_block });
+            }
+            _ => {
+                expanded_bet_types.push(bet_type.clone());
+            }
+        }
+    }
+    
+    msg!("     Expanded to {} bet types", expanded_bet_types.len());
+    
+    // Place each bet using internal_join_round
+    for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
+        msg!("     Placing bet {} of {}: {:?} for {} lamports", idx + 1, expanded_bet_types.len(), bet_type, bet_size_per_bet);
+        
+        // Validate all bets are for same faction (required by join_round_batch)
+        if idx > 0 {
+            let target_block = get_target_block_from_bet_type(bet_type, &ctx.accounts.game_session.block_assignments)?;
+            let target_faction = ctx.accounts.game_session.block_assignments[target_block as usize];
+            
+            let prev_target_block = get_target_block_from_bet_type(&expanded_bet_types[idx - 1], &ctx.accounts.game_session.block_assignments)?;
+            let prev_target_faction = ctx.accounts.game_session.block_assignments[prev_target_block as usize];
+            
+            require!(target_faction == prev_target_faction, ErrorCode::InvalidParameters);
+        }
         
         // Call internal_join_round with autominer vault as payer
         internal_join_round(
@@ -502,7 +532,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.user_game_bet,
             owner_key,
-            bet_amount_per_bet,
+            bet_size_per_bet,
             bet_type.clone(),
             None, // autominer always uses SOL, not tickets
         )?;
@@ -511,11 +541,61 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     }
     
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
-    msg!("   {} bets of {} SOL each for round {}", num_bets, bet_amount_per_bet, current_round_id);
+    msg!("   {} bets of {} SOL each for round {}", expanded_bet_types.len(), bet_size_per_bet, current_round_id);
     msg!("   Rounds remaining: {}", new_rounds_remaining);
+    msg!("   Caller compensation: {} lamports", total_caller_compensation);
     
     Ok(())
 }
+
+/// Stop autominer and refund remaining SOL
+/// Can only be called by vault owner
+/// Refunds all remaining SOL (after rent) and resets rounds_remaining to 0
+pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+    msg!("🛑 [stop_autominer] Stopping autominer");
+    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
+    
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    
+    // Verify caller is owner
+    require!( ctx.accounts.authority.key() == autominer_vault.owner, ErrorCode::Unauthorized);
+    msg!("     ✓ Caller is owner");
+    
+    // Calculate remaining SOL (after rent)
+    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    let remaining_sol = vault_lamports.checked_sub(rent).ok_or(ErrorCode::InsufficientFunds)?;
+    
+    msg!("   Vault state:");
+    msg!("     Rounds remaining: {}", autominer_vault.rounds_remaining);
+    msg!("     Vault lamports: {}", vault_lamports);
+    msg!("     Rent: {}", rent);
+    msg!("     Remaining SOL to refund: {}", remaining_sol);
+    
+    // Refund remaining SOL to owner
+    if remaining_sol > 0 {
+        msg!("   Refunding {} lamports to owner...", remaining_sol);
+        let owner_before = ctx.accounts.owner.lamports();
+        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
+        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
+        let owner_after = ctx.accounts.owner.lamports();
+        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
+    }
+    
+    // Reset vault state
+    autominer_vault.rounds_remaining = 0;
+    autominer_vault.last_bet_round_id = 0;
+    autominer_vault.blocks_config = None;
+    autominer_vault.factions_config = None;
+    autominer_vault.sol_per_round = 0;
+    msg!("   Reset vault state: rounds_remaining = 0, last_bet_round_id = 0");
+    
+    msg!("✅ [stop_autominer] Autominer stopped successfully");
+    msg!("   Refunded {} lamports to owner", remaining_sol);
+    
+    Ok(())
+}
+
  
 
 
@@ -901,6 +981,184 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 }
 
 
+// Compute blocks to bet on based on blocks_config and clock
+fn compute_blocks_to_bet(blocks_config: Option<BlocksConfig>, clock: &Clock) -> Result<Option<Vec<u8>>> {
+    let blocks_to_bet = if let Some(ref blocks_cfg) = blocks_config {
+        match blocks_cfg {
+            BlocksConfig::Specific { blocks } => Some(blocks.clone()),
+            BlocksConfig::Random { count } => {
+            // Generate random blocks using slot hash
+            let mut random_blocks = Vec::new();
+            let mut used_blocks = [false; 24];
+            let mut attempts: u64 = 0;
+            while random_blocks.len() < *count as usize && attempts < 100 {
+                let slot_bytes = clock.slot.to_le_bytes();
+                let hash = keccak::hash(&[slot_bytes, attempts.to_le_bytes()].concat());
+                let block_id = (hash.0[0] % 24) as u8;
+                if !used_blocks[block_id as usize] {
+                    random_blocks.push(block_id);
+                    used_blocks[block_id as usize] = true;
+                }
+                attempts += 1;
+            }
+                require!(random_blocks.len() == *count as usize, ErrorCode::InvalidParameters);
+                Some(random_blocks)
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(ref blocks) = blocks_to_bet {
+        msg!("     Blocks to bet on: {:?}", blocks);
+    }
+
+    Ok(blocks_to_bet)
+}
+
+
+fn make_bets_vec( factions_config: Option<FactionsConfig>, blocks_config: Option<BlocksConfig>, clock: &Clock, global_config: &Account<'info, GlobalConfig>) -> Result<Vec<BetType>> {
+
+    let mut bet_types = Vec::new();
+
+    // Generate faction bets if factions_config is provided
+    if let Some(ref factions_cfg) = factions_config {
+        let factions_to_bet = match factions_cfg {
+            FactionsConfig::Specific { factions, .. } => factions.clone(),
+            FactionsConfig::Random { count, .. } => {
+                // Generate random factions
+                let mut random_factions = Vec::new();
+                let mut used_factions = [false; 12];
+                let mut attempts: u64 = 0;
+                let max_factions = global_config.supported_factions.len();
+                while random_factions.len() < *count as usize && attempts < 100 {
+                    let slot_bytes = clock.slot.to_le_bytes();
+                    let hash = keccak::hash(&[slot_bytes, (attempts + 100u64).to_le_bytes()].concat());
+                    let faction_id = (hash.0[0] % max_factions as u8) as u8;
+                    if !used_factions[faction_id as usize] && (faction_id as usize) < max_factions {
+                        random_factions.push(faction_id);
+                        used_factions[faction_id as usize] = true;
+                    }
+                    attempts += 1;
+                }
+                require!(random_factions.len() == *count as usize, ErrorCode::InvalidParameters);
+                random_factions
+            }
+        };
+        
+        let strategy = match factions_cfg {
+            FactionsConfig::Specific { strategy, .. } => strategy,
+            FactionsConfig::Random { strategy, .. } => strategy,
+        };
+        
+        msg!("     Factions to bet on: {:?} (strategy: {:?})", factions_to_bet, strategy);
+        
+        // Generate bet types for each faction
+        // If blocks_config provided, bet on those blocks for each faction
+        // If no blocks_config, bet on all blocks assigned to those factions
+        if let Some(ref blocks) = blocks_to_bet {
+            // Blocks config provided - bet on specified blocks for each faction
+            for &faction_id in factions_to_bet.iter() {
+                match strategy {
+                    FactionStrategy::Highest => {
+                        for _block_id in blocks.iter() {
+                            bet_types.push(BetType::FactionHighestLowest { 
+                                faction_id, 
+                                is_highest: true 
+                            });
+                        }
+                    }
+                    FactionStrategy::Lowest => {
+                        for _block_id in blocks.iter() {
+                            bet_types.push(BetType::FactionHighestLowest { 
+                                faction_id, 
+                                is_highest: false 
+                            });
+                        }
+                    }
+                    FactionStrategy::Both => {
+                        for _block_id in blocks.iter() {
+                            bet_types.push(BetType::FactionHighestLowest { 
+                                faction_id, 
+                                is_highest: true 
+                            });
+                            bet_types.push(BetType::FactionHighestLowest { 
+                                faction_id, 
+                                is_highest: false 
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            // No blocks config - bet on all blocks assigned to selected factions
+            // Find blocks assigned to each faction in current round
+            for &faction_id in factions_to_bet.iter() {
+                for block_id in 0..NUM_BLOCKS as u8 {
+                    if ctx.accounts.game_session.block_assignments[block_id as usize] == faction_id {
+                        match strategy {
+                            FactionStrategy::Highest => {
+                                bet_types.push(BetType::FactionHighestLowest { 
+                                    faction_id, 
+                                    is_highest: true 
+                                });
+                            }
+                            FactionStrategy::Lowest => {
+                                bet_types.push(BetType::FactionHighestLowest { 
+                                    faction_id, 
+                                    is_highest: false 
+                                });
+                            }
+                            FactionStrategy::Both => {
+                                bet_types.push(BetType::FactionHighestLowest { 
+                                    faction_id, 
+                                    is_highest: true 
+                                });
+                                bet_types.push(BetType::FactionHighestLowest { 
+                                    faction_id, 
+                                    is_highest: false 
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else if let Some(ref blocks) = blocks_to_bet {
+        // Only blocks config - bet on blocks directly
+        for &block_id in blocks.iter() {
+            bet_types.push(BetType::Block { block_id });
+        }
+    } else {
+        return Err(ErrorCode::InvalidParameters.into());
+    }
+
+    Ok(bet_types)    
+
+}
+
+fn get_caller_compensation(sol_per_round: u64) -> Result<u64> {
+    let caller_compensation = (sol_per_round / 100).min(MAX_CALLER_COMPENSATION);
+    Ok(caller_compensation)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1137,13 +1395,13 @@ pub struct ClaimRoundRewards<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(bet_types: Vec<BetType>, bet_amount_per_bet: u64, num_rounds: u32)]
+#[instruction(blocks_config: BlocksConfig, factions_config: Option<FactionsConfig>, sol_per_round: u64, num_rounds: u32)]
 pub struct InitAutominer<'info> {
     #[account(
-        init,
-        payer = authority,
+        init_if_needed,
+        payer = user_wallet,
         space = AutominerVault::LEN,
-        seeds = [AUTOMINER_VAULT_SEED.as_ref(), authority.key().as_ref()],
+        seeds = [AUTOMINER_VAULT_SEED.as_ref(), user_wallet.key().as_ref()],
         bump
     )]
     pub autominer_vault: Account<'info, AutominerVault>,
@@ -1156,10 +1414,7 @@ pub struct InitAutominer<'info> {
     
     #[account(mut)]
     pub user_wallet: Signer<'info>,
-    
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    
+        
     pub system_program: Program<'info, System>,
 }
 
