@@ -400,7 +400,6 @@ pub mod moonbase {
     /// Start a new round by committing a hash and initializing GameSession
     /// This commits randomness hash and randomly assigns factions to blocks
     /// round_id should be current_round_id + 1 (validated in the function)
-    /// If commit_hash is None, uses next_round_commit from global_state
     pub fn start_round(
         ctx: Context<StartRound>,
         round_id: u64,

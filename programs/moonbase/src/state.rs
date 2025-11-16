@@ -328,7 +328,6 @@ impl BuybacksAccount {
 /// Hashpower configuration for the Moonbase program
 #[account]
 pub struct HashpowerConfig {
-
     /// Minimum lockup period in days
     pub min_lockup_days: u64,
     /// Maximum lockup period in days
@@ -528,9 +527,6 @@ pub struct GlobalGameSate {
     /// Total SOL bets since start of game (cumulative across all rounds)
     pub total_sol_bets: u128,
 
-    /// The total "shares" (hashpower) across all passive stakers.
-    pub total_global_passive_hashpower: u128,
-
     /// The currently active round ID (e.g., 48636).
     pub current_round_id: u64,
     /// The timestamp when the current round ends.
@@ -551,9 +547,6 @@ pub struct GlobalGameSate {
     /// Revealed seed for the current round (set after betting closes)
     /// Must verify: hash(revealed_seed) == current_round_commit
     pub current_round_seed: Option<[u8; 32]>,
-    /// Committed hash for the next round (set during end_round)
-    /// This allows continuous rounds without gaps
-    pub next_round_commit: [u8; 32],
     
     /// Whitelisted cranker bots that can call start_round and end_round
     /// Maximum MAX_CRANKER_BOTS bots
@@ -566,7 +559,6 @@ impl GlobalGameSate {
         1 +     // is_active
         1 +     // can_begin_round
         16 +    // total_sol_bets (u128)
-        16 +    // total_global_passive_hashpower (u128)
         8 +     // current_round_id
         8 +     // round_end_timestamp
         8 +     // round_duration_seconds
@@ -574,7 +566,6 @@ impl GlobalGameSate {
         1 +     // winning_faction_id
         32 +    // current_round_commit [u8; 32]
         33 +    // current_round_seed Option<[u8; 32]> (1 byte discriminator + 32 bytes)
-        32 +    // next_round_commit [u8; 32]
         4 + (MAX_CRANKER_BOTS * 32); // cranker_bots Vec<Pubkey> (4 bytes length + MAX_CRANKER_BOTS * 32 bytes)
 }
 
@@ -976,16 +967,17 @@ pub struct DragonEggMetadata {
 }
 
 impl DragonEggMetadata {
+    // Field order matches struct: mint, created_at, faction_id, multiplier, power, dna, incubated_player_data, last_update_ts, bump
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
-        4 +     // power
-        32 +    // dna
-        33 +    // incubated_moonbase (Option<Pubkey>)
-        4 +     // multiplier
+        8 +     // created_at (i64)
         1 +     // faction_id
-        8 +     // last_update_ts
-        8 +     // created_at
-        1; // bump
+        4 +     // multiplier (u32)
+        4 +     // power (u32)
+        32 +    // dna [u8; 32]
+        33 +    // incubated_player_data Option<Pubkey> (1 byte discriminator + 32 bytes)
+        8 +     // last_update_ts (i64)
+        1;      // bump
 }
 
 // ========================================================================================

@@ -1,6 +1,6 @@
 {
   "localnet": {
-    "MOON_BASE_PROGRAM_ID": "76MyNaKaRGJ8Xsc1s1x4CXCbSiFu82jBf3CMEMbH2tbU",
+    "MOON_BASE_PROGRAM_ID": "7r11BE6wvvctiB8V7mn2JqSYzGKCi5Qj1eeLxb1TK2ai",
     "RAYDIUM_CP_PROGRAM_ID": "FAJFNh5VwwkczFrwBxf1w4kyW7ryndnauubDVwsDudze",
     "rpc_url": "http://127.0.0.1:8899",
     "commitment": "confirmed",
@@ -19,32 +19,34 @@
     "is_dbtc_token0": false,
     "token0_mint": "So11111111111111111111111111111111111111112",
     "token1_mint": "AKoPbZXxAwdTDVHXdCDEkKnBcercyvRHQ2qSCZ8mFZuC",
-    "globalConfig_pda": "8QMVYLstvWLmMQWZWCV6mw38etQnFeA8rbLrYpqShhek",
-    "dogeBtcMining_pda": "G712a3KYLqzfug1ERtWsAo5FSNjL3t1q1UdVTSo9udi3",
-    "sol_treasury_pda": "3wBY2nWbq1pfXAQdqNreBLjxp1dX5zgEgLFcDPZ45rht",
-    "dragon_egg_collection": "EgjG8vy9saEDNfRGZC6y3rHyhMLpLGH8ZPHjmtrytppx",
-    "dbtc_token_vault": "J3o6RfLoo6NTCa1EJNvCWsXA4hCJLt8HZn6njLj321pK",
-    "dbtc_vault_authority": "HdjKxnZU3qFv6zwwhWApbnqwUAyK322VeWNHxcXD8Rmo",
-    "mining_start_timestamp": 1763315167,
+    "globalConfig_pda": "4f9DvbF4z8UX4yKTWKQWbZetmhfhzhNjDX4E6NwU3HmH",
+    "dogeBtcMining_pda": "GeXxDY6cswKUa2uAxbnzfiJNyNPEZgzNtBnRZhq42eN4",
+    "sol_treasury_pda": "9Ljt8YMqWVAJ1jUwCo2Z2KggVknZRKMxMhfEFRdTtDah",
+    "eggs_treasury_pda": "7VpmKgcrxsFckZtpmAcYTPTZZLri6ETazECXJF82cYCr",
+    "dragon_egg_collection": "HCFG4fxno87CihG8qJcpQzpXyLBvfVuE3hu7CzwpWBin",
+    "dbtc_token_vault": "HVNEc2skr4DpZRkpSkc9ReMwacHa6uYeSeRZrJST8iQy",
+    "dbtc_vault_authority": "9BHfh7YHVRzYRwtSiaQ59yfLSKGpysTgcGNBFJ79vYNy",
+    "mining_start_timestamp": 1763324772,
     "doge_btc_per_round": "1000000",
-    "global_game_state_pda": "Zo5o6ULojEDMXKHSdTBXkxGgszNmmr8iHrQsDGyD26S",
+    "hashpower_config_pda": "Fj3xbVSUJLNXkDMdGBxorqW8yqXbKeJ5mDQg6QJxoAkz",
+    "global_game_state_pda": "EzWX6r35CYi51Vo3UUsLW99Q7AhTZ4T6Cutc6VWScyjs",
     "round_duration_seconds": 3600,
-    "sol_rewards_vault": "5Dintnr8e6M24jR2bUELw7gpGvVeV5LzyakELpdr81NW",
-    "sol_prize_pot_vault": "Bdo6sGZGSLSk6XirMupv43GR9PxZfkFb3GquDBtBz7GQ",
-    "lp_token_account": "442yW4fFtJrEzn1FiKJkRqp53iGiuXko3TtTeQMLxm7z",
+    "sol_rewards_vault": "6dKmbRagb7wfRR9SbZP3pD2ELbHT5MgLum41QxXidadT",
+    "sol_prize_pot_vault": "Gex3VP8UHLFq9Eipjxamxs1q2m2RX4biAKXdmhdDuyGq",
+    "lp_token_account": "kc8XtaVDsqHNhy8c34iCPYpKMZA8nEjECDvC298Fbps",
     "lp_token_mint": "23cZuXAaPuFjiXpytAzuQvA9Sx4rCfeq6RMGwkrFeVz1",
-    "referral_rewards_pda": "6brjjGX2f6QxjbryBJgjGtNpUFeLv6AjkeTgohwP7QJj",
-    "buybacks_account_pda": "CTmY8MEYxNN2JpebdxQ3Wrf63soyKsTT7Sos88bDYTD",
-    "buybacks_sol_vault_pda": "FLy3oKXDrbvBU1ttPDQEqfTD4mS7oBzZPheJPWu2n4zG",
-    "egg_config_pda": "847jjgHtpyzX54tDJb5t8ZaF8UNtVdHqBqTAKHzvkWRB",
+    "referral_rewards_pda": "EJvCieWEprdFtmcwf8qJ5pQLsL7QtDWwzZjjb3JVb4Jo",
+    "buybacks_account_pda": "6CyN1QtZvcA7ZEycXoPDaBhaVoD8jxvGVF8pMj66UF1Z",
+    "buybacks_sol_vault_pda": "4cfMjXaJA27dDR3RTQMCvBmD7gqdY7RRsvGUCbPFLShM",
+    "egg_config_pda": "Bs9nPQKjoiPoW5xpgJGLYHsLTBRrbya1iiDN8Mz91uP4",
     "egg_base_price": "1000000000",
-    "egg_curve_a": "10000",
-    "egg_max_supply": "15000",
-    "tax_config_pda": "FLhLzEz2wLy9nv5YTxLhNnEpWRsGF54QbmjtH9JMFHaB",
-    "withdraw_withheld_authority": "A1m4eRXmzyFwPf8nGvUCBknUJqEMRnDoL6vxzr1wYD1f",
-    "faction_treasury_vault": "3GpxrTKcXAo7vBpaYhhQFmfGSaNfQtWRJ2AeYYyhvruy",
-    "nft_floor_sweep_vault": "EEAoGhgXACwkDEu8aU4ahc5ckn6srfUUdKeuu9VncFrm",
-    "nft_sale_sol_vault": "AhHNifCKSXmZywwPegNFU6PdCAwxtcuBigaUhBmBYUsQ",
+    "egg_curve_a": "1111111",
+    "egg_max_supply": "24690",
+    "tax_config_pda": "p1jW4spsBuTJhSfuhb8DN2qRtWA3gnMJ9i9afdCBK1Q",
+    "withdraw_withheld_authority": "Cub3NjRfM8oa1c6wyDZUE4F17f5NL99HN9Sin4didCP4",
+    "faction_treasury_vault": "J384eNezM4bdwhawrxJxy7GexT7Q7xoxgtppkiESC1cX",
+    "nft_floor_sweep_vault": "5pgySwmq4eZo8rMkWxENfp3wH4p9Pu6NBqkxzS7odnHq",
+    "nft_sale_sol_vault": "DyCCBabgPx1P3jius3hWPsoTYUwFo7iysy4uUaL27rrB",
     "nft_floor_sweep_pct": 33,
     "faction_treasury_pct": 33,
     "cranker_bots": [
@@ -87,62 +89,62 @@
       {
         "faction_id": 0,
         "name": "USA",
-        "faction_state_pda": "7RzDwFoJioYiR6X3t6QwAWZvE6RPfPyaXDMLGctzZ7HW"
+        "faction_state_pda": "2HpBQi6BJT5GoevGcqd4FSFzTwwAbnURL2uGeWWH2aCG"
       },
       {
         "faction_id": 1,
         "name": "China",
-        "faction_state_pda": "4b85UmpdFajZYj77Vxtd5V1cBajyX61E9jMqV4DPnRRS"
+        "faction_state_pda": "D6GjrjnCVdnWSVHuw81jgmo593nuH5wgd1U6TxUpLS4x"
       },
       {
         "faction_id": 2,
         "name": "Russia",
-        "faction_state_pda": "7UPDBg9z8uAJuAJy2KUpsqrTJ4eWRW2pqHgZKiC1WozA"
+        "faction_state_pda": "GGMJQ6hQ5Kg3VVqqQAoTP7puBsL4Zqpem3PaFuHFKY3k"
       },
       {
         "faction_id": 3,
         "name": "India",
-        "faction_state_pda": "2uL3F6EtgXDPJu1FYEjLM2nsf8GQxv4b3BDiq6FoNNhy"
+        "faction_state_pda": "64y4Jem4EqeYpD4r56xXDwzALruCEHuDoqqaYHt6bswr"
       },
       {
         "faction_id": 4,
         "name": "Japan",
-        "faction_state_pda": "2Q9CjAfN2HbC68aoa4Uaw3jcaNntZqgU8a6vGsFLnhsQ"
+        "faction_state_pda": "3JEkJ7tGP3G6NYA6qA4rJgBJuu7zBNx1EBqFtH36BiBd"
       },
       {
         "faction_id": 5,
         "name": "South Korea",
-        "faction_state_pda": "66opaXvt1zycVF2MNeCi5jnHb4PPkDbQkjfMKjRUH8m5"
+        "faction_state_pda": "24sTksH1d2YtwQYNtry3xqYAC4zM8R3Jguksh66wpdjA"
       },
       {
         "faction_id": 6,
         "name": "Vietnam",
-        "faction_state_pda": "C3RRKqUSTHtdVJ2V4724pThujYVqkFuCqBDuaeJiYiqf"
+        "faction_state_pda": "AwPEqvwV9fodZXZLwb7ppkiXf2Uc7KbUND7Hw3scdMBG"
       },
       {
         "faction_id": 7,
         "name": "The Philippines",
-        "faction_state_pda": "2aaLHfcUJ3SPLKEaXcKmX2M1wxX9iSrT6Y99jutsxiHW"
+        "faction_state_pda": "8uFm6TK9SPPWsXJZEDC6uqvKkvMt3jWEgbKpkk6QSchh"
       },
       {
         "faction_id": 8,
         "name": "North Korea",
-        "faction_state_pda": "4v2rj1SJCywJzQLBWnfykbXMFA6QtRN9os3tMeWk3mgr"
+        "faction_state_pda": "ETH5Z8JMZ8LsfugQcoqCFRPCWz2PyS5uPGmwJ8B6LoZw"
       },
       {
         "faction_id": 9,
         "name": "France",
-        "faction_state_pda": "GikzSgNQ7QVZdLyxTU2rdE7J3bHkWqndg5sUK8BtQ2t"
+        "faction_state_pda": "3qC3kZebV7iooua4MjQY7vEcnbaKcaqeZdmyPQsLLGkz"
       },
       {
         "faction_id": 10,
         "name": "Brazil",
-        "faction_state_pda": "FYHhLyXiQaKpTVZkL92Es7SjdACde8mjMvn48bauMFJ4"
+        "faction_state_pda": "7QJHGrBZxHhLXFUHUSDUbkLqKcX9BcmDERnGwku7XAPQ"
       },
       {
         "faction_id": 11,
         "name": "Argentina",
-        "faction_state_pda": "87zcdPUkLDSTV7gHGe12rNGUBeYJz8CMVA91C1nm8Pqa"
+        "faction_state_pda": "DQNqozpxnrBVB8Tvu6WHVxyPZZkEuYmhK7jDHWmtTFk1"
       }
     ],
     "fee_recipient": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",

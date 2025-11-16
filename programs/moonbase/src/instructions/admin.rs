@@ -986,16 +986,12 @@ pub fn initialize_game_state_internal(
     // Initialize commit-reveal randomness fields
     global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
     global_game_state.current_round_seed = None;
-    global_game_state.next_round_commit = [0u8; 32]; // Should be set before first start_round
     msg!("     Current round commit: {:?} (will be set in start_round)", global_game_state.current_round_commit);
     msg!("     Current round seed: {:?} (will be set in end_round)", global_game_state.current_round_seed);
-    msg!("     Next round commit: {:?} (should be set before first start_round)", global_game_state.next_round_commit);
     
     // Initialize cumulative stats
     global_game_state.total_sol_bets = 0;
-    global_game_state.total_global_passive_hashpower = 0;
     msg!("     Total SOL bets: {}", global_game_state.total_sol_bets);
-    msg!("     Total global passive hashpower: {}", global_game_state.total_global_passive_hashpower);
     
     // Initialize empty cranker bots whitelist
     global_game_state.cranker_bots = Vec::new();
