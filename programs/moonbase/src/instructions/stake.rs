@@ -109,14 +109,17 @@ pub fn stake_moondoge(
     }
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
+
+    let eggs_multiplier = player_data.egg_multiplier as u64;
+    let weighted_amount_with_eggs = (weighted_amount * eggs_multiplier) / M_HUNDRED;
     
     // Update player data state
-    player_data.dogebtc_hashpower += weighted_amount;
+    player_data.dogebtc_hashpower += weighted_amount_with_eggs;
     player_data.dogebtc_staked += actual_amount;
     
     // Update faction state with actual_amount (post-tax) and weighted_amount
     faction_state.dbtc_staked += actual_amount;
-    faction_state.total_dbtc_hashpower += weighted_amount;
+    faction_state.total_dbtc_hashpower += weighted_amount_with_eggs;
     msg!("   Updated faction state - Total staked: {}, Total hashpower: {}",  faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
 
     // -------------- TRANSFER TOKENS -------------- //
@@ -143,7 +146,7 @@ pub fn stake_moondoge(
         actual_amount: actual_amount,
         lockup_duration,
         multiplier,
-        hashpower_contribution: weighted_amount,
+        hashpower_contribution: weighted_amount_with_eggs,
         position_index,
         new_sol_rewards,
         new_dbtc_rewards,
@@ -193,18 +196,19 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
+    let hashpower_contribution = (original_weighted * player_data.egg_multiplier as u64) / M_HUNDRED;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
         
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
     faction_state.dbtc_staked -= staked_amount;
-    faction_state.total_dbtc_hashpower -= original_weighted;
+    faction_state.total_dbtc_hashpower -= hashpower_contribution;
     msg!("   New faction totals - Staked: {}, Hashpower: {}", faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
     
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.dogebtc_hashpower -= original_weighted;
+    player_data.dogebtc_hashpower -= hashpower_contribution;
     player_data.dogebtc_staked -= staked_amount;
     msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.dogebtc_hashpower as f64 / 1e6, player_data.dogebtc_staked as f64 / 1e6);
     
@@ -281,6 +285,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         position_index,
         amount: return_amount,
         weighted_amount: original_weighted,
+        hashpower_contribution: hashpower_contribution,
         early_withdrawal: is_early_withdrawal,
         new_sol_rewards,
         new_dbtc_rewards,
@@ -400,13 +405,16 @@ pub fn stake_lp_tokens(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
     
+    let eggs_multiplier = player_data.egg_multiplier as u64;
+    let weighted_amount_with_eggs = (weighted_amount * eggs_multiplier) / M_HUNDRED;
+
     // Update player data state
-    player_data.lp_hashpower += weighted_amount;
+    player_data.lp_hashpower += weighted_amount_with_eggs;
     player_data.lp_staked += actual_amount;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
     faction_state.lp_staked += actual_amount;
-    faction_state.total_lp_hashpower += weighted_amount;
+    faction_state.total_lp_hashpower += weighted_amount_with_eggs;
     msg!("   Updated faction state - Total staked: {}, Total hashpower: {}",  faction_state.lp_staked as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
 
     // -------------- TRANSFER TOKENS -------------- //
@@ -432,7 +440,7 @@ pub fn stake_lp_tokens(
         lockup_duration,
         multiplier,
         weighted_amount,
-        hashpower_contribution: weighted_amount,
+        hashpower_contribution: weighted_amount_with_eggs,
         position_index,
         new_sol_rewards,
         new_dbtc_rewards,
@@ -476,18 +484,19 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
+    let hashpower_contribution = (original_weighted * player_data.egg_multiplier as u64) / M_HUNDRED;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
         
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
     faction_state.lp_staked -= staked_amount;
-    faction_state.total_lp_hashpower -= original_weighted;
+    faction_state.total_lp_hashpower -= hashpower_contribution;
     msg!("   New faction totals - Staked: {}, Hashpower: {}", faction_state.lp_staked as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
     
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.lp_hashpower -= original_weighted;
+    player_data.lp_hashpower -= hashpower_contribution;
     player_data.lp_staked -= staked_amount;
     msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.lp_hashpower as f64 / 1e6, player_data.lp_staked as f64 / 1e6);
     
@@ -560,11 +569,12 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     user_position.weighted_amount = 0;
     
     // Emit events
-    emit!(DogeBtcUnstaked {
+    emit!(LiquidityUnstaked {
         owner: ctx.accounts.authority.key(),
         position_index,
         amount: return_amount,
         weighted_amount: original_weighted,
+        hashpower_contribution: hashpower_contribution,
         early_withdrawal: is_early_withdrawal,
         new_sol_rewards,
         new_dbtc_rewards,
@@ -844,7 +854,7 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
 
 
 
-fn update_dbtc_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
+pub fn update_dbtc_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
     msg!("💰 Processing pending rewards before position update");
     let mut new_dbtc_rewards = 0;
     let mut new_sol_rewards = 0;
@@ -871,7 +881,7 @@ fn update_dbtc_staking_rewards( player_data: &mut PlayerData, unrefined_rewards:
 
 
 
-fn update_lp_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
+pub fn update_lp_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
     msg!("💰 Processing pending rewards before position update");
     let mut new_dbtc_rewards = 0;
     let mut new_sol_rewards = 0;

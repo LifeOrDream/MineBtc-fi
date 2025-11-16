@@ -201,6 +201,7 @@ pub struct DogeBtcUnstaked {
     pub position_index: u8,
     pub amount: u64,
     pub weighted_amount: u64,
+    pub hashpower_contribution: u64,
     pub early_withdrawal: bool,
     pub new_sol_rewards: u64,
     pub new_dbtc_rewards: u64,
@@ -228,8 +229,13 @@ pub struct LiquidityUnstaked {
     pub position_index: u8,
     pub amount: u64,
     pub weighted_amount: u64,
+    pub hashpower_contribution: u64,
     pub early_withdrawal: bool,
+    pub new_sol_rewards: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
 }
+
 
 #[event]
 pub struct EmergencyWithdrawal {

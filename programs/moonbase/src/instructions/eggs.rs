@@ -5,6 +5,7 @@ use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::state::*;
 use crate::instructions::helper;
+use crate::instructions::stake;
 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
@@ -568,6 +569,14 @@ pub struct MintDragonEgg<'info> {
     )]
     pub egg_config: Account<'info, EggConfig>,
     
+    /// CHECK: SOL treasury PDA
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -644,6 +653,14 @@ pub struct BatchMintDragonEggs<'info> {
         bump = egg_config.bump,
     )]
     pub egg_config: Account<'info, EggConfig>,
+
+    /// CHECK: SOL treasury PDA
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Multisig WSOL token account (destination for WSOL transfers)
     #[account(mut)]
@@ -767,6 +784,13 @@ pub struct StakeDragonEgg<'info> {
     )]
     pub faction_state: Account<'info, FactionState>,
 
+    #[account(
+        mut,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
@@ -815,6 +839,13 @@ pub struct UnstakeDragonEgg<'info> {
         mut,
     )]
     pub faction_state: Account<'info, FactionState>,
+
+    #[account(
+        mut,
+        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        bump
+    )]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]
