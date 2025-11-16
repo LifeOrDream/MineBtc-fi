@@ -178,10 +178,10 @@ async function main() {
 
         // 3. Add Factions (12 factions for the raffle)
         await addFactions(moonbaseProgram);
-        // return; 
 
         // 2. Initialize System Accounts (Referral + Buybacks)
         await initializeSystemAccounts(moonbaseProgram);
+        return;
 
         // 4. Initialize Mining System (Token Vault + Mining Parameters)
         await initializeMiningSystem(moonbaseProgram);
@@ -258,6 +258,11 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
         moonbaseProgram.programId
     );
 
+    const [eggsTreasuryPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('eggs-treasury')],
+        moonbaseProgram.programId
+    );
+
     const FEE_RECIPIENT_MULTISIG = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
 
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPDA.toString()}`);
@@ -272,6 +277,7 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
                 globalConfig: globalConfigPDA,
                 dogeBtcMining: dogeBtcMiningPDA,
                 solTreasury: solTreasuryPDA,
+                eggs_treasury: eggsTreasuryPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
@@ -297,6 +303,7 @@ async function initializeMoonbaseProgram(moonbaseProgram) {
                 globalConfig_address: globalConfigPDA.toString(),
                 dogeBtcMining_address: dogeBtcMiningPDA.toString(),
                 solTreasury_address: solTreasuryPDA.toString(),
+                eggsTreasury_address: eggsTreasuryPDA.toString(),
             };
             saveDeploymentData();
         } else {

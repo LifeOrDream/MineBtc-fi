@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("CHDRVyhzHN1eNU2hzzSKrDgGo8UpVqzvwq9TKWKiKATD");
+declare_id!("35iBvvtgjDxAt5AmMhiFw4MH8zvhEPvEKyn8SfEPW6jF");
 
 #[program]
 pub mod moonbase {
@@ -405,6 +405,13 @@ pub mod moonbase {
     /// Initialize a player account for the Faction Surge game
     pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
         user::initialize_player(ctx, faction_id, referral_code)
+    }
+
+    /// Change user's faction
+    /// Requires no staked positions (dbtc/lp hashpower = 0, no eggs staked)
+    /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
+    pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+        user::change_faction(ctx, new_faction_id)
     }
 
     /// Join a round by betting SOL

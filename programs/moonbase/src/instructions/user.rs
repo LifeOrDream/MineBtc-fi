@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
+use anchor_spl::token::Token;
+use anchor_spl::associated_token::AssociatedToken;
 
 use crate::errors::ErrorCode;
 use crate::state::*;
@@ -120,7 +122,64 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     Ok(())
 }
 
-
+/// Change user's faction
+/// Requires:
+/// - No dbtc hashpower (dogebtc_hashpower == 0)
+/// - No lp hashpower (lp_hashpower == 0)
+/// - No eggs staked (staked_eggs.is_empty())
+/// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
+pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+    msg!("🔄 [change_faction] User changing faction. User: {}", ctx.accounts.authority.key());
+    msg!("   Current faction ID: {}. New faction ID: {}", ctx.accounts.player_data.faction_id, new_faction_id);
+    
+    let player_data = &mut ctx.accounts.player_data;
+    let global_config = &ctx.accounts.global_config;
+    
+    // Validate new faction_id
+    require!( (new_faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId);    
+    require!( player_data.faction_id != new_faction_id, ErrorCode::InvalidParameters);
+    
+    // Validate user has no staked positions
+    msg!("   Validating user has no staked positions...");
+    require!( player_data.dogebtc_hashpower == 0 && player_data.lp_hashpower == 0 && player_data.staked_eggs.is_empty(), ErrorCode::InvalidParameters);
+    
+    // Charge change_faction_fee
+    let change_fee = global_config.change_faction_fee;
+    require!(change_fee > 0, ErrorCode::InvalidAmount);
+    msg!("   Change faction fee: {} SOL", (change_fee as f64 / 1e9));
+    
+    // Split fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
+    let treasury_amt = change_fee / 2;
+    let dev_amt = change_fee - treasury_amt;
+    
+    msg!("   Transferring {} SOL to sol_treasury", (treasury_amt as f64 / 1e9));
+    helper::transfer_to_sol_treasury(
+        &ctx.accounts.user_wallet.to_account_info(),
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        treasury_amt,
+    )?;
+    
+    msg!("   Transferring {} SOL to fee_recipient (as WSOL)", (dev_amt as f64 / 1e9));
+    helper::transfer_wsol_to_multisig(
+        &ctx.accounts.user_wallet.to_account_info(),
+        &ctx.accounts.multisig_wsol_account.to_account_info(),
+        &ctx.accounts.user_wsol_account.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.token_program.to_account_info(),
+        dev_amt,
+    )?;
+    
+    // Update faction_id
+    let old_faction_id = player_data.faction_id;
+    player_data.faction_id = new_faction_id;
+    
+    msg!("✅ [change_faction] Faction changed successfully");
+    msg!("   User: {}", ctx.accounts.authority.key());
+    msg!("   Old faction ID: {} -> New faction ID: {}", old_faction_id, new_faction_id);
+    
+    Ok(())
+}
 
 /// Join a round by betting SOL or using free tickets (single bet)
 /// Users can bet on either:
@@ -1224,6 +1283,65 @@ pub struct InitializePlayer<'info> {
     pub authority: Signer<'info>,
     
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ChangeFaction<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+    
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    
+    /// CHECK: SOL treasury PDA (50% of fee goes here)
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump
+    )]
+    pub sol_treasury: UncheckedAccount<'info>,
+    
+    /// Multisig WSOL token account (destination for WSOL transfers)
+    /// MUST be owned by global_config.fee_recipient (the multisig address)
+    #[account(
+        mut,
+        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
+    )]
+    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+    
+    /// User's WSOL token account (for wrapping SOL to WSOL)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        associated_token::mint = wsol_mint,
+        associated_token::authority = authority,
+    )]
+    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+    
+    /// CHECK: WSOL mint
+    #[account(
+        constraint = wsol_mint.key() == anchor_spl::token::spl_token::native_mint::id() @ ErrorCode::InvalidMint
+    )]
+    pub wsol_mint: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub user_wallet: Signer<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]

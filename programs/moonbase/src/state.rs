@@ -128,6 +128,9 @@ pub struct GlobalConfig {
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
 
+    /// Fee for changing faction (in lamports)
+    pub change_faction_fee: u64,
+
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
     pub bump: u8,
@@ -171,7 +174,7 @@ impl DogeBtcDistConfig {
 
 
 impl GlobalConfig {
-    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + bump + treasury_bump + supported_factions (vec)
+    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + change_faction_fee + bump + treasury_bump + supported_factions (vec)
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
         8 +                     // total_players
@@ -181,6 +184,7 @@ impl GlobalConfig {
         SolFeeConfig::LEN +     // sol_fee_config
         DogeBtcDistConfig::LEN + // dbtc_dist_config
         32 +                    // raydium_pool_state
+        8 +                     // change_faction_fee
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
