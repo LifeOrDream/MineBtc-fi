@@ -237,8 +237,6 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
                 &ctx.accounts.dbtc_custodian.to_account_info(),
                 &ctx.accounts.dbtc_custodian_authority.to_account_info(),
                 &ctx.accounts.dbtc_mint.to_account_info(),
-                faction_state,
-                &ctx.accounts.dbtc_token_vault.to_account_info(),
                 &ctx.accounts.token_program.to_account_info(),
                 ctx.bumps.dbtc_custodian_authority,
                 penalty_amount,
@@ -1027,7 +1025,7 @@ pub struct UnstakeDogeBtc<'info> {
     #[account(
         mut,
     )]
-    pub faction_state: Account<'info, FactionState>,
+    pub faction_state: Box<Account<'info, FactionState>>,
     
     // Player data
     #[account(
@@ -1036,7 +1034,7 @@ pub struct UnstakeDogeBtc<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
     
     // Staked position
     #[account(
@@ -1047,9 +1045,10 @@ pub struct UnstakeDogeBtc<'info> {
             &[position_index]
         ],
         bump = user_position.bump,
-        constraint = user_position.position_index == position_index @ ErrorCode::InvalidParameters
+        constraint = user_position.position_index == position_index @ ErrorCode::InvalidParameters,
+        close = authority
     )]
-    pub user_position: Account<'info, StakedPosition>,
+    pub user_position: Box<Account<'info, StakedPosition>>,
     
     /// CHECK: DOGE_BTC Mint (validated manually)
     pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
@@ -1085,22 +1084,7 @@ pub struct UnstakeDogeBtc<'info> {
         bump
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
-    
-    /// CHECK: DogeBtc token vault (main vault where tokens are deposited)
-    #[account(
-        mut,
-        seeds = [DOGE_BTC_VAULT_SEED.as_ref(), doge_btc_mining.key().as_ref()],
-        bump,
-        constraint = dbtc_token_vault.mint == dbtc_mint.key() @ ErrorCode::InvalidMint,
-    )]
-    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
-        
-    #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump = doge_btc_mining.bump
-    )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
-    
+                
     /// User who is unstaking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1205,7 +1189,7 @@ pub struct UnstakeLpTokens<'info> {
     #[account(
         mut,
     )]
-    pub faction_state: Account<'info, FactionState>,
+    pub faction_state: Box<Account<'info, FactionState>>,
     
     // Player data
     #[account(
@@ -1214,7 +1198,7 @@ pub struct UnstakeLpTokens<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
     
     // Staked position
     #[account(
@@ -1225,9 +1209,10 @@ pub struct UnstakeLpTokens<'info> {
             &[position_index]
         ],
         bump = user_position.bump,
-        constraint = user_position.position_index == position_index @ ErrorCode::InvalidParameters
+        constraint = user_position.position_index == position_index @ ErrorCode::InvalidParameters,
+        close = authority
     )]
-    pub user_position: Account<'info, StakedPosition>,
+    pub user_position: Box<Account<'info, StakedPosition>>,
     
     #[account(
         mut,

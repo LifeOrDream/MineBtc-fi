@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("bKuXBWKQGB8nQWM9jsfPGP3BA3yDFK2jao4FmeDrvvs");
+declare_id!("DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF");
 
 #[program]
 pub mod moonbase {
@@ -534,20 +534,20 @@ pub mod moonbase {
         stake::unstake_lp_tokens(ctx, position_index)
     }
     
-    // /// Claim SOL rewards from DogeBtc and LP staking
-    // pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-    //     stake::claim_sol_rewards(ctx)
-    // }
+    /// Claim SOL rewards from DogeBtc and LP staking
+    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
+        stake::claim_sol_rewards(ctx)
+    }
     
-    // /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
-    // pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-    //     stake::claim_dbtc_rewards(ctx)
-    // }
+    /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
+    pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+        stake::claim_dbtc_rewards(ctx)
+    }
     
-    // /// Claim referral rewards (SOL and DogeBtc earned from referrals)
-    // pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-    //     stake::claim_referral_rewards(ctx)
-    // }
+    /// Claim referral rewards (SOL and DogeBtc earned from referrals)
+    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+        stake::claim_referral_rewards(ctx)
+    }
 
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------

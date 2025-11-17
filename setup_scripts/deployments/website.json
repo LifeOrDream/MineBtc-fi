@@ -180,32 +180,32 @@
     "dogeBtcMining_pda": "63u3neUasYoXLk9xYLvtd9SDSsTvemDu5g5E2yaJBPC2",
     "sol_treasury_pda": "H1sMjRgQMwTv6oNncKf1wcKyyUYbPLpZj36Qnb46oHz1",
     "dragon_egg_collection": "3tBijLtQj7uE4Y9SYa4m94jjmWi5YPXdYcMUdX1119WA",
-    "dbtc_token_vault": "GDnkXkt1yzaK2TKANRf32yRJZtKboA9ExQdRtjP7aZmY",
-    "dbtc_vault_authority": "4JNNxB7BQm1gBLxrnp4nrZsvugRVQF2z6QWwRG9xfsdF",
-    "mining_start_timestamp": 1762937405,
-    "doge_btc_per_slot": "1000000",
+    "dbtc_token_vault": "2vY7GDcYB5zAvr4YH4TPaSHP11ChkGZnUDJxfHKkb1xM",
+    "dbtc_vault_authority": "2PDg82uXpy341qN1pYiZGoWnwsPY69CJH1YE7WUXQBhb",
+    "mining_start_timestamp": 1750835599,
+    "doge_btc_per_round": "1000000",
     "lp_token_account": "2yje69fgba1VfCKawKikvj4bjMryRXWFq8536BAH4tXb",
     "lp_token_mint": "EWfAGbT5Rs9yD5gsUoEpTeUjY8JTD69Sz2u8doQB8WrW",
-    "referral_rewards_pda": "E1WBMmnDpv3W22KU56R746qrSWczEBoH3gJnU94rQDqd",
-    "module_config_store": "Fgt1T6Aubctw93aoLgjpT1CB9pgC2RcMDM84ge7unCqp",
-    "loot_rewards_pda": "8eR9ajT1LPgA21knsSZW4gNWPiYSmVhBB3UNcyKz4LYm",
-    "loot_sol_vault": "Fxeb9m8Vm43sxvQfivBvM1F7h6ujTb1JisVhvaGXugAb",
-    "loot_dbtc_vault": "5P3kLsB2CmSZ11wHurfhAfKhdkhahCxazK9M4UQ3R6fG",
-    "loot_dbtc_vault_authority": "8ZTmcZGqi7KE7gHmMo7Lu78AJtBhLe6b8eRFB5UhDdou",
-    "level_stats_pda": "ZLuhrNcUfahcQE81t39o6yfyjj4T2LGPPNGSoUoB6o3",
+    "cranker_bots": [],
     "base_creation_cost": 100000000,
     "loot_percentage": 10,
-    "initial_distribution_rate": 1000000,
-    "pvp_ticket_tiers": [
-      100000000,
-      1000000000,
-      10000000000,
-      100000000000,
-      500000000000
+    "ticket_tiers": [
+      {
+        "tier_index": 0,
+        "ticket_value": 1000000,
+        "ticket_count": 1000
+      },
+      {
+        "tier_index": 1,
+        "ticket_value": 10000000,
+        "ticket_count": 100
+      },
+      {
+        "tier_index": 2,
+        "ticket_value": 100000000,
+        "ticket_count": 50
+      }
     ],
-    "pvp_min_hp_required": 1000,
-    "pvp_turn_timeout_seconds": 300,
-    "pvp_max_turns": 15,
     "supported_factions": [
       "USA",
       "China",
@@ -219,31 +219,42 @@
       "France",
       "Brazil"
     ],
-    "creation_fee_recipient": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "moon_economy_enabled": true,
-    "dogebtc_allocation": 33,
-    "liquidity_allocation": 33,
-    "min_lockup_days": 1,
-    "max_lockup_days": 365,
-    "base_multiplier": 100,
-    "max_multiplier": 700,
-    "electricity_per_weighted_mdoge": 100,
-    "electricity_per_weighted_lp_tokens": 400,
-    "moonEconomy_globalConfig_pda": "HND9wLxb7uccbKkqU5CT9fLdpvY1KqzxutZk1KExo7Hf",
-    "moonEconomy_devEarnings_pda": "7DUYntos72wQrx6QdwmaCJjRdKEhdmcjfTV7r9cjakmT",
-    "moonEconomy_feeCollector_pda": "4QnnN7ATWt2k14opqYqRNjv5hqhTJ9vhaHMuwCmxpAUD",
-    "moonEconomy_dbtc_vault": "E11NhdGTEhJBKKTVGA52ZPq9W1CEgUvDrb3yon6cQtNH",
-    "moonEconomy_dbtc_sol_vault": "Fk25fAywSa4Pxj3jcgp9kCbhwT3HKYoZAwSUUESrupJH",
-    "moonEconomy_dbtc_custodian": "Eyz64vrT5bRiCDDhqiLXrkwSbcJajmm8miVnf1wBvdRM",
-    "moonEconomy_dbtc_custodian_authority": "4BdAAjvZp8vS5uJxBzi5WXHK68gY1FgvTfHbRk6Q9G8E",
-    "moonEconomy_liquidity_vault": "4bqatCXbcFoWJokNTLhKgWDshgR3JsXUPgMyDprdRx45",
-    "moonEconomy_liquidity_sol_vault": "Fqz87Dz9oNwzYbRA8Duo4goRUfCondyrMAxyMo8YGYkB",
-    "moonEconomy_liquidity_custodian": "8rPjbVCpReD2VK6REKvmHruBoxGsUbcSoM2LKghgWGKs",
-    "moonEconomy_liquidity_custodian_authority": "BxoLGW78Ebhno7K6j5FTaAVTwvvyLfEQCPZ8wic1RjBU",
-    "max_modules_per_base": 50,
-    "grid_width": 20,
-    "grid_height": 15,
-    "max_upgrade_level": 10
+    "faction_states": [
+      {
+        "name": "USA"
+      },
+      {
+        "name": "China"
+      },
+      {
+        "name": "Russia"
+      },
+      {
+        "name": "India"
+      },
+      {
+        "name": "Japan"
+      },
+      {
+        "name": "South Korea"
+      },
+      {
+        "name": "Vietnam"
+      },
+      {
+        "name": "The Philippines"
+      },
+      {
+        "name": "North Korea"
+      },
+      {
+        "name": "France"
+      },
+      {
+        "name": "Brazil"
+      }
+    ],
+    "fee_recipient": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
+    "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
   }
 }

@@ -381,32 +381,16 @@ pub fn charge_emergency_tax<'info>(
     dbtc_custodian: &AccountInfo<'info>,
     dbtc_custodian_authority: &AccountInfo<'info>,
     dbtc_mint: &AccountInfo<'info>,
-    faction_state: &mut FactionState,
-    dbtc_token_vault: &AccountInfo<'info>,
     token_program: &AccountInfo<'info>,
     custodian_authority_bump: u8,
     penalty_amount: u64,
 ) -> Result<()> {
     msg!("💰 [charge_emergency_tax] Processing DBTC emergency tax");
     msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
-    
-    // Split penalty: 50% to burn, 50% to DBTC vault
-    let burn_amt = penalty_amount / 2;
-    let vault_amt = penalty_amount - burn_amt;  
-    
-    // Account for 1% burn tax on the transfer to vault
-    let rewards_amt = vault_amt * (M_HUNDRED - BURN_TAX_PERCENTAGE) / M_HUNDRED;
-    let dbtc_per_share = mul_div(rewards_amt, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-    faction_state.dbtc_dbtc_reward_index += dbtc_per_share;
-    
-    msg!("   DBTC reward index: {} (+{})", faction_state.dbtc_dbtc_reward_index, dbtc_per_share);
-
-    msg!("   Burn amount: {} tokens (50%)", burn_amt as f64 / 1e6);
-    msg!("   Vault transfer amount: {} tokens", vault_amt as f64 / 1e6);
-    
+        
     // Burn 50% from custodian
-    if burn_amt > 0 {
-        msg!("   Burning {} tokens from custodian...", burn_amt as f64 / 1e6);
+    if penalty_amount > 0 {
+        msg!("   Burning {} tokens from custodian...", penalty_amount as f64 / 1e6);
         
         // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
@@ -426,38 +410,9 @@ pub fn charge_emergency_tax<'info>(
                 },
                 custodian_signer,
             ),
-            burn_amt,
+            penalty_amount,
         )?;
-        msg!("   ✅ Burned {} tokens", burn_amt as f64 / 1e6);
-    }
-
-    // Transfer 50% (minus 1% burn tax) to DBTC vault
-    if vault_amt > 0 {
-        msg!("   Transferring {} tokens to DBTC vault...", vault_amt as f64 / 1e6);
-        
-        // Get PDA signer seeds for both authorities
-        let custodian_authority_seeds = &[
-            DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
-            &[custodian_authority_bump],
-        ];
-        let custodian_signer = &[&custodian_authority_seeds[..]];
-        
-        // Transfer from custodian to vault (Token-2022 transfer_checked)
-        anchor_spl::token_interface::transfer_checked(
-            CpiContext::new_with_signer(
-                token_program.to_account_info(),
-                anchor_spl::token_interface::TransferChecked {
-                    from: dbtc_custodian.to_account_info(),
-                    to: dbtc_token_vault.to_account_info(),
-                    authority: dbtc_custodian_authority.to_account_info(),
-                    mint: dbtc_mint.to_account_info(),
-                },
-                custodian_signer,
-            ),
-            vault_amt,
-            6,  
-        )?;
-        msg!("   ✅ Transferred {} tokens to DBTC vault", vault_amt as f64 / 1e6);
+        msg!("   ✅ Burned {} tokens", penalty_amount as f64 / 1e6);
     }
     
     msg!("   ✅ Emergency tax charged successfully");

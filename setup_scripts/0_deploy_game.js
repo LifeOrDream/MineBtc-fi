@@ -4,7 +4,7 @@ import { execSync, spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Keypair } from '@solana/web3.js';
+import { Keypair, Connection, LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -425,10 +425,43 @@ function saveDeploymentInfo(programAddresses) {
   console.log(`\x1b[32m   🔗 MOON_BASE: ${programAddresses.moonbase}\x1b[0m`);
 }
 
+async function printWalletInfo() {
+  try {
+    const configPath = path.join(__dirname, 'config.json');
+    let clusterUrl = 'http://127.0.0.1:8899';
+    
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      clusterUrl = config.network?.rpc_url || clusterUrl;
+    } catch (error) {}
+    
+    const connection = new Connection(clusterUrl, 'confirmed');
+    const keypairData = JSON.parse(fs.readFileSync(WALLET_KEYPAIR_PATH, 'utf8'));
+    const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
+    const publicKey = keypair.publicKey;
+    
+    const balance = await connection.getBalance(publicKey);
+    const balanceSOL = balance / LAMPORTS_PER_SOL;
+    
+    console.log(`\x1b[36m👤 Wallet Address: ${publicKey.toString()}\x1b[0m`);
+    console.log(`\x1b[36m💰 Balance: ${balanceSOL.toFixed(4)} SOL (${balance} lamports)\x1b[0m`);
+    
+    if (balanceSOL < 1) {
+      console.log(`\x1b[33m⚠️  Warning: Low balance! You may need more SOL for deployment.\x1b[0m`);
+    }
+  } catch (error) {
+    console.log(`\x1b[33m⚠️  Could not fetch wallet info: ${error.message}\x1b[0m`);
+  }
+}
+
 async function main() {
   try {
     console.log(`\x1b[35m🚀 Starting automated program deployment...\x1b[0m`);
     console.log(`\x1b[35m==============================================\x1b[0m`);
+    
+    // Print wallet info at the start
+    await printWalletInfo();
+    console.log('');
     
     // Check for existing deployment
     const existingDeployment = getExistingDeployment();
