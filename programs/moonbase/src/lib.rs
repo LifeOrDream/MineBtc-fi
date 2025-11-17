@@ -553,6 +553,19 @@ pub mod moonbase {
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
+    ///Simulate mint costs for multiple eggs accounting for bonding curve pricing
+    /// 
+    /// # Parameters
+    /// - `egg_config`: EggConfig account
+    /// - `mint_count`: Number of eggs to mint
+    pub fn simulate_purchase_cost(
+        ctx: Context<SimulateMintCost>,
+        mint_count: u64,
+    ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
+        eggs::simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
+    }
+
+
 
     /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
     /// 

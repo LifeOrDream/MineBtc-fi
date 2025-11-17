@@ -664,6 +664,18 @@ fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add:
 // ----------------------------------------------------------------------------------------
 
 #[derive(Accounts)]
+#[instruction(mint_count: u64)]
+pub struct SimulateMintCost<'info> {
+    #[account(
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump = egg_config.bump
+    )]
+    pub egg_config: Account<'info, EggConfig>,
+}
+
+
+
+#[derive(Accounts)]
 #[instruction(faction_id: u8)]
 pub struct MintDragonEgg<'info> {
     #[account(

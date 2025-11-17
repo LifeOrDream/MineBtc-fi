@@ -36,6 +36,11 @@ solana program deploy target/deploy/moonbase.so \
   --keypair wallet-keypair.json \
   --url http://127.0.0.1:8899
 
+solana program deploy target/deploy/moonbase.so \
+  --program-id target/deploy/moonbase-keypair.json \
+  --keypair wallet-keypair.json \
+  --url https://api.devnet.solana.com
+
 anchor idl build -p moonbase
 
 
