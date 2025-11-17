@@ -77,6 +77,7 @@ function generateWebsiteConfig(config, deployment) {
       "dogeBtcMining_pda": deployment.moonbase_program_initialized?.dogeBtcMining_address,
       "sol_treasury_pda": deployment.moonbase_program_initialized?.solTreasury_address,
       "eggs_treasury_pda": deployment.moonbase_program_initialized?.eggsTreasury_address,
+      "unrefinedRewards_pda": deployment.moonbase_program_initialized?.unrefinedRewards_address,
 
       "dragon_egg_collection": deployment.dragon_egg_collection_created?.collection_address,
       
@@ -87,7 +88,7 @@ function generateWebsiteConfig(config, deployment) {
       "doge_btc_per_round": deployment.mining_vault_initialized?.doge_btc_per_round,
 
       // ========== HASHPOWER CONFIG ==========
-      "hashpower_config_pda": deployment.hashpower_config_initialized?.hashpower_config_pda,
+      "hashpowerConfig_pda": deployment.hashpower_config_initialized?.hashpowerConfig_pda,
       
       // ========== GAME STATE ==========
       "global_game_state_pda": deployment.game_state_initialized?.global_game_state_pda,
@@ -105,6 +106,12 @@ function generateWebsiteConfig(config, deployment) {
       "referral_rewards_pda": deployment.system_accounts_initialized?.system_referral_rewards_pda,
       "buybacks_account_pda": deployment.system_accounts_initialized?.buybacks_account_pda,
       "buybacks_sol_vault_pda": deployment.system_accounts_initialized?.buybacks_sol_vault_pda,
+
+      // ========== CUSTODIAN ACCOUNTS ==========
+      "dbtcCustodian_pda": deployment.custodian_accounts_initialized?.dbtc_custodian,
+      "dbtcCustodian_authority": deployment.custodian_accounts_initialized?.dbtc_custodian_authority,
+      "liquidityCustodian_pda": deployment.custodian_accounts_initialized?.liquidity_custodian,
+      "liquidityCustodian_authority": deployment.custodian_accounts_initialized?.liquidity_custodian_authority,
       
       // ========== EGG CONFIG ==========
       "egg_config_pda": deployment.egg_config_initialized?.eggs_config_pda,

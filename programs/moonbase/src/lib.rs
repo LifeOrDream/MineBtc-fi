@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("7r11BE6wvvctiB8V7mn2JqSYzGKCi5Qj1eeLxb1TK2ai");
+declare_id!("bKuXBWKQGB8nQWM9jsfPGP3BA3yDFK2jao4FmeDrvvs");
 
 #[program]
 pub mod moonbase {
@@ -143,6 +143,14 @@ pub mod moonbase {
         admin::initialize_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
     }
 
+
+    /// Initialize both custodian token accounts (admin only)
+    /// Initializes:
+    /// - DBTC custodian: Token-2022 account that holds all staked DOGE_BTC tokens (global for all factions)
+    /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
+    pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+        admin::initialize_custodian_accounts(ctx)
+    }
 
     /// Update HashpowerConfig account (admin only)
     pub fn update_hashpower_config(
@@ -527,13 +535,13 @@ pub mod moonbase {
     }
     
     // /// Claim SOL rewards from DogeBtc and LP staking
-    // pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>, faction_id: u8) -> Result<()> {
-    //     stake::claim_sol_rewards(ctx, faction_id)
+    // pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
+    //     stake::claim_sol_rewards(ctx)
     // }
     
     // /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
-    // pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>, faction_id: u8) -> Result<()> {
-    //     stake::claim_dbtc_rewards(ctx, faction_id)
+    // pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+    //     stake::claim_dbtc_rewards(ctx)
     // }
     
     // /// Claim referral rewards (SOL and DogeBtc earned from referrals)

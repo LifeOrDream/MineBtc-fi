@@ -189,7 +189,9 @@ async function main() {
         await depositMiningTokens(moonbaseProgram);
 
         await initializeHashpowerConfig(moonbaseProgram);
-        // return;
+
+        // 6.5. Initialize Custodian Accounts (DBTC and Liquidity custodians)
+        await initializeCustodianAccounts(moonbaseProgram);
 
         // 7. Initialize EggConfig
         await initializeEggConfig(moonbaseProgram);
@@ -749,7 +751,7 @@ async function initializeHashpowerConfig(moonbaseProgram) {
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.hashpower_config_initialized = {
-            hashpower_config_pda: hashpowerConfigPDA.toString(),
+            hashpowerConfig_pda: hashpowerConfigPDA.toString(),
             tx_signature: tx,
             timestamp: new Date().toISOString()
         };
@@ -758,6 +760,132 @@ async function initializeHashpowerConfig(moonbaseProgram) {
         console.error(COLOR_ERROR, '❌ Failed to initialize hashpower config:', error);
         throw error;
     }    
+}
+
+async function initializeCustodianAccounts(moonbaseProgram) {
+    if (deploymentFile.custodian_accounts_initialized) {
+        console.log(COLOR_INFO, 'ℹ️ Custodian accounts already initialized. Skipping...');
+        return;
+    }
+
+    console.log(COLOR_STEP, '\n=================== [ INITIALIZING CUSTODIAN ACCOUNTS ] ===================');
+
+    // Verify prerequisites
+    if (!MOONDOGE_TOKEN_MINT) {
+        console.error(COLOR_ERROR, '❌ DOGE_BTC token mint address not found in deployment file.');
+        throw new Error('DOGE_BTC mint address required for custodian initialization');
+    }
+
+    if (!deploymentFile.dbtc_sol_pool_created?.lpMintPDA) {
+        console.error(COLOR_ERROR, '❌ LP mint address not found in deployment file.');
+        console.log(COLOR_WARNING, '⚠️ Please run 2_init_mdoge_SOL_pool.js first.');
+        throw new Error('LP mint address required for custodian initialization');
+    }
+
+    const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+    const dbtcMint = MOONDOGE_TOKEN_MINT;
+    const lpMint = new PublicKey(deploymentFile.dbtc_sol_pool_created.lpMintPDA);
+
+    // Derive DBTC custodian PDAs
+    const [dbtcCustodianPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('dbtc-custodian')],
+        moonbaseProgram.programId
+    );
+
+    const [dbtcCustodianAuthorityPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('dbtc-custodian-authority')],
+        moonbaseProgram.programId
+    );
+
+    // Derive Liquidity custodian PDAs
+    const [liquidityCustodianPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('lp-custodian')],
+        moonbaseProgram.programId
+    );
+
+    const [liquidityCustodianAuthorityPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from('lp-custodian-authority')],
+        moonbaseProgram.programId
+    );
+
+    console.log(COLOR_INFO, `🔑 DBTC Mint: ${dbtcMint.toString()}`);
+    console.log(COLOR_INFO, `🔑 DBTC Custodian PDA: ${dbtcCustodianPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 DBTC Custodian Authority PDA: ${dbtcCustodianAuthorityPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 LP Mint: ${lpMint.toString()}`);
+    console.log(COLOR_INFO, `🔑 Liquidity Custodian PDA: ${liquidityCustodianPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 Liquidity Custodian Authority PDA: ${liquidityCustodianAuthorityPDA.toString()}`);
+
+    try {
+        const tx = await moonbaseProgram.methods
+            .initializeCustodianAccounts()
+            .accounts({
+                globalConfig: globalConfigPDA,
+                dbtcMint: dbtcMint,
+                dbtcCustodian: dbtcCustodianPDA,
+                dbtcCustodianAuthority: dbtcCustodianAuthorityPDA,
+                lpMint: lpMint,
+                liquidityCustodian: liquidityCustodianPDA,
+                liquidityCustodianAuthority: liquidityCustodianAuthorityPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+                token2022Program: anchor_spl.TOKEN_2022_PROGRAM_ID,
+                tokenProgram: anchor_spl.TOKEN_PROGRAM_ID,
+                rent: web3.SYSVAR_RENT_PUBKEY,
+            })
+            .rpc();
+
+        console.log(COLOR_SUCCESS, '✅ Custodian accounts initialized successfully!');
+        console.log(COLOR_SUCCESS, '   ✅ DBTC custodian (Token-2022) initialized');
+        console.log(COLOR_SUCCESS, '   ✅ Liquidity custodian (SPL Token) initialized');
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`);
+
+        deploymentFile.custodian_accounts_initialized = {
+            dbtc_custodian: dbtcCustodianPDA.toString(),
+            dbtc_custodian_authority: dbtcCustodianAuthorityPDA.toString(),
+            liquidity_custodian: liquidityCustodianPDA.toString(),
+            liquidity_custodian_authority: liquidityCustodianAuthorityPDA.toString(),
+            dbtc_mint: dbtcMint.toString(),
+            lp_mint: lpMint.toString(),
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        saveDeploymentData();
+    } catch (error) {
+        const errorStr = error.toString();
+        if (errorStr.includes("already in use") || errorStr.includes("already exists")) {
+            console.log(COLOR_WARNING, '⚠️ Custodian accounts may already be initialized. Checking...');
+            
+            // Check if accounts exist
+            try {
+                const dbtcCustodianInfo = await connection.getAccountInfo(dbtcCustodianPDA);
+                const liquidityCustodianInfo = await connection.getAccountInfo(liquidityCustodianPDA);
+                
+                if (dbtcCustodianInfo && liquidityCustodianInfo) {
+                    console.log(COLOR_INFO, 'ℹ️ Custodian accounts already exist. Skipping...');
+                    deploymentFile.custodian_accounts_initialized = {
+                        dbtc_custodian: dbtcCustodianPDA.toString(),
+                        dbtc_custodian_authority: dbtcCustodianAuthorityPDA.toString(),
+                        liquidity_custodian: liquidityCustodianPDA.toString(),
+                        liquidity_custodian_authority: liquidityCustodianAuthorityPDA.toString(),
+                        dbtc_mint: dbtcMint.toString(),
+                        lp_mint: lpMint.toString(),
+                        status: 'already_exists'
+                    };
+                    saveDeploymentData();
+                    return;
+                }
+            } catch (checkError) {
+                // Continue to throw original error
+            }
+        }
+        console.error(COLOR_ERROR, '❌ Failed to initialize custodian accounts:', error);
+        if (error.logs) {
+            console.error(COLOR_ERROR, '📝 Transaction logs:');
+            error.logs.forEach(log => console.error(COLOR_DIM, log));
+        }
+        throw error;
+    }
 }
 
 

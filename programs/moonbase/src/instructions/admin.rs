@@ -11,7 +11,8 @@ use anchor_spl::token_interface::{
     self as token_if,  
     Mint as Mint2022,
     TokenAccount as TokenAccount2022,
-};  
+};
+use anchor_spl::token::{self, Token};  
 
 use mpl_core::{
     instructions::{
@@ -1688,6 +1689,110 @@ pub struct InitializeSystemAccounts<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+// --------------------------------------------------------------------------------
+// ------------ CUSTODIAN TOKEN ACCOUNTS INITIALIZATION ------------
+// --------------------------------------------------------------------------------
+
+/// Initialize both custodian token accounts (admin only)
+/// Initializes:
+/// - DBTC custodian: Token-2022 account that holds all staked DOGE_BTC tokens (global for all factions)
+/// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
+pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+    msg!("🔧 [initialize_custodian_accounts] Initializing custodian token accounts");
+    
+    // Verify DBTC custodian
+    msg!("   DBTC Custodian:");
+    msg!("     Mint: {}", ctx.accounts.dbtc_mint.key());
+    msg!("     Custodian PDA: {}", ctx.accounts.dbtc_custodian.key());
+    msg!("     Authority PDA: {}", ctx.accounts.dbtc_custodian_authority.key());
+    require!(
+        ctx.accounts.dbtc_custodian.mint == ctx.accounts.dbtc_mint.key(),
+        ErrorCode::InvalidMint
+    );
+    require!(
+        ctx.accounts.dbtc_custodian.owner == ctx.accounts.dbtc_custodian_authority.key(),
+        ErrorCode::InvalidOwner
+    );
+    
+    // Verify liquidity custodian
+    msg!("   Liquidity Custodian:");
+    msg!("     Mint: {}", ctx.accounts.lp_mint.key());
+    msg!("     Custodian PDA: {}", ctx.accounts.liquidity_custodian.key());
+    msg!("     Authority PDA: {}", ctx.accounts.liquidity_custodian_authority.key());
+    require!(
+        ctx.accounts.liquidity_custodian.mint == ctx.accounts.lp_mint.key(),
+        ErrorCode::InvalidMint
+    );
+    require!(
+        ctx.accounts.liquidity_custodian.owner == ctx.accounts.liquidity_custodian_authority.key(),
+        ErrorCode::InvalidOwner
+    );
+    
+    msg!("✅ [initialize_custodian_accounts] Both custodian token accounts initialized successfully");
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitializeCustodianAccounts<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// CHECK: DBTC Mint (Token-2022)
+    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
+
+    /// DBTC custodian token account (Token-2022) - PDA owned by dbtc_custodian_authority
+    #[account(
+        init,
+        payer = authority,
+        seeds = [DBTC_CUSTODIAN_SEED.as_ref()],
+        bump,
+        token::mint = dbtc_mint,
+        token::authority = dbtc_custodian_authority,
+        token::token_program = token_2022_program,
+    )]
+    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// CHECK: Authority PDA for dbtc_custodian (signs for token transfers)
+    #[account(
+        seeds = [DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    pub dbtc_custodian_authority: UncheckedAccount<'info>,
+
+    /// CHECK: LP Mint (standard SPL Token)
+    pub lp_mint: Account<'info, token::Mint>,
+
+    /// Liquidity custodian token account (standard SPL Token) - PDA owned by liquidity_custodian_authority
+    #[account(
+        init,
+        payer = authority,
+        seeds = [LIQUIDITY_CUSTODIAN_SEED.as_ref()],
+        bump,
+        token::mint = lp_mint,
+        token::authority = liquidity_custodian_authority,
+    )]
+    pub liquidity_custodian: Account<'info, token::TokenAccount>,
+
+    /// CHECK: Authority PDA for liquidity_custodian (signs for token transfers)
+    #[account(
+        seeds = [LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        bump,
+    )]
+    pub liquidity_custodian_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub token_2022_program: Program<'info, Token2022>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
  

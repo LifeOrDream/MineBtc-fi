@@ -920,7 +920,7 @@ fn calculate_power_points(claimable_by_user: u64) -> u64 {
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
-#[instruction(faction_id: u8, amount: u64, lockup_duration: u64, position_index: u8)]
+#[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
 pub struct StakeDogeBtc<'info> {
     // Global config
     #[account(
@@ -980,7 +980,7 @@ pub struct StakeDogeBtc<'info> {
     
     #[account(
         mut,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref(), &[faction_id]],
+        seeds = [DBTC_CUSTODIAN_SEED.as_ref()],
         bump,
         constraint = dbtc_custodian.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
@@ -1094,7 +1094,7 @@ pub struct UnstakeDogeBtc<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(faction_id: u8, amount: u64, lockup_duration: u64, position_index: u8)]
+#[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
 pub struct StakeLpTokens<'info> {
     // Hashpower config (contains lockup and multiplier settings)
     #[account(
@@ -1154,7 +1154,7 @@ pub struct StakeLpTokens<'info> {
     
     #[account(
         mut,
-        seeds = [b"lp-custodian", &[faction_id]],
+        seeds = [LIQUIDITY_CUSTODIAN_SEED.as_ref()],
         bump,
         constraint = liquidity_custodian.mint == lp_mint.key() @ ErrorCode::InvalidParameters,
     )]
@@ -1231,7 +1231,7 @@ pub struct UnstakeLpTokens<'info> {
     
     #[account(
         mut,
-        seeds = [b"lp-custodian", &[user_position.faction_id]],
+        seeds = [LIQUIDITY_CUSTODIAN_SEED.as_ref()],
         bump,
         constraint = liquidity_custodian.mint == lp_mint.key() @ ErrorCode::InvalidParameters,
     )]
@@ -1239,10 +1239,10 @@ pub struct UnstakeLpTokens<'info> {
     pub liquidity_custodian: Account<'info, token::TokenAccount>,
     
     #[account(
-        seeds = [b"lp-custodian-authority", &[user_position.faction_id]],
+        seeds = [LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    /// CHECK: Authority of the custodian (PDA that signs for token transfers)
+    /// CHECK: Authority of the custodian (PDA that signs for token transfers, global for all factions)
     pub liquidity_custodian_authority: UncheckedAccount<'info>,
     
     /// User who is unstaking tokens
@@ -1261,7 +1261,6 @@ pub struct UnstakeLpTokens<'info> {
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
-#[instruction(faction_id: u8)]
 pub struct ClaimSolRewards<'info> {
     // Faction state
     #[account()]
@@ -1311,7 +1310,6 @@ pub struct ClaimSolRewards<'info> {
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
-#[instruction(faction_id: u8)]
 pub struct ClaimDbtcRewards<'info> {
     // Global config
     #[account(
