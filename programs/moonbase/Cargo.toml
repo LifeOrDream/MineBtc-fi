@@ -15,6 +15,7 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
  
 [dependencies]
 anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
@@ -22,7 +23,7 @@ anchor-spl  = { version = "0.31.1", features = [
   "token_2022",
   "idl-build",         # required so Mint/TokenAccount expose IDL types
 ] }
-mpl-core = "0.10.1"
+mpl-core = { version = "0.11", features = ["anchor"] }
 mpl-token-metadata = { version = "5.1.1" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 raydium-cp-swap = { path = "../../raydium/programs/cp-swap", features = ["cpi"] }

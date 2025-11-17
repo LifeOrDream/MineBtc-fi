@@ -76,6 +76,8 @@ function generateWebsiteConfig(config, deployment) {
       "globalConfig_pda": deployment.moonbase_program_initialized?.globalConfig_address,
       "dogeBtcMining_pda": deployment.moonbase_program_initialized?.dogeBtcMining_address,
       "sol_treasury_pda": deployment.moonbase_program_initialized?.solTreasury_address,
+      "eggs_treasury_pda": deployment.moonbase_program_initialized?.eggsTreasury_address,
+      "unrefinedRewards_pda": deployment.moonbase_program_initialized?.unrefinedRewards_address,
 
       "dragon_egg_collection": deployment.dragon_egg_collection_created?.collection_address,
       
@@ -83,102 +85,78 @@ function generateWebsiteConfig(config, deployment) {
       "dbtc_token_vault": deployment.mining_vault_initialized?.vault_address,
       "dbtc_vault_authority": deployment.mining_vault_initialized?.vault_authority,
       "mining_start_timestamp": deployment.mining_vault_initialized?.start_timestamp,
-      "doge_btc_per_slot": deployment.mining_vault_initialized?.doge_btc_per_slot,
+      "doge_btc_per_round": deployment.mining_vault_initialized?.doge_btc_per_round,
+
+      // ========== HASHPOWER CONFIG ==========
+      "hashpowerConfig_pda": deployment.hashpower_config_initialized?.hashpowerConfig_pda,
+      
+      // ========== GAME STATE ==========
+      "global_game_state_pda": deployment.game_state_initialized?.global_game_state_pda,
+      "round_duration_seconds": deployment.game_state_initialized?.round_duration_seconds,
+      
+      // ========== RAYDIUM POOL STATE (Game-related vaults) ==========
+      "sol_rewards_vault": deployment.raydium_pool_state_set?.sol_rewards_vault,
+      "sol_prize_pot_vault": deployment.raydium_pool_state_set?.sol_prize_pot_vault,
       
       // ========== LP TOKEN MANAGEMENT ==========
       "lp_token_account": deployment.lp_token_accounts_initialized?.lp_token_account,
       "lp_token_mint": deployment.lp_token_accounts_initialized?.lp_mint,
       
       // ========== SYSTEM ACCOUNTS ==========
-      "referral_rewards_pda": deployment.referral_system_initialized?.system_referral_pda,
-      "module_config_store": deployment.config_stores_initialized?.module_config_store,
-      "pvp_matchmaker_pda": deployment.pvp_matchmaker_initialized?.pvp_matchmaker_pda,
+      "referral_rewards_pda": deployment.system_accounts_initialized?.system_referral_rewards_pda,
+      "buybacks_account_pda": deployment.system_accounts_initialized?.buybacks_account_pda,
+      "buybacks_sol_vault_pda": deployment.system_accounts_initialized?.buybacks_sol_vault_pda,
+
+      // ========== CUSTODIAN ACCOUNTS ==========
+      "dbtcCustodian_pda": deployment.custodian_accounts_initialized?.dbtc_custodian,
+      "dbtcCustodian_authority": deployment.custodian_accounts_initialized?.dbtc_custodian_authority,
+      "liquidityCustodian_pda": deployment.custodian_accounts_initialized?.liquidity_custodian,
+      "liquidityCustodian_authority": deployment.custodian_accounts_initialized?.liquidity_custodian_authority,
       
-      // ========== LOOT REWARDS SYSTEM ==========
-      "loot_rewards_pda": deployment.loot_rewards_initialized?.loot_rewards_pda,
-      "loot_sol_vault": deployment.loot_rewards_initialized?.sol_vault,
-      "loot_dbtc_vault": deployment.loot_rewards_initialized?.dbtc_vault,
-      "loot_dbtc_vault_authority": deployment.loot_rewards_initialized?.loot_dbtc_vault_authority,
+      // ========== EGG CONFIG ==========
+      "egg_config_pda": deployment.egg_config_initialized?.eggs_config_pda,
+      "egg_base_price": deployment.egg_config_initialized?.base_price,
+      "egg_curve_a": deployment.egg_config_initialized?.curve_a,
+      "egg_max_supply": deployment.egg_config_initialized?.max_supply,
       
-      // ========== LEVEL STATS ==========
-      "level_stats_pda": deployment.level_stats_initialized?.level_stats_pda,
+      // ========== TAX CONFIG ==========
+      "tax_config_pda": deployment.tax_config_initialized?.tax_config_pda,
+      "withdraw_withheld_authority": deployment.tax_config_initialized?.withdraw_withheld_authority,
+      "faction_treasury_vault": deployment.tax_config_initialized?.faction_treasury_vault,
+      "nft_floor_sweep_vault": deployment.tax_config_initialized?.nft_floor_sweep_vault,
+      "nft_sale_sol_vault": deployment.tax_config_initialized?.nft_sale_sol_vault,
+      "nft_floor_sweep_pct": deployment.tax_config_initialized?.nft_floor_sweep_pct,
+      "faction_treasury_pct": deployment.tax_config_initialized?.faction_treasury_pct,
+      
+      // ========== CRANKER BOTS ==========
+      "cranker_bots": deployment.cranker_bots_added?.bots || [],
       
       // ========== GAME CONFIGURATION ==========
       "base_creation_cost": config.moonbase?.base_creation_cost || 100000000,
       "loot_percentage": config.moonbase?.loot_percentage || 10,
       
-      // ========== MINING CONFIGURATION ==========
-      "initial_distribution_rate": config.mining?.doge_btc_per_slot || 1000000,
-      
-      // ========== PVP CONFIGURATION ==========
-      "pvp_ticket_tiers": config.pvp?.ticket_tiers || [
-        100000000,    // 0.1 SOL
-        1000000000,   // 1 SOL
-        10000000000,  // 10 SOL
-        100000000000, // 100 SOL
-        500000000000  // 500 SOL
-      ],
-      "pvp_min_hp_required": config.pvp?.min_hp_required || 1000,
-      "pvp_turn_timeout_seconds": config.pvp?.turn_timeout_seconds || 300,
-      "pvp_max_turns": config.pvp?.max_turns || 15,
+      // ========== TICKET TIER CONFIGURATION ==========
+      "ticket_tiers": deployment.ticket_tier_configs_initialized?.ticket_tiers?.map(tier => ({
+        tier_index: tier.tier_index,
+        ticket_value: tier.ticket_value,
+        ticket_count: tier.ticket_count
+      })) || config.eggs_config?.ticket_tiers || [],
       
       // ========== FACTION CONFIGURATION ==========
-      "supported_factions": config.factions?.map(f => f.name) || [
-        "United States", "China", "Russia", "Israel", "Iran", "Ukraine"
-      ],
+      "supported_factions": deployment.factions_added?.factions?.map(f => f.name) || config.factions?.map(f => f.name) || [],
+      "faction_states": deployment.factions_added?.factions?.map(f => ({
+        faction_id: f.faction_id,
+        name: f.name,
+        faction_state_pda: f.faction_state_pda
+      })) || [],
       
       // // ========== EXPANSION CONFIGURATION ==========
       // "expansions": config.expansions || [],
             
       // ========== AUTHORITIES ==========
-      "creation_fee_recipient": config.deployment?.creation_fee_recipient,
+      "fee_recipient": deployment.moonbase_program_initialized?.FEE_RECIPIENT_MULTISIG || config.deployment?.FEE_RECIPIENT_MULTISIG,
       "transfer_fee_config_authority": config.deployment?.transfer_fee_config_authority,
-                  
-            // ========== MOON ECONOMY (if deployed) ==========
-      ...(deployment.MOON_ECONOMY_PROGRAM_ID && {
-        "moon_economy_enabled": true,
-        "dogebtc_allocation": config.moonEconomy?.dogebtc_allocation || 33,
-        "liquidity_allocation": config.moonEconomy?.liquidity_allocation || 33,
-        "min_lockup_days": config.moonEconomy?.min_lockup_days || 1,
-        "max_lockup_days": config.moonEconomy?.max_lockup_days || 365,
-        "base_multiplier": config.moonEconomy?.base_multiplier || 100,
-        "max_multiplier": config.moonEconomy?.max_multiplier || 700,
-        "electricity_per_weighted_mdoge": config.moonEconomy?.electricity_per_weighted_mdoge || 100,
-        "electricity_per_weighted_lp_tokens": config.moonEconomy?.electricity_per_weighted_lp_tokens || 400,
-        
-        // ========== MOON ECONOMY PDAs ==========
-        "moonEconomy_globalConfig_pda": deployment.moonEconomy_program_initialized?.moonEconomy_globalConfig_data_ac,
-        "moonEconomy_devEarnings_pda": deployment.moonEconomy_program_initialized?.moonEconomy_devEarnings_data_ac,
-        "moonEconomy_feeCollector_pda": deployment.moonEconomy_program_initialized?.moonEconomy_feeCollector_data_ac,
-        
-        // ========== MOON ECONOMY DOGE_BTC VAULTS ==========
-        "moonEconomy_dbtc_vault": deployment.moonEconomy_mDogeVault_initialized?.dogebtcVault,
-        "moonEconomy_dbtc_sol_vault": deployment.moonEconomy_mDogeVault_initialized?.dbtcSolVault,
-        "moonEconomy_dbtc_custodian": deployment.moonEconomy_mDogeVault_initialized?.dbtcCustodian,
-        "moonEconomy_dbtc_custodian_authority": deployment.moonEconomy_mDogeVault_initialized?.dbtcCustodianAuthority,
-        
-        // ========== MOON ECONOMY LIQUIDITY VAULTS ==========
-        "moonEconomy_liquidity_vault": deployment.moonEconomy_liquidityVault_initialized?.liquidityVault,
-        "moonEconomy_liquidity_sol_vault": deployment.moonEconomy_liquidityVault_initialized?.liquiditySolVault,
-        "moonEconomy_liquidity_custodian": deployment.moonEconomy_liquidityVault_initialized?.liquidityCustodian,
-        "moonEconomy_liquidity_custodian_authority": deployment.moonEconomy_liquidityVault_initialized?.liquidityCustodianAuthority
-      }),
-      
-      // ========== UI CONFIGURATION ==========
-      "max_modules_per_base": 50,
-      "grid_width": 20,
-      "grid_height": 15,
-      "max_upgrade_level": 10,
-      
-      // // ========== FEATURE FLAGS ==========
-      // "features": {
-      //   "pvp_enabled": config.moonbase?.is_game_active !== false,
-      //   "loot_rewards_enabled": true,
-      //   "referral_system_enabled": true,
-      //   "level_system_enabled": true,
-      //   "expansion_system_enabled": true,
-      //   "moon_economy_enabled": !!deployment.MOON_ECONOMY_PROGRAM_ID
-      // }
+                   
     }
   };
   
@@ -239,8 +217,10 @@ function main() {
     console.log(`  🔗 Moon Economy Program: ${websiteConfig[cluster].MOON_ECONOMY_PROGRAM_ID || 'Not deployed'}`);
     console.log(`  🪙 DOGE_BTC Token: ${websiteConfig[cluster].dbtc_mintAddress}`);
     console.log(`  🏊 Raydium Pool: ${websiteConfig[cluster].raydium_pool_state}`);
-    console.log(`  💰 Loot Rewards: ${websiteConfig[cluster].loot_rewards_pda}`);
-    console.log(`  ⚔️  PvP Matchmaker: ${websiteConfig[cluster].pvp_matchmaker_pda}`);
+    console.log(`  🎮 Global Game State: ${websiteConfig[cluster].global_game_state_pda || 'Not initialized'}`);
+    console.log(`  🥚 Dragon Egg Collection: ${websiteConfig[cluster].dragon_egg_collection || 'Not created'}`);
+    console.log(`  💰 Buybacks Account: ${websiteConfig[cluster].buybacks_account_pda || 'Not initialized'}`);
+    console.log(`  🤖 Cranker Bots: ${websiteConfig[cluster].cranker_bots?.length || 0} bot(s)`);
     
     console.log(`\n🔗 Next Steps:`);
     console.log(`  1. Update your frontend to use the addresses from deployments/website.json`);

@@ -19,3 +19,5 @@ p_tweets/*
 raydium/target/*
 
 setup_scripts/node_modules/*
+.env
+game_keypair.json

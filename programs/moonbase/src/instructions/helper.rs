@@ -1,10 +1,12 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{self, transfer, Transfer};
-
-use crate::errors::ErrorCode;
-use crate::events::*;
+use anchor_lang::system_program::{transfer, Transfer};
+use anchor_spl::token_2022::{self, Burn};
 use crate::state::*;
+use crate::errors::ErrorCode;
 
+// WSOL mint address (Wrapped SOL)
+pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
+ 
 // -----------------------------------------------------
 // ------------ REFERRAL SYSTEM HELPERS ----------------
 // -----------------------------------------------------
@@ -28,1858 +30,397 @@ pub fn transfer_to_sol_treasury<'info>(
     )
 }
 
-/// Helper function to process referral payments
-///
-/// Takes a cost amount, calculates referral fee (if applicable),
-/// transfers SOL to referrer's rewards account, refunds discount to user,
-/// transfers remaining to treasury, increments referral count,
-/// and returns the referral fee, discount, and treasury amount
-pub fn process_referral_payment<'info>(
-    cost: u64,
-    referrer: &Pubkey,
-    user_key: &Pubkey,
-    user_account_info: &AccountInfo<'info>,
-    referrer_rewards: Option<&AccountInfo<'info>>,
-    global_config: &mut GlobalConfig,
-    sol_treasury: &AccountInfo<'info>,
+// Helper function to transfer SOL to the program's eggs_treasury PDA
+pub fn transfer_to_eggs_treasury<'info>(
+    from: &AccountInfo<'info>,
+    eggs_treasury: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
-    treasury_bump: u8,
-) -> Result<(u64, u64, u64)> {
-    let mut referral_fee = 0;
-    let mut discount = 0;
-    let mut treasury_amount = cost;
-
-    // Check if we have a referral that's not the default (system program)
-    if referrer != &system_program::ID {
-        // Calculate referral fee (15% of cost)
-        referral_fee = cost
-            .checked_mul(REFERRAL_FEE)
-            .unwrap()
-            .checked_div(100)
-            .unwrap();
-        
-        // Calculate discount (5% of cost) - refunded to user
-        discount = cost
-            .checked_mul(REFERRAL_DISCOUNT)
-            .unwrap()
-            .checked_div(100)
-            .unwrap();
-        
-        // Treasury gets: cost - referral_fee (we'll refund discount separately)
-        treasury_amount = cost.checked_sub(referral_fee + discount).unwrap();
-
-        // If referrer rewards account is provided, update and transfer
-        if let Some(rewards_account_info) = referrer_rewards {
-            // Access the data to update the total_sol_earned
-            let mut rewards_data = rewards_account_info.try_borrow_mut_data()?;
-            let mut rewards = ReferralRewards::try_deserialize(&mut rewards_data.as_ref())?;
-
-            // Update the referrer's earned amount
-            rewards.total_sol_earned = rewards.total_sol_earned.checked_add(referral_fee).unwrap();
-
-            // Serialize back to the account
-            rewards.try_serialize(&mut *rewards_data)?;
-
-            // Increment total referral sol paid
-            global_config.total_referral_sol_paid = global_config
-                .total_referral_sol_paid
-                .checked_add(referral_fee)
-                .unwrap();
-
-            // Transfer SOL to the referrer's PDA account
-            transfer(
-                CpiContext::new(
-                    system_program.to_account_info(),
-                    Transfer {
-                        from: user_account_info.to_account_info(),
-                        to: rewards_account_info.to_account_info(),
-                    },
-                ),
-                referral_fee,
-            )?;
-
-            // Emit event for the referral
-            emit!(ReferralRewardsAdded {
-                referrer: *referrer,
-                referred_user: *user_key,
-                referral_rewards_account: rewards_account_info.key(),
-                amount: referral_fee
-            });
-
-            msg!(
-                "Transferred {} lamports to referrer's rewards account",
-                referral_fee
-            );
-        } else {
-            // No referrer rewards account found, all goes to treasury (no discount)
-            treasury_amount = cost;
-            referral_fee = 0;
-            discount = 0;
-            msg!("Referrer rewards account not found, all fees go to treasury");
-        }
-    }
-
-    // Transfer the remaining amount to treasury
-    transfer_to_sol_treasury(
-        user_account_info,
-        sol_treasury,
-        system_program,
-        treasury_amount,
-    )?;
- 
-    global_config.total_sol_spent = global_config
-        .total_sol_spent
-        .checked_add(treasury_amount)
-        .unwrap_or(global_config.total_sol_spent);
-
-    // Return final treasury amount (after refund)
-    Ok((referral_fee, discount, treasury_amount))
-}
-
-// -----------------------------------------------------
-// ------------ REFERRAL SYSTEM HELPERS ----------------
-// -----------------------------------------------------
-
-// ========== MOONBASE EXPANSION SYSTEM HELPERS ========== //
-
-/// Check if a user can purchase a specific expansion
-pub fn can_purchase_expansion(
-    user_moonbase: &UserMoonBaseInstance,
-    expansion: &ExpansionConfig,
-) -> Result<bool> {
-    // Check level requirement
-    if user_moonbase.level < expansion.required_level {
-        return Ok(false);
-    }
-
-    // Check if already purchased
-    if user_moonbase.purchased_expansions.contains(&expansion.id) {
-        return Ok(false);
-    }
-
-    // Check if expansion is active
-    if !expansion.is_active {
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
-// --------------------------------------- //
-// ========== DAILY LOGIN SYSTEM =========== //
-// --------------------------------------- //
-
-/// Process daily login and award XP if eligible
-/// Returns (xp_gained, new_streak) if login reward was given, or (0, current_streak) if not
-pub fn process_daily_login(user: &mut UserMoonBaseInstance) -> Result<(u32, u16)> {
-    let current_timestamp = Clock::get()?.unix_timestamp;
-    let one_day_seconds = 24 * 60 * 60; // 86400 seconds
-
-    // Check if it's been at least 24 hours since last login
-    let time_since_last_login = current_timestamp - user.last_login_ts;
-
-    // withing 24 hours, no login reward
-    if (time_since_last_login < one_day_seconds) {
-        return Ok((0, user.daily_login_streak));
-    }
-
-    // Check if the streak should continue (within 48 hours) or reset
-    if time_since_last_login >= one_day_seconds && time_since_last_login < 2 * one_day_seconds {
-        user.daily_login_streak = user.daily_login_streak.saturating_add(1);
-    } else {
-        user.daily_login_streak = 1;
-    }
-
-    // Update last login timestamp
-    user.last_login_ts = current_timestamp;
-
-    // 🔥🔥🔥 DEGEN STREAK XP CALCULATION 🔥🔥🔥
-    let base_xp = XP_DAILY_LOGIN; // 10 XP base
-    let streak = user.daily_login_streak;
-
-    let xp_gained = match streak {
-        1..=7 => base_xp + (streak as u32), // Day 7 = 17 XP :: Week 1: Build the habit (10-20 XP)
-        8..=14 => base_xp + 10 + (streak as u32), // Day 14 = 34 XP :: Week 2: Getting serious (21-35 XP)
-        15..=30 => base_xp + 20 + (streak as u32), // Day 30 = 60 XP :: Week 3-4: Degen territory (36-60 XP)
-        31..=60 => base_xp + 40 + ((streak - 20) as u32), // Day 60 = 90 XP :: Month 2: Diamond hands (61-80 XP)
-        _ => {
-            let capped_streak = std::cmp::min(streak, 90); // Cap at day 90 scaling
-            base_xp + 50 + ((capped_streak - 30) as u32) // Day 90+ = 100 XP max
-        }
-    };
-
-    // 🎰 MILESTONE STREAK BONUSES (REASONABLE BUT EXCITING) 🎰
-    let milestone_bonus = match streak {
-        7 => 50,      // Week milestone: +50 XP bonus
-        14 => 75,     // 2 weeks: +75 XP bonus
-        30 => 100,    // Month: +100 XP bonus
-        50 => 125,    // 50 days: +125 XP bonus
-        69 => 150,    // Nice: +150 XP bonus 😏
-        100 => 200,   // 100 days: +200 XP bonus
-        150 => 250,   // 150 days: +250 XP bonus
-        200 => 300,   // 200 days: +300 XP bonus
-        365 => 500,   // 1 YEAR: +500 XP MEGA BONUS!
-        500 => 750,   // 500 days: +750 XP bonus
-        1000 => 1000, // 1000 days: +1000 XP LEGENDARY BONUS!
-        _ => 0,
-    };
-
-    let total_xp = xp_gained + milestone_bonus;
-    user.xp = user.xp.saturating_add(total_xp);
-
-    // 🎉 Enhanced logging for degen streaks
-    msg!(
-        "🗓️ Daily login: Day {} streak = {} XP (Building momentum...)",
-        streak,
-        total_xp
-    );
-
-    // Emit events
-    emit!(DailyLoginReward {
-        owner: user.owner,
-        streak: user.daily_login_streak,
-        xp_gained: total_xp,
-    });
-
-    Ok((total_xp, user.daily_login_streak))
-}
-
-/// Calculate mining XP based on DOGE_BTC tokens mined
-/// Awards 15 XP per 1000 DOGE_BTC mined
-pub fn calculate_mining_xp(tokens_mined: u64) -> u32 {
-    ((tokens_mined * XP_MINING_1000_MDOGE as u64) / (1_000_000 * 1000)) as u32
-}
-
-// --------------------------------------- //
-// ========== DOGE BTC MINING SYSTEM =========== //
-// --------------------------------------- //
-
-/// Transfer claimed DogeBtc tokens to the user (with optional loot rewards)
-pub fn claim_dogebtc_tokens<'info>(
-    user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut DogeBtcMining,
-    token_program: &AccountInfo<'info>,
-    token_vault: &AccountInfo<'info>,
-    token_mint: &AccountInfo<'info>,
-    user_token_account: &AccountInfo<'info>,
-    vault_authority: &AccountInfo<'info>,
-    vault_authority_seeds: &[&[u8]],
-    loot_dbtc_vault: Option<&AccountInfo<'info>>,
-    loot_rewards: Option<&mut LootRewards>,
-) -> Result<u64> {
-    mine_dbtc_for_user(user_moonbase, doge_btc_mining)?;
-    let claimable_amount = user_moonbase.claimable_dbtc;
-
-    // If there's nothing to claim, return early
-    if claimable_amount == 0 {
-        msg!("No tokens to claim");
-        return Ok(0);
-    }
-
-    // Reset claimable amount since we're claiming it now
-    user_moonbase.claimable_dbtc = 0;
-
-    // Calculate loot rewards (10% of claimable amount)
-    let loot_amount = claimable_amount
-        .checked_mul(LOOT_REWARDS_PERCENTAGE)
-        .unwrap()
-        .checked_div(100)
-        .unwrap();
-    let user_amount = claimable_amount.checked_sub(loot_amount).unwrap();
-
-    // Transfer tokens from vault to user (90% of claimable amount)
-    let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
-        &anchor_spl::token_2022::spl_token_2022::ID, // program_id
-        &token_vault.key(),                          // source (vault)
-        &token_mint.key(),                           // mint
-        &user_token_account.key(),                   // destination
-        &vault_authority.key(),                      // authority
-        &[],                                         // signer_pubkeys (vault PDA is a signer later)
-        user_amount,                                 // amount (90% of total)
-        DBTC_DECIMALS,                               // decimals
-    )?;
-    anchor_lang::solana_program::program::invoke_signed(
-        &ix,
-        &[
-            token_program.clone(),
-            token_vault.clone(),
-            token_mint.clone(),
-            user_token_account.clone(),
-            vault_authority.clone(),
-        ],
-        &[vault_authority_seeds],
-    )?;
-
-    // Transfer loot rewards to loot vault (10% of claimable amount)
-    if loot_amount > 0 && loot_dbtc_vault.is_some() {
-        transfer_to_loot_dbtc_vault(
-            token_program,
-            token_vault,
-            loot_dbtc_vault.unwrap(),
-            vault_authority,
-            token_mint,
-            vault_authority_seeds,
-            loot_amount,
-        )?;
-
-        // Update loot rewards tracking
-        if let Some(loot_rewards_account) = loot_rewards {
-            update_loot_rewards_accumulation(loot_rewards_account, claimable_amount, 0)?;
-        }
-    }
-
-    // Log the claim
-    msg!("Claimed {} DogeBtc tokens", user_amount);
-
-    // Return the amount claimed
-    Ok(user_amount)
-}
-
-/// Process the mining for a specific user
-/// This function should be called whenever a user's hashpower changes
-pub fn mine_dbtc_for_user(
-    user_moonbase: &mut UserMoonBaseInstance,
-    doge_btc_mining: &mut DogeBtcMining,
-) -> Result<()> {
-    // First update the global mining state to ensure it's current
-    update_global_mining_index(doge_btc_mining)?;
-
-    // If there's no global hashpower, nothing to distribute
-    if doge_btc_mining.total_active_hashpower == 0 || user_moonbase.active_hashpower == 0 {
-        return Ok(());
-    }
-
-    let index_diff = doge_btc_mining
-        .dbtc_tokens_minted_per_hashpower
-        .saturating_sub(user_moonbase.dbtc_claim_index);
-
-    // Use u128 to prevent overflow: (index_diff * hashpower) / INDEX_PRECISION
-    let claimable_amount = ((index_diff as u128)
-        .saturating_mul(user_moonbase.active_hashpower as u128)
-        .saturating_div(INDEX_PRECISION as u128)) as u64;
-
-    user_moonbase.dbtc_claim_index = doge_btc_mining.dbtc_tokens_minted_per_hashpower;
-    user_moonbase.claimable_dbtc = user_moonbase.claimable_dbtc + claimable_amount;
-
-    // Log the mining activity
-    msg!(
-        "User mining processed: {} tokens earned with hashpower {}",
-        claimable_amount,
-        user_moonbase.active_hashpower
-    );
-
-    Ok(())
-}
-
-/// Update the mining state and distribute DogeBtc tokens
-/// This function should be called whenever global hashpower changes
-pub fn update_global_mining_index(doge_btc_mining: &mut DogeBtcMining) -> Result<()> {
-    // Get the current slot
-    let current_slot = Clock::get()?.slot;
-
-    // If mining hasn't started yet, just update the last slot
-    if doge_btc_mining.mining_start_timestamp == 0 || current_slot <= doge_btc_mining.last_slot {
-        doge_btc_mining.last_slot = current_slot;
-        return Ok(());
-    }
-
-    // Early return if no active hashpower (prevents division by zero)
-    if doge_btc_mining.total_active_hashpower == 0 {
-        doge_btc_mining.last_slot = current_slot;
-        return Ok(());
-    }
-
-    // Calculate new tokens mined in this period
-    let slots_passed = current_slot - doge_btc_mining.last_slot;
-    let current_reward_rate = calculate_current_reward_rate(doge_btc_mining);
-    let new_tokens_mined = slots_passed.checked_mul(current_reward_rate).unwrap_or(0);
-
-    // Use u128 to prevent overflow: (new_tokens_mined * INDEX_PRECISION) / total_active_hashpower
-    let index_increment = ((new_tokens_mined as u128)
-        .saturating_mul(INDEX_PRECISION as u128)
-        .saturating_div(doge_btc_mining.total_active_hashpower as u128));
-
-    doge_btc_mining.dbtc_tokens_minted_per_hashpower = doge_btc_mining
-        .dbtc_tokens_minted_per_hashpower
-        .saturating_add(index_increment);
-
-    msg!("Slots passed: {}", slots_passed);
-    msg!("Current reward rate: {}", current_reward_rate);
-    msg!("New tokens mined: {}", new_tokens_mined);
-    msg!("Index increment: {}", index_increment);
-    msg!(
-        "Total tokens minted per hashpower: {}",
-        doge_btc_mining.dbtc_tokens_minted_per_hashpower
-    );
-
-    // Update total tokens mined
-    doge_btc_mining.total_tokens_mined = doge_btc_mining
-        .total_tokens_mined
-        .saturating_add(new_tokens_mined);
-    doge_btc_mining.last_slot = current_slot;
-
-    msg!(
-        "Mining state updated: {} new tokens mined, total: {}",
-        new_tokens_mined,
-        doge_btc_mining.total_tokens_mined
-    );
-
-    Ok(())
-}
-
-/// Calculate the current reward rate based on dynamic distribution
-fn calculate_current_reward_rate(doge_btc_mining: &DogeBtcMining) -> u64 {
-    if doge_btc_mining.current_dist_rate > 0 {
-        doge_btc_mining.current_dist_rate
-    } else {
-        doge_btc_mining.doge_btc_per_slot
-    }
-}
-
-// ========== XP AND LEVEL SYSTEM HELPERS ========== //
-
-/// Integer square root implementation for u64
-/// Uses binary search to find the largest integer whose square is <= n
-pub fn integer_sqrt(n: u64) -> u32 {
-    if n == 0 {
-        return 0;
-    }
-
-    let mut left = 1u32;
-    let mut right = if n > u32::MAX as u64 {
-        u32::MAX
-    } else {
-        n as u32
-    };
-    let mut result = 0u32;
-
-    while left <= right {
-        let mid = left + (right - left) / 2;
-        let mid_squared = (mid as u64) * (mid as u64);
-
-        if mid_squared == n {
-            return mid;
-        } else if mid_squared < n {
-            result = mid;
-            left = mid + 1;
-        } else {
-            if mid == 0 {
-                break;
-            }
-            right = mid - 1;
-        }
-    }
-
-    result
-}
-
-/// Initialize default moonbase dimensions for a new user
-pub fn initialize_moonbase_dimensions(user_moonbase: &mut UserMoonBaseInstance) -> Result<()> {
-    user_moonbase.current_width = DEFAULT_MOONBASE_WIDTH;
-    user_moonbase.current_height = DEFAULT_MOONBASE_HEIGHT;
-    user_moonbase.purchased_expansions = Vec::new();
-
-    msg!(
-        "🏗️ Initialized moonbase dimensions: {}x{} ({} tiles)",
-        DEFAULT_MOONBASE_WIDTH,
-        DEFAULT_MOONBASE_HEIGHT,
-        (DEFAULT_MOONBASE_WIDTH as u32) * (DEFAULT_MOONBASE_HEIGHT as u32)
-    );
-
-    Ok(())
-}
-
-// --------------------------------------- //
-// ========== ENHANCED XP & LEVEL UP SYSTEM =========== //
-// --------------------------------------- //
-
-/// Calculate required XP for a specific level using exponential curve: 120 × (1.35^level)
-/// Rounds to nearest 10 for clean numbers
-pub fn required_xp_new(level: u8) -> u64 {
-    msg!("📊 Calculating required XP for level {}:", level);
-
-    let mut num: u64 = 1;
-    let mut den: u64 = 1;
-
-    // Calculate exponential growth
-    for i in 0..level {
-        num = num.saturating_mul(XP_CURVE_NUM);
-        den = den.saturating_mul(XP_CURVE_DEN);
-        msg!(
-            "   Step {}: {} / {} = {}",
-            i + 1,
-            num,
-            den,
-            (num as f64 / den as f64) * XP_BASE as f64
-        );
-    }
-
-    // Calculate final XP requirement
-    let raw_xp = ((XP_BASE * num) / den + 5) / 10 * 10; // round to nearest 10
-
-    msg!("   Base XP: {}", XP_BASE);
-    msg!(
-        "   Final calculation: ({} * {}) / {} = {} (rounded to nearest 10)",
-        XP_BASE,
-        num,
-        den,
-        raw_xp
-    );
-
-    raw_xp
-}
-
-/// Add XP to user moonbase without level progression (XP accumulation only)
-/// Level-ups should be handled separately with loot transfers via process_auto_daily_login_and_activity_xp
-pub fn add_xp_simple(
-    user_moonbase: &mut UserMoonBaseInstance,
-    xp_amount: u32,
-    source: &str,
-) -> Result<()> {
-    if xp_amount == 0 {
-        return Ok(());
-    }
-
-    msg!("🌟 Adding {} XP from: {}", xp_amount, source);
-
-    let old_xp = user_moonbase.xp;
-
-    // Add XP (convert to u64 for calculation to prevent overflow, then back to u32)
-    let new_xp = (user_moonbase.xp as u64).saturating_add(xp_amount as u64);
-    user_moonbase.xp = new_xp.min(u32::MAX as u64) as u32;
-
-    // Check if user has enough XP for level-ups (but don't actually level up)
-    let current_required = required_xp_new(user_moonbase.level);
-    if (user_moonbase.xp as u64) >= current_required {
-        msg!(
-            "💡 User has accumulated enough XP for level-up! Current: {} XP, Required: {} XP",
-            user_moonbase.xp,
-            current_required
-        );
-        msg!("   Use claim_level_up_rewards() or similar function to claim level-up with loot transfers");
-    } else {
-        let remaining = current_required.saturating_sub(user_moonbase.xp as u64);
-        msg!(
-            "📈 XP progress: {} -> {} (Level {} - need {} more for next level)",
-            old_xp,
-            user_moonbase.xp,
-            user_moonbase.level,
-            remaining
-        );
-    }
-
-    Ok(())
-}
-
-// ========== LOOT REWARDS SYSTEM HELPERS ========== //
-
-/// Transfer DOGE_BTC tokens to loot rewards vault (10% of distributions)
-pub fn transfer_to_loot_dbtc_vault<'info>(
-    token_program: &AccountInfo<'info>,
-    from_vault: &AccountInfo<'info>,
-    to_vault: &AccountInfo<'info>,
-    vault_authority: &AccountInfo<'info>,
-    token_mint: &AccountInfo<'info>,
-    vault_authority_seeds: &[&[u8]],
-    loot_amount: u64,
-) -> Result<()> {
-    if loot_amount > 0 {
-        // Transfer DOGE_BTC tokens using Token-2022 instruction directly
-        let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
-            &anchor_spl::token_2022::spl_token_2022::ID,
-            &from_vault.key(),
-            &token_mint.key(),
-            &to_vault.key(),
-            &vault_authority.key(),
-            &[],
-            loot_amount,
-            DBTC_DECIMALS, // decimals
-        )?;
-
-        anchor_lang::solana_program::program::invoke_signed(
-            &ix,
-            &[
-                token_program.clone(),
-                from_vault.clone(),
-                to_vault.clone(),
-                vault_authority.clone(),
-                token_mint.clone(),
-            ],
-            &[vault_authority_seeds],
-        )?;
-
-        msg!(
-            "🎁 Transferred {} DOGE_BTC tokens to loot vault",
-            loot_amount
-        );
-    }
-
-    Ok(())
-}
-
-/// Update loot rewards accumulation tracking
-pub fn update_loot_rewards_accumulation(
-    loot_rewards: &mut LootRewards,
-    dbtc_amount: u64,
-    sol_amount: u64,
-) -> Result<()> {
-    let dbtc_loot = dbtc_amount
-        .checked_mul(LOOT_REWARDS_PERCENTAGE)
-        .unwrap()
-        .checked_div(100)
-        .unwrap();
-    let sol_loot = sol_amount
-        .checked_mul(LOOT_REWARDS_PERCENTAGE)
-        .unwrap()
-        .checked_div(100)
-        .unwrap();
-
-    loot_rewards.total_dbtc_accumulated = loot_rewards
-        .total_dbtc_accumulated
-        .checked_add(dbtc_loot)
-        .unwrap();
-    loot_rewards.total_sol_accumulated = loot_rewards
-        .total_sol_accumulated
-        .checked_add(sol_loot)
-        .unwrap();
-
-    emit!(LootRewardsAccumulated {
-        dbtc_amount: dbtc_loot,
-        sol_amount: sol_loot,
-        total_dbtc_accumulated: loot_rewards.total_dbtc_accumulated,
-        total_sol_accumulated: loot_rewards.total_sol_accumulated,
-    });
-
-    msg!(
-        "🎁 Loot rewards accumulated: {} DOGE_BTC, {} SOL",
-        dbtc_loot,
-        sol_loot
-    );
-
-    Ok(())
-}
-
-/// Initialize runtime state for a new module instance based on its type
-pub fn initialize_module_runtime_state(
-    module_type: &ModuleType,
-    stats: &ModuleStats,
-) -> ModuleRuntimeState {
-    match (module_type, stats) {
-        (ModuleType::Mining, ModuleStats::Mining(mining_stats)) => ModuleRuntimeState::Mining {
-            current_hp: mining_stats.max_hp,
-            total_mined: 0,
-        },
-        (ModuleType::Attraction, ModuleStats::Attraction(attraction_stats)) => {
-            ModuleRuntimeState::Attraction {
-                current_hp: attraction_stats.max_hp,
-                total_xp_generated: 0,
-                last_xp_claim: Clock::get().unwrap().unix_timestamp,
-            }
-        }
-        _ => {
-            // Fallback for mismatched types (shouldn't happen with proper validation)
-            ModuleRuntimeState::Mining {
-                current_hp: 100, // Default HP value
-                total_mined: 0,
-            }
-        }
-    }
-}
-
-// ========== GRID PLACEMENT SYSTEM HELPERS ========== //
-
-/// Check if a module can be placed at the given coordinates
-pub fn can_place_module(
-    user_moonbase: &UserMoonBaseInstance,
-    x: u8,
-    y: u8,
-    width: u8,
-    height: u8,
-) -> Result<bool> {
-    // 1. Bounds check
-    if x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? > GRID_WIDTH {
-        return Ok(false);
-    }
-    if y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? > GRID_HEIGHT {
-        return Ok(false);
-    }
-
-    // 2. Overlap check
-    for dy in 0..height {
-        for dx in 0..width {
-            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
-            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            if is_tile_occupied(user_moonbase, tile_x, tile_y)? {
-                return Ok(false);
-            }
-        }
-    }
-
-    Ok(true)
-}
-
-/// Check if a module placement is within the user's current moonbase boundaries
-pub fn can_place_module_in_moonbase(
-    user_moonbase: &UserMoonBaseInstance,
-    x: u8,
-    y: u8,
-    width: u8,
-    height: u8,
-) -> Result<bool> {
-    // 1. Check if within current moonbase bounds (not full grid)
-    if x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_width {
-        return Ok(false);
-    }
-    if y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? > user_moonbase.current_height {
-        return Ok(false);
-    }
-
-    // 2. Check overlap with existing modules
-    for dy in 0..height {
-        for dx in 0..width {
-            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
-            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            if is_tile_occupied(user_moonbase, tile_x, tile_y)? {
-                return Ok(false);
-            }
-        }
-    }
-
-    Ok(true)
-}
-
-/// Check if a specific tile is occupied
-pub fn is_tile_occupied(user_moonbase: &UserMoonBaseInstance, x: u8, y: u8) -> Result<bool> {
-    if x >= GRID_WIDTH || y >= GRID_HEIGHT {
-        return Err(ErrorCode::InvalidTileIndex.into());
-    }
-
-    let idx = (y as usize) * (GRID_WIDTH as usize) + (x as usize);
-    let byte_idx = idx / 8;
-    let bit_idx = idx % 8;
-
-    if byte_idx >= BITMAP_SIZE {
-        return Err(ErrorCode::InvalidTileIndex.into());
-    }
-
-    let is_occupied = (user_moonbase.occupied_bitmap[byte_idx] & (1 << bit_idx)) != 0;
-    Ok(is_occupied)
-}
-
-/// Mark tiles as occupied for a module
-pub fn mark_tiles_occupied(
-    user_moonbase: &mut UserMoonBaseInstance,
-    x: u8,
-    y: u8,
-    width: u8,
-    height: u8,
-) -> Result<()> {
-    // Bounds check
-    require!(
-        x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_WIDTH,
-        ErrorCode::InvalidTileIndex
-    );
-    require!(
-        y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_HEIGHT,
-        ErrorCode::InvalidTileIndex
-    );
-
-    // Mark all tiles as occupied
-    for dy in 0..height {
-        for dx in 0..width {
-            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
-            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            let idx = (tile_y as usize) * (GRID_WIDTH as usize) + (tile_x as usize);
-            let byte_idx = idx / 8;
-            let bit_idx = idx % 8;
-
-            if byte_idx >= BITMAP_SIZE {
-                return Err(ErrorCode::InvalidTileIndex.into());
-            }
-
-            user_moonbase.occupied_bitmap[byte_idx] |= 1 << bit_idx;
-        }
-    }
-
-    msg!(
-        "🏗️ Marked tiles occupied: ({}, {}) to ({}, {})",
-        x,
-        y,
-        x + width - 1,
-        y + height - 1
-    );
-
-    Ok(())
-}
-
-/// Clear tiles (mark as unoccupied) for a module
-pub fn clear_tiles(
-    user_moonbase: &mut UserMoonBaseInstance,
-    x: u8,
-    y: u8,
-    width: u8,
-    height: u8,
-) -> Result<()> {
-    // Bounds check
-    require!(
-        x.checked_add(width).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_WIDTH,
-        ErrorCode::InvalidTileIndex
-    );
-    require!(
-        y.checked_add(height).ok_or(ErrorCode::ArithmeticOverflow)? <= GRID_HEIGHT,
-        ErrorCode::InvalidTileIndex
-    );
-
-    // Clear all tiles
-    for dy in 0..height {
-        for dx in 0..width {
-            let tile_x = x.checked_add(dx).ok_or(ErrorCode::ArithmeticOverflow)?;
-            let tile_y = y.checked_add(dy).ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            let idx = (tile_y as usize) * (GRID_WIDTH as usize) + (tile_x as usize);
-            let byte_idx = idx / 8;
-            let bit_idx = idx % 8;
-
-            if byte_idx >= BITMAP_SIZE {
-                return Err(ErrorCode::InvalidTileIndex.into());
-            }
-
-            user_moonbase.occupied_bitmap[byte_idx] &= !(1 << bit_idx);
-        }
-    }
-
-    msg!(
-        "🧹 Cleared tiles: ({}, {}) to ({}, {})",
-        x,
-        y,
-        x + width - 1,
-        y + height - 1
-    );
-
-    Ok(())
-}
-
-/// Place a module at the given coordinates
-pub fn place_module(
-    user_moonbase: &mut UserMoonBaseInstance,
-    module_instance: &mut ModuleInstance,
-    x: u8,
-    y: u8,
-    width: u8,
-    height: u8,
-) -> Result<()> {
-    // 1. Check if placement is valid
-    require!(
-        can_place_module(user_moonbase, x, y, width, height)?,
-        ErrorCode::TileAlreadyOccupied
-    );
-
-    // 2. Mark tiles as occupied
-    mark_tiles_occupied(user_moonbase, x, y, width, height)?;
-
-    // 3. Save coordinates on the module instance
-    module_instance.pos_x = x;
-    module_instance.pos_y = y;
-    module_instance.width = width;
-    module_instance.height = height;
-
-    msg!(
-        "📍 Module placed at ({}, {}) with size {}x{}",
-        x,
-        y,
-        width,
-        height
-    );
-
-    Ok(())
-}
-
-/// Move a module to new coordinates
-pub fn move_module(
-    user_moonbase: &mut UserMoonBaseInstance,
-    module_instance: &mut ModuleInstance,
-    new_x: u8,
-    new_y: u8,
-) -> Result<()> {
-    // 1. Clear current tiles
-    clear_tiles(
-        user_moonbase,
-        module_instance.pos_x,
-        module_instance.pos_y,
-        module_instance.width,
-        module_instance.height,
-    )?;
-
-    // 2. Check if new placement is valid
-    require!(
-        can_place_module(
-            user_moonbase,
-            new_x,
-            new_y,
-            module_instance.width,
-            module_instance.height
-        )?,
-        ErrorCode::TileAlreadyOccupied
-    );
-
-    // 3. Mark new tiles as occupied
-    mark_tiles_occupied(
-        user_moonbase,
-        new_x,
-        new_y,
-        module_instance.width,
-        module_instance.height,
-    )?;
-
-    // 4. Update coordinates
-    let old_x = module_instance.pos_x;
-    let old_y = module_instance.pos_y;
-    module_instance.pos_x = new_x;
-    module_instance.pos_y = new_y;
-    module_instance.last_updated = Clock::get()?.unix_timestamp;
-
-    msg!(
-        "🚚 Module moved from ({}, {}) to ({}, {})",
-        old_x,
-        old_y,
-        new_x,
-        new_y
-    );
-
-    Ok(())
-}
-
-/// Remove a module and clear its tiles
-pub fn remove_module(
-    user_moonbase: &mut UserMoonBaseInstance,
-    module_instance: &ModuleInstance,
-) -> Result<()> {
-    // Clear the tiles occupied by this module
-    clear_tiles(
-        user_moonbase,
-        module_instance.pos_x,
-        module_instance.pos_y,
-        module_instance.width,
-        module_instance.height,
-    )?;
-
-    msg!(
-        "🗑️ Module removed from ({}, {}) with size {}x{}",
-        module_instance.pos_x,
-        module_instance.pos_y,
-        module_instance.width,
-        module_instance.height
-    );
-
-    Ok(())
-}
-
-/// Get the total number of occupied tiles
-pub fn get_occupied_tile_count(user_moonbase: &UserMoonBaseInstance) -> u32 {
-    let mut count = 0;
-    for byte in &user_moonbase.occupied_bitmap {
-        count += byte.count_ones();
-    }
-    count
-}
-
-/// Get available tiles count
-pub fn get_available_tile_count(user_moonbase: &UserMoonBaseInstance) -> u32 {
-    TOTAL_TILES as u32 - get_occupied_tile_count(user_moonbase)
-}
-
-/// Calculate XP based on SOL spent using sqrt scaling for diminishing returns
-/// Formula: sqrt(lamports) * 500 / 1_000_000_000 (where 1 SOL = 500 XP base)
-/// This gives reasonable XP rewards that scale with investment but with diminishing returns
-pub fn calculate_sol_based_xp(lamports: u64) -> u32 {
-    if lamports == 0 {
-        return 0;
-    }
-
-    // Use sqrt scaling for diminishing returns
-    let sqrt_lamports = integer_sqrt(lamports);
-
-    // Calculate XP: 500 XP per SOL (sqrt'ed)
-    // sqrt_lamports is in sqrt(lamports), so we scale by 500 and divide by sqrt(1e9)
-    let xp = sqrt_lamports * 500 / integer_sqrt(1_000_000_000);
-
-    // Ensure we give at least 1 XP for any non-zero SOL spent
-    xp.max(1)
-}
-
-/// Get the current moonbase dimensions
-pub fn get_current_moonbase_dimensions(user_moonbase: &UserMoonBaseInstance) -> (u8, u8) {
-    (user_moonbase.current_width, user_moonbase.current_height)
-}
-
-/// Get the current usable tile count for a user's moonbase
-pub fn get_current_usable_tiles(user_moonbase: &UserMoonBaseInstance) -> u32 {
-    (user_moonbase.current_width as u32) * (user_moonbase.current_height as u32)
-}
-
-/// Enhanced XP function with actual loot transfers - for use in instruction handlers
-pub fn add_xp_with_loot_transfers<'info>(
-    user: &mut UserMoonBaseInstance,
-    xp_amount: u32,
-    xp_source: &str,
-    loot_rewards: &mut LootRewards,
-    level_stats: &mut LevelStats,
-    doge_btc_mining: &DogeBtcMining,
-    // Transfer-related accounts (required for loot transfers)
-    loot_sol_vault: &AccountInfo<'info>,
-    loot_dbtc_vault: &AccountInfo<'info>,
-    loot_dbtc_vault_authority: &AccountInfo<'info>,
-    user_account: &AccountInfo<'info>,
-    user_token_account: Option<&AccountInfo<'info>>,
-    token_mint: Option<&AccountInfo<'info>>,
-    token_program: Option<&AccountInfo<'info>>,
-    system_program: &AccountInfo<'info>,
-) -> Result<bool> {
-    msg!(
-        "🎮 Processing XP for user {}: {} XP from {}",
-        user.owner,
-        xp_amount,
-        xp_source
-    );
-
-    // Add XP
-    let old_xp = user.xp;
-    user.xp = user.xp.saturating_add(xp_amount);
-
-    // Emit XP gained event
-    emit!(XpGained {
-        owner: user.owner,
-        xp_amount,
-        xp_source: xp_source.to_string(),
-        total_xp: user.xp,
-    });
-
-    msg!(
-        "🌟 Player {} gained {} XP from {} (Total: {}, Previous: {})",
-        user.owner,
-        xp_amount,
-        xp_source,
-        user.xp,
-        old_xp
-    );
-
-    let mut leveled_up = false;
-    let old_level = user.level;
-
-    // Check for multiple level-ups
-    while user.xp >= required_xp_new(user.level) as u32 {
-        let required_xp = required_xp_new(user.level) as u32;
-        let remaining_xp = user.xp.saturating_sub(required_xp);
-
-        user.xp = remaining_xp;
-        user.level = user.level.saturating_add(1);
-        leveled_up = true;
-
-        // Emit level up event
-        emit!(LevelUp {
-            owner: user.owner,
-            new_level: user.level,
-            total_xp: user.xp,
-        });
-
-        msg!(
-            "🎉 Player {} leveled up to level {}! (Required: {}, Remaining XP: {})",
-            user.owner,
-            user.level,
-            required_xp,
-            remaining_xp
-        );
-
-        // Roll for loot and perform transfers if loot is won
-        msg!("🎲 Rolling for loot at level {}...", user.level);
-        let (sol_payout, dbtc_payout) =
-            try_roll_loot(user, loot_rewards, Some(level_stats), doge_btc_mining)?;
-
-        // Perform actual transfers if loot was won
-        if sol_payout > 0 {
-            msg!(
-                "💰 Processing SOL loot transfer of {} lamports...",
-                sol_payout
-            );
-            transfer_loot_sol_to_user(
-                loot_sol_vault,
-                user_account,
-                system_program,
-                sol_payout,
-                loot_rewards.sol_vault_bump,
-            )?;
-        }
-
-        if dbtc_payout > 0 {
-            if let (Some(user_token_account), Some(token_mint), Some(token_program)) =
-                (user_token_account, token_mint, token_program)
-            {
-                msg!(
-                    "💎 Processing DOGE_BTC loot transfer of {} tokens...",
-                    dbtc_payout
-                );
-                transfer_loot_dbtc_to_user(
-                    token_program,
-                    loot_dbtc_vault,
-                    user_token_account,
-                    loot_dbtc_vault_authority,
-                    token_mint,
-                    dbtc_payout,
-                    loot_rewards.dbtc_vault_authority_bump,
-                )?;
-            } else if dbtc_payout > 0 {
-                msg!("⚠️ DOGE_BTC loot won ({} tokens) but token accounts not provided - transfer skipped", dbtc_payout);
-            }
-        }
-    }
-
-    // Update level statistics if leveled up
-    if leveled_up {
-        msg!(
-            "📊 Updating level statistics for user {} (Level {} -> {})",
-            user.owner,
-            old_level,
-            user.level
-        );
-        update_level_stats(level_stats, &user.owner, old_level, user.level)?;
-    }
-
-    Ok(leveled_up)
-}
-
-/// Transfer DOGE_BTC from loot vault to user
-pub fn transfer_loot_dbtc_to_user<'info>(
-    token_program: &AccountInfo<'info>,
-    loot_dbtc_vault: &AccountInfo<'info>,
-    user_token_account: &AccountInfo<'info>,
-    loot_dbtc_vault_authority: &AccountInfo<'info>,
-    token_mint: &AccountInfo<'info>,
     amount: u64,
-    dbtc_vault_authority_bump: u8,
 ) -> Result<()> {
-    msg!("💎 Initiating DOGE_BTC loot transfer:");
-    msg!("   From: {} (Loot DOGE_BTC Vault)", loot_dbtc_vault.key());
-    msg!("   To: {} (User Token Account)", user_token_account.key());
-    msg!("   Amount: {} DOGE_BTC", amount as f64 / 1e9);
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: eggs_treasury.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
 
+// Helper function to transfer SOL to the sol_rewards_vault PDA
+pub fn transfer_to_sol_rewards_vault<'info>(
+    from: &AccountInfo<'info>,
+    sol_rewards_vault: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_rewards_vault.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL to the sol_prize_pot_vault PDA
+pub fn transfer_to_sol_prize_pot_vault<'info>(
+    from: &AccountInfo<'info>,
+    sol_prize_pot_vault: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: sol_prize_pot_vault.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer SOL FROM sol_rewards_vault to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_sol_rewards_vault<'info>(
+    sol_rewards_vault: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    vault_bump: u8,
+) -> Result<()> {
     let seeds = &[
-        LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-        &[dbtc_vault_authority_bump],
+        STAKER_SOL_REWARD_VAULT_SEED.as_ref(),
+        &[vault_bump],
     ];
     let signer_seeds = &[&seeds[..]];
-
-    // Get initial balances using token program CPI
-    let initial_vault_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(
-        &mut &loot_dbtc_vault.data.borrow()[..],
-    )?
-    .amount;
-    let initial_user_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(
-        &mut &user_token_account.data.borrow()[..],
-    )?
-    .amount;
-
-    // Use Token-2022 transfer_checked instruction
-    let ix = anchor_spl::token_2022::spl_token_2022::instruction::transfer_checked(
-        &anchor_spl::token_2022::spl_token_2022::ID,
-        &loot_dbtc_vault.key(),
-        &token_mint.key(),
-        &user_token_account.key(),
-        &loot_dbtc_vault_authority.key(),
-        &[],
-        amount,
-        DBTC_DECIMALS, // DOGE_BTC has 6 decimals
-    )?;
-
-    anchor_lang::solana_program::program::invoke_signed(
-        &ix,
-        &[
-            token_program.clone(),
-            loot_dbtc_vault.clone(),
-            user_token_account.clone(),
-            loot_dbtc_vault_authority.clone(),
-            token_mint.clone(),
-        ],
-        signer_seeds,
-    )?;
-
-    // Get final balances
-    let final_vault_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(
-        &mut &loot_dbtc_vault.data.borrow()[..],
-    )?
-    .amount;
-    let final_user_balance = anchor_spl::token_interface::TokenAccount::try_deserialize(
-        &mut &user_token_account.data.borrow()[..],
-    )?
-    .amount;
-
-    msg!("✅ DOGE_BTC transfer completed successfully:");
-    msg!(
-        "   Vault balance: {} -> {} DOGE_BTC",
-        initial_vault_balance as f64 / 1e9,
-        final_vault_balance as f64 / 1e9
-    );
-    msg!(
-        "   User balance: {} -> {} DOGE_BTC",
-        initial_user_balance as f64 / 1e9,
-        final_user_balance as f64 / 1e9
-    );
-
-    Ok(())
-}
-
-// --------------------------------------- //
-// ========== LEVEL STATISTICS =========== //
-// --------------------------------------- //
-
-/// Update level statistics when a user levels up (gas-optimized top-level tracking)
-/// Maintains a sorted list (descending) of top 25 levels with efficient operations
-/// O(25) update of LevelStats
-pub fn update_level_stats(
-    stats: &mut LevelStats,
-    user_pk: &Pubkey,
-    old_lvl: u8,
-    new_lvl: u8,
-) -> Result<()> {
-    // ---------- 0. quick exit ----------
-    if old_lvl == new_lvl {
-        return Ok(());
-    }
-
-    // ---------- 1. total user count ----------
-    if old_lvl == 0 {
-        // first time levelling
-        stats.total_users = stats.total_users.saturating_add(1);
-    }
-
-    // ---------- 2. bump max level ----------
-    if new_lvl > stats.max_level_achieved {
-        stats.max_level_achieved = new_lvl;
-    }
-
-    // ---------- 3. single scan pass ----------
-    let mut found_old = None;
-    let mut found_new = None;
-
-    for (idx, entry) in stats.tracked_levels.iter_mut().enumerate() {
-        if entry.level == old_lvl {
-            // ↓ remove one user; flag if becomes 0
-            entry.user_count = entry.user_count.saturating_sub(1);
-            if entry.user_count == 0 {
-                found_old = Some(idx);
-            }
-        }
-        if entry.level == new_lvl {
-            found_new = Some(idx);
-        }
-    }
-
-    // ---------- 4. drop old level if now empty ----------
-    if let Some(i) = found_old {
-        stats.tracked_levels.swap_remove(i); // O(1)
-    }
-
-    // ---------- 5. add / inc new level ----------
-    if let Some(i) = found_new {
-        stats.tracked_levels[i].user_count = stats.tracked_levels[i].user_count.saturating_add(1);
-    } else {
-        // not tracked yet
-        if stats.tracked_levels.len() < LevelStats::MAX_TRACKED_LEVELS {
-            stats.tracked_levels.push(LevelEntry {
-                level: new_lvl,
-                user_count: 1,
-            });
-        } else {
-            // list full – push & pop lowest in one shot
-            stats.tracked_levels.push(LevelEntry {
-                level: new_lvl,
-                user_count: 1,
-            });
-            // find lowest (smallest level)
-            let (low_i, _) = stats
-                .tracked_levels
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, e)| e.level)
-                .unwrap();
-            stats.tracked_levels.swap_remove(low_i);
-        }
-    }
-
-    // ---------- 6. re-sort descending (25 items max) ----------
-    stats
-        .tracked_levels
-        .sort_unstable_by(|a, b| b.level.cmp(&a.level));
-
-    // ---------- 7. update min level & timestamp ----------
-    stats.min_tracked_level = stats.tracked_levels.last().map(|e| e.level).unwrap_or(0);
-
-    stats.last_update_timestamp = Clock::get()?.unix_timestamp;
-
-    emit!(LevelStatsUpdated {
-        user: *user_pk,
-        old_level: old_lvl,
-        new_level: new_lvl,
-        total_users: stats.total_users,
-        users_at_new_level: stats
-            .tracked_levels
-            .iter()
-            .find(|e| e.level == new_lvl)
-            .map(|e| e.user_count)
-            .unwrap_or(0),
-    });
-
-    Ok(())
-}
-
-/// Get user count at a specific level from dynamic tracking (optimized for sorted list)
-pub fn get_users_at_level(level_stats: &LevelStats, level: u8) -> u32 {
-    // Since list is sorted descending, we can stop early if we go below target level
-    for entry in &level_stats.tracked_levels {
-        if entry.level == level {
-            return entry.user_count;
-        } else if entry.level < level {
-            // We've gone below the target level, it's not tracked
-            break;
-        }
-    }
-    0
-}
-
-// --------------------------------------- //
-// --------------------------------------- //
-// ========== LOOT ROLLING SYSTEM =========== //
-// --------------------------------------- //
-// --------------------------------------- //
-
-/// Calculate vault health multiplier (reduces payouts when vaults are low)
-/// Returns percentage (100 = full payout, 50 = half payout, etc.)
-fn calculate_vault_health_multiplier(loot: &LootRewards) -> u64 {
-    // Calculate health for each vault
-    let sol_health = if LOOT_TARGET_SOL_VAULT > 0 {
-        (loot.total_sol_accumulated.saturating_mul(100)) / LOOT_TARGET_SOL_VAULT
-    } else {
-        100
-    };
-
-    let dbtc_health = if LOOT_TARGET_DBTC_VAULT > 0 {
-        (loot.total_dbtc_accumulated.saturating_mul(100)) / LOOT_TARGET_DBTC_VAULT
-    } else {
-        100
-    };
-
-    // Use the LOWER of the two health values (most conservative)
-    let vault_health = sol_health.min(dbtc_health);
-
-    // Multiplier: 100% if vault >= target, scales down if vault < target
-    let multiplier = vault_health.min(100);
-
-    msg!(
-        "🏥 Vault health: SOL={}%, DBTC={}%, Multiplier={}%",
-        sol_health,
-        dbtc_health,
-        multiplier
-    );
-
-    multiplier
-}
-
-/// Try to roll loot when user levels up - NEW CASINO-STYLE SYSTEM WITH DUAL TOKEN DISTRIBUTION
-/// Returns (sol_payout, dbtc_payout) if loot was won
-fn try_roll_loot(
-    user: &UserMoonBaseInstance,
-    loot: &mut LootRewards,
-    level_stats: Option<&LevelStats>,
-    doge_btc_mining: &DogeBtcMining,
-) -> Result<(u64, u64)> {
-    use anchor_lang::solana_program::keccak;
-
-    msg!(
-        "🎲 Starting loot roll for user {} at level {}",
-        user.owner,
-        user.level
-    );
-
-    // ---------- RNG seed -------------
-    let slot = Clock::get()?.slot;
-    let seed = keccak::hashv(&[&slot.to_le_bytes(), &user.owner.to_bytes()]);
-    let roll = u16::from_le_bytes([seed.0[0], seed.0[1]]); // 0-65535
-    let roll_bp = (roll % 10_000) as u32; // 0-9999 bps
-
-    msg!(
-        "🎲 Generated roll: {} (raw), {} basis points",
-        roll,
-        roll_bp
-    );
-
-    // ---------- tier & base -----------
-    // base_chance: Base probability of getting loot (in basis points)
-    // vault_bp: Vault bonus probability (in basis points)
-    // Reduced vault cuts by 10x for sustainability
-    let (base_chance, vault_bp) = match user.level {
-        1..=4 => {
-            msg!(
-                "📊 Minor tier (levels 1-4): Base chance {}bp + {}bp per level, vault bonus {}bp",
-                300,
-                20,
-                10
-            );
-            (300 + 20 * user.level as u32, 10) // 0.1% vault (was 1%)
-        }
-        5 | 10 => {
-            msg!(
-                "🌟 Milestone level: Guaranteed roll (10,000bp) with {}bp vault bonus",
-                5
-            );
-            (10_000, 5) // 0.05% vault (was 0.5%)
-        }
-        6..=14 => {
-            msg!("📊 Regular tier (levels 6-14): Base chance {}bp + {}bp per level, vault bonus {}bp", 
-                300, 20, 10);
-            (300 + 20 * user.level as u32, 10) // 0.1% vault (was 1%)
-        }
-        15..=24 => {
-            if user.level % 5 == 0 {
-                msg!("🌟 Rare milestone (level {}): Guaranteed roll (10,000bp) with {}bp vault bonus", 
-                    user.level, 20);
-                (10_000, 20) // 0.2% vault (was 2%)
-            } else {
-                msg!(
-                    "💎 Rare tier (levels 15-24): Base chance {}bp, vault bonus {}bp",
-                    1_500,
-                    50
-                );
-                (1_500, 50) // 0.5% vault (was 5%)
-            }
-        }
-        _ => {
-            if user.level % 5 == 0 {
-                msg!("🌟 Legendary milestone (level {}): Guaranteed roll (10,000bp) with {}bp vault bonus", 
-                    user.level, 40);
-                (10_000, 40) // 0.4% vault (was 4% for milestones, was 8% for regular)
-            } else {
-                msg!(
-                    "👑 Legendary tier (level 25+): Base chance {}bp, vault bonus {}bp",
-                    2_500,
-                    80
-                );
-                (2_500, 80) // 0.8% vault (was 8%)
-            }
-        }
-    };
-
-    msg!(
-        "📊 Base chance: {}bp ({}%), Vault bonus: {}bp",
-        base_chance,
-        base_chance as f64 / 100.0,
-        vault_bp
-    );
-
-    // ---------- exclusivity bonus -----------
-    let bonus = get_exclusivity_bonus(user.level, level_stats);
-
-    msg!(
-        "🏆 Exclusivity bonus: Chance multiplier {}%, Vault multiplier {}%, Rank {}",
-        bonus.chance_mult,
-        bonus.vault_mult,
-        bonus.rank
-    );
-
-    // ---------- final probabilities -----------
-    let chance_bp_final = (base_chance as u32).saturating_mul(bonus.chance_mult) / 100;
-    let vault_bp_with_bonus = (vault_bp as u64).saturating_mul(bonus.vault_mult) / 100;
-
-    // Apply vault health multiplier (reduces payouts when vault is low)
-    let vault_health_mult = calculate_vault_health_multiplier(loot);
-    let vault_bp_final = (vault_bp_with_bonus as u64).saturating_mul(vault_health_mult) / 100;
-
-    msg!("🎯 Final probabilities after bonuses:");
-    msg!(
-        "   Win chance: {}bp ({}%)",
-        chance_bp_final,
-        chance_bp_final as f64 / 100.0
-    );
-    msg!("   Vault cut (with bonus): {}bp", vault_bp_with_bonus);
-    msg!("   Vault health multiplier: {}%", vault_health_mult);
-    msg!(
-        "   Vault cut (final): {}bp ({}%)",
-        vault_bp_final,
-        vault_bp_final as f64 / 100.0
-    );
-
-    // ---------- roll result -------------
-    if roll_bp >= chance_bp_final {
-        msg!("❌ Roll failed: {} >= {}", roll_bp, chance_bp_final);
-        return Ok((0, 0));
-    }
-
-    msg!("✨ Roll succeeded! {} < {}", roll_bp, chance_bp_final);
-
-    // ---------- Calculate desired payout amounts -------------
-    let is_milestone = user.level % 10 == 0;
-    let mut desired_sol_payout = 0_u64;
-    let mut jackpot = false;
-
-    msg!(
-        "💰 Calculating payout amounts (Milestone level: {})",
-        is_milestone
-    );
-
-    // Try jackpot first for milestone levels
-    if is_milestone {
-        msg!(
-            "🎰 Attempting jackpot roll for milestone level {}",
-            user.level
-        );
-        // Calculate combined vault value (SOL + DOGE_BTC equivalent in SOL)
-        // Use u128 throughout to prevent overflow
-        let dbtc_price = get_avg_price_in_sol(doge_btc_mining)?; // 1e9 scale
-        let dbtc_sol_equivalent = ((loot.total_dbtc_accumulated as u128)
-            .saturating_mul(dbtc_price as u128)
-            .saturating_div(1_000_000_000u128)) as u64;
-        let combined_vault_value = loot
-            .total_sol_accumulated
-            .saturating_add(dbtc_sol_equivalent);
-
-        msg!(
-            "   Combined vault value: {} SOL (SOL: {}, DOGE_BTC equivalent: {})",
-            combined_vault_value,
-            loot.total_sol_accumulated,
-            dbtc_sol_equivalent
-        );
-
-        let (jp, hit) = try_jackpot(combined_vault_value, roll_bp as u16);
-        if hit {
-            msg!("🎊 JACKPOT HIT! Amount: {} SOL", jp);
-            desired_sol_payout = jp;
-            jackpot = true;
-        } else {
-            msg!("   Jackpot not hit, falling back to normal payout");
-        }
-    };
-
-    // If no jackpot, calculate normal payout
-    if !jackpot {
-        msg!(
-            "💫 Calculating normal payout with {}bp vault cut",
-            vault_bp_final
-        );
-        desired_sol_payout = loot.total_sol_accumulated * vault_bp_final / 10_000;
-        desired_sol_payout = clamp_payout(loot.total_sol_accumulated, desired_sol_payout);
-        msg!("   Initial payout calculation: {} SOL", desired_sol_payout);
-    }
-
-    // --- after you have `desired_sol_payout` (may be 0 if jackpot didn't fire) ---
-    let dbtc_price = get_avg_price_in_sol(doge_btc_mining)?; // 1e9
-    let desired_sol = clamp_to_vault(loot.total_sol_accumulated, desired_sol_payout);
-    let desired_dbtc = clamp_to_vault(
-        loot.total_dbtc_accumulated,
-        sol_to_mdoge(desired_sol, dbtc_price),
-    );
-
-    msg!("💎 Desired payouts after clamping:");
-    msg!("   SOL: {} (from {})", desired_sol, desired_sol_payout);
-    msg!("   DOGE_BTC: {} (at price {})", desired_dbtc, dbtc_price);
-
-    // currency decision
-    let (final_sol_payout, final_dbtc_payout, payout_type) = if is_milestone {
-        msg!("🎯 Milestone level: Preferring SOL payout");
-        pick_preferring_sol(desired_sol, desired_dbtc, loot)
-    } else {
-        let flip = (roll_bp & 1) == 0;
-        msg!(
-            "🎯 Regular level: Using best available ({} preference)",
-            if flip { "SOL" } else { "DOGE_BTC" }
-        );
-        pick_best_available(desired_sol, desired_dbtc, loot, flip)
-    };
-
-    msg!("💰 Final payout decision:");
-    msg!("   Type: {}", payout_type);
-    msg!("   SOL: {}", final_sol_payout);
-    msg!("   DOGE_BTC: {}", final_dbtc_payout);
-
-    // bail-out if nothing can be paid
-    if final_sol_payout == 0 && final_dbtc_payout == 0 {
-        msg!("⚠️ No payouts possible - vaults empty");
-        return Ok((0, 0));
-    }
-
-    if final_sol_payout > 0 || final_dbtc_payout > 0 {
-        // Update vault balances
-        loot.total_sol_accumulated = loot.total_sol_accumulated.saturating_sub(final_sol_payout);
-        loot.total_dbtc_accumulated = loot
-            .total_dbtc_accumulated
-            .saturating_sub(final_dbtc_payout);
-        loot.total_sol_distributed = loot.total_sol_distributed.saturating_add(final_sol_payout);
-        loot.total_dbtc_distributed = loot
-            .total_dbtc_distributed
-            .saturating_add(final_dbtc_payout);
-
-        // Emit event
-        emit!(LootWon {
-            owner: user.owner,
-            level: user.level,
-            sol: final_sol_payout,
-            mdoge: final_dbtc_payout,
-            loot_tier: payout_type.to_string(),
-            exclusivity_rank: bonus.rank,
-            chance_percentage: chance_bp_final,
-        });
-
-        // Log the result
-        if final_sol_payout > 0 && final_dbtc_payout > 0 {
-            msg!("🎁 DUAL LOOT WON! Player {} won {} SOL + {} DOGE_BTC at level {} ({}% chance, {} type)", 
-                user.owner, final_sol_payout, final_dbtc_payout, user.level, 
-                chance_bp_final as f64 / 100.0, payout_type);
-        } else if final_sol_payout > 0 {
-            msg!(
-                "🎁 SOL LOOT WON! Player {} won {} SOL at level {} ({}% chance, {} type)",
-                user.owner,
-                final_sol_payout,
-                user.level,
-                chance_bp_final as f64 / 100.0,
-                payout_type
-            );
-        } else {
-            msg!(
-                "🎁 DOGE_BTC LOOT WON! Player {} won {} DOGE_BTC at level {} ({}% chance, {} type)",
-                user.owner,
-                final_dbtc_payout,
-                user.level,
-                chance_bp_final as f64 / 100.0,
-                payout_type
-            );
-        }
-    }
-
-    msg!("✅ Loot roll complete");
-    Ok((final_sol_payout, final_dbtc_payout))
-}
-
-/// Transfer SOL from loot vault to user
-pub fn transfer_loot_sol_to_user<'info>(
-    loot_sol_vault: &AccountInfo<'info>,
-    user: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    amount: u64,
-    sol_vault_bump: u8,
-) -> Result<()> {
-    msg!("💰 Initiating SOL loot transfer:");
-    msg!("   From: {} (Loot SOL Vault)", loot_sol_vault.key());
-    msg!("   To: {} (User)", user.key());
-    msg!("   Amount: {} SOL", amount as f64 / 1e9);
-
-    let seeds = &[LOOT_SOL_VAULT_SEED.as_ref(), &[sol_vault_bump]];
-    let signer_seeds = &[&seeds[..]];
-
-    // Get initial balances
-    let initial_vault_balance = loot_sol_vault.lamports();
-    let initial_user_balance = user.lamports();
-
-    anchor_lang::system_program::transfer(
+    
+    transfer(
         CpiContext::new_with_signer(
             system_program.to_account_info(),
-            anchor_lang::system_program::Transfer {
-                from: loot_sol_vault.to_account_info(),
-                to: user.to_account_info(),
+            Transfer {
+                from: sol_rewards_vault.to_account_info(),
+                to: to.to_account_info(),
             },
             signer_seeds,
         ),
         amount,
+    )
+}
+
+// Helper function to transfer SOL FROM sol_prize_pot_vault to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_sol_prize_pot_vault<'info>(
+    sol_prize_pot_vault: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    let seeds = &[
+        SOL_PRIZE_POT_VAULT_SEED.as_ref(),
+        &[vault_bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+    
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: sol_prize_pot_vault.to_account_info(),
+                to: to.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )
+}
+
+// Helper function to transfer WSOL to multisig token account
+// Wraps SOL to WSOL first, then transfers WSOL
+pub fn transfer_wsol_to_multisig<'info>(
+    from: &AccountInfo<'info>,
+    multisig_wsol_account: &AccountInfo<'info>,
+    from_wsol_account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    // Step 1: Transfer SOL to the from_wsol_account (this wraps it)
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: from_wsol_account.to_account_info(),
+            },
+        ),
+        amount,
     )?;
 
-    // Get final balances
-    let final_vault_balance = loot_sol_vault.lamports();
-    let final_user_balance = user.lamports();
+    // Step 2: Sync native account to update WSOL balance
+    anchor_spl::token::sync_native(
+        CpiContext::new(
+            token_program.to_account_info(),
+            anchor_spl::token::SyncNative {
+                account: from_wsol_account.to_account_info(),
+            },
+        ),
+    )?;
 
-    msg!("✅ SOL transfer completed successfully:");
-    msg!(
-        "   Vault balance: {} -> {} SOL",
-        initial_vault_balance as f64 / 1e9,
-        final_vault_balance as f64 / 1e9
-    );
-    msg!(
-        "   User balance: {} -> {} SOL",
-        initial_user_balance as f64 / 1e9,
-        final_user_balance as f64 / 1e9
-    );
+    // Step 3: Transfer WSOL from from_wsol_account to multisig_wsol_account
+    anchor_spl::token::transfer(
+        CpiContext::new(
+            token_program.to_account_info(),
+            anchor_spl::token::Transfer {
+                from: from_wsol_account.to_account_info(),
+                to: multisig_wsol_account.to_account_info(),
+                authority: from.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
 
     Ok(())
 }
 
-/// Loot exclusivity bonus based on global level proximity and crowd size
-#[derive(Clone, Copy)]
-struct ExclusivityBonus {
-    chance_mult: u32, // Percentage multiplier for chance
-    vault_mult: u64,  // Percentage multiplier for vault cut
-    rank: u8,         // Bucket rank for UI (0 = max level, 1 = max-1, 2 = max-2, 99 = crowd bucket)
+
+// Helper function to calculate multiplier
+pub fn calculate_multiplier(
+    lockup_duration: u64,
+    min_lockup: u64,
+    max_lockup: u64,
+    base_multiplier: u16,
+    max_multiplier: u16,
+) -> Result<u16> {
+    let duration_range = max_lockup.saturating_sub(min_lockup);
+    let multiplier_range = max_multiplier.saturating_sub(base_multiplier);
+
+    let duration_above_min = lockup_duration.saturating_sub(min_lockup);
+
+    let multiplier_increase = (duration_above_min as u128)
+        .checked_mul(multiplier_range as u128)
+        .unwrap()
+        .checked_div(duration_range as u128)
+        .unwrap() as u16;
+
+    Ok(base_multiplier.checked_add(multiplier_increase).unwrap())
 }
 
-/// Loot exclusivity bonus without per-player rank / new state.
-///  - Rewards being at (or near) the global-max level.
-///  - Otherwise uses how crowded the level is.
-///
-/// Returns: percentage multipliers (100 = no change) and a pseudo-rank
-///          bucket just for UI (0 = max level, 1 = max-1, 2 = max-2, 99 = crowd bucket).
-fn get_exclusivity_bonus(level: u8, level_stats: Option<&LevelStats>) -> ExclusivityBonus {
-    // Default (no stats passed in)
-    let default = ExclusivityBonus {
-        chance_mult: 100,
-        vault_mult: 100,
-        rank: 255,
-    };
-
-    let stats = match level_stats {
-        Some(s) => s,
-        None => return default,
-    };
-
-    // -------- 1. distance to global max (HIGHEST PRIORITY) --------
-    let delta = stats.max_level_achieved.saturating_sub(level);
-    match delta {
-        0 => {
-            return ExclusivityBonus {
-                chance_mult: LOOT_FIRST_CHANCE_MULT,
-                vault_mult: LOOT_FIRST_VAULT_MULT,
-                rank: 0,
-            }
-        } // 150%, 300%
-        1 => {
-            return ExclusivityBonus {
-                chance_mult: 140,
-                vault_mult: 250,
-                rank: 1,
-            }
-        } // max-1 level (better than any crowd bonus)
-        2 => {
-            return ExclusivityBonus {
-                chance_mult: 130,
-                vault_mult: 200,
-                rank: 2,
-            }
-        } // max-2 level (better than any crowd bonus)
-        _ => { /* fall through to crowd logic */ }
-    };
-
-    // -------- 2. crowd-size bonus (LOWER PRIORITY) ---------------
-    if let Some(entry) = stats.tracked_levels.iter().find(|e| e.level == level) {
-        let c = entry.user_count;
-        if c <= 3 {
-            return ExclusivityBonus {
-                chance_mult: 125,
-                vault_mult: 175,
-                rank: 3,
-            }; // Below max-2
-        } else if c <= 10 {
-            return ExclusivityBonus {
-                chance_mult: LOOT_TOP10_CHANCE_MULT,
-                vault_mult: LOOT_TOP10_VAULT_MULT,
-                rank: 4,
-            }; // 120%, 150%
-        } else if c <= 25 {
-            return ExclusivityBonus {
-                chance_mult: LOOT_TOP25_CHANCE_MULT,
-                vault_mult: LOOT_TOP25_VAULT_MULT,
-                rank: 5,
-            }; // 110%, 120%
-        }
+/// Add position index to user's moondoge positions
+pub fn add_dogebtc_position(
+    player_ac: &mut PlayerData,
+    position_index: u8,
+) -> Result<()> {
+    if position_index >= MAX_ALLOWED_POSITIONS {
+        return Err(ErrorCode::InvalidParameters.into());
     }
 
-    default
+    // If this position index is not already active
+    if !player_ac
+        .moondoge_position_indices
+        .contains(&position_index)
+    {
+        // Ensure we're not exceeding the max allowed positions
+        if player_ac.moondoge_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+        player_ac.moondoge_position_indices.push(position_index);
+    }
+
+    Ok(())
 }
 
-/// Get average DOGE_BTC price in SOL from the mining state (scaled by 1e9)
-/// Production-grade: reads real price from DogeBtcMining.recent_price
-fn get_avg_price_in_sol(doge_btc_mining: &DogeBtcMining) -> Result<u64> {
-    // Use the recent price from the dynamic distribution system (most up-to-date)
-    if doge_btc_mining.recent_price > 0 {
-        Ok(doge_btc_mining.recent_price)
+/// Remove position index from user's moondoge positions
+pub fn remove_moondoge_position(
+    player_ac: &mut PlayerData,
+    position_index: u8,
+) -> Result<()> {
+    // Find the position index in the vector
+    if let Some(pos) = player_ac.moondoge_position_indices.iter().position(|&x| x == position_index) {
+        player_ac.moondoge_position_indices.remove(pos);
     } else {
-        // Fallback to default if price hasn't been set yet (early bootstrap)
-        Ok(1_000_000) // Default: 1 DOGE_BTC = 0.001 SOL (scaled by 1e9)
-    }
-}
-
-/// Clamp payout between min & max, and never over 10% of vault
-fn clamp_payout(vault: u64, want: u64) -> u64 {
-    want.max(MIN_SOL_PAYOUT_LAMPORTS)
-        .min(MAX_SOL_PAYOUT_LAMPORTS)
-        .min(vault / 10) // ≤10%
-}
-
-/// Try wheel jackpots – returns (payout, was_jackpot)
-fn try_jackpot(vault: u64, seed: u16) -> (u64, bool) {
-    if seed > JACKPOT_CHANCE_BP {
-        return (0, false); // 0.20% gate
+        return Err(ErrorCode::InvalidParameters.into());
     }
 
-    for pot in JACKPOT_POTS_SOL {
-        if vault >= pot * 11 / 10 {
-            // keep 10% buffer
-            return (pot, true);
+    Ok(())
+}
+
+/// Add position index to user's LP positions
+pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    if position_index >= MAX_ALLOWED_POSITIONS {
+        return Err(ErrorCode::InvalidParameters.into());
+    }
+
+    // If this position index is not already active
+    if !player_ac.lp_position_indices.contains(&position_index) {
+        if player_ac.lp_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            return Err(ErrorCode::InvalidParameters.into());
         }
+        player_ac.lp_position_indices.push(position_index);
     }
-    (0, false)
+
+    Ok(())
 }
 
-#[inline]
-fn clamp_to_vault(vault: u64, want: u64) -> u64 {
-    want.max(MIN_SOL_PAYOUT_LAMPORTS)
-        .min(MAX_SOL_PAYOUT_LAMPORTS)
-        .min(vault * MAX_VAULT_SLICE_BP / 10_000)
-}
-
-#[inline]
-fn sol_to_mdoge(sol: u64, price_q9: u64) -> u64 {
-    ((sol as u128 * 1_000_000_000u128) / price_q9 as u128) as u64
-}
-
-#[inline]
-fn pick_preferring_sol(
-    want_sol: u64,
-    want_doge: u64,
-    loot: &LootRewards,
-) -> (u64, u64, &'static str) {
-    if loot.total_sol_accumulated >= want_sol && want_sol > 0 {
-        (want_sol, 0, "sol_milestone")
-    } else if loot.total_dbtc_accumulated >= want_doge && want_doge > 0 {
-        (0, want_doge, "dbtc_fallback")
+/// Remove position index from user's LP positions
+pub fn remove_lp_position(
+    player_ac: &mut PlayerData,
+    position_index: u8,
+) -> Result<()> {
+    if let Some(pos) = player_ac.lp_position_indices.iter().position(|&x| x == position_index) {
+        player_ac.lp_position_indices.remove(pos);
     } else {
-        // fallback: half of whichever vault is non-zero
-        if loot.total_sol_accumulated > 0 {
-            let pay = clamp_to_vault(loot.total_sol_accumulated, loot.total_sol_accumulated / 2);
-            (pay, 0, "sol_reduced")
-        } else {
-            let pay_d =
-                clamp_to_vault(loot.total_dbtc_accumulated, loot.total_dbtc_accumulated / 2);
-            (0, pay_d, "dbtc_reduced")
-        }
+        return Err(ErrorCode::InvalidParameters.into());
     }
+
+    Ok(())
 }
 
-#[inline]
-fn pick_best_available(
-    want_sol: u64,
-    want_doge: u64,
-    loot: &LootRewards,
-    coin_flip: bool,
-) -> (u64, u64, &'static str) {
-    let sol_ok = loot.total_sol_accumulated >= want_sol && want_sol > 0;
-    let doge_ok = loot.total_dbtc_accumulated >= want_doge && want_doge > 0;
+ 
+pub fn calculate_staking_rewards(
+    user_weighted_amt: u64,
+    accumulated_sol_per_point: u128,
+    reward_debt: u128,
+) -> Result<u64> {
+    let reward_diff = accumulated_sol_per_point.checked_sub(reward_debt).unwrap_or(0);
+    let new_rewards = mul_div_u128(user_weighted_amt as u128, reward_diff, INDEX_PRECISION as u128)?;
+    Ok(new_rewards as u64)
+}
 
-    match (sol_ok, doge_ok) {
-        (true, false) => (want_sol, 0, "sol_only"),
-        (false, true) => (0, want_doge, "dbtc_only"),
-        (true, true) => {
-            if coin_flip {
-                (want_sol, 0, "sol_normal")
-            } else {
-                (0, want_doge, "dbtc_normal")
-            }
-        }
-        _ => (0, 0, "none"),
+
+pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
+    let result = (a as u128)
+        .checked_mul(b as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(c as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    Ok(result)
+}
+
+
+pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
+    let result = a.checked_mul(b).ok_or(ErrorCode::ArithmeticOverflow)?.checked_div(c).ok_or(ErrorCode::ArithmeticOverflow)?;
+    Ok(result)
+}
+
+
+
+pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_index: u8, staked_amount: u64, weighted_amount: u64, 
+                    lockup_duration: u64, current_ts: i64, multiplier: u16) -> Result<()> {
+    position.position_index = position_index;
+
+    position.faction_id = faction_id;
+    position.staked_amount = staked_amount;
+    position.weighted_amount = weighted_amount;
+
+    position.lockup_duration = lockup_duration;
+    position.start_timestamp = current_ts;
+    position.multiplier = multiplier;
+
+    let seconds_to_add = lockup_duration * DAY_IN_SECONDS;
+    position.lockup_end_timestamp = current_ts + seconds_to_add as i64;
+
+    Ok(())
+}
+
+/// Add to total claimable and pending rewards
+pub fn add_to_total_claimable(unrefined_dbtc: &mut UnrefinedRewards, player_data: &mut PlayerData, dbtc_rewards: u64) -> u64 {
+
+    // Calculate extra dogeBtc rewards due to unrefining
+    let index_dif = unrefined_dbtc.unrefining_index - player_data.unrefining_index;
+    let accrued_rewards = mul_div_u128( player_data.pending_dbtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
+    msg!("     Accrued DogeBtc rewards: {}", accrued_rewards );
+
+    unrefined_dbtc.total_dbtc_claimable += dbtc_rewards + accrued_rewards;
+    player_data.unrefining_index = unrefined_dbtc.unrefining_index;
+    player_data.pending_dbtc_rewards += dbtc_rewards + accrued_rewards;
+    player_data.total_dbtc_won += dbtc_rewards + accrued_rewards;
+    player_data.unrefined_dbtc_rewards += accrued_rewards;
+
+    return accrued_rewards;
+}
+
+
+pub fn calculate_emergency_tax(user_position: &StakedPosition, current_ts: i64, emergency_tax: u64) -> u64 {
+
+    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
+    let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+
+    let mut remaining_seconds_pct = 0;
+    if total_lockup_seconds > 0 {
+        remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds;
     }
+    msg!("   Lockup remaining: {}%", remaining_seconds_pct);
+
+    let calc_penalty_pct = (emergency_tax * (remaining_seconds_pct as u64)) / M_HUNDRED;
+    let penalty_amount = (user_position.staked_amount * calc_penalty_pct) / M_HUNDRED;
+
+    return penalty_amount;
+}
+
+
+/// Charge emergency tax: 50% burned, 50% sent to faction treasury vault
+/// This function handles the penalty for early withdrawal from staking positions
+pub fn charge_emergency_tax<'info>(
+    dbtc_custodian: &AccountInfo<'info>,
+    dbtc_custodian_authority: &AccountInfo<'info>,
+    dbtc_mint: &AccountInfo<'info>,
+    faction_state: &mut FactionState,
+    token_program: &AccountInfo<'info>,
+    custodian_authority_bump: u8,
+    penalty_amount: u64,
+) -> Result<()> {
+    msg!("💰 [charge_emergency_tax] Processing emergency tax");
+    msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
+    
+    // Split penalty: 50% to burn, 50% to faction treasury vault
+    let burn_amt = penalty_amount / 2;
+    let rewards_amt = penalty_amount - burn_amt; // Ensure we account for rounding
+    msg!("   Burn amount: {} tokens (50%)", burn_amt as f64 / 1e6);
+    msg!("   Faction staking rewards amount: {} tokens (50%)", rewards_amt as f64 / 1e6);
+    
+    // Burn 50% from custodian
+    if burn_amt > 0 {
+        msg!("   Burning {} tokens from custodian...", burn_amt as f64 / 1e6);
+        
+        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
+        let custodian_authority_seeds = &[
+            DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[custodian_authority_bump],
+        ];
+        let custodian_signer = &[&custodian_authority_seeds[..]];
+        
+        // Use Token-2022 burn instruction
+        token_2022::burn(
+            CpiContext::new_with_signer(
+                token_program.to_account_info(),
+                Burn {  mint: dbtc_mint.to_account_info(),  from: dbtc_custodian.to_account_info(),  authority: dbtc_custodian_authority.to_account_info(),
+                },
+                custodian_signer,
+            ),
+            burn_amt,
+        )?;
+        msg!("   ✅ Burned {} tokens", burn_amt as f64 / 1e6);
+    }
+
+    let dbtc_per_share = mul_div(rewards_amt, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+    faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + dbtc_per_share;
+    
+    msg!("   ✅ Emergency tax charged successfully");
+    
+    Ok(())
+}
+
+
+/// Calculate number of tickets given minting price
+pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
+    return ((total_price * 150) / ticket_value) / 100
 }

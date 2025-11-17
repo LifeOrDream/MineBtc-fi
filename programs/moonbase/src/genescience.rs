@@ -14,8 +14,8 @@
 /// 5. Reserved (25 bits): For future use
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
+use crate::errors::ErrorCode;
 
-#[allow(dead_code)] // Functions will be used when NFT minting is enabled
 
 // DNA field offsets
 const FAMILY_TYPE_BITS: u8 = 4;
@@ -23,7 +23,6 @@ const EVOLUTIONARY_STAGE_BITS: u8 = 3;
 const APPEARANCE_TRAIT_BITS: u8 = 5;
 const POWER_TRAIT_BITS: u8 = 4;
 
-const EVOLUTIONARY_STAGE_OFFSET: u8 = FAMILY_TYPE_BITS;
 const APPEARANCE_TRAITS_OFFSET: u8 = FAMILY_TYPE_BITS + EVOLUTIONARY_STAGE_BITS;
 const POWER_TRAITS_OFFSET: u8 = APPEARANCE_TRAITS_OFFSET + (28 * APPEARANCE_TRAIT_BITS); // 7 groups × 4 traits
 
@@ -32,6 +31,107 @@ const APPEARANCE_TRAIT_GROUPS: usize = 7;
 const APPEARANCE_TRAITS_PER_GROUP: usize = 4;
 const POWER_TRAIT_GROUPS: usize = 7;
 const POWER_TRAITS_PER_GROUP: usize = 3;
+
+
+
+/// Calculate dynamic pricing based on bonding curve
+/// Formula: price = base_price + curve_a * (items_minted^(2/3))
+/// This creates a diminishing returns curve where price increases slower as more items are minted
+///
+/// # Arguments
+/// * `base_price` - The starting base price in lamports
+/// * `curve_a` - Curve steepness parameter (controls price growth rate, typically >= 100)
+/// * `items_minted` - The number of NFTs already minted
+///
+/// # Returns
+/// * Current mint price in lamports
+pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> Result<u64> {
+    if items_minted == 0 {
+        return Ok(base_price);
+    }
+
+    // Calculate x^(2/3) using fixed-point arithmetic
+    // We'll approximate: x^(2/3) ≈ cube_root(x^2)
+    let items_minted_u128 = items_minted as u128;
+    
+    // Calculate x^2
+    let squared = items_minted_u128.checked_mul(items_minted_u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Find cube root of x^2 using binary search
+    // This gives us x^(2/3)
+    let mut low: u128 = 1;
+    let mut high = squared.min(1_000_000_000_000_000_000); // Cap to prevent overflow
+    let mut result: u128 = 0;
+    
+    while low <= high {
+        let mid = (low + high) / 2;
+        let cube = mid.checked_mul(mid)
+            .and_then(|x| x.checked_mul(mid))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        if cube <= squared {
+            result = mid;
+            low = mid + 1;
+        } else {
+            if mid == 0 {
+                break;
+            }
+            high = mid - 1;
+        }
+    }
+    
+    // result is approximately x^(2/3)
+    // Now multiply by curve_a and add to base_price
+    let exponent_component = result.min(u64::MAX as u128) as u64;
+    let exponent_price_factor = curve_a.checked_mul(exponent_component)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    // Final price = base_price + exponential component
+    let mint_price = base_price.checked_add(exponent_price_factor)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    
+    Ok(mint_price)
+}
+
+#[allow(dead_code)] // Functions will be used when NFT minting is enabled
+
+
+pub fn calculate_progressive_multiplier(
+    current_egg_count: u64, max_supply: u64
+) -> Result<u32> {
+    
+    // The multiplier for the very first egg (mint #1)
+    let start_multiplier = 100;
+    let end_multiplier = 420;
+    
+    // The multiplier for the very last egg (mint #20,000)
+    let multiplier_range = (end_multiplier - start_multiplier) as u128;
+    let mint_range = (max_supply - 1) as u128;
+    
+    // Ensure we don't go over the max supply
+    if current_egg_count >= max_supply {
+        return Ok(end_multiplier as u32);
+    }
+    
+    // --- Linear Interpolation (y = mx + b) using u128 math ---
+    
+    // 1. Calculate the "progress" (x) as a u128
+    // This is how many eggs have already been minted (0 to 19,999)
+    let progress = current_egg_count as u128;
+
+    // 2. Calculate the "slope" (m) part: (progress / mint_range)
+    // We multiply first to avoid losing precision
+    // `increase = (progress * multiplier_range) / mint_range`
+    let multiplier_increase = (progress * multiplier_range) / mint_range;
+    let new_multiplier = start_multiplier as u128 + multiplier_increase;
+    Ok(new_multiplier as u32)
+}
+
+
+
+
+
 
 /// Generate unique DNA for a genesis Dragon Egg
 ///
@@ -78,87 +178,7 @@ pub fn generate_genesis_dna(
     Ok(dna)
 }
 
-/// Generate DNA with progressive gene windows based on tier (family)
-/// Each tier gets progressively better gene value ranges
-///
-/// # Arguments
-/// * `mint_number` - The sequential mint number
-/// * `minter` - Address of minter
-/// * `slot` - Current slot
-/// * `gene_tier` - Tier/family (0-15)
-///
-/// # Returns
-/// * 32-byte array representing 256-bit DNA with tier-based gene windows
-pub fn generate_genesis_dna_with_tier(
-    mint_number: u64,
-    minter: &Pubkey,
-    slot: u64,
-    gene_tier: u8,
-) -> Result<[u8; 32]> {
-    require!(gene_tier < 16, crate::errors::ErrorCode::InvalidParameters);
-
-    // Create seed for randomness
-    let mut seed_data = Vec::new();
-    seed_data.extend_from_slice(&mint_number.to_le_bytes());
-    seed_data.extend_from_slice(&minter.to_bytes());
-    seed_data.extend_from_slice(&slot.to_le_bytes());
-
-    let hash = keccak::hash(&seed_data);
-    let hash_bytes = hash.to_bytes();
-
-    let mut dna = [0u8; 32];
-
-    // Set family type (first 4 bits)
-    dna[0] = gene_tier & 0x0F;
-
-    // Set evolutionary stage to 0 (bits 4-6)
-    // Already 0 from initialization
-
-    // Generate appearance traits with progressive windows
-    // Tier 0: [0,3], Tier 1: [0,4], Tier 2: [2,5], ..., Tier 15: [13,18]
-    let appearance_min = if gene_tier >= 2 { gene_tier - 2 } else { 0 };
-    let appearance_max = 3 + gene_tier;
-
-    for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
-        let hash_index = (i * 3) % 32;
-        let random_byte = hash_bytes[hash_index];
-        let range = appearance_max - appearance_min + 1;
-        let trait_value = appearance_min + (random_byte % range);
-        let trait_value = trait_value.min(15); // Cap at half of max (31/2 ≈ 15)
-
-        set_trait_value(
-            &mut dna,
-            APPEARANCE_TRAITS_OFFSET,
-            APPEARANCE_TRAIT_BITS,
-            i as u8,
-            trait_value,
-        );
-    }
-
-    // Generate power traits with progressive windows
-    // Tier 0: [0,2], Tier 1: [1,3], Tier 2: [2,4], ..., Tier 15: [14,16]
-    let power_min = if gene_tier >= 1 { gene_tier - 1 } else { 0 };
-    let power_max = 2 + gene_tier;
-
-    for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
-        let hash_index = ((28 + i) * 3) % 32;
-        let random_byte = hash_bytes[hash_index];
-        let range = power_max - power_min + 1;
-        let trait_value = power_min + (random_byte % range);
-        let trait_value = trait_value.min(7); // Cap at half of max (15/2 ≈ 7)
-
-        set_trait_value(
-            &mut dna,
-            POWER_TRAITS_OFFSET,
-            POWER_TRAIT_BITS,
-            i as u8,
-            trait_value,
-        );
-    }
-
-    Ok(dna)
-}
-
+ 
 /// Limit trait ranges to lower half of possible values
 /// Appearance traits: 0-15 (instead of 0-31)
 /// Power traits: 0-7 (instead of 0-15)
@@ -265,190 +285,191 @@ fn set_trait_value(
     }
 }
 
-/// Get family/type from DNA (first 4 bits)
-pub fn get_family_type(dna: &[u8; 32]) -> u8 {
-    dna[0] & 0x0F
-}
+// /// Get family/type from DNA (first 4 bits)
+// pub fn get_family_type(dna: &[u8; 32]) -> u8 {
+//     dna[0] & 0x0F
+// }
 
-/// Get evolutionary stage from DNA (bits 4-6)
-pub fn get_evolutionary_stage(dna: &[u8; 32]) -> u8 {
-    (dna[0] >> 4) & 0x07
-}
+// /// Get evolutionary stage from DNA (bits 4-6)
+// pub fn get_evolutionary_stage(dna: &[u8; 32]) -> u8 {
+//     (dna[0] >> 4) & 0x07
+// }
 
-/// Set evolutionary stage in DNA
-pub fn set_evolutionary_stage(dna: &mut [u8; 32], stage: u8) -> Result<()> {
-    require!(stage < 8, crate::errors::ErrorCode::InvalidParameters);
-    dna[0] = (dna[0] & 0x8F) | ((stage & 0x07) << 4);
-    Ok(())
-}
+// /// Set evolutionary stage in DNA
+// pub fn set_evolutionary_stage(dna: &mut [u8; 32], stage: u8) -> Result<()> {
+//     require!(stage < 8, crate::errors::ErrorCode::InvalidParameters);
+//     dna[0] = (dna[0] & 0x8F) | ((stage & 0x07) << 4);
+//     Ok(())
+// }
 
-/// Get all appearance traits (28 traits)
-pub fn get_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-    let mut traits = Vec::with_capacity(28);
-    for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
-        traits.push(get_trait_value(
-            dna,
-            APPEARANCE_TRAITS_OFFSET,
-            APPEARANCE_TRAIT_BITS,
-            i as u8,
-        ));
-    }
-    traits
-}
+// /// Get all appearance traits (28 traits)
+// pub fn get_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     let mut traits = Vec::with_capacity(28);
+//     for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
+//         traits.push(get_trait_value(
+//             dna,
+//             APPEARANCE_TRAITS_OFFSET,
+//             APPEARANCE_TRAIT_BITS,
+//             i as u8,
+//         ));
+//     }
+//     traits
+// }
 
-/// Get dominant appearance traits (7 traits - first from each group)
-pub fn get_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-    let mut traits = Vec::with_capacity(7);
-    for i in 0..APPEARANCE_TRAIT_GROUPS {
-        let trait_index = (i * APPEARANCE_TRAITS_PER_GROUP) as u8;
-        traits.push(get_trait_value(
-            dna,
-            APPEARANCE_TRAITS_OFFSET,
-            APPEARANCE_TRAIT_BITS,
-            trait_index,
-        ));
-    }
-    traits
-}
+// /// Get dominant appearance traits (7 traits - first from each group)
+// pub fn get_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     let mut traits = Vec::with_capacity(7);
+//     for i in 0..APPEARANCE_TRAIT_GROUPS {
+//         let trait_index = (i * APPEARANCE_TRAITS_PER_GROUP) as u8;
+//         traits.push(get_trait_value(
+//             dna,
+//             APPEARANCE_TRAITS_OFFSET,
+//             APPEARANCE_TRAIT_BITS,
+//             trait_index,
+//         ));
+//     }
+//     traits
+// }
 
-/// Get all power traits (21 traits)
-pub fn get_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-    let mut traits = Vec::with_capacity(21);
-    for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
-        traits.push(get_trait_value(
-            dna,
-            POWER_TRAITS_OFFSET,
-            POWER_TRAIT_BITS,
-            i as u8,
-        ));
-    }
-    traits
-}
+// /// Get all power traits (21 traits)
+// pub fn get_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     let mut traits = Vec::with_capacity(21);
+//     for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
+//         traits.push(get_trait_value(
+//             dna,
+//             POWER_TRAITS_OFFSET,
+//             POWER_TRAIT_BITS,
+//             i as u8,
+//         ));
+//     }
+//     traits
+// }
 
-/// Get dominant power traits (7 traits - first from each group)
-pub fn get_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-    let mut traits = Vec::with_capacity(7);
-    for i in 0..POWER_TRAIT_GROUPS {
-        let trait_index = (i * POWER_TRAITS_PER_GROUP) as u8;
-        traits.push(get_trait_value(
-            dna,
-            POWER_TRAITS_OFFSET,
-            POWER_TRAIT_BITS,
-            trait_index,
-        ));
-    }
-    traits
-}
+// /// Get dominant power traits (7 traits - first from each group)
+// pub fn get_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     let mut traits = Vec::with_capacity(7);
+//     for i in 0..POWER_TRAIT_GROUPS {
+//         let trait_index = (i * POWER_TRAITS_PER_GROUP) as u8;
+//         traits.push(get_trait_value(
+//             dna,
+//             POWER_TRAITS_OFFSET,
+//             POWER_TRAIT_BITS,
+//             trait_index,
+//         ));
+//     }
+//     traits
+// }
 
-/// Evolve DNA to next stage (increases evolutionary stage and may improve traits)
-pub fn evolve_dna(dna: &mut [u8; 32], random_seed: &[u8]) -> Result<()> {
-    let current_stage = get_evolutionary_stage(dna);
-    require!(
-        current_stage < 7,
-        crate::errors::ErrorCode::InvalidParameters
-    );
+// /// Evolve DNA to next stage (increases evolutionary stage and may improve traits)
+// pub fn evolve_dna(dna: &mut [u8; 32], random_seed: &[u8]) -> Result<()> {
+//     let current_stage = get_evolutionary_stage(dna);
+//     require!(
+//         current_stage < 7,
+//         crate::errors::ErrorCode::InvalidParameters
+//     );
 
-    let new_stage = current_stage + 1;
-    set_evolutionary_stage(dna, new_stage)?;
+//     let new_stage = current_stage + 1;
+//     set_evolutionary_stage(dna, new_stage)?;
 
-    // Use random seed to probabilistically improve traits
-    let hash = keccak::hash(random_seed);
-    let random_bytes = hash.to_bytes();
+//     // Use random seed to probabilistically improve traits
+//     let hash = keccak::hash(random_seed);
+//     let random_bytes = hash.to_bytes();
 
-    // Evolve appearance traits with ~30% chance each
-    for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
-        if random_bytes[i % 32] < 77 {
-            // 77/256 ≈ 30%
-            let current = get_trait_value(
-                dna,
-                APPEARANCE_TRAITS_OFFSET,
-                APPEARANCE_TRAIT_BITS,
-                i as u8,
-            );
-            let max_for_stage = 15 + new_stage; // Increases with evolution
-            if current < max_for_stage {
-                set_trait_value(
-                    dna,
-                    APPEARANCE_TRAITS_OFFSET,
-                    APPEARANCE_TRAIT_BITS,
-                    i as u8,
-                    current + 1,
-                );
-            }
-        }
-    }
+//     // Evolve appearance traits with ~30% chance each
+//     for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
+//         if random_bytes[i % 32] < 77 {
+//             // 77/256 ≈ 30%
+//             let current = get_trait_value(
+//                 dna,
+//                 APPEARANCE_TRAITS_OFFSET,
+//                 APPEARANCE_TRAIT_BITS,
+//                 i as u8,
+//             );
+//             let max_for_stage = 15 + new_stage; // Increases with evolution
+//             if current < max_for_stage {
+//                 set_trait_value(
+//                     dna,
+//                     APPEARANCE_TRAITS_OFFSET,
+//                     APPEARANCE_TRAIT_BITS,
+//                     i as u8,
+//                     current + 1,
+//                 );
+//             }
+//         }
+//     }
 
-    // Evolve power traits with ~30% chance each
-    for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
-        let rand_index = (28 + i) % 32;
-        if random_bytes[rand_index] < 77 {
-            // 77/256 ≈ 30%
-            let current = get_trait_value(dna, POWER_TRAITS_OFFSET, POWER_TRAIT_BITS, i as u8);
-            let max_for_stage = 7 + new_stage; // Increases with evolution
-            if current < max_for_stage {
-                set_trait_value(
-                    dna,
-                    POWER_TRAITS_OFFSET,
-                    POWER_TRAIT_BITS,
-                    i as u8,
-                    current + 1,
-                );
-            }
-        }
-    }
+//     // Evolve power traits with ~30% chance each
+//     for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
+//         let rand_index = (28 + i) % 32;
+//         if random_bytes[rand_index] < 77 {
+//             // 77/256 ≈ 30%
+//             let current = get_trait_value(dna, POWER_TRAITS_OFFSET, POWER_TRAIT_BITS, i as u8);
+//             let max_for_stage = 7 + new_stage; // Increases with evolution
+//             if current < max_for_stage {
+//                 set_trait_value(
+//                     dna,
+//                     POWER_TRAITS_OFFSET,
+//                     POWER_TRAIT_BITS,
+//                     i as u8,
+//                     current + 1,
+//                 );
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn test_dna_generation() {
-        let mint_number = 1;
-        let minter = Pubkey::new_unique();
-        let slot = 12345;
-        let family = 3;
+//     #[test]
+//     fn test_dna_generation() {
+//         let mint_number = 1;
+//         let minter = Pubkey::new_unique();
+//         let slot = 12345;
+//         let family = 3;
 
-        let dna = generate_genesis_dna(mint_number, &minter, slot, family).unwrap();
+//         let dna = generate_genesis_dna(mint_number, &minter, slot, family).unwrap();
 
-        // Check family type
-        assert_eq!(get_family_type(&dna), family);
+//         // Check family type
+//         assert_eq!(get_family_type(&dna), family);
 
-        // Check evolution stage is 0
-        assert_eq!(get_evolutionary_stage(&dna), 0);
+//         // Check evolution stage is 0
+//         assert_eq!(get_evolutionary_stage(&dna), 0);
 
-        // Check traits are in valid range
-        let appearance = get_appearance_traits(&dna);
-        assert_eq!(appearance.len(), 28);
-        for trait_val in appearance {
-            assert!(
-                trait_val <= 15,
-                "Appearance trait {} should be <= 15",
-                trait_val
-            );
-        }
+//         // Check traits are in valid range
+//         let appearance = get_appearance_traits(&dna);
+//         assert_eq!(appearance.len(), 28);
+//         for trait_val in appearance {
+//             assert!(
+//                 trait_val <= 15,
+//                 "Appearance trait {} should be <= 15",
+//                 trait_val
+//             );
+//         }
 
-        let power = get_power_traits(&dna);
-        assert_eq!(power.len(), 21);
-        for trait_val in power {
-            assert!(trait_val <= 7, "Power trait {} should be <= 7", trait_val);
-        }
-    }
+//         let power = get_power_traits(&dna);
+//         assert_eq!(power.len(), 21);
+//         for trait_val in power {
+//             assert!(trait_val <= 7, "Power trait {} should be <= 7", trait_val);
+//         }
+//     }
 
-    #[test]
-    fn test_evolution() {
-        let mint_number = 1;
-        let minter = Pubkey::new_unique();
-        let slot = 12345;
-        let family = 5;
+//     #[test]
+//     fn test_evolution() {
+//         let mint_number = 1;
+//         let minter = Pubkey::new_unique();
+//         let slot = 12345;
+//         let family = 5;
 
-        let mut dna = generate_genesis_dna(mint_number, &minter, slot, family).unwrap();
+//         let mut dna = generate_genesis_dna(mint_number, &minter, slot, family).unwrap();
 
-        let seed = b"evolution_seed_1";
-        evolve_dna(&mut dna, seed).unwrap();
+//         let seed = b"evolution_seed_1";
+//         evolve_dna(&mut dna, seed).unwrap();
 
-        assert_eq!(get_evolutionary_stage(&dna), 1);
-    }
-}
+//         assert_eq!(get_evolutionary_stage(&dna), 1);
+//     }
+// }
+

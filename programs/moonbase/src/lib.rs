@@ -4,20 +4,30 @@ mod events;
 mod genescience;
 pub mod instructions;
 mod mpl_core_helpers;
-mod state;
+pub mod state;
 
 pub use instructions::admin::*;
 pub use instructions::economy::*;
 pub use instructions::user::*;
+pub use instructions::stake::*;
+pub use instructions::game::*;
+pub use instructions::eggs::*;
+pub use instructions::tax::*;
+pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
+pub use instructions::admin::CreatorInput;
 
-declare_id!("EAJaPU6L3dDbhydfkwyzD4fLj1dVPvWcFLdA87XYcBJZ");
+declare_id!("bKuXBWKQGB8nQWM9jsfPGP3BA3yDFK2jao4FmeDrvvs");
 
 #[program]
 pub mod moonbase {
     use super::*;
-    use crate::instructions::admin::{self, CreateDragonEggCollection};
-    use crate::instructions::economy::{self};
-    use crate::instructions::user::{self};
+    use instructions::admin::{self};
+    use instructions::economy::{self};
+    use instructions::user::{self};
+    use instructions::stake::{self};
+    use instructions::game::{self};
+    use instructions::eggs::{self};
+    use instructions::tax::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -26,100 +36,74 @@ pub mod moonbase {
     /// Initialize the global program configuration
     /// This function can only be called once as it creates the program's configuration accounts
     /// It will fail if the accounts already exist
-    pub fn initialize(ctx: Context<Initialize>, creation_fee_recipient: Pubkey) -> Result<()> {
-        admin::internal_initialize(ctx, creation_fee_recipient)
-    }
-
-    /// Set the Dragon Egg collection address (admin only)
-    pub fn set_dragon_egg_collection(
-        ctx: Context<UpdateConfigAc>,
-        dragon_egg_collection: Pubkey,
-    ) -> Result<()> {
-        admin::set_dragon_egg_collection_internal(ctx, dragon_egg_collection)
+    pub fn initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
+        admin::internal_initialize(ctx, fee_recipient)
     }
 
     /// Set the Raydium pool state address (admin only)
     /// Security: Prevents using malicious pools for swaps
+    /// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
     pub fn set_raydium_pool_state(
-        ctx: Context<UpdateConfigAc>,
+        ctx: Context<SetRaydiumPoolState>,
         raydium_pool_state: Pubkey,
     ) -> Result<()> {
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
-    /// Add Dragon Egg URIs to the pool (admin only)
-    pub fn add_dragon_egg_uris(ctx: Context<UpdateConfigAc>, uris: Vec<String>) -> Result<()> {
-        admin::add_dragon_egg_uris_internal(ctx, uris)
+    /// Add a single faction to the global config (admin only)
+    pub fn add_faction(ctx: Context<AddFaction>, faction_name: String, faction_id: u8) -> Result<()> {
+        admin::add_faction_internal(ctx, faction_name, faction_id)
     }
 
-    /// Clear all Dragon Egg URIs (admin only)
-    pub fn clear_dragon_egg_uris(ctx: Context<UpdateConfigAc>) -> Result<()> {
-        admin::clear_dragon_egg_uris_internal(ctx)
+
+    /// Initialize system referral account and buybacks system (admin only)
+    pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+        admin::initialize_system_accounts_internal(ctx)
     }
 
-    /// Add factions to the global config (admin only)
-    pub fn add_factions(ctx: Context<UpdateConfigAc>, factions: Vec<String>) -> Result<()> {
-        admin::add_factions_internal(ctx, factions)
-    }
-
-    /// Create Dragon Egg collection with program PDA as authority
-    /// This allows the program to mint NFTs from the collection
-    pub fn create_dragon_egg_collection(
-        ctx: Context<CreateDragonEggCollection>,
-        name: String,
-        uri: String,
-    ) -> Result<()> {
-        admin::create_dragon_egg_collection_internal(ctx, name, uri)
-    }
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
     pub fn update_config(
         ctx: Context<UpdateConfigAc>,
         new_authority: Option<Pubkey>,
-        new_fee_collector: Option<Pubkey>,
-        new_creation_fee_recipient: Option<Pubkey>,
-        new_loot_percentage: Option<u8>,
+        new_fee_recipient: Option<Pubkey>,
     ) -> Result<()> {
         admin::update_config_internal(
             ctx,
             new_authority,
-            new_fee_collector,
-            new_creation_fee_recipient,
-            new_loot_percentage,
+            new_fee_recipient,
         )
     }
 
-    /// Update egg limits for tiers (admin only)
-    pub fn update_egg_limits(
+    /// Update fee configuration (admin only)
+    /// Validates that percentages sum correctly
+    pub fn update_fees(
         ctx: Context<UpdateConfigAc>,
-        tier2_limit: Option<u64>,
-        tier3_limit: Option<u64>,
-        tier4_limit: Option<u64>,
+        new_protocol_fee_pct: Option<u8>,
+        new_buyback_pct: Option<u8>,
+        new_stakers_pct: Option<u8>,
+        new_dbtc_stakers_pct: Option<u8>,
+        new_dbtc_winners_pct: Option<u8>,
+        new_dbtc_same_faction_pct: Option<u8>,
+        new_dbtc_motherlode_pct: Option<u8>,
+        new_refining_fee: Option<u8>,
+        change_faction_fee: Option<u64>,
     ) -> Result<()> {
-        admin::update_egg_limits_internal(ctx, tier2_limit, tier3_limit, tier4_limit)
-    }
-
-    /// Add a new expansion configuration (admin only)
-    pub fn add_expansion(
-        ctx: Context<AddExpansion>,
-        id: u8,
-        name: String,
-        required_level: u8,
-        cost_sol: u64,
-        new_width: u8,
-        new_height: u8,
-    ) -> Result<()> {
-        admin::add_expansion_internal(
+        admin::update_fees_internal(
             ctx,
-            id,
-            name,
-            required_level,
-            cost_sol,
-            new_width,
-            new_height,
+            new_protocol_fee_pct,
+            new_buyback_pct,
+            new_stakers_pct,
+            new_dbtc_stakers_pct,
+            new_dbtc_winners_pct,
+            new_dbtc_same_faction_pct,
+            new_dbtc_motherlode_pct,
+            new_refining_fee,
+            change_faction_fee,
         )
     }
+
 
     // ----------------------------------------------------------------------------------------
     // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
@@ -130,170 +114,217 @@ pub mod moonbase {
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
         start_timestamp: u64,
-        doge_btc_per_slot: u64,
+        doge_btc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
-        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_slot, pool_state)
+        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_round, pool_state)
     }
 
-    /// Deposit moon doge tokens to the mining vault
+    /// Deposit DogeBtc tokens to the mining vault (anyone can call)
+    /// 
+    /// Allows anyone to deposit DogeBtc tokens into the mining vault.
+    /// These tokens will be distributed as rewards to stakers over time.
     pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
         admin::deposit_doge_btc_tokens_internal(ctx, amount)
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ SYSTEM_REFERRAL_ACCOUNT (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ HASHPOWER CONFIG (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Create a new moon base for a user
-    pub fn create_system_referral_account(ctx: Context<CreateSystemReferralAccount>) -> Result<()> {
-        let rewards_acct = &mut ctx.accounts.referrer_rewards;
-        // 1) Set the owner field to the system program key
-        rewards_acct.owner = ctx.accounts.system_program.key();
-        rewards_acct.total_sol_earned = 0;
-        rewards_acct.sol_claimed_for_xp = 0;
-        // 2) Set the bump field to the bump of the account
-        rewards_acct.bump = ctx.bumps.referrer_rewards;
-        rewards_acct.referrals_count = 0;
-
-        Ok(())
+    /// Initialize HashpowerConfig account (admin only)
+    pub fn initialize_hashpower_config(
+        ctx: Context<InitializeHashpowerConfig>,
+        min_lockup_days: u64,
+        max_lockup_days: u64,
+        base_multiplier: u16,
+        max_multiplier: u16,
+    ) -> Result<()> {
+        admin::initialize_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
     }
 
-    // ----------------------------------------------------------
-    // ------------ LOOT REWARDS (ADMIN) --------------------------------
-    // ----------------------------------------------------------
 
-    /// Initialize the loot rewards system
-    pub fn initialize_loot_rewards(ctx: Context<InitializeLootRewards>) -> Result<()> {
-        admin::initialize_loot_rewards_internal(ctx)
+    /// Initialize both custodian token accounts (admin only)
+    /// Initializes:
+    /// - DBTC custodian: Token-2022 account that holds all staked DOGE_BTC tokens (global for all factions)
+    /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
+    pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+        admin::initialize_custodian_accounts(ctx)
     }
 
-    /// Initialize buybacks account system (admin only)
-    pub fn initialize_buybacks(ctx: Context<InitializeBuybacks>) -> Result<()> {
-        admin::initialize_buybacks_internal(ctx)
+    /// Update HashpowerConfig account (admin only)
+    pub fn update_hashpower_config(
+        ctx: Context<UpdateHashpowerConfig>,
+        min_lockup_days: u64,
+        max_lockup_days: u64,
+        base_multiplier: u16,
+        max_multiplier: u16,
+    ) -> Result<()> {
+        admin::update_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
     }
 
-    /// Initialize level statistics tracking (admin only)
-    pub fn initialize_level_stats(ctx: Context<InitializeLevelStats>) -> Result<()> {
-        admin::initialize_level_stats_internal(ctx)
-    }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ MOONBASE EXPANSION FUNCTIONS :: MANAGE EXPANSIONS & PURCHASE -----------
+    // ------------ DRAGON EGG SYSTEM (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize config stores for modules and gears
-    /// Can only be called by the authority
-    pub fn initialize_config_stores(ctx: Context<InitializeConfigStore>) -> Result<()> {
-        admin::initialize_config_stores_internal(ctx)
+    /// Initialize EggConfig account (admin only)
+    /// 
+    /// Creates the EggConfig account that stores Dragon Egg configuration.
+    /// This must be called before creating the Dragon Egg collection.
+    pub fn initialize_egg_config(
+        ctx: Context<InitializeEggConfig>,
+        base_price: u64,
+        curve_a: u64,
+        max_supply: u64,
+    ) -> Result<()> {
+        admin::initialize_egg_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
-    /// Initialize a new module configuration (basic info only)
-    pub fn add_module_to_base(
-        ctx: Context<AddModuleToConfigStore>,
+    /// Create Dragon Egg collection with program PDA as authority (admin only)
+    /// 
+    /// Creates a new Metaplex Core collection for Dragon Egg NFTs.
+    /// The collection's update authority is set to a program-controlled PDA,
+    /// allowing the program to mint NFTs from the collection.
+    /// Requires EggConfig to be initialized first.
+    pub fn create_dragon_egg_collection(
+        ctx: Context<CreateDragonEggCollection>,
         name: String,
-        image_url: String,
-        module_type: u8,
-        faction_ids: Vec<u8>,
-        min_level: u8,
-        width: u8,
-        height: u8,
-        mint_cost: u64,
-        upgrade_cost: u64,
-        upgrade_level_requirements: Vec<u8>,
+        uri: String,
     ) -> Result<()> {
-        admin::add_module_to_base_internal(
-            ctx,
-            name,
-            image_url,
-            module_type,
-            faction_ids,
-            min_level,
-            width,
-            height,
-            mint_cost,
-            upgrade_cost,
-            upgrade_level_requirements,
-        )
+        admin::create_dragon_egg_collection_internal(ctx, name, uri)
     }
 
-    pub fn update_module_internal(
-        ctx: Context<UpdateModuleConfig>,
-        id: u16,
-        image_url: Option<String>,
-        faction_ids: Option<Vec<u8>>,
-        mint_cost: Option<u64>,
-        upgrade_cost: Option<u64>,
-        upgrade_level_requirements: Option<Vec<u8>>,
-        is_active: Option<bool>,
+
+    /// Set Dragon Egg URIs for all factions (admin only)
+    /// uris: Vec of URIs, one per faction (must match number of factions)
+    pub fn set_dragon_egg_uris(
+        ctx: Context<UpdateEggsConfig>,
+        uris: Vec<String>,
     ) -> Result<()> {
-        admin::update_module_internal(
-            ctx,
-            id,
-            image_url,
-            faction_ids,
-            mint_cost,
-            upgrade_cost,
-            upgrade_level_requirements,
-            is_active,
-        )
+        admin::set_dragon_egg_uris_internal(ctx, uris)
     }
 
-    /// Update module stats (required before module can be used)
-    pub fn update_module_stats(
-        ctx: Context<UpdateModuleStats>,
-        id: u16,
-        max_hp: u32,
-        power_consumption: u16,
-        base_hashpower: u32,
-        base_xp_per_hour: u32,
+    /// Clear all Dragon Egg URIs (admin only)
+    pub fn clear_dragon_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+        admin::clear_dragon_egg_uris_internal(ctx)
+    }
+
+    /// Initialize royalties on the Dragon Egg collection (admin only)
+    pub fn init_dragon_egg_royalties(
+        ctx: Context<InitDragonEggRoyalties>,
+        basis_points: u16,
+        creators: Vec<CreatorInput>,
     ) -> Result<()> {
-        admin::update_module_stats_internal(
-            ctx,
-            id,
-            max_hp,
-            power_consumption,
-            base_hashpower,
-            base_xp_per_hour,
-        )
+        admin::init_dragon_egg_royalties(ctx, basis_points, creators)
     }
 
-    // ----------------------------------------------------------
-    // ------------ WITHDRAW SOL FEES (ANYONE) ------------------
-    // ----------------------------------------------------------
-
-    /// Withdraw collected SOL fees from the treasury
-    ///
-    /// Called by MoonEconomy program, withdraws SOL and splits it into 3 parts:
-    /// 1. For DOGE_BTC stakers
-    /// 2. For liquidity providers
-    /// 3. For devs
-    ///
-    /// Internally, 10% is sent to loot rewards.
-    ///
-    pub fn withdraw_sol_fees(ctx: Context<WithdrawSolFees>) -> Result<()> {
-        admin::withdraw_sol_fees_internal(ctx)
+    /// Add or update ticket tier configs (admin only)
+    /// Max 4 ticket tier configs can be set
+    pub fn add_ticket_tier_config(
+        ctx: Context<UpdateEggsConfig>,
+        ticket_tier_index: u8,
+        ticket_value: u64,
+        ticket_count: u16,
+    ) -> Result<()> {
+        admin::add_ticket_tier_config(ctx, ticket_tier_index, ticket_value, ticket_count)
     }
 
-    /// Query function to get treasury info for external programs
-    /// Returns available balance after accounting for POL reserves and loot percentage
-    pub fn query_treasury_info(ctx: Context<QueryTreasuryInfo>) -> Result<TreasuryInfo> {
-        admin::query_treasury_info_internal(ctx)
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize TaxConfig account and create vault token accounts (admin only)
+    pub fn initialize_tax_config(
+        ctx: Context<InitializeTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+        nft_floor_sweep_whitelisted_address: Pubkey,
+    ) -> Result<()> {
+        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, nft_floor_sweep_whitelisted_address)
     }
 
-    /// Query function to get global config values for external programs
-    pub fn query_global_config(ctx: Context<QueryGlobalConfig>) -> Result<GlobalConfigInfo> {
-        admin::query_global_config_internal(ctx)
+    /// Update tax distribution percentages (admin only)
+    pub fn update_tax_config(
+        ctx: Context<UpdateTaxConfig>,
+        nft_floor_sweep_pct: u8,
+        faction_treasury_pct: u8,
+    ) -> Result<()> {
+        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
     }
 
-    /// Query function to get token prices (dBTC and LP) for external programs
-    pub fn query_token_prices(ctx: Context<QueryTokenPrices>) -> Result<TokenPricesInfo> {
-        admin::query_token_prices_internal(ctx)
+    /// Update NFT floor sweep whitelisted address (admin only)
+    pub fn update_nft_floor_sweep_whitelist(
+        ctx: Context<UpdateNftFloorSweepWhitelist>,
+        new_whitelisted_address: Pubkey,
+    ) -> Result<()> {
+        tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
+    }
+ 
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+
+    /// Initialize the global game state for Faction Surge (admin only)
+    /// 
+    /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
+    /// This must be called before any rounds can be started.
+    pub fn initialize_game_state(
+        ctx: Context<InitializeGameState>,
+        round_duration_seconds: i64,
+    ) -> Result<()> {
+        admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
+
+    /// Add a cranker bot to the whitelist (admin only)
+    /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
+    pub fn add_cranker_bot(
+        ctx: Context<UpdateGameState>,
+        bot_pubkey: Pubkey,
+    ) -> Result<()> {
+        admin::add_cranker_bot_internal(ctx, bot_pubkey)
+    }
+
+    /// Remove a cranker bot from the whitelist (admin only)
+    pub fn remove_cranker_bot(
+        ctx: Context<UpdateGameState>,
+        bot_pubkey: Pubkey,
+    ) -> Result<()> {
+        admin::remove_cranker_bot_internal(ctx, bot_pubkey)
+    }
+
+    /// Switch game state (toggle is_active) (admin only)
+    /// 
+    /// Toggles the game's active state. When paused, rounds cannot be started or ended.
+    pub fn switch_game_state(
+        ctx: Context<UpdateGameState>,
+    ) -> Result<()> {
+        admin::switch_game_state_internal(ctx)
+    }
+
+
+ 
     // ----------------------------------------------------------------------------------------
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------
+
+    /// Withdraw collected SOL fees from the treasury (anyone can call)
+    ///
+    /// Withdraws SOL from the treasury and distributes it according to configured percentages:
+    /// - Protocol fee percentage
+    /// - Buyback percentage (for token buybacks)
+    /// - Stakers percentage (distributed to stakers)
+    ///
+    /// The remaining amount goes to the fee recipient (dev earnings).
+    pub fn distribute_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
+        economy::distribute_sol_fees_internal(ctx)
+    }
+
 
     /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
     /// Performs a small SOL → DOGE_BTC swap for price discovery and earnmarks SOL for POL
@@ -313,134 +344,282 @@ pub mod moonbase {
     ) -> Result<()> {
         economy::update_rate_and_add_lp_internal(ctx, lp_token_amount)
     }
+ 
+
 
     // ----------------------------------------------------------------------------------------
-    // ------------ USER FUNCTIONS :: CREATE MOON-BASE, CLAIM REFERRAL REWARDS ----------------
+    // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
-
-    /// Create a new moon base for a user
-    /// pricing_tier options:
-    /// - PRICE_TIER_1 (0.5 SOL): Basic moonbase, no Dragon Egg
-    /// - PRICE_TIER_2 (2.42 SOL): Moonbase + Dragon Egg + 5k electricity
-    /// - PRICE_TIER_3 (4.20 SOL): Moonbase + Dragon Egg + 10k electricity
-    /// - PRICE_TIER_4 (6.9 SOL): Moonbase + Dragon Egg + 15k electricity
-    pub fn create_user_moonbase(
-        ctx: Context<CreateUserMoonbase>,
-        referrer: Option<Pubkey>,
-        faction_id: u8,
-        pricing_tier: u64,
-    ) -> Result<()> {
-        user::initialize_user_moonbase(ctx, referrer, faction_id, pricing_tier)
-    }
-
-    /// Create user moonbase with Dragon Egg NFT (tiers 2-4)
-    pub fn create_user_moonbase_w_egg(
-        ctx: Context<CreateUserMoonbaseWithEgg>,
-        referrer: Option<Pubkey>,
-        faction_id: u8,
-        pricing_tier: u64,
-    ) -> Result<()> {
-        user::initialize_user_moonbase_w_egg(ctx, referrer, faction_id, pricing_tier)
-    }
-
-    /// Purchase a moonbase expansion (user function)
-    pub fn expand_moonbase(ctx: Context<ExpandMoonbase>, expansion_id: u8) -> Result<()> {
-        user::expand_moonbase_internal(ctx, expansion_id)
-    }
-
-    /// Claim referral rewards (CPI only from mooneconomy)
-    pub fn claim_referral_rewards(
-        ctx: Context<ClaimReferralRewards>,
-        new_electricity: u64,
-    ) -> Result<()> {
-        user::claim_referral_rewards_internal(ctx, new_electricity)
-    }
-
-    pub fn update_user_electricity(
-        ctx: Context<UpdateUserElectricity>,
-        to_increase: bool,
+ 
+    /// Withdraw DogeBtc from NFT floor sweep vault (whitelisted address only)
+    pub fn withdraw_nft_floor_sweep_funds(
+        ctx: Context<WithdrawNftFloorSweepFunds>,
         amount: u64,
     ) -> Result<()> {
-        user::update_user_electricity_internal(ctx, to_increase, amount)
+        tax::withdraw_nft_floor_sweep_funds(ctx, amount)
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ USER FUNCTIONS :: INSTALL / UPGRADE MODULEs -------------------------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Buy a module without installing it
-    pub fn buy_module(ctx: Context<BuyModule>, config_id: u16) -> Result<()> {
-        user::buy_module(ctx, config_id)
+    /// STEP 1: Harvest fees from user token accounts to the mint
+    /// Callable by anyone - keeper bot should call this in batches
+    pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
+        tax::crank_harvest_fees(ctx)
     }
 
-    /// Install the free command center module (can only be called once per moonbase)
-    pub fn install_command_center(
-        ctx: Context<InstallCommandCenter>,
-        pos_x: u8,
-        pos_y: u8,
+    /// STEP 2: Withdraw total tax from mint and distribute it
+    /// Callable by anyone - program-controlled withdraw authority
+    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+        tax::crank_distribute_tax(ctx)
+    }
+
+    /// Start a new distribution round (callable by anyone after 7-day cooldown)
+    pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
+        tax::start_distribution_round(ctx)
+    }
+
+    /// Calculate leaderboard position for one faction
+    /// Must be called 12 times to build complete leaderboard
+    pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
+        tax::calculate_faction_leaderboard_position(ctx)
+    }
+
+    /// Calculate rewards for all factions based on leaderboard
+    /// Can only be called after all 12 factions are on leaderboard
+    pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
+        tax::calculate_faction_rewards(ctx)
+    }
+
+    /// Claim treasury rewards for one faction
+    /// Adds rewards to staking reward indexes (50% each to dbtc and lp stakers)
+    pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
+        tax::claim_faction_treasury_rewards(ctx)
+    }
+
+    /// Finish distribution round (check all factions claimed and reset state)
+    pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
+        tax::finish_distribution_round(ctx)
+    }
+
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Start a new round by committing a hash and initializing GameSession
+    /// This commits randomness hash and randomly assigns factions to blocks
+    /// round_id should be current_round_id + 1 (validated in the function)
+    pub fn start_round(
+        ctx: Context<StartRound>,
+        round_id: u64,
+        commit: [u8; 32],
     ) -> Result<()> {
-        user::install_command_center(ctx, pos_x, pos_y)
+        game::start_round(ctx, round_id, commit)
     }
 
-    /// Install/deploy an existing undeployed module
-    pub fn install_module(
-        ctx: Context<InstallModule>,
-        module_index: u8,
-        pos_x: u8,
-        pos_y: u8,
+    /// End the current round by revealing seed, selecting winner, and starting next round
+    /// Verifies commit-reveal, generates final randomness, selects winning block
+    pub fn end_round(
+        ctx: Context<EndRound>,
+        revealed_seed: [u8; 32],
     ) -> Result<()> {
-        user::install_module(ctx, module_index, pos_x, pos_y)
+        game::end_round(ctx, revealed_seed)
+    }
+    
+    /// End the current round by revealing seed, selecting winner, and starting next round
+    /// Verifies commit-reveal, generates final randomness, selects winning block
+    pub fn end_round_faction_rewards(
+        ctx: Context<EndRoundFactionRewards>
+    ) -> Result<()> {
+        game::end_round_faction_rewards(ctx)
     }
 
-    /// Remove a module instance from the moonbase
-    pub fn remove_module(ctx: Context<RemoveModuleInstance>, module_index: u8) -> Result<()> {
-        user::remove_module_internal(ctx, module_index)
-    }
 
-    /// Delete a specific undeployed module permanently
-    pub fn delete_module(ctx: Context<DeleteModule>, module_index: u8) -> Result<()> {
-        user::delete_module(ctx, module_index)
-    }
-
-    /// Upgrade a module instance
-    pub fn upgrade_module(ctx: Context<UpdateModuleInstance>, module_index: u8) -> Result<()> {
-        user::upgrade_module_internal(ctx, module_index)
-    }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ MINING FUNCTIONS :: CLAIM MOONDOGE TOKENS -----------------------------------
+    // ------------ FACTION SURGE RAFFLE FUNCTIONS -------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Claim DogeBtc tokens based on user's hashpower contribution (CPI only from mooneconomy)
-    pub fn claim_dbtc_tokens(ctx: Context<ClaimDogeBtc>, new_electricity: u64) -> Result<()> {
-        user::claim_dbtc_tokens_internal(ctx, new_electricity)
+    /// Initialize a player account for the Faction Surge game
+    pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
+        user::initialize_player(ctx, faction_id, referral_code)
     }
 
-    /// Claim accumulated XP from Attraction modules (CPI only from mooneconomy)
-    pub fn claim_attraction_xp(
-        ctx: Context<ClaimAttractionXP>,
-        module_index: u8,
-        new_electricity: u64,
+    /// Change user's faction
+    /// Requires no staked positions (dbtc/lp hashpower = 0, no eggs staked)
+    /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
+    pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+        user::change_faction(ctx, new_faction_id)
+    }
+
+    /// Join a round by betting SOL
+    /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
+    pub fn join_round(
+        ctx: Context<JoinRound>, 
+        amount: u64,
+        bet_type: BetType,
+        use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::claim_attraction_xp_internal(ctx, module_index, new_electricity)
+        user::join_round(ctx, amount, bet_type, use_ticket)
     }
 
-    /// Claim level-up rewards based on accumulated XP (with loot transfers)
-    pub fn claim_level_up_rewards(ctx: Context<ClaimLevelUpRewards>) -> Result<()> {
-        user::claim_level_up_rewards_internal(ctx)
+    /// Join a round with multiple bets in a single transaction
+    pub fn join_round_batch(
+        ctx: Context<JoinRoundBatch>,
+        bet_types: Vec<BetType>,
+        amount_per_bet: u64,
+        use_ticket: Option<u8>,
+    ) -> Result<()> {
+        user::join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
     }
+
+    /// Initialize autominer vault with flexible block/faction configuration
+    pub fn init_autominer(
+        ctx: Context<InitAutominer>,
+        blocks_config: Option<BlocksConfig>,
+        factions_config: Option<FactionsConfig>,
+        sol_per_round: u64,
+        num_rounds: u32,
+    ) -> Result<()> {
+        user::init_autominer(ctx, blocks_config, factions_config, sol_per_round, num_rounds)
+    }
+
+    /// Execute autominer bet (keeper instruction)
+    pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+        user::execute_autominer_bet(ctx)
+    }
+
+    /// Stop autominer and refund remaining SOL
+    pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+        user::stop_autominer(ctx)
+    }
+
+
+    /// Claim rewards for a user after round ends
+    pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>, round_id: u64) -> Result<()> {
+        user::internal_claim_round_rewards(round_id, ctx)
+    }
+
+ 
+    // ----------------------------------------------------------------------------------------
+    // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MOONDOGE / LP TOKENs  ------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Stake DogeBtc tokens to earn SOL and dbtc rewards
+    pub fn stake_moondoge(
+        ctx: Context<StakeDogeBtc>,
+        amount: u64,
+        lockup_duration: u64,
+        position_index: u8,
+    ) -> Result<()> {
+        stake::stake_moondoge(ctx, amount, lockup_duration, position_index)
+    }
+
+    /// Unstake DogeBtc tokens from a position
+    pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
+        stake::unstake_moondoge(ctx, position_index)
+    }
+
+    /// Stake LP tokens to earn SOL and dbtc rewards
+    pub fn stake_lp_tokens(
+        ctx: Context<StakeLpTokens>,
+        amount: u64,
+        lockup_duration: u64,
+        position_index: u8,
+    ) -> Result<()> {
+        stake::stake_lp_tokens(ctx, amount, lockup_duration, position_index)
+    }
+
+    /// Unstake LP tokens from a position
+    pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+        stake::unstake_lp_tokens(ctx, position_index)
+    }
+    
+    // /// Claim SOL rewards from DogeBtc and LP staking
+    // pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
+    //     stake::claim_sol_rewards(ctx)
+    // }
+    
+    // /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
+    // pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+    //     stake::claim_dbtc_rewards(ctx)
+    // }
+    
+    // /// Claim referral rewards (SOL and DogeBtc earned from referrals)
+    // pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+    //     stake::claim_referral_rewards(ctx)
+    // }
 
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Incubate a Dragon Egg in the moonbase (max 1 per moonbase)
-    pub fn incubate_dragon_egg(ctx: Context<IncubateDragonEgg>) -> Result<()> {
-        user::incubate_dragon_egg_internal(ctx)
+
+    /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
+    /// 
+    /// Allows the admin to mint a Dragon Egg NFT without payment.
+    /// The NFT is minted directly to the specified recipient address.
+    /// 
+    /// # Parameters
+    /// - `recipient`: Address that will receive the minted NFT
+    /// - `faction_id`: Faction ID the egg belongs to
+    pub fn admin_mint_dragon_egg(
+        ctx: Context<AdminMintDragonEgg>,
+        recipient: Pubkey,
+        faction_id: u8,
+    ) -> Result<()> {
+        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id)
     }
 
-    /// Remove Dragon Egg from moonbase incubation
-    pub fn remove_dragon_egg(ctx: Context<RemoveDragonEgg>) -> Result<()> {
-        user::remove_dragon_egg_internal(ctx)
+
+    /// Mint a single Dragon Egg NFT (anyone can call)
+    /// 
+    /// Mints a Dragon Egg NFT using bonding curve pricing based on current supply.
+    /// Users can optionally select a ticket tier to receive free tickets when minting.
+    /// 
+    /// # Parameters
+    /// - `faction_id`: Faction ID the egg belongs to
+    /// - `ticket_tier_index`: Optional ticket tier index (0-3) to receive free tickets
+    pub fn mint_dragon_egg(
+        ctx: Context<MintDragonEgg>,
+        faction_id: u8,
+        ticket_tier_index: Option<u8>,
+    ) -> Result<()> {
+        eggs::mint_dragon_egg(ctx, faction_id, ticket_tier_index)
     }
+
+    /// Batch mint multiple Dragon Eggs (anyone can call, max 10 per transaction)
+    /// 
+    /// Mints multiple Dragon Egg NFTs in a single transaction.
+    /// Each egg uses bonding curve pricing based on the current supply at mint time.
+    /// 
+    /// # Parameters
+    /// - `faction_id`: Faction ID all eggs belong to
+    /// - `mint_count`: Number of eggs to mint (1-10)
+    pub fn batch_mint_dragon_eggs(
+        ctx: Context<BatchMintDragonEggs>,
+        faction_id: u8,
+        mint_count: u8,
+        ticket_tier_index: Option<u8>,
+    ) -> Result<()> {
+        eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count, ticket_tier_index)
+    }
+
+    /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)
+    pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
+        eggs::stake_dragon_egg(ctx)
+    }
+
+    /// Unstake a Dragon Egg (remove hashpower boost)
+    pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
+        eggs::unstake_dragon_egg(ctx)
+    }
+
+    /// Claim power points and distribute them to staked eggs
+    /// Power is accumulated when claiming dbtc rewards
+    pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
+        eggs::claim_power(ctx)
+    }
+
+
+   
 }
