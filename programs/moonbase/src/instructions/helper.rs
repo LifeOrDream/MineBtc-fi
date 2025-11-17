@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
 use anchor_spl::token_2022::{self, Burn};
+use anchor_spl::token::{self as token_standard, Burn as StandardBurn};
 use crate::state::*;
 use crate::errors::ErrorCode;
 
@@ -219,6 +220,9 @@ pub fn add_dogebtc_position(
     player_ac: &mut PlayerData,
     position_index: u8,
 ) -> Result<()> {
+    msg!("🔍 [add_dogebtc_position] Adding position index: {}", position_index);
+    msg!("🔍 [add_dogebtc_position] MAX_ALLOWED_POSITIONS: {}", MAX_ALLOWED_POSITIONS);
+
     if position_index >= MAX_ALLOWED_POSITIONS {
         return Err(ErrorCode::InvalidParameters.into());
     }
@@ -228,11 +232,14 @@ pub fn add_dogebtc_position(
         .moondoge_position_indices
         .contains(&position_index)
     {
+        msg!("🔍 [add_dogebtc_position] Position index is not already active");
         // Ensure we're not exceeding the max allowed positions
         if player_ac.moondoge_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            msg!("🔍 [add_dogebtc_position] Exceeding max allowed positions");
             return Err(ErrorCode::InvalidParameters.into());
         }
         player_ac.moondoge_position_indices.push(position_index);
+        msg!("🔍 [add_dogebtc_position] Position index added: {}", position_index);
     }
 
     Ok(())
@@ -367,25 +374,35 @@ pub fn calculate_emergency_tax(user_position: &StakedPosition, current_ts: i64, 
 }
 
 
-/// Charge emergency tax: 50% burned, 50% sent to faction treasury vault
-/// This function handles the penalty for early withdrawal from staking positions
+/// Charge emergency tax for DBTC tokens: 50% burned, 50% sent to DBTC vault
+/// This function handles the penalty for early withdrawal from DBTC staking positions
+/// Note: The 50% sent to vault accounts for 1% burn tax (transfers 99% of that 50%)
 pub fn charge_emergency_tax<'info>(
     dbtc_custodian: &AccountInfo<'info>,
     dbtc_custodian_authority: &AccountInfo<'info>,
     dbtc_mint: &AccountInfo<'info>,
     faction_state: &mut FactionState,
+    dbtc_token_vault: &AccountInfo<'info>,
     token_program: &AccountInfo<'info>,
     custodian_authority_bump: u8,
     penalty_amount: u64,
 ) -> Result<()> {
-    msg!("💰 [charge_emergency_tax] Processing emergency tax");
+    msg!("💰 [charge_emergency_tax] Processing DBTC emergency tax");
     msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
     
-    // Split penalty: 50% to burn, 50% to faction treasury vault
+    // Split penalty: 50% to burn, 50% to DBTC vault
     let burn_amt = penalty_amount / 2;
-    let rewards_amt = penalty_amount - burn_amt; // Ensure we account for rounding
+    let vault_amt = penalty_amount - burn_amt;  
+    
+    // Account for 1% burn tax on the transfer to vault
+    let rewards_amt = vault_amt * (M_HUNDRED - BURN_TAX_PERCENTAGE) / M_HUNDRED;
+    let dbtc_per_share = mul_div(rewards_amt, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
+    faction_state.dbtc_dbtc_reward_index += dbtc_per_share;
+    
+    msg!("   DBTC reward index: {} (+{})", faction_state.dbtc_dbtc_reward_index, dbtc_per_share);
+
     msg!("   Burn amount: {} tokens (50%)", burn_amt as f64 / 1e6);
-    msg!("   Faction staking rewards amount: {} tokens (50%)", rewards_amt as f64 / 1e6);
+    msg!("   Vault transfer amount: {} tokens", vault_amt as f64 / 1e6);
     
     // Burn 50% from custodian
     if burn_amt > 0 {
@@ -402,7 +419,10 @@ pub fn charge_emergency_tax<'info>(
         token_2022::burn(
             CpiContext::new_with_signer(
                 token_program.to_account_info(),
-                Burn {  mint: dbtc_mint.to_account_info(),  from: dbtc_custodian.to_account_info(),  authority: dbtc_custodian_authority.to_account_info(),
+                Burn {
+                    mint: dbtc_mint.to_account_info(),
+                    from: dbtc_custodian.to_account_info(),
+                    authority: dbtc_custodian_authority.to_account_info(),
                 },
                 custodian_signer,
             ),
@@ -411,10 +431,80 @@ pub fn charge_emergency_tax<'info>(
         msg!("   ✅ Burned {} tokens", burn_amt as f64 / 1e6);
     }
 
-    let dbtc_per_share = mul_div(rewards_amt, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-    faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + dbtc_per_share;
+    // Transfer 50% (minus 1% burn tax) to DBTC vault
+    if vault_amt > 0 {
+        msg!("   Transferring {} tokens to DBTC vault...", vault_amt as f64 / 1e6);
+        
+        // Get PDA signer seeds for both authorities
+        let custodian_authority_seeds = &[
+            DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[custodian_authority_bump],
+        ];
+        let custodian_signer = &[&custodian_authority_seeds[..]];
+        
+        // Transfer from custodian to vault (Token-2022 transfer_checked)
+        anchor_spl::token_interface::transfer_checked(
+            CpiContext::new_with_signer(
+                token_program.to_account_info(),
+                anchor_spl::token_interface::TransferChecked {
+                    from: dbtc_custodian.to_account_info(),
+                    to: dbtc_token_vault.to_account_info(),
+                    authority: dbtc_custodian_authority.to_account_info(),
+                    mint: dbtc_mint.to_account_info(),
+                },
+                custodian_signer,
+            ),
+            vault_amt,
+            6,  
+        )?;
+        msg!("   ✅ Transferred {} tokens to DBTC vault", vault_amt as f64 / 1e6);
+    }
     
     msg!("   ✅ Emergency tax charged successfully");
+    
+    Ok(())
+}
+
+/// Charge emergency tax for LP tokens: 100% burned
+/// This function handles the penalty for early withdrawal from LP staking positions
+/// LP tokens are fully burned with no rewards to stakers
+pub fn charge_lp_emergency_tax<'info>(
+    liquidity_custodian: &AccountInfo<'info>,
+    liquidity_custodian_authority: &AccountInfo<'info>,
+    lp_mint: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    custodian_authority_bump: u8,
+    penalty_amount: u64,
+) -> Result<()> {
+    msg!("💰 [charge_lp_emergency_tax] Processing LP emergency tax");
+    msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
+    msg!("   Burning 100% of penalty (no rewards to stakers)");
+    
+    if penalty_amount > 0 {
+        // Get PDA signer seeds for the liquidity_custodian authority (global)
+        let custodian_authority_seeds = &[
+            LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[custodian_authority_bump],
+        ];
+        let custodian_signer = &[&custodian_authority_seeds[..]];
+        
+        // Burn 100% of penalty from custodian (standard SPL Token burn)
+        token_standard::burn(
+            CpiContext::new_with_signer(
+                token_program.to_account_info(),
+                StandardBurn {
+                    mint: lp_mint.to_account_info(),
+                    from: liquidity_custodian.to_account_info(),
+                    authority: liquidity_custodian_authority.to_account_info(),
+                },
+                custodian_signer,
+            ),
+            penalty_amount,
+        )?;
+        msg!("   ✅ Burned {} LP tokens", penalty_amount as f64 / 1e6);
+    }
+    
+    msg!("   ✅ LP emergency tax charged successfully");
     
     Ok(())
 }

@@ -41,58 +41,18 @@ pub struct MiningTokenVaultSet {
     pub mining_start_timestamp: u64,
 }
 
-// Global Config events
-#[event]
-pub struct ConfigUpdated {
-    pub authority: Pubkey,
-    pub sol_claimer: Pubkey,
-}
-
+ 
 #[event]
 pub struct FactionsAdded {
     pub authority: Pubkey,
     pub factions: Vec<String>,
     pub total_factions: u8, // Changed from usize to u8 for Anchor event compatibility
 }
-
-#[event]
-pub struct DogeBtcTokensClaimed {
-    pub owner: Pubkey,
-    pub amount: u64,
-}
-
-#[event]
-pub struct MiningRewardsProcessed {
-    pub owner: Pubkey,
-    pub hashpower: u64,
-    pub tokens_earned: u64,
-}
-
-#[event]
-pub struct MiningHalveningOccurred {
-    pub slot: u64,
-    pub new_rate: u64,
-    pub next_halvening_slot: u64,
-}
-
-#[event]
-pub struct UserElectricityUpdated {
-    pub user: Pubkey,
-    pub previous_amount: u64,
-    pub new_amount: u64,
-    pub is_increase: bool,
-}
-
+ 
 // ------------------------------
 // Dynamic distribution events
 // ------------------------------
-
-#[event]
-pub struct RaydiumPoolSet {
-    pub authority: Pubkey,
-    pub pool_state: Pubkey,
-}
-
+ 
 /// Price snapshot taken every 30 minutes (1-8 snapshots per 4-hour cycle)
 #[event]
 pub struct PriceSnapshotTaken {

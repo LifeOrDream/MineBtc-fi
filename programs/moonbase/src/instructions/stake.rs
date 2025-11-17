@@ -62,6 +62,9 @@ pub fn stake_moondoge(
 
     // Add position index to player data
     helper::add_dogebtc_position(player_data, position_index)?;
+    msg!("🔍 [stake_moondoge] Position index added: {}", position_index);
+    msg!("🔍 [stake_moondoge] Player data - Position indices: {:?}", player_data.moondoge_position_indices);
+    msg!("🔍 [stake_moondoge] Player data - Total positions: {}", player_data.moondoge_position_indices.len());
 
     // Calculate multiplier based on lockup duration
     let multiplier = helper::calculate_multiplier(
@@ -88,6 +91,7 @@ pub fn stake_moondoge(
     if user_position.staked_amount > 0 {    
         msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount);
         require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionNotLocked);
+        require!( lockup_duration <= user_position.lockup_duration, ErrorCode::InvalidParameters);
 
         // Update staked amount with actual_amount (post-tax)
         user_position.staked_amount += actual_amount;
@@ -228,12 +232,13 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         
         // Charge emergency tax if any penalty
         if penalty_amount > 0 {
-            // Charge emergency tax: 50% to burn, 50% to faction staking rewards
+            // Charge emergency tax: 50% to burn, 50% to DBTC vault  
             helper::charge_emergency_tax(
                 &ctx.accounts.dbtc_custodian.to_account_info(),
                 &ctx.accounts.dbtc_custodian_authority.to_account_info(),
                 &ctx.accounts.dbtc_mint.to_account_info(),
                 faction_state,
+                &ctx.accounts.dbtc_token_vault.to_account_info(),
                 &ctx.accounts.token_program.to_account_info(),
                 ctx.bumps.dbtc_custodian_authority,
                 penalty_amount,
@@ -381,8 +386,8 @@ pub fn stake_lp_tokens(
     // If position exists, validate and update
     if user_position.staked_amount > 0 {    
         msg!("🔄 Updating existing position - Current amount: {}", user_position.staked_amount as f64 / 1e6);
-        require!(user_position.faction_id == player_data.faction_id, ErrorCode::InvalidFactionId);
         require!(user_position.lockup_end_timestamp > current_ts, ErrorCode::PositionNotLocked);
+        require!( lockup_duration <= user_position.lockup_duration, ErrorCode::InvalidParameters);
 
         // Update staked amount with actual_amount (post-tax)
         user_position.staked_amount += actual_amount;
@@ -517,12 +522,11 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         
         // Charge emergency tax if any penalty
         if penalty_amount > 0 {
-            // Charge emergency tax: 50% to burn, 50% to faction staking rewards
-            helper::charge_emergency_tax(
+            // Charge emergency tax: 100% to burn (no rewards to stakers)
+            helper::charge_lp_emergency_tax(
                 &ctx.accounts.liquidity_custodian.to_account_info(),
                 &ctx.accounts.liquidity_custodian_authority.to_account_info(),
                 &ctx.accounts.lp_mint.to_account_info(),
-                faction_state,
                 &ctx.accounts.token_program.to_account_info(),
                 ctx.bumps.liquidity_custodian_authority,
                 penalty_amount,
@@ -1081,6 +1085,21 @@ pub struct UnstakeDogeBtc<'info> {
         bump
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    
+    /// CHECK: DogeBtc token vault (main vault where tokens are deposited)
+    #[account(
+        mut,
+        seeds = [DOGE_BTC_VAULT_SEED.as_ref(), doge_btc_mining.key().as_ref()],
+        bump,
+        constraint = dbtc_token_vault.mint == dbtc_mint.key() @ ErrorCode::InvalidMint,
+    )]
+    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+        
+    #[account(
+        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        bump = doge_btc_mining.bump
+    )]
+    pub doge_btc_mining: Account<'info, DogeBtcMining>,
     
     /// User who is unstaking tokens
     #[account(mut)]
