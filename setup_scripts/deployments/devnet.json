@@ -261,7 +261,7 @@
     "collection_address": "DFfCWTQQKV5ug83sVoBgrvhaWZhRmTNubpg4E3G6CpoY",
     "collection_name": "DogeTech Dragon Eggs",
     "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
-    "update_authority": "61vaU2rsuhjGmft2sdq8PYzzxvDCQNoVFNh5mRMwRbK6",
+    "collection_authority": "61vaU2rsuhjGmft2sdq8PYzzxvDCQNoVFNh5mRMwRbK6",
     "tx_signature": "5WbigrNZ4cY2atNeMETm8qsx93KXSUvYcb8rKEE4NaaPFt8szeR2LoMHqrYPqevobsQDbEHhbur2esk3DW85F4Vn",
     "timestamp": "2025-11-17T14:48:49.217Z"
   },

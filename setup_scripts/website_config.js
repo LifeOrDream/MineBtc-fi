@@ -78,8 +78,6 @@ function generateWebsiteConfig(config, deployment) {
       "sol_treasury_pda": deployment.moonbase_program_initialized?.solTreasury_address,
       "eggs_treasury_pda": deployment.moonbase_program_initialized?.eggsTreasury_address,
       "unrefinedRewards_pda": deployment.moonbase_program_initialized?.unrefinedRewards_address,
-
-      "dragon_egg_collection": deployment.dragon_egg_collection_created?.collection_address,
       
       // ========== DOGE_BTC MINING VAULT ==========
       "dbtc_token_vault": deployment.mining_vault_initialized?.vault_address,
@@ -97,6 +95,10 @@ function generateWebsiteConfig(config, deployment) {
       // ========== RAYDIUM POOL STATE (Game-related vaults) ==========
       "sol_rewards_vault": deployment.raydium_pool_state_set?.sol_rewards_vault,
       "sol_prize_pot_vault": deployment.raydium_pool_state_set?.sol_prize_pot_vault,
+
+      // ========== DRAGON EGG COLLECTION ==========
+      "dragon_egg_collection": deployment.dragon_egg_collection_created?.collection_address,
+      "dragon_egg_collection_authority": deployment.dragon_egg_collection_created?.collection_authority,
       
       // ========== LP TOKEN MANAGEMENT ==========
       "lp_token_account": deployment.lp_token_accounts_initialized?.lp_token_account,

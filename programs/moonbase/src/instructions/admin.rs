@@ -938,6 +938,34 @@ pub fn add_ticket_tier_config(
 }
 
 
+
+/// Update EggConfig account (admin only)
+/// 
+/// Updates the EggConfig account that stores Dragon Egg collection configuration.
+/// 
+/// # Parameters
+/// - `base_price`: Base price for Dragon Eggs in SOL (lamports)
+/// - `curve_a`: Bonding curve parameter (controls price growth rate)
+pub fn update_egg_config_internal(
+    ctx: Context<UpdateEggsConfig>,
+    base_price: u64,
+    curve_a: u64,
+) -> Result<()> {
+    msg!("🥚 [update_egg_config_internal] Updating EggConfig");
+    
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    eggs_config.base_price = base_price;
+    eggs_config.curve_a = curve_a;
+    
+    msg!("   ✅ EggConfig initialized");
+    msg!("   Base Price: {} lamports", base_price);
+    msg!("   Curve A: {}", curve_a);
+    
+    Ok(())
+}
+
+
+
 // --------------------------------------------------------------------------------
 // ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
 // --------------------------------------------------------------------------------
@@ -1484,6 +1512,7 @@ pub struct InitializeEggConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
+
 #[derive(Accounts)]
 pub struct CreateDragonEggCollection<'info> {
     #[account(mut)]
@@ -1538,13 +1567,6 @@ pub struct UpdateEggsConfig<'info> {
         bump = eggs_config.bump,
     )]
     pub eggs_config: Account<'info, EggConfig>,
-
-    #[account(
-        mut,
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
-        bump,
-    )]
-    pub doge_btc_mining: Option<Account<'info, DogeBtcMining>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

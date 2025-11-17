@@ -1089,7 +1089,7 @@ async function createDragonEggCollection(moonbaseProgram) {
             collection_address: collectionPubkey.toString(),
             collection_name: config.dragon_eggs.collection_name,
             collection_uri: config.dragon_eggs.collection_uri,
-            update_authority: collectionAuthorityPDA.toString(),
+            collection_authority: collectionAuthorityPDA.toString(),
             tx_signature: tx,
             timestamp: new Date().toISOString()
         };
