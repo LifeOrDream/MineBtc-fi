@@ -465,3 +465,89 @@ pub struct RoundFactionRewardsDistributed {
     pub motherlode_pot_size_on_hit: u64,
     pub timestamp: i64,
 }
+
+// ========================================================================================
+// =============================== TAX & DISTRIBUTION EVENTS =============================
+// ========================================================================================
+
+/// Event emitted when tax is distributed from mint to vaults
+#[event]
+pub struct TaxDistributed {
+    pub total_tax_amount: u64,
+    pub nft_floor_sweep_amount: u64,
+    pub faction_treasury_amount: u64,
+    pub burn_amount: u64,
+    pub total_burnt: u64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when NFT floor sweep funds are withdrawn
+#[event]
+pub struct NftFloorSweepFundsWithdrawn {
+    pub whitelisted_address: Pubkey,
+    pub amount: u64,
+    pub nft_floor_sweep_vault: Pubkey,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a new distribution round starts
+#[event]
+pub struct DistributionRoundStarted {
+    pub tax_config: Pubkey,
+    pub faction_treasury_balance: u64,
+    pub start_timestamp: i64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when faction leaderboard position is calculated
+#[event]
+pub struct FactionLeaderboardPositionCalculated {
+    pub tax_config: Pubkey,
+    pub faction_id: u8,
+    pub faction_state: Pubkey,
+    pub total_hashpower: u64,
+    pub dbtc_hashpower: u64,
+    pub lp_hashpower: u64,
+    pub rank: u8,
+    pub leaderboard_count: u8,
+    pub timestamp: i64,
+}
+
+/// Event emitted when faction rewards are calculated
+#[event]
+pub struct FactionRewardsCalculated {
+    pub tax_config: Pubkey,
+    pub total_treasury: u64,
+    pub first_place_faction_id: u8,
+    pub first_place_reward: u64,
+    pub second_place_faction_id: u8,
+    pub second_place_reward: u64,
+    pub third_place_faction_id: u8,
+    pub third_place_reward: u64,
+    pub random_winner_faction_id: u8,
+    pub random_winner_reward: u64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a faction claims their treasury rewards
+#[event]
+pub struct FactionTreasuryRewardsClaimed {
+    pub tax_config: Pubkey,
+    pub faction_id: u8,
+    pub faction_state: Pubkey,
+    pub rank: u8,
+    pub total_reward: u64,
+    pub dbtc_staker_reward: u64,
+    pub lp_staker_reward: u64,
+    pub dbtc_emission_vault: Pubkey,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a distribution round finishes
+#[event]
+pub struct DistributionRoundFinished {
+    pub tax_config: Pubkey,
+    pub end_timestamp: i64,
+    pub next_round_start_after: i64,
+    pub timestamp: i64,
+}

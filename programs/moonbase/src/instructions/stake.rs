@@ -174,6 +174,10 @@ pub fn stake_moondoge(
 
 /// Unstake DogeBtc tokens from a position
 pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
+    // Store values before mutable borrow (for event emission)
+    let position_key = ctx.accounts.user_position.key();
+    let player_data_key = ctx.accounts.player_data.key();
+    
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
@@ -288,12 +292,25 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     user_position.staked_amount = 0;
     user_position.weighted_amount = 0;
     
+    // Store values for emergency withdrawal event before resetting position
+    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
+    let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+    let mut remaining_seconds_pct = 0u64;
+    if total_lockup_seconds > 0 {
+        remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
+    }
+    let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
+        (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
+    } else {
+        0
+    };
+    
     // Emit events
     emit!(DogeBtcUnstaked {
         owner: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
+        player_data: player_data_key,
         position_index,
-        position_key: ctx.accounts.user_position.key(),
+        position_key,
         new_sol_rewards,
         new_dbtc_rewards,
         unrefined_dbtc: accrued_dbtc_rewards,
@@ -302,18 +319,10 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     
     // Emit emergency withdrawal event if early withdrawal
     if is_early_withdrawal && penalty_amount > 0 {
-        let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
-        let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
-        let mut remaining_seconds_pct = 0u64;
-        if total_lockup_seconds > 0 {
-            remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
-        }
-        let calc_penalty_pct = (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED;
-        
         emit!(EmergencyWithdrawal {
             owner: ctx.accounts.authority.key(),
-            player_data: ctx.accounts.player_data.key(),
-            position_key: ctx.accounts.user_position.key(),
+            player_data: player_data_key,
+            position_key,
             position_index,
             original_amount: staked_amount,
             penalty_amount,
@@ -469,6 +478,10 @@ pub fn stake_lp_tokens(
 
 /// Unstake LP tokens from a position
 pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+    // Store values before mutable borrow (for event emission)
+    let player_data_key = ctx.accounts.player_data.key();
+    let position_key = ctx.accounts.user_position.key();
+    
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
@@ -584,12 +597,29 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     user_position.staked_amount = 0;
     user_position.weighted_amount = 0;
     
+    // Store values before emitting events (to avoid borrow conflicts)
+    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
+    let remaining_seconds = if is_early_withdrawal {
+        user_position.lockup_end_timestamp - current_ts
+    } else {
+        0
+    };
+    let mut remaining_seconds_pct = 0u64;
+    if total_lockup_seconds > 0 && is_early_withdrawal {
+        remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
+    }
+    let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
+        (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
+    } else {
+        0
+    };
+    
     // Emit events
     emit!(LiquidityUnstaked {
         owner: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
+        player_data: player_data_key,
         position_index,
-        position_key: ctx.accounts.user_position.key(),
+        position_key,
         new_sol_rewards,
         new_dbtc_rewards,
         unrefined_dbtc: accrued_dbtc_rewards,
@@ -598,19 +628,11 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     
     // Emit emergency withdrawal event if early withdrawal
     if is_early_withdrawal && penalty_amount > 0 {
-        let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
-        let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
-        let mut remaining_seconds_pct = 0u64;
-        if total_lockup_seconds > 0 {
-            remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
-        }
-        let calc_penalty_pct = (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED;
-        
         emit!(EmergencyWithdrawal {
             owner: ctx.accounts.authority.key(),
-            player_data: ctx.accounts.player_data.key(),
+            player_data: player_data_key,
             position_index,
-            position_key: ctx.accounts.user_position.key(),
+            position_key,
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,

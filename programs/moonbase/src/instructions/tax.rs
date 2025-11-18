@@ -12,6 +12,7 @@ use anchor_spl::token_2022::spl_token_2022::extension::{
 use anchor_spl::token_interface::{harvest_withheld_tokens_to_mint, HarvestWithheldTokensToMint, withdraw_withheld_tokens_from_mint, WithdrawWithheldTokensFromMint};
 
 use crate::errors::ErrorCode;
+use crate::events::*;
 use crate::state::*;
 use crate::instructions::helper;
 
@@ -167,6 +168,13 @@ pub fn withdraw_nft_floor_sweep_funds(
     )?;
     
     msg!("   ✅ Transferred {} DogeBtc to whitelisted address {}", amount, whitelisted_address.key());
+    
+    emit!(NftFloorSweepFundsWithdrawn {
+        whitelisted_address: whitelisted_address.key(),
+        amount,
+        nft_floor_sweep_vault: ctx.accounts.nft_floor_sweep_vault.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -350,6 +358,18 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
         msg!("   ✅ Burnt {} tokens (Total burnt: {})", (burn_amount as f64) / 1e6, (tax_config_mut.total_burnt as f64) / 1e6);
     }
     
+    // Store total_burnt before emitting event (to avoid borrow checker issues)
+    let total_burnt = ctx.accounts.tax_config.total_burnt;
+    
+    emit!(TaxDistributed {
+        total_tax_amount: withheld_amount,
+        nft_floor_sweep_amount,
+        faction_treasury_amount,
+        burn_amount,
+        total_burnt,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     msg!("✅ [crank_distribute_tax] Tax distribution complete");
     Ok(())
 }
@@ -405,6 +425,13 @@ pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<
     msg!("✅ [start_distribution_round] Distribution round started");
     msg!("   Round start timestamp: {}", current_time);
     
+    emit!(DistributionRoundStarted {
+        tax_config: ctx.accounts.tax_config.key(),
+        faction_treasury_balance,
+        start_timestamp: current_time,
+        timestamp: current_time,
+    });
+    
     Ok(())
 }
 
@@ -412,6 +439,10 @@ pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<
 /// Must be called 12 times (once per faction) to build complete leaderboard
 pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
     msg!("📊 [calculate_faction_leaderboard_position] Calculating leaderboard position");
+    
+    // Store values before mutable borrow (for event emission)
+    let tax_config_key = ctx.accounts.tax_config.key();
+    let faction_state_key = ctx.accounts.faction_state.key();
     
     let tax_config = &mut ctx.accounts.tax_config;
     let faction_state = &ctx.accounts.faction_state;
@@ -462,6 +493,24 @@ pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeade
     msg!("   Rank: {} (0 = highest)", insert_index);
     msg!("   Leaderboard count: {}/12", tax_config.leaderboard_factions_count);
     
+    // Store values before emitting event
+    let faction_id = faction_state.faction_id;
+    let dbtc_hashpower = faction_state.total_dbtc_hashpower;
+    let lp_hashpower = faction_state.total_lp_hashpower;
+    let leaderboard_count = tax_config.leaderboard_factions_count;
+    
+    emit!(FactionLeaderboardPositionCalculated {
+        tax_config: tax_config_key,
+        faction_id,
+        faction_state: faction_state_key,
+        total_hashpower,
+        dbtc_hashpower,
+        lp_hashpower,
+        rank: insert_index as u8,
+        leaderboard_count,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     Ok(())
 }
 
@@ -469,6 +518,9 @@ pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeade
 /// Can only be called after all 12 factions are on leaderboard
 pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
     msg!("💰 [calculate_faction_rewards] Calculating faction rewards");
+    
+    // Store values before mutable borrow (for event emission)
+    let tax_config_key = ctx.accounts.tax_config.key();
     
     let tax_config = &mut ctx.accounts.tax_config;
     
@@ -536,6 +588,26 @@ pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Resul
     }
     
     tax_config.rewards_calculated = true;
+    
+    // Store values before emitting event
+    let first_place_faction_id = tax_config.leaderboard_faction_ids[0];
+    let second_place_faction_id = tax_config.leaderboard_faction_ids[1];
+    let third_place_faction_id = tax_config.leaderboard_faction_ids[2];
+    let random_winner_faction_id = tax_config.leaderboard_faction_ids[random_index];
+    
+    emit!(FactionRewardsCalculated {
+        tax_config: tax_config_key,
+        total_treasury,
+        first_place_faction_id,
+        first_place_reward: first_place_reward,
+        second_place_faction_id,
+        second_place_reward: second_place_reward,
+        third_place_faction_id,
+        third_place_reward: third_place_reward,
+        random_winner_faction_id,
+        random_winner_reward: remaining_amount,
+        timestamp: clock.unix_timestamp,
+    });
     
     msg!("✅ [calculate_faction_rewards] Rewards calculated");
     
@@ -626,6 +698,18 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
     msg!("   Updated dbtc_dbtc_reward_index: {}", faction_state.dbtc_dbtc_reward_index);
     msg!("   Updated lp_dbtc_reward_index: {}", faction_state.lp_dbtc_reward_index);
     
+    emit!(FactionTreasuryRewardsClaimed {
+        tax_config: ctx.accounts.tax_config.key(),
+        faction_id: faction_state.faction_id,
+        faction_state: ctx.accounts.faction_state.key(),
+        rank: rank as u8,
+        total_reward: reward_amount,
+        dbtc_staker_reward: dbtc_reward,
+        lp_staker_reward: lp_reward,
+        dbtc_emission_vault: ctx.accounts.dbtc_emission_vault.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     Ok(())
 }
 
@@ -673,8 +757,18 @@ pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Resul
     tax_config.faction_rewards.clear();
     tax_config.faction_claimed.clear();
     
+    let end_timestamp = tax_config.end_timestamp;
+    let next_round_start_after = end_timestamp + TaxConfig::DISTRIBUTION_COOLDOWN_SECONDS;
+    
     msg!("✅ [finish_distribution_round] Distribution round finished");
     msg!("   Next round can start after: {} seconds", TaxConfig::DISTRIBUTION_COOLDOWN_SECONDS);
+    
+    emit!(DistributionRoundFinished {
+        tax_config: ctx.accounts.tax_config.key(),
+        end_timestamp,
+        next_round_start_after,
+        timestamp: clock.unix_timestamp,
+    });
     
     Ok(())
 }
