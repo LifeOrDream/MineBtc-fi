@@ -579,8 +579,9 @@ pub mod moonbase {
         ctx: Context<AdminMintDragonEgg>,
         recipient: Pubkey,
         faction_id: u8,
+        ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id)
+        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Dragon Eggs (anyone can call, max 10 per transaction)
@@ -591,11 +592,12 @@ pub mod moonbase {
     /// # Parameters
     /// - `faction_id`: Faction ID all eggs belong to
     /// - `mint_count`: Number of eggs to mint (1-10)
+    /// - `ticket_tier_index`: Ticket tier index (0-2)
     pub fn batch_mint_dragon_eggs<'info>(
         ctx: Context<'_, '_, '_, 'info, BatchMintDragonEggs<'info>>,
         faction_id: u8,
         mint_count: u8,
-        ticket_tier_index: Option<u8>,
+        ticket_tier_index: u8,
     ) -> Result<()> {
         eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }

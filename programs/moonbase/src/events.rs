@@ -119,6 +119,7 @@ pub struct DragonEggMinted {
     pub egg_metadata_account: Pubkey,
     pub dragon_egg_asset_signer: Pubkey,
     pub owner: Pubkey,
+    pub player: Pubkey,
     pub mint: Pubkey,
     pub name: String,
     pub uri: String,
@@ -126,6 +127,9 @@ pub struct DragonEggMinted {
     pub multiplier: u32,
     pub initial_power: u32,
     pub faction_id: u8, // Faction/country the egg belongs to
+    pub price: u64,
+    pub ticket_tier: u64,
+    pub ticket_count: u64,
 }
 
 #[event]
@@ -134,6 +138,68 @@ pub struct DragonEggCollectionCreated {
     pub update_authority: Pubkey,
     pub name: String,
     pub uri: String,
+}
+
+/// Event emitted when a Dragon Egg is staked
+/// Tracks multiplier changes and hashpower updates for indexing
+#[event]
+pub struct DragonEggStaked {
+    /// User who staked the egg
+    pub owner: Pubkey,
+    /// Player data account address
+    pub player: Pubkey,
+    /// Egg mint address
+    pub egg_mint: Pubkey,
+    /// Faction ID the egg belongs to
+    pub faction_id: u8,
+    /// Egg metadata account address
+    pub egg_metadata_account: Pubkey,
+    /// Player's current multiplier after staking
+    pub player_multiplier: u16,
+    /// Player's current DBTC hashpower after staking
+    pub dbtc_hashpower: u64,
+    /// Player's current LP hashpower after staking
+    pub lp_hashpower: u64,
+    /// Timestamp of the staking action
+    pub timestamp: i64,
+}
+
+/// Event emitted when a Dragon Egg is unstaked
+/// Tracks multiplier changes and hashpower updates for indexing
+#[event]
+pub struct DragonEggUnstaked {
+    /// User who unstaked the egg
+    pub owner: Pubkey,
+    /// Player data account address
+    pub player: Pubkey,
+    /// Egg mint address
+    pub egg_mint: Pubkey,
+    /// Egg metadata account address
+    pub egg_metadata_account: Pubkey,
+    /// Faction ID the egg belongs to
+    pub faction_id: u8,
+    /// Player's current multiplier after unstaking
+    pub egg_multiplier: u32,
+    /// Player's current DBTC hashpower after unstaking
+    pub dbtc_hashpower: u64,
+    /// Player's current LP hashpower after unstaking
+    pub lp_hashpower: u64,
+    /// Timestamp of the unstaking action
+    pub timestamp: i64,
+}
+
+/// Event emitted when power is claimed and distributed to a staked egg
+/// Tracks power distribution for indexing (emitted per egg)
+#[event]
+pub struct DragonEggPowerClaimed {
+    /// Egg mint address that received power
+    pub egg_mint: Pubkey,
+    /// Power added to this egg
+    pub to_add: u64,
+    /// New total power for this egg after distribution
+    pub power: u32,
+    /// Timestamp of the power claim action
+    pub timestamp: i64,
 }
  
 // ========================================================================================
