@@ -274,3 +274,116 @@ pub struct EmergencyWithdrawal {
     pub penalty_tax_pct: u64,
     pub timestamp: i64,
 }
+
+// ========================================================================================
+// =============================== USER PARTICIPATION EVENTS =============================
+// ========================================================================================
+
+/// Event emitted when a player initializes their account
+#[event]
+pub struct PlayerInitialized {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub faction_id: u8,
+    pub referral_code: Option<Pubkey>,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user changes their faction
+#[event]
+pub struct FactionChanged {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub new_faction_id: u8,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user joins a round with a single bet
+#[event]
+pub struct RoundJoined {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub round_id: u64,
+    pub target_block: u8,
+    pub net_amount: u64,
+    pub fee_amount: u64,
+    pub points_amount: u64,
+    pub used_ticket: bool,
+    pub ticket_type_index: Option<u8>,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user joins a round with multiple bets (batch)
+#[event]
+pub struct RoundJoinedBatch {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub round_id: u64,
+    pub num_bets: u8,
+    pub target_blocks: Vec<u8>,
+    pub net_amounts: Vec<u64>,
+    pub fee_amounts: Vec<u64>,
+    pub points_amounts: Vec<u64>,
+    pub used_ticket: bool,
+    pub ticket_type_index: Option<u8>,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user claims rewards for a round
+#[event]
+pub struct RoundRewardsClaimed {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub round_id: u64,
+    pub sol_reward: u64,
+    pub dbtc_reward: u64,
+    pub timestamp: i64,
+}
+
+// ========================================================================================
+// =============================== AUTOMINER EVENTS ======================================
+// ========================================================================================
+
+/// Event emitted when an autominer vault is initialized
+#[event]
+pub struct AutominerInitialized {
+    pub owner: Pubkey,
+    pub player_data: Pubkey,
+    pub autominer_vault: Pubkey,
+    pub sol_per_round: u64,
+    pub num_rounds: u32,
+    pub bets_per_round: u64,
+    pub bet_size_per_bet: u64,
+    pub has_blocks_config: bool,
+    pub has_factions_config: bool,
+    pub timestamp: i64,
+}
+
+/// Event emitted when autominer executes bets for a round
+#[event]
+pub struct AutominerBetExecuted {
+    pub owner: Pubkey,
+    pub player_data: Pubkey,
+    pub autominer_vault: Pubkey,
+    pub round_id: u64,
+    pub target_blocks: Vec<u8>,
+    pub net_amounts: Vec<u64>,
+    pub fee_amounts: Vec<u64>,
+    pub points_amounts: Vec<u64>,
+    pub caller: Pubkey,
+    pub caller_compensation: u64,
+    pub rounds_remaining: u32,
+    pub vault_closed: bool,
+    pub timestamp: i64,
+}
+
+/// Event emitted when autominer is stopped
+#[event]
+pub struct AutominerStopped {
+    pub owner: Pubkey,
+    pub player_data: Pubkey,
+    pub autominer_vault: Pubkey,
+    pub rounds_remaining: u32,
+    pub refund_amount: u64,
+    pub timestamp: i64,
+}

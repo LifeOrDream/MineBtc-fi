@@ -4,6 +4,7 @@ use anchor_spl::token::Token;
 use anchor_spl::associated_token::AssociatedToken;
 
 use crate::errors::ErrorCode;
+use crate::events::*;
 use crate::state::*;
 use crate::instructions::helper;
 
@@ -119,6 +120,14 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
         msg!("   Using system referral account: {}", referrer_pubkey);
     }
     
+    emit!(PlayerInitialized {
+        user: ctx.accounts.authority.key(),
+        player_data: ctx.accounts.player_data.key(),
+        faction_id,
+        referral_code,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     Ok(())
 }
 
@@ -178,6 +187,13 @@ pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result
     msg!("   User: {}", ctx.accounts.authority.key());
     msg!("   Old faction ID: {} -> New faction ID: {}", old_faction_id, new_faction_id);
     
+    emit!(FactionChanged {
+        user: ctx.accounts.authority.key(),
+        player_data: ctx.accounts.player_data.key(),
+        new_faction_id,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     Ok(())
 }
 
@@ -201,9 +217,9 @@ pub fn join_round(
 ) -> Result<()> {
     msg!("🎲 [join_round] User joining round (single bet). User: {}", ctx.accounts.authority.key());
     msg!("   Bet type: {:?}", bet_type);
-    
+        
     // Call internal join_round with user as payer
-    internal_join_round(
+    let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
         &mut ctx.accounts.player_data,
@@ -216,9 +232,23 @@ pub fn join_round(
         ctx.bumps.user_game_bet,
         ctx.accounts.authority.key(),
         amount,
-        bet_type,
+        bet_type.clone(),
         use_ticket,
     )?;
+ 
+    
+    emit!(RoundJoined {
+        user: ctx.accounts.authority.key(),
+        player_data: ctx.accounts.player_data.key(),
+        round_id: ctx.accounts.global_game_state.current_round_id,
+        target_block,
+        net_amount,
+        fee_amount,
+        points_amount,
+        used_ticket: use_ticket.is_some(),
+        ticket_type_index: use_ticket,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     msg!("✅ [join_round] Bet placed successfully");
     Ok(())
@@ -280,6 +310,11 @@ pub fn join_round_batch(
     }
     
     msg!("   Expanded to {} bet types", expanded_bet_types.len());
+
+    let mut target_blocks = Vec::new();
+    let mut net_amounts = Vec::new();
+    let mut fee_amounts = Vec::new();
+    let mut points_amounts = Vec::new();
     
     // Place each bet
     // Note: No faction validation needed - faction_state is not required for betting
@@ -287,7 +322,7 @@ pub fn join_round_batch(
         msg!("   Placing bet {} of {}: {:?}", idx + 1, expanded_bet_types.len(), bet_type);
         
         // Call internal join_round for each bet
-        internal_join_round(
+        let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
             &ctx.accounts.global_game_state,
             &ctx.accounts.global_config,
             &mut ctx.accounts.player_data,
@@ -303,7 +338,26 @@ pub fn join_round_batch(
             bet_type.clone(),
             use_ticket,
         )?;
+        
+        target_blocks.push(target_block);
+        net_amounts.push(net_amount);
+        fee_amounts.push(fee_amount);
+        points_amounts.push(points_amount);
     }
+    
+    emit!(RoundJoinedBatch {
+        user: ctx.accounts.authority.key(),
+        player_data: ctx.accounts.player_data.key(),
+        round_id: ctx.accounts.global_game_state.current_round_id,
+        num_bets: expanded_bet_types.len() as u8,
+        target_blocks,
+        net_amounts,
+        fee_amounts,
+        points_amounts,
+        used_ticket: use_ticket.is_some(),
+        ticket_type_index: use_ticket,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     msg!("✅ [join_round_batch] All {} bets placed successfully", expanded_bet_types.len());
     Ok(())
@@ -394,6 +448,10 @@ pub fn init_autominer(
     
     msg!("   Initializing autominer vault...");
 
+    // Store config flags before moving values
+    let has_blocks_config = blocks_config.is_some();
+    let has_factions_config = factions_config.is_some();
+
     autominer_vault.owner = ctx.accounts.user_wallet.key();
     autominer_vault.blocks_config = blocks_config;
     autominer_vault.factions_config = factions_config;
@@ -429,6 +487,19 @@ pub fn init_autominer(
 
     msg!("✅ [init_autominer] Autominer initialized successfully");
     msg!("   {} SOL per round, {} rounds ({} SOL total)", (sol_per_round as f64 / 1e9), num_rounds, (total_sol as f64 / 1e9));
+    
+    emit!(AutominerInitialized {
+        owner: ctx.accounts.user_wallet.key(),
+        player_data: ctx.accounts.player_data.key(),
+        autominer_vault: ctx.accounts.autominer_vault.key(),
+        sol_per_round,
+        num_rounds,
+        bets_per_round,
+        bet_size_per_bet,
+        has_blocks_config,
+        has_factions_config,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -585,7 +656,11 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     }
     
     msg!("     Expanded to {} bet types", expanded_bet_types.len());
-    
+
+    let mut target_blocks = Vec::new();
+    let mut net_amounts = Vec::new();
+    let mut fee_amounts = Vec::new();
+    let mut points_amounts = Vec::new();
     // Place each bet using internal_join_round
     // Note: No faction validation needed - faction_state is not required for betting
     for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
@@ -596,7 +671,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             (bet_size_per_bet as f64 / 1e9));
         
         // Call internal_join_round with autominer vault as payer
-        internal_join_round(
+        let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
             &ctx.accounts.global_game_state,
             &ctx.accounts.global_config,
             &mut ctx.accounts.player_data,
@@ -613,7 +688,12 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             None, // autominer always uses SOL, not tickets
         )?;
         
+        target_blocks.push(target_block);
+        net_amounts.push(net_amount);
+        fee_amounts.push(fee_amount);
+        points_amounts.push(points_amount);
         msg!("       ✓ Bet #{} placed successfully", idx + 1);
+
     }
     
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
@@ -623,6 +703,22 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         current_round_id);
     msg!("   Rounds remaining: {}", new_rounds_remaining);
     msg!("   Caller compensation: {} SOL", (total_caller_compensation as f64 / 1e9));
+    
+    emit!(AutominerBetExecuted {
+        owner: owner_key,
+        player_data: ctx.accounts.player_data.key(),
+        autominer_vault: ctx.accounts.autominer_vault.key(),
+        round_id: current_round_id,
+        target_blocks,
+        net_amounts,
+        fee_amounts,
+        points_amounts,
+        caller: ctx.accounts.caller.key(),
+        caller_compensation: total_caller_compensation,
+        rounds_remaining: new_rounds_remaining,
+        vault_closed: new_rounds_remaining == 0,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -682,6 +778,15 @@ pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     
     msg!("✅ [stop_autominer] Autominer stopped successfully");
     msg!("   Refunded {} lamports to owner", remaining_sol);
+    
+    emit!(AutominerStopped {
+        owner: owner_key,
+        player_data: ctx.accounts.player_data.key(),
+        autominer_vault: ctx.accounts.autominer_vault.key(),
+        rounds_remaining,
+        refund_amount: remaining_sol,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -782,6 +887,15 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     msg!("   User: {}", signer_key);
     msg!("   Round: {}", user_bet.round_id);
     
+    emit!(RoundRewardsClaimed {
+        user: signer_key,
+        player_data: ctx.accounts.player_data.key(),
+        round_id: user_bet.round_id,
+        sol_reward: total_sol_reward,
+        dbtc_reward: total_dbtc_reward,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     Ok(())
 }
  
@@ -801,6 +915,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
 /// Internal join_round logic that can be called by both user and autominer
 /// Payer can be either user wallet or autominer vault PDA
+/// Returns (net_amount, fee_amount, points_amount) for event emission
 #[allow(clippy::too_many_arguments)]
 fn internal_join_round<'info>(
     global_state: &Account<'info, GlobalGameSate>,
@@ -817,7 +932,7 @@ fn internal_join_round<'info>(
     amount: u64,
     bet_type: BetType,
     use_ticket: Option<u8>,
-) -> Result<()> {
+) -> Result<(u8, u64, u64, u64)> {
     let clock = Clock::get()?;
     
     require!(game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
@@ -976,7 +1091,7 @@ fn internal_join_round<'info>(
     
     msg!("   ✓ Bet placed: {} SOL on block {} (bet_type: {:?})", (amount as f64) / 1_000_000_000.0, target_block, bet_type);
      
-    Ok(())
+    Ok((target_block, net_amount, fee_amount, points_amount))
 }
  
   
@@ -1540,6 +1655,12 @@ pub struct InitAutominer<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
     
+    #[account(
+        seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
+        bump
+    )]
+    pub player_data: Account<'info, PlayerData>,
+    
     #[account(mut)]
     pub user_wallet: Signer<'info>,
         
@@ -1554,6 +1675,12 @@ pub struct StopAutominer<'info> {
         bump = autominer_vault.vault_bump
     )]
     pub autominer_vault: Account<'info, AutominerVault>,
+    
+    #[account(
+        seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
+        bump
+    )]
+    pub player_data: Account<'info, PlayerData>,
     
     /// CHECK: Owner account (to receive refunded SOL)
     #[account(
