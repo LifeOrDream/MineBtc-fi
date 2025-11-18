@@ -8,6 +8,7 @@ use crate::state::*;
 use crate::instructions::helper;
 use crate::instructions::stake;
 
+
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
@@ -86,7 +87,7 @@ pub fn batch_mint_dragon_eggs<'info>(
     require!(  (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId );
     require!(  egg_config.eggs_minted + mint_count as u64 <= egg_config.max_supply, ErrorCode::InvalidParameters );
     
-    let (total_price, prices, ticket_amounts) = simulate_mint_cost(egg_config, mint_count as u64)?;
+    let (total_price, prices, _ticket_amounts) = simulate_mint_cost(egg_config, mint_count as u64)?;
     msg!("   Batch minting {} eggs, total cost: {} lamports", mint_count, total_price);
 
     let dev_amt = total_price * 80 / 100;
@@ -110,30 +111,11 @@ pub fn batch_mint_dragon_eggs<'info>(
     )?;
     
     // Handle ticket tier selection and add free tickets (using pre-calculated ticket_amounts)
-    if  (ticket_tier_index > 0 || ticket_tier_index == 0) {
-        require!(  (ticket_tier_index as usize) < ticket_amounts.len(), ErrorCode::InvalidParameters );
-        require!(  ticket_amounts.len() == 3, ErrorCode::InvalidParameters ); // Must have exactly 3 tiers
-        
-        let (ticket_value, ticket_count) = ticket_amounts[ticket_tier_index as usize];
-        
-        msg!("   Selected ticket tier: {} tickets of {} SOL each (calculated from {} SOL spent)", 
-            ticket_count, 
-            ticket_value as f64 / 1e9,
-            total_price as f64 / 1e9);
-        
-        // Add free tickets to player
-        if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
-            player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
-                .checked_add(ticket_count)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
-        } else {
-            require!(  player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters );
-            player_data.free_tickets.push(ticket_value);
-            player_data.free_tickets_remaining.push(ticket_count);
-            msg!("     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
-        }
-    }
+    let ticket_count = if (ticket_tier_index > 0 || ticket_tier_index == 0) {
+        add_tickets_to_player(player_data, egg_config, ticket_tier_index, total_price)?
+    } else {
+        0
+    };
     
     // Mint each egg using remaining_accounts
     for i in 0..mint_count {
@@ -160,22 +142,9 @@ pub fn batch_mint_dragon_eggs<'info>(
         
         let current_mint_number = egg_config.eggs_minted + 1;
         
-        // Calculate progressive multiplier based on current egg count (before this mint)
-        let multiplier = crate::genescience::calculate_progressive_multiplier(
-            egg_config.eggs_minted + i as u64, 
-            egg_config.max_supply
-        )?;
-        
-        // Generate DNA
-    let dna = crate::genescience::generate_genesis_dna(
-            current_mint_number,
-            &ctx.accounts.user.key(),
-            Clock::get()?.slot + i as u64, 
-            faction_id
-        )?;        
-        
-        let name = format!("Dragon Egg #{}", current_mint_number);
-        let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
+        // Generate egg data (DNA, name, URI, multiplier)
+        let slot = Clock::get()?.slot + i as u64;
+        let (name, uri, dna, multiplier) = generate_egg_data(  egg_config,  current_mint_number,  &ctx.accounts.user.key(),  slot,  faction_id,egg_config.eggs_minted + i as u64)?;
         
         // Create Metaplex Core Asset
         let collection_authority_bump = ctx.bumps.collection_authority;
@@ -274,7 +243,7 @@ pub fn batch_mint_dragon_eggs<'info>(
             faction_id,
             price: prices[index as usize],
             ticket_tier: ticket_tier_index as u64,
-            ticket_count: ticket_amounts[index as usize].1,
+            ticket_count, 
         });
         
         egg_config.eggs_minted += 1;
@@ -308,16 +277,11 @@ pub fn admin_mint_dragon_egg(
     msg!("   Faction ID: {}", faction_id);
     msg!("   Egg number: {}", egg_config.eggs_minted + 1);
 
-    // Use slot and recipient key as seed
-    let recipient_key = recipient;
+    let current_mint_number = egg_config.eggs_minted + 1;
     
-    // Generate DNA (use faction as family type)    
-    let dna = crate::genescience::generate_genesis_dna(  egg_config.eggs_minted + 1,&recipient_key,Clock::get()?.slot, faction_id)?;
-    let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
-    let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
-    
-    // Calculate progressive multiplier based on current egg count
-    let multiplier = crate::genescience::calculate_progressive_multiplier(egg_config.eggs_minted, egg_config.max_supply)?;
+    // Generate egg data (DNA, name, URI, multiplier)
+    let slot = Clock::get()?.slot;
+    let (name, uri, dna, multiplier) = generate_egg_data(  egg_config,  current_mint_number,  &recipient,  slot,  faction_id,egg_config.eggs_minted)?;
     
     // Get collection authority seeds
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -371,38 +335,12 @@ pub fn admin_mint_dragon_egg(
     egg_metadata.created_at = Clock::get()?.unix_timestamp;
     egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
     
-    // Handle ticket tier selection and add free tickets (same logic as batch_mint, using actual price)
-    let mut ticket_count = 0u64;
-    let player_data = &mut ctx.accounts.player_data;
-    
-    if (ticket_tier_index > 0 || ticket_tier_index == 0) && egg_config.ticket_tiers.len() > 0 {
-        require!(  (ticket_tier_index as usize) < egg_config.ticket_tiers.len(), ErrorCode::InvalidParameters );
-        require!(  egg_config.ticket_tiers.len() == 3, ErrorCode::InvalidParameters ); // Must have exactly 3 tiers
-        
-        // Calculate ticket count using actual egg price (same as regular mint)
-        // Admin mint doesn't charge SOL, but ticket calculations use the actual bonding curve price
-        let selected_tier = &egg_config.ticket_tiers[ticket_tier_index as usize];
-        let ticket_value = selected_tier.ticket_value;
-        ticket_count = helper::calc_tickets_count(cost_per_egg, ticket_value);
-        
-        msg!("   Selected ticket tier: {} tickets of {} SOL each (calculated from {} SOL price)", 
-            ticket_count, 
-            ticket_value as f64 / 1e9,
-            cost_per_egg as f64 / 1e9);
-        
-        // Add free tickets to player
-        if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
-            player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
-                .checked_add(ticket_count)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
-        } else {
-            require!(  player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters );
-            player_data.free_tickets.push(ticket_value);
-            player_data.free_tickets_remaining.push(ticket_count);
-            msg!("     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
-        }
-    }
+    // Handle ticket tier selection and add free tickets (using actual price)
+    let ticket_count = if (ticket_tier_index > 0 || ticket_tier_index == 0) && egg_config.ticket_tiers.len() > 0 {
+        add_tickets_to_player(&mut ctx.accounts.player_data, egg_config, ticket_tier_index, cost_per_egg)?
+    } else {
+        0
+    };
     
     // Update egg config stats
     egg_config.eggs_minted += 1;
@@ -412,7 +350,7 @@ pub fn admin_mint_dragon_egg(
         egg_metadata_account: egg_metadata.key(),
         dragon_egg_asset_signer: ctx.accounts.dragon_egg_asset.key(),
         owner: recipient,
-        player: player_data.key(),
+        player: ctx.accounts.player_data.key(),
         mint: egg_metadata.mint,
         name,
         uri,
@@ -497,8 +435,13 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
     msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
 
     // Update faction state totals
-    faction_state.total_dbtc_hashpower = faction_state.total_dbtc_hashpower - existing_dbtc_hashpower + player_data.dogebtc_hashpower;
-    faction_state.total_lp_hashpower = faction_state.total_lp_hashpower - existing_lp_hashpower + player_data.lp_hashpower;
+    update_faction_hashpower(
+        faction_state,
+        existing_dbtc_hashpower,
+        player_data.dogebtc_hashpower,
+        existing_lp_hashpower,
+        player_data.lp_hashpower,
+    );
     msg!("   Faction dbtc hashpower: {} -> {}", faction_state.total_dbtc_hashpower as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
     msg!("   Faction LP hashpower: {} -> {}", faction_state.total_lp_hashpower as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
 
@@ -575,8 +518,13 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
 
     // Update faction state totals
-    faction_state.total_dbtc_hashpower = faction_state.total_dbtc_hashpower - existing_dbtc_hashpower + player_data.dogebtc_hashpower;
-    faction_state.total_lp_hashpower = faction_state.total_lp_hashpower - existing_lp_hashpower + player_data.lp_hashpower;
+    update_faction_hashpower(
+        faction_state,
+        existing_dbtc_hashpower,
+        player_data.dogebtc_hashpower,
+        existing_lp_hashpower,
+        player_data.lp_hashpower,
+    );
     msg!("   Faction dbtc hashpower: {} -> {}", faction_state.total_dbtc_hashpower as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
     msg!("   Faction LP hashpower: {} -> {}", faction_state.total_lp_hashpower as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
 
@@ -644,90 +592,30 @@ pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
     
     // Update each egg's power
     let mut eggs_updated = 0;
-    
-    // Update egg 1 if provided
-    if let Some(egg1) = &mut ctx.accounts.egg1_metadata {
-        require!(player_data.staked_eggs.contains(&egg1.mint), ErrorCode::InvalidParameters);
-        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
-        let to_add = power_per_egg + extra;
-        egg1.power += to_add as u32;
-        egg1.last_update_ts = current_time;
-        eggs_updated += 1;
-        msg!("   Egg 1: +{} power (total: {})", power_per_egg + extra, egg1.power);
-        emit!(DragonEggPowerClaimed {
-            egg_mint: egg1.mint,
-            to_add: to_add,
-            power: egg1.power,
-            timestamp: current_time,
-        });
-    }
-    
-    // Update egg 2 if provided
-    if let Some(egg2) = &mut ctx.accounts.egg2_metadata {
-        require!(player_data.staked_eggs.contains(&egg2.mint), ErrorCode::InvalidParameters);
-        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
-        let to_add = power_per_egg + extra;
-        egg2.power += to_add as u32;
-        egg2.last_update_ts = current_time;
-        eggs_updated += 1;
-        msg!("   Egg 2: +{} power (total: {})", power_per_egg + extra, egg2.power);
-        emit!(DragonEggPowerClaimed {
-            egg_mint: egg2.mint,
-            to_add: to_add,
-            power: egg2.power,
-            timestamp: current_time,
-        });
-    }
-    
-    // Update egg 3 if provided
-    if let Some(egg3) = &mut ctx.accounts.egg3_metadata {
-        require!(player_data.staked_eggs.contains(&egg3.mint), ErrorCode::InvalidParameters);
-        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
-        let to_add = power_per_egg + extra;
-        egg3.power += to_add as u32;
-        egg3.last_update_ts = current_time;
-        eggs_updated += 1;
-        msg!("   Egg 3: +{} power (total: {})", power_per_egg + extra, egg3.power);
-        emit!(DragonEggPowerClaimed {
-            egg_mint: egg3.mint,
-            to_add: to_add,
-            power: egg3.power,
-            timestamp: current_time,
-        });
-    }
-    
-    // Update egg 4 if provided
-    if let Some(egg4) = &mut ctx.accounts.egg4_metadata {
-        require!(player_data.staked_eggs.contains(&egg4.mint), ErrorCode::InvalidParameters);
-        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
-        let to_add = power_per_egg + extra; 
-        egg4.power += to_add as u32;
-        egg4.last_update_ts = current_time;
-        eggs_updated += 1;
-        msg!("   Egg 4: +{} power (total: {})", power_per_egg + extra, egg4.power);
-        emit!(DragonEggPowerClaimed {
-            egg_mint: egg4.mint,
-            to_add: to_add,
-            power: egg4.power,
-            timestamp: current_time,
-        });
-    }
-    
-    // Update egg 5 if provided
-    if let Some(egg5) = &mut ctx.accounts.egg5_metadata {
-        require!(player_data.staked_eggs.contains(&egg5.mint), ErrorCode::InvalidParameters);
-        let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
-        let to_add = power_per_egg + extra;
-        egg5.power += to_add as u32;
-        egg5.last_update_ts = current_time;
-        eggs_updated += 1;
-        msg!("   Egg 5: +{} power (total: {})", power_per_egg + extra, egg5.power);
-        emit!(DragonEggPowerClaimed {
-            egg_mint: egg5.mint,
-            to_add: to_add,
-            power: egg5.power,
-            timestamp: current_time,
-        });
+    let mut egg_metadatas = [
+        &mut ctx.accounts.egg1_metadata,
+        &mut ctx.accounts.egg2_metadata,
+        &mut ctx.accounts.egg3_metadata,
+        &mut ctx.accounts.egg4_metadata,
+        &mut ctx.accounts.egg5_metadata,
+    ];
+
+    for (idx, egg_opt) in egg_metadatas.iter_mut().enumerate() {
+        if let Some(egg) = egg_opt {
+            require!(
+                player_data.staked_eggs.contains(&egg.mint),
+                ErrorCode::InvalidParameters
+            );
+            let extra = if eggs_updated < remainder as usize { 1 } else { 0 };
+            update_egg_power(egg, power_per_egg, extra, current_time)?;
+            eggs_updated += 1;
+            msg!(
+                "   Egg {}: +{} power (total: {})",
+                idx + 1,
+                power_per_egg + extra,
+                egg.power
+            );
+        }
     }
     
     require!(eggs_updated == num_eggs as usize, ErrorCode::InvalidParameters);
@@ -741,6 +629,101 @@ pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
     
     Ok(())
 }
+
+// ----------------------------------------------------------------------------------------
+// -------------- HELPER FUNCTIONS ---------------------------------------------------------
+// ----------------------------------------------------------------------------------------
+
+
+/// Generate egg data (DNA, name, URI, multiplier) for a new egg
+fn generate_egg_data(
+    egg_config: &EggConfig,
+    mint_number: u64,
+    user_key: &Pubkey,
+    slot_offset: u64,
+    faction_id: u8,
+    eggs_minted_before: u64,
+) -> Result<(String, String, [u8; 32], u32)> {
+    let dna = crate::genescience::generate_genesis_dna(
+        mint_number,
+        user_key,
+        Clock::get()?.slot + slot_offset,
+        faction_id,
+    )?;
+    let name = format!("Dragon Egg #{}", mint_number);
+    let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
+    let multiplier = crate::genescience::calculate_progressive_multiplier(
+        eggs_minted_before,
+        egg_config.max_supply,
+    )?;
+
+    Ok((name, uri, dna, multiplier))
+}
+
+/// Add tickets to player based on price and ticket tier
+fn add_tickets_to_player(
+    player_data: &mut PlayerData,
+    egg_config: &EggConfig,
+    ticket_tier_index: u8,
+    price: u64,
+) -> Result<u64> {
+    require!(  (ticket_tier_index as usize) < egg_config.ticket_tiers.len(), ErrorCode::InvalidParameters);
+    require!( egg_config.ticket_tiers.len() == 3, ErrorCode::InvalidParameters);
+
+    let selected_tier = &egg_config.ticket_tiers[ticket_tier_index as usize];
+    let ticket_value = selected_tier.ticket_value;
+    let ticket_count = helper::calc_tickets_count(price, ticket_value);
+
+    msg!( "   Selected ticket tier: {} tickets of {} SOL each (calculated from {} SOL)", ticket_count, ticket_value as f64 / 1e9, price as f64 / 1e9);
+
+    // Add free tickets to player
+    if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
+        player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index] + ticket_count;
+    } else {
+        require!( player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters);
+        player_data.free_tickets.push(ticket_value);
+        player_data.free_tickets_remaining.push(ticket_count);
+    }
+    msg!( "     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
+
+    Ok(ticket_count)
+}
+
+
+/// Update a single egg's power and emit event
+fn update_egg_power(
+    egg_metadata: &mut DragonEggMetadata,
+    power_per_egg: u64,
+    extra: u64,
+    current_time: i64,
+) -> Result<()> {
+    let to_add = power_per_egg + extra;
+    egg_metadata.power += to_add as u32;
+    egg_metadata.last_update_ts = current_time;
+
+    emit!(DragonEggPowerClaimed {
+        egg_mint: egg_metadata.mint,
+        to_add,
+        power: egg_metadata.power,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+/// Update faction state hashpower totals
+fn update_faction_hashpower(
+    faction_state: &mut FactionState,
+    old_dbtc_hashpower: u64,
+    new_dbtc_hashpower: u64,
+    old_lp_hashpower: u64,
+    new_lp_hashpower: u64,
+) {
+    faction_state.total_dbtc_hashpower = faction_state.total_dbtc_hashpower - old_dbtc_hashpower + new_dbtc_hashpower;
+    faction_state.total_lp_hashpower = faction_state.total_lp_hashpower - old_lp_hashpower + new_lp_hashpower;
+}
+
+
 
 fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add: bool) -> u16 {
 
