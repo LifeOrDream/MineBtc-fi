@@ -43,6 +43,10 @@ pub fn stake_moondoge(
     );
 
     let current_ts = Clock::get()?.unix_timestamp;
+    
+    // Store values before mutable borrow (for event emission)
+    let player_data_key = ctx.accounts.player_data.key();
+    
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
@@ -142,19 +146,21 @@ pub fn stake_moondoge(
     token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.dbtc_mint.decimals)?;
     msg!("✅ [stake_moondoge] DogeBtc staking successful");    
 
+    // Store faction_id before emitting event
+    let faction_id = player_data.faction_id;
+
     emit!(DogeBtcStaked {
         owner: ctx.accounts.authority.key(),
-        faction_id: player_data.faction_id,
-        amount: amount,
-        burn_amount: burn_amount,
-        actual_amount: actual_amount,
-        lockup_duration,
-        multiplier,
-        hashpower_contribution: weighted_amount_with_eggs,
+        player_data: player_data_key,
+        faction_id,
         position_index,
+        position_key: ctx.accounts.user_position.key(),
+        lockup_duration,
+        hashpower_contribution: weighted_amount_with_eggs,
         new_sol_rewards,
         new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards
+        unrefined_dbtc: accrued_dbtc_rewards,
+        timestamp: current_ts,
     });
     
     Ok(())
@@ -285,14 +291,13 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     // Emit events
     emit!(DogeBtcUnstaked {
         owner: ctx.accounts.authority.key(),
+        player_data: ctx.accounts.player_data.key(),
         position_index,
-        amount: return_amount,
-        weighted_amount: original_weighted,
-        hashpower_contribution: hashpower_contribution,
-        early_withdrawal: is_early_withdrawal,
+        position_key: ctx.accounts.user_position.key(),
         new_sol_rewards,
         new_dbtc_rewards,
         unrefined_dbtc: accrued_dbtc_rewards,
+        timestamp: current_ts,
     });
     
     // Emit emergency withdrawal event if early withdrawal
@@ -307,6 +312,8 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         
         emit!(EmergencyWithdrawal {
             owner: ctx.accounts.authority.key(),
+            player_data: ctx.accounts.player_data.key(),
+            position_key: ctx.accounts.user_position.key(),
             position_index,
             original_amount: staked_amount,
             penalty_amount,
@@ -342,6 +349,10 @@ pub fn stake_lp_tokens(
     );
 
     let current_ts = Clock::get()?.unix_timestamp;
+    
+    // Store values before mutable borrow (for event emission)
+    let player_data_key = ctx.accounts.player_data.key();
+    
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
@@ -436,18 +447,21 @@ pub fn stake_lp_tokens(
     token::transfer(transfer_ctx, amount)?;
     msg!("   ✓ Transferred {} LP tokens", actual_amount as f64 / 1e6);
     
+    // Store faction_id before emitting event
+    let faction_id = player_data.faction_id;
+    
     emit!(LiquidityStaked {
         owner: ctx.accounts.authority.key(),
-        faction_id: player_data.faction_id,
-        amount: actual_amount,
-        lockup_duration,
-        multiplier,
-        weighted_amount,
-        hashpower_contribution: weighted_amount_with_eggs,
+        player_data: player_data_key,
         position_index,
+        position_key: ctx.accounts.user_position.key(),
+        faction_id,
+        lockup_duration,
+        hashpower_contribution: weighted_amount_with_eggs,
         new_sol_rewards,
         new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards        
+        unrefined_dbtc: accrued_dbtc_rewards,
+        timestamp: current_ts,
     });
     
     Ok(())
@@ -573,14 +587,13 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     // Emit events
     emit!(LiquidityUnstaked {
         owner: ctx.accounts.authority.key(),
+        player_data: ctx.accounts.player_data.key(),
         position_index,
-        amount: return_amount,
-        weighted_amount: original_weighted,
-        hashpower_contribution: hashpower_contribution,
-        early_withdrawal: is_early_withdrawal,
+        position_key: ctx.accounts.user_position.key(),
         new_sol_rewards,
         new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards        
+        unrefined_dbtc: accrued_dbtc_rewards,
+        timestamp: current_ts,
     });
     
     // Emit emergency withdrawal event if early withdrawal
@@ -595,7 +608,9 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         
         emit!(EmergencyWithdrawal {
             owner: ctx.accounts.authority.key(),
+            player_data: ctx.accounts.player_data.key(),
             position_index,
+            position_key: ctx.accounts.user_position.key(),
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,
@@ -619,13 +634,17 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     
     require!(ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id, ErrorCode::InvalidFactionId);
     
+    // Store values before mutable borrow (for event emission)
+    let player_data_key = ctx.accounts.player_data.key();
+    let faction_id = ctx.accounts.faction_state.faction_id;
+    
     let faction_state = &ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     
     // Process DogeBtc staking SOL rewards
-    let (st_dbtc_new_sol_rewards, st_dbtc_new_dbtc_rewards, st_dbtc_accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_st_dbtc_new_sol_rewards, _st_dbtc_new_dbtc_rewards, _st_dbtc_accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     // Process LP staking SOL rewards
-    let (st_lp_new_sol_rewards, st_lp_new_dbtc_rewards, st_lp_accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_st_lp_new_sol_rewards, _st_lp_new_dbtc_rewards, _st_lp_accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     
     let total_pending_sol_rewards = player_data.pending_sol_rewards;
     require!(total_pending_sol_rewards > 0, ErrorCode::InsufficientFunds);    
@@ -634,10 +653,9 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     
     // Check if user has a referrer (not system referral account)
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
-    let mut referral_rewards = 0;
 
     let (referral_fee, player_sol) = if has_referrer {
-        referral_rewards = total_pending_sol_rewards * REFERRAL_FEE_PCT / 100; // 5% referral fee
+        let referral_rewards = total_pending_sol_rewards * REFERRAL_FEE_PCT / 100; // 5% referral fee
         msg!("     Referral fee (5%): {} lamports", referral_rewards as f64 / 1e9);
         
         // Add fee to referrer's pending SOL rewards
@@ -662,8 +680,21 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     )?;
     msg!("     ✓ SOL rewards transferred to user");
         
+    // Store referrer before resetting and emitting event
+    let referrer_pubkey = if has_referrer { Some(player_data.referral_code) } else { None };
+    
     // Reset pending rewards
     player_data.pending_sol_rewards = 0;
+    
+    emit!(SolRewardsClaimed {
+        user: ctx.accounts.authority.key(),
+        player_data: player_data_key,
+        faction_id,
+        sol_amount: player_sol,
+        referral_fee,
+        referrer: referrer_pubkey,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     msg!("✅ [claim_sol_rewards] Claimed {} SOL (fee: {} to referrer)", player_sol as f64 / 1e9, referral_fee as f64 / 1e9);
     Ok(())
@@ -681,15 +712,19 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     
     require!(ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id, ErrorCode::InvalidFactionId);
     
+    // Store values before mutable borrow (for event emission)
+    let player_data_key = ctx.accounts.player_data.key();
+    let faction_id = ctx.accounts.faction_state.faction_id;
+    
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     let unrefined_dbtc = &mut ctx.accounts.unrefined_rewards;
     let global_config = &ctx.accounts.global_config;
 
     // Process DogeBtc staking SOL rewards
-    let (st_dbtc_new_sol_rewards, st_dbtc_new_dbtc_rewards, st_dbtc_accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, unrefined_dbtc, faction_state)?;
+    let (_st_dbtc_new_sol_rewards, _st_dbtc_new_dbtc_rewards, _st_dbtc_accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, unrefined_dbtc, faction_state)?;
     // Process LP staking SOL rewards
-    let (st_lp_new_sol_rewards, st_lp_new_dbtc_rewards, st_lp_accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, unrefined_dbtc, faction_state)?;
+    let (_st_lp_new_sol_rewards, _st_lp_new_dbtc_rewards, _st_lp_accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, unrefined_dbtc, faction_state)?;
     
     require!(player_data.pending_dbtc_rewards > 0, ErrorCode::InsufficientFunds);
     
@@ -762,6 +797,9 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     doge_btc_mining.total_tokens_distributed += claimable_by_user;
     msg!("   Updated total tokens distributed: {} (+{})", doge_btc_mining.total_tokens_distributed as f64 / 1e6, claimable_by_user as f64 / 1e6);
     
+    // Store referrer before emitting event
+    let referrer_pubkey = if has_referrer { Some(player_data.referral_code) } else { None };
+    
     // Redistribute refining fee to all other stakers who haven't claimed
     // This is done by increasing the reward index, which benefits all stakers proportionally
     if refining_fee > 0 {
@@ -770,6 +808,18 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         unrefined_dbtc.unrefining_index += increment;
         msg!("   Updated unrefining index: {} (+{})", unrefined_dbtc.unrefining_index, increment);        
     }
+    
+    emit!(DbtcRewardsClaimed {
+        user: ctx.accounts.authority.key(),
+        player_data: player_data_key,
+        faction_id,
+        dbtc_amount: claimable_by_user,
+        refining_fee,
+        referral_fee,
+        power_points_earned: power_points,
+        referrer: referrer_pubkey,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -840,11 +890,21 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
     referral_rewards.pending_sol_rewards = 0;
     referral_rewards.pending_dbtc_rewards = 0;
     
+    emit!(ReferralRewardsClaimed {
+        referrer: ctx.accounts.authority.key(),
+        referral_rewards_account: ctx.accounts.referral_rewards.key(),
+        sol_amount: pending_sol,
+        dbtc_amount: pending_dbtc,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     msg!("✅ [claim_referral_rewards] Claimed referral rewards successfully");
     Ok(())
 }
 
-
+// ----------------------------------------------------------------------------------------
+// -------------- HELPER FUNCTIONS ---------------------------------------------------------
+// ----------------------------------------------------------------------------------------
 
 
 pub fn update_dbtc_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {

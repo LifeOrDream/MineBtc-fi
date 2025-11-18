@@ -15,8 +15,11 @@ pub struct ReferralRewardsAdded {
 
 #[event]
 pub struct ReferralRewardsClaimed {
-    pub owner: Pubkey,
-    pub amount: u64,
+    pub referrer: Pubkey,
+    pub referral_rewards_account: Pubkey,
+    pub sol_amount: u64,
+    pub dbtc_amount: u64,
+    pub timestamp: i64,
 }
  
   
@@ -209,69 +212,93 @@ pub struct DragonEggPowerClaimed {
 #[event]
 pub struct DogeBtcStaked {
     pub owner: Pubkey,
+    pub player_data: Pubkey,
     pub faction_id: u8,
-    pub amount: u64,
-    pub burn_amount: u64,
-    pub actual_amount: u64,
-    pub lockup_duration: u64,
-    pub multiplier: u16,
-    pub hashpower_contribution: u64,
     pub position_index: u8,
+    pub position_key: Pubkey,
+    pub lockup_duration: u64,
+    pub hashpower_contribution: u64,
     pub new_sol_rewards: u64,
     pub new_dbtc_rewards: u64,
     pub unrefined_dbtc: u64,
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct DogeBtcUnstaked {
     pub owner: Pubkey,
+    pub player_data: Pubkey,
     pub position_index: u8,
-    pub amount: u64,
-    pub weighted_amount: u64,
-    pub hashpower_contribution: u64,
-    pub early_withdrawal: bool,
+    pub position_key: Pubkey,
     pub new_sol_rewards: u64,
     pub new_dbtc_rewards: u64,
     pub unrefined_dbtc: u64,
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct LiquidityStaked {
     pub owner: Pubkey,
+    pub player_data: Pubkey,
     pub faction_id: u8,
-    pub amount: u64,
-    pub lockup_duration: u64,
-    pub multiplier: u16,
-    pub weighted_amount: u64,
-    pub hashpower_contribution: u64,
     pub position_index: u8,
+    pub position_key: Pubkey,    
+    pub lockup_duration: u64,
+    pub hashpower_contribution: u64,
     pub new_sol_rewards: u64,
     pub new_dbtc_rewards: u64,
     pub unrefined_dbtc: u64,
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct LiquidityUnstaked {
     pub owner: Pubkey,
+    pub player_data: Pubkey,
     pub position_index: u8,
-    pub amount: u64,
-    pub weighted_amount: u64,
-    pub hashpower_contribution: u64,
-    pub early_withdrawal: bool,
+    pub position_key: Pubkey,
     pub new_sol_rewards: u64,
     pub new_dbtc_rewards: u64,
     pub unrefined_dbtc: u64,
+    pub timestamp: i64,
 }
-
 
 #[event]
 pub struct EmergencyWithdrawal {
     pub owner: Pubkey,
+    pub player_data: Pubkey,
     pub position_index: u8,
+    pub position_key: Pubkey,
     pub original_amount: u64,
     pub penalty_amount: u64,
     pub returned_amount: u64,
     pub penalty_tax_pct: u64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user claims SOL rewards from staking
+#[event]
+pub struct SolRewardsClaimed {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub faction_id: u8,
+    pub sol_amount: u64,
+    pub referral_fee: u64,
+    pub referrer: Option<Pubkey>,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user claims DogeBtc token rewards from staking
+#[event]
+pub struct DbtcRewardsClaimed {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub faction_id: u8,
+    pub dbtc_amount: u64,
+    pub refining_fee: u64,
+    pub referral_fee: u64,
+    pub power_points_earned: u64,
+    pub referrer: Option<Pubkey>,
     pub timestamp: i64,
 }
 
