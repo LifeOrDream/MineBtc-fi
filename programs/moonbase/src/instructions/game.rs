@@ -3,6 +3,7 @@ use anchor_lang::solana_program::keccak;
 use anchor_lang::solana_program::sysvar::Sysvar;
 
 use crate::errors::ErrorCode;
+use crate::events::*;
 use crate::state::*;
 use crate::instructions::helper;
 
@@ -156,6 +157,16 @@ pub fn start_round(
     msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);
     msg!("   Round ends at timestamp: {}", game_session.round_end_timestamp);
+    
+    emit!(RoundStarted {
+        round_id,
+        game_session: game_session.key(),
+        commit_hash: commit,
+        block_assignments: block_assignments,
+        round_start_timestamp: game_session.round_start_timestamp,
+        round_end_timestamp: game_session.round_end_timestamp,
+        timestamp: clock.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -341,6 +352,27 @@ pub fn end_round(
          
     game_session.stage = 1;
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);
+    
+    emit!(RoundEnded {
+        round_id: game_session.round_id,
+        game_session: game_session.key(),
+        winning_block,
+        winning_faction_id,
+        same_faction_other_block,
+        total_sol_bets: game_session.total_sol_bets,
+        total_points_bets: game_session.total_points_bets,
+
+        user_bets_count: game_session.user_block_indexes.clone(),
+        block_bet_counts: game_session.sol_bets_indexes.clone(),
+        block_points: game_session.points_bets_indexes.clone(),
+
+        dbtc_winner_pool: winning_block_rewards,
+        dbtc_same_faction_pool: same_faction_rewards,
+        dbtc_faction_stakers: faction_stakers,
+        dbtc_motherlode: motherlode_rewards,
+        motherlode_hit,
+        timestamp: clock.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -534,6 +566,16 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
     // Can start new round now
     global_state.can_begin_round = true;
     msg!("   Can begin new round: {}", global_state.can_begin_round);
+
+    emit!(RoundFactionRewardsDistributed {
+        round_id: game_session.round_id,
+        game_session: game_session.key(),
+        winning_faction_id,
+        sol_stakers_fee: game_session.stakers_fee,
+        motherlode_hit: game_session.motherlode_hit,
+        motherlode_pot_size_on_hit: game_session.motherlode_pot_size_on_hit,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
 
     msg!("✅ [end_round] Round {} ended successfully", game_session.round_id);    
     Ok(())

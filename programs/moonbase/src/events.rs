@@ -387,3 +387,54 @@ pub struct AutominerStopped {
     pub refund_amount: u64,
     pub timestamp: i64,
 }
+
+// ========================================================================================
+// =============================== GAME ROUND EVENTS =====================================
+// ========================================================================================
+
+/// Event emitted when a new round starts
+#[event]
+pub struct RoundStarted {
+    pub round_id: u64,
+    pub game_session: Pubkey,
+    pub commit_hash: [u8; 32],
+    pub block_assignments: [u8; 24], // 24 blocks, each assigned to a faction (0-11)
+    pub round_start_timestamp: i64,
+    pub round_end_timestamp: i64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a round ends (after winner selection and reward calculations)
+#[event]
+pub struct RoundEnded {
+    pub round_id: u64,
+    pub game_session: Pubkey,
+    pub winning_block: u8, // 0-indexed: 0-23
+    pub winning_faction_id: u8,
+    pub same_faction_other_block: u8, // 0-indexed: 0-23
+    pub total_sol_bets: u64,
+    pub total_points_bets: u64,
+
+    pub user_bets_count: Vec<u64>,
+    pub block_bet_counts: Vec<u64>,
+    pub block_points: Vec<u64>,
+
+    pub dbtc_winner_pool: u64,
+    pub dbtc_same_faction_pool: u64,
+    pub dbtc_faction_stakers: u64,
+    pub dbtc_motherlode: u64,
+    pub motherlode_hit: bool,
+    pub timestamp: i64,
+}
+
+/// Event emitted when faction rewards are distributed for a round
+#[event]
+pub struct RoundFactionRewardsDistributed {
+    pub round_id: u64,
+    pub game_session: Pubkey,
+    pub winning_faction_id: u8,
+    pub sol_stakers_fee: u64,
+    pub motherlode_hit: bool,
+    pub motherlode_pot_size_on_hit: u64,
+    pub timestamp: i64,
+}
