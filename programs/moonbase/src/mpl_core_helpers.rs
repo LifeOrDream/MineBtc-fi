@@ -6,10 +6,11 @@ use mpl_core::{
 };
 
 /// Create a Metaplex Core NFT asset via CPI
+/// Note: Uses multiple lifetimes to support mixing remaining_accounts with ctx.accounts
 pub fn create_mpl_core_asset<'info>(
     asset: &AccountInfo<'info>,
-    collection: Option<&AccountInfo<'info>>,
-    authority: &AccountInfo<'info>, // This is the signer (e.g., collection_authority PDA)
+    collection: Option<&AccountInfo<'info>>, // Use 'info here too
+    authority: &AccountInfo<'info>,
     payer: &AccountInfo<'info>,
     owner: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,

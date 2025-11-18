@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Token;
 use anchor_spl::associated_token::AssociatedToken;
+use std::io::Write;
 use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::state::*;
@@ -52,144 +53,31 @@ pub fn simulate_mint_cost(
     Ok((total_price, prices, ticket_amounts))
 }
 
-/// Mint a single Dragon Egg NFT
-/// Uses bonding curve pricing based on current supply
-/// Users can choose a ticket tier to receive free tickets
-pub fn mint_dragon_egg( ctx: Context<MintDragonEgg>, faction_id: u8, ticket_tier_index: Option<u8>) -> Result<()> {
-    let global_config = &ctx.accounts.global_config;
-    let egg_config = &mut ctx.accounts.egg_config;
-    let player_data = &mut ctx.accounts.player_data;
-    
-    require!(   (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId);
-    require!(   egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
-    
-    // Calculate cost using bonding curve
-    let cost_per_egg = crate::genescience::compute_gene_price(egg_config.base_price, egg_config.curve_a, egg_config.eggs_minted)?;
-    
-    msg!("   Minting egg #{} at price: {} lamports", egg_config.eggs_minted + 1, cost_per_egg as f64 / 1e9);
-    let treasury_amt = cost_per_egg * 20 / 100;
-    let dev_amt =  cost_per_egg - treasury_amt;
-
-    // Transfer to eggs treasury  
-    helper::transfer_to_eggs_treasury(
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.eggs_treasury.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        treasury_amt,
-    )?;
-
-    // Transfer WSOL from user to multisig account
-    helper::transfer_wsol_to_multisig(
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.multisig_wsol_account.to_account_info(),
-        &ctx.accounts.user_wsol_account.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        &ctx.accounts.token_program.to_account_info(),
-        dev_amt,
-    )?;
-    
-    // Handle ticket tier selection and add free tickets (dynamic calculation)
-    if let Some(tier_index) = ticket_tier_index {
-        require!(  (tier_index as usize) < egg_config.ticket_tiers.len(), ErrorCode::InvalidParameters );
-        require!(  egg_config.ticket_tiers.len() == 3, ErrorCode::InvalidParameters ); // Must have exactly 3 tiers
-        
-        let selected_tier = &egg_config.ticket_tiers[tier_index as usize];
-        let ticket_value = selected_tier.ticket_value;
-        
-        // Calculate ticket count dynamically: (cost_per_egg / ticket_value) * 1.5
-        // This gives users tickets worth 1.5x the SOL they spent
-        let ticket_count = helper::calc_tickets_count( cost_per_egg, ticket_value);
-        
-        msg!("   Selected ticket tier: {} tickets of {} SOL each (calculated from {} SOL spent)", 
-            ticket_count, 
-            ticket_value as f64 / 1e9,
-            cost_per_egg as f64 / 1e9);
-        
-        // Add free tickets to player
-        if let Some(index) = player_data.free_tickets.iter().position(|&v| v == ticket_value) {
-            player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
-                .checked_add(ticket_count)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("     Updated existing ticket type: {} tickets of {} SOL (total: {})", ticket_count, ticket_value as f64 / 1e9, player_data.free_tickets_remaining[index]);
-        } else {
-            require!(  player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES, ErrorCode::InvalidParameters );
-            player_data.free_tickets.push(ticket_value);
-            player_data.free_tickets_remaining.push(ticket_count);
-            msg!("     Added new ticket type: {} tickets of {} SOL", ticket_count, ticket_value as f64 / 1e9);
-        }
-    }
-    
-    // Use slot and user key as seed for egg count
-    let clock = Clock::get()?;
-    let slot = clock.slot;
-    let user_key = ctx.accounts.user.key();
-    
-    // Generate DNA (no tier, use faction as family type)
-    let family_type = faction_id;
-    let dna = crate::genescience::generate_genesis_dna(egg_config.eggs_minted + 1, &user_key, slot, family_type)?;
-
-    // Get URI for this faction
-    let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
-    let name = format!("Dragon Egg #{}", egg_config.eggs_minted + 1);
-    
-    // Calculate progressive multiplier based on current egg count
-    let multiplier = crate::genescience::calculate_progressive_multiplier(egg_config.eggs_minted, egg_config.max_supply)?;
-    let collection_authority_bump = ctx.bumps.collection_authority;
-    let collection_authority_seeds = &[crate::state::COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
-
-    crate::mpl_core_helpers::create_mpl_core_asset(&ctx.accounts.dragon_egg_asset.to_account_info(), ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
-        &ctx.accounts.collection_authority.to_account_info(),
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        &ctx.accounts.mpl_core_program.to_account_info(),
-        name.clone(),
-        uri.clone(),
-        Some(&[collection_authority_seeds]),
-    )?;
-
-    // Initialize Dragon Egg metadata
-    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
-    egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
-    egg_metadata.power = 0;
-    egg_metadata.dna = dna;
-    egg_metadata.incubated_player_data = None;
-    egg_metadata.multiplier = multiplier;
-    egg_metadata.faction_id = faction_id;
-    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    egg_metadata.created_at = Clock::get()?.unix_timestamp;
-    egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
-    
-    // Update egg config stats
-    egg_config.eggs_minted += 1;
-    msg!("   Total eggs minted: {} / {}", egg_config.eggs_minted, egg_config.max_supply);
-
-    emit!(DragonEggMinted {
-        egg_metadata_account: egg_metadata.key(),
-        dragon_egg_asset_signer: ctx.accounts.dragon_egg_asset.key(),
-        owner: ctx.accounts.user.key(),
-        mint: egg_metadata.mint,
-        name,
-        uri,
-        dna,
-        initial_power: 0,
-        multiplier,
-        faction_id,
-    });
-    
-    msg!("✅ Minted Dragon Egg #{} for faction {}", egg_config.eggs_minted, faction_id);
-    Ok(())
-}
+ 
 
 /// Batch mint multiple Dragon Eggs (max 10 per transaction)
 /// Uses bonding curve pricing for each egg
-pub fn batch_mint_dragon_eggs(
-    ctx: Context<BatchMintDragonEggs>,
+/// 
+/// # Remaining Accounts
+/// For each egg to mint, the client must pass 2 accounts in remaining_accounts:
+/// 1. dragon_egg_asset (Signer, Writable) - The new Keypair for the egg
+/// 2. dragon_egg_metadata (Writable) - The derived PDA for metadata
+/// 
+/// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
+pub fn batch_mint_dragon_eggs<'info>(
+    ctx: Context<'_, '_, '_, 'info, BatchMintDragonEggs<'info>>,
     faction_id: u8,
     mint_count: u8,
     ticket_tier_index: Option<u8>,
 ) -> Result<()> {
     require!(mint_count > 0 && mint_count <= 10, ErrorCode::InvalidParameters);
+    
+    // Validate we have enough remaining accounts
+    // We need 2 accounts per egg: Asset(Signer) + Metadata(PDA)
+    require!(
+        ctx.remaining_accounts.len() == (mint_count as usize * 2),
+        ErrorCode::InvalidParameters
+    );
     
     let global_config = &ctx.accounts.global_config;
     let egg_config = &mut ctx.accounts.egg_config;
@@ -247,22 +135,65 @@ pub fn batch_mint_dragon_eggs(
         }
     }
     
-    // Mint each egg
+    // Mint each egg using remaining_accounts
     for i in 0..mint_count {
+        let index = i as usize;
+        
+        // Get accounts from remaining_accounts
+        // [asset_0, meta_0, asset_1, meta_1, ...]
+        // Store keys first to avoid lifetime issues
+        let egg_asset_key = ctx.remaining_accounts[index * 2].key();
+        let egg_metadata_key = ctx.remaining_accounts[index * 2 + 1].key();
+        
+        // Verify Asset is a Signer
+        require!(ctx.remaining_accounts[index * 2].is_signer, ErrorCode::Unauthorized);
+        
+        // Verify Metadata PDA derivation
+        let (expected_metadata, metadata_bump) = Pubkey::find_program_address(
+            &[
+                DRAGON_EGG_METADATA_SEED.as_ref(), 
+                egg_asset_key.as_ref()
+            ],
+            ctx.program_id
+        );
+        require!(egg_metadata_key == expected_metadata, ErrorCode::InvalidAccount);
+        
         let current_mint_number = egg_config.eggs_minted + 1;
         
         // Calculate progressive multiplier based on current egg count (before this mint)
-        let multiplier = crate::genescience::calculate_progressive_multiplier(egg_config.eggs_minted + i as u64, egg_config.max_supply)?;
+        let multiplier = crate::genescience::calculate_progressive_multiplier(
+            egg_config.eggs_minted + i as u64, 
+            egg_config.max_supply
+        )?;
         
         // Generate DNA
-        let dna = crate::genescience::generate_genesis_dna(  current_mint_number,&ctx.accounts.user.key(),Clock::get()?.slot + i as u64, faction_id)?;        
+        let dna = crate::genescience::generate_genesis_dna(
+            current_mint_number,
+            &ctx.accounts.user.key(),
+            Clock::get()?.slot + i as u64, 
+            faction_id
+        )?;        
+        
         let name = format!("Dragon Egg #{}", current_mint_number);
         let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
         
+        // Create Metaplex Core Asset
         let collection_authority_bump = ctx.bumps.collection_authority;
         let collection_authority_seeds = &[crate::state::COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
-    
-        crate::mpl_core_helpers::create_mpl_core_asset(&ctx.accounts.dragon_egg_asset.to_account_info(), ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        
+        // Get AccountInfo references for this iteration
+        // Note: We must access these directly in the function call to avoid lifetime conflicts
+        let egg_asset_info = &ctx.remaining_accounts[index * 2];
+        let egg_metadata_info = &ctx.remaining_accounts[index * 2 + 1];
+        
+        // Prepare collection account info (if exists) - must be done inline to avoid lifetime issues
+        let collection_account_info = ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info());
+        
+        // Call create_mpl_core_asset with all accounts accessed directly
+        // This avoids storing references that mix lifetimes from remaining_accounts and ctx.accounts
+        crate::mpl_core_helpers::create_mpl_core_asset(
+            egg_asset_info,
+            collection_account_info.as_ref(),
             &ctx.accounts.collection_authority.to_account_info(),
             &ctx.accounts.user.to_account_info(),
             &ctx.accounts.user.to_account_info(),
@@ -273,11 +204,67 @@ pub fn batch_mint_dragon_eggs(
             Some(&[collection_authority_seeds]),
         )?;
         
+        // Initialize Metadata PDA manually (since we can't use #[account(init)] with remaining_accounts)
+        // Check if account already exists (shouldn't, but safety check)
+        if egg_metadata_info.lamports() == 0 {
+            let space = DragonEggMetadata::LEN;
+            let rent = Rent::get()?.minimum_balance(space);
+            
+            let metadata_seeds = &[
+                DRAGON_EGG_METADATA_SEED.as_ref(),
+                egg_asset_key.as_ref(),
+                &[metadata_bump]
+            ];
+            let metadata_signer = &[&metadata_seeds[..]];
+
+            // Create the account (System Program)
+            anchor_lang::system_program::create_account(
+                CpiContext::new_with_signer(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::CreateAccount {
+                        from: ctx.accounts.user.to_account_info(),
+                        to: egg_metadata_info.to_account_info(),
+                    },
+                    metadata_signer // The PDA must sign its own creation
+                ),
+                rent,
+                space as u64,
+                ctx.program_id // Assign owner to OUR program
+            )?;
+        }
+        
+        // Write data to the metadata account
+        let metadata_data = DragonEggMetadata {
+            mint: egg_asset_key,
+            power: 0, // Initial power
+            dna,
+            incubated_player_data: None,
+            multiplier,
+            faction_id,
+            last_update_ts: Clock::get()?.unix_timestamp,
+            created_at: Clock::get()?.unix_timestamp,
+            bump: metadata_bump,
+        };
+        
+        // Serialize into the account with Anchor discriminator
+        // CRITICAL: Must write the 8-byte discriminator first, then serialize the struct
+        let mut data = egg_metadata_info.try_borrow_mut_data()?;
+        let mut cursor = &mut data[..];
+        
+        // Write the 8-byte discriminator (required by Anchor for account deserialization)
+        // Anchor calculates discriminator as first 8 bytes of sha256("account:DragonEggMetadata")
+        // Use the Discriminator trait's DISCRIMINATOR constant
+        cursor.write_all(&<DragonEggMetadata as Discriminator>::DISCRIMINATOR)?;
+        
+        // Now serialize the struct data after the discriminator
+        metadata_data.try_serialize(&mut cursor)?;
+        
+        // Emit event
         emit!(DragonEggMinted {
-            egg_metadata_account: ctx.accounts.dragon_egg_metadata.key(),
-            dragon_egg_asset_signer: ctx.accounts.dragon_egg_asset.key(),
+            egg_metadata_account: egg_metadata_key,
+            dragon_egg_asset_signer: egg_asset_key,
             owner: ctx.accounts.user.key(),
-            mint: ctx.accounts.dragon_egg_asset.key(), // In batch, this would be different per egg
+            mint: egg_asset_key,
             name: name.clone(),
             uri: uri.clone(),
             dna,
@@ -820,6 +807,7 @@ pub struct BatchMintDragonEggs<'info> {
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: Dragon Egg collection (Metaplex Core)
+    #[account(mut)]
     pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
@@ -828,19 +816,6 @@ pub struct BatchMintDragonEggs<'info> {
         bump
     )]
     pub collection_authority: UncheckedAccount<'info>,
-
-    /// CHECK: Dragon Egg asset (will be created)
-    #[account(mut, signer)]
-    pub dragon_egg_asset: UncheckedAccount<'info>,
-
-    #[account(
-        init,
-        payer = user,
-        space = DragonEggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_asset.key().as_ref()],
-        bump
-    )]
-    pub dragon_egg_metadata: Account<'info, DragonEggMetadata>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,

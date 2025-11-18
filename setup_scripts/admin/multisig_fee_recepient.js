@@ -232,6 +232,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
     const balanceSOL = Number(balance) / LAMPORTS_PER_SOL;
 
     console.log(`  Current Balance: ${balanceSOL} WSOL`);
+    return;
 
     if (balance < TRANSFER_AMOUNT_LAMPORTS) {
       console.error("\n❌ INSUFFICIENT FUNDS ❌");

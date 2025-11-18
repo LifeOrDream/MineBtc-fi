@@ -10,7 +10,7 @@ seeds = false
 skip-lint = false
 
 [programs.Localnet]
-raydium_cp_swap = "7kuyWndzvLvyMyaBwrTp168YmA463iyjX4ko3jr8jZ6y"
+raydium_cp_swap = "35XpeajKa67tzhn9EiwLuxMT7dbvLVWGjRS9VTgpEuKT"
 
 
 [registry]

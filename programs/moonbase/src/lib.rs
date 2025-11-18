@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF");
+declare_id!("CqAg2KQKgJpzmKcLaTwSVzJxNbzPfYVm9unZvqAPyG5T");
 
 #[program]
 pub mod moonbase {
@@ -583,23 +583,6 @@ pub mod moonbase {
         eggs::admin_mint_dragon_egg(ctx, recipient, faction_id)
     }
 
-
-    /// Mint a single Dragon Egg NFT (anyone can call)
-    /// 
-    /// Mints a Dragon Egg NFT using bonding curve pricing based on current supply.
-    /// Users can optionally select a ticket tier to receive free tickets when minting.
-    /// 
-    /// # Parameters
-    /// - `faction_id`: Faction ID the egg belongs to
-    /// - `ticket_tier_index`: Optional ticket tier index (0-3) to receive free tickets
-    pub fn mint_dragon_egg(
-        ctx: Context<MintDragonEgg>,
-        faction_id: u8,
-        ticket_tier_index: Option<u8>,
-    ) -> Result<()> {
-        eggs::mint_dragon_egg(ctx, faction_id, ticket_tier_index)
-    }
-
     /// Batch mint multiple Dragon Eggs (anyone can call, max 10 per transaction)
     /// 
     /// Mints multiple Dragon Egg NFTs in a single transaction.
@@ -608,8 +591,8 @@ pub mod moonbase {
     /// # Parameters
     /// - `faction_id`: Faction ID all eggs belong to
     /// - `mint_count`: Number of eggs to mint (1-10)
-    pub fn batch_mint_dragon_eggs(
-        ctx: Context<BatchMintDragonEggs>,
+    pub fn batch_mint_dragon_eggs<'info>(
+        ctx: Context<'_, '_, '_, 'info, BatchMintDragonEggs<'info>>,
         faction_id: u8,
         mint_count: u8,
         ticket_tier_index: Option<u8>,

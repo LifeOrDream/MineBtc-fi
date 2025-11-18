@@ -547,8 +547,6 @@ pub fn initialize_mining_internal(
         ErrorCode::MiningAlreadyInitialized
     );
 
-    let cur_slot = Clock::get()?.slot;
-
     // ───── persist vault + bump(s) ─────
     doge_btc_mining.dbtc_token_vault = ctx.accounts.token_vault.key();
     doge_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
