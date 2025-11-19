@@ -173,6 +173,13 @@ async function main() {
         // 1. Initialize MoonBase Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Eggs Treasury)
         await initializeMoonbaseProgram(moonbaseProgram);
 
+        // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
+        const feeRecipientFromConfig = config.deployment.FEE_RECIPIENT_MULTISIG;
+        // if (feeRecipientFromConfig) {
+            await updateFeeRecipient(moonbaseProgram, feeRecipientFromConfig);
+        // }
+        return;
+
         // 6. Set Raydium Pool State (for price discovery and swaps)
         await setRaydiumPoolState(moonbaseProgram);
 
@@ -1512,6 +1519,83 @@ async function initializeLpTokenAccounts(moonbaseProgram) {
     }
 }
 
+
+async function updateFeeRecipient(moonbaseProgram, newFeeRecipientAddress) {
+    console.log(COLOR_STEP, '\n================ [ UPDATING FEE RECIPIENT ] ================');
+
+    // Check if program is initialized
+    if (!deploymentFile.moonbase_program_initialized) {
+        console.log(COLOR_WARNING, '⚠️ MoonBase program not initialized. Skipping fee recipient update...');
+        return;
+    }
+
+    const newFeeRecipient = new PublicKey(newFeeRecipientAddress);
+    console.log(COLOR_INFO, `💰 Updating fee recipient to: ${newFeeRecipient.toString()}`);
+
+    try {
+        // Load PDAs
+        const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+        
+        // Get current fee recipient
+        const globalConfig = await moonbaseProgram.account.globalConfig.fetch(globalConfigPDA);
+        const currentFeeRecipient = globalConfig.feeRecipient;
+        
+        console.log(COLOR_INFO, `   Current fee recipient: ${currentFeeRecipient.toString()}`);
+        console.log(COLOR_INFO, `   New fee recipient: ${newFeeRecipient.toString()}`);
+        
+        // Check if already set
+        if (currentFeeRecipient.equals(newFeeRecipient)) {
+            console.log(COLOR_WARNING, `   ⚠️ Fee recipient is already set to ${newFeeRecipient.toString()}`);
+            return;
+        }
+
+        // Derive DogeBtcMining PDA (optional account)
+        const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from('moon-doge-mining')],
+            moonbaseProgram.programId
+        );
+
+        console.log(COLOR_INFO, `   Global Config PDA: ${globalConfigPDA.toString()}`);
+        console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
+
+        // Build and send transaction
+        // Pass null for new_authority (don't change it) and newFeeRecipient for new_fee_recipient
+        const tx = await moonbaseProgram.methods
+            .updateConfig(null, newFeeRecipient)
+            .accounts({
+                globalConfig: globalConfigPDA,
+                dogeBtcMining: dogeBtcMiningPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+
+        console.log(COLOR_SUCCESS, `✅ Fee recipient updated successfully!`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`);
+
+        // Update deployment file
+        if (!deploymentFile.fee_recipient_updated) {
+            deploymentFile.fee_recipient_updated = {};
+        }
+        deploymentFile.fee_recipient_updated = {
+            old_fee_recipient: currentFeeRecipient.toString(),
+            new_fee_recipient: newFeeRecipient.toString(),
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        
+        // Also update the initial deployment data
+        if (deploymentFile.moonbase_program_initialized) {
+            deploymentFile.moonbase_program_initialized.FEE_RECIPIENT_MULTISIG = newFeeRecipient.toString();
+        }
+        
+        saveDeploymentData();
+    } catch (error) {
+        console.error(COLOR_ERROR, '❌ Failed to update fee recipient:', error);
+        throw error;
+    }
+}
 
 async function addGameCrankerBot(moonbaseProgram, botWalletAddress) {
     // Check if cranker bots are already added

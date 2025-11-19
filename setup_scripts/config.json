@@ -11,7 +11,7 @@
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
-        "FEE_RECIPIENT_MULTISIG": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
+        "FEE_RECIPIENT_MULTISIG": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
         "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
     },
     "token": {

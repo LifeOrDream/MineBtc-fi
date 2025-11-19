@@ -72,7 +72,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("   Initializing SOL fee config...");
     global_config.sol_fee_config = SolFeeConfig {
         protocol_fee_pct: 10,
-        buyback_pct: 40,
+        buyback_pct: 80,
         stakers_pct: 40,
     };
     msg!("     Protocol fee: {}%", global_config.sol_fee_config.protocol_fee_pct);

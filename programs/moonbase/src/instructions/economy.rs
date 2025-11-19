@@ -1375,16 +1375,18 @@ pub struct DistributeSolFees<'info> {
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump  // Let Anchor find the correct bump
+        bump  
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
     /// Treasury's WSOL token account (authority is treasury PDA)
+    /// Initialized automatically if it doesn't exist (payer pays for initialization)
     #[account(
-        mut,
-        constraint = treasury_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = wsol_mint,
+        associated_token::authority = sol_treasury,
     )]
-    /// CHECK: Token account owned by treasury PDA (verified via constraint)
     pub treasury_wsol_account: Account<'info, TokenAccount>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
@@ -1423,7 +1425,12 @@ pub struct DistributeSolFees<'info> {
     )]
     pub buybacks_account: Account<'info, BuybacksAccount>,
 
+    /// Payer for account initialization (can be anyone calling this keeper function)
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
  

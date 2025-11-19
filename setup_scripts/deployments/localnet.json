@@ -126,7 +126,7 @@
     "solTreasury_address": "5QWcBpuumcSa6GJBHbJfsKrvSyuqnGWK9p1VJbukJpNo",
     "eggsTreasury_address": "81XqGasQ6ASGJXeFF4DhupsHpYTLEtbTTkxyPiFPioBV",
     "unrefinedRewards_address": "DzHyJVm81sJmfDrHJkaE3VcyXrpTV1t91b6xY8jRTCDV",
-    "FEE_RECIPIENT_MULTISIG": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
+    "FEE_RECIPIENT_MULTISIG": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
     "tx_signature": "2G917u3eXgiUu27sUcbaPJADLNNEmRfL7sHgHLZbcNDRsDTJCUREKCXhbLMotDTLM8xWcZLiYdXk5uGgQxGNZ4WS",
     "timestamp": "2025-11-19T14:36:26.288Z"
   },
@@ -351,5 +351,11 @@
     ],
     "tx_signature": "3JtxKNBvEBFXzQgmVqSNdaujPT5DwSMJyvpVNUk7s9SJ5t31jGHHgxuaNzKLBeM6LPaNcfCohk4vXKK7SPguWjzN",
     "timestamp": "2025-11-19T14:36:47.130Z"
+  },
+  "fee_recipient_updated": {
+    "old_fee_recipient": "DmSXs7sqBGghZAb8kjWpEP2KfTY8sr3jqzdmTooCJS99",
+    "new_fee_recipient": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
+    "tx_signature": "37GgFgGP1w2ndPMx7vMoRBYF1P26xFZV9iuc1wgRrGjMJAy7Krq6cwiMcYEjU87zDD3xFF3vNUZAd3waPsjeHgm8",
+    "timestamp": "2025-11-19T18:11:22.700Z"
   }
 }
