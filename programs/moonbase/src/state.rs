@@ -132,6 +132,10 @@ pub struct GlobalConfig {
     /// Fee for changing faction (in lamports)
     pub change_faction_fee: u64,
 
+    /// Minimum time interval between price snapshots (in seconds)
+    /// Default: 1800 seconds (30 minutes)
+    pub snapshot_interval: u64,
+
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
     pub bump: u8,
@@ -175,7 +179,7 @@ impl DogeBtcDistConfig {
 
 
 impl GlobalConfig {
-    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + change_faction_fee + bump + treasury_bump + supported_factions (vec)
+    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + change_faction_fee + snapshot_interval + bump + treasury_bump + supported_factions (vec)
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
         8 +                     // total_players
@@ -186,6 +190,7 @@ impl GlobalConfig {
         DogeBtcDistConfig::LEN + // dbtc_dist_config
         32 +                    // raydium_pool_state
         8 +                     // change_faction_fee
+        8 +                     // snapshot_interval
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec

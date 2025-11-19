@@ -46,10 +46,11 @@ pub struct MiningTokenVaultSet {
 
  
 #[event]
-pub struct FactionsAdded {
+pub struct FactionAdded {
     pub authority: Pubkey,
-    pub factions: Vec<String>,
-    pub total_factions: u8, // Changed from usize to u8 for Anchor event compatibility
+    pub faction_name: String,   
+    pub faction_id: u8,
+    pub faction_key: Pubkey,
 }
  
 // ------------------------------

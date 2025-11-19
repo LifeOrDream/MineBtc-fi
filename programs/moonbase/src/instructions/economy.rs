@@ -179,25 +179,26 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         ErrorCode::InvalidAccount
     );
 
-    // Check if at least 30 minutes has passed since last snapshot
+    // Check if at least snapshot_interval has passed since last snapshot
     msg!("\n   ⏱️ Checking time constraints...");
-    let thirty_mins = THIRTY_MINS as i64;
-    if current_time < doge_btc_mining.last_rate_update + thirty_mins {
-        msg!("   ⏰ Update too early - must wait at least 30 minutes between updates");
+    let snapshot_interval = ctx.accounts.global_config.snapshot_interval as i64;
+    if current_time < doge_btc_mining.last_rate_update + snapshot_interval {
+        msg!("   ⏰ Update too early - must wait at least {} seconds between updates", snapshot_interval);
         msg!(
             "      Next update allowed: {}",
-            doge_btc_mining.last_rate_update + thirty_mins
+            doge_btc_mining.last_rate_update + snapshot_interval
         );
         msg!(
             "      Time remaining: {} seconds",
-            (doge_btc_mining.last_rate_update + thirty_mins - current_time)
+            (doge_btc_mining.last_rate_update + snapshot_interval - current_time)
         );
         return Ok(());
     }
 
     msg!(
-        "   ✅ Time constraint satisfied ({}s since last update)",
-        current_time - doge_btc_mining.last_rate_update
+        "   ✅ Time constraint satisfied ({}s since last update, required: {}s)",
+        current_time - doge_btc_mining.last_rate_update,
+        snapshot_interval
     );
 
     msg!("\n🔄 === PROCESSING DISTRIBUTION RATE UPDATE ===");

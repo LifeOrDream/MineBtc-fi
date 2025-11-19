@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("CqAg2KQKgJpzmKcLaTwSVzJxNbzPfYVm9unZvqAPyG5T");
+declare_id!("433HY49wUisF9FZvGahKRwJwUDZ5sFvuLTmdXLiy9ghs");
 
 #[program]
 pub mod moonbase {
@@ -89,6 +89,7 @@ pub mod moonbase {
         new_dbtc_motherlode_pct: Option<u8>,
         new_refining_fee: Option<u8>,
         change_faction_fee: Option<u64>,
+        snapshot_interval: Option<u64>,
     ) -> Result<()> {
         admin::update_fees_internal(
             ctx,
@@ -101,6 +102,7 @@ pub mod moonbase {
             new_dbtc_motherlode_pct,
             new_refining_fee,
             change_faction_fee,
+            snapshot_interval,
         )
     }
 
