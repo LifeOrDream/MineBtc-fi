@@ -429,28 +429,13 @@ pub fn update_fees_internal(
         let protocol_fee_pct = new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
-
-        msg!("     New values: protocol={}%, buyback={}%, stakers={}%", protocol_fee_pct, buyback_pct, stakers_pct);
-        let total = protocol_fee_pct as u16 + buyback_pct as u16 + stakers_pct as u16;
-        msg!("     Total: {}%", total);
         
-        require!(
-            total == 100,
-            ErrorCode::InvalidParameters
-        );
-        msg!("     ✓ Percentages sum to 100%");
-
-        let old_config = global_config.sol_fee_config.clone();
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
         };
-        msg!("     Updated: protocol {}% -> {}%, buyback {}% -> {}%, stakers {}% -> {}%",
-            old_config.protocol_fee_pct, protocol_fee_pct,
-            old_config.buyback_pct, buyback_pct,
-            old_config.stakers_pct, stakers_pct
-        );
+        msg!("     Updated: protocol fee -> {}%, buyback -> {}%, stakers -> {}%", protocol_fee_pct, buyback_pct, stakers_pct);
     } else {
         msg!("   SOL fee config: not updated");
     }
