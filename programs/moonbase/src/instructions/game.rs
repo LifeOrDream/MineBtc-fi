@@ -193,6 +193,11 @@ pub fn end_round(
     let doge_btc_mining = &ctx.accounts.doge_btc_mining;
     let clock = Clock::get()?;
     
+    if game_session.stage == 1 || game_session.stage == 2 {
+        msg!("   Round has already ended or already distributed faction rewards, skipping");
+        return Ok(());
+    }
+
     // Validate round has ended
     require!( clock.unix_timestamp >= game_session.round_end_timestamp, ErrorCode::RoundNotEnded);
     require!( game_session.stage == 0, ErrorCode::InvalidStage);
@@ -229,6 +234,66 @@ pub fn end_round(
     let final_hash = keccak::hash(&final_randomness_seed);
     let final_hash_bytes = final_hash.to_bytes();
     msg!("   Final hash generated from seed + slot {} + timestamp {}", clock.slot, clock.unix_timestamp);
+    
+    // Check if there are any users/bets in this round
+    let total_users: u64 = game_session.user_block_indexes.iter().sum();
+    
+    if total_users == 0 {
+        msg!("   ⚠️ No users or bets in this round - finishing round without rewards");
+        
+        // Set default values for winning block (use initial block from hash, but no rewards)
+        let initial_winning_block = ((u64::from_le_bytes([
+            final_hash_bytes[0],
+            final_hash_bytes[1],
+            final_hash_bytes[2],
+            final_hash_bytes[3],
+            0, 0, 0, 0,
+        ]) % NUM_BLOCKS as u64)) as u8;
+        
+        let winning_faction_id = game_session.block_assignments[initial_winning_block as usize];
+        let same_faction_other_block = game_session.block_assignments
+            .iter()
+            .enumerate()
+            .find(|(idx, &faction)| faction == winning_faction_id && *idx != initial_winning_block as usize)
+            .map(|(idx, _)| idx as u8)
+            .unwrap_or(initial_winning_block); // Fallback to same block if not found
+        
+        game_session.winning_block = initial_winning_block;
+        game_session.winning_faction_id = winning_faction_id;
+        game_session.same_faction_other_block = same_faction_other_block;
+        
+        // Update global state
+        global_state.last_round_id = game_session.round_id;
+        global_state.winning_faction_id = winning_faction_id;
+        global_state.total_sol_bets = global_state.total_sol_bets + (game_session.total_sol_bets as u128);
+        global_state.can_begin_round = true;
+        
+        // Skip to stage 2 (no rewards to claim, round is complete)
+        game_session.stage = 2;
+        
+        msg!("   ✅ Round {} finished with no users/bets - skipping to stage 2", game_session.round_id);
+        
+        emit!(RoundEnded {
+            round_id: game_session.round_id,
+            game_session: game_session.key(),
+            winning_block: initial_winning_block,
+            winning_faction_id,
+            same_faction_other_block,
+            total_sol_bets: game_session.total_sol_bets,
+            total_points_bets: game_session.total_points_bets,
+            user_bets_count: game_session.user_block_indexes.clone(),
+            block_bet_counts: game_session.sol_bets_indexes.clone(),
+            block_points: game_session.points_bets_indexes.clone(),
+            dbtc_winner_pool: 0,
+            dbtc_same_faction_pool: 0,
+            dbtc_faction_stakers: 0,
+            dbtc_motherlode: 0,
+            motherlode_hit: false,
+            timestamp: clock.unix_timestamp,
+        });
+        
+        return Ok(());
+    }
     
     // Select initial winning block (0-23) using final hash
     let initial_winning_block = ((u64::from_le_bytes([
@@ -451,6 +516,11 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
     let faction_state = &mut ctx.accounts.faction_state;
 
     let global_state = &mut ctx.accounts.global_game_state;
+
+    if game_session.stage == 0 || game_session.stage == 2 {
+        msg!("   Round has not ended yet or already distributed faction rewards, skipping");
+        return Ok(());
+    }
     
     // Validate round has ended
     require!( game_session.stage == 1, ErrorCode::InvalidStage);
