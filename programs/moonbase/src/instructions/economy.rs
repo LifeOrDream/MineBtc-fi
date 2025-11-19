@@ -879,7 +879,43 @@ pub fn update_rate_and_add_lp_internal(
         
         // Validate: DOGE_BTC needed must be less than 5% of vault balance
         require!(available_dbtc >= max_dbtc_with_buffer, ErrorCode::InsufficientTokensInVault);
-        require!(max_dbtc_with_buffer < available_dbtc / 20, ErrorCode::MaxLimitError);
+        
+        // If max_dbtc_with_buffer exceeds 5% limit, adjust SOL amount to match 5% DBTC limit
+        let (final_sol_amount, _final_dbtc_amount, final_max_dbtc_with_buffer) = 
+            if max_dbtc_with_buffer >= available_dbtc / 20 {
+                msg!("   ⚠️ DBTC amount ({}) exceeds 5% limit ({}), adjusting SOL amount...", 
+                     max_dbtc_with_buffer as f64 / 1e6, (available_dbtc / 20) as f64 / 1e6);
+                adjust_sol_for_dbtc_limit(
+                    available_dbtc,
+                    sol_vault_balance,
+                    dbtc_vault_balance,
+                    lp_supply,
+                    adjusted_sol_amount,
+                    adjusted_dbtc_amount,
+                )?
+            } else {
+                (adjusted_sol_amount, adjusted_dbtc_amount, max_dbtc_with_buffer)
+            };
+        
+        msg!("   💰 Final deposit amounts: SOL={} SOL, DBTC={} DBTC (max with buffer)", 
+             final_sol_amount as f64 / 1e9, final_max_dbtc_with_buffer as f64 / 1e6);
+        
+        // Recalculate estimated_lp_amount based on final adjusted SOL amount
+        // This ensures the LP amount matches the actual SOL/DBTC amounts we're depositing
+        let final_estimated_lp_amount = if lp_supply > 0 && sol_vault_balance > 0 {
+            // Calculate LP tokens we'll receive based on final SOL amount
+            // LP tokens = (sol_amount * lp_supply) / sol_vault_balance
+            // Apply a small buffer (reduce by 1%) to account for slippage
+            let lp_from_sol = (final_sol_amount as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
+            // Reduce by 1% to account for slippage tolerance
+            lp_from_sol.saturating_sub(lp_from_sol / 100)
+        } else {
+            // Pool is empty, use 0 (will be calculated by Raydium)
+            0
+        };
+        
+        msg!("   📊 Recalculated LP amount: {} LP (was {} LP)", 
+             final_estimated_lp_amount as f64 / 1e6, estimated_lp_amount as f64 / 1e6);
         
         // Execute Raydium deposit CPI
         raydium_cp_swap::cpi::deposit(
@@ -902,9 +938,9 @@ pub fn update_rate_and_add_lp_internal(
                 },
                 signer_seeds,
             ),
-            estimated_lp_amount,
-            adjusted_sol_amount,
-            max_dbtc_with_buffer,
+            final_estimated_lp_amount,
+            final_sol_amount,
+            final_max_dbtc_with_buffer,
         )?;
         
         // Calculate LP tokens minted
@@ -1051,9 +1087,20 @@ pub fn update_rate_and_add_lp_internal(
         }
         
         // Update sol_for_pol: subtract consumed SOL (remaining SOL was already returned)
-        buybacks_account.sol_for_pol = buybacks_account.sol_for_pol.saturating_sub(sol_consumed);
-        msg!("   ✅ Updated sol_for_pol: {} SOL (consumed {} SOL)", 
-             buybacks_account.sol_for_pol as f64 / 1e9, sol_consumed as f64 / 1e9);
+        // If we adjusted due to DBTC limit, also subtract the difference from sol_for_pol
+        let sol_adjustment = if max_dbtc_with_buffer >= available_dbtc / 20 {
+            // We used less SOL than originally planned, so adjust sol_for_pol accordingly
+            total_sol_for_lp.saturating_sub(final_sol_amount)
+        } else {
+            0
+        };
+        buybacks_account.sol_for_pol = buybacks_account.sol_for_pol
+            .saturating_sub(sol_consumed)
+            .saturating_sub(sol_adjustment);
+        msg!("   ✅ Updated sol_for_pol: {} SOL (consumed {} SOL, adjusted {} SOL)", 
+             buybacks_account.sol_for_pol as f64 / 1e9, 
+             sol_consumed as f64 / 1e9,
+             sol_adjustment as f64 / 1e9);
         
         msg!("   ✅ LP addition and burn completed successfully");
     }
@@ -1332,6 +1379,78 @@ fn perform_sol_to_dbtc_swap<'info>(
 // ----------------------------------------------------------------------------------------
 // ------------ DYNAMIC DISTRIBUTION FUNCTIONS :: ORACLE & RATE UPDATES -----------------
 // ----------------------------------------------------------------------------------------
+
+/// Adjust SOL amount to respect 5% DBTC vault limit
+/// When max_dbtc_with_buffer exceeds 5% of available_dbtc, calculates the SOL amount
+/// needed to match exactly 5% of available DBTC, maintaining pool ratio
+/// Accounts for 1% DBTC burn tax and adds slippage tolerance
+/// Returns (adjusted_sol_amount, adjusted_dbtc_amount, adjusted_max_dbtc_with_buffer)
+fn adjust_sol_for_dbtc_limit(
+    available_dbtc: u64,
+    sol_vault_balance: u64,
+    dbtc_vault_balance: u64,
+    lp_supply: u64,
+    original_sol_amount: u64,
+    original_dbtc_amount: u64,
+) -> Result<(u64, u64, u64)> {
+    // Calculate maximum DBTC we can use (5% of available)
+    let max_dbtc_allowed = available_dbtc / 20; // 5% = 1/20
+    msg!("   📊 Max DBTC allowed (5%): {} DBTC", max_dbtc_allowed as f64 / 1e6);
+    
+    // Account for 1% burn tax on DBTC transfers
+    // We want max_dbtc_allowed to reach the pool AFTER burn
+    // After burn: dbtc_received = dbtc_sent * 0.99
+    // So: dbtc_sent = dbtc_received / 0.99 = max_dbtc_allowed * 100/99
+    // But we also have the buffer: max_dbtc_with_buffer = dbtc_amount * 51/50
+    // We want: max_dbtc_with_buffer * 0.99 <= max_dbtc_allowed
+    // So: dbtc_amount * 51/50 * 0.99 <= max_dbtc_allowed
+    //     dbtc_amount <= max_dbtc_allowed * 50/51 * 100/99
+    let max_base_dbtc = (max_dbtc_allowed as u128 * 50 * 100 / (51 * 99)) as u64;
+    msg!("   📊 Max base DBTC (accounting for 1% burn tax): {} DBTC", max_base_dbtc as f64 / 1e6);
+    
+    // Calculate DBTC that will actually reach the pool (after 1% burn)
+    let dbtc_received_in_pool = (max_base_dbtc as u128 * 99 / 100) as u64;
+    msg!("   📊 DBTC that will reach pool (after burn): {} DBTC", dbtc_received_in_pool as f64 / 1e6);
+    
+    // Calculate corresponding SOL amount based on pool ratio
+    // Use the DBTC that actually reaches the pool (after burn) for ratio calculation
+    // If pool exists: sol_amount = (dbtc_received_in_pool * sol_vault_balance) / dbtc_vault_balance
+    // If pool is empty, use original ratio
+    let sol_from_ratio = if lp_supply > 0 && dbtc_vault_balance > 0 && sol_vault_balance > 0 {
+        // Use pool ratio based on DBTC that reaches pool
+        (dbtc_received_in_pool as u128 * sol_vault_balance as u128 / dbtc_vault_balance as u128) as u64
+    } else {
+        // Pool is empty or invalid, use original ratio
+        if original_dbtc_amount > 0 {
+            // Account for burn tax in original ratio too
+            let original_dbtc_received = (original_dbtc_amount as u128 * 99 / 100) as u64;
+            (dbtc_received_in_pool as u128 * original_sol_amount as u128 / original_dbtc_received as u128) as u64
+        } else {
+            original_sol_amount // Fallback to original if no ratio available
+        }
+    };
+    
+    // Add slippage tolerance (reduce SOL by 3% to account for price movement and slippage)
+    // This ensures we don't exceed slippage limits in Raydium
+    let adjusted_sol_amount = sol_from_ratio.saturating_sub(sol_from_ratio * 3 / 100);
+    msg!("   📊 SOL from ratio (based on DBTC after burn): {} SOL", sol_from_ratio as f64 / 1e9);
+    msg!("   📊 SOL with slippage tolerance (3%): {} SOL", adjusted_sol_amount as f64 / 1e9);
+    
+    // Recalculate buffer with adjusted amounts
+    let adjusted_dbtc_amount = max_base_dbtc;
+    // Account for burn tax in the buffer calculation
+    // After burn: adjusted_dbtc_amount * 0.99 will reach the pool
+    // So max_dbtc_with_buffer should account for this
+    let adjusted_max_dbtc_with_buffer = adjusted_dbtc_amount.saturating_add(adjusted_dbtc_amount / 50);
+    
+    msg!("   ✅ Adjusted amounts:");
+    msg!("      SOL: {} SOL (was {} SOL)", adjusted_sol_amount as f64 / 1e9, original_sol_amount as f64 / 1e9);
+    msg!("      DBTC: {} DBTC (was {} DBTC)", adjusted_dbtc_amount as f64 / 1e6, original_dbtc_amount as f64 / 1e6);
+    msg!("      Max DBTC with buffer: {} DBTC (limit: {} DBTC)", 
+         adjusted_max_dbtc_with_buffer as f64 / 1e6, max_dbtc_allowed as f64 / 1e6);
+    
+    Ok((adjusted_sol_amount, adjusted_dbtc_amount, adjusted_max_dbtc_with_buffer))
+}
 
 /// Calculate price change percentage between old and new price
 /// Returns (change_pct, direction) where direction: 1=increase, -1=decrease, 0=same
