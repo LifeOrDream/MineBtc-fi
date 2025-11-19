@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("433HY49wUisF9FZvGahKRwJwUDZ5sFvuLTmdXLiy9ghs");
+declare_id!("BggweUrzZ1hQv6zHrd2tY6UtWrSJYQC5rLxy9UGUEyfa");
 
 #[program]
 pub mod moonbase {
@@ -307,6 +307,19 @@ pub mod moonbase {
         ctx: Context<UpdateGameState>,
     ) -> Result<()> {
         admin::switch_game_state_internal(ctx)
+    }
+
+    /// Update round duration (admin only)
+    /// 
+    /// Updates the duration of each game round in seconds.
+    /// 
+    /// # Parameters
+    /// - `new_round_duration_seconds`: New round duration in seconds (must be > 0)
+    pub fn update_round_duration(
+        ctx: Context<UpdateGameState>,
+        new_round_duration_seconds: i64,
+    ) -> Result<()> {
+        admin::update_round_duration_internal(ctx, new_round_duration_seconds)
     }
 
 

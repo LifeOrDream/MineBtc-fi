@@ -1149,6 +1149,26 @@ pub fn switch_game_state_internal(
     Ok(())
 }
 
+/// Update round duration (admin only)
+/// 
+/// Updates the `round_duration_seconds` field in the global game state.
+/// This controls how long each game round lasts.
+/// 
+/// # Parameters
+/// - `new_round_duration_seconds`: New round duration in seconds (must be > 0)
+pub fn update_round_duration_internal( ctx: Context<UpdateGameState>, new_round_duration_seconds: i64) -> Result<()> {
+    msg!("⏱️ [update_round_duration_internal] Updating round duration");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
+    let global_game_state = &mut ctx.accounts.global_game_state;
+    require!( new_round_duration_seconds > 0, ErrorCode::InvalidParameters);    
+    global_game_state.round_duration_seconds = new_round_duration_seconds;    
+    msg!("✅ [update_round_duration_internal] Round duration updated successfully");
+    msg!("   New duration: {} seconds ({} minutes)", new_round_duration_seconds, new_round_duration_seconds / 60);
+    
+    Ok(())
+}
+
  
  
 
