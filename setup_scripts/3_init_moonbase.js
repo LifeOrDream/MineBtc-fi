@@ -174,14 +174,24 @@ async function main() {
         await initializeMoonbaseProgram(moonbaseProgram);
 
         // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
-        const feeRecipientFromConfig = config.deployment.FEE_RECIPIENT_MULTISIG;
-        // if (feeRecipientFromConfig) {
-            await updateFeeRecipient(moonbaseProgram, feeRecipientFromConfig);
-        // }
-        return;
+        // const feeRecipientFromConfig = config.deployment.FEE_RECIPIENT_MULTISIG;
+        // // if (feeRecipientFromConfig) {
+        //     await updateFeeRecipient(moonbaseProgram, feeRecipientFromConfig);
+        // // }
+
+        // 1.6. Update Fees (if needed - can be called anytime after initialization)
+        // Example usage:
+        await updateFees(moonbaseProgram, {
+            newProtocolFeePct: null, // 10,
+            newBuybackPct: null, //40,
+            newStakersPct: null, //50,
+            changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
+            snapshotInterval: 3, // 30 minutes in seconds
+        });
 
         // 6. Set Raydium Pool State (for price discovery and swaps)
         await setRaydiumPoolState(moonbaseProgram);
+        return;
 
         // 3. Add Factions (12 factions for the raffle)
         await addFactions(moonbaseProgram);
@@ -1593,6 +1603,115 @@ async function updateFeeRecipient(moonbaseProgram, newFeeRecipientAddress) {
         saveDeploymentData();
     } catch (error) {
         console.error(COLOR_ERROR, '❌ Failed to update fee recipient:', error);
+        throw error;
+    }
+}
+
+async function updateFees(moonbaseProgram, feeConfig) {
+    console.log(COLOR_STEP, '\n================ [ UPDATING FEES ] ================');
+
+    // Check if program is initialized
+    if (!deploymentFile.moonbase_program_initialized) {
+        console.log(COLOR_WARNING, '⚠️ MoonBase program not initialized. Skipping fee update...');
+        return;
+    }
+
+    try {
+        // Load PDAs
+        const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
+        
+        // Derive DogeBtcMining PDA (optional account)
+        const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from('moon-doge-mining')],
+            moonbaseProgram.programId
+        );
+
+        // Get current config
+        const globalConfig = await moonbaseProgram.account.globalConfig.fetch(globalConfigPDA);
+        
+        console.log(COLOR_INFO, '   Current SOL fee config:');
+        console.log(COLOR_INFO, `     Protocol fee: ${globalConfig.solFeeConfig.protocolFeePct}%`);
+        console.log(COLOR_INFO, `     Buyback: ${globalConfig.solFeeConfig.buybackPct}%`);
+        console.log(COLOR_INFO, `     Stakers: ${globalConfig.solFeeConfig.stakersPct}%`);
+        
+        console.log(COLOR_INFO, '   Current DogeBtc dist config:');
+        console.log(COLOR_INFO, `     Stakers: ${globalConfig.dbtcDistConfig.dbtcStakersPct}%`);
+        console.log(COLOR_INFO, `     Winners: ${globalConfig.dbtcDistConfig.dbtcWinnersPct}%`);
+        console.log(COLOR_INFO, `     Same-faction: ${globalConfig.dbtcDistConfig.dbtcSameFactionPct}%`);
+        console.log(COLOR_INFO, `     Motherlode: ${globalConfig.dbtcDistConfig.dbtcMotherlodePct}%`);
+        console.log(COLOR_INFO, `     Refining fee: ${globalConfig.dbtcDistConfig.refiningFee}%`);
+        console.log(COLOR_INFO, `     Change faction fee: ${globalConfig.changeFactionFee.toString()} lamports`);
+        console.log(COLOR_INFO, `     Snapshot interval: ${globalConfig.snapshotInterval.toString()} seconds`);
+
+        // Prepare fee config with defaults (null = don't update)
+        const feeParams = {
+            newProtocolFeePct: feeConfig?.newProtocolFeePct ?? null,
+            newBuybackPct: feeConfig?.newBuybackPct ?? null,
+            newStakersPct: feeConfig?.newStakersPct ?? null,
+            newDbtcStakersPct: feeConfig?.newDbtcStakersPct ?? null,
+            newDbtcWinnersPct: feeConfig?.newDbtcWinnersPct ?? null,
+            newDbtcSameFactionPct: feeConfig?.newDbtcSameFactionPct ?? null,
+            newDbtcMotherlodePct: feeConfig?.newDbtcMotherlodePct ?? null,
+            newRefiningFee: feeConfig?.newRefiningFee ?? null,
+            changeFactionFee: feeConfig?.changeFactionFee ? new BN(feeConfig.changeFactionFee) : null,
+            snapshotInterval: feeConfig?.snapshotInterval ? new BN(feeConfig.snapshotInterval) : null,
+        };
+
+        // Log what will be updated
+        console.log(COLOR_INFO, '\n   Updating fees:');
+        if (feeParams.newProtocolFeePct !== null) console.log(COLOR_INFO, `     Protocol fee: ${feeParams.newProtocolFeePct}%`);
+        if (feeParams.newBuybackPct !== null) console.log(COLOR_INFO, `     Buyback: ${feeParams.newBuybackPct}%`);
+        if (feeParams.newStakersPct !== null) console.log(COLOR_INFO, `     Stakers: ${feeParams.newStakersPct}%`);
+        if (feeParams.newDbtcStakersPct !== null) console.log(COLOR_INFO, `     DBTC Stakers: ${feeParams.newDbtcStakersPct}%`);
+        if (feeParams.newDbtcWinnersPct !== null) console.log(COLOR_INFO, `     DBTC Winners: ${feeParams.newDbtcWinnersPct}%`);
+        if (feeParams.newDbtcSameFactionPct !== null) console.log(COLOR_INFO, `     DBTC Same-faction: ${feeParams.newDbtcSameFactionPct}%`);
+        if (feeParams.newDbtcMotherlodePct !== null) console.log(COLOR_INFO, `     DBTC Motherlode: ${feeParams.newDbtcMotherlodePct}%`);
+        if (feeParams.newRefiningFee !== null) console.log(COLOR_INFO, `     Refining fee: ${feeParams.newRefiningFee}%`);
+        if (feeParams.changeFactionFee !== null) console.log(COLOR_INFO, `     Change faction fee: ${feeParams.changeFactionFee.toString()} lamports`);
+        if (feeParams.snapshotInterval !== null) console.log(COLOR_INFO, `     Snapshot interval: ${feeParams.snapshotInterval.toString()} seconds`);
+
+        console.log(COLOR_INFO, `   Global Config PDA: ${globalConfigPDA.toString()}`);
+        console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
+
+        // Build and send transaction
+        const tx = await moonbaseProgram.methods
+            .updateFees(
+                feeParams.newProtocolFeePct,
+                feeParams.newBuybackPct,
+                feeParams.newStakersPct,
+                feeParams.newDbtcStakersPct,
+                feeParams.newDbtcWinnersPct,
+                feeParams.newDbtcSameFactionPct,
+                feeParams.newDbtcMotherlodePct,
+                feeParams.newRefiningFee,
+                feeParams.changeFactionFee,
+                feeParams.snapshotInterval
+            )
+            .accounts({
+                globalConfig: globalConfigPDA,
+                dogeBtcMining: dogeBtcMiningPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+
+        console.log(COLOR_SUCCESS, `✅ Fees updated successfully!`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`);
+
+        // Update deployment file
+        if (!deploymentFile.fees_updated) {
+            deploymentFile.fees_updated = {};
+        }
+        deploymentFile.fees_updated = {
+            fee_config: feeConfig,
+            tx_signature: tx,
+            timestamp: new Date().toISOString()
+        };
+        
+        saveDeploymentData();
+    } catch (error) {
+        console.error(COLOR_ERROR, '❌ Failed to update fees:', error);
         throw error;
     }
 }

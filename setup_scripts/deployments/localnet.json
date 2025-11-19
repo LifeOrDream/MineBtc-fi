@@ -130,13 +130,6 @@
     "tx_signature": "2G917u3eXgiUu27sUcbaPJADLNNEmRfL7sHgHLZbcNDRsDTJCUREKCXhbLMotDTLM8xWcZLiYdXk5uGgQxGNZ4WS",
     "timestamp": "2025-11-19T14:36:26.288Z"
   },
-  "raydium_pool_state_set": {
-    "pool_state_address": "4UuWYriMkRa9PHnop3A2q7RL5LTJ4p7BNKGGVAJsJzxy",
-    "sol_rewards_vault": "Fobj9x1FMDEc4GQ96WqcKpoJ8cEVUNUQpMHDwNZNUKrc",
-    "sol_prize_pot_vault": "3GZWp4BtNG5sYun1YEjvgS4yBnC4HNxG5nPih2toq11j",
-    "tx_signature": "3JcJ9jjF2CQtuJdV7oxLdwnZPfLYuo85aTmiCBiKN77sW9ydNzxowsexGuCRf7TXZfn5KAQABuS2QLYpzy5LmuRz",
-    "timestamp": "2025-11-19T14:36:26.676Z"
-  },
   "factions_added": {
     "factions": [
       {
@@ -357,5 +350,23 @@
     "new_fee_recipient": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
     "tx_signature": "37GgFgGP1w2ndPMx7vMoRBYF1P26xFZV9iuc1wgRrGjMJAy7Krq6cwiMcYEjU87zDD3xFF3vNUZAd3waPsjeHgm8",
     "timestamp": "2025-11-19T18:11:22.700Z"
+  },
+  "raydium_pool_state_set": {
+    "pool_state_address": "4UuWYriMkRa9PHnop3A2q7RL5LTJ4p7BNKGGVAJsJzxy",
+    "sol_rewards_vault": "Fobj9x1FMDEc4GQ96WqcKpoJ8cEVUNUQpMHDwNZNUKrc",
+    "sol_prize_pot_vault": "3GZWp4BtNG5sYun1YEjvgS4yBnC4HNxG5nPih2toq11j",
+    "tx_signature": "4nwoYRMiAQHBrD1h7xjQuXmtHwSj9uGeSVk3hquhKA3gxL5NfjGULSmQmcRu8daaLC1VxHyrNfH9QrEFaLsLUUZS",
+    "timestamp": "2025-11-19T18:29:47.096Z"
+  },
+  "fees_updated": {
+    "fee_config": {
+      "newProtocolFeePct": null,
+      "newBuybackPct": null,
+      "newStakersPct": null,
+      "changeFactionFee": null,
+      "snapshotInterval": 3
+    },
+    "tx_signature": "3KEHdJpmtKmvC4nehhJ7EhUonLerQXYSvffUErJWZ9R6faXLxt8fHKNt3tNERZ9gD88rg2SWhwPTSKKHK5y6968i",
+    "timestamp": "2025-11-19T18:34:16.839Z"
   }
 }

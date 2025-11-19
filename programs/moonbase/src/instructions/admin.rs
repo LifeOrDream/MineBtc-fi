@@ -1284,6 +1284,7 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct SetRaydiumPoolState<'info> {
     #[account(
+        mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
         constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
