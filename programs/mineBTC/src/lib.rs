@@ -39,7 +39,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, MineBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("83A69ZNUj4nWBvXoZJ8fqcZ1EaSNVHayi7tTPRBqarFq");
+declare_id!("GagRkqpDhF61L2BcjqurwBBBv2pwRxQR2BPoYJ8JGY8y");
 
 #[program]
 pub mod minebtc {

@@ -89,6 +89,8 @@ function generateWebsiteConfig(config, deployment) {
         deployment.minebtc_program_initialized?.eggsTreasury_address,
       unrefinedRewards_pda:
         deployment.minebtc_program_initialized?.unrefinedRewards_address,
+      autominerCustody_pda:
+        deployment.minebtc_program_initialized?.autominerCustody_address,
 
       // ========== DOGE_BTC MINING VAULT ==========
       dbtc_token_vault: deployment.mining_vault_initialized?.vault_address,

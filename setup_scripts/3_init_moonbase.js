@@ -373,6 +373,11 @@ async function initializeMinebtcProgram(minebtcProgram) {
     minebtcProgram.programId
   );
 
+  const [autominerCustodyPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("autominer-custody")],
+    minebtcProgram.programId
+  );
+
   const FEE_RECIPIENT_MULTISIG = new PublicKey(
     config.deployment.FEE_RECIPIENT_MULTISIG
   );
@@ -399,7 +404,8 @@ async function initializeMinebtcProgram(minebtcProgram) {
         dogeBtcMining: dogeBtcMiningPDA,
         unrefinedRewards: unrefinedRewardsPDA,
         solTreasury: solTreasuryPDA,
-        eggs_treasury: eggsTreasuryPDA,
+        eggsTreasury: eggsTreasuryPDA,
+        autominerCustody: autominerCustodyPDA,        
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -417,6 +423,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
       dogeBtcMining_address: dogeBtcMiningPDA.toString(),
       solTreasury_address: solTreasuryPDA.toString(),
       eggsTreasury_address: eggsTreasuryPDA.toString(),
+      autominerCustody_address: autominerCustodyPDA.toString(),
       unrefinedRewards_address: unrefinedRewardsPDA.toString(),
       FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
       tx_signature: tx,
