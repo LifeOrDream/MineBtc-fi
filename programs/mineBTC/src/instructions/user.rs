@@ -236,8 +236,9 @@ pub fn join_round(
     msg!("🎲 [join_round] User joining round (single bet). User: {}", ctx.accounts.authority.key());
     msg!("   Bet type: {:?}", bet_type);
         
-    // Call internal join_round with user as payer (None for signer_seeds - user signs the tx)
-    let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
+    // Call internal_process_bets with user as payer (None for signer_seeds - user signs the tx)
+    // Wrap single bet in vector
+    let (target_blocks, net_amounts, fee_amounts, points_amounts) = internal_process_bets(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
         &mut ctx.accounts.player_data,
@@ -251,11 +252,16 @@ pub fn join_round(
         ctx.bumps.user_game_bet,
         ctx.accounts.authority.key(),
         amount,
-        bet_type.clone(),
+        vec![bet_type.clone()],
         use_ticket,
         None, // User wallet signs the transaction
     )?;
  
+    // Extract single result
+    let target_block = target_blocks[0];
+    let net_amount = net_amounts[0];
+    let fee_amount = fee_amounts[0];
+    let points_amount = points_amounts[0];
     
     emit!(RoundJoined {
         user: ctx.accounts.authority.key(),
@@ -331,41 +337,25 @@ pub fn join_round_batch(
     
     msg!("   Expanded to {} bet types", expanded_bet_types.len());
 
-    let mut target_blocks = Vec::new();
-    let mut net_amounts = Vec::new();
-    let mut fee_amounts = Vec::new();
-    let mut points_amounts = Vec::new();
-    
-    // Place each bet
-    // Note: No faction validation needed - faction_state is not required for betting
-    for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
-        msg!("   Placing bet {} of {}: {:?}", idx + 1, expanded_bet_types.len(), bet_type);
-        
-        // Call internal join_round for each bet (None for signer_seeds - user signs the tx)
-        let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
-            &ctx.accounts.global_game_state,
-            &ctx.accounts.global_config,
-            &mut ctx.accounts.player_data,
-            &mut ctx.accounts.game_session,
-            &mut ctx.accounts.user_game_bet,
-            &ctx.accounts.user_wallet.to_account_info(),
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.sol_rewards_vault.to_account_info(),
-            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.user_game_bet,
-            ctx.accounts.authority.key(),
-            amount_per_bet,
-            bet_type.clone(),
-            use_ticket,
-            None, // User wallet signs the transaction
-        )?;
-        
-        target_blocks.push(target_block);
-        net_amounts.push(net_amount);
-        fee_amounts.push(fee_amount);
-        points_amounts.push(points_amount);
-    }
+    // Call internal_process_bets for all bets at once
+    let (target_blocks, net_amounts, fee_amounts, points_amounts) = internal_process_bets(
+        &ctx.accounts.global_game_state,
+        &ctx.accounts.global_config,
+        &mut ctx.accounts.player_data,
+        &mut ctx.accounts.game_session,
+        &mut ctx.accounts.user_game_bet,
+        &ctx.accounts.user_wallet.to_account_info(),
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.sol_rewards_vault.to_account_info(),
+        &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        ctx.bumps.user_game_bet,
+        ctx.accounts.authority.key(),
+        amount_per_bet,
+        expanded_bet_types.clone(),
+        use_ticket,
+        None, // User wallet signs the transaction
+    )?;
     
     emit!(RoundJoinedBatch {
         user: ctx.accounts.authority.key(),
@@ -552,7 +542,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     let autominer_custody_info = ctx.accounts.autominer_custody.to_account_info();
 
     if rounds_remaining == 0 {
-        Ok(())
+        return Ok(());
     }
     
     msg!("   Vault state:");
@@ -677,52 +667,32 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     
     msg!("     Expanded to {} bet types", expanded_bet_types.len());
 
-    let mut target_blocks = Vec::new();
-    let mut net_amounts = Vec::new();
-    let mut fee_amounts = Vec::new();
-    let mut points_amounts = Vec::new();
+    // Prepare PDA signer seeds for autominer custody
+    let autominer_seeds = &[
+        AUTOMINER_CUSTODY_SEED.as_ref(),
+        &[custody_bump],
+    ];
 
-    // Place each bet using internal_join_round
-    for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
-        msg!("     Placing bet {} of {}: {:?} for {} SOL", 
-            idx + 1, 
-            expanded_bet_types.len(), 
-            bet_type, 
-            (bet_size_per_bet as f64 / 1e9));
-        
-        // Prepare PDA signer seeds for autominer custody
-        let autominer_seeds = &[
-            AUTOMINER_CUSTODY_SEED.as_ref(),
-            &[custody_bump],
-        ];
-        
-        // Call internal_join_round with autominer vault as payer (PDA signs via seeds)
-        let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
-            &ctx.accounts.global_game_state,
-            &ctx.accounts.global_config,
-            &mut ctx.accounts.player_data,
-            &mut ctx.accounts.game_session,
-            &mut ctx.accounts.user_game_bet,
-            &autominer_custody_info,
-            &ctx.accounts.sol_treasury.to_account_info(),
-            &ctx.accounts.sol_rewards_vault.to_account_info(),
-            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.user_game_bet,
-            owner_key,
-            bet_size_per_bet,
-            bet_type.clone(),
-            None, // autominer always uses SOL, not tickets
-            Some(autominer_seeds), // PDA signs via seeds
-        )?;
-        
-        target_blocks.push(target_block);
-        net_amounts.push(net_amount);
-        fee_amounts.push(fee_amount);
-        points_amounts.push(points_amount);
-        msg!("       ✓ Bet #{} placed successfully", idx + 1);
-
-    }
+    // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
+    // Process all bets at once
+    let (target_blocks, net_amounts, fee_amounts, points_amounts) = internal_process_bets(
+        &ctx.accounts.global_game_state,
+        &ctx.accounts.global_config,
+        &mut ctx.accounts.player_data,
+        &mut ctx.accounts.game_session,
+        &mut ctx.accounts.user_game_bet,
+        &autominer_custody_info,
+        &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.sol_rewards_vault.to_account_info(),
+        &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        ctx.bumps.user_game_bet,
+        owner_key,
+        bet_size_per_bet,
+        expanded_bet_types.clone(),
+        None, // autominer always uses SOL, not tickets
+        Some(autominer_seeds), // PDA signs via seeds
+    )?;
     
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
     msg!("   {} bets of {} SOL each for round {}", 
@@ -947,12 +917,11 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
 
 
-/// Internal join_round logic that can be called by both user and autominer
-/// Payer can be either user wallet or autominer vault PDA
-/// signer_seeds: Optional PDA seeds for signing transfers (None for user wallet, Some(seeds) for PDA)
-/// Returns (net_amount, fee_amount, points_amount) for event emission
+/// Internal join_round logic for batched processing
+/// Calculates totals, performs single transfers, and updates state for all bets
+/// Returns vectors of results for events
 #[allow(clippy::too_many_arguments)]
-fn internal_join_round<'info>(
+fn internal_process_bets<'info>(
     global_state: &Account<'info, GlobalGameSate>,
     global_config: &Account<'info, GlobalConfig>,
     player_data: &mut Account<'info, PlayerData>,
@@ -965,205 +934,174 @@ fn internal_join_round<'info>(
     system_program: &AccountInfo<'info>,
     user_game_bet_bump: u8,
     owner_key: Pubkey,
-    amount: u64,
-    bet_type: BetType,
+    amount_per_bet: u64,
+    bet_types: Vec<BetType>,
     use_ticket: Option<u8>,
-    signer_seeds: Option<&[&[u8]]>, // PDA seeds for autominer vault transfers
-) -> Result<(u8, u64, u64, u64)> {
-    let clock = Clock::get()?;
-    
-    require!(game_session.round_id == global_state.current_round_id, ErrorCode::InvalidRound);
-    require!(  game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
+    signer_seeds: Option<&[&[u8]]>,
+) -> Result<(Vec<u8>, Vec<u64>, Vec<u64>, Vec<u64>)> {
     let round_id = global_state.current_round_id;
-    msg!("   Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", round_id, clock.unix_timestamp, global_state.round_end_timestamp);    
-    require!(amount > 0 || use_ticket.is_some(), ErrorCode::InvalidAmount);
     
-    // Validate bet type
-    msg!("   Validating bet type...");
-    let target_block = get_target_block_from_bet_type( &bet_type, &game_session.block_assignments)?;
-    let target_faction = game_session.block_assignments[target_block as usize];
-    msg!("     ✓ Target faction {}", target_faction);
+    require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
+    require!(game_session.block_assignments.iter().any(|&f| f != 0), ErrorCode::InvalidParameters);
+    require!(amount_per_bet > 0 || use_ticket.is_some(), ErrorCode::InvalidAmount);
+    require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
 
-    // Determine if using ticket or SOL
-    let (fee_amount, net_amount, points_amount) = if let Some(ticket_type_index) = use_ticket {
-        msg!("   Using ticket type index: {}", ticket_type_index);
-        require!(  (ticket_type_index as usize) < player_data.free_tickets.len() && (ticket_type_index as usize) < player_data.free_tickets_remaining.len(), ErrorCode::InvalidParameters );
-        
+    msg!("   Processing batch of {} bets for round {}", bet_types.len(), round_id);
+
+    // Arrays to return for events
+    let mut evt_target_blocks = Vec::new();
+    let mut evt_net_amounts = Vec::new();
+    let mut evt_fee_amounts = Vec::new();
+    let mut evt_points_amounts = Vec::new();
+
+    // Initialize totals
+    let num_bets = bet_types.len() as u64;
+    let mut total_stakers_fee = 0u64;
+    let mut total_protocol_fee = 0u64;
+    let mut total_net_to_pot = 0u64;
+    
+    // Calculate amounts per bet (uniform across batch)
+    let (net_per_bet, fee_per_bet, points_per_bet) = if let Some(ticket_type_index) = use_ticket {
+        // Ticket Logic
+        require!((ticket_type_index as usize) < player_data.free_tickets.len(), ErrorCode::InvalidParameters);
         let ticket_value = player_data.free_tickets[ticket_type_index as usize];
-        require!(ticket_value > 0, ErrorCode::InvalidAmount);
-        msg!("     Ticket value: {} points ({} SOL)", ticket_value, ticket_value as f64 / 1_000_000_000.0);
+        require!(amount_per_bet == ticket_value, ErrorCode::InvalidAmount);
         
-        require!( player_data.free_tickets_remaining[ticket_type_index as usize] > 0, ErrorCode::InsufficientFunds);
-        msg!("     Tickets remaining: {}", player_data.free_tickets_remaining[ticket_type_index as usize]);
+        require!(player_data.free_tickets_remaining[ticket_type_index as usize] >= num_bets, ErrorCode::InsufficientFunds);
         
-        require!(amount == ticket_value, ErrorCode::InvalidAmount);
-        msg!("     ✓ Ticket amount matches ticket value");
+        // Validate total points limit
+        let total_points = amount_per_bet * num_bets;
+        validate_points_percentage_limit(game_session.total_points_bets, game_session.total_sol_bets, total_points)?;
         
-        validate_points_percentage_limit(game_session.total_points_bets, game_session.total_sol_bets, amount)?;
+        // Deduct tickets
+        player_data.free_tickets_remaining[ticket_type_index as usize] -= num_bets;
+        msg!("     Deducted {} tickets of tier {}", num_bets, ticket_type_index);
         
-        // Deduct ticket
-        player_data.free_tickets_remaining[ticket_type_index as usize] -= 1;
-        msg!("     ✓ Ticket deducted (remaining: {})", player_data.free_tickets_remaining[ticket_type_index as usize]);
-        
-        // Points bets don't have fees and don't go to prize pot
-        (0, 0, amount)
+        (0, 0, amount_per_bet)
     } else {
-        require!(amount > 0, ErrorCode::InvalidAmount);
-        msg!("   Using SOL bet. Bet amount: {} SOL", (amount as f64) / 1_000_000_000.0);
+        // SOL Logic
+        require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
+        let (net, fee) = handle_fee(amount_per_bet, global_config.sol_fee_config.protocol_fee_pct as u64)?;
         
-        // Calculate fees using protocol_fee_pct from GlobalConfig
-        let (net, fee_amount) = handle_fee(amount, global_config.sol_fee_config.protocol_fee_pct as u64)?;
-
-        // Calculate faction staker fees (split between minebtc and LP stakers)
-        let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
-        game_session.stakers_fee += stakers_fee;
-
-        // Helper closure for flexible transfers (handles both user wallet and PDA)
-        let do_transfer = |to: &AccountInfo<'info>, amount: u64| -> Result<()> {
-            if let Some(seeds) = signer_seeds {
-                // Case A: Autominer (PDA is payer) - use new_with_signer
-                transfer(
-                    CpiContext::new_with_signer(
-                        system_program.to_account_info(),
-                        Transfer {
-                            from: payer.to_account_info(),
-                            to: to.to_account_info(),
-                        },
-                        &[seeds],
-                    ),
-                    amount,
-                )
-            } else {
-                // Case B: Manual User (Wallet is payer) - standard transfer
-                transfer(
-                    CpiContext::new(
-                        system_program.to_account_info(),
-                        Transfer {
-                            from: payer.to_account_info(),
-                            to: to.to_account_info(),
-                        },
-                    ),
-                    amount,
-                )
-            }
-        };
-
-        // Transfer stakers fee to sol_rewards_vault
-        if stakers_fee > 0 {
-             msg!("   Transferring stakers fees ({} SOL) to sol_rewards_vault", (stakers_fee as f64 / 1_000_000_000.0));
-             do_transfer(sol_rewards_vault, stakers_fee)?;
-             msg!("     ✓ Stakers fees transferred to sol_rewards_vault");
-        }
-
-        // Transfer remaining protocol fees to sol_treasury
-        let protocol_fee = fee_amount - stakers_fee;
-        if protocol_fee > 0 {
-            msg!("   Transferring protocol fees ({} SOL) to sol_treasury", (protocol_fee as f64 / 1_000_000_000.0));
-            do_transfer(sol_treasury, protocol_fee)?;
-            msg!("     ✓ Protocol fees transferred to sol_treasury");
-        }    
-
-        // Transfer net amount to prize pot
-        msg!("   Transferring net amount ({} SOL) to sol_prize_pot_vault", (net as f64 / 1_000_000_000.0));
-        do_transfer(sol_prize_pot_vault, net)?;
-        msg!("     ✓ Net amount transferred to prize pot");
+        // Split fee
+        let stakers_fee = fee * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
+        let protocol_fee = fee - stakers_fee;
         
-        (fee_amount, net, net)
+        // Accumulate totals for transfer
+        total_stakers_fee = stakers_fee * num_bets;
+        total_protocol_fee = protocol_fee * num_bets;
+        total_net_to_pot = net * num_bets;
+        
+        (net, fee, net) // Points = Net Amount for SOL bets
     };
 
-    // Initialize or update UserGameBet PDA
-    msg!("   Processing user bet account...");
-    let is_new_bet = user_game_bet.owner == Pubkey::default();
-    if is_new_bet {
+    // Perform Bulk Transfers
+    let do_transfer = |to: &AccountInfo<'info>, amount: u64| -> Result<()> {
+        if amount == 0 { return Ok(()); }
+        if let Some(seeds) = signer_seeds {
+            transfer(
+                CpiContext::new_with_signer(
+                    system_program.to_account_info(),
+                    Transfer { from: payer.to_account_info(), to: to.to_account_info() },
+                    &[seeds],
+                ),
+                amount,
+            )
+        } else {
+            transfer(
+                CpiContext::new(
+                    system_program.to_account_info(),
+                    Transfer { from: payer.to_account_info(), to: to.to_account_info() },
+                ),
+                amount,
+            )
+        }
+    };
+
+    if total_stakers_fee > 0 {
+        msg!("   Transferring total stakers fees ({} SOL)", total_stakers_fee as f64 / 1e9);
+        do_transfer(sol_rewards_vault, total_stakers_fee)?;
+    }
+    if total_protocol_fee > 0 {
+        msg!("   Transferring total protocol fees ({} SOL)", total_protocol_fee as f64 / 1e9);
+        do_transfer(sol_treasury, total_protocol_fee)?;
+    }
+    if total_net_to_pot > 0 {
+        msg!("   Transferring total net amount to pot ({} SOL)", total_net_to_pot as f64 / 1e9);
+        do_transfer(sol_prize_pot_vault, total_net_to_pot)?;
+    }
+
+    // Initialize UserGameBet if needed
+    if user_game_bet.owner == Pubkey::default() {
         user_game_bet.owner = owner_key;
         user_game_bet.round_id = round_id;
         user_game_bet.block_ids = Vec::new();
         user_game_bet.sol_bets = Vec::new();
         user_game_bet.points_bets = Vec::new();
-        user_game_bet.total_sol_bet = 0;
-        user_game_bet.total_points_bet = 0;
-        user_game_bet.total_fee = 0;
         user_game_bet.bump = user_game_bet_bump;
-        msg!("     ✓ New bet account initialized");
+        msg!("     New bet account initialized");
     } else {
-        require!(
-            user_game_bet.round_id == round_id,
-            ErrorCode::InvalidRound
-        );
-        msg!("     ✓ Existing bet account found for round {}", round_id);
+        require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
     }
-    
-    // Update block_ids, sol_bets, and points_bets vectors
-    // Check if target_block is already in block_ids
-    let block_index_in_user_bet = user_game_bet.block_ids.iter().position(|&b| b == target_block);
-    
-    if let Some(index) = block_index_in_user_bet {
-        // Block already exists - update existing values
-        msg!("     Block {} already in user bet, updating at index {}", target_block, index);
-        user_game_bet.sol_bets[index] += net_amount;
-        user_game_bet.points_bets[index] += points_amount;
-        msg!("       Updated SOL bet: {})",  user_game_bet.sol_bets[index] as f64 / 1_000_000_000.0);
-        msg!("       Updated points bet: {})",  user_game_bet.points_bets[index] as f64 / 1_000_000_000.0);
-    } else {
-        // New block - add to vectors
-        msg!("     Adding new block {} to user bet", target_block);
-        user_game_bet.block_ids.push(target_block);
-        user_game_bet.sol_bets.push(net_amount);
-        user_game_bet.points_bets.push(points_amount);
-        msg!("       Added SOL bet: {}, points bet: {}", net_amount, points_amount);
-    }
-    
-    // Update totals
-    user_game_bet.total_sol_bet += net_amount;
-    user_game_bet.total_points_bet += points_amount;
-    user_game_bet.total_fee += fee_amount;
-    msg!("     Total SOL bet: {} SOL. Total points bet: {} SOL. Total fee: {} SOL", 
-        (user_game_bet.total_sol_bet as f64) / 1_000_000_000.0, 
-        (user_game_bet.total_points_bet as f64) / 1_000_000_000.0,
-        (user_game_bet.total_fee as f64) / 1_000_000_000.0);
-    
-    // Update block tracking arrays in GameSession (0-indexed: blocks 0-23)
-    let block_index = target_block as usize;
-    require!(block_index < NUM_BLOCKS, ErrorCode::InvalidParameters);
-    
-    // Only increment user count if this is a new bet for this block
-    if block_index_in_user_bet.is_none() {
-        game_session.user_block_indexes[block_index] += 1;
-        msg!("     User count for block {}: {}", target_block, game_session.user_block_indexes[block_index]);
-    }
-    
-    // Update SOL bet tracking in GameSession
-    game_session.sol_bets_indexes[block_index] += net_amount;
-    game_session.points_bets_indexes[block_index] += points_amount;
-    game_session.total_sol_bets += net_amount;
-    game_session.total_points_bets += points_amount;
-    msg!("     SOL bet for block {}: {} (total: {})", target_block, net_amount, game_session.sol_bets_indexes[block_index]);
-    msg!("     Points bet for block {}: {} (total: {})", target_block, points_amount, game_session.points_bets_indexes[block_index]);
 
-    // Update PlayerData to track this round
-    msg!("   Updating PlayerData for round {}...", round_id);
+    // Process each bet state
+    for bet_type in bet_types {
+        let target_block = get_target_block_from_bet_type(&bet_type, &game_session.block_assignments)?;
+        let block_index = target_block as usize;
+        require!(block_index < NUM_BLOCKS, ErrorCode::InvalidParameters);
+
+        // Update UserGameBet vectors
+        if let Some(index) = user_game_bet.block_ids.iter().position(|&b| b == target_block) {
+            user_game_bet.sol_bets[index] += net_per_bet;
+            user_game_bet.points_bets[index] += points_per_bet;
+        } else {
+            user_game_bet.block_ids.push(target_block);
+            user_game_bet.sol_bets.push(net_per_bet);
+            user_game_bet.points_bets.push(points_per_bet);
+            
+            // Increment user count for this block only if new
+            game_session.user_block_indexes[block_index] += 1;
+        }
+
+        // Update GameSession stats
+        game_session.sol_bets_indexes[block_index] += net_per_bet;
+        game_session.points_bets_indexes[block_index] += points_per_bet;
+        
+        // Record for events
+        evt_target_blocks.push(target_block);
+        evt_net_amounts.push(net_per_bet);
+        evt_fee_amounts.push(fee_per_bet);
+        evt_points_amounts.push(points_per_bet);
+    }
+
+    // Update Totals
+    let total_net_added = net_per_bet * num_bets;
+    let total_points_added = points_per_bet * num_bets;
+    let total_fee_added = fee_per_bet * num_bets;
+
+    user_game_bet.total_sol_bet += total_net_added;
+    user_game_bet.total_points_bet += total_points_added;
+    user_game_bet.total_fee += total_fee_added;
+
+    game_session.total_sol_bets += total_net_added;
+    game_session.total_points_bets += total_points_added;
+    game_session.stakers_fee += total_stakers_fee;
+
+    // Update PlayerData
     if !player_data.bets_rounds.contains(&round_id) {
         player_data.rounds_played += 1;
         player_data.bets_rounds.push(round_id);
         player_data.bets_points.push(0);
-        msg!("     Added round {} to player's active rounds", round_id);
     }
-    
-    // Update the bet amount for this round in PlayerData
     if let Some(index) = player_data.bets_rounds.iter().position(|&r| r == round_id) {
-        player_data.bets_points[index] += points_amount;
-        msg!("     Player bet amount for round {}: {} SOL", round_id, (player_data.bets_points[index] as f64) / 1_000_000_000.0);
+        player_data.bets_points[index] += total_points_added;
     }
-    
-    // Update cumulative statistics
-    player_data.total_sol_bet += net_amount;
-    player_data.total_points_bet += points_amount;
-    msg!("     Player total points bet: {} SOL", (player_data.total_points_bet as f64) / 1_000_000_000.0);
-    msg!("     Player total SOL bet: {} SOL", (player_data.total_sol_bet as f64) / 1_000_000_000.0);
-    
-    msg!("   ✓ Bet placed: {} SOL on block {} (bet_type: {:?})", (amount as f64) / 1_000_000_000.0, target_block, bet_type);
-     
-    Ok((target_block, net_amount, fee_amount, points_amount))
+    player_data.total_sol_bet += total_net_added;
+    player_data.total_points_bet += total_points_added;
+
+    msg!("   Batch processed: {} bets. Total Net: {} SOL", num_bets, total_net_added as f64 / 1e9);
+
+    Ok((evt_target_blocks, evt_net_amounts, evt_fee_amounts, evt_points_amounts))
 }
  
   
