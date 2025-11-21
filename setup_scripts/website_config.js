@@ -92,7 +92,7 @@ function generateWebsiteConfig(config, deployment) {
 
       // ========== DOGE_BTC MINING VAULT ==========
       dbtc_token_vault: deployment.mining_vault_initialized?.vault_address,
-      dbtc_vault_authority:
+      minebtc_vault_authority:
         deployment.mining_vault_initialized?.vault_authority,
       mining_start_timestamp:
         deployment.mining_vault_initialized?.start_timestamp,
@@ -134,9 +134,9 @@ function generateWebsiteConfig(config, deployment) {
         deployment.system_accounts_initialized?.buybacks_sol_vault_pda,
 
       // ========== CUSTODIAN ACCOUNTS ==========
-      dbtcCustodian_pda:
+      minebtcCustodian_pda:
         deployment.custodian_accounts_initialized?.dbtc_custodian,
-      dbtcCustodian_authority:
+      minebtcCustodian_authority:
         deployment.custodian_accounts_initialized?.dbtc_custodian_authority,
       liquidityCustodian_pda:
         deployment.custodian_accounts_initialized?.liquidity_custodian,

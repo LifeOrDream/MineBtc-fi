@@ -37,8 +37,8 @@ export const DOGE_BTC_MINING_SEED = "mine-btc-mining";
 export const SOL_TREASURY_SEED = "sol-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
-export const DOGE_BTC_VAULT_AUTHORITY_SEED = "mdoge-vault-authority";
-export const DOGE_BTC_VAULT_SEED = "dbtc_vault";
+export const DOGE_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
+export const DOGE_BTC_VAULT_SEED = "minebtc_vault";
 
 // PDAs which hold ModuleConfigStore / GearConfigStore state
 export const MODULE_CONFIG_STORE_SEED = "module-config-store";
@@ -58,7 +58,7 @@ export const dbtc_NFT_VAULT_SEED = "mdoge-nft-vault";
 export const LOOT_REWARDS_SEED = "loot-rewards";
 export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
 export const LOOT_DOGE_BTC_VAULT_SEED = "loot-mdoge-vault";
-export const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED = "loot-mdoge-vault-authority";
+export const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED = "loot-minebtc-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
 export const BUYBACKS_SEED = "buybacks";
 export const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
@@ -960,91 +960,7 @@ export async function setupMiningVault(
     };
   }
 }
-
-/**
- * Deposit MDOGE tokens to the mining vault
- */
-export async function depositMDOGE(
-  connection,
-  program,
-  wallet,
-  walletKeypair,
-  userTokenAccount, // PublicKey of the user's token account
-  vaultPDA, // PublicKey of the mining token vault
-  vaultAuthorityPDA,
-  tokenMint,
-  token_program,
-  amount // 21 billion with decimals
-) {
-  try {
-    console.log(
-      "\x1b[33m%s\x1b[0m",
-      `📡 Depositing ${amount.toString()} MDOGE tokens to vault...`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 User Token Account: ${userTokenAccount.toString()}`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Mining Token Vault: ${vaultPDA.toString()}`
-    );
-
-    // Find the mining PDA
-    const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(DOGE_BTC_MINING_SEED)],
-      program.programId
-    );
-
-    // Create the deposit instruction
-    const depositTx = await program.methods
-      .depositDogeBtcTokens(amount)
-      .accounts({
-        depositor: wallet.publicKey,
-        depositorTokenAccount: userTokenAccount,
-        vaultAuthority: vaultAuthorityPDA,
-        mdogeTokenVault: vaultPDA,
-        tokenMint: tokenMint,
-        dogeBtcMining: dogeBtcMiningPDA,
-        tokenProgram: token_program,
-      })
-      .transaction();
-
-    const depositTxid = await web3.sendAndConfirmTransaction(
-      connection,
-      depositTx,
-      [walletKeypair]
-    );
-    console.log(
-      "\x1b[32m%s\x1b[0m",
-      `✅ Deposited ${amount.toString()} MDOGE tokens to vault`
-    );
-    console.log("\x1b[90m%s\x1b[0m", `🔗 Transaction ID: ${depositTxid}`);
-    console.log(
-      "\x1b[90m%s\x1b[0m",
-      `🔍 Explorer URL: https://explorer.solana.com/tx/${depositTxid}?cluster=devnet`
-    );
-
-    return {
-      success: true,
-      data: {
-        vaultAddress: vaultPDA.toString(),
-        depositTxid: depositTxid,
-      },
-    };
-  } catch (error) {
-    console.error(
-      "\x1b[31m%s\x1b[0m",
-      "❌ Error depositing MDOGE tokens:",
-      error
-    );
-    return {
-      success: false,
-      error: error.toString(),
-    };
-  }
-}
-
+ 
 /**
  * Initialize the config stores
  */

@@ -671,18 +671,7 @@ pub fn update_hashpower_config_internal(
     msg!("✅ [update_hashpower_config_internal] Hashpower config updated successfully");
     Ok(())
 }
-
-
-
-
-    // // Hashpower config (contains lockup and multiplier settings)
-    // #[account(
-    //     seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
-    //     bump
-    // )]
-    // pub hashpower_config: Account<'info, HashpowerConfig>,
-
-
+ 
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------

@@ -816,12 +816,12 @@ async function initializeMiningSystem(minebtcProgram) {
   }
 
   const [vaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("dbtc_vault"), dogeBtcMiningPDA.toBuffer()],
+    [Buffer.from("minebtc_vault"), dogeBtcMiningPDA.toBuffer()],
     minebtcProgram.programId
   );
 
   const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("mdoge-vault-authority")],
+    [Buffer.from("minebtc-vault-authority")],
     minebtcProgram.programId
   );
 
@@ -920,7 +920,7 @@ async function depositMiningTokens(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .depositDogeBtcTokens(DBTC_DEPOSIT_AMOUNT)
+      .depositMineBtcTokens(DBTC_DEPOSIT_AMOUNT)
       .accounts({
         depositor: wallet.publicKey,
         depositorTokenAccount: userTokenAccount,
@@ -1051,17 +1051,17 @@ async function initializeCustodianAccounts(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const dbtcMint = DOGEBTC_TOKEN_MINT;
+  const minebtcMint = DOGEBTC_TOKEN_MINT;
   const lpMint = new PublicKey(deploymentFile.dbtc_sol_pool_created.lpMintPDA);
 
   // Derive DBTC custodian PDAs
-  const [dbtcCustodianPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("dbtc-custodian")],
+  const [minebtcCustodianPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("minebtc-custodian")],
     minebtcProgram.programId
   );
 
-  const [dbtcCustodianAuthorityPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("dbtc-custodian-authority")],
+  const [minebtcCustodianAuthorityPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("minebtc-custodian-authority")],
     minebtcProgram.programId
   );
 
@@ -1076,14 +1076,14 @@ async function initializeCustodianAccounts(minebtcProgram) {
     minebtcProgram.programId
   );
 
-  console.log(COLOR_INFO, `🔑 DBTC Mint: ${dbtcMint.toString()}`);
+  console.log(COLOR_INFO, `🔑 DBTC Mint: ${minebtcMint.toString()}`);
   console.log(
     COLOR_INFO,
-    `🔑 DBTC Custodian PDA: ${dbtcCustodianPDA.toString()}`
+    `🔑 DBTC Custodian PDA: ${minebtcCustodianPDA.toString()}`
   );
   console.log(
     COLOR_INFO,
-    `🔑 DBTC Custodian Authority PDA: ${dbtcCustodianAuthorityPDA.toString()}`
+    `🔑 DBTC Custodian Authority PDA: ${minebtcCustodianAuthorityPDA.toString()}`
   );
   console.log(COLOR_INFO, `🔑 LP Mint: ${lpMint.toString()}`);
   console.log(
@@ -1100,9 +1100,9 @@ async function initializeCustodianAccounts(minebtcProgram) {
       .initializeCustodianAccounts()
       .accounts({
         globalConfig: globalConfigPDA,
-        dbtcMint: dbtcMint,
-        dbtcCustodian: dbtcCustodianPDA,
-        dbtcCustodianAuthority: dbtcCustodianAuthorityPDA,
+        minebtcMint: minebtcMint,
+        minebtcCustodian: minebtcCustodianPDA,
+        minebtcCustodianAuthority: minebtcCustodianAuthorityPDA,
         lpMint: lpMint,
         liquidityCustodian: liquidityCustodianPDA,
         liquidityCustodianAuthority: liquidityCustodianAuthorityPDA,
@@ -1130,11 +1130,11 @@ async function initializeCustodianAccounts(minebtcProgram) {
     );
 
     deploymentFile.custodian_accounts_initialized = {
-      dbtc_custodian: dbtcCustodianPDA.toString(),
-      dbtc_custodian_authority: dbtcCustodianAuthorityPDA.toString(),
+      dbtc_custodian: minebtcCustodianPDA.toString(),
+      dbtc_custodian_authority: minebtcCustodianAuthorityPDA.toString(),
       liquidity_custodian: liquidityCustodianPDA.toString(),
       liquidity_custodian_authority: liquidityCustodianAuthorityPDA.toString(),
-      dbtc_mint: dbtcMint.toString(),
+      dbtc_mint: minebtcMint.toString(),
       lp_mint: lpMint.toString(),
       tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1153,25 +1153,25 @@ async function initializeCustodianAccounts(minebtcProgram) {
 
       // Check if accounts exist
       try {
-        const dbtcCustodianInfo = await connection.getAccountInfo(
-          dbtcCustodianPDA
+        const minebtcCustodianInfo = await connection.getAccountInfo(
+          minebtcCustodianPDA
         );
         const liquidityCustodianInfo = await connection.getAccountInfo(
           liquidityCustodianPDA
         );
 
-        if (dbtcCustodianInfo && liquidityCustodianInfo) {
+        if (minebtcCustodianInfo && liquidityCustodianInfo) {
           console.log(
             COLOR_INFO,
             "ℹ️ Custodian accounts already exist. Skipping..."
           );
           deploymentFile.custodian_accounts_initialized = {
-            dbtc_custodian: dbtcCustodianPDA.toString(),
-            dbtc_custodian_authority: dbtcCustodianAuthorityPDA.toString(),
+            dbtc_custodian: minebtcCustodianPDA.toString(),
+            dbtc_custodian_authority: minebtcCustodianAuthorityPDA.toString(),
             liquidity_custodian: liquidityCustodianPDA.toString(),
             liquidity_custodian_authority:
               liquidityCustodianAuthorityPDA.toString(),
-            dbtc_mint: dbtcMint.toString(),
+            dbtc_mint: minebtcMint.toString(),
             lp_mint: lpMint.toString(),
             status: "already_exists",
           };
@@ -1749,7 +1749,7 @@ async function initializeTaxConfig(minebtcProgram) {
       .accounts({
         globalConfig: globalConfigPDA,
         taxConfig: taxConfigPDA,
-        dbtcMint: DOGEBTC_TOKEN_MINT,
+        minebtcMint: DOGEBTC_TOKEN_MINT,
         withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
         factionTreasuryVault: factionTreasuryVaultPDA,
         nftFloorSweepVault: nftFloorSweepVaultPDA,

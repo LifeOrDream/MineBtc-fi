@@ -82,8 +82,8 @@ const DOGE_BTC_MINING_SEED = "mine-btc-mining";
 const SOL_TREASURY_SEED = "sol-treasury";
 const BUYBACKS_SEED = "buybacks";
 const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
-const DOGE_BTC_VAULT_SEED = "dbtc_vault";
-const VAULT_AUTHORITY_SEED = "mdoge-vault-authority";
+const DOGE_BTC_VAULT_SEED = "minebtc_vault";
+const VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
 
 // Derive PDAs
 const [globalConfigPDA] = PublicKey.findProgramAddressSync(
@@ -117,7 +117,7 @@ const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
 );
 
 // Token mints
-const dbtcMint = new PublicKey(deployment.dbtc_mint_address);
+const minebtcMint = new PublicKey(deployment.dbtc_mint_address);
 const solMint = new PublicKey("So11111111111111111111111111111111111111112"); // WSOL
 
 // Raydium addresses from deployment
@@ -232,7 +232,7 @@ async function executeSnapshotPrice() {
         solVault: solVaultPDA,
         dbtcTokenAccount: dbtcTokenAccountPDA,
         solTokenAccount: solTokenAccount,
-        dbtcMint: dbtcMint,
+        minebtcMint: minebtcMint,
         solMint: solMint,
         observationState: raydiumObservationState,
         tokenProgram2022: TOKEN_2022_PROGRAM_ID,
@@ -309,7 +309,7 @@ async function executeUpdateRateAndAddLp() {
         solVault: solVaultPDA,
         dbtcTokenAccount: dbtcTokenAccountPDA,
         solTokenAccount: solTokenAccount,
-        dbtcMint: dbtcMint,
+        minebtcMint: minebtcMint,
         solMint: solMint,
         lpTokenAccount: lpTokenAccount,
         lpMint: raydiumLpMint,
