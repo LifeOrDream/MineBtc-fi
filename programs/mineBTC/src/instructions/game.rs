@@ -717,13 +717,13 @@ pub struct EndRound<'info> {
     pub mine_btc_mining: Account<'info, MineBtcMining>,
 
     #[account(
+        mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
     pub global_game_state: Account<'info, GlobalGameSate>,
         
     #[account(
-        mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
