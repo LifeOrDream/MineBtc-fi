@@ -8,7 +8,7 @@ solana-test-validator --reset \
  --clone CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d \
 --url https://api.mainnet-beta.solana.com
 
-solana-keygen new -o target/deploy/moonbase-keypair.json --force --no-bip39-passphrase
+solana-keygen new -o target/deploy/minebtc-keypair.json --force --no-bip39-passphrase
 
 solana-test-validator --reset \
  --limit-ledger-size 100000000 \
@@ -16,15 +16,15 @@ solana-test-validator --reset \
  --clone CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d \
  --url https://api.mainnet-beta.solana.com
 
-anchor build -p moonbase
+anchor build -p minebtc
 
-solana program deploy target/deploy/moonbase.so \
- --program-id target/deploy/moonbase-keypair.json \
+solana program deploy target/deploy/minebtc.so \
+ --program-id target/deploy/minebtc-keypair.json \
  --keypair wallet-keypair.json \
  --url http://127.0.0.1:8899
 
-solana program deploy target/deploy/moonbase.so \
- --program-id target/deploy/moonbase-keypair.json \
+solana program deploy target/deploy/minebtc.so \
+ --program-id target/deploy/minebtc-keypair.json \
  --keypair wallet-keypair.json \
  --url https://api.devnet.solana.com
 

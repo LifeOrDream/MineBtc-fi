@@ -41,7 +41,7 @@ const REFERRAL_FEE_PCT: u64 = 5; // 5% referral fee
  
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- STAKE MOONDOGE TOKENS :: User gets electricity and SOL rewards ------
+// ---- STAKE DOGEBTC TOKENS :: User gets electricity and SOL rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 
@@ -189,7 +189,7 @@ pub fn stake_minebtc(
 
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- UNSTAKE MOONDOGE TOKENS :: User gets MINE_BTC back ------------------------
+// ---- UNSTAKE DOGEBTC TOKENS :: User gets MINE_BTC back ------------------------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Unstake MineBtc tokens from a position
@@ -1024,7 +1024,7 @@ fn calculate_power_points(claimable_by_user: u64) -> u64 {
 // ----------------------------------------------------------------------------------------
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- STAKE MOONDOGE ---------
+// --------- STAKE DOGEBTC ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
@@ -1114,7 +1114,7 @@ pub struct StakeMineBtc<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- UNSTAKE MOONDOGE ---------
+// --------- UNSTAKE DOGEBTC ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]

@@ -1285,6 +1285,5 @@ function printCompletionSummary(deploymentData) {
     
     console.log('\x1b[35m%s\x1b[0m', '========================================================================================');
     console.log('\x1b[36m%s\x1b[0m', '📁 Pool configuration saved to:', path.resolve(__dirname, config.deployment.paths.deployments_dir, `${CLUSTER}.json`));
-    console.log('\x1b[36m%s\x1b[0m', '🔄 Ready for next steps: MoonBase program initialization');
 }
   

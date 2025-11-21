@@ -117,7 +117,7 @@ pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max 
 
 /// ------------ GLOBAL CONFIG ------------
 
-/// Global configuration for the Moon Facility program
+/// Global configuration for the program
 #[account]
 pub struct GlobalConfig {
 
@@ -212,7 +212,7 @@ impl GlobalConfig {
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
 }
 
-/// ------------ MOON DOGE MINING ------------
+/// ------------ DOGE-BTC MINING ------------
 
 /// Price entry for tracking historical prices
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
@@ -259,7 +259,7 @@ impl ProtocolOwnedLiquidity {
     }
 }
 
-/// Moon Doge Mining status and parameters
+/// Doge-BTC Mining status and parameters
 #[account]
 pub struct MineBtcMining {
     /// Token vault that holds all pre-minted tokens
@@ -346,7 +346,7 @@ impl BuybacksAccount {
 
 /// ------------ HASHPOWER CONFIG ------------
 
-/// Hashpower configuration for the Moonbase program
+/// Hashpower configuration for the Minebtc program
 #[account]
 pub struct HashpowerConfig {
     /// Minimum lockup period in days
@@ -977,7 +977,7 @@ pub struct DragonEggMetadata {
     /// DNA data (32 bytes for breeding/evolution)
     pub dna: [u8; 32],
 
-    /// Moonbase this egg is incubated in (if any)
+    /// Minebtc this egg is incubated in (if any)
     pub incubated_player_data: Option<Pubkey>,
 
     /// Last power update timestamp

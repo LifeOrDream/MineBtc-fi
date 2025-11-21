@@ -1,12 +1,12 @@
 [package]
-name = "moonbase"
+name = "minebtc"
 version = "1.0.0"
-description = "MoonBase main program"
+description = "MineBTC game"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "moonbase"
+name = "minebtc"
 
 [features]
 default = []

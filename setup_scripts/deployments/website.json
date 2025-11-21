@@ -1,6 +1,6 @@
 {
   "localnet": {
-    "MOON_BASE_PROGRAM_ID": "5Ex2vDpz7BBua3bKm1Pzio3gDZXhQrvnQhQgsX4QVfMD",
+    "MINE_BTC_PROGRAM_ID": "5Ex2vDpz7BBua3bKm1Pzio3gDZXhQrvnQhQgsX4QVfMD",
     "RAYDIUM_CP_PROGRAM_ID": "4mpdXJ6rc5du3MN8pMxGVMCZR1d6vDqMBD7U9xf8eFgg",
     "rpc_url": "http://127.0.0.1:8899",
     "commitment": "confirmed",
@@ -157,7 +157,7 @@
     "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
   },
   "devnet": {
-    "MOON_BASE_PROGRAM_ID": "DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF",
+    "MINE_BTC_PROGRAM_ID": "DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF",
     "RAYDIUM_CP_PROGRAM_ID": "7kuyWndzvLvyMyaBwrTp168YmA463iyjX4ko3jr8jZ6y",
     "rpc_url": "https://api.devnet.solana.com",
     "commitment": "confirmed",

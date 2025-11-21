@@ -10,7 +10,7 @@
     "keywords": [
         "solana",
         "anchor",
-        "moondoge"
+        "minebtc"
     ],
     "dependencies": {
         "@coral-xyz/anchor": "^0.31.1",

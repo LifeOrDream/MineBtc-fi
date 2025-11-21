@@ -7,7 +7,7 @@
     "deployment": {
         "paths": {
             "deployer_key": "../wallet-keypair.json",
-            "moonbase_idl": "../target/idl/moonbase.json",
+            "minebtc_idl": "../target/idl/minebtc.json",
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
@@ -37,7 +37,7 @@
         "open_time": 0,
         "burn_lp_tokens": true
     },    
-    "moonbase": {
+    "minebtc": {
         "base_creation_cost": 100000000,
         "loot_percentage": 10,
         "default_width": 8,

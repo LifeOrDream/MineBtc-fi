@@ -6,11 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-moonbase = "9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A"
+minebtc = "9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]
-moonbase = "DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF"
+minebtc = "DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF"
 mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
 raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 

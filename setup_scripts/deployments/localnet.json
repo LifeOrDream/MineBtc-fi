@@ -4,7 +4,7 @@
     "timestamp": "2025-11-21T11:19:41.215Z",
     "cluster": "localnet"
   },
-  "MOON_BASE_PROGRAM_ID": "9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A",
+  "MINE_BTC_PROGRAM_ID": "9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A",
   "game_programs_deployment": {
     "timestamp": "2025-11-21T11:21:02.343Z",
     "cluster": "localnet"

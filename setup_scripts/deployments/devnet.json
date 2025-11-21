@@ -1,5 +1,5 @@
 {
-  "MOON_BASE_PROGRAM_ID": "DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF",
+  "MINE_BTC_PROGRAM_ID": "DXwQurZLCynyHXZ716RKHNs73DqaG1bMTvAnxhDr5epF",
   "game_programs_deployment": {
     "timestamp": "2025-11-17T14:42:44.783Z",
     "cluster": "devnet"
@@ -120,7 +120,7 @@
     "permanent_lock": true,
     "timestamp": "2025-11-17T14:48:18.793Z"
   },
-  "moonbase_program_initialized": {
+  "minebtc_program_initialized": {
     "globalConfig_address": "3v6R4LjsVVR26JDnDFvdqGbh3EakUpPBKs2H7KFTt1rg",
     "dogeBtcMining_address": "GwAdhF367UxEkgUZq5H2dsKX1fRNeeKS2rZsjpMhBQ5y",
     "solTreasury_address": "5TqLpQXqg6gB4Zs9csTc6yydgcBBwE2PJqztScVCphNX",

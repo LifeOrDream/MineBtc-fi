@@ -1,7 +1,7 @@
 /**
  * Multisig Admin Script (2-of-3)
  *
- * This script executes admin functions on the moonbase program using a multisig authority.
+ * This script executes admin functions on the minebtc program using a multisig authority.
  * Currently supports: add_cranker_bot
  * Requires 2 of 3 signatures to execute.
  *
@@ -24,17 +24,14 @@ import {
   Keypair,
   SystemProgram,
 } from "@solana/web3.js";
-import {
-  createMultisig,
-  getMultisig,
-} from "@solana/spl-token";
+import { createMultisig, getMultisig } from "@solana/spl-token";
 import * as bip39 from "bip39";
 import { derivePath } from "ed25519-hd-key";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import pkg from '@coral-xyz/anchor';
+import pkg from "@coral-xyz/anchor";
 const { AnchorProvider, Program, Wallet, setProvider } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,7 +47,9 @@ if (fs.existsSync(envPath)) {
   console.log(`✓ Loaded .env from: ${envPath}`);
 } else {
   dotenv.config();
-  console.log(`⚠️  .env not found at ${envPath}, using current working directory`);
+  console.log(
+    `⚠️  .env not found at ${envPath}, using current working directory`
+  );
 }
 
 // Load configuration
@@ -63,17 +62,20 @@ const RPC_URL = config.network.rpc_url;
 const COMMITMENT = config.network.commitment;
 
 // Load deployment file
-const deploymentPath = path.resolve(__dirname, `../deployments/${CLUSTER}.json`);
+const deploymentPath = path.resolve(
+  __dirname,
+  `../deployments/${CLUSTER}.json`
+);
 let deploymentFile = {};
 if (fs.existsSync(deploymentPath)) {
-  deploymentFile = JSON.parse(fs.readFileSync(deploymentPath, 'utf-8'));
+  deploymentFile = JSON.parse(fs.readFileSync(deploymentPath, "utf-8"));
 } else {
   throw new Error(`Deployment file not found: ${deploymentPath}`);
 }
 
 // Load IDL
-const idlPath = path.resolve(__dirname, config.deployment.paths.moonbase_idl);
-const IDL_MOONBASE = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
+const idlPath = path.resolve(__dirname, config.deployment.paths.minebtc_idl);
+const IDL_MINEBTC = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
 
 // ====================================================================
 // CONFIGURATION
@@ -94,14 +96,14 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
   if (!mnemonic || typeof mnemonic !== "string") {
     throw new Error(`${label} is missing or invalid (got: ${typeof mnemonic})`);
   }
-  
+
   // Trim whitespace
   const trimmedMnemonic = mnemonic.trim();
-  
+
   if (!trimmedMnemonic) {
     throw new Error(`${label} is empty after trimming`);
   }
-  
+
   const seed = bip39.mnemonicToSeedSync(trimmedMnemonic);
   const hd = derivePath("m/44'/501'/0'/0'", seed.toString("hex"));
   return Keypair.fromSeed(hd.key);
@@ -130,21 +132,21 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
     if (!mnemonic1) missing.push("MULTISIG1");
     if (!mnemonic2) missing.push("MULTISIG2");
     if (!mnemonic3) missing.push("MULTISIG3");
-    
+
     if (missing.length > 0) {
       throw new Error(
         `Missing ${missing.join(", ")} in environment variables.\n\n` +
-        `You can set them in two ways:\n\n` +
-        `1. Using .env file (recommended):\n` +
-        `   Create a .env file in setup_scripts/ with:\n` +
-        `   MULTISIG1="your mnemonic phrase"\n` +
-        `   MULTISIG2="your mnemonic phrase"\n` +
-        `   MULTISIG3="your mnemonic phrase"\n\n` +
-        `2. Using shell exports:\n` +
-        `   export MULTISIG1="your mnemonic phrase"\n` +
-        `   export MULTISIG2="your mnemonic phrase"\n` +
-        `   export MULTISIG3="your mnemonic phrase"\n` +
-        `   (Note: Don't use 'const' in export statements)`
+          `You can set them in two ways:\n\n` +
+          `1. Using .env file (recommended):\n` +
+          `   Create a .env file in setup_scripts/ with:\n` +
+          `   MULTISIG1="your mnemonic phrase"\n` +
+          `   MULTISIG2="your mnemonic phrase"\n` +
+          `   MULTISIG3="your mnemonic phrase"\n\n` +
+          `2. Using shell exports:\n` +
+          `   export MULTISIG1="your mnemonic phrase"\n` +
+          `   export MULTISIG2="your mnemonic phrase"\n` +
+          `   export MULTISIG3="your mnemonic phrase"\n` +
+          `   (Note: Don't use 'const' in export statements)`
       );
     }
 
@@ -187,7 +189,9 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
         signerPubkeys,
         MULTISIG_M
       );
-      console.log(`  Multisig Authority Address: ${multisigAddress.toBase58()}`);
+      console.log(
+        `  Multisig Authority Address: ${multisigAddress.toBase58()}`
+      );
       console.log(
         `  ⚠️  Save this address to MULTISIG_ADDRESS in .env: ${multisigAddress.toBase58()}`
       );
@@ -205,8 +209,8 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
     if (!command) {
       throw new Error(
         "No command specified. Usage: node multisig_admin.js <command> [args]\n" +
-        "Available commands:\n" +
-        "  add_cranker_bot <bot_pubkey> - Add a cranker bot to the whitelist"
+          "Available commands:\n" +
+          "  add_cranker_bot <bot_pubkey> - Add a cranker bot to the whitelist"
       );
     }
 
@@ -214,7 +218,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       if (!botPubkeyArg) {
         throw new Error(
           "BOT_PUBKEY not provided. Set BOT_PUBKEY environment variable or pass as argument.\n" +
-          "Usage: node multisig_admin.js add_cranker_bot <bot_pubkey>"
+            "Usage: node multisig_admin.js add_cranker_bot <bot_pubkey>"
         );
       }
 
@@ -222,9 +226,13 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       console.log(`\n🤖 Adding cranker bot: ${botPubkey.toString()}`);
 
       // --- 5. Load Program and PDAs ---
-      const programId = new PublicKey(deploymentFile.MOON_BASE_PROGRAM_ID);
-      const globalConfigPDA = new PublicKey(deploymentFile.moonbase_program_initialized.globalConfig_address);
-      const globalGameStatePDA = new PublicKey(deploymentFile.game_state_initialized.global_game_state_pda);
+      const programId = new PublicKey(deploymentFile.MINE_BTC_PROGRAM_ID);
+      const globalConfigPDA = new PublicKey(
+        deploymentFile.minebtc_program_initialized.globalConfig_address
+      );
+      const globalGameStatePDA = new PublicKey(
+        deploymentFile.game_state_initialized.global_game_state_pda
+      );
 
       console.log(`   Program ID: ${programId.toString()}`);
       console.log(`   Global Config PDA: ${globalConfigPDA.toString()}`);
@@ -237,10 +245,12 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
         signAllTransactions: async (txs) => txs,
       };
 
-      const provider = new AnchorProvider(connection, dummyWallet, { commitment: COMMITMENT });
+      const provider = new AnchorProvider(connection, dummyWallet, {
+        commitment: COMMITMENT,
+      });
       setProvider(provider);
 
-      const moonbaseProgram = new Program(IDL_MOONBASE, programId, provider);
+      const minebtcProgram = new Program(IDL_MINEBTC, programId, provider);
 
       // --- 6. Build Signers Array from Multisig ---
       const multisigSigners = [];
@@ -253,11 +263,11 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       }
 
       // Find the indices of our signers in the multisig
-      const signer1Index = multisigSigners.findIndex(
-        (pk) => pk.equals(signer1.publicKey)
+      const signer1Index = multisigSigners.findIndex((pk) =>
+        pk.equals(signer1.publicKey)
       );
-      const signer2Index = multisigSigners.findIndex(
-        (pk) => pk.equals(signer2.publicKey)
+      const signer2Index = multisigSigners.findIndex((pk) =>
+        pk.equals(signer2.publicKey)
       );
 
       if (signer1Index === -1 || signer2Index === -1) {
@@ -270,12 +280,14 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       console.log("\nBuilding add_cranker_bot instruction...");
 
       // Fetch GlobalConfig to check ext_authority
-      const globalConfig = await moonbaseProgram.account.globalConfig.fetch(globalConfigPDA);
+      const globalConfig = await minebtcProgram.account.globalConfig.fetch(
+        globalConfigPDA
+      );
       const extAuthority = new PublicKey(globalConfig.extAuthority);
-      
+
       console.log(`   GlobalConfig ext_authority: ${extAuthority.toString()}`);
       console.log(`   Multisig address: ${multisigAddress.toString()}`);
-      
+
       // Check if ext_authority matches any of the multisig signers
       // The program requires authority to be a Signer, so we need to use one of the signers
       let authoritySigner = null;
@@ -292,17 +304,19 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
         // If ext_authority is the multisig address itself, we can't use it directly
         // as Anchor requires Signer. We'll need to use signer1 and modify the instruction
         // to pass validation (but this will fail at runtime unless program supports it)
-        console.log(`   ⚠️  ext_authority is multisig address - using signer1 (may fail validation)`);
+        console.log(
+          `   ⚠️  ext_authority is multisig address - using signer1 (may fail validation)`
+        );
         authoritySigner = signer1;
       } else {
         throw new Error(
           `ext_authority (${extAuthority.toString()}) does not match any multisig signer ` +
-          `or multisig address. Cannot proceed.`
+            `or multisig address. Cannot proceed.`
         );
       }
 
       // Build the instruction with the appropriate authority signer
-      const addBotIx = await moonbaseProgram.methods
+      const addBotIx = await minebtcProgram.methods
         .addCrankerBot(botPubkey)
         .accounts({
           globalGameState: globalGameStatePDA,
@@ -311,17 +325,22 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
           systemProgram: SystemProgram.programId,
         })
         .instruction();
-      
+
       // If ext_authority is multisig address but we're using a signer,
       // we need to modify the instruction keys to replace the authority
-      if (extAuthority.equals(multisigAddress) && !authoritySigner.publicKey.equals(multisigAddress)) {
-        const authorityKeyIndex = addBotIx.keys.findIndex(
-          (key) => key.pubkey.equals(authoritySigner.publicKey)
+      if (
+        extAuthority.equals(multisigAddress) &&
+        !authoritySigner.publicKey.equals(multisigAddress)
+      ) {
+        const authorityKeyIndex = addBotIx.keys.findIndex((key) =>
+          key.pubkey.equals(authoritySigner.publicKey)
         );
         if (authorityKeyIndex !== -1) {
           // Replace with multisig address but keep it as a signer (will fail, but trying)
           // Actually, this won't work - we need the program to support multisig
-          console.log(`   ⚠️  Warning: Program may reject this transaction as authority mismatch`);
+          console.log(
+            `   ⚠️  Warning: Program may reject this transaction as authority mismatch`
+          );
         }
       }
 
@@ -330,49 +349,63 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       const transaction = new Transaction().add(addBotIx);
       transaction.feePayer = signer1.publicKey;
 
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } =
+        await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
       transaction.lastValidBlockHeight = lastValidBlockHeight;
 
       // --- 9. Sign and Send Transaction ---
       console.log("Signing transaction...");
-      
+
       // Collect all required signers
       // The authority signer must sign (it's required by the program)
       // We also need at least 2 multisig signers for the multisig to be valid
       const signers = [authoritySigner];
-      
+
       // Add other multisig signers if they're not already the authority
       // We need at least 2 signers total for multisig validation
       if (!authoritySigner.publicKey.equals(signer1.publicKey)) {
         signers.push(signer1);
       }
-      if (!authoritySigner.publicKey.equals(signer2.publicKey) && signers.length < 2) {
+      if (
+        !authoritySigner.publicKey.equals(signer2.publicKey) &&
+        signers.length < 2
+      ) {
         signers.push(signer2);
       }
-      
-      console.log(`   Signers: ${signers.map(s => s.publicKey.toString()).join(', ')}`);
+
+      console.log(
+        `   Signers: ${signers.map((s) => s.publicKey.toString()).join(", ")}`
+      );
 
       // Sign the transaction
       transaction.partialSign(...signers);
 
       console.log("Sending and confirming transaction...");
-      const signature = await connection.sendRawTransaction(transaction.serialize(), {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
+      const signature = await connection.sendRawTransaction(
+        transaction.serialize(),
+        {
+          skipPreflight: false,
+          maxRetries: 3,
+        }
+      );
 
       console.log(`   Transaction sent: ${signature}`);
-      
+
       // Wait for confirmation
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      }, COMMITMENT);
+      const confirmation = await connection.confirmTransaction(
+        {
+          signature,
+          blockhash,
+          lastValidBlockHeight,
+        },
+        COMMITMENT
+      );
 
       if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        throw new Error(
+          `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+        );
       }
 
       console.log("\n✅ Transaction Successful!");
