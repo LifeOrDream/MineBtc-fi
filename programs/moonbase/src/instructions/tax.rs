@@ -11,6 +11,34 @@ use anchor_spl::token_2022::spl_token_2022::extension::{
 };
 use anchor_spl::token_interface::{harvest_withheld_tokens_to_mint, HarvestWithheldTokensToMint, withdraw_withheld_tokens_from_mint, WithdrawWithheldTokensFromMint};
 
+//! # Tax and Distribution Instructions
+//!
+//! This module implements the deflationary tax system for MineBTC using Token-2022 transfer fees.
+//!
+//! ## Tax Mechanics
+//!
+//! All MineBTC transfers incur a 1% tax, which is:
+//! - **Burned**: Reducing total supply and increasing scarcity.
+//! - **NFT Floor Sweep**: Allocated for NFT buyback and floor support.
+//! - **Faction Treasury**: Distributed to factions based on performance rankings.
+//!
+//! ## Distribution Rounds
+//!
+//! Every 7 days, a distribution round calculates faction rankings based on total hashpower:
+//! 1. Factions are ranked by hashpower (highest to lowest).
+//! 2. Rewards are distributed using a tiered model (top factions earn more).
+//! 3. Each faction claims rewards, which are distributed to their stakers.
+//!
+//! ## Key Functions
+//!
+//! - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
+//! - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
+//! - `start_distribution_round`: Initiates a new 7-day distribution cycle.
+//! - `calculate_faction_leaderboard_position`: Ranks one faction by hashpower.
+//! - `calculate_faction_rewards`: Computes rewards for all factions.
+//! - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
+//!
+
 use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::state::*;
@@ -121,15 +149,15 @@ pub fn update_nft_floor_sweep_whitelist(
     Ok(())
 }
 
-/// Withdraw DogeBtc from NFT floor sweep vault
+/// Withdraw MineBtc from NFT floor sweep vault
 /// Callable only by the whitelisted address
-/// The whitelisted address will use this DogeBtc to swap for SOL off-chain,
+/// The whitelisted address will use this MineBtc to swap for SOL off-chain,
 /// buy NFTs, re-list them at 1.2x, and transfer SOL proceeds to SOL treasury
 pub fn withdraw_nft_floor_sweep_funds(
     ctx: Context<WithdrawNftFloorSweepFunds>,
     amount: u64,
 ) -> Result<()> {
-    msg!("💰 [withdraw_nft_floor_sweep_funds] Withdrawing {} DogeBtc", amount);
+    msg!("💰 [withdraw_nft_floor_sweep_funds] Withdrawing {} MineBtc", amount);
     
     let tax_config = &ctx.accounts.tax_config;
     let whitelisted_address = &ctx.accounts.whitelisted_address;
@@ -144,7 +172,7 @@ pub fn withdraw_nft_floor_sweep_funds(
     let vault_balance = ctx.accounts.nft_floor_sweep_vault.amount;
     require!(vault_balance >= amount, ErrorCode::InsufficientFunds);
     
-    // Transfer DogeBtc from vault to whitelisted address's token account
+    // Transfer MineBtc from vault to whitelisted address's token account
     let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
     let withdraw_authority_seeds = &[
         WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
@@ -157,17 +185,17 @@ pub fn withdraw_nft_floor_sweep_funds(
             ctx.accounts.token_program_2022.to_account_info(),
             TransferChecked {
                 from: ctx.accounts.nft_floor_sweep_vault.to_account_info(),
-                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                mint: ctx.accounts.minebtc_mint.to_account_info(),
                 to: ctx.accounts.whitelisted_token_account.to_account_info(),
                 authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
             },
             withdraw_authority_signer
         ),
         amount,
-        ctx.accounts.dbtc_mint.decimals,
+        ctx.accounts.minebtc_mint.decimals,
     )?;
     
-    msg!("   ✅ Transferred {} DogeBtc to whitelisted address {}", amount, whitelisted_address.key());
+    msg!("   ✅ Transferred {} MineBtc to whitelisted address {}", amount, whitelisted_address.key());
     
     emit!(NftFloorSweepFundsWithdrawn {
         whitelisted_address: whitelisted_address.key(),
@@ -192,7 +220,7 @@ pub fn withdraw_nft_floor_sweep_funds(
 /// in batches using `ctx.remaining_accounts`.
 /// 
 /// This instruction "sucks" the fees from user accounts and deposits
-/// them into the dbtc_mint's own "withheld_amount" field.
+/// them into the minebtc_mint's own "withheld_amount" field.
 /// 
 /// Callable by anyone - designed to be called many times in batches
 pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
@@ -213,12 +241,12 @@ pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFee
 
     // Call `harvest_withheld_tokens_to_mint`
     // This CPI will pull the fees from all `remaining_accounts`
-    // and aggregate them into `dbtc_mint.withheld_amount`.
+    // and aggregate them into `minebtc_mint.withheld_amount`.
     harvest_withheld_tokens_to_mint(
         CpiContext::new(
             ctx.accounts.token_program_2022.to_account_info(),
             HarvestWithheldTokensToMint {
-                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                mint: ctx.accounts.minebtc_mint.to_account_info(),
                 token_program_id: ctx.accounts.token_program_2022.to_account_info(),
             },
         ),
@@ -241,10 +269,10 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
 
     // 1. Get the total amount of tax sitting on the mint account
     // We must reload to get the most up-to-date data after harvesting
-    ctx.accounts.dbtc_mint.reload()?;
+    ctx.accounts.minebtc_mint.reload()?;
     
     // Read mint data and get TransferFeeConfig extension
-    let mint_account_info = ctx.accounts.dbtc_mint.to_account_info();
+    let mint_account_info = ctx.accounts.minebtc_mint.to_account_info();
     let mint_data = mint_account_info.try_borrow_data()?;
     let mint = StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(&mint_data)?;
     let transfer_fee_config = <StateWithExtensions<anchor_spl::token_2022::spl_token_2022::state::Mint> as BaseStateWithExtensions<anchor_spl::token_2022::spl_token_2022::state::Mint>>::get_extension::<TransferFeeConfig>(&mint)?;
@@ -271,7 +299,7 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
             WithdrawWithheldTokensFromMint {
                 destination: ctx.accounts.withdraw_authority_token_account.to_account_info(),
                 authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
-                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                mint: ctx.accounts.minebtc_mint.to_account_info(),
                 token_program_id: ctx.accounts.token_program_2022.to_account_info(),
             },
             withdraw_authority_signer
@@ -304,14 +332,14 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
                 ctx.accounts.token_program_2022.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
-                    mint: ctx.accounts.dbtc_mint.to_account_info(),
+                    mint: ctx.accounts.minebtc_mint.to_account_info(),
                     to: ctx.accounts.nft_floor_sweep_vault.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer
             ),
             nft_floor_sweep_amount,
-            ctx.accounts.dbtc_mint.decimals,
+            ctx.accounts.minebtc_mint.decimals,
         )?;
         msg!("   ✅ Transferred {} tokens to NFT floor sweep vault", (nft_floor_sweep_amount as f64) / 1e6);
     }
@@ -323,14 +351,14 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
                 ctx.accounts.token_program_2022.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
-                    mint: ctx.accounts.dbtc_mint.to_account_info(),
+                    mint: ctx.accounts.minebtc_mint.to_account_info(),
                     to: ctx.accounts.faction_treasury_vault.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer
             ),
             faction_treasury_amount,
-            ctx.accounts.dbtc_mint.decimals,
+            ctx.accounts.minebtc_mint.decimals,
         )?;
         msg!("   ✅ Transferred {} tokens to Faction treasury vault", (faction_treasury_amount as f64) / 1e6);
     }
@@ -341,7 +369,7 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
                 Burn {
-                    mint: ctx.accounts.dbtc_mint.to_account_info(),
+                    mint: ctx.accounts.minebtc_mint.to_account_info(),
                     from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
@@ -457,15 +485,15 @@ pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeade
         ErrorCode::InvalidState
     );
     
-    // Calculate total hashpower for this faction (dbtc + lp)
-    let total_hashpower = faction_state.total_dbtc_hashpower
+    // Calculate total hashpower for this faction (minebtc + lp)
+    let total_hashpower = faction_state.total_minebtc_hashpower
         .checked_add(faction_state.total_lp_hashpower)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     
     msg!("   Faction ID: {}", faction_state.faction_id);
-    msg!("   Total hashpower: {} (dbtc: {}, lp: {})", 
+    msg!("   Total hashpower: {} (minebtc: {}, lp: {})", 
         total_hashpower, 
-        faction_state.total_dbtc_hashpower,
+        faction_state.total_minebtc_hashpower,
         faction_state.total_lp_hashpower);
     
     // Find insertion position (maintain descending order by hashpower)
@@ -495,7 +523,7 @@ pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeade
     
     // Store values before emitting event
     let faction_id = faction_state.faction_id;
-    let dbtc_hashpower = faction_state.total_dbtc_hashpower;
+    let minebtc_hashpower = faction_state.total_minebtc_hashpower;
     let lp_hashpower = faction_state.total_lp_hashpower;
     let leaderboard_count = tax_config.leaderboard_factions_count;
     
@@ -504,7 +532,7 @@ pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeade
         faction_id,
         faction_state: faction_state_key,
         total_hashpower,
-        dbtc_hashpower,
+        minebtc_hashpower,
         lp_hashpower,
         rank: insert_index as u8,
         leaderboard_count,
@@ -615,7 +643,7 @@ pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Resul
 }
 
 /// Claim treasury rewards for one faction
-/// Adds rewards to staking reward indexes (50% each to dbtc and lp stakers)
+/// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
 pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
     msg!("🎁 [claim_faction_treasury_rewards] Claiming treasury rewards");
     
@@ -654,11 +682,11 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
     msg!("   Rank: {}", rank);
     msg!("   Reward amount: {} tokens", reward_amount);
     
-    // Split reward 50/50 between dbtc and lp stakers
-    let dbtc_reward = reward_amount / 2;
-    let lp_reward = reward_amount - dbtc_reward; // Handle odd amounts
+    // Split reward 50/50 between minebtc and lp stakers
+    let minebtc_reward = reward_amount / 2;
+    let lp_reward = reward_amount - minebtc_reward; // Handle odd amounts
     
-    msg!("   Split: {} to dbtc stakers, {} to lp stakers", dbtc_reward, lp_reward);
+    msg!("   Split: {} to minebtc stakers, {} to lp stakers", minebtc_reward, lp_reward);
     
     // Transfer tokens from treasury vault to emission vault
     token_2022::transfer_checked(
@@ -666,25 +694,25 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
             ctx.accounts.token_program_2022.to_account_info(),
             token_2022::TransferChecked {
                 from: ctx.accounts.faction_treasury_vault.to_account_info(),
-                mint: ctx.accounts.dbtc_mint.to_account_info(),
-                to: ctx.accounts.dbtc_emission_vault.to_account_info(),
-                authority: ctx.accounts.dbtc_emission_vault_authority.to_account_info(),
+                mint: ctx.accounts.minebtc_mint.to_account_info(),
+                to: ctx.accounts.minebtc_emission_vault.to_account_info(),
+                authority: ctx.accounts.minebtc_emission_vault_authority.to_account_info(),
             },
         ),
         reward_amount,
-        ctx.accounts.dbtc_mint.decimals,
+        ctx.accounts.minebtc_mint.decimals,
     )?;
     
-    // Update reward indexes for dbtc stakers
-    if dbtc_reward > 0 && faction_state.total_dbtc_hashpower > 0 {
-        let index_increase = helper::mul_div(dbtc_reward, INDEX_PRECISION, faction_state.total_dbtc_hashpower)?;
-        faction_state.dbtc_dbtc_reward_index = faction_state.dbtc_dbtc_reward_index + index_increase;
+    // Update reward indexes for minebtc stakers
+    if minebtc_reward > 0 && faction_state.total_minebtc_hashpower > 0 {
+        let index_increase = helper::mul_div(minebtc_reward, INDEX_PRECISION, faction_state.total_minebtc_hashpower)?;
+        faction_state.minebtc_minebtc_reward_index = faction_state.minebtc_minebtc_reward_index + index_increase;
     }
     
     // Update reward indexes for lp stakers
     if lp_reward > 0 && faction_state.total_lp_hashpower > 0 {
         let index_increase = helper::mul_div(lp_reward, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_dbtc_reward_index = faction_state.lp_dbtc_reward_index + index_increase;
+        faction_state.lp_minebtc_reward_index = faction_state.lp_minebtc_reward_index + index_increase;
     }
     
     // Mark faction as claimed
@@ -695,8 +723,8 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
     tax_config.faction_rewards[rank] = 0;
     
     msg!("✅ [claim_faction_treasury_rewards] Rewards claimed and distributed");
-    msg!("   Updated dbtc_dbtc_reward_index: {}", faction_state.dbtc_dbtc_reward_index);
-    msg!("   Updated lp_dbtc_reward_index: {}", faction_state.lp_dbtc_reward_index);
+    msg!("   Updated minebtc_minebtc_reward_index: {}", faction_state.minebtc_minebtc_reward_index);
+    msg!("   Updated lp_minebtc_reward_index: {}", faction_state.lp_minebtc_reward_index);
     
     emit!(FactionTreasuryRewardsClaimed {
         tax_config: ctx.accounts.tax_config.key(),
@@ -704,9 +732,9 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
         faction_state: ctx.accounts.faction_state.key(),
         rank: rank as u8,
         total_reward: reward_amount,
-        dbtc_staker_reward: dbtc_reward,
+        minebtc_staker_reward: minebtc_reward,
         lp_staker_reward: lp_reward,
-        dbtc_emission_vault: ctx.accounts.dbtc_emission_vault.key(),
+        minebtc_emission_vault: ctx.accounts.minebtc_emission_vault.key(),
         timestamp: Clock::get()?.unix_timestamp,
     });
     
@@ -804,7 +832,7 @@ pub struct InitializeTaxConfig<'info> {
     #[account(
         init,
         payer = authority,
-        token::mint = dbtc_mint,
+        token::mint = minebtc_mint,
         token::authority = withdraw_withheld_authority,
         token::token_program = token_program_2022,
         seeds = [FACTION_TREASURY_VAULT_SEED.as_ref()],
@@ -816,7 +844,7 @@ pub struct InitializeTaxConfig<'info> {
     #[account(
         init,
         payer = authority,
-        token::mint = dbtc_mint,
+        token::mint = minebtc_mint,
         token::authority = withdraw_withheld_authority,
         token::token_program = token_program_2022,
         seeds = [NFT_FLOOR_SWEEP_VAULT_SEED.as_ref()],
@@ -845,7 +873,7 @@ pub struct InitializeTaxConfig<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     
-    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    pub minebtc_mint: InterfaceAccount<'info, Mint>,
     
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
     pub system_program: Program<'info, System>,
@@ -913,10 +941,10 @@ pub struct WithdrawNftFloorSweepFunds<'info> {
     pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(mut)]
-    /// CHECK: Whitelisted address's token account (receives DogeBtc)
+    /// CHECK: Whitelisted address's token account (receives MineBtc)
     pub whitelisted_token_account: InterfaceAccount<'info, TokenAccount2022>,
     
-    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    pub minebtc_mint: InterfaceAccount<'info, Mint>,
     
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }
@@ -928,7 +956,7 @@ pub struct WithdrawNftFloorSweepFunds<'info> {
 pub struct CrankHarvestFees<'info> {
     #[account(mut)]
     /// CHECK: The mint account must be the one that is configured with the TransferFeeConfig extension
-    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    pub minebtc_mint: InterfaceAccount<'info, Mint>,
 
     /// CHECK: This is the Token-2022 Program.
     /// We use AccountInfo<'info> instead of Interface<>
@@ -949,7 +977,7 @@ pub struct CrankDistributeTax<'info> {
 
     // The Mint
     #[account(mut)]
-    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    pub minebtc_mint: InterfaceAccount<'info, Mint>,
     
     // Vaults
     /// The temporary vault that receives the full tax amount before splitting
@@ -1036,18 +1064,18 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(mut)]
-    /// CHECK: DogeBtc emission vault (receives transferred tokens)
-    pub dbtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
+    /// CHECK: MineBtc emission vault (receives transferred tokens)
+    pub minebtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: Emission vault authority PDA
-    pub dbtc_emission_vault_authority: UncheckedAccount<'info>,
+    pub minebtc_emission_vault_authority: UncheckedAccount<'info>,
     
-    /// CHECK: DogeBtc mint (for transfer decimals)
-    pub dbtc_mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: MineBtc mint (for transfer decimals)
+    pub minebtc_mint: InterfaceAccount<'info, Mint>,
     
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }

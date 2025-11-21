@@ -1,7 +1,23 @@
+//! # State Definitions
+//!
+//! This module defines all the account structures and constants used in the MineBTC program.
+//!
+//! ## Key Accounts
+//!
+//! - `GlobalConfig`: Stores global configuration parameters (fees, authorities, etc.).
+//! - `GlobalGameState`: Tracks the overall game state, including active rounds and pots.
+//! - `FactionState`: Stores statistics and reward pools for each faction.
+//! - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
+//! - `GameSession`: Represents a single game round, tracking bets and outcomes.
+//! - `MineBtcMining`: Manages the mining emission and distribution logic.
+//! - `EggConfig`: Configuration for the Dragon Egg NFT system.
+//! - `TaxConfig`: Configuration for the tax and burn system.
+//!
+
 use anchor_lang::prelude::*;
 
 
-pub const DBTC_DECIMALS: u8 = 6;
+pub const MINEBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
 pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
@@ -36,10 +52,10 @@ pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker 
  
 // ----- [SEEDS] -----
 
-// PDAs which hold GlobalConfig / DogeBtcMining state
+// PDAs which hold GlobalConfig / MineBtcMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 pub const HASHPOWER_CONFIG_SEED: &[u8] = b"hashpower-config";
-pub const DOGE_BTC_MINING_SEED: &[u8] = b"moon-doge-mining";
+pub const MINE_BTC_MINING_SEED: &[u8] = b"mine-btc-mining";
 pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
@@ -47,8 +63,8 @@ pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
 pub const EGGS_TREASURY_SEED: &[u8] = b"eggs-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
-pub const DOGE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"mdoge-vault-authority";
-pub const DOGE_BTC_VAULT_SEED: &[u8] = b"dbtc_vault";
+pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
+pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
  
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
@@ -69,8 +85,8 @@ pub const PLAYER_DATA_SEED: &[u8] = b"player";
 pub const STAKED_POSITION_SEED: &[u8] = b"staked-position";
 pub const LP_STAKED_POSITION_SEED: &[u8] = b"lp-staked-position";
 
-pub const DBTC_CUSTODIAN_SEED: &[u8] = b"dbtc-custodian";
-pub const DBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"dbtc-custodian-authority";
+pub const MINEBTC_CUSTODIAN_SEED: &[u8] = b"minebtc-custodian";
+pub const MINEBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"minebtc-custodian-authority";
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";
 pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
 
@@ -123,8 +139,8 @@ pub struct GlobalConfig {
     /// SOL fee distribution configuration
     pub sol_fee_config: SolFeeConfig,
 
-    /// DogeBtc distribution configuration
-    pub dbtc_dist_config: DogeBtcDistConfig,
+    /// MineBtc distribution configuration
+    pub minebtc_dist_config: MineBtcDistConfig,
 
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
@@ -159,27 +175,27 @@ impl SolFeeConfig {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct DogeBtcDistConfig {
-    /// Percentage of DogeBtc emission that goes to stakers
-    pub dbtc_stakers_pct: u8,
-    /// Percentage of DogeBtc emission that goes to winning block bettors
-    pub dbtc_winners_pct: u8,
-    /// Percentage of DogeBtc emission that goes to losing block bettors
-    pub dbtc_same_faction_pct: u8,
-    /// Percentage of DogeBtc emission that goes to motherlode
-    pub dbtc_motherlode_pct: u8,
+pub struct MineBtcDistConfig {
+    /// Percentage of MineBtc emission that goes to stakers
+    pub minebtc_stakers_pct: u8,
+    /// Percentage of MineBtc emission that goes to winning block bettors
+    pub minebtc_winners_pct: u8,
+    /// Percentage of MineBtc emission that goes to losing block bettors
+    pub minebtc_same_faction_pct: u8,
+    /// Percentage of MineBtc emission that goes to motherlode
+    pub minebtc_motherlode_pct: u8,
     /// Refining fee
     pub refining_fee: u8,
 }
 
-impl DogeBtcDistConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_motherlode_pct + refining_fee
+impl MineBtcDistConfig {
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct + refining_fee
 }
  
 
 
 impl GlobalConfig {
-    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + dbtc_dist_config + raydium_pool_state + change_faction_fee + snapshot_interval + bump + treasury_bump + supported_factions (vec)
+    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + minebtc_dist_config + raydium_pool_state + change_faction_fee + snapshot_interval + bump + treasury_bump + supported_factions (vec)
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     pub const LEN: usize = DISCRIMINATOR_SIZE + 
         8 +                     // total_players
@@ -187,7 +203,7 @@ impl GlobalConfig {
         32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config
-        DogeBtcDistConfig::LEN + // dbtc_dist_config
+        MineBtcDistConfig::LEN + // minebtc_dist_config
         32 +                    // raydium_pool_state
         8 +                     // change_faction_fee
         8 +                     // snapshot_interval
@@ -203,7 +219,7 @@ impl GlobalConfig {
 pub struct PriceEntry {
     /// Timestamp when this price was recorded
     pub timestamp: i64,
-    /// Price in SOL per DOGE_BTC (scaled by 10^9 for full precision)
+    /// Price in SOL per MINE_BTC (scaled by 10^9 for full precision)
     /// This matches SOL's decimal precision for accurate price tracking
     pub price: u64,
 }
@@ -219,8 +235,8 @@ pub struct ProtocolOwnedLiquidity {
     pub total_lp_burnt: u64,
     /// Total SOL added to liquidity pool (accumulated)
     pub total_sol_added: u64,
-    /// Total DOGE_BTC added to liquidity pool (accumulated)
-    pub total_dbtc_added: u64,
+    /// Total MINE_BTC added to liquidity pool (accumulated)
+    pub total_minebtc_added: u64,
     /// Number of LP addition operations performed
     pub lp_operations_count: u32,
 }
@@ -233,25 +249,25 @@ impl ProtocolOwnedLiquidity {
         &mut self,
         lp_tokens_burnt: u64,
         sol_added: u64,
-        dbtc_added: u64,
+        minebtc_added: u64,
     ) {
         // Update cumulative totals
         self.total_lp_burnt = self.total_lp_burnt.saturating_add(lp_tokens_burnt);
         self.total_sol_added = self.total_sol_added.saturating_add(sol_added);
-        self.total_dbtc_added = self.total_dbtc_added.saturating_add(dbtc_added);
+        self.total_minebtc_added = self.total_minebtc_added.saturating_add(minebtc_added);
         self.lp_operations_count = self.lp_operations_count.saturating_add(1);
     }
 }
 
 /// Moon Doge Mining status and parameters
 #[account]
-pub struct DogeBtcMining {
+pub struct MineBtcMining {
     /// Token vault that holds all pre-minted tokens
-    pub dbtc_token_vault: Pubkey,
+    pub minebtc_token_vault: Pubkey,
     /// Timestamp of the mining start
     pub mining_start_timestamp: u64,
-    /// DogeBtc mined per slot (original base rate)
-    pub doge_btc_per_round: u64,
+    /// MineBtc mined per slot (original base rate)
+    pub mine_btc_per_round: u64,
 
     /// Total tokens mined so far
     pub total_tokens_mined: u64,
@@ -264,7 +280,7 @@ pub struct DogeBtcMining {
     pub vault_auth_bump: u8,
 
     // ===== DYNAMIC DISTRIBUTION FIELDS =====
-    /// Raydium pool state for DOGE_BTC-SOL trading
+    /// Raydium pool state for MINE_BTC-SOL trading
     pub raydium_pool_state: Pubkey,
     /// Last time distribution rate was updated (timestamp)
     pub last_rate_update: i64,
@@ -282,14 +298,14 @@ pub struct DogeBtcMining {
     pub lp_token_price_in_sol: u64,
 }
 
-impl DogeBtcMining {
-    // discriminator + dbtc_token_vault + mining_start_timestamp + doge_btc_per_round + total_tokens_mined + bump + vault_auth_bump +
+impl MineBtcMining {
+    // discriminator + minebtc_token_vault + mining_start_timestamp + mine_btc_per_round + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
-        + 32                    // dbtc_token_vault
+        + 32                    // minebtc_token_vault
         + 8                     // mining_start_timestamp
-        + 8                     // doge_btc_per_round
+        + 8                     // mine_btc_per_round
         + 8                     // total_tokens_mined
         + 8                     // total_tokens_distributed
         + 1                     // bump
@@ -447,7 +463,7 @@ pub struct TaxConfig {
     /// Percentage of withheld tax that goes to faction treasury
     pub faction_treasury_pct: u8,
     
-    /// Total amount of DogeBtc burnt so far (cumulative)
+    /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
     
     /// Current distribution round state
@@ -465,7 +481,7 @@ pub struct TaxConfig {
     /// Number of factions added to leaderboard so far (0-12)
     pub leaderboard_factions_count: u8,
     
-    /// Faction rewards: DogeBtc amount each faction gets (index = rank, value = dbtc_amount)
+    /// Faction rewards: MineBtc amount each faction gets (index = rank, value = minebtc_amount)
     pub faction_rewards: Vec<u64>,
     /// Whether rewards have been calculated for current round
     pub rewards_calculated: bool,
@@ -481,8 +497,8 @@ pub struct TaxConfig {
     pub nft_floor_sweep_vault: Pubkey,
     pub nft_sale_sol_vault: Pubkey,
     
-    /// Whitelisted address that can withdraw DogeBtc from NFT floor sweep vault
-    /// This address will swap DogeBtc for SOL off-chain, buy NFTs, and re-list them
+    /// Whitelisted address that can withdraw MineBtc from NFT floor sweep vault
+    /// This address will swap MineBtc for SOL off-chain, buy NFTs, and re-list them
     pub nft_floor_sweep_whitelisted_address: Pubkey,
 }
 
@@ -578,13 +594,13 @@ impl GlobalGameSate {
 #[account]
 pub struct UnrefinedRewards {
     pub unrefining_index: u128,
-    pub total_dbtc_claimable: u64
+    pub total_minebtc_claimable: u64
 }
 
 impl UnrefinedRewards {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         16 +    // unrefining_index (u128)
-        8;      // total_dbtc_claimable (u64)
+        8;      // total_minebtc_claimable (u64)
 }
 
 
@@ -599,15 +615,15 @@ pub struct FactionState {
     pub faction_id: u8,
 
     /// Total passive hashpower from stakers in this faction (cumulative)
-    pub total_dbtc_hashpower: u64,
-    pub dbtc_staked: u64,
-    pub dbtc_dbtc_reward_index: u128,
-    pub dbtc_sol_reward_index: u128,
+    pub total_minebtc_hashpower: u64,
+    pub minebtc_staked: u64,
+    pub minebtc_minebtc_reward_index: u128,
+    pub minebtc_sol_reward_index: u128,
 
     pub total_lp_hashpower: u64,
     pub lp_staked: u64,
     pub lp_sol_reward_index: u128,
-    pub lp_dbtc_reward_index: u128,
+    pub lp_minebtc_reward_index: u128,
 
     pub eggs_staked: u64,
 
@@ -628,14 +644,14 @@ impl FactionState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // faction_id
-        8 +     // total_dbtc_hashpower (u64)
-        8 +     // dbtc_staked (u64)
-        16 +    // dbtc_dbtc_reward_index (u128)
-        16 +    // dbtc_sol_reward_index (u128)
+        8 +     // total_minebtc_hashpower (u64)
+        8 +     // minebtc_staked (u64)
+        16 +    // minebtc_minebtc_reward_index (u128)
+        16 +    // minebtc_sol_reward_index (u128)
         8 +     // total_lp_hashpower (u64)
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_index (u128)
-        16 +    // lp_dbtc_reward_index (u128)
+        16 +    // lp_minebtc_reward_index (u128)
         8 +     // eggs_staked (u64)
         8 +     // total_sol_bets (u64)
         8 +     // total_wins (u64)
@@ -694,22 +710,22 @@ pub struct GameSession {
     pub winning_faction_id: u8,
     pub same_faction_other_block: u8,
 
-    // --- DogeBtc reward pools for this round ---
-    /// DogeBtc allocated for winners in this round
-    pub dbtc_winner_pool: u64,
-    /// DogeBtc allocated for same-faction bettors in this round
-    pub dbtc_loser_pool: u64,
-    /// DogeBtc allocated for stakers in this round
+    // --- MineBtc reward pools for this round ---
+    /// MineBtc allocated for winners in this round
+    pub minebtc_winner_pool: u64,
+    /// MineBtc allocated for same-faction bettors in this round
+    pub minebtc_loser_pool: u64,
+    /// MineBtc allocated for stakers in this round
     pub faction_stakers: u64,
-    /// DogeBtc allocated for motherlode in this round
+    /// MineBtc allocated for motherlode in this round
     pub motherlode_rewards: u64,
 
     /// SOL rewards index for this round
     pub sol_rewards_index: u128,
-    /// DogeBtc rewards index for this round
-    pub dbtc_rewards_index: u128,
-    /// DogeBtc rewards index for same-faction bettors in this round
-    pub same_faction_dbtc_rewards_index: u128,
+    /// MineBtc rewards index for this round
+    pub minebtc_rewards_index: u128,
+    /// MineBtc rewards index for same-faction bettors in this round
+    pub same_faction_minebtc_rewards_index: u128,
 
     // --- Motherlode data for this round ---
     /// Whether motherlode was hit in this round
@@ -738,13 +754,13 @@ impl GameSession {
         1 +     // winning_block (u8)
         1 +     // winning_faction_id (u8)
         1 +     // same_faction_other_block (u8)
-        8 +     // dbtc_winner_pool
-        8 +     // dbtc_loser_pool
+        8 +     // minebtc_winner_pool
+        8 +     // minebtc_loser_pool
         8 +     // faction_stakers (u64)
         8 +     // motherlode_rewards (u64)
         16 +    // sol_rewards_index (u128)
-        16 +    // dbtc_rewards_index (u128)
-        16 +    // same_faction_dbtc_rewards_index (u128)
+        16 +    // minebtc_rewards_index (u128)
+        16 +    // same_faction_minebtc_rewards_index (u128)
         1 +     // motherlode_hit (bool)
         8;      // motherlode_pot_size_on_hit
 }
@@ -789,28 +805,28 @@ pub struct PlayerData {
     pub total_points_bet: u64,
 
     pub total_sol_won: u64,
-    pub total_dbtc_won: u64,
+    pub total_minebtc_won: u64,
 
-    pub dogebtc_hashpower: u64,
-    pub dogebtc_staked: u64,
-    pub dbtc_dbtc_reward_debt: u128,
-    pub dbtc_sol_reward_debt: u128,
+    pub minebtc_hashpower: u64,
+    pub minebtc_staked: u64,
+    pub minebtc_minebtc_reward_debt: u128,
+    pub minebtc_sol_reward_debt: u128,
 
     pub lp_hashpower: u64,
     pub lp_staked: u64,
     pub lp_sol_reward_debt: u128,
-    pub lp_dbtc_reward_debt: u128,
+    pub lp_minebtc_reward_debt: u128,
 
     pub pending_sol_rewards: u64,
     pub unrefining_index: u128,
-    pub pending_dbtc_rewards: u64,
-    pub unrefined_dbtc_rewards: u64,
+    pub pending_minebtc_rewards: u64,
+    pub unrefined_minebtc_rewards: u64,
     
     /// Claimable power points (distributed to staked eggs via claim_power)
-    /// Power is accumulated when claiming dbtc rewards
+    /// Power is accumulated when claiming minebtc rewards
     pub claimable_power: u64,
 
-    pub moondoge_position_indices: Vec<u8>,
+    pub minebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
     
     /// Staked dragon eggs (max 5 eggs)
@@ -849,21 +865,21 @@ impl PlayerData {
         8 +     // total_sol_bet
         8 +     // total_points_bet
         8 +     // total_sol_won
-        8 +     // total_dbtc_won
-        8 +     // dogebtc_hashpower (u64)
-        8 +     // dogebtc_staked (u64)
-        16 +    // dbtc_dbtc_reward_debt (u128)
-        16 +    // dbtc_sol_reward_debt (u128)
+        8 +     // total_minebtc_won
+        8 +     // minebtc_hashpower (u64)
+        8 +     // minebtc_staked (u64)
+        16 +    // minebtc_minebtc_reward_debt (u128)
+        16 +    // minebtc_sol_reward_debt (u128)
         8 +     // lp_hashpower (u64)
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_debt (u128)
-        16 +    // lp_dbtc_reward_debt (u128)
+        16 +    // lp_minebtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         16 +    // unrefining_index (u128)
-        8 +     // pending_dbtc_rewards (u64)
-        8 +     // unrefined_dbtc_rewards (u64)
+        8 +     // pending_minebtc_rewards (u64)
+        8 +     // unrefined_minebtc_rewards (u64)
         8 +     // claimable_power (u64)
-        4 + (Self::MAX_POSITIONS * 1) + // moondoge_position_indices Vec<u8>
+        4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
         2 +     // egg_multiplier (u16)
@@ -873,7 +889,7 @@ impl PlayerData {
 
 
 
-/// Individual DogeBtc staking position
+/// Individual MineBtc staking position
 #[account]
 pub struct StakedPosition {
     pub position_index: u8,
@@ -914,13 +930,13 @@ pub struct ReferralRewards {
     
     /// Pending SOL rewards from referrals (claimable)
     pub pending_sol_rewards: u64,
-    /// Pending DogeBtc rewards from referrals (claimable)
-    pub pending_dbtc_rewards: u64,
+    /// Pending MineBtc rewards from referrals (claimable)
+    pub pending_minebtc_rewards: u64,
     
     /// Total SOL earned from referrals (cumulative)
     pub total_sol_earned: u64,
-    /// Total DogeBtc earned from referrals (cumulative)
-    pub total_dbtc_earned: u64,
+    /// Total MineBtc earned from referrals (cumulative)
+    pub total_minebtc_earned: u64,
 }
 
 impl ReferralRewards {
@@ -929,9 +945,9 @@ impl ReferralRewards {
         1 +     // bump
         2 +     // referrals_count
         8 +     // pending_sol_rewards
-        8 +     // pending_dbtc_rewards
+        8 +     // pending_minebtc_rewards
         8 +     // total_sol_earned
-        8;      // total_dbtc_earned
+        8;      // total_minebtc_earned
 }
 
 
@@ -940,7 +956,7 @@ impl ReferralRewards {
 // =============================== DRAGON EGG NFT METADATA ===============================
 // ========================================================================================
 
-/// Dragon Egg NFT metadata (stored in moonbase program for simplicity)
+/// Dragon Egg NFT metadata (stored in minebtc program for simplicity)
 #[account]
 pub struct DragonEggMetadata {
     /// The NFT mint address (Metaplex Core asset)
@@ -949,7 +965,7 @@ pub struct DragonEggMetadata {
     /// Creation timestamp
     pub created_at: i64,
 
-    /// Faction ID (country) that the egg belongs to (matches moonbase faction)
+    /// Faction ID (country) that the egg belongs to (matches minebtc faction)
     pub faction_id: u8,
 
     /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)

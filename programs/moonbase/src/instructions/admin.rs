@@ -1,3 +1,20 @@
+//! # Admin Instructions
+//!
+//! This module contains administrative functions for configuring and managing the MineBTC program.
+//!
+//! ## Key Functions
+//!
+//! - `initialize`: Sets up the initial global configuration.
+//! - `update_config`: Updates global parameters like authorities and fees.
+//! - `add_faction`: Registers new factions in the game.
+//! - `initialize_mining`: Starts the token mining process.
+//! - `initialize_egg_config`: Sets up the Dragon Egg NFT system.
+//! - `initialize_tax_config`: Configures the tax and burn mechanisms.
+//! - `initialize_game_state`: Prepares the game state for the first round.
+//!
+//! Only authorized administrators (or the program authority) can call these functions.
+//!
+
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -38,7 +55,7 @@ pub struct CreatorInput {
 
 /// Initialize the global program configuration (admin only)
 /// 
-/// Creates the GlobalConfig and DogeBtcMining accounts and initializes default values.
+/// Creates the GlobalConfig and MineBtcMining accounts and initializes default values.
 /// This function can only be called once during program deployment.
 /// 
 /// # Parameters
@@ -46,7 +63,7 @@ pub struct CreatorInput {
 /// 
 /// # Initializes
 /// - GlobalConfig with default fee distributions
-/// - DogeBtcMining account
+/// - MineBtcMining account
 /// - SOL treasury PDA
 pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
     msg!("🔧 [internal_initialize] Initializing global config");
@@ -54,7 +71,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("   Creation fee recipient: {}", fee_recipient);
     
     let global_config = &mut ctx.accounts.global_config;
-    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
+    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
     // Initialize GlobalConfig
     msg!("   Initializing GlobalConfig...");
@@ -79,20 +96,20 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("     Buyback: {}%", global_config.sol_fee_config.buyback_pct);
     msg!("     Stakers: {}%", global_config.sol_fee_config.stakers_pct);
 
-    // Initialize DogeBtc distribution config with defaults
-    msg!("   Initializing DogeBtc distribution config...");
-    global_config.dbtc_dist_config = DogeBtcDistConfig {
-        dbtc_stakers_pct: 50,
-        dbtc_winners_pct: 30,
-        dbtc_same_faction_pct: 10,
-        dbtc_motherlode_pct: 10,
+    // Initialize MineBtc distribution config with defaults
+    msg!("   Initializing MineBtc distribution config...");
+    global_config.minebtc_dist_config = MineBtcDistConfig {
+        minebtc_stakers_pct: 50,
+        minebtc_winners_pct: 30,
+        minebtc_same_faction_pct: 10,
+        minebtc_motherlode_pct: 10,
         refining_fee: 5,
     };
-    msg!("     Stakers: {}%", global_config.dbtc_dist_config.dbtc_stakers_pct);
-    msg!("     Winners: {}%", global_config.dbtc_dist_config.dbtc_winners_pct);
-    msg!("     Same-faction: {}%", global_config.dbtc_dist_config.dbtc_same_faction_pct);
-    msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
-    msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
+    msg!("     Stakers: {}%", global_config.minebtc_dist_config.minebtc_stakers_pct);
+    msg!("     Winners: {}%", global_config.minebtc_dist_config.minebtc_winners_pct);
+    msg!("     Same-faction: {}%", global_config.minebtc_dist_config.minebtc_same_faction_pct);
+    msg!("     Motherlode: {}%", global_config.minebtc_dist_config.minebtc_motherlode_pct);
+    msg!("     Refining fee: {}%", global_config.minebtc_dist_config.refining_fee);
 
     global_config.change_faction_fee = 4_200_000_000; // 4.2 SOL
 
@@ -139,35 +156,35 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     )?;
     msg!("     ✓ 1 lamport transferred to Eggs treasury");
 
-    // Initialize DogeBtcMining
-    msg!("   Initializing DogeBtcMining...");
-    doge_btc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
-    doge_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
-    doge_btc_mining.doge_btc_per_round = 0;
+    // Initialize MineBtcMining
+    msg!("   Initializing MineBtcMining...");
+    mine_btc_mining.minebtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
+    mine_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
+    mine_btc_mining.mine_btc_per_round = 0;
 
-    doge_btc_mining.total_tokens_mined = 0;
-    doge_btc_mining.bump = ctx.bumps.doge_btc_mining;
-    doge_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
-    msg!("     DogeBtc token vault: {} (default, will be set during initialize_mining)", doge_btc_mining.dbtc_token_vault);
-    msg!("     Mining start timestamp: {} (0 = not started)", doge_btc_mining.mining_start_timestamp);
-    msg!("     DogeBtc per slot: {}", doge_btc_mining.doge_btc_per_round);
-    msg!("     Bump: {}", doge_btc_mining.bump);
+    mine_btc_mining.total_tokens_mined = 0;
+    mine_btc_mining.bump = ctx.bumps.mine_btc_mining;
+    mine_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
+    msg!("     MineBtc token vault: {} (default, will be set during initialize_mining)", mine_btc_mining.minebtc_token_vault);
+    msg!("     Mining start timestamp: {} (0 = not started)", mine_btc_mining.mining_start_timestamp);
+    msg!("     MineBtc per slot: {}", mine_btc_mining.mine_btc_per_round);
+    msg!("     Bump: {}", mine_btc_mining.bump);
 
     // Initialize dynamic distribution fields with defaults
     msg!("   Initializing dynamic distribution fields...");
-    doge_btc_mining.raydium_pool_state = Pubkey::default();
-    doge_btc_mining.last_rate_update = 0;
-    doge_btc_mining.price_history = Vec::new();
-    doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
-    doge_btc_mining.track_price = 0;
-    doge_btc_mining.sol_for_pol = 0;
-    msg!("     Raydium pool state: {} (default)", doge_btc_mining.raydium_pool_state);
-    msg!("     Recent price: {}", doge_btc_mining.recent_price);
+    mine_btc_mining.raydium_pool_state = Pubkey::default();
+    mine_btc_mining.last_rate_update = 0;
+    mine_btc_mining.price_history = Vec::new();
+    mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
+    mine_btc_mining.track_price = 0;
+    mine_btc_mining.sol_for_pol = 0;
+    msg!("     Raydium pool state: {} (default)", mine_btc_mining.raydium_pool_state);
+    msg!("     Recent price: {}", mine_btc_mining.recent_price);
 
     // ---------------------------- Unrefined Rewards ---------------------------------
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
     unrefined_rewards.unrefining_index = INDEX_PRECISION as u128;
-    unrefined_rewards.total_dbtc_claimable = 0;
+    unrefined_rewards.total_minebtc_claimable = 0;
 
     //--------------------------------- Global Game State ---------------------------------
     // Note: GlobalGameSate should be initialized separately via initialize_game_state function
@@ -295,13 +312,13 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, fact
     msg!("   Initializing faction state data...");
     faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
-    faction_state.total_dbtc_hashpower = 0;
-    faction_state.dbtc_staked = 0;
-    faction_state.dbtc_dbtc_reward_index = 0;
-    faction_state.dbtc_sol_reward_index = 0;
+    faction_state.total_minebtc_hashpower = 0;
+    faction_state.minebtc_staked = 0;
+    faction_state.minebtc_minebtc_reward_index = 0;
+    faction_state.minebtc_sol_reward_index = 0;
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
-    faction_state.lp_dbtc_reward_index = 0;
+    faction_state.lp_minebtc_reward_index = 0;
     faction_state.total_sol_bets = 0;
     faction_state.total_wins = 0;
     faction_state.sol_reward_index = 0;
@@ -376,33 +393,33 @@ pub fn update_config_internal(
 
 /// Update fee configuration (admin only)
 /// 
-/// Updates SOL fee distribution percentages and/or DogeBtc distribution percentages.
+/// Updates SOL fee distribution percentages and/or MineBtc distribution percentages.
 /// All percentages must sum to 100% for their respective categories.
 /// 
 /// # Parameters
 /// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
 /// - `new_buyback_pct`: Optional new buyback percentage (SOL fees)
 /// - `new_stakers_pct`: Optional new stakers percentage (SOL fees)
-/// - `new_dbtc_stakers_pct`: Optional new DogeBtc stakers percentage
-/// - `new_dbtc_winners_pct`: Optional new DogeBtc winners percentage
-/// - `new_dbtc_same_faction_pct`: Optional new DogeBtc same-faction percentage
-/// - `new_dbtc_motherlode_pct`: Optional new DogeBtc motherlode percentage
+/// - `new_minebtc_stakers_pct`: Optional new MineBtc stakers percentage
+/// - `new_minebtc_winners_pct`: Optional new MineBtc winners percentage
+/// - `new_minebtc_same_faction_pct`: Optional new MineBtc same-faction percentage
+/// - `new_minebtc_motherlode_pct`: Optional new MineBtc motherlode percentage
 /// - `new_refining_fee`: Optional new refining fee percentage
 /// - `change_faction_fee`: Optional new change faction fee (in lamports)
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 /// 
 /// # Validation
 /// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == 100
-/// - DogeBtc dist: dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_motherlode_pct == 100
+/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct == 100
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
     new_buyback_pct: Option<u8>,
     new_stakers_pct: Option<u8>,
-    new_dbtc_stakers_pct: Option<u8>,
-    new_dbtc_winners_pct: Option<u8>,
-    new_dbtc_same_faction_pct: Option<u8>,
-    new_dbtc_motherlode_pct: Option<u8>,
+    new_minebtc_stakers_pct: Option<u8>,
+    new_minebtc_winners_pct: Option<u8>,
+    new_minebtc_same_faction_pct: Option<u8>,
+    new_minebtc_motherlode_pct: Option<u8>,
     new_refining_fee: Option<u8>,
     change_faction_fee: Option<u64>,
     snapshot_interval: Option<u64>,
@@ -416,12 +433,12 @@ pub fn update_fees_internal(
     msg!("     Protocol fee: {}%", global_config.sol_fee_config.protocol_fee_pct);
     msg!("     Buyback: {}%", global_config.sol_fee_config.buyback_pct);
     msg!("     Stakers: {}%", global_config.sol_fee_config.stakers_pct);
-    msg!("   Current DogeBtc dist config:");
-    msg!("     Stakers: {}%", global_config.dbtc_dist_config.dbtc_stakers_pct);
-    msg!("     Winners: {}%", global_config.dbtc_dist_config.dbtc_winners_pct);
-    msg!("     Same-faction: {}%", global_config.dbtc_dist_config.dbtc_same_faction_pct);
-    msg!("     Motherlode: {}%", global_config.dbtc_dist_config.dbtc_motherlode_pct);
-    msg!("     Refining fee: {}%", global_config.dbtc_dist_config.refining_fee);
+    msg!("   Current MineBtc dist config:");
+    msg!("     Stakers: {}%", global_config.minebtc_dist_config.minebtc_stakers_pct);
+    msg!("     Winners: {}%", global_config.minebtc_dist_config.minebtc_winners_pct);
+    msg!("     Same-faction: {}%", global_config.minebtc_dist_config.minebtc_same_faction_pct);
+    msg!("     Motherlode: {}%", global_config.minebtc_dist_config.minebtc_motherlode_pct);
+    msg!("     Refining fee: {}%", global_config.minebtc_dist_config.refining_fee);
 
     // Update SOL fee config if any values provided
     if new_protocol_fee_pct.is_some() || new_buyback_pct.is_some() || new_stakers_pct.is_some() {
@@ -440,24 +457,24 @@ pub fn update_fees_internal(
         msg!("   SOL fee config: not updated");
     }
 
-    // Update DogeBtc distribution config if any values provided
-    if new_dbtc_stakers_pct.is_some() 
-        || new_dbtc_winners_pct.is_some() 
-        || new_dbtc_same_faction_pct.is_some() 
-        || new_dbtc_motherlode_pct.is_some() 
+    // Update MineBtc distribution config if any values provided
+    if new_minebtc_stakers_pct.is_some() 
+        || new_minebtc_winners_pct.is_some() 
+        || new_minebtc_same_faction_pct.is_some() 
+        || new_minebtc_motherlode_pct.is_some() 
     {
-        msg!("   Updating DogeBtc distribution config...");
-        let dbtc_stakers_pct = new_dbtc_stakers_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_stakers_pct);
-        let dbtc_winners_pct = new_dbtc_winners_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_winners_pct);
-        let dbtc_same_faction_pct = new_dbtc_same_faction_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_same_faction_pct);
-        let dbtc_motherlode_pct = new_dbtc_motherlode_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_motherlode_pct);
+        msg!("   Updating MineBtc distribution config...");
+        let minebtc_stakers_pct = new_minebtc_stakers_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_stakers_pct);
+        let minebtc_winners_pct = new_minebtc_winners_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_winners_pct);
+        let minebtc_same_faction_pct = new_minebtc_same_faction_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_same_faction_pct);
+        let minebtc_motherlode_pct = new_minebtc_motherlode_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
 
         msg!("     New values: stakers={}%, winners={}%, same_faction={}%, motherlode={}%",
-            dbtc_stakers_pct, dbtc_winners_pct, dbtc_same_faction_pct, dbtc_motherlode_pct);
-        let total = dbtc_stakers_pct as u16
-            + dbtc_winners_pct as u16
-            + dbtc_same_faction_pct as u16
-            + dbtc_motherlode_pct as u16;
+            minebtc_stakers_pct, minebtc_winners_pct, minebtc_same_faction_pct, minebtc_motherlode_pct);
+        let total = minebtc_stakers_pct as u16
+            + minebtc_winners_pct as u16
+            + minebtc_same_faction_pct as u16
+            + minebtc_motherlode_pct as u16;
         msg!("     Total: {}%", total);
         
         require!(
@@ -467,34 +484,34 @@ pub fn update_fees_internal(
         msg!("     ✓ Percentages sum to 100%");
 
         // Get current refining_fee to preserve it
-        let current_refining_fee = global_config.dbtc_dist_config.refining_fee;
+        let current_refining_fee = global_config.minebtc_dist_config.refining_fee;
         msg!("     Preserving refining_fee: {}%", current_refining_fee);
         
-        let old_config = global_config.dbtc_dist_config.clone();
-        global_config.dbtc_dist_config = DogeBtcDistConfig {
-            dbtc_stakers_pct,
-            dbtc_winners_pct,
-            dbtc_same_faction_pct,
-            dbtc_motherlode_pct,
+        let old_config = global_config.minebtc_dist_config.clone();
+        global_config.minebtc_dist_config = MineBtcDistConfig {
+            minebtc_stakers_pct,
+            minebtc_winners_pct,
+            minebtc_same_faction_pct,
+            minebtc_motherlode_pct,
             refining_fee: current_refining_fee,
         };
         msg!("     Updated: stakers {}% -> {}%, winners {}% -> {}%, same_faction {}% -> {}%, motherlode {}% -> {}%",
-            old_config.dbtc_stakers_pct, dbtc_stakers_pct,
-            old_config.dbtc_winners_pct, dbtc_winners_pct,
-            old_config.dbtc_same_faction_pct, dbtc_same_faction_pct,
-            old_config.dbtc_motherlode_pct, dbtc_motherlode_pct
+            old_config.minebtc_stakers_pct, minebtc_stakers_pct,
+            old_config.minebtc_winners_pct, minebtc_winners_pct,
+            old_config.minebtc_same_faction_pct, minebtc_same_faction_pct,
+            old_config.minebtc_motherlode_pct, minebtc_motherlode_pct
         );
     } else {
-        msg!("   DogeBtc dist config: not updated");
+        msg!("   MineBtc dist config: not updated");
     }
     
     // Update refining fee if provided
     if let Some(refining_fee) = new_refining_fee {
-        let old_refining_fee = global_config.dbtc_dist_config.refining_fee;
-        global_config.dbtc_dist_config.refining_fee = refining_fee;
+        let old_refining_fee = global_config.minebtc_dist_config.refining_fee;
+        global_config.minebtc_dist_config.refining_fee = refining_fee;
         msg!("   Updated refining fee: {}% -> {}%", old_refining_fee, refining_fee);
     } else {
-        msg!("   Refining fee: {}% (not updated)", global_config.dbtc_dist_config.refining_fee);
+        msg!("   Refining fee: {}% (not updated)", global_config.minebtc_dist_config.refining_fee);
     }
 
     // Update change faction fee if provided
@@ -521,52 +538,52 @@ pub fn update_fees_internal(
 
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
-// ------------ doge_btc_MINING :: INITIALIZATION & UPDATES ------------
+// ------------ mine_btc_MINING :: INITIALIZATION & UPDATES ------------
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
 
 
 /// Initialize mining by setting the token vault and starting timestamp (admin only)
 /// 
-/// Sets up the DogeBtc mining system with the token vault and initial mining parameters.
+/// Sets up the MineBtc mining system with the token vault and initial mining parameters.
 /// Can only be called once when `mining_start_timestamp == 0`.
 /// 
 /// # Parameters
 /// - `start_timestamp`: Unix timestamp when mining should start
-/// - `doge_btc_per_round`: Base DogeBtc emission rate per slot
+/// - `mine_btc_per_round`: Base MineBtc emission rate per slot
 /// - `pool_state`: Raydium pool state address for price discovery
 pub fn initialize_mining_internal(
     ctx: Context<InitializeMining>,
     start_timestamp: u64,
-    doge_btc_per_round: u64,
+    mine_btc_per_round: u64,
     pool_state: Pubkey,
 ) -> Result<()> {
-    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
+    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
     // Check mining hasn't been initialized yet
     require!(
-        doge_btc_mining.mining_start_timestamp == 0,
+        mine_btc_mining.mining_start_timestamp == 0,
         ErrorCode::MiningAlreadyInitialized
     );
 
     // ───── persist vault + bump(s) ─────
-    doge_btc_mining.dbtc_token_vault = ctx.accounts.token_vault.key();
-    doge_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
+    mine_btc_mining.minebtc_token_vault = ctx.accounts.token_vault.key();
+    mine_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
 
     // Initialize mining parameters
-    doge_btc_mining.mining_start_timestamp = start_timestamp;
-    doge_btc_mining.doge_btc_per_round = doge_btc_per_round;
+    mine_btc_mining.mining_start_timestamp = start_timestamp;
+    mine_btc_mining.mine_btc_per_round = mine_btc_per_round;
 
     // Initialize dynamic distribution fields
-    doge_btc_mining.raydium_pool_state = pool_state;
-    doge_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
+    mine_btc_mining.raydium_pool_state = pool_state;
+    mine_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
 
-    doge_btc_mining.price_history = Vec::with_capacity(8);
-    doge_btc_mining.recent_price = 0; // Default: 0.001 SOL/DBTC
-    doge_btc_mining.track_price = 0; // Initialize with same default
+    mine_btc_mining.price_history = Vec::with_capacity(8);
+    mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
+    mine_btc_mining.track_price = 0; // Initialize with same default
 
-    doge_btc_mining.sol_for_pol = 0; // Initialize POL tracking
-    doge_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
+    mine_btc_mining.sol_for_pol = 0; // Initialize POL tracking
+    mine_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
 
     msg!("Initialized dynamic distribution system (30min snapshots, 4hr cycles) with Raydium pool: {}", pool_state);
 
@@ -586,26 +603,26 @@ pub fn initialize_mining_internal(
     Ok(())
 }
 
-/// Deposit DogeBtc tokens to the mining vault (anyone can call)
+/// Deposit MineBtc tokens to the mining vault (anyone can call)
 /// 
-/// Allows anyone to deposit DogeBtc tokens into the mining vault.
+/// Allows anyone to deposit MineBtc tokens into the mining vault.
 /// These tokens will be distributed as rewards to stakers over time.
 /// 
 /// # Parameters
-/// - `amount`: Amount of DogeBtc tokens to deposit (in token's native decimals)
-pub fn deposit_doge_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+/// - `amount`: Amount of MineBtc tokens to deposit (in token's native decimals)
+pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
     token_if::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(), // TOKEN_2022_PROGRAM_ID
             token_if::TransferChecked {
                 from: ctx.accounts.depositor_token_account.to_account_info(),
                 mint: ctx.accounts.token_mint.to_account_info(),
-                to: ctx.accounts.dbtc_token_vault.to_account_info(),
+                to: ctx.accounts.minebtc_token_vault.to_account_info(),
                 authority: ctx.accounts.depositor.to_account_info(),
             },
         ),
         amount,
-        DBTC_DECIMALS,
+        MINEBTC_DECIMALS,
     )?;
 
     msg!("Deposited {} MDOGE into mining vault", amount);
@@ -1197,9 +1214,9 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.bump = ctx.bumps.system_referral_rewards;
     system_referral.referrals_count = 0;
     system_referral.pending_sol_rewards = 0;
-    system_referral.pending_dbtc_rewards = 0;
+    system_referral.pending_minebtc_rewards = 0;
     system_referral.total_sol_earned = 0;
-    system_referral.total_dbtc_earned = 0;
+    system_referral.total_minebtc_earned = 0;
     msg!("     System referral account initialized");
     msg!("     Owner: {}", system_referral.owner);
     msg!("     Bump: {}", system_referral.bump);
@@ -1243,11 +1260,11 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = DogeBtcMining::LEN,
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        space = MineBtcMining::LEN,
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
 
     #[account(
         init,
@@ -1336,10 +1353,10 @@ pub struct UpdateConfigAc<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
-    pub doge_btc_mining: Option<Account<'info, DogeBtcMining>>,
+    pub mine_btc_mining: Option<Account<'info, MineBtcMining>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1386,14 +1403,14 @@ pub struct InitializeMining<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
 
     //  Vault authority PDA (0-byte, signer only)
     #[account(
-        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: signer-only PDA, no data or lamports required
@@ -1404,7 +1421,7 @@ pub struct InitializeMining<'info> {
         init,
         payer  = authority,
         owner  = token_program.key(),
-        seeds  = [DOGE_BTC_VAULT_SEED, doge_btc_mining.key().as_ref()],
+        seeds  = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
         token::mint      = token_mint,
         token::authority = vault_authority,
         bump
@@ -1433,24 +1450,24 @@ pub struct DepositTokens<'info> {
         mut,
         owner       = token_program.key(),                     // interface account check
         constraint  = depositor_token_account.owner == depositor.key() @ ErrorCode::Unauthorized,
-        constraint  = depositor_token_account.mint  == dbtc_token_vault.mint @ ErrorCode::InvalidMint
+        constraint  = depositor_token_account.mint  == minebtc_token_vault.mint @ ErrorCode::InvalidMint
     )]
     pub depositor_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
     // ─── mining token vault ───
     #[account(
         mut,
-        seeds  = [DOGE_BTC_VAULT_SEED, doge_btc_mining.key().as_ref()],
+        seeds  = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
         bump,
         owner  = token_program.key(),
     )]
-    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
 
     #[account(owner = token_program.key())]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
@@ -1740,22 +1757,22 @@ pub struct InitializeSystemAccounts<'info> {
 
 /// Initialize both custodian token accounts (admin only)
 /// Initializes:
-/// - DBTC custodian: Token-2022 account that holds all staked DOGE_BTC tokens (global for all factions)
+/// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
 /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
 pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
     msg!("🔧 [initialize_custodian_accounts] Initializing custodian token accounts");
     
-    // Verify DBTC custodian
-    msg!("   DBTC Custodian:");
-    msg!("     Mint: {}", ctx.accounts.dbtc_mint.key());
-    msg!("     Custodian PDA: {}", ctx.accounts.dbtc_custodian.key());
-    msg!("     Authority PDA: {}", ctx.accounts.dbtc_custodian_authority.key());
+    // Verify MINEBTC custodian
+    msg!("   MINEBTC Custodian:");
+    msg!("     Mint: {}", ctx.accounts.minebtc_mint.key());
+    msg!("     Custodian PDA: {}", ctx.accounts.minebtc_custodian.key());
+    msg!("     Authority PDA: {}", ctx.accounts.minebtc_custodian_authority.key());
     require!(
-        ctx.accounts.dbtc_custodian.mint == ctx.accounts.dbtc_mint.key(),
+        ctx.accounts.minebtc_custodian.mint == ctx.accounts.minebtc_mint.key(),
         ErrorCode::InvalidMint
     );
     require!(
-        ctx.accounts.dbtc_custodian.owner == ctx.accounts.dbtc_custodian_authority.key(),
+        ctx.accounts.minebtc_custodian.owner == ctx.accounts.minebtc_custodian_authority.key(),
         ErrorCode::InvalidOwner
     );
     
@@ -1786,27 +1803,27 @@ pub struct InitializeCustodianAccounts<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// CHECK: DBTC Mint (Token-2022)
-    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: MINEBTC Mint (Token-2022)
+    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
 
-    /// DBTC custodian token account (Token-2022) - PDA owned by dbtc_custodian_authority
+    /// MINEBTC custodian token account (Token-2022) - PDA owned by minebtc_custodian_authority
     #[account(
         init,
         payer = authority,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref()],
+        seeds = [MINEBTC_CUSTODIAN_SEED.as_ref()],
         bump,
-        token::mint = dbtc_mint,
-        token::authority = dbtc_custodian_authority,
+        token::mint = minebtc_mint,
+        token::authority = minebtc_custodian_authority,
         token::token_program = token_2022_program,
     )]
-    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
 
-    /// CHECK: Authority PDA for dbtc_custodian (signs for token transfers)
+    /// CHECK: Authority PDA for minebtc_custodian (signs for token transfers)
     #[account(
-        seeds = [DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        seeds = [MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    pub dbtc_custodian_authority: UncheckedAccount<'info>,
+    pub minebtc_custodian_authority: UncheckedAccount<'info>,
 
     /// CHECK: LP Mint (standard SPL Token)
     pub lp_mint: Account<'info, token::Mint>,

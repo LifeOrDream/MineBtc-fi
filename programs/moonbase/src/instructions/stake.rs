@@ -2,6 +2,31 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program::System;
 use anchor_spl::token::{self, Token};
 
+//! # Staking Instructions
+//!
+//! This module implements the staking system for MineBTC and LP tokens.
+//!
+//! ## Staking Mechanics
+//!
+//! Players can stake MineBTC or LP tokens to earn passive rewards:
+//! - **SOL Rewards**: Distributed from staker fees collected on game bets.
+//! - **MineBTC Rewards**: Distributed from the mining emission pool.
+//!
+//! Longer lockup periods grant higher hashpower multipliers, increasing reward share.
+//!
+//! ## Key Functions
+//!
+//! - `stake_minebtc`: Stakes MineBTC tokens with a specified lockup duration.
+//! - `unstake_minebtc`: Unstakes MineBTC tokens after the lockup period expires.
+//! - `stake_lp_tokens`: Stakes LP tokens for dual rewards (SOL + MineBTC).
+//! - `unstake_lp_tokens`: Unstakes LP tokens after lockup.
+//! - `claim_sol_rewards`: Claims accumulated SOL rewards from staking.
+//! - `claim_minebtc_rewards`: Claims accumulated MineBTC rewards (with refining fee).
+//! - `claim_referral_rewards`: Claims referral earnings.
+//!
+//! The refining fee on MineBTC claims is redistributed to all stakers, creating a deflationary reward loop.
+//!
+
 use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::state::*;
@@ -20,18 +45,18 @@ const REFERRAL_FEE_PCT: u64 = 5; // 5% referral fee
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 
-/// Stake DogeBtc tokens
-/// Users stake DogeBtc tokens to a faction and earn SOL and dbtc rewards
+/// Stake MineBtc tokens
+/// Users stake MineBtc tokens to a faction and earn SOL and minebtc rewards
 /// SOL rewards are distributed per round via join_round function
-/// dbtc rewards are distributed per round via end_round function
-pub fn stake_moondoge(
-    ctx: Context<StakeDogeBtc>,
+/// minebtc rewards are distributed per round via end_round function
+pub fn stake_minebtc(
+    ctx: Context<StakeMineBtc>,
     amount: u64,
     lockup_duration: u64,
     position_index: u8,
 ) -> Result<()> {
     msg!(
-        "🔒 [stake_moondoge] Starting DogeBtc staking - Amount: {}, Lockup: {} days, Position: {}",
+        "🔒 [stake_minebtc] Starting MineBtc staking - Amount: {}, Lockup: {} days, Position: {}",
         amount,
         lockup_duration,
         position_index
@@ -57,13 +82,13 @@ pub fn stake_moondoge(
     let burn_amount = amount * BURN_TAX_PERCENTAGE / M_HUNDRED;
     let actual_amount = amount - burn_amount;
     msg!("🔥 mDoge burn tax: {}% - Amount: {}, Burn: {}, Actual amount: {}", BURN_TAX_PERCENTAGE, amount as f64 / 1e6, burn_amount as f64 / 1e6, actual_amount as f64 / 1e6);  
-    msg!("📊 Current faction state - Total staked: {}, Total hashpower: {}", faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    msg!("📊 Current faction state - Total staked: {}, Total hashpower: {}", faction_state.minebtc_staked as f64 / 1e6, faction_state.total_minebtc_hashpower as f64 / 1e6);
 
     // Add position index to player data
-    helper::add_dogebtc_position(player_data, position_index)?;
-    msg!("🔍 [stake_moondoge] Position index added: {}", position_index);
-    msg!("🔍 [stake_moondoge] Player data - Position indices: {:?}", player_data.moondoge_position_indices);
-    msg!("🔍 [stake_moondoge] Player data - Total positions: {}", player_data.moondoge_position_indices.len());
+    helper::add_minebtc_position(player_data, position_index)?;
+    msg!("🔍 [stake_minebtc] Position index added: {}", position_index);
+    msg!("🔍 [stake_minebtc] Player data - Position indices: {:?}", player_data.minebtc_position_indices);
+    msg!("🔍 [stake_minebtc] Player data - Total positions: {}", player_data.minebtc_position_indices.len());
 
     // Calculate multiplier based on lockup duration
     let multiplier = helper::calculate_multiplier(
@@ -82,7 +107,7 @@ pub fn stake_moondoge(
     // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) = update_minebtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
 
     // -------------- UPDATE POSITION -------------- //
 
@@ -117,13 +142,13 @@ pub fn stake_moondoge(
     let weighted_amount_with_eggs = (weighted_amount * eggs_multiplier) / M_HUNDRED;
     
     // Update player data state
-    player_data.dogebtc_hashpower += weighted_amount_with_eggs;
-    player_data.dogebtc_staked += actual_amount;
+    player_data.minebtc_hashpower += weighted_amount_with_eggs;
+    player_data.minebtc_staked += actual_amount;
     
     // Update faction state with actual_amount (post-tax) and weighted_amount
-    faction_state.dbtc_staked += actual_amount;
-    faction_state.total_dbtc_hashpower += weighted_amount_with_eggs;
-    msg!("   Updated faction state - Total staked: {}, Total hashpower: {}",  faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    faction_state.minebtc_staked += actual_amount;
+    faction_state.total_minebtc_hashpower += weighted_amount_with_eggs;
+    msg!("   Updated faction state - Total staked: {}, Total hashpower: {}",  faction_state.minebtc_staked as f64 / 1e6, faction_state.total_minebtc_hashpower as f64 / 1e6);
 
     // -------------- TRANSFER TOKENS -------------- //
 
@@ -132,19 +157,19 @@ pub fn stake_moondoge(
     let transfer_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         token_interface::TransferChecked {
-            from: ctx.accounts.user_dbtc_account.to_account_info(),
-            to: ctx.accounts.dbtc_custodian.to_account_info(),
+            from: ctx.accounts.user_minebtc_account.to_account_info(),
+            to: ctx.accounts.minebtc_custodian.to_account_info(),
             authority: ctx.accounts.authority.to_account_info(),
-            mint: ctx.accounts.dbtc_mint.to_account_info(),
+            mint: ctx.accounts.minebtc_mint.to_account_info(),
         },
     );
-    token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.dbtc_mint.decimals)?;
-    msg!("✅ [stake_moondoge] DogeBtc staking successful");    
+    token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.minebtc_mint.decimals)?;
+    msg!("✅ [stake_minebtc] MineBtc staking successful");    
 
     // Store faction_id before emitting event
     let faction_id = player_data.faction_id;
 
-    emit!(DogeBtcStaked {
+    emit!(MineBtcStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
         faction_id,
@@ -153,8 +178,8 @@ pub fn stake_moondoge(
         lockup_duration,
         hashpower_contribution: weighted_amount_with_eggs,
         new_sol_rewards,
-        new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards,
+        new_minebtc_rewards,
+        unrefined_minebtc: accrued_minebtc_rewards,
         timestamp: current_ts,
     });
     
@@ -164,11 +189,11 @@ pub fn stake_moondoge(
 
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- UNSTAKE MOONDOGE TOKENS :: User gets DOGE_BTC back ------------------------
+// ---- UNSTAKE MOONDOGE TOKENS :: User gets MINE_BTC back ------------------------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Unstake DogeBtc tokens from a position
-pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
+/// Unstake MineBtc tokens from a position
+pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
     // Store values before mutable borrow (for event emission)
     let position_key = ctx.accounts.user_position.key();
     let player_data_key = ctx.accounts.player_data.key();
@@ -178,13 +203,13 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
     
-    msg!("🔓 [unstake_moondoge] Processing unstake for position {}", position_index);
+    msg!("🔓 [unstake_minebtc] Processing unstake for position {}", position_index);
     
     // Validate the position exists and has funds
     require!(faction_state.faction_id == user_position.faction_id, ErrorCode::InvalidFactionId);
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
     require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);    
-    require!( player_data.moondoge_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
+    require!( player_data.minebtc_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
     
     msg!(
         "📊 Position details - Staked: {}, Weighted: {}, Faction: {}, Lockup ends: {}",
@@ -197,7 +222,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) = update_minebtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     
     // -------------- UPDATE FACTION AND PLAYER DATA -------------- //
 
@@ -211,18 +236,18 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
-    faction_state.dbtc_staked -= staked_amount;
-    faction_state.total_dbtc_hashpower -= hashpower_contribution;
-    msg!("   New faction totals - Staked: {}, Hashpower: {}", faction_state.dbtc_staked as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    faction_state.minebtc_staked -= staked_amount;
+    faction_state.total_minebtc_hashpower -= hashpower_contribution;
+    msg!("   New faction totals - Staked: {}, Hashpower: {}", faction_state.minebtc_staked as f64 / 1e6, faction_state.total_minebtc_hashpower as f64 / 1e6);
     
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.dogebtc_hashpower -= hashpower_contribution;
-    player_data.dogebtc_staked -= staked_amount;
-    msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.dogebtc_hashpower as f64 / 1e6, player_data.dogebtc_staked as f64 / 1e6);
+    player_data.minebtc_hashpower -= hashpower_contribution;
+    player_data.minebtc_staked -= staked_amount;
+    msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.minebtc_hashpower as f64 / 1e6, player_data.minebtc_staked as f64 / 1e6);
     
     // Remove position from user's active positions
-    helper::remove_moondoge_position(player_data, position_index)?;
+    helper::remove_minebtc_position(player_data, position_index)?;
 
     // -------------- CHARGE EMERGENCY TAX -------------- //
 
@@ -237,13 +262,13 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         
         // Charge emergency tax if any penalty
         if penalty_amount > 0 {
-            // Charge emergency tax: 50% to burn, 50% to DBTC vault  
+            // Charge emergency tax: 50% to burn, 50% to MINEBTC vault  
             helper::charge_emergency_tax(
-                &ctx.accounts.dbtc_custodian.to_account_info(),
-                &ctx.accounts.dbtc_custodian_authority.to_account_info(),
-                &ctx.accounts.dbtc_mint.to_account_info(),
+                &ctx.accounts.minebtc_custodian.to_account_info(),
+                &ctx.accounts.minebtc_custodian_authority.to_account_info(),
+                &ctx.accounts.minebtc_mint.to_account_info(),
                 &ctx.accounts.token_program.to_account_info(),
-                ctx.bumps.dbtc_custodian_authority,
+                ctx.bumps.minebtc_custodian_authority,
                 penalty_amount,
             )?;
         }
@@ -255,12 +280,12 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
 
     // Transfer remaining tokens back to user
     if return_amount > 0 {
-        msg!("💱 Transferring {} DOGE_BTC tokens to user", return_amount);
+        msg!("💱 Transferring {} MINE_BTC tokens to user", return_amount);
         
-        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
+        // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
-            DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.dbtc_custodian_authority],
+            MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            &[ctx.bumps.minebtc_custodian_authority],
         ];
         let signer = &[&custodian_authority_seeds[..]];
         
@@ -268,10 +293,10 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             token_interface::TransferChecked {
-                from: ctx.accounts.dbtc_custodian.to_account_info(),
-                to: ctx.accounts.user_dbtc_account.to_account_info(),
-                authority: ctx.accounts.dbtc_custodian_authority.to_account_info(),
-                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                from: ctx.accounts.minebtc_custodian.to_account_info(),
+                to: ctx.accounts.user_minebtc_account.to_account_info(),
+                authority: ctx.accounts.minebtc_custodian_authority.to_account_info(),
+                mint: ctx.accounts.minebtc_mint.to_account_info(),
             },
             signer,
         );
@@ -279,7 +304,7 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         token_interface::transfer_checked(
             transfer_ctx,
             return_amount,
-            ctx.accounts.dbtc_mint.decimals,
+            ctx.accounts.minebtc_mint.decimals,
         )?;
     }
     
@@ -301,14 +326,14 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
     };
     
     // Emit events
-    emit!(DogeBtcUnstaked {
+    emit!(MineBtcUnstaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
         position_index,
         position_key,
         new_sol_rewards,
-        new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards,
+        new_minebtc_rewards,
+        unrefined_minebtc: accrued_minebtc_rewards,
         timestamp: current_ts,
     });
     
@@ -327,18 +352,18 @@ pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Res
         });
     }
     
-    msg!("✅ [unstake_moondoge] Unstake completed successfully");
+    msg!("✅ [unstake_minebtc] Unstake completed successfully");
     Ok(())
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- STAKE LIQUIDITY LP TOKENS :: User gets SOL and dbtc rewards ------
+// ---- STAKE LIQUIDITY LP TOKENS :: User gets SOL and minebtc rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Stake LP tokens
-/// Users stake LP tokens to a faction and earn SOL and dbtc rewards
+/// Users stake LP tokens to a faction and earn SOL and minebtc rewards
 /// SOL rewards are distributed per round via join_round function
-/// dbtc rewards are distributed per round via end_round function
+/// minebtc rewards are distributed per round via end_round function
 pub fn stake_lp_tokens(
     ctx: Context<StakeLpTokens>,
     amount: u64,
@@ -392,7 +417,7 @@ pub fn stake_lp_tokens(
     // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
 
     // -------------- UPDATE POSITION -------------- //
 
@@ -463,8 +488,8 @@ pub fn stake_lp_tokens(
         lockup_duration,
         hashpower_contribution: weighted_amount_with_eggs,
         new_sol_rewards,
-        new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards,
+        new_minebtc_rewards,
+        unrefined_minebtc: accrued_minebtc_rewards,
         timestamp: current_ts,
     });
     
@@ -482,13 +507,13 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
     
-    msg!("🔓 [unstake_moondoge] Processing unstake for position {}", position_index);
+    msg!("🔓 [unstake_minebtc] Processing unstake for position {}", position_index);
     
     // Validate the position exists and has funds
     require!(faction_state.faction_id == user_position.faction_id, ErrorCode::InvalidFactionId);
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
     require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);    
-    require!( player_data.moondoge_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
+    require!( player_data.minebtc_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
     
     msg!(
         "📊 Position details - Staked: {}, Weighted: {}, Faction: {}, Lockup ends: {}",
@@ -501,7 +526,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     // -------------- ACCRUE PENDING REWARDS -------------- //
     
     // Process pending rewards before updating position
-    let (new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
 
     // -------------- UPDATE FACTION AND PLAYER DATA -------------- //
 
@@ -526,7 +551,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.lp_hashpower as f64 / 1e6, player_data.lp_staked as f64 / 1e6);
     
     // Remove position from user's active positions
-    helper::remove_moondoge_position(player_data, position_index)?;
+    helper::remove_minebtc_position(player_data, position_index)?;
         
 
     // -------------- CHARGE EMERGENCY TAX -------------- //
@@ -560,9 +585,9 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 
     // Transfer remaining tokens back to user
     if return_amount > 0 {
-        msg!("💱 Transferring {} DOGE_BTC tokens to user", return_amount);
+        msg!("💱 Transferring {} MINE_BTC tokens to user", return_amount);
         
-        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
+        // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
             LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref(),
             &[ctx.bumps.liquidity_custodian_authority],
@@ -616,8 +641,8 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         position_index,
         position_key,
         new_sol_rewards,
-        new_dbtc_rewards,
-        unrefined_dbtc: accrued_dbtc_rewards,
+        new_minebtc_rewards,
+        unrefined_minebtc: accrued_minebtc_rewards,
         timestamp: current_ts,
     });
     
@@ -636,7 +661,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         });
     }
     
-    msg!("✅ [unstake_moondoge] Unstake completed successfully");
+    msg!("✅ [unstake_minebtc] Unstake completed successfully");
     Ok(())
 }
 
@@ -645,7 +670,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 // ---- CLAIM SOL REWARDS :: User earns SOL rewards from staking ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim SOL rewards from staking DogeBtc and LP tokens
+/// Claim SOL rewards from staking MineBtc and LP tokens
 pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     msg!("💰 [claim_sol_rewards] Claiming SOL rewards from staking");
     
@@ -658,15 +683,15 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     let faction_state = &ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     
-    // Process DogeBtc staking SOL rewards
-    let (_st_dbtc_new_sol_rewards, _st_dbtc_new_dbtc_rewards, _st_dbtc_accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    // Process MineBtc staking SOL rewards
+    let (_st_minebtc_new_sol_rewards, _st_minebtc_new_minebtc_rewards, _st_minebtc_accrued_minebtc_rewards) = update_minebtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     // Process LP staking SOL rewards
-    let (_st_lp_new_sol_rewards, _st_lp_new_dbtc_rewards, _st_lp_accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_st_lp_new_sol_rewards, _st_lp_new_minebtc_rewards, _st_lp_accrued_minebtc_rewards) = update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     
     let total_pending_sol_rewards = player_data.pending_sol_rewards;
     require!(total_pending_sol_rewards > 0, ErrorCode::InsufficientFunds);    
     msg!("   Total claimable SOL rewards: {} lamports", total_pending_sol_rewards as f64 / 1e9);
-    msg!("   Total claimable DogeBtc rewards: {} dbtc", player_data.pending_dbtc_rewards as f64 / 1e6);
+    msg!("   Total claimable MineBtc rewards: {} minebtc", player_data.pending_minebtc_rewards as f64 / 1e6);
     
     // Check if user has a referrer (not system referral account)
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
@@ -718,14 +743,14 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- CLAIM DBTC REWARDS :: User earns dbtc rewards from staking ------
+// ---- CLAIM MINEBTC REWARDS :: User earns minebtc rewards from staking ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim DogeBtc token rewards from staking DogeBtc and LP tokens
+/// Claim MineBtc token rewards from staking MineBtc and LP tokens
 /// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
 /// Also increases power of all staked eggs proportionally to claimed amount
-pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-    msg!("💰 [claim_dbtc_rewards] Claiming DogeBtc token rewards with refining fee");
+pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+    msg!("💰 [claim_minebtc_rewards] Claiming MineBtc token rewards with refining fee");
     
     require!(ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id, ErrorCode::InvalidFactionId);
     
@@ -735,33 +760,33 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
-    let unrefined_dbtc = &mut ctx.accounts.unrefined_rewards;
+    let unrefined_minebtc = &mut ctx.accounts.unrefined_rewards;
     let global_config = &ctx.accounts.global_config;
 
-    // Process DogeBtc staking SOL rewards
-    let (_st_dbtc_new_sol_rewards, _st_dbtc_new_dbtc_rewards, _st_dbtc_accrued_dbtc_rewards) = update_dbtc_staking_rewards(player_data, unrefined_dbtc, faction_state)?;
+    // Process MineBtc staking SOL rewards
+    let (_st_minebtc_new_sol_rewards, _st_minebtc_new_minebtc_rewards, _st_minebtc_accrued_minebtc_rewards) = update_minebtc_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
     // Process LP staking SOL rewards
-    let (_st_lp_new_sol_rewards, _st_lp_new_dbtc_rewards, _st_lp_accrued_dbtc_rewards) = update_lp_staking_rewards(player_data, unrefined_dbtc, faction_state)?;
+    let (_st_lp_new_sol_rewards, _st_lp_new_minebtc_rewards, _st_lp_accrued_minebtc_rewards) = update_lp_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
     
-    require!(player_data.pending_dbtc_rewards > 0, ErrorCode::InsufficientFunds);
+    require!(player_data.pending_minebtc_rewards > 0, ErrorCode::InsufficientFunds);
     
     // Apply refining fee (10% by default, or configured in global_config)
-    let refining_fee_pct = global_config.dbtc_dist_config.refining_fee as u64;
-    let refining_fee = (player_data.pending_dbtc_rewards * refining_fee_pct) / M_HUNDRED;
-    let claimable_amount = player_data.pending_dbtc_rewards - refining_fee;
-    msg!("Refining fee: {} dbtc. Claimable amount: {} dbtc", refining_fee as f64 / 1e6, claimable_amount as f64 / 1e6);
+    let refining_fee_pct = global_config.minebtc_dist_config.refining_fee as u64;
+    let refining_fee = (player_data.pending_minebtc_rewards * refining_fee_pct) / M_HUNDRED;
+    let claimable_amount = player_data.pending_minebtc_rewards - refining_fee;
+    msg!("Refining fee: {} minebtc. Claimable amount: {} minebtc", refining_fee as f64 / 1e6, claimable_amount as f64 / 1e6);
     
     // Apply referral fee first (5% of total)
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let referral_fee = if has_referrer {
         let fee = claimable_amount * REFERRAL_FEE_PCT / 100; // 5% referral fee
-        msg!("   Referral fee (5%): {} dbtc", fee);
+        msg!("   Referral fee (5%): {} minebtc", fee);
         
-        // Add fee to referrer's pending dbtc rewards
+        // Add fee to referrer's pending minebtc rewards
         if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
-            referrer_rewards.pending_dbtc_rewards += fee;
-            referrer_rewards.total_dbtc_earned += fee;
-            msg!("     Added {} dbtc to referrer's rewards", fee);
+            referrer_rewards.pending_minebtc_rewards += fee;
+            referrer_rewards.total_minebtc_earned += fee;
+            msg!("     Added {} minebtc to referrer's rewards", fee);
         }
         fee
     } else {
@@ -769,50 +794,50 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     };
     
     let claimable_by_user = claimable_amount - referral_fee;
-    msg!("Claimable by user: {} dbtc", claimable_by_user as f64 / 1e6);
+    msg!("Claimable by user: {} minebtc", claimable_by_user as f64 / 1e6);
     
-    // Accumulate power points (1 power per 1000 dbtc claimed, minimum 1 power)
+    // Accumulate power points (1 power per 1000 minebtc claimed, minimum 1 power)
 
     let power_points = calculate_power_points(claimable_by_user);
     player_data.claimable_power += power_points;
     msg!("   Accumulated {} power points (total claimable: {})", power_points, player_data.claimable_power);
     
-    // Transfer claimable DogeBtc to user
+    // Transfer claimable MineBtc to user
     if claimable_by_user > 0 {
-        msg!("💱 Transferring {} DogeBtc tokens to user", claimable_amount as f64 / 1e6);
+        msg!("💱 Transferring {} MineBtc tokens to user", claimable_amount as f64 / 1e6);
         
-        // Get PDA signer seeds for the dbtc vault authority
+        // Get PDA signer seeds for the minebtc vault authority
         let vault_authority_seeds = &[
-            DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.dbtc_vault_authority],
+            MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
+            &[ctx.bumps.minebtc_vault_authority],
         ];
         let signer = &[&vault_authority_seeds[..]];
         
         let transfer_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 token_interface::TransferChecked {
-                    from: ctx.accounts.dbtc_token_vault.to_account_info(),
-                    to: ctx.accounts.user_dbtc_account.to_account_info(),
-                    authority: ctx.accounts.dbtc_vault_authority.to_account_info(),
-                    mint: ctx.accounts.dbtc_mint.to_account_info(),
+                    from: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    to: ctx.accounts.user_minebtc_account.to_account_info(),
+                    authority: ctx.accounts.minebtc_vault_authority.to_account_info(),
+                    mint: ctx.accounts.minebtc_mint.to_account_info(),
                 },
             signer,
         );
         token_interface::transfer_checked(
             transfer_ctx,
             claimable_by_user,
-            ctx.accounts.dbtc_mint.decimals,
+            ctx.accounts.minebtc_mint.decimals,
         )?;
     }    
 
-    // update total claimable dbtc amount 
-    unrefined_dbtc.total_dbtc_claimable = unrefined_dbtc.total_dbtc_claimable - player_data.pending_dbtc_rewards;
-    player_data.pending_dbtc_rewards = 0;
+    // update total claimable minebtc amount 
+    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc.total_minebtc_claimable - player_data.pending_minebtc_rewards;
+    player_data.pending_minebtc_rewards = 0;
 
     // Update total tokens distributed
-    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
-    doge_btc_mining.total_tokens_distributed += claimable_by_user;
-    msg!("   Updated total tokens distributed: {} (+{})", doge_btc_mining.total_tokens_distributed as f64 / 1e6, claimable_by_user as f64 / 1e6);
+    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    mine_btc_mining.total_tokens_distributed += claimable_by_user;
+    msg!("   Updated total tokens distributed: {} (+{})", mine_btc_mining.total_tokens_distributed as f64 / 1e6, claimable_by_user as f64 / 1e6);
     
     // Store referrer before emitting event
     let referrer_pubkey = if has_referrer { Some(player_data.referral_code) } else { None };
@@ -821,16 +846,20 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     // This is done by increasing the reward index, which benefits all stakers proportionally
     if refining_fee > 0 {
         msg!("   Redistributing refining fee to other stakers...");
-        let increment = helper::mul_div(refining_fee, INDEX_PRECISION, unrefined_dbtc.total_dbtc_claimable)?;
-        unrefined_dbtc.unrefining_index += increment;
-        msg!("   Updated unrefining index: {} (+{})", unrefined_dbtc.unrefining_index, increment);        
+        if unrefined_minebtc.total_minebtc_claimable > 0 {
+            let increment = helper::mul_div(refining_fee, INDEX_PRECISION, unrefined_minebtc.total_minebtc_claimable)?;
+            unrefined_minebtc.unrefining_index += increment;
+            msg!("   Updated unrefining index: {} (+{})", unrefined_minebtc.unrefining_index, increment);        
+        } else {
+            msg!("   No other stakers to redistribute to. Fee remains in unrefined rewards pool.");
+        }
     }
     
     emit!(DbtcRewardsClaimed {
         user: ctx.accounts.authority.key(),
         player_data: player_data_key,
         faction_id,
-        dbtc_amount: claimable_by_user,
+        minebtc_amount: claimable_by_user,
         refining_fee,
         referral_fee,
         power_points_earned: power_points,
@@ -845,18 +874,18 @@ pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
 // ---- CLAIM REFERRAL REWARDS :: Referrers claim their earned rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim referral rewards (SOL and DogeBtc)
+/// Claim referral rewards (SOL and MineBtc)
 pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
     msg!("💰 [claim_referral_rewards] Claiming referral rewards");
     
     let referral_rewards = &mut ctx.accounts.referral_rewards;
     
     let pending_sol = referral_rewards.pending_sol_rewards;
-    let pending_dbtc = referral_rewards.pending_dbtc_rewards;
+    let pending_minebtc = referral_rewards.pending_minebtc_rewards;
     
-    require!(pending_sol > 0 || pending_dbtc > 0, ErrorCode::InsufficientFunds);
+    require!(pending_sol > 0 || pending_minebtc > 0, ErrorCode::InsufficientFunds);
     
-    msg!("   Pending SOL: {} lamports. Pending DogeBtc: {} dbtc", pending_sol as f64 / 1e9, pending_dbtc as f64 / 1e6);
+    msg!("   Pending SOL: {} lamports. Pending MineBtc: {} minebtc", pending_sol as f64 / 1e9, pending_minebtc as f64 / 1e6);
     
     // Transfer SOL if any
     if pending_sol > 0 {
@@ -871,47 +900,47 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
         msg!("     ✓ Transferred {} SOL", pending_sol as f64 / 1e9);
     }
     
-    // Transfer DogeBtc if any
-    if pending_dbtc > 0 {
+    // Transfer MineBtc if any
+    if pending_minebtc > 0 {
         let vault_authority_seeds = &[
-            DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.dbtc_vault_authority],
+            MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
+            &[ctx.bumps.minebtc_vault_authority],
         ];
         let signer = &[&vault_authority_seeds[..]];
         
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             token_interface::TransferChecked {
-                from: ctx.accounts.dbtc_token_vault.to_account_info(),
-                to: ctx.accounts.user_dbtc_account.to_account_info(),
-                authority: ctx.accounts.dbtc_vault_authority.to_account_info(),
-                mint: ctx.accounts.dbtc_mint.to_account_info(),
+                from: ctx.accounts.minebtc_token_vault.to_account_info(),
+                to: ctx.accounts.user_minebtc_account.to_account_info(),
+                authority: ctx.accounts.minebtc_vault_authority.to_account_info(),
+                mint: ctx.accounts.minebtc_mint.to_account_info(),
             },
             signer,
         );
         
         token_interface::transfer_checked(
             transfer_ctx,
-            pending_dbtc,
-            ctx.accounts.dbtc_mint.decimals,
+            pending_minebtc,
+            ctx.accounts.minebtc_mint.decimals,
         )?;
-        msg!("   ✓ Transferred {} dbtc", pending_dbtc);
+        msg!("   ✓ Transferred {} minebtc", pending_minebtc);
     }
     
     // Update total tokens distributed
-    let doge_btc_mining = &mut ctx.accounts.doge_btc_mining;
-    doge_btc_mining.total_tokens_distributed += pending_dbtc;
-    msg!("   Updated total tokens distributed: {} (+{})", doge_btc_mining.total_tokens_distributed as f64 / 1e6, pending_dbtc as f64 / 1e6);
+    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    mine_btc_mining.total_tokens_distributed += pending_minebtc;
+    msg!("   Updated total tokens distributed: {} (+{})", mine_btc_mining.total_tokens_distributed as f64 / 1e6, pending_minebtc as f64 / 1e6);
     
     // Reset pending rewards
     referral_rewards.pending_sol_rewards = 0;
-    referral_rewards.pending_dbtc_rewards = 0;
+    referral_rewards.pending_minebtc_rewards = 0;
     
     emit!(ReferralRewardsClaimed {
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
         sol_amount: pending_sol,
-        dbtc_amount: pending_dbtc,
+        minebtc_amount: pending_minebtc,
         timestamp: Clock::get()?.unix_timestamp,
     });
     
@@ -924,38 +953,38 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
 // ----------------------------------------------------------------------------------------
 
 
-pub fn update_dbtc_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
+pub fn update_minebtc_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
     msg!("💰 Processing pending rewards before position update");
-    let mut new_dbtc_rewards = 0;
+    let mut new_minebtc_rewards = 0;
     let mut new_sol_rewards = 0;
-    let mut accrued_dbtc_rewards = 0;
+    let mut accrued_minebtc_rewards = 0;
         
-    if player_data.dogebtc_hashpower > 0 {
+    if player_data.minebtc_hashpower > 0 {
                 
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
-        new_sol_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_sol_reward_index, player_data.dbtc_sol_reward_debt)?;
+        new_sol_rewards = helper::calculate_staking_rewards( player_data.minebtc_hashpower,faction_state.minebtc_sol_reward_index, player_data.minebtc_sol_reward_debt)?;
         player_data.pending_sol_rewards += new_sol_rewards;
         msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
-        new_dbtc_rewards = helper::calculate_staking_rewards( player_data.dogebtc_hashpower,faction_state.dbtc_dbtc_reward_index, player_data.dbtc_dbtc_reward_debt)?;
-        accrued_dbtc_rewards = helper::add_to_total_claimable(unrefined_rewards, player_data, new_dbtc_rewards);
-        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
+        new_minebtc_rewards = helper::calculate_staking_rewards( player_data.minebtc_hashpower,faction_state.minebtc_minebtc_reward_index, player_data.minebtc_minebtc_reward_debt)?;
+        accrued_minebtc_rewards = helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards);
+        msg!("   Updated pending MineBtc rewards: {} (+{})", player_data.pending_minebtc_rewards as f64 / 1e6, new_minebtc_rewards as f64 / 1e6);
     }
 
     // Update reward debt to current indexes
-    player_data.dbtc_sol_reward_debt = faction_state.dbtc_sol_reward_index;
-    player_data.dbtc_dbtc_reward_debt = faction_state.dbtc_dbtc_reward_index;
+    player_data.minebtc_sol_reward_debt = faction_state.minebtc_sol_reward_index;
+    player_data.minebtc_minebtc_reward_debt = faction_state.minebtc_minebtc_reward_index;
     
-    Ok((new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards))
+    Ok((new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards))
 }
 
 
 
 pub fn update_lp_staking_rewards( player_data: &mut PlayerData, unrefined_rewards: &mut UnrefinedRewards, faction_state: &FactionState) -> Result<(u64, u64, u64)> {
     msg!("💰 Processing pending rewards before position update");
-    let mut new_dbtc_rewards = 0;
+    let mut new_minebtc_rewards = 0;
     let mut new_sol_rewards = 0;
-    let mut accrued_dbtc_rewards = 0;
+    let mut accrued_minebtc_rewards = 0;
 
     if player_data.lp_hashpower > 0 {                    
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
@@ -963,23 +992,23 @@ pub fn update_lp_staking_rewards( player_data: &mut PlayerData, unrefined_reward
         player_data.pending_sol_rewards += new_sol_rewards;
         msg!("   Updated pending SOL rewards: {} (+{})", player_data.pending_sol_rewards as f64 / 1e9, new_sol_rewards as f64 / 1e9);
 
-        new_dbtc_rewards = helper::calculate_staking_rewards( player_data.lp_hashpower,faction_state.lp_dbtc_reward_index, player_data.lp_dbtc_reward_debt)?;
-        accrued_dbtc_rewards = helper::add_to_total_claimable(unrefined_rewards, player_data, new_dbtc_rewards);
-        msg!("   Updated pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards as f64 / 1e6, new_dbtc_rewards as f64 / 1e6);
+        new_minebtc_rewards = helper::calculate_staking_rewards( player_data.lp_hashpower,faction_state.lp_minebtc_reward_index, player_data.lp_minebtc_reward_debt)?;
+        accrued_minebtc_rewards = helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards);
+        msg!("   Updated pending MineBtc rewards: {} (+{})", player_data.pending_minebtc_rewards as f64 / 1e6, new_minebtc_rewards as f64 / 1e6);
 
         // Update reward debt to current indexes
         player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
-        player_data.lp_dbtc_reward_debt = faction_state.lp_dbtc_reward_index;
+        player_data.lp_minebtc_reward_debt = faction_state.lp_minebtc_reward_index;
     }
 
-    Ok((new_sol_rewards, new_dbtc_rewards, accrued_dbtc_rewards))
+    Ok((new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards))
 }
 
 fn calculate_power_points(claimable_by_user: u64) -> u64 {
     let power_points = if claimable_by_user > 0 {
-        let power = claimable_by_user / 10_000; // 100 power per 1 dbtc (with 6 decimals)
+        let power = claimable_by_user / 10_000; // 100 power per 1 minebtc (with 6 decimals)
         if power == 0 && claimable_by_user > 0 {
-            1 // Minimum 1 power if any dbtc claimed
+            1 // Minimum 1 power if any minebtc claimed
         } else {
             power
         }
@@ -1000,7 +1029,7 @@ fn calculate_power_points(claimable_by_user: u64) -> u64 {
 
 #[derive(Accounts)]
 #[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
-pub struct StakeDogeBtc<'info> {
+pub struct StakeMineBtc<'info> {
     // Global config
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1044,27 +1073,27 @@ pub struct StakeDogeBtc<'info> {
     )]
     pub user_position: Account<'info, StakedPosition>,
     
-    /// CHECK: DOGE_BTC Mint (validated manually)
-    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: MINE_BTC Mint (validated manually)
+    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
 
     // Token accounts
     #[account(
         mut,
-        constraint = user_dbtc_account.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
-        constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
-        constraint = user_dbtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
+        constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = user_minebtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
+        constraint = user_minebtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
     )]
-    /// User's DogeBtc token account
-    pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
+    /// User's MineBtc token account
+    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
         mut,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref()],
+        seeds = [MINEBTC_CUSTODIAN_SEED.as_ref()],
         bump,
-        constraint = dbtc_custodian.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = minebtc_custodian.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
-    /// Token-2022 account that holds staked DOGE_BTC for this faction
-    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    /// Token-2022 account that holds staked MINE_BTC for this faction
+    pub minebtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
         mut,
@@ -1090,7 +1119,7 @@ pub struct StakeDogeBtc<'info> {
 
 #[derive(Accounts)]
 #[instruction(position_index: u8)]
-pub struct UnstakeDogeBtc<'info> {
+pub struct UnstakeMineBtc<'info> {
     // Global config
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1127,33 +1156,33 @@ pub struct UnstakeDogeBtc<'info> {
     )]
     pub user_position: Box<Account<'info, StakedPosition>>,
     
-    /// CHECK: DOGE_BTC Mint (validated manually)
-    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: MINE_BTC Mint (validated manually)
+    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
 
     // Token accounts
     #[account(
         mut,
-        constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
-        constraint = user_dbtc_account.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = user_minebtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
+        constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
-    /// User's DogeBtc token account to receive the unstaked tokens
-    pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
+    /// User's MineBtc token account to receive the unstaked tokens
+    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
         mut,
-        seeds = [DBTC_CUSTODIAN_SEED.as_ref()],
+        seeds = [MINEBTC_CUSTODIAN_SEED.as_ref()],
         bump,
-        constraint = dbtc_custodian.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = minebtc_custodian.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
-    /// Token-2022 account that holds staked DOGE_BTC (global for all factions)
-    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    /// Token-2022 account that holds staked MINE_BTC (global for all factions)
+    pub minebtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        seeds = [MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump,
     )]
     /// CHECK: Authority of the custodian (PDA that signs for token transfers, global for all factions)
-    pub dbtc_custodian_authority: UncheckedAccount<'info>,
+    pub minebtc_custodian_authority: UncheckedAccount<'info>,
     
     #[account(
         mut,
@@ -1387,7 +1416,7 @@ pub struct ClaimSolRewards<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- CLAIM DBTC REWARDS ---------
+// --------- CLAIM MINEBTC REWARDS ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
@@ -1429,40 +1458,40 @@ pub struct ClaimDbtcRewards<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
     
-    /// CHECK: DOGE_BTC Mint (validated manually)
-    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: MINE_BTC Mint (validated manually)
+    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
     
     // Token accounts
     #[account(
         mut,
-        constraint = user_dbtc_account.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
-        constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
+        constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = user_minebtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
     )]
-    /// User's DogeBtc token account to receive rewards
-    pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
+    /// User's MineBtc token account to receive rewards
+    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
-    /// CHECK: DogeBtc mining state (needed for vault PDA derivation)
+    /// CHECK: MineBtc mining state (needed for vault PDA derivation)
     #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
     
-    /// CHECK: DogeBtc token vault (main vault where tokens are deposited)
+    /// CHECK: MineBtc token vault (main vault where tokens are deposited)
     #[account(
         mut,
-        seeds = [DOGE_BTC_VAULT_SEED.as_ref(), doge_btc_mining.key().as_ref()],
+        seeds = [MINE_BTC_VAULT_SEED.as_ref(), mine_btc_mining.key().as_ref()],
         bump,
-        constraint = dbtc_token_vault.mint == dbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = minebtc_token_vault.mint == minebtc_mint.key() @ ErrorCode::InvalidMint,
     )]
-    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: Authority of the token vault (PDA that signs for token transfers)
-    pub dbtc_vault_authority: UncheckedAccount<'info>,
+    pub minebtc_vault_authority: UncheckedAccount<'info>,
     
     /// User claiming rewards
     pub authority: Signer<'info>,
@@ -1487,17 +1516,17 @@ pub struct ClaimReferralRewards<'info> {
     )]
     pub referral_rewards: Account<'info, ReferralRewards>,
     
-    /// CHECK: DOGE_BTC Mint (validated manually)
-    pub dbtc_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: MINE_BTC Mint (validated manually)
+    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
     
     // Token accounts
     #[account(
         mut,
-        constraint = user_dbtc_account.mint == dbtc_mint.key() @ ErrorCode::InvalidParameters,
-        constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
+        constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = user_minebtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
     )]
-    /// Referrer's DogeBtc token account to receive rewards
-    pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
+    /// Referrer's MineBtc token account to receive rewards
+    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
     
     /// CHECK: SOL rewards vault (System Account)
     #[account(
@@ -1507,28 +1536,28 @@ pub struct ClaimReferralRewards<'info> {
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
     
-    /// CHECK: DogeBtc mining state (needed for vault PDA derivation)
+    /// CHECK: MineBtc mining state (needed for vault PDA derivation)
     #[account(
-        seeds = [DOGE_BTC_MINING_SEED.as_ref()],
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub doge_btc_mining: Account<'info, DogeBtcMining>,
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
     
-    /// CHECK: DogeBtc token vault (main vault where tokens are deposited)
+    /// CHECK: MineBtc token vault (main vault where tokens are deposited)
     #[account(
         mut,
-        seeds = [DOGE_BTC_VAULT_SEED.as_ref(), doge_btc_mining.key().as_ref()],
+        seeds = [MINE_BTC_VAULT_SEED.as_ref(), mine_btc_mining.key().as_ref()],
         bump,
-        constraint = dbtc_token_vault.mint == dbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = minebtc_token_vault.mint == minebtc_mint.key() @ ErrorCode::InvalidMint,
     )]
-    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
     
     #[account(
-        seeds = [DOGE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: Authority of the token vault (PDA that signs for token transfers)
-    pub dbtc_vault_authority: UncheckedAccount<'info>,
+    pub minebtc_vault_authority: UncheckedAccount<'info>,
     
     /// Referrer claiming rewards
     #[account(mut)]

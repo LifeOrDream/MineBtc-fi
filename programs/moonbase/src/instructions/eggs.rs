@@ -3,6 +3,20 @@ use anchor_spl::token::Token;
 use anchor_spl::associated_token::AssociatedToken;
 use std::io::Write;
 use crate::errors::ErrorCode;
+//! # Dragon Egg Instructions
+//!
+//! This module manages the Dragon Egg NFT system, which provides hashpower multipliers to players.
+//!
+//! ## Key Functions
+//!
+//! - `batch_mint_dragon_eggs`: Mints new Dragon Egg NFTs using a bonding curve pricing model.
+//! - `stake_dragon_egg`: Stakes an egg to boost a player's hashpower.
+//! - `unstake_dragon_egg`: Unstakes an egg and removes the boost.
+//! - `claim_power`: Distributes accumulated power points to staked eggs.
+//!
+//! Dragon Eggs are a core mechanic for increasing mining efficiency and earning potential.
+//!
+
 use crate::events::*;
 use crate::state::*;
 use crate::instructions::helper;
@@ -372,7 +386,7 @@ pub fn admin_mint_dragon_egg(
 
 
  
-/// Stake a Dragon Egg to boost hashpower (multiplier applies to staked dbtc and LP)
+/// Stake a Dragon Egg to boost hashpower (multiplier applies to staked minebtc and LP)
 /// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
 /// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
 pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
@@ -405,8 +419,8 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
     )?;
         
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
-    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) = stake::update_minebtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     
     // Add egg to player's staked eggs list
     player_data.staked_eggs.push(egg_mint);
@@ -418,31 +432,31 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
     msg!("⚡ Updated egg multiplier: ({})x", player_data.egg_multiplier as f64 / 100.0);    
 
     // Calculate new hashpower based on new multiplier and UPDATE
-    let existing_dbtc_hashpower = player_data.dogebtc_hashpower;
+    let existing_minebtc_hashpower = player_data.minebtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
     
     // Recalculate hashpower with new multiplier (multiply first to avoid precision loss)
-    // Formula: new_hashpower = old_hashpower * (new_multiplier / old_multiplier)
+    // Formula: new_hashpower = (old_hashpower * new_multiplier) / old_multiplier
     if old_multiplier > 0 {
-        player_data.dogebtc_hashpower = (existing_dbtc_hashpower / old_multiplier) * new_multiplier;
-        player_data.lp_hashpower = (existing_lp_hashpower / old_multiplier) * new_multiplier;
+        player_data.minebtc_hashpower = (existing_minebtc_hashpower as u128 * new_multiplier as u128 / old_multiplier as u128) as u64;
+        player_data.lp_hashpower = (existing_lp_hashpower as u128 * new_multiplier as u128 / old_multiplier as u128) as u64;
     } else {
         // If old_multiplier is 0 (shouldn't happen), use new_multiplier directly
-        player_data.dogebtc_hashpower = (existing_dbtc_hashpower * new_multiplier) / M_HUNDRED;
+        player_data.minebtc_hashpower = (existing_minebtc_hashpower * new_multiplier) / M_HUNDRED;
         player_data.lp_hashpower = (existing_lp_hashpower * new_multiplier) / M_HUNDRED;
     }
-    msg!("   DogeBtc hashpower: {} -> {}", existing_dbtc_hashpower as f64 / 1e6, player_data.dogebtc_hashpower as f64 / 1e6);
+    msg!("   MineBtc hashpower: {} -> {}", existing_minebtc_hashpower as f64 / 1e6, player_data.minebtc_hashpower as f64 / 1e6);
     msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
 
     // Update faction state totals
     update_faction_hashpower(
         faction_state,
-        existing_dbtc_hashpower,
-        player_data.dogebtc_hashpower,
+        existing_minebtc_hashpower,
+        player_data.minebtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
     );
-    msg!("   Faction dbtc hashpower: {} -> {}", faction_state.total_dbtc_hashpower as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    msg!("   Faction minebtc hashpower: {} -> {}", faction_state.total_minebtc_hashpower as f64 / 1e6, faction_state.total_minebtc_hashpower as f64 / 1e6);
     msg!("   Faction LP hashpower: {} -> {}", faction_state.total_lp_hashpower as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
 
     faction_state.eggs_staked += 1;
@@ -461,7 +475,7 @@ pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
         faction_id: player_data.faction_id,
         egg_metadata_account: egg_metadata.key(),
         player_multiplier: player_data.egg_multiplier,
-        dbtc_hashpower: player_data.dogebtc_hashpower,
+        minebtc_hashpower: player_data.minebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
     });
@@ -492,8 +506,8 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     require!( incubated_by_player == player_data.owner,  ErrorCode::Unauthorized);
         
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_dbtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
-    let (_new_sol_rewards, _new_dbtc_rewards, _accrued_dbtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) = stake::update_minebtc_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
+    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) = stake::update_lp_staking_rewards(player_data, &mut ctx.accounts.unrefined_rewards, faction_state)?;
     
     // Remove egg from player's staked eggs list
     if let Some(index) = player_data.staked_eggs.iter().position(|&mint| mint == egg_mint) {
@@ -510,22 +524,25 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
     msg!("⚡ Updated egg multiplier: ({})x", player_data.egg_multiplier as f64 / 100.0);    
 
     // Calculate new hashpower based on new multiplier and UPDATE
-    let existing_dbtc_hashpower = player_data.dogebtc_hashpower;
+    let existing_minebtc_hashpower = player_data.minebtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
-    player_data.dogebtc_hashpower = (existing_dbtc_hashpower / old_multiplier) * new_multiplier;
-    player_data.lp_hashpower = (existing_lp_hashpower / old_multiplier) * new_multiplier;
-    msg!("   DogeBtc hashpower: {} -> {}", existing_dbtc_hashpower as f64 / 1e6, player_data.dogebtc_hashpower as f64 / 1e6);
+    
+    if old_multiplier > 0 {
+        player_data.minebtc_hashpower = (existing_minebtc_hashpower as u128 * new_multiplier as u128 / old_multiplier as u128) as u64;
+        player_data.lp_hashpower = (existing_lp_hashpower as u128 * new_multiplier as u128 / old_multiplier as u128) as u64;
+    }
+    msg!("   MineBtc hashpower: {} -> {}", existing_minebtc_hashpower as f64 / 1e6, player_data.minebtc_hashpower as f64 / 1e6);
     msg!("   LP hashpower: {} -> {}", existing_lp_hashpower as f64 / 1e6, player_data.lp_hashpower as f64 / 1e6);
 
     // Update faction state totals
     update_faction_hashpower(
         faction_state,
-        existing_dbtc_hashpower,
-        player_data.dogebtc_hashpower,
+        existing_minebtc_hashpower,
+        player_data.minebtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
     );
-    msg!("   Faction dbtc hashpower: {} -> {}", faction_state.total_dbtc_hashpower as f64 / 1e6, faction_state.total_dbtc_hashpower as f64 / 1e6);
+    msg!("   Faction minebtc hashpower: {} -> {}", faction_state.total_minebtc_hashpower as f64 / 1e6, faction_state.total_minebtc_hashpower as f64 / 1e6);
     msg!("   Faction LP hashpower: {} -> {}", faction_state.total_lp_hashpower as f64 / 1e6, faction_state.total_lp_hashpower as f64 / 1e6);
 
     faction_state.eggs_staked -= 1;
@@ -559,7 +576,7 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
         egg_metadata_account: egg_metadata.key(),
         faction_id: player_data.faction_id,
         egg_multiplier: egg_multiplier,
-        dbtc_hashpower: player_data.dogebtc_hashpower,
+        minebtc_hashpower: player_data.minebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
     });
@@ -572,7 +589,7 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
 
 
 /// Claim power points and distribute them evenly to all staked eggs
-/// Power is accumulated when claiming dbtc rewards via claim_dbtc_rewards
+/// Power is accumulated when claiming minebtc rewards via claim_minebtc_rewards
 pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let current_time = Clock::get()?.unix_timestamp;
@@ -714,12 +731,12 @@ fn update_egg_power(
 /// Update faction state hashpower totals
 fn update_faction_hashpower(
     faction_state: &mut FactionState,
-    old_dbtc_hashpower: u64,
-    new_dbtc_hashpower: u64,
+    old_minebtc_hashpower: u64,
+    new_minebtc_hashpower: u64,
     old_lp_hashpower: u64,
     new_lp_hashpower: u64,
 ) {
-    faction_state.total_dbtc_hashpower = faction_state.total_dbtc_hashpower - old_dbtc_hashpower + new_dbtc_hashpower;
+    faction_state.total_minebtc_hashpower = faction_state.total_minebtc_hashpower - old_minebtc_hashpower + new_minebtc_hashpower;
     faction_state.total_lp_hashpower = faction_state.total_lp_hashpower - old_lp_hashpower + new_lp_hashpower;
 }
 

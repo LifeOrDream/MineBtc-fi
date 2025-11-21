@@ -1,3 +1,26 @@
+//! # MineBTC Program
+//!
+//! The main entry point for the MineBTC program.
+//!
+//! This program implements a faction-based betting and mining game on Solana.
+//! Users can join factions, place bets on blocks, mine MineBTC tokens, and stake assets for rewards.
+//!
+//! ## Modules
+//!
+//! - `admin`: Administrative functions for configuration and management.
+//! - `economy`: Tokenomics, fee distribution, and liquidity management.
+//! - `user`: User interactions, betting, and account management.
+//! - `stake`: Staking logic for MineBTC and LP tokens.
+//! - `game`: Core game loop, round management, and randomness.
+//! - `eggs`: Dragon Egg NFT system for hashpower multipliers.
+//! - `tax`: Tax system for deflationary mechanics and reward distribution.
+//!
+//! ## Architecture
+//!
+//! The program uses a hub-and-spoke architecture with `GlobalConfig` and `GlobalGameState` as central
+//! state accounts. Users interact through `PlayerData` accounts, and factions are tracked via `FactionState`.
+//!
+
 use anchor_lang::prelude::*;
 mod errors;
 mod events;
@@ -13,13 +36,13 @@ pub use instructions::stake::*;
 pub use instructions::game::*;
 pub use instructions::eggs::*;
 pub use instructions::tax::*;
-pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
+pub use state::{SolFeeConfig, MineBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
 declare_id!("9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A");
 
 #[program]
-pub mod moonbase {
+pub mod minebtc {
     use super::*;
     use instructions::admin::{self};
     use instructions::economy::{self};
@@ -83,10 +106,10 @@ pub mod moonbase {
         new_protocol_fee_pct: Option<u8>,
         new_buyback_pct: Option<u8>,
         new_stakers_pct: Option<u8>,
-        new_dbtc_stakers_pct: Option<u8>,
-        new_dbtc_winners_pct: Option<u8>,
-        new_dbtc_same_faction_pct: Option<u8>,
-        new_dbtc_motherlode_pct: Option<u8>,
+        new_minebtc_stakers_pct: Option<u8>,
+        new_minebtc_winners_pct: Option<u8>,
+        new_minebtc_same_faction_pct: Option<u8>,
+        new_minebtc_motherlode_pct: Option<u8>,
         new_refining_fee: Option<u8>,
         change_faction_fee: Option<u64>,
         snapshot_interval: Option<u64>,
@@ -96,10 +119,10 @@ pub mod moonbase {
             new_protocol_fee_pct,
             new_buyback_pct,
             new_stakers_pct,
-            new_dbtc_stakers_pct,
-            new_dbtc_winners_pct,
-            new_dbtc_same_faction_pct,
-            new_dbtc_motherlode_pct,
+            new_minebtc_stakers_pct,
+            new_minebtc_winners_pct,
+            new_minebtc_same_faction_pct,
+            new_minebtc_motherlode_pct,
             new_refining_fee,
             change_faction_fee,
             snapshot_interval,
@@ -108,7 +131,7 @@ pub mod moonbase {
 
 
     // ----------------------------------------------------------------------------------------
-    // ------------ doge_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ mine_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
     /// Initialize mining by setting the token vault and starting timestamp
@@ -116,18 +139,18 @@ pub mod moonbase {
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
         start_timestamp: u64,
-        doge_btc_per_round: u64,
+        mine_btc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
-        admin::initialize_mining_internal(ctx, start_timestamp, doge_btc_per_round, pool_state)
+        admin::initialize_mining_internal(ctx, start_timestamp, mine_btc_per_round, pool_state)
     }
 
-    /// Deposit DogeBtc tokens to the mining vault (anyone can call)
+    /// Deposit MineBtc tokens to the mining vault (anyone can call)
     /// 
-    /// Allows anyone to deposit DogeBtc tokens into the mining vault.
+    /// Allows anyone to deposit MineBtc tokens into the mining vault.
     /// These tokens will be distributed as rewards to stakers over time.
-    pub fn deposit_doge_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-        admin::deposit_doge_btc_tokens_internal(ctx, amount)
+    pub fn deposit_mine_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        admin::deposit_mine_btc_tokens_internal(ctx, amount)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -148,7 +171,7 @@ pub mod moonbase {
 
     /// Initialize both custodian token accounts (admin only)
     /// Initializes:
-    /// - DBTC custodian: Token-2022 account that holds all staked DOGE_BTC tokens (global for all factions)
+    /// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
     /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
     pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
         admin::initialize_custodian_accounts(ctx)
@@ -342,7 +365,7 @@ pub mod moonbase {
 
 
     /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
-    /// Performs a small SOL → DOGE_BTC swap for price discovery and earnmarks SOL for POL
+    /// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
     /// After 8 snapshots over 4 hours, call update_rate_and_add_lp to finalize
     pub fn snapshot_price(ctx: Context<SnapshotPrice>) -> Result<()> {
         economy::snapshot_price_internal(ctx)
@@ -366,7 +389,7 @@ pub mod moonbase {
     // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
  
-    /// Withdraw DogeBtc from NFT floor sweep vault (whitelisted address only)
+    /// Withdraw MineBtc from NFT floor sweep vault (whitelisted address only)
     pub fn withdraw_nft_floor_sweep_funds(
         ctx: Context<WithdrawNftFloorSweepFunds>,
         amount: u64,
@@ -404,7 +427,7 @@ pub mod moonbase {
     }
 
     /// Claim treasury rewards for one faction
-    /// Adds rewards to staking reward indexes (50% each to dbtc and lp stakers)
+    /// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
     pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
         tax::claim_faction_treasury_rewards(ctx)
     }
@@ -460,7 +483,7 @@ pub mod moonbase {
     }
 
     /// Change user's faction
-    /// Requires no staked positions (dbtc/lp hashpower = 0, no eggs staked)
+    /// Requires no staked positions (minebtc/lp hashpower = 0, no eggs staked)
     /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
     pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
         user::change_faction(ctx, new_faction_id)
@@ -516,25 +539,25 @@ pub mod moonbase {
 
  
     // ----------------------------------------------------------------------------------------
-    // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MOONDOGE / LP TOKENs  ------------
+    // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MINEBTC / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Stake DogeBtc tokens to earn SOL and dbtc rewards
-    pub fn stake_moondoge(
-        ctx: Context<StakeDogeBtc>,
+    /// Stake MineBtc tokens to earn SOL and minebtc rewards
+    pub fn stake_minebtc(
+        ctx: Context<StakeMineBtc>,
         amount: u64,
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        stake::stake_moondoge(ctx, amount, lockup_duration, position_index)
+        stake::stake_minebtc(ctx, amount, lockup_duration, position_index)
     }
 
-    /// Unstake DogeBtc tokens from a position
-    pub fn unstake_moondoge(ctx: Context<UnstakeDogeBtc>, position_index: u8) -> Result<()> {
-        stake::unstake_moondoge(ctx, position_index)
+    /// Unstake MineBtc tokens from a position
+    pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
+        stake::unstake_minebtc(ctx, position_index)
     }
 
-    /// Stake LP tokens to earn SOL and dbtc rewards
+    /// Stake LP tokens to earn SOL and minebtc rewards
     pub fn stake_lp_tokens(
         ctx: Context<StakeLpTokens>,
         amount: u64,
@@ -549,17 +572,17 @@ pub mod moonbase {
         stake::unstake_lp_tokens(ctx, position_index)
     }
     
-    /// Claim SOL rewards from DogeBtc and LP staking
+    /// Claim SOL rewards from MineBtc and LP staking
     pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
         stake::claim_sol_rewards(ctx)
     }
     
-    /// Claim DogeBtc token rewards from staking (with refining fee redistribution)
-    pub fn claim_dbtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-        stake::claim_dbtc_rewards(ctx)
+    /// Claim MineBtc token rewards from staking (with refining fee redistribution)
+    pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+        stake::claim_minebtc_rewards(ctx)
     }
     
-    /// Claim referral rewards (SOL and DogeBtc earned from referrals)
+    /// Claim referral rewards (SOL and MineBtc earned from referrals)
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
         stake::claim_referral_rewards(ctx)
     }
@@ -628,7 +651,7 @@ pub mod moonbase {
     }
 
     /// Claim power points and distribute them to staked eggs
-    /// Power is accumulated when claiming dbtc rewards
+    /// Power is accumulated when claiming minebtc rewards
     pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
         eggs::claim_power(ctx)
     }

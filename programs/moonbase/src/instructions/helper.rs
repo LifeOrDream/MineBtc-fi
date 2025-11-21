@@ -215,13 +215,13 @@ pub fn calculate_multiplier(
     Ok(base_multiplier.checked_add(multiplier_increase).unwrap())
 }
 
-/// Add position index to user's moondoge positions
-pub fn add_dogebtc_position(
+/// Add position index to user's minebtc positions
+pub fn add_minebtc_position(
     player_ac: &mut PlayerData,
     position_index: u8,
 ) -> Result<()> {
-    msg!("🔍 [add_dogebtc_position] Adding position index: {}", position_index);
-    msg!("🔍 [add_dogebtc_position] MAX_ALLOWED_POSITIONS: {}", MAX_ALLOWED_POSITIONS);
+    msg!("🔍 [add_minebtc_position] Adding position index: {}", position_index);
+    msg!("🔍 [add_minebtc_position] MAX_ALLOWED_POSITIONS: {}", MAX_ALLOWED_POSITIONS);
 
     if position_index >= MAX_ALLOWED_POSITIONS {
         return Err(ErrorCode::InvalidParameters.into());
@@ -229,30 +229,30 @@ pub fn add_dogebtc_position(
 
     // If this position index is not already active
     if !player_ac
-        .moondoge_position_indices
+        .minebtc_position_indices
         .contains(&position_index)
     {
-        msg!("🔍 [add_dogebtc_position] Position index is not already active");
+        msg!("🔍 [add_minebtc_position] Position index is not already active");
         // Ensure we're not exceeding the max allowed positions
-        if player_ac.moondoge_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
-            msg!("🔍 [add_dogebtc_position] Exceeding max allowed positions");
+        if player_ac.minebtc_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            msg!("🔍 [add_minebtc_position] Exceeding max allowed positions");
             return Err(ErrorCode::InvalidParameters.into());
         }
-        player_ac.moondoge_position_indices.push(position_index);
-        msg!("🔍 [add_dogebtc_position] Position index added: {}", position_index);
+        player_ac.minebtc_position_indices.push(position_index);
+        msg!("🔍 [add_minebtc_position] Position index added: {}", position_index);
     }
 
     Ok(())
 }
 
-/// Remove position index from user's moondoge positions
-pub fn remove_moondoge_position(
+/// Remove position index from user's minebtc positions
+pub fn remove_minebtc_position(
     player_ac: &mut PlayerData,
     position_index: u8,
 ) -> Result<()> {
     // Find the position index in the vector
-    if let Some(pos) = player_ac.moondoge_position_indices.iter().position(|&x| x == position_index) {
-        player_ac.moondoge_position_indices.remove(pos);
+    if let Some(pos) = player_ac.minebtc_position_indices.iter().position(|&x| x == position_index) {
+        player_ac.minebtc_position_indices.remove(pos);
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
@@ -339,18 +339,18 @@ pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_ind
 }
 
 /// Add to total claimable and pending rewards
-pub fn add_to_total_claimable(unrefined_dbtc: &mut UnrefinedRewards, player_data: &mut PlayerData, dbtc_rewards: u64) -> u64 {
+pub fn add_to_total_claimable(unrefined_minebtc: &mut UnrefinedRewards, player_data: &mut PlayerData, minebtc_rewards: u64) -> u64 {
 
     // Calculate extra dogeBtc rewards due to unrefining
-    let index_dif = unrefined_dbtc.unrefining_index - player_data.unrefining_index;
-    let accrued_rewards = mul_div_u128( player_data.pending_dbtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
-    msg!("     Accrued DogeBtc rewards: {}", accrued_rewards );
+    let index_dif = unrefined_minebtc.unrefining_index - player_data.unrefining_index;
+    let accrued_rewards = mul_div_u128( player_data.pending_minebtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
+    msg!("     Accrued MineBtc rewards: {}", accrued_rewards );
 
-    unrefined_dbtc.total_dbtc_claimable += dbtc_rewards + accrued_rewards;
-    player_data.unrefining_index = unrefined_dbtc.unrefining_index;
-    player_data.pending_dbtc_rewards += dbtc_rewards + accrued_rewards;
-    player_data.total_dbtc_won += dbtc_rewards + accrued_rewards;
-    player_data.unrefined_dbtc_rewards += accrued_rewards;
+    unrefined_minebtc.total_minebtc_claimable += minebtc_rewards + accrued_rewards;
+    player_data.unrefining_index = unrefined_minebtc.unrefining_index;
+    player_data.pending_minebtc_rewards += minebtc_rewards + accrued_rewards;
+    player_data.total_minebtc_won += minebtc_rewards + accrued_rewards;
+    player_data.unrefined_minebtc_rewards += accrued_rewards;
 
     return accrued_rewards;
 }
@@ -374,27 +374,27 @@ pub fn calculate_emergency_tax(user_position: &StakedPosition, current_ts: i64, 
 }
 
 
-/// Charge emergency tax for DBTC tokens: 50% burned, 50% sent to DBTC vault
-/// This function handles the penalty for early withdrawal from DBTC staking positions
+/// Charge emergency tax for MINEBTC tokens: 50% burned, 50% sent to MINEBTC vault
+/// This function handles the penalty for early withdrawal from MINEBTC staking positions
 /// Note: The 50% sent to vault accounts for 1% burn tax (transfers 99% of that 50%)
 pub fn charge_emergency_tax<'info>(
-    dbtc_custodian: &AccountInfo<'info>,
-    dbtc_custodian_authority: &AccountInfo<'info>,
-    dbtc_mint: &AccountInfo<'info>,
+    minebtc_custodian: &AccountInfo<'info>,
+    minebtc_custodian_authority: &AccountInfo<'info>,
+    minebtc_mint: &AccountInfo<'info>,
     token_program: &AccountInfo<'info>,
     custodian_authority_bump: u8,
     penalty_amount: u64,
 ) -> Result<()> {
-    msg!("💰 [charge_emergency_tax] Processing DBTC emergency tax");
+    msg!("💰 [charge_emergency_tax] Processing MINEBTC emergency tax");
     msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
         
     // Burn 50% from custodian
     if penalty_amount > 0 {
         msg!("   Burning {} tokens from custodian...", penalty_amount as f64 / 1e6);
         
-        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
+        // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
-            DBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
             &[custodian_authority_bump],
         ];
         let custodian_signer = &[&custodian_authority_seeds[..]];
@@ -404,9 +404,9 @@ pub fn charge_emergency_tax<'info>(
             CpiContext::new_with_signer(
                 token_program.to_account_info(),
                 Burn {
-                    mint: dbtc_mint.to_account_info(),
-                    from: dbtc_custodian.to_account_info(),
-                    authority: dbtc_custodian_authority.to_account_info(),
+                    mint: minebtc_mint.to_account_info(),
+                    from: minebtc_custodian.to_account_info(),
+                    authority: minebtc_custodian_authority.to_account_info(),
                 },
                 custodian_signer,
             ),

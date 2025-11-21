@@ -1,3 +1,20 @@
+//! # User Instructions
+//!
+//! This module handles all user-facing interactions in the MineBTC Faction Surge game.
+//!
+//! ## Key Functions
+//!
+//! - `initialize_player`: Creates a new player account and assigns them to a faction.
+//! - `change_faction`: Allows players to switch factions (requires no active stakes).
+//! - `join_round`: Places a bet on a block or faction for the current round.
+//! - `join_round_batch`: Places multiple bets in a single transaction.
+//! - `claim_round_rewards`: Claims winnings from completed rounds.
+//! - `init_autominer`: Sets up an automated betting system for recurring bets.
+//! - `execute_autominer_bet`: Executes an autominer bet (keeper function).
+//!
+//! Players can earn rewards through winning bets, same-faction bonuses, motherlode jackpots, and referrals.
+//!
+
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use anchor_spl::token::Token;
@@ -64,29 +81,29 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     player_data.total_sol_bet = 0;
     player_data.total_points_bet = 0;
     player_data.total_sol_won = 0;
-    player_data.total_dbtc_won = 0;
+    player_data.total_minebtc_won = 0;
     
-    // Initialize DogeBtc staking fields
-    player_data.dogebtc_hashpower = 0;
-    player_data.dogebtc_staked = 0;
-    player_data.dbtc_dbtc_reward_debt = 0;
-    player_data.dbtc_sol_reward_debt = 0;
-    msg!("     DogeBtc staking fields initialized");
+    // Initialize MineBtc staking fields
+    player_data.minebtc_hashpower = 0;
+    player_data.minebtc_staked = 0;
+    player_data.minebtc_minebtc_reward_debt = 0;
+    player_data.minebtc_sol_reward_debt = 0;
+    msg!("     MineBtc staking fields initialized");
     
     // Initialize LP staking fields
     player_data.lp_hashpower = 0;
     player_data.lp_staked = 0;
     player_data.lp_sol_reward_debt = 0;
-    player_data.lp_dbtc_reward_debt = 0;
+    player_data.lp_minebtc_reward_debt = 0;
     msg!("     LP staking fields initialized");
     
     // Initialize pending rewards
     player_data.pending_sol_rewards = 0;
-    player_data.pending_dbtc_rewards = 0;
+    player_data.pending_minebtc_rewards = 0;
     msg!("     Pending rewards initialized");
     
     // Initialize position tracking vectors
-    player_data.moondoge_position_indices = Vec::new();
+    player_data.minebtc_position_indices = Vec::new();
     player_data.lp_position_indices = Vec::new();
     msg!("     Position tracking initialized");
     
@@ -107,9 +124,9 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
     new_player_rewards.referrals_count = 0;
     new_player_rewards.pending_sol_rewards = 0;
-    new_player_rewards.pending_dbtc_rewards = 0;
+    new_player_rewards.pending_minebtc_rewards = 0;
     new_player_rewards.total_sol_earned = 0;
-    new_player_rewards.total_dbtc_earned = 0;
+    new_player_rewards.total_minebtc_earned = 0;
     msg!("     Referral rewards account initialized");
     
     msg!("✅ [initialize_player] Player initialized successfully");
@@ -133,7 +150,7 @@ pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referra
 
 /// Change user's faction
 /// Requires:
-/// - No dbtc hashpower (dogebtc_hashpower == 0)
+/// - No minebtc hashpower (minebtc_hashpower == 0)
 /// - No lp hashpower (lp_hashpower == 0)
 /// - No eggs staked (staked_eggs.is_empty())
 /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
@@ -150,7 +167,7 @@ pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result
     
     // Validate user has no staked positions
     msg!("   Validating user has no staked positions...");
-    require!( player_data.dogebtc_hashpower == 0 && player_data.lp_hashpower == 0 && player_data.staked_eggs.is_empty(), ErrorCode::InvalidParameters);
+    require!( player_data.minebtc_hashpower == 0 && player_data.lp_hashpower == 0 && player_data.staked_eggs.is_empty(), ErrorCode::InvalidParameters);
     
     // Charge change_faction_fee
     let change_fee = global_config.change_faction_fee;
@@ -818,7 +835,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         
     // Calculate rewards for each block user bet on
     let mut total_sol_reward = 0u64;
-    let mut total_dbtc_reward = 0u64;
+    let mut total_minebtc_reward = 0u64;
     
     for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
         let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
@@ -838,20 +855,20 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 msg!("         SOL reward: {} lamports", sol_reward);
             }
             
-            // DogeBtc rewards (winning block)
-            if game_session.dbtc_rewards_index > 0 && points_bet_on_block > 0 {
-                let dbtc_reward = helper::mul_div(points_bet_on_block, game_session.dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
-                total_dbtc_reward += dbtc_reward;
-                msg!("         DogeBtc reward: {} tokens", dbtc_reward);
+            // MineBtc rewards (winning block)
+            if game_session.minebtc_rewards_index > 0 && points_bet_on_block > 0 {
+                let minebtc_reward = helper::mul_div(points_bet_on_block, game_session.minebtc_rewards_index as u64, INDEX_PRECISION)? as u64;
+                total_minebtc_reward += minebtc_reward;
+                msg!("         MineBtc reward: {} tokens", minebtc_reward);
             }
         } else if is_same_faction_block {
-            msg!("       ✓ Same-faction other block - calculating DogeBtc rewards...");
+            msg!("       ✓ Same-faction other block - calculating MineBtc rewards...");
             
-            // DogeBtc rewards (same-faction other block)
-            if game_session.same_faction_dbtc_rewards_index > 0 && points_bet_on_block > 0 {
-                let dbtc_reward = helper::mul_div(points_bet_on_block, game_session.same_faction_dbtc_rewards_index as u64, INDEX_PRECISION)? as u64;
-                total_dbtc_reward += dbtc_reward;
-                msg!("         DogeBtc reward: {} tokens", dbtc_reward);
+            // MineBtc rewards (same-faction other block)
+            if game_session.same_faction_minebtc_rewards_index > 0 && points_bet_on_block > 0 {
+                let minebtc_reward = helper::mul_div(points_bet_on_block, game_session.same_faction_minebtc_rewards_index as u64, INDEX_PRECISION)? as u64;
+                total_minebtc_reward += minebtc_reward;
+                msg!("         MineBtc reward: {} tokens", minebtc_reward);
             }
         } else {
             msg!("       ✗ Not a winning or same-faction block - no rewards");
@@ -859,11 +876,11 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     }
     
     msg!("   Total SOL reward: {} lamports", total_sol_reward);
-    msg!("   Total DogeBtc reward: {} tokens", total_dbtc_reward);
+    msg!("   Total MineBtc reward: {} tokens", total_minebtc_reward);
 
     player_data.total_sol_won += total_sol_reward;
     msg!("     Total SOL won: {} (+{})", player_data.total_sol_won, total_sol_reward);
-    msg!("     Total DogeBtc won: {} (+{})", player_data.total_dbtc_won, total_dbtc_reward);
+    msg!("     Total MineBtc won: {} (+{})", player_data.total_minebtc_won, total_minebtc_reward);
 
     // Transfer SOL winnings directly to user from prize pot vault
     if total_sol_reward > 0 {
@@ -877,8 +894,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         )?;
     }
 
-    helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, total_dbtc_reward);
-    msg!("     Pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards, total_dbtc_reward);
+    helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, total_minebtc_reward);
+    msg!("     Pending MineBtc rewards: {} (+{})", player_data.pending_minebtc_rewards, total_minebtc_reward);
         
     // Remove round from player's active rounds list
     msg!("   Removing round from player's active rounds list...");
@@ -905,7 +922,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         player_data: ctx.accounts.player_data.key(),
         round_id: user_bet.round_id,
         sol_reward: total_sol_reward,
-        dbtc_reward: total_dbtc_reward,
+        minebtc_reward: total_minebtc_reward,
         timestamp: Clock::get()?.unix_timestamp,
     });
     
@@ -991,7 +1008,7 @@ fn internal_join_round<'info>(
         // Calculate fees using protocol_fee_pct from GlobalConfig
         let (net, fee_amount) = handle_fee(amount, global_config.sol_fee_config.protocol_fee_pct as u64)?;
 
-        // Calculate faction staker fees (split between dbtc and LP stakers)
+        // Calculate faction staker fees (split between minebtc and LP stakers)
         let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
         game_session.stakers_fee += stakers_fee;
 
