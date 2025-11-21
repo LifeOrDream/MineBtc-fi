@@ -1,4 +1,4 @@
-//! Curve invariant implementations
+// Curve invariant implementations
 
 pub mod calculator;
 pub mod constant_product;

@@ -1,18 +1,18 @@
-//! # State Definitions
-//!
-//! This module defines all the account structures and constants used in the MineBTC program.
-//!
-//! ## Key Accounts
-//!
-//! - `GlobalConfig`: Stores global configuration parameters (fees, authorities, etc.).
-//! - `GlobalGameState`: Tracks the overall game state, including active rounds and pots.
-//! - `FactionState`: Stores statistics and reward pools for each faction.
-//! - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
-//! - `GameSession`: Represents a single game round, tracking bets and outcomes.
-//! - `MineBtcMining`: Manages the mining emission and distribution logic.
-//! - `EggConfig`: Configuration for the Dragon Egg NFT system.
-//! - `TaxConfig`: Configuration for the tax and burn system.
-//!
+// # State Definitions
+//
+// This module defines all the account structures and constants used in the MineBTC program.
+//
+// ## Key Accounts
+//
+// - `GlobalConfig`: Stores global configuration parameters (fees, authorities, etc.).
+// - `GlobalGameState`: Tracks the overall game state, including active rounds and pots.
+// - `FactionState`: Stores statistics and reward pools for each faction.
+// - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
+// - `GameSession`: Represents a single game round, tracking bets and outcomes.
+// - `MineBtcMining`: Manages the mining emission and distribution logic.
+// - `EggConfig`: Configuration for the Dragon Egg NFT system.
+// - `TaxConfig`: Configuration for the tax and burn system.
+//
 
 use anchor_lang::prelude::*;
 

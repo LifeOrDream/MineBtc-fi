@@ -1,19 +1,19 @@
-//! # Admin Instructions
-//!
-//! This module contains administrative functions for configuring and managing the MineBTC program.
-//!
-//! ## Key Functions
-//!
-//! - `initialize`: Sets up the initial global configuration.
-//! - `update_config`: Updates global parameters like authorities and fees.
-//! - `add_faction`: Registers new factions in the game.
-//! - `initialize_mining`: Starts the token mining process.
-//! - `initialize_egg_config`: Sets up the Dragon Egg NFT system.
-//! - `initialize_tax_config`: Configures the tax and burn mechanisms.
-//! - `initialize_game_state`: Prepares the game state for the first round.
-//!
-//! Only authorized administrators (or the program authority) can call these functions.
-//!
+// # Admin Instructions
+//
+// This module contains administrative functions for configuring and managing the MineBTC program.
+//
+// ## Key Functions
+//
+// - `initialize`: Sets up the initial global configuration.
+// - `update_config`: Updates global parameters like authorities and fees.
+// - `add_faction`: Registers new factions in the game.
+// - `initialize_mining`: Starts the token mining process.
+// - `initialize_egg_config`: Sets up the Dragon Egg NFT system.
+// - `initialize_tax_config`: Configures the tax and burn mechanisms.
+// - `initialize_game_state`: Prepares the game state for the first round.
+//
+// Only authorized administrators (or the program authority) can call these functions.
+//
 
 use crate::events::*;
 use crate::state::*;

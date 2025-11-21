@@ -11,33 +11,33 @@ use anchor_spl::token_2022::spl_token_2022::extension::{
 };
 use anchor_spl::token_interface::{harvest_withheld_tokens_to_mint, HarvestWithheldTokensToMint, withdraw_withheld_tokens_from_mint, WithdrawWithheldTokensFromMint};
 
-//! # Tax and Distribution Instructions
-//!
-//! This module implements the deflationary tax system for MineBTC using Token-2022 transfer fees.
-//!
-//! ## Tax Mechanics
-//!
-//! All MineBTC transfers incur a 1% tax, which is:
-//! - **Burned**: Reducing total supply and increasing scarcity.
-//! - **NFT Floor Sweep**: Allocated for NFT buyback and floor support.
-//! - **Faction Treasury**: Distributed to factions based on performance rankings.
-//!
-//! ## Distribution Rounds
-//!
-//! Every 7 days, a distribution round calculates faction rankings based on total hashpower:
-//! 1. Factions are ranked by hashpower (highest to lowest).
-//! 2. Rewards are distributed using a tiered model (top factions earn more).
-//! 3. Each faction claims rewards, which are distributed to their stakers.
-//!
-//! ## Key Functions
-//!
-//! - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
-//! - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
-//! - `start_distribution_round`: Initiates a new 7-day distribution cycle.
-//! - `calculate_faction_leaderboard_position`: Ranks one faction by hashpower.
-//! - `calculate_faction_rewards`: Computes rewards for all factions.
-//! - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
-//!
+// # Tax and Distribution Instructions
+//
+// This module implements the deflationary tax system for MineBTC using Token-2022 transfer fees.
+//
+// ## Tax Mechanics
+//
+// All MineBTC transfers incur a 1% tax, which is:
+// - **Burned**: Reducing total supply and increasing scarcity.
+// - **NFT Floor Sweep**: Allocated for NFT buyback and floor support.
+// - **Faction Treasury**: Distributed to factions based on performance rankings.
+//
+// ## Distribution Rounds
+//
+// Every 7 days, a distribution round calculates faction rankings based on total hashpower:
+// 1. Factions are ranked by hashpower (highest to lowest).
+// 2. Rewards are distributed using a tiered model (top factions earn more).
+// 3. Each faction claims rewards, which are distributed to their stakers.
+//
+// ## Key Functions
+//
+// - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
+// - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
+// - `start_distribution_round`: Initiates a new 7-day distribution cycle.
+// - `calculate_faction_leaderboard_position`: Ranks one faction by hashpower.
+// - `calculate_faction_rewards`: Computes rewards for all factions.
+// - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
+//
 
 use crate::errors::ErrorCode;
 use crate::events::*;

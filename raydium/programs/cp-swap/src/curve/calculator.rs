@@ -1,4 +1,4 @@
-//! Swap calculations
+// Swap calculations
 
 use crate::curve::{constant_product::ConstantProductCurve, fees::Fees};
 use anchor_lang::prelude::*;

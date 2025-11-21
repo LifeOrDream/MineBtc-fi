@@ -1,19 +1,19 @@
-//! # User Instructions
-//!
-//! This module handles all user-facing interactions in the MineBTC Faction Surge game.
-//!
-//! ## Key Functions
-//!
-//! - `initialize_player`: Creates a new player account and assigns them to a faction.
-//! - `change_faction`: Allows players to switch factions (requires no active stakes).
-//! - `join_round`: Places a bet on a block or faction for the current round.
-//! - `join_round_batch`: Places multiple bets in a single transaction.
-//! - `claim_round_rewards`: Claims winnings from completed rounds.
-//! - `init_autominer`: Sets up an automated betting system for recurring bets.
-//! - `execute_autominer_bet`: Executes an autominer bet (keeper function).
-//!
-//! Players can earn rewards through winning bets, same-faction bonuses, motherlode jackpots, and referrals.
-//!
+// # User Instructions
+//
+// This module handles all user-facing interactions in the MineBTC Faction Surge game.
+//
+// ## Key Functions
+//
+// - `initialize_player`: Creates a new player account and assigns them to a faction.
+// - `change_faction`: Allows players to switch factions (requires no active stakes).
+// - `join_round`: Places a bet on a block or faction for the current round.
+// - `join_round_batch`: Places multiple bets in a single transaction.
+// - `claim_round_rewards`: Claims winnings from completed rounds.
+// - `init_autominer`: Sets up an automated betting system for recurring bets.
+// - `execute_autominer_bet`: Executes an autominer bet (keeper function).
+//
+// Players can earn rewards through winning bets, same-faction bonuses, motherlode jackpots, and referrals.
+//
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;

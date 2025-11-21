@@ -3,19 +3,19 @@ use anchor_spl::token::Token;
 use anchor_spl::associated_token::AssociatedToken;
 use std::io::Write;
 use crate::errors::ErrorCode;
-//! # Dragon Egg Instructions
-//!
-//! This module manages the Dragon Egg NFT system, which provides hashpower multipliers to players.
-//!
-//! ## Key Functions
-//!
-//! - `batch_mint_dragon_eggs`: Mints new Dragon Egg NFTs using a bonding curve pricing model.
-//! - `stake_dragon_egg`: Stakes an egg to boost a player's hashpower.
-//! - `unstake_dragon_egg`: Unstakes an egg and removes the boost.
-//! - `claim_power`: Distributes accumulated power points to staked eggs.
-//!
-//! Dragon Eggs are a core mechanic for increasing mining efficiency and earning potential.
-//!
+// # Dragon Egg Instructions
+//
+// This module manages the Dragon Egg NFT system, which provides hashpower multipliers to players.
+//
+// ## Key Functions
+//
+// - `batch_mint_dragon_eggs`: Mints new Dragon Egg NFTs using a bonding curve pricing model.
+// - `stake_dragon_egg`: Stakes an egg to boost a player's hashpower.
+// - `unstake_dragon_egg`: Unstakes an egg and removes the boost.
+// - `claim_power`: Distributes accumulated power points to staked eggs.
+//
+// Dragon Eggs are a core mechanic for increasing mining efficiency and earning potential.
+//
 
 use crate::events::*;
 use crate::state::*;

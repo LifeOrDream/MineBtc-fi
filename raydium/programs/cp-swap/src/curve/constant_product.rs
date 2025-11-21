@@ -1,4 +1,4 @@
-//! The Uniswap invariantConstantProductCurve::
+// The Uniswap invariantConstantProductCurve::
 
 use crate::{
     curve::calculator::{RoundDirection, TradingTokenResult},

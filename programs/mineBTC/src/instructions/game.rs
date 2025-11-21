@@ -1,23 +1,23 @@
-//! # Game Instructions
-//!
-//! This module implements the core game loop for the MineBTC Faction Surge betting game.
-//!
-//! ## Game Mechanics
-//!
-//! The game operates in rounds where:
-//! 1. A cranker bot starts a new round by committing a randomness hash (commit-reveal scheme).
-//! 2. Players bet SOL on specific blocks (1-24) or factions (highest/lowest).
-//! 3. After the round ends, the cranker reveals the seed to select a winning block.
-//! 4. Winners receive SOL and MineBTC rewards; stakers and same-faction bettors also earn rewards.
-//!
-//! ## Key Functions
-//!
-//! - `start_round`: Initializes a new round with committed randomness.
-//! - `end_round`: Reveals the seed, selects the winning block, and calculates initial rewards.
-//! - `end_round_faction_rewards`: Distributes MineBTC rewards to stakers and faction pools.
-//!
-//! The commit-reveal randomness system ensures fairness and prevents manipulation.
-//!
+// # Game Instructions
+//
+// This module implements the core game loop for the MineBTC Faction Surge betting game.
+//
+// ## Game Mechanics
+//
+// The game operates in rounds where:
+// 1. A cranker bot starts a new round by committing a randomness hash (commit-reveal scheme).
+// 2. Players bet SOL on specific blocks (1-24) or factions (highest/lowest).
+// 3. After the round ends, the cranker reveals the seed to select a winning block.
+// 4. Winners receive SOL and MineBTC rewards; stakers and same-faction bettors also earn rewards.
+//
+// ## Key Functions
+//
+// - `start_round`: Initializes a new round with committed randomness.
+// - `end_round`: Reveals the seed, selects the winning block, and calculates initial rewards.
+// - `end_round_faction_rewards`: Distributes MineBTC rewards to stakers and faction pools.
+//
+// The commit-reveal randomness system ensures fairness and prevents manipulation.
+//
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;

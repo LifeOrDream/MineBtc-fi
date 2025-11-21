@@ -1,4 +1,4 @@
-//! All fee information, to be used for validation currently
+// All fee information, to be used for validation currently
 
 pub const FEE_RATE_DENOMINATOR_VALUE: u64 = 1_000_000;
 

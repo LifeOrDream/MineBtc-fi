@@ -1,12 +1,12 @@
 {
-  "RAYDIUM_CP_PROGRAM_ID": "7y87R8GW6WuPGPbLo89jS4oMwDZLDvwXgHuVSEMM8as7",
+  "RAYDIUM_CP_PROGRAM_ID": "CD5ocftPAwWtMaghgcf2jZhZgCSEUmTZx3eX5Xr6AUA7",
   "raydium_last_deployment": {
-    "timestamp": "2025-11-21T11:19:41.215Z",
+    "timestamp": "2025-11-21T12:18:45.964Z",
     "cluster": "localnet"
   },
-  "MINE_BTC_PROGRAM_ID": "9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A",
+  "MINE_BTC_PROGRAM_ID": "83A69ZNUj4nWBvXoZJ8fqcZ1EaSNVHayi7tTPRBqarFq",
   "game_programs_deployment": {
-    "timestamp": "2025-11-21T11:21:02.343Z",
+    "timestamp": "2025-11-21T12:22:56.832Z",
     "cluster": "localnet"
   }
 }

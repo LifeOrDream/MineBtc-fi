@@ -1,17 +1,17 @@
 use crate::errors::ErrorCode;
-//! # Economy Instructions
-//!
-//! This module handles the economic mechanisms of the MineBTC program, including fee distribution,
-//! price discovery, and liquidity management.
-//!
-//! ## Key Functions
-//!
-//! - `distribute_sol_fees_internal`: Distributes collected SOL fees to protocol, buybacks, and stakers.
-//! - `snapshot_price_internal`: Takes a price snapshot from the Raydium pool for the dynamic distribution rate.
-//! - `update_rate_and_add_lp_internal`: Updates the mining emission rate based on price history and adds liquidity.
-//!
-//! These functions ensure the economic stability and sustainability of the ecosystem.
-//!
+// # Economy Instructions
+//
+// This module handles the economic mechanisms of the MineBTC program, including fee distribution,
+// price discovery, and liquidity management.
+//
+// ## Key Functions
+//
+// - `distribute_sol_fees_internal`: Distributes collected SOL fees to protocol, buybacks, and stakers.
+// - `snapshot_price_internal`: Takes a price snapshot from the Raydium pool for the dynamic distribution rate.
+// - `update_rate_and_add_lp_internal`: Updates the mining emission rate based on price history and adds liquidity.
+//
+// These functions ensure the economic stability and sustainability of the ecosystem.
+//
 
 use crate::events::*;
 use crate::state::*;

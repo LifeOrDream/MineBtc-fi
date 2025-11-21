@@ -1,25 +1,25 @@
-//! # MineBTC Program
-//!
-//! The main entry point for the MineBTC program.
-//!
-//! This program implements a faction-based betting and mining game on Solana.
-//! Users can join factions, place bets on blocks, mine MineBTC tokens, and stake assets for rewards.
-//!
-//! ## Modules
-//!
-//! - `admin`: Administrative functions for configuration and management.
-//! - `economy`: Tokenomics, fee distribution, and liquidity management.
-//! - `user`: User interactions, betting, and account management.
-//! - `stake`: Staking logic for MineBTC and LP tokens.
-//! - `game`: Core game loop, round management, and randomness.
-//! - `eggs`: Dragon Egg NFT system for hashpower multipliers.
-//! - `tax`: Tax system for deflationary mechanics and reward distribution.
-//!
-//! ## Architecture
-//!
-//! The program uses a hub-and-spoke architecture with `GlobalConfig` and `GlobalGameState` as central
-//! state accounts. Users interact through `PlayerData` accounts, and factions are tracked via `FactionState`.
-//!
+// # MineBTC Program
+//
+// The main entry point for the MineBTC program.
+//
+// This program implements a faction-based betting and mining game on Solana.
+// Users can join factions, place bets on blocks, mine MineBTC tokens, and stake assets for rewards.
+//
+// ## Modules
+//
+// - `admin`: Administrative functions for configuration and management.
+// - `economy`: Tokenomics, fee distribution, and liquidity management.
+// - `user`: User interactions, betting, and account management.
+// - `stake`: Staking logic for MineBTC and LP tokens.
+// - `game`: Core game loop, round management, and randomness.
+// - `eggs`: Dragon Egg NFT system for hashpower multipliers.
+// - `tax`: Tax system for deflationary mechanics and reward distribution.
+//
+// ## Architecture
+//
+// The program uses a hub-and-spoke architecture with `GlobalConfig` and `GlobalGameState` as central
+// state accounts. Users interact through `PlayerData` accounts, and factions are tracked via `FactionState`.
+//
 
 use anchor_lang::prelude::*;
 mod errors;
@@ -39,7 +39,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, MineBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A");
+declare_id!("83A69ZNUj4nWBvXoZJ8fqcZ1EaSNVHayi7tTPRBqarFq");
 
 #[program]
 pub mod minebtc {

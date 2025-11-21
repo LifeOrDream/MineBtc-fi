@@ -2,30 +2,30 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program::System;
 use anchor_spl::token::{self, Token};
 
-//! # Staking Instructions
-//!
-//! This module implements the staking system for MineBTC and LP tokens.
-//!
-//! ## Staking Mechanics
-//!
-//! Players can stake MineBTC or LP tokens to earn passive rewards:
-//! - **SOL Rewards**: Distributed from staker fees collected on game bets.
-//! - **MineBTC Rewards**: Distributed from the mining emission pool.
-//!
-//! Longer lockup periods grant higher hashpower multipliers, increasing reward share.
-//!
-//! ## Key Functions
-//!
-//! - `stake_minebtc`: Stakes MineBTC tokens with a specified lockup duration.
-//! - `unstake_minebtc`: Unstakes MineBTC tokens after the lockup period expires.
-//! - `stake_lp_tokens`: Stakes LP tokens for dual rewards (SOL + MineBTC).
-//! - `unstake_lp_tokens`: Unstakes LP tokens after lockup.
-//! - `claim_sol_rewards`: Claims accumulated SOL rewards from staking.
-//! - `claim_minebtc_rewards`: Claims accumulated MineBTC rewards (with refining fee).
-//! - `claim_referral_rewards`: Claims referral earnings.
-//!
-//! The refining fee on MineBTC claims is redistributed to all stakers, creating a deflationary reward loop.
-//!
+// # Staking Instructions
+//
+// This module implements the staking system for MineBTC and LP tokens.
+//
+// ## Staking Mechanics
+//
+// Players can stake MineBTC or LP tokens to earn passive rewards:
+// - **SOL Rewards**: Distributed from staker fees collected on game bets.
+// - **MineBTC Rewards**: Distributed from the mining emission pool.
+//
+// Longer lockup periods grant higher hashpower multipliers, increasing reward share.
+//
+// ## Key Functions
+//
+// - `stake_minebtc`: Stakes MineBTC tokens with a specified lockup duration.
+// - `unstake_minebtc`: Unstakes MineBTC tokens after the lockup period expires.
+// - `stake_lp_tokens`: Stakes LP tokens for dual rewards (SOL + MineBTC).
+// - `unstake_lp_tokens`: Unstakes LP tokens after lockup.
+// - `claim_sol_rewards`: Claims accumulated SOL rewards from staking.
+// - `claim_minebtc_rewards`: Claims accumulated MineBTC rewards (with refining fee).
+// - `claim_referral_rewards`: Claims referral earnings.
+//
+// The refining fee on MineBTC claims is redistributed to all stakers, creating a deflationary reward loop.
+//
 
 use crate::errors::ErrorCode;
 use crate::events::*;
