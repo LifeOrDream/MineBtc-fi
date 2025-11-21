@@ -227,6 +227,7 @@ pub fn join_round(
         &mut ctx.accounts.user_game_bet,
         &ctx.accounts.user_wallet.to_account_info(),
         &ctx.accounts.sol_treasury.to_account_info(),
+        &ctx.accounts.sol_rewards_vault.to_account_info(),
         &ctx.accounts.sol_prize_pot_vault.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         ctx.bumps.user_game_bet,
@@ -330,6 +331,7 @@ pub fn join_round_batch(
             &mut ctx.accounts.user_game_bet,
             &ctx.accounts.user_wallet.to_account_info(),
             &ctx.accounts.sol_treasury.to_account_info(),
+            &ctx.accounts.sol_rewards_vault.to_account_info(),
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.user_game_bet,
@@ -679,6 +681,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             &mut ctx.accounts.user_game_bet,
             &ctx.accounts.autominer_vault.to_account_info(),
             &ctx.accounts.sol_treasury.to_account_info(),
+            &ctx.accounts.sol_rewards_vault.to_account_info(),
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.user_game_bet,
@@ -862,9 +865,19 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     msg!("     Total SOL won: {} (+{})", player_data.total_sol_won, total_sol_reward);
     msg!("     Total DogeBtc won: {} (+{})", player_data.total_dbtc_won, total_dbtc_reward);
 
-    player_data.pending_sol_rewards += total_sol_reward;
+    // Transfer SOL winnings directly to user from prize pot vault
+    if total_sol_reward > 0 {
+        msg!("   Transferring {} SOL winnings from prize pot to user", total_sol_reward as f64 / 1e9);
+        helper::transfer_from_sol_prize_pot_vault(
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            &ctx.accounts.user_wallet.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            total_sol_reward,
+            ctx.bumps.sol_prize_pot_vault,
+        )?;
+    }
+
     helper::add_to_total_claimable(&mut ctx.accounts.unrefined_rewards, player_data, total_dbtc_reward);
-    msg!("     Pending SOL rewards: {} (+{})", player_data.pending_sol_rewards, total_sol_reward);
     msg!("     Pending DogeBtc rewards: {} (+{})", player_data.pending_dbtc_rewards, total_dbtc_reward);
         
     // Remove round from player's active rounds list
@@ -925,6 +938,7 @@ fn internal_join_round<'info>(
     user_game_bet: &mut Account<'info, UserGameBet>,
     payer: &AccountInfo<'info>,
     sol_treasury: &AccountInfo<'info>,
+    sol_rewards_vault: &AccountInfo<'info>,
     sol_prize_pot_vault: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     user_game_bet_bump: u8,
@@ -980,6 +994,13 @@ fn internal_join_round<'info>(
         // Calculate faction staker fees (split between dbtc and LP stakers)
         let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
         game_session.stakers_fee += stakers_fee;
+
+        // Transfer stakers fee to sol_rewards_vault
+        if stakers_fee > 0 {
+             msg!("   Transferring stakers fees ({} SOL) to sol_rewards_vault", (stakers_fee as f64 / 1_000_000_000.0));
+             helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, stakers_fee)?;
+             msg!("     ✓ Stakers fees transferred to sol_rewards_vault");
+        }
 
 
 
@@ -1506,6 +1527,14 @@ pub struct JoinRound<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
     
+    /// CHECK: SOL rewards vault (staker fees go here)
+    #[account(
+        mut,
+        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_rewards_vault: UncheckedAccount<'info>,
+    
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
@@ -1572,6 +1601,14 @@ pub struct JoinRoundBatch<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
     
+    /// CHECK: SOL rewards vault (staker fees go here)
+    #[account(
+        mut,
+        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_rewards_vault: UncheckedAccount<'info>,
+    
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
@@ -1619,6 +1656,14 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
         
+    /// CHECK: SOL prize pot vault (PDA)
+    #[account(
+        mut,
+        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
     /// CHECK: UserGameBet PDA (validated in instruction)
     #[account(
         mut,
@@ -1749,6 +1794,14 @@ pub struct ExecuteAutominerBet<'info> {
         bump
     )]
     pub sol_treasury: UncheckedAccount<'info>,
+    
+    /// CHECK: SOL rewards vault (staker fees go here)
+    #[account(
+        mut,
+        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_rewards_vault: UncheckedAccount<'info>,
     
     /// CHECK: SOL prize pot vault
     #[account(

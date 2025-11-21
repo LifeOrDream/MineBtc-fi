@@ -16,7 +16,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, DogeBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("BggweUrzZ1hQv6zHrd2tY6UtWrSJYQC5rLxy9UGUEyfa");
+declare_id!("9L7Gc16Wi5CcBw8rDmXFWThdBkTDBpvLaDXdbFKQK95A");
 
 #[program]
 pub mod moonbase {

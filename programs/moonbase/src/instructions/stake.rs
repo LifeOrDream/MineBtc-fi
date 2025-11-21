@@ -13,12 +13,7 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 
 const REFERRAL_FEE_PCT: u64 = 5; // 5% referral fee
 
-// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- INITIALIZE A USER'S ELECTRICITY ACCOUNT ------------------------ ------
-// --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-
-// Old initialize_player_account function removed - no longer needed for Faction Surge system
-// Users now initialize via initialize_player in moonbase program
+ 
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // ---- STAKE MOONDOGE TOKENS :: User gets electricity and SOL rewards ------

@@ -181,17 +181,17 @@ async function main() {
 
         // 1.6. Update Fees (if needed - can be called anytime after initialization)
         // Example usage:
-        await updateFees(moonbaseProgram, {
-            newProtocolFeePct: null, // 10,
-            newBuybackPct: null, //40,
-            newStakersPct: null, //50,
-            changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
-            snapshotInterval: 3, // 30 minutes in seconds
-        });
+        // await updateFees(moonbaseProgram, {
+        //     newProtocolFeePct: null, // 10,
+        //     newBuybackPct: 80, //40,
+        //     newStakersPct: null, //50,
+        //     changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
+        //     snapshotInterval: null, // 3, // 30 minutes in seconds
+        // });
 
         // 6. Set Raydium Pool State (for price discovery and swaps)
         await setRaydiumPoolState(moonbaseProgram);
-        return;
+        // return;
 
         // 3. Add Factions (12 factions for the raffle)
         await addFactions(moonbaseProgram);
@@ -238,7 +238,7 @@ async function main() {
         console.log(COLOR_STEP, '\n================ [ ADDING GAME CRANKER BOT ] ================');
         console.log(COLOR_INFO, `🔑 Game Cranker Bot: ${gameKeypair.publicKey.toString()}`);
 
-        await addGameCrankerBot(moonbaseProgram, gameKeypair.publicKey.toString());
+        await addGameCrankerBot(moonbaseProgram, "6658Pu1vFuJuJMCbnv7v9LfjUgEfmaNpKN4xGfbfiZbr");
 
         // Print completion summary
         // printCompletionSummary();

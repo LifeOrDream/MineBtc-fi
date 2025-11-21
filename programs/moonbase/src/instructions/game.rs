@@ -261,12 +261,15 @@ pub fn end_round(
         game_session.winning_block = initial_winning_block;
         game_session.winning_faction_id = winning_faction_id;
         game_session.same_faction_other_block = same_faction_other_block;
+        msg!("   🎯 Winning block selected: {} (Faction: {}). Same-faction other block: {}", initial_winning_block, winning_faction_id, same_faction_other_block);
+
         
         // Update global state
         global_state.last_round_id = game_session.round_id;
         global_state.winning_faction_id = winning_faction_id;
         global_state.total_sol_bets = global_state.total_sol_bets + (game_session.total_sol_bets as u128);
         global_state.can_begin_round = true;
+        msg!("   Global state updated: last_round_id: {}, winning_faction_id: {}, total_sol_bets: {}, can_begin_round: {}", global_state.last_round_id, global_state.winning_faction_id, global_state.total_sol_bets, global_state.can_begin_round);
         
         // Skip to stage 2 (no rewards to claim, round is complete)
         game_session.stage = 2;
@@ -557,12 +560,8 @@ pub fn end_round_faction_rewards( ctx: Context<EndRoundFactionRewards>) -> Resul
         msg!("   Faction stakers SOL reward index: {} -> {} (+{})", faction_state.lp_sol_reward_index - sol_reward_inc, faction_state.lp_sol_reward_index, sol_reward_inc);
     }
     
-    // Transfer SOL staker fees to sol_rewards_vault
-    let payer = &ctx.accounts.authority.to_account_info();
-    let sol_rewards_vault = &ctx.accounts.sol_rewards_vault.to_account_info();
-    let system_program = &ctx.accounts.system_program.to_account_info();
-    helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, sol_staker_fees)?;
-    msg!("     ✓ DBTC stakers fee transferred to sol_rewards_vault");
+    // SOL staker fees are already collected in join_round directly to sol_rewards_vault
+    msg!("     ✓ SOL staker fees already collected: {} SOL", sol_staker_fees as f64 / 1_000_000_000.0);
  
 
     // Increment motherlode pot size (always, regardless of hit)    
