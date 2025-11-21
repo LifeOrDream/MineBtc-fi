@@ -50,6 +50,45 @@ pub fn transfer_to_eggs_treasury<'info>(
     )
 }
 
+pub fn transfer_to_autominer_custody<'info>(
+    from: &AccountInfo<'info>,
+    autominer_custody: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+) -> Result<()> {
+    transfer(
+        CpiContext::new(
+            system_program.to_account_info(),
+            Transfer {
+                from: from.to_account_info(),
+                to: autominer_custody.to_account_info(),
+            },
+        ),
+        amount,
+    )
+}
+
+pub fn transfer_from_autominer_custody<'info>(
+    autominer_custody: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    custody_bump: u8,
+) -> Result<()> {
+    let seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: autominer_custody.to_account_info(),
+                to: to.to_account_info(),
+            },
+            &[seeds],
+        ),
+        amount,
+    )
+}
+
 // Helper function to transfer SOL to the sol_rewards_vault PDA
 pub fn transfer_to_sol_rewards_vault<'info>(
     from: &AccountInfo<'info>,

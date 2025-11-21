@@ -156,6 +156,19 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     )?;
     msg!("     ✓ 1 lamport transferred to Eggs treasury");
 
+    msg!("   Transferring 1 lamport to Autominer custody for rent-exempt status...");
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: ctx.accounts.authority.to_account_info(),
+                to: ctx.accounts.autominer_custody.to_account_info(),
+            },
+        ),
+        1,
+    )?;
+    msg!("     ✓ 1 lamport transferred to Autominer custody");
+
     // Initialize MineBtcMining
     msg!("   Initializing MineBtcMining...");
     mine_btc_mining.minebtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
@@ -1285,6 +1298,17 @@ pub struct Initialize<'info> {
         owner = system_program.key()  // System-owned account for native SOL
     )]
     pub eggs_treasury: UncheckedAccount<'info>,
+
+    /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [AUTOMINER_CUSTODY_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub autominer_custody: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

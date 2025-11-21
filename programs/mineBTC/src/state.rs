@@ -93,6 +93,7 @@ pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
 pub const GAME_SESSION_SEED: &[u8] = b"game-session"; // Seed: [b"game-session", round_id_u64]
 pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_pubkey, round_id_u64]
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
+pub const AUTOMINER_CUSTODY_SEED: &[u8] = b"autominer-custody";
 pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 
@@ -1121,7 +1122,7 @@ pub enum FactionStrategy {
 }
 
 /// Autominer Vault PDA (Seed: `[b"autominer", user_pubkey]`)
-/// This PDA also acts as a SOL vault by holding lamports
+/// Stores autominer configuration for a user; funds are held in the global autominer custody PDA
 /// Allows users to configure automatic betting with flexible block/faction selection
 #[account]
 pub struct AutominerVault {
@@ -1137,6 +1138,8 @@ pub struct AutominerVault {
     /// Last round ID where bets were placed (to prevent duplicate bets)
     pub last_bet_round_id: u64,
     pub vault_bump: u8,
+    /// Remaining SOL balance reserved for this autominer (held in autominer custody PDA)
+    pub sol_balance: u64,
 }
 
 impl AutominerVault {
@@ -1156,5 +1159,6 @@ impl AutominerVault {
         8 +     // sol_per_round
         4 +     // rounds_remaining (u32)
         8 +     // last_bet_round_id
-        1;      // vault_bump
+        1 +     // vault_bump
+        8;      // sol_balance
 }

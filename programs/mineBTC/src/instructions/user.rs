@@ -17,6 +17,7 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
+use anchor_lang::system_program::{transfer, Transfer};
 use anchor_spl::token::Token;
 use anchor_spl::associated_token::AssociatedToken;
 
@@ -235,7 +236,7 @@ pub fn join_round(
     msg!("🎲 [join_round] User joining round (single bet). User: {}", ctx.accounts.authority.key());
     msg!("   Bet type: {:?}", bet_type);
         
-    // Call internal join_round with user as payer
+    // Call internal join_round with user as payer (None for signer_seeds - user signs the tx)
     let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
@@ -252,6 +253,7 @@ pub fn join_round(
         amount,
         bet_type.clone(),
         use_ticket,
+        None, // User wallet signs the transaction
     )?;
  
     
@@ -339,7 +341,7 @@ pub fn join_round_batch(
     for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
         msg!("   Placing bet {} of {}: {:?}", idx + 1, expanded_bet_types.len(), bet_type);
         
-        // Call internal join_round for each bet
+        // Call internal join_round for each bet (None for signer_seeds - user signs the tx)
         let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
             &ctx.accounts.global_game_state,
             &ctx.accounts.global_config,
@@ -356,6 +358,7 @@ pub fn join_round_batch(
             amount_per_bet,
             bet_type.clone(),
             use_ticket,
+            None, // User wallet signs the transaction
         )?;
         
         target_blocks.push(target_block);
@@ -471,6 +474,12 @@ pub fn init_autominer(
     let has_blocks_config = blocks_config.is_some();
     let has_factions_config = factions_config.is_some();
 
+    // Calculate total SOL needed: sol_per_round × num_rounds
+    // Note: Rent is already handled by init_if_needed if account is new
+    msg!("   Calculating total SOL needed...");
+    let total_sol = sol_per_round * num_rounds as u64;
+    msg!("     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)", (total_sol as f64 / 1e9), num_rounds, (sol_per_round as f64 / 1e9));
+    
     autominer_vault.owner = ctx.accounts.user_wallet.key();
     autominer_vault.blocks_config = blocks_config;
     autominer_vault.factions_config = factions_config;
@@ -478,31 +487,17 @@ pub fn init_autominer(
     autominer_vault.rounds_remaining = num_rounds;
     autominer_vault.last_bet_round_id = 0;
     autominer_vault.vault_bump = ctx.bumps.autominer_vault;
+    autominer_vault.sol_balance = total_sol;
     msg!("     Vault initialized for owner: {}", autominer_vault.owner);
     
-    // Calculate total SOL needed: sol_per_round × num_rounds + rent (if new account)
-    msg!("   Calculating total SOL needed...");
-    let total_sol = sol_per_round * num_rounds as u64;
-    msg!("     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)", (total_sol as f64 / 1e9), num_rounds, (sol_per_round as f64 / 1e9));
-    
-    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
-    
-    // If vault already exists, only transfer the SOL needed
-    // If new vault, also need rent
-    let total_transfer = if vault_lamports == 0 {
-        total_sol + rent
-    } else {
-        total_sol
-    };
-    
-    msg!("     Rent: {} lamports", rent);
-    msg!("     Total transfer: {} lamports", total_transfer);
-    
-    // Transfer SOL to vault
-    msg!("   Transferring SOL to vault...");
-    **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? += total_transfer;
-    **ctx.accounts.user_wallet.to_account_info().try_borrow_mut_lamports()? -= total_transfer;
+    // Transfer SOL to global autominer custody
+    msg!("   Transferring SOL to autominer custody...");
+    helper::transfer_to_autominer_custody(
+        &ctx.accounts.user_wallet.to_account_info(),
+        &ctx.accounts.autominer_custody.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        total_sol,
+    )?;
 
     msg!("✅ [init_autominer] Autominer initialized successfully");
     msg!("   {} SOL per round, {} rounds ({} SOL total)", (sol_per_round as f64 / 1e9), num_rounds, (total_sol as f64 / 1e9));
@@ -546,17 +541,26 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     let clock = Clock::get()?;
     
     // Read values before mutable borrow
+    let owner_key = ctx.accounts.autominer_vault.owner;
     let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
     let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
     let sol_per_round = ctx.accounts.autominer_vault.sol_per_round;
     let blocks_config = ctx.accounts.autominer_vault.blocks_config.clone(); // Already Option<BlocksConfig>
     let factions_config = ctx.accounts.autominer_vault.factions_config.clone();
+    let sol_balance = ctx.accounts.autominer_vault.sol_balance;
+    let custody_bump = ctx.bumps.autominer_custody;
+    let autominer_custody_info = ctx.accounts.autominer_custody.to_account_info();
+
+    if rounds_remaining == 0 {
+        Ok(())
+    }
     
     msg!("   Vault state:");
     msg!("     Rounds remaining: {}. Last bet round ID: {}. SOL per round: {} SOL", rounds_remaining, last_bet_round_id, (sol_per_round as f64 / 1e9));
     msg!("   Current round ID: {}. Current timestamp: {}. Round end timestamp: {}", global_state.current_round_id, clock.unix_timestamp, global_state.round_end_timestamp);
     
     require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
+    require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
     require!(clock.unix_timestamp < global_state.round_end_timestamp, ErrorCode::RoundEnded);
     require!(last_bet_round_id != global_state.current_round_id, ErrorCode::InvalidRound);
     
@@ -601,14 +605,25 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         (sol_for_betting as f64 / 1e9), 
         bet_types.len());
     
-    // Pay caller compensation
+    // Pay caller compensation (transfer from custody PDA to caller)
     if total_caller_compensation > 0 {
         msg!("   Paying caller compensation...");
-        let caller_before = ctx.accounts.caller.lamports();
-        **ctx.accounts.caller.to_account_info().try_borrow_mut_lamports()? += total_caller_compensation;
-        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= total_caller_compensation;
-        let caller_after = ctx.accounts.caller.lamports();
-        msg!("     Caller: {} -> {} lamports (+{})", caller_before, caller_after, total_caller_compensation);
+        let autominer_seeds = &[
+            AUTOMINER_CUSTODY_SEED.as_ref(),
+            &[custody_bump],
+        ];
+        transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                Transfer {
+                    from: autominer_custody_info.clone(),
+                    to: ctx.accounts.caller.to_account_info(),
+                },
+                &[autominer_seeds],
+            ),
+            total_caller_compensation,
+        )?;
+        msg!("     Caller compensation: {} SOL transferred", (total_caller_compensation as f64 / 1e9));
     }
     
     // Now borrow mutably to update state
@@ -626,28 +641,14 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     autominer_vault.rounds_remaining = new_rounds_remaining;
     msg!("   Updated rounds_remaining: {} -> {}", rounds_remaining, new_rounds_remaining);
     
-    // If no rounds remaining, close vault and return remaining SOL
-    if new_rounds_remaining == 0 {
-        msg!("   No rounds remaining - closing vault and returning remaining SOL...");
-        let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-        let remaining_sol = ctx.accounts.autominer_vault.to_account_info()
-            .lamports()
-            .checked_sub(rent)
-            .ok_or(ErrorCode::InsufficientFunds)?;
-        
-        let owner_before = ctx.accounts.owner.lamports();
-        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
-        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
-        let owner_after = ctx.accounts.owner.lamports();
-        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
-        msg!("     Vault closed");
-    }
+    // Update remaining SOL balance tracked for this autominer
+    autominer_vault.sol_balance = autominer_vault
+        .sol_balance
+        .checked_sub(sol_per_round)
+        .ok_or(ErrorCode::InsufficientFunds)?;
     
     // Place bets using join_round_batch
     msg!("   Placing {} bets for round {} using join_round_batch...", bet_types.len(), current_round_id);
-    
-    // Use internal join_round_batch logic but with autominer vault as payer
-    let owner_key = ctx.accounts.autominer_vault.owner;
     
     // Expand bet types (handle FactionBoth and RandomBlock)
     let mut expanded_bet_types = Vec::new();
@@ -680,8 +681,8 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     let mut net_amounts = Vec::new();
     let mut fee_amounts = Vec::new();
     let mut points_amounts = Vec::new();
+
     // Place each bet using internal_join_round
-    // Note: No faction validation needed - faction_state is not required for betting
     for (idx, bet_type) in expanded_bet_types.iter().enumerate() {
         msg!("     Placing bet {} of {}: {:?} for {} SOL", 
             idx + 1, 
@@ -689,14 +690,20 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             bet_type, 
             (bet_size_per_bet as f64 / 1e9));
         
-        // Call internal_join_round with autominer vault as payer
+        // Prepare PDA signer seeds for autominer custody
+        let autominer_seeds = &[
+            AUTOMINER_CUSTODY_SEED.as_ref(),
+            &[custody_bump],
+        ];
+        
+        // Call internal_join_round with autominer vault as payer (PDA signs via seeds)
         let (target_block, net_amount, fee_amount, points_amount) = internal_join_round(
             &ctx.accounts.global_game_state,
             &ctx.accounts.global_config,
             &mut ctx.accounts.player_data,
             &mut ctx.accounts.game_session,
             &mut ctx.accounts.user_game_bet,
-            &ctx.accounts.autominer_vault.to_account_info(),
+            &autominer_custody_info,
             &ctx.accounts.sol_treasury.to_account_info(),
             &ctx.accounts.sol_rewards_vault.to_account_info(),
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
@@ -706,6 +713,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
             bet_size_per_bet,
             bet_type.clone(),
             None, // autominer always uses SOL, not tickets
+            Some(autominer_seeds), // PDA signs via seeds
         )?;
         
         target_blocks.push(target_block);
@@ -752,7 +760,7 @@ pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     // Read values before mutable borrow
     let owner_key = ctx.accounts.autominer_vault.owner;
     let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
-    let vault_lamports = ctx.accounts.autominer_vault.to_account_info().lamports();
+    let sol_balance = ctx.accounts.autominer_vault.sol_balance;
     
     msg!("   Owner: {}", owner_key);
     
@@ -763,26 +771,21 @@ pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     );
     msg!("     ✓ Caller is owner");
     
-    // Calculate remaining SOL (after rent)
-    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
-    let remaining_sol = vault_lamports
-        .checked_sub(rent)
-        .ok_or(ErrorCode::InsufficientFunds)?;
-    
     msg!("   Vault state:");
     msg!("     Rounds remaining: {}", rounds_remaining);
-    msg!("     Vault lamports: {}", vault_lamports);
-    msg!("     Rent: {}", rent);
-    msg!("     Remaining SOL to refund: {}", remaining_sol);
+    msg!("     Remaining SOL to refund: {}", sol_balance);
     
-    // Refund remaining SOL to owner
-    if remaining_sol > 0 {
-        msg!("   Refunding {} lamports to owner...", remaining_sol);
-        let owner_before = ctx.accounts.owner.lamports();
-        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += remaining_sol;
-        **ctx.accounts.autominer_vault.to_account_info().try_borrow_mut_lamports()? -= remaining_sol;
-        let owner_after = ctx.accounts.owner.lamports();
-        msg!("     Owner: {} -> {} lamports (+{})", owner_before, owner_after, remaining_sol);
+    // Refund remaining SOL to owner (transfer from custody PDA to owner)
+    if sol_balance > 0 {
+        msg!("   Refunding {} SOL to owner...", (sol_balance as f64 / 1e9));
+        helper::transfer_from_autominer_custody(
+            &ctx.accounts.autominer_custody.to_account_info(),
+            &ctx.accounts.owner.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            sol_balance,
+            ctx.bumps.autominer_custody,
+        )?;
+        msg!("     ✓ Refunded {} SOL to owner", (sol_balance as f64 / 1e9));
     }
     
     // Now borrow mutably to update state
@@ -794,17 +797,18 @@ pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     autominer_vault.blocks_config = None;
     autominer_vault.factions_config = None;
     autominer_vault.sol_per_round = 0;
+    autominer_vault.sol_balance = 0;
     msg!("   Reset vault state: rounds_remaining = 0, last_bet_round_id = 0");
     
     msg!("✅ [stop_autominer] Autominer stopped successfully");
-    msg!("   Refunded {} lamports to owner", remaining_sol);
+    msg!("   Refunded {} SOL to owner", (sol_balance as f64 / 1e9));
     
     emit!(AutominerStopped {
         owner: owner_key,
         player_data: ctx.accounts.player_data.key(),
         autominer_vault: ctx.accounts.autominer_vault.key(),
         rounds_remaining,
-        refund_amount: remaining_sol,
+        refund_amount: sol_balance,
         timestamp: Clock::get()?.unix_timestamp,
     });
     
@@ -945,6 +949,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
 /// Internal join_round logic that can be called by both user and autominer
 /// Payer can be either user wallet or autominer vault PDA
+/// signer_seeds: Optional PDA seeds for signing transfers (None for user wallet, Some(seeds) for PDA)
 /// Returns (net_amount, fee_amount, points_amount) for event emission
 #[allow(clippy::too_many_arguments)]
 fn internal_join_round<'info>(
@@ -963,6 +968,7 @@ fn internal_join_round<'info>(
     amount: u64,
     bet_type: BetType,
     use_ticket: Option<u8>,
+    signer_seeds: Option<&[&[u8]]>, // PDA seeds for autominer vault transfers
 ) -> Result<(u8, u64, u64, u64)> {
     let clock = Clock::get()?;
     
@@ -1012,26 +1018,54 @@ fn internal_join_round<'info>(
         let stakers_fee = fee_amount * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
         game_session.stakers_fee += stakers_fee;
 
+        // Helper closure for flexible transfers (handles both user wallet and PDA)
+        let do_transfer = |to: &AccountInfo<'info>, amount: u64| -> Result<()> {
+            if let Some(seeds) = signer_seeds {
+                // Case A: Autominer (PDA is payer) - use new_with_signer
+                transfer(
+                    CpiContext::new_with_signer(
+                        system_program.to_account_info(),
+                        Transfer {
+                            from: payer.to_account_info(),
+                            to: to.to_account_info(),
+                        },
+                        &[seeds],
+                    ),
+                    amount,
+                )
+            } else {
+                // Case B: Manual User (Wallet is payer) - standard transfer
+                transfer(
+                    CpiContext::new(
+                        system_program.to_account_info(),
+                        Transfer {
+                            from: payer.to_account_info(),
+                            to: to.to_account_info(),
+                        },
+                    ),
+                    amount,
+                )
+            }
+        };
+
         // Transfer stakers fee to sol_rewards_vault
         if stakers_fee > 0 {
              msg!("   Transferring stakers fees ({} SOL) to sol_rewards_vault", (stakers_fee as f64 / 1_000_000_000.0));
-             helper::transfer_to_sol_rewards_vault(payer, sol_rewards_vault, system_program, stakers_fee)?;
+             do_transfer(sol_rewards_vault, stakers_fee)?;
              msg!("     ✓ Stakers fees transferred to sol_rewards_vault");
         }
-
-
 
         // Transfer remaining protocol fees to sol_treasury
         let protocol_fee = fee_amount - stakers_fee;
         if protocol_fee > 0 {
             msg!("   Transferring protocol fees ({} SOL) to sol_treasury", (protocol_fee as f64 / 1_000_000_000.0));
-            helper::transfer_to_sol_treasury(payer, sol_treasury, system_program, protocol_fee)?;
+            do_transfer(sol_treasury, protocol_fee)?;
             msg!("     ✓ Protocol fees transferred to sol_treasury");
         }    
 
         // Transfer net amount to prize pot
         msg!("   Transferring net amount ({} SOL) to sol_prize_pot_vault", (net as f64 / 1_000_000_000.0));
-        helper::transfer_to_sol_prize_pot_vault(payer, sol_prize_pot_vault, system_program, net)?;
+        do_transfer(sol_prize_pot_vault, net)?;
         msg!("     ✓ Net amount transferred to prize pot");
         
         (fee_amount, net, net)
@@ -1711,6 +1745,14 @@ pub struct InitAutominer<'info> {
     )]
     pub autominer_vault: Account<'info, AutominerVault>,
 
+    /// CHECK: Global autominer custody PDA holding SOL deposits
+    #[account(
+        mut,
+        seeds = [AUTOMINER_CUSTODY_SEED.as_ref()],
+        bump
+    )]
+    pub autominer_custody: UncheckedAccount<'info>,
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
@@ -1738,6 +1780,14 @@ pub struct StopAutominer<'info> {
     )]
     pub autominer_vault: Account<'info, AutominerVault>,
     
+    /// CHECK: Autominer custody PDA holding SOL
+    #[account(
+        mut,
+        seeds = [AUTOMINER_CUSTODY_SEED.as_ref()],
+        bump
+    )]
+    pub autominer_custody: UncheckedAccount<'info>,
+
     #[account(
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
         bump
@@ -1766,6 +1816,14 @@ pub struct ExecuteAutominerBet<'info> {
         bump = autominer_vault.vault_bump
     )]
     pub autominer_vault: Account<'info, AutominerVault>,
+
+    /// CHECK: Autominer custody PDA holding SOL deposits
+    #[account(
+        mut,
+        seeds = [AUTOMINER_CUSTODY_SEED.as_ref()],
+        bump
+    )]
+    pub autominer_custody: UncheckedAccount<'info>,
 
     #[account(
         mut,
