@@ -194,6 +194,15 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("     Raydium pool state: {} (default)", mine_btc_mining.raydium_pool_state);
     msg!("     Recent price: {}", mine_btc_mining.recent_price);
 
+    // Initialize emission adjustment parameters with defaults
+    msg!("   Initializing emission adjustment parameters...");
+    mine_btc_mining.price_change_threshold = 3; // 3% threshold
+    mine_btc_mining.emission_increase_pct = 1; // 1% increase when price goes up
+    mine_btc_mining.emission_decrease_pct = 3; // 3% decrease when price goes down
+    msg!("     Price change threshold: {}%", mine_btc_mining.price_change_threshold);
+    msg!("     Emission increase: {}%", mine_btc_mining.emission_increase_pct);
+    msg!("     Emission decrease: {}%", mine_btc_mining.emission_decrease_pct);
+
     // ---------------------------- Unrefined Rewards ---------------------------------
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
     unrefined_rewards.unrefining_index = INDEX_PRECISION as u128;
@@ -545,6 +554,58 @@ pub fn update_fees_internal(
     }
 
     msg!("✅ [update_fees_internal] Fee configuration updated successfully");
+    Ok(())
+}
+
+/// Update emission adjustment parameters (admin only)
+/// Allows updating price change threshold and emission increase/decrease percentages
+pub fn update_emission_params_internal(
+    ctx: Context<UpdateEmissionParams>,
+    price_change_threshold: Option<u64>,
+    emission_increase_pct: Option<u64>,
+    emission_decrease_pct: Option<u64>,
+) -> Result<()> {
+    msg!("📊 [update_emission_params_internal] Updating emission adjustment parameters");
+    msg!("   Authority: {}", ctx.accounts.authority.key());
+    
+    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    
+    msg!("   Current emission adjustment parameters:");
+    msg!("     Price change threshold: {}%", mine_btc_mining.price_change_threshold);
+    msg!("     Emission increase: {}%", mine_btc_mining.emission_increase_pct);
+    msg!("     Emission decrease: {}%", mine_btc_mining.emission_decrease_pct);
+    
+    // Update price change threshold if provided
+    if let Some(threshold) = price_change_threshold {
+        require!(threshold > 0 && threshold <= 100, ErrorCode::InvalidParameters);
+        let old_threshold = mine_btc_mining.price_change_threshold;
+        mine_btc_mining.price_change_threshold = threshold;
+        msg!("   Updated price change threshold: {}% -> {}%", old_threshold, threshold);
+    } else {
+        msg!("   Price change threshold: {}% (not updated)", mine_btc_mining.price_change_threshold);
+    }
+    
+    // Update emission increase percentage if provided
+    if let Some(increase_pct) = emission_increase_pct {
+        require!(increase_pct > 0 && increase_pct <= 100, ErrorCode::InvalidParameters);
+        let old_increase = mine_btc_mining.emission_increase_pct;
+        mine_btc_mining.emission_increase_pct = increase_pct;
+        msg!("   Updated emission increase: {}% -> {}%", old_increase, increase_pct);
+    } else {
+        msg!("   Emission increase: {}% (not updated)", mine_btc_mining.emission_increase_pct);
+    }
+    
+    // Update emission decrease percentage if provided
+    if let Some(decrease_pct) = emission_decrease_pct {
+        require!(decrease_pct > 0 && decrease_pct <= 100, ErrorCode::InvalidParameters);
+        let old_decrease = mine_btc_mining.emission_decrease_pct;
+        mine_btc_mining.emission_decrease_pct = decrease_pct;
+        msg!("   Updated emission decrease: {}% -> {}%", old_decrease, decrease_pct);
+    } else {
+        msg!("   Emission decrease: {}% (not updated)", mine_btc_mining.emission_decrease_pct);
+    }
+    
+    msg!("✅ [update_emission_params_internal] Emission adjustment parameters updated successfully");
     Ok(())
 }
 
@@ -1370,6 +1431,28 @@ pub struct UpdateConfigAc<'info> {
         bump,
     )]
     pub mine_btc_mining: Option<Account<'info, MineBtcMining>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateEmissionParams<'info> {
+    #[account(
+        mut,
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
+        bump = mine_btc_mining.bump,
+    )]
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

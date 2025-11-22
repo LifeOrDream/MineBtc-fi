@@ -705,42 +705,48 @@ pub fn update_rate_and_add_lp_internal(
         direction
     );
 
-    // Check if change exceeds 3% threshold
+    // Check if change exceeds threshold (using configurable threshold from MineBtcMining)
     let old_rate = mine_btc_mining.mine_btc_per_round;
     let mut rate_changed = false;
+    let price_change_threshold = mine_btc_mining.price_change_threshold as i64;
 
-    if price_change_pct.abs() < PRICE_CHANGE_THRESHOLD as i64 {
+    if price_change_pct.abs() < price_change_threshold {
         msg!(
-            "   ➡️ Price change {}% within ±3% deadband, keeping same distribution rate",
-            price_change_pct
+            "   ➡️ Price change {}% within ±{}% deadband, keeping same distribution rate",
+            price_change_pct,
+            price_change_threshold
         );
         // Don't update track_price, keep monitoring
     } else if direction > 0 {
-        // Price increased by >3% - increase distribution by 1%
+        // Price increased beyond threshold - increase distribution by configured percentage
+        let increase_multiplier = 100 + mine_btc_mining.emission_increase_pct;
         mine_btc_mining.mine_btc_per_round = mine_btc_mining
             .mine_btc_per_round
-            .checked_mul(101)
+            .checked_mul(increase_multiplier)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         msg!(
-            "   📈 Price increased {}%! Increasing distribution rate by 1%",
-            price_change_pct
+            "   📈 Price increased {}%! Increasing distribution rate by {}%",
+            price_change_pct,
+            mine_btc_mining.emission_increase_pct
         );
         rate_changed = true;
     } else {
-        // Price decreased by >3% - decrease distribution by 3%
+        // Price decreased beyond threshold - decrease distribution by configured percentage
+        let decrease_multiplier = 100u64.saturating_sub(mine_btc_mining.emission_decrease_pct);
         mine_btc_mining.mine_btc_per_round = mine_btc_mining
             .mine_btc_per_round
-            .checked_mul(97)
+            .checked_mul(decrease_multiplier)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         msg!(
-            "   📉 Price decreased {}%! Decreasing distribution rate by 3%",
-            price_change_pct
+            "   📉 Price decreased {}%! Decreasing distribution rate by {}%",
+            price_change_pct,
+            mine_btc_mining.emission_decrease_pct
         );
         rate_changed = true;
     }

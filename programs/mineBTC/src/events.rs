@@ -326,24 +326,9 @@ pub struct FactionChanged {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user joins a round with a single bet
+/// Event emitted when bets are placed (single, batch, or autominer)
 #[event]
-pub struct RoundJoined {
-    pub user: Pubkey,
-    pub player_data: Pubkey,
-    pub round_id: u64,
-    pub target_block: u8,
-    pub net_amount: u64,
-    pub fee_amount: u64,
-    pub points_amount: u64,
-    pub used_ticket: bool,
-    pub ticket_type_index: Option<u8>,
-    pub timestamp: i64,
-}
-
-/// Event emitted when a user joins a round with multiple bets (batch)
-#[event]
-pub struct RoundJoinedBatch {
+pub struct BetsPlaced {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub round_id: u64,
@@ -352,10 +337,21 @@ pub struct RoundJoinedBatch {
     pub net_amounts: Vec<u64>,
     pub fee_amounts: Vec<u64>,
     pub points_amounts: Vec<u64>,
+    
     pub used_ticket: bool,
     pub ticket_type_index: Option<u8>,
+
+    // Autominer specific (Optional)
+    pub is_autominer: bool,
+    pub autominer_vault: Option<Pubkey>,
+    pub caller: Option<Pubkey>,
+    pub caller_compensation: u64,
+    pub rounds_remaining: Option<u32>,
+    pub vault_closed: Option<bool>,
+
     pub timestamp: i64,
 }
+
 
 /// Event emitted when a user claims rewards for a round
 #[event]
@@ -384,24 +380,6 @@ pub struct AutominerInitialized {
     pub bet_size_per_bet: u64,
     pub has_blocks_config: bool,
     pub has_factions_config: bool,
-    pub timestamp: i64,
-}
-
-/// Event emitted when autominer executes bets for a round
-#[event]
-pub struct AutominerBetExecuted {
-    pub owner: Pubkey,
-    pub player_data: Pubkey,
-    pub autominer_vault: Pubkey,
-    pub round_id: u64,
-    pub target_blocks: Vec<u8>,
-    pub net_amounts: Vec<u64>,
-    pub fee_amounts: Vec<u64>,
-    pub points_amounts: Vec<u64>,
-    pub caller: Pubkey,
-    pub caller_compensation: u64,
-    pub rounds_remaining: u32,
-    pub vault_closed: bool,
     pub timestamp: i64,
 }
 

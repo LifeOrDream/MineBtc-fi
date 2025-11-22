@@ -238,7 +238,7 @@ pub fn join_round(
         
     // Call internal_process_bets with user as payer (None for signer_seeds - user signs the tx)
     // Wrap single bet in vector
-    let (target_blocks, net_amounts, fee_amounts, points_amounts) = internal_process_bets(
+    internal_process_bets(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
         &mut ctx.accounts.player_data,
@@ -255,27 +255,9 @@ pub fn join_round(
         vec![bet_type.clone()],
         use_ticket,
         None, // User wallet signs the transaction
+        None, // No autominer info
     )?;
  
-    // Extract single result
-    let target_block = target_blocks[0];
-    let net_amount = net_amounts[0];
-    let fee_amount = fee_amounts[0];
-    let points_amount = points_amounts[0];
-    
-    emit!(RoundJoined {
-        user: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
-        round_id: ctx.accounts.global_game_state.current_round_id,
-        target_block,
-        net_amount,
-        fee_amount,
-        points_amount,
-        used_ticket: use_ticket.is_some(),
-        ticket_type_index: use_ticket,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
-    
     msg!("✅ [join_round] Bet placed successfully");
     Ok(())
 }
@@ -338,7 +320,7 @@ pub fn join_round_batch(
     msg!("   Expanded to {} bet types", expanded_bet_types.len());
 
     // Call internal_process_bets for all bets at once
-    let (target_blocks, net_amounts, fee_amounts, points_amounts) = internal_process_bets(
+    internal_process_bets(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
         &mut ctx.accounts.player_data,
@@ -355,21 +337,8 @@ pub fn join_round_batch(
         expanded_bet_types.clone(),
         use_ticket,
         None, // User wallet signs the transaction
+        None, // No autominer info
     )?;
-    
-    emit!(RoundJoinedBatch {
-        user: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
-        round_id: ctx.accounts.global_game_state.current_round_id,
-        num_bets: expanded_bet_types.len() as u8,
-        target_blocks,
-        net_amounts,
-        fee_amounts,
-        points_amounts,
-        used_ticket: use_ticket.is_some(),
-        ticket_type_index: use_ticket,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
     
     msg!("✅ [join_round_batch] All {} bets placed successfully", expanded_bet_types.len());
     Ok(())
@@ -673,9 +642,17 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         &[custody_bump],
     ];
 
+    // Prepare autominer info
+    let autominer_info = AutominerBetInfo {
+        vault: ctx.accounts.autominer_vault.key(),
+        caller: ctx.accounts.caller.key(),
+        compensation: total_caller_compensation,
+        rounds_remaining: new_rounds_remaining,
+    };
+
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
-    let (target_blocks, net_amounts, fee_amounts, points_amounts) = internal_process_bets(
+    internal_process_bets(
         &ctx.accounts.global_game_state,
         &ctx.accounts.global_config,
         &mut ctx.accounts.player_data,
@@ -692,6 +669,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         expanded_bet_types.clone(),
         None, // autominer always uses SOL, not tickets
         Some(autominer_seeds), // PDA signs via seeds
+        Some(autominer_info),
     )?;
     
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
@@ -701,22 +679,6 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
         current_round_id);
     msg!("   Rounds remaining: {}", new_rounds_remaining);
     msg!("   Caller compensation: {} SOL", (total_caller_compensation as f64 / 1e9));
-    
-    emit!(AutominerBetExecuted {
-        owner: owner_key,
-        player_data: ctx.accounts.player_data.key(),
-        autominer_vault: ctx.accounts.autominer_vault.key(),
-        round_id: current_round_id,
-        target_blocks,
-        net_amounts,
-        fee_amounts,
-        points_amounts,
-        caller: ctx.accounts.caller.key(),
-        caller_compensation: total_caller_compensation,
-        rounds_remaining: new_rounds_remaining,
-        vault_closed: new_rounds_remaining == 0,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
     
     Ok(())
 }
@@ -917,9 +879,16 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
 
 
+/// Helper struct for passing autominer info to internal_process_bets
+pub struct AutominerBetInfo {
+    pub vault: Pubkey,
+    pub caller: Pubkey,
+    pub compensation: u64,
+    pub rounds_remaining: u32,
+}
+
 /// Internal join_round logic for batched processing
 /// Calculates totals, performs single transfers, and updates state for all bets
-/// Returns vectors of results for events
 #[allow(clippy::too_many_arguments)]
 fn internal_process_bets<'info>(
     global_state: &Account<'info, GlobalGameSate>,
@@ -938,7 +907,8 @@ fn internal_process_bets<'info>(
     bet_types: Vec<BetType>,
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
-) -> Result<(Vec<u8>, Vec<u64>, Vec<u64>, Vec<u64>)> {
+    autominer_info: Option<AutominerBetInfo>,
+) -> Result<()> {
     let round_id = global_state.current_round_id;
     
     require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
@@ -1101,7 +1071,42 @@ fn internal_process_bets<'info>(
 
     msg!("   Batch processed: {} bets. Total Net: {} SOL", num_bets, total_net_added as f64 / 1e9);
 
-    Ok((evt_target_blocks, evt_net_amounts, evt_fee_amounts, evt_points_amounts))
+    // Emit consolidated event
+    let (is_autominer, autominer_vault, caller, caller_compensation, rounds_remaining, vault_closed) = 
+        if let Some(info) = autominer_info {
+            (
+                true, 
+                Some(info.vault), 
+                Some(info.caller), 
+                info.compensation, 
+                Some(info.rounds_remaining),
+                Some(info.rounds_remaining == 0)
+            )
+        } else {
+            (false, None, None, 0, None, None)
+        };
+
+    emit!(BetsPlaced {
+        user: owner_key,
+        player_data: player_data.key(),
+        round_id,
+        num_bets: num_bets as u8,
+        target_blocks: evt_target_blocks,
+        net_amounts: evt_net_amounts,
+        fee_amounts: evt_fee_amounts,
+        points_amounts: evt_points_amounts,
+        used_ticket: use_ticket.is_some(),
+        ticket_type_index: use_ticket,
+        is_autominer,
+        autominer_vault,
+        caller,
+        caller_compensation,
+        rounds_remaining,
+        vault_closed,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
 }
  
   

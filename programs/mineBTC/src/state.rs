@@ -297,6 +297,14 @@ pub struct MineBtcMining {
     pub pol_stats: ProtocolOwnedLiquidity,
     /// LP token price in SOL (9-decimal precision, updated during oracle updates)
     pub lp_token_price_in_sol: u64,
+
+    // ===== EMISSION ADJUSTMENT PARAMETERS =====
+    /// Price change threshold percentage (e.g., 3 = 3%) - rate changes only if price moves beyond this
+    pub price_change_threshold: u64,
+    /// Emission increase percentage when price goes up (e.g., 1 = 1% increase)
+    pub emission_increase_pct: u64,
+    /// Emission decrease percentage when price goes down (e.g., 3 = 3% decrease)
+    pub emission_decrease_pct: u64,
 }
 
 impl MineBtcMining {
@@ -318,7 +326,10 @@ impl MineBtcMining {
         + 8                     // track_price
         + 8                     // sol_for_pol
         + ProtocolOwnedLiquidity::LEN // pol_stats
-        + 8;                    // lp_token_price_in_sol
+        + 8                     // lp_token_price_in_sol
+        + 8                     // price_change_threshold
+        + 8                     // emission_increase_pct
+        + 8;                    // emission_decrease_pct
 }
 
 

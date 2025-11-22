@@ -129,6 +129,22 @@ pub mod minebtc {
         )
     }
 
+    /// Update emission adjustment parameters (admin only)
+    /// Allows updating price change threshold and emission increase/decrease percentages
+    pub fn update_emission_params(
+        ctx: Context<UpdateEmissionParams>,
+        price_change_threshold: Option<u64>,
+        emission_increase_pct: Option<u64>,
+        emission_decrease_pct: Option<u64>,
+    ) -> Result<()> {
+        admin::update_emission_params_internal(
+            ctx,
+            price_change_threshold,
+            emission_increase_pct,
+            emission_decrease_pct,
+        )
+    }
+
 
     // ----------------------------------------------------------------------------------------
     // ------------ mine_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
