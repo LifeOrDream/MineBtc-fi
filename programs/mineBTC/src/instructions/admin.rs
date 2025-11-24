@@ -771,14 +771,14 @@ pub fn initialize_egg_config_internal(
     let eggs_config = &mut ctx.accounts.eggs_config;
     
     eggs_config.bump = ctx.bumps.eggs_config;
-    eggs_config.dragon_egg_collection = Pubkey::default(); // Will be set when collection is created
+    eggs_config.egg_collection = Pubkey::default(); // Will be set when collection is created
     eggs_config.eggs_minted = 0;
     eggs_config.base_price = base_price;
     eggs_config.curve_a = curve_a;
     eggs_config.max_supply = max_supply;
-    eggs_config.dragon_egg_uris = Vec::new();
+    eggs_config.egg_uris = Vec::new();
     eggs_config.ticket_tiers = Vec::new();
-    eggs_config.global_dragon_egg_power = 0;
+    eggs_config.global_egg_power = 0;
     
     msg!("   ✅ EggConfig initialized");
     msg!("   Base Price: {} lamports", base_price);
@@ -797,7 +797,7 @@ pub fn initialize_egg_config_internal(
 /// # Parameters
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
-pub fn create_dragon_egg_collection_internal(
+pub fn create_egg_collection_internal(
     ctx: Context<CreateEggCollection>,
     name: String,
     uri: String,
@@ -829,7 +829,7 @@ pub fn create_dragon_egg_collection_internal(
         .invoke()?;
 
     // Store the collection address in global config
-    eggs_config.dragon_egg_collection = ctx.accounts.collection.key();
+    eggs_config.egg_collection = ctx.accounts.collection.key();
 
     emit!(EggCollectionCreated {
         collection: ctx.accounts.collection.key(),
@@ -849,7 +849,7 @@ pub fn create_dragon_egg_collection_internal(
 /// 
 /// # Parameters
 /// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
-pub fn set_dragon_egg_uris_internal(
+pub fn set_egg_uris_internal(
     ctx: Context<UpdateEggsConfig>,
     uris: Vec<String>,
 ) -> Result<()> {
@@ -867,7 +867,7 @@ pub fn set_dragon_egg_uris_internal(
     }
 
     // Set URIs for all factions
-    eggs_config.dragon_egg_uris = uris.clone();
+    eggs_config.egg_uris = uris.clone();
 
     msg!("✅ Set {} Egg URIs (one per faction)", uris.len());
     msg!("   Factions: {}", global_config.supported_factions.len());
@@ -879,9 +879,9 @@ pub fn set_dragon_egg_uris_internal(
 /// 
 /// Removes all Egg metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
-pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.dragon_egg_uris.clear();
+    eggs_config.egg_uris.clear();
 
     msg!("✅ Cleared all Egg URIs");
 
@@ -901,7 +901,7 @@ pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<
 /// # Validation
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
-pub fn init_dragon_egg_royalties(
+pub fn init_egg_royalties(
     ctx: Context<InitEggRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
@@ -1731,7 +1731,7 @@ pub struct InitEggRoyalties<'info> {
     /// CHECK: Egg collection (already created via MPL Core)
     #[account(
         mut,
-        address = eggs_config.dragon_egg_collection @ ErrorCode::InvalidAccount
+        address = eggs_config.egg_collection @ ErrorCode::InvalidAccount
     )]
     pub collection: UncheckedAccount<'info>,
 

@@ -97,7 +97,7 @@
         { "name": "Brazil" },
         { "name": "Argentina" }
     ],
-    "dragon_eggs": {
+    "eggs": {
         "collection_name": "DogeTech Eggs",
         "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
         "uris": [

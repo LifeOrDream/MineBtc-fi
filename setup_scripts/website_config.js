@@ -117,10 +117,10 @@ function generateWebsiteConfig(config, deployment) {
         deployment.raydium_pool_state_set?.sol_prize_pot_vault,
 
       // ========== DRAGON EGG COLLECTION ==========
-      dragon_egg_collection:
-        deployment.dragon_egg_collection_created?.collection_address,
-      dragon_egg_collection_authority:
-        deployment.dragon_egg_collection_created?.collection_authority,
+     egg_collection:
+        deployment.egg_collection_created?.collection_address,
+     egg_collection_authority:
+        deployment.egg_collection_created?.collection_authority,
 
       // ========== LP TOKEN MANAGEMENT ==========
       lp_token_account:
@@ -286,7 +286,7 @@ function main() {
     );
     console.log(
       `  🥚 Egg Collection: ${
-        websiteConfig[cluster].dragon_egg_collection || "Not created"
+        websiteConfig[cluster].egg_collection || "Not created"
       }`
     );
     console.log(

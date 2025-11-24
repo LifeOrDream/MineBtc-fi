@@ -258,7 +258,7 @@
     "tx_signature": "5jNzTvPopSHojEKzknxvmxNX2gGim2oSkJD7oUEcNHKGmwccWAyxSDjQD9eqNc9eTiWd5nTZ9r4EZZdjjP3KHUpt",
     "timestamp": "2025-11-21T20:58:46.750Z"
   },
-  "dragon_egg_collection_created": {
+  "_egg_collection_created": {
     "collection_address": "CDfocDAvadT2k4Aipqxpw8bWZ8rubcbNJdLkX45qWbvX",
     "collection_name": "DogeTech Eggs",
     "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
@@ -266,7 +266,7 @@
     "tx_signature": "5BYx8nhTZhCRorTT96Km55t2ihbyKg7VFu72RoHCWPjRJkJtJd3nUZs4ng1pN43KwLddzHkcwABimZXxcYq7Zw4T",
     "timestamp": "2025-11-21T20:58:47.268Z"
   },
-  "dragon_egg_uris_set": {
+  "_egg_uris_set": {
     "uris": [
       "https://arweave.net/dragon-egg-usa.json",
       "https://arweave.net/dragon-egg-china.json",
@@ -284,7 +284,7 @@
     "tx_signature": "5WT9MLTcqfxeoV2y2ci3Uf9Am67oW7WpZyDwzQjZbJNk9ubr2qq2B6N2KDcFnLS1DCQxsd8qVttFs6enira9RN7X",
     "timestamp": "2025-11-21T20:58:47.652Z"
   },
-  "dragon_egg_royalties_initialized": {
+  "_egg_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {

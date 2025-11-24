@@ -413,11 +413,11 @@ pub struct EggConfig {
     pub bump: u8,
 
     /// Egg collection address (Metaplex Core)
-    pub dragon_egg_collection: Pubkey,
+    pub egg_collection: Pubkey,
 
     /// Egg URIs organized by faction
     /// Structure: [faction_id] = URI
-    pub dragon_egg_uris: Vec<String>, // [faction_index] = URI
+    pub egg_uris: Vec<String>, // [faction_index] = URI
 
     /// Maximum supply of eggs that can be minted
     pub max_supply: u64,
@@ -432,7 +432,7 @@ pub struct EggConfig {
     pub curve_a: u64,
     
     /// Global total power across all Eggs (sum of all egg powers)
-    pub global_dragon_egg_power: u64,
+    pub global_egg_power: u64,
     
     /// Available ticket tier configs users can choose when minting (max 4 options)
     /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
@@ -446,13 +446,13 @@ impl EggConfig {
     // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        32 +    // dragon_egg_collection
-        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // dragon_egg_uris Vec<String> (max 12 factions)
+        32 +    //egg_collection
+        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + //egg_uris Vec<String> (max 12 factions)
         8 +     // max_supply
         8 +     // eggs_minted
         8 +     // base_price
         8 +     // curve_a
-        8 +     // global_dragon_egg_power
+        8 +     // global_egg_power
         4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
 }
 

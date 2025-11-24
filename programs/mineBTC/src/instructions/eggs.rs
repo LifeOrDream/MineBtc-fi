@@ -9,9 +9,9 @@ use crate::errors::ErrorCode;
 //
 // ## Key Functions
 //
-// - `batch_mint_dragon_eggs`: Mints new Egg NFTs using a bonding curve pricing model.
-// - `stake_dragon_egg`: Stakes an egg to boost a player's hashpower.
-// - `unstake_dragon_egg`: Unstakes an egg and removes the boost.
+// - `batch_mint_eggs`: Mints new Egg NFTs using a bonding curve pricing model.
+// - `stake_egg`: Stakes an egg to boost a player's hashpower.
+// - `unstake_egg`: Unstakes an egg and removes the boost.
 // - `claim_power`: Distributes accumulated power points to staked eggs.
 //
 // Eggs are a core mechanic for increasing mining efficiency and earning potential.
@@ -75,11 +75,11 @@ pub fn simulate_mint_cost(
 /// 
 /// # Remaining Accounts
 /// For each egg to mint, the client must pass 2 accounts in remaining_accounts:
-/// 1. dragon_egg_asset (Signer, Writable) - The new Keypair for the egg
-/// 2. dragon_egg_metadata (Writable) - The derived PDA for metadata
+/// 1. egg_asset (Signer, Writable) - The new Keypair for the egg
+/// 2.egg_metadata (Writable) - The derived PDA for metadata
 /// 
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
-pub fn batch_mint_dragon_eggs<'info>(
+pub fn batch_mint_eggs<'info>(
     ctx: Context<'_, '_, '_, 'info, BatchMintEggs<'info>>,
     faction_id: u8,
     mint_count: u8,
@@ -166,7 +166,7 @@ pub fn batch_mint_dragon_eggs<'info>(
         let egg_metadata_info = &ctx.remaining_accounts[index * 2 + 1];
         
         // Prepare collection account info (if exists) - must be done inline to avoid lifetime issues
-        let collection_account_info = ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info());
+        let collection_account_info = ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info());
         
         // Call create_mpl_core_asset with all accounts accessed directly
         // This avoids storing references that mix lifetimes from remaining_accounts and ctx.accounts
@@ -243,7 +243,7 @@ pub fn batch_mint_dragon_eggs<'info>(
         // Emit event
         emit!(EggMinted {
             egg_metadata_account: egg_metadata_key,
-            dragon_egg_asset_signer: egg_asset_key,
+            egg_asset_signer: egg_asset_key,
             owner: ctx.accounts.user.key(),
             player: ctx.accounts.player_data.key(),
             mint: egg_asset_key,
@@ -271,7 +271,7 @@ pub fn batch_mint_dragon_eggs<'info>(
 // ----------------------------------------------------------------------------------------
 
 /// Admin function to mint a Egg NFT for free to a specified recipient
-pub fn admin_mint_dragon_egg(
+pub fn admin_mint_egg(
     ctx: Context<AdminMintEgg>,
     recipient: Pubkey,
     faction_id: u8,
@@ -285,7 +285,7 @@ pub fn admin_mint_dragon_egg(
     require!(  (faction_id as usize) < global_config.supported_factions.len(), ErrorCode::InvalidFactionId);
     require!(  egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
 
-    msg!("🎁 [admin_mint_dragon_egg] Admin minting free egg to recipient: {}", recipient);
+    msg!("🎁 [admin_mint_egg] Admin minting free egg to recipient: {}", recipient);
     msg!("   Faction ID: {}", faction_id);
     msg!("   Egg number: {}", egg_config.eggs_minted + 1);
 
@@ -309,9 +309,9 @@ pub fn admin_mint_dragon_egg(
     msg!("   Recipient: {}", recipient);
 
     crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.dragon_egg_asset.to_account_info(),
+        &ctx.accounts.egg_asset.to_account_info(),
         ctx.accounts
-            .dragon_egg_collection
+            .egg_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
@@ -336,8 +336,8 @@ pub fn admin_mint_dragon_egg(
     msg!("   Calculated egg price: {} lamports (for ticket calculation)", cost_per_egg as f64 / 1e9);
 
     // Initialize Egg metadata
-    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
-    egg_metadata.mint = ctx.accounts.dragon_egg_asset.key();
+    let egg_metadata = &mut ctx.accounts.egg_metadata;
+    egg_metadata.mint = ctx.accounts.egg_asset.key();
     egg_metadata.power = 0;
     egg_metadata.dna = dna;
     // FIX: Use Pubkey::default() instead of None for fixed account size
@@ -346,7 +346,7 @@ pub fn admin_mint_dragon_egg(
     egg_metadata.faction_id = faction_id;
     egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
     egg_metadata.created_at = Clock::get()?.unix_timestamp;
-    egg_metadata.bump = ctx.bumps.dragon_egg_metadata;
+    egg_metadata.bump = ctx.bumps.egg_metadata;
     
     // Handle ticket tier selection and add free tickets (using actual price)
     let ticket_count = if egg_config.ticket_tiers.len() > 0 {
@@ -361,7 +361,7 @@ pub fn admin_mint_dragon_egg(
 
     emit!(EggMinted {
         egg_metadata_account: egg_metadata.key(),
-        dragon_egg_asset_signer: ctx.accounts.dragon_egg_asset.key(),
+        egg_asset_signer: ctx.accounts.egg_asset.key(),
         owner: recipient,
         player: ctx.accounts.player_data.key(),
         mint: egg_metadata.mint,
@@ -388,9 +388,9 @@ pub fn admin_mint_dragon_egg(
 /// Stake a Egg to boost hashpower (multiplier applies to staked minebtc and LP)
 /// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
 /// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
-pub fn stake_dragon_egg(ctx: Context<StakeEgg>) -> Result<()> {
+pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
 
-    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let egg_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
@@ -398,7 +398,7 @@ pub fn stake_dragon_egg(ctx: Context<StakeEgg>) -> Result<()> {
     let egg_multiplier = egg_metadata.multiplier;
     
     // Verify ownership
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
 
     require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser );
     // Check if already incubated (using Pubkey::default() instead of None)
@@ -412,8 +412,8 @@ pub fn stake_dragon_egg(ctx: Context<StakeEgg>) -> Result<()> {
     // Transfer NFT to custody PDA (lock it)
     msg!("🔒 Transferring NFT to custody PDA (locking)");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.egg_asset.to_account_info(),
+        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.egg_custody_pda.to_account_info(),
@@ -491,9 +491,9 @@ pub fn stake_dragon_egg(ctx: Context<StakeEgg>) -> Result<()> {
 
 
 /// Unstake a Egg (reduces multiplier and recalculates hashpower)
-pub fn unstake_dragon_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
+pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 
-    let egg_metadata = &mut ctx.accounts.dragon_egg_metadata;
+    let egg_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let egg_mint = egg_metadata.mint;
@@ -502,7 +502,7 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     let egg_multiplier = egg_metadata.multiplier;
     
     // Verify NFT is in custody PDA
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dragon_egg_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
     require!( nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::EggNotIncubated);
     // Verify ownership (using Pubkey::default() check instead of is_some())
     require!(
@@ -568,8 +568,8 @@ pub fn unstake_dragon_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     let signer_seeds = &[&custody_seeds[..]];
     
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.dragon_egg_asset.to_account_info(),
-        ctx.accounts.dragon_egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.egg_asset.to_account_info(),
+        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.egg_custody_pda.to_account_info(),
         &ctx.accounts.egg_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
@@ -677,7 +677,7 @@ fn generate_egg_data(
         faction_id,
     )?;
     let name = format!("Egg #{}", mint_number);
-    let uri = egg_config.dragon_egg_uris[faction_id as usize].clone();
+    let uri = egg_config.egg_uris[faction_id as usize].clone();
     let multiplier = crate::genescience::calculate_progressive_multiplier(
         eggs_minted_before,
         egg_config.max_supply,
@@ -842,20 +842,20 @@ pub struct MintEgg<'info> {
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub dragon_egg_asset: UncheckedAccount<'info>,
+    pub egg_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    pub egg_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = user,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_asset.key().as_ref()],
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
         bump
     )]
-    pub dragon_egg_metadata: Account<'info, EggMetadata>,
+    pub egg_metadata: Account<'info, EggMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -931,7 +931,7 @@ pub struct BatchMintEggs<'info> {
 
     /// CHECK: Egg collection (Metaplex Core)
     #[account(mut)]
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    pub egg_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
     #[account(
@@ -989,20 +989,20 @@ pub struct AdminMintEgg<'info> {
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub dragon_egg_asset: UncheckedAccount<'info>,
+    pub egg_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    pub egg_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = authority,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_asset.key().as_ref()],
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
         bump
     )]
-    pub dragon_egg_metadata: Account<'info, EggMetadata>,
+    pub egg_metadata: Account<'info, EggMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -1042,19 +1042,19 @@ pub struct StakeEgg<'info> {
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub dragon_egg_asset: UncheckedAccount<'info>,
+    pub egg_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    pub egg_collection: Option<UncheckedAccount<'info>>,
     
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_metadata.mint.as_ref()],
-        bump = dragon_egg_metadata.bump,
-        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        bump = egg_metadata.bump,
+        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub dragon_egg_metadata: Account<'info, EggMetadata>,
+    pub egg_metadata: Account<'info, EggMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
@@ -1098,19 +1098,19 @@ pub struct UnstakeEgg<'info> {
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub dragon_egg_asset: UncheckedAccount<'info>,
+    pub egg_asset: UncheckedAccount<'info>,
     
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub dragon_egg_collection: Option<UncheckedAccount<'info>>,
+    pub egg_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dragon_egg_metadata.mint.as_ref()],
-        bump = dragon_egg_metadata.bump,
-        constraint = dragon_egg_metadata.mint == dragon_egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        bump = egg_metadata.bump,
+        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub dragon_egg_metadata: Account<'info, EggMetadata>,
+    pub egg_metadata: Account<'info, EggMetadata>,
     
     /// PDA that holds custody of locked NFTs
     #[account(

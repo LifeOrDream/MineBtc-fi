@@ -39,7 +39,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, MineBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("8CQtUK6ckHY1Q86HySw9FH4L5Baptg4cRn3PHzwDw8oX");
+declare_id!("4ybsV8wziB7Z4DMJjkc6x3ZhzaevRNgD4DbXNz6Ta5Ed");
 
 #[program]
 pub mod minebtc {
@@ -243,36 +243,36 @@ pub mod minebtc {
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
     /// Requires EggConfig to be initialized first.
-    pub fn create_dragon_egg_collection(
+    pub fn create_egg_collection(
         ctx: Context<CreateEggCollection>,
         name: String,
         uri: String,
     ) -> Result<()> {
-        admin::create_dragon_egg_collection_internal(ctx, name, uri)
+        admin::create_egg_collection_internal(ctx, name, uri)
     }
 
 
     /// Set Egg URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_dragon_egg_uris(
+    pub fn set_egg_uris(
         ctx: Context<UpdateEggsConfig>,
         uris: Vec<String>,
     ) -> Result<()> {
-        admin::set_dragon_egg_uris_internal(ctx, uris)
+        admin::set_egg_uris_internal(ctx, uris)
     }
 
     /// Clear all Egg URIs (admin only)
-    pub fn clear_dragon_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
-        admin::clear_dragon_egg_uris_internal(ctx)
+    pub fn clear_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+        admin::clear_egg_uris_internal(ctx)
     }
 
     /// Initialize royalties on the Egg collection (admin only)
-    pub fn init_dragon_egg_royalties(
+    pub fn init_egg_royalties(
         ctx: Context<InitEggRoyalties>,
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
-        admin::init_dragon_egg_royalties(ctx, basis_points, creators)
+        admin::init_egg_royalties(ctx, basis_points, creators)
     }
 
     /// Add or update ticket tier configs (admin only)
@@ -644,13 +644,13 @@ pub mod minebtc {
     /// # Parameters
     /// - `recipient`: Address that will receive the minted NFT
     /// - `faction_id`: Faction ID the egg belongs to
-    pub fn admin_mint_dragon_egg(
+    pub fn admin_mint_egg(
         ctx: Context<AdminMintEgg>,
         recipient: Pubkey,
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::admin_mint_dragon_egg(ctx, recipient, faction_id, ticket_tier_index)
+        eggs::admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
@@ -662,23 +662,23 @@ pub mod minebtc {
     /// - `faction_id`: Faction ID all eggs belong to
     /// - `mint_count`: Number of eggs to mint (1-10)
     /// - `ticket_tier_index`: Ticket tier index (0-2)
-    pub fn batch_mint_dragon_eggs<'info>(
+    pub fn batch_mint_eggs<'info>(
         ctx: Context<'_, '_, '_, 'info, BatchMintEggs<'info>>,
         faction_id: u8,
         mint_count: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count, ticket_tier_index)
+        eggs::batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
     /// Stake a Egg to boost hashpower (if faction matches player's faction)
-    pub fn stake_dragon_egg(ctx: Context<StakeEgg>) -> Result<()> {
-        eggs::stake_dragon_egg(ctx)
+    pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
+        eggs::stake_egg(ctx)
     }
 
     /// Unstake a Egg (remove hashpower boost)
-    pub fn unstake_dragon_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
-        eggs::unstake_dragon_egg(ctx)
+    pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
+        eggs::unstake_egg(ctx)
     }
 
     /// Claim power points and distribute them to staked eggs

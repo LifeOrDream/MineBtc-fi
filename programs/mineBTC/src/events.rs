@@ -121,7 +121,7 @@ pub struct LpTokensBurned {
 #[event]
 pub struct EggMinted {
     pub egg_metadata_account: Pubkey,
-    pub dragon_egg_asset_signer: Pubkey,
+    pub egg_asset_signer: Pubkey,
     pub owner: Pubkey,
     pub player: Pubkey,
     pub mint: Pubkey,

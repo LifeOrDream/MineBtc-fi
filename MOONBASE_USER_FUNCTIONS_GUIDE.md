@@ -308,14 +308,14 @@ initialize_player --faction-id 0 --referral-code <optional>
 
 ```bash
 # Mint 3 eggs for your faction with Silver tier tickets
-batch_mint_dragon_eggs --faction-id 0 --count 3 --tier 1
+batch_mint_eggs --faction-id 0 --count 3 --tier 1
 ```
 
 ### 3. Stake Your Eggs
 
 ```bash
 # Stake an egg to boost hashpower
-stake_dragon_egg --egg-mint <egg_pubkey>
+stake_egg --egg-mint <egg_pubkey>
 ```
 
 ### 4. Stake MineBTC

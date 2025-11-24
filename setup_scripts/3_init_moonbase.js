@@ -243,12 +243,12 @@ async function main() {
     // 1. Initialize MineBTC Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Eggs Treasury)
     await initializeMinebtcProgram(minebtcProgram);
 
-    // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
-    const feeRecipientFromConfig = "B4Q5BNqjpZRyo9ZJ1dhKfJqHcR3TpksG5BKJjQ3V4ZvQ";
-    // if (feeRecipientFromConfig) {
-        await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
-    // }
-    return;
+    // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
+    // const feeRecipientFromConfig = "B4Q5BNqjpZRyo9ZJ1dhKfJqHcR3TpksG5BKJjQ3V4ZvQ";
+    // // if (feeRecipientFromConfig) {
+    //     await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
+    // // }
+    // return;
 
     // 1.6. Update Fees (if needed - can be called anytime after initialization)
     // Example usage:
@@ -263,11 +263,11 @@ async function main() {
 
     // 1.7. Update Egg Config (if needed - can be called anytime after initialization)
     // Example usage:
-    await updateEggConfig(minebtcProgram, {
-        basePrice: 100000000, // 1 SOL in lamports
-        curveA: 1111111, // Curve parameter
-    });
-    return;
+    // await updateEggConfig(minebtcProgram, {
+    //     basePrice: 100000000, // 1 SOL in lamports
+    //     curveA: 1111111, // Curve parameter
+    // });
+    // return;
 
         // 6. Set Raydium Pool State (for price discovery and swaps)
     await setRaydiumPoolState(minebtcProgram);
@@ -1367,12 +1367,12 @@ async function initializeEggConfig(minebtcProgram) {
 }
 
 async function createEggCollection(minebtcProgram) {
-    if (deploymentFile.dragon_egg_collection_created) {
+    if (deploymentFile.egg_collection_created) {
     console.log(COLOR_INFO, "ℹ️ Egg collection already created");
     console.log(
       COLOR_INFO,
       "🔑 Collection Address:",
-      deploymentFile.dragon_egg_collection_created.collection_address
+      deploymentFile.egg_collection_created.collection_address
     );
         return;
     }
@@ -1399,8 +1399,8 @@ async function createEggCollection(minebtcProgram) {
     );
 
   console.log(COLOR_INFO, "🎨 Creating Metaplex Core collection...");
-    console.log(COLOR_DIM, `   Name: ${config.dragon_eggs.collection_name}`);
-    console.log(COLOR_DIM, `   URI: ${config.dragon_eggs.collection_uri}`);
+    console.log(COLOR_DIM, `   Name: ${config.eggs.collection_name}`);
+    console.log(COLOR_DIM, `   URI: ${config.eggs.collection_uri}`);
   console.log(
     COLOR_INFO,
     "🔐 Collection Authority PDA:",
@@ -1412,9 +1412,9 @@ async function createEggCollection(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-            .createDragonEggCollection(
-                config.dragon_eggs.collection_name,
-                config.dragon_eggs.collection_uri
+            .createEggCollection(
+                config.eggs.collection_name,
+                config.eggs.collection_uri
             )
             .accounts({
                 authority: walletKeypair.publicKey,
@@ -1447,10 +1447,10 @@ async function createEggCollection(minebtcProgram) {
       `🔍 Explorer: https://explorer.solana.com/address/${collectionPubkey.toString()}?cluster=${CLUSTER}`
     );
 
-        deploymentFile.dragon_egg_collection_created = {
+        deploymentFile.egg_collection_created = {
             collection_address: collectionPubkey.toString(),
-            collection_name: config.dragon_eggs.collection_name,
-            collection_uri: config.dragon_eggs.collection_uri,
+            collection_name: config.eggs.collection_name,
+            collection_uri: config.eggs.collection_uri,
       collection_authority: collectionAuthorityPDA.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1463,7 +1463,7 @@ async function createEggCollection(minebtcProgram) {
 }
 
 async function setEggUris(minebtcProgram) {
-    if (!deploymentFile.dragon_egg_collection_created) {
+    if (!deploymentFile.egg_collection_created) {
     console.error(
       COLOR_ERROR,
       "❌ Egg collection must be created first"
@@ -1471,7 +1471,7 @@ async function setEggUris(minebtcProgram) {
     throw new Error("Collection not created");
     }
 
-    if (deploymentFile.dragon_egg_uris_set) {
+    if (deploymentFile.egg_uris_set) {
     console.log(COLOR_INFO, "ℹ️ Egg URIs already set");
         return;
     }
@@ -1493,14 +1493,14 @@ async function setEggUris(minebtcProgram) {
     minebtcProgram.programId
     );
 
-  console.log(COLOR_INFO, "📝 Setting URIs:", config.dragon_eggs.uris.length);
-    config.dragon_eggs.uris.forEach((uri, index) => {
+  console.log(COLOR_INFO, "📝 Setting URIs:", config.eggs.uris.length);
+    config.eggs.uris.forEach((uri, index) => {
         console.log(COLOR_DIM, `   ${index + 1}. ${uri}`);
     });
 
     try {
     const tx = await minebtcProgram.methods
-            .setDragonEggUris(config.dragon_eggs.uris)
+            .setEggUris(config.eggs.uris)
             .accounts({
                 globalConfig: globalConfigPDA,
                 eggsConfig: eggsConfigPDA,
@@ -1513,8 +1513,8 @@ async function setEggUris(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ Egg URIs set successfully!");
     console.log(COLOR_DIM, "🔗 Transaction:", tx);
 
-        deploymentFile.dragon_egg_uris_set = {
-            uris: config.dragon_eggs.uris,
+        deploymentFile.egg_uris_set = {
+            uris: config.eggs.uris,
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -1526,7 +1526,7 @@ async function setEggUris(minebtcProgram) {
 }
 
 async function initializeEggRoyalties(minebtcProgram) {
-    if (deploymentFile.dragon_egg_royalties_initialized) {
+    if (deploymentFile.egg_royalties_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Egg royalties already initialized. Skipping..."
@@ -1543,7 +1543,7 @@ async function initializeEggRoyalties(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
   const collectionPubkey = new PublicKey(
-    deploymentFile.dragon_egg_collection_created.collection_address
+    deploymentFile.egg_collection_created.collection_address
   );
 
     const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
@@ -1594,7 +1594,7 @@ async function initializeEggRoyalties(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initDragonEggRoyalties(basisPoints, creators)
+      .initEggRoyalties(basisPoints, creators)
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
@@ -1611,7 +1611,7 @@ async function initializeEggRoyalties(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ Egg royalties initialized!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-        deploymentFile.dragon_egg_royalties_initialized = {
+        deploymentFile.egg_royalties_initialized = {
             basis_points: basisPoints,
             creators: creators,
             tx_signature: tx,
@@ -2559,17 +2559,17 @@ function printCompletionSummary() {
   console.log(
     COLOR_INFO,
     `  • Egg Collection: ${
-      deploymentFile.dragon_egg_collection_created ? "✅" : "❌"
+      deploymentFile.egg_collection_created ? "✅" : "❌"
     }`
   );
   console.log(
     COLOR_INFO,
-    `  • Egg URIs: ${deploymentFile.dragon_egg_uris_set ? "✅" : "❌"}`
+    `  • Egg URIs: ${deploymentFile.egg_uris_set ? "✅" : "❌"}`
   );
   console.log(
     COLOR_INFO,
     `  • Egg Royalties: ${
-      deploymentFile.dragon_egg_royalties_initialized ? "✅" : "❌"
+      deploymentFile.egg_royalties_initialized ? "✅" : "❌"
     }`
   );
   console.log(
@@ -2617,10 +2617,10 @@ function printCompletionSummary() {
         `   Mining Vault: ${deploymentFile.mining_vault_initialized.vault_address}`
       );
         }
-        if (deploymentFile.dragon_egg_collection_created) {
+        if (deploymentFile.egg_collection_created) {
       console.log(
         COLOR_DIM,
-        `   Egg Collection: ${deploymentFile.dragon_egg_collection_created.collection_address}`
+        `   Egg Collection: ${deploymentFile.egg_collection_created.collection_address}`
       );
         }
         if (deploymentFile.game_state_initialized) {
