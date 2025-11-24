@@ -8,7 +8,7 @@
 // - `update_config`: Updates global parameters like authorities and fees.
 // - `add_faction`: Registers new factions in the game.
 // - `initialize_mining`: Starts the token mining process.
-// - `initialize_egg_config`: Sets up the Dragon Egg NFT system.
+// - `initialize_egg_config`: Sets up the Egg NFT system.
 // - `initialize_tax_config`: Configures the tax and burn mechanisms.
 // - `initialize_game_state`: Prepares the game state for the first round.
 //
@@ -753,13 +753,13 @@ pub fn update_hashpower_config_internal(
 
 /// Initialize EggConfig account (admin only)
 /// 
-/// Creates the EggConfig account that stores Dragon Egg collection configuration.
-/// This must be called before creating the Dragon Egg collection.
+/// Creates the EggConfig account that stores Egg collection configuration.
+/// This must be called before creating the Egg collection.
 /// 
 /// # Parameters
-/// - `base_price`: Base price for Dragon Eggs in SOL (lamports)
+/// - `base_price`: Base price for Eggs in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
-/// - `max_supply`: Maximum number of Dragon Eggs that can be minted
+/// - `max_supply`: Maximum number of Eggs that can be minted
 pub fn initialize_egg_config_internal(
     ctx: Context<InitializeEggConfig>,
     base_price: u64,
@@ -788,9 +788,9 @@ pub fn initialize_egg_config_internal(
     Ok(())
 }
 
-/// Create Dragon Egg collection with program PDA as authority (admin only)
+/// Create Egg collection with program PDA as authority (admin only)
 /// 
-/// Creates a new Metaplex Core collection for Dragon Egg NFTs.
+/// Creates a new Metaplex Core collection for Egg NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
 /// Requires EggConfig to be initialized first.
 /// 
@@ -798,13 +798,13 @@ pub fn initialize_egg_config_internal(
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
 pub fn create_dragon_egg_collection_internal(
-    ctx: Context<CreateDragonEggCollection>,
+    ctx: Context<CreateEggCollection>,
     name: String,
     uri: String,
 ) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
 
-    msg!("Creating Dragon Egg collection with program PDA as update authority");
+    msg!("Creating Egg collection with program PDA as update authority");
     msg!("Collection: {}", ctx.accounts.collection.key());
     msg!(
         "Collection Authority PDA: {}",
@@ -831,7 +831,7 @@ pub fn create_dragon_egg_collection_internal(
     // Store the collection address in global config
     eggs_config.dragon_egg_collection = ctx.accounts.collection.key();
 
-    emit!(DragonEggCollectionCreated {
+    emit!(EggCollectionCreated {
         collection: ctx.accounts.collection.key(),
         update_authority: ctx.accounts.collection_authority.key(),
         name,
@@ -842,9 +842,9 @@ pub fn create_dragon_egg_collection_internal(
 }
 
 
-/// Set Dragon Egg URIs for all factions (admin only)
+/// Set Egg URIs for all factions (admin only)
 /// 
-/// Sets the metadata URIs for Dragon Eggs, one URI per faction.
+/// Sets the metadata URIs for Eggs, one URI per faction.
 /// The number of URIs must match the number of supported factions.
 /// 
 /// # Parameters
@@ -869,29 +869,29 @@ pub fn set_dragon_egg_uris_internal(
     // Set URIs for all factions
     eggs_config.dragon_egg_uris = uris.clone();
 
-    msg!("✅ Set {} Dragon Egg URIs (one per faction)", uris.len());
+    msg!("✅ Set {} Egg URIs (one per faction)", uris.len());
     msg!("   Factions: {}", global_config.supported_factions.len());
 
     Ok(())
 }
 
-/// Clear all Dragon Egg URIs (admin only)
+/// Clear all Egg URIs (admin only)
 /// 
-/// Removes all Dragon Egg metadata URIs from the configuration.
+/// Removes all Egg metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
 pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.dragon_egg_uris.clear();
 
-    msg!("✅ Cleared all Dragon Egg URIs");
+    msg!("✅ Cleared all Egg URIs");
 
     Ok(())
 }
 
 
-/// Initialize royalties on the Dragon Egg collection (admin only)
+/// Initialize royalties on the Egg collection (admin only)
 /// 
-/// Sets up royalty configuration for the Dragon Egg NFT collection using Metaplex Core.
+/// Sets up royalty configuration for the Egg NFT collection using Metaplex Core.
 /// Initializes with an empty ProgramDenyList that can be updated later.
 /// 
 /// # Parameters
@@ -902,7 +902,7 @@ pub fn clear_dragon_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
 pub fn init_dragon_egg_royalties(
-    ctx: Context<InitDragonEggRoyalties>,
+    ctx: Context<InitEggRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
 ) -> Result<()> {
@@ -956,13 +956,13 @@ pub fn init_dragon_egg_royalties(
         // No log_wrapper needed; pass no extra accounts.
         .invoke_signed(signer_seeds)?;
 
-    msg!("✅ Initialized Dragon Egg royalties: {} basis points", basis_points);
+    msg!("✅ Initialized Egg royalties: {} basis points", basis_points);
     Ok(())
 }
  
 /// Add or update ticket tier configs (admin only)
 /// 
-/// Configures ticket tier options that users can choose when minting Dragon Eggs.
+/// Configures ticket tier options that users can choose when minting Eggs.
 /// Users receive free tickets based on the selected tier when they mint.
 /// 
 /// # Parameters
@@ -1021,10 +1021,10 @@ pub fn add_ticket_tier_config(
 
 /// Update EggConfig account (admin only)
 /// 
-/// Updates the EggConfig account that stores Dragon Egg collection configuration.
+/// Updates the EggConfig account that stores Egg collection configuration.
 /// 
 /// # Parameters
-/// - `base_price`: Base price for Dragon Eggs in SOL (lamports)
+/// - `base_price`: Base price for Eggs in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
 pub fn update_egg_config_internal(
     ctx: Context<UpdateEggsConfig>,
@@ -1648,7 +1648,7 @@ pub struct InitializeEggConfig<'info> {
 
 
 #[derive(Accounts)]
-pub struct CreateDragonEggCollection<'info> {
+pub struct CreateEggCollection<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -1667,7 +1667,7 @@ pub struct CreateDragonEggCollection<'info> {
     )]
     pub eggs_config: Account<'info, EggConfig>,
 
-    /// CHECK: Dragon Egg collection account (will be created by MPL Core)
+    /// CHECK: Egg collection account (will be created by MPL Core)
     #[account(mut, signer)]
     pub collection: UncheckedAccount<'info>,
 
@@ -1709,7 +1709,7 @@ pub struct UpdateEggsConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitDragonEggRoyalties<'info> {
+pub struct InitEggRoyalties<'info> {
     #[account(mut)]
     pub authority: Signer<'info>, // ext authority EOA
 
@@ -1728,7 +1728,7 @@ pub struct InitDragonEggRoyalties<'info> {
     )]
     pub eggs_config: Account<'info, EggConfig>,
 
-    /// CHECK: Dragon Egg collection (already created via MPL Core)
+    /// CHECK: Egg collection (already created via MPL Core)
     #[account(
         mut,
         address = eggs_config.dragon_egg_collection @ ErrorCode::InvalidAccount

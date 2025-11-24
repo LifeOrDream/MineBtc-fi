@@ -34,9 +34,9 @@ let deploymentFile = {};
 if (fs.existsSync(deploymentPath)) {
   deploymentFile = JSON.parse(fs.readFileSync(deploymentPath, "utf-8"));
 } else {
-  if (!fs.existsSync(deploymentDir)) {
-    fs.mkdirSync(deploymentDir, { recursive: true });
-  }
+    if (!fs.existsSync(deploymentDir)) {
+        fs.mkdirSync(deploymentDir, { recursive: true });
+    }
   console.log(
     COLOR_WARNING,
     "⚠️ No deployment file found. Starting fresh deployment."
@@ -71,16 +71,16 @@ const connection = new Connection(RPC_URL, COMMITMENT);
 
 // Load wallet keypair
 const walletKeypair = (() => {
-  try {
+    try {
     const walletPath = path.resolve(
       __dirname,
       config.deployment.paths.deployer_key
     );
-    return Keypair.fromSecretKey(
+        return Keypair.fromSecretKey(
       new Uint8Array(JSON.parse(fs.readFileSync(walletPath, "utf-8")))
-    );
-  } catch (e) {
-    console.error(COLOR_ERROR, "❌ Failed to load wallet keypair:", e);
+        );
+    } catch (e) {
+        console.error(COLOR_ERROR, "❌ Failed to load wallet keypair:", e);
     console.error(
       COLOR_ERROR,
       `   Expected path: ${path.resolve(
@@ -107,22 +107,22 @@ const gameKeypair = (() => {
         config.deployment.paths.game_keypair || "undefined"
       )}`
     );
-    throw e;
-  }
+        throw e;
+    }
 })();
 
 // Create wallet interface
 const wallet = {
-  publicKey: walletKeypair.publicKey,
-  signTransaction: async (tx) => {
-    tx.partialSign(walletKeypair);
-    return tx;
-  },
-  signAllTransactions: async (txs) => {
+    publicKey: walletKeypair.publicKey,
+    signTransaction: async (tx) => {
+        tx.partialSign(walletKeypair);
+        return tx;
+    },
+    signAllTransactions: async (txs) => {
     return txs.map((tx) => {
-      tx.partialSign(walletKeypair);
-      return tx;
-    });
+            tx.partialSign(walletKeypair);
+            return tx;
+        });
   },
 };
 
@@ -134,20 +134,20 @@ setProvider(provider);
 
 // Helper function to save deployment data
 function saveDeploymentData() {
-  fs.writeFileSync(deploymentPath, JSON.stringify(deploymentFile, null, 2));
+    fs.writeFileSync(deploymentPath, JSON.stringify(deploymentFile, null, 2));
   console.log(COLOR_SUCCESS, "✅ Deployment file updated");
 }
 
 async function getSolanaBalance(pubkey) {
-  try {
-    return await connection.getBalance(pubkey);
-  } catch (error) {
+    try {
+        return await connection.getBalance(pubkey);
+    } catch (error) {
     console.error(
       COLOR_ERROR,
       `❌ Error getting SOL balance: ${error.message}`
     );
-    throw error;
-  }
+        throw error;
+    }
 }
 
 // ==================== [ MAIN SCRIPT ] ====================
@@ -164,19 +164,19 @@ async function main() {
   );
   console.log(COLOR_INFO, "🌐 Network:", CLUSTER);
   console.log(COLOR_INFO, "🔗 RPC URL:", RPC_URL);
-
-  const balance = await getSolanaBalance(walletKeypair.publicKey);
+    
+    const balance = await getSolanaBalance(walletKeypair.publicKey);
   console.log(COLOR_INFO, "💰 Balance:", balance / 1e9, "SOL");
 
-  // Verify prerequisites
+    // Verify prerequisites
   if (!DOGEBTC_TOKEN_MINT) {
     console.error(
       COLOR_ERROR,
       "❌ DOGE_BTC token mint address not found in deployment file."
     );
     console.log(COLOR_WARNING, "⚠️ Please run 1_init_mdoge_token.js first.");
-    return;
-  }
+        return;
+    }
 
   if (!ID_MineBTC_PROGRAM) {
     console.error(
@@ -184,8 +184,8 @@ async function main() {
       "❌ MineBTC program ID not found in deployment file."
     );
     console.log(COLOR_WARNING, "⚠️ Please run 0_deploy_game.js first.");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -244,35 +244,45 @@ async function main() {
     await initializeMinebtcProgram(minebtcProgram);
 
     // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
-    // const feeRecipientFromConfig = config.deployment.FEE_RECIPIENT_MULTISIG;
-    // // if (feeRecipientFromConfig) {
-    //     await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
-    // // }
+    const feeRecipientFromConfig = "B4Q5BNqjpZRyo9ZJ1dhKfJqHcR3TpksG5BKJjQ3V4ZvQ";
+    // if (feeRecipientFromConfig) {
+        await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
+    // }
+    return;
 
     // 1.6. Update Fees (if needed - can be called anytime after initialization)
     // Example usage:
     // await updateFees(minebtcProgram, {
-    //     newProtocolFeePct: null, // 10,
-    //     newBuybackPct: 80, //40,
+    //     newProtocolFeePct: 10, // 10,
+    //     newBuybackPct: null, //40,
     //     newStakersPct: null, //50,
     //     changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
-    //     snapshotInterval: null, // 3, // 30 minutes in seconds
+    //     snapshotInterval:  10, // 30 minutes in seconds
     // });
+    // return;
 
-    // 6. Set Raydium Pool State (for price discovery and swaps)
+    // 1.7. Update Egg Config (if needed - can be called anytime after initialization)
+    // Example usage:
+    await updateEggConfig(minebtcProgram, {
+        basePrice: 100000000, // 1 SOL in lamports
+        curveA: 1111111, // Curve parameter
+    });
+    return;
+
+        // 6. Set Raydium Pool State (for price discovery and swaps)
     await setRaydiumPoolState(minebtcProgram);
     // return;
 
-    // 3. Add Factions (12 factions for the raffle)
+        // 3. Add Factions (12 factions for the raffle)
     await addFactions(minebtcProgram);
 
-    // 2. Initialize System Accounts (Referral + Buybacks)
+        // 2. Initialize System Accounts (Referral + Buybacks)
     await initializeSystemAccounts(minebtcProgram);
 
-    // 4. Initialize Mining System (Token Vault + Mining Parameters)
+        // 4. Initialize Mining System (Token Vault + Mining Parameters)
     await initializeMiningSystem(minebtcProgram);
 
-    // 5. Deposit Mining Tokens
+        // 5. Deposit Mining Tokens
     await depositMiningTokens(minebtcProgram);
 
     await initializeHashpowerConfig(minebtcProgram);
@@ -280,28 +290,28 @@ async function main() {
     // 6.5. Initialize Custodian Accounts (DBTC and Liquidity custodians)
     await initializeCustodianAccounts(minebtcProgram);
 
-    // 7. Initialize EggConfig
+        // 7. Initialize EggConfig
     await initializeEggConfig(minebtcProgram);
 
-    // 8. Create Dragon Egg Collection
-    await createDragonEggCollection(minebtcProgram);
+        // 8. Create Egg Collection
+    await createEggCollection(minebtcProgram);
 
-    // 9. Set Dragon Egg URIs (one per faction)
-    await setDragonEggUris(minebtcProgram);
+        // 9. Set Egg URIs (one per faction)
+    await setEggUris(minebtcProgram);
 
-    // 10. Initialize Dragon Egg Royalties
-    await initializeDragonEggRoyalties(minebtcProgram);
+        // 10. Initialize Egg Royalties
+    await initializeEggRoyalties(minebtcProgram);
 
-    // 11. Configure Ticket Tiers (for Dragon Egg minting)
+        // 11. Configure Ticket Tiers (for Egg minting)
     await configureTicketTiers(minebtcProgram);
 
-    // 12. Initialize Tax Config (for tax distribution)
+        // 12. Initialize Tax Config (for tax distribution)
     await initializeTaxConfig(minebtcProgram);
 
-    // 13. Initialize Game State (for Faction Surge rounds)
+        // 13. Initialize Game State (for Faction Surge rounds)
     await initializeGameState(minebtcProgram);
 
-    // 14. Initialize LP Token Accounts (for Raydium integration)
+        // 14. Initialize LP Token Accounts (for Raydium integration)
     await initializeLpTokenAccounts(minebtcProgram);
     // return;
 
@@ -321,14 +331,14 @@ async function main() {
 
     // Print completion summary
     // printCompletionSummary();
-  } catch (error) {
+    } catch (error) {
     console.error(COLOR_ERROR, "❌ Initialization failed:", error);
-    if (error.logs) {
+        if (error.logs) {
       console.error(COLOR_ERROR, "📝 Transaction logs:");
       error.logs.forEach((log) => console.error(COLOR_DIM, log));
+        }
+        process.exit(1);
     }
-    process.exit(1);
-  }
 }
 
 // ==================== [ INITIALIZATION FUNCTIONS ] ====================
@@ -339,26 +349,26 @@ async function initializeMinebtcProgram(minebtcProgram) {
       COLOR_INFO,
       "ℹ️ MineBTC program already initialized. Skipping..."
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
     "\n====================== [ INITIALIZING MineBTC PROGRAM ] ===================="
   );
 
-  // Derive PDAs
-  const [globalConfigPDA] = PublicKey.findProgramAddressSync(
+    // Derive PDAs
+    const [globalConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("global-config")],
     minebtcProgram.programId
   );
 
-  const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+  const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("mine-btc-mining")],
     minebtcProgram.programId
-  );
+    );
 
-  const [solTreasuryPDA] = PublicKey.findProgramAddressSync(
+    const [solTreasuryPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("sol-treasury")],
     minebtcProgram.programId
   );
@@ -388,73 +398,73 @@ async function initializeMinebtcProgram(minebtcProgram) {
   );
   console.log(
     COLOR_INFO,
-    `🔑 DogeBtc Mining PDA: ${dogeBtcMiningPDA.toString()}`
+    `🔑 DogeBtc Mining PDA: ${mineBtcMiningPDA.toString()}`
   );
-  console.log(COLOR_INFO, `🔑 SOL Treasury PDA: ${solTreasuryPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 SOL Treasury PDA: ${solTreasuryPDA.toString()}`);
   console.log(
     COLOR_INFO,
     `🔑 Fee Recipient: ${FEE_RECIPIENT_MULTISIG.toString()}`
   );
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
-      .initialize(FEE_RECIPIENT_MULTISIG)
-      .accounts({
-        globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+            .initialize(FEE_RECIPIENT_MULTISIG)
+            .accounts({
+                globalConfig: globalConfigPDA,
+        mineBtcMining: mineBtcMiningPDA,
         unrefinedRewards: unrefinedRewardsPDA,
-        solTreasury: solTreasuryPDA,
+                solTreasury: solTreasuryPDA,
         eggsTreasury: eggsTreasuryPDA,
         autominerCustody: autominerCustodyPDA,        
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ Program initialized successfully!");
-    console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
+        console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
     console.log(
       COLOR_DIM,
       `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
     );
 
     deploymentFile.minebtc_program_initialized = {
-      globalConfig_address: globalConfigPDA.toString(),
-      dogeBtcMining_address: dogeBtcMiningPDA.toString(),
-      solTreasury_address: solTreasuryPDA.toString(),
+            globalConfig_address: globalConfigPDA.toString(),
+      mineBtcMining_address: mineBtcMiningPDA.toString(),
+            solTreasury_address: solTreasuryPDA.toString(),
       eggsTreasury_address: eggsTreasuryPDA.toString(),
       autominerCustody_address: autominerCustodyPDA.toString(),
       unrefinedRewards_address: unrefinedRewardsPDA.toString(),
-      FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
-      tx_signature: tx,
+            FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    if (error.toString().includes("already in use")) {
+        };
+        saveDeploymentData();
+    } catch (error) {
+        if (error.toString().includes("already in use")) {
       console.log(COLOR_INFO, "ℹ️ Program already initialized. Skipping...");
       deploymentFile.minebtc_program_initialized = {
-        globalConfig_address: globalConfigPDA.toString(),
-        dogeBtcMining_address: dogeBtcMiningPDA.toString(),
+                globalConfig_address: globalConfigPDA.toString(),
+        mineBtcMining_address: mineBtcMiningPDA.toString(),
         unrefinedRewards: unrefinedRewardsPDA.toString(),
-        solTreasury_address: solTreasuryPDA.toString(),
+                solTreasury_address: solTreasuryPDA.toString(),
         eggsTreasury_address: eggsTreasuryPDA.toString(),
-      };
-      saveDeploymentData();
-    } else {
-      throw error;
+            };
+            saveDeploymentData();
+        } else {
+            throw error;
+        }
     }
-  }
 }
 
 async function initializeSystemAccounts(minebtcProgram) {
-  if (deploymentFile.system_accounts_initialized) {
+    if (deploymentFile.system_accounts_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ System accounts already initialized. Skipping..."
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -465,18 +475,18 @@ async function initializeSystemAccounts(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-  // Derive PDAs
-  const [systemReferralRewardsPDA] = PublicKey.findProgramAddressSync(
+    // Derive PDAs
+    const [systemReferralRewardsPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("referral-rewards"), SystemProgram.programId.toBuffer()],
     minebtcProgram.programId
-  );
+    );
 
-  const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
+    const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("buybacks")],
     minebtcProgram.programId
-  );
+    );
 
-  const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
+    const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("buybacks-sol-vault")],
     minebtcProgram.programId
   );
@@ -496,51 +506,51 @@ async function initializeSystemAccounts(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .initializeSystemAccounts()
-      .accounts({
-        globalConfig: globalConfigPDA,
-        systemReferralRewards: systemReferralRewardsPDA,
-        buybacksAccount: buybacksAccountPDA,
-        buybacksSolVault: buybacksSolVaultPDA,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+            .initializeSystemAccounts()
+            .accounts({
+                globalConfig: globalConfigPDA,
+                systemReferralRewards: systemReferralRewardsPDA,
+                buybacksAccount: buybacksAccountPDA,
+                buybacksSolVault: buybacksSolVaultPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ System accounts initialized!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.system_accounts_initialized = {
-      system_referral_rewards_pda: systemReferralRewardsPDA.toString(),
-      buybacks_account_pda: buybacksAccountPDA.toString(),
-      buybacks_sol_vault_pda: buybacksSolVaultPDA.toString(),
-      tx_signature: tx,
+        deploymentFile.system_accounts_initialized = {
+            system_referral_rewards_pda: systemReferralRewardsPDA.toString(),
+            buybacks_account_pda: buybacksAccountPDA.toString(),
+            buybacks_sol_vault_pda: buybacksSolVaultPDA.toString(),
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    if (error.toString().includes("already in use")) {
+        };
+        saveDeploymentData();
+    } catch (error) {
+        if (error.toString().includes("already in use")) {
       console.log(
         COLOR_INFO,
         "ℹ️ System accounts already initialized. Skipping..."
       );
-      deploymentFile.system_accounts_initialized = {
-        system_referral_rewards_pda: systemReferralRewardsPDA.toString(),
-        buybacks_account_pda: buybacksAccountPDA.toString(),
-        buybacks_sol_vault_pda: buybacksSolVaultPDA.toString(),
-      };
-      saveDeploymentData();
-    } else {
-      throw error;
+            deploymentFile.system_accounts_initialized = {
+                system_referral_rewards_pda: systemReferralRewardsPDA.toString(),
+                buybacks_account_pda: buybacksAccountPDA.toString(),
+                buybacks_sol_vault_pda: buybacksSolVaultPDA.toString(),
+            };
+            saveDeploymentData();
+        } else {
+            throw error;
+        }
     }
-  }
 }
 
 async function addFactions(minebtcProgram) {
-  if (deploymentFile.factions_added) {
+    if (deploymentFile.factions_added) {
     console.log(COLOR_INFO, "ℹ️ Factions already added. Skipping...");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -550,7 +560,7 @@ async function addFactions(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const addedFactions = [];
+    const addedFactions = [];
 
   // First, fetch the current global config to get the current faction count
   let currentFactionCount = 0;
@@ -571,11 +581,11 @@ async function addFactions(minebtcProgram) {
     currentFactionCount = 0;
   }
 
-  console.log(COLOR_INFO, `📝 Adding ${config.factions.length} factions...`);
+    console.log(COLOR_INFO, `📝 Adding ${config.factions.length} factions...`);
 
-  for (let i = 0; i < config.factions.length; i++) {
-    const faction = config.factions[i];
-    const factionId = i;
+    for (let i = 0; i < config.factions.length; i++) {
+        const faction = config.factions[i];
+        const factionId = i;
     console.log(COLOR_INFO, `Faction ID: ${factionId}`);
     console.log(COLOR_INFO, `Current faction count: ${currentFactionCount}`);
 
@@ -599,7 +609,7 @@ async function addFactions(minebtcProgram) {
       [Buffer.from("faction"), Buffer.from(faction.name)],
       minebtcProgram.programId
     );
-    console.log(`   ${i + 1}. ${faction.name} (ID: ${factionId})`);
+        console.log(`   ${i + 1}. ${faction.name} (ID: ${factionId})`);
     console.log(`      FactionState PDA: ${factionStatePDA.toString()}`);
     console.log(`      Bump: ${bump}`);
 
@@ -682,26 +692,26 @@ async function addFactions(minebtcProgram) {
       console.log(COLOR_DIM, `         Bump: ${bump}`);
 
       const tx = await minebtcProgram.methods
-        .addFaction(faction.name, factionId)
-        .accounts({
-          globalConfig: globalConfigPDA,
-          factionState: factionStatePDA,
-          authority: wallet.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+                .addFaction(faction.name, factionId)
+                .accounts({
+                    globalConfig: globalConfigPDA,
+                    factionState: factionStatePDA,
+                    authority: wallet.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .rpc();
 
-      console.log(COLOR_SUCCESS, `      ✅ Added: ${faction.name}`);
-      addedFactions.push({
-        faction_id: factionId,
-        name: faction.name,
-        faction_state_pda: factionStatePDA.toString(),
+            console.log(COLOR_SUCCESS, `      ✅ Added: ${faction.name}`);
+            addedFactions.push({
+                faction_id: factionId,
+                name: faction.name,
+                faction_state_pda: factionStatePDA.toString(),
         tx_signature: tx,
-      });
+            });
 
       // Increment the faction count for next iteration
       currentFactionCount++;
-    } catch (error) {
+        } catch (error) {
       // Check for specific error types
       const errorStr = error.toString();
       console.log(errorStr);
@@ -750,10 +760,10 @@ async function addFactions(minebtcProgram) {
         );
         console.log(COLOR_DIM, `         Error: ${errorStr.substring(0, 200)}`);
 
-        addedFactions.push({
-          faction_id: factionId,
-          name: faction.name,
-          faction_state_pda: factionStatePDA.toString(),
+                addedFactions.push({
+                    faction_id: factionId,
+                    name: faction.name,
+                    faction_state_pda: factionStatePDA.toString(),
           status: "error_or_exists",
           error: errorStr.substring(0, 200),
         });
@@ -774,31 +784,31 @@ async function addFactions(minebtcProgram) {
           `         Factions must be added sequentially.`
         );
         throw error;
-      } else {
+            } else {
         console.error(COLOR_ERROR, `      ❌ Failed to add ${faction.name}:`);
         console.error(COLOR_ERROR, `         ${errorStr}`);
-        throw error;
-      }
+                throw error;
+            }
+        }
     }
-  }
 
-  console.log(COLOR_SUCCESS, `✅ ${addedFactions.length} factions configured!`);
+    console.log(COLOR_SUCCESS, `✅ ${addedFactions.length} factions configured!`);
 
-  deploymentFile.factions_added = {
-    factions: addedFactions,
+    deploymentFile.factions_added = {
+        factions: addedFactions,
     timestamp: new Date().toISOString(),
-  };
-  saveDeploymentData();
+    };
+    saveDeploymentData();
 }
 
 async function initializeMiningSystem(minebtcProgram) {
-  if (deploymentFile.mining_vault_initialized) {
+    if (deploymentFile.mining_vault_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Mining system already initialized. Skipping..."
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -808,149 +818,149 @@ async function initializeMiningSystem(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const dogeBtcMiningPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.dogeBtcMining_address
+  const mineBtcMiningPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.mineBtcMining_address
   );
-  const raydiumPoolState = deploymentFile.dbtc_sol_pool_created?.poolStatePDA;
+    const raydiumPoolState = deploymentFile.dbtc_sol_pool_created?.poolStatePDA;
 
-  if (!raydiumPoolState) {
+    if (!raydiumPoolState) {
     console.error(
       COLOR_ERROR,
       "❌ Raydium pool state not found in deployment file."
     );
     console.log(COLOR_WARNING, "⚠️ Please run 2_init_mdoge_SOL_pool.js first.");
-    return;
-  }
+        return;
+    }
 
-  const [vaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc_vault"), dogeBtcMiningPDA.toBuffer()],
+    const [vaultPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("minebtc_vault"), mineBtcMiningPDA.toBuffer()],
     minebtcProgram.programId
-  );
+    );
 
-  const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
+    const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("minebtc-vault-authority")],
     minebtcProgram.programId
-  );
+    );
 
-  console.log(COLOR_INFO, `🔑 Mining Token Vault PDA: ${vaultPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 Mining Token Vault PDA: ${vaultPDA.toString()}`);
   console.log(
     COLOR_INFO,
     `🔑 Vault Authority PDA: ${vaultAuthorityPDA.toString()}`
   );
-  console.log(COLOR_INFO, `⏰ Start Timestamp: ${MINING_START_TIMESTAMP}`);
+    console.log(COLOR_INFO, `⏰ Start Timestamp: ${MINING_START_TIMESTAMP}`);
   console.log(
     COLOR_INFO,
     `💰 DogeBtc Per Slot: ${MINING_DOGE_BTC_PER_SLOT.toString()}`
   );
-  console.log(COLOR_INFO, `🔄 Raydium Pool State: ${raydiumPoolState}`);
+    console.log(COLOR_INFO, `🔄 Raydium Pool State: ${raydiumPoolState}`);
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
-      .initializeMining(
-        new BN(MINING_START_TIMESTAMP),
-        MINING_DOGE_BTC_PER_SLOT,
-        new PublicKey(raydiumPoolState)
-      )
-      .accounts({
-        globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
-        vaultAuthority: vaultAuthorityPDA,
-        tokenVault: vaultPDA,
+            .initializeMining(
+                new BN(MINING_START_TIMESTAMP),
+                MINING_DOGE_BTC_PER_SLOT,
+                new PublicKey(raydiumPoolState)
+            )
+            .accounts({
+                globalConfig: globalConfigPDA,
+        mineBtcMining: mineBtcMiningPDA,
+                vaultAuthority: vaultAuthorityPDA,
+                tokenVault: vaultPDA,
         tokenMint: DOGEBTC_TOKEN_MINT,
-        tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-        rent: web3.SYSVAR_RENT_PUBKEY,
-      })
-      .rpc();
+                tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+                rent: web3.SYSVAR_RENT_PUBKEY,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ Mining system initialized!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.mining_vault_initialized = {
-      vault_address: vaultPDA.toString(),
-      vault_authority: vaultAuthorityPDA.toString(),
-      start_timestamp: MINING_START_TIMESTAMP,
-      doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
-      tx_signature: tx,
+        deploymentFile.mining_vault_initialized = {
+            vault_address: vaultPDA.toString(),
+            vault_authority: vaultAuthorityPDA.toString(),
+            start_timestamp: MINING_START_TIMESTAMP,
+            doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    if (error.toString().includes("MiningAlreadyInitialized")) {
+        };
+        saveDeploymentData();
+    } catch (error) {
+        if (error.toString().includes("MiningAlreadyInitialized")) {
       console.log(COLOR_INFO, "ℹ️ Mining already initialized. Skipping...");
-      deploymentFile.mining_vault_initialized = {
-        vault_address: vaultPDA.toString(),
-        vault_authority: vaultAuthorityPDA.toString(),
-        start_timestamp: MINING_START_TIMESTAMP,
-        doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
-      };
-      saveDeploymentData();
-    } else {
-      throw error;
+            deploymentFile.mining_vault_initialized = {
+                vault_address: vaultPDA.toString(),
+                vault_authority: vaultAuthorityPDA.toString(),
+                start_timestamp: MINING_START_TIMESTAMP,
+                doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
+            };
+            saveDeploymentData();
+        } else {
+            throw error;
+        }
     }
-  }
 }
 
 async function depositMiningTokens(minebtcProgram) {
-  if (deploymentFile.mining_tokens_deposited) {
+    if (deploymentFile.mining_tokens_deposited) {
     console.log(COLOR_INFO, "ℹ️ Mining tokens already deposited. Skipping...");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
     "\n================ [ DEPOSITING MINING TOKENS ] ================"
   );
 
-  const dogeBtcMiningPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.dogeBtcMining_address
+  const mineBtcMiningPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.mineBtcMining_address
   );
   const vaultPDA = new PublicKey(
     deploymentFile.mining_vault_initialized.vault_address
   );
 
-  // Get user's token account
-  const userTokenAccount = await anchor_spl.getAssociatedTokenAddress(
+    // Get user's token account
+    const userTokenAccount = await anchor_spl.getAssociatedTokenAddress(
     DOGEBTC_TOKEN_MINT,
-    wallet.publicKey,
-    false,
-    anchor_spl.TOKEN_2022_PROGRAM_ID
-  );
+        wallet.publicKey,
+        false,
+        anchor_spl.TOKEN_2022_PROGRAM_ID
+    );
 
   console.log(
     COLOR_INFO,
     `💰 Depositing ${DBTC_DEPOSIT_AMOUNT.toString()} tokens...`
   );
-  console.log(COLOR_INFO, `   From: ${userTokenAccount.toString()}`);
-  console.log(COLOR_INFO, `   To: ${vaultPDA.toString()}`);
+    console.log(COLOR_INFO, `   From: ${userTokenAccount.toString()}`);
+    console.log(COLOR_INFO, `   To: ${vaultPDA.toString()}`);
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
       .depositMineBtcTokens(DBTC_DEPOSIT_AMOUNT)
-      .accounts({
-        depositor: wallet.publicKey,
-        depositorTokenAccount: userTokenAccount,
-        dbtcTokenVault: vaultPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+            .accounts({
+                depositor: wallet.publicKey,
+                depositorTokenAccount: userTokenAccount,
+                dbtcTokenVault: vaultPDA,
+        mineBtcMining: mineBtcMiningPDA,
         tokenMint: DOGEBTC_TOKEN_MINT,
-        tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
-      })
-      .rpc();
+                tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ Mining tokens deposited successfully!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.mining_tokens_deposited = {
-      amount: DBTC_DEPOSIT_AMOUNT.toString(),
-      tx_signature: tx,
+        deploymentFile.mining_tokens_deposited = {
+            amount: DBTC_DEPOSIT_AMOUNT.toString(),
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
+        };
+        saveDeploymentData();
+    } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to deposit mining tokens:", error);
-    throw error;
-  }
+        throw error;
+    }
 }
 
 async function initializeHashpowerConfig(minebtcProgram) {
@@ -1203,31 +1213,31 @@ async function initializeCustodianAccounts(minebtcProgram) {
 }
 
 async function setRaydiumPoolState(minebtcProgram) {
-  if (deploymentFile.raydium_pool_state_set) {
+    if (deploymentFile.raydium_pool_state_set) {
     console.log(COLOR_INFO, "ℹ️ Raydium pool state already set. Skipping...");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
     "\n=================== [ SETTING RAYDIUM POOL STATE ] ==================="
   );
 
-  const raydiumPoolState = deploymentFile.dbtc_sol_pool_created?.poolStatePDA;
+    const raydiumPoolState = deploymentFile.dbtc_sol_pool_created?.poolStatePDA;
 
-  if (!raydiumPoolState) {
+    if (!raydiumPoolState) {
     console.error(
       COLOR_ERROR,
       "❌ Raydium pool state not found in deployment file."
     );
     console.log(COLOR_WARNING, "⚠️ Please run 2_init_mdoge_SOL_pool.js first.");
-    return;
-  }
+        return;
+    }
 
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const poolStatePubkey = new PublicKey(raydiumPoolState);
+    const poolStatePubkey = new PublicKey(raydiumPoolState);
 
   // Derive vault PDAs
   const [solRewardsVaultPDA] = PublicKey.findProgramAddressSync(
@@ -1255,40 +1265,40 @@ async function setRaydiumPoolState(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .setRaydiumPoolState(poolStatePubkey)
-      .accounts({
-        globalConfig: globalConfigPDA,
+            .setRaydiumPoolState(poolStatePubkey)
+            .accounts({
+                globalConfig: globalConfigPDA,
         solRewardsVault: solRewardsVaultPDA,
         solPrizePotVault: solPrizePotVaultPDA,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ Raydium pool state set successfully!");
     console.log(COLOR_SUCCESS, "✅ SOL rewards vault initialized!");
     console.log(COLOR_SUCCESS, "✅ SOL prize pot vault initialized!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.raydium_pool_state_set = {
-      pool_state_address: poolStatePubkey.toString(),
+        deploymentFile.raydium_pool_state_set = {
+            pool_state_address: poolStatePubkey.toString(),
       sol_rewards_vault: solRewardsVaultPDA.toString(),
       sol_prize_pot_vault: solPrizePotVaultPDA.toString(),
-      tx_signature: tx,
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
+        };
+        saveDeploymentData();
+    } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to set Raydium pool state:", error);
-    throw error;
-  }
+        throw error;
+    }
 }
 
 async function initializeEggConfig(minebtcProgram) {
-  if (deploymentFile.egg_config_initialized) {
+    if (deploymentFile.egg_config_initialized) {
     console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -1299,172 +1309,172 @@ async function initializeEggConfig(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-  const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
-  );
+    );
 
-  // Get egg config values
-  const basePrice = config.eggs_config.base_price;
-  const curveA = config.eggs_config.curve_a; // Curve steepness
-  const maxSupply = config.eggs_config.max_supply; // Max 10k eggs
+    // Get egg config values
+    const basePrice = config.eggs_config.base_price; 
+    const curveA = config.eggs_config.curve_a; // Curve steepness
+    const maxSupply = config.eggs_config.max_supply; // Max 10k eggs
 
-  if (!basePrice || !curveA || !maxSupply) {
+    if (!basePrice || !curveA || !maxSupply) {
     console.error(COLOR_ERROR, "❌ Egg config values not found in config.json");
     throw new Error("Egg config values not found");
-  }
+    }
 
-  console.log(COLOR_INFO, `🔑 EggConfig PDA: ${eggsConfigPDA.toString()}`);
-  console.log(COLOR_INFO, `💰 Base Price: ${basePrice / 1e9} SOL`);
-  console.log(COLOR_INFO, `📈 Curve A: ${curveA}`);
-  console.log(COLOR_INFO, `🥚 Max Supply: ${maxSupply}`);
+    console.log(COLOR_INFO, `🔑 EggConfig PDA: ${eggsConfigPDA.toString()}`);
+    console.log(COLOR_INFO, `💰 Base Price: ${basePrice / 1e9} SOL`);
+    console.log(COLOR_INFO, `📈 Curve A: ${curveA}`);
+    console.log(COLOR_INFO, `🥚 Max Supply: ${maxSupply}`);
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
       .initializeEggConfig(new BN(basePrice), new BN(curveA), new BN(maxSupply))
-      .accounts({
-        eggsConfig: eggsConfigPDA,
-        globalConfig: globalConfigPDA,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+            .accounts({
+                eggsConfig: eggsConfigPDA,
+                globalConfig: globalConfigPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ EggConfig initialized successfully!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.egg_config_initialized = {
-      eggs_config_pda: eggsConfigPDA.toString(),
-      base_price: basePrice.toString(),
-      curve_a: curveA.toString(),
-      max_supply: maxSupply.toString(),
-      tx_signature: tx,
+        deploymentFile.egg_config_initialized = {
+            eggs_config_pda: eggsConfigPDA.toString(),
+            base_price: basePrice.toString(),
+            curve_a: curveA.toString(),
+            max_supply: maxSupply.toString(),
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    if (error.toString().includes("already in use")) {
+        };
+        saveDeploymentData();
+    } catch (error) {
+        if (error.toString().includes("already in use")) {
       console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
-      deploymentFile.egg_config_initialized = {
-        eggs_config_pda: eggsConfigPDA.toString(),
-      };
-      saveDeploymentData();
-    } else {
+            deploymentFile.egg_config_initialized = {
+                eggs_config_pda: eggsConfigPDA.toString(),
+            };
+            saveDeploymentData();
+        } else {
       console.error(COLOR_ERROR, "❌ Failed to initialize EggConfig:", error);
-      throw error;
+            throw error;
+        }
     }
-  }
 }
 
-async function createDragonEggCollection(minebtcProgram) {
-  if (deploymentFile.dragon_egg_collection_created) {
-    console.log(COLOR_INFO, "ℹ️ Dragon Egg collection already created");
+async function createEggCollection(minebtcProgram) {
+    if (deploymentFile.dragon_egg_collection_created) {
+    console.log(COLOR_INFO, "ℹ️ Egg collection already created");
     console.log(
       COLOR_INFO,
       "🔑 Collection Address:",
       deploymentFile.dragon_egg_collection_created.collection_address
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
     "\n=================== [ CREATING DRAGON EGG COLLECTION ] ==================="
   );
 
-  // Derive PDAs
-  const [globalConfigPDA] = PublicKey.findProgramAddressSync(
+    // Derive PDAs
+    const [globalConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("global-config")],
     minebtcProgram.programId
-  );
+    );
 
-  const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
-  );
+    );
 
-  const [collectionAuthorityPDA] = PublicKey.findProgramAddressSync(
+    const [collectionAuthorityPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("collection_authority")],
     minebtcProgram.programId
-  );
+    );
 
   console.log(COLOR_INFO, "🎨 Creating Metaplex Core collection...");
-  console.log(COLOR_DIM, `   Name: ${config.dragon_eggs.collection_name}`);
-  console.log(COLOR_DIM, `   URI: ${config.dragon_eggs.collection_uri}`);
+    console.log(COLOR_DIM, `   Name: ${config.dragon_eggs.collection_name}`);
+    console.log(COLOR_DIM, `   URI: ${config.dragon_eggs.collection_uri}`);
   console.log(
     COLOR_INFO,
     "🔐 Collection Authority PDA:",
     collectionAuthorityPDA.toString()
   );
 
-  // Generate a new keypair for the collection
-  const collectionKeypair = Keypair.generate();
+    // Generate a new keypair for the collection
+    const collectionKeypair = Keypair.generate();
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
-      .createDragonEggCollection(
-        config.dragon_eggs.collection_name,
-        config.dragon_eggs.collection_uri
-      )
-      .accounts({
-        authority: walletKeypair.publicKey,
-        globalConfig: globalConfigPDA,
-        eggsConfig: eggsConfigPDA,
-        collection: collectionKeypair.publicKey,
-        collectionAuthority: collectionAuthorityPDA,
+            .createDragonEggCollection(
+                config.dragon_eggs.collection_name,
+                config.dragon_eggs.collection_uri
+            )
+            .accounts({
+                authority: walletKeypair.publicKey,
+                globalConfig: globalConfigPDA,
+                eggsConfig: eggsConfigPDA,
+                collection: collectionKeypair.publicKey,
+                collectionAuthority: collectionAuthorityPDA,
         mplCoreProgram: new PublicKey(
           "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
         ),
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([collectionKeypair])
-      .rpc();
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([collectionKeypair])
+            .rpc();
 
-    const collectionPubkey = collectionKeypair.publicKey;
+        const collectionPubkey = collectionKeypair.publicKey;
 
     console.log(
       COLOR_SUCCESS,
-      "✅ Dragon Egg collection created successfully!"
+      "✅ Egg collection created successfully!"
     );
     console.log(
       COLOR_INFO,
       "🔑 Collection Address:",
       collectionPubkey.toString()
     );
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
     console.log(
       COLOR_DIM,
       `🔍 Explorer: https://explorer.solana.com/address/${collectionPubkey.toString()}?cluster=${CLUSTER}`
     );
 
-    deploymentFile.dragon_egg_collection_created = {
-      collection_address: collectionPubkey.toString(),
-      collection_name: config.dragon_eggs.collection_name,
-      collection_uri: config.dragon_eggs.collection_uri,
+        deploymentFile.dragon_egg_collection_created = {
+            collection_address: collectionPubkey.toString(),
+            collection_name: config.dragon_eggs.collection_name,
+            collection_uri: config.dragon_eggs.collection_uri,
       collection_authority: collectionAuthorityPDA.toString(),
-      tx_signature: tx,
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
+        };
+        saveDeploymentData();
+    } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to create collection:", error);
-    throw error;
-  }
+        throw error;
+    }
 }
 
-async function setDragonEggUris(minebtcProgram) {
-  if (!deploymentFile.dragon_egg_collection_created) {
+async function setEggUris(minebtcProgram) {
+    if (!deploymentFile.dragon_egg_collection_created) {
     console.error(
       COLOR_ERROR,
-      "❌ Dragon Egg collection must be created first"
+      "❌ Egg collection must be created first"
     );
     throw new Error("Collection not created");
-  }
+    }
 
-  if (deploymentFile.dragon_egg_uris_set) {
-    console.log(COLOR_INFO, "ℹ️ Dragon Egg URIs already set");
-    return;
-  }
+    if (deploymentFile.dragon_egg_uris_set) {
+    console.log(COLOR_INFO, "ℹ️ Egg URIs already set");
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -1474,55 +1484,55 @@ async function setDragonEggUris(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const dogeBtcMiningPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.dogeBtcMining_address
+  const mineBtcMiningPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.mineBtcMining_address
   );
 
-  const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
-  );
+    );
 
   console.log(COLOR_INFO, "📝 Setting URIs:", config.dragon_eggs.uris.length);
-  config.dragon_eggs.uris.forEach((uri, index) => {
-    console.log(COLOR_DIM, `   ${index + 1}. ${uri}`);
-  });
+    config.dragon_eggs.uris.forEach((uri, index) => {
+        console.log(COLOR_DIM, `   ${index + 1}. ${uri}`);
+    });
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
-      .setDragonEggUris(config.dragon_eggs.uris)
-      .accounts({
-        globalConfig: globalConfigPDA,
-        eggsConfig: eggsConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
-        authority: walletKeypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+            .setDragonEggUris(config.dragon_eggs.uris)
+            .accounts({
+                globalConfig: globalConfigPDA,
+                eggsConfig: eggsConfigPDA,
+        mineBtcMining: mineBtcMiningPDA,
+                authority: walletKeypair.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ Dragon Egg URIs set successfully!");
+    console.log(COLOR_SUCCESS, "✅ Egg URIs set successfully!");
     console.log(COLOR_DIM, "🔗 Transaction:", tx);
 
-    deploymentFile.dragon_egg_uris_set = {
-      uris: config.dragon_eggs.uris,
-      tx_signature: tx,
+        deploymentFile.dragon_egg_uris_set = {
+            uris: config.dragon_eggs.uris,
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    console.error(COLOR_ERROR, "❌ Failed to set Dragon Egg URIs:", error);
-    throw error;
-  }
+        };
+        saveDeploymentData();
+    } catch (error) {
+    console.error(COLOR_ERROR, "❌ Failed to set Egg URIs:", error);
+        throw error;
+    }
 }
 
-async function initializeDragonEggRoyalties(minebtcProgram) {
-  if (deploymentFile.dragon_egg_royalties_initialized) {
+async function initializeEggRoyalties(minebtcProgram) {
+    if (deploymentFile.dragon_egg_royalties_initialized) {
     console.log(
       COLOR_INFO,
-      "ℹ️ Dragon Egg royalties already initialized. Skipping..."
+      "ℹ️ Egg royalties already initialized. Skipping..."
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -1536,19 +1546,19 @@ async function initializeDragonEggRoyalties(minebtcProgram) {
     deploymentFile.dragon_egg_collection_created.collection_address
   );
 
-  const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
-  );
+    );
 
-  const [collectionAuthorityPDA] = PublicKey.findProgramAddressSync(
+    const [collectionAuthorityPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("collection_authority")],
     minebtcProgram.programId
-  );
+    );
 
-  // Configure royalties
+    // Configure royalties
   const basisPoints = config.eggs_config.royalties;
-  let creators = [];
+    let creators = [];
 
   // Convert addresses to PublicKey objects
   const multisigAddress = new PublicKey(
@@ -1574,54 +1584,54 @@ async function initializeDragonEggRoyalties(minebtcProgram) {
   });
 
   console.log(COLOR_INFO, `💎 Royalty: ${basisPoints / 100}%`);
-  console.log(COLOR_INFO, `👥 Creators: ${creators.length}`);
-  creators.forEach((creator, idx) => {
+    console.log(COLOR_INFO, `👥 Creators: ${creators.length}`);
+    creators.forEach((creator, idx) => {
     console.log(
       COLOR_DIM,
       `   ${idx + 1}. ${creator.address.toBase58()} (${creator.percentage}%)`
     );
-  });
+    });
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
       .initDragonEggRoyalties(basisPoints, creators)
-      .accounts({
-        authority: walletKeypair.publicKey,
-        globalConfig: globalConfigPDA,
-        eggsConfig: eggsConfigPDA,
-        collection: collectionPubkey,
-        collectionAuthority: collectionAuthorityPDA,
+            .accounts({
+                authority: walletKeypair.publicKey,
+                globalConfig: globalConfigPDA,
+                eggsConfig: eggsConfigPDA,
+                collection: collectionPubkey,
+                collectionAuthority: collectionAuthorityPDA,
         mplCoreProgram: new PublicKey(
           "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
         ),
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ Dragon Egg royalties initialized!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+    console.log(COLOR_SUCCESS, "✅ Egg royalties initialized!");
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.dragon_egg_royalties_initialized = {
-      basis_points: basisPoints,
-      creators: creators,
-      tx_signature: tx,
+        deploymentFile.dragon_egg_royalties_initialized = {
+            basis_points: basisPoints,
+            creators: creators,
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
+        };
+        saveDeploymentData();
+    } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to initialize royalties:", error);
-    throw error;
-  }
+        throw error;
+    }
 }
 
 async function configureTicketTiers(minebtcProgram) {
-  if (deploymentFile.ticket_tier_configs_initialized) {
+    if (deploymentFile.ticket_tier_configs_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Ticket tier configs already initialized. Skipping..."
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -1631,14 +1641,14 @@ async function configureTicketTiers(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const dogeBtcMiningPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.dogeBtcMining_address
+  const mineBtcMiningPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.mineBtcMining_address
   );
 
-  const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
-  );
+    );
 
   const ticketTiers = config.eggs_config.ticket_tiers || [];
 
@@ -1647,9 +1657,9 @@ async function configureTicketTiers(minebtcProgram) {
     `📝 Adding ${ticketTiers.length} ticket tier configs...`
   );
 
-  const addedTiers = [];
+    const addedTiers = [];
 
-  for (const tier of ticketTiers) {
+    for (const tier of ticketTiers) {
     console.log(
       `   Tier ${tier.tier_index}: ${tier.ticket_value / 1e9} SOL × ${
         tier.ticket_count
@@ -1658,46 +1668,46 @@ async function configureTicketTiers(minebtcProgram) {
 
     try {
       const tx = await minebtcProgram.methods
-        .addTicketTierConfig(
-          tier.tier_index,
-          new BN(tier.ticket_value),
-          tier.ticket_count
-        )
-        .accounts({
-          globalConfig: globalConfigPDA,
-          eggsConfig: eggsConfigPDA,
-          dogeBtcMining: dogeBtcMiningPDA,
-          authority: wallet.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+                .addTicketTierConfig(
+                    tier.tier_index,
+                    new BN(tier.ticket_value),
+                    tier.ticket_count
+                )
+                .accounts({
+                    globalConfig: globalConfigPDA,
+                    eggsConfig: eggsConfigPDA,
+          mineBtcMining: mineBtcMiningPDA,
+                    authority: wallet.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .rpc();
 
-      console.log(COLOR_SUCCESS, `      ✅ Tier ${tier.tier_index} configured`);
-      addedTiers.push({ ...tier, tx_signature: tx });
-    } catch (error) {
+            console.log(COLOR_SUCCESS, `      ✅ Tier ${tier.tier_index} configured`);
+            addedTiers.push({ ...tier, tx_signature: tx });
+        } catch (error) {
       console.error(
         COLOR_ERROR,
         `❌ Failed to add tier ${tier.tier_index}:`,
         error
       );
-      throw error;
+            throw error;
+        }
     }
-  }
 
   console.log(COLOR_SUCCESS, "✅ All ticket tier configs initialized!");
 
-  deploymentFile.ticket_tier_configs_initialized = {
-    ticket_tiers: addedTiers,
+    deploymentFile.ticket_tier_configs_initialized = {
+        ticket_tiers: addedTiers,
     timestamp: new Date().toISOString(),
-  };
-  saveDeploymentData();
+    };
+    saveDeploymentData();
 }
 
 async function initializeTaxConfig(minebtcProgram) {
-  if (deploymentFile.tax_config_initialized) {
+    if (deploymentFile.tax_config_initialized) {
     console.log(COLOR_INFO, "ℹ️ Tax config already initialized. Skipping...");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -1708,92 +1718,92 @@ async function initializeTaxConfig(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-  // Derive PDAs
-  const [taxConfigPDA] = PublicKey.findProgramAddressSync(
+    // Derive PDAs
+    const [taxConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("tax-config")],
     minebtcProgram.programId
-  );
+    );
 
-  const [withdrawWithheldAuthorityPDA] = PublicKey.findProgramAddressSync(
+    const [withdrawWithheldAuthorityPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("withdraw-withheld-authority")],
     minebtcProgram.programId
-  );
+    );
 
-  const [factionTreasuryVaultPDA] = PublicKey.findProgramAddressSync(
+    const [factionTreasuryVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("faction-treasury-vault")],
     minebtcProgram.programId
-  );
+    );
 
-  const [nftFloorSweepVaultPDA] = PublicKey.findProgramAddressSync(
+    const [nftFloorSweepVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("nft-floor-sweep-vault")],
     minebtcProgram.programId
-  );
+    );
 
-  const [nftSaleSolVaultPDA] = PublicKey.findProgramAddressSync(
+    const [nftSaleSolVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("nft-sale-sol-vault")],
     minebtcProgram.programId
-  );
+    );
 
-  // Get config values
-  const whitelistedAddress = config.tax.nft_floor_sweep_whitelisted_address;
-  const nftFloorSweepPct = config.tax.nft_floor_sweep_pct;
-  const factionTreasuryPct = config.tax.faction_treasury_pct;
-  const burnPct = 100 - nftFloorSweepPct - factionTreasuryPct;
+    // Get config values
+    const whitelistedAddress = config.tax.nft_floor_sweep_whitelisted_address;
+    const nftFloorSweepPct = config.tax.nft_floor_sweep_pct;
+    const factionTreasuryPct = config.tax.faction_treasury_pct;
+    const burnPct = 100 - nftFloorSweepPct - factionTreasuryPct;
 
-  console.log(COLOR_INFO, `💰 Tax Distribution:`);
-  console.log(COLOR_INFO, `   NFT Floor Sweep: ${nftFloorSweepPct}%`);
-  console.log(COLOR_INFO, `   Faction Treasury: ${factionTreasuryPct}%`);
-  console.log(COLOR_INFO, `   Burn: ${burnPct}%`);
-  console.log(COLOR_INFO, `🔑 Whitelisted Address: ${whitelistedAddress}`);
+    console.log(COLOR_INFO, `💰 Tax Distribution:`);
+    console.log(COLOR_INFO, `   NFT Floor Sweep: ${nftFloorSweepPct}%`);
+    console.log(COLOR_INFO, `   Faction Treasury: ${factionTreasuryPct}%`);
+    console.log(COLOR_INFO, `   Burn: ${burnPct}%`);
+    console.log(COLOR_INFO, `🔑 Whitelisted Address: ${whitelistedAddress}`);
 
-  try {
+    try {
     const tx = await minebtcProgram.methods
-      .initializeTaxConfig(
-        nftFloorSweepPct,
-        factionTreasuryPct,
-        new PublicKey(whitelistedAddress)
-      )
-      .accounts({
-        globalConfig: globalConfigPDA,
-        taxConfig: taxConfigPDA,
+            .initializeTaxConfig(
+                nftFloorSweepPct,
+                factionTreasuryPct,
+                new PublicKey(whitelistedAddress)
+            )
+            .accounts({
+                globalConfig: globalConfigPDA,
+                taxConfig: taxConfigPDA,
         minebtcMint: DOGEBTC_TOKEN_MINT,
-        withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
-        factionTreasuryVault: factionTreasuryVaultPDA,
-        nftFloorSweepVault: nftFloorSweepVaultPDA,
-        nftSaleSolVault: nftSaleSolVaultPDA,
-        authority: wallet.publicKey,
-        tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+                withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
+                factionTreasuryVault: factionTreasuryVaultPDA,
+                nftFloorSweepVault: nftFloorSweepVaultPDA,
+                nftSaleSolVault: nftSaleSolVaultPDA,
+                authority: wallet.publicKey,
+                tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ Tax config initialized successfully!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.tax_config_initialized = {
-      tax_config_pda: taxConfigPDA.toString(),
-      withdraw_withheld_authority: withdrawWithheldAuthorityPDA.toString(),
-      faction_treasury_vault: factionTreasuryVaultPDA.toString(),
-      nft_floor_sweep_vault: nftFloorSweepVaultPDA.toString(),
-      nft_sale_sol_vault: nftSaleSolVaultPDA.toString(),
-      nft_floor_sweep_pct: nftFloorSweepPct,
-      faction_treasury_pct: factionTreasuryPct,
-      whitelisted_address: whitelistedAddress,
-      tx_signature: tx,
+        deploymentFile.tax_config_initialized = {
+            tax_config_pda: taxConfigPDA.toString(),
+            withdraw_withheld_authority: withdrawWithheldAuthorityPDA.toString(),
+            faction_treasury_vault: factionTreasuryVaultPDA.toString(),
+            nft_floor_sweep_vault: nftFloorSweepVaultPDA.toString(),
+            nft_sale_sol_vault: nftSaleSolVaultPDA.toString(),
+            nft_floor_sweep_pct: nftFloorSweepPct,
+            faction_treasury_pct: factionTreasuryPct,
+            whitelisted_address: whitelistedAddress,
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
+        };
+        saveDeploymentData();
+    } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to initialize tax config:", error);
-    throw error;
-  }
+        throw error;
+    }
 }
 
 async function initializeGameState(minebtcProgram) {
-  if (deploymentFile.game_state_initialized) {
+    if (deploymentFile.game_state_initialized) {
     console.log(COLOR_INFO, "ℹ️ Game state already initialized. Skipping...");
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
@@ -1804,13 +1814,13 @@ async function initializeGameState(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-  // Derive GlobalGameState PDA
-  const [globalGameStatePDA] = PublicKey.findProgramAddressSync(
+    // Derive GlobalGameState PDA
+    const [globalGameStatePDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("global-game-state")],
     minebtcProgram.programId
-  );
+    );
 
-  const roundDurationSeconds = config.game.round_duration_seconds;
+    const roundDurationSeconds = config.game.round_duration_seconds;
 
   console.log(
     COLOR_INFO,
@@ -1825,70 +1835,70 @@ async function initializeGameState(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .initializeGameState(new BN(roundDurationSeconds))
-      .accounts({
-        globalGameState: globalGameStatePDA,
-        globalConfig: globalConfigPDA,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+            .initializeGameState(new BN(roundDurationSeconds))
+            .accounts({
+                globalGameState: globalGameStatePDA,
+                globalConfig: globalConfigPDA,
+                authority: wallet.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
 
     console.log(COLOR_SUCCESS, "✅ Game state initialized successfully!");
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+        console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.game_state_initialized = {
-      global_game_state_pda: globalGameStatePDA.toString(),
-      round_duration_seconds: roundDurationSeconds,
-      tx_signature: tx,
+        deploymentFile.game_state_initialized = {
+            global_game_state_pda: globalGameStatePDA.toString(),
+            round_duration_seconds: roundDurationSeconds,
+            tx_signature: tx,
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    if (error.toString().includes("already in use")) {
+        };
+        saveDeploymentData();
+    } catch (error) {
+        if (error.toString().includes("already in use")) {
       console.log(COLOR_INFO, "ℹ️ Game state already initialized. Skipping...");
-      deploymentFile.game_state_initialized = {
-        global_game_state_pda: globalGameStatePDA.toString(),
-        round_duration_seconds: roundDurationSeconds,
-      };
-      saveDeploymentData();
-    } else {
+            deploymentFile.game_state_initialized = {
+                global_game_state_pda: globalGameStatePDA.toString(),
+                round_duration_seconds: roundDurationSeconds,
+            };
+            saveDeploymentData();
+        } else {
       console.error(COLOR_ERROR, "❌ Failed to initialize game state:", error);
-      throw error;
+            throw error;
+        }
     }
-  }
 }
 
 async function initializeLpTokenAccounts(minebtcProgram) {
-  if (deploymentFile.lp_token_accounts_initialized) {
+    if (deploymentFile.lp_token_accounts_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ LP token accounts already initialized. Skipping..."
     );
-    return;
-  }
+        return;
+    }
 
   console.log(
     COLOR_STEP,
     "\n================ [ INITIALIZING LP TOKEN ACCOUNTS ] ================"
   );
 
-  try {
-    if (!deploymentFile.dbtc_sol_pool_created?.lpMintPDA) {
+    try {
+        if (!deploymentFile.dbtc_sol_pool_created?.lpMintPDA) {
       console.log(
         COLOR_WARNING,
         "⚠️ LP mint not found in deployment file. Cannot initialize LP token accounts."
       );
-      return;
-    }
+            return;
+        }
 
-    if (!deploymentFile.mining_vault_initialized?.vault_authority) {
+        if (!deploymentFile.mining_vault_initialized?.vault_authority) {
       console.log(
         COLOR_WARNING,
         "⚠️ Vault authority not found. Cannot initialize LP token accounts."
       );
-      return;
-    }
+            return;
+        }
 
     const lpMint = new PublicKey(
       deploymentFile.dbtc_sol_pool_created.lpMintPDA
@@ -1897,29 +1907,29 @@ async function initializeLpTokenAccounts(minebtcProgram) {
       deploymentFile.mining_vault_initialized.vault_authority
     );
 
-    // For Raydium deposit, LP token account must be owned by vault authority
-    const lpTokenAccount = await anchor_spl.getAssociatedTokenAddress(
-      lpMint,
-      vaultAuthority,
-      true,
-      anchor_spl.TOKEN_PROGRAM_ID
-    );
+        // For Raydium deposit, LP token account must be owned by vault authority
+        const lpTokenAccount = await anchor_spl.getAssociatedTokenAddress(
+            lpMint,
+            vaultAuthority,
+            true,
+            anchor_spl.TOKEN_PROGRAM_ID
+        );
 
-    // Check if LP token account already exists
-    const lpAccountInfo = await connection.getAccountInfo(lpTokenAccount);
-    if (lpAccountInfo) {
+        // Check if LP token account already exists
+        const lpAccountInfo = await connection.getAccountInfo(lpTokenAccount);
+        if (lpAccountInfo) {
       console.log(
         COLOR_INFO,
         "ℹ️ LP token accounts already exist. Skipping..."
       );
-      deploymentFile.lp_token_accounts_initialized = {
-        lp_token_account: lpTokenAccount.toString(),
-        lp_token_owner: vaultAuthority.toString(),
-        lp_mint: lpMint.toString(),
-      };
-      saveDeploymentData();
-      return;
-    }
+            deploymentFile.lp_token_accounts_initialized = {
+                lp_token_account: lpTokenAccount.toString(),
+                lp_token_owner: vaultAuthority.toString(),
+                lp_mint: lpMint.toString(),
+            };
+            saveDeploymentData();
+            return;
+        }
 
     console.log(COLOR_INFO, "🔄 Initializing LP token accounts...");
     console.log(
@@ -1930,19 +1940,19 @@ async function initializeLpTokenAccounts(minebtcProgram) {
       COLOR_DIM,
       `   LP Token Owner (Vault Authority): ${vaultAuthority.toString()}`
     );
-    console.log(COLOR_DIM, `   LP Mint: ${lpMint.toString()}`);
+        console.log(COLOR_DIM, `   LP Mint: ${lpMint.toString()}`);
 
-    // Create associated token account
-    const createdAccount = await anchor_spl.getOrCreateAssociatedTokenAccount(
-      connection,
-      walletKeypair,
-      lpMint,
-      vaultAuthority,
-      true,
+        // Create associated token account
+        const createdAccount = await anchor_spl.getOrCreateAssociatedTokenAccount(
+            connection,
+            walletKeypair,
+            lpMint,
+            vaultAuthority,
+            true,
       "confirmed",
-      {},
-      anchor_spl.TOKEN_PROGRAM_ID
-    );
+            {},
+            anchor_spl.TOKEN_PROGRAM_ID
+        );
 
     console.log(
       COLOR_SUCCESS,
@@ -1953,14 +1963,14 @@ async function initializeLpTokenAccounts(minebtcProgram) {
       `   LP Token Account: ${createdAccount.address.toString()}`
     );
 
-    deploymentFile.lp_token_accounts_initialized = {
-      lp_token_account: createdAccount.address.toString(),
-      lp_token_owner: vaultAuthority.toString(),
-      lp_mint: lpMint.toString(),
+        deploymentFile.lp_token_accounts_initialized = {
+            lp_token_account: createdAccount.address.toString(),
+            lp_token_owner: vaultAuthority.toString(),
+            lp_mint: lpMint.toString(),
       timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
+        };
+        saveDeploymentData();
+    } catch (error) {
     console.error(
       COLOR_ERROR,
       "❌ Failed to initialize LP token accounts:",
@@ -2025,7 +2035,7 @@ async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
     }
 
     // Derive DogeBtcMining PDA (optional account)
-    const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("mine-btc-mining")],
       minebtcProgram.programId
     );
@@ -2042,7 +2052,7 @@ async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
       .updateConfig(null, newFeeRecipient)
       .accounts({
         globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -2101,7 +2111,7 @@ async function updateFees(minebtcProgram, feeConfig) {
     );
 
     // Derive DogeBtcMining PDA (optional account)
-    const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("mine-btc-mining")],
       minebtcProgram.programId
     );
@@ -2128,23 +2138,23 @@ async function updateFees(minebtcProgram, feeConfig) {
     console.log(COLOR_INFO, "   Current DogeBtc dist config:");
     console.log(
       COLOR_INFO,
-      `     Stakers: ${globalConfig.dbtcDistConfig.dbtcStakersPct}%`
+      `     Stakers: ${globalConfig.minebtcDistConfig.minebtcStakersPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Winners: ${globalConfig.dbtcDistConfig.dbtcWinnersPct}%`
+      `     Winners: ${globalConfig.minebtcDistConfig.dbtcWinnersPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Same-faction: ${globalConfig.dbtcDistConfig.dbtcSameFactionPct}%`
+      `     Same-faction: ${globalConfig.minebtcDistConfig.dbtcSameFactionPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Motherlode: ${globalConfig.dbtcDistConfig.dbtcMotherlodePct}%`
+      `     Motherlode: ${globalConfig.minebtcDistConfig.dbtcMotherlodePct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Refining fee: ${globalConfig.dbtcDistConfig.refiningFee}%`
+      `     Refining fee: ${globalConfig.minebtcDistConfig.refiningFee}%`
     );
     console.log(
       COLOR_INFO,
@@ -2242,7 +2252,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -2268,6 +2278,118 @@ async function updateFees(minebtcProgram, feeConfig) {
     saveDeploymentData();
   } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to update fees:", error);
+    throw error;
+  }
+}
+
+async function updateEggConfig(minebtcProgram, eggConfig) {
+  console.log(
+    COLOR_STEP,
+    "\n================ [ UPDATING EGG CONFIG ] ================"
+  );
+
+  // Check if program is initialized
+  if (!deploymentFile.minebtc_program_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ MineBTC program not initialized. Skipping egg config update..."
+    );
+    return;
+  }
+
+  // Check if egg config is initialized
+  if (!deploymentFile.egg_config_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ Egg config not initialized. Please initialize it first."
+    );
+    return;
+  }
+
+  try {
+    // Load PDAs
+    const globalConfigPDA = new PublicKey(
+      deploymentFile.minebtc_program_initialized.globalConfig_address
+    );
+
+    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("egg-config")],
+      minebtcProgram.programId
+    );
+
+    // Get current config
+    const eggsConfig = await minebtcProgram.account.eggConfig.fetch(
+      eggsConfigPDA
+    );
+
+    console.log(COLOR_INFO, "   Current Egg Config:");
+    console.log(
+      COLOR_INFO,
+      `     Base Price: ${eggsConfig.basePrice.toString()} lamports (${eggsConfig.basePrice.toNumber() / 1e9} SOL)`
+    );
+    console.log(
+      COLOR_INFO,
+      `     Curve A: ${eggsConfig.curveA.toString()}`
+    );
+    console.log(
+      COLOR_INFO,
+      `     Max Supply: ${eggsConfig.maxSupply.toString()}`
+    );
+
+    // Get values from config or use provided values
+    const basePrice = eggConfig?.basePrice 
+      ? new BN(eggConfig.basePrice)
+      : new BN(config.eggs_config.base_price);
+    const curveA = eggConfig?.curveA 
+      ? new BN(eggConfig.curveA)
+      : new BN(config.eggs_config.curve_a);
+
+    console.log(COLOR_INFO, "\n   Updating Egg Config:");
+    console.log(
+      COLOR_INFO,
+      `     Base Price: ${basePrice.toString()} lamports (${basePrice.toNumber() / 1e9} SOL)`
+    );
+    console.log(COLOR_INFO, `     Curve A: ${curveA.toString()}`);
+
+    console.log(
+      COLOR_INFO,
+      `   Global Config PDA: ${globalConfigPDA.toString()}`
+    );
+    console.log(COLOR_INFO, `   Eggs Config PDA: ${eggsConfigPDA.toString()}`);
+    console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
+
+    // Build and send transaction
+    const tx = await minebtcProgram.methods
+      .updateEggConfig(basePrice, curveA)
+      .accounts({
+        globalConfig: globalConfigPDA,
+        eggsConfig: eggsConfigPDA,
+        authority: wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, `✅ Egg config updated successfully!`);
+    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+    console.log(
+      COLOR_DIM,
+      `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
+    );
+
+    // Update deployment file
+    if (!deploymentFile.egg_config_updated) {
+      deploymentFile.egg_config_updated = {};
+    }
+    deploymentFile.egg_config_updated = {
+      base_price: basePrice.toString(),
+      curve_a: curveA.toString(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+
+    saveDeploymentData();
+  } catch (error) {
+    console.error(COLOR_ERROR, "❌ Failed to update egg config:", error);
     throw error;
   }
 }
@@ -2388,7 +2510,7 @@ async function addGameCrankerBot(minebtcProgram, botWalletAddress) {
       console.error(COLOR_ERROR, "❌ Failed to add cranker bot:", error);
       throw error;
     }
-  }
+    }
 }
 
 function printCompletionSummary() {
@@ -2436,17 +2558,17 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    `  • Dragon Egg Collection: ${
+    `  • Egg Collection: ${
       deploymentFile.dragon_egg_collection_created ? "✅" : "❌"
     }`
   );
   console.log(
     COLOR_INFO,
-    `  • Dragon Egg URIs: ${deploymentFile.dragon_egg_uris_set ? "✅" : "❌"}`
+    `  • Egg URIs: ${deploymentFile.dragon_egg_uris_set ? "✅" : "❌"}`
   );
   console.log(
     COLOR_INFO,
-    `  • Dragon Egg Royalties: ${
+    `  • Egg Royalties: ${
       deploymentFile.dragon_egg_royalties_initialized ? "✅" : "❌"
     }`
   );
@@ -2483,25 +2605,25 @@ function printCompletionSummary() {
     );
     console.log(
       COLOR_DIM,
-      `   Mining State: ${deploymentFile.minebtc_program_initialized.dogeBtcMining_address}`
+      `   Mining State: ${deploymentFile.minebtc_program_initialized.mineBtcMining_address}`
     );
     console.log(
       COLOR_DIM,
       `   SOL Treasury: ${deploymentFile.minebtc_program_initialized.solTreasury_address}`
     );
-    if (deploymentFile.mining_vault_initialized) {
+        if (deploymentFile.mining_vault_initialized) {
       console.log(
         COLOR_DIM,
         `   Mining Vault: ${deploymentFile.mining_vault_initialized.vault_address}`
       );
-    }
-    if (deploymentFile.dragon_egg_collection_created) {
+        }
+        if (deploymentFile.dragon_egg_collection_created) {
       console.log(
         COLOR_DIM,
-        `   Dragon Egg Collection: ${deploymentFile.dragon_egg_collection_created.collection_address}`
+        `   Egg Collection: ${deploymentFile.dragon_egg_collection_created.collection_address}`
       );
-    }
-    if (deploymentFile.game_state_initialized) {
+        }
+        if (deploymentFile.game_state_initialized) {
       console.log(
         COLOR_DIM,
         `   Game State: ${deploymentFile.game_state_initialized.global_game_state_pda}`
@@ -2516,7 +2638,7 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    "   2. Users can mint Dragon Eggs for their factions"
+    "   2. Users can mint Eggs for their factions"
   );
   console.log(COLOR_INFO, "   3. Users can stake DogeBtc and LP tokens");
   console.log(

@@ -10,7 +10,7 @@
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
 // - `MineBtcMining`: Manages the mining emission and distribution logic.
-// - `EggConfig`: Configuration for the Dragon Egg NFT system.
+// - `EggConfig`: Configuration for the Egg NFT system.
 // - `TaxConfig`: Configuration for the tax and burn system.
 //
 
@@ -69,7 +69,7 @@ pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
-// PDAs for Dragon Egg NFT system
+// PDAs for Egg NFT system
 pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
 pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
 
@@ -412,10 +412,10 @@ impl TicketTier {
 pub struct EggConfig {
     pub bump: u8,
 
-    /// Dragon Egg collection address (Metaplex Core)
+    /// Egg collection address (Metaplex Core)
     pub dragon_egg_collection: Pubkey,
 
-    /// Dragon Egg URIs organized by faction
+    /// Egg URIs organized by faction
     /// Structure: [faction_id] = URI
     pub dragon_egg_uris: Vec<String>, // [faction_index] = URI
 
@@ -431,7 +431,7 @@ pub struct EggConfig {
     /// Curve steepness parameter (controls price growth rate, typically >= 100)
     pub curve_a: u64,
     
-    /// Global total power across all Dragon Eggs (sum of all egg powers)
+    /// Global total power across all Eggs (sum of all egg powers)
     pub global_dragon_egg_power: u64,
     
     /// Available ticket tier configs users can choose when minting (max 4 options)
@@ -968,9 +968,9 @@ impl ReferralRewards {
 // =============================== DRAGON EGG NFT METADATA ===============================
 // ========================================================================================
 
-/// Dragon Egg NFT metadata (stored in minebtc program for simplicity)
+/// Egg NFT metadata (stored in minebtc program for simplicity)
 #[account]
-pub struct DragonEggMetadata {
+pub struct EggMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
 
@@ -989,8 +989,10 @@ pub struct DragonEggMetadata {
     /// DNA data (32 bytes for breeding/evolution)
     pub dna: [u8; 32],
 
-    /// Minebtc this egg is incubated in (if any)
-    pub incubated_player_data: Option<Pubkey>,
+    /// The Player who is incubating this egg.
+    /// If NOT incubated, this is set to Pubkey::default() (111111...)
+    /// We use Pubkey instead of Option<Pubkey> to keep account size FIXED.
+    pub incubated_player_data: Pubkey,
 
     /// Last power update timestamp
     pub last_update_ts: i64,
@@ -999,8 +1001,9 @@ pub struct DragonEggMetadata {
     pub bump: u8,
 }
 
-impl DragonEggMetadata {
-    // Field order matches struct: mint, created_at, faction_id, multiplier, power, dna, incubated_player_data, last_update_ts, bump
+impl EggMetadata {
+    // discriminator + mint + created_at + faction + mult + power + dna + player + update + bump
+    // 8 + 32 + 8 + 1 + 4 + 4 + 32 + 32 + 8 + 1 = 130 bytes
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
         8 +     // created_at (i64)
@@ -1008,7 +1011,7 @@ impl DragonEggMetadata {
         4 +     // multiplier (u32)
         4 +     // power (u32)
         32 +    // dna [u8; 32]
-        33 +    // incubated_player_data Option<Pubkey> (1 byte discriminator + 32 bytes)
+        32 +    // incubated_player_data Pubkey (always 32 bytes, Pubkey::default() if not incubated)
         8 +     // last_update_ts (i64)
         1;      // bump
 }

@@ -91,7 +91,7 @@ const [globalConfigPDA] = PublicKey.findProgramAddressSync(
   mineBTCProgramId
 );
 
-const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
   [Buffer.from(DOGE_BTC_MINING_SEED)],
   mineBTCProgramId
 );
@@ -178,12 +178,12 @@ async function sendSolToTreasury() {
 }
 
 /**
- * Get price history length from dogeBtcMining account
+ * Get price history length from mineBtcMining account
  */
 async function getPriceHistoryLength() {
   try {
-    const miningAccount = await mineBTCProgram.account.dogeBtcMining.fetch(
-      dogeBtcMiningPDA
+    const miningAccount = await mineBTCProgram.account.mineBtcMining.fetch(
+      mineBtcMiningPDA
     );
     // console.log(miningAccount)
     const priceHistory = miningAccount.priceHistory || [];
@@ -214,14 +214,14 @@ async function executeSnapshotPrice() {
 
     // Derive dbtc_token_account PDA
     const [dbtcTokenAccountPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(DOGE_BTC_VAULT_SEED), dogeBtcMiningPDA.toBuffer()],
+      [Buffer.from(DOGE_BTC_VAULT_SEED), mineBtcMiningPDA.toBuffer()],
       mineBTCProgramId
     );
 
     const snapshotTx = await mineBTCProgram.methods
       .snapshotPrice()
       .accounts({
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         globalConfig: globalConfigPDA,
         raydiumProgram: raydiumProgramId,
         poolState: raydiumPoolState,
@@ -292,14 +292,14 @@ async function executeUpdateRateAndAddLp() {
 
     // Derive dbtc_token_account PDA
     const [dbtcTokenAccountPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(DOGE_BTC_VAULT_SEED), dogeBtcMiningPDA.toBuffer()],
+      [Buffer.from(DOGE_BTC_VAULT_SEED), mineBtcMiningPDA.toBuffer()],
       mineBTCProgramId
     );
 
     const updateRateTx = await mineBTCProgram.methods
       .updateRateAndAddLp(new BN(0)) // 0 = automatic calculation mode
       .accounts({
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         globalConfig: globalConfigPDA,
         raydiumProgram: raydiumProgramId,
         poolState: raydiumPoolState,

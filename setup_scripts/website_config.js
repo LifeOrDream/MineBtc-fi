@@ -81,8 +81,8 @@ function generateWebsiteConfig(config, deployment) {
       // ========== MINE-BTC PROGRAM ACCOUNTS ==========
       globalConfig_pda:
         deployment.minebtc_program_initialized?.globalConfig_address,
-      dogeBtcMining_pda:
-        deployment.minebtc_program_initialized?.dogeBtcMining_address,
+      mineBtcMining_pda:
+        deployment.minebtc_program_initialized?.mineBtcMining_address,
       sol_treasury_pda:
         deployment.minebtc_program_initialized?.solTreasury_address,
       eggs_treasury_pda:
@@ -285,7 +285,7 @@ function main() {
       }`
     );
     console.log(
-      `  🥚 Dragon Egg Collection: ${
+      `  🥚 Egg Collection: ${
         websiteConfig[cluster].dragon_egg_collection || "Not created"
       }`
     );

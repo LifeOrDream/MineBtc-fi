@@ -12,7 +12,7 @@
 // - `user`: User interactions, betting, and account management.
 // - `stake`: Staking logic for MineBTC and LP tokens.
 // - `game`: Core game loop, round management, and randomness.
-// - `eggs`: Dragon Egg NFT system for hashpower multipliers.
+// - `eggs`: Egg NFT system for hashpower multipliers.
 // - `tax`: Tax system for deflationary mechanics and reward distribution.
 //
 // ## Architecture
@@ -39,7 +39,7 @@ pub use instructions::tax::*;
 pub use state::{SolFeeConfig, MineBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
 pub use instructions::admin::CreatorInput;
 
-declare_id!("4r5LJgNnNQ5RW5gZ2odpHNbZhf9DvnTLK4ZmthMKgAAy");
+declare_id!("8CQtUK6ckHY1Q86HySw9FH4L5Baptg4cRn3PHzwDw8oX");
 
 #[program]
 pub mod minebtc {
@@ -211,8 +211,8 @@ pub mod minebtc {
 
     /// Initialize EggConfig account (admin only)
     /// 
-    /// Creates the EggConfig account that stores Dragon Egg configuration.
-    /// This must be called before creating the Dragon Egg collection.
+    /// Creates the EggConfig account that stores Egg configuration.
+    /// This must be called before creating the Egg collection.
     pub fn initialize_egg_config(
         ctx: Context<InitializeEggConfig>,
         base_price: u64,
@@ -222,14 +222,29 @@ pub mod minebtc {
         admin::initialize_egg_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
-    /// Create Dragon Egg collection with program PDA as authority (admin only)
+    /// Update EggConfig account (admin only)
     /// 
-    /// Creates a new Metaplex Core collection for Dragon Egg NFTs.
+    /// Updates the EggConfig account that stores Egg collection configuration.
+    /// 
+    /// # Parameters
+    /// - `base_price`: Base price for Eggs in SOL (lamports)
+    /// - `curve_a`: Bonding curve parameter (controls price growth rate)
+    pub fn update_egg_config(
+        ctx: Context<UpdateEggsConfig>,
+        base_price: u64,
+        curve_a: u64,
+    ) -> Result<()> {
+        admin::update_egg_config_internal(ctx, base_price, curve_a)
+    }
+
+    /// Create Egg collection with program PDA as authority (admin only)
+    /// 
+    /// Creates a new Metaplex Core collection for Egg NFTs.
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
     /// Requires EggConfig to be initialized first.
     pub fn create_dragon_egg_collection(
-        ctx: Context<CreateDragonEggCollection>,
+        ctx: Context<CreateEggCollection>,
         name: String,
         uri: String,
     ) -> Result<()> {
@@ -237,7 +252,7 @@ pub mod minebtc {
     }
 
 
-    /// Set Dragon Egg URIs for all factions (admin only)
+    /// Set Egg URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
     pub fn set_dragon_egg_uris(
         ctx: Context<UpdateEggsConfig>,
@@ -246,14 +261,14 @@ pub mod minebtc {
         admin::set_dragon_egg_uris_internal(ctx, uris)
     }
 
-    /// Clear all Dragon Egg URIs (admin only)
+    /// Clear all Egg URIs (admin only)
     pub fn clear_dragon_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
         admin::clear_dragon_egg_uris_internal(ctx)
     }
 
-    /// Initialize royalties on the Dragon Egg collection (admin only)
+    /// Initialize royalties on the Egg collection (admin only)
     pub fn init_dragon_egg_royalties(
-        ctx: Context<InitDragonEggRoyalties>,
+        ctx: Context<InitEggRoyalties>,
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
@@ -621,16 +636,16 @@ pub mod minebtc {
 
 
 
-    /// Admin function to mint a Dragon Egg NFT for free to a specified recipient (admin only)
+    /// Admin function to mint a Egg NFT for free to a specified recipient (admin only)
     /// 
-    /// Allows the admin to mint a Dragon Egg NFT without payment.
+    /// Allows the admin to mint a Egg NFT without payment.
     /// The NFT is minted directly to the specified recipient address.
     /// 
     /// # Parameters
     /// - `recipient`: Address that will receive the minted NFT
     /// - `faction_id`: Faction ID the egg belongs to
     pub fn admin_mint_dragon_egg(
-        ctx: Context<AdminMintDragonEgg>,
+        ctx: Context<AdminMintEgg>,
         recipient: Pubkey,
         faction_id: u8,
         ticket_tier_index: u8,
@@ -638,9 +653,9 @@ pub mod minebtc {
         eggs::admin_mint_dragon_egg(ctx, recipient, faction_id, ticket_tier_index)
     }
 
-    /// Batch mint multiple Dragon Eggs (anyone can call, max 10 per transaction)
+    /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
     /// 
-    /// Mints multiple Dragon Egg NFTs in a single transaction.
+    /// Mints multiple Egg NFTs in a single transaction.
     /// Each egg uses bonding curve pricing based on the current supply at mint time.
     /// 
     /// # Parameters
@@ -648,7 +663,7 @@ pub mod minebtc {
     /// - `mint_count`: Number of eggs to mint (1-10)
     /// - `ticket_tier_index`: Ticket tier index (0-2)
     pub fn batch_mint_dragon_eggs<'info>(
-        ctx: Context<'_, '_, '_, 'info, BatchMintDragonEggs<'info>>,
+        ctx: Context<'_, '_, '_, 'info, BatchMintEggs<'info>>,
         faction_id: u8,
         mint_count: u8,
         ticket_tier_index: u8,
@@ -656,13 +671,13 @@ pub mod minebtc {
         eggs::batch_mint_dragon_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
-    /// Stake a Dragon Egg to boost hashpower (if faction matches player's faction)
-    pub fn stake_dragon_egg(ctx: Context<StakeDragonEgg>) -> Result<()> {
+    /// Stake a Egg to boost hashpower (if faction matches player's faction)
+    pub fn stake_dragon_egg(ctx: Context<StakeEgg>) -> Result<()> {
         eggs::stake_dragon_egg(ctx)
     }
 
-    /// Unstake a Dragon Egg (remove hashpower boost)
-    pub fn unstake_dragon_egg(ctx: Context<UnstakeDragonEgg>) -> Result<()> {
+    /// Unstake a Egg (remove hashpower boost)
+    pub fn unstake_dragon_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
         eggs::unstake_dragon_egg(ctx)
     }
 

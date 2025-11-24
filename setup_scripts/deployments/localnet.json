@@ -122,7 +122,7 @@
   },
   "minebtc_program_initialized": {
     "globalConfig_address": "7nLNCNBHFsVymuTyoNHsXLWbTg7GPekLLGJvq9VYvuCh",
-    "dogeBtcMining_address": "EXqq4MqiNhxNAxpJxJTocQDn5TSUCsGe4G9DkN7H7QBA",
+    "mineBtcMining_address": "EXqq4MqiNhxNAxpJxJTocQDn5TSUCsGe4G9DkN7H7QBA",
     "solTreasury_address": "GTL9gQHp1BuVcqgwNdFZcztZSgat9ivH6vR3HstPyR84",
     "eggsTreasury_address": "A7whJZ92kcwzdtraQGVbdg42Dq91rsUDZcXsSDbrmiay",
     "unrefinedRewards_address": "84m9Ng8DKj86cZo5r7VSxswu7giJTC87pEEx9Phm6BCq",
@@ -260,7 +260,7 @@
   },
   "dragon_egg_collection_created": {
     "collection_address": "CDfocDAvadT2k4Aipqxpw8bWZ8rubcbNJdLkX45qWbvX",
-    "collection_name": "DogeTech Dragon Eggs",
+    "collection_name": "DogeTech Eggs",
     "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
     "collection_authority": "zJgj8NkdHueoXVyzw3cTNSwDSbVcyPNSAfYAcwWTmSz",
     "tx_signature": "5BYx8nhTZhCRorTT96Km55t2ihbyKg7VFu72RoHCWPjRJkJtJd3nUZs4ng1pN43KwLddzHkcwABimZXxcYq7Zw4T",

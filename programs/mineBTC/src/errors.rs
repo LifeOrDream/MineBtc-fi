@@ -63,10 +63,10 @@ pub enum ErrorCode {
     #[msg("URI too long - maximum 200 characters")]
     UriTooLong,
 
-    #[msg("Dragon Egg is already incubated in a minebtc")]
+    #[msg("Egg is already incubated in a minebtc")]
     EggAlreadyIncubated,
 
-    #[msg("Dragon Egg is not incubated in this minebtc")]
+    #[msg("Egg is not incubated in this minebtc")]
     EggNotIncubated,
 
     #[msg("Egg limit for this tier has been reached")]

@@ -649,7 +649,7 @@ export async function initializeMinebtcProgram(
       [Buffer.from(GLOBAL_CONFIG_SEED)],
       program.programId
     );
-    const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from(DOGE_BTC_MINING_SEED)],
       program.programId
     );
@@ -664,7 +664,7 @@ export async function initializeMinebtcProgram(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DogeBTC Mining PDA: ${dogeBtcMiningPDA.toString()}`
+      `🔑 DogeBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -680,7 +680,7 @@ export async function initializeMinebtcProgram(
       .initialize(feeRecipient)
       .accounts({
         globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         solTreasury: solTreasuryPDA,
         authority: wallet.publicKey,
         systemProgram: web3.SystemProgram.programId,
@@ -705,7 +705,7 @@ export async function initializeMinebtcProgram(
       data: {
         txid,
         globalConfig_address: globalConfigPDA.toString(),
-        dogeBtcMining_address: dogeBtcMiningPDA.toString(),
+        mineBtcMining_address: mineBtcMiningPDA.toString(),
         solTreasury_address: solTreasuryPDA.toString(),
       },
     };
@@ -722,7 +722,7 @@ export async function initializeMinebtcProgram(
         program.programId
       );
 
-      const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+      const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
         [Buffer.from(DOGE_BTC_MINING_SEED)],
         program.programId
       );
@@ -736,7 +736,7 @@ export async function initializeMinebtcProgram(
         success: true,
         data: {
           globalConfig_address: globalConfigPDA.toString(),
-          dogeBtcMining_address: dogeBtcMiningPDA.toString(),
+          mineBtcMining_address: mineBtcMiningPDA.toString(),
           solTreasury_address: solTreasuryPDA.toString(),
         },
       };
@@ -764,7 +764,7 @@ export async function updateGlobalConfig(
   walletKeypair,
   globalConfigPDA,
   moduleConfigStorePDA,
-  dogeBtcMiningPDA,
+  mineBtcMiningPDA,
   newAuthority = null,
   newFeeCollector = null,
   newCreationFeeRecipient = null,
@@ -783,7 +783,7 @@ export async function updateGlobalConfig(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DogeBtc Mining PDA: ${dogeBtcMiningPDA}`
+      `🔑 DogeBtc Mining PDA: ${mineBtcMiningPDA}`
     );
 
     if (newAuthority)
@@ -819,7 +819,7 @@ export async function updateGlobalConfig(
       .accounts({
         globalConfig: new PublicKey(globalConfigPDA),
         moduleConfigStore: new PublicKey(moduleConfigStorePDA),
-        dogeBtcMining: new PublicKey(dogeBtcMiningPDA),
+        mineBtcMining: new PublicKey(mineBtcMiningPDA),
         authority: wallet.publicKey,
         systemProgram: web3.SystemProgram.programId,
       })
@@ -861,7 +861,7 @@ export async function setupMiningVault(
   program,
   wallet,
   walletKeypair,
-  dogeBtcMiningPDA,
+  mineBtcMiningPDA,
   vaultPDA,
   vaultAuthorityPDA,
   tokenMint,
@@ -874,7 +874,7 @@ export async function setupMiningVault(
     console.log("\x1b[33m%s\x1b[0m", "📡 Initializing mining parameters...");
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGEBTC Mining PDA: ${dogeBtcMiningPDA.toString()}`
+      `🔑 DOGEBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -915,7 +915,7 @@ export async function setupMiningVault(
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         vaultAuthority: vaultAuthorityPDA,
         tokenVault: vaultPDA,
         tokenMint: tokenMint,
@@ -1247,7 +1247,7 @@ export async function updateModuleConfig(
         globalConfig: globalConfigPDA,
         moduleConfigStore: moduleConfigStorePDA,
         gearConfigStore: gearConfigStorePDA,
-        dogeBtcMining: dogeBtcMiningPDA,
+        mineBtcMining: mineBtcMiningPDA,
         authority: wallet.publicKey,
         systemProgram: web3.SystemProgram.programId,
       })
@@ -1610,7 +1610,7 @@ export async function updateSlotsPerHour(
   wallet,
   walletKeypair,
   globalConfigPDA,
-  dogeBtcMiningPDA,
+  mineBtcMiningPDA,
   newSlotsPerHour
 ) {
   try {
@@ -1624,7 +1624,7 @@ export async function updateSlotsPerHour(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGEBTC Mining PDA: ${dogeBtcMiningPDA}`
+      `🔑 DOGEBTC Mining PDA: ${mineBtcMiningPDA}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -1635,7 +1635,7 @@ export async function updateSlotsPerHour(
       .updateSlotsPerHour(new BN(newSlotsPerHour))
       .accounts({
         globalConfig: new PublicKey(globalConfigPDA),
-        dogeBtcMining: new PublicKey(dogeBtcMiningPDA),
+        mineBtcMining: new PublicKey(mineBtcMiningPDA),
         authority: wallet.publicKey,
       })
       .transaction();
@@ -1686,7 +1686,7 @@ export async function addFactions(
   walletKeypair,
   globalConfigPDA,
   moduleConfigStorePDA,
-  dogeBtcMiningPDA,
+  mineBtcMiningPDA,
   factionNames
 ) {
   try {
@@ -1702,7 +1702,7 @@ export async function addFactions(
       .accounts({
         globalConfig: new PublicKey(globalConfigPDA),
         moduleConfigStore: new PublicKey(moduleConfigStorePDA),
-        dogeBtcMining: new PublicKey(dogeBtcMiningPDA),
+        mineBtcMining: new PublicKey(mineBtcMiningPDA),
         authority: wallet.publicKey,
         systemProgram: web3.SystemProgram.programId,
       })
@@ -1782,7 +1782,7 @@ export async function updateGlobalConfigHelper(
       .accounts({
         globalConfig: globalConfigPDA,
         moduleConfigStore: null,
-        dogeBtcMining: null,
+        mineBtcMining: null,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -1838,14 +1838,14 @@ export async function toggleGameActiveHelper(
 export async function getSystemStatus(
   program,
   globalConfigPDA,
-  dogeBtcMiningPDA
+  mineBtcMiningPDA
 ) {
   try {
     const globalConfig = await program.account.globalConfig.fetch(
       globalConfigPDA
     );
-    const dogeBtcMining = await program.account.dogeBtcMining.fetch(
-      dogeBtcMiningPDA
+    const mineBtcMining = await program.account.mineBtcMining.fetch(
+      mineBtcMiningPDA
     );
 
     return {
@@ -1856,11 +1856,11 @@ export async function getSystemStatus(
         lootPercentage: globalConfig.lootPercentage,
         totalMinebtcsCreated: globalConfig.totalMinebtcsCreated,
         totalSolSpent: globalConfig.totalSolSpent,
-        totalActiveHashpower: dogeBtcMining.totalActiveHashpower,
-        totalActiveElectricity: dogeBtcMining.totalActiveElectricity,
-        totalTokensMined: dogeBtcMining.totalTokensMined,
-        currentDistRate: dogeBtcMining.currentDistRate,
-        slotsForSwap: dogeBtcMining.slotsForSwap,
+        totalActiveHashpower: mineBtcMining.totalActiveHashpower,
+        totalActiveElectricity: mineBtcMining.totalActiveElectricity,
+        totalTokensMined: mineBtcMining.totalTokensMined,
+        currentDistRate: mineBtcMining.currentDistRate,
+        slotsForSwap: mineBtcMining.slotsForSwap,
         supportedFactions: globalConfig.supportedFactions,
       },
     };

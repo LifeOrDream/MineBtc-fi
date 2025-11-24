@@ -1,287 +1,205 @@
-/// DNA Generation and Manipulation for Dragon Eggs
+/// DNA Generation and Manipulation for Cyber-Doge Assets
 ///
-/// Based on a 256-bit DNA structure that determines characteristics:
+/// The core genetic engine for the Bio-Doge Invasion.
+/// Based on a 256-bit DNA structure that seeds the AI generation pipeline.
 ///
 /// DNA STRUCTURE (256 bits total):
 ///
-/// 1. Family/Type (4 bits): Dragon family (0-15), determines base appearance
-/// 2. Evolutionary Stage (3 bits): Current evolution level (0-7)
-/// 3. Appearance Traits (140 bits): 7 groups × 4 traits × 5 bits
-///    - Each group: [Dominant][Recessive1][Recessive2][Recessive3]
-///    - Examples: Wings, Horns, Eyes, Claws, Scales, Color, Pattern
-/// 4. Power Traits (84 bits): 7 groups × 3 traits × 4 bits
-///    - Examples: Health, Energy, Attack, Defense, Special, Ultimate, Passive
-/// 5. Reserved (25 bits): For future use
+/// 1. Faction/Family (4 bits): Maps 1:1 to Faction ID (0-11). Determines base loyalty & breed.
+/// 2. Cyber-Evolution Stage (3 bits): Current upgrade level (0-7).
+/// 3. Appearance Genes (140 bits): 7 groups × 4 traits × 5 bits.
+///    - Seeds the AI generation for visual traits (Fur, Armor, Cybernetics, Eyes).
+/// 4. Combat Genes (84 bits): 7 groups × 3 traits × 4 bits.
+///    - Determines on-chain stats (Hashpower Efficiency, Raid Attack, Defense).
+/// 5. Reserved (25 bits): Future mutations.
+
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use crate::errors::ErrorCode;
 
-
-// DNA field offsets
-const FAMILY_TYPE_BITS: u8 = 4;
-const EVOLUTIONARY_STAGE_BITS: u8 = 3;
+// --- GENE MAPPING CONSTANTS ---
+const FACTION_TYPE_BITS: u8 = 4;      // First 4 bits = Faction ID
+const EVOLUTION_STAGE_BITS: u8 = 3;   // Next 3 bits = Level (0-7)
 const APPEARANCE_TRAIT_BITS: u8 = 5;
-const POWER_TRAIT_BITS: u8 = 4;
+const COMBAT_TRAIT_BITS: u8 = 4;
 
-const APPEARANCE_TRAITS_OFFSET: u8 = FAMILY_TYPE_BITS + EVOLUTIONARY_STAGE_BITS;
-const POWER_TRAITS_OFFSET: u8 = APPEARANCE_TRAITS_OFFSET + (28 * APPEARANCE_TRAIT_BITS); // 7 groups × 4 traits
+const APPEARANCE_OFFSET: u8 = FACTION_TYPE_BITS + EVOLUTION_STAGE_BITS;
+const COMBAT_OFFSET: u8 = APPEARANCE_OFFSET + (28 * APPEARANCE_TRAIT_BITS);
 
-// Constants
-const APPEARANCE_TRAIT_GROUPS: usize = 7;
-const APPEARANCE_TRAITS_PER_GROUP: usize = 4;
-const POWER_TRAIT_GROUPS: usize = 7;
-const POWER_TRAITS_PER_GROUP: usize = 3;
+const APPEARANCE_GROUPS: usize = 7;
+const APPEARANCE_PER_GROUP: usize = 4;
+const COMBAT_GROUPS: usize = 7;
+const COMBAT_PER_GROUP: usize = 3;
 
-
-
-/// Calculate dynamic pricing based on bonding curve
-/// Formula: price = base_price + curve_a * (items_minted^(2/3))
-/// This creates a diminishing returns curve where price increases slower as more items are minted
-///
-/// # Arguments
-/// * `base_price` - The starting base price in lamports
-/// * `curve_a` - Curve steepness parameter (controls price growth rate, typically >= 100)
-/// * `items_minted` - The number of NFTs already minted
-///
-/// # Returns
-/// * Current mint price in lamports
+/// Calculate dynamic pricing for Genetic Assets (Bonding Curve)
+/// Formula: price = base_price + curve_a * (minted^(2/3))
+/// Creates a "FOMO Curve" where early adopters get cheaper genes.
 pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> Result<u64> {
     if items_minted == 0 {
         return Ok(base_price);
     }
 
-    // Calculate x^(2/3) using fixed-point arithmetic
-    // We'll approximate: x^(2/3) ≈ cube_root(x^2)
-    let items_minted_u128 = items_minted as u128;
+    // Calculate x^(2/3) approximation
+    let items_u128 = items_minted as u128;
+    let squared = items_u128.checked_mul(items_u128).ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    // Calculate x^2
-    let squared = items_minted_u128.checked_mul(items_minted_u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-    // Find cube root of x^2 using binary search
-    // This gives us x^(2/3)
+    // Binary search for cube root of x^2
     let mut low: u128 = 1;
-    let mut high = squared.min(1_000_000_000_000_000_000); // Cap to prevent overflow
+    let mut high = squared.min(1_000_000_000_000_000_000); 
     let mut result: u128 = 0;
     
     while low <= high {
         let mid = (low + high) / 2;
-        let cube = mid.checked_mul(mid)
-            .and_then(|x| x.checked_mul(mid))
+        let cube = mid.checked_mul(mid).and_then(|x| x.checked_mul(mid))
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         
         if cube <= squared {
             result = mid;
             low = mid + 1;
         } else {
-            if mid == 0 {
-                break;
-            }
+            if mid == 0 { break; }
             high = mid - 1;
         }
     }
     
-    // result is approximately x^(2/3)
-    // Now multiply by curve_a and add to base_price
     let exponent_component = result.min(u64::MAX as u128) as u64;
-    let exponent_price_factor = curve_a.checked_mul(exponent_component)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let price_increase = curve_a.checked_mul(exponent_component).ok_or(ErrorCode::ArithmeticOverflow)?;
+    let final_price = base_price.checked_add(price_increase).ok_or(ErrorCode::ArithmeticOverflow)?;
     
-    // Final price = base_price + exponential component
-    let mint_price = base_price.checked_add(exponent_price_factor)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    
-    Ok(mint_price)
+    Ok(final_price)
 }
 
-#[allow(dead_code)] // Functions will be used when NFT minting is enabled
-
-
+/// Calculate the progressive Hashpower Multiplier
+/// Linear progression: 1.0x -> 4.2x over the total supply.
+/// This rewards early minters with higher base potential.
 pub fn calculate_progressive_multiplier(
-    current_egg_count: u64, max_supply: u64
+    current_mint_count: u64, 
+    max_supply: u64
 ) -> Result<u32> {
+    let start_mult = 100; // 1.0x
+    let end_mult = 420;   // 4.2x
     
-    // The multiplier for the very first egg (mint #1)
-    let start_multiplier = 100;
-    let end_multiplier = 420;
-    
-    // The multiplier for the very last egg (mint #20,000)
-    let multiplier_range = (end_multiplier - start_multiplier) as u128;
-    let mint_range = (max_supply - 1) as u128;
-    
-    // Ensure we don't go over the max supply
-    if current_egg_count >= max_supply {
-        return Ok(end_multiplier as u32);
+    if current_mint_count >= max_supply {
+        return Ok(end_mult as u32);
     }
     
-    // --- Linear Interpolation (y = mx + b) using u128 math ---
-    
-    // 1. Calculate the "progress" (x) as a u128
-    // This is how many eggs have already been minted (0 to 19,999)
-    let progress = current_egg_count as u128;
+    let range = (end_mult - start_mult) as u128;
+    let supply_range = (max_supply - 1) as u128;
+    let progress = current_mint_count as u128;
 
-    // 2. Calculate the "slope" (m) part: (progress / mint_range)
-    // We multiply first to avoid losing precision
-    // `increase = (progress * multiplier_range) / mint_range`
-    let multiplier_increase = (progress * multiplier_range) / mint_range;
-    let new_multiplier = start_multiplier as u128 + multiplier_increase;
-    Ok(new_multiplier as u32)
+    let increase = (progress * range) / supply_range;
+    let current = start_mult as u128 + increase;
+    
+    Ok(current as u32)
 }
 
-
-
-
-
-
-/// Generate unique DNA for a genesis Dragon Egg
-///
+/// Generate unique DNA for a Genesis Cyber-Doge
+/// 
 /// # Arguments
-/// * `mint_number` - The sequential mint number of the egg
-/// * `minter` - Address of the person minting the egg
-/// * `slot` - Current slot for additional entropy
-/// * `family_type` - Dragon family (0-15)
-///
-/// # Returns
-/// * 32-byte array representing 256-bit DNA
+/// * `faction_id` - The Faction (0-11) this Doge belongs to.
+///                  This is hard-coded into the first 4 bits of DNA.
 pub fn generate_genesis_dna(
     mint_number: u64,
     minter: &Pubkey,
     slot: u64,
-    family_type: u8,
+    faction_id: u8,
 ) -> Result<[u8; 32]> {
-    require!(
-        family_type < 16,
-        crate::errors::ErrorCode::InvalidParameters
-    );
+    // Ensure faction ID fits in 4 bits (0-15)
+    require!(faction_id < 16, ErrorCode::InvalidFactionId);
 
-    // Create seed for randomness
+    // 1. Seed Generation (Deterministic but unpredictable)
     let mut seed_data = Vec::new();
     seed_data.extend_from_slice(&mint_number.to_le_bytes());
     seed_data.extend_from_slice(&minter.to_bytes());
     seed_data.extend_from_slice(&slot.to_le_bytes());
 
-    // Hash to create base randomness
+    // 2. Hash for Randomness
     let hash = keccak::hash(&seed_data);
     let mut dna = hash.to_bytes();
 
-    // Set family type (first 4 bits)
-    dna[0] = (dna[0] & 0xF0) | (family_type & 0x0F);
+    // 3. Encode Faction (Family) - First 4 bits
+    // Clears first 4 bits, sets them to faction_id
+    dna[0] = (dna[0] & 0xF0) | (faction_id & 0x0F);
 
-    // Set evolutionary stage to 0 (next 3 bits)
-    dna[0] = dna[0] & 0x8F; // Clear evolution bits (bits 4-6)
+    // 4. Initialize Evolution to Stage 0 - Next 3 bits
+    // Clears bits 4-6
+    dna[0] = dna[0] & 0x8F; 
 
-    // Limit trait values to lower half of possible range
-    // For appearance traits (5 bits, max 31): limit to 0-15
-    // For power traits (4 bits, max 15): limit to 0-7
+    // 5. Normalize Trait Ranges
+    // Ensures generated values map correctly to our AI model's trait tables
     limit_trait_ranges(&mut dna);
 
     Ok(dna)
 }
 
- 
-/// Limit trait ranges to lower half of possible values
-/// Appearance traits: 0-15 (instead of 0-31)
-/// Power traits: 0-7 (instead of 0-15)
+// --- HELPER FUNCTIONS (Bit Manipulation) ---
+
 fn limit_trait_ranges(dna: &mut [u8; 32]) {
-    // Limit appearance traits (28 traits, 5 bits each)
-    for i in 0..(APPEARANCE_TRAIT_GROUPS * APPEARANCE_TRAITS_PER_GROUP) {
-        let trait_val = get_trait_value(
-            dna,
-            APPEARANCE_TRAITS_OFFSET,
-            APPEARANCE_TRAIT_BITS,
-            i as u8,
-        );
-        let limited_val = trait_val % 16; // 0-15
-        set_trait_value(
-            dna,
-            APPEARANCE_TRAITS_OFFSET,
-            APPEARANCE_TRAIT_BITS,
-            i as u8,
-            limited_val,
-        );
+    // Appearance: 0-15 range
+    for i in 0..(APPEARANCE_GROUPS * APPEARANCE_PER_GROUP) {
+        let val = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
+        set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, val % 16);
     }
-
-    // Limit power traits (21 traits, 4 bits each)
-    for i in 0..(POWER_TRAIT_GROUPS * POWER_TRAITS_PER_GROUP) {
-        let trait_val = get_trait_value(dna, POWER_TRAITS_OFFSET, POWER_TRAIT_BITS, i as u8);
-        let limited_val = trait_val % 8; // 0-7
-        set_trait_value(
-            dna,
-            POWER_TRAITS_OFFSET,
-            POWER_TRAIT_BITS,
-            i as u8,
-            limited_val,
-        );
+    // Combat: 0-7 range
+    for i in 0..(COMBAT_GROUPS * COMBAT_PER_GROUP) {
+        let val = get_trait_value(dna, COMBAT_OFFSET, COMBAT_TRAIT_BITS, i as u8);
+        set_trait_value(dna, COMBAT_OFFSET, COMBAT_TRAIT_BITS, i as u8, val % 8);
     }
 }
 
-/// Extract a specific bit range from DNA
-fn get_trait_value(dna: &[u8; 32], base_offset: u8, trait_bits: u8, trait_index: u8) -> u8 {
-    let bit_offset = base_offset + (trait_index * trait_bits);
-    let byte_index = (bit_offset / 8) as usize;
-    let bit_in_byte = bit_offset % 8;
+fn get_trait_value(dna: &[u8; 32], base_offset: u8, trait_bits: u8, index: u8) -> u8 {
+    let start_bit = base_offset + (index * trait_bits);
+    let byte_idx = (start_bit / 8) as usize;
+    let bit_idx = start_bit % 8;
 
-    if byte_index >= 32 {
-        return 0;
+    if byte_idx >= 32 { return 0; }
+
+    // Logic to read bits across byte boundaries
+    let mut val = 0u8;
+    let mut remaining = trait_bits;
+    let mut curr_byte = byte_idx;
+    let mut curr_bit = bit_idx;
+
+    while remaining > 0 && curr_byte < 32 {
+        let bits_in_byte = 8 - curr_bit;
+        let take = remaining.min(bits_in_byte);
+        let mask = ((1u8 << take) - 1) << curr_bit;
+        let bits = (dna[curr_byte] & mask) >> curr_bit;
+        
+        val |= bits << (trait_bits - remaining);
+        
+        remaining -= take;
+        curr_byte += 1;
+        curr_bit = 0;
     }
-
-    let mut value = 0u8;
-    let mut bits_remaining = trait_bits;
-    let mut current_byte_index = byte_index;
-    let mut current_bit_offset = bit_in_byte;
-
-    while bits_remaining > 0 && current_byte_index < 32 {
-        let bits_in_this_byte = 8 - current_bit_offset;
-        let bits_to_take = bits_remaining.min(bits_in_this_byte);
-
-        let mask = ((1u8 << bits_to_take) - 1) << current_bit_offset;
-        let bits = (dna[current_byte_index] & mask) >> current_bit_offset;
-
-        value |= bits << (trait_bits - bits_remaining);
-
-        bits_remaining -= bits_to_take;
-        current_byte_index += 1;
-        current_bit_offset = 0;
-    }
-
-    value
+    val
 }
 
-/// Set a specific bit range in DNA
-fn set_trait_value(
-    dna: &mut [u8; 32],
-    base_offset: u8,
-    trait_bits: u8,
-    trait_index: u8,
-    value: u8,
-) {
-    let bit_offset = base_offset + (trait_index * trait_bits);
-    let byte_index = (bit_offset / 8) as usize;
-    let bit_in_byte = bit_offset % 8;
+fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u8, value: u8) {
+    let start_bit = base_offset + (index * trait_bits);
+    let byte_idx = (start_bit / 8) as usize;
+    let bit_idx = start_bit % 8;
 
-    if byte_index >= 32 {
-        return;
-    }
+    if byte_idx >= 32 { return; }
 
-    let mut bits_remaining = trait_bits;
-    let mut current_byte_index = byte_index;
-    let mut current_bit_offset = bit_in_byte;
-    let mut value_bits_used = 0u8;
+    let mut remaining = trait_bits;
+    let mut curr_byte = byte_idx;
+    let mut curr_bit = bit_idx;
+    let mut val_processed = 0;
 
-    while bits_remaining > 0 && current_byte_index < 32 {
-        let bits_in_this_byte = 8 - current_bit_offset;
-        let bits_to_set = bits_remaining.min(bits_in_this_byte);
-
-        let mask = ((1u8 << bits_to_set) - 1) << current_bit_offset;
-        let value_bits = (value >> value_bits_used) & ((1u8 << bits_to_set) - 1);
-
-        dna[current_byte_index] =
-            (dna[current_byte_index] & !mask) | (value_bits << current_bit_offset);
-
-        bits_remaining -= bits_to_set;
-        value_bits_used += bits_to_set;
-        current_byte_index += 1;
-        current_bit_offset = 0;
+    while remaining > 0 && curr_byte < 32 {
+        let bits_in_byte = 8 - curr_bit;
+        let set = remaining.min(bits_in_byte);
+        
+        let mask = ((1u8 << set) - 1) << curr_bit;
+        let chunk = (value >> val_processed) & ((1u8 << set) - 1);
+        
+        dna[curr_byte] = (dna[curr_byte] & !mask) | (chunk << curr_bit);
+        
+        remaining -= set;
+        val_processed += set;
+        curr_byte += 1;
+        curr_bit = 0;
     }
 }
 

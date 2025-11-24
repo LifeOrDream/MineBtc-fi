@@ -119,7 +119,7 @@ pub struct LpTokensBurned {
 // ========================================================================================
 
 #[event]
-pub struct DragonEggMinted {
+pub struct EggMinted {
     pub egg_metadata_account: Pubkey,
     pub dragon_egg_asset_signer: Pubkey,
     pub owner: Pubkey,
@@ -137,17 +137,17 @@ pub struct DragonEggMinted {
 }
 
 #[event]
-pub struct DragonEggCollectionCreated {
+pub struct EggCollectionCreated {
     pub collection: Pubkey,
     pub update_authority: Pubkey,
     pub name: String,
     pub uri: String,
 }
 
-/// Event emitted when a Dragon Egg is staked
+/// Event emitted when a Egg is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct DragonEggStaked {
+pub struct EggStaked {
     /// User who staked the egg
     pub owner: Pubkey,
     /// Player data account address
@@ -168,10 +168,10 @@ pub struct DragonEggStaked {
     pub timestamp: i64,
 }
 
-/// Event emitted when a Dragon Egg is unstaked
+/// Event emitted when a Egg is unstaked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct DragonEggUnstaked {
+pub struct EggUnstaked {
     /// User who unstaked the egg
     pub owner: Pubkey,
     /// Player data account address
@@ -195,7 +195,7 @@ pub struct DragonEggUnstaked {
 /// Event emitted when power is claimed and distributed to a staked egg
 /// Tracks power distribution for indexing (emitted per egg)
 #[event]
-pub struct DragonEggPowerClaimed {
+pub struct EggPowerClaimed {
     /// Egg mint address that received power
     pub egg_mint: Pubkey,
     /// Power added to this egg

@@ -195,6 +195,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
         `Using existing multisig authority: ${multisigAddress.toBase58()}`
       );
       multisigInfo = await getMultisig(connection, multisigAddress);
+      console.log(multisigInfo);
       console.log(`  Threshold: ${multisigInfo.m} of ${multisigInfo.n}`);
     }
 

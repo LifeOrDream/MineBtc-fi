@@ -37,7 +37,7 @@ MineBTC is a revolutionary faction-based betting and mining game that combines s
 - **Provably Fair Randomness**: Commit-reveal scheme ensures transparency and prevents manipulation
 - **Multi-Layered Rewards**: Earn through betting, staking, referrals, and faction performance
 - **Deflationary Tokenomics**: 1% transfer tax with burns and buybacks
-- **NFT Power System**: Dragon Eggs provide persistent hashpower multipliers
+- **NFT Power System**: Eggs provide persistent hashpower multipliers
 - **Dynamic Emission**: Mining rate adjusts based on market prices to maintain sustainability
 
 ---
@@ -111,11 +111,11 @@ When claiming MineBTC rewards, a 5% refining fee is charged and **redistributed 
 
 ---
 
-## 🐉 Dragon Egg NFT System
+## 🐉 Egg NFT System
 
 ### Bonding Curve Pricing
 
-Dragon Eggs use a bonding curve pricing model:
+Eggs use a bonding curve pricing model:
 
 ```
 Price = Base_Price + (Current_Supply² / Curve_A)
@@ -135,7 +135,7 @@ Free tickets can be used for betting instead of SOL.
 
 ### Hashpower Multipliers
 
-Stake up to **5 Dragon Eggs** to boost your mining hashpower:
+Stake up to **5 Eggs** to boost your mining hashpower:
 
 ```
 1 Egg:  1.3x multiplier
@@ -149,7 +149,7 @@ Stake up to **5 Dragon Eggs** to boost your mining hashpower:
 
 ### Power System
 
-Dragon Eggs accumulate "power" over time:
+Eggs accumulate "power" over time:
 
 - Power is earned when claiming MineBTC rewards
 - Power is distributed proportionally to all staked eggs
@@ -248,7 +248,7 @@ Deposit SOL into your autominer vault, and a keeper bot will execute bets for yo
 ### Solana Programs
 
 - **Token-2022**: MineBTC uses transfer fees for deflationary mechanics
-- **Metaplex Core**: Dragon Egg NFTs with royalties and on-chain metadata
+- **Metaplex Core**: Egg NFTs with royalties and on-chain metadata
 - **Raydium CLMM**: Liquidity pool for MineBTC-SOL trading
 
 ### Security Features
@@ -304,7 +304,7 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
 initialize_player --faction-id 0 --referral-code <optional>
 ```
 
-### 2. Mint Dragon Eggs (Optional)
+### 2. Mint Eggs (Optional)
 
 ```bash
 # Mint 3 eggs for your faction with Silver tier tickets

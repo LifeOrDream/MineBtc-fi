@@ -94,7 +94,7 @@ const [globalGameStatePDA] = PublicKey.findProgramAddressSync(
   mineBTCProgramId
 );
 
-const [dogeBtcMiningPDA] = PublicKey.findProgramAddressSync(
+const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
   [Buffer.from("mine-btc-mining")],
   mineBTCProgramId
 );
@@ -327,7 +327,7 @@ async function tryEndRound(
       globalGameState: globalGameStatePDA,
       gameSession: gameSessionPDA,
       globalConfig: globalConfigPDA,
-      dogeBtcMining: dogeBtcMiningPDA,
+      mineBtcMining: mineBtcMiningPDA,
       winningFactionState: factionStatePDA,
       solPrizePotVault: solPrizePotVaultPDA,
       dbtcEmissionVault: dbtcEmissionVaultPDA,

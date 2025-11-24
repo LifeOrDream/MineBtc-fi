@@ -12,12 +12,12 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const CLUSTER = config.network.cluster;
 const RPC_URL = config.network.rpc_url;
 
-// Only allow on localnet
-if (CLUSTER !== 'localnet') {
-  console.error('❌ This script only works on localnet for safety reasons');
-  console.error(`   Current cluster: ${CLUSTER}`);
-  process.exit(1);
-}
+// // Only allow on localnet
+// if (CLUSTER !== 'localnet') {
+//   console.error('❌ This script only works on localnet for safety reasons');
+//   console.error(`   Current cluster: ${CLUSTER}`);
+//   process.exit(1);
+// }
 
 // Load wallet keypair (sender)
 const walletPath = path.join(process.cwd(), config.deployment.paths.deployer_key);
