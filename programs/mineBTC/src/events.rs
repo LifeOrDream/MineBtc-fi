@@ -234,6 +234,8 @@ pub struct MineBtcUnstaked {
     pub new_sol_rewards: u64,
     pub new_minebtc_rewards: u64,
     pub unrefined_minebtc: u64,
+    pub original_amount: u64,
+    pub returned_amount: u64,
     pub timestamp: i64,
 }
 
@@ -261,6 +263,8 @@ pub struct LiquidityUnstaked {
     pub new_sol_rewards: u64,
     pub new_minebtc_rewards: u64,
     pub unrefined_minebtc: u64,
+    pub original_amount: u64,
+    pub returned_amount: u64,
     pub timestamp: i64,
 }
 

@@ -210,6 +210,7 @@ pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Resu
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
     require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);    
     require!( player_data.minebtc_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
+    require!( position_index == user_position.position_index, ErrorCode::Unauthorized);
     
     msg!(
         "📊 Position details - Staked: {}, Weighted: {}, Faction: {}, Lockup ends: {}",
@@ -334,6 +335,8 @@ pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Resu
         new_sol_rewards,
         new_minebtc_rewards,
         unrefined_minebtc: accrued_minebtc_rewards,
+        original_amount: staked_amount,
+        returned_amount: return_amount,
         timestamp: current_ts,
     });
     
@@ -513,7 +516,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     require!(faction_state.faction_id == user_position.faction_id, ErrorCode::InvalidFactionId);
     require!(user_position.staked_amount > 0, ErrorCode::InvalidAmount);
     require!(user_position.position_index == position_index, ErrorCode::InvalidParameters);    
-    require!( player_data.minebtc_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
+    require!( player_data.lp_position_indices.contains(&position_index), ErrorCode::InvalidParameters);
     
     msg!(
         "📊 Position details - Staked: {}, Weighted: {}, Faction: {}, Lockup ends: {}",
@@ -551,7 +554,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
     msg!("   New player totals - Hashpower: {}, Staked: {}", player_data.lp_hashpower as f64 / 1e6, player_data.lp_staked as f64 / 1e6);
     
     // Remove position from user's active positions
-    helper::remove_minebtc_position(player_data, position_index)?;
+    helper::remove_lp_position(player_data, position_index)?;
         
 
     // -------------- CHARGE EMERGENCY TAX -------------- //
@@ -585,9 +588,9 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 
     // Transfer remaining tokens back to user
     if return_amount > 0 {
-        msg!("💱 Transferring {} MINE_BTC tokens to user", return_amount);
+        msg!("💱 Transferring {} LP tokens to user", return_amount);
         
-        // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
+        // Get PDA signer seeds for the liquidity_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
             LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref(),
             &[ctx.bumps.liquidity_custodian_authority],
@@ -643,6 +646,8 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
         new_sol_rewards,
         new_minebtc_rewards,
         unrefined_minebtc: accrued_minebtc_rewards,
+        original_amount: staked_amount,
+        returned_amount: return_amount,
         timestamp: current_ts,
     });
     
@@ -1145,18 +1150,11 @@ pub struct UnstakeMineBtc<'info> {
     // Staked position
     #[account(
         mut,
-        seeds = [
-            STAKED_POSITION_SEED.as_ref(),
-            authority.key().as_ref(),
-            &[position_index]
-        ],
-        bump = user_position.bump,
-        constraint = user_position.position_index == position_index @ ErrorCode::InvalidParameters,
-        close = authority
     )]
     pub user_position: Box<Account<'info, StakedPosition>>,
     
-    /// CHECK: MINE_BTC Mint (validated manually)
+    /// CHECK: MINE_BTC Mint - must be mut for burn instruction during emergency withdrawal
+    #[account(mut)]
     pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
 
     // Token accounts
@@ -1309,14 +1307,6 @@ pub struct UnstakeLpTokens<'info> {
     // Staked position
     #[account(
         mut,
-        seeds = [
-            LP_STAKED_POSITION_SEED.as_ref(),
-            authority.key().as_ref(),
-            &[position_index]
-        ],
-        bump = user_position.bump,
-        constraint = user_position.position_index == position_index @ ErrorCode::InvalidParameters,
-        close = authority
     )]
     pub user_position: Box<Account<'info, StakedPosition>>,
     
@@ -1327,7 +1317,8 @@ pub struct UnstakeLpTokens<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
-    /// CHECK: LP Mint (validated manually)
+    /// CHECK: LP Mint - must be mut for burn instruction during emergency withdrawal
+    #[account(mut)]
     pub lp_mint: Account<'info, token::Mint>,
     
     // Token accounts
