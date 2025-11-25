@@ -338,5 +338,18 @@
     "round_duration_seconds": 60,
     "tx_signature": "4NodVEpjDHXDSykLSKexpWHkdRy7c6ywSLEynXWZVxaQ6GGWMXkXV737CYg9QyzTPLxKwm7pu21S5rV8ow8Z9F9a",
     "timestamp": "2025-11-24T18:52:41.723Z"
+  },
+  "lp_token_accounts_initialized": {
+    "lp_token_account": "BNhmkhJfaVhSgJYoidUaFnMsZMDiQh3NdRkfsNEigzi3",
+    "lp_token_owner": "7YobHH9wAXK1EgMJ4wrcJNCgLHR1CTFmKa6XJ9WU7MLi",
+    "lp_mint": "3zTiePHjrn1V67C1XnNNRVnHuZcqwcDXunxuK2uPCtBk",
+    "timestamp": "2025-11-24T18:53:31.978Z"
+  },
+  "cranker_bots_added": {
+    "bots": [
+      "6658Pu1vFuJuJMCbnv7v9LfjUgEfmaNpKN4xGfbfiZbr"
+    ],
+    "tx_signature": "3UyTsvBZv96AyBdWFVD1jBARuFWUDirbWPYKodHc1VdUXGaTLXVopS4nkVxKVpsrtDYTcEyitZBGJ349F9rvKPKP",
+    "timestamp": "2025-11-24T18:53:33.827Z"
   }
 }

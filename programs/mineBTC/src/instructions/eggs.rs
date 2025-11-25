@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Token;
 use anchor_spl::associated_token::AssociatedToken;
-use std::io::Write;
 use crate::errors::ErrorCode;
 // # Egg Instructions
 //
@@ -230,15 +229,19 @@ pub fn batch_mint_eggs<'info>(
         // Serialize into the account with Anchor discriminator
         // CRITICAL: Must write the 8-byte discriminator first, then serialize the struct
         let mut data = egg_metadata_info.try_borrow_mut_data()?;
-        let mut cursor = &mut data[..];
+        
+        // Ensure the account has enough space
+        require!(data.len() >= EggMetadata::LEN, ErrorCode::InvalidParameters);
         
         // Write the 8-byte discriminator (required by Anchor for account deserialization)
         // Anchor calculates discriminator as first 8 bytes of sha256("account:EggMetadata")
-        // Use the Discriminator trait's DISCRIMINATOR constant
-        cursor.write_all(&<EggMetadata as Discriminator>::DISCRIMINATOR)?;
+        data[..8].copy_from_slice(&<EggMetadata as Discriminator>::DISCRIMINATOR);
         
-        // Now serialize the struct data after the discriminator
-        metadata_data.try_serialize(&mut cursor)?;
+        // Serialize struct data to a Vec, then copy to buffer after discriminator
+        // This is more reliable than using Write trait directly on mutable slice
+        let serialized = metadata_data.try_to_vec()
+            .map_err(|_| ErrorCode::InvalidParameters)?;
+        data[8..8 + serialized.len()].copy_from_slice(&serialized);
         
         // Emit event
         emit!(EggMinted {
