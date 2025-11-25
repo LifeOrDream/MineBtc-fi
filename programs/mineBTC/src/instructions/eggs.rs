@@ -1,7 +1,9 @@
 use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Token;
+use anchor_spl::token_2022::{self, Mint as Mint2022, Token2022, TokenAccount as TokenAccount2022};
 // # Egg Instructions
 //
 // This module manages the Egg NFT system, which provides hashpower multipliers to players.
@@ -252,7 +254,7 @@ pub fn batch_mint_eggs<'info>(
         // Write data to the metadata account
         let metadata_data = EggMetadata {
             mint: egg_asset_key,
-            power: 0, // Initial power
+            accumulated_val: 0,  
             dna,
             // FIX: Use Pubkey::default() instead of None
             // This ensures the account is always exactly 32 bytes here
@@ -292,7 +294,7 @@ pub fn batch_mint_eggs<'info>(
             name: name.clone(),
             uri: uri.clone(),
             dna,
-            initial_power: 0,
+            accumulated_val: 0,
             multiplier,
             faction_id,
             price: prices[index as usize],
@@ -410,7 +412,7 @@ pub fn admin_mint_egg(
     // Initialize Egg metadata
     let egg_metadata = &mut ctx.accounts.egg_metadata;
     egg_metadata.mint = ctx.accounts.egg_asset.key();
-    egg_metadata.power = 0;
+    egg_metadata.accumulated_val = 0;
     egg_metadata.dna = dna;
     // FIX: Use Pubkey::default() instead of None for fixed account size
     egg_metadata.incubated_player_data = Pubkey::default();
@@ -449,7 +451,7 @@ pub fn admin_mint_egg(
         name,
         uri,
         dna,
-        initial_power: 0,
+        accumulated_val: 0,
         multiplier,
         faction_id,
         price: cost_per_egg,
@@ -777,80 +779,74 @@ pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     Ok(())
 }
 
-/// Claim power points and distribute them evenly to all staked eggs
-/// Power is accumulated when claiming minebtc rewards via claim_minebtc_rewards
-pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
-    let player_data = &mut ctx.accounts.player_data;
+/// Send an egg to heaven (burn it) to claim accumulated rewards
+pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
+    let egg_metadata = &ctx.accounts.egg_metadata;
+    let accumulated_val = egg_metadata.accumulated_val;
     let current_time = Clock::get()?.unix_timestamp;
 
+    // Verify not incubated (should be default if user holds it, but double check)
     require!(
-        player_data.claimable_power > 0,
-        ErrorCode::InsufficientFunds
-    );
-    require!(
-        player_data.staked_eggs.len() > 0,
-        ErrorCode::InvalidParameters
+        egg_metadata.incubated_player_data == Pubkey::default(),
+        ErrorCode::EggAlreadyIncubated
     );
 
-    let total_power = player_data.claimable_power;
-    let num_eggs = player_data.staked_eggs.len() as u64;
+    msg!("🔥 Burning Egg NFT to send to heaven...");
+    msg!("   Accumulated Value: {}", accumulated_val);
 
-    // Distribute power evenly among all staked eggs
-    let power_per_egg = total_power / num_eggs;
-    let remainder = total_power % num_eggs;
+    // Burn the NFT
+    crate::mpl_core_helpers::burn_mpl_core_asset(
+        &ctx.accounts.egg_asset.to_account_info(),
+        ctx.accounts
+            .egg_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        None,
+    )?;
 
-    msg!(
-        "⚡ [claim_power] Distributing {} power points to {} staked eggs",
-        total_power,
-        num_eggs
-    );
-    msg!("   Power per egg: {}", power_per_egg);
+    // Transfer accumulated tokens if any
+    if accumulated_val > 0 {
+        msg!("💸 Transferring {} MINEBTC to user...", accumulated_val);
 
-    // Update each egg's power
-    let mut eggs_updated = 0;
-    let mut egg_metadatas = [
-        &mut ctx.accounts.egg1_metadata,
-        &mut ctx.accounts.egg2_metadata,
-        &mut ctx.accounts.egg3_metadata,
-        &mut ctx.accounts.egg4_metadata,
-        &mut ctx.accounts.egg5_metadata,
-    ];
+        let seeds = &[
+            MINE_BTC_VAULT_AUTHORITY_SEED,
+            &[ctx.accounts.mine_btc_mining.vault_auth_bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
 
-    for (idx, egg_opt) in egg_metadatas.iter_mut().enumerate() {
-        if let Some(egg) = egg_opt {
-            require!(
-                player_data.staked_eggs.contains(&egg.mint),
-                ErrorCode::InvalidParameters
-            );
-            let extra = if eggs_updated < remainder as usize {
-                1
-            } else {
-                0
-            };
-            update_egg_power(egg, power_per_egg, extra, current_time)?;
-            eggs_updated += 1;
-            msg!(
-                "   Egg {}: +{} power (total: {})",
-                idx + 1,
-                power_per_egg + extra,
-                egg.power
-            );
-        }
+        token_2022::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token_2022::TransferChecked {
+                    from: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    to: ctx.accounts.user_token_account.to_account_info(),
+                    authority: ctx.accounts.vault_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            accumulated_val,
+            MINEBTC_DECIMALS,
+        )?;
+
+        // Update mining stats
+        let mining_state = &mut ctx.accounts.mine_btc_mining;
+        mining_state.total_tokens_distributed += accumulated_val;
     }
 
-    require!(
-        eggs_updated == num_eggs as usize,
-        ErrorCode::InvalidParameters
-    );
+    // Emit event
+    emit!(EggSentToHeaven {
+        egg_mint: egg_metadata.mint,
+        user: ctx.accounts.user.key(),
+        accumulated_val,
+        timestamp: current_time,
+    });
 
-    // Reset claimable power
-    player_data.claimable_power = 0;
-
-    msg!(
-        "✅ [claim_power] Successfully distributed {} power points to {} eggs",
-        total_power,
-        num_eggs
-    );
+    msg!("✅ [send_to_heaven] Egg sent to heaven successfully");
 
     Ok(())
 }
@@ -876,10 +872,7 @@ fn generate_egg_data(
     )?;
     let name = format!("Egg #{}", mint_number);
     let uri = egg_config.egg_uris[faction_id as usize].clone();
-    let multiplier = crate::genescience::calculate_progressive_multiplier(
-        eggs_minted_before,
-        egg_config.max_supply,
-    )?;
+    let multiplier = 100;
 
     Ok((name, uri, dna, multiplier))
 }
@@ -936,26 +929,7 @@ fn add_tickets_to_player(
     Ok(ticket_count)
 }
 
-/// Update a single egg's power and emit event
-fn update_egg_power(
-    egg_metadata: &mut EggMetadata,
-    power_per_egg: u64,
-    extra: u64,
-    current_time: i64,
-) -> Result<()> {
-    let to_add = power_per_egg + extra;
-    egg_metadata.power += to_add as u32;
-    egg_metadata.last_update_ts = current_time;
 
-    emit!(EggPowerClaimed {
-        egg_mint: egg_metadata.mint,
-        to_add,
-        power: egg_metadata.power,
-        timestamp: current_time,
-    });
-
-    Ok(())
-}
 
 /// Update faction state hashpower totals
 fn update_faction_hashpower(
@@ -1342,31 +1316,66 @@ pub struct UnstakeEgg<'info> {
 }
 
 #[derive(Accounts)]
-pub struct ClaimPower<'info> {
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
-        bump = player_data.bump,
-        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
-    )]
-    pub player_data: Account<'info, PlayerData>,
-
-    /// User claiming power
+pub struct SendToHeaven<'info> {
+    #[account(mut)]
     pub user: Signer<'info>,
 
-    /// Optional egg metadata accounts (1-5 eggs can be staked)
-    #[account(mut)]
-    pub egg1_metadata: Option<Account<'info, EggMetadata>>,
+    #[account(
+        mut,
+        close = user,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
+        bump = egg_metadata.bump,
+        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub egg_metadata: Account<'info, EggMetadata>,
 
+    /// Metaplex Core asset (will be burnt)
     #[account(mut)]
-    pub egg2_metadata: Option<Account<'info, EggMetadata>>,
+    /// CHECK: Verified via get_mpl_core_owner helper (implicit in burn)
+    pub egg_asset: UncheckedAccount<'info>,
 
-    #[account(mut)]
-    pub egg3_metadata: Option<Account<'info, EggMetadata>>,
+    /// Optional collection account for the Egg
+    /// CHECK: Optional collection
+    pub egg_collection: Option<UncheckedAccount<'info>>,
 
-    #[account(mut)]
-    pub egg4_metadata: Option<Account<'info, EggMetadata>>,
+    /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID)]
+    pub mpl_core_program: UncheckedAccount<'info>,
 
-    #[account(mut)]
-    pub egg5_metadata: Option<Account<'info, EggMetadata>>,
+    // Mining accounts for token transfer
+    #[account(
+        mut,
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
+        bump = mine_btc_mining.bump,
+    )]
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
+
+    #[account(
+        mut,
+        seeds = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        bump,
+        token::mint = token_mint,
+        token::authority = vault_authority,
+    )]
+    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+
+    #[account(
+        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    /// CHECK: Vault authority PDA
+    pub vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        associated_token::mint = token_mint,
+        associated_token::authority = user,
+    )]
+    pub user_token_account: InterfaceAccount<'info, TokenAccount2022>,
+
+    #[account(address = minebtc_token_vault.mint)]
+    pub token_mint: InterfaceAccount<'info, Mint2022>,
+
+    pub token_program: Program<'info, Token2022>,
+    pub system_program: Program<'info, System>,
 }

@@ -1046,16 +1046,6 @@ pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         claimable_by_user as f64 / 1e6
     );
 
-    // Accumulate power points (1 power per 1000 minebtc claimed, minimum 1 power)
-
-    let power_points = calculate_power_points(claimable_by_user);
-    player_data.claimable_power += power_points;
-    msg!(
-        "   Accumulated {} power points (total claimable: {})",
-        power_points,
-        player_data.claimable_power
-    );
-
     // Transfer claimable MineBtc to user
     if claimable_by_user > 0 {
         msg!(
@@ -1338,19 +1328,7 @@ pub fn update_lp_staking_rewards(
     ))
 }
 
-fn calculate_power_points(claimable_by_user: u64) -> u64 {
-    let power_points = if claimable_by_user > 0 {
-        let power = claimable_by_user / 10_000; // 100 power per 1 minebtc (with 6 decimals)
-        if power == 0 && claimable_by_user > 0 {
-            1 // Minimum 1 power if any minebtc claimed
-        } else {
-            power
-        }
-    } else {
-        0
-    };
-    return power_points;
-}
+ 
 
 // ----------------------------------------------------------------------------------------
 // ------------ ACCOUNT STRUCTS ----------------------------------------------------------

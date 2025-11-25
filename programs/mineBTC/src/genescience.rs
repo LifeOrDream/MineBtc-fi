@@ -78,26 +78,6 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
     Ok(final_price)
 }
 
-/// Calculate the progressive Hashpower Multiplier
-/// Linear progression: 1.0x -> 4.2x over the total supply.
-/// This rewards early minters with higher base potential.
-pub fn calculate_progressive_multiplier(current_mint_count: u64, max_supply: u64) -> Result<u32> {
-    let start_mult = 100; // 1.0x
-    let end_mult = 420; // 4.2x
-
-    if current_mint_count >= max_supply {
-        return Ok(end_mult as u32);
-    }
-
-    let range = (end_mult - start_mult) as u128;
-    let supply_range = (max_supply - 1) as u128;
-    let progress = current_mint_count as u128;
-
-    let increase = (progress * range) / supply_range;
-    let current = start_mult as u128 + increase;
-
-    Ok(current as u32)
-}
 
 /// Generate unique DNA for a Genesis Cyber-Doge
 ///

@@ -123,7 +123,7 @@ pub struct EggMinted {
     pub uri: String,
     pub dna: [u8; 32],
     pub multiplier: u32,
-    pub initial_power: u32,
+    pub accumulated_val: u64,
     pub faction_id: u8, // Faction/country the egg belongs to
     pub price: u64,
     pub ticket_tier: u64,
@@ -186,17 +186,16 @@ pub struct EggUnstaked {
     pub timestamp: i64,
 }
 
-/// Event emitted when power is claimed and distributed to a staked egg
-/// Tracks power distribution for indexing (emitted per egg)
+/// Event emitted when an egg is sent to heaven (burnt) for rewards
 #[event]
-pub struct EggPowerClaimed {
-    /// Egg mint address that received power
+pub struct EggSentToHeaven {
+    /// Egg mint address that was burnt
     pub egg_mint: Pubkey,
-    /// Power added to this egg
-    pub to_add: u64,
-    /// New total power for this egg after distribution
-    pub power: u32,
-    /// Timestamp of the power claim action
+    /// User who sent the egg to heaven
+    pub user: Pubkey,
+    /// Accumulated value claimed
+    pub accumulated_val: u64,
+    /// Timestamp of the action
     pub timestamp: i64,
 }
 

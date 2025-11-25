@@ -806,10 +806,6 @@ pub struct PlayerData {
     pub pending_minebtc_rewards: u64,
     pub unrefined_minebtc_rewards: u64,
 
-    /// Claimable power points (distributed to staked eggs via claim_power)
-    /// Power is accumulated when claiming minebtc rewards
-    pub claimable_power: u64,
-
     pub minebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
 
@@ -862,7 +858,6 @@ impl PlayerData {
         16 +    // unrefining_index (u128)
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
-        8 +     // claimable_power (u64)
         4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
@@ -949,8 +944,8 @@ pub struct EggMetadata {
     /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
     pub multiplier: u32,
 
-    /// Current power level
-    pub power: u32,
+    /// dogeBTC accumulated which can be claimed by sending this doge to heaven
+    pub accumulated_val: u64,
 
     /// DNA data (32 bytes for breeding/evolution)
     pub dna: [u8; 32],
@@ -968,14 +963,14 @@ pub struct EggMetadata {
 }
 
 impl EggMetadata {
-    // discriminator + mint + created_at + faction + mult + power + dna + player + update + bump
-    // 8 + 32 + 8 + 1 + 4 + 4 + 32 + 32 + 8 + 1 = 130 bytes
+    // discriminator + mint + created_at + faction + mult + accumulated_val + dna + player + update + bump
+    // 8 + 32 + 8 + 1 + 4 + 8 + 32 + 32 + 8 + 1 = 134 bytes
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
         8 +     // created_at (i64)
         1 +     // faction_id
         4 +     // multiplier (u32)
-        4 +     // power (u32)
+        8 +     // accumulated_val (u64)
         32 +    // dna [u8; 32]
         32 +    // incubated_player_data Pubkey (always 32 bytes, Pubkey::default() if not incubated)
         8 +     // last_update_ts (i64)

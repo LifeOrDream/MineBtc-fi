@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use mpl_core::{
     accounts::BaseAssetV1,
-    instructions::{CreateV1CpiBuilder, TransferV1CpiBuilder},
+    instructions::{CreateV1CpiBuilder, TransferV1CpiBuilder, BurnV1CpiBuilder},
     ID as MPL_CORE_PROGRAM_ID,
 };
 
@@ -116,6 +116,55 @@ pub fn transfer_mpl_core_asset<'info>(
     }
 
     msg!("✅ NFT transferred successfully");
+
+    Ok(())
+}
+
+/// Burn a Metaplex Core NFT asset via CPI
+pub fn burn_mpl_core_asset<'info>(
+    asset: &AccountInfo<'info>,
+    collection: Option<&AccountInfo<'info>>,
+    payer: &AccountInfo<'info>,
+    authority: &AccountInfo<'info>,
+    mpl_core_program: &AccountInfo<'info>,
+    signer_seeds: Option<&[&[&[u8]]]>,
+) -> Result<()> {
+    msg!("🔥 MPL Core Helper: burn_mpl_core_asset");
+    msg!("   Asset: {}", asset.key());
+    msg!("   Authority: {}", authority.key());
+
+    // Validate Metaplex Core program
+    require!(
+        mpl_core_program.key() == MPL_CORE_PROGRAM_ID,
+        crate::errors::ErrorCode::InvalidMplCoreProgram
+    );
+    msg!("✅ Metaplex Core program validated");
+
+    // Build BurnV1 CPI
+    let mut cpi_builder = BurnV1CpiBuilder::new(mpl_core_program);
+
+    cpi_builder
+        .asset(asset)
+        .payer(payer)
+        .authority(Some(authority));
+
+    // Add collection if provided
+    if let Some(collection_account) = collection {
+        msg!("📚 Collection: {}", collection_account.key());
+        cpi_builder.collection(Some(collection_account));
+    }
+
+    msg!("🚀 Invoking Metaplex Core BurnV1 CPI...");
+    // Execute CPI with or without signer seeds
+    if let Some(seeds) = signer_seeds {
+        msg!("   Using PDA signer seeds");
+        cpi_builder.invoke_signed(seeds)?;
+    } else {
+        msg!("   Using regular signer");
+        cpi_builder.invoke()?;
+    }
+
+    msg!("✅ NFT burnt successfully");
 
     Ok(())
 }
