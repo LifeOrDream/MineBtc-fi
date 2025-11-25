@@ -16,7 +16,6 @@
 
 use anchor_lang::prelude::*;
 
-
 pub const MINEBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
@@ -30,7 +29,6 @@ pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
 pub const MAX_ALLOWED_POSITIONS: u8 = 7;
 pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;
 pub const M_HUNDRED: u64 = 100;
-
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
@@ -49,7 +47,7 @@ pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 pub const NUM_BLOCKS: usize = 24; // 24 blocks total
 pub const BLOCKS_PER_FACTION: usize = 2; // Each faction gets 2 blocks
 pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker bots
- 
+
 // ----- [SEEDS] -----
 
 // PDAs which hold GlobalConfig / MineBtcMining state
@@ -65,7 +63,7 @@ pub const EGGS_TREASURY_SEED: &[u8] = b"eggs-treasury";
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
 pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
- 
+
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
@@ -121,7 +119,6 @@ pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max 
 /// Global configuration for the program
 #[account]
 pub struct GlobalConfig {
-
     /// total number of players in the game
     pub total_players: u64,
 
@@ -160,14 +157,13 @@ pub struct GlobalConfig {
     pub treasury_bump: u8,
 }
 
-
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct SolFeeConfig {
     /// Percentage of SOL fees that go to protocol  
     pub protocol_fee_pct: u8,
-    /// Percentage of SOL fees that go to buybacks 
+    /// Percentage of SOL fees that go to buybacks
     pub buyback_pct: u8,
-    /// Percentage of SOL fees that go to stakers 
+    /// Percentage of SOL fees that go to stakers
     pub stakers_pct: u8,
 }
 
@@ -192,13 +188,11 @@ pub struct MineBtcDistConfig {
 impl MineBtcDistConfig {
     pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct + refining_fee
 }
- 
-
 
 impl GlobalConfig {
     // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + minebtc_dist_config + raydium_pool_state + change_faction_fee + snapshot_interval + bump + treasury_bump + supported_factions (vec)
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
         8 +                     // total_players
         32 +                    // ext_authority
         32 +                    // fee_recipient
@@ -329,9 +323,8 @@ impl MineBtcMining {
         + 8                     // lp_token_price_in_sol
         + 8                     // price_change_threshold
         + 8                     // emission_increase_pct
-        + 8;                    // emission_decrease_pct
+        + 8; // emission_decrease_pct
 }
-
 
 /// Buybacks account that accumulates SOL for token buybacks
 #[account]
@@ -352,9 +345,6 @@ impl BuybacksAccount {
     // discriminator + total_sol_accumulated + total_sol_used + sol_for_pol + bump + sol_vault_bump
     pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 1 + 1;
 }
-
-
-
 
 /// ------------ HASHPOWER CONFIG ------------
 
@@ -382,16 +372,10 @@ impl HashpowerConfig {
         8 +     // max_lockup_days
         2 +     // base_multiplier (u16)
         2 +     // max_multiplier (u16)
-        1;      // bump
+        1; // bump
 }
 
-
- 
-
- 
 // ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
-
-
 
 /// Ticket tier option for egg minting
 /// When users mint eggs, they choose a ticket tier which gives them free tickets
@@ -421,19 +405,19 @@ pub struct EggConfig {
 
     /// Maximum supply of eggs that can be minted
     pub max_supply: u64,
-    
+
     /// Number of eggs minted so far
     pub eggs_minted: u64,
-    
+
     /// Base price for bonding curve (in lamports)
     pub base_price: u64,
-    
+
     /// Curve steepness parameter (controls price growth rate, typically >= 100)
     pub curve_a: u64,
-    
+
     /// Global total power across all Eggs (sum of all egg powers)
     pub global_egg_power: u64,
-    
+
     /// Available ticket tier configs users can choose when minting (max 4 options)
     /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
     pub ticket_tiers: Vec<TicketTier>,
@@ -441,7 +425,7 @@ pub struct EggConfig {
 
 impl EggConfig {
     pub const MAX_TICKET_TIERS: usize = 3; // Only 3 ticket options now
-    
+
     // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_URI_LENGTH bytes)
     // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE +
@@ -456,10 +440,6 @@ impl EggConfig {
         4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
 }
 
-
-
-
-
 // ========================================================================================
 // ============================= TAX CONFIG ACCOUNT ==============================
 // ========================================================================================
@@ -469,22 +449,22 @@ impl EggConfig {
 #[account]
 pub struct TaxConfig {
     pub bump: u8,
-    
+
     /// Percentage of withheld tax that goes to NFT floor sweep
     pub nft_floor_sweep_pct: u8,
     /// Percentage of withheld tax that goes to faction treasury
     pub faction_treasury_pct: u8,
-    
+
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
-    
+
     /// Current distribution round state
     pub round_active: bool,
     /// Timestamp when current distribution round started
     pub start_timestamp: i64,
     /// Timestamp when last distribution round ended (for 7-day cooldown)
     pub end_timestamp: i64,
-    
+
     /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)
     /// Rank 0 = highest hashpower, Rank 11 = lowest hashpower
     pub leaderboard_faction_ids: Vec<u8>,
@@ -492,23 +472,23 @@ pub struct TaxConfig {
     pub leaderboard_hashpower: Vec<u64>,
     /// Number of factions added to leaderboard so far (0-12)
     pub leaderboard_factions_count: u8,
-    
+
     /// Faction rewards: MineBtc amount each faction gets (index = rank, value = minebtc_amount)
     pub faction_rewards: Vec<u64>,
     /// Whether rewards have been calculated for current round
     pub rewards_calculated: bool,
-    
+
     /// Faction claim status: whether each faction has claimed rewards (index = faction_id, value = claimed)
     pub faction_claimed: Vec<bool>,
     /// Number of factions that have claimed rewards
     pub factions_claimed_count: u8,
-    
+
     /// PDA addresses for tax system
     pub withdraw_withheld_authority: Pubkey,
     pub faction_treasury_vault: Pubkey,
     pub nft_floor_sweep_vault: Pubkey,
     pub nft_sale_sol_vault: Pubkey,
-    
+
     /// Whitelisted address that can withdraw MineBtc from NFT floor sweep vault
     /// This address will swap MineBtc for SOL off-chain, buy NFTs, and re-list them
     pub nft_floor_sweep_whitelisted_address: Pubkey,
@@ -516,7 +496,7 @@ pub struct TaxConfig {
 
 impl TaxConfig {
     pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
-    
+
     // Note: burn_tax_pct is calculated as 100 - nft_floor_sweep_pct - faction_treasury_pct, not stored
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
@@ -537,10 +517,8 @@ impl TaxConfig {
         32 +    // faction_treasury_vault
         32 +    // nft_floor_sweep_vault
         32 +    // nft_sale_sol_vault
-        32;     // nft_floor_sweep_whitelisted_address
+        32; // nft_floor_sweep_whitelisted_address
 }
- 
-
 
 // ========================================================================================
 // ========================== 1. GLOBAL & ORACLE ACCOUNTS =================================
@@ -566,13 +544,13 @@ pub struct GlobalGameSate {
     pub round_end_timestamp: i64,
     /// Round duration in seconds (configurable)
     pub round_duration_seconds: i64,
-    
+
     // --- Data from the *previous* round (for claiming) ---
     /// The last completed round ID
     pub last_round_id: u64,
     /// The winning faction ID from the last completed round
     pub winning_faction_id: u8,
-    
+
     // --- Commit-Reveal Randomness (ORE-style) ---
     /// Committed hash for the current round (set before round starts)
     /// This is hash(secret_seed) - the secret is revealed after betting closes
@@ -580,7 +558,7 @@ pub struct GlobalGameSate {
     /// Revealed seed for the current round (set after betting closes)
     /// Must verify: hash(revealed_seed) == current_round_commit
     pub current_round_seed: Option<[u8; 32]>,
-    
+
     /// Whitelisted cranker bots that can call start_round and end_round
     /// Maximum MAX_CRANKER_BOTS bots
     pub cranker_bots: Vec<Pubkey>,
@@ -602,19 +580,17 @@ impl GlobalGameSate {
         4 + (MAX_CRANKER_BOTS * 32); // cranker_bots Vec<Pubkey> (4 bytes length + MAX_CRANKER_BOTS * 32 bytes)
 }
 
-
 #[account]
 pub struct UnrefinedRewards {
     pub unrefining_index: u128,
-    pub total_minebtc_claimable: u64
+    pub total_minebtc_claimable: u64,
 }
 
 impl UnrefinedRewards {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         16 +    // unrefining_index (u128)
-        8;      // total_minebtc_claimable (u64)
+        8; // total_minebtc_claimable (u64)
 }
-
 
 /// Faction State PDA (Seed: `[b"faction", faction_id_u8]`)
 /// Tracks cumulative statistics and reward indexes for a specific faction.
@@ -643,13 +619,13 @@ pub struct FactionState {
     pub total_sol_bets: u64,
     /// Total number of rounds this faction has won (cumulative)
     pub total_wins: u64,
-    
+
     /// Cumulative SOL-per-share this faction has earned for stakers
     /// Used for calculating staker rewards
     pub sol_reward_index: u128,
 
     /// Current motherlode pot size for this faction
-    pub motherlode_pot_size: u64
+    pub motherlode_pot_size: u64,
 }
 
 impl FactionState {
@@ -668,9 +644,8 @@ impl FactionState {
         8 +     // total_sol_bets (u64)
         8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
-        8;      // motherlode_pot_size (u64)
+        8; // motherlode_pot_size (u64)
 }
-
 
 // ========================================================================================
 // ========================== GAME SESSION ACCOUNTS =================================
@@ -749,7 +724,7 @@ pub struct GameSession {
 impl GameSession {
     // Maximum number of bets per round (for Vec sizing)
     pub const MAX_BETS_PER_ROUND: usize = 10000; // Reasonable limit per round
-    
+
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // stage (u8)
@@ -774,11 +749,8 @@ impl GameSession {
         16 +    // minebtc_rewards_index (u128)
         16 +    // same_faction_minebtc_rewards_index (u128)
         1 +     // motherlode_hit (bool)
-        8;      // motherlode_pot_size_on_hit
+        8; // motherlode_pot_size_on_hit
 }
-
- 
-
 
 // ========================================================================================
 // ============================= 2. USER-SPECIFIC ACCOUNTS ==============================
@@ -833,14 +805,14 @@ pub struct PlayerData {
     pub unrefining_index: u128,
     pub pending_minebtc_rewards: u64,
     pub unrefined_minebtc_rewards: u64,
-    
+
     /// Claimable power points (distributed to staked eggs via claim_power)
     /// Power is accumulated when claiming minebtc rewards
     pub claimable_power: u64,
 
     pub minebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
-    
+
     /// Staked dragon eggs (max 5 eggs)
     /// Stores the mint addresses of staked eggs
     pub staked_eggs: Vec<Pubkey>,
@@ -860,12 +832,12 @@ pub struct PlayerData {
 impl PlayerData {
     // Maximum number of active rounds a player can track (for Vec sizing)
     pub const MAX_ACTIVE_ROUNDS: usize = 100; // Reasonable limit for unclaimed rounds
-    // Maximum number of ticket types (max 5 ticket types)
+                                              // Maximum number of ticket types (max 5 ticket types)
     pub const MAX_TICKET_TYPES: usize = 5;
-    
+
     // Maximum number of staking positions per user
     pub const MAX_POSITIONS: usize = 7; // 0-6 positions
-    
+
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
@@ -896,10 +868,8 @@ impl PlayerData {
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
         2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
-        4 + (Self::MAX_TICKET_TYPES * 8);  // free_tickets_remaining Vec<u64>
+        4 + (Self::MAX_TICKET_TYPES * 8); // free_tickets_remaining Vec<u64>
 }
-
-
 
 /// Individual MineBtc staking position
 #[account]
@@ -927,10 +897,8 @@ impl StakedPosition {
         8 +  // lockup_end_timestamp
         8 +  // lockup_duration
         2 +  // multiplier
-        1;   // bump
+        1; // bump
 }
-
-
 
 /// Stores referral rewards that a user has earned from referrals
 #[account]
@@ -939,12 +907,12 @@ pub struct ReferralRewards {
     pub bump: u8,
     /// Number of users who have used this user's referral code
     pub referrals_count: u16,
-    
+
     /// Pending SOL rewards from referrals (claimable)
     pub pending_sol_rewards: u64,
     /// Pending MineBtc rewards from referrals (claimable)
     pub pending_minebtc_rewards: u64,
-    
+
     /// Total SOL earned from referrals (cumulative)
     pub total_sol_earned: u64,
     /// Total MineBtc earned from referrals (cumulative)
@@ -952,17 +920,15 @@ pub struct ReferralRewards {
 }
 
 impl ReferralRewards {
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         1 +     // bump
         2 +     // referrals_count
         8 +     // pending_sol_rewards
         8 +     // pending_minebtc_rewards
         8 +     // total_sol_earned
-        8;      // total_minebtc_earned
+        8; // total_minebtc_earned
 }
-
-
 
 // ========================================================================================
 // =============================== DRAGON EGG NFT METADATA ===============================
@@ -1013,7 +979,7 @@ impl EggMetadata {
         32 +    // dna [u8; 32]
         32 +    // incubated_player_data Pubkey (always 32 bytes, Pubkey::default() if not incubated)
         8 +     // last_update_ts (i64)
-        1;      // bump
+        1; // bump
 }
 
 // ========================================================================================
@@ -1053,7 +1019,7 @@ impl BetType {
 /// User Game Bet PDA (Seed: `[b"user-bet", user_pubkey, round_id_u64]`)
 /// Each user bet in a round has its own PDA account.
 /// Users can bet on multiple blocks in a single round.
-/// 
+///
 /// Structure:
 /// - `block_ids`: List of blocks user bet on (0-indexed: 0-23)
 /// - `sol_bets`: SOL bets for each block (index matches block_ids)
@@ -1067,7 +1033,7 @@ pub struct UserGameBet {
     pub owner: Pubkey,
     /// The round ID this bet belongs to
     pub round_id: u64,
-    
+
     /// List of block IDs user bet on (0-indexed: 0-23)
     /// Index position corresponds to same index in sol_bets and points_bets
     pub block_ids: Vec<u8>,
@@ -1090,7 +1056,7 @@ pub struct UserGameBet {
 impl UserGameBet {
     // Maximum number of blocks a user can bet on in a single round
     pub const MAX_BLOCKS_PER_BET: usize = 24; // One per block maximum
-    
+
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
@@ -1100,7 +1066,7 @@ impl UserGameBet {
         8 +     // total_sol_bet
         8 +     // total_points_bet
         8 +     // total_fee
-        1;      // bump
+        1; // bump
 }
 
 /// Autominer configuration for blocks
@@ -1116,12 +1082,12 @@ pub enum BlocksConfig {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub enum FactionsConfig {
     /// Specific list of factions with strategy
-    Specific { 
+    Specific {
         factions: Vec<u8>,
         strategy: FactionStrategy, // highest, lowest, or both
     },
     /// Random number of factions with strategy
-    Random { 
+    Random {
         count: u8,
         strategy: FactionStrategy,
     },
@@ -1159,7 +1125,7 @@ pub struct AutominerVault {
 impl AutominerVault {
     pub const MAX_BLOCKS: usize = 24; // Max 24 blocks
     pub const MAX_FACTIONS: usize = 12; // Max 12 factions
-    
+
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         // blocks_config Option<BlocksConfig>
@@ -1174,5 +1140,5 @@ impl AutominerVault {
         4 +     // rounds_remaining (u32)
         8 +     // last_bet_round_id
         1 +     // vault_bump
-        8;      // sol_balance
+        8; // sol_balance
 }

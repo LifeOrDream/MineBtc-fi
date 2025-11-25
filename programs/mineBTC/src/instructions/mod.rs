@@ -1,8 +1,8 @@
 pub mod admin;
 pub mod economy;
+pub mod eggs;
 pub mod game;
 pub mod helper;
-pub mod user;
 pub mod stake;
-pub mod eggs;
 pub mod tax;
+pub mod user;

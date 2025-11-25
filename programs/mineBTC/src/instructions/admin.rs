@@ -23,22 +23,16 @@ use mpl_core::{instructions::CreateCollectionV1CpiBuilder, ID as MPL_CORE_PROGRA
 
 use crate::errors::ErrorCode;
 
+use anchor_spl::token::{self, Token};
 use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface::{
-    self as token_if,  
-    Mint as Mint2022,
-    TokenAccount as TokenAccount2022,
+    self as token_if, Mint as Mint2022, TokenAccount as TokenAccount2022,
 };
-use anchor_spl::token::{self, Token};  
 
 use mpl_core::{
-    instructions::{
-        AddCollectionPluginV1CpiBuilder,
-    },
-    types::{Plugin, PluginAuthority, Royalties, RuleSet, Creator},
+    instructions::AddCollectionPluginV1CpiBuilder,
+    types::{Creator, Plugin, PluginAuthority, Royalties, RuleSet},
 };
-
-
 
 /// Helper type for passing creators from client
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -48,19 +42,18 @@ pub struct CreatorInput {
     pub percentage: u8,
 }
 
- 
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: UPDATES, ADDING EXPANSIONS ------------
 // --------------------------------------------------------------------------------
 
 /// Initialize the global program configuration (admin only)
-/// 
+///
 /// Creates the GlobalConfig and MineBtcMining accounts and initializes default values.
 /// This function can only be called once during program deployment.
-/// 
+///
 /// # Parameters
 /// - `fee_recipient`: Address that receives creation fees and dev earnings
-/// 
+///
 /// # Initializes
 /// - GlobalConfig with default fee distributions
 /// - MineBtcMining account
@@ -69,7 +62,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("🔧 [internal_initialize] Initializing global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Creation fee recipient: {}", fee_recipient);
-    
+
     let global_config = &mut ctx.accounts.global_config;
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
@@ -78,12 +71,19 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     global_config.ext_authority = ctx.accounts.authority.key();
     global_config.fee_recipient = fee_recipient;
     msg!("     Authority: {}", global_config.ext_authority);
-    msg!("     Creation fee recipient: {}", global_config.fee_recipient);
+    msg!(
+        "     Creation fee recipient: {}",
+        global_config.fee_recipient
+    );
 
     // Store both PDA bumps for future derivation
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
     global_config.treasury_bump = ctx.bumps.sol_treasury;
-    msg!("     SOL treasury PDA: {} (bump: {})", global_config.pda_sol_treasury, global_config.treasury_bump);
+    msg!(
+        "     SOL treasury PDA: {} (bump: {})",
+        global_config.pda_sol_treasury,
+        global_config.treasury_bump
+    );
 
     // Initialize SOL fee config with defaults
     msg!("   Initializing SOL fee config...");
@@ -92,9 +92,18 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         buyback_pct: 80,
         stakers_pct: 40,
     };
-    msg!("     Protocol fee: {}%", global_config.sol_fee_config.protocol_fee_pct);
-    msg!("     Buyback: {}%", global_config.sol_fee_config.buyback_pct);
-    msg!("     Stakers: {}%", global_config.sol_fee_config.stakers_pct);
+    msg!(
+        "     Protocol fee: {}%",
+        global_config.sol_fee_config.protocol_fee_pct
+    );
+    msg!(
+        "     Buyback: {}%",
+        global_config.sol_fee_config.buyback_pct
+    );
+    msg!(
+        "     Stakers: {}%",
+        global_config.sol_fee_config.stakers_pct
+    );
 
     // Initialize MineBtc distribution config with defaults
     msg!("   Initializing MineBtc distribution config...");
@@ -105,29 +114,52 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         minebtc_motherlode_pct: 10,
         refining_fee: 5,
     };
-    msg!("     Stakers: {}%", global_config.minebtc_dist_config.minebtc_stakers_pct);
-    msg!("     Winners: {}%", global_config.minebtc_dist_config.minebtc_winners_pct);
-    msg!("     Same-faction: {}%", global_config.minebtc_dist_config.minebtc_same_faction_pct);
-    msg!("     Motherlode: {}%", global_config.minebtc_dist_config.minebtc_motherlode_pct);
-    msg!("     Refining fee: {}%", global_config.minebtc_dist_config.refining_fee);
+    msg!(
+        "     Stakers: {}%",
+        global_config.minebtc_dist_config.minebtc_stakers_pct
+    );
+    msg!(
+        "     Winners: {}%",
+        global_config.minebtc_dist_config.minebtc_winners_pct
+    );
+    msg!(
+        "     Same-faction: {}%",
+        global_config.minebtc_dist_config.minebtc_same_faction_pct
+    );
+    msg!(
+        "     Motherlode: {}%",
+        global_config.minebtc_dist_config.minebtc_motherlode_pct
+    );
+    msg!(
+        "     Refining fee: {}%",
+        global_config.minebtc_dist_config.refining_fee
+    );
 
     global_config.change_faction_fee = 4_200_000_000; // 4.2 SOL
 
     // Initialize snapshot interval (default: 1800 seconds = 30 minutes)
     global_config.snapshot_interval = 1800;
-    msg!("     Snapshot interval: {} seconds (30 minutes)", global_config.snapshot_interval);
+    msg!(
+        "     Snapshot interval: {} seconds (30 minutes)",
+        global_config.snapshot_interval
+    );
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
-    msg!("   Raydium pool state: {} (default, must be set via admin)", global_config.raydium_pool_state);
+    msg!(
+        "   Raydium pool state: {} (default, must be set via admin)",
+        global_config.raydium_pool_state
+    );
 
     global_config.bump = ctx.bumps.global_config;
     msg!("   Global config bump: {}", global_config.bump);
 
     // Initialize empty factions list
     global_config.supported_factions = Vec::new();
-    msg!("   Supported factions: {} (empty, must be added via admin)", global_config.supported_factions.len());
-
+    msg!(
+        "   Supported factions: {} (empty, must be added via admin)",
+        global_config.supported_factions.len()
+    );
 
     // Optionally drop 1 lamport into the vaults for future-proof rent-exempt status
     msg!("   Transferring 1 lamport to SOL treasury for rent-exempt status...");
@@ -142,7 +174,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         1,
     )?;
     msg!("     ✓ 1 lamport transferred to SOL treasury");
-    
+
     msg!("   Transferring 1 lamport to Eggs treasury for rent-exempt status...");
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -178,9 +210,18 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.total_tokens_mined = 0;
     mine_btc_mining.bump = ctx.bumps.mine_btc_mining;
     mine_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
-    msg!("     MineBtc token vault: {} (default, will be set during initialize_mining)", mine_btc_mining.minebtc_token_vault);
-    msg!("     Mining start timestamp: {} (0 = not started)", mine_btc_mining.mining_start_timestamp);
-    msg!("     MineBtc per slot: {}", mine_btc_mining.mine_btc_per_round);
+    msg!(
+        "     MineBtc token vault: {} (default, will be set during initialize_mining)",
+        mine_btc_mining.minebtc_token_vault
+    );
+    msg!(
+        "     Mining start timestamp: {} (0 = not started)",
+        mine_btc_mining.mining_start_timestamp
+    );
+    msg!(
+        "     MineBtc per slot: {}",
+        mine_btc_mining.mine_btc_per_round
+    );
     msg!("     Bump: {}", mine_btc_mining.bump);
 
     // Initialize dynamic distribution fields with defaults
@@ -191,7 +232,10 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
     mine_btc_mining.track_price = 0;
     mine_btc_mining.sol_for_pol = 0;
-    msg!("     Raydium pool state: {} (default)", mine_btc_mining.raydium_pool_state);
+    msg!(
+        "     Raydium pool state: {} (default)",
+        mine_btc_mining.raydium_pool_state
+    );
     msg!("     Recent price: {}", mine_btc_mining.recent_price);
 
     // Initialize emission adjustment parameters with defaults
@@ -199,9 +243,18 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.price_change_threshold = 3; // 3% threshold
     mine_btc_mining.emission_increase_pct = 1; // 1% increase when price goes up
     mine_btc_mining.emission_decrease_pct = 3; // 3% decrease when price goes down
-    msg!("     Price change threshold: {}%", mine_btc_mining.price_change_threshold);
-    msg!("     Emission increase: {}%", mine_btc_mining.emission_increase_pct);
-    msg!("     Emission decrease: {}%", mine_btc_mining.emission_decrease_pct);
+    msg!(
+        "     Price change threshold: {}%",
+        mine_btc_mining.price_change_threshold
+    );
+    msg!(
+        "     Emission increase: {}%",
+        mine_btc_mining.emission_increase_pct
+    );
+    msg!(
+        "     Emission decrease: {}%",
+        mine_btc_mining.emission_decrease_pct
+    );
 
     // ---------------------------- Unrefined Rewards ---------------------------------
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
@@ -214,7 +267,8 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     msg!("   ⚠️ Note: GlobalGameSate must be initialized separately via initialize_game_state");
 
     msg!("✅ [internal_initialize] Global config initialized successfully");
-    msg!("   SOL Treasury PDA: {} (bump: {})",
+    msg!(
+        "   SOL Treasury PDA: {} (bump: {})",
         ctx.accounts.sol_treasury.key(),
         ctx.bumps.sol_treasury
     );
@@ -222,13 +276,12 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     Ok(())
 }
 
-
 /// Set the Raydium pool state address (admin only)
 /// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
-/// 
+///
 /// Security measure to prevent using malicious pools for swaps.
 /// Only the authorized Raydium pool can be used for price discovery and liquidity operations.
-/// 
+///
 /// # Parameters
 /// - `raydium_pool_state`: The authorized Raydium pool state address
 pub fn set_raydium_pool_state_internal(
@@ -245,7 +298,7 @@ pub fn set_raydium_pool_state_internal(
     global_config.raydium_pool_state = raydium_pool_state;
 
     msg!("✅ Set Raydium pool state: {}", raydium_pool_state);
-    
+
     // Initialize sol_rewards_vault if not already initialized
     msg!("   Initializing sol_rewards_vault...");
     let sol_rewards_vault_lamports = ctx.accounts.sol_rewards_vault.lamports();
@@ -261,11 +314,14 @@ pub fn set_raydium_pool_state_internal(
             ),
             1,
         )?;
-        msg!("     ✓ sol_rewards_vault initialized (bump: {})", ctx.bumps.sol_rewards_vault);
+        msg!(
+            "     ✓ sol_rewards_vault initialized (bump: {})",
+            ctx.bumps.sol_rewards_vault
+        );
     } else {
         msg!("     ℹ️ sol_rewards_vault already initialized");
     }
-    
+
     // Initialize sol_prize_pot_vault if not already initialized
     msg!("   Initializing sol_prize_pot_vault...");
     let sol_prize_pot_vault_lamports = ctx.accounts.sol_prize_pot_vault.lamports();
@@ -281,7 +337,10 @@ pub fn set_raydium_pool_state_internal(
             ),
             1,
         )?;
-        msg!("     ✓ sol_prize_pot_vault initialized (bump: {})", ctx.bumps.sol_prize_pot_vault);
+        msg!(
+            "     ✓ sol_prize_pot_vault initialized (bump: {})",
+            ctx.bumps.sol_prize_pot_vault
+        );
     } else {
         msg!("     ℹ️ sol_prize_pot_vault already initialized");
     }
@@ -289,35 +348,45 @@ pub fn set_raydium_pool_state_internal(
     Ok(())
 }
 
- 
 /// Add a single faction to the global config (admin only)
-/// 
+///
 /// Adds a new faction to the supported factions list and initializes its FactionState account.
 /// Maximum of MAX_FACTIONS (12) factions can be added.
-/// 
+///
 /// # Parameters
 /// - `faction_name`: Name of the faction (max MAX_FACTION_NAME_LENGTH characters)
-/// 
+///
 /// # Effects
 /// - Adds faction to `supported_factions` list
 /// - Creates and initializes FactionState PDA for the new faction
 /// - Faction ID is assigned based on current count (0-indexed)
-pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, faction_id: u8) -> Result<()> {
+pub fn add_faction_internal(
+    ctx: Context<AddFaction>,
+    faction_name: String,
+    faction_id: u8,
+) -> Result<()> {
     msg!("🏛️ [add_faction_internal] Adding faction");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Faction name: {}", faction_name);
-    
+
     let global_config = &mut ctx.accounts.global_config;
     let faction_state = &mut ctx.accounts.faction_state;
 
-    msg!("   Current factions count: {}", global_config.supported_factions.len());
+    msg!(
+        "   Current factions count: {}",
+        global_config.supported_factions.len()
+    );
     msg!("   Validating faction name...");
     // Validate faction name
     require!(
         faction_name.len() > 0 && faction_name.len() <= MAX_FACTION_NAME_LENGTH,
         ErrorCode::InvalidFactionName
     );
-    msg!("     ✓ Faction name length valid ({} chars, max: {})", faction_name.len(), MAX_FACTION_NAME_LENGTH);
+    msg!(
+        "     ✓ Faction name length valid ({} chars, max: {})",
+        faction_name.len(),
+        MAX_FACTION_NAME_LENGTH
+    );
 
     // Check we don't exceed max factions
     let current_faction_count = global_config.supported_factions.len();
@@ -327,8 +396,14 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, fact
     );
     msg!("     ✓ Factions count < MAX_FACTIONS ({})", MAX_FACTIONS);
 
-    require!( faction_id ==  current_faction_count as u8, ErrorCode::InvalidFactionId );
-    msg!("     ✓ Faction ID matches current factions count ({})", current_faction_count);   
+    require!(
+        faction_id == current_faction_count as u8,
+        ErrorCode::InvalidFactionId
+    );
+    msg!(
+        "     ✓ Faction ID matches current factions count ({})",
+        current_faction_count
+    );
 
     // Initialize faction state data
     msg!("   Initializing faction state data...");
@@ -350,11 +425,17 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, fact
     // Add faction to config
     msg!("   Adding faction to supported_factions list...");
     global_config.supported_factions.push(faction_name.clone());
-    msg!("     New factions count: {}", global_config.supported_factions.len());
+    msg!(
+        "     New factions count: {}",
+        global_config.supported_factions.len()
+    );
 
     msg!("✅ [add_faction_internal] Faction added successfully");
     msg!("   Faction: {} (ID: {})", faction_name, faction_id);
-    msg!("   Total factions: {}", global_config.supported_factions.len());
+    msg!(
+        "   Total factions: {}",
+        global_config.supported_factions.len()
+    );
 
     // Emit event for off-chain indexing
     emit!(FactionAdded {
@@ -367,12 +448,11 @@ pub fn add_faction_internal(ctx: Context<AddFaction>, faction_name: String, fact
     Ok(())
 }
 
-
 /// Update the global configuration parameters (admin only)
-/// 
+///
 /// Updates the program authority and/or fee recipient address.
 /// Only the current `ext_authority` can call this function.
-/// 
+///
 /// # Parameters
 /// - `new_authority`: Optional new program authority (if None, authority unchanged)
 /// - `new_fee_recipient`: Optional new fee recipient (if None, fee recipient unchanged)
@@ -383,12 +463,15 @@ pub fn update_config_internal(
 ) -> Result<()> {
     msg!("🔧 [update_config_internal] Updating global config");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    
+
     let global_config = &mut ctx.accounts.global_config;
 
     msg!("   Current config:");
     msg!("     Authority: {}", global_config.ext_authority);
-    msg!("     Creation fee recipient: {}", global_config.fee_recipient);
+    msg!(
+        "     Creation fee recipient: {}",
+        global_config.fee_recipient
+    );
 
     // Update fields if provided
     if let Some(authority) = new_authority {
@@ -399,12 +482,15 @@ pub fn update_config_internal(
         msg!("   Authority: not updated");
     }
 
-
     // Update creation fee recipient if provided
     if let Some(fee_recipient) = new_fee_recipient {
         let old_recipient = global_config.fee_recipient;
         global_config.fee_recipient = fee_recipient;
-        msg!("   Updated creation fee recipient: {} -> {}", old_recipient, fee_recipient);
+        msg!(
+            "   Updated creation fee recipient: {} -> {}",
+            old_recipient,
+            fee_recipient
+        );
     } else {
         msg!("   Creation fee recipient: not updated");
     }
@@ -414,10 +500,10 @@ pub fn update_config_internal(
 }
 
 /// Update fee configuration (admin only)
-/// 
+///
 /// Updates SOL fee distribution percentages and/or MineBtc distribution percentages.
 /// All percentages must sum to 100% for their respective categories.
-/// 
+///
 /// # Parameters
 /// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
 /// - `new_buyback_pct`: Optional new buyback percentage (SOL fees)
@@ -429,7 +515,7 @@ pub fn update_config_internal(
 /// - `new_refining_fee`: Optional new refining fee percentage
 /// - `change_faction_fee`: Optional new change faction fee (in lamports)
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
-/// 
+///
 /// # Validation
 /// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == 100
 /// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct == 100
@@ -448,67 +534,103 @@ pub fn update_fees_internal(
 ) -> Result<()> {
     msg!("💰 [update_fees_internal] Updating fee configuration");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    
+
     let global_config = &mut ctx.accounts.global_config;
-    
+
     msg!("   Current SOL fee config:");
-    msg!("     Protocol fee: {}%", global_config.sol_fee_config.protocol_fee_pct);
-    msg!("     Buyback: {}%", global_config.sol_fee_config.buyback_pct);
-    msg!("     Stakers: {}%", global_config.sol_fee_config.stakers_pct);
+    msg!(
+        "     Protocol fee: {}%",
+        global_config.sol_fee_config.protocol_fee_pct
+    );
+    msg!(
+        "     Buyback: {}%",
+        global_config.sol_fee_config.buyback_pct
+    );
+    msg!(
+        "     Stakers: {}%",
+        global_config.sol_fee_config.stakers_pct
+    );
     msg!("   Current MineBtc dist config:");
-    msg!("     Stakers: {}%", global_config.minebtc_dist_config.minebtc_stakers_pct);
-    msg!("     Winners: {}%", global_config.minebtc_dist_config.minebtc_winners_pct);
-    msg!("     Same-faction: {}%", global_config.minebtc_dist_config.minebtc_same_faction_pct);
-    msg!("     Motherlode: {}%", global_config.minebtc_dist_config.minebtc_motherlode_pct);
-    msg!("     Refining fee: {}%", global_config.minebtc_dist_config.refining_fee);
+    msg!(
+        "     Stakers: {}%",
+        global_config.minebtc_dist_config.minebtc_stakers_pct
+    );
+    msg!(
+        "     Winners: {}%",
+        global_config.minebtc_dist_config.minebtc_winners_pct
+    );
+    msg!(
+        "     Same-faction: {}%",
+        global_config.minebtc_dist_config.minebtc_same_faction_pct
+    );
+    msg!(
+        "     Motherlode: {}%",
+        global_config.minebtc_dist_config.minebtc_motherlode_pct
+    );
+    msg!(
+        "     Refining fee: {}%",
+        global_config.minebtc_dist_config.refining_fee
+    );
 
     // Update SOL fee config if any values provided
     if new_protocol_fee_pct.is_some() || new_buyback_pct.is_some() || new_stakers_pct.is_some() {
         msg!("   Updating SOL fee config...");
-        let protocol_fee_pct = new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
+        let protocol_fee_pct =
+            new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
-        
+
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
         };
-        msg!("     Updated: protocol fee -> {}%, buyback -> {}%, stakers -> {}%", protocol_fee_pct, buyback_pct, stakers_pct);
+        msg!(
+            "     Updated: protocol fee -> {}%, buyback -> {}%, stakers -> {}%",
+            protocol_fee_pct,
+            buyback_pct,
+            stakers_pct
+        );
     } else {
         msg!("   SOL fee config: not updated");
     }
 
     // Update MineBtc distribution config if any values provided
-    if new_minebtc_stakers_pct.is_some() 
-        || new_minebtc_winners_pct.is_some() 
-        || new_minebtc_same_faction_pct.is_some() 
-        || new_minebtc_motherlode_pct.is_some() 
+    if new_minebtc_stakers_pct.is_some()
+        || new_minebtc_winners_pct.is_some()
+        || new_minebtc_same_faction_pct.is_some()
+        || new_minebtc_motherlode_pct.is_some()
     {
         msg!("   Updating MineBtc distribution config...");
-        let minebtc_stakers_pct = new_minebtc_stakers_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_stakers_pct);
-        let minebtc_winners_pct = new_minebtc_winners_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_winners_pct);
-        let minebtc_same_faction_pct = new_minebtc_same_faction_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_same_faction_pct);
-        let minebtc_motherlode_pct = new_minebtc_motherlode_pct.unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
+        let minebtc_stakers_pct = new_minebtc_stakers_pct
+            .unwrap_or(global_config.minebtc_dist_config.minebtc_stakers_pct);
+        let minebtc_winners_pct = new_minebtc_winners_pct
+            .unwrap_or(global_config.minebtc_dist_config.minebtc_winners_pct);
+        let minebtc_same_faction_pct = new_minebtc_same_faction_pct
+            .unwrap_or(global_config.minebtc_dist_config.minebtc_same_faction_pct);
+        let minebtc_motherlode_pct = new_minebtc_motherlode_pct
+            .unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
 
-        msg!("     New values: stakers={}%, winners={}%, same_faction={}%, motherlode={}%",
-            minebtc_stakers_pct, minebtc_winners_pct, minebtc_same_faction_pct, minebtc_motherlode_pct);
+        msg!(
+            "     New values: stakers={}%, winners={}%, same_faction={}%, motherlode={}%",
+            minebtc_stakers_pct,
+            minebtc_winners_pct,
+            minebtc_same_faction_pct,
+            minebtc_motherlode_pct
+        );
         let total = minebtc_stakers_pct as u16
             + minebtc_winners_pct as u16
             + minebtc_same_faction_pct as u16
             + minebtc_motherlode_pct as u16;
         msg!("     Total: {}%", total);
-        
-        require!(
-            total == 100,
-            ErrorCode::InvalidParameters
-        );
+
+        require!(total == 100, ErrorCode::InvalidParameters);
         msg!("     ✓ Percentages sum to 100%");
 
         // Get current refining_fee to preserve it
         let current_refining_fee = global_config.minebtc_dist_config.refining_fee;
         msg!("     Preserving refining_fee: {}%", current_refining_fee);
-        
+
         let old_config = global_config.minebtc_dist_config.clone();
         global_config.minebtc_dist_config = MineBtcDistConfig {
             minebtc_stakers_pct,
@@ -526,31 +648,52 @@ pub fn update_fees_internal(
     } else {
         msg!("   MineBtc dist config: not updated");
     }
-    
+
     // Update refining fee if provided
     if let Some(refining_fee) = new_refining_fee {
         let old_refining_fee = global_config.minebtc_dist_config.refining_fee;
         global_config.minebtc_dist_config.refining_fee = refining_fee;
-        msg!("   Updated refining fee: {}% -> {}%", old_refining_fee, refining_fee);
+        msg!(
+            "   Updated refining fee: {}% -> {}%",
+            old_refining_fee,
+            refining_fee
+        );
     } else {
-        msg!("   Refining fee: {}% (not updated)", global_config.minebtc_dist_config.refining_fee);
+        msg!(
+            "   Refining fee: {}% (not updated)",
+            global_config.minebtc_dist_config.refining_fee
+        );
     }
 
     // Update change faction fee if provided
     if let Some(change_faction_fee) = change_faction_fee {
         global_config.change_faction_fee = change_faction_fee;
-        msg!("   Updated change faction fee: {} SOL -> {} SOL", global_config.change_faction_fee, change_faction_fee);
+        msg!(
+            "   Updated change faction fee: {} SOL -> {} SOL",
+            global_config.change_faction_fee,
+            change_faction_fee
+        );
     } else {
-        msg!("   Change faction fee: {} SOL (not updated)", global_config.change_faction_fee);
+        msg!(
+            "   Change faction fee: {} SOL (not updated)",
+            global_config.change_faction_fee
+        );
     }
 
     // Update snapshot interval if provided
     if let Some(snapshot_interval) = snapshot_interval {
         let old_interval = global_config.snapshot_interval;
         global_config.snapshot_interval = snapshot_interval;
-        msg!("   Updated snapshot interval: {} seconds -> {} seconds", old_interval, snapshot_interval);
+        msg!(
+            "   Updated snapshot interval: {} seconds -> {} seconds",
+            old_interval,
+            snapshot_interval
+        );
     } else {
-        msg!("   Snapshot interval: {} seconds (not updated)", global_config.snapshot_interval);
+        msg!(
+            "   Snapshot interval: {} seconds (not updated)",
+            global_config.snapshot_interval
+        );
     }
 
     msg!("✅ [update_fees_internal] Fee configuration updated successfully");
@@ -567,48 +710,88 @@ pub fn update_emission_params_internal(
 ) -> Result<()> {
     msg!("📊 [update_emission_params_internal] Updating emission adjustment parameters");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    
+
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
-    
+
     msg!("   Current emission adjustment parameters:");
-    msg!("     Price change threshold: {}%", mine_btc_mining.price_change_threshold);
-    msg!("     Emission increase: {}%", mine_btc_mining.emission_increase_pct);
-    msg!("     Emission decrease: {}%", mine_btc_mining.emission_decrease_pct);
-    
+    msg!(
+        "     Price change threshold: {}%",
+        mine_btc_mining.price_change_threshold
+    );
+    msg!(
+        "     Emission increase: {}%",
+        mine_btc_mining.emission_increase_pct
+    );
+    msg!(
+        "     Emission decrease: {}%",
+        mine_btc_mining.emission_decrease_pct
+    );
+
     // Update price change threshold if provided
     if let Some(threshold) = price_change_threshold {
-        require!(threshold > 0 && threshold <= 100, ErrorCode::InvalidParameters);
+        require!(
+            threshold > 0 && threshold <= 100,
+            ErrorCode::InvalidParameters
+        );
         let old_threshold = mine_btc_mining.price_change_threshold;
         mine_btc_mining.price_change_threshold = threshold;
-        msg!("   Updated price change threshold: {}% -> {}%", old_threshold, threshold);
+        msg!(
+            "   Updated price change threshold: {}% -> {}%",
+            old_threshold,
+            threshold
+        );
     } else {
-        msg!("   Price change threshold: {}% (not updated)", mine_btc_mining.price_change_threshold);
+        msg!(
+            "   Price change threshold: {}% (not updated)",
+            mine_btc_mining.price_change_threshold
+        );
     }
-    
+
     // Update emission increase percentage if provided
     if let Some(increase_pct) = emission_increase_pct {
-        require!(increase_pct > 0 && increase_pct <= 100, ErrorCode::InvalidParameters);
+        require!(
+            increase_pct > 0 && increase_pct <= 100,
+            ErrorCode::InvalidParameters
+        );
         let old_increase = mine_btc_mining.emission_increase_pct;
         mine_btc_mining.emission_increase_pct = increase_pct;
-        msg!("   Updated emission increase: {}% -> {}%", old_increase, increase_pct);
+        msg!(
+            "   Updated emission increase: {}% -> {}%",
+            old_increase,
+            increase_pct
+        );
     } else {
-        msg!("   Emission increase: {}% (not updated)", mine_btc_mining.emission_increase_pct);
+        msg!(
+            "   Emission increase: {}% (not updated)",
+            mine_btc_mining.emission_increase_pct
+        );
     }
-    
+
     // Update emission decrease percentage if provided
     if let Some(decrease_pct) = emission_decrease_pct {
-        require!(decrease_pct > 0 && decrease_pct <= 100, ErrorCode::InvalidParameters);
+        require!(
+            decrease_pct > 0 && decrease_pct <= 100,
+            ErrorCode::InvalidParameters
+        );
         let old_decrease = mine_btc_mining.emission_decrease_pct;
         mine_btc_mining.emission_decrease_pct = decrease_pct;
-        msg!("   Updated emission decrease: {}% -> {}%", old_decrease, decrease_pct);
+        msg!(
+            "   Updated emission decrease: {}% -> {}%",
+            old_decrease,
+            decrease_pct
+        );
     } else {
-        msg!("   Emission decrease: {}% (not updated)", mine_btc_mining.emission_decrease_pct);
+        msg!(
+            "   Emission decrease: {}% (not updated)",
+            mine_btc_mining.emission_decrease_pct
+        );
     }
-    
-    msg!("✅ [update_emission_params_internal] Emission adjustment parameters updated successfully");
+
+    msg!(
+        "✅ [update_emission_params_internal] Emission adjustment parameters updated successfully"
+    );
     Ok(())
 }
-
 
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
@@ -616,12 +799,11 @@ pub fn update_emission_params_internal(
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
 
-
 /// Initialize mining by setting the token vault and starting timestamp (admin only)
-/// 
+///
 /// Sets up the MineBtc mining system with the token vault and initial mining parameters.
 /// Can only be called once when `mining_start_timestamp == 0`.
-/// 
+///
 /// # Parameters
 /// - `start_timestamp`: Unix timestamp when mining should start
 /// - `mine_btc_per_round`: Base MineBtc emission rate per slot
@@ -678,10 +860,10 @@ pub fn initialize_mining_internal(
 }
 
 /// Deposit MineBtc tokens to the mining vault (anyone can call)
-/// 
+///
 /// Allows anyone to deposit MineBtc tokens into the mining vault.
 /// These tokens will be distributed as rewards to stakers over time.
-/// 
+///
 /// # Parameters
 /// - `amount`: Amount of MineBtc tokens to deposit (in token's native decimals)
 pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
@@ -702,12 +884,10 @@ pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
     msg!("Deposited {} MDOGE into mining vault", amount);
     Ok(())
 }
- 
 
 // ----------------------------------------------------------------------------------------
 // -------------- HASHPOWER CONFIG (ADMIN) -------------------------------------------------
 // ----------------------------------------------------------------------------------------
-
 
 pub fn initialize_hashpower_config_internal(
     ctx: Context<InitializeHashpowerConfig>,
@@ -728,7 +908,7 @@ pub fn initialize_hashpower_config_internal(
     Ok(())
 }
 
-pub fn update_hashpower_config_internal(    
+pub fn update_hashpower_config_internal(
     ctx: Context<UpdateHashpowerConfig>,
     min_lockup_days: u64,
     max_lockup_days: u64,
@@ -745,17 +925,16 @@ pub fn update_hashpower_config_internal(
     msg!("✅ [update_hashpower_config_internal] Hashpower config updated successfully");
     Ok(())
 }
- 
+
 // ----------------------------------------------------------------------------------------
 // -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
-
 /// Initialize EggConfig account (admin only)
-/// 
+///
 /// Creates the EggConfig account that stores Egg collection configuration.
 /// This must be called before creating the Egg collection.
-/// 
+///
 /// # Parameters
 /// - `base_price`: Base price for Eggs in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
@@ -767,9 +946,9 @@ pub fn initialize_egg_config_internal(
     max_supply: u64,
 ) -> Result<()> {
     msg!("🥚 [initialize_egg_config_internal] Initializing EggConfig");
-    
+
     let eggs_config = &mut ctx.accounts.eggs_config;
-    
+
     eggs_config.bump = ctx.bumps.eggs_config;
     eggs_config.egg_collection = Pubkey::default(); // Will be set when collection is created
     eggs_config.eggs_minted = 0;
@@ -779,21 +958,21 @@ pub fn initialize_egg_config_internal(
     eggs_config.egg_uris = Vec::new();
     eggs_config.ticket_tiers = Vec::new();
     eggs_config.global_egg_power = 0;
-    
+
     msg!("   ✅ EggConfig initialized");
     msg!("   Base Price: {} lamports", base_price);
     msg!("   Curve A: {}", curve_a);
     msg!("   Max Supply: {}", max_supply);
-    
+
     Ok(())
 }
 
 /// Create Egg collection with program PDA as authority (admin only)
-/// 
+///
 /// Creates a new Metaplex Core collection for Egg NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
 /// Requires EggConfig to be initialized first.
-/// 
+///
 /// # Parameters
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
@@ -841,18 +1020,14 @@ pub fn create_egg_collection_internal(
     Ok(())
 }
 
-
 /// Set Egg URIs for all factions (admin only)
-/// 
+///
 /// Sets the metadata URIs for Eggs, one URI per faction.
 /// The number of URIs must match the number of supported factions.
-/// 
+///
 /// # Parameters
 /// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
-pub fn set_egg_uris_internal(
-    ctx: Context<UpdateEggsConfig>,
-    uris: Vec<String>,
-) -> Result<()> {
+pub fn set_egg_uris_internal(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let eggs_config = &mut ctx.accounts.eggs_config;
 
@@ -876,7 +1051,7 @@ pub fn set_egg_uris_internal(
 }
 
 /// Clear all Egg URIs (admin only)
-/// 
+///
 /// Removes all Egg metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
 pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
@@ -888,16 +1063,15 @@ pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
     Ok(())
 }
 
-
 /// Initialize royalties on the Egg collection (admin only)
-/// 
+///
 /// Sets up royalty configuration for the Egg NFT collection using Metaplex Core.
 /// Initializes with an empty ProgramDenyList that can be updated later.
-/// 
+///
 /// # Parameters
 /// - `basis_points`: Royalty percentage in basis points (e.g., 500 = 5%)
 /// - `creators`: List of creator addresses and their percentage shares
-/// 
+///
 /// # Validation
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
@@ -956,20 +1130,23 @@ pub fn init_egg_royalties(
         // No log_wrapper needed; pass no extra accounts.
         .invoke_signed(signer_seeds)?;
 
-    msg!("✅ Initialized Egg royalties: {} basis points", basis_points);
+    msg!(
+        "✅ Initialized Egg royalties: {} basis points",
+        basis_points
+    );
     Ok(())
 }
- 
+
 /// Add or update ticket tier configs (admin only)
-/// 
+///
 /// Configures ticket tier options that users can choose when minting Eggs.
 /// Users receive free tickets based on the selected tier when they mint.
-/// 
+///
 /// # Parameters
 /// - `ticket_tier_index`: Index of the ticket tier (0-3, max 4 tiers)
 /// - `ticket_value`: Value of each ticket in lamports (e.g., 10_000_000 = 0.01 SOL)
 /// - `ticket_count`: Number of tickets given with this tier
-/// 
+///
 /// # Example
 /// - Tier 0: 0.01 SOL × 1000 tickets
 /// - Tier 1: 0.1 SOL × 10 tickets
@@ -1010,19 +1187,19 @@ pub fn add_ticket_tier_config(
         ticket_count,
     };
 
-    msg!("✅ Updated ticket tier config #{}: {} tickets of {} SOL", 
-        ticket_tier_index, 
-        ticket_count, 
-        ticket_value as f64 / 1e9);
+    msg!(
+        "✅ Updated ticket tier config #{}: {} tickets of {} SOL",
+        ticket_tier_index,
+        ticket_count,
+        ticket_value as f64 / 1e9
+    );
     Ok(())
 }
 
-
-
 /// Update EggConfig account (admin only)
-/// 
+///
 /// Updates the EggConfig account that stores Egg collection configuration.
-/// 
+///
 /// # Parameters
 /// - `base_price`: Base price for Eggs in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
@@ -1032,29 +1209,27 @@ pub fn update_egg_config_internal(
     curve_a: u64,
 ) -> Result<()> {
     msg!("🥚 [update_egg_config_internal] Updating EggConfig");
-    
+
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.base_price = base_price;
     eggs_config.curve_a = curve_a;
-    
+
     msg!("   ✅ EggConfig initialized");
     msg!("   Base Price: {} lamports", base_price);
     msg!("   Curve A: {}", curve_a);
-    
+
     Ok(())
 }
-
-
 
 // --------------------------------------------------------------------------------
 // ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
 // --------------------------------------------------------------------------------
 
 /// Initialize the global game state for Faction Surge (admin only)
-/// 
+///
 /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
 /// This must be called before any rounds can be started.
-/// 
+///
 /// # Parameters
 /// - `round_duration_seconds`: Duration of each game round in seconds
 pub fn initialize_game_state_internal(
@@ -1064,7 +1239,7 @@ pub fn initialize_game_state_internal(
     msg!("🎮 [initialize_game_state_internal] Initializing global game state");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Round duration: {} seconds", round_duration_seconds);
-    
+
     let global_game_state = &mut ctx.accounts.global_game_state;
     let clock = Clock::get()?;
 
@@ -1076,95 +1251,123 @@ pub fn initialize_game_state_internal(
     global_game_state.is_active = true;
     global_game_state.can_begin_round = true;
 
-
     global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
     global_game_state.round_end_timestamp = 0;
     global_game_state.round_duration_seconds = round_duration_seconds;
     msg!("     Bump: {}", global_game_state.bump);
     msg!("     Is active: {}", global_game_state.is_active);
-    msg!("     Current round ID: {} (will be incremented to 1 in start_round)", global_game_state.current_round_id);
-    msg!("     Round duration: {} seconds", global_game_state.round_duration_seconds);
-    msg!("     Round end timestamp: {}", global_game_state.round_end_timestamp);
-    
+    msg!(
+        "     Current round ID: {} (will be incremented to 1 in start_round)",
+        global_game_state.current_round_id
+    );
+    msg!(
+        "     Round duration: {} seconds",
+        global_game_state.round_duration_seconds
+    );
+    msg!(
+        "     Round end timestamp: {}",
+        global_game_state.round_end_timestamp
+    );
+
     // Initialize previous round data
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
     msg!("     Last round ID: {}", global_game_state.last_round_id);
-    msg!("     Winning faction ID: {} (no rounds completed yet)", global_game_state.winning_faction_id);
-    
+    msg!(
+        "     Winning faction ID: {} (no rounds completed yet)",
+        global_game_state.winning_faction_id
+    );
+
     // Initialize commit-reveal randomness fields
     global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
     global_game_state.current_round_seed = None;
-    msg!("     Current round commit: {:?} (will be set in start_round)", global_game_state.current_round_commit);
-    msg!("     Current round seed: {:?} (will be set in end_round)", global_game_state.current_round_seed);
-    
+    msg!(
+        "     Current round commit: {:?} (will be set in start_round)",
+        global_game_state.current_round_commit
+    );
+    msg!(
+        "     Current round seed: {:?} (will be set in end_round)",
+        global_game_state.current_round_seed
+    );
+
     // Initialize cumulative stats
     global_game_state.total_sol_bets = 0;
     msg!("     Total SOL bets: {}", global_game_state.total_sol_bets);
-    
+
     // Initialize empty cranker bots whitelist
     global_game_state.cranker_bots = Vec::new();
-    msg!("     Cranker bots whitelist: {} (empty, must be added via admin)", global_game_state.cranker_bots.len());
+    msg!(
+        "     Cranker bots whitelist: {} (empty, must be added via admin)",
+        global_game_state.cranker_bots.len()
+    );
 
     msg!("✅ [initialize_game_state_internal] Global game state initialized successfully");
     msg!("   Round duration: {} seconds", round_duration_seconds);
-    msg!("   First round ends at: {}", global_game_state.round_end_timestamp);
+    msg!(
+        "   First round ends at: {}",
+        global_game_state.round_end_timestamp
+    );
 
     Ok(())
 }
 
-
 /// Add a cranker bot to the whitelist (admin only)
-/// 
+///
 /// Adds a bot address to the whitelist of authorized cranker bots.
 /// Only whitelisted bots can call `start_round` and `end_round` functions.
 /// Maximum of MAX_CRANKER_BOTS (3) bots can be whitelisted.
-/// 
+///
 /// # Parameters
 /// - `bot_pubkey`: Public key of the bot to whitelist
-pub fn add_cranker_bot_internal(
-    ctx: Context<UpdateGameState>,
-    bot_pubkey: Pubkey,
-) -> Result<()> {
+pub fn add_cranker_bot_internal(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
     msg!("🤖 [add_cranker_bot_internal] Adding cranker bot to whitelist");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Bot pubkey: {}", bot_pubkey);
-    
+
     let global_game_state = &mut ctx.accounts.global_game_state;
-    
-    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
+
+    msg!(
+        "   Current cranker bots count: {}",
+        global_game_state.cranker_bots.len()
+    );
     msg!("   Maximum allowed: {}", MAX_CRANKER_BOTS);
-    
+
     // Check if bot is already whitelisted
     require!(
         !global_game_state.cranker_bots.contains(&bot_pubkey),
         ErrorCode::InvalidParameters // Bot already whitelisted
     );
     msg!("     ✓ Bot not already whitelisted");
-    
+
     // Check if we've reached the maximum
     require!(
         global_game_state.cranker_bots.len() < MAX_CRANKER_BOTS,
         ErrorCode::InvalidParameters // Max cranker bots reached
     );
     msg!("     ✓ Under maximum limit");
-    
+
     // Add bot to whitelist
     global_game_state.cranker_bots.push(bot_pubkey);
     msg!("   Added bot to whitelist");
-    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
-    
+    msg!(
+        "     New cranker bots count: {}",
+        global_game_state.cranker_bots.len()
+    );
+
     msg!("✅ [add_cranker_bot_internal] Cranker bot added successfully");
     msg!("   Bot: {}", bot_pubkey);
-    msg!("   Total whitelisted bots: {}", global_game_state.cranker_bots.len());
-    
+    msg!(
+        "   Total whitelisted bots: {}",
+        global_game_state.cranker_bots.len()
+    );
+
     Ok(())
 }
 
 /// Remove a cranker bot from the whitelist (admin only)
-/// 
+///
 /// Removes a bot address from the whitelist of authorized cranker bots.
-/// 
+///
 /// # Parameters
 /// - `bot_pubkey`: Public key of the bot to remove from whitelist
 pub fn remove_cranker_bot_internal(
@@ -1174,94 +1377,110 @@ pub fn remove_cranker_bot_internal(
     msg!("🤖 [remove_cranker_bot_internal] Removing cranker bot from whitelist");
     msg!("   Authority: {}", ctx.accounts.authority.key());
     msg!("   Bot pubkey: {}", bot_pubkey);
-    
+
     let global_game_state = &mut ctx.accounts.global_game_state;
-    
-    msg!("   Current cranker bots count: {}", global_game_state.cranker_bots.len());
-    
+
+    msg!(
+        "   Current cranker bots count: {}",
+        global_game_state.cranker_bots.len()
+    );
+
     // Find and remove bot
     let initial_count = global_game_state.cranker_bots.len();
-    global_game_state.cranker_bots.retain(|&bot| bot != bot_pubkey);
-    
+    global_game_state
+        .cranker_bots
+        .retain(|&bot| bot != bot_pubkey);
+
     require!(
         global_game_state.cranker_bots.len() < initial_count,
         ErrorCode::InvalidParameters // Bot not found in whitelist
     );
     msg!("     ✓ Bot removed from whitelist");
-    msg!("     New cranker bots count: {}", global_game_state.cranker_bots.len());
-    
+    msg!(
+        "     New cranker bots count: {}",
+        global_game_state.cranker_bots.len()
+    );
+
     msg!("✅ [remove_cranker_bot_internal] Cranker bot removed successfully");
     msg!("   Bot: {}", bot_pubkey);
-    msg!("   Remaining whitelisted bots: {}", global_game_state.cranker_bots.len());
-    
+    msg!(
+        "   Remaining whitelisted bots: {}",
+        global_game_state.cranker_bots.len()
+    );
+
     Ok(())
 }
 
 /// Switch game state (toggle is_active) (admin only)
-/// 
+///
 /// Toggles the `is_active` field in the global game state.
 /// When `is_active` is false, rounds cannot be started or ended.
-/// 
+///
 /// This allows admins to pause/resume the game without losing state.
-pub fn switch_game_state_internal(
-    ctx: Context<UpdateGameState>,
-) -> Result<()> {
+pub fn switch_game_state_internal(ctx: Context<UpdateGameState>) -> Result<()> {
     msg!("🔄 [switch_game_state_internal] Switching game state");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    
+
     let global_game_state = &mut ctx.accounts.global_game_state;
-    
+
     let old_state = global_game_state.is_active;
     global_game_state.is_active = !global_game_state.is_active;
     let new_state = global_game_state.is_active;
-    
+
     msg!("   Game state: {} -> {}", old_state, new_state);
-    
+
     if new_state {
         msg!("   ✅ Game is now ACTIVE - rounds can be started/ended");
     } else {
         msg!("   ⏸️  Game is now PAUSED - rounds cannot be started/ended");
     }
-    
+
     msg!("✅ [switch_game_state_internal] Game state switched successfully");
-    msg!("   New state: {}", if new_state { "ACTIVE" } else { "PAUSED" });
-    
+    msg!(
+        "   New state: {}",
+        if new_state { "ACTIVE" } else { "PAUSED" }
+    );
+
     Ok(())
 }
 
 /// Update round duration (admin only)
-/// 
+///
 /// Updates the `round_duration_seconds` field in the global game state.
 /// This controls how long each game round lasts.
-/// 
+///
 /// # Parameters
 /// - `new_round_duration_seconds`: New round duration in seconds (must be > 0)
-pub fn update_round_duration_internal( ctx: Context<UpdateGameState>, new_round_duration_seconds: i64) -> Result<()> {
+pub fn update_round_duration_internal(
+    ctx: Context<UpdateGameState>,
+    new_round_duration_seconds: i64,
+) -> Result<()> {
     msg!("⏱️ [update_round_duration_internal] Updating round duration");
     msg!("   Authority: {}", ctx.accounts.authority.key());
-    
+
     let global_game_state = &mut ctx.accounts.global_game_state;
-    require!( new_round_duration_seconds > 0, ErrorCode::InvalidParameters);    
-    global_game_state.round_duration_seconds = new_round_duration_seconds;    
+    require!(new_round_duration_seconds > 0, ErrorCode::InvalidParameters);
+    global_game_state.round_duration_seconds = new_round_duration_seconds;
     msg!("✅ [update_round_duration_internal] Round duration updated successfully");
-    msg!("   New duration: {} seconds ({} minutes)", new_round_duration_seconds, new_round_duration_seconds / 60);
-    
+    msg!(
+        "   New duration: {} seconds ({} minutes)",
+        new_round_duration_seconds,
+        new_round_duration_seconds / 60
+    );
+
     Ok(())
 }
-
- 
- 
 
 // ----------------------------------------------------------------------------------------
 // ------------ SYSTEM ACCOUNTS INITIALIZATION ----------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Initialize system referral account and buybacks system (admin only)
-/// 
+///
 /// Creates and initializes both the system referral rewards account and the buybacks tracking account.
 /// The system referral account tracks rewards for the system referral code.
 /// The buybacks account tracks SOL accumulated for token buybacks.
-/// 
+///
 /// # Initializes
 /// - System referral rewards PDA
 /// - Buybacks account PDA
@@ -1289,12 +1508,24 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     let buybacks_ac = &mut ctx.accounts.buybacks_account;
     buybacks_ac.total_sol_accumulated = 0;
     msg!("     Buybacks account initialized");
-    msg!("     Total SOL accumulated: {}", buybacks_ac.total_sol_accumulated);
+    msg!(
+        "     Total SOL accumulated: {}",
+        buybacks_ac.total_sol_accumulated
+    );
 
     msg!("✅ [initialize_system_accounts_internal] System accounts initialized successfully");
-    msg!("   System referral rewards PDA: {}", ctx.accounts.system_referral_rewards.key());
-    msg!("   Buybacks account PDA: {}", ctx.accounts.buybacks_account.key());
-    msg!("   Buybacks SOL vault PDA: {}", ctx.accounts.buybacks_sol_vault.key());
+    msg!(
+        "   System referral rewards PDA: {}",
+        ctx.accounts.system_referral_rewards.key()
+    );
+    msg!(
+        "   Buybacks account PDA: {}",
+        ctx.accounts.buybacks_account.key()
+    );
+    msg!(
+        "   Buybacks SOL vault PDA: {}",
+        ctx.accounts.buybacks_sol_vault.key()
+    );
 
     Ok(())
 }
@@ -1303,8 +1534,6 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
 // ------------ WITHDRAW SOL FEES ----------------------------------
 // ----------------------------------------------------------------------------------------
 
-
- 
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: INITIALIZE ------------
 // --------------------------------------------------------------------------------
@@ -1336,7 +1565,7 @@ pub struct Initialize<'info> {
         seeds = [UNREFINED_REWARDS_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,    
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
     /// CHECK: 0-byte PDA that only stores lamports (System Account)
     #[account(
@@ -1386,7 +1615,7 @@ pub struct SetRaydiumPoolState<'info> {
         constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// CHECK: SOL rewards vault for stakers (System Account, 0-byte PDA)
     #[account(
         init_if_needed,
@@ -1397,7 +1626,7 @@ pub struct SetRaydiumPoolState<'info> {
         owner = system_program.key()
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
-    
+
     /// CHECK: SOL prize pot vault (System Account, 0-byte PDA)
     #[account(
         init_if_needed,
@@ -1408,17 +1637,17 @@ pub struct SetRaydiumPoolState<'info> {
         owner = system_program.key()
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
-    
+
     #[account(mut)]
     pub authority: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateConfigAc<'info> {
     #[account(
-        mut, 
+        mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
         constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
@@ -1487,7 +1716,6 @@ pub struct AddFaction<'info> {
     pub system_program: Program<'info, System>,
 }
 
-
 #[derive(Accounts)]
 pub struct InitializeMining<'info> {
     #[account(
@@ -1535,7 +1763,6 @@ pub struct InitializeMining<'info> {
     pub token_program: Program<'info, Token2022>,
     pub rent: Sysvar<'info, Rent>,
 }
- 
 
 #[derive(Accounts)]
 pub struct DepositTokens<'info> {
@@ -1571,10 +1798,8 @@ pub struct DepositTokens<'info> {
     pub token_program: Program<'info, Token2022>,
 }
 
-
 #[derive(Accounts)]
 pub struct InitializeHashpowerConfig<'info> {
-
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1619,9 +1844,6 @@ pub struct UpdateHashpowerConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
-
-
-
 #[derive(Accounts)]
 pub struct InitializeEggConfig<'info> {
     #[account(
@@ -1645,7 +1867,6 @@ pub struct InitializeEggConfig<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 pub struct CreateEggCollection<'info> {
@@ -1684,7 +1905,6 @@ pub struct CreateEggCollection<'info> {
 
     pub system_program: Program<'info, System>,
 }
- 
 
 #[derive(Accounts)]
 pub struct UpdateEggsConfig<'info> {
@@ -1694,9 +1914,9 @@ pub struct UpdateEggsConfig<'info> {
         constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(
-        mut, 
+        mut,
         seeds = [EGG_CONFIG_SEED.as_ref()],
         bump = eggs_config.bump,
     )]
@@ -1748,8 +1968,6 @@ pub struct InitEggRoyalties<'info> {
 
     pub system_program: Program<'info, System>,
 }
- 
-
 
 #[derive(Accounts)]
 pub struct InitializeGameState<'info> {
@@ -1783,22 +2001,19 @@ pub struct UpdateGameState<'info> {
         bump = global_game_state.bump
     )]
     pub global_game_state: Account<'info, GlobalGameSate>,
-    
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
         constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     #[account(mut)]
     pub authority: Signer<'info>,
-    
+
     pub system_program: Program<'info, System>,
 }
-
-
-
 
 /// Merged account context for initializing system referral account and buybacks system
 #[derive(Accounts)]
@@ -1857,12 +2072,18 @@ pub struct InitializeSystemAccounts<'info> {
 /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
 pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
     msg!("🔧 [initialize_custodian_accounts] Initializing custodian token accounts");
-    
+
     // Verify MINEBTC custodian
     msg!("   MINEBTC Custodian:");
     msg!("     Mint: {}", ctx.accounts.minebtc_mint.key());
-    msg!("     Custodian PDA: {}", ctx.accounts.minebtc_custodian.key());
-    msg!("     Authority PDA: {}", ctx.accounts.minebtc_custodian_authority.key());
+    msg!(
+        "     Custodian PDA: {}",
+        ctx.accounts.minebtc_custodian.key()
+    );
+    msg!(
+        "     Authority PDA: {}",
+        ctx.accounts.minebtc_custodian_authority.key()
+    );
     require!(
         ctx.accounts.minebtc_custodian.mint == ctx.accounts.minebtc_mint.key(),
         ErrorCode::InvalidMint
@@ -1871,12 +2092,18 @@ pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) 
         ctx.accounts.minebtc_custodian.owner == ctx.accounts.minebtc_custodian_authority.key(),
         ErrorCode::InvalidOwner
     );
-    
+
     // Verify liquidity custodian
     msg!("   Liquidity Custodian:");
     msg!("     Mint: {}", ctx.accounts.lp_mint.key());
-    msg!("     Custodian PDA: {}", ctx.accounts.liquidity_custodian.key());
-    msg!("     Authority PDA: {}", ctx.accounts.liquidity_custodian_authority.key());
+    msg!(
+        "     Custodian PDA: {}",
+        ctx.accounts.liquidity_custodian.key()
+    );
+    msg!(
+        "     Authority PDA: {}",
+        ctx.accounts.liquidity_custodian_authority.key()
+    );
     require!(
         ctx.accounts.liquidity_custodian.mint == ctx.accounts.lp_mint.key(),
         ErrorCode::InvalidMint
@@ -1885,8 +2112,10 @@ pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) 
         ctx.accounts.liquidity_custodian.owner == ctx.accounts.liquidity_custodian_authority.key(),
         ErrorCode::InvalidOwner
     );
-    
-    msg!("✅ [initialize_custodian_accounts] Both custodian token accounts initialized successfully");
+
+    msg!(
+        "✅ [initialize_custodian_accounts] Both custodian token accounts initialized successfully"
+    );
     Ok(())
 }
 
@@ -1950,8 +2179,3 @@ pub struct InitializeCustodianAccounts<'info> {
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
 }
-
- 
-
-
-

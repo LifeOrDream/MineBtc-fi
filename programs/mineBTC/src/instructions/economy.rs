@@ -20,14 +20,12 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface::TokenAccount as TokenAccount2022; // ← the PROGRAM-ID wrapper (implements Id)
 use anchor_spl::{
-    token::{Token, TokenAccount},           // <- gives you TokenAccount type
-    associated_token::AssociatedToken,     // <- gives you AssociatedToken program type
+    associated_token::AssociatedToken, // <- gives you AssociatedToken program type
+    token::{Token, TokenAccount},      // <- gives you TokenAccount type
 };
 
 // Import Raydium CP-Swap for CPI calls
 use raydium_cp_swap;
-
-
 
 pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<()> {
     let sol_treasury = &ctx.accounts.sol_treasury;
@@ -36,7 +34,10 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
 
     msg!("Withdrawing SOL from treasury");
     msg!("SOL Treasury: {}", sol_treasury.key());
-    msg!("Treasury balance: {} SOL", sol_treasury.lamports() as f64 / 1e9);
+    msg!(
+        "Treasury balance: {} SOL",
+        sol_treasury.lamports() as f64 / 1e9
+    );
 
     let rent_exempt_amount = Rent::get()?.minimum_balance(sol_treasury.data_len());
     let current_balance = sol_treasury.lamports();
@@ -47,10 +48,17 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
 
     // Check if we have enough available balance
     if available_solana == 0 {
-        msg!( "⚠️ No SOL balance to withdraw. Available: {} SOL", available_solana as f64 / 1e9);        
+        msg!(
+            "⚠️ No SOL balance to withdraw. Available: {} SOL",
+            available_solana as f64 / 1e9
+        );
         return Ok(());
     }
-    msg!( "   Total balance: {} SOL, Rent: {} SOL", current_balance as f64 / 1e9, rent_exempt_amount as f64 / 1e9);
+    msg!(
+        "   Total balance: {} SOL, Rent: {} SOL",
+        current_balance as f64 / 1e9,
+        rent_exempt_amount as f64 / 1e9
+    );
 
     // Calculate buybacks amount using configurable percentage
     let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
@@ -77,9 +85,13 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         // Update buybacks tracking
         buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + sol_for_buybacks;
 
-        msg!("💰 Transferred {} SOL to buybacks vault ({}%)", sol_for_buybacks as f64 / 1e9,  buyback_percentage);
+        msg!(
+            "💰 Transferred {} SOL to buybacks vault ({}%)",
+            sol_for_buybacks as f64 / 1e9,
+            buyback_percentage
+        );
     }
- 
+
     let dev_earnings = available_solana.saturating_sub(sol_for_buybacks);
     if dev_earnings > 0 {
         // Transfer SOL from treasury to treasury WSOL account (wraps it)
@@ -96,15 +108,13 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         )?;
 
         // Sync native account to update WSOL balance
-        anchor_spl::token::sync_native(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                anchor_spl::token::SyncNative {
-                    account: ctx.accounts.treasury_wsol_account.to_account_info(),
-                },
-                signer_seeds,
-            ),
-        )?;
+        anchor_spl::token::sync_native(CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            anchor_spl::token::SyncNative {
+                account: ctx.accounts.treasury_wsol_account.to_account_info(),
+            },
+            signer_seeds,
+        ))?;
 
         // Transfer WSOL from treasury WSOL account to multisig WSOL account
         anchor_spl::token::transfer(
@@ -119,7 +129,10 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
             ),
             dev_earnings,
         )?;
-        msg!("👨‍💻 Sent {} WSOL to Multisig (Dev Earnings)", dev_earnings as f64 / 1e9);
+        msg!(
+            "👨‍💻 Sent {} WSOL to Multisig (Dev Earnings)",
+            dev_earnings as f64 / 1e9
+        );
     }
 
     // Transfer from eggs treasury to buybacks (1% of 10x buyback amount, whichever is lower)
@@ -127,16 +140,14 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
     let eggs_treasury_rent = Rent::get()?.minimum_balance(0);
     let eggs_treasury_available = eggs_treasury_balance.saturating_sub(eggs_treasury_rent);
     let mut egg_treasury_amt = 0;
-    
-    if eggs_treasury_available > 0 && sol_for_buybacks > 0 {
 
+    if eggs_treasury_available > 0 && sol_for_buybacks > 0 {
         // Transfer whichever is lower: 1% of available eggs treasury balance or 10x of buyback amount
-        egg_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);        
+        egg_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);
         if egg_treasury_amt > 0 {
-                 
             let eggs_treasury_seeds = &[EGGS_TREASURY_SEED.as_ref(), &[ctx.bumps.eggs_treasury]];
             let eggs_treasury_signer_seeds = &[&eggs_treasury_seeds[..]];
-            
+
             anchor_lang::system_program::transfer(
                 CpiContext::new_with_signer(
                     ctx.accounts.system_program.to_account_info(),
@@ -148,9 +159,13 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
                 ),
                 egg_treasury_amt,
             )?;
-            
-            buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + egg_treasury_amt;            
-            msg!("🥚 Transferred {} SOL from Eggs Treasury to Buybacks (1% of 10x buyback)", egg_treasury_amt as f64 / 1e9);
+
+            buybacks_ac.total_sol_accumulated =
+                buybacks_ac.total_sol_accumulated + egg_treasury_amt;
+            msg!(
+                "🥚 Transferred {} SOL from Eggs Treasury to Buybacks (1% of 10x buyback)",
+                egg_treasury_amt as f64 / 1e9
+            );
         }
     }
 
@@ -162,10 +177,12 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         dev_earnings_amount: dev_earnings,
     });
 
-    msg!("Withdrew {} SOL from treasury", available_solana as f64 / 1e9);
+    msg!(
+        "Withdrew {} SOL from treasury",
+        available_solana as f64 / 1e9
+    );
     Ok(())
 }
-
 
 /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
 /// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
@@ -181,7 +198,10 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         mine_btc_mining.last_rate_update
     );
 
-    require!( mine_btc_mining.price_history.len() < 8, ErrorCode::UpdateDistRateFirst);
+    require!(
+        mine_btc_mining.price_history.len() < 8,
+        ErrorCode::UpdateDistRateFirst
+    );
 
     // SECURITY: Validate that the provided pool_state matches the authorized pool in global_config
     require!(
@@ -197,7 +217,10 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     msg!("\n   ⏱️ Checking time constraints...");
     let snapshot_interval = ctx.accounts.global_config.snapshot_interval as i64;
     if current_time < mine_btc_mining.last_rate_update + snapshot_interval {
-        msg!("   ⏰ Update too early - must wait at least {} seconds between updates", snapshot_interval);
+        msg!(
+            "   ⏰ Update too early - must wait at least {} seconds between updates",
+            snapshot_interval
+        );
         msg!(
             "      Next update allowed: {}",
             mine_btc_mining.last_rate_update + snapshot_interval
@@ -831,51 +854,67 @@ pub fn update_rate_and_add_lp_internal(
     let mut lp_tokens_minted = 0u64;
     let sol_consumed: u64;
     let minebtc_consumed: u64;
-    
+
     if total_sol_for_lp > 0 {
         msg!("\n   🎯 === ADDING LIQUIDITY TO POOL ===");
-        
+
         // Check available MINE_BTC in main vault
         let available_minebtc = ctx.accounts.minebtc_token_account.amount;
-        msg!("   💰 Available MINE_BTC: {} MINEBTC", available_minebtc as f64 / 1e6);
+        msg!(
+            "   💰 Available MINE_BTC: {} MINEBTC",
+            available_minebtc as f64 / 1e6
+        );
 
         // Create signer seeds for vault authority
-        let authority_seeds = &[MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(), &[mine_btc_mining.vault_auth_bump]];
+        let authority_seeds = &[
+            MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
+            &[mine_btc_mining.vault_auth_bump],
+        ];
         let signer_seeds = &[&authority_seeds[..]];
-        
+
         // Read pool state once
         let lp_balance_before = {
             let lp_account_data = ctx.accounts.lp_token_account.try_borrow_data()?;
-            let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &lp_account_data[..])?;
+            let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(
+                &mut &lp_account_data[..],
+            )?;
             lp_account.amount
         };
-        
+
         let sol_vault_balance = {
             let account_data = ctx.accounts.sol_vault.try_borrow_data()?;
-            let token_account = anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
+            let token_account =
+                anchor_spl::token::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
 
         let minebtc_vault_balance = {
             let account_data = ctx.accounts.minebtc_vault.try_borrow_data()?;
-            let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
+            let token_account =
+                anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
-        
+
         let lp_supply = {
             let data = ctx.accounts.lp_mint.try_borrow_data()?;
             let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
             mint.supply
         };
-        
-        msg!("   📊 Pool state: SOL={} SOL, MINEBTC={} MINEBTC, LP supply={} LP", 
-             sol_vault_balance as f64 / 1e9, minebtc_vault_balance as f64 / 1e6, lp_supply as f64 / 1e6);
-        
+
+        msg!(
+            "   📊 Pool state: SOL={} SOL, MINEBTC={} MINEBTC, LP supply={} LP",
+            sol_vault_balance as f64 / 1e9,
+            minebtc_vault_balance as f64 / 1e6,
+            lp_supply as f64 / 1e6
+        );
+
         // Calculate deposit amounts
         let sol_buffer = total_sol_for_lp / 50;
         let available_sol = total_sol_for_lp.saturating_sub(sol_buffer);
-        
-        let (estimated_lp_amount, adjusted_sol_amount, adjusted_minebtc_amount) = if lp_token_amount > 0 {
+
+        let (estimated_lp_amount, adjusted_sol_amount, adjusted_minebtc_amount) = if lp_token_amount
+            > 0
+        {
             let required_sol = if lp_supply > 0 && sol_vault_balance > 0 {
                 (lp_token_amount as u128 * sol_vault_balance as u128 / lp_supply as u128) as u64
             } else {
@@ -886,25 +925,41 @@ pub fn update_rate_and_add_lp_internal(
             } else {
                 0
             };
-            (lp_token_amount, required_sol.min(available_sol), required_minebtc + 100)
+            (
+                lp_token_amount,
+                required_sol.min(available_sol),
+                required_minebtc + 100,
+            )
         } else {
-            let lp_from_sol = (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
-            let required_minebtc = (lp_from_sol as u128 * minebtc_vault_balance as u128 / lp_supply as u128) as u64;
+            let lp_from_sol =
+                (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
+            let required_minebtc =
+                (lp_from_sol as u128 * minebtc_vault_balance as u128 / lp_supply as u128) as u64;
             (lp_from_sol, available_sol, required_minebtc + 100)
         };
-        
-        let max_minebtc_with_buffer = adjusted_minebtc_amount.saturating_add(adjusted_minebtc_amount / 50);
-        msg!("   💰 Deposit amounts: SOL={} SOL, MINEBTC={} MINEBTC (max with buffer)", 
-             adjusted_sol_amount as f64 / 1e9, max_minebtc_with_buffer as f64 / 1e6);
-        
+
+        let max_minebtc_with_buffer =
+            adjusted_minebtc_amount.saturating_add(adjusted_minebtc_amount / 50);
+        msg!(
+            "   💰 Deposit amounts: SOL={} SOL, MINEBTC={} MINEBTC (max with buffer)",
+            adjusted_sol_amount as f64 / 1e9,
+            max_minebtc_with_buffer as f64 / 1e6
+        );
+
         // Validate: MINE_BTC needed must be less than 5% of vault balance
-        require!(available_minebtc >= max_minebtc_with_buffer, ErrorCode::InsufficientTokensInVault);
-        
+        require!(
+            available_minebtc >= max_minebtc_with_buffer,
+            ErrorCode::InsufficientTokensInVault
+        );
+
         // If max_minebtc_with_buffer exceeds 5% limit, adjust SOL amount to match 5% MINEBTC limit
-        let (final_sol_amount, _final_minebtc_amount, final_max_minebtc_with_buffer) = 
+        let (final_sol_amount, _final_minebtc_amount, final_max_minebtc_with_buffer) =
             if max_minebtc_with_buffer >= available_minebtc / 20 {
-                msg!("   ⚠️ MINEBTC amount ({}) exceeds 5% limit ({}), adjusting SOL amount...", 
-                     max_minebtc_with_buffer as f64 / 1e6, (available_minebtc / 20) as f64 / 1e6);
+                msg!(
+                    "   ⚠️ MINEBTC amount ({}) exceeds 5% limit ({}), adjusting SOL amount...",
+                    max_minebtc_with_buffer as f64 / 1e6,
+                    (available_minebtc / 20) as f64 / 1e6
+                );
                 adjust_sol_for_minebtc_limit(
                     available_minebtc,
                     sol_vault_balance,
@@ -914,29 +969,40 @@ pub fn update_rate_and_add_lp_internal(
                     adjusted_minebtc_amount,
                 )?
             } else {
-                (adjusted_sol_amount, adjusted_minebtc_amount, max_minebtc_with_buffer)
+                (
+                    adjusted_sol_amount,
+                    adjusted_minebtc_amount,
+                    max_minebtc_with_buffer,
+                )
             };
-        
-        msg!("   💰 Final deposit amounts: SOL={} SOL, MINEBTC={} MINEBTC (max with buffer)", 
-             final_sol_amount as f64 / 1e9, final_max_minebtc_with_buffer as f64 / 1e6);
-        
+
+        msg!(
+            "   💰 Final deposit amounts: SOL={} SOL, MINEBTC={} MINEBTC (max with buffer)",
+            final_sol_amount as f64 / 1e9,
+            final_max_minebtc_with_buffer as f64 / 1e6
+        );
+
         // Recalculate estimated_lp_amount based on final adjusted SOL amount
         // This ensures the LP amount matches the actual SOL/MINEBTC amounts we're depositing
         let final_estimated_lp_amount = if lp_supply > 0 && sol_vault_balance > 0 {
             // Calculate LP tokens we'll receive based on final SOL amount
             // LP tokens = (sol_amount * lp_supply) / sol_vault_balance
             // Apply a small buffer (reduce by 1%) to account for slippage
-            let lp_from_sol = (final_sol_amount as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
+            let lp_from_sol =
+                (final_sol_amount as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
             // Reduce by 1% to account for slippage tolerance
             lp_from_sol.saturating_sub(lp_from_sol / 100)
         } else {
             // Pool is empty, use 0 (will be calculated by Raydium)
             0
         };
-        
-        msg!("   📊 Recalculated LP amount: {} LP (was {} LP)", 
-             final_estimated_lp_amount as f64 / 1e6, estimated_lp_amount as f64 / 1e6);
-        
+
+        msg!(
+            "   📊 Recalculated LP amount: {} LP (was {} LP)",
+            final_estimated_lp_amount as f64 / 1e6,
+            estimated_lp_amount as f64 / 1e6
+        );
+
         // Execute Raydium deposit CPI
         raydium_cp_swap::cpi::deposit(
             CpiContext::new_with_signer(
@@ -962,34 +1028,44 @@ pub fn update_rate_and_add_lp_internal(
             final_sol_amount,
             final_max_minebtc_with_buffer,
         )?;
-        
+
         // Calculate LP tokens minted
         let lp_balance_after = {
             let lp_account_data = ctx.accounts.lp_token_account.try_borrow_data()?;
-            let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &lp_account_data[..])?;
+            let lp_account = anchor_spl::token_interface::TokenAccount::try_deserialize(
+                &mut &lp_account_data[..],
+            )?;
             lp_account.amount
         };
         lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
-        msg!("   ✅ LP tokens minted: {} LP", lp_tokens_minted as f64 / 1e6);
+        msg!(
+            "   ✅ LP tokens minted: {} LP",
+            lp_tokens_minted as f64 / 1e6
+        );
 
         // Calculate actual amounts consumed from deposit
         let sol_balance_after_deposit = {
             let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
-            let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+            let sol_token_data =
+                anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
             sol_token_data.amount
         };
         sol_consumed = total_sol_for_lp.saturating_sub(sol_balance_after_deposit);
-        
+
         // Read actual MINE_BTC consumed (difference in vault balance)
         let minebtc_vault_balance_after = {
             let account_data = ctx.accounts.minebtc_vault.try_borrow_data()?;
-            let token_account = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
+            let token_account =
+                anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &account_data[..])?;
             token_account.amount
         };
         minebtc_consumed = minebtc_vault_balance_after.saturating_sub(minebtc_vault_balance);
-        
-        msg!("   💰 Actual consumption: SOL={} SOL, MINEBTC={} MINEBTC", 
-             sol_consumed as f64 / 1e9, minebtc_consumed as f64 / 1e6);
+
+        msg!(
+            "   💰 Actual consumption: SOL={} SOL, MINEBTC={} MINEBTC",
+            sol_consumed as f64 / 1e9,
+            minebtc_consumed as f64 / 1e6
+        );
 
         // Emit LiquidityAdded event (before burn)
         if lp_tokens_minted > 0 {
@@ -1006,7 +1082,9 @@ pub fn update_rate_and_add_lp_internal(
                 } else {
                     0
                 };
-                let total_value_sol = sol_consumed.checked_add(minebtc_value_in_sol).ok_or(ErrorCode::ArithmeticOverflow)?;
+                let total_value_sol = sol_consumed
+                    .checked_add(minebtc_value_in_sol)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 (total_value_sol as u128)
                     .checked_mul(1_000_000_000)
                     .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -1020,7 +1098,7 @@ pub fn update_rate_and_add_lp_internal(
             if lp_token_price > 0 {
                 mine_btc_mining.lp_token_price_in_sol = lp_token_price;
             }
-            
+
             emit!(LiquidityAdded {
                 sol_amount: sol_consumed,
                 minebtc_amount: minebtc_consumed,
@@ -1045,12 +1123,19 @@ pub fn update_rate_and_add_lp_internal(
                 ),
                 lp_tokens_minted,
             )?;
-            
+
             // Update POL stats
-            mine_btc_mining.pol_stats.update_after_lp_operation(lp_tokens_minted, sol_consumed, minebtc_consumed);
-            
-            msg!("   💰 LP token price: {} SOL per LP", mine_btc_mining.lp_token_price_in_sol as f64 / 1e9);
-            
+            mine_btc_mining.pol_stats.update_after_lp_operation(
+                lp_tokens_minted,
+                sol_consumed,
+                minebtc_consumed,
+            );
+
+            msg!(
+                "   💰 LP token price: {} SOL per LP",
+                mine_btc_mining.lp_token_price_in_sol as f64 / 1e9
+            );
+
             // Read final vault balances for event
             let sol_vault_balance_final = {
                 let data = ctx.accounts.sol_vault.try_borrow_data()?;
@@ -1059,7 +1144,8 @@ pub fn update_rate_and_add_lp_internal(
             };
             let minebtc_vault_balance_final = {
                 let data = ctx.accounts.minebtc_vault.try_borrow_data()?;
-                let ta = anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?;
+                let ta =
+                    anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?;
                 ta.amount
             };
             let lp_supply_after_burn = {
@@ -1067,7 +1153,7 @@ pub fn update_rate_and_add_lp_internal(
                 let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
                 mint.supply
             };
-            
+
             emit!(LpTokensBurned {
                 lp_tokens_burned: lp_tokens_minted,
                 total_lp_burnt: mine_btc_mining.pol_stats.total_lp_burnt,
@@ -1080,17 +1166,21 @@ pub fn update_rate_and_add_lp_internal(
                 timestamp: Clock::get()?.unix_timestamp,
             });
         }
-        
+
         // Send remaining SOL back to buybacks vault
         let sol_remaining = {
             let sol_account_data = ctx.accounts.sol_token_account.try_borrow_data()?;
-            let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
+            let sol_token_data =
+                anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
             sol_token_data.amount
         };
-        
+
         if sol_remaining > 0 {
-            msg!("   💸 Returning {} SOL to buybacks vault", sol_remaining as f64 / 1e9);
-            
+            msg!(
+                "   💸 Returning {} SOL to buybacks vault",
+                sol_remaining as f64 / 1e9
+            );
+
             // Close WSOL account - this unwraps SOL and sends it to destination
             // The account will be recreated with init_if_needed next time
             anchor_spl::token::close_account(CpiContext::new_with_signer(
@@ -1102,10 +1192,13 @@ pub fn update_rate_and_add_lp_internal(
                 },
                 signer_seeds,
             ))?;
-            
-            msg!("   ✅ Closed WSOL account and returned {} SOL to buybacks vault", sol_remaining as f64 / 1e9);
+
+            msg!(
+                "   ✅ Closed WSOL account and returned {} SOL to buybacks vault",
+                sol_remaining as f64 / 1e9
+            );
         }
-        
+
         // Update sol_for_pol: subtract consumed SOL (remaining SOL was already returned)
         // If we adjusted due to MINEBTC limit, also subtract the difference from sol_for_pol
         let sol_adjustment = if max_minebtc_with_buffer >= available_minebtc / 20 {
@@ -1114,14 +1207,17 @@ pub fn update_rate_and_add_lp_internal(
         } else {
             0
         };
-        buybacks_account.sol_for_pol = buybacks_account.sol_for_pol
+        buybacks_account.sol_for_pol = buybacks_account
+            .sol_for_pol
             .saturating_sub(sol_consumed)
             .saturating_sub(sol_adjustment);
-        msg!("   ✅ Updated sol_for_pol: {} SOL (consumed {} SOL, adjusted {} SOL)", 
-             buybacks_account.sol_for_pol as f64 / 1e9, 
-             sol_consumed as f64 / 1e9,
-             sol_adjustment as f64 / 1e9);
-        
+        msg!(
+            "   ✅ Updated sol_for_pol: {} SOL (consumed {} SOL, adjusted {} SOL)",
+            buybacks_account.sol_for_pol as f64 / 1e9,
+            sol_consumed as f64 / 1e9,
+            sol_adjustment as f64 / 1e9
+        );
+
         msg!("   ✅ LP addition and burn completed successfully");
     }
 
@@ -1297,7 +1393,8 @@ fn perform_sol_to_minebtc_swap<'info>(
     let minebtc_balance_before = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
         let minebtc_account_data = minebtc_token_account.try_borrow_data()?;
-        let minebtc_token_data = TokenAccountInterface::try_deserialize(&mut &minebtc_account_data[..])?;
+        let minebtc_token_data =
+            TokenAccountInterface::try_deserialize(&mut &minebtc_account_data[..])?;
         msg!("   ✅ Successfully deserialized MINE_BTC token account");
         minebtc_token_data.amount
     }; // Borrow is dropped here
@@ -1323,7 +1420,7 @@ fn perform_sol_to_minebtc_swap<'info>(
         pool_state: pool_state.to_account_info(),
         input_token_account: sol_token_account.to_account_info(), // Our SOL token account (authority = our PDA)
         output_token_account: minebtc_token_account.to_account_info(), // Our MINE_BTC token account (authority = our PDA)
-        input_vault: sol_vault.to_account_info(),                   // Raydium's SOL vault
+        input_vault: sol_vault.to_account_info(),                      // Raydium's SOL vault
         output_vault: minebtc_vault.to_account_info(),                 // Raydium's MINE_BTC vault
         input_token_program: token_program.to_account_info(), // Standard token program for SOL
         output_token_program: token_program_2022.to_account_info(), // Token-2022 program for MINE_BTC
@@ -1415,8 +1512,11 @@ fn adjust_sol_for_minebtc_limit(
 ) -> Result<(u64, u64, u64)> {
     // Calculate maximum MINEBTC we can use (5% of available)
     let max_minebtc_allowed = available_minebtc / 20; // 5% = 1/20
-    msg!("   📊 Max MINEBTC allowed (5%): {} MINEBTC", max_minebtc_allowed as f64 / 1e6);
-    
+    msg!(
+        "   📊 Max MINEBTC allowed (5%): {} MINEBTC",
+        max_minebtc_allowed as f64 / 1e6
+    );
+
     // Account for 1% burn tax on MINEBTC transfers
     // We want max_minebtc_allowed to reach the pool AFTER burn
     // After burn: minebtc_received = minebtc_sent * 0.99
@@ -1426,50 +1526,80 @@ fn adjust_sol_for_minebtc_limit(
     // So: minebtc_amount * 51/50 * 0.99 <= max_minebtc_allowed
     //     minebtc_amount <= max_minebtc_allowed * 50/51 * 100/99
     let max_base_minebtc = (max_minebtc_allowed as u128 * 50 * 100 / (51 * 99)) as u64;
-    msg!("   📊 Max base MINEBTC (accounting for 1% burn tax): {} MINEBTC", max_base_minebtc as f64 / 1e6);
-    
+    msg!(
+        "   📊 Max base MINEBTC (accounting for 1% burn tax): {} MINEBTC",
+        max_base_minebtc as f64 / 1e6
+    );
+
     // Calculate MINEBTC that will actually reach the pool (after 1% burn)
     let minebtc_received_in_pool = (max_base_minebtc as u128 * 99 / 100) as u64;
-    msg!("   📊 MINEBTC that will reach pool (after burn): {} MINEBTC", minebtc_received_in_pool as f64 / 1e6);
-    
+    msg!(
+        "   📊 MINEBTC that will reach pool (after burn): {} MINEBTC",
+        minebtc_received_in_pool as f64 / 1e6
+    );
+
     // Calculate corresponding SOL amount based on pool ratio
     // Use the MINEBTC that actually reaches the pool (after burn) for ratio calculation
     // If pool exists: sol_amount = (minebtc_received_in_pool * sol_vault_balance) / minebtc_vault_balance
     // If pool is empty, use original ratio
     let sol_from_ratio = if lp_supply > 0 && minebtc_vault_balance > 0 && sol_vault_balance > 0 {
         // Use pool ratio based on MINEBTC that reaches pool
-        (minebtc_received_in_pool as u128 * sol_vault_balance as u128 / minebtc_vault_balance as u128) as u64
+        (minebtc_received_in_pool as u128 * sol_vault_balance as u128
+            / minebtc_vault_balance as u128) as u64
     } else {
         // Pool is empty or invalid, use original ratio
         if original_minebtc_amount > 0 {
             // Account for burn tax in original ratio too
             let original_minebtc_received = (original_minebtc_amount as u128 * 99 / 100) as u64;
-            (minebtc_received_in_pool as u128 * original_sol_amount as u128 / original_minebtc_received as u128) as u64
+            (minebtc_received_in_pool as u128 * original_sol_amount as u128
+                / original_minebtc_received as u128) as u64
         } else {
             original_sol_amount // Fallback to original if no ratio available
         }
     };
-    
+
     // Add slippage tolerance (reduce SOL by 3% to account for price movement and slippage)
     // This ensures we don't exceed slippage limits in Raydium
     let adjusted_sol_amount = sol_from_ratio.saturating_sub(sol_from_ratio * 3 / 100);
-    msg!("   📊 SOL from ratio (based on MINEBTC after burn): {} SOL", sol_from_ratio as f64 / 1e9);
-    msg!("   📊 SOL with slippage tolerance (3%): {} SOL", adjusted_sol_amount as f64 / 1e9);
-    
+    msg!(
+        "   📊 SOL from ratio (based on MINEBTC after burn): {} SOL",
+        sol_from_ratio as f64 / 1e9
+    );
+    msg!(
+        "   📊 SOL with slippage tolerance (3%): {} SOL",
+        adjusted_sol_amount as f64 / 1e9
+    );
+
     // Recalculate buffer with adjusted amounts
     let adjusted_minebtc_amount = max_base_minebtc;
     // Account for burn tax in the buffer calculation
     // After burn: adjusted_minebtc_amount * 0.99 will reach the pool
     // So max_minebtc_with_buffer should account for this
-    let adjusted_max_minebtc_with_buffer = adjusted_minebtc_amount.saturating_add(adjusted_minebtc_amount / 50);
-    
+    let adjusted_max_minebtc_with_buffer =
+        adjusted_minebtc_amount.saturating_add(adjusted_minebtc_amount / 50);
+
     msg!("   ✅ Adjusted amounts:");
-    msg!("      SOL: {} SOL (was {} SOL)", adjusted_sol_amount as f64 / 1e9, original_sol_amount as f64 / 1e9);
-    msg!("      MINEBTC: {} MINEBTC (was {} MINEBTC)", adjusted_minebtc_amount as f64 / 1e6, original_minebtc_amount as f64 / 1e6);
-    msg!("      Max MINEBTC with buffer: {} MINEBTC (limit: {} MINEBTC)", 
-         adjusted_max_minebtc_with_buffer as f64 / 1e6, max_minebtc_allowed as f64 / 1e6);
-    
-    Ok((adjusted_sol_amount, adjusted_minebtc_amount, adjusted_max_minebtc_with_buffer))
+    msg!(
+        "      SOL: {} SOL (was {} SOL)",
+        adjusted_sol_amount as f64 / 1e9,
+        original_sol_amount as f64 / 1e9
+    );
+    msg!(
+        "      MINEBTC: {} MINEBTC (was {} MINEBTC)",
+        adjusted_minebtc_amount as f64 / 1e6,
+        original_minebtc_amount as f64 / 1e6
+    );
+    msg!(
+        "      Max MINEBTC with buffer: {} MINEBTC (limit: {} MINEBTC)",
+        adjusted_max_minebtc_with_buffer as f64 / 1e6,
+        max_minebtc_allowed as f64 / 1e6
+    );
+
+    Ok((
+        adjusted_sol_amount,
+        adjusted_minebtc_amount,
+        adjusted_max_minebtc_with_buffer,
+    ))
 }
 
 /// Calculate price change percentage between old and new price
@@ -1501,7 +1631,6 @@ fn calculate_price_change_pct(old_price: u64, new_price: u64) -> (i64, i64) {
 // ------------ DYNAMIC DISTRIBUTION ACCOUNT STRUCTS ------------------------------------
 // ----------------------------------------------------------------------------------------
 
-
 #[derive(Accounts)]
 pub struct DistributeSolFees<'info> {
     #[account(
@@ -1514,7 +1643,7 @@ pub struct DistributeSolFees<'info> {
     #[account(
         mut,
         seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump  
+        bump
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
@@ -1572,9 +1701,6 @@ pub struct DistributeSolFees<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
- 
- 
-
 
 /// Account struct for taking price snapshots (Instruction 1)
 /// Lighter weight - only needs swap-related accounts
@@ -1586,41 +1712,41 @@ pub struct SnapshotPrice<'info> {
         bump = mine_btc_mining.bump,
     )]
     pub mine_btc_mining: Account<'info, MineBtcMining>,
-    
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// CHECK: Raydium CP-Swap program
     pub raydium_program: UncheckedAccount<'info>,
-    
+
     /// CHECK: Raydium pool state
     #[account(mut)]
     pub pool_state: UncheckedAccount<'info>,
-    
+
     /// CHECK: Raydium AMM config
     pub amm_config: UncheckedAccount<'info>,
-    
+
     /// CHECK: Vault authority PDA (our program's authority for token accounts)
     #[account(
         seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
     pub authority_pda: UncheckedAccount<'info>,
-    
+
     /// CHECK: Raydium's pool authority PDA (from Raydium program)
     pub raydium_authority: UncheckedAccount<'info>,
-    
+
     /// CHECK: MINE_BTC vault in Raydium pool
     #[account(mut)]
     pub minebtc_vault: UncheckedAccount<'info>,
-    
+
     /// CHECK: SOL vault in Raydium pool
     #[account(mut)]
     pub sol_vault: UncheckedAccount<'info>,
-    
+
     /// MINE_BTC token vault (main vault - same as used in initialize_mining)
     #[account(
         mut,
@@ -1630,37 +1756,37 @@ pub struct SnapshotPrice<'info> {
         constraint = minebtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
     )]
     pub minebtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
-    
+
     // === The WSOL ATA, created automatically if missing
     #[account(
         init_if_needed,
         payer = authority,
         associated_token::mint = sol_mint,
         associated_token::authority = authority_pda,
-        associated_token::token_program = token_program,  
+        associated_token::token_program = token_program
     )]
-    pub sol_token_account: Account<'info, TokenAccount>,   // <- concrete TokenAccount type
+    pub sol_token_account: Account<'info, TokenAccount>, // <- concrete TokenAccount type
 
-    pub associated_token_program: Program<'info, AssociatedToken>,  
-     
+    pub associated_token_program: Program<'info, AssociatedToken>,
+
     /// CHECK: MINE_BTC mint
     #[account(mut)]
     pub minebtc_mint: UncheckedAccount<'info>,
-    
+
     /// CHECK: SOL mint (WSOL)
     #[account(mut)]
     pub sol_mint: UncheckedAccount<'info>,
-    
+
     /// CHECK: Raydium observation state
     #[account(mut)]
     pub observation_state: UncheckedAccount<'info>,
-    
+
     /// Token-2022 program for MINE_BTC
     pub token_program_2022: Program<'info, Token2022>,
-    
+
     /// Standard token program for SOL
     pub token_program: Program<'info, anchor_spl::token::Token>,
-    
+
     /// CHECK: Buybacks SOL vault PDA (System Account - source of SOL for swaps)
     #[account(
         mut,
@@ -1668,7 +1794,7 @@ pub struct SnapshotPrice<'info> {
         bump
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
-    
+
     /// Buybacks tracking account (required)
     #[account(
         mut,
@@ -1676,12 +1802,12 @@ pub struct SnapshotPrice<'info> {
         bump,
     )]
     pub buybacks_account: Account<'info, BuybacksAccount>,
-    
+
     /// System program (required for SOL transfers)
     pub system_program: Program<'info, System>,
 
     #[account(mut)]
-    pub authority: Signer<'info>,    
+    pub authority: Signer<'info>,
 }
 
 /// Account struct for updating rate and adding LP (Instruction 2)
@@ -1694,41 +1820,41 @@ pub struct UpdateRateAndAddLp<'info> {
         bump = mine_btc_mining.bump,
     )]
     pub mine_btc_mining: Account<'info, MineBtcMining>,
-    
+
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    
+
     /// Authority (optional - only required when lp_token_amount > 0)
     pub authority: Option<Signer<'info>>,
-    
+
     /// CHECK: Raydium CP-Swap program
     pub raydium_program: UncheckedAccount<'info>,
-    
+
     /// CHECK: Raydium pool state
     #[account(mut)]
     pub pool_state: UncheckedAccount<'info>,
-    
+
     /// CHECK: Vault authority PDA (our program's authority for token accounts)
     #[account(
         seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
     pub authority_pda: UncheckedAccount<'info>,
-    
+
     /// CHECK: Raydium's pool authority PDA (from Raydium program)
     pub raydium_authority: UncheckedAccount<'info>,
-    
+
     /// CHECK: MINE_BTC vault in Raydium pool
     #[account(mut)]
     pub minebtc_vault: UncheckedAccount<'info>,
-    
+
     /// CHECK: SOL vault in Raydium pool
     #[account(mut)]
     pub sol_vault: UncheckedAccount<'info>,
-    
+
     /// MINE_BTC token vault (main vault - same as used in initialize_mining)
     #[account(
         mut,
@@ -1738,33 +1864,33 @@ pub struct UpdateRateAndAddLp<'info> {
         constraint = minebtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
     )]
     pub minebtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
-    
+
     /// CHECK: SOL token account for LP addition
     #[account(mut)]
     pub sol_token_account: UncheckedAccount<'info>,
-    
+
     /// CHECK: MINE_BTC mint
     #[account(mut)]
     pub minebtc_mint: UncheckedAccount<'info>,
-    
+
     /// CHECK: SOL mint (WSOL)
     #[account(mut)]
     pub sol_mint: UncheckedAccount<'info>,
-    
+
     /// CHECK: LP token account for receiving and burning LP tokens
     #[account(mut)]
     pub lp_token_account: UncheckedAccount<'info>,
-        
+
     /// CHECK: LP mint from Raydium pool (must be writable for minting)
     #[account(mut)]
     pub lp_mint: UncheckedAccount<'info>,
-    
+
     /// Token-2022 program for MINE_BTC
     pub token_program_2022: Program<'info, Token2022>,
-    
+
     /// Standard token program for SOL
     pub token_program: Program<'info, anchor_spl::token::Token>,
-    
+
     /// CHECK: Buybacks SOL vault PDA (System Account - source of SOL for LP)
     #[account(
         mut,
@@ -1772,7 +1898,7 @@ pub struct UpdateRateAndAddLp<'info> {
         bump
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
-    
+
     /// Buybacks tracking account (required)
     #[account(
         mut,
@@ -1780,7 +1906,7 @@ pub struct UpdateRateAndAddLp<'info> {
         bump,
     )]
     pub buybacks_account: Account<'info, BuybacksAccount>,
-    
+
     /// System program (required for SOL transfers)
     pub system_program: Program<'info, System>,
 }

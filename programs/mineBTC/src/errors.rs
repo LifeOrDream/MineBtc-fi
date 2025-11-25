@@ -50,7 +50,7 @@ pub enum ErrorCode {
 
     #[msg("Invalid faction ID: faction does not exist")]
     InvalidFactionId,
- 
+
     #[msg("Metaplex Core program ID mismatch")]
     InvalidMplCoreProgram,
 

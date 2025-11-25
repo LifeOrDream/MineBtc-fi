@@ -1,13 +1,13 @@
+use crate::errors::ErrorCode;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
-use anchor_spl::token_2022::{self, Burn};
 use anchor_spl::token::{self as token_standard, Burn as StandardBurn};
-use crate::state::*;
-use crate::errors::ErrorCode;
+use anchor_spl::token_2022::{self, Burn};
 
 // WSOL mint address (Wrapped SOL)
 pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
- 
+
 // -----------------------------------------------------
 // ------------ REFERRAL SYSTEM HELPERS ----------------
 // -----------------------------------------------------
@@ -136,12 +136,9 @@ pub fn transfer_from_sol_rewards_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
-    let seeds = &[
-        STAKER_SOL_REWARD_VAULT_SEED.as_ref(),
-        &[vault_bump],
-    ];
+    let seeds = &[STAKER_SOL_REWARD_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
-    
+
     transfer(
         CpiContext::new_with_signer(
             system_program.to_account_info(),
@@ -164,12 +161,9 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
-    let seeds = &[
-        SOL_PRIZE_POT_VAULT_SEED.as_ref(),
-        &[vault_bump],
-    ];
+    let seeds = &[SOL_PRIZE_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
-    
+
     transfer(
         CpiContext::new_with_signer(
             system_program.to_account_info(),
@@ -206,14 +200,12 @@ pub fn transfer_wsol_to_multisig<'info>(
     )?;
 
     // Step 2: Sync native account to update WSOL balance
-    anchor_spl::token::sync_native(
-        CpiContext::new(
-            token_program.to_account_info(),
-            anchor_spl::token::SyncNative {
-                account: from_wsol_account.to_account_info(),
-            },
-        ),
-    )?;
+    anchor_spl::token::sync_native(CpiContext::new(
+        token_program.to_account_info(),
+        anchor_spl::token::SyncNative {
+            account: from_wsol_account.to_account_info(),
+        },
+    ))?;
 
     // Step 3: Transfer WSOL from from_wsol_account to multisig_wsol_account
     anchor_spl::token::transfer(
@@ -230,7 +222,6 @@ pub fn transfer_wsol_to_multisig<'info>(
 
     Ok(())
 }
-
 
 // Helper function to calculate multiplier
 pub fn calculate_multiplier(
@@ -255,22 +246,22 @@ pub fn calculate_multiplier(
 }
 
 /// Add position index to user's minebtc positions
-pub fn add_minebtc_position(
-    player_ac: &mut PlayerData,
-    position_index: u8,
-) -> Result<()> {
-    msg!("🔍 [add_minebtc_position] Adding position index: {}", position_index);
-    msg!("🔍 [add_minebtc_position] MAX_ALLOWED_POSITIONS: {}", MAX_ALLOWED_POSITIONS);
+pub fn add_minebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    msg!(
+        "🔍 [add_minebtc_position] Adding position index: {}",
+        position_index
+    );
+    msg!(
+        "🔍 [add_minebtc_position] MAX_ALLOWED_POSITIONS: {}",
+        MAX_ALLOWED_POSITIONS
+    );
 
     if position_index >= MAX_ALLOWED_POSITIONS {
         return Err(ErrorCode::InvalidParameters.into());
     }
 
     // If this position index is not already active
-    if !player_ac
-        .minebtc_position_indices
-        .contains(&position_index)
-    {
+    if !player_ac.minebtc_position_indices.contains(&position_index) {
         msg!("🔍 [add_minebtc_position] Position index is not already active");
         // Ensure we're not exceeding the max allowed positions
         if player_ac.minebtc_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
@@ -278,19 +269,23 @@ pub fn add_minebtc_position(
             return Err(ErrorCode::InvalidParameters.into());
         }
         player_ac.minebtc_position_indices.push(position_index);
-        msg!("🔍 [add_minebtc_position] Position index added: {}", position_index);
+        msg!(
+            "🔍 [add_minebtc_position] Position index added: {}",
+            position_index
+        );
     }
 
     Ok(())
 }
 
 /// Remove position index from user's minebtc positions
-pub fn remove_minebtc_position(
-    player_ac: &mut PlayerData,
-    position_index: u8,
-) -> Result<()> {
+pub fn remove_minebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     // Find the position index in the vector
-    if let Some(pos) = player_ac.minebtc_position_indices.iter().position(|&x| x == position_index) {
+    if let Some(pos) = player_ac
+        .minebtc_position_indices
+        .iter()
+        .position(|&x| x == position_index)
+    {
         player_ac.minebtc_position_indices.remove(pos);
     } else {
         return Err(ErrorCode::InvalidParameters.into());
@@ -317,11 +312,12 @@ pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result
 }
 
 /// Remove position index from user's LP positions
-pub fn remove_lp_position(
-    player_ac: &mut PlayerData,
-    position_index: u8,
-) -> Result<()> {
-    if let Some(pos) = player_ac.lp_position_indices.iter().position(|&x| x == position_index) {
+pub fn remove_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    if let Some(pos) = player_ac
+        .lp_position_indices
+        .iter()
+        .position(|&x| x == position_index)
+    {
         player_ac.lp_position_indices.remove(pos);
     } else {
         return Err(ErrorCode::InvalidParameters.into());
@@ -330,17 +326,21 @@ pub fn remove_lp_position(
     Ok(())
 }
 
- 
 pub fn calculate_staking_rewards(
     user_weighted_amt: u64,
     accumulated_sol_per_point: u128,
     reward_debt: u128,
 ) -> Result<u64> {
-    let reward_diff = accumulated_sol_per_point.checked_sub(reward_debt).unwrap_or(0);
-    let new_rewards = mul_div_u128(user_weighted_amt as u128, reward_diff, INDEX_PRECISION as u128)?;
+    let reward_diff = accumulated_sol_per_point
+        .checked_sub(reward_debt)
+        .unwrap_or(0);
+    let new_rewards = mul_div_u128(
+        user_weighted_amt as u128,
+        reward_diff,
+        INDEX_PRECISION as u128,
+    )?;
     Ok(new_rewards as u64)
 }
-
 
 pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
     let result = (a as u128)
@@ -351,16 +351,25 @@ pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
     Ok(result)
 }
 
-
 pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
-    let result = a.checked_mul(b).ok_or(ErrorCode::ArithmeticOverflow)?.checked_div(c).ok_or(ErrorCode::ArithmeticOverflow)?;
+    let result = a
+        .checked_mul(b)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(c)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     Ok(result)
 }
 
-
-
-pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_index: u8, staked_amount: u64, weighted_amount: u64, 
-                    lockup_duration: u64, current_ts: i64, multiplier: u16) -> Result<()> {
+pub fn init_position(
+    position: &mut StakedPosition,
+    faction_id: u8,
+    position_index: u8,
+    staked_amount: u64,
+    weighted_amount: u64,
+    lockup_duration: u64,
+    current_ts: i64,
+    multiplier: u16,
+) -> Result<()> {
     position.position_index = position_index;
 
     position.faction_id = faction_id;
@@ -378,12 +387,20 @@ pub fn init_position(position: &mut StakedPosition, faction_id: u8, position_ind
 }
 
 /// Add to total claimable and pending rewards
-pub fn add_to_total_claimable(unrefined_minebtc: &mut UnrefinedRewards, player_data: &mut PlayerData, minebtc_rewards: u64) -> u64 {
-
+pub fn add_to_total_claimable(
+    unrefined_minebtc: &mut UnrefinedRewards,
+    player_data: &mut PlayerData,
+    minebtc_rewards: u64,
+) -> u64 {
     // Calculate extra dogeBtc rewards due to unrefining
     let index_dif = unrefined_minebtc.unrefining_index - player_data.unrefining_index;
-    let accrued_rewards = mul_div_u128( player_data.pending_minebtc_rewards as u128, index_dif, INDEX_PRECISION as u128).unwrap() as u64;
-    msg!("     Accrued MineBtc rewards: {}", accrued_rewards );
+    let accrued_rewards = mul_div_u128(
+        player_data.pending_minebtc_rewards as u128,
+        index_dif,
+        INDEX_PRECISION as u128,
+    )
+    .unwrap() as u64;
+    msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
     unrefined_minebtc.total_minebtc_claimable += minebtc_rewards + accrued_rewards;
     player_data.unrefining_index = unrefined_minebtc.unrefining_index;
@@ -394,9 +411,11 @@ pub fn add_to_total_claimable(unrefined_minebtc: &mut UnrefinedRewards, player_d
     return accrued_rewards;
 }
 
-
-pub fn calculate_emergency_tax(user_position: &StakedPosition, current_ts: i64, emergency_tax: u64) -> u64 {
-
+pub fn calculate_emergency_tax(
+    user_position: &StakedPosition,
+    current_ts: i64,
+    emergency_tax: u64,
+) -> u64 {
     let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
     let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
 
@@ -412,7 +431,6 @@ pub fn calculate_emergency_tax(user_position: &StakedPosition, current_ts: i64, 
     return penalty_amount;
 }
 
-
 /// Charge emergency tax for MINEBTC tokens: 50% burned, 50% sent to MINEBTC vault
 /// This function handles the penalty for early withdrawal from MINEBTC staking positions
 /// Note: The 50% sent to vault accounts for 1% burn tax (transfers 99% of that 50%)
@@ -426,18 +444,21 @@ pub fn charge_emergency_tax<'info>(
 ) -> Result<()> {
     msg!("💰 [charge_emergency_tax] Processing MINEBTC emergency tax");
     msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
-        
+
     // Burn 50% from custodian
     if penalty_amount > 0 {
-        msg!("   Burning {} tokens from custodian...", penalty_amount as f64 / 1e6);
-        
+        msg!(
+            "   Burning {} tokens from custodian...",
+            penalty_amount as f64 / 1e6
+        );
+
         // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
             MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
             &[custodian_authority_bump],
         ];
         let custodian_signer = &[&custodian_authority_seeds[..]];
-        
+
         // Use Token-2022 burn instruction
         token_2022::burn(
             CpiContext::new_with_signer(
@@ -453,9 +474,9 @@ pub fn charge_emergency_tax<'info>(
         )?;
         msg!("   ✅ Burned {} tokens", penalty_amount as f64 / 1e6);
     }
-    
+
     msg!("   ✅ Emergency tax charged successfully");
-    
+
     Ok(())
 }
 
@@ -473,7 +494,7 @@ pub fn charge_lp_emergency_tax<'info>(
     msg!("💰 [charge_lp_emergency_tax] Processing LP emergency tax");
     msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
     msg!("   Burning 100% of penalty (no rewards to stakers)");
-    
+
     if penalty_amount > 0 {
         // Get PDA signer seeds for the liquidity_custodian authority (global)
         let custodian_authority_seeds = &[
@@ -481,7 +502,7 @@ pub fn charge_lp_emergency_tax<'info>(
             &[custodian_authority_bump],
         ];
         let custodian_signer = &[&custodian_authority_seeds[..]];
-        
+
         // Burn 100% of penalty from custodian (standard SPL Token burn)
         token_standard::burn(
             CpiContext::new_with_signer(
@@ -497,14 +518,13 @@ pub fn charge_lp_emergency_tax<'info>(
         )?;
         msg!("   ✅ Burned {} LP tokens", penalty_amount as f64 / 1e6);
     }
-    
+
     msg!("   ✅ LP emergency tax charged successfully");
-    
+
     Ok(())
 }
 
-
 /// Calculate number of tickets given minting price
 pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
-    return ((total_price * 150) / ticket_value) / 100
+    return ((total_price * 150) / ticket_value) / 100;
 }

@@ -3,7 +3,6 @@ use anchor_lang::prelude::*;
 // ------------------------------
 // User management events
 // ------------------------------
- 
 
 #[event]
 pub struct ReferralRewardsAdded {
@@ -21,17 +20,15 @@ pub struct ReferralRewardsClaimed {
     pub minebtc_amount: u64,
     pub timestamp: i64,
 }
- 
-  
 
 #[event]
 pub struct SolFeesWithdrawn {
     pub available_solana: u64,
     pub buyback_amount: u64,
     pub egg_treasury_amt: u64,
-    pub dev_earnings_amount: u64
+    pub dev_earnings_amount: u64,
 }
- 
+
 #[event]
 pub struct MiningTokenVaultSet {
     /// The authority that set the token vault
@@ -44,41 +41,40 @@ pub struct MiningTokenVaultSet {
     pub mining_start_timestamp: u64,
 }
 
- 
 #[event]
 pub struct FactionAdded {
     pub authority: Pubkey,
-    pub faction_name: String,   
+    pub faction_name: String,
     pub faction_id: u8,
     pub faction_key: Pubkey,
 }
- 
+
 // ------------------------------
 // Dynamic distribution events
 // ------------------------------
- 
+
 /// Price snapshot taken every 30 minutes (1-8 snapshots per 4-hour cycle)
 #[event]
 pub struct PriceSnapshotTaken {
-    pub snapshot_number: u8,           // 1-8 (which snapshot in the cycle)
-    pub sol_swapped: u64,              // SOL amount swapped (lamports)
-    pub minebtc_received: u64,           // MINE_BTC received from swap (6 decimals)
-    pub current_price: u64,           // Calculated price (9 decimals: SOL per MINE_BTC)
-    pub weighted_avg_price: u64,      // Weighted average price so far (9 decimals)
-    pub sol_earnmarked_for_pol: u64,  // SOL earnmarked for POL this snapshot (lamports)
-    pub total_pol_balance: u64,       // Total SOL earnmarked for POL (lamports)
-    pub price_history_count: u8,      // Number of entries in price history (1-8)
-    pub timestamp: i64,               // Unix timestamp
+    pub snapshot_number: u8,         // 1-8 (which snapshot in the cycle)
+    pub sol_swapped: u64,            // SOL amount swapped (lamports)
+    pub minebtc_received: u64,       // MINE_BTC received from swap (6 decimals)
+    pub current_price: u64,          // Calculated price (9 decimals: SOL per MINE_BTC)
+    pub weighted_avg_price: u64,     // Weighted average price so far (9 decimals)
+    pub sol_earnmarked_for_pol: u64, // SOL earnmarked for POL this snapshot (lamports)
+    pub total_pol_balance: u64,      // Total SOL earnmarked for POL (lamports)
+    pub price_history_count: u8,     // Number of entries in price history (1-8)
+    pub timestamp: i64,              // Unix timestamp
 }
 
 /// Liquidity added to Raydium pool (before burning LP tokens)
 #[event]
 pub struct LiquidityAdded {
-    pub sol_amount: u64,              // SOL added to pool (lamports)
-    pub minebtc_amount: u64,             // MINE_BTC added to pool (6 decimals)
-    pub lp_tokens_minted: u64,        // LP tokens minted (6 decimals)
-    pub lp_token_price: u64,          // LP token price in SOL (9 decimals)
-    pub timestamp: i64,               // Unix timestamp
+    pub sol_amount: u64,       // SOL added to pool (lamports)
+    pub minebtc_amount: u64,   // MINE_BTC added to pool (6 decimals)
+    pub lp_tokens_minted: u64, // LP tokens minted (6 decimals)
+    pub lp_token_price: u64,   // LP token price in SOL (9 decimals)
+    pub timestamp: i64,        // Unix timestamp
 }
 
 #[event]
@@ -92,10 +88,10 @@ pub struct DistributionRateUpdated {
     pub recent_price: u64,
     pub rate_changed: bool,
     pub sol_received: u64,
-    pub price_history_count: u8,      // Number of price snapshots used (should be 8)
-    pub sol_for_pol_used: u64,        // SOL used for POL (lamports)
-    pub sol_for_pol_remaining: u64,  // SOL remaining for POL (lamports)
-    pub lp_tokens_burned: u64,        // LP tokens burned (0 if no LP added)
+    pub price_history_count: u8, // Number of price snapshots used (should be 8)
+    pub sol_for_pol_used: u64,   // SOL used for POL (lamports)
+    pub sol_for_pol_remaining: u64, // SOL remaining for POL (lamports)
+    pub lp_tokens_burned: u64,   // LP tokens burned (0 if no LP added)
     pub timestamp: i64,
 }
 
@@ -105,14 +101,12 @@ pub struct LpTokensBurned {
     pub total_lp_burnt: u64,
     pub minebtc_amount_added: u64,
     pub sol_amount_added: u64,
-    pub sol_vault_balance: u64,       // SOL vault balance after LP addition (lamports)
-    pub minebtc_vault_balance: u64,     // MINE_BTC vault balance after LP addition (6 decimals)
-    pub lp_supply: u64,               // LP token supply after burn (6 decimals)
-    pub lp_token_price: u64,          // LP token price in SOL (9 decimals)
+    pub sol_vault_balance: u64, // SOL vault balance after LP addition (lamports)
+    pub minebtc_vault_balance: u64, // MINE_BTC vault balance after LP addition (6 decimals)
+    pub lp_supply: u64,         // LP token supply after burn (6 decimals)
+    pub lp_token_price: u64,    // LP token price in SOL (9 decimals)
     pub timestamp: i64,
 }
- 
- 
 
 // ========================================================================================
 // =============================== DRAGON EGG NFT EVENTS =================================
@@ -205,7 +199,7 @@ pub struct EggPowerClaimed {
     /// Timestamp of the power claim action
     pub timestamp: i64,
 }
- 
+
 // ========================================================================================
 // =============================== STAKING EVENTS ========================================
 // ========================================================================================
@@ -245,7 +239,7 @@ pub struct LiquidityStaked {
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub position_index: u8,
-    pub position_key: Pubkey,    
+    pub position_key: Pubkey,
     pub lockup_duration: u64,
     pub hashpower_contribution: u64,
     pub new_sol_rewards: u64,
@@ -341,7 +335,7 @@ pub struct BetsPlaced {
     pub net_amounts: Vec<u64>,
     pub fee_amounts: Vec<u64>,
     pub points_amounts: Vec<u64>,
-    
+
     pub used_ticket: bool,
     pub ticket_type_index: Option<u8>,
 
@@ -355,7 +349,6 @@ pub struct BetsPlaced {
 
     pub timestamp: i64,
 }
-
 
 /// Event emitted when a user claims rewards for a round
 #[event]

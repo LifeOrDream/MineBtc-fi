@@ -29,15 +29,18 @@ pub mod instructions;
 mod mpl_core_helpers;
 pub mod state;
 
+pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::economy::*;
-pub use instructions::user::*;
-pub use instructions::stake::*;
-pub use instructions::game::*;
 pub use instructions::eggs::*;
+pub use instructions::game::*;
+pub use instructions::stake::*;
 pub use instructions::tax::*;
-pub use state::{SolFeeConfig, MineBtcDistConfig, BetType, EggConfig, TicketTier, TaxConfig, BlocksConfig, FactionsConfig, FactionStrategy};
-pub use instructions::admin::CreatorInput;
+pub use instructions::user::*;
+pub use state::{
+    BetType, BlocksConfig, EggConfig, FactionStrategy, FactionsConfig, MineBtcDistConfig,
+    SolFeeConfig, TaxConfig, TicketTier,
+};
 
 declare_id!("4ybsV8wziB7Z4DMJjkc6x3ZhzaevRNgD4DbXNz6Ta5Ed");
 
@@ -46,11 +49,11 @@ pub mod minebtc {
     use super::*;
     use instructions::admin::{self};
     use instructions::economy::{self};
-    use instructions::user::{self};
-    use instructions::stake::{self};
-    use instructions::game::{self};
     use instructions::eggs::{self};
+    use instructions::game::{self};
+    use instructions::stake::{self};
     use instructions::tax::{self};
+    use instructions::user::{self};
 
     // ----------------------------------------------------------------------------------------
     // ------------ GLOBAL_CONFIG (ADMIN) :: UPDATES, ADDING FACTIONS / EXPANSIONS ------------
@@ -74,16 +77,18 @@ pub mod minebtc {
     }
 
     /// Add a single faction to the global config (admin only)
-    pub fn add_faction(ctx: Context<AddFaction>, faction_name: String, faction_id: u8) -> Result<()> {
+    pub fn add_faction(
+        ctx: Context<AddFaction>,
+        faction_name: String,
+        faction_id: u8,
+    ) -> Result<()> {
         admin::add_faction_internal(ctx, faction_name, faction_id)
     }
-
 
     /// Initialize system referral account and buybacks system (admin only)
     pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
         admin::initialize_system_accounts_internal(ctx)
     }
-
 
     /// Update the global configuration parameters
     /// Can only be called by the current authority
@@ -92,11 +97,7 @@ pub mod minebtc {
         new_authority: Option<Pubkey>,
         new_fee_recipient: Option<Pubkey>,
     ) -> Result<()> {
-        admin::update_config_internal(
-            ctx,
-            new_authority,
-            new_fee_recipient,
-        )
+        admin::update_config_internal(ctx, new_authority, new_fee_recipient)
     }
 
     /// Update fee configuration (admin only)
@@ -145,7 +146,6 @@ pub mod minebtc {
         )
     }
 
-
     // ----------------------------------------------------------------------------------------
     // ------------ mine_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
@@ -162,7 +162,7 @@ pub mod minebtc {
     }
 
     /// Deposit MineBtc tokens to the mining vault (anyone can call)
-    /// 
+    ///
     /// Allows anyone to deposit MineBtc tokens into the mining vault.
     /// These tokens will be distributed as rewards to stakers over time.
     pub fn deposit_mine_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
@@ -181,9 +181,14 @@ pub mod minebtc {
         base_multiplier: u16,
         max_multiplier: u16,
     ) -> Result<()> {
-        admin::initialize_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
+        admin::initialize_hashpower_config_internal(
+            ctx,
+            min_lockup_days,
+            max_lockup_days,
+            base_multiplier,
+            max_multiplier,
+        )
     }
-
 
     /// Initialize both custodian token accounts (admin only)
     /// Initializes:
@@ -201,16 +206,21 @@ pub mod minebtc {
         base_multiplier: u16,
         max_multiplier: u16,
     ) -> Result<()> {
-        admin::update_hashpower_config_internal(ctx, min_lockup_days, max_lockup_days, base_multiplier, max_multiplier)
+        admin::update_hashpower_config_internal(
+            ctx,
+            min_lockup_days,
+            max_lockup_days,
+            base_multiplier,
+            max_multiplier,
+        )
     }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ DRAGON EGG SYSTEM (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
     /// Initialize EggConfig account (admin only)
-    /// 
+    ///
     /// Creates the EggConfig account that stores Egg configuration.
     /// This must be called before creating the Egg collection.
     pub fn initialize_egg_config(
@@ -223,9 +233,9 @@ pub mod minebtc {
     }
 
     /// Update EggConfig account (admin only)
-    /// 
+    ///
     /// Updates the EggConfig account that stores Egg collection configuration.
-    /// 
+    ///
     /// # Parameters
     /// - `base_price`: Base price for Eggs in SOL (lamports)
     /// - `curve_a`: Bonding curve parameter (controls price growth rate)
@@ -238,7 +248,7 @@ pub mod minebtc {
     }
 
     /// Create Egg collection with program PDA as authority (admin only)
-    /// 
+    ///
     /// Creates a new Metaplex Core collection for Egg NFTs.
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
@@ -251,13 +261,9 @@ pub mod minebtc {
         admin::create_egg_collection_internal(ctx, name, uri)
     }
 
-
     /// Set Egg URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_egg_uris(
-        ctx: Context<UpdateEggsConfig>,
-        uris: Vec<String>,
-    ) -> Result<()> {
+    pub fn set_egg_uris(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) -> Result<()> {
         admin::set_egg_uris_internal(ctx, uris)
     }
 
@@ -286,7 +292,6 @@ pub mod minebtc {
         admin::add_ticket_tier_config(ctx, ticket_tier_index, ticket_value, ticket_count)
     }
 
-
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
@@ -298,7 +303,12 @@ pub mod minebtc {
         faction_treasury_pct: u8,
         nft_floor_sweep_whitelisted_address: Pubkey,
     ) -> Result<()> {
-        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, nft_floor_sweep_whitelisted_address)
+        tax::initialize_tax_config(
+            ctx,
+            nft_floor_sweep_pct,
+            faction_treasury_pct,
+            nft_floor_sweep_whitelisted_address,
+        )
     }
 
     /// Update tax distribution percentages (admin only)
@@ -317,16 +327,13 @@ pub mod minebtc {
     ) -> Result<()> {
         tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
     }
- 
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
 
-
     /// Initialize the global game state for Faction Surge (admin only)
-    /// 
+    ///
     /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
     /// This must be called before any rounds can be started.
     pub fn initialize_game_state(
@@ -336,37 +343,28 @@ pub mod minebtc {
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
-
     /// Add a cranker bot to the whitelist (admin only)
     /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
-    pub fn add_cranker_bot(
-        ctx: Context<UpdateGameState>,
-        bot_pubkey: Pubkey,
-    ) -> Result<()> {
+    pub fn add_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
         admin::add_cranker_bot_internal(ctx, bot_pubkey)
     }
 
     /// Remove a cranker bot from the whitelist (admin only)
-    pub fn remove_cranker_bot(
-        ctx: Context<UpdateGameState>,
-        bot_pubkey: Pubkey,
-    ) -> Result<()> {
+    pub fn remove_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
         admin::remove_cranker_bot_internal(ctx, bot_pubkey)
     }
 
     /// Switch game state (toggle is_active) (admin only)
-    /// 
+    ///
     /// Toggles the game's active state. When paused, rounds cannot be started or ended.
-    pub fn switch_game_state(
-        ctx: Context<UpdateGameState>,
-    ) -> Result<()> {
+    pub fn switch_game_state(ctx: Context<UpdateGameState>) -> Result<()> {
         admin::switch_game_state_internal(ctx)
     }
 
     /// Update round duration (admin only)
-    /// 
+    ///
     /// Updates the duration of each game round in seconds.
-    /// 
+    ///
     /// # Parameters
     /// - `new_round_duration_seconds`: New round duration in seconds (must be > 0)
     pub fn update_round_duration(
@@ -376,8 +374,6 @@ pub mod minebtc {
         admin::update_round_duration_internal(ctx, new_round_duration_seconds)
     }
 
-
- 
     // ----------------------------------------------------------------------------------------
     // ------------ PRICE ORACLE AND DISTRIBUTION RATE (ANYONE) --------------------------------
     // ----------------------------------------------------------------------------------------
@@ -393,7 +389,6 @@ pub mod minebtc {
     pub fn distribute_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
         economy::distribute_sol_fees_internal(ctx)
     }
-
 
     /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
     /// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
@@ -413,13 +408,11 @@ pub mod minebtc {
     ) -> Result<()> {
         economy::update_rate_and_add_lp_internal(ctx, lp_token_amount)
     }
- 
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
- 
+
     /// Withdraw MineBtc from NFT floor sweep vault (whitelisted address only)
     pub fn withdraw_nft_floor_sweep_funds(
         ctx: Context<WithdrawNftFloorSweepFunds>,
@@ -430,7 +423,9 @@ pub mod minebtc {
 
     /// STEP 1: Harvest fees from user token accounts to the mint
     /// Callable by anyone - keeper bot should call this in batches
-    pub fn crank_harvest_fees<'info>(ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>) -> Result<()> {
+    pub fn crank_harvest_fees<'info>(
+        ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
+    ) -> Result<()> {
         tax::crank_harvest_fees(ctx)
     }
 
@@ -447,7 +442,9 @@ pub mod minebtc {
 
     /// Calculate leaderboard position for one faction
     /// Must be called 12 times to build complete leaderboard
-    pub fn calculate_faction_leaderboard_position(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
+    pub fn calculate_faction_leaderboard_position(
+        ctx: Context<CalculateFactionLeaderboard>,
+    ) -> Result<()> {
         tax::calculate_faction_leaderboard_position(ctx)
     }
 
@@ -468,8 +465,6 @@ pub mod minebtc {
         tax::finish_distribution_round(ctx)
     }
 
-
-
     // ----------------------------------------------------------------------------------------
     // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
     // ----------------------------------------------------------------------------------------
@@ -477,39 +472,32 @@ pub mod minebtc {
     /// Start a new round by committing a hash and initializing GameSession
     /// This commits randomness hash and randomly assigns factions to blocks
     /// round_id should be current_round_id + 1 (validated in the function)
-    pub fn start_round(
-        ctx: Context<StartRound>,
-        round_id: u64,
-        commit: [u8; 32],
-    ) -> Result<()> {
+    pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
         game::start_round(ctx, round_id, commit)
     }
 
     /// End the current round by revealing seed, selecting winner, and starting next round
     /// Verifies commit-reveal, generates final randomness, selects winning block
-    pub fn end_round(
-        ctx: Context<EndRound>,
-        revealed_seed: [u8; 32],
-    ) -> Result<()> {
+    pub fn end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
         game::end_round(ctx, revealed_seed)
     }
-    
+
     /// End the current round by revealing seed, selecting winner, and starting next round
     /// Verifies commit-reveal, generates final randomness, selects winning block
-    pub fn end_round_faction_rewards(
-        ctx: Context<EndRoundFactionRewards>
-    ) -> Result<()> {
+    pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
         game::end_round_faction_rewards(ctx)
     }
-
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ FACTION SURGE RAFFLE FUNCTIONS -------------------------------------------
     // ----------------------------------------------------------------------------------------
 
     /// Initialize a player account for the Faction Surge game
-    pub fn initialize_player(ctx: Context<InitializePlayer>, faction_id: u8, referral_code: Option<Pubkey>) -> Result<()> {
+    pub fn initialize_player(
+        ctx: Context<InitializePlayer>,
+        faction_id: u8,
+        referral_code: Option<Pubkey>,
+    ) -> Result<()> {
         user::initialize_player(ctx, faction_id, referral_code)
     }
 
@@ -523,7 +511,7 @@ pub mod minebtc {
     /// Join a round by betting SOL
     /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
     pub fn join_round(
-        ctx: Context<JoinRound>, 
+        ctx: Context<JoinRound>,
         amount: u64,
         bet_type: BetType,
         use_ticket: Option<u8>,
@@ -549,7 +537,13 @@ pub mod minebtc {
         sol_per_round: u64,
         num_rounds: u32,
     ) -> Result<()> {
-        user::init_autominer(ctx, blocks_config, factions_config, sol_per_round, num_rounds)
+        user::init_autominer(
+            ctx,
+            blocks_config,
+            factions_config,
+            sol_per_round,
+            num_rounds,
+        )
     }
 
     /// Execute autominer bet (keeper instruction)
@@ -562,13 +556,11 @@ pub mod minebtc {
         user::stop_autominer(ctx)
     }
 
-
     /// Claim rewards for a user after round ends
     pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>, round_id: u64) -> Result<()> {
         user::internal_claim_round_rewards(round_id, ctx)
     }
 
- 
     // ----------------------------------------------------------------------------------------
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MINEBTC / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
@@ -602,17 +594,17 @@ pub mod minebtc {
     pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
         stake::unstake_lp_tokens(ctx, position_index)
     }
-    
+
     /// Claim SOL rewards from MineBtc and LP staking
     pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
         stake::claim_sol_rewards(ctx)
     }
-    
+
     /// Claim MineBtc token rewards from staking (with refining fee redistribution)
     pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         stake::claim_minebtc_rewards(ctx)
     }
-    
+
     /// Claim referral rewards (SOL and MineBtc earned from referrals)
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
         stake::claim_referral_rewards(ctx)
@@ -623,7 +615,7 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
 
     ///Simulate mint costs for multiple eggs accounting for bonding curve pricing
-    /// 
+    ///
     /// # Parameters
     /// - `egg_config`: EggConfig account
     /// - `mint_count`: Number of eggs to mint
@@ -634,13 +626,11 @@ pub mod minebtc {
         eggs::simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
     }
 
-
-
     /// Admin function to mint a Egg NFT for free to a specified recipient (admin only)
-    /// 
+    ///
     /// Allows the admin to mint a Egg NFT without payment.
     /// The NFT is minted directly to the specified recipient address.
-    /// 
+    ///
     /// # Parameters
     /// - `recipient`: Address that will receive the minted NFT
     /// - `faction_id`: Faction ID the egg belongs to
@@ -654,10 +644,10 @@ pub mod minebtc {
     }
 
     /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
-    /// 
+    ///
     /// Mints multiple Egg NFTs in a single transaction.
     /// Each egg uses bonding curve pricing based on the current supply at mint time.
-    /// 
+    ///
     /// # Parameters
     /// - `faction_id`: Faction ID all eggs belong to
     /// - `mint_count`: Number of eggs to mint (1-10)
@@ -686,7 +676,4 @@ pub mod minebtc {
     pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
         eggs::claim_power(ctx)
     }
-
-
-   
 }
