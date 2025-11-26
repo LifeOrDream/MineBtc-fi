@@ -619,6 +619,8 @@ pub struct FactionState {
     pub lp_minebtc_reward_index: u128,
 
     pub eggs_staked: u64,
+    /// Total eggs currently being used in gameplay
+    pub eggs_playing: u64,
 
     /// Total SOL bet on this faction across all rounds (cumulative)
     pub total_sol_bets: u64,
@@ -646,6 +648,7 @@ impl FactionState {
         16 +    // lp_sol_reward_index (u128)
         16 +    // lp_minebtc_reward_index (u128)
         8 +     // eggs_staked (u64)
+        8 +     // eggs_playing (u64)
         8 +     // total_sol_bets (u64)
         8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
@@ -828,6 +831,9 @@ pub struct PlayerData {
     /// Free tickets remaining: count of each ticket type remaining
     /// Index matches free_tickets (e.g., free_tickets_remaining[0] is count for free_tickets[0])
     pub free_tickets_remaining: Vec<u64>,
+
+    /// Egg currently being used in gameplay (Pubkey::default() if none)
+    pub gameplay_egg: Pubkey,
 }
 
 impl PlayerData {
@@ -868,7 +874,8 @@ impl PlayerData {
         4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
         2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
-        4 + (Self::MAX_TICKET_TYPES * 8); // free_tickets_remaining Vec<u64>
+        4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
+        32; // gameplay_egg (Pubkey)
 }
 
 /// Individual MineBtc staking position

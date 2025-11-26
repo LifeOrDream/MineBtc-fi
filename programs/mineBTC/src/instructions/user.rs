@@ -2116,3 +2116,212 @@ pub struct ExecuteAutominerBet<'info> {
 
     pub system_program: Program<'info, System>,
 }
+
+// ========================================================================================
+// =============================== GAMEPLAY EGG FUNCTIONS =================================
+// ========================================================================================
+
+/// Use an egg for gameplay - deposits egg to program custody and sets it as active gameplay egg
+pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let faction_state = &mut ctx.accounts.faction_state;
+    let egg_metadata = &mut ctx.accounts.egg_metadata;
+    let egg_mint = egg_metadata.mint;
+    let current_time = Clock::get()?.unix_timestamp;
+
+    msg!("🎮 === USING EGG FOR GAMEPLAY ===");
+    msg!("   Egg mint: {}", egg_mint);
+
+    // Verify ownership
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
+    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+
+    // Verify egg is not already incubated (staked)
+    require!(egg_metadata.incubated_player_data == Pubkey::default(), ErrorCode::EggAlreadyIncubated);
+
+    // Verify no egg currently in gameplay
+    require!(player_data.gameplay_egg == Pubkey::default(), ErrorCode::InvalidParameters);
+
+    // Verify faction matches
+    require!(
+        egg_metadata.faction_id == faction_state.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+
+    // Transfer NFT to custody PDA
+    msg!("🔒 Transferring egg to custody PDA for gameplay");
+    crate::mpl_core_helpers::transfer_mpl_core_asset(
+        &ctx.accounts.egg_asset.to_account_info(),
+        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        None,
+    )?;
+
+    // Update player data
+    player_data.gameplay_egg = egg_mint;
+
+    // Update faction state
+    faction_state.eggs_playing += 1;
+
+    // Update egg metadata
+    egg_metadata.incubated_player_data = player_data.owner;
+    egg_metadata.last_update_ts = current_time;
+
+    msg!("✅ Egg {} now active for gameplay", egg_mint);
+    msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
+
+    emit!(EggUsedForGameplay {
+        user: ctx.accounts.user.key(),
+        egg_mint,
+        faction_id: player_data.faction_id,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+/// Withdraw egg from gameplay - returns egg to user and clears gameplay egg
+pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let faction_state = &mut ctx.accounts.faction_state;
+    let egg_metadata = &mut ctx.accounts.egg_metadata;
+    let egg_mint = egg_metadata.mint;
+    let current_time = Clock::get()?.unix_timestamp;
+
+    msg!("🎮 === WITHDRAWING EGG FROM GAMEPLAY ===");
+    msg!("   Egg mint: {}", egg_mint);
+
+    // Verify NFT is in custody PDA
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
+    require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::EggNotIncubated);
+
+    // Verify this is the player's gameplay egg
+    require!(player_data.gameplay_egg == egg_mint, ErrorCode::InvalidParameters);
+
+    // Verify egg metadata matches player
+    require!(egg_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
+
+    // Transfer NFT back to user
+    msg!("🔓 Transferring egg back to user");
+    let custody_seeds = &[DRAGON_EGG_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    let signer_seeds = &[&custody_seeds[..]];
+
+    crate::mpl_core_helpers::transfer_mpl_core_asset(
+        &ctx.accounts.egg_asset.to_account_info(),
+        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        Some(signer_seeds),
+    )?;
+
+    // Update player data
+    player_data.gameplay_egg = Pubkey::default();
+
+    // Update faction state
+    faction_state.eggs_playing = faction_state.eggs_playing.saturating_sub(1);
+
+    // Update egg metadata
+    egg_metadata.incubated_player_data = Pubkey::default();
+    egg_metadata.last_update_ts = current_time;
+
+    msg!("✅ Egg {} withdrawn from gameplay", egg_mint);
+    msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
+
+    emit!(EggWithdrawnFromGameplay {
+        user: ctx.accounts.user.key(),
+        egg_mint,
+        faction_id: player_data.faction_id,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct UseEggForGameplay<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub faction_state: Account<'info, FactionState>,
+
+    /// Metaplex Core asset
+    #[account(mut)]
+    /// CHECK: Verified via get_mpl_core_owner helper
+    pub egg_asset: UncheckedAccount<'info>,
+
+    /// CHECK: Optional collection
+    pub egg_collection: Option<UncheckedAccount<'info>>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
+        bump = egg_metadata.bump,
+        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub egg_metadata: Account<'info, EggMetadata>,
+
+    /// CHECK: PDA for NFT custody
+    #[account(seeds = [DRAGON_EGG_CUSTODY_SEED], bump)]
+    pub egg_custody_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawEggFromGameplay<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub faction_state: Account<'info, FactionState>,
+
+    /// Metaplex Core asset (in custody)
+    #[account(mut)]
+    /// CHECK: Verified via get_mpl_core_owner helper
+    pub egg_asset: UncheckedAccount<'info>,
+
+    /// CHECK: Optional collection
+    pub egg_collection: Option<UncheckedAccount<'info>>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
+        bump = egg_metadata.bump,
+        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub egg_metadata: Account<'info, EggMetadata>,
+
+    /// CHECK: PDA for NFT custody
+    #[account(seeds = [DRAGON_EGG_CUSTODY_SEED], bump)]
+    pub egg_custody_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}

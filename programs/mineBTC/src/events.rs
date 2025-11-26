@@ -519,3 +519,25 @@ pub struct DistributionRoundFinished {
     pub next_round_start_after: i64,
     pub timestamp: i64,
 }
+
+// ========================================================================================
+// =============================== GAMEPLAY EGG EVENTS ====================================
+// ========================================================================================
+
+/// Event emitted when an egg is used for gameplay
+#[event]
+pub struct EggUsedForGameplay {
+    pub user: Pubkey,
+    pub egg_mint: Pubkey,
+    pub faction_id: u8,
+    pub timestamp: i64,
+}
+
+/// Event emitted when an egg is withdrawn from gameplay
+#[event]
+pub struct EggWithdrawnFromGameplay {
+    pub user: Pubkey,
+    pub egg_mint: Pubkey,
+    pub faction_id: u8,
+    pub timestamp: i64,
+}

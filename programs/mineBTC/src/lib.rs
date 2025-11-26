@@ -563,6 +563,20 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
+    // ------------ USER INSTRUCTIONS :: GAMEPLAY EGGS  ------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Use an egg for gameplay - deposits to custody and sets as active gameplay egg
+    pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+        user::use_egg_for_gameplay(ctx)
+    }
+
+    /// Withdraw egg from gameplay - returns egg to user
+    pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+        user::withdraw_egg_from_gameplay(ctx)
+    }
+
+    // ----------------------------------------------------------------------------------------
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MINEBTC / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
 
