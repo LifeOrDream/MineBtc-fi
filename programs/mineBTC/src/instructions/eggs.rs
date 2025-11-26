@@ -1,9 +1,10 @@
 use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Token;
-use anchor_spl::token_2022::{self, Mint as Mint2022, Token2022, TokenAccount as TokenAccount2022};
+use anchor_spl::token_2022::{self, Token2022, TransferChecked};
+use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
+use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // # Egg Instructions
 //
 // This module manages the Egg NFT system, which provides hashpower multipliers to players.
@@ -821,7 +822,7 @@ pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         token_2022::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                token_2022::TransferChecked {
+                TransferChecked {
                     from: ctx.accounts.minebtc_token_vault.to_account_info(),
                     mint: ctx.accounts.token_mint.to_account_info(),
                     to: ctx.accounts.user_token_account.to_account_info(),

@@ -1126,7 +1126,6 @@ pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         minebtc_amount: claimable_by_user,
         refining_fee,
         referral_fee,
-        power_points_earned: power_points,
         referrer: referrer_pubkey,
         timestamp: Clock::get()?.unix_timestamp,
     });

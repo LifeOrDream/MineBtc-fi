@@ -671,9 +671,8 @@ pub mod minebtc {
         eggs::unstake_egg(ctx)
     }
 
-    /// Claim power points and distribute them to staked eggs
-    /// Power is accumulated when claiming minebtc rewards
-    pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
-        eggs::claim_power(ctx)
-    }
+    // TODO: Implement claim_power function and ClaimPower accounts struct
+    // pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
+    //     eggs::claim_power(ctx)
+    // }
 }

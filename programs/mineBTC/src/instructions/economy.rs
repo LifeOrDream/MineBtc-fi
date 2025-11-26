@@ -896,9 +896,15 @@ pub fn update_rate_and_add_lp_internal(
         };
 
         let lp_supply = {
-            let data = ctx.accounts.lp_mint.try_borrow_data()?;
-            let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
-            mint.supply
+            // Read lp_supply directly from pool_state account
+            // PoolState layout: discriminator (8) + fields before lp_supply (325) + lp_supply (8)
+            // lp_supply offset: 8 (discriminator) + 10*32 (pubkeys) + 5 (u8s) = 333
+            let data = ctx.accounts.pool_state.try_borrow_data()?;
+            require!(data.len() >= 341, ErrorCode::InvalidAccount); // 333 + 8
+            let lp_supply_bytes: [u8; 8] = data[333..341]
+                .try_into()
+                .map_err(|_| ErrorCode::InvalidAccount)?;
+            u64::from_le_bytes(lp_supply_bytes)
         };
 
         msg!(
@@ -1003,31 +1009,103 @@ pub fn update_rate_and_add_lp_internal(
             estimated_lp_amount as f64 / 1e6
         );
 
-        // Execute Raydium deposit CPI
-        raydium_cp_swap::cpi::deposit(
-            CpiContext::new_with_signer(
-                ctx.accounts.raydium_program.to_account_info(),
-                raydium_cp_swap::cpi::accounts::Deposit {
-                    owner: ctx.accounts.authority_pda.to_account_info(),
-                    authority: ctx.accounts.raydium_authority.to_account_info(),
-                    pool_state: ctx.accounts.pool_state.to_account_info(),
-                    owner_lp_token: ctx.accounts.lp_token_account.to_account_info(),
-                    token_0_account: ctx.accounts.sol_token_account.to_account_info(),
-                    token_1_account: ctx.accounts.minebtc_token_account.to_account_info(),
-                    token_0_vault: ctx.accounts.sol_vault.to_account_info(),
-                    token_1_vault: ctx.accounts.minebtc_vault.to_account_info(),
-                    token_program: ctx.accounts.token_program.to_account_info(),
-                    token_program_2022: ctx.accounts.token_program_2022.to_account_info(),
-                    vault_0_mint: ctx.accounts.sol_mint.to_account_info(),
-                    vault_1_mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    lp_mint: ctx.accounts.lp_mint.to_account_info(),
-                },
-                signer_seeds,
-            ),
-            final_estimated_lp_amount,
+
+// -------------------------------------------------------
+    // DYNAMIC SORTING FIX
+    // -------------------------------------------------------
+    
+    let mine_btc_key = ctx.accounts.minebtc_mint.key();
+    let sol_key = ctx.accounts.sol_mint.key();
+
+    // Determine which token is Token 0 (smaller address)
+    let (
+        token_0_vault, token_1_vault, 
+        token_0_account, token_1_account, 
+        vault_0_mint, vault_1_mint,
+        amount_0_max, amount_1_max
+    ) = if mine_btc_key < sol_key {
+        msg!("   ℹ️ SORT: MINE_BTC is Token 0 (Correct for this pool)");
+        (
+            ctx.accounts.minebtc_vault.to_account_info(),      // token_0_vault
+            ctx.accounts.sol_vault.to_account_info(),          // token_1_vault
+            ctx.accounts.minebtc_token_account.to_account_info(), // token_0_account (User/PDA source)
+            ctx.accounts.sol_token_account.to_account_info(),     // token_1_account (User/PDA source)
+            ctx.accounts.minebtc_mint.to_account_info(),       // vault_0_mint
+            ctx.accounts.sol_mint.to_account_info(),           // vault_1_mint
+            final_max_minebtc_with_buffer,                     // amount_0_max (MINEBTC)
+            final_sol_amount                                   // amount_1_max (SOL)
+        )
+    } else {
+        msg!("   ℹ️ SORT: SOL is Token 0");
+        (
+            ctx.accounts.sol_vault.to_account_info(),
+            ctx.accounts.minebtc_vault.to_account_info(),
+            ctx.accounts.sol_token_account.to_account_info(),
+            ctx.accounts.minebtc_token_account.to_account_info(),
+            ctx.accounts.sol_mint.to_account_info(),
+            ctx.accounts.minebtc_mint.to_account_info(),
             final_sol_amount,
-            final_max_minebtc_with_buffer,
-        )?;
+            final_max_minebtc_with_buffer
+        )
+    };
+
+    // -------------------------------------------------------
+    // DEPOSIT CPI
+    // -------------------------------------------------------
+
+    raydium_cp_swap::cpi::deposit(
+        CpiContext::new_with_signer(
+            ctx.accounts.raydium_program.to_account_info(),
+            raydium_cp_swap::cpi::accounts::Deposit {
+                owner: ctx.accounts.authority_pda.to_account_info(),
+                authority: ctx.accounts.raydium_authority.to_account_info(),
+                pool_state: ctx.accounts.pool_state.to_account_info(),
+                owner_lp_token: ctx.accounts.lp_token_account.to_account_info(),
+                
+                // USE THE SORTED VARIABLES
+                token_0_account,
+                token_1_account,
+                token_0_vault,
+                token_1_vault,
+                vault_0_mint,
+                vault_1_mint,
+                
+                token_program: ctx.accounts.token_program.to_account_info(),
+                token_program_2022: ctx.accounts.token_program_2022.to_account_info(),
+                lp_mint: ctx.accounts.lp_mint.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        final_estimated_lp_amount,
+        amount_0_max, // Sorted Max Amount 0
+        amount_1_max, // Sorted Max Amount 1
+    )?;
+
+        // // Execute Raydium deposit CPI
+        // raydium_cp_swap::cpi::deposit(
+        //     CpiContext::new_with_signer(
+        //         ctx.accounts.raydium_program.to_account_info(),
+        //         raydium_cp_swap::cpi::accounts::Deposit {
+        //             owner: ctx.accounts.authority_pda.to_account_info(),
+        //             authority: ctx.accounts.raydium_authority.to_account_info(),
+        //             pool_state: ctx.accounts.pool_state.to_account_info(),
+        //             owner_lp_token: ctx.accounts.lp_token_account.to_account_info(),
+        //             token_0_account: ctx.accounts.sol_token_account.to_account_info(),
+        //             token_1_account: ctx.accounts.minebtc_token_account.to_account_info(),
+        //             token_0_vault: ctx.accounts.sol_vault.to_account_info(),
+        //             token_1_vault: ctx.accounts.minebtc_vault.to_account_info(),
+        //             token_program: ctx.accounts.token_program.to_account_info(),
+        //             token_program_2022: ctx.accounts.token_program_2022.to_account_info(),
+        //             vault_0_mint: ctx.accounts.sol_mint.to_account_info(),
+        //             vault_1_mint: ctx.accounts.minebtc_mint.to_account_info(),
+        //             lp_mint: ctx.accounts.lp_mint.to_account_info(),
+        //         },
+        //         signer_seeds,
+        //     ),
+        //     final_estimated_lp_amount,
+        //     final_sol_amount,
+        //     final_max_minebtc_with_buffer,
+        // )?;
 
         // Calculate LP tokens minted
         let lp_balance_after = {
@@ -1149,9 +1227,15 @@ pub fn update_rate_and_add_lp_internal(
                 ta.amount
             };
             let lp_supply_after_burn = {
-                let data = ctx.accounts.lp_mint.try_borrow_data()?;
-                let mint = anchor_spl::token::Mint::try_deserialize(&mut &data[..])?;
-                mint.supply
+                // Read lp_supply directly from pool_state account
+                // PoolState layout: discriminator (8) + fields before lp_supply (325) + lp_supply (8)
+                // lp_supply offset: 8 (discriminator) + 10*32 (pubkeys) + 5 (u8s) = 333
+                let data = ctx.accounts.pool_state.try_borrow_data()?;
+                require!(data.len() >= 341, ErrorCode::InvalidAccount); // 333 + 8
+                let lp_supply_bytes: [u8; 8] = data[333..341]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidAccount)?;
+                u64::from_le_bytes(lp_supply_bytes)
             };
 
             emit!(LpTokensBurned {

@@ -295,7 +295,6 @@ pub struct DbtcRewardsClaimed {
     pub minebtc_amount: u64,
     pub refining_fee: u64,
     pub referral_fee: u64,
-    pub power_points_earned: u64,
     pub referrer: Option<Pubkey>,
     pub timestamp: i64,
 }
