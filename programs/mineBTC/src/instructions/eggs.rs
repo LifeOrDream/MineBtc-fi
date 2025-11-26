@@ -255,7 +255,7 @@ pub fn batch_mint_eggs<'info>(
         // Write data to the metadata account
         let metadata_data = EggMetadata {
             mint: egg_asset_key,
-            accumulated_val: 0,  
+            accumulated_val: 0,
             dna,
             // FIX: Use Pubkey::default() instead of None
             // This ensures the account is always exactly 32 bytes here
@@ -929,8 +929,6 @@ fn add_tickets_to_player(
 
     Ok(ticket_count)
 }
-
-
 
 /// Update faction state hashpower totals
 fn update_faction_hashpower(

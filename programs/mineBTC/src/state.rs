@@ -299,6 +299,10 @@ pub struct MineBtcMining {
     pub emission_increase_pct: u64,
     /// Emission decrease percentage when price goes down (e.g., 3 = 3% decrease)
     pub emission_decrease_pct: u64,
+
+    // ===== LP OPERATION STATE =====
+    /// Flag indicating LP operation is pending after rate update
+    pub lp_operation_pending: bool,
 }
 
 impl MineBtcMining {
@@ -323,7 +327,8 @@ impl MineBtcMining {
         + 8                     // lp_token_price_in_sol
         + 8                     // price_change_threshold
         + 8                     // emission_increase_pct
-        + 8; // emission_decrease_pct
+        + 8                     // emission_decrease_pct
+        + 1; // lp_operation_pending
 }
 
 /// Buybacks account that accumulates SOL for token buybacks

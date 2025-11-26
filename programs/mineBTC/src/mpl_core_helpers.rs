@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use mpl_core::{
     accounts::BaseAssetV1,
-    instructions::{CreateV1CpiBuilder, TransferV1CpiBuilder, BurnV1CpiBuilder},
+    instructions::{BurnV1CpiBuilder, CreateV1CpiBuilder, TransferV1CpiBuilder},
     ID as MPL_CORE_PROGRAM_ID,
 };
 

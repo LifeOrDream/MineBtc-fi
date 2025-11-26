@@ -78,7 +78,6 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
     Ok(final_price)
 }
 
-
 /// Generate unique DNA for a Genesis Cyber-Doge
 ///
 /// # Arguments

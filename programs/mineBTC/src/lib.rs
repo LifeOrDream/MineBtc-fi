@@ -392,21 +392,22 @@ pub mod minebtc {
 
     /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
     /// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
-    /// After 8 snapshots over 4 hours, call update_rate_and_add_lp to finalize
+    /// After 8 snapshots over 4 hours, call update_rate then add_lp_and_burn to finalize
     pub fn snapshot_price(ctx: Context<SnapshotPrice>) -> Result<()> {
         economy::snapshot_price_internal(ctx)
     }
 
-    /// INSTRUCTION 2: Update distribution rate and add liquidity (can be called after 4 hours)
-    /// Checks if 8 snapshots collected, updates distribution rate, and adds liquidity to pool
-    ///
+    /// INSTRUCTION 2a: Update distribution rate (can be called after 4 hours)
+    /// Checks if 8 snapshots collected, updates distribution rate, sets flag for LP operation
+    pub fn update_rate(ctx: Context<UpdateRate>) -> Result<()> {
+        economy::update_rate_internal(ctx)
+    }
+
+    /// INSTRUCTION 2b: Add liquidity and burn LP tokens (called after update_rate)
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
-    pub fn update_rate_and_add_lp(
-        ctx: Context<UpdateRateAndAddLp>,
-        lp_token_amount: u64,
-    ) -> Result<()> {
-        economy::update_rate_and_add_lp_internal(ctx, lp_token_amount)
+    pub fn add_lp_and_burn(ctx: Context<AddLpAndBurn>, lp_token_amount: u64) -> Result<()> {
+        economy::add_lp_and_burn_internal(ctx, lp_token_amount)
     }
 
     // ----------------------------------------------------------------------------------------

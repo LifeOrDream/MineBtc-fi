@@ -87,11 +87,6 @@ pub struct DistributionRateUpdated {
     pub track_price: u64,
     pub recent_price: u64,
     pub rate_changed: bool,
-    pub sol_received: u64,
-    pub price_history_count: u8, // Number of price snapshots used (should be 8)
-    pub sol_for_pol_used: u64,   // SOL used for POL (lamports)
-    pub sol_for_pol_remaining: u64, // SOL remaining for POL (lamports)
-    pub lp_tokens_burned: u64,   // LP tokens burned (0 if no LP added)
     pub timestamp: i64,
 }
 
@@ -103,7 +98,6 @@ pub struct LpTokensBurned {
     pub sol_amount_added: u64,
     pub sol_vault_balance: u64, // SOL vault balance after LP addition (lamports)
     pub minebtc_vault_balance: u64, // MINE_BTC vault balance after LP addition (6 decimals)
-    pub lp_supply: u64,         // LP token supply after burn (6 decimals)
     pub lp_token_price: u64,    // LP token price in SOL (9 decimals)
     pub timestamp: i64,
 }
