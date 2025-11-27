@@ -686,6 +686,8 @@ pub struct GameSession {
     pub total_sol_bets: u64,
     /// Total points bets placed in this round
     pub total_points_bets: u64,
+    /// Total weighted points bets (for dogeBTC distribution)
+    pub total_wgtd_points_bets: u64,
     /// Total stakers fee paid in this round
     pub stakers_fee: u64,
 
@@ -699,6 +701,8 @@ pub struct GameSession {
     pub user_block_indexes: Vec<u64>,
     pub sol_bets_indexes: Vec<u64>,
     pub points_bets_indexes: Vec<u64>,
+    /// Weighted points per block (points * active_multiplier / 100 for SOL bets, else points) - for dogeBTC rewards
+    pub wgtd_points_bets_indexes: Vec<u64>,
 
     /// The winning block and faction ID for this round (0-indexed: 0-23), and the 2nd block with same faction ID
     pub winning_block: u8,
@@ -741,10 +745,12 @@ impl GameSession {
         8 +     // round_end_timestamp (i64)
         8 +     // total_sol_bets
         8 +     // total_points_bets
+        8 +     // total_wgtd_points_bets
         8 +     // stakers_fee
-        4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64> (24-sized array)
-        4 + (NUM_BLOCKS * 8) + // sol_bets_indexes Vec<u64> (24-sized array)
-        4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64> (24-sized array)
+        4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // sol_bets_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // wgtd_points_bets_indexes Vec<u64>
         (NUM_BLOCKS * 1) + // block_assignments [u8; NUM_BLOCKS]
         1 +     // winning_block (u8)
         1 +     // winning_faction_id (u8)
@@ -834,6 +840,8 @@ pub struct PlayerData {
 
     /// Egg currently being used in gameplay (Pubkey::default() if none)
     pub gameplay_egg: Pubkey,
+    /// Active gameplay multiplier (100 = 1x, set from gameplay egg's multiplier, reset to 100 on withdraw)
+    pub active_multiplier: u32,
 }
 
 impl PlayerData {
@@ -875,7 +883,8 @@ impl PlayerData {
         2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
-        32; // gameplay_egg (Pubkey)
+        32 +    // gameplay_egg
+        4; // active_multiplier (u32) (Pubkey)
 }
 
 /// Individual MineBtc staking position
@@ -1049,11 +1058,15 @@ pub struct UserGameBet {
     pub sol_bets: Vec<u64>,
     /// Points bets for each block (index matches block_ids)
     pub points_bets: Vec<u64>,
+    /// Weighted points for each block (points * multiplier / 100 for SOL, else points) - for dogeBTC
+    pub wgtd_points_bets: Vec<u64>,
 
     /// Total SOL amount bet across all blocks (after protocol fee deduction)
     pub total_sol_bet: u64,
     /// Total points amount bet across all blocks
     pub total_points_bet: u64,
+    /// Total weighted points (for dogeBTC rewards)
+    pub total_wgtd_points_bet: u64,
 
     /// Total fees paid across all bets
     pub total_fee: u64,
@@ -1062,16 +1075,18 @@ pub struct UserGameBet {
 
 impl UserGameBet {
     // Maximum number of blocks a user can bet on in a single round
-    pub const MAX_BLOCKS_PER_BET: usize = 24; // One per block maximum
+    pub const MAX_BLOCKS_PER_BET: usize = 24;
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        4 + (Self::MAX_BLOCKS_PER_BET * 1) + // block_ids Vec<u8> (4 bytes length + MAX_BLOCKS_PER_BET * 1 byte)
-        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // sol_bets Vec<u64> (4 bytes length + MAX_BLOCKS_PER_BET * 8 bytes)
-        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // points_bets Vec<u64> (4 bytes length + MAX_BLOCKS_PER_BET * 8 bytes)
+        4 + (Self::MAX_BLOCKS_PER_BET * 1) + // block_ids Vec<u8>
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // sol_bets Vec<u64>
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // points_bets Vec<u64>
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // wgtd_points_bets Vec<u64>
         8 +     // total_sol_bet
         8 +     // total_points_bet
+        8 +     // total_wgtd_points_bet
         8 +     // total_fee
         1; // bump
 }

@@ -933,11 +933,13 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
         let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
+        let wgtd_points_bet_on_block = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
 
         msg!(
-            "     Block {}: Points bet: {} SOL",
+            "     Block {}: Points: {}, Wgtd: {}",
             block_id,
-            points_bet_on_block as f64 / 1_000_000_000.0
+            points_bet_on_block as f64 / 1_000_000_000.0,
+            wgtd_points_bet_on_block as f64 / 1_000_000_000.0
         );
 
         let is_winning_block = block_id == game_session.winning_block;
@@ -946,7 +948,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         if is_winning_block {
             msg!("       ✓ Winning block - calculating rewards...");
 
-            // SOL rewards (only for winning block)
+            // SOL rewards: use regular points
             if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
                 let sol_reward = helper::mul_div(
                     points_bet_on_block,
@@ -957,10 +959,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 msg!("         SOL reward: {} lamports", sol_reward);
             }
 
-            // MineBtc rewards (winning block)
-            if game_session.minebtc_rewards_index > 0 && points_bet_on_block > 0 {
+            // MineBtc rewards: use wgtd_points
+            if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
                 let minebtc_reward = helper::mul_div(
-                    points_bet_on_block,
+                    wgtd_points_bet_on_block,
                     game_session.minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
@@ -970,10 +972,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         } else if is_same_faction_block {
             msg!("       ✓ Same-faction other block - calculating MineBtc rewards...");
 
-            // MineBtc rewards (same-faction other block)
-            if game_session.same_faction_minebtc_rewards_index > 0 && points_bet_on_block > 0 {
+            // MineBtc rewards: use wgtd_points
+            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
                 let minebtc_reward = helper::mul_div(
-                    points_bet_on_block,
+                    wgtd_points_bet_on_block,
                     game_session.same_faction_minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
@@ -1132,9 +1134,13 @@ fn internal_process_bets<'info>(
     let mut total_protocol_fee = 0u64;
     let mut total_net_to_pot = 0u64;
 
+    // Get multiplier (default 100 = 1x if not set)
+    let active_mult = if player_data.active_multiplier == 0 { 100u64 } else { player_data.active_multiplier as u64 };
+
     // Calculate amounts per bet (uniform across batch)
-    let (net_per_bet, fee_per_bet, points_per_bet) = if let Some(ticket_type_index) = use_ticket {
-        // Ticket Logic
+    // wgtd_points: points * multiplier / 100 for SOL bets, else points (tickets)
+    let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) = if let Some(ticket_type_index) = use_ticket {
+        // Ticket Logic - no multiplier applied
         require!(
             (ticket_type_index as usize) < player_data.free_tickets.len(),
             ErrorCode::InvalidParameters
@@ -1163,9 +1169,9 @@ fn internal_process_bets<'info>(
             ticket_type_index
         );
 
-        (0, 0, amount_per_bet)
+        (0, 0, amount_per_bet, amount_per_bet) // wgtd_points = points for tickets
     } else {
-        // SOL Logic
+        // SOL Logic - apply multiplier for wgtd_points
         require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
         let (net, fee) = handle_fee(
             amount_per_bet,
@@ -1181,7 +1187,9 @@ fn internal_process_bets<'info>(
         total_protocol_fee = protocol_fee * num_bets;
         total_net_to_pot = net * num_bets;
 
-        (net, fee, net) // Points = Net Amount for SOL bets
+        // wgtd_points = points * multiplier / 100 for SOL bets
+        let wgtd = net * active_mult / 100;
+        (net, fee, net, wgtd)
     };
 
     // Perform Bulk Transfers
@@ -1244,6 +1252,7 @@ fn internal_process_bets<'info>(
         user_game_bet.block_ids = Vec::new();
         user_game_bet.sol_bets = Vec::new();
         user_game_bet.points_bets = Vec::new();
+        user_game_bet.wgtd_points_bets = Vec::new();
         user_game_bet.bump = user_game_bet_bump;
         msg!("     New bet account initialized");
     } else {
@@ -1265,10 +1274,12 @@ fn internal_process_bets<'info>(
         {
             user_game_bet.sol_bets[index] += net_per_bet;
             user_game_bet.points_bets[index] += points_per_bet;
+            user_game_bet.wgtd_points_bets[index] += wgtd_points_per_bet;
         } else {
             user_game_bet.block_ids.push(target_block);
             user_game_bet.sol_bets.push(net_per_bet);
             user_game_bet.points_bets.push(points_per_bet);
+            user_game_bet.wgtd_points_bets.push(wgtd_points_per_bet);
 
             // Increment user count for this block only if new
             game_session.user_block_indexes[block_index] += 1;
@@ -1277,6 +1288,7 @@ fn internal_process_bets<'info>(
         // Update GameSession stats
         game_session.sol_bets_indexes[block_index] += net_per_bet;
         game_session.points_bets_indexes[block_index] += points_per_bet;
+        game_session.wgtd_points_bets_indexes[block_index] += wgtd_points_per_bet;
 
         // Record for events
         evt_target_blocks.push(target_block);
@@ -1288,14 +1300,17 @@ fn internal_process_bets<'info>(
     // Update Totals
     let total_net_added = net_per_bet * num_bets;
     let total_points_added = points_per_bet * num_bets;
+    let total_wgtd_points_added = wgtd_points_per_bet * num_bets;
     let total_fee_added = fee_per_bet * num_bets;
 
     user_game_bet.total_sol_bet += total_net_added;
     user_game_bet.total_points_bet += total_points_added;
+    user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
     user_game_bet.total_fee += total_fee_added;
 
     game_session.total_sol_bets += total_net_added;
     game_session.total_points_bets += total_points_added;
+    game_session.total_wgtd_points_bets += total_wgtd_points_added;
     game_session.stakers_fee += total_stakers_fee;
 
     // Update PlayerData
@@ -2162,6 +2177,7 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
 
     // Update player data
     player_data.gameplay_egg = egg_mint;
+    player_data.active_multiplier = egg_metadata.multiplier;
 
     // Update faction state
     faction_state.eggs_playing += 1;
@@ -2170,7 +2186,7 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     egg_metadata.incubated_player_data = player_data.owner;
     egg_metadata.last_update_ts = current_time;
 
-    msg!("✅ Egg {} now active for gameplay", egg_mint);
+    msg!("✅ Egg {} now active for gameplay (multiplier: {})", egg_mint, egg_metadata.multiplier);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggUsedForGameplay {
@@ -2221,6 +2237,7 @@ pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Resu
 
     // Update player data
     player_data.gameplay_egg = Pubkey::default();
+    player_data.active_multiplier = 100; // Reset to 1x
 
     // Update faction state
     faction_state.eggs_playing = faction_state.eggs_playing.saturating_sub(1);
@@ -2229,7 +2246,7 @@ pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Resu
     egg_metadata.incubated_player_data = Pubkey::default();
     egg_metadata.last_update_ts = current_time;
 
-    msg!("✅ Egg {} withdrawn from gameplay", egg_mint);
+    msg!("✅ Egg {} withdrawn from gameplay (multiplier reset to 100)", egg_mint);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggWithdrawnFromGameplay {
