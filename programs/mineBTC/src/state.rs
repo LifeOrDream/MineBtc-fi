@@ -10,7 +10,7 @@
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
 // - `MineBtcMining`: Manages the mining emission and distribution logic.
-// - `EggConfig`: Configuration for the Egg NFT system.
+// - `EggConfig`: Configuration for the Doge NFT system.
 // - `TaxConfig`: Configuration for the tax and burn system.
 //
 
@@ -69,7 +69,7 @@ pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
-// PDAs for Egg NFT system
+// PDAs for Doge NFT system
 pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
 pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
 
@@ -403,10 +403,10 @@ impl TicketTier {
 pub struct EggConfig {
     pub bump: u8,
 
-    /// Egg collection address (Metaplex Core)
+    /// Doge collection address (Metaplex Core)
     pub egg_collection: Pubkey,
 
-    /// Egg URIs organized by faction
+    /// Doge URIs organized by faction
     /// Structure: [faction_id] = URI
     pub egg_uris: Vec<String>, // [faction_index] = URI
 
@@ -847,7 +847,7 @@ pub struct PlayerData {
     /// Index matches free_tickets (e.g., free_tickets_remaining[0] is count for free_tickets[0])
     pub free_tickets_remaining: Vec<u64>,
 
-    /// Egg currently being used in gameplay (Pubkey::default() if none)
+    /// Doge currently being used in gameplay (Pubkey::default() if none)
     pub gameplay_egg: Pubkey,
     /// Active gameplay multiplier (100 = 1x, set from gameplay egg's multiplier, reset to 100 on withdraw)
     pub active_multiplier: u32,
@@ -963,7 +963,7 @@ impl ReferralRewards {
 // =============================== DRAGON EGG NFT METADATA ===============================
 // ========================================================================================
 
-/// Egg NFT metadata (stored in minebtc program for simplicity)
+/// Doge NFT metadata (stored in minebtc program for simplicity)
 #[account]
 pub struct EggMetadata {
     /// The NFT mint address (Metaplex Core asset)

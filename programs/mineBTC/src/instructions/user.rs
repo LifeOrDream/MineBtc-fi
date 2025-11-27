@@ -120,7 +120,7 @@ pub fn internal_initialize_player(
     // Initialize egg staking
     player_data.staked_eggs = Vec::new();
     player_data.egg_multiplier = 100; // Default 1.0x (no eggs staked)
-    msg!("     Egg staking initialized (0 eggs, 1.0x multiplier)");
+    msg!("     Doge staking initialized (0 eggs, 1.0x multiplier)");
 
     // Initialize free tickets vectors
     player_data.free_tickets = Vec::new();
@@ -1029,7 +1029,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
-        require!(ctx.accounts.egg_metadata.is_some(), ErrorCode::EggMetadataNotFound);
+        require!(ctx.accounts.egg_metadata.is_some(), ErrorCode::DogeMetadataNotFound);
         if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
             if egg_metadata.mint == player_data.gameplay_egg {
                 // Calculate accumulated_val % based on mutation type
@@ -1042,7 +1042,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 };
                 let accum_add = (total_minebtc_reward * accum_pct) / 1000;
                 egg_metadata.accumulated_val = egg_metadata.accumulated_val + accum_add;
-                msg!("💎 Egg accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
+                msg!("💎 Doge accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
 
                 // Sync DNA/XP/multiplier from PlayerData cache
                 // Note: generation is stored in DNA bits 4-6, not as separate field
@@ -1158,7 +1158,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
                     egg_config.eggs_minted += 1;
 
-                    emit!(crate::events::EggMinted {
+                    emit!(crate::events::DogeMinted {
                         egg_metadata_account: new_egg_metadata_info.key(),
                         egg_asset_signer: new_egg_asset.key(),
                         owner: bet_owner,
@@ -2158,7 +2158,7 @@ pub struct ClaimRoundRewards<'info> {
     #[account(mut)]
     pub egg_metadata: Option<Box<Account<'info, EggMetadata>>>,
 
-    // === Free Egg Mint Accounts (optional) ===
+    // === Free Doge Mint Accounts (optional) ===
     #[account(mut)]
     pub egg_config: Option<Box<Account<'info, EggConfig>>>,
 
@@ -2166,7 +2166,7 @@ pub struct ClaimRoundRewards<'info> {
     #[account(mut)]
     pub new_egg_asset: Option<UncheckedAccount<'info>>,
 
-    /// CHECK: Egg collection
+    /// CHECK: Doge collection
     pub egg_collection: Option<UncheckedAccount<'info>>,
 
     /// New egg metadata account (init if minting)
@@ -2364,14 +2364,14 @@ pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!("🎮 === USING EGG FOR GAMEPLAY ===");
-    msg!("   Egg mint: {}", egg_mint);
+    msg!("   Doge mint: {}", egg_mint);
 
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
     require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
 
     // Verify egg is not already incubated (staked)
-    require!(egg_metadata.incubated_player_data == Pubkey::default(), ErrorCode::EggAlreadyIncubated);
+    require!(egg_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
 
     // Verify no egg currently in gameplay
     require!(player_data.gameplay_egg == Pubkey::default(), ErrorCode::InvalidParameters);
@@ -2409,7 +2409,7 @@ pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<
     egg_metadata.last_update_ts = current_time;
 
     let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
-    msg!("✅ Egg {} now active for gameplay", egg_mint);
+    msg!("✅ Doge {} now active for gameplay", egg_mint);
     msg!("   Multiplier: {}, Gen: {}, XP: {}", egg_metadata.multiplier, gen, egg_metadata.xp);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
@@ -2432,11 +2432,11 @@ pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!("🎮 === WITHDRAWING EGG FROM GAMEPLAY ===");
-    msg!("   Egg mint: {}", egg_mint);
+    msg!("   Doge mint: {}", egg_mint);
 
     // Verify NFT is in custody PDA
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
-    require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::EggNotIncubated);
+    require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::DogeNotAtGuard);
 
     // Verify this is the player's gameplay egg
     require!(player_data.gameplay_egg == egg_mint, ErrorCode::InvalidParameters);
@@ -2482,7 +2482,7 @@ pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>
     egg_metadata.incubated_player_data = Pubkey::default();
     egg_metadata.last_update_ts = current_time;
 
-    msg!("✅ Egg {} withdrawn from gameplay", egg_mint);
+    msg!("✅ Doge {} withdrawn from gameplay", egg_mint);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggWithdrawnFromGameplay {

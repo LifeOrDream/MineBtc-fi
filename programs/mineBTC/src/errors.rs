@@ -63,14 +63,14 @@ pub enum ErrorCode {
     #[msg("URI too long - maximum 200 characters")]
     UriTooLong,
 
-    #[msg("Egg is already incubated in a minebtc")]
-    EggAlreadyIncubated,
+    #[msg("Doge already at guard")]
+    DogeAlreadyAtGuard,
 
-    #[msg("Egg is not incubated in this minebtc")]
-    EggNotIncubated,
+    #[msg("Doge is not incubated in this minebtc")]
+    DogeNotAtGuard,
 
-    #[msg("Egg limit for this tier has been reached")]
-    EggLimitExceeded,
+    #[msg("Doge limit for this tier has been reached")]
+    DogeLimitExceeded,
 
     #[msg("NFT is not owned by the user")]
     NftNotOwnedByUser,
@@ -156,6 +156,6 @@ pub enum ErrorCode {
     #[msg("Maximum evolution stage reached")]
     MaxEvolutionReached,
 
-    #[msg("Egg metadata not found")]
-    EggMetadataNotFound,
+    #[msg("Doge metadata not found")]
+    DogeMetadataNotFound,
 }

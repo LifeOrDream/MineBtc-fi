@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Egg Minting Simulation Script
+ * Doge Minting Simulation Script
  * Simulates the cost of minting all eggs using the bonding curve pricing formula
  * and displays fee distribution (DEV vs GAME treasury)
  */
@@ -220,8 +220,8 @@ function simulateEggMints() {
     const lastEggPrice = computeGenePrice(BASE_PRICE, CURVE_A, TOTAL_SUPPLY - 1);
     
     console.log(`Average Price per Egg: ${formatSol(avgPrice)} (${formatUsd(avgPrice)})`);
-    console.log(`First Egg Price:       ${formatSol(firstEggPrice)} (${formatUsd(firstEggPrice)})`);
-    console.log(`Last Egg Price:        ${formatSol(lastEggPrice)} (${formatUsd(lastEggPrice)})`);
+    console.log(`First Doge Price:       ${formatSol(firstEggPrice)} (${formatUsd(firstEggPrice)})`);
+    console.log(`Last Doge Price:        ${formatSol(lastEggPrice)} (${formatUsd(lastEggPrice)})`);
     console.log(`Price Increase:        ${formatNumber((lastEggPrice / firstEggPrice - 1) * 100)}%`);
     console.log("-".repeat(80));
 }

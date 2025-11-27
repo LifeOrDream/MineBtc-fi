@@ -5,13 +5,13 @@ use anchor_spl::token::Token;
 use anchor_spl::token_2022::{self, Token2022, TransferChecked};
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
-// # Egg Instructions
+// # Doge Instructions
 //
-// This module manages the Egg NFT system, which provides hashpower multipliers to players.
+// This module manages the Doge NFT system, which provides hashpower multipliers to players.
 //
 // ## Key Functions
 //
-// - `batch_mint_eggs`: Mints new Egg NFTs using a bonding curve pricing model.
+// - `batch_mint_eggs`: Mints new Doge NFTs using a bonding curve pricing model.
 // - `stake_egg`: Stakes an egg to boost a player's hashpower.
 // - `unstake_egg`: Unstakes an egg and removes the boost.
 // - `claim_power`: Distributes accumulated power points to staked eggs.
@@ -288,7 +288,7 @@ pub fn int_batch_mint_eggs<'info>(
         data[8..8 + serialized.len()].copy_from_slice(&serialized);
 
         // Emit event
-        emit!(EggMinted {
+        emit!(DogeMinted {
             egg_metadata_account: egg_metadata_key,
             egg_asset_signer: egg_asset_key,
             owner: ctx.accounts.user.key(),
@@ -325,7 +325,7 @@ pub fn int_batch_mint_eggs<'info>(
 // -------------- ADMIN FREE MINT FUNCTION ------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Admin function to mint a Egg NFT for free to a specified recipient
+/// Admin function to mint a Doge NFT for free to a specified recipient
 pub fn int_admin_mint_egg(
     ctx: Context<AdminMintEgg>,
     recipient: Pubkey,
@@ -354,7 +354,7 @@ pub fn int_admin_mint_egg(
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
-    msg!("   Egg number: {}", egg_config.eggs_minted + 1);
+    msg!("   Doge number: {}", egg_config.eggs_minted + 1);
 
     let current_mint_number = egg_config.eggs_minted + 1;
 
@@ -376,7 +376,7 @@ pub fn int_admin_mint_egg(
     ];
 
     // Create NFT via MPL Core CPI (paid by admin, sent to recipient)
-    msg!("🎨 Creating Egg NFT via Metaplex Core CPI");
+    msg!("🎨 Creating Doge NFT via Metaplex Core CPI");
     msg!("   Name: {}", name);
     msg!("   URI: {}", uri);
     msg!("   Recipient: {}", recipient);
@@ -411,7 +411,7 @@ pub fn int_admin_mint_egg(
         cost_per_egg as f64 / 1e9
     );
 
-    // Initialize Egg metadata
+    // Initialize Doge metadata
     let egg_metadata = &mut ctx.accounts.egg_metadata;
     egg_metadata.mint = ctx.accounts.egg_asset.key();
     egg_metadata.mom = Pubkey::default();
@@ -448,7 +448,7 @@ pub fn int_admin_mint_egg(
         egg_config.max_supply
     );
 
-    emit!(EggMinted {
+    emit!(DogeMinted {
         egg_metadata_account: egg_metadata.key(),
         egg_asset_signer: ctx.accounts.egg_asset.key(),
         owner: recipient,
@@ -466,7 +466,7 @@ pub fn int_admin_mint_egg(
     });
 
     msg!(
-        "✅ Admin minted Egg #{} for faction {} to recipient {}",
+        "✅ Admin minted Doge #{} for faction {} to recipient {}",
         egg_config.eggs_minted,
         faction_id,
         recipient
@@ -474,7 +474,7 @@ pub fn int_admin_mint_egg(
     Ok(())
 }
 
-/// Stake a Egg to boost hashpower (multiplier applies to staked minebtc and LP)
+/// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
 /// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
 /// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
 pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
@@ -495,7 +495,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     // Check if already incubated (using Pubkey::default() instead of None)
     require!(
         egg_metadata.incubated_player_data == Pubkey::default(),
-        ErrorCode::EggAlreadyIncubated
+        ErrorCode::DogeAlreadyAtGuard
     );
     require!(
         egg_metadata.faction_id == player_data.faction_id
@@ -604,7 +604,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     // Set new owner (using Pubkey instead of Option)
     egg_metadata.incubated_player_data = player_data.owner;
     egg_metadata.last_update_ts = current_time;
-    msg!("   Egg metadata updated");
+    msg!("   Doge metadata updated");
 
     // Emit event for indexing
     emit!(EggStaked {
@@ -622,7 +622,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     Ok(())
 }
 
-/// Unstake a Egg (reduces multiplier and recalculates hashpower)
+/// Unstake a Doge (reduces multiplier and recalculates hashpower)
 pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
@@ -636,12 +636,12 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
     require!(
         nft_owner == ctx.accounts.egg_custody_pda.key(),
-        ErrorCode::EggNotIncubated
+        ErrorCode::DogeNotAtGuard
     );
     // Verify ownership (using Pubkey::default() check instead of is_some())
     require!(
         egg_metadata.incubated_player_data != Pubkey::default(),
-        ErrorCode::EggNotIncubated
+        ErrorCode::DogeNotAtGuard
     );
     require!(
         egg_metadata.faction_id == player_data.faction_id
@@ -748,7 +748,7 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     // Clear owner (Set back to default using Pubkey::default() instead of None)
     egg_metadata.incubated_player_data = Pubkey::default();
     egg_metadata.last_update_ts = current_time;
-    msg!("   Egg metadata updated");
+    msg!("   Doge metadata updated");
 
     // Transfer NFT back to user (unlock it)
     msg!("🔓 Transferring NFT back to user (unlocking)");
@@ -796,12 +796,12 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
     // Verify not incubated (should be default if user holds it, but double check)
     require!(
         egg_metadata.incubated_player_data == Pubkey::default(),
-        ErrorCode::EggAlreadyIncubated
+        ErrorCode::DogeAlreadyAtGuard
     );
 
     egg_config.eggs_minted -= 1;
 
-    msg!("🔥 Burning Egg NFT to send to heaven...");
+    msg!("🔥 Burning Doge NFT to send to heaven...");
     msg!("   Accumulated Value: {}", accumulated_val);
 
     // Burn the NFT
@@ -856,7 +856,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         timestamp: current_time,
     });
 
-    msg!("✅ [send_to_heaven] Egg sent to heaven successfully");
+    msg!("✅ [send_to_heaven] Doge sent to heaven successfully");
 
     Ok(())
 }
@@ -878,8 +878,8 @@ pub fn int_breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
     require!(egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
     
     // Validate parents are not incubated
-    require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::EggAlreadyIncubated);
-    require!(dad.incubated_player_data == Pubkey::default(), ErrorCode::EggAlreadyIncubated);
+    require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
+    require!(dad.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
     
     // Validate same faction
     require!(mom.faction_id == dad.faction_id, ErrorCode::InvalidFactionId);
@@ -987,7 +987,7 @@ pub fn int_breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
     msg!("✅ Bred offspring #{} from {} x {}", current_mint_number, mom.mint, dad.mint);
     msg!("   Mom next cooldown: {}s, Dad next cooldown: {}s", mom_cooldown, dad_cooldown);
 
-    emit!(EggMinted {
+    emit!(DogeMinted {
         egg_metadata_account: offspring.key(),
         egg_asset_signer: ctx.accounts.offspring_asset.key(),
         owner: ctx.accounts.user.key(),
@@ -1272,7 +1272,7 @@ pub struct BatchMintEggs<'info> {
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
 
-    /// CHECK: Egg collection (Metaplex Core)
+    /// CHECK: Doge collection (Metaplex Core)
     #[account(mut)]
     pub egg_collection: Option<UncheckedAccount<'info>>,
 
@@ -1614,7 +1614,7 @@ pub struct BreedEggs<'info> {
     )]
     pub offspring_metadata: Box<Account<'info, EggMetadata>>,
 
-    /// CHECK: Egg collection
+    /// CHECK: Doge collection
     pub egg_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA

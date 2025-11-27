@@ -8,7 +8,7 @@
 // - `update_config`: Updates global parameters like authorities and fees.
 // - `add_faction`: Registers new factions in the game.
 // - `initialize_mining`: Starts the token mining process.
-// - `initialize_egg_config`: Sets up the Egg NFT system.
+// - `initialize_egg_config`: Sets up the Doge NFT system.
 // - `initialize_tax_config`: Configures the tax and burn mechanisms.
 // - `initialize_game_state`: Prepares the game state for the first round.
 //
@@ -940,8 +940,8 @@ pub fn update_hashpower_config_internal(
 
 /// Initialize EggConfig account (admin only)
 ///
-/// Creates the EggConfig account that stores Egg collection configuration.
-/// This must be called before creating the Egg collection.
+/// Creates the EggConfig account that stores Doge collection configuration.
+/// This must be called before creating the Doge collection.
 ///
 /// # Parameters
 /// - `base_price`: Base price for Eggs in SOL (lamports)
@@ -975,9 +975,9 @@ pub fn initialize_egg_config_internal(
     Ok(())
 }
 
-/// Create Egg collection with program PDA as authority (admin only)
+/// Create Doge collection with program PDA as authority (admin only)
 ///
-/// Creates a new Metaplex Core collection for Egg NFTs.
+/// Creates a new Metaplex Core collection for Doge NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
 /// Requires EggConfig to be initialized first.
 ///
@@ -991,7 +991,7 @@ pub fn create_egg_collection_internal(
 ) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
 
-    msg!("Creating Egg collection with program PDA as update authority");
+    msg!("Creating Doge collection with program PDA as update authority");
     msg!("Collection: {}", ctx.accounts.collection.key());
     msg!(
         "Collection Authority PDA: {}",
@@ -1028,7 +1028,7 @@ pub fn create_egg_collection_internal(
     Ok(())
 }
 
-/// Set Egg URIs for all factions (admin only)
+/// Set Doge URIs for all factions (admin only)
 ///
 /// Sets the metadata URIs for Eggs, one URI per faction.
 /// The number of URIs must match the number of supported factions.
@@ -1052,28 +1052,28 @@ pub fn set_egg_uris_internal(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) 
     // Set URIs for all factions
     eggs_config.egg_uris = uris.clone();
 
-    msg!("✅ Set {} Egg URIs (one per faction)", uris.len());
+    msg!("✅ Set {} Doge URIs (one per faction)", uris.len());
     msg!("   Factions: {}", global_config.supported_factions.len());
 
     Ok(())
 }
 
-/// Clear all Egg URIs (admin only)
+/// Clear all Doge URIs (admin only)
 ///
-/// Removes all Egg metadata URIs from the configuration.
+/// Removes all Doge metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
 pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.egg_uris.clear();
 
-    msg!("✅ Cleared all Egg URIs");
+    msg!("✅ Cleared all Doge URIs");
 
     Ok(())
 }
 
-/// Initialize royalties on the Egg collection (admin only)
+/// Initialize royalties on the Doge collection (admin only)
 ///
-/// Sets up royalty configuration for the Egg NFT collection using Metaplex Core.
+/// Sets up royalty configuration for the Doge NFT collection using Metaplex Core.
 /// Initializes with an empty ProgramDenyList that can be updated later.
 ///
 /// # Parameters
@@ -1139,7 +1139,7 @@ pub fn init_egg_royalties_internal(
         .invoke_signed(signer_seeds)?;
 
     msg!(
-        "✅ Initialized Egg royalties: {} basis points",
+        "✅ Initialized Doge royalties: {} basis points",
         basis_points
     );
     Ok(())
@@ -1202,7 +1202,7 @@ pub fn add_ticket_tier_config_int(
 
 /// Update EggConfig account (admin only)
 ///
-/// Updates the EggConfig account that stores Egg collection configuration.
+/// Updates the EggConfig account that stores Doge collection configuration.
 ///
 /// # Parameters
 /// - `base_price`: Base price for Eggs in SOL (lamports)
@@ -1908,7 +1908,7 @@ pub struct CreateEggCollection<'info> {
     )]
     pub eggs_config: Account<'info, EggConfig>,
 
-    /// CHECK: Egg collection account (will be created by MPL Core)
+    /// CHECK: Doge collection account (will be created by MPL Core)
     #[account(mut, signer)]
     pub collection: UncheckedAccount<'info>,
 
@@ -1968,7 +1968,7 @@ pub struct InitEggRoyalties<'info> {
     )]
     pub eggs_config: Account<'info, EggConfig>,
 
-    /// CHECK: Egg collection (already created via MPL Core)
+    /// CHECK: Doge collection (already created via MPL Core)
     #[account(
         mut,
         address = eggs_config.egg_collection @ ErrorCode::InvalidAccount

@@ -107,7 +107,7 @@ pub struct LpTokensBurned {
 // ========================================================================================
 
 #[event]
-pub struct EggMinted {
+pub struct DogeMinted {
     pub egg_metadata_account: Pubkey,
     pub egg_asset_signer: Pubkey,
     pub owner: Pubkey,
@@ -132,7 +132,7 @@ pub struct EggCollectionCreated {
     pub uri: String,
 }
 
-/// Event emitted when a Egg is staked
+/// Event emitted when a Doge is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
 pub struct EggStaked {
@@ -140,11 +140,11 @@ pub struct EggStaked {
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
-    /// Egg mint address
+    /// Doge mint address
     pub egg_mint: Pubkey,
     /// Faction ID the egg belongs to
     pub faction_id: u8,
-    /// Egg metadata account address
+    /// Doge metadata account address
     pub egg_metadata_account: Pubkey,
     /// Player's current multiplier after staking
     pub player_multiplier: u16,
@@ -156,7 +156,7 @@ pub struct EggStaked {
     pub timestamp: i64,
 }
 
-/// Event emitted when a Egg is unstaked
+/// Event emitted when a Doge is unstaked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
 pub struct EggUnstaked {
@@ -164,9 +164,9 @@ pub struct EggUnstaked {
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
-    /// Egg mint address
+    /// Doge mint address
     pub egg_mint: Pubkey,
-    /// Egg metadata account address
+    /// Doge metadata account address
     pub egg_metadata_account: Pubkey,
     /// Faction ID the egg belongs to
     pub faction_id: u8,
@@ -183,7 +183,7 @@ pub struct EggUnstaked {
 /// Event emitted when an egg is sent to heaven (burnt) for rewards
 #[event]
 pub struct EggSentToHeaven {
-    /// Egg mint address that was burnt
+    /// Doge mint address that was burnt
     pub egg_mint: Pubkey,
     /// User who sent the egg to heaven
     pub user: Pubkey,

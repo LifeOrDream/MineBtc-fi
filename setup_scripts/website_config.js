@@ -284,7 +284,7 @@ function main() {
       }`
     );
     console.log(
-      `  🥚 Egg Collection: ${
+      `  🥚 Doge Collection: ${
         websiteConfig[cluster].egg_collection || "Not created"
       }`
     );

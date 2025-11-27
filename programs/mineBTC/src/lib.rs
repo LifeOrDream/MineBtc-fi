@@ -12,7 +12,7 @@
 // - `user`: User interactions, betting, and account management.
 // - `stake`: Staking logic for MineBTC and LP tokens.
 // - `game`: Core game loop, round management, and randomness.
-// - `eggs`: Egg NFT system for hashpower multipliers.
+// - `eggs`: Doge NFT system for hashpower multipliers.
 // - `tax`: Tax system for deflationary mechanics and reward distribution.
 //
 // ## Architecture
@@ -236,8 +236,8 @@ pub mod minebtc {
 
     /// Initialize EggConfig account (admin only)
     ///
-    /// Creates the EggConfig account that stores Egg configuration.
-    /// This must be called before creating the Egg collection.
+    /// Creates the EggConfig account that stores Doge configuration.
+    /// This must be called before creating the Doge collection.
     pub fn initialize_egg_config(
         ctx: Context<InitializeEggConfig>,
         base_price: u64,
@@ -249,7 +249,7 @@ pub mod minebtc {
 
     /// Update EggConfig account (admin only)
     ///
-    /// Updates the EggConfig account that stores Egg collection configuration.
+    /// Updates the EggConfig account that stores Doge collection configuration.
     ///
     /// # Parameters
     /// - `base_price`: Base price for Eggs in SOL (lamports)
@@ -262,9 +262,9 @@ pub mod minebtc {
         admin::update_egg_config_internal(ctx, base_price, curve_a)
     }
 
-    /// Create Egg collection with program PDA as authority (admin only)
+    /// Create Doge collection with program PDA as authority (admin only)
     ///
-    /// Creates a new Metaplex Core collection for Egg NFTs.
+    /// Creates a new Metaplex Core collection for Doge NFTs.
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
     /// Requires EggConfig to be initialized first.
@@ -276,18 +276,18 @@ pub mod minebtc {
         admin::create_egg_collection_internal(ctx, name, uri)
     }
 
-    /// Set Egg URIs for all factions (admin only)
+    /// Set Doge URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
     pub fn set_egg_uris(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) -> Result<()> {
         admin::set_egg_uris_internal(ctx, uris)
     }
 
-    /// Clear all Egg URIs (admin only)
+    /// Clear all Doge URIs (admin only)
     pub fn clear_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
         admin::clear_egg_uris_internal(ctx)
     }
 
-    /// Initialize royalties on the Egg collection (admin only)
+    /// Initialize royalties on the Doge collection (admin only)
     pub fn init_egg_royalties(
         ctx: Context<InitEggRoyalties>,
         basis_points: u16,
@@ -652,9 +652,9 @@ pub mod minebtc {
         doges::int_simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
     }
 
-    /// Admin function to mint a Egg NFT for free to a specified recipient (admin only)
+    /// Admin function to mint a Doge NFT for free to a specified recipient (admin only)
     ///
-    /// Allows the admin to mint a Egg NFT without payment.
+    /// Allows the admin to mint a Doge NFT without payment.
     /// The NFT is minted directly to the specified recipient address.
     ///
     /// # Parameters
@@ -671,7 +671,7 @@ pub mod minebtc {
 
     /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
     ///
-    /// Mints multiple Egg NFTs in a single transaction.
+    /// Mints multiple Doge NFTs in a single transaction.
     /// Each egg uses bonding curve pricing based on the current supply at mint time.
     ///
     /// # Parameters
@@ -687,12 +687,12 @@ pub mod minebtc {
         doges::int_batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
-    /// Stake a Egg to boost hashpower (if faction matches player's faction)
+    /// Stake a Doge to boost hashpower (if faction matches player's faction)
     pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
         doges::int_stake_egg(ctx)
     }
 
-    /// Unstake a Egg (remove hashpower boost)
+    /// Unstake a Doge (remove hashpower boost)
     pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
         doges::int_unstake_egg(ctx)
     }

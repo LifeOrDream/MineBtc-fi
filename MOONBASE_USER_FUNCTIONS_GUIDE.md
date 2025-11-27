@@ -90,7 +90,7 @@ Stake your MineBTC tokens to earn **dual rewards**:
 **Hashpower Formula**: Your reward share depends on your hashpower
 
 ```
-Hashpower = Amount × Lockup Multiplier × Egg Multiplier
+Hashpower = Amount × Lockup Multiplier × Doge Multiplier
 ```
 
 **Lockup Periods**:
@@ -111,7 +111,7 @@ When claiming MineBTC rewards, a 5% refining fee is charged and **redistributed 
 
 ---
 
-## 🐉 Egg NFT System
+## 🐉 Doge NFT System
 
 ### Bonding Curve Pricing
 
@@ -123,7 +123,7 @@ Price = Base_Price + (Current_Supply² / Curve_A)
 
 Each subsequent egg costs more, creating natural scarcity.
 
-### Egg Tiers & Free Tickets
+### Doge Tiers & Free Tickets
 
 When minting eggs, choose a ticket tier:
 
@@ -248,7 +248,7 @@ Deposit SOL into your autominer vault, and a keeper bot will execute bets for yo
 ### Solana Programs
 
 - **Token-2022**: MineBTC uses transfer fees for deflationary mechanics
-- **Metaplex Core**: Egg NFTs with royalties and on-chain metadata
+- **Metaplex Core**: Doge NFTs with royalties and on-chain metadata
 - **Raydium CLMM**: Liquidity pool for MineBTC-SOL trading
 
 ### Security Features
