@@ -32,7 +32,7 @@ pub mod state;
 pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::economy::*;
-pub use instructions::eggs::*;
+pub use instructions::doges::*;
 pub use instructions::game::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
@@ -49,7 +49,7 @@ pub mod minebtc {
     use super::*;
     use instructions::admin::{self};
     use instructions::economy::{self};
-    use instructions::eggs::{self};
+    use instructions::doges::{self};
     use instructions::game::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
@@ -649,7 +649,7 @@ pub mod minebtc {
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
     ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
-        eggs::int_simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
+        doges::int_simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
     }
 
     /// Admin function to mint a Egg NFT for free to a specified recipient (admin only)
@@ -666,7 +666,7 @@ pub mod minebtc {
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::int_admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
+        doges::int_admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
@@ -684,26 +684,26 @@ pub mod minebtc {
         mint_count: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::int_batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
+        doges::int_batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
     /// Stake a Egg to boost hashpower (if faction matches player's faction)
     pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
-        eggs::int_stake_egg(ctx)
+        doges::int_stake_egg(ctx)
     }
 
     /// Unstake a Egg (remove hashpower boost)
     pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
-        eggs::int_unstake_egg(ctx)
+        doges::int_unstake_egg(ctx)
     }
 
     /// Breed two eggs to create offspring
     pub fn breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
-        eggs::int_breed_eggs(ctx)
+        doges::int_breed_eggs(ctx)
     }
 
     /// Send an egg to heaven (burn for rewards)
     pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
-        eggs::int_send_to_heaven(ctx)
+        doges::int_send_to_heaven(ctx)
     }
 }

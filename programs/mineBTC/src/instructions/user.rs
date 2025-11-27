@@ -1108,7 +1108,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
             ) {
                 if egg_config.eggs_minted < egg_config.max_supply {
                     let mint_number = egg_config.eggs_minted + 1;
-                    let (name, uri, dna, multiplier) = crate::instructions::eggs::generate_egg_data(
+                    let (name, uri, dna, multiplier) = crate::instructions::doges::generate_egg_data(
                         egg_config,
                         mint_number,
                         &bet_owner,
