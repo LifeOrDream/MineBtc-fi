@@ -149,8 +149,8 @@ pub fn calculate_mutation_result(
     user_total_bet: u64,
     highest_round_bet_for_faction: u64,
     current_multiplier: u32,
-    mut gameplay_egg_dna: [u8; 32],
-    gameplay_egg_xp: u32,
+    mut gameplay_doge_dna: [u8; 32],
+    gameplay_doge_xp: u32,
     total_sol_bets: u64,
     total_points_bets: u64,
     total_wgtd_points_bets: u64,
@@ -159,14 +159,14 @@ pub fn calculate_mutation_result(
 ) -> MutationResult {
     msg!("🧬 Calculating mutation result...");
     msg!("   User total bet: {}, Highest round bet for faction: {}", user_total_bet as f64 / 1e9, highest_round_bet_for_faction as f64 / 1e9);
-    msg!("   Current multiplier: {}. Gameplay egg XP: {}", current_multiplier, gameplay_egg_xp);
+    msg!("   Current multiplier: {}. Gameplay doge XP: {}", current_multiplier, gameplay_doge_xp);
     msg!("   Total sol bets: {}, Total points bets: {}, Total wgtd points bets: {}", total_sol_bets as f64 / 1e9, total_points_bets as f64 / 1e9, total_wgtd_points_bets as f64 / 1e9);
     msg!("   Slot: {}. User key: {}", slot, user_key);
 
     // Derive generation from DNA (bits 4-6 of byte 0)
-    let generation = get_evolution_stage(&gameplay_egg_dna);
+    let generation = get_evolution_stage(&gameplay_doge_dna);
     
-    msg!("🧬 Mutation calc: bet={}, gen={}, xp={}, mult={}", user_total_bet as f64 / 1e9, generation, gameplay_egg_xp, current_multiplier);
+    msg!("🧬 Mutation calc: bet={}, gen={}, xp={}, mult={}", user_total_bet as f64 / 1e9, generation, gameplay_doge_xp, current_multiplier);
     
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
@@ -175,7 +175,7 @@ pub fn calculate_mutation_result(
     let xp_gained = ((user_total_bet as u128 * 1) / 1_000_000).min(1000) as u32;
     
     if user_total_bet == 0 {
-        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_egg_dna };
+        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_doge_dna };
     }
 
     // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio.
@@ -202,7 +202,7 @@ pub fn calculate_mutation_result(
 
     // Roll the dice
     let total_combined = total_sol_bets + total_points_bets + total_wgtd_points_bets;
-    let seed = keccak::hashv(&[&slot.to_le_bytes(), &total_sol_bets.to_le_bytes(), &total_combined.to_le_bytes(), user_key.as_ref(), &gameplay_egg_dna]).to_bytes();
+    let seed = keccak::hashv(&[&slot.to_le_bytes(), &total_sol_bets.to_le_bytes(), &total_combined.to_le_bytes(), user_key.as_ref(), &gameplay_doge_dna]).to_bytes();
 
     // Roll 1: Did we hit the mutation? (0-10000)
     // Use first 2 bytes for higher precision (u16)    
@@ -210,7 +210,7 @@ pub fn calculate_mutation_result(
     let roll_normalized = (roll_val * 10_000) / 65535;
 
     if roll_normalized >= final_chance_bps {
-        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_egg_dna };
+        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_doge_dna };
     }
 
     // Mutation triggered - determine type
@@ -220,13 +220,13 @@ pub fn calculate_mutation_result(
     let power_threshold = evo_threshold + ((255 * 30) / 100);
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
-        let _ = evolve_stage(&mut gameplay_egg_dna, &seed);
+        let _ = evolve_stage(&mut gameplay_doge_dna, &seed);
         (MutationType::Evolution, 50u32)
     } else if (type_roll as u64) < power_threshold {
-        mutate_power_trait(&mut gameplay_egg_dna, &seed);
+        mutate_power_trait(&mut gameplay_doge_dna, &seed);
         (MutationType::Power, 25u32)
     } else {
-        mutate_visual_trait(&mut gameplay_egg_dna, &seed);
+        mutate_visual_trait(&mut gameplay_doge_dna, &seed);
         (MutationType::Trait, 5u32)
     };
 
@@ -234,13 +234,13 @@ pub fn calculate_mutation_result(
     let xp_roll = seed[3] as u64;
     let (min_pct, max_pct) = if m_type == MutationType::Evolution { (50, 100) } else { (10, 50) };
     let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
-    let xp_mult_boost = ((gameplay_egg_xp as u64 * efficiency_pct) / 100) / 10;
+    let xp_mult_boost = ((gameplay_doge_xp as u64 * efficiency_pct) / 100) / 10;
 
     MutationResult {
         mutation_type: Some(m_type),
         xp_gained,
         multiplier_increase: base_boost + xp_mult_boost as u32,
-        new_dna: gameplay_egg_dna,
+        new_dna: gameplay_doge_dna,
     }
 }
 

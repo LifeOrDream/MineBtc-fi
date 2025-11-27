@@ -258,33 +258,33 @@
     "tx_signature": "5jNzTvPopSHojEKzknxvmxNX2gGim2oSkJD7oUEcNHKGmwccWAyxSDjQD9eqNc9eTiWd5nTZ9r4EZZdjjP3KHUpt",
     "timestamp": "2025-11-21T20:58:46.750Z"
   },
-  "_egg_collection_created": {
+  "_doge_collection_created": {
     "collection_address": "CDfocDAvadT2k4Aipqxpw8bWZ8rubcbNJdLkX45qWbvX",
     "collection_name": "DogeTech Doge",
-    "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+    "collection_uri": "https://arweave.net/doge-collection-metadata.json",
     "collection_authority": "zJgj8NkdHueoXVyzw3cTNSwDSbVcyPNSAfYAcwWTmSz",
     "tx_signature": "5BYx8nhTZhCRorTT96Km55t2ihbyKg7VFu72RoHCWPjRJkJtJd3nUZs4ng1pN43KwLddzHkcwABimZXxcYq7Zw4T",
     "timestamp": "2025-11-21T20:58:47.268Z"
   },
-  "_egg_uris_set": {
+  "_doge_uris_set": {
     "uris": [
-      "https://arweave.net/dragon-egg-usa.json",
-      "https://arweave.net/dragon-egg-china.json",
-      "https://arweave.net/dragon-egg-russia.json",
-      "https://arweave.net/dragon-egg-india.json",
-      "https://arweave.net/dragon-egg-japan.json",
-      "https://arweave.net/dragon-egg-korea.json",
-      "https://arweave.net/dragon-egg-vietnam.json",
-      "https://arweave.net/dragon-egg-philippines.json",
-      "https://arweave.net/dragon-egg-northkorea.json",
-      "https://arweave.net/dragon-egg-france.json",
-      "https://arweave.net/dragon-egg-brazil.json",
-      "https://arweave.net/dragon-egg-argentina.json"
+      "https://arweave.net/doge-usa.json",
+      "https://arweave.net/doge-china.json",
+      "https://arweave.net/doge-russia.json",
+      "https://arweave.net/doge-india.json",
+      "https://arweave.net/doge-japan.json",
+      "https://arweave.net/doge-korea.json",
+      "https://arweave.net/doge-vietnam.json",
+      "https://arweave.net/doge-philippines.json",
+      "https://arweave.net/doge-northkorea.json",
+      "https://arweave.net/doge-france.json",
+      "https://arweave.net/doge-brazil.json",
+      "https://arweave.net/doge-argentina.json"
     ],
     "tx_signature": "5WT9MLTcqfxeoV2y2ci3Uf9Am67oW7WpZyDwzQjZbJNk9ubr2qq2B6N2KDcFnLS1DCQxsd8qVttFs6enira9RN7X",
     "timestamp": "2025-11-21T20:58:47.652Z"
   },
-  "_egg_royalties_initialized": {
+  "_doge_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {

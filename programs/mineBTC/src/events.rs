@@ -25,7 +25,7 @@ pub struct ReferralRewardsClaimed {
 pub struct SolFeesWithdrawn {
     pub available_solana: u64,
     pub buyback_amount: u64,
-    pub egg_treasury_amt: u64,
+    pub doge_treasury_amt: u64,
     pub dev_earnings_amount: u64,
 }
 
@@ -103,13 +103,13 @@ pub struct LpTokensBurned {
 }
 
 // ========================================================================================
-// =============================== DRAGON DOGE NFT EVENTS =================================
+// ===============================  DOGE NFT EVENTS =================================
 // ========================================================================================
 
 #[event]
 pub struct DogeMinted {
-    pub egg_metadata_account: Pubkey,
-    pub egg_asset_signer: Pubkey,
+    pub doge_metadata_account: Pubkey,
+    pub doge_asset_signer: Pubkey,
     pub owner: Pubkey,
     pub player: Pubkey,
     pub mint: Pubkey,
@@ -118,7 +118,7 @@ pub struct DogeMinted {
     pub dna: [u8; 32],
     pub multiplier: u32,
     pub accumulated_val: u64,
-    pub faction_id: u8, // Faction/country the egg belongs to
+    pub faction_id: u8, // Faction/country the doge belongs to
     pub price: u64,
     pub ticket_tier: u64,
     pub ticket_count: u64
@@ -141,11 +141,11 @@ pub struct EggStaked {
     /// Player data account address
     pub player: Pubkey,
     /// Doge mint address
-    pub egg_mint: Pubkey,
-    /// Faction ID the egg belongs to
+    pub doge_mint: Pubkey,
+    /// Faction ID the doge belongs to
     pub faction_id: u8,
     /// Doge metadata account address
-    pub egg_metadata_account: Pubkey,
+    pub doge_metadata_account: Pubkey,
     /// Player's current multiplier after staking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after staking
@@ -165,13 +165,13 @@ pub struct EggUnstaked {
     /// Player data account address
     pub player: Pubkey,
     /// Doge mint address
-    pub egg_mint: Pubkey,
+    pub doge_mint: Pubkey,
     /// Doge metadata account address
-    pub egg_metadata_account: Pubkey,
-    /// Faction ID the egg belongs to
+    pub doge_metadata_account: Pubkey,
+    /// Faction ID the doge belongs to
     pub faction_id: u8,
     /// Player's current multiplier after unstaking
-    pub egg_multiplier: u32,
+    pub doge_multiplier: u32,
     /// Player's current MINEBTC hashpower after unstaking
     pub minebtc_hashpower: u64,
     /// Player's current LP hashpower after unstaking
@@ -180,12 +180,12 @@ pub struct EggUnstaked {
     pub timestamp: i64,
 }
 
-/// Event emitted when an egg is sent to heaven (burnt) for rewards
+/// Event emitted when an doge is sent to heaven (burnt) for rewards
 #[event]
 pub struct EggSentToHeaven {
     /// Doge mint address that was burnt
-    pub egg_mint: Pubkey,
-    /// User who sent the egg to heaven
+    pub doge_mint: Pubkey,
+    /// User who sent the doge to heaven
     pub user: Pubkey,
     /// Accumulated value claimed
     pub accumulated_val: u64,
@@ -524,20 +524,20 @@ pub struct DistributionRoundFinished {
 // =============================== GAMEPLAY DOGE EVENTS ====================================
 // ========================================================================================
 
-/// Event emitted when an egg is used for gameplay
+/// Event emitted when an doge is used for gameplay
 #[event]
 pub struct EggUsedForGameplay {
     pub user: Pubkey,
-    pub egg_mint: Pubkey,
+    pub doge_mint: Pubkey,
     pub faction_id: u8,
     pub timestamp: i64,
 }
 
-/// Event emitted when an egg is withdrawn from gameplay
+/// Event emitted when an doge is withdrawn from gameplay
 #[event]
 pub struct EggWithdrawnFromGameplay {
     pub user: Pubkey,
-    pub egg_mint: Pubkey,
+    pub doge_mint: Pubkey,
     pub faction_id: u8,
     pub timestamp: i64,
 }
@@ -546,7 +546,7 @@ pub struct EggWithdrawnFromGameplay {
 #[event]
 pub struct MutationTriggered {
     pub user: Pubkey,
-    pub egg_mint: Pubkey,
+    pub doge_mint: Pubkey,
     pub faction_id: u8,
     pub round_id: u64,
     /// 0 = Evolution, 1 = Power, 2 = Trait

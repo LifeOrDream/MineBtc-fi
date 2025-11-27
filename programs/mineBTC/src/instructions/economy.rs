@@ -141,12 +141,12 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
     let eggs_treasury_balance = ctx.accounts.eggs_treasury.lamports();
     let eggs_treasury_rent = Rent::get()?.minimum_balance(0);
     let eggs_treasury_available = eggs_treasury_balance.saturating_sub(eggs_treasury_rent);
-    let mut egg_treasury_amt = 0;
+    let mut doge_treasury_amt = 0;
 
     if eggs_treasury_available > 0 && sol_for_buybacks > 0 {
         // Transfer whichever is lower: 1% of available eggs treasury balance or 10x of buyback amount
-        egg_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);
-        if egg_treasury_amt > 0 {
+        doge_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);
+        if doge_treasury_amt > 0 {
             let eggs_treasury_seeds = &[DOGES_TREASURY_SEED.as_ref(), &[ctx.bumps.eggs_treasury]];
             let eggs_treasury_signer_seeds = &[&eggs_treasury_seeds[..]];
 
@@ -159,14 +159,14 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
                     },
                     eggs_treasury_signer_seeds,
                 ),
-                egg_treasury_amt,
+                doge_treasury_amt,
             )?;
 
             buybacks_ac.total_sol_accumulated =
-                buybacks_ac.total_sol_accumulated + egg_treasury_amt;
+                buybacks_ac.total_sol_accumulated + doge_treasury_amt;
             msg!(
                 "🥚 Transferred {} SOL from Doge Treasury to Buybacks (1% of 10x buyback)",
-                egg_treasury_amt as f64 / 1e9
+                doge_treasury_amt as f64 / 1e9
             );
         }
     }
@@ -175,7 +175,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
     emit!(SolFeesWithdrawn {
         available_solana: available_solana,
         buyback_amount: sol_for_buybacks,
-        egg_treasury_amt,
+        doge_treasury_amt,
         dev_earnings_amount: dev_earnings,
     });
 
@@ -1442,7 +1442,7 @@ pub struct DistributeSolFees<'info> {
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
 
-    /// CHECK: Doge treasury PDA (System Account) - holds egg minting fees
+    /// CHECK: Doge treasury PDA (System Account) - holds doge minting fees
     #[account(
         mut,
         seeds = [DOGES_TREASURY_SEED.as_ref()],

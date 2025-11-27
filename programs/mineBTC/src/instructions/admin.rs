@@ -8,7 +8,7 @@
 // - `update_config`: Updates global parameters like authorities and fees.
 // - `add_faction`: Registers new factions in the game.
 // - `initialize_mining`: Starts the token mining process.
-// - `initialize_egg_config`: Sets up the Doge NFT system.
+// - `initialize_doge_config`: Sets up the Doge NFT system.
 // - `initialize_tax_config`: Configures the tax and burn mechanisms.
 // - `initialize_game_state`: Prepares the game state for the first round.
 //
@@ -935,7 +935,7 @@ pub fn update_hashpower_config_internal(
 }
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
+// --------------  DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Initialize EggConfig account (admin only)
@@ -947,13 +947,13 @@ pub fn update_hashpower_config_internal(
 /// - `base_price`: Base price for Doge in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
 /// - `max_supply`: Maximum number of Doge that can be minted
-pub fn initialize_egg_config_internal(
+pub fn initialize_doge_config_internal(
     ctx: Context<InitializeEggConfig>,
     base_price: u64,
     curve_a: u64,
     max_supply: u64,
 ) -> Result<()> {
-    msg!("🥚 [initialize_egg_config_internal] Initializing EggConfig");
+    msg!("🥚 [initialize_doge_config_internal] Initializing EggConfig");
 
     let eggs_config = &mut ctx.accounts.eggs_config;
 
@@ -984,7 +984,7 @@ pub fn initialize_egg_config_internal(
 /// # Parameters
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
-pub fn create_egg_collection_internal(
+pub fn create_doge_collection_internal(
     ctx: Context<CreateEggCollection>,
     name: String,
     uri: String,
@@ -1035,7 +1035,7 @@ pub fn create_egg_collection_internal(
 ///
 /// # Parameters
 /// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
-pub fn set_egg_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
+pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let eggs_config = &mut ctx.accounts.eggs_config;
 
@@ -1062,7 +1062,7 @@ pub fn set_egg_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) 
 ///
 /// Removes all Doge metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
-pub fn clear_egg_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
+pub fn clear_doge_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.egg_uris.clear();
 
@@ -1083,7 +1083,7 @@ pub fn clear_egg_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
 /// # Validation
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
-pub fn init_egg_royalties_internal(
+pub fn init_doge_royalties_internal(
     ctx: Context<InitEggRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
@@ -1207,12 +1207,12 @@ pub fn add_ticket_tier_config_int(
 /// # Parameters
 /// - `base_price`: Base price for Doge in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
-pub fn update_egg_config_internal(
+pub fn update_doge_config_internal(
     ctx: Context<UpdateDogeConfig>,
     base_price: u64,
     curve_a: u64,
 ) -> Result<()> {
-    msg!("🥚 [update_egg_config_internal] Updating EggConfig");
+    msg!("🥚 [update_doge_config_internal] Updating EggConfig");
 
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.base_price = base_price;
@@ -1598,7 +1598,7 @@ pub struct Initialize<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
-    /// CHECK: 0-byte PDA that only stores lamports (System Account) for egg minting fees
+    /// CHECK: 0-byte PDA that only stores lamports (System Account) for doge minting fees
     #[account(
         init,
         payer = authority,

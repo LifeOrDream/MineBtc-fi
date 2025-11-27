@@ -231,20 +231,20 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ DRAGON DOGE SYSTEM (ADMIN) ------------------------------------------------
+    // ------------  DOGE SYSTEM (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
     /// Initialize EggConfig account (admin only)
     ///
     /// Creates the EggConfig account that stores Doge configuration.
     /// This must be called before creating the Doge collection.
-    pub fn initialize_egg_config(
+    pub fn initialize_doge_config(
         ctx: Context<InitializeEggConfig>,
         base_price: u64,
         curve_a: u64,
         max_supply: u64,
     ) -> Result<()> {
-        admin::initialize_egg_config_internal(ctx, base_price, curve_a, max_supply)
+        admin::initialize_doge_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
     /// Update EggConfig account (admin only)
@@ -254,12 +254,12 @@ pub mod minebtc {
     /// # Parameters
     /// - `base_price`: Base price for Doge in SOL (lamports)
     /// - `curve_a`: Bonding curve parameter (controls price growth rate)
-    pub fn update_egg_config(
+    pub fn update_doge_config(
         ctx: Context<UpdateDogeConfig>,
         base_price: u64,
         curve_a: u64,
     ) -> Result<()> {
-        admin::update_egg_config_internal(ctx, base_price, curve_a)
+        admin::update_doge_config_internal(ctx, base_price, curve_a)
     }
 
     /// Create Doge collection with program PDA as authority (admin only)
@@ -268,32 +268,32 @@ pub mod minebtc {
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
     /// Requires EggConfig to be initialized first.
-    pub fn create_egg_collection(
+    pub fn create_doge_collection(
         ctx: Context<CreateEggCollection>,
         name: String,
         uri: String,
     ) -> Result<()> {
-        admin::create_egg_collection_internal(ctx, name, uri)
+        admin::create_doge_collection_internal(ctx, name, uri)
     }
 
     /// Set Doge URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_egg_uris(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
-        admin::set_egg_uris_internal(ctx, uris)
+    pub fn set_doge_uris(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
+        admin::set_doge_uris_internal(ctx, uris)
     }
 
     /// Clear all Doge URIs (admin only)
-    pub fn clear_egg_uris(ctx: Context<UpdateDogeConfig>) -> Result<()> {
-        admin::clear_egg_uris_internal(ctx)
+    pub fn clear_doge_uris(ctx: Context<UpdateDogeConfig>) -> Result<()> {
+        admin::clear_doge_uris_internal(ctx)
     }
 
     /// Initialize royalties on the Doge collection (admin only)
-    pub fn init_egg_royalties(
+    pub fn init_doge_royalties(
         ctx: Context<InitEggRoyalties>,
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
-        admin::init_egg_royalties_internal(ctx, basis_points, creators)
+        admin::init_doge_royalties_internal(ctx, basis_points, creators)
     }
 
     /// Add or update ticket tier configs (admin only)
@@ -577,14 +577,14 @@ pub mod minebtc {
     // ------------ USER INSTRUCTIONS :: GAMEPLAY DOGES  ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Use an egg for gameplay - deposits to custody and sets as active gameplay egg
-    pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
-        user::internal_use_egg_for_gameplay(ctx)
+    /// Use an doge for gameplay - deposits to custody and sets as active gameplay egg
+    pub fn use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+        user::internal_use_doge_for_gameplay(ctx)
     }
 
-    /// Withdraw egg from gameplay - returns egg to user
-    pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
-        user::internal_withdraw_egg_from_gameplay(ctx)
+    /// Withdraw doge from gameplay - returns doge to user
+    pub fn withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+        user::internal_withdraw_doge_from_gameplay(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -637,7 +637,7 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ DRAGON DOGE NFT FUNCTIONS -------------------------------------------------
+    // ------------  DOGE NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
     ///Simulate mint costs for multiple eggs accounting for bonding curve pricing
@@ -659,7 +659,7 @@ pub mod minebtc {
     ///
     /// # Parameters
     /// - `recipient`: Address that will receive the minted NFT
-    /// - `faction_id`: Faction ID the egg belongs to
+    /// - `faction_id`: Faction ID the doge belongs to
     pub fn admin_mint_egg(
         ctx: Context<AdminMintEgg>,
         recipient: Pubkey,
@@ -672,7 +672,7 @@ pub mod minebtc {
     /// Batch mint multiple Doge (anyone can call, max 10 per transaction)
     ///
     /// Mints multiple Doge NFTs in a single transaction.
-    /// Each egg uses bonding curve pricing based on the current supply at mint time.
+    /// Each doge uses bonding curve pricing based on the current supply at mint time.
     ///
     /// # Parameters
     /// - `faction_id`: Faction ID all eggs belong to
@@ -702,7 +702,7 @@ pub mod minebtc {
         doges::int_breed_eggs(ctx)
     }
 
-    /// Send an egg to heaven (burn for rewards)
+    /// Send an doge to heaven (burn for rewards)
     pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         doges::int_send_to_heaven(ctx)
     }

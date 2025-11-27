@@ -116,10 +116,10 @@ function generateWebsiteConfig(config, deployment) {
       sol_prize_pot_vault:
         deployment.raydium_pool_state_set?.sol_prize_pot_vault,
 
-      // ========== DRAGON DOGE COLLECTION ==========
-     egg_collection:
+      // ==========  DOGE COLLECTION ==========
+     doge_collection:
         deployment.egg_collection_created?.collection_address,
-     egg_collection_authority:
+     doge_collection_authority:
         deployment.egg_collection_created?.collection_authority,
 
       // ========== LP TOKEN MANAGEMENT ==========
@@ -147,10 +147,10 @@ function generateWebsiteConfig(config, deployment) {
           ?.liquidity_custodian_authority,
 
       // ========== DOGE CONFIG ==========
-      egg_config_pda: deployment.egg_config_initialized?.eggs_config_pda,
-      egg_base_price: deployment.egg_config_initialized?.base_price,
-      egg_curve_a: deployment.egg_config_initialized?.curve_a,
-      egg_max_supply: deployment.egg_config_initialized?.max_supply,
+      doge_config_pda: deployment.egg_config_initialized?.eggs_config_pda,
+      doge_base_price: deployment.egg_config_initialized?.base_price,
+      doge_curve_a: deployment.egg_config_initialized?.curve_a,
+      doge_max_supply: deployment.egg_config_initialized?.max_supply,
 
       // ========== TAX CONFIG ==========
       tax_config_pda: deployment.tax_config_initialized?.tax_config_pda,

@@ -121,7 +121,7 @@ Doge use a bonding curve pricing model:
 Price = Base_Price + (Current_Supply² / Curve_A)
 ```
 
-Each subsequent egg costs more, creating natural scarcity.
+Each subsequent doge costs more, creating natural scarcity.
 
 ### Doge Tiers & Free Tickets
 
@@ -314,7 +314,7 @@ batch_mint_eggs --faction-id 0 --count 3 --tier 1
 ### 3. Stake Your Doge
 
 ```bash
-# Stake an egg to boost hashpower
+# Stake an doge to boost hashpower
 stake_egg --egg-mint <egg_pubkey>
 ```
 

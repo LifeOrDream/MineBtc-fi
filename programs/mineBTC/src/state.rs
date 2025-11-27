@@ -70,8 +70,8 @@ pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
 // PDAs for Doge NFT system
-pub const DRAGON_DOGE_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
-pub const DRAGON_DOGE_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
+pub const DOGE_METADATA_SEED: &[u8] = b"doge-metadata";
+pub const DOGE_CUSTODY_SEED: &[u8] = b"doge-custody"; // PDA that holds locked NFTs
 
 pub const BUYBACKS_SEED: &[u8] = b"buybacks";
 pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
@@ -107,11 +107,11 @@ pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
 pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
-// ========== DRAGON DOGE NFT CONSTANTS ========== //
+// ==========  DOGE NFT CONSTANTS ========== //
 pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of eggs a user can stake
 pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x)
 
-pub const MAX_DRAGON_DOGE_URIS: usize = 20; // Max URIs in GlobalConfig
+pub const MAX_DOGE_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
@@ -126,7 +126,7 @@ pub struct GlobalConfig {
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
-    /// Direct recipient for egg mints + dev earnings revenue
+    /// Direct recipient for doge mints + dev earnings revenue
     pub fee_recipient: Pubkey,
 
     /// PDA account that holds collected SOL fees
@@ -386,7 +386,7 @@ impl HashpowerConfig {
 
 // ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
 
-/// Ticket tier option for egg minting
+/// Ticket tier option for doge minting
 /// When users mint eggs, they choose a ticket tier which gives them free tickets
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct TicketTier {
@@ -398,17 +398,17 @@ impl TicketTier {
     pub const LEN: usize = 8 + 2; // ticket_value 
 }
 
-/// Global egg configuration
+/// Global doge configuration
 #[account]
 pub struct EggConfig {
     pub bump: u8,
 
     /// Doge collection address (Metaplex Core)
-    pub egg_collection: Pubkey,
+    pub doge_collection: Pubkey,
 
     /// Doge URIs organized by faction
     /// Structure: [faction_id] = URI
-    pub egg_uris: Vec<String>, // [faction_index] = URI
+    pub doge_uris: Vec<String>, // [faction_index] = URI
 
     /// Maximum supply of eggs that can be minted
     pub max_supply: u64,
@@ -439,8 +439,8 @@ impl EggConfig {
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        32 +    // egg_collection
-        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // egg_uris Vec<String>
+        32 +    // doge_collection
+        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // doge_uris Vec<String>
         8 +     // max_supply
         8 +     // eggs_minted
         8 +     // base_price
@@ -835,9 +835,9 @@ pub struct PlayerData {
     /// Staked dragon eggs (max 5 eggs)
     /// Stores the mint addresses of staked eggs
     pub staked_eggs: Vec<Pubkey>,
-    /// Current egg multiplier (100 = 1x, 150 = 1.5x, etc.)
+    /// Current doge multiplier (100 = 1x, 150 = 1.5x, etc.)
     /// Calculated based on number of staked eggs
-    pub egg_multiplier: u16,
+    pub doge_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
     /// Example: [10000000, 100000000, ...] where 1 point = 1 SOL lamport
@@ -851,10 +851,10 @@ pub struct PlayerData {
     pub gameplay_egg: Pubkey,
     /// Active gameplay multiplier (100 = 1x, set from gameplay egg's multiplier, reset to 100 on withdraw)
     pub active_multiplier: u32,
-    /// Cached DNA of gameplay egg (for mutation calculations without loading EggMetadata)
-    pub gameplay_egg_dna: [u8; 32],
-    /// Cached XP of gameplay egg (updated during gameplay, synced to EggMetadata on withdraw)
-    pub gameplay_egg_xp: u32,
+    /// Cached DNA of gameplay doge (for mutation calculations without loading EggMetadata)
+    pub gameplay_doge_dna: [u8; 32],
+    /// Cached XP of gameplay doge (updated during gameplay, synced to EggMetadata on withdraw)
+    pub gameplay_doge_xp: u32,
 }
 
 impl PlayerData {
@@ -891,13 +891,13 @@ impl PlayerData {
         4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_DOGES * 32) + // staked_eggs Vec<Pubkey>
-        2 +     // egg_multiplier (u16)
+        2 +     // doge_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
         32 +    // gameplay_egg
         4 +     // active_multiplier (u32)
-        32 +    // gameplay_egg_dna [u8; 32]
-        4; // gameplay_egg_xp (u32)
+        32 +    // gameplay_doge_dna [u8; 32]
+        4; // gameplay_doge_xp (u32)
 }
 
 /// Individual MineBtc staking position
@@ -960,7 +960,7 @@ impl ReferralRewards {
 }
 
 // ========================================================================================
-// =============================== DRAGON DOGE NFT METADATA ===============================
+// ===============================  DOGE NFT METADATA ===============================
 // ========================================================================================
 
 /// Doge NFT metadata (stored in minebtc program for simplicity)
@@ -972,15 +972,15 @@ pub struct EggMetadata {
     pub mom: Pubkey,
     /// Parent 2 mint (Pubkey::default() for genesis eggs)
     pub dad: Pubkey,
-    /// Number of times this egg has bred (max 5)
+    /// Number of times this doge has bred (max 5)
     pub breed_count: u8,
     /// Unix timestamp when cooldown ends (can breed again after this)
     pub cooldown_end: i64,
     /// Creation timestamp
     pub created_at: i64,
-    /// Faction ID (country) that the egg belongs to (matches minebtc faction)
+    /// Faction ID (country) that the doge belongs to (matches minebtc faction)
     pub faction_id: u8,
-    /// Multiplier for this egg (basis points, e.g., 150 = 1.5x)
+    /// Multiplier for this doge (basis points, e.g., 150 = 1.5x)
     pub multiplier: u32,
     /// dogeBTC accumulated which can be claimed by sending this doge to heaven
     pub accumulated_val: u64,

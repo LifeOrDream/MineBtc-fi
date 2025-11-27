@@ -117,7 +117,7 @@ pub fn internal_initialize_player(
     player_data.lp_position_indices = Vec::new();
     msg!("     Position tracking initialized");
 
-    // Initialize egg staking
+    // Initialize doge staking
     player_data.staked_eggs = Vec::new();
     player_data.egg_multiplier = 100; // Default 1.0x (no eggs staked)
     msg!("     Doge staking initialized (0 eggs, 1.0x multiplier)");
@@ -1030,8 +1030,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
         require!(ctx.accounts.egg_metadata.is_some(), ErrorCode::DogeMetadataNotFound);
-        if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
-            if egg_metadata.mint == player_data.gameplay_egg {
+        if let Some(ref mut doge_metadata) = ctx.accounts.egg_metadata {
+            if doge_metadata.mint == player_data.gameplay_egg {
                 // Calculate accumulated_val % based on mutation type
                 // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
                 let accum_pct = match user_bet.mutation_type {
@@ -1041,22 +1041,22 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     _ => 10u64,  // No mutation: 1%
                 };
                 let accum_add = (total_minebtc_reward * accum_pct) / 1000;
-                egg_metadata.accumulated_val = egg_metadata.accumulated_val + accum_add;
+                doge_metadata.accumulated_val = doge_metadata.accumulated_val + accum_add;
                 msg!("💎 Doge accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
 
                 // Sync DNA/XP/multiplier from PlayerData cache
                 // Note: generation is stored in DNA bits 4-6, not as separate field
-                egg_metadata.dna = player_data.gameplay_egg_dna;
-                egg_metadata.xp = player_data.gameplay_egg_xp;
-                egg_metadata.multiplier = player_data.active_multiplier;
+                doge_metadata.dna = player_data.gameplay_doge_dna;
+                doge_metadata.xp = player_data.gameplay_doge_xp;
+                doge_metadata.multiplier = player_data.active_multiplier;
                 
                 // For Evolution, reset XP (DNA already updated by evolve_stage)
                 if user_bet.mutation_type == 1 {
-                    egg_metadata.xp = 0;
-                    player_data.gameplay_egg_xp = 0;
+                    doge_metadata.xp = 0;
+                    player_data.gameplay_doge_xp = 0;
                 }
 
-                msg!("🧬 Synced to egg: {}", egg_metadata.mint);
+                msg!("🧬 Synced to egg: {}", doge_metadata.mint);
             }
         }
     }
@@ -1092,24 +1092,24 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         if roll < 128 {
             msg!("🎁 FREE DOGE! Roll: {} < 128", roll);
 
-            // Mint free egg if all accounts provided
+            // Mint free doge if all accounts provided
             if let (
-                Some(ref mut egg_config),
-                Some(ref new_egg_asset),
+                Some(ref mut doge_config),
+                Some(ref new_doge_asset),
                 Some(ref collection_authority),
                 Some(ref mpl_core_program),
-                Some(ref new_egg_metadata_info),
+                Some(ref new_doge_metadata_info),
             ) = (
                 ctx.accounts.egg_config.as_mut(),
-                ctx.accounts.new_egg_asset.as_ref(),
+                ctx.accounts.new_doge_asset.as_ref(),
                 ctx.accounts.collection_authority.as_ref(),
                 ctx.accounts.mpl_core_program.as_ref(),
-                ctx.accounts.new_egg_metadata.as_ref(),
+                ctx.accounts.new_doge_metadata.as_ref(),
             ) {
-                if egg_config.eggs_minted < egg_config.max_supply {
-                    let mint_number = egg_config.eggs_minted + 1;
-                    let (name, uri, dna, multiplier) = crate::instructions::doges::generate_egg_data(
-                        egg_config,
+                if doge_config.eggs_minted < doge_config.max_supply {
+                    let mint_number = doge_config.eggs_minted + 1;
+                    let (name, uri, dna, multiplier) = crate::instructions::doges::generate_doge_data(
+                        doge_config,
                         mint_number,
                         &bet_owner,
                         clock.slot,
@@ -1121,7 +1121,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
                     
                     crate::mpl_core_helpers::create_mpl_core_asset(
-                        &new_egg_asset.to_account_info(),
+                        &new_doge_asset.to_account_info(),
                         ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
                         &collection_authority.to_account_info(),
                         &ctx.accounts.caller.to_account_info(),
@@ -1133,9 +1133,9 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                         Some(&[collection_authority_seeds]),
                     )?;
 
-                    // Initialize new egg metadata (generation is in DNA bits 4-6)
-                    let new_egg_meta_data = EggMetadata {
-                        mint: new_egg_asset.key(),
+                    // Initialize new doge metadata (generation is in DNA bits 4-6)
+                    let new_doge_meta_data = EggMetadata {
+                        mint: new_doge_asset.key(),
                         mom: Pubkey::default(),
                         dad: Pubkey::default(),
                         breed_count: 0,
@@ -1152,18 +1152,18 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     };
                     
                     // Serialize and write to account
-                    let mut data = new_egg_metadata_info.try_borrow_mut_data()?;
+                    let mut data = new_doge_metadata_info.try_borrow_mut_data()?;
                     let mut cursor = std::io::Cursor::new(&mut data[8..]); // Skip discriminator
-                    new_egg_meta_data.serialize(&mut cursor)?;
+                    new_doge_meta_data.serialize(&mut cursor)?;
 
-                    egg_config.eggs_minted += 1;
+                    doge_config.eggs_minted += 1;
 
                     emit!(crate::events::DogeMinted {
-                        egg_metadata_account: new_egg_metadata_info.key(),
-                        egg_asset_signer: new_egg_asset.key(),
+                        doge_metadata_account: new_doge_metadata_info.key(),
+                        doge_asset_signer: new_doge_asset.key(),
                         owner: bet_owner,
                         player: player_data_key,
-                        mint: new_egg_asset.key(),
+                        mint: new_doge_asset.key(),
                         name,
                         uri,
                         dna,
@@ -1175,11 +1175,11 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                         ticket_count: 0,
                     });
 
-                    msg!("🥚 Free egg minted to {}!", bet_owner);
+                    msg!("🥚 Free doge minted to {}!", bet_owner);
                 }
             }
         } else {
-            msg!("🎲 No free egg this time. Roll: {} >= 128", roll);
+            msg!("🎲 No free doge this time. Roll: {} >= 128", roll);
         }
     }
 
@@ -1522,8 +1522,8 @@ fn internal_process_bets<'info>(
             user_game_bet.total_sol_bet,
             game_session.highest_sol_bet_per_faction[faction_id],
             player_data.active_multiplier,
-            player_data.gameplay_egg_dna,
-            player_data.gameplay_egg_xp,
+            player_data.gameplay_doge_dna,
+            player_data.gameplay_doge_xp,
             game_session.total_sol_bets,
             game_session.total_points_bets,
             game_session.total_wgtd_points_bets,
@@ -1532,7 +1532,7 @@ fn internal_process_bets<'info>(
         );
 
         // Always add XP to PlayerData (even without mutation)
-        player_data.gameplay_egg_xp = player_data.gameplay_egg_xp + mutation_result.xp_gained;
+        player_data.gameplay_doge_xp = player_data.gameplay_doge_xp + mutation_result.xp_gained;
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
@@ -1548,7 +1548,7 @@ fn internal_process_bets<'info>(
                     MutationType::Power => 2,
                     MutationType::Trait => 3,
                 };
-                player_data.gameplay_egg_dna = mutation_result.new_dna;
+                player_data.gameplay_doge_dna = mutation_result.new_dna;
 
                 if is_evolution {
                     game_session.mutation_occurred_per_faction[faction_id] = true;
@@ -1556,7 +1556,7 @@ fn internal_process_bets<'info>(
 
                 emit!(MutationTriggered {
                     user: owner_key,
-                    egg_mint: player_data.gameplay_egg,
+                    doge_mint: player_data.gameplay_egg,
                     faction_id: player_data.faction_id,
                     round_id,
                     mutation_type: user_game_bet.mutation_type,
@@ -1569,7 +1569,7 @@ fn internal_process_bets<'info>(
             }
         }
 
-        msg!("   XP: {}", player_data.gameplay_egg_xp);
+        msg!("   XP: {}", player_data.gameplay_doge_xp);
     }
 
     Ok(())
@@ -2156,23 +2156,23 @@ pub struct ClaimRoundRewards<'info> {
 
     /// Optional EggMetadata account for syncing mutation
     #[account(mut)]
-    pub egg_metadata: Option<Box<Account<'info, EggMetadata>>>,
+    pub doge_metadata: Option<Box<Account<'info, EggMetadata>>>,
 
     // === Free Doge Mint Accounts (optional) ===
     #[account(mut)]
-    pub egg_config: Option<Box<Account<'info, EggConfig>>>,
+    pub doge_config: Option<Box<Account<'info, EggConfig>>>,
 
-    /// CHECK: New egg asset to be created
+    /// CHECK: New doge asset to be created
     #[account(mut)]
-    pub new_egg_asset: Option<UncheckedAccount<'info>>,
+    pub new_doge_asset: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Doge collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
-    /// New egg metadata account (init if minting)
+    /// New doge metadata account (init if minting)
     /// CHECK: Will be initialized via remaining_accounts if needed
     #[account(mut)]
-    pub new_egg_metadata: Option<UncheckedAccount<'info>>,
+    pub new_doge_metadata: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
     #[account(seeds = [COLLECTION_AUTHORITY_SEED], bump)]
@@ -2355,35 +2355,35 @@ pub struct ExecuteAutominerBet<'info> {
 // =============================== GAMEPLAY DOGE FUNCTIONS =================================
 // ========================================================================================
 
-/// Use an egg for gameplay - deposits egg to program custody and sets it as active gameplay egg
-pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+/// Use an doge for gameplay - deposits doge to program custody and sets it as active gameplay egg
+pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
-    let egg_metadata = &mut ctx.accounts.egg_metadata;
-    let egg_mint = egg_metadata.mint;
+    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_mint = doge_metadata.mint;
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!("🎮 === USING DOGE FOR GAMEPLAY ===");
-    msg!("   Doge mint: {}", egg_mint);
+    msg!("   Doge mint: {}", doge_mint);
 
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
     require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
 
-    // Verify egg is not already incubated (staked)
+    // Verify doge is not already incubated (staked)
     require!(egg_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
 
-    // Verify no egg currently in gameplay
+    // Verify no doge currently in gameplay
     require!(player_data.gameplay_egg == Pubkey::default(), ErrorCode::InvalidParameters);
 
     // Verify faction matches
     require!(
-        egg_metadata.faction_id == faction_state.faction_id,
+        doge_metadata.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
 
     // Transfer NFT to custody PDA
-    msg!("🔒 Transferring egg to custody PDA for gameplay");
+    msg!("🔒 Transferring doge to custody PDA for gameplay");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.egg_asset.to_account_info(),
         ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
@@ -2394,28 +2394,28 @@ pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<
         None,
     )?;
 
-    // Update player data - cache egg fields for mutation calculations
+    // Update player data - cache doge fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
-    player_data.gameplay_egg = egg_mint;
-    player_data.active_multiplier = egg_metadata.multiplier;
-    player_data.gameplay_egg_dna = egg_metadata.dna;
-    player_data.gameplay_egg_xp = egg_metadata.xp;
+    player_data.gameplay_egg = doge_mint;
+    player_data.active_multiplier = doge_metadata.multiplier;
+    player_data.gameplay_doge_dna = doge_metadata.dna;
+    player_data.gameplay_doge_xp = doge_metadata.xp;
 
     // Update faction state
     faction_state.eggs_playing += 1;
 
-    // Update egg metadata
-    egg_metadata.incubated_player_data = player_data.owner;
-    egg_metadata.last_update_ts = current_time;
+    // Update doge metadata
+    doge_metadata.incubated_player_data = player_data.owner;
+    doge_metadata.last_update_ts = current_time;
 
     let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
-    msg!("✅ Doge {} now active for gameplay", egg_mint);
-    msg!("   Multiplier: {}, Gen: {}, XP: {}", egg_metadata.multiplier, gen, egg_metadata.xp);
+    msg!("✅ Doge {} now active for gameplay", doge_mint);
+    msg!("   Multiplier: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggUsedForGameplay {
         user: ctx.accounts.user.key(),
-        egg_mint,
+        doge_mint,
         faction_id: player_data.faction_id,
         timestamp: current_time,
     });
@@ -2423,30 +2423,30 @@ pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<
     Ok(())
 }
 
-/// Withdraw egg from gameplay - returns egg to user and clears gameplay egg
-pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+/// Withdraw doge from gameplay - returns doge to user and clears gameplay egg
+pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
-    let egg_metadata = &mut ctx.accounts.egg_metadata;
-    let egg_mint = egg_metadata.mint;
+    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_mint = doge_metadata.mint;
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!("🎮 === WITHDRAWING DOGE FROM GAMEPLAY ===");
-    msg!("   Doge mint: {}", egg_mint);
+    msg!("   Doge mint: {}", doge_mint);
 
     // Verify NFT is in custody PDA
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
     require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::DogeNotAtGuard);
 
     // Verify this is the player's gameplay egg
-    require!(player_data.gameplay_egg == egg_mint, ErrorCode::InvalidParameters);
+    require!(player_data.gameplay_egg == doge_mint, ErrorCode::InvalidParameters);
 
-    // Verify egg metadata matches player
+    // Verify doge metadata matches player
     require!(egg_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
 
     // Transfer NFT back to user
-    msg!("🔓 Transferring egg back to user");
-    let custody_seeds = &[DRAGON_DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    msg!("🔓 Transferring doge back to user");
+    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
@@ -2459,35 +2459,35 @@ pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>
         Some(signer_seeds),
     )?;
 
-    // Sync cached data back to egg metadata before withdrawal
+    // Sync cached data back to doge metadata before withdrawal
     // Note: generation is stored in DNA bits 4-6
     msg!("   Syncing gameplay progress to egg...");
-    egg_metadata.dna = player_data.gameplay_egg_dna;
-    egg_metadata.xp = player_data.gameplay_egg_xp;
-    egg_metadata.multiplier = player_data.active_multiplier;
+    doge_metadata.dna = player_data.gameplay_doge_dna;
+    doge_metadata.xp = player_data.gameplay_doge_xp;
+    doge_metadata.multiplier = player_data.active_multiplier;
 
     let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
-    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", egg_metadata.multiplier, gen, egg_metadata.xp);
+    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
 
     // Clear player data gameplay fields
     player_data.gameplay_egg = Pubkey::default();
     player_data.active_multiplier = 100; // Reset to 1x
-    player_data.gameplay_egg_dna = [0u8; 32];
-    player_data.gameplay_egg_xp = 0;
+    player_data.gameplay_doge_dna = [0u8; 32];
+    player_data.gameplay_doge_xp = 0;
 
     // Update faction state
     faction_state.eggs_playing = faction_state.eggs_playing.saturating_sub(1);
 
-    // Update egg metadata
-    egg_metadata.incubated_player_data = Pubkey::default();
-    egg_metadata.last_update_ts = current_time;
+    // Update doge metadata
+    doge_metadata.incubated_player_data = Pubkey::default();
+    doge_metadata.last_update_ts = current_time;
 
-    msg!("✅ Doge {} withdrawn from gameplay", egg_mint);
+    msg!("✅ Doge {} withdrawn from gameplay", doge_mint);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggWithdrawnFromGameplay {
         user: ctx.accounts.user.key(),
-        egg_mint,
+        doge_mint,
         faction_id: player_data.faction_id,
         timestamp: current_time,
     });
@@ -2511,22 +2511,22 @@ pub struct UseEggForGameplay<'info> {
     /// Metaplex Core asset
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
-        bump = egg_metadata.bump,
-        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_metadata.mint.as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     /// CHECK: PDA for NFT custody
-    #[account(seeds = [DRAGON_DOGE_CUSTODY_SEED], bump)]
-    pub egg_custody_pda: UncheckedAccount<'info>,
+    #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
+    pub doge_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
@@ -2553,22 +2553,22 @@ pub struct WithdrawEggFromGameplay<'info> {
     /// Metaplex Core asset (in custody)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
-        bump = egg_metadata.bump,
-        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_metadata.mint.as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     /// CHECK: PDA for NFT custody
-    #[account(seeds = [DRAGON_DOGE_CUSTODY_SEED], bump)]
-    pub egg_custody_pda: UncheckedAccount<'info>,
+    #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
+    pub doge_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,

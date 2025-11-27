@@ -12,8 +12,8 @@ use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // ## Key Functions
 //
 // - `batch_mint_eggs`: Mints new Doge NFTs using a bonding curve pricing model.
-// - `stake_egg`: Stakes an egg to boost a player's hashpower.
-// - `unstake_egg`: Unstakes an egg and removes the boost.
+// - `stake_egg`: Stakes an doge to boost a player's hashpower.
+// - `unstake_egg`: Unstakes an doge and removes the boost.
 // - `claim_power`: Distributes accumulated power points to staked eggs.
 //
 // Doge are a core mechanic for increasing mining efficiency and earning potential.
@@ -25,14 +25,14 @@ use crate::instructions::stake;
 use crate::state::*;
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON DOGE NFT MANAGEMENT -----------------------------------------------
+// --------------  DOGE NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Simulate mint costs for multiple eggs accounting for bonding curve pricing
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
 /// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
 pub fn int_simulate_mint_cost(
-    egg_config: &EggConfig,
+    doge_config: &EggConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
     require!(
@@ -40,22 +40,22 @@ pub fn int_simulate_mint_cost(
         ErrorCode::InvalidParameters
     );
     require!(
-        egg_config.eggs_minted + mint_count <= egg_config.max_supply,
+        doge_config.eggs_minted + mint_count <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
     require!(
-        egg_config.ticket_tiers.len() == 3,
+        doge_config.ticket_tiers.len() == 3,
         ErrorCode::InvalidParameters
     ); // Must have exactly 3 ticket tiers
 
     let mut prices = Vec::new();
     let mut total_price = 0u64;
-    let mut current_minted = egg_config.eggs_minted;
+    let mut current_minted = doge_config.eggs_minted;
 
     for _ in 0..mint_count {
         let actual_price = crate::genescience::compute_gene_price(
-            egg_config.base_price,
-            egg_config.curve_a,
+            doge_config.base_price,
+            doge_config.curve_a,
             current_minted,
         )?;
 
@@ -83,8 +83,8 @@ pub fn int_simulate_mint_cost(
 /// Uses bonding curve pricing for each egg
 ///
 /// # Remaining Accounts
-/// For each egg to mint, the client must pass 2 accounts in remaining_accounts:
-/// 1. egg_asset (Signer, Writable) - The new Keypair for the egg
+/// For each doge to mint, the client must pass 2 accounts in remaining_accounts:
+/// 1. doge_asset (Signer, Writable) - The new Keypair for the egg
 /// 2.egg_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
@@ -107,7 +107,7 @@ pub fn int_batch_mint_eggs<'info>(
     );
 
     let global_config = &ctx.accounts.global_config;
-    let egg_config = &mut ctx.accounts.egg_config;
+    let doge_config = &mut ctx.accounts.egg_config;
     let player_data = &mut ctx.accounts.player_data;
 
     require!(
@@ -115,7 +115,7 @@ pub fn int_batch_mint_eggs<'info>(
         ErrorCode::InvalidFactionId
     );
     require!(
-        egg_config.eggs_minted + mint_count as u64 <= egg_config.max_supply,
+        doge_config.eggs_minted + mint_count as u64 <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
 
@@ -148,17 +148,17 @@ pub fn int_batch_mint_eggs<'info>(
 
     // Handle ticket tier selection and add free tickets (using pre-calculated ticket_amounts)
     let ticket_count =
-        add_tickets_to_player(player_data, egg_config, ticket_tier_index, total_price)?;
+        add_tickets_to_player(player_data, doge_config, ticket_tier_index, total_price)?;
 
-    // Mint each egg using remaining_accounts
+    // Mint each doge using remaining_accounts
     for i in 0..mint_count {
         let index = i as usize;
 
         // Get accounts from remaining_accounts
         // [asset_0, meta_0, asset_1, meta_1, ...]
         // Store keys first to avoid lifetime issues
-        let egg_asset_key = ctx.remaining_accounts[index * 2].key();
-        let egg_metadata_key = ctx.remaining_accounts[index * 2 + 1].key();
+        let doge_asset_key = ctx.remaining_accounts[index * 2].key();
+        let doge_metadata_key = ctx.remaining_accounts[index * 2 + 1].key();
 
         // Verify Asset is a Signer
         require!(
@@ -168,20 +168,20 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Verify Metadata PDA derivation
         let (expected_metadata, metadata_bump) = Pubkey::find_program_address(
-            &[DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset_key.as_ref()],
+            &[DOGE_METADATA_SEED.as_ref(), doge_asset_key.as_ref()],
             ctx.program_id,
         );
         require!(
-            egg_metadata_key == expected_metadata,
+            doge_metadata_key == expected_metadata,
             ErrorCode::InvalidAccount
         );
 
-        let current_mint_number = egg_config.eggs_minted + 1;
+        let current_mint_number = doge_config.eggs_minted + 1;
 
-        // Generate egg data (DNA, name, URI, multiplier)
+        // Generate doge data (DNA, name, URI, multiplier)
         let slot = Clock::get()?.slot + i as u64;
-        let (name, uri, dna, multiplier) = generate_egg_data(
-            egg_config,
+        let (name, uri, dna, multiplier) = generate_doge_data(
+            doge_config,
             current_mint_number,
             &ctx.accounts.user.key(),
             slot,
@@ -197,8 +197,8 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Get AccountInfo references for this iteration
         // Note: We must access these directly in the function call to avoid lifetime conflicts
-        let egg_asset_info = &ctx.remaining_accounts[index * 2];
-        let egg_metadata_info = &ctx.remaining_accounts[index * 2 + 1];
+        let doge_asset_info = &ctx.remaining_accounts[index * 2];
+        let doge_metadata_info = &ctx.remaining_accounts[index * 2 + 1];
 
         // Prepare collection account info (if exists) - must be done inline to avoid lifetime issues
         let collection_account_info = ctx
@@ -210,7 +210,7 @@ pub fn int_batch_mint_eggs<'info>(
         // Call create_mpl_core_asset with all accounts accessed directly
         // This avoids storing references that mix lifetimes from remaining_accounts and ctx.accounts
         crate::mpl_core_helpers::create_mpl_core_asset(
-            egg_asset_info,
+            doge_asset_info,
             collection_account_info.as_ref(),
             &ctx.accounts.collection_authority.to_account_info(),
             &ctx.accounts.user.to_account_info(),
@@ -224,13 +224,13 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Initialize Metadata PDA manually (since we can't use #[account(init)] with remaining_accounts)
         // Check if account already exists (shouldn't, but safety check)
-        if egg_metadata_info.lamports() == 0 {
+        if doge_metadata_info.lamports() == 0 {
             let space = EggMetadata::LEN;
             let rent = Rent::get()?.minimum_balance(space);
 
             let metadata_seeds = &[
-                DRAGON_DOGE_METADATA_SEED.as_ref(),
-                egg_asset_key.as_ref(),
+                DOGE_METADATA_SEED.as_ref(),
+                doge_asset_key.as_ref(),
                 &[metadata_bump],
             ];
             let metadata_signer = &[&metadata_seeds[..]];
@@ -241,7 +241,7 @@ pub fn int_batch_mint_eggs<'info>(
                     ctx.accounts.system_program.to_account_info(),
                     anchor_lang::system_program::CreateAccount {
                         from: ctx.accounts.user.to_account_info(),
-                        to: egg_metadata_info.to_account_info(),
+                        to: doge_metadata_info.to_account_info(),
                     },
                     metadata_signer, // The PDA must sign its own creation
                 ),
@@ -253,7 +253,7 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Write data to the metadata account (generation is in DNA bits 4-6)
         let metadata_data = EggMetadata {
-            mint: egg_asset_key,
+            mint: doge_asset_key,
             mom: Pubkey::default(),
             dad: Pubkey::default(),
             breed_count: 0,
@@ -271,7 +271,7 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Serialize into the account with Anchor discriminator
         // CRITICAL: Must write the 8-byte discriminator first, then serialize the struct
-        let mut data = egg_metadata_info.try_borrow_mut_data()?;
+        let mut data = doge_metadata_info.try_borrow_mut_data()?;
 
         // Ensure the account has enough space
         require!(data.len() >= EggMetadata::LEN, ErrorCode::InvalidParameters);
@@ -289,11 +289,11 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Emit event
         emit!(DogeMinted {
-            egg_metadata_account: egg_metadata_key,
-            egg_asset_signer: egg_asset_key,
+            doge_metadata_account: doge_metadata_key,
+            doge_asset_signer: doge_asset_key,
             owner: ctx.accounts.user.key(),
             player: ctx.accounts.player_data.key(),
-            mint: egg_asset_key,
+            mint: doge_asset_key,
             name: name.clone(),
             uri: uri.clone(),
             dna,
@@ -305,7 +305,7 @@ pub fn int_batch_mint_eggs<'info>(
             ticket_count,
         });
 
-        egg_config.eggs_minted += 1;
+        doge_config.eggs_minted += 1;
     }
 
     msg!(
@@ -315,8 +315,8 @@ pub fn int_batch_mint_eggs<'info>(
     );
     msg!(
         "   Total eggs minted: {} / {}",
-        egg_config.eggs_minted,
-        egg_config.max_supply
+        doge_config.eggs_minted,
+        doge_config.max_supply
     );
     Ok(())
 }
@@ -333,7 +333,7 @@ pub fn int_admin_mint_egg(
     ticket_tier_index: u8,
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
-    let egg_config = &mut ctx.accounts.egg_config;
+    let doge_config = &mut ctx.accounts.egg_config;
 
     // Verify recipient matches instruction parameter
     require!(
@@ -345,23 +345,23 @@ pub fn int_admin_mint_egg(
         ErrorCode::InvalidFactionId
     );
     require!(
-        egg_config.eggs_minted < egg_config.max_supply,
+        doge_config.eggs_minted < doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
 
     msg!(
-        "🎁 [admin_mint_egg] Admin minting free egg to recipient: {}",
+        "🎁 [admin_mint_egg] Admin minting free doge to recipient: {}",
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
-    msg!("   Doge number: {}", egg_config.eggs_minted + 1);
+    msg!("   Doge number: {}", doge_config.eggs_minted + 1);
 
-    let current_mint_number = egg_config.eggs_minted + 1;
+    let current_mint_number = doge_config.eggs_minted + 1;
 
-    // Generate egg data (DNA, name, URI, multiplier)
+    // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
-    let (name, uri, dna, multiplier) = generate_egg_data(
-        egg_config,
+    let (name, uri, dna, multiplier) = generate_doge_data(
+        doge_config,
         current_mint_number,
         &recipient,
         slot,
@@ -401,38 +401,38 @@ pub fn int_admin_mint_egg(
     // Calculate actual price using bonding curve (same as regular mint)
     // This is used for ticket calculations - admin mint doesn't charge SOL but tickets are calculated based on actual price
     let cost_per_egg = crate::genescience::compute_gene_price(
-        egg_config.base_price,
-        egg_config.curve_a,
-        egg_config.eggs_minted,
+        doge_config.base_price,
+        doge_config.curve_a,
+        doge_config.eggs_minted,
     )?;
 
     msg!(
-        "   Calculated egg price: {} lamports (for ticket calculation)",
+        "   Calculated doge price: {} lamports (for ticket calculation)",
         cost_per_egg as f64 / 1e9
     );
 
     // Initialize Doge metadata
-    let egg_metadata = &mut ctx.accounts.egg_metadata;
-    egg_metadata.mint = ctx.accounts.egg_asset.key();
-    egg_metadata.mom = Pubkey::default();
-    egg_metadata.dad = Pubkey::default();
-    egg_metadata.breed_count = 0;
-    egg_metadata.cooldown_end = 0;
-    egg_metadata.accumulated_val = 0;
-    egg_metadata.dna = dna;
-    egg_metadata.incubated_player_data = Pubkey::default();
-    egg_metadata.multiplier = multiplier;
-    egg_metadata.faction_id = faction_id;
-    egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    egg_metadata.created_at = Clock::get()?.unix_timestamp;
-    egg_metadata.xp = 0;
-    egg_metadata.bump = ctx.bumps.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    doge_metadata.mint = ctx.accounts.egg_asset.key();
+    doge_metadata.mom = Pubkey::default();
+    doge_metadata.dad = Pubkey::default();
+    doge_metadata.breed_count = 0;
+    doge_metadata.cooldown_end = 0;
+    doge_metadata.accumulated_val = 0;
+    doge_metadata.dna = dna;
+    doge_metadata.incubated_player_data = Pubkey::default();
+    doge_metadata.multiplier = multiplier;
+    doge_metadata.faction_id = faction_id;
+    doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    doge_metadata.created_at = Clock::get()?.unix_timestamp;
+    doge_metadata.xp = 0;
+    doge_metadata.bump = ctx.bumps.egg_metadata;
 
     // Handle ticket tier selection and add free tickets (using actual price)
-    let ticket_count = if egg_config.ticket_tiers.len() > 0 {
+    let ticket_count = if doge_config.ticket_tiers.len() > 0 {
         add_tickets_to_player(
             &mut ctx.accounts.player_data,
-            egg_config,
+            doge_config,
             ticket_tier_index,
             cost_per_egg,
         )?
@@ -440,20 +440,20 @@ pub fn int_admin_mint_egg(
         0
     };
 
-    // Update egg config stats
-    egg_config.eggs_minted += 1;
+    // Update doge config stats
+    doge_config.eggs_minted += 1;
     msg!(
         "   Total eggs minted: {} / {}",
-        egg_config.eggs_minted,
-        egg_config.max_supply
+        doge_config.eggs_minted,
+        doge_config.max_supply
     );
 
     emit!(DogeMinted {
-        egg_metadata_account: egg_metadata.key(),
-        egg_asset_signer: ctx.accounts.egg_asset.key(),
+        doge_metadata_account: doge_metadata.key(),
+        doge_asset_signer: ctx.accounts.egg_asset.key(),
         owner: recipient,
         player: ctx.accounts.player_data.key(),
-        mint: egg_metadata.mint,
+        mint: doge_metadata.mint,
         name,
         uri,
         dna,
@@ -467,7 +467,7 @@ pub fn int_admin_mint_egg(
 
     msg!(
         "✅ Admin minted Doge #{} for faction {} to recipient {}",
-        egg_config.eggs_minted,
+        doge_config.eggs_minted,
         faction_id,
         recipient
     );
@@ -475,15 +475,15 @@ pub fn int_admin_mint_egg(
 }
 
 /// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
-/// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
-/// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
+/// Users can stake up to 5 eggs, each additional doge increases multiplier by 0.5x
+/// Multipliers: 1 doge = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
 pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
-    let egg_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
-    let egg_mint = egg_metadata.mint;
-    let egg_multiplier = egg_metadata.multiplier;
+    let doge_mint = doge_metadata.mint;
+    let doge_multiplier = doge_metadata.multiplier;
 
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
@@ -494,12 +494,12 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     );
     // Check if already incubated (using Pubkey::default() instead of None)
     require!(
-        egg_metadata.incubated_player_data == Pubkey::default(),
+        doge_metadata.incubated_player_data == Pubkey::default(),
         ErrorCode::DogeAlreadyAtGuard
     );
     require!(
-        egg_metadata.faction_id == player_data.faction_id
-            && egg_metadata.faction_id == faction_state.faction_id,
+        doge_metadata.faction_id == player_data.faction_id
+            && doge_metadata.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
     require!(
@@ -537,16 +537,16 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
             faction_state,
         )?;
 
-    // Add egg to player's staked eggs list
+    // Add doge to player's staked eggs list
     player_data.staked_eggs.push(egg_mint);
 
     // Calculate new multiplier based on number of staked eggs
     let old_multiplier = player_data.egg_multiplier as u64;
     let new_multiplier =
-        calc_player_multiplier(old_multiplier as u16, egg_multiplier as u16, true) as u64;
+        calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, true) as u64;
     player_data.egg_multiplier = new_multiplier as u16;
     msg!(
-        "⚡ Updated egg multiplier: ({})x",
+        "⚡ Updated doge multiplier: ({})x",
         player_data.egg_multiplier as f64 / 100.0
     );
 
@@ -600,19 +600,19 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     faction_state.eggs_staked += 1;
     msg!("   Faction eggs staked: {} ", faction_state.eggs_staked);
 
-    // Update egg metadata
+    // Update doge metadata
     // Set new owner (using Pubkey instead of Option)
-    egg_metadata.incubated_player_data = player_data.owner;
-    egg_metadata.last_update_ts = current_time;
+    doge_metadata.incubated_player_data = player_data.owner;
+    doge_metadata.last_update_ts = current_time;
     msg!("   Doge metadata updated");
 
     // Emit event for indexing
     emit!(EggStaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
-        egg_mint: egg_mint,
+        doge_mint: doge_mint,
         faction_id: player_data.faction_id,
-        egg_metadata_account: egg_metadata.key(),
+        doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.egg_multiplier,
         minebtc_hashpower: player_data.minebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
@@ -624,13 +624,13 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
 
 /// Unstake a Doge (reduces multiplier and recalculates hashpower)
 pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
-    let egg_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
-    let egg_mint = egg_metadata.mint;
-    let incubated_by_player = egg_metadata.incubated_player_data;
+    let doge_mint = doge_metadata.mint;
+    let incubated_by_player = doge_metadata.incubated_player_data;
     let current_time = Clock::get()?.unix_timestamp;
-    let egg_multiplier = egg_metadata.multiplier;
+    let doge_multiplier = doge_metadata.multiplier;
 
     // Verify NFT is in custody PDA
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
@@ -640,12 +640,12 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     );
     // Verify ownership (using Pubkey::default() check instead of is_some())
     require!(
-        egg_metadata.incubated_player_data != Pubkey::default(),
+        doge_metadata.incubated_player_data != Pubkey::default(),
         ErrorCode::DogeNotAtGuard
     );
     require!(
-        egg_metadata.faction_id == player_data.faction_id
-            && egg_metadata.faction_id == faction_state.faction_id,
+        doge_metadata.faction_id == player_data.faction_id
+            && doge_metadata.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
     require!(
@@ -671,15 +671,15 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
             faction_state,
         )?;
 
-    // Remove egg from player's staked eggs list
+    // Remove doge from player's staked eggs list
     if let Some(index) = player_data
         .staked_eggs
         .iter()
-        .position(|&mint| mint == egg_mint)
+        .position(|&mint| mint == doge_mint)
     {
         player_data.staked_eggs.remove(index);
         msg!(
-            "   Removed egg from staked eggs. Remaining: {}",
+            "   Removed doge from staked eggs. Remaining: {}",
             player_data.staked_eggs.len()
         );
     } else {
@@ -689,10 +689,10 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     // Calculate new multiplier based on number of staked eggs
     let old_multiplier = player_data.egg_multiplier as u64;
     let new_multiplier =
-        calc_player_multiplier(old_multiplier as u16, egg_multiplier as u16, false) as u64;
+        calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, false) as u64;
     player_data.egg_multiplier = new_multiplier as u16;
     msg!(
-        "⚡ Updated egg multiplier: ({})x",
+        "⚡ Updated doge multiplier: ({})x",
         player_data.egg_multiplier as f64 / 100.0
     );
 
@@ -744,15 +744,15 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
         faction_state.eggs_staked
     );
 
-    // Update egg metadata
+    // Update doge metadata
     // Clear owner (Set back to default using Pubkey::default() instead of None)
-    egg_metadata.incubated_player_data = Pubkey::default();
-    egg_metadata.last_update_ts = current_time;
+    doge_metadata.incubated_player_data = Pubkey::default();
+    doge_metadata.last_update_ts = current_time;
     msg!("   Doge metadata updated");
 
     // Transfer NFT back to user (unlock it)
     msg!("🔓 Transferring NFT back to user (unlocking)");
-    let custody_seeds = &[DRAGON_DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
@@ -773,10 +773,10 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     emit!(EggUnstaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
-        egg_mint: egg_mint,
-        egg_metadata_account: egg_metadata.key(),
+        doge_mint: doge_mint,
+        doge_metadata_account: doge_metadata.key(),
         faction_id: player_data.faction_id,
-        egg_multiplier: egg_multiplier,
+        doge_multiplier: doge_multiplier,
         minebtc_hashpower: player_data.minebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
@@ -785,21 +785,21 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     Ok(())
 }
 
-/// Send an egg to heaven (burn it) to claim accumulated rewards
+/// Send an doge to heaven (burn it) to claim accumulated rewards
 pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
-    let egg_config = &mut ctx.accounts.egg_config;
-    let egg_metadata = &ctx.accounts.egg_metadata;
-    let accumulated_val = egg_metadata.accumulated_val;
+    let doge_config = &mut ctx.accounts.egg_config;
+    let doge_metadata = &ctx.accounts.egg_metadata;
+    let accumulated_val = doge_metadata.accumulated_val;
     let current_time = Clock::get()?.unix_timestamp;
 
     // Verify not incubated (should be default if user holds it, but double check)
     require!(
-        egg_metadata.incubated_player_data == Pubkey::default(),
+        doge_metadata.incubated_player_data == Pubkey::default(),
         ErrorCode::DogeAlreadyAtGuard
     );
 
-    egg_config.eggs_minted -= 1;
+    doge_config.eggs_minted -= 1;
 
     msg!("🔥 Burning Doge NFT to send to heaven...");
     msg!("   Accumulated Value: {}", accumulated_val);
@@ -850,7 +850,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
     // Emit event
     emit!(EggSentToHeaven {
-        egg_mint: egg_metadata.mint,
+        doge_mint: doge_metadata.mint,
         user: ctx.accounts.user.key(),
         accumulated_val,
         timestamp: current_time,
@@ -863,7 +863,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
 /// Breed two eggs to create offspring (both parents must not be incubated, same faction)
 pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
-    let egg_config = &mut ctx.accounts.egg_config;
+    let doge_config = &mut ctx.accounts.egg_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
     let clock = Clock::get()?;
@@ -875,7 +875,7 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
 
     // Validate breeding is allowed
     require!(egg_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
-    require!(egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
+    require!(egg_config.eggs_minted < doge_config.max_supply, ErrorCode::InvalidParameters);
     
     // Validate parents are not incubated
     require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
@@ -900,9 +900,9 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
 
     // Calculate breeding cost
     let breed_cost = crate::genescience::compute_gene_price(
-        egg_config.breed_base_price,
-        egg_config.breed_curve_a,
-        egg_config.eggs_minted,
+        doge_config.breed_base_price,
+        doge_config.breed_curve_a,
+        doge_config.eggs_minted,
     )?;
     msg!("   Breed cost: {} SOL", breed_cost as f64 / 1e9);
 
@@ -936,9 +936,9 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
 
     // Create offspring NFT
-    let current_mint_number = egg_config.eggs_minted + 1;
+    let current_mint_number = doge_config.eggs_minted + 1;
     let name = format!("Doge #{}", current_mint_number);
-    let uri = egg_config.egg_uris[mom.faction_id as usize].clone();
+    let uri = doge_config.egg_uris[mom.faction_id as usize].clone();
 
     let collection_authority_bump = ctx.bumps.collection_authority;
     let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
@@ -982,14 +982,14 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     dad.breed_count += 1;
     dad.cooldown_end = current_time + dad_cooldown;
 
-    egg_config.eggs_minted += 1;
+    doge_config.eggs_minted += 1;
 
     msg!("✅ Bred offspring #{} from {} x {}", current_mint_number, mom.mint, dad.mint);
     msg!("   Mom next cooldown: {}s, Dad next cooldown: {}s", mom_cooldown, dad_cooldown);
 
     emit!(DogeMinted {
-        egg_metadata_account: offspring.key(),
-        egg_asset_signer: ctx.accounts.offspring_asset.key(),
+        doge_metadata_account: offspring.key(),
+        doge_asset_signer: ctx.accounts.offspring_asset.key(),
         owner: ctx.accounts.user.key(),
         player: ctx.accounts.player_data.key(),
         mint: offspring.mint,
@@ -1011,9 +1011,9 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
 // -------------- HELPER FUNCTIONS ---------------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Generate egg data (DNA, name, URI, multiplier) for a new egg
-pub fn generate_egg_data(
-    egg_config: &EggConfig,
+/// Generate doge data (DNA, name, URI, multiplier) for a new egg
+pub fn generate_doge_data(
+    doge_config: &EggConfig,
     mint_number: u64,
     user_key: &Pubkey,
     slot_offset: u64,
@@ -1026,7 +1026,7 @@ pub fn generate_egg_data(
         faction_id,
     )?;
     let name = format!("Doge #{}", mint_number);
-    let uri = egg_config.egg_uris[faction_id as usize].clone();
+    let uri = doge_config.egg_uris[faction_id as usize].clone();
     let multiplier = BASE_MULTIPLIER;
 
     Ok((name, uri, dna, multiplier))
@@ -1035,16 +1035,16 @@ pub fn generate_egg_data(
 /// Add tickets to player based on price and ticket tier
 fn add_tickets_to_player(
     player_data: &mut PlayerData,
-    egg_config: &EggConfig,
+    doge_config: &EggConfig,
     ticket_tier_index: u8,
     price: u64,
 ) -> Result<u64> {
     require!(
-        (ticket_tier_index as usize) < egg_config.ticket_tiers.len(),
+        (ticket_tier_index as usize) < doge_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
     );
     require!(
-        egg_config.ticket_tiers.len() == 3,
+        doge_config.ticket_tiers.len() == 3,
         ErrorCode::InvalidParameters
     );
 
@@ -1098,15 +1098,15 @@ fn update_faction_hashpower(
         faction_state.total_lp_hashpower - old_lp_hashpower + new_lp_hashpower;
 }
 
-fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add: bool) -> u16 {
+fn calc_player_multiplier(existing_multiplier: u16, doge_multiplier: u16, to_add: bool) -> u16 {
     if to_add {
-        let new_multiplier = existing_multiplier + egg_multiplier;
+        let new_multiplier = existing_multiplier + doge_multiplier;
         if new_multiplier > MAX_MULTIPLIER {
             return MAX_MULTIPLIER;
         }
         return new_multiplier;
     } else {
-        let new_multiplier = existing_multiplier - egg_multiplier;
+        let new_multiplier = existing_multiplier - doge_multiplier;
         if new_multiplier < 100 {
             return 100;
         }
@@ -1115,7 +1115,7 @@ fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add:
 }
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON DOGE ACCOUNT CONTEXTS ---------------------------------------------
+// --------------  DOGE ACCOUNT CONTEXTS ---------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 #[derive(Accounts)]
@@ -1123,9 +1123,9 @@ fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add:
 pub struct SimulateMintCost<'info> {
     #[account(
         seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = egg_config.bump
+        bump = doge_config.bump
     )]
-    pub egg_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, EggConfig>,
 }
 
 #[derive(Accounts)]
@@ -1141,11 +1141,11 @@ pub struct MintEgg<'info> {
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = egg_config.bump
+        bump = doge_config.bump
     )]
-    pub egg_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, EggConfig>,
 
-    /// CHECK: Doge treasury PDA (for egg minting fees)
+    /// CHECK: Doge treasury PDA (for doge minting fees)
     #[account(
         mut,
         seeds = [DOGES_TREASURY_SEED.as_ref()],
@@ -1185,20 +1185,20 @@ pub struct MintEgg<'info> {
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = user,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
         bump
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -1231,9 +1231,9 @@ pub struct BatchMintDoge<'info> {
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = egg_config.bump,
+        bump = doge_config.bump,
     )]
-    pub egg_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, EggConfig>,
 
     #[account(
         mut,
@@ -1243,7 +1243,7 @@ pub struct BatchMintDoge<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    /// CHECK: Doge treasury PDA (for egg minting fees)
+    /// CHECK: Doge treasury PDA (for doge minting fees)
     #[account(
         mut,
         seeds = [DOGES_TREASURY_SEED.as_ref()],
@@ -1274,7 +1274,7 @@ pub struct BatchMintDoge<'info> {
 
     /// CHECK: Doge collection (Metaplex Core)
     #[account(mut)]
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
     #[account(
@@ -1312,9 +1312,9 @@ pub struct AdminMintEgg<'info> {
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = egg_config.bump,
+        bump = doge_config.bump,
     )]
-    pub egg_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, EggConfig>,
 
     /// CHECK: Recipient account (will receive the NFT)
     #[account(mut)]
@@ -1332,20 +1332,20 @@ pub struct AdminMintEgg<'info> {
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = authority,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
         bump
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -1383,27 +1383,27 @@ pub struct StakeEgg<'info> {
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
-        bump = egg_metadata.bump,
-        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
-        seeds = [DRAGON_DOGE_CUSTODY_SEED],
+        seeds = [DOGE_CUSTODY_SEED],
         bump
     )]
     /// CHECK: PDA for NFT custody
-    pub egg_custody_pda: UncheckedAccount<'info>,
+    pub doge_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
@@ -1437,27 +1437,27 @@ pub struct UnstakeEgg<'info> {
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
-        bump = egg_metadata.bump,
-        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
-        seeds = [DRAGON_DOGE_CUSTODY_SEED],
+        seeds = [DOGE_CUSTODY_SEED],
         bump
     )]
     /// CHECK: PDA for NFT custody
-    pub egg_custody_pda: UncheckedAccount<'info>,
+    pub doge_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
@@ -1473,26 +1473,26 @@ pub struct SendToHeaven<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
-    pub egg_config: Account<'info, EggConfig>,
+    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = doge_config.bump)]
+    pub doge_config: Account<'info, EggConfig>,
 
     #[account(
         mut,
         close = user,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
-        bump = egg_metadata.bump,
-        constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub egg_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, EggMetadata>,
 
     /// Metaplex Core asset (will be burnt)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper (implicit in burn)
-    pub egg_asset: UncheckedAccount<'info>,
+    pub doge_asset: UncheckedAccount<'info>,
 
     /// Optional collection account for the Egg
     /// CHECK: Optional collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
     #[account(address = MPL_CORE_PROGRAM_ID)]
@@ -1544,8 +1544,8 @@ pub struct BreedDoge<'info> {
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
-    pub egg_config: Account<'info, EggConfig>,
+    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = doge_config.bump)]
+    pub doge_config: Account<'info, EggConfig>,
 
     #[account(
         mut,
@@ -1583,7 +1583,7 @@ pub struct BreedDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
         bump = mom_metadata.bump,
         constraint = mom_metadata.mint == mom_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1595,7 +1595,7 @@ pub struct BreedDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
         bump = dad_metadata.bump,
         constraint = dad_metadata.mint == dad_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1609,13 +1609,13 @@ pub struct BreedDoge<'info> {
         init,
         payer = user,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
         bump
     )]
     pub offspring_metadata: Box<Account<'info, EggMetadata>>,
 
     /// CHECK: Doge collection
-    pub egg_collection: Option<UncheckedAccount<'info>>,
+    pub doge_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
     #[account(seeds = [COLLECTION_AUTHORITY_SEED.as_ref()], bump)]

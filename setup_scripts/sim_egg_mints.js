@@ -169,7 +169,7 @@ function simulateEggMints() {
     let totalTreasury = 0;
     let totalPrice = 0;
     
-    // Track every Nth egg (for display)
+    // Track every Nth doge (for display)
     const displayInterval = Math.max(1, Math.floor(TOTAL_SUPPLY / 50)); // Show ~50 eggs
     
     for (let eggNumber = 1; eggNumber <= TOTAL_SUPPLY; eggNumber++) {
@@ -187,7 +187,7 @@ function simulateEggMints() {
         totalDev += fees.dev;
         totalTreasury += fees.treasury;
         
-        // Display every Nth egg or last 10 eggs
+        // Display every Nth doge or last 10 eggs
         const shouldDisplay = (eggNumber % displayInterval === 0) || 
                              (eggNumber > TOTAL_SUPPLY - 10) ||
                              eggNumber === 1 ||

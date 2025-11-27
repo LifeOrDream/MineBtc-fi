@@ -240,7 +240,7 @@ async function main() {
   }
 
   try {
-    // 1. Initialize MineBTC Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Eggs Treasury)
+    // 1. Initialize MineBTC Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Doge Treasury)
     await initializeMinebtcProgram(minebtcProgram);
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
@@ -252,16 +252,16 @@ async function main() {
 
     // 1.6. Update Fees (if needed - can be called anytime after initialization)
     // Example usage:
-    // await updateFees(minebtcProgram, {
-    //     newProtocolFeePct: 10, // 10,
-    //     newBuybackPct: null, //40,
-    //     newStakersPct: null, //50,
-    //     changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
-    //     snapshotInterval:  10, // 30 minutes in seconds
-    // });
-    // return;
+    await updateFees(minebtcProgram, {
+        newProtocolFeePct: 10, // 10,
+        newBuybackPct: null, //40,
+        newStakersPct: null, //50,
+        changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
+        snapshotInterval:  10, // 30 minutes in seconds
+    });
+    return;
 
-    // 1.7. Update Egg Config (if needed - can be called anytime after initialization)
+    // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // Example usage:
     // await updateEggConfig(minebtcProgram, {
     //     basePrice: 100000000, // 1 SOL in lamports
@@ -293,16 +293,16 @@ async function main() {
         // 7. Initialize EggConfig
     await initializeEggConfig(minebtcProgram);
 
-        // 8. Create Egg Collection
+        // 8. Create Doge Collection
     await createEggCollection(minebtcProgram);
 
-        // 9. Set Egg URIs (one per faction)
+        // 9. Set Doge URIs (one per faction)
     await setEggUris(minebtcProgram);
 
-        // 10. Initialize Egg Royalties
+        // 10. Initialize Doge Royalties
     await initializeEggRoyalties(minebtcProgram);
 
-        // 11. Configure Ticket Tiers (for Egg minting)
+        // 11. Configure Ticket Tiers (for Doge minting)
     await configureTicketTiers(minebtcProgram);
 
         // 12. Initialize Tax Config (for tax distribution)
@@ -1302,7 +1302,7 @@ async function initializeEggConfig(minebtcProgram) {
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ INITIALIZING EGG CONFIG ] ==================="
+    "\n=================== [ INITIALIZING DOGE CONFIG ] ==================="
   );
 
   const globalConfigPDA = new PublicKey(
@@ -1314,14 +1314,14 @@ async function initializeEggConfig(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    // Get egg config values
+    // Get doge config values
     const basePrice = config.eggs_config.base_price; 
     const curveA = config.eggs_config.curve_a; // Curve steepness
     const maxSupply = config.eggs_config.max_supply; // Max 10k eggs
 
     if (!basePrice || !curveA || !maxSupply) {
-    console.error(COLOR_ERROR, "❌ Egg config values not found in config.json");
-    throw new Error("Egg config values not found");
+    console.error(COLOR_ERROR, "❌ Doge config values not found in config.json");
+    throw new Error("Doge config values not found");
     }
 
     console.log(COLOR_INFO, `🔑 EggConfig PDA: ${eggsConfigPDA.toString()}`);
@@ -1368,7 +1368,7 @@ async function initializeEggConfig(minebtcProgram) {
 
 async function createEggCollection(minebtcProgram) {
     if (deploymentFile.egg_collection_created) {
-    console.log(COLOR_INFO, "ℹ️ Egg collection already created");
+    console.log(COLOR_INFO, "ℹ️ Doge collection already created");
     console.log(
       COLOR_INFO,
       "🔑 Collection Address:",
@@ -1379,7 +1379,7 @@ async function createEggCollection(minebtcProgram) {
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ CREATING DRAGON EGG COLLECTION ] ==================="
+    "\n=================== [ CREATING  DOGE COLLECTION ] ==================="
   );
 
     // Derive PDAs
@@ -1434,7 +1434,7 @@ async function createEggCollection(minebtcProgram) {
 
     console.log(
       COLOR_SUCCESS,
-      "✅ Egg collection created successfully!"
+      "✅ Doge collection created successfully!"
     );
     console.log(
       COLOR_INFO,
@@ -1466,19 +1466,19 @@ async function setEggUris(minebtcProgram) {
     if (!deploymentFile.egg_collection_created) {
     console.error(
       COLOR_ERROR,
-      "❌ Egg collection must be created first"
+      "❌ Doge collection must be created first"
     );
     throw new Error("Collection not created");
     }
 
     if (deploymentFile.egg_uris_set) {
-    console.log(COLOR_INFO, "ℹ️ Egg URIs already set");
+    console.log(COLOR_INFO, "ℹ️ Doge URIs already set");
         return;
     }
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ SETTING DRAGON EGG URIS ] ==================="
+    "\n=================== [ SETTING  DOGE URIS ] ==================="
   );
 
   const globalConfigPDA = new PublicKey(
@@ -1510,7 +1510,7 @@ async function setEggUris(minebtcProgram) {
             })
             .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ Egg URIs set successfully!");
+    console.log(COLOR_SUCCESS, "✅ Doge URIs set successfully!");
     console.log(COLOR_DIM, "🔗 Transaction:", tx);
 
         deploymentFile.egg_uris_set = {
@@ -1520,7 +1520,7 @@ async function setEggUris(minebtcProgram) {
         };
         saveDeploymentData();
     } catch (error) {
-    console.error(COLOR_ERROR, "❌ Failed to set Egg URIs:", error);
+    console.error(COLOR_ERROR, "❌ Failed to set Doge URIs:", error);
         throw error;
     }
 }
@@ -1529,14 +1529,14 @@ async function initializeEggRoyalties(minebtcProgram) {
     if (deploymentFile.egg_royalties_initialized) {
     console.log(
       COLOR_INFO,
-      "ℹ️ Egg royalties already initialized. Skipping..."
+      "ℹ️ Doge royalties already initialized. Skipping..."
     );
         return;
     }
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ INITIALIZING DRAGON EGG ROYALTIES ] ==================="
+    "\n=================== [ INITIALIZING  DOGE ROYALTIES ] ==================="
   );
 
   const globalConfigPDA = new PublicKey(
@@ -1608,7 +1608,7 @@ async function initializeEggRoyalties(minebtcProgram) {
             })
             .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ Egg royalties initialized!");
+    console.log(COLOR_SUCCESS, "✅ Doge royalties initialized!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.egg_royalties_initialized = {
@@ -1661,17 +1661,14 @@ async function configureTicketTiers(minebtcProgram) {
 
     for (const tier of ticketTiers) {
     console.log(
-      `   Tier ${tier.tier_index}: ${tier.ticket_value / 1e9} SOL × ${
-        tier.ticket_count
-      } tickets`
+      `   Tier ${tier.tier_index}: ${tier.ticket_value / 1e9} SOL`
     );
 
     try {
       const tx = await minebtcProgram.methods
                 .addTicketTierConfig(
                     tier.tier_index,
-                    new BN(tier.ticket_value),
-                    tier.ticket_count
+                    new BN(tier.ticket_value)
                 )
                 .accounts({
                     globalConfig: globalConfigPDA,
@@ -2285,23 +2282,23 @@ async function updateFees(minebtcProgram, feeConfig) {
 async function updateEggConfig(minebtcProgram, eggConfig) {
   console.log(
     COLOR_STEP,
-    "\n================ [ UPDATING EGG CONFIG ] ================"
+    "\n================ [ UPDATING DOGE CONFIG ] ================"
   );
 
   // Check if program is initialized
   if (!deploymentFile.minebtc_program_initialized) {
     console.log(
       COLOR_WARNING,
-      "⚠️ MineBTC program not initialized. Skipping egg config update..."
+      "⚠️ MineBTC program not initialized. Skipping doge config update..."
     );
     return;
   }
 
-  // Check if egg config is initialized
+  // Check if doge config is initialized
   if (!deploymentFile.egg_config_initialized) {
     console.log(
       COLOR_WARNING,
-      "⚠️ Egg config not initialized. Please initialize it first."
+      "⚠️ Doge config not initialized. Please initialize it first."
     );
     return;
   }
@@ -2322,7 +2319,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       eggsConfigPDA
     );
 
-    console.log(COLOR_INFO, "   Current Egg Config:");
+    console.log(COLOR_INFO, "   Current Doge Config:");
     console.log(
       COLOR_INFO,
       `     Base Price: ${eggsConfig.basePrice.toString()} lamports (${eggsConfig.basePrice.toNumber() / 1e9} SOL)`
@@ -2344,7 +2341,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       ? new BN(eggConfig.curveA)
       : new BN(config.eggs_config.curve_a);
 
-    console.log(COLOR_INFO, "\n   Updating Egg Config:");
+    console.log(COLOR_INFO, "\n   Updating Doge Config:");
     console.log(
       COLOR_INFO,
       `     Base Price: ${basePrice.toString()} lamports (${basePrice.toNumber() / 1e9} SOL)`
@@ -2355,7 +2352,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       COLOR_INFO,
       `   Global Config PDA: ${globalConfigPDA.toString()}`
     );
-    console.log(COLOR_INFO, `   Eggs Config PDA: ${eggsConfigPDA.toString()}`);
+    console.log(COLOR_INFO, `   Doge Config PDA: ${eggsConfigPDA.toString()}`);
     console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
 
     // Build and send transaction
@@ -2369,7 +2366,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       })
       .rpc();
 
-    console.log(COLOR_SUCCESS, `✅ Egg config updated successfully!`);
+    console.log(COLOR_SUCCESS, `✅ Doge config updated successfully!`);
     console.log(COLOR_DIM, `   Transaction: ${tx}`);
     console.log(
       COLOR_DIM,
@@ -2389,7 +2386,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
 
     saveDeploymentData();
   } catch (error) {
-    console.error(COLOR_ERROR, "❌ Failed to update egg config:", error);
+    console.error(COLOR_ERROR, "❌ Failed to update doge config:", error);
     throw error;
   }
 }
@@ -2558,17 +2555,17 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    `  • Egg Collection: ${
+    `  • Doge Collection: ${
       deploymentFile.egg_collection_created ? "✅" : "❌"
     }`
   );
   console.log(
     COLOR_INFO,
-    `  • Egg URIs: ${deploymentFile.egg_uris_set ? "✅" : "❌"}`
+    `  • Doge URIs: ${deploymentFile.egg_uris_set ? "✅" : "❌"}`
   );
   console.log(
     COLOR_INFO,
-    `  • Egg Royalties: ${
+    `  • Doge Royalties: ${
       deploymentFile.egg_royalties_initialized ? "✅" : "❌"
     }`
   );
@@ -2620,7 +2617,7 @@ function printCompletionSummary() {
         if (deploymentFile.egg_collection_created) {
       console.log(
         COLOR_DIM,
-        `   Egg Collection: ${deploymentFile.egg_collection_created.collection_address}`
+        `   Doge Collection: ${deploymentFile.egg_collection_created.collection_address}`
       );
         }
         if (deploymentFile.game_state_initialized) {
@@ -2638,7 +2635,7 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    "   2. Users can mint Eggs for their factions"
+    "   2. Users can mint Doge for their factions"
   );
   console.log(COLOR_INFO, "   3. Users can stake DogeBtc and LP tokens");
   console.log(

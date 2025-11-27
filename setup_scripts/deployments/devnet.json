@@ -259,26 +259,26 @@
   },
   "egg_collection_created": {
     "collection_address": "e5egNeYHF2BAAYhvcEE7YMNHZRjtyqFR5vSgUbAFfVE",
-    "collection_name": "DogeTech Eggs",
-    "collection_uri": "https://arweave.net/dragon-egg-collection-metadata.json",
+    "collection_name": "DogeTech Doge",
+    "collection_uri": "https://arweave.net/doge-collection-metadata.json",
     "collection_authority": "EzTKtgVWhoraeAGJRiEdau4i57SGfGtGmoSpokVtPsLD",
     "tx_signature": "5HLtLFaV2zFRARA92fevH3C4F6ijEkjazbCaNQxQLVpnhcaTANM5xrrtmmvTieGBiDyb9ptFGGBLbXU1BLGeNTWP",
     "timestamp": "2025-11-24T18:51:55.542Z"
   },
   "egg_uris_set": {
     "uris": [
-      "https://arweave.net/dragon-egg-usa.json",
-      "https://arweave.net/dragon-egg-china.json",
-      "https://arweave.net/dragon-egg-russia.json",
-      "https://arweave.net/dragon-egg-india.json",
-      "https://arweave.net/dragon-egg-japan.json",
-      "https://arweave.net/dragon-egg-korea.json",
-      "https://arweave.net/dragon-egg-vietnam.json",
-      "https://arweave.net/dragon-egg-philippines.json",
-      "https://arweave.net/dragon-egg-northkorea.json",
-      "https://arweave.net/dragon-egg-france.json",
-      "https://arweave.net/dragon-egg-brazil.json",
-      "https://arweave.net/dragon-egg-argentina.json"
+      "https://arweave.net/doge-usa.json",
+      "https://arweave.net/doge-china.json",
+      "https://arweave.net/doge-russia.json",
+      "https://arweave.net/doge-india.json",
+      "https://arweave.net/doge-japan.json",
+      "https://arweave.net/doge-korea.json",
+      "https://arweave.net/doge-vietnam.json",
+      "https://arweave.net/doge-philippines.json",
+      "https://arweave.net/doge-northkorea.json",
+      "https://arweave.net/doge-france.json",
+      "https://arweave.net/doge-brazil.json",
+      "https://arweave.net/doge-argentina.json"
     ],
     "tx_signature": "65J2prhgq5jhDRpKVi7qVkJZkXUkXzbKAo3PvDiD5aFt8RBeiMYjuoSmHjUYUFpRHFqQt1c5NHWJ393pDL23ru3W",
     "timestamp": "2025-11-24T18:52:14.259Z"
@@ -303,19 +303,16 @@
       {
         "tier_index": 0,
         "ticket_value": 1000000,
-        "ticket_count": 1000,
         "tx_signature": "38DvHTiGUjHLPzTYvAKUaeGMAq6z23gVBty4EKWPaMMAawA9n1jHrQgjo6FDfnJVnSsku8KBUxYHQLpuWpsDYFgZ"
       },
       {
         "tier_index": 1,
         "ticket_value": 10000000,
-        "ticket_count": 100,
         "tx_signature": "5uYMb5so1kXoBvR36tLm57auahFHRvNg1Tb7Uwe7KYPpkE2y7XY3TvF21W6HHyMknFfmqprfVxFrKDDUzSsfjNcp"
       },
       {
         "tier_index": 2,
         "ticket_value": 100000000,
-        "ticket_count": 50,
         "tx_signature": "538PExoAZvCPWKES94TRpm5z8xqVSf2Udc8eEx1P5EF5HwshiFiynrWLCrrcDkNdxukLxuqz1QdZNJfT78yiWCoq"
       }
     ],
@@ -351,5 +348,16 @@
     ],
     "tx_signature": "3UyTsvBZv96AyBdWFVD1jBARuFWUDirbWPYKodHc1VdUXGaTLXVopS4nkVxKVpsrtDYTcEyitZBGJ349F9rvKPKP",
     "timestamp": "2025-11-24T18:53:33.827Z"
+  },
+  "fees_updated": {
+    "fee_config": {
+      "newProtocolFeePct": 10,
+      "newBuybackPct": null,
+      "newStakersPct": null,
+      "changeFactionFee": null,
+      "snapshotInterval": 10
+    },
+    "tx_signature": "A3fKkrWzjUQAPbryGkbMj914qQv1ddYa9rhfupWy3uAT2awSpG81dF249ZHoaCPHDMKJ5vP4Gff9jGYirpSAJxG",
+    "timestamp": "2025-11-25T09:24:37.597Z"
   }
 }
