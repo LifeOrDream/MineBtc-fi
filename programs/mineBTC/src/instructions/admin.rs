@@ -1084,7 +1084,7 @@ pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
 /// # Validation
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
-pub fn init_egg_royalties(
+pub fn init_egg_royalties_internal(
     ctx: Context<InitEggRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
@@ -1159,7 +1159,7 @@ pub fn init_egg_royalties(
 /// # Example
 /// - Tier 0: 0.01 SOL × 1000 tickets
 /// - Tier 1: 0.1 SOL × 10 tickets
-pub fn add_ticket_tier_config(
+pub fn add_ticket_tier_config_int(
     ctx: Context<UpdateEggsConfig>,
     ticket_tier_index: u8,
     ticket_value: u64,
@@ -2095,7 +2095,7 @@ pub struct InitializeSystemAccounts<'info> {
 /// Initializes:
 /// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
 /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
-pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+pub fn int_initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
     msg!("🔧 [initialize_custodian_accounts] Initializing custodian token accounts");
 
     // Verify MINEBTC custodian

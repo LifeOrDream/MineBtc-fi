@@ -31,7 +31,7 @@ use crate::state::*;
 /// Simulate mint costs for multiple eggs accounting for bonding curve pricing
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
 /// ticket_amounts_per_tier: Vec of (ticket_value, ticket_count) for each of the 3 ticket tiers
-pub fn simulate_mint_cost(
+pub fn int_simulate_mint_cost(
     egg_config: &EggConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
@@ -88,7 +88,7 @@ pub fn simulate_mint_cost(
 /// 2.egg_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
-pub fn batch_mint_eggs<'info>(
+pub fn int_batch_mint_eggs<'info>(
     ctx: Context<'_, '_, '_, 'info, BatchMintEggs<'info>>,
     faction_id: u8,
     mint_count: u8,
@@ -119,7 +119,7 @@ pub fn batch_mint_eggs<'info>(
         ErrorCode::InvalidParameters
     );
 
-    let (total_price, prices, _ticket_amounts) = simulate_mint_cost(egg_config, mint_count as u64)?;
+    let (total_price, prices, _ticket_amounts) = int_simulate_mint_cost(egg_config, mint_count as u64)?;
     msg!(
         "   Batch minting {} eggs, total cost: {} lamports",
         mint_count,
@@ -186,7 +186,6 @@ pub fn batch_mint_eggs<'info>(
             &ctx.accounts.user.key(),
             slot,
             faction_id,
-            egg_config.eggs_minted + i as u64,
         )?;
 
         // Create Metaplex Core Asset
@@ -327,7 +326,7 @@ pub fn batch_mint_eggs<'info>(
 // ----------------------------------------------------------------------------------------
 
 /// Admin function to mint a Egg NFT for free to a specified recipient
-pub fn admin_mint_egg(
+pub fn int_admin_mint_egg(
     ctx: Context<AdminMintEgg>,
     recipient: Pubkey,
     faction_id: u8,
@@ -367,7 +366,6 @@ pub fn admin_mint_egg(
         &recipient,
         slot,
         faction_id,
-        egg_config.eggs_minted,
     )?;
 
     // Get collection authority seeds
@@ -479,7 +477,7 @@ pub fn admin_mint_egg(
 /// Stake a Egg to boost hashpower (multiplier applies to staked minebtc and LP)
 /// Users can stake up to 5 eggs, each additional egg increases multiplier by 0.5x
 /// Multipliers: 1 egg = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
-pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
+pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -527,13 +525,13 @@ pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
 
     // Process pending rewards before updating position
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::update_minebtc_staking_rewards(
+        stake::int_update_minebtc_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::update_lp_staking_rewards(
+        stake::int_update_lp_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -625,7 +623,7 @@ pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
 }
 
 /// Unstake a Egg (reduces multiplier and recalculates hashpower)
-pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
+pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     let egg_metadata = &mut ctx.accounts.egg_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -661,13 +659,13 @@ pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 
     // Process pending rewards before updating position
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::update_minebtc_staking_rewards(
+        stake::int_update_minebtc_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::update_lp_staking_rewards(
+        stake::int_update_lp_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -788,7 +786,7 @@ pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 }
 
 /// Send an egg to heaven (burn it) to claim accumulated rewards
-pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
+pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
     let egg_metadata = &ctx.accounts.egg_metadata;
     let accumulated_val = egg_metadata.accumulated_val;
     let current_time = Clock::get()?.unix_timestamp;
@@ -860,7 +858,7 @@ pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 }
 
 /// Breed two eggs to create offspring (both parents must not be incubated, same faction)
-pub fn breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
+pub fn int_breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
     let egg_config = &mut ctx.accounts.egg_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
@@ -1016,7 +1014,6 @@ pub fn generate_egg_data(
     user_key: &Pubkey,
     slot_offset: u64,
     faction_id: u8,
-    eggs_minted_before: u64,
 ) -> Result<(String, String, [u8; 32], u32)> {
     let dna = crate::genescience::generate_genesis_dna(
         mint_number,
@@ -1537,18 +1534,11 @@ pub struct BreedEggs<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    #[account(
-        mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
-        bump = egg_config.bump,
-    )]
-    pub egg_config: Account<'info, EggConfig>,
+    #[account(mut, seeds = [EGG_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
+    pub egg_config: Box<Account<'info, EggConfig>>,
 
     #[account(
         mut,
@@ -1556,7 +1546,7 @@ pub struct BreedEggs<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     /// CHECK: Eggs treasury PDA
     #[account(mut, seeds = [EGGS_TREASURY_SEED.as_ref()], bump)]
@@ -1580,9 +1570,8 @@ pub struct BreedEggs<'info> {
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
 
-    /// Mom NFT asset
+    /// CHECK: Mom NFT asset - Verified via get_mpl_core_owner
     #[account(mut)]
-    /// CHECK: Verified via get_mpl_core_owner
     pub mom_asset: UncheckedAccount<'info>,
 
     #[account(
@@ -1591,11 +1580,10 @@ pub struct BreedEggs<'info> {
         bump = mom_metadata.bump,
         constraint = mom_metadata.mint == mom_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub mom_metadata: Account<'info, EggMetadata>,
+    pub mom_metadata: Box<Account<'info, EggMetadata>>,
 
-    /// Dad NFT asset
+    /// CHECK: Dad NFT asset - Verified via get_mpl_core_owner
     #[account(mut)]
-    /// CHECK: Verified via get_mpl_core_owner
     pub dad_asset: UncheckedAccount<'info>,
 
     #[account(
@@ -1604,11 +1592,10 @@ pub struct BreedEggs<'info> {
         bump = dad_metadata.bump,
         constraint = dad_metadata.mint == dad_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub dad_metadata: Account<'info, EggMetadata>,
+    pub dad_metadata: Box<Account<'info, EggMetadata>>,
 
-    /// Offspring NFT asset (new Keypair)
+    /// CHECK: Offspring NFT asset - Will be created via MPL Core CPI
     #[account(mut)]
-    /// CHECK: Will be created via MPL Core CPI
     pub offspring_asset: Signer<'info>,
 
     #[account(
@@ -1618,13 +1605,13 @@ pub struct BreedEggs<'info> {
         seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
         bump
     )]
-    pub offspring_metadata: Account<'info, EggMetadata>,
+    pub offspring_metadata: Box<Account<'info, EggMetadata>>,
 
     /// CHECK: Egg collection
     pub egg_collection: Option<UncheckedAccount<'info>>,
 
-    #[account(seeds = [COLLECTION_AUTHORITY_SEED.as_ref()], bump)]
     /// CHECK: Collection authority PDA
+    #[account(seeds = [COLLECTION_AUTHORITY_SEED.as_ref()], bump)]
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program

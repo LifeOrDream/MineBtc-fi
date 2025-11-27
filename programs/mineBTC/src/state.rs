@@ -811,13 +811,6 @@ pub struct PlayerData {
     /// The faction this player is assigned to
     pub faction_id: u8,
 
-    /// List of round IDs where the player has placed bets
-    /// Used to track rounds with unclaimed rewards or unclosed sessions
-    pub bets_rounds: Vec<u64>,
-    /// Corresponding SOL bet amounts for each round in bets_rounds
-    /// Index matches bets_rounds (e.g., bets_points[0] is the bet for bets_rounds[0])
-    pub bets_points: Vec<u64>,
-
     /// Cumulative statistics
     pub rounds_played: u64,
 
@@ -884,8 +877,6 @@ impl PlayerData {
         32 +    // owner
         32 +    // referral_code
         1 +     // faction_id
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_rounds Vec<u64>
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_points Vec<u64>
         8 +     // rounds_played
         8 +     // total_sol_bet
         8 +     // total_points_bet

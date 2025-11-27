@@ -46,7 +46,7 @@ const REFERRAL_FEE_PCT: u64 = 5; // 5% referral fee
 /// Users stake MineBtc tokens to a faction and earn SOL and minebtc rewards
 /// SOL rewards are distributed per round via join_round function
 /// minebtc rewards are distributed per round via end_round function
-pub fn stake_minebtc(
+pub fn int_stake_minebtc(
     ctx: Context<StakeMineBtc>,
     amount: u64,
     lockup_duration: u64,
@@ -141,7 +141,7 @@ pub fn stake_minebtc(
 
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
-        update_minebtc_staking_rewards(
+        int_update_minebtc_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -249,7 +249,7 @@ pub fn stake_minebtc(
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Unstake MineBtc tokens from a position
-pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
+pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
     // Store values before mutable borrow (for event emission)
     let position_key = ctx.accounts.user_position.key();
     let player_data_key = ctx.accounts.player_data.key();
@@ -297,7 +297,7 @@ pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Resu
 
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
-        update_minebtc_staking_rewards(
+        int_update_minebtc_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -468,7 +468,7 @@ pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Resu
 /// Users stake LP tokens to a faction and earn SOL and minebtc rewards
 /// SOL rewards are distributed per round via join_round function
 /// minebtc rewards are distributed per round via end_round function
-pub fn stake_lp_tokens(
+pub fn int_stake_lp_tokens(
     ctx: Context<StakeLpTokens>,
     amount: u64,
     lockup_duration: u64,
@@ -543,7 +543,7 @@ pub fn stake_lp_tokens(
 
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
-        update_lp_staking_rewards(
+        int_update_lp_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -647,7 +647,7 @@ pub fn stake_lp_tokens(
 }
 
 /// Unstake LP tokens from a position
-pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
     let position_key = ctx.accounts.user_position.key();
@@ -689,7 +689,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
-        update_lp_staking_rewards(
+        int_update_lp_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -861,7 +861,7 @@ pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> R
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Claim SOL rewards from staking MineBtc and LP tokens
-pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
+pub fn int_claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     msg!("💰 [claim_sol_rewards] Claiming SOL rewards from staking");
 
     require!(
@@ -881,14 +881,14 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
         _st_minebtc_new_sol_rewards,
         _st_minebtc_new_minebtc_rewards,
         _st_minebtc_accrued_minebtc_rewards,
-    ) = update_minebtc_staking_rewards(
+    ) = int_update_minebtc_staking_rewards(
         player_data,
         &mut ctx.accounts.unrefined_rewards,
         faction_state,
     )?;
     // Process LP staking SOL rewards
     let (_st_lp_new_sol_rewards, _st_lp_new_minebtc_rewards, _st_lp_accrued_minebtc_rewards) =
-        update_lp_staking_rewards(
+        int_update_lp_staking_rewards(
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -981,7 +981,7 @@ pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
 /// Claim MineBtc token rewards from staking MineBtc and LP tokens
 /// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
 /// Also increases power of all staked eggs proportionally to claimed amount
-pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
+pub fn int_claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     msg!("💰 [claim_minebtc_rewards] Claiming MineBtc token rewards with refining fee");
 
     require!(
@@ -1003,10 +1003,10 @@ pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         _st_minebtc_new_sol_rewards,
         _st_minebtc_new_minebtc_rewards,
         _st_minebtc_accrued_minebtc_rewards,
-    ) = update_minebtc_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
+    ) = int_update_minebtc_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
     // Process LP staking SOL rewards
     let (_st_lp_new_sol_rewards, _st_lp_new_minebtc_rewards, _st_lp_accrued_minebtc_rewards) =
-        update_lp_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
+        int_update_lp_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
 
     require!(
         player_data.pending_minebtc_rewards > 0,
@@ -1138,7 +1138,7 @@ pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Claim referral rewards (SOL and MineBtc)
-pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
     msg!("💰 [claim_referral_rewards] Claiming referral rewards");
 
     let referral_rewards = &mut ctx.accounts.referral_rewards;
@@ -1229,7 +1229,7 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
 // -------------- HELPER FUNCTIONS ---------------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-pub fn update_minebtc_staking_rewards(
+pub fn int_update_minebtc_staking_rewards(
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
     faction_state: &FactionState,
@@ -1278,7 +1278,7 @@ pub fn update_minebtc_staking_rewards(
     ))
 }
 
-pub fn update_lp_staking_rewards(
+pub fn int_update_lp_staking_rewards(
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
     faction_state: &FactionState,
@@ -1338,25 +1338,15 @@ pub fn update_lp_staking_rewards(
 #[derive(Accounts)]
 #[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
 pub struct StakeMineBtc<'info> {
-    // Global config
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    // Hashpower config (contains lockup and multiplier settings)
-    #[account(
-        seeds = [HASHPOWER_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub hashpower_config: Account<'info, HashpowerConfig>,
+    #[account(seeds = [HASHPOWER_CONFIG_SEED.as_ref()], bump)]
+    pub hashpower_config: Box<Account<'info, HashpowerConfig>>,
 
-    // Faction state
     #[account(mut)]
-    pub faction_state: Account<'info, FactionState>,
+    pub faction_state: Box<Account<'info, FactionState>>,
 
-    // Player data
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
@@ -1444,11 +1434,11 @@ pub struct UnstakeMineBtc<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Box<Account<'info, PlayerData>>,
+    pub player_data: Account<'info, PlayerData>,
 
     // Staked position
     #[account(mut)]
-    pub user_position: Box<Account<'info, StakedPosition>>,
+    pub user_position: Account<'info, StakedPosition>,
 
     /// CHECK: MINE_BTC Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
@@ -1595,11 +1585,11 @@ pub struct UnstakeLpTokens<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Box<Account<'info, PlayerData>>,
+    pub player_data: Account<'info, PlayerData>,
 
     // Staked position
     #[account(mut)]
-    pub user_position: Box<Account<'info, StakedPosition>>,
+    pub user_position: Account<'info, StakedPosition>,
 
     #[account(
         mut,
@@ -1703,18 +1693,12 @@ pub struct ClaimSolRewards<'info> {
 
 #[derive(Accounts)]
 pub struct ClaimDbtcRewards<'info> {
-    // Global config
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    // Faction state
     #[account(mut)]
-    pub faction_state: Account<'info, FactionState>,
+    pub faction_state: Box<Account<'info, FactionState>>,
 
-    // Player data
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],

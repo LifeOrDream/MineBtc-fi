@@ -27,15 +27,15 @@ const POWER_TRAIT_BITS: u8 = 4;       // 0-15 values
 const APPEARANCE_OFFSET: u8 = FACTION_TYPE_BITS + EVOLUTION_STAGE_BITS; // 7
 const COMBAT_OFFSET: u8 = APPEARANCE_OFFSET + (21 * APPEARANCE_TRAIT_BITS); // 7 + 105 = 112
 
-const APPEARANCE_GROUPS: usize = 7;
-const APPEARANCE_TRAITS_PER_GROUP: usize = 3;  // Dominant, Recessive, Minor Recessive
+// const APPEARANCE_GROUPS: usize = 7;
+// const APPEARANCE_TRAITS_PER_GROUP: usize = 3;  // Dominant, Recessive, Minor Recessive
 const APPEARANCE_TOTAL_TRAITS: usize = 21;     // 7 × 3
 
-const COMBAT_GROUPS: usize = 5;
-const COMBAT_TRAITS_PER_GROUP: usize = 3;
+// const COMBAT_GROUPS: usize = 5;
+// const COMBAT_TRAITS_PER_GROUP: usize = 3;
 const COMBAT_TOTAL_TRAITS: usize = 15;         // 5 × 3
 
-const EVOLUTION_STAGES: u8 = 8;
+// const EVOLUTION_STAGES: u8 = 8;
 const APPEARANCE_MAX: u8 = 31;
 const COMBAT_MAX: u8 = 15;
 
@@ -159,7 +159,7 @@ pub fn calculate_mutation_result(
 ) -> MutationResult {
     msg!("🧬 Calculating mutation result...");
     msg!("   User total bet: {}, Highest round bet for faction: {}", user_total_bet as f64 / 1e9, highest_round_bet_for_faction as f64 / 1e9);
-    msg!("   Current multiplier: {}. Gameplay egg generation: {}. Gameplay egg XP: {}", current_multiplier, gameplay_egg_generation, gameplay_egg_xp);
+    msg!("   Current multiplier: {}. Gameplay egg XP: {}", current_multiplier, gameplay_egg_xp);
     msg!("   Total sol bets: {}, Total points bets: {}, Total wgtd points bets: {}", total_sol_bets as f64 / 1e9, total_points_bets as f64 / 1e9, total_wgtd_points_bets as f64 / 1e9);
     msg!("   Slot: {}. User key: {}", slot, user_key);
 
@@ -371,87 +371,87 @@ fn synergy_boost(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
 // ============================= EVOLUTION SYSTEM =========================================
 // ========================================================================================
 
-/// Evolve genes to next stage with probabilistic trait improvements
-pub fn evolve_genes(dna: &mut [u8; 32], seed: &[u8]) -> Result<u8> {
-    let current_stage = (dna[0] >> 4) & 0x07;
-    require!(current_stage < 7, ErrorCode::InvalidParameters);
+// /// Evolve genes to next stage with probabilistic trait improvements
+// pub fn evolve_genes(dna: &mut [u8; 32], seed: &[u8]) -> Result<u8> {
+//     let current_stage = (dna[0] >> 4) & 0x07;
+//     require!(current_stage < 7, ErrorCode::InvalidParameters);
 
-    let new_stage = current_stage + 1;
-    dna[0] = (dna[0] & 0x8F) | ((new_stage & 0x07) << 4);
+//     let new_stage = current_stage + 1;
+//     dna[0] = (dna[0] & 0x8F) | ((new_stage & 0x07) << 4);
 
-    let hash = keccak::hash(seed).to_bytes();
-    evolve_appearance_traits(dna, new_stage, &hash);
-    evolve_power_traits(dna, new_stage, &hash);
+//     let hash = keccak::hash(seed).to_bytes();
+//     evolve_appearance_traits(dna, new_stage, &hash);
+//     evolve_power_traits(dna, new_stage, &hash);
 
-    Ok(new_stage)
-}
+//     Ok(new_stage)
+// }
 
-fn evolve_appearance_traits(dna: &mut [u8; 32], stage: u8, random: &[u8; 32]) {
-    let chance = evolution_chance(stage);
-    for i in 0..APPEARANCE_TOTAL_TRAITS {
-        if random[i % 32] < chance {
-            let current = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
-            let evolved = evolve_single_trait(current, stage, random[(i + 16) % 32], APPEARANCE_MAX);
-            set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, evolved);
-        }
-    }
-}
+// fn evolve_appearance_traits(dna: &mut [u8; 32], stage: u8, random: &[u8; 32]) {
+//     let chance = evolution_chance(stage);
+//     for i in 0..APPEARANCE_TOTAL_TRAITS {
+//         if random[i % 32] < chance {
+//             let current = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
+//             let evolved = evolve_single_trait(current, stage, random[(i + 16) % 32], APPEARANCE_MAX);
+//             set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, evolved);
+//         }
+//     }
+// }
 
-fn evolve_power_traits(dna: &mut [u8; 32], stage: u8, random: &[u8; 32]) {
-    let chance = evolution_chance(stage);
-    for i in 0..COMBAT_TOTAL_TRAITS {
-        if random[(i + 8) % 32] < chance {
-            let current = get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8);
-            let evolved = evolve_single_trait(current, stage, random[(i + 24) % 32], COMBAT_MAX);
-            set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, evolved);
-        }
-    }
-}
+// fn evolve_power_traits(dna: &mut [u8; 32], stage: u8, random: &[u8; 32]) {
+//     let chance = evolution_chance(stage);
+//     for i in 0..COMBAT_TOTAL_TRAITS {
+//         if random[(i + 8) % 32] < chance {
+//             let current = get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8);
+//             let evolved = evolve_single_trait(current, stage, random[(i + 24) % 32], COMBAT_MAX);
+//             set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, evolved);
+//         }
+//     }
+// }
 
-fn evolution_chance(stage: u8) -> u8 {
-    match stage { 0 => 50, 1 => 70, 2 => 90, 3 => 110, 4 => 90, 5 => 70, 6 => 50, _ => 30 }
-}
+// fn evolution_chance(stage: u8) -> u8 {
+//     match stage { 0 => 50, 1 => 70, 2 => 90, 3 => 110, 4 => 90, 5 => 70, 6 => 50, _ => 30 }
+// }
 
-fn evolve_single_trait(current: u8, stage: u8, rand: u8, max_cap: u8) -> u8 {
-    let max_for_stage = if stage == EVOLUTION_STAGES - 1 { max_cap } else { (max_cap * 3 / 4) + stage };
-    if current >= max_for_stage { return current; }
+// fn evolve_single_trait(current: u8, stage: u8, rand: u8, max_cap: u8) -> u8 {
+//     let max_for_stage = if stage == EVOLUTION_STAGES - 1 { max_cap } else { (max_cap * 3 / 4) + stage };
+//     if current >= max_for_stage { return current; }
 
-    if rand < 192 { (current + 1).min(max_for_stage) }
-    else if rand < 224 && current + 2 <= max_for_stage { current + 2 }
-    else if rand < 244 && current > 0 { current - 1 }
-    else if rand < 248 && current + 3 <= max_for_stage { current + 3 }
-    else { current }
-}
+//     if rand < 192 { (current + 1).min(max_for_stage) }
+//     else if rand < 224 && current + 2 <= max_for_stage { current + 2 }
+//     else if rand < 244 && current > 0 { current - 1 }
+//     else if rand < 248 && current + 3 <= max_for_stage { current + 3 }
+//     else { current }
+// }
 
 // ========================================================================================
 // ============================= DNA DECODER FUNCTIONS ====================================
 // ========================================================================================
 
 /// Get faction/family type from DNA (first 4 bits)
-pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
+// pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
 
 /// Get evolution stage from DNA (bits 4-6)
 pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 { (dna[0] >> 4) & 0x07 }
 
-/// Decode all 21 appearance traits (7 groups × 3)
-pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..APPEARANCE_TOTAL_TRAITS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8)).collect()
-}
+// /// Decode all 21 appearance traits (7 groups × 3)
+// pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     (0..APPEARANCE_TOTAL_TRAITS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8)).collect()
+// }
 
-/// Decode dominant appearance traits (7 traits - first from each group)
-pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..APPEARANCE_GROUPS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * APPEARANCE_TRAITS_PER_GROUP) as u8)).collect()
-}
+// /// Decode dominant appearance traits (7 traits - first from each group)
+// pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     (0..APPEARANCE_GROUPS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * APPEARANCE_TRAITS_PER_GROUP) as u8)).collect()
+// }
 
-/// Decode all 15 power traits (5 groups × 3)
-pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..COMBAT_TOTAL_TRAITS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8)).collect()
-}
+// /// Decode all 15 power traits (5 groups × 3)
+// pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     (0..COMBAT_TOTAL_TRAITS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8)).collect()
+// }
 
-/// Decode dominant power traits (5 traits - first from each group)
-pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..COMBAT_GROUPS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * COMBAT_TRAITS_PER_GROUP) as u8)).collect()
-}
+// /// Decode dominant power traits (5 traits - first from each group)
+// pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+//     (0..COMBAT_GROUPS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * COMBAT_TRAITS_PER_GROUP) as u8)).collect()
+// }
 
 // ========================================================================================
 // ============================= BIT MANIPULATION HELPERS =================================

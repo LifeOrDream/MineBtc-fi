@@ -39,7 +39,7 @@ use crate::state::*;
 /// 3. Initializes GameSession for the new round
 ///
 /// The commit hash should be hash(secret_seed) where secret_seed will be revealed in end_round.
-pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
+pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
     msg!("🎮 [start_round] Starting new round");
     msg!("   Authority: {}", ctx.accounts.authority.key());
 
@@ -242,7 +242,7 @@ pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) ->
 /// 3. Selects winning block
 /// 4. Calculates winners and updates payout data
 /// 5. Commits hash for next round
-pub fn end_round(
+pub fn int_end_round(
     ctx: Context<EndRound>,
     revealed_seed: [u8; 32], // The secret seed that was hashed to create commit_hash
 ) -> Result<()> {
@@ -690,7 +690,7 @@ fn calculate_minebtc_split(
 /// 3. Selects winning block
 /// 4. Calculates winners and updates payout data
 /// 5. Commits hash for next round
-pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
+pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
     msg!("🏁 [end_round_faction_rewards] Ending current round");
 
     let game_session = &mut ctx.accounts.game_session;

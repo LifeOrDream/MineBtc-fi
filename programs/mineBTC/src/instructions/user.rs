@@ -32,7 +32,7 @@ use crate::state::*;
 // ========================================================================================
 
 /// Initialize a player account for the Faction Surge game
-pub fn initialize_player(
+pub fn internal_initialize_player(
     ctx: Context<InitializePlayer>,
     faction_id: u8,
     referral_code: Option<Pubkey>,
@@ -84,9 +84,6 @@ pub fn initialize_player(
         player_data.referral_code = system_referral_pubkey;
         system_referral_pubkey
     };
-
-    player_data.bets_rounds = Vec::new();
-    player_data.bets_points = Vec::new();
 
     // Initialize statistics
     player_data.rounds_played = 0;
@@ -171,7 +168,7 @@ pub fn initialize_player(
 /// - No lp hashpower (lp_hashpower == 0)
 /// - No eggs staked (staked_eggs.is_empty())
 /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
     msg!(
         "🔄 [change_faction] User changing faction. User: {}",
         ctx.accounts.authority.key()
@@ -271,7 +268,7 @@ pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result
 ///
 /// Note: Faction accounts are not required for user betting functions. Faction-related calculations
 /// are handled in end_round_faction_rewards by cranker bots.
-pub fn join_round(
+pub fn internal_join_round(
     ctx: Context<JoinRound>,
     amount: u64,
     bet_type: BetType,
@@ -321,7 +318,7 @@ pub fn join_round(
 ///
 /// Note: Faction accounts are not required for user betting functions. Faction-related calculations
 /// are handled in end_round_faction_rewards by cranker bots.
-pub fn join_round_batch(
+pub fn internal_join_round_batch(
     ctx: Context<JoinRoundBatch>,
     bet_types: Vec<BetType>,
     amount_per_bet: u64,
@@ -404,7 +401,7 @@ pub fn join_round_batch(
 /// Can be called multiple times, but only when rounds_remaining == 0
 /// Total SOL = sol_per_round × num_rounds
 /// Bet size per bet = sol_per_round / total_bets_per_round
-pub fn init_autominer(
+pub fn internal_init_autominer(
     ctx: Context<InitAutominer>,
     blocks_config: Option<BlocksConfig>,
     factions_config: Option<FactionsConfig>,
@@ -585,7 +582,7 @@ fn get_strategy_multiplier(strategy: FactionStrategy) -> u64 {
 /// Generates bet types dynamically from blocks_config and factions_config
 /// Pays caller 1% of bet size (max 0.005 SOL) per bet for tx costs
 /// Uses join_round_batch to place all bets efficiently
-pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
     msg!("   Caller: {}", ctx.accounts.caller.key());
@@ -819,7 +816,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
 /// Stop autominer and refund remaining SOL
 /// Can only be called by vault owner
 /// Refunds all remaining SOL (after rent) and resets rounds_remaining to 0
-pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     msg!("🛑 [stop_autominer] Stopping autominer");
 
     // Read values before mutable borrow
@@ -1030,24 +1027,6 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         total_minebtc_reward
     );
 
-    // Remove round from player's active rounds list
-    msg!("   Removing round from player's active rounds list...");
-    if let Some(index) = player_data
-        .bets_rounds
-        .iter()
-        .position(|&r| r == user_bet.round_id)
-    {
-        let old_count = player_data.bets_rounds.len();
-        player_data.bets_rounds.remove(index);
-        player_data.bets_points.remove(index);
-        msg!(
-            "     Removed round {} from active rounds (count: {} -> {})",
-            user_bet.round_id,
-            old_count,
-            player_data.bets_rounds.len()
-        );
-    }
-
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
         if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
@@ -1133,8 +1112,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                         mint_number,
                         &bet_owner,
                         clock.slot,
-                        player_data.faction_id,
-                        egg_config.eggs_minted,
+                        player_data.faction_id
                     )?;
 
                     // Create NFT via MPL Core - owner is bet_owner (not caller)
@@ -1412,6 +1390,8 @@ fn internal_process_bets<'info>(
         user_game_bet.points_bets = Vec::new();
         user_game_bet.wgtd_points_bets = Vec::new();
         user_game_bet.bump = user_game_bet_bump;
+
+        player_data.rounds_played += 1;
         msg!("     New bet account initialized");
     } else {
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
@@ -1471,15 +1451,6 @@ fn internal_process_bets<'info>(
     game_session.total_wgtd_points_bets += total_wgtd_points_added;
     game_session.stakers_fee += total_stakers_fee;
 
-    // Update PlayerData
-    if !player_data.bets_rounds.contains(&round_id) {
-        player_data.rounds_played += 1;
-        player_data.bets_rounds.push(round_id);
-        player_data.bets_points.push(0);
-    }
-    if let Some(index) = player_data.bets_rounds.iter().position(|&r| r == round_id) {
-        player_data.bets_points[index] += total_points_added;
-    }
     player_data.total_sol_bet += total_net_added;
     player_data.total_points_bet += total_points_added;
 
@@ -2146,36 +2117,23 @@ pub struct ClaimRoundRewards<'info> {
         seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
         bump = player_data.bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
-    #[account(
-        mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
-        bump
-    )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
-    #[account(
-        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
-        bump = game_session.bump
-    )]
-    pub game_session: Account<'info, GameSession>,
+    #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
+    pub game_session: Box<Account<'info, GameSession>>,
 
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     /// Global game state (for current round entropy)
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
-    /// Current ongoing round session (for randomness entropy) - different from claimed round
-    pub current_game_session: Option<Account<'info, GameSession>>,
+    /// Current ongoing round session (for randomness entropy)
+    pub current_game_session: Option<Box<Account<'info, GameSession>>>,
 
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
@@ -2185,28 +2143,23 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// CHECK: UserGameBet PDA (validated in instruction)
-    #[account(
-        mut,
-        close = user_wallet
-    )]
-    pub user_game_bet: Account<'info, UserGameBet>,
+    #[account(mut, close = user_wallet)]
+    pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
-    /// User whose bet this is (doesn't need to be signer - anyone can claim for them)
-    /// CHECK: Validated via player_data.owner matching user_wallet
+    /// CHECK: User whose bet this is
     #[account(mut)]
     pub user_wallet: UncheckedAccount<'info>,
 
-    /// Caller (bot or user themselves) - can be anyone
+    /// Caller (bot or user themselves)
     pub caller: Signer<'info>,
 
     /// Optional EggMetadata account for syncing mutation
     #[account(mut)]
-    pub egg_metadata: Option<Account<'info, EggMetadata>>,
+    pub egg_metadata: Option<Box<Account<'info, EggMetadata>>>,
 
-    // === Free Egg Mint Accounts (optional - only needed if eligible) ===
+    // === Free Egg Mint Accounts (optional) ===
     #[account(mut)]
-    pub egg_config: Option<Account<'info, EggConfig>>,
+    pub egg_config: Option<Box<Account<'info, EggConfig>>>,
 
     /// CHECK: New egg asset to be created
     #[account(mut)]
@@ -2402,7 +2355,7 @@ pub struct ExecuteAutominerBet<'info> {
 // ========================================================================================
 
 /// Use an egg for gameplay - deposits egg to program custody and sets it as active gameplay egg
-pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let egg_metadata = &mut ctx.accounts.egg_metadata;
@@ -2470,7 +2423,7 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
 }
 
 /// Withdraw egg from gameplay - returns egg to user and clears gameplay egg
-pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let egg_metadata = &mut ctx.accounts.egg_metadata;

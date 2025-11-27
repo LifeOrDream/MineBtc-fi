@@ -210,7 +210,7 @@ pub mod minebtc {
     /// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
     /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
     pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
-        admin::initialize_custodian_accounts(ctx)
+        admin::int_initialize_custodian_accounts(ctx)
     }
 
     /// Update HashpowerConfig account (admin only)
@@ -293,7 +293,7 @@ pub mod minebtc {
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
-        admin::init_egg_royalties(ctx, basis_points, creators)
+        admin::init_egg_royalties_internal(ctx, basis_points, creators)
     }
 
     /// Add or update ticket tier configs (admin only)
@@ -304,7 +304,7 @@ pub mod minebtc {
         ticket_value: u64,
         ticket_count: u16,
     ) -> Result<()> {
-        admin::add_ticket_tier_config(ctx, ticket_tier_index, ticket_value, ticket_count)
+        admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value, ticket_count)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -319,7 +319,7 @@ pub mod minebtc {
         burn_pct: u8,
         nft_floor_sweep_whitelisted_address: Pubkey,
     ) -> Result<()> {
-        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct, nft_floor_sweep_whitelisted_address)
+        tax::internal_initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct, nft_floor_sweep_whitelisted_address)
     }
 
     /// Update tax distribution percentages (admin only)
@@ -329,7 +329,7 @@ pub mod minebtc {
         faction_treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
-        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct)
+        tax::internal_update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct)
     }
 
     /// Update NFT floor sweep whitelisted address (admin only)
@@ -337,7 +337,7 @@ pub mod minebtc {
         ctx: Context<UpdateNftFloorSweepWhitelist>,
         new_whitelisted_address: Pubkey,
     ) -> Result<()> {
-        tax::update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
+        tax::internal_update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -431,7 +431,7 @@ pub mod minebtc {
         ctx: Context<WithdrawNftFloorSweepFunds>,
         amount: u64,
     ) -> Result<()> {
-        tax::withdraw_nft_floor_sweep_funds(ctx, amount)
+        tax::internal_withdraw_nft_floor_sweep_funds(ctx, amount)
     }
 
     /// STEP 1: Harvest fees from user token accounts to the mint
@@ -439,43 +439,43 @@ pub mod minebtc {
     pub fn crank_harvest_fees<'info>(
         ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
     ) -> Result<()> {
-        tax::crank_harvest_fees(ctx)
+        tax::internal_crank_harvest_fees(ctx)
     }
 
     /// STEP 2: Withdraw total tax from mint and distribute it
     /// Callable by anyone - program-controlled withdraw authority
     pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
-        tax::crank_distribute_tax(ctx)
+        tax::internal_crank_distribute_tax(ctx)
     }
 
     /// Start a new distribution round (callable by anyone after 7-day cooldown)
     pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
-        tax::start_distribution_round(ctx)
+        tax::internal_start_distribution_round(ctx)
     }
 
     /// Calculate leaderboard position for one faction
     /// Must be called 12 times to build complete leaderboard
-    pub fn calculate_faction_leaderboard_position(
+    pub fn cal_faction_positions(
         ctx: Context<CalculateFactionLeaderboard>,
     ) -> Result<()> {
-        tax::calculate_faction_leaderboard_position(ctx)
+        tax::internal_cal_faction_positions(ctx)
     }
 
     /// Calculate rewards for all factions based on leaderboard
     /// Can only be called after all 12 factions are on leaderboard
-    pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
-        tax::calculate_faction_rewards(ctx)
+    pub fn cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
+        tax::internal_cal_faction_rewards(ctx)
     }
 
     /// Claim treasury rewards for one faction
     /// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
     pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
-        tax::claim_faction_treasury_rewards(ctx)
+        tax::internal_claim_faction_treasury_rewards(ctx)
     }
 
     /// Finish distribution round (check all factions claimed and reset state)
     pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
-        tax::finish_distribution_round(ctx)
+        tax::internal_finish_distribution_round(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -486,19 +486,19 @@ pub mod minebtc {
     /// This commits randomness hash and randomly assigns factions to blocks
     /// round_id should be current_round_id + 1 (validated in the function)
     pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
-        game::start_round(ctx, round_id, commit)
+        game::int_start_round(ctx, round_id, commit)
     }
 
     /// End the current round by revealing seed, selecting winner, and starting next round
     /// Verifies commit-reveal, generates final randomness, selects winning block
     pub fn end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
-        game::end_round(ctx, revealed_seed)
+        game::int_end_round(ctx, revealed_seed)
     }
 
     /// End the current round by revealing seed, selecting winner, and starting next round
     /// Verifies commit-reveal, generates final randomness, selects winning block
     pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
-        game::end_round_faction_rewards(ctx)
+        game::int_end_round_faction_rewards(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -511,14 +511,14 @@ pub mod minebtc {
         faction_id: u8,
         referral_code: Option<Pubkey>,
     ) -> Result<()> {
-        user::initialize_player(ctx, faction_id, referral_code)
+        user::internal_initialize_player(ctx, faction_id, referral_code)
     }
 
     /// Change user's faction
     /// Requires no staked positions (minebtc/lp hashpower = 0, no eggs staked)
     /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
     pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
-        user::change_faction(ctx, new_faction_id)
+        user::internal_change_faction(ctx, new_faction_id)
     }
 
     /// Join a round by betting SOL
@@ -529,7 +529,7 @@ pub mod minebtc {
         bet_type: BetType,
         use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::join_round(ctx, amount, bet_type, use_ticket)
+        user::internal_join_round(ctx, amount, bet_type, use_ticket)
     }
 
     /// Join a round with multiple bets in a single transaction
@@ -539,7 +539,7 @@ pub mod minebtc {
         amount_per_bet: u64,
         use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
+        user::internal_join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
     }
 
     /// Initialize autominer vault with flexible block/faction configuration
@@ -550,7 +550,7 @@ pub mod minebtc {
         sol_per_round: u64,
         num_rounds: u32,
     ) -> Result<()> {
-        user::init_autominer(
+        user::internal_init_autominer(
             ctx,
             blocks_config,
             factions_config,
@@ -561,12 +561,12 @@ pub mod minebtc {
 
     /// Execute autominer bet (keeper instruction)
     pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
-        user::execute_autominer_bet(ctx)
+        user::internal_execute_autominer_bet(ctx)
     }
 
     /// Stop autominer and refund remaining SOL
     pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
-        user::stop_autominer(ctx)
+        user::internal_stop_autominer(ctx)
     }
 
     /// Claim rewards for a user after round ends
@@ -580,12 +580,12 @@ pub mod minebtc {
 
     /// Use an egg for gameplay - deposits to custody and sets as active gameplay egg
     pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
-        user::use_egg_for_gameplay(ctx)
+        user::internal_use_egg_for_gameplay(ctx)
     }
 
     /// Withdraw egg from gameplay - returns egg to user
     pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
-        user::withdraw_egg_from_gameplay(ctx)
+        user::internal_withdraw_egg_from_gameplay(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -599,12 +599,12 @@ pub mod minebtc {
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        stake::stake_minebtc(ctx, amount, lockup_duration, position_index)
+        stake::int_stake_minebtc(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake MineBtc tokens from a position
     pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
-        stake::unstake_minebtc(ctx, position_index)
+        stake::int_unstake_minebtc(ctx, position_index)
     }
 
     /// Stake LP tokens to earn SOL and minebtc rewards
@@ -614,27 +614,27 @@ pub mod minebtc {
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        stake::stake_lp_tokens(ctx, amount, lockup_duration, position_index)
+        stake::int_stake_lp_tokens(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake LP tokens from a position
     pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
-        stake::unstake_lp_tokens(ctx, position_index)
+        stake::int_unstake_lp_tokens(ctx, position_index)
     }
 
     /// Claim SOL rewards from MineBtc and LP staking
     pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-        stake::claim_sol_rewards(ctx)
+        stake::int_claim_sol_rewards(ctx)
     }
 
     /// Claim MineBtc token rewards from staking (with refining fee redistribution)
     pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-        stake::claim_minebtc_rewards(ctx)
+        stake::int_claim_minebtc_rewards(ctx)
     }
 
     /// Claim referral rewards (SOL and MineBtc earned from referrals)
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-        stake::claim_referral_rewards(ctx)
+        stake::int_claim_referral_rewards(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -650,7 +650,7 @@ pub mod minebtc {
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
     ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
-        eggs::simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
+        eggs::int_simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
     }
 
     /// Admin function to mint a Egg NFT for free to a specified recipient (admin only)
@@ -667,7 +667,7 @@ pub mod minebtc {
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
+        eggs::int_admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
@@ -685,21 +685,26 @@ pub mod minebtc {
         mint_count: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        eggs::batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
+        eggs::int_batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
     /// Stake a Egg to boost hashpower (if faction matches player's faction)
     pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
-        eggs::stake_egg(ctx)
+        eggs::int_stake_egg(ctx)
     }
 
     /// Unstake a Egg (remove hashpower boost)
     pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
-        eggs::unstake_egg(ctx)
+        eggs::int_unstake_egg(ctx)
     }
 
     /// Breed two eggs to create offspring
     pub fn breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
-        eggs::breed_eggs(ctx)
+        eggs::int_breed_eggs(ctx)
+    }
+
+    /// Send an egg to heaven (burn for rewards)
+    pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
+        eggs::int_send_to_heaven(ctx)
     }
 }

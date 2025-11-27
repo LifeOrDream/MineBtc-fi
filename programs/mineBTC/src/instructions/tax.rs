@@ -32,8 +32,8 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 // - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
 // - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
 // - `start_distribution_round`: Initiates a new 7-day distribution cycle.
-// - `calculate_faction_leaderboard_position`: Ranks one faction by hashpower.
-// - `calculate_faction_rewards`: Computes rewards for all factions.
+// - `cal_faction_positions`: Ranks one faction by hashpower.
+// - `cal_faction_rewards`: Computes rewards for all factions.
 // - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
 //
 
@@ -48,7 +48,7 @@ use crate::state::*;
 
 /// Initialize TaxConfig account and create vault token accounts
 /// Callable only by global config authority
-pub fn initialize_tax_config(
+pub fn internal_initialize_tax_config(
     ctx: Context<InitializeTaxConfig>,
     nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
@@ -119,7 +119,7 @@ pub fn initialize_tax_config(
 
 /// Update tax distribution percentages
 /// Callable only by global config authority
-pub fn update_tax_config(
+pub fn internal_update_tax_config(
     ctx: Context<UpdateTaxConfig>,
     nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
@@ -148,7 +148,7 @@ pub fn update_tax_config(
 
 /// Update NFT floor sweep whitelisted address
 /// Callable only by global config authority
-pub fn update_nft_floor_sweep_whitelist(
+pub fn internal_update_nft_floor_sweep_whitelist(
     ctx: Context<UpdateNftFloorSweepWhitelist>,
     new_whitelisted_address: Pubkey,
 ) -> Result<()> {
@@ -169,7 +169,7 @@ pub fn update_nft_floor_sweep_whitelist(
 /// Callable only by the whitelisted address
 /// The whitelisted address will use this MineBtc to swap for SOL off-chain,
 /// buy NFTs, re-list them at 1.2x, and transfer SOL proceeds to SOL treasury
-pub fn withdraw_nft_floor_sweep_funds(
+pub fn internal_withdraw_nft_floor_sweep_funds(
     ctx: Context<WithdrawNftFloorSweepFunds>,
     amount: u64,
 ) -> Result<()> {
@@ -244,7 +244,7 @@ pub fn withdraw_nft_floor_sweep_funds(
 /// them into the minebtc_mint's own "withheld_amount" field.
 ///
 /// Callable by anyone - designed to be called many times in batches
-pub fn crank_harvest_fees<'info>(
+pub fn internal_crank_harvest_fees<'info>(
     ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
 ) -> Result<()> {
     msg!("🌱 [crank_harvest_fees] Harvesting withheld fees to mint...");
@@ -290,7 +290,7 @@ pub fn crank_harvest_fees<'info>(
 /// mint account and distributes it according to TaxConfig percentages.
 ///
 /// Callable by anyone - program-controlled withdraw authority
-pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
     msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
 
     // 1. Get the total amount of tax sitting on the mint account
@@ -472,7 +472,7 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
 // ========================================================================================
 
 /// Start a new distribution round (callable by anyone after 7-day cooldown)
-pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
+pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
     msg!("🎯 [start_distribution_round] Starting new distribution round");
 
     let tax_config = &mut ctx.accounts.tax_config;
@@ -530,10 +530,10 @@ pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<
 
 /// Calculate and store leaderboard position for one faction
 /// Must be called 12 times (once per faction) to build complete leaderboard
-pub fn calculate_faction_leaderboard_position(
+pub fn internal_cal_faction_positions(
     ctx: Context<CalculateFactionLeaderboard>,
 ) -> Result<()> {
-    msg!("📊 [calculate_faction_leaderboard_position] Calculating leaderboard position");
+    msg!("📊 [cal_faction_positions] Calculating leaderboard position");
 
     // Store values before mutable borrow (for event emission)
     let tax_config_key = ctx.accounts.tax_config.key();
@@ -614,8 +614,8 @@ pub fn calculate_faction_leaderboard_position(
 
 /// Calculate rewards for all factions based on leaderboard
 /// Can only be called after all 12 factions are on leaderboard
-pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
-    msg!("💰 [calculate_faction_rewards] Calculating faction rewards");
+pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
+    msg!("💰 [cal_faction_rewards] Calculating faction rewards");
 
     // Store values before mutable borrow (for event emission)
     let tax_config_key = ctx.accounts.tax_config.key();
@@ -713,14 +713,14 @@ pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Resul
         timestamp: clock.unix_timestamp,
     });
 
-    msg!("✅ [calculate_faction_rewards] Rewards calculated");
+    msg!("✅ [cal_faction_rewards] Rewards calculated");
 
     Ok(())
 }
 
 /// Claim treasury rewards for one faction
 /// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
-pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
+pub fn internal_claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
     msg!("🎁 [claim_faction_treasury_rewards] Claiming treasury rewards");
 
     let tax_config = &mut ctx.accounts.tax_config;
@@ -832,7 +832,7 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
 }
 
 /// Finish distribution round (check all factions claimed and reset state)
-pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
+pub fn internal_finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
     msg!("🏁 [finish_distribution_round] Finishing distribution round");
 
     let tax_config = &mut ctx.accounts.tax_config;
