@@ -130,6 +130,11 @@ pub mod minebtc {
         )
     }
 
+    /// Toggle RPG progression (mutations, XP) during gameplay
+    pub fn update_rpg_progression(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
+        admin::update_rpg_progression_internal(ctx, enabled)
+    }
+
     /// Update emission adjustment parameters (admin only)
     /// Allows updating price change threshold and emission increase/decrease percentages
     pub fn update_emission_params(

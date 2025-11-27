@@ -152,6 +152,9 @@ pub struct GlobalConfig {
     /// Default: 1800 seconds (30 minutes)
     pub snapshot_interval: u64,
 
+    /// Enable RPG progression (mutations, XP, etc) during gameplay
+    pub rpg_progression: bool,
+
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
     pub bump: u8,
@@ -192,8 +195,6 @@ impl MineBtcDistConfig {
 }
 
 impl GlobalConfig {
-    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + minebtc_dist_config + raydium_pool_state + change_faction_fee + snapshot_interval + bump + treasury_bump + supported_factions (vec)
-    // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         8 +                     // total_players
         32 +                    // ext_authority
@@ -204,6 +205,7 @@ impl GlobalConfig {
         32 +                    // raydium_pool_state
         8 +                     // change_faction_fee
         8 +                     // snapshot_interval
+        1 +                     // rpg_progression
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
@@ -1104,8 +1106,6 @@ pub struct UserGameBet {
     pub xp_gained: u32,
     /// Multiplier increase (added to egg's multiplier during claim_rewards)
     pub multiplier_increase: u32,
-    /// New DNA after mutation (copied to EggMetadata during claim_rewards)
-    pub new_dna: [u8; 32],
 }
 
 impl UserGameBet {
@@ -1126,8 +1126,7 @@ impl UserGameBet {
         1 +     // bump
         1 +     // mutation_type
         4 +     // xp_gained
-        4 +     // multiplier_increase
-        32;     // new_dna
+        4;     // multiplier_increase
 }
 
 /// Autominer configuration for blocks

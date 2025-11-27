@@ -700,6 +700,14 @@ pub fn update_fees_internal(
     Ok(())
 }
 
+/// Toggle RPG progression (mutations, XP) during gameplay
+pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
+    msg!("🎮 [update_rpg_progression] Setting rpg_progression to {}", enabled);
+    ctx.accounts.global_config.rpg_progression = enabled;
+    msg!("✅ RPG progression updated");
+    Ok(())
+}
+
 /// Update emission adjustment parameters (admin only)
 /// Allows updating price change threshold and emission increase/decrease percentages
 pub fn update_emission_params_internal(

@@ -1068,7 +1068,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
             if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
                 if egg_metadata.mint == player_data.gameplay_egg {
                     // Apply stored new_dna directly
-                    egg_metadata.dna = user_bet.new_dna;
+                    egg_metadata.dna = player_data.gameplay_egg_dna;
                     
                     // For Evolution, increment generation and reset XP
                     if user_bet.mutation_type == 1 && egg_metadata.generation < 7 {
@@ -1415,20 +1415,20 @@ fn internal_process_bets<'info>(
     });
 
     // === INSTANT MUTATION & XP LOGIC ===
-    // Check conditions: SOL bet > 0, player has gameplay_egg
+    // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_egg
     let faction_id = player_data.faction_id as usize;
-    if amount_per_bet > 0
+    if global_config.rpg_progression
+        && amount_per_bet > 0
         && use_ticket.is_none()
-        && player_data.gameplay_egg != Pubkey::default()
         && user_game_bet.mutation_type == 0 // No mutation already triggered for this bet
-        && !game_session.mutation_occurred_per_faction[faction_id]
+        && player_data.gameplay_egg != Pubkey::default()
     {
-        // Update highest bet for faction ::: i.e highest bet made by a player which belongs to this faction
+        // Update highest bet for faction
         if user_game_bet.total_sol_bet > game_session.highest_sol_bet_per_faction[faction_id] {
             game_session.highest_sol_bet_per_faction[faction_id] = user_game_bet.total_sol_bet;
         }
 
-        // Calculate mutation result with full game state entropy
+        // Calculate mutation result
         let mutation_result = calculate_mutation_result(
             user_game_bet.total_sol_bet,
             game_session.highest_sol_bet_per_faction[faction_id],
@@ -1446,23 +1446,26 @@ fn internal_process_bets<'info>(
         // Always store XP gained (even without mutation)
         user_game_bet.xp_gained = user_game_bet.xp_gained + mutation_result.xp_gained;
 
-        // Check if mutation triggered AND faction hasn't mutated this round
+        // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
-            if !game_session.mutation_occurred_per_faction[faction_id] {
-                // Store mutation result in UserGameBet
+            // Evolution: only 1 per faction per round. Power/Trait: unlimited
+            let is_evolution = matches!(mutation_type, MutationType::Evolution);
+            let can_apply = !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
+
+            user_game_bet.multiplier_increase = mutation_result.multiplier_increase;
+
+            if can_apply {
                 user_game_bet.mutation_type = match mutation_type {
                     MutationType::Evolution => 1,
                     MutationType::Power => 2,
                     MutationType::Trait => 3,
                 };
-                user_game_bet.new_dna = mutation_result.new_dna;
-                user_game_bet.multiplier_increase = mutation_result.multiplier_increase;
-
-                // Update PlayerData cache with mutated DNA
                 player_data.gameplay_egg_dna = mutation_result.new_dna;
 
-                // Mark mutation occurred for this faction this round
-                game_session.mutation_occurred_per_faction[faction_id] = true;
+                // Only mark faction as "evolved" for Evolution type
+                if is_evolution {
+                    game_session.mutation_occurred_per_faction[faction_id] = true;
+                }
 
                 emit!(MutationTriggered {
                     user: owner_key,
@@ -1475,12 +1478,11 @@ fn internal_process_bets<'info>(
                     timestamp: clock.unix_timestamp,
                 });
 
-                msg!("🧬 Mutation triggered! Type: {}, Mult+: {} (will apply on claim)", 
-                    user_game_bet.mutation_type, user_game_bet.multiplier_increase);
+                msg!("🧬 Mutation triggered! Type: {}, Mult+: {}", user_game_bet.mutation_type, user_game_bet.multiplier_increase);
             }
         }
 
-        msg!("   XP gained this round: {}", user_game_bet.xp_gained);
+        msg!("   XP gained: {}", user_game_bet.xp_gained);
     }
 
     Ok(())
