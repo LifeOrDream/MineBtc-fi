@@ -875,7 +875,7 @@ fn generate_egg_data(
     )?;
     let name = format!("Egg #{}", mint_number);
     let uri = egg_config.egg_uris[faction_id as usize].clone();
-    let multiplier = 100;
+    let multiplier = BASE_MULTIPLIER;
 
     Ok((name, uri, dna, multiplier))
 }

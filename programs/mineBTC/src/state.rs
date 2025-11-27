@@ -19,7 +19,9 @@ use anchor_lang::prelude::*;
 pub const MINEBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
-pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
+
+pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
+pub const MAX_BASE_CHANCE: u64 = 3000; // 30%
 
 /// ------------ CONSTANTS ------------
 
@@ -850,6 +852,12 @@ pub struct PlayerData {
     pub gameplay_egg: Pubkey,
     /// Active gameplay multiplier (100 = 1x, set from gameplay egg's multiplier, reset to 100 on withdraw)
     pub active_multiplier: u32,
+    /// Cached DNA of gameplay egg (for mutation calculations without loading EggMetadata)
+    pub gameplay_egg_dna: [u8; 32],
+    /// Cached generation of gameplay egg
+    pub gameplay_egg_generation: u8,
+    /// Cached XP of gameplay egg (updated during gameplay, synced to EggMetadata on withdraw)
+    pub gameplay_egg_xp: u32,
 }
 
 impl PlayerData {
@@ -892,7 +900,10 @@ impl PlayerData {
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
         32 +    // gameplay_egg
-        4; // active_multiplier (u32) (Pubkey)
+        4 +     // active_multiplier (u32)
+        32 +    // gameplay_egg_dna [u8; 32]
+        1 +     // gameplay_egg_generation (u8)
+        4; // gameplay_egg_xp (u32)
 }
 
 /// Individual MineBtc staking position
@@ -1091,6 +1102,10 @@ pub struct UserGameBet {
     pub mutation_type: u8,
     /// Random seed for mutation application (stored at bet time, used at claim time)
     pub mutation_seed: [u8; 8],
+    /// XP gained from betting (added to egg during claim_rewards)
+    pub xp_gained: u32,
+    /// Multiplier increase (added to egg's multiplier during claim_rewards)
+    pub multiplier_increase: u32,
 }
 
 impl UserGameBet {
@@ -1110,7 +1125,9 @@ impl UserGameBet {
         8 +     // total_fee
         1 +     // bump
         1 +     // mutation_type
-        8; // mutation_seed
+        8 +     // mutation_seed
+        4 +     // xp_gained
+        4; // multiplier_increase
 }
 
 /// Autominer configuration for blocks

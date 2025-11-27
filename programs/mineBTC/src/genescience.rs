@@ -1,4 +1,6 @@
 use crate::errors::ErrorCode;
+use crate::state::{BASE_MULTIPLIER, MAX_BASE_CHANCE};
+
 /// DNA Generation and Manipulation for Cyber-Doge Assets
 ///
 /// The core genetic engine for the Bio-Doge Invasion.
@@ -195,6 +197,207 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
         val_processed += set;
         curr_byte += 1;
         curr_bit = 0;
+    }
+}
+
+// ========================================================================================
+// ============================= INSTANT MUTATION SYSTEM ==================================
+// ========================================================================================
+
+/// Mutation types for instant mutation mechanic
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq)]
+pub enum MutationType {
+    /// Evolution: generation += 1, xp = 0 (~10%)
+    Evolution,
+    /// Power: multiplier += 25 (0.25x) (~30%)
+    Power,
+    /// Trait: reroll a visual gene in dna (~60%)
+    Trait,
+}
+
+/// Result of mutation attempt - includes XP and multiplier gains
+#[derive(Clone, Debug)]
+pub struct MutationResult {
+    /// Mutation type (None if no mutation triggered)
+    pub mutation_type: Option<MutationType>,
+    /// XP gained from betting (always > 0 for SOL bets)
+    pub xp_gained: u32,
+    /// Multiplier increase (0 if no Power mutation or no mutation)
+    pub multiplier_increase: u32,
+}
+
+/// Calculate mutation result based on bet and game state.
+/// 
+/// **Chance Formula**: `base_chance * bet_strength * multiplier_penalty`
+/// - `base_chance` = 30%
+/// - `bet_strength` = min(user_bet / highest_bet, 1.0)
+/// - `multiplier_penalty` = 100 / (100 + current_multiplier - 100) = 100 / current_multiplier
+///   (Higher multiplier = lower chance, slowing progression for advanced eggs)
+///
+/// **XP Gain**: Always gained on SOL bets, scaled by bet size relative to 0.1 SOL
+/// - Base XP per 0.1 SOL = 10 XP
+/// 
+/// **Multiplier Increase**: Only on Power mutation, +25 (0.25x)
+pub fn calculate_mutation_result(
+    user_total_bet: u64,
+    highest_round_bet_for_faction: u64,
+    current_multiplier: u32,
+    gameplay_egg_dna: [u8; 32],
+    gameplay_egg_generation: u8,
+    gameplay_egg_xp: u32,
+    total_sol_bets: u64,
+    total_points_bets: u64,
+    total_wgtd_points_bets: u64, 
+    slot: u64,
+    user_key: &Pubkey,
+) -> MutationResult {
+    msg!("🧬 Calculating mutation result...");
+    msg!("   User total bet: {}, Highest round bet for faction: {}", user_total_bet as f64 / 1e9, highest_round_bet_for_faction as f64 / 1e9);
+    msg!("   Current multiplier: {}. Gameplay egg generation: {}. Gameplay egg XP: {}", current_multiplier, gameplay_egg_generation, gameplay_egg_xp);
+    msg!("   Total sol bets: {}, Total points bets: {}, Total wgtd points bets: {}", total_sol_bets as f64 / 1e9, total_points_bets as f64 / 1e9, total_wgtd_points_bets as f64 / 1e9);
+    msg!("   Slot: {}. User key: {}", slot, user_key);
+
+    // --- STEP 1: CALCULATE TRIGGER CHANCE ---
+
+    // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio.
+    let effective_highest = if highest_round_bet_for_faction == 0 { user_total_bet } else { highest_round_bet_for_faction };
+    let bet_strength = ((user_total_bet * 10000) / effective_highest).min(10000);
+    msg!("   Bet strength: {}", bet_strength as f64 / 10000.0);
+
+    // B. Multiplier Penalty (0 - 10,000 bps)
+    // Formula: (BASE_MULTIPLIER / Current) * 10,000
+    // 1.0x -> 1k/1k * 1k = 1000 (100% factor)
+    // 6.9x -> 1k/6900 * 1k = 144.9 (14.5% factor)
+    let mult_factor = (BASE_MULTIPLIER   * 10000) / current_multiplier;
+    msg!("   Multiplier factor: {}", mult_factor);
+
+    // C. Final Chance Calculation
+    // Chance = 30% * BetFactor * MultFactor
+    // scale: 3000 * (0.0-1.0) * (0.14-1.0)
+    let final_chance_bps = (MAX_BASE_CHANCE * bet_strength * (mult_factor as u64)) 
+        / 100_000_000; // Divide by 10k * 10k
+    msg!("   Final chance: {}", final_chance_bps as f64 / 100.0);
+
+    // --- STEP 2: ROLL THE DICE ---
+
+    // Calculate the sums first to get the values
+    let total_combined_points = total_points_bets + total_wgtd_points_bets;
+
+    // Use hashv which takes a slice of byte slices directly
+    let seed = keccak::hashv(&[
+        &slot.to_le_bytes(),
+        &total_sol_bets.to_le_bytes(),
+        &total_combined_points.to_le_bytes(),
+    ]).to_bytes();
+
+    // Roll 1: Did we hit the mutation? (0-10000)
+    // Use first 2 bytes for higher precision (u16)
+    let roll_val = u16::from_le_bytes([seed[0], seed[1]]) as u64;
+    let roll_normalized = (roll_val * 10_000) / 65535;
+
+    if roll_normalized < final_chance_bps as u64 {
+        // SUCCESS! Mutation triggered. Now decide TYPE.
+        // Use 3rd byte for type roll (0-100)
+        let type_roll = seed[2]; // 0-255
+        
+        // D. Determine Type
+        // Gen 0: Evo(10%), Power(30%), Trait(60%)
+        // Gen 9: Evo(1%), Power(30%), Trait(69%)
+        let evo_chance = 10 / (current_generation as u64 + 1);
+        let power_chance = 30;
+        
+        let evo_threshold = (255 * evo_chance) / 100;
+        let power_threshold = evo_threshold + ((255 * power_chance) / 100);
+
+        let mut base_boost = 0;
+        let m_type = if (type_roll as u64) < evo_threshold {
+            MutationType::Evolution
+        } else if (type_roll as u64) < power_threshold {
+            MutationType::Power
+        } else {
+            MutationType::Trait
+        };
+
+        match m_type {
+            MutationType::Evolution => {
+                // 1. Increment Generation in DNA
+                let new_gen = gameplay_egg_generation.saturating_add(1);
+                base_boost = 50; // +0.50x Base for Evolving
+            },
+            MutationType::Power => {
+                let new_gen = gameplay_egg_generation.saturating_add(1);
+                base_boost = 25; // +0.25x Base for Power
+            },
+            MutationType::Trait => {
+                let new_gen = gameplay_egg_generation.saturating_add(1);
+                base_boost = 5; // +0.05x Base for Trait
+            }
+        }        
+
+        // E. Calculate XP Bonus (The "Investment" Logic)
+        // We use a % of current XP to boost the multiplier.
+        // Evolution: Uses 50-100% of XP efficiency.
+        // Others: Uses 10-50% of XP efficiency.
+        let xp_roll = seed[3] as u64; // 0-255
+
+        let (min_pct, max_pct) = if m_type == MutationType::Evolution { (50, 100) } else { (10, 50) };
+        let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);        
+
+        // XP Boost Formula: (XP * Efficiency%) / 100 
+        // Example: 1000 XP * 80% efficiency = +800 basis points (+0.08x)
+        // We scale this down slightly so 1000 XP isn't too OP. Let's say 10 XP = 1 basis point.
+        let xp_mult_boost: u64 = ((gameplay_egg_xp as u64 * efficiency_pct) / 100) / 10;
+        msg!("   XP boost: {}", xp_mult_boost);
+
+        let total_boost = base_boost + xp_mult_boost as u32;
+        let new_multiplier = current_multiplier + total_boost;        
+        msg!("   New multiplier: {}", new_multiplier);
+    }
+
+    MutationResult {
+        mutation_type: Some(mutation_type),
+        xp_gained,
+        multiplier_increase,
+    }
+}
+
+
+/// Apply mutation to egg metadata directly
+/// Note: Power mutation multiplier is applied separately via UserGameBet.multiplier_increase
+pub fn apply_mutation(
+    egg: &mut Account<crate::state::EggMetadata>,
+    mutation_type: MutationType,
+    slot: u64,
+    user_key: &Pubkey,
+) {
+    match mutation_type {
+        MutationType::Evolution => {
+            // Increment generation (cap at 7), reset xp
+            if egg.generation < 7 {
+                egg.generation += 1;
+            }
+            egg.xp = 0;
+            // Update evolution stage in DNA (bits 4-6)
+            egg.dna[0] = (egg.dna[0] & 0x8F) | ((egg.generation & 0x07) << 4);
+        }
+        MutationType::Power => {
+            // Multiplier increase is handled via UserGameBet.multiplier_increase
+            // and applied to PlayerData.active_multiplier in claim_rewards
+            // No action needed here - just marks the mutation type
+        }
+        MutationType::Trait => {
+            // Reroll a random visual gene
+            let mut seed_data = Vec::with_capacity(40);
+            seed_data.extend_from_slice(&slot.to_le_bytes());
+            seed_data.extend_from_slice(&user_key.to_bytes());
+            let hash = keccak::hash(&seed_data);
+            let bytes = hash.to_bytes();
+
+            // Pick random appearance trait (0-27)
+            let trait_index = bytes[0] % 28;
+            let new_value = bytes[1] % 16; // Appearance traits 0-15
+            set_trait_value(&mut egg.dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, trait_index, new_value);
+        }
     }
 }
 

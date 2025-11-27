@@ -23,6 +23,7 @@ use anchor_spl::token::Token;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
+use crate::genescience::{apply_mutation, calculate_mutation_result, MutationType};
 use crate::instructions::helper;
 use crate::state::*;
 
@@ -1046,6 +1047,51 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         );
     }
 
+    // === APPLY XP AND MUTATION TO EGG ===
+    if player_data.gameplay_egg != Pubkey::default() {
+        // Always add XP to PlayerData cache (will sync to EggMetadata on withdraw)
+        if user_bet.xp_gained > 0 {
+            player_data.gameplay_egg_xp = player_data.gameplay_egg_xp.saturating_add(user_bet.xp_gained);
+            msg!("   XP added to egg: +{} (total: {})", user_bet.xp_gained, player_data.gameplay_egg_xp);
+        }
+
+        // Apply multiplier increase (from Power mutation)
+        if user_bet.multiplier_increase > 0 {
+            player_data.active_multiplier = player_data.active_multiplier.saturating_add(user_bet.multiplier_increase);
+            msg!("   Multiplier increased: +{} (total: {})", user_bet.multiplier_increase, player_data.active_multiplier);
+        }
+
+        // Apply mutation to EggMetadata if provided
+        if user_bet.mutation_type != 0 {
+            msg!("🧬 Applying pending mutation type: {}", user_bet.mutation_type);
+
+            if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
+                if egg_metadata.mint == player_data.gameplay_egg {
+                    let mutation_type = match user_bet.mutation_type {
+                        1 => MutationType::Evolution,
+                        2 => MutationType::Power,
+                        3 => MutationType::Trait,
+                        _ => {
+                            msg!("   Invalid mutation type, skipping");
+                            return Ok(());
+                        }
+                    };
+
+                    // Apply mutation using stored seed
+                    let slot = u64::from_le_bytes(user_bet.mutation_seed);
+                    apply_mutation(egg_metadata, mutation_type, slot, &user_bet.owner);
+
+                    // Sync PlayerData cache with egg state after mutation
+                    player_data.gameplay_egg_dna = egg_metadata.dna;
+                    player_data.gameplay_egg_generation = egg_metadata.generation;
+                    player_data.active_multiplier = egg_metadata.multiplier;
+
+                    msg!("   ✓ Mutation applied to egg: {}", egg_metadata.mint);
+                }
+            }
+        }
+    }
+
     // Close bet account and return rent
     msg!("   Closing bet account and returning rent...");
     let signer_key = ctx.accounts.user_wallet.key();
@@ -1352,6 +1398,7 @@ fn internal_process_bets<'info>(
         (false, None, None, 0, None, None)
     };
 
+    let clock = Clock::get()?;
     emit!(BetsPlaced {
         user: owner_key,
         player_data: player_data.key(),
@@ -1369,8 +1416,74 @@ fn internal_process_bets<'info>(
         caller_compensation,
         rounds_remaining,
         vault_closed,
-        timestamp: Clock::get()?.unix_timestamp,
+        timestamp: clock.unix_timestamp,
     });
+
+    // === INSTANT MUTATION & XP LOGIC ===
+    // Check conditions: SOL bet > 0, player has gameplay_egg
+    let faction_id = player_data.faction_id as usize;
+    if amount_per_bet > 0
+        && use_ticket.is_none()
+        && player_data.gameplay_egg != Pubkey::default()
+        && user_game_bet.mutation_type == 0 // No mutation already triggered for this bet
+        && !game_session.mutation_occurred_per_faction[faction_id]
+    {
+        // Update highest bet for faction ::: i.e highest bet made by a player which belongs to this faction
+        if user_game_bet.total_sol_bet > game_session.highest_sol_bet_per_faction[faction_id] {
+            game_session.highest_sol_bet_per_faction[faction_id] = user_game_bet.total_sol_bet;
+        }
+
+        // Calculate mutation result with full game state entropy
+        let mutation_result = calculate_mutation_result(
+            user_game_bet.total_sol_bet,
+            game_session.highest_sol_bet_per_faction[faction_id],
+            player_data.active_multiplier,
+            player_data.gameplay_egg_dna,
+            player_data.gameplay_egg_generation,
+            player_data.gameplay_egg_xp,
+            game_session.total_sol_bets,
+            game_session.total_points_bets,
+            game_session.total_wgtd_points_bets,
+            clock.slot,
+            &owner_key,
+        );
+
+        // Always store XP gained (even without mutation)
+        user_game_bet.xp_gained = user_game_bet.xp_gained + mutation_result.xp_gained;
+
+        // Check if mutation triggered AND faction hasn't mutated this round
+        if let Some(mutation_type) = mutation_result.mutation_type {
+            if faction_id < NUM_FACTIONS && !game_session.mutation_occurred_per_faction[faction_id] {
+                // Store mutation result in UserGameBet
+                user_game_bet.mutation_type = match mutation_type {
+                    MutationType::Evolution => 1,
+                    MutationType::Power => 2,
+                    MutationType::Trait => 3,
+                };
+                user_game_bet.mutation_seed = clock.slot.to_le_bytes();
+                user_game_bet.multiplier_increase = mutation_result.multiplier_increase;
+
+                // Mark mutation occurred for this faction this round
+                game_session.mutation_occurred_per_faction[faction_id] = true;
+
+                emit!(MutationTriggered {
+                    user: owner_key,
+                    egg_mint: player_data.gameplay_egg,
+                    faction_id: player_data.faction_id,
+                    round_id,
+                    mutation_type: user_game_bet.mutation_type,
+                    bet_amount: total_net_added,
+                    highest_bet: game_session.highest_sol_bet_per_faction[faction_id],
+                    timestamp: clock.unix_timestamp,
+                });
+
+                msg!("🧬 Mutation triggered! Type: {}, Mult+: {} (will apply on claim)", 
+                    user_game_bet.mutation_type, user_game_bet.multiplier_increase);
+            }
+        }
+
+        msg!("   XP gained this round: {}", user_game_bet.xp_gained);
+    }
 
     Ok(())
 }
@@ -1962,6 +2075,10 @@ pub struct ClaimRoundRewards<'info> {
     /// Caller (bot or user themselves) - can be anyone
     pub caller: Signer<'info>,
 
+    /// Optional EggMetadata account for applying pending mutation (required if mutation_type != 0)
+    #[account(mut)]
+    pub egg_metadata: Option<Account<'info, EggMetadata>>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -2175,9 +2292,12 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
         None,
     )?;
 
-    // Update player data
+    // Update player data - cache egg fields for mutation calculations
     player_data.gameplay_egg = egg_mint;
     player_data.active_multiplier = egg_metadata.multiplier;
+    player_data.gameplay_egg_dna = egg_metadata.dna;
+    player_data.gameplay_egg_generation = egg_metadata.generation;
+    player_data.gameplay_egg_xp = egg_metadata.xp;
 
     // Update faction state
     faction_state.eggs_playing += 1;
@@ -2186,7 +2306,8 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     egg_metadata.incubated_player_data = player_data.owner;
     egg_metadata.last_update_ts = current_time;
 
-    msg!("✅ Egg {} now active for gameplay (multiplier: {})", egg_mint, egg_metadata.multiplier);
+    msg!("✅ Egg {} now active for gameplay", egg_mint);
+    msg!("   Multiplier: {}, Gen: {}, XP: {}", egg_metadata.multiplier, egg_metadata.generation, egg_metadata.xp);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggUsedForGameplay {
@@ -2235,9 +2356,22 @@ pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Resu
         Some(signer_seeds),
     )?;
 
-    // Update player data
+    // Sync cached data back to egg metadata before withdrawal
+    msg!("   Syncing gameplay progress to egg...");
+    egg_metadata.dna = player_data.gameplay_egg_dna;
+    egg_metadata.generation = player_data.gameplay_egg_generation;
+    egg_metadata.xp = player_data.gameplay_egg_xp;
+    egg_metadata.multiplier = player_data.active_multiplier;
+
+    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", 
+        egg_metadata.multiplier, egg_metadata.generation, egg_metadata.xp);
+
+    // Clear player data gameplay fields
     player_data.gameplay_egg = Pubkey::default();
     player_data.active_multiplier = 100; // Reset to 1x
+    player_data.gameplay_egg_dna = [0u8; 32];
+    player_data.gameplay_egg_generation = 0;
+    player_data.gameplay_egg_xp = 0;
 
     // Update faction state
     faction_state.eggs_playing = faction_state.eggs_playing.saturating_sub(1);
@@ -2246,7 +2380,7 @@ pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Resu
     egg_metadata.incubated_player_data = Pubkey::default();
     egg_metadata.last_update_ts = current_time;
 
-    msg!("✅ Egg {} withdrawn from gameplay (multiplier reset to 100)", egg_mint);
+    msg!("✅ Egg {} withdrawn from gameplay", egg_mint);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggWithdrawnFromGameplay {

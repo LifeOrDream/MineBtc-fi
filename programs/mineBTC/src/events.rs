@@ -541,3 +541,17 @@ pub struct EggWithdrawnFromGameplay {
     pub faction_id: u8,
     pub timestamp: i64,
 }
+
+/// Event emitted when an instant mutation is triggered during betting
+#[event]
+pub struct MutationTriggered {
+    pub user: Pubkey,
+    pub egg_mint: Pubkey,
+    pub faction_id: u8,
+    pub round_id: u64,
+    /// 0 = Evolution, 1 = Power, 2 = Trait
+    pub mutation_type: u8,
+    pub bet_amount: u64,
+    pub highest_bet: u64,
+    pub timestamp: i64,
+}
