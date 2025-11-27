@@ -859,7 +859,7 @@ pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 // ----------------------------------------------------------------------------------------
 
 /// Generate egg data (DNA, name, URI, multiplier) for a new egg
-fn generate_egg_data(
+pub fn generate_egg_data(
     egg_config: &EggConfig,
     mint_number: u64,
     user_key: &Pubkey,

@@ -895,6 +895,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     msg!("   Round ID: {}", round_id);
 
+    let player_data_key = ctx.accounts.player_data.key();
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
@@ -1047,11 +1048,23 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         );
     }
 
-    // === SYNC MUTATION TO EGG METADATA ===
-    if user_bet.mutation_type != 0 && player_data.gameplay_egg != Pubkey::default() {
+    // === ACCUMULATED VALUE & MUTATION SYNC ===
+    if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
         if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
             if egg_metadata.mint == player_data.gameplay_egg {
-                // Sync DNA from PlayerData cache
+                // Calculate accumulated_val % based on mutation type
+                // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
+                let accum_pct = match user_bet.mutation_type {
+                    1 => 69u64,  // Evolution: 6.9%
+                    2 => 42u64,  // Power: 4.2%
+                    3 => 30u64,  // Trait: 3%
+                    _ => 10u64,  // No mutation: 1%
+                };
+                let accum_add = (total_minebtc_reward * accum_pct) / 1000;
+                egg_metadata.accumulated_val = egg_metadata.accumulated_val + accum_add;
+                msg!("💎 Egg accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
+
+                // Sync DNA/XP/multiplier from PlayerData cache
                 egg_metadata.dna = player_data.gameplay_egg_dna;
                 egg_metadata.xp = player_data.gameplay_egg_xp;
                 egg_metadata.multiplier = player_data.active_multiplier;
@@ -1064,8 +1077,128 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     player_data.gameplay_egg_xp = 0;
                 }
 
-                msg!("🧬 Synced mutation to egg: {}", egg_metadata.mint);
+                msg!("🧬 Synced to egg: {}", egg_metadata.mint);
             }
+        }
+    }
+
+    // === FREE EGG MINT CHANCE ===
+    // Conditions: won on winning block, same faction, no mutation, 50% random chance
+    let bet_owner = user_bet.owner;
+    let won_on_winning_block = user_bet.block_ids.iter().any(|&b| b == game_session.winning_block);
+    let same_faction = player_data.faction_id == game_session.winning_faction_id;
+    let no_mutation = user_bet.mutation_type == 0;
+
+    if won_on_winning_block && same_faction && no_mutation {
+        // Use current ongoing round for entropy (harder to game)
+        let entropy_sol = ctx.accounts.current_game_session.as_ref()
+            .map(|s| s.total_sol_bets).unwrap_or(0);
+        let entropy_pts = ctx.accounts.current_game_session.as_ref()
+            .map(|s| s.total_points_bets).unwrap_or(0);
+        let current_round = ctx.accounts.global_game_state.current_round_id;
+        let clock = Clock::get()?;
+
+        let seed = anchor_lang::solana_program::keccak::hashv(&[
+            &clock.slot.to_le_bytes(),
+            &clock.unix_timestamp.to_le_bytes(),
+            &current_round.to_le_bytes(),
+            &entropy_sol.to_le_bytes(),
+            &entropy_pts.to_le_bytes(),
+            bet_owner.as_ref(),
+            &game_session.round_id.to_le_bytes(),
+        ]).to_bytes();
+
+        // 50% chance: check if first byte < 128
+        let roll = seed[0];
+        if roll < 128 {
+            msg!("🎁 FREE EGG! Roll: {} < 128", roll);
+
+            // Mint free egg if all accounts provided
+            if let (
+                Some(ref mut egg_config),
+                Some(ref new_egg_asset),
+                Some(ref collection_authority),
+                Some(ref mpl_core_program),
+                Some(ref new_egg_metadata_info),
+            ) = (
+                ctx.accounts.egg_config.as_mut(),
+                ctx.accounts.new_egg_asset.as_ref(),
+                ctx.accounts.collection_authority.as_ref(),
+                ctx.accounts.mpl_core_program.as_ref(),
+                ctx.accounts.new_egg_metadata.as_ref(),
+            ) {
+                if egg_config.eggs_minted < egg_config.max_supply {
+                    let mint_number = egg_config.eggs_minted + 1;
+                    let (name, uri, dna, multiplier) = crate::instructions::eggs::generate_egg_data(
+                        egg_config,
+                        mint_number,
+                        &bet_owner,
+                        clock.slot,
+                        player_data.faction_id,
+                        egg_config.eggs_minted,
+                    )?;
+
+                    // Create NFT via MPL Core - owner is bet_owner (not caller)
+                    let collection_authority_bump = ctx.bumps.collection_authority.unwrap_or(0);
+                    let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
+                    
+                    crate::mpl_core_helpers::create_mpl_core_asset(
+                        &new_egg_asset.to_account_info(),
+                        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+                        &collection_authority.to_account_info(),
+                        &ctx.accounts.caller.to_account_info(),
+                        &ctx.accounts.user_wallet.to_account_info(), // Owner is bet_owner
+                        &ctx.accounts.system_program.to_account_info(),
+                        &mpl_core_program.to_account_info(),
+                        name.clone(),
+                        uri.clone(),
+                        Some(&[collection_authority_seeds]),
+                    )?;
+
+                    // Initialize new egg metadata via raw account write
+                    let new_egg_meta_data = EggMetadata {
+                        mint: new_egg_asset.key(),
+                        accumulated_val: 0,
+                        dna,
+                        incubated_player_data: Pubkey::default(),
+                        multiplier,
+                        faction_id: player_data.faction_id,
+                        generation: 0,
+                        xp: 0,
+                        last_update_ts: clock.unix_timestamp,
+                        created_at: clock.unix_timestamp,
+                        bump: 0, // Will be set by anchor
+                    };
+                    
+                    // Serialize and write to account
+                    let mut data = new_egg_metadata_info.try_borrow_mut_data()?;
+                    let mut cursor = std::io::Cursor::new(&mut data[8..]); // Skip discriminator
+                    new_egg_meta_data.serialize(&mut cursor)?;
+
+                    egg_config.eggs_minted += 1;
+
+                    emit!(crate::events::EggMinted {
+                        egg_metadata_account: new_egg_metadata_info.key(),
+                        egg_asset_signer: new_egg_asset.key(),
+                        owner: bet_owner,
+                        player: player_data_key,
+                        mint: new_egg_asset.key(),
+                        name,
+                        uri,
+                        dna,
+                        accumulated_val: 0,
+                        multiplier,
+                        faction_id: player_data.faction_id,
+                        price: 0,
+                        ticket_tier: 0,
+                        ticket_count: 0,
+                    });
+
+                    msg!("🥚 Free egg minted to {}!", bet_owner);
+                }
+            }
+        } else {
+            msg!("🎲 No free egg this time. Roll: {} >= 128", roll);
         }
     }
 
@@ -2033,6 +2166,16 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
+    /// Global game state (for current round entropy)
+    #[account(
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump = global_game_state.bump
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+
+    /// Current ongoing round session (for randomness entropy) - different from claimed round
+    pub current_game_session: Option<Account<'info, GameSession>>,
+
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
@@ -2056,9 +2199,32 @@ pub struct ClaimRoundRewards<'info> {
     /// Caller (bot or user themselves) - can be anyone
     pub caller: Signer<'info>,
 
-    /// Optional EggMetadata account for applying pending mutation (required if mutation_type != 0)
+    /// Optional EggMetadata account for syncing mutation
     #[account(mut)]
     pub egg_metadata: Option<Account<'info, EggMetadata>>,
+
+    // === Free Egg Mint Accounts (optional - only needed if eligible) ===
+    #[account(mut)]
+    pub egg_config: Option<Account<'info, EggConfig>>,
+
+    /// CHECK: New egg asset to be created
+    #[account(mut)]
+    pub new_egg_asset: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Egg collection
+    pub egg_collection: Option<UncheckedAccount<'info>>,
+
+    /// New egg metadata account (init if minting)
+    /// CHECK: Will be initialized via remaining_accounts if needed
+    #[account(mut)]
+    pub new_egg_metadata: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Collection authority PDA
+    #[account(seeds = [COLLECTION_AUTHORITY_SEED], bump)]
+    pub collection_authority: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: Option<UncheckedAccount<'info>>,
 
     pub system_program: Program<'info, System>,
 }
