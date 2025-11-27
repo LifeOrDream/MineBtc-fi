@@ -80,11 +80,11 @@ pub fn int_simulate_mint_cost(
 }
 
 /// Batch mint multiple Doge (max 10 per transaction)
-/// Uses bonding curve pricing for each egg
+/// Uses bonding curve pricing for each doge
 ///
 /// # Remaining Accounts
 /// For each doge to mint, the client must pass 2 accounts in remaining_accounts:
-/// 1. doge_asset (Signer, Writable) - The new Keypair for the egg
+/// 1. doge_asset (Signer, Writable) - The new Keypair for the doge
 /// 2.doge_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
@@ -100,7 +100,7 @@ pub fn int_batch_mint_doges<'info>(
     );
 
     // Validate we have enough remaining accounts
-    // We need 2 accounts per egg: Asset(Signer) + Metadata(PDA)
+    // We need 2 accounts per doge: Asset(Signer) + Metadata(PDA)
     require!(
         ctx.remaining_accounts.len() == (mint_count as usize * 2),
         ErrorCode::InvalidParameters
@@ -1011,7 +1011,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 // -------------- HELPER FUNCTIONS ---------------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Generate doge data (DNA, name, URI, multiplier) for a new egg
+/// Generate doge data (DNA, name, URI, multiplier) for a new doge
 pub fn generate_doge_data(
     doge_config: &EggConfig,
     mint_number: u64,

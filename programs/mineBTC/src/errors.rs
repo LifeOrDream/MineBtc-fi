@@ -147,7 +147,7 @@ pub enum ErrorCode {
     #[msg("Breeding is not currently allowed")]
     BreedingNotAllowed,
 
-    #[msg("Maximum breed count reached for this egg")]
+    #[msg("Maximum breed count reached for this doge")]
     MaxBreedCountReached,
 
     #[msg("Breeding cooldown has not ended yet")]

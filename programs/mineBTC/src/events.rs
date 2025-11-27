@@ -136,7 +136,7 @@ pub struct EggCollectionCreated {
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
 pub struct EggStaked {
-    /// User who staked the egg
+    /// User who staked the doge
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
@@ -160,7 +160,7 @@ pub struct EggStaked {
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
 pub struct EggUnstaked {
-    /// User who unstaked the egg
+    /// User who unstaked the doge
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,

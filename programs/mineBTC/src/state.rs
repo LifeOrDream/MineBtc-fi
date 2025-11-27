@@ -849,7 +849,7 @@ pub struct PlayerData {
 
     /// Doge currently being used in gameplay (Pubkey::default() if none)
     pub gameplay_egg: Pubkey,
-    /// Active gameplay multiplier (100 = 1x, set from gameplay egg's multiplier, reset to 100 on withdraw)
+    /// Active gameplay multiplier (100 = 1x, set from gameplay doge's multiplier, reset to 100 on withdraw)
     pub active_multiplier: u32,
     /// Cached DNA of gameplay doge (for mutation calculations without loading EggMetadata)
     pub gameplay_doge_dna: [u8; 32],
@@ -986,7 +986,7 @@ pub struct EggMetadata {
     pub accumulated_val: u64,
     /// DNA data (32 bytes for breeding/evolution)
     pub dna: [u8; 32],
-    /// The Player who is incubating this egg. Pubkey::default() if not incubated.
+    /// The Player who is incubating this doge. Pubkey::default() if not incubated.
     pub incubated_player_data: Pubkey,
     /// Last power update timestamp
     pub last_update_ts: i64,

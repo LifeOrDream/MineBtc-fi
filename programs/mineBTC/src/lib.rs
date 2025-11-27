@@ -577,7 +577,7 @@ pub mod minebtc {
     // ------------ USER INSTRUCTIONS :: GAMEPLAY DOGES  ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Use an doge for gameplay - deposits to custody and sets as active gameplay egg
+    /// Use an doge for gameplay - deposits to custody and sets as active gameplay doge
     pub fn use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
         user::internal_use_doge_for_gameplay(ctx)
     }

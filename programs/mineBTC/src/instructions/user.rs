@@ -1056,7 +1056,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     player_data.gameplay_doge_xp = 0;
                 }
 
-                msg!("🧬 Synced to egg: {}", doge_metadata.mint);
+                msg!("🧬 Synced to doge: {}", doge_metadata.mint);
             }
         }
     }
@@ -2355,7 +2355,7 @@ pub struct ExecuteAutominerBet<'info> {
 // =============================== GAMEPLAY DOGE FUNCTIONS =================================
 // ========================================================================================
 
-/// Use an doge for gameplay - deposits doge to program custody and sets it as active gameplay egg
+/// Use an doge for gameplay - deposits doge to program custody and sets it as active gameplay doge
 pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -2423,7 +2423,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     Ok(())
 }
 
-/// Withdraw doge from gameplay - returns doge to user and clears gameplay egg
+/// Withdraw doge from gameplay - returns doge to user and clears gameplay doge
 pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -2438,7 +2438,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
     require!(nft_owner == ctx.accounts.doge_custody_pda.key(), ErrorCode::DogeNotAtGuard);
 
-    // Verify this is the player's gameplay egg
+    // Verify this is the player's gameplay doge
     require!(player_data.gameplay_egg == doge_mint, ErrorCode::InvalidParameters);
 
     // Verify doge metadata matches player
@@ -2461,7 +2461,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
 
     // Sync cached data back to doge metadata before withdrawal
     // Note: generation is stored in DNA bits 4-6
-    msg!("   Syncing gameplay progress to egg...");
+    msg!("   Syncing gameplay progress to doge...");
     doge_metadata.dna = player_data.gameplay_doge_dna;
     doge_metadata.xp = player_data.gameplay_doge_xp;
     doge_metadata.multiplier = player_data.active_multiplier;

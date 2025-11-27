@@ -2279,7 +2279,7 @@ async function updateFees(minebtcProgram, feeConfig) {
   }
 }
 
-async function updateEggConfig(minebtcProgram, eggConfig) {
+async function updateEggConfig(minebtcProgram, dogeConfig) {
   console.log(
     COLOR_STEP,
     "\n================ [ UPDATING DOGE CONFIG ] ================"
@@ -2334,10 +2334,10 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
     );
 
     // Get values from config or use provided values
-    const basePrice = eggConfig?.basePrice 
+    const basePrice = dogeConfig?.basePrice 
       ? new BN(eggConfig.basePrice)
       : new BN(config.doges_config.base_price);
-    const curveA = eggConfig?.curveA 
+    const curveA = dogeConfig?.curveA 
       ? new BN(eggConfig.curveA)
       : new BN(config.doges_config.curve_a);
 

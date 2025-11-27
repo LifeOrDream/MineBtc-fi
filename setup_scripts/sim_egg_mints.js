@@ -172,11 +172,11 @@ function simulateEggMints() {
     // Track every Nth doge (for display)
     const displayInterval = Math.max(1, Math.floor(TOTAL_SUPPLY / 50)); // Show ~50 doges
     
-    for (let eggNumber = 1; eggNumber <= TOTAL_SUPPLY; eggNumber++) {
-        // items_minted is 0-indexed (0 = first egg, 1 = second egg, etc.)
-        const itemsMinted = eggNumber - 1;
+    for (let dogeNumber = 1; dogeNumber <= TOTAL_SUPPLY; dogeNumber++) {
+        // items_minted is 0-indexed (0 = first doge, 1 = second doge, etc.)
+        const itemsMinted = dogeNumber - 1;
         
-        // Calculate price for this egg
+        // Calculate price for this doge
         const price = computeGenePrice(BASE_PRICE, CURVE_A, itemsMinted);
         
         // Calculate fee distribution
@@ -190,8 +190,8 @@ function simulateEggMints() {
         // Display every Nth doge or last 10 doges
         const shouldDisplay = (eggNumber % displayInterval === 0) || 
                              (eggNumber > TOTAL_SUPPLY - 10) ||
-                             eggNumber === 1 ||
-                             eggNumber === TOTAL_SUPPLY;
+                             dogeNumber === 1 ||
+                             dogeNumber === TOTAL_SUPPLY;
         
         if (shouldDisplay) {
             console.log(
