@@ -10,7 +10,7 @@
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
 // - `MineBtcMining`: Manages the mining emission and distribution logic.
-// - `EggConfig`: Configuration for the Doge NFT system.
+// - `DogeConfig`: Configuration for the Doge NFT system.
 // - `TaxConfig`: Configuration for the tax and burn system.
 //
 
@@ -400,7 +400,7 @@ impl TicketTier {
 
 /// Global doge configuration
 #[account]
-pub struct EggConfig {
+pub struct DogeConfig {
     pub bump: u8,
 
     /// Doge collection address (Metaplex Core)
@@ -434,7 +434,7 @@ pub struct EggConfig {
     pub breed_curve_a: u64,
 }
 
-impl EggConfig {
+impl DogeConfig {
     pub const MAX_TICKET_TIERS: usize = 3;
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
@@ -851,9 +851,9 @@ pub struct PlayerData {
     pub gameplay_doge: Pubkey,
     /// Active gameplay multiplier (100 = 1x, set from gameplay doge's multiplier, reset to 100 on withdraw)
     pub active_multiplier: u32,
-    /// Cached DNA of gameplay doge (for mutation calculations without loading EggMetadata)
+    /// Cached DNA of gameplay doge (for mutation calculations without loading DogeMetadata)
     pub gameplay_doge_dna: [u8; 32],
-    /// Cached XP of gameplay doge (updated during gameplay, synced to EggMetadata on withdraw)
+    /// Cached XP of gameplay doge (updated during gameplay, synced to DogeMetadata on withdraw)
     pub gameplay_doge_xp: u32,
 }
 
@@ -965,7 +965,7 @@ impl ReferralRewards {
 
 /// Doge NFT metadata (stored in minebtc program for simplicity)
 #[account]
-pub struct EggMetadata {
+pub struct DogeMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
     /// Parent 1 mint (Pubkey::default() for genesis doges)
@@ -996,7 +996,7 @@ pub struct EggMetadata {
     pub bump: u8,
 }
 
-impl EggMetadata {
+impl DogeMetadata {
     pub const MAX_BREED_COUNT: u8 = 5;
     
     /// Cooldown times in seconds: [0h, 24h, 72h, 120h, 336h]

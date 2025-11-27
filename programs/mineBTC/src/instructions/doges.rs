@@ -32,7 +32,7 @@ use crate::state::*;
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
 /// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
 pub fn int_simulate_mint_cost(
-    doge_config: &EggConfig,
+    doge_config: &DogeConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
     require!(
@@ -225,7 +225,7 @@ pub fn int_batch_mint_doges<'info>(
         // Initialize Metadata PDA manually (since we can't use #[account(init)] with remaining_accounts)
         // Check if account already exists (shouldn't, but safety check)
         if doge_metadata_info.lamports() == 0 {
-            let space = EggMetadata::LEN;
+            let space = DogeMetadata::LEN;
             let rent = Rent::get()?.minimum_balance(space);
 
             let metadata_seeds = &[
@@ -252,7 +252,7 @@ pub fn int_batch_mint_doges<'info>(
         }
 
         // Write data to the metadata account (generation is in DNA bits 4-6)
-        let metadata_data = EggMetadata {
+        let metadata_data = DogeMetadata {
             mint: doge_asset_key,
             mom: Pubkey::default(),
             dad: Pubkey::default(),
@@ -274,11 +274,11 @@ pub fn int_batch_mint_doges<'info>(
         let mut data = doge_metadata_info.try_borrow_mut_data()?;
 
         // Ensure the account has enough space
-        require!(data.len() >= EggMetadata::LEN, ErrorCode::InvalidParameters);
+        require!(data.len() >= DogeMetadata::LEN, ErrorCode::InvalidParameters);
 
         // Write the 8-byte discriminator (required by Anchor for account deserialization)
-        // Anchor calculates discriminator as first 8 bytes of sha256("account:EggMetadata")
-        data[..8].copy_from_slice(&<EggMetadata as Discriminator>::DISCRIMINATOR);
+        // Anchor calculates discriminator as first 8 bytes of sha256("account:DogeMetadata")
+        data[..8].copy_from_slice(&<DogeMetadata as Discriminator>::DISCRIMINATOR);
 
         // Serialize struct data to a Vec, then copy to buffer after discriminator
         // This is more reliable than using Write trait directly on mutable slice
@@ -327,7 +327,7 @@ pub fn int_batch_mint_doges<'info>(
 
 /// Admin function to mint a Doge NFT for free to a specified recipient
 pub fn int_admin_mint_doge(
-    ctx: Context<AdminMintEgg>,
+    ctx: Context<AdminMintDoge>,
     recipient: Pubkey,
     faction_id: u8,
     ticket_tier_index: u8,
@@ -477,7 +477,7 @@ pub fn int_admin_mint_doge(
 /// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
 /// Users can stake up to 5 doges, each additional doge increases multiplier by 0.5x
 /// Multipliers: 1 doge = 1.5x, 2 doges = 2.0x, 3 doges = 2.5x, 4 doges = 3.0x, 5 doges = 3.5x
-pub fn int_stake_doge(ctx: Context<StakeEgg>) -> Result<()> {
+pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -607,7 +607,7 @@ pub fn int_stake_doge(ctx: Context<StakeEgg>) -> Result<()> {
     msg!("   Doge metadata updated");
 
     // Emit event for indexing
-    emit!(EggStaked {
+    emit!(DogeStaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
         doge_mint: doge_mint,
@@ -623,7 +623,7 @@ pub fn int_stake_doge(ctx: Context<StakeEgg>) -> Result<()> {
 }
 
 /// Unstake a Doge (reduces multiplier and recalculates hashpower)
-pub fn int_unstake_doge(ctx: Context<UnstakeEgg>) -> Result<()> {
+pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -770,7 +770,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeEgg>) -> Result<()> {
     )?;
 
     // Emit event for indexing
-    emit!(EggUnstaked {
+    emit!(DogeUnstaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
         doge_mint: doge_mint,
@@ -849,7 +849,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
     }
 
     // Emit event
-    emit!(EggSentToHeaven {
+    emit!(DogeSentToHeaven {
         doge_mint: doge_metadata.mint,
         user: ctx.accounts.user.key(),
         accumulated_val,
@@ -885,8 +885,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     require!(mom.faction_id == dad.faction_id, ErrorCode::InvalidFactionId);
     
     // Validate breed counts
-    require!(mom.breed_count < EggMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
-    require!(dad.breed_count < EggMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
+    require!(mom.breed_count < DogeMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
+    require!(dad.breed_count < DogeMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
     
     // Validate cooldowns
     require!(mom.cooldown_end <= current_time, ErrorCode::CooldownNotEnded);
@@ -974,8 +974,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     offspring.bump = ctx.bumps.offspring_metadata;
 
     // Update parent cooldowns and breed counts
-    let mom_cooldown = EggMetadata::COOLDOWNS.get(mom.breed_count as usize).copied().unwrap_or(1209600);
-    let dad_cooldown = EggMetadata::COOLDOWNS.get(dad.breed_count as usize).copied().unwrap_or(1209600);
+    let mom_cooldown = DogeMetadata::COOLDOWNS.get(mom.breed_count as usize).copied().unwrap_or(1209600);
+    let dad_cooldown = DogeMetadata::COOLDOWNS.get(dad.breed_count as usize).copied().unwrap_or(1209600);
     
     mom.breed_count += 1;
     mom.cooldown_end = current_time + mom_cooldown;
@@ -1013,7 +1013,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 
 /// Generate doge data (DNA, name, URI, multiplier) for a new doge
 pub fn generate_doge_data(
-    doge_config: &EggConfig,
+    doge_config: &DogeConfig,
     mint_number: u64,
     user_key: &Pubkey,
     slot_offset: u64,
@@ -1035,7 +1035,7 @@ pub fn generate_doge_data(
 /// Add tickets to player based on price and ticket tier
 fn add_tickets_to_player(
     player_data: &mut PlayerData,
-    doge_config: &EggConfig,
+    doge_config: &DogeConfig,
     ticket_tier_index: u8,
     price: u64,
 ) -> Result<u64> {
@@ -1125,12 +1125,12 @@ pub struct SimulateMintCost<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doge_config.bump
     )]
-    pub doge_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, DogeConfig>,
 }
 
 #[derive(Accounts)]
 #[instruction(faction_id: u8)]
-pub struct MintEgg<'info> {
+pub struct MintDoge<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1143,7 +1143,7 @@ pub struct MintEgg<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doge_config.bump
     )]
-    pub doge_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, DogeConfig>,
 
     /// CHECK: Doge treasury PDA (for doge minting fees)
     #[account(
@@ -1187,18 +1187,18 @@ pub struct MintEgg<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub doge_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Egg
+    /// Optional collection account for the Doge
     /// CHECK: Optional collection
     pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = user,
-        space = EggMetadata::LEN,
+        space = DogeMetadata::LEN,
         seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
         bump
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -1233,7 +1233,7 @@ pub struct BatchMintDoge<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doge_config.bump,
     )]
-    pub doge_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, DogeConfig>,
 
     #[account(
         mut,
@@ -1297,7 +1297,7 @@ pub struct BatchMintDoge<'info> {
 
 #[derive(Accounts)]
 #[instruction(recipient: Pubkey, faction_id: u8)]
-pub struct AdminMintEgg<'info> {
+pub struct AdminMintDoge<'info> {
     #[account(mut)]
     pub authority: Signer<'info>, // Admin authority
 
@@ -1314,7 +1314,7 @@ pub struct AdminMintEgg<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doge_config.bump,
     )]
-    pub doge_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, DogeConfig>,
 
     /// CHECK: Recipient account (will receive the NFT)
     #[account(mut)]
@@ -1334,18 +1334,18 @@ pub struct AdminMintEgg<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub doge_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Egg
+    /// Optional collection account for the Doge
     /// CHECK: Optional collection
     pub doge_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = authority,
-        space = EggMetadata::LEN,
+        space = DogeMetadata::LEN,
         seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
         bump
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -1361,7 +1361,7 @@ pub struct AdminMintEgg<'info> {
 }
 
 #[derive(Accounts)]
-pub struct StakeEgg<'info> {
+pub struct StakeDoge<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -1385,7 +1385,7 @@ pub struct StakeEgg<'info> {
     /// CHECK: Verified via get_mpl_core_owner helper
     pub doge_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Egg
+    /// Optional collection account for the Doge
     /// CHECK: Optional collection
     pub doge_collection: Option<UncheckedAccount<'info>>,
 
@@ -1395,7 +1395,7 @@ pub struct StakeEgg<'info> {
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
@@ -1415,7 +1415,7 @@ pub struct StakeEgg<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UnstakeEgg<'info> {
+pub struct UnstakeDoge<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -1439,7 +1439,7 @@ pub struct UnstakeEgg<'info> {
     /// CHECK: Verified via get_mpl_core_owner helper
     pub doge_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Egg
+    /// Optional collection account for the Doge
     /// CHECK: Optional collection
     pub doge_collection: Option<UncheckedAccount<'info>>,
 
@@ -1449,7 +1449,7 @@ pub struct UnstakeEgg<'info> {
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
@@ -1474,7 +1474,7 @@ pub struct SendToHeaven<'info> {
     pub user: Signer<'info>,
 
     #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = doge_config.bump)]
-    pub doge_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, DogeConfig>,
 
     #[account(
         mut,
@@ -1483,14 +1483,14 @@ pub struct SendToHeaven<'info> {
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     /// Metaplex Core asset (will be burnt)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper (implicit in burn)
     pub doge_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Egg
+    /// Optional collection account for the Doge
     /// CHECK: Optional collection
     pub doge_collection: Option<UncheckedAccount<'info>>,
 
@@ -1545,7 +1545,7 @@ pub struct BreedDoge<'info> {
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = doge_config.bump)]
-    pub doge_config: Account<'info, EggConfig>,
+    pub doge_config: Account<'info, DogeConfig>,
 
     #[account(
         mut,
@@ -1587,7 +1587,7 @@ pub struct BreedDoge<'info> {
         bump = mom_metadata.bump,
         constraint = mom_metadata.mint == mom_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub mom_metadata: Box<Account<'info, EggMetadata>>,
+    pub mom_metadata: Box<Account<'info, DogeMetadata>>,
 
     /// CHECK: Dad NFT asset - Verified via get_mpl_core_owner
     #[account(mut)]
@@ -1599,7 +1599,7 @@ pub struct BreedDoge<'info> {
         bump = dad_metadata.bump,
         constraint = dad_metadata.mint == dad_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub dad_metadata: Box<Account<'info, EggMetadata>>,
+    pub dad_metadata: Box<Account<'info, DogeMetadata>>,
 
     /// CHECK: Offspring NFT asset - Will be created via MPL Core CPI
     #[account(mut)]
@@ -1608,11 +1608,11 @@ pub struct BreedDoge<'info> {
     #[account(
         init,
         payer = user,
-        space = EggMetadata::LEN,
+        space = DogeMetadata::LEN,
         seeds = [DOGE_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
         bump
     )]
-    pub offspring_metadata: Box<Account<'info, EggMetadata>>,
+    pub offspring_metadata: Box<Account<'info, DogeMetadata>>,
 
     /// CHECK: Doge collection
     pub doge_collection: Option<UncheckedAccount<'info>>,

@@ -263,7 +263,7 @@ async function main() {
 
     // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // Example usage:
-    // await updateEggConfig(minebtcProgram, {
+    // await updateDogeConfig(minebtcProgram, {
     //     basePrice: 100000000, // 1 SOL in lamports
     //     curveA: 1111111, // Curve parameter
     // });
@@ -290,17 +290,17 @@ async function main() {
     // 6.5. Initialize Custodian Accounts (DBTC and Liquidity custodians)
     await initializeCustodianAccounts(minebtcProgram);
 
-        // 7. Initialize EggConfig
-    await initializeEggConfig(minebtcProgram);
+        // 7. Initialize DogeConfig
+    await initializeDogeConfig(minebtcProgram);
 
         // 8. Create Doge Collection
-    await createEggCollection(minebtcProgram);
+    await createDogeCollection(minebtcProgram);
 
         // 9. Set Doge URIs (one per faction)
-    await setEggUris(minebtcProgram);
+    await setDogeUris(minebtcProgram);
 
         // 10. Initialize Doge Royalties
-    await initializeEggRoyalties(minebtcProgram);
+    await initializeDogeRoyalties(minebtcProgram);
 
         // 11. Configure Ticket Tiers (for Doge minting)
     await configureTicketTiers(minebtcProgram);
@@ -1294,9 +1294,9 @@ async function setRaydiumPoolState(minebtcProgram) {
     }
 }
 
-async function initializeEggConfig(minebtcProgram) {
+async function initializeDogeConfig(minebtcProgram) {
     if (deploymentFile.doge_config_initialized) {
-    console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
+    console.log(COLOR_INFO, "ℹ️ DogeConfig already initialized. Skipping...");
         return;
     }
 
@@ -1324,14 +1324,14 @@ async function initializeEggConfig(minebtcProgram) {
     throw new Error("Doge config values not found");
     }
 
-    console.log(COLOR_INFO, `🔑 EggConfig PDA: ${dogesConfigPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 DogeConfig PDA: ${dogesConfigPDA.toString()}`);
     console.log(COLOR_INFO, `💰 Base Price: ${basePrice / 1e9} SOL`);
     console.log(COLOR_INFO, `📈 Curve A: ${curveA}`);
     console.log(COLOR_INFO, `🥚 Max Supply: ${maxSupply}`);
 
     try {
     const tx = await minebtcProgram.methods
-      .initializeEggConfig(new BN(basePrice), new BN(curveA), new BN(maxSupply))
+      .initializeDogeConfig(new BN(basePrice), new BN(curveA), new BN(maxSupply))
             .accounts({
                 dogesConfig: dogesConfigPDA,
                 globalConfig: globalConfigPDA,
@@ -1340,7 +1340,7 @@ async function initializeEggConfig(minebtcProgram) {
             })
             .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ EggConfig initialized successfully!");
+    console.log(COLOR_SUCCESS, "✅ DogeConfig initialized successfully!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.doge_config_initialized = {
@@ -1354,19 +1354,19 @@ async function initializeEggConfig(minebtcProgram) {
         saveDeploymentData();
     } catch (error) {
         if (error.toString().includes("already in use")) {
-      console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
+      console.log(COLOR_INFO, "ℹ️ DogeConfig already initialized. Skipping...");
             deploymentFile.doge_config_initialized = {
                 doges_config_pda: dogesConfigPDA.toString(),
             };
             saveDeploymentData();
         } else {
-      console.error(COLOR_ERROR, "❌ Failed to initialize EggConfig:", error);
+      console.error(COLOR_ERROR, "❌ Failed to initialize DogeConfig:", error);
             throw error;
         }
     }
 }
 
-async function createEggCollection(minebtcProgram) {
+async function createDogeCollection(minebtcProgram) {
     if (deploymentFile.doge_collection_created) {
     console.log(COLOR_INFO, "ℹ️ Doge collection already created");
     console.log(
@@ -1412,7 +1412,7 @@ async function createEggCollection(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-            .createEggCollection(
+            .createDogeCollection(
                 config.doges.collection_name,
                 config.doges.collection_uri
             )
@@ -1462,7 +1462,7 @@ async function createEggCollection(minebtcProgram) {
     }
 }
 
-async function setEggUris(minebtcProgram) {
+async function setDogeUris(minebtcProgram) {
     if (!deploymentFile.doge_collection_created) {
     console.error(
       COLOR_ERROR,
@@ -1500,7 +1500,7 @@ async function setEggUris(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-            .setEggUris(config.doges.uris)
+            .setDogeUris(config.doges.uris)
             .accounts({
                 globalConfig: globalConfigPDA,
                 dogesConfig: dogesConfigPDA,
@@ -1525,7 +1525,7 @@ async function setEggUris(minebtcProgram) {
     }
 }
 
-async function initializeEggRoyalties(minebtcProgram) {
+async function initializeDogeRoyalties(minebtcProgram) {
     if (deploymentFile.doge_royalties_initialized) {
     console.log(
       COLOR_INFO,
@@ -1594,7 +1594,7 @@ async function initializeEggRoyalties(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initEggRoyalties(basisPoints, creators)
+      .initDogeRoyalties(basisPoints, creators)
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
@@ -2279,7 +2279,7 @@ async function updateFees(minebtcProgram, feeConfig) {
   }
 }
 
-async function updateEggConfig(minebtcProgram, dogeConfig) {
+async function updateDogeConfig(minebtcProgram, dogeConfig) {
   console.log(
     COLOR_STEP,
     "\n================ [ UPDATING DOGE CONFIG ] ================"
@@ -2315,7 +2315,7 @@ async function updateEggConfig(minebtcProgram, dogeConfig) {
     );
 
     // Get current config
-    const dogesConfig = await minebtcProgram.account.eggConfig.fetch(
+    const dogesConfig = await minebtcProgram.account.dogeConfig.fetch(
       dogesConfigPDA
     );
 
@@ -2335,10 +2335,10 @@ async function updateEggConfig(minebtcProgram, dogeConfig) {
 
     // Get values from config or use provided values
     const basePrice = dogeConfig?.basePrice 
-      ? new BN(eggConfig.basePrice)
+      ? new BN(dogeConfig.basePrice)
       : new BN(config.doges_config.base_price);
     const curveA = dogeConfig?.curveA 
-      ? new BN(eggConfig.curveA)
+      ? new BN(dogeConfig.curveA)
       : new BN(config.doges_config.curve_a);
 
     console.log(COLOR_INFO, "\n   Updating Doge Config:");
@@ -2357,7 +2357,7 @@ async function updateEggConfig(minebtcProgram, dogeConfig) {
 
     // Build and send transaction
     const tx = await minebtcProgram.methods
-      .updateEggConfig(basePrice, curveA)
+      .updateDogeConfig(basePrice, curveA)
       .accounts({
         globalConfig: globalConfigPDA,
         dogesConfig: dogesConfigPDA,

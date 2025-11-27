@@ -125,7 +125,7 @@ pub struct DogeMinted {
 }
 
 #[event]
-pub struct EggCollectionCreated {
+pub struct DogeCollectionCreated {
     pub collection: Pubkey,
     pub update_authority: Pubkey,
     pub name: String,
@@ -135,7 +135,7 @@ pub struct EggCollectionCreated {
 /// Event emitted when a Doge is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct EggStaked {
+pub struct DogeStaked {
     /// User who staked the doge
     pub owner: Pubkey,
     /// Player data account address
@@ -159,7 +159,7 @@ pub struct EggStaked {
 /// Event emitted when a Doge is unstaked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct EggUnstaked {
+pub struct DogeUnstaked {
     /// User who unstaked the doge
     pub owner: Pubkey,
     /// Player data account address
@@ -182,7 +182,7 @@ pub struct EggUnstaked {
 
 /// Event emitted when an doge is sent to heaven (burnt) for rewards
 #[event]
-pub struct EggSentToHeaven {
+pub struct DogeSentToHeaven {
     /// Doge mint address that was burnt
     pub doge_mint: Pubkey,
     /// User who sent the doge to heaven
@@ -526,7 +526,7 @@ pub struct DistributionRoundFinished {
 
 /// Event emitted when an doge is used for gameplay
 #[event]
-pub struct EggUsedForGameplay {
+pub struct DogeUsedForGameplay {
     pub user: Pubkey,
     pub doge_mint: Pubkey,
     pub faction_id: u8,
@@ -535,7 +535,7 @@ pub struct EggUsedForGameplay {
 
 /// Event emitted when an doge is withdrawn from gameplay
 #[event]
-pub struct EggWithdrawnFromGameplay {
+pub struct DogeWithdrawnFromGameplay {
     pub user: Pubkey,
     pub doge_mint: Pubkey,
     pub faction_id: u8,

@@ -138,7 +138,7 @@ Free tickets can be used for betting instead of SOL.
 Stake up to **5 Doge** to boost your mining hashpower:
 
 ```
-1 Egg:  1.3x multiplier
+1 Doge:  1.3x multiplier
 2 Doge: 1.6x multiplier
 3 Doge: 2.0x multiplier
 4 Doge: 2.5x multiplier
@@ -265,7 +265,7 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
               → GameSession (per round)
               → MineBtcMining
               → TaxConfig
-              → EggConfig
+              → DogeConfig
 ```
 
 ---

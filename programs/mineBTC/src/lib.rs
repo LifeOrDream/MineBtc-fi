@@ -38,7 +38,7 @@ pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    BetType, BlocksConfig, EggConfig, FactionStrategy, FactionsConfig, MineBtcDistConfig,
+    BetType, BlocksConfig, DogeConfig, FactionStrategy, FactionsConfig, MineBtcDistConfig,
     SolFeeConfig, TaxConfig, TicketTier,
 };
 
@@ -234,12 +234,12 @@ pub mod minebtc {
     // ------------  DOGE SYSTEM (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize EggConfig account (admin only)
+    /// Initialize DogeConfig account (admin only)
     ///
-    /// Creates the EggConfig account that stores Doge configuration.
+    /// Creates the DogeConfig account that stores Doge configuration.
     /// This must be called before creating the Doge collection.
     pub fn initialize_doge_config(
-        ctx: Context<InitializeEggConfig>,
+        ctx: Context<InitializeDogeConfig>,
         base_price: u64,
         curve_a: u64,
         max_supply: u64,
@@ -247,9 +247,9 @@ pub mod minebtc {
         admin::initialize_doge_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
-    /// Update EggConfig account (admin only)
+    /// Update DogeConfig account (admin only)
     ///
-    /// Updates the EggConfig account that stores Doge collection configuration.
+    /// Updates the DogeConfig account that stores Doge collection configuration.
     ///
     /// # Parameters
     /// - `base_price`: Base price for Doge in SOL (lamports)
@@ -267,9 +267,9 @@ pub mod minebtc {
     /// Creates a new Metaplex Core collection for Doge NFTs.
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
-    /// Requires EggConfig to be initialized first.
+    /// Requires DogeConfig to be initialized first.
     pub fn create_doge_collection(
-        ctx: Context<CreateEggCollection>,
+        ctx: Context<CreateDogeCollection>,
         name: String,
         uri: String,
     ) -> Result<()> {
@@ -289,7 +289,7 @@ pub mod minebtc {
 
     /// Initialize royalties on the Doge collection (admin only)
     pub fn init_doge_royalties(
-        ctx: Context<InitEggRoyalties>,
+        ctx: Context<InitDogeRoyalties>,
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
@@ -578,12 +578,12 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
 
     /// Use an doge for gameplay - deposits to custody and sets as active gameplay doge
-    pub fn use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+    pub fn use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
         user::internal_use_doge_for_gameplay(ctx)
     }
 
     /// Withdraw doge from gameplay - returns doge to user
-    pub fn withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+    pub fn withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
         user::internal_withdraw_doge_from_gameplay(ctx)
     }
 
@@ -643,7 +643,7 @@ pub mod minebtc {
     ///Simulate mint costs for multiple doges accounting for bonding curve pricing
     ///
     /// # Parameters
-    /// - `doge_config`: EggConfig account
+    /// - `doge_config`: DogeConfig account
     /// - `mint_count`: Number of doges to mint
     pub fn simulate_purchase_cost(
         ctx: Context<SimulateMintCost>,
@@ -661,7 +661,7 @@ pub mod minebtc {
     /// - `recipient`: Address that will receive the minted NFT
     /// - `faction_id`: Faction ID the doge belongs to
     pub fn admin_mint_doge(
-        ctx: Context<AdminMintEgg>,
+        ctx: Context<AdminMintDoge>,
         recipient: Pubkey,
         faction_id: u8,
         ticket_tier_index: u8,
@@ -688,12 +688,12 @@ pub mod minebtc {
     }
 
     /// Stake a Doge to boost hashpower (if faction matches player's faction)
-    pub fn stake_doge(ctx: Context<StakeEgg>) -> Result<()> {
+    pub fn stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         doges::int_stake_doge(ctx)
     }
 
     /// Unstake a Doge (remove hashpower boost)
-    pub fn unstake_doge(ctx: Context<UnstakeEgg>) -> Result<()> {
+    pub fn unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         doges::int_unstake_doge(ctx)
     }
 

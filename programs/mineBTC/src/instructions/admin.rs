@@ -938,9 +938,9 @@ pub fn update_hashpower_config_internal(
 // --------------  DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Initialize EggConfig account (admin only)
+/// Initialize DogeConfig account (admin only)
 ///
-/// Creates the EggConfig account that stores Doge collection configuration.
+/// Creates the DogeConfig account that stores Doge collection configuration.
 /// This must be called before creating the Doge collection.
 ///
 /// # Parameters
@@ -948,12 +948,12 @@ pub fn update_hashpower_config_internal(
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
 /// - `max_supply`: Maximum number of Doge that can be minted
 pub fn initialize_doge_config_internal(
-    ctx: Context<InitializeEggConfig>,
+    ctx: Context<InitializeDogeConfig>,
     base_price: u64,
     curve_a: u64,
     max_supply: u64,
 ) -> Result<()> {
-    msg!("🥚 [initialize_doge_config_internal] Initializing EggConfig");
+    msg!("🥚 [initialize_doge_config_internal] Initializing DogeConfig");
 
     let doges_config = &mut ctx.accounts.doges_config;
 
@@ -969,7 +969,7 @@ pub fn initialize_doge_config_internal(
     doges_config.breed_base_price = 0;
     doges_config.breed_curve_a = 100;
 
-    msg!("   ✅ EggConfig initialized");
+    msg!("   ✅ DogeConfig initialized");
     msg!("   Base Price: {} lamports, Max Supply: {}", base_price, max_supply);
 
     Ok(())
@@ -979,13 +979,13 @@ pub fn initialize_doge_config_internal(
 ///
 /// Creates a new Metaplex Core collection for Doge NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
-/// Requires EggConfig to be initialized first.
+/// Requires DogeConfig to be initialized first.
 ///
 /// # Parameters
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
 pub fn create_doge_collection_internal(
-    ctx: Context<CreateEggCollection>,
+    ctx: Context<CreateDogeCollection>,
     name: String,
     uri: String,
 ) -> Result<()> {
@@ -1018,7 +1018,7 @@ pub fn create_doge_collection_internal(
     // Store the collection address in global config
     doges_config.doge_collection = ctx.accounts.collection.key();
 
-    emit!(EggCollectionCreated {
+    emit!(DogeCollectionCreated {
         collection: ctx.accounts.collection.key(),
         update_authority: ctx.accounts.collection_authority.key(),
         name,
@@ -1084,7 +1084,7 @@ pub fn clear_doge_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
 pub fn init_doge_royalties_internal(
-    ctx: Context<InitEggRoyalties>,
+    ctx: Context<InitDogeRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
 ) -> Result<()> {
@@ -1174,7 +1174,7 @@ pub fn add_ticket_tier_config_int(
     );
 
     require!(
-        ticket_tier_index < EggConfig::MAX_TICKET_TIERS as u8,
+        ticket_tier_index < DogeConfig::MAX_TICKET_TIERS as u8,
         ErrorCode::InvalidParameters
     );
 
@@ -1200,9 +1200,9 @@ pub fn add_ticket_tier_config_int(
     Ok(())
 }
 
-/// Update EggConfig account (admin only)
+/// Update DogeConfig account (admin only)
 ///
-/// Updates the EggConfig account that stores Doge collection configuration.
+/// Updates the DogeConfig account that stores Doge collection configuration.
 ///
 /// # Parameters
 /// - `base_price`: Base price for Doge in SOL (lamports)
@@ -1212,13 +1212,13 @@ pub fn update_doge_config_internal(
     base_price: u64,
     curve_a: u64,
 ) -> Result<()> {
-    msg!("🥚 [update_doge_config_internal] Updating EggConfig");
+    msg!("🥚 [update_doge_config_internal] Updating DogeConfig");
 
     let doges_config = &mut ctx.accounts.doges_config;
     doges_config.base_price = base_price;
     doges_config.curve_a = curve_a;
 
-    msg!("   ✅ EggConfig updated");
+    msg!("   ✅ DogeConfig updated");
     msg!("   Base Price: {} lamports", base_price);
     msg!("   Curve A: {}", curve_a);
 
@@ -1865,15 +1865,15 @@ pub struct UpdateHashpowerConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitializeEggConfig<'info> {
+pub struct InitializeDogeConfig<'info> {
     #[account(
         init,
         payer = authority,
-        space = EggConfig::LEN,
+        space = DogeConfig::LEN,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub doges_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1889,7 +1889,7 @@ pub struct InitializeEggConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CreateEggCollection<'info> {
+pub struct CreateDogeCollection<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -1906,7 +1906,7 @@ pub struct CreateEggCollection<'info> {
         seeds = [DOGE_CONFIG_SEED],
         bump = doges_config.bump,
     )]
-    pub doges_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
     /// CHECK: Doge collection account (will be created by MPL Core)
     #[account(mut, signer)]
@@ -1940,7 +1940,7 @@ pub struct UpdateDogeConfig<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doges_config.bump,
     )]
-    pub doges_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1949,7 +1949,7 @@ pub struct UpdateDogeConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitEggRoyalties<'info> {
+pub struct InitDogeRoyalties<'info> {
     #[account(mut)]
     pub authority: Signer<'info>, // ext authority EOA
 
@@ -1966,7 +1966,7 @@ pub struct InitEggRoyalties<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doges_config.bump,
     )]
-    pub doges_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
     /// CHECK: Doge collection (already created via MPL Core)
     #[account(

@@ -1134,7 +1134,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     )?;
 
                     // Initialize new doge metadata (generation is in DNA bits 4-6)
-                    let new_doge_meta_data = EggMetadata {
+                    let new_doge_meta_data = DogeMetadata {
                         mint: new_doge_asset.key(),
                         mom: Pubkey::default(),
                         dad: Pubkey::default(),
@@ -2154,13 +2154,13 @@ pub struct ClaimRoundRewards<'info> {
     /// Caller (bot or user themselves)
     pub caller: Signer<'info>,
 
-    /// Optional EggMetadata account for syncing mutation
+    /// Optional DogeMetadata account for syncing mutation
     #[account(mut)]
-    pub doge_metadata: Option<Box<Account<'info, EggMetadata>>>,
+    pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
 
     // === Free Doge Mint Accounts (optional) ===
     #[account(mut)]
-    pub doge_config: Option<Box<Account<'info, EggConfig>>>,
+    pub doge_config: Option<Box<Account<'info, DogeConfig>>>,
 
     /// CHECK: New doge asset to be created
     #[account(mut)]
@@ -2356,7 +2356,7 @@ pub struct ExecuteAutominerBet<'info> {
 // ========================================================================================
 
 /// Use an doge for gameplay - deposits doge to program custody and sets it as active gameplay doge
-pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
+pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let doge_metadata = &mut ctx.accounts.doge_metadata;
@@ -2413,7 +2413,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     msg!("   Multiplier: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
     msg!("   Faction doges playing: {}", faction_state.doges_playing);
 
-    emit!(EggUsedForGameplay {
+    emit!(DogeUsedForGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
         faction_id: player_data.faction_id,
@@ -2424,7 +2424,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
 }
 
 /// Withdraw doge from gameplay - returns doge to user and clears gameplay doge
-pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
+pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let doge_metadata = &mut ctx.accounts.doge_metadata;
@@ -2485,7 +2485,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     msg!("✅ Doge {} withdrawn from gameplay", doge_mint);
     msg!("   Faction doges playing: {}", faction_state.doges_playing);
 
-    emit!(EggWithdrawnFromGameplay {
+    emit!(DogeWithdrawnFromGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
         faction_id: player_data.faction_id,
@@ -2496,7 +2496,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
 }
 
 #[derive(Accounts)]
-pub struct UseEggForGameplay<'info> {
+pub struct UseDogeForGameplay<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -2522,7 +2522,7 @@ pub struct UseEggForGameplay<'info> {
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     /// CHECK: PDA for NFT custody
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
@@ -2538,7 +2538,7 @@ pub struct UseEggForGameplay<'info> {
 }
 
 #[derive(Accounts)]
-pub struct WithdrawEggFromGameplay<'info> {
+pub struct WithdrawDogeFromGameplay<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -2564,7 +2564,7 @@ pub struct WithdrawEggFromGameplay<'info> {
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, EggMetadata>,
+    pub doge_metadata: Account<'info, DogeMetadata>,
 
     /// CHECK: PDA for NFT custody
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
