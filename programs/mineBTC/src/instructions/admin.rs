@@ -958,12 +958,12 @@ pub fn initialize_doge_config_internal(
     let eggs_config = &mut ctx.accounts.eggs_config;
 
     eggs_config.bump = ctx.bumps.eggs_config;
-    eggs_config.egg_collection = Pubkey::default();
+    eggs_config.doge_collection = Pubkey::default();
     eggs_config.eggs_minted = 0;
     eggs_config.base_price = base_price;
     eggs_config.curve_a = curve_a;
     eggs_config.max_supply = max_supply;
-    eggs_config.egg_uris = Vec::new();
+    eggs_config.doge_uris = Vec::new();
     eggs_config.ticket_tiers = Vec::new();
     eggs_config.breeding_allowed = false;
     eggs_config.breed_base_price = 0;
@@ -1016,7 +1016,7 @@ pub fn create_doge_collection_internal(
         .invoke()?;
 
     // Store the collection address in global config
-    eggs_config.egg_collection = ctx.accounts.collection.key();
+    eggs_config.doge_collection = ctx.accounts.collection.key();
 
     emit!(EggCollectionCreated {
         collection: ctx.accounts.collection.key(),
@@ -1050,7 +1050,7 @@ pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>)
     }
 
     // Set URIs for all factions
-    eggs_config.egg_uris = uris.clone();
+    eggs_config.doge_uris = uris.clone();
 
     msg!("✅ Set {} Doge URIs (one per faction)", uris.len());
     msg!("   Factions: {}", global_config.supported_factions.len());
@@ -1064,7 +1064,7 @@ pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>)
 /// This can be used to reset URIs before setting new ones.
 pub fn clear_doge_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.egg_uris.clear();
+    eggs_config.doge_uris.clear();
 
     msg!("✅ Cleared all Doge URIs");
 
@@ -1971,7 +1971,7 @@ pub struct InitEggRoyalties<'info> {
     /// CHECK: Doge collection (already created via MPL Core)
     #[account(
         mut,
-        address = eggs_config.egg_collection @ ErrorCode::InvalidAccount
+        address = eggs_config.doge_collection @ ErrorCode::InvalidAccount
     )]
     pub collection: UncheckedAccount<'info>,
 

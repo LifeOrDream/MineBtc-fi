@@ -69,7 +69,7 @@ pub fn int_simulate_mint_cost(
     // Calculate ticket amounts for each tier: sol_price / ticket_value * 1.5
     // This gives users tickets worth 1.5x the SOL they spent
     let mut ticket_amounts = Vec::new();
-    for tier in &egg_config.ticket_tiers {
+    for tier in &doge_config.ticket_tiers {
         // Calculate: (total_price / ticket_value) * 1.5
         // Using fixed-point math: multiply by 150, then divide by 100
         let ticket_count = helper::calc_tickets_count(total_price, tier.ticket_value);
@@ -85,7 +85,7 @@ pub fn int_simulate_mint_cost(
 /// # Remaining Accounts
 /// For each doge to mint, the client must pass 2 accounts in remaining_accounts:
 /// 1. doge_asset (Signer, Writable) - The new Keypair for the egg
-/// 2.egg_metadata (Writable) - The derived PDA for metadata
+/// 2.doge_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
 pub fn int_batch_mint_eggs<'info>(
@@ -107,7 +107,7 @@ pub fn int_batch_mint_eggs<'info>(
     );
 
     let global_config = &ctx.accounts.global_config;
-    let doge_config = &mut ctx.accounts.egg_config;
+    let doge_config = &mut ctx.accounts.doge_config;
     let player_data = &mut ctx.accounts.player_data;
 
     require!(
@@ -119,7 +119,7 @@ pub fn int_batch_mint_eggs<'info>(
         ErrorCode::InvalidParameters
     );
 
-    let (total_price, prices, _ticket_amounts) = int_simulate_mint_cost(egg_config, mint_count as u64)?;
+    let (total_price, prices, _ticket_amounts) = int_simulate_mint_cost(doge_config, mint_count as u64)?;
     msg!(
         "   Batch minting {} eggs, total cost: {} lamports",
         mint_count,
@@ -203,7 +203,7 @@ pub fn int_batch_mint_eggs<'info>(
         // Prepare collection account info (if exists) - must be done inline to avoid lifetime issues
         let collection_account_info = ctx
             .accounts
-            .egg_collection
+            .doge_collection
             .as_ref()
             .map(|c| c.to_account_info());
 
@@ -333,7 +333,7 @@ pub fn int_admin_mint_egg(
     ticket_tier_index: u8,
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
-    let doge_config = &mut ctx.accounts.egg_config;
+    let doge_config = &mut ctx.accounts.doge_config;
 
     // Verify recipient matches instruction parameter
     require!(
@@ -382,9 +382,9 @@ pub fn int_admin_mint_egg(
     msg!("   Recipient: {}", recipient);
 
     crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.egg_asset.to_account_info(),
+        &ctx.accounts.doge_asset.to_account_info(),
         ctx.accounts
-            .egg_collection
+            .doge_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
@@ -412,8 +412,8 @@ pub fn int_admin_mint_egg(
     );
 
     // Initialize Doge metadata
-    let doge_metadata = &mut ctx.accounts.egg_metadata;
-    doge_metadata.mint = ctx.accounts.egg_asset.key();
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
+    doge_metadata.mint = ctx.accounts.doge_asset.key();
     doge_metadata.mom = Pubkey::default();
     doge_metadata.dad = Pubkey::default();
     doge_metadata.breed_count = 0;
@@ -426,7 +426,7 @@ pub fn int_admin_mint_egg(
     doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
     doge_metadata.created_at = Clock::get()?.unix_timestamp;
     doge_metadata.xp = 0;
-    doge_metadata.bump = ctx.bumps.egg_metadata;
+    doge_metadata.bump = ctx.bumps.doge_metadata;
 
     // Handle ticket tier selection and add free tickets (using actual price)
     let ticket_count = if doge_config.ticket_tiers.len() > 0 {
@@ -450,7 +450,7 @@ pub fn int_admin_mint_egg(
 
     emit!(DogeMinted {
         doge_metadata_account: doge_metadata.key(),
-        doge_asset_signer: ctx.accounts.egg_asset.key(),
+        doge_asset_signer: ctx.accounts.doge_asset.key(),
         owner: recipient,
         player: ctx.accounts.player_data.key(),
         mint: doge_metadata.mint,
@@ -478,7 +478,7 @@ pub fn int_admin_mint_egg(
 /// Users can stake up to 5 eggs, each additional doge increases multiplier by 0.5x
 /// Multipliers: 1 doge = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
 pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
-    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
@@ -486,7 +486,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     let doge_multiplier = doge_metadata.multiplier;
 
     // Verify ownership
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
 
     require!(
         nft_owner == ctx.accounts.user.key(),
@@ -510,15 +510,15 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     // Transfer NFT to custody PDA (lock it)
     msg!("🔒 Transferring NFT to custody PDA (locking)");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.egg_asset.to_account_info(),
+        &ctx.accounts.doge_asset.to_account_info(),
         ctx.accounts
-            .egg_collection
+            .doge_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         None,
     )?;
@@ -538,16 +538,16 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
         )?;
 
     // Add doge to player's staked eggs list
-    player_data.staked_eggs.push(egg_mint);
+    player_data.staked_eggs.push(doge_mint);
 
     // Calculate new multiplier based on number of staked eggs
-    let old_multiplier = player_data.egg_multiplier as u64;
+    let old_multiplier = player_data.doge_multiplier as u64;
     let new_multiplier =
         calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, true) as u64;
-    player_data.egg_multiplier = new_multiplier as u16;
+    player_data.doge_multiplier = new_multiplier as u16;
     msg!(
         "⚡ Updated doge multiplier: ({})x",
-        player_data.egg_multiplier as f64 / 100.0
+        player_data.doge_multiplier as f64 / 100.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
@@ -613,7 +613,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
         doge_mint: doge_mint,
         faction_id: player_data.faction_id,
         doge_metadata_account: doge_metadata.key(),
-        player_multiplier: player_data.egg_multiplier,
+        player_multiplier: player_data.doge_multiplier,
         minebtc_hashpower: player_data.minebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
@@ -624,7 +624,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
 
 /// Unstake a Doge (reduces multiplier and recalculates hashpower)
 pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
-    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let doge_mint = doge_metadata.mint;
@@ -633,9 +633,9 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     let doge_multiplier = doge_metadata.multiplier;
 
     // Verify NFT is in custody PDA
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
     require!(
-        nft_owner == ctx.accounts.egg_custody_pda.key(),
+        nft_owner == ctx.accounts.doge_custody_pda.key(),
         ErrorCode::DogeNotAtGuard
     );
     // Verify ownership (using Pubkey::default() check instead of is_some())
@@ -649,7 +649,7 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.staked_eggs.contains(&egg_mint),
+        player_data.staked_eggs.contains(&doge_mint),
         ErrorCode::InvalidParameters
     );
     require!(
@@ -687,13 +687,13 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
     }
 
     // Calculate new multiplier based on number of staked eggs
-    let old_multiplier = player_data.egg_multiplier as u64;
+    let old_multiplier = player_data.doge_multiplier as u64;
     let new_multiplier =
         calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, false) as u64;
-    player_data.egg_multiplier = new_multiplier as u16;
+    player_data.doge_multiplier = new_multiplier as u16;
     msg!(
         "⚡ Updated doge multiplier: ({})x",
-        player_data.egg_multiplier as f64 / 100.0
+        player_data.doge_multiplier as f64 / 100.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
@@ -752,18 +752,18 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 
     // Transfer NFT back to user (unlock it)
     msg!("🔓 Transferring NFT back to user (unlocking)");
-    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.doge_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.egg_asset.to_account_info(),
+        &ctx.accounts.doge_asset.to_account_info(),
         ctx.accounts
-            .egg_collection
+            .doge_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
-        &ctx.accounts.egg_custody_pda.to_account_info(),
-        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         Some(signer_seeds),
@@ -788,8 +788,8 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 /// Send an doge to heaven (burn it) to claim accumulated rewards
 pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
-    let doge_config = &mut ctx.accounts.egg_config;
-    let doge_metadata = &ctx.accounts.egg_metadata;
+    let doge_config = &mut ctx.accounts.doge_config;
+    let doge_metadata = &ctx.accounts.doge_metadata;
     let accumulated_val = doge_metadata.accumulated_val;
     let current_time = Clock::get()?.unix_timestamp;
 
@@ -806,9 +806,9 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
     // Burn the NFT
     crate::mpl_core_helpers::burn_mpl_core_asset(
-        &ctx.accounts.egg_asset.to_account_info(),
+        &ctx.accounts.doge_asset.to_account_info(),
         ctx.accounts
-            .egg_collection
+            .doge_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
@@ -863,7 +863,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
 /// Breed two eggs to create offspring (both parents must not be incubated, same faction)
 pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
-    let doge_config = &mut ctx.accounts.egg_config;
+    let doge_config = &mut ctx.accounts.doge_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
     let clock = Clock::get()?;
@@ -874,8 +874,8 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     msg!("   Dad: {} (breed_count: {})", dad.mint, dad.breed_count);
 
     // Validate breeding is allowed
-    require!(egg_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
-    require!(egg_config.eggs_minted < doge_config.max_supply, ErrorCode::InvalidParameters);
+    require!(doge_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
+    require!(doge_config.eggs_minted < doge_config.max_supply, ErrorCode::InvalidParameters);
     
     // Validate parents are not incubated
     require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
@@ -938,14 +938,14 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     // Create offspring NFT
     let current_mint_number = doge_config.eggs_minted + 1;
     let name = format!("Doge #{}", current_mint_number);
-    let uri = doge_config.egg_uris[mom.faction_id as usize].clone();
+    let uri = doge_config.doge_uris[mom.faction_id as usize].clone();
 
     let collection_authority_bump = ctx.bumps.collection_authority;
     let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
 
     crate::mpl_core_helpers::create_mpl_core_asset(
         &ctx.accounts.offspring_asset.to_account_info(),
-        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.collection_authority.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
@@ -1026,7 +1026,7 @@ pub fn generate_doge_data(
         faction_id,
     )?;
     let name = format!("Doge #{}", mint_number);
-    let uri = doge_config.egg_uris[faction_id as usize].clone();
+    let uri = doge_config.doge_uris[faction_id as usize].clone();
     let multiplier = BASE_MULTIPLIER;
 
     Ok((name, uri, dna, multiplier))
@@ -1048,7 +1048,7 @@ fn add_tickets_to_player(
         ErrorCode::InvalidParameters
     );
 
-    let selected_tier = &egg_config.ticket_tiers[ticket_tier_index as usize];
+    let selected_tier = &doge_config.ticket_tiers[ticket_tier_index as usize];
     let ticket_value = selected_tier.ticket_value;
     let ticket_count = helper::calc_tickets_count(price, ticket_value);
 
@@ -1391,7 +1391,7 @@ pub struct StakeEgg<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(),doge_metadata.mint.as_ref()],
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1445,7 +1445,7 @@ pub struct UnstakeEgg<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        seeds = [DOGE_METADATA_SEED.as_ref(),doge_metadata.mint.as_ref()],
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]

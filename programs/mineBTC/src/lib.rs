@@ -643,13 +643,13 @@ pub mod minebtc {
     ///Simulate mint costs for multiple eggs accounting for bonding curve pricing
     ///
     /// # Parameters
-    /// - `egg_config`: EggConfig account
+    /// - `doge_config`: EggConfig account
     /// - `mint_count`: Number of eggs to mint
     pub fn simulate_purchase_cost(
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
     ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
-        doges::int_simulate_mint_cost(&ctx.accounts.egg_config, mint_count)
+        doges::int_simulate_mint_cost(&ctx.accounts.doge_config, mint_count)
     }
 
     /// Admin function to mint a Doge NFT for free to a specified recipient (admin only)

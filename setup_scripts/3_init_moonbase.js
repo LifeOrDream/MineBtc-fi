@@ -1295,7 +1295,7 @@ async function setRaydiumPoolState(minebtcProgram) {
 }
 
 async function initializeEggConfig(minebtcProgram) {
-    if (deploymentFile.egg_config_initialized) {
+    if (deploymentFile.doge_config_initialized) {
     console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
         return;
     }
@@ -1343,7 +1343,7 @@ async function initializeEggConfig(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ EggConfig initialized successfully!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-        deploymentFile.egg_config_initialized = {
+        deploymentFile.doge_config_initialized = {
             eggs_config_pda: eggsConfigPDA.toString(),
             base_price: basePrice.toString(),
             curve_a: curveA.toString(),
@@ -1355,7 +1355,7 @@ async function initializeEggConfig(minebtcProgram) {
     } catch (error) {
         if (error.toString().includes("already in use")) {
       console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
-            deploymentFile.egg_config_initialized = {
+            deploymentFile.doge_config_initialized = {
                 eggs_config_pda: eggsConfigPDA.toString(),
             };
             saveDeploymentData();
@@ -1367,12 +1367,12 @@ async function initializeEggConfig(minebtcProgram) {
 }
 
 async function createEggCollection(minebtcProgram) {
-    if (deploymentFile.egg_collection_created) {
+    if (deploymentFile.doge_collection_created) {
     console.log(COLOR_INFO, "ℹ️ Doge collection already created");
     console.log(
       COLOR_INFO,
       "🔑 Collection Address:",
-      deploymentFile.egg_collection_created.collection_address
+      deploymentFile.doge_collection_created.collection_address
     );
         return;
     }
@@ -1447,7 +1447,7 @@ async function createEggCollection(minebtcProgram) {
       `🔍 Explorer: https://explorer.solana.com/address/${collectionPubkey.toString()}?cluster=${CLUSTER}`
     );
 
-        deploymentFile.egg_collection_created = {
+        deploymentFile.doge_collection_created = {
             collection_address: collectionPubkey.toString(),
             collection_name: config.eggs.collection_name,
             collection_uri: config.eggs.collection_uri,
@@ -1463,7 +1463,7 @@ async function createEggCollection(minebtcProgram) {
 }
 
 async function setEggUris(minebtcProgram) {
-    if (!deploymentFile.egg_collection_created) {
+    if (!deploymentFile.doge_collection_created) {
     console.error(
       COLOR_ERROR,
       "❌ Doge collection must be created first"
@@ -1471,7 +1471,7 @@ async function setEggUris(minebtcProgram) {
     throw new Error("Collection not created");
     }
 
-    if (deploymentFile.egg_uris_set) {
+    if (deploymentFile.doge_uris_set) {
     console.log(COLOR_INFO, "ℹ️ Doge URIs already set");
         return;
     }
@@ -1513,7 +1513,7 @@ async function setEggUris(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ Doge URIs set successfully!");
     console.log(COLOR_DIM, "🔗 Transaction:", tx);
 
-        deploymentFile.egg_uris_set = {
+        deploymentFile.doge_uris_set = {
             uris: config.eggs.uris,
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1526,7 +1526,7 @@ async function setEggUris(minebtcProgram) {
 }
 
 async function initializeEggRoyalties(minebtcProgram) {
-    if (deploymentFile.egg_royalties_initialized) {
+    if (deploymentFile.doge_royalties_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Doge royalties already initialized. Skipping..."
@@ -1543,7 +1543,7 @@ async function initializeEggRoyalties(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
   const collectionPubkey = new PublicKey(
-    deploymentFile.egg_collection_created.collection_address
+    deploymentFile.doge_collection_created.collection_address
   );
 
     const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
@@ -1611,7 +1611,7 @@ async function initializeEggRoyalties(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ Doge royalties initialized!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-        deploymentFile.egg_royalties_initialized = {
+        deploymentFile.doge_royalties_initialized = {
             basis_points: basisPoints,
             creators: creators,
             tx_signature: tx,
@@ -2295,7 +2295,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
   }
 
   // Check if doge config is initialized
-  if (!deploymentFile.egg_config_initialized) {
+  if (!deploymentFile.doge_config_initialized) {
     console.log(
       COLOR_WARNING,
       "⚠️ Doge config not initialized. Please initialize it first."
@@ -2374,10 +2374,10 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
     );
 
     // Update deployment file
-    if (!deploymentFile.egg_config_updated) {
-      deploymentFile.egg_config_updated = {};
+    if (!deploymentFile.doge_config_updated) {
+      deploymentFile.doge_config_updated = {};
     }
-    deploymentFile.egg_config_updated = {
+    deploymentFile.doge_config_updated = {
       base_price: basePrice.toString(),
       curve_a: curveA.toString(),
       tx_signature: tx,
@@ -2556,17 +2556,17 @@ function printCompletionSummary() {
   console.log(
     COLOR_INFO,
     `  • Doge Collection: ${
-      deploymentFile.egg_collection_created ? "✅" : "❌"
+      deploymentFile.doge_collection_created ? "✅" : "❌"
     }`
   );
   console.log(
     COLOR_INFO,
-    `  • Doge URIs: ${deploymentFile.egg_uris_set ? "✅" : "❌"}`
+    `  • Doge URIs: ${deploymentFile.doge_uris_set ? "✅" : "❌"}`
   );
   console.log(
     COLOR_INFO,
     `  • Doge Royalties: ${
-      deploymentFile.egg_royalties_initialized ? "✅" : "❌"
+      deploymentFile.doge_royalties_initialized ? "✅" : "❌"
     }`
   );
   console.log(
@@ -2614,10 +2614,10 @@ function printCompletionSummary() {
         `   Mining Vault: ${deploymentFile.mining_vault_initialized.vault_address}`
       );
         }
-        if (deploymentFile.egg_collection_created) {
+        if (deploymentFile.doge_collection_created) {
       console.log(
         COLOR_DIM,
-        `   Doge Collection: ${deploymentFile.egg_collection_created.collection_address}`
+        `   Doge Collection: ${deploymentFile.doge_collection_created.collection_address}`
       );
         }
         if (deploymentFile.game_state_initialized) {

@@ -119,7 +119,7 @@ pub fn internal_initialize_player(
 
     // Initialize doge staking
     player_data.staked_eggs = Vec::new();
-    player_data.egg_multiplier = 100; // Default 1.0x (no eggs staked)
+    player_data.doge_multiplier = 100; // Default 1.0x (no eggs staked)
     msg!("     Doge staking initialized (0 eggs, 1.0x multiplier)");
 
     // Initialize free tickets vectors
@@ -1029,8 +1029,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
-        require!(ctx.accounts.egg_metadata.is_some(), ErrorCode::DogeMetadataNotFound);
-        if let Some(ref mut doge_metadata) = ctx.accounts.egg_metadata {
+        require!(ctx.accounts.doge_metadata.is_some(), ErrorCode::DogeMetadataNotFound);
+        if let Some(ref mut doge_metadata) = ctx.accounts.doge_metadata {
             if doge_metadata.mint == player_data.gameplay_egg {
                 // Calculate accumulated_val % based on mutation type
                 // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
@@ -1100,7 +1100,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 Some(ref mpl_core_program),
                 Some(ref new_doge_metadata_info),
             ) = (
-                ctx.accounts.egg_config.as_mut(),
+                ctx.accounts.doge_config.as_mut(),
                 ctx.accounts.new_doge_asset.as_ref(),
                 ctx.accounts.collection_authority.as_ref(),
                 ctx.accounts.mpl_core_program.as_ref(),
@@ -1122,7 +1122,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     
                     crate::mpl_core_helpers::create_mpl_core_asset(
                         &new_doge_asset.to_account_info(),
-                        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+                        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
                         &collection_authority.to_account_info(),
                         &ctx.accounts.caller.to_account_info(),
                         &ctx.accounts.user_wallet.to_account_info(), // Owner is bet_owner
@@ -2359,7 +2359,7 @@ pub struct ExecuteAutominerBet<'info> {
 pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
-    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
     let doge_mint = doge_metadata.mint;
     let current_time = Clock::get()?.unix_timestamp;
 
@@ -2367,11 +2367,11 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     msg!("   Doge mint: {}", doge_mint);
 
     // Verify ownership
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
     require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
 
     // Verify doge is not already incubated (staked)
-    require!(egg_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
+    require!(doge_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
 
     // Verify no doge currently in gameplay
     require!(player_data.gameplay_egg == Pubkey::default(), ErrorCode::InvalidParameters);
@@ -2385,11 +2385,11 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     // Transfer NFT to custody PDA
     msg!("🔒 Transferring doge to custody PDA for gameplay");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.egg_asset.to_account_info(),
-        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.doge_asset.to_account_info(),
+        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         None,
     )?;
@@ -2408,7 +2408,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     doge_metadata.incubated_player_data = player_data.owner;
     doge_metadata.last_update_ts = current_time;
 
-    let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
+    let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
     msg!("✅ Doge {} now active for gameplay", doge_mint);
     msg!("   Multiplier: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
@@ -2427,7 +2427,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
 pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
-    let doge_metadata = &mut ctx.accounts.egg_metadata;
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
     let doge_mint = doge_metadata.mint;
     let current_time = Clock::get()?.unix_timestamp;
 
@@ -2435,25 +2435,25 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     msg!("   Doge mint: {}", doge_mint);
 
     // Verify NFT is in custody PDA
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.egg_asset)?;
-    require!(nft_owner == ctx.accounts.egg_custody_pda.key(), ErrorCode::DogeNotAtGuard);
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
+    require!(nft_owner == ctx.accounts.doge_custody_pda.key(), ErrorCode::DogeNotAtGuard);
 
     // Verify this is the player's gameplay egg
     require!(player_data.gameplay_egg == doge_mint, ErrorCode::InvalidParameters);
 
     // Verify doge metadata matches player
-    require!(egg_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
+    require!(doge_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
 
     // Transfer NFT back to user
     msg!("🔓 Transferring doge back to user");
-    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.doge_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.egg_asset.to_account_info(),
-        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
-        &ctx.accounts.egg_custody_pda.to_account_info(),
-        &ctx.accounts.egg_custody_pda.to_account_info(),
+        &ctx.accounts.doge_asset.to_account_info(),
+        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         Some(signer_seeds),
@@ -2466,7 +2466,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     doge_metadata.xp = player_data.gameplay_doge_xp;
     doge_metadata.multiplier = player_data.active_multiplier;
 
-    let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
+    let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
     msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
 
     // Clear player data gameplay fields

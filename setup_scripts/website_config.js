@@ -118,9 +118,9 @@ function generateWebsiteConfig(config, deployment) {
 
       // ==========  DOGE COLLECTION ==========
      doge_collection:
-        deployment.egg_collection_created?.collection_address,
+        deployment.doge_collection_created?.collection_address,
      doge_collection_authority:
-        deployment.egg_collection_created?.collection_authority,
+        deployment.doge_collection_created?.collection_authority,
 
       // ========== LP TOKEN MANAGEMENT ==========
       lp_token_account:
@@ -147,10 +147,10 @@ function generateWebsiteConfig(config, deployment) {
           ?.liquidity_custodian_authority,
 
       // ========== DOGE CONFIG ==========
-      doge_config_pda: deployment.egg_config_initialized?.eggs_config_pda,
-      doge_base_price: deployment.egg_config_initialized?.base_price,
-      doge_curve_a: deployment.egg_config_initialized?.curve_a,
-      doge_max_supply: deployment.egg_config_initialized?.max_supply,
+      doge_config_pda: deployment.doge_config_initialized?.eggs_config_pda,
+      doge_base_price: deployment.doge_config_initialized?.base_price,
+      doge_curve_a: deployment.doge_config_initialized?.curve_a,
+      doge_max_supply: deployment.doge_config_initialized?.max_supply,
 
       // ========== TAX CONFIG ==========
       tax_config_pda: deployment.tax_config_initialized?.tax_config_pda,
@@ -285,7 +285,7 @@ function main() {
     );
     console.log(
       `  🥚 Doge Collection: ${
-        websiteConfig[cluster].egg_collection || "Not created"
+        websiteConfig[cluster].doge_collection || "Not created"
       }`
     );
     console.log(

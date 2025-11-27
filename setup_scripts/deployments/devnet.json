@@ -249,7 +249,7 @@
     "tx_signature": "4ZhAHxpsTMXx2TQedppbtQXhUELhtoW7puYM8zDZMYAEL1ucEDd9WPn7hDiZudiQyogsaDM7bZ8dVMcbtf52Tbey",
     "timestamp": "2025-11-24T18:50:22.684Z"
   },
-  "egg_config_initialized": {
+  "doge_config_initialized": {
     "eggs_config_pda": "3Bg1bucbYgWjtZcfwASh5sASe3hQKeVkbRaUWtRizTgL",
     "base_price": "1000000000",
     "curve_a": "1111111",
@@ -257,7 +257,7 @@
     "tx_signature": "5HahBtna8fZSNPqcNTi4bVTQvxdEmXt3Q3hpSopfkBKXSb6bfwP332Dwy7tNDJXTwMrRE621wSk1jkdQ5GKPXTZQ",
     "timestamp": "2025-11-24T18:50:23.969Z"
   },
-  "egg_collection_created": {
+  "doge_collection_created": {
     "collection_address": "e5egNeYHF2BAAYhvcEE7YMNHZRjtyqFR5vSgUbAFfVE",
     "collection_name": "DogeTech Doge",
     "collection_uri": "https://arweave.net/doge-collection-metadata.json",
@@ -265,7 +265,7 @@
     "tx_signature": "5HLtLFaV2zFRARA92fevH3C4F6ijEkjazbCaNQxQLVpnhcaTANM5xrrtmmvTieGBiDyb9ptFGGBLbXU1BLGeNTWP",
     "timestamp": "2025-11-24T18:51:55.542Z"
   },
-  "egg_uris_set": {
+  "doge_uris_set": {
     "uris": [
       "https://arweave.net/doge-usa.json",
       "https://arweave.net/doge-china.json",
@@ -283,7 +283,7 @@
     "tx_signature": "65J2prhgq5jhDRpKVi7qVkJZkXUkXzbKAo3PvDiD5aFt8RBeiMYjuoSmHjUYUFpRHFqQt1c5NHWJ393pDL23ru3W",
     "timestamp": "2025-11-24T18:52:14.259Z"
   },
-  "egg_royalties_initialized": {
+  "doge_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {

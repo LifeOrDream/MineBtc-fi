@@ -250,7 +250,7 @@
     "tx_signature": "37ySWNeGn3MxmrfBRch1W18CsU5sdK7FQDcdZvHnvbcGvRfsM3ZozGUXUFuZimpRH5bQ8EtC6LVZPQymzViVE1YS",
     "timestamp": "2025-11-21T20:58:46.241Z"
   },
-  "egg_config_initialized": {
+  "doge_config_initialized": {
     "eggs_config_pda": "BKQQbrZ2Tr8Vsb1mXf9j6YmmaiQGjNfVF11depTbUsS",
     "base_price": "1000000000",
     "curve_a": "1111111",
