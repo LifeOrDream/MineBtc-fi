@@ -1061,7 +1061,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         }
     }
 
-    // === FREE EGG MINT CHANCE ===
+    // === FREE DOGE MINT CHANCE ===
     // Conditions: won on winning block, same faction, no mutation, 50% random chance
     let bet_owner = user_bet.owner;
     let won_on_winning_block = user_bet.block_ids.iter().any(|&b| b == game_session.winning_block);
@@ -1090,7 +1090,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         // 50% chance: check if first byte < 128
         let roll = seed[0];
         if roll < 128 {
-            msg!("🎁 FREE EGG! Roll: {} < 128", roll);
+            msg!("🎁 FREE DOGE! Roll: {} < 128", roll);
 
             // Mint free egg if all accounts provided
             if let (
@@ -2352,7 +2352,7 @@ pub struct ExecuteAutominerBet<'info> {
 }
 
 // ========================================================================================
-// =============================== GAMEPLAY EGG FUNCTIONS =================================
+// =============================== GAMEPLAY DOGE FUNCTIONS =================================
 // ========================================================================================
 
 /// Use an egg for gameplay - deposits egg to program custody and sets it as active gameplay egg
@@ -2363,7 +2363,7 @@ pub fn internal_use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<
     let egg_mint = egg_metadata.mint;
     let current_time = Clock::get()?.unix_timestamp;
 
-    msg!("🎮 === USING EGG FOR GAMEPLAY ===");
+    msg!("🎮 === USING DOGE FOR GAMEPLAY ===");
     msg!("   Doge mint: {}", egg_mint);
 
     // Verify ownership
@@ -2431,7 +2431,7 @@ pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>
     let egg_mint = egg_metadata.mint;
     let current_time = Clock::get()?.unix_timestamp;
 
-    msg!("🎮 === WITHDRAWING EGG FROM GAMEPLAY ===");
+    msg!("🎮 === WITHDRAWING DOGE FROM GAMEPLAY ===");
     msg!("   Doge mint: {}", egg_mint);
 
     // Verify NFT is in custody PDA
@@ -2446,7 +2446,7 @@ pub fn internal_withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>
 
     // Transfer NFT back to user
     msg!("🔓 Transferring egg back to user");
-    let custody_seeds = &[DRAGON_EGG_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    let custody_seeds = &[DRAGON_DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
@@ -2518,14 +2518,14 @@ pub struct UseEggForGameplay<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
         bump = egg_metadata.bump,
         constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
     pub egg_metadata: Account<'info, EggMetadata>,
 
     /// CHECK: PDA for NFT custody
-    #[account(seeds = [DRAGON_EGG_CUSTODY_SEED], bump)]
+    #[account(seeds = [DRAGON_DOGE_CUSTODY_SEED], bump)]
     pub egg_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
@@ -2560,14 +2560,14 @@ pub struct WithdrawEggFromGameplay<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_metadata.mint.as_ref()],
         bump = egg_metadata.bump,
         constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
     pub egg_metadata: Account<'info, EggMetadata>,
 
     /// CHECK: PDA for NFT custody
-    #[account(seeds = [DRAGON_EGG_CUSTODY_SEED], bump)]
+    #[account(seeds = [DRAGON_DOGE_CUSTODY_SEED], bump)]
     pub egg_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program

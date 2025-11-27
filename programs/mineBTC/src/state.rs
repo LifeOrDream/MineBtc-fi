@@ -60,7 +60,7 @@ pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
-pub const EGGS_TREASURY_SEED: &[u8] = b"eggs-treasury";
+pub const DOGES_TREASURY_SEED: &[u8] = b"eggs-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
@@ -70,8 +70,8 @@ pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
 // PDAs for Doge NFT system
-pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
-pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
+pub const DRAGON_DOGE_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
+pub const DRAGON_DOGE_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
 
 pub const BUYBACKS_SEED: &[u8] = b"buybacks";
 pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
@@ -98,7 +98,7 @@ pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
-pub const EGG_CONFIG_SEED: &[u8] = b"egg-config";
+pub const DOGE_CONFIG_SEED: &[u8] = b"egg-config";
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -107,11 +107,11 @@ pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
 pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
-// ========== DRAGON EGG NFT CONSTANTS ========== //
-pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
+// ========== DRAGON DOGE NFT CONSTANTS ========== //
+pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of eggs a user can stake
 pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x)
 
-pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
+pub const MAX_DRAGON_DOGE_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
@@ -890,7 +890,7 @@ impl PlayerData {
         8 +     // unrefined_minebtc_rewards (u64)
         4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
-        4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
+        4 + (MAX_STAKED_DOGES * 32) + // staked_eggs Vec<Pubkey>
         2 +     // egg_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
@@ -960,7 +960,7 @@ impl ReferralRewards {
 }
 
 // ========================================================================================
-// =============================== DRAGON EGG NFT METADATA ===============================
+// =============================== DRAGON DOGE NFT METADATA ===============================
 // ========================================================================================
 
 /// Doge NFT metadata (stored in minebtc program for simplicity)

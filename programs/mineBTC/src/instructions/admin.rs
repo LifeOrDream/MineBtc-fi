@@ -935,7 +935,7 @@ pub fn update_hashpower_config_internal(
 }
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
+// -------------- DRAGON DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Initialize EggConfig account (admin only)
@@ -1603,7 +1603,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         space = 0,
-        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump,
         owner = system_program.key()  // System-owned account for native SOL
     )]
@@ -1870,7 +1870,7 @@ pub struct InitializeEggConfig<'info> {
         init,
         payer = authority,
         space = EggConfig::LEN,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump
     )]
     pub eggs_config: Account<'info, EggConfig>,
@@ -1903,7 +1903,7 @@ pub struct CreateEggCollection<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED],
+        seeds = [DOGE_CONFIG_SEED],
         bump = eggs_config.bump,
     )]
     pub eggs_config: Account<'info, EggConfig>,
@@ -1937,7 +1937,7 @@ pub struct UpdateDogeConfig<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = eggs_config.bump,
     )]
     pub eggs_config: Account<'info, EggConfig>,
@@ -1963,7 +1963,7 @@ pub struct InitEggRoyalties<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = eggs_config.bump,
     )]
     pub eggs_config: Account<'info, EggConfig>,

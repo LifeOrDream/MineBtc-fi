@@ -155,7 +155,7 @@ function formatUsd(lamports) {
 
 function simulateEggMints() {
     console.log("=".repeat(80));
-    console.log("EGG MINTING SIMULATION");
+    console.log("DOGE MINTING SIMULATION");
     console.log("=".repeat(80));
     console.log(`Base Price: ${formatSol(BASE_PRICE)}`);
     console.log(`Curve A: ${CURVE_A.toLocaleString()}`);

@@ -25,7 +25,7 @@ use crate::instructions::stake;
 use crate::state::*;
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON EGG NFT MANAGEMENT -----------------------------------------------
+// -------------- DRAGON DOGE NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 /// Simulate mint costs for multiple eggs accounting for bonding curve pricing
@@ -168,7 +168,7 @@ pub fn int_batch_mint_eggs<'info>(
 
         // Verify Metadata PDA derivation
         let (expected_metadata, metadata_bump) = Pubkey::find_program_address(
-            &[DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset_key.as_ref()],
+            &[DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset_key.as_ref()],
             ctx.program_id,
         );
         require!(
@@ -229,7 +229,7 @@ pub fn int_batch_mint_eggs<'info>(
             let rent = Rent::get()?.minimum_balance(space);
 
             let metadata_seeds = &[
-                DRAGON_EGG_METADATA_SEED.as_ref(),
+                DRAGON_DOGE_METADATA_SEED.as_ref(),
                 egg_asset_key.as_ref(),
                 &[metadata_bump],
             ];
@@ -503,7 +503,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.staked_eggs.len() < MAX_STAKED_EGGS,
+        player_data.staked_eggs.len() < MAX_STAKED_DOGES,
         ErrorCode::InvalidParameters
     );
 
@@ -752,7 +752,7 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 
     // Transfer NFT back to user (unlock it)
     msg!("🔓 Transferring NFT back to user (unlocking)");
-    let custody_seeds = &[DRAGON_EGG_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
+    let custody_seeds = &[DRAGON_DOGE_CUSTODY_SEED, &[ctx.bumps.egg_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
@@ -869,7 +869,7 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     let clock = Clock::get()?;
     let current_time = clock.unix_timestamp;
 
-    msg!("🧬 === BREEDING EGGS ===");
+    msg!("🧬 === BREEDING DOGES ===");
     msg!("   Mom: {} (breed_count: {})", mom.mint, mom.breed_count);
     msg!("   Dad: {} (breed_count: {})", dad.mint, dad.breed_count);
 
@@ -1115,14 +1115,14 @@ fn calc_player_multiplier(existing_multiplier: u16, egg_multiplier: u16, to_add:
 }
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON EGG ACCOUNT CONTEXTS ---------------------------------------------
+// -------------- DRAGON DOGE ACCOUNT CONTEXTS ---------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 #[derive(Accounts)]
 #[instruction(mint_count: u64)]
 pub struct SimulateMintCost<'info> {
     #[account(
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = egg_config.bump
     )]
     pub egg_config: Account<'info, EggConfig>,
@@ -1140,7 +1140,7 @@ pub struct MintEgg<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = egg_config.bump
     )]
     pub egg_config: Account<'info, EggConfig>,
@@ -1148,7 +1148,7 @@ pub struct MintEgg<'info> {
     /// CHECK: Doge treasury PDA (for egg minting fees)
     #[account(
         mut,
-        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump
     )]
     pub eggs_treasury: UncheckedAccount<'info>,
@@ -1195,7 +1195,7 @@ pub struct MintEgg<'info> {
         init,
         payer = user,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
         bump
     )]
     pub egg_metadata: Account<'info, EggMetadata>,
@@ -1230,7 +1230,7 @@ pub struct BatchMintDoge<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = egg_config.bump,
     )]
     pub egg_config: Account<'info, EggConfig>,
@@ -1246,7 +1246,7 @@ pub struct BatchMintDoge<'info> {
     /// CHECK: Doge treasury PDA (for egg minting fees)
     #[account(
         mut,
-        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump
     )]
     pub eggs_treasury: UncheckedAccount<'info>,
@@ -1311,7 +1311,7 @@ pub struct AdminMintEgg<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = egg_config.bump,
     )]
     pub egg_config: Account<'info, EggConfig>,
@@ -1342,7 +1342,7 @@ pub struct AdminMintEgg<'info> {
         init,
         payer = authority,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
         bump
     )]
     pub egg_metadata: Account<'info, EggMetadata>,
@@ -1391,7 +1391,7 @@ pub struct StakeEgg<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
         bump = egg_metadata.bump,
         constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1399,7 +1399,7 @@ pub struct StakeEgg<'info> {
 
     /// PDA that holds custody of locked NFTs
     #[account(
-        seeds = [DRAGON_EGG_CUSTODY_SEED],
+        seeds = [DRAGON_DOGE_CUSTODY_SEED],
         bump
     )]
     /// CHECK: PDA for NFT custody
@@ -1445,7 +1445,7 @@ pub struct UnstakeEgg<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(),egg_metadata.mint.as_ref()],
         bump = egg_metadata.bump,
         constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1453,7 +1453,7 @@ pub struct UnstakeEgg<'info> {
 
     /// PDA that holds custody of locked NFTs
     #[account(
-        seeds = [DRAGON_EGG_CUSTODY_SEED],
+        seeds = [DRAGON_DOGE_CUSTODY_SEED],
         bump
     )]
     /// CHECK: PDA for NFT custody
@@ -1473,13 +1473,13 @@ pub struct SendToHeaven<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    #[account(mut, seeds = [EGG_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
+    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
     pub egg_config: Account<'info, EggConfig>,
 
     #[account(
         mut,
         close = user,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), egg_asset.key().as_ref()],
         bump = egg_metadata.bump,
         constraint = egg_metadata.mint == egg_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1544,7 +1544,7 @@ pub struct BreedDoge<'info> {
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    #[account(mut, seeds = [EGG_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
+    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
     pub egg_config: Account<'info, EggConfig>,
 
     #[account(
@@ -1556,7 +1556,7 @@ pub struct BreedDoge<'info> {
     pub player_data: Box<Account<'info, PlayerData>>,
 
     /// CHECK: Doge treasury PDA
-    #[account(mut, seeds = [EGGS_TREASURY_SEED.as_ref()], bump)]
+    #[account(mut, seeds = [DOGES_TREASURY_SEED.as_ref()], bump)]
     pub eggs_treasury: UncheckedAccount<'info>,
 
     #[account(
@@ -1583,7 +1583,7 @@ pub struct BreedDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
         bump = mom_metadata.bump,
         constraint = mom_metadata.mint == mom_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1595,7 +1595,7 @@ pub struct BreedDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
         bump = dad_metadata.bump,
         constraint = dad_metadata.mint == dad_asset.key() @ ErrorCode::InvalidAccount
     )]
@@ -1609,7 +1609,7 @@ pub struct BreedDoge<'info> {
         init,
         payer = user,
         space = EggMetadata::LEN,
-        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
+        seeds = [DRAGON_DOGE_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
         bump
     )]
     pub offspring_metadata: Box<Account<'info, EggMetadata>>,

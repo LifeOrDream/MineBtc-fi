@@ -147,7 +147,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         // Transfer whichever is lower: 1% of available eggs treasury balance or 10x of buyback amount
         egg_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);
         if egg_treasury_amt > 0 {
-            let eggs_treasury_seeds = &[EGGS_TREASURY_SEED.as_ref(), &[ctx.bumps.eggs_treasury]];
+            let eggs_treasury_seeds = &[DOGES_TREASURY_SEED.as_ref(), &[ctx.bumps.eggs_treasury]];
             let eggs_treasury_signer_seeds = &[&eggs_treasury_seeds[..]];
 
             anchor_lang::system_program::transfer(
@@ -1445,7 +1445,7 @@ pub struct DistributeSolFees<'info> {
     /// CHECK: Doge treasury PDA (System Account) - holds egg minting fees
     #[account(
         mut,
-        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump
     )]
     pub eggs_treasury: UncheckedAccount<'info>,

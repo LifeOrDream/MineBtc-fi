@@ -116,7 +116,7 @@ function generateWebsiteConfig(config, deployment) {
       sol_prize_pot_vault:
         deployment.raydium_pool_state_set?.sol_prize_pot_vault,
 
-      // ========== DRAGON EGG COLLECTION ==========
+      // ========== DRAGON DOGE COLLECTION ==========
      egg_collection:
         deployment.egg_collection_created?.collection_address,
      egg_collection_authority:
@@ -146,7 +146,7 @@ function generateWebsiteConfig(config, deployment) {
         deployment.custodian_accounts_initialized
           ?.liquidity_custodian_authority,
 
-      // ========== EGG CONFIG ==========
+      // ========== DOGE CONFIG ==========
       egg_config_pda: deployment.egg_config_initialized?.eggs_config_pda,
       egg_base_price: deployment.egg_config_initialized?.base_price,
       egg_curve_a: deployment.egg_config_initialized?.curve_a,
