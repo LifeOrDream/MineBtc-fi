@@ -1047,42 +1047,24 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         );
     }
 
-    // === APPLY XP AND MUTATION TO EGG ===
-    if player_data.gameplay_egg != Pubkey::default() {
-        // Always add XP to PlayerData cache (will sync to EggMetadata on withdraw)
-        if user_bet.xp_gained > 0 {
-            player_data.gameplay_egg_xp = player_data.gameplay_egg_xp.saturating_add(user_bet.xp_gained);
-            msg!("   XP added to egg: +{} (total: {})", user_bet.xp_gained, player_data.gameplay_egg_xp);
-        }
-
-        // Apply multiplier increase (from Power mutation)
-        if user_bet.multiplier_increase > 0 {
-            player_data.active_multiplier = player_data.active_multiplier.saturating_add(user_bet.multiplier_increase);
-            msg!("   Multiplier increased: +{} (total: {})", user_bet.multiplier_increase, player_data.active_multiplier);
-        }
-
-        // Apply mutation to EggMetadata if provided
-        if user_bet.mutation_type != 0 {
-            msg!("🧬 Applying pending mutation type: {}", user_bet.mutation_type);
-
-            if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
-                if egg_metadata.mint == player_data.gameplay_egg {
-                    // Apply stored new_dna directly
-                    egg_metadata.dna = player_data.gameplay_egg_dna;
-                    
-                    // For Evolution, increment generation and reset XP
-                    if user_bet.mutation_type == 1 && egg_metadata.generation < 7 {
-                        egg_metadata.generation += 1;
-                        egg_metadata.xp = 0;
-                    }
-
-                    // Sync PlayerData cache with egg state
-                    player_data.gameplay_egg_dna = egg_metadata.dna;
+    // === SYNC MUTATION TO EGG METADATA ===
+    if user_bet.mutation_type != 0 && player_data.gameplay_egg != Pubkey::default() {
+        if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
+            if egg_metadata.mint == player_data.gameplay_egg {
+                // Sync DNA from PlayerData cache
+                egg_metadata.dna = player_data.gameplay_egg_dna;
+                egg_metadata.xp = player_data.gameplay_egg_xp;
+                egg_metadata.multiplier = player_data.active_multiplier;
+                
+                // For Evolution, increment generation and reset XP
+                if user_bet.mutation_type == 1 && egg_metadata.generation < 7 {
+                    egg_metadata.generation += 1;
+                    egg_metadata.xp = 0;
                     player_data.gameplay_egg_generation = egg_metadata.generation;
-                    player_data.active_multiplier = player_data.active_multiplier;
-
-                    msg!("   ✓ Mutation applied to egg: {}", egg_metadata.mint);
+                    player_data.gameplay_egg_xp = 0;
                 }
+
+                msg!("🧬 Synced mutation to egg: {}", egg_metadata.mint);
             }
         }
     }
@@ -1420,7 +1402,7 @@ fn internal_process_bets<'info>(
     if global_config.rpg_progression
         && amount_per_bet > 0
         && use_ticket.is_none()
-        && user_game_bet.mutation_type == 0 // No mutation already triggered for this bet
+        && user_game_bet.mutation_type == 0
         && player_data.gameplay_egg != Pubkey::default()
     {
         // Update highest bet for faction
@@ -1443,8 +1425,8 @@ fn internal_process_bets<'info>(
             &owner_key,
         );
 
-        // Always store XP gained (even without mutation)
-        user_game_bet.xp_gained = user_game_bet.xp_gained + mutation_result.xp_gained;
+        // Always add XP to PlayerData (even without mutation)
+        player_data.gameplay_egg_xp = player_data.gameplay_egg_xp + mutation_result.xp_gained;
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
@@ -1452,7 +1434,7 @@ fn internal_process_bets<'info>(
             let is_evolution = matches!(mutation_type, MutationType::Evolution);
             let can_apply = !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
 
-            user_game_bet.multiplier_increase = mutation_result.multiplier_increase;
+            player_data.active_multiplier = player_data.active_multiplier + mutation_result.multiplier_increase;
 
             if can_apply {
                 user_game_bet.mutation_type = match mutation_type {
@@ -1462,7 +1444,6 @@ fn internal_process_bets<'info>(
                 };
                 player_data.gameplay_egg_dna = mutation_result.new_dna;
 
-                // Only mark faction as "evolved" for Evolution type
                 if is_evolution {
                     game_session.mutation_occurred_per_faction[faction_id] = true;
                 }
@@ -1478,11 +1459,11 @@ fn internal_process_bets<'info>(
                     timestamp: clock.unix_timestamp,
                 });
 
-                msg!("🧬 Mutation triggered! Type: {}, Mult+: {}", user_game_bet.mutation_type, user_game_bet.multiplier_increase);
+                msg!("🧬 Mutation! Type: {}, Mult: {}", user_game_bet.mutation_type, player_data.active_multiplier);
             }
         }
 
-        msg!("   XP gained: {}", user_game_bet.xp_gained);
+        msg!("   XP: {}", player_data.gameplay_egg_xp);
     }
 
     Ok(())

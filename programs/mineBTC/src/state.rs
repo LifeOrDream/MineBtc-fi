@@ -1102,10 +1102,6 @@ pub struct UserGameBet {
     // --- Instant Mutation (applied during claim_rewards) ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
-    /// XP gained from betting (added to egg during claim_rewards)
-    pub xp_gained: u32,
-    /// Multiplier increase (added to egg's multiplier during claim_rewards)
-    pub multiplier_increase: u32,
 }
 
 impl UserGameBet {
@@ -1124,9 +1120,7 @@ impl UserGameBet {
         8 +     // total_wgtd_points_bet
         8 +     // total_fee
         1 +     // bump
-        1 +     // mutation_type
-        4 +     // xp_gained
-        4;     // multiplier_increase
+        1;      // mutation_type
 }
 
 /// Autominer configuration for blocks
