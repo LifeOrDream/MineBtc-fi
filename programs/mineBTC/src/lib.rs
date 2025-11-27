@@ -135,6 +135,16 @@ pub mod minebtc {
         admin::update_rpg_progression_internal(ctx, enabled)
     }
 
+    /// Update breeding configuration (admin only)
+    pub fn update_breeding_config(
+        ctx: Context<UpdateEggsConfig>,
+        breeding_allowed: bool,
+        breed_base_price: u64,
+        breed_curve_a: u64,
+    ) -> Result<()> {
+        admin::update_breeding_config_internal(ctx, breeding_allowed, breed_base_price, breed_curve_a)
+    }
+
     /// Update emission adjustment parameters (admin only)
     /// Allows updating price change threshold and emission increase/decrease percentages
     pub fn update_emission_params(
@@ -306,14 +316,10 @@ pub mod minebtc {
         ctx: Context<InitializeTaxConfig>,
         nft_floor_sweep_pct: u8,
         faction_treasury_pct: u8,
+        burn_pct: u8,
         nft_floor_sweep_whitelisted_address: Pubkey,
     ) -> Result<()> {
-        tax::initialize_tax_config(
-            ctx,
-            nft_floor_sweep_pct,
-            faction_treasury_pct,
-            nft_floor_sweep_whitelisted_address,
-        )
+        tax::initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct, nft_floor_sweep_whitelisted_address)
     }
 
     /// Update tax distribution percentages (admin only)
@@ -321,8 +327,9 @@ pub mod minebtc {
         ctx: Context<UpdateTaxConfig>,
         nft_floor_sweep_pct: u8,
         faction_treasury_pct: u8,
+        burn_pct: u8,
     ) -> Result<()> {
-        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct)
+        tax::update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct)
     }
 
     /// Update NFT floor sweep whitelisted address (admin only)
@@ -691,8 +698,8 @@ pub mod minebtc {
         eggs::unstake_egg(ctx)
     }
 
-    // TODO: Implement claim_power function and ClaimPower accounts struct
-    // pub fn claim_power(ctx: Context<ClaimPower>) -> Result<()> {
-    //     eggs::claim_power(ctx)
-    // }
+    /// Breed two eggs to create offspring
+    pub fn breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
+        eggs::breed_eggs(ctx)
+    }
 }

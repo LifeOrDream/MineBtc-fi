@@ -162,10 +162,12 @@ pub fn calculate_mutation_result(
     msg!("   Current multiplier: {}. Gameplay egg generation: {}. Gameplay egg XP: {}", current_multiplier, gameplay_egg_generation, gameplay_egg_xp);
     msg!("   Total sol bets: {}, Total points bets: {}, Total wgtd points bets: {}", total_sol_bets as f64 / 1e9, total_points_bets as f64 / 1e9, total_wgtd_points_bets as f64 / 1e9);
     msg!("   Slot: {}. User key: {}", slot, user_key);
+
     // Derive generation from DNA (bits 4-6 of byte 0)
     let generation = get_evolution_stage(&gameplay_egg_dna);
     
-    msg!("🧬 Mutation calc: bet={}, gen={}, xp={}", user_total_bet as f64 / 1e9, generation, gameplay_egg_xp);
+    msg!("🧬 Mutation calc: bet={}, gen={}, xp={}, mult={}", user_total_bet as f64 / 1e9, generation, gameplay_egg_xp, current_multiplier);
+    
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 

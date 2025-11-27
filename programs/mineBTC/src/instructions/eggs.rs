@@ -255,6 +255,10 @@ pub fn batch_mint_eggs<'info>(
         // Write data to the metadata account (generation is in DNA bits 4-6)
         let metadata_data = EggMetadata {
             mint: egg_asset_key,
+            mom: Pubkey::default(),
+            dad: Pubkey::default(),
+            breed_count: 0,
+            cooldown_end: 0,
             accumulated_val: 0,
             dna,
             incubated_player_data: Pubkey::default(),
@@ -412,14 +416,18 @@ pub fn admin_mint_egg(
     // Initialize Egg metadata
     let egg_metadata = &mut ctx.accounts.egg_metadata;
     egg_metadata.mint = ctx.accounts.egg_asset.key();
+    egg_metadata.mom = Pubkey::default();
+    egg_metadata.dad = Pubkey::default();
+    egg_metadata.breed_count = 0;
+    egg_metadata.cooldown_end = 0;
     egg_metadata.accumulated_val = 0;
     egg_metadata.dna = dna;
-    // FIX: Use Pubkey::default() instead of None for fixed account size
     egg_metadata.incubated_player_data = Pubkey::default();
     egg_metadata.multiplier = multiplier;
     egg_metadata.faction_id = faction_id;
     egg_metadata.last_update_ts = Clock::get()?.unix_timestamp;
     egg_metadata.created_at = Clock::get()?.unix_timestamp;
+    egg_metadata.xp = 0;
     egg_metadata.bump = ctx.bumps.egg_metadata;
 
     // Handle ticket tier selection and add free tickets (using actual price)
@@ -847,6 +855,152 @@ pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
     });
 
     msg!("✅ [send_to_heaven] Egg sent to heaven successfully");
+
+    Ok(())
+}
+
+/// Breed two eggs to create offspring (both parents must not be incubated, same faction)
+pub fn breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
+    let egg_config = &mut ctx.accounts.egg_config;
+    let mom = &mut ctx.accounts.mom_metadata;
+    let dad = &mut ctx.accounts.dad_metadata;
+    let clock = Clock::get()?;
+    let current_time = clock.unix_timestamp;
+
+    msg!("🧬 === BREEDING EGGS ===");
+    msg!("   Mom: {} (breed_count: {})", mom.mint, mom.breed_count);
+    msg!("   Dad: {} (breed_count: {})", dad.mint, dad.breed_count);
+
+    // Validate breeding is allowed
+    require!(egg_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
+    require!(egg_config.eggs_minted < egg_config.max_supply, ErrorCode::InvalidParameters);
+    
+    // Validate parents are not incubated
+    require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::EggAlreadyIncubated);
+    require!(dad.incubated_player_data == Pubkey::default(), ErrorCode::EggAlreadyIncubated);
+    
+    // Validate same faction
+    require!(mom.faction_id == dad.faction_id, ErrorCode::InvalidFactionId);
+    
+    // Validate breed counts
+    require!(mom.breed_count < EggMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
+    require!(dad.breed_count < EggMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
+    
+    // Validate cooldowns
+    require!(mom.cooldown_end <= current_time, ErrorCode::CooldownNotEnded);
+    require!(dad.cooldown_end <= current_time, ErrorCode::CooldownNotEnded);
+
+    // Verify NFT ownership
+    let mom_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.mom_asset)?;
+    let dad_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dad_asset)?;
+    require!(mom_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+    require!(dad_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+
+    // Calculate breeding cost
+    let breed_cost = crate::genescience::compute_gene_price(
+        egg_config.breed_base_price,
+        egg_config.breed_curve_a,
+        egg_config.eggs_minted,
+    )?;
+    msg!("   Breed cost: {} SOL", breed_cost as f64 / 1e9);
+
+    // Transfer breeding cost
+    let dev_amt = breed_cost * 50 / 100;
+    let treasury_amt = breed_cost - dev_amt;
+
+    helper::transfer_to_eggs_treasury(
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.eggs_treasury.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        treasury_amt,
+    )?;
+
+    helper::transfer_wsol_to_multisig(
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.multisig_wsol_account.to_account_info(),
+        &ctx.accounts.user_wsol_account.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.token_program.to_account_info(),
+        dev_amt,
+    )?;
+
+    // Generate offspring DNA
+    let seed = [
+        clock.slot.to_le_bytes().as_ref(),
+        ctx.accounts.user.key().as_ref(),
+        mom.mint.as_ref(),
+        dad.mint.as_ref(),
+    ].concat();
+    let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
+
+    // Create offspring NFT
+    let current_mint_number = egg_config.eggs_minted + 1;
+    let name = format!("Egg #{}", current_mint_number);
+    let uri = egg_config.egg_uris[mom.faction_id as usize].clone();
+
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
+
+    crate::mpl_core_helpers::create_mpl_core_asset(
+        &ctx.accounts.offspring_asset.to_account_info(),
+        ctx.accounts.egg_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.collection_authority.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        name.clone(),
+        uri.clone(),
+        Some(&[collection_authority_seeds]),
+    )?;
+
+    // Initialize offspring metadata
+    let offspring = &mut ctx.accounts.offspring_metadata;
+    offspring.mint = ctx.accounts.offspring_asset.key();
+    offspring.mom = mom.mint;
+    offspring.dad = dad.mint;
+    offspring.breed_count = 0;
+    offspring.cooldown_end = 0;
+    offspring.accumulated_val = 0;
+    offspring.dna = offspring_dna;
+    offspring.incubated_player_data = Pubkey::default();
+    offspring.multiplier = BASE_MULTIPLIER;
+    offspring.faction_id = mom.faction_id;
+    offspring.last_update_ts = current_time;
+    offspring.created_at = current_time;
+    offspring.xp = 0;
+    offspring.bump = ctx.bumps.offspring_metadata;
+
+    // Update parent cooldowns and breed counts
+    let mom_cooldown = EggMetadata::COOLDOWNS.get(mom.breed_count as usize).copied().unwrap_or(1209600);
+    let dad_cooldown = EggMetadata::COOLDOWNS.get(dad.breed_count as usize).copied().unwrap_or(1209600);
+    
+    mom.breed_count += 1;
+    mom.cooldown_end = current_time + mom_cooldown;
+    dad.breed_count += 1;
+    dad.cooldown_end = current_time + dad_cooldown;
+
+    egg_config.eggs_minted += 1;
+
+    msg!("✅ Bred offspring #{} from {} x {}", current_mint_number, mom.mint, dad.mint);
+    msg!("   Mom next cooldown: {}s, Dad next cooldown: {}s", mom_cooldown, dad_cooldown);
+
+    emit!(EggMinted {
+        egg_metadata_account: offspring.key(),
+        egg_asset_signer: ctx.accounts.offspring_asset.key(),
+        owner: ctx.accounts.user.key(),
+        player: ctx.accounts.player_data.key(),
+        mint: offspring.mint,
+        name,
+        uri,
+        dna: offspring_dna,
+        accumulated_val: 0,
+        multiplier: BASE_MULTIPLIER,
+        faction_id: mom.faction_id,
+        price: breed_cost,
+        ticket_tier: 0,
+        ticket_count: 0,
+    });
 
     Ok(())
 }
@@ -1375,5 +1529,108 @@ pub struct SendToHeaven<'info> {
     pub token_mint: InterfaceAccount<'info, Mint2022>,
 
     pub token_program: Program<'info, Token2022>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct BreedEggs<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [EGG_CONFIG_SEED.as_ref()],
+        bump = egg_config.bump,
+    )]
+    pub egg_config: Account<'info, EggConfig>,
+
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    /// CHECK: Eggs treasury PDA
+    #[account(mut, seeds = [EGGS_TREASURY_SEED.as_ref()], bump)]
+    pub eggs_treasury: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
+        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
+    )]
+    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+
+    #[account(
+        init_if_needed,
+        payer = user,
+        associated_token::mint = wsol_mint,
+        associated_token::authority = user,
+    )]
+    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+
+    /// CHECK: WSOL mint
+    pub wsol_mint: UncheckedAccount<'info>,
+
+    /// Mom NFT asset
+    #[account(mut)]
+    /// CHECK: Verified via get_mpl_core_owner
+    pub mom_asset: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
+        bump = mom_metadata.bump,
+        constraint = mom_metadata.mint == mom_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub mom_metadata: Account<'info, EggMetadata>,
+
+    /// Dad NFT asset
+    #[account(mut)]
+    /// CHECK: Verified via get_mpl_core_owner
+    pub dad_asset: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
+        bump = dad_metadata.bump,
+        constraint = dad_metadata.mint == dad_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub dad_metadata: Account<'info, EggMetadata>,
+
+    /// Offspring NFT asset (new Keypair)
+    #[account(mut)]
+    /// CHECK: Will be created via MPL Core CPI
+    pub offspring_asset: Signer<'info>,
+
+    #[account(
+        init,
+        payer = user,
+        space = EggMetadata::LEN,
+        seeds = [DRAGON_EGG_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
+        bump
+    )]
+    pub offspring_metadata: Account<'info, EggMetadata>,
+
+    /// CHECK: Egg collection
+    pub egg_collection: Option<UncheckedAccount<'info>>,
+
+    #[account(seeds = [COLLECTION_AUTHORITY_SEED.as_ref()], bump)]
+    /// CHECK: Collection authority PDA
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }

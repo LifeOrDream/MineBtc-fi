@@ -430,23 +430,31 @@ pub struct EggConfig {
     /// Available ticket tier configs users can choose when minting (max 4 options)
     /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
     pub ticket_tiers: Vec<TicketTier>,
+    
+    /// Whether breeding is currently allowed
+    pub breeding_allowed: bool,
+    /// Base price for breeding cost bonding curve (in lamports)
+    pub breed_base_price: u64,
+    /// Curve steepness for breeding cost
+    pub breed_curve_a: u64,
 }
 
 impl EggConfig {
-    pub const MAX_TICKET_TIERS: usize = 3; // Only 3 ticket options now
+    pub const MAX_TICKET_TIERS: usize = 3;
 
-    // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_URI_LENGTH bytes)
-    // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        32 +    //egg_collection
-        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + //egg_uris Vec<String> (max 12 factions)
+        32 +    // egg_collection
+        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // egg_uris Vec<String>
         8 +     // max_supply
         8 +     // eggs_minted
         8 +     // base_price
         8 +     // curve_a
         8 +     // global_egg_power
-        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN) + // ticket_tiers
+        1 +     // breeding_allowed
+        8 +     // breed_base_price
+        8;      // breed_curve_a
 }
 
 // ========================================================================================
@@ -463,6 +471,8 @@ pub struct TaxConfig {
     pub nft_floor_sweep_pct: u8,
     /// Percentage of withheld tax that goes to faction treasury
     pub faction_treasury_pct: u8,
+    /// Percentage of withheld tax that gets burned (remainder goes back to vault)
+    pub burn_pct: u8,
 
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
@@ -506,11 +516,11 @@ pub struct TaxConfig {
 impl TaxConfig {
     pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
 
-    // Note: burn_tax_pct is calculated as 100 - nft_floor_sweep_pct - faction_treasury_pct, not stored
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // nft_floor_sweep_pct
         1 +     // faction_treasury_pct
+        1 +     // burn_pct
         8 +     // total_burnt
         1 +     // round_active (bool)
         8 +     // start_timestamp (i64)
@@ -973,50 +983,55 @@ impl ReferralRewards {
 pub struct EggMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
-
+    /// Parent 1 mint (Pubkey::default() for genesis eggs)
+    pub mom: Pubkey,
+    /// Parent 2 mint (Pubkey::default() for genesis eggs)
+    pub dad: Pubkey,
+    /// Number of times this egg has bred (max 5)
+    pub breed_count: u8,
+    /// Unix timestamp when cooldown ends (can breed again after this)
+    pub cooldown_end: i64,
     /// Creation timestamp
     pub created_at: i64,
-
     /// Faction ID (country) that the egg belongs to (matches minebtc faction)
     pub faction_id: u8,
-
-    /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
+    /// Multiplier for this egg (basis points, e.g., 150 = 1.5x)
     pub multiplier: u32,
-
     /// dogeBTC accumulated which can be claimed by sending this doge to heaven
     pub accumulated_val: u64,
-
     /// DNA data (32 bytes for breeding/evolution)
     pub dna: [u8; 32],
-
-    /// The Player who is incubating this egg.
-    /// If NOT incubated, this is set to Pubkey::default() (111111...)
-    /// We use Pubkey instead of Option<Pubkey> to keep account size FIXED.
+    /// The Player who is incubating this egg. Pubkey::default() if not incubated.
     pub incubated_player_data: Pubkey,
-
     /// Last power update timestamp
     pub last_update_ts: i64,
-
-
     /// Experience points, reset to 0 on evolution
     pub xp: u32,
-
     /// PDA bump
     pub bump: u8,
 }
 
 impl EggMetadata {
+    pub const MAX_BREED_COUNT: u8 = 5;
+    
+    /// Cooldown times in seconds: [0h, 24h, 72h, 120h, 336h]
+    pub const COOLDOWNS: [i64; 5] = [0, 86400, 259200, 432000, 1209600];
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
-        8 +     // created_at (i64)
+        32 +    // mom
+        32 +    // dad
+        1 +     // breed_count
+        8 +     // cooldown_end
+        8 +     // created_at
         1 +     // faction_id
-        4 +     // multiplier (u32)
-        8 +     // accumulated_val (u64)
-        32 +    // dna [u8; 32]
-        32 +    // incubated_player_data Pubkey
-        8 +     // last_update_ts (i64)
-        4 +     // xp (u32)
-        1; // bump
+        4 +     // multiplier
+        8 +     // accumulated_val
+        32 +    // dna
+        32 +    // incubated_player_data
+        8 +     // last_update_ts
+        4 +     // xp
+        1;      // bump
 }
 
 // ========================================================================================

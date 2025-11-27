@@ -958,7 +958,7 @@ pub fn initialize_egg_config_internal(
     let eggs_config = &mut ctx.accounts.eggs_config;
 
     eggs_config.bump = ctx.bumps.eggs_config;
-    eggs_config.egg_collection = Pubkey::default(); // Will be set when collection is created
+    eggs_config.egg_collection = Pubkey::default();
     eggs_config.eggs_minted = 0;
     eggs_config.base_price = base_price;
     eggs_config.curve_a = curve_a;
@@ -966,11 +966,12 @@ pub fn initialize_egg_config_internal(
     eggs_config.egg_uris = Vec::new();
     eggs_config.ticket_tiers = Vec::new();
     eggs_config.global_egg_power = 0;
+    eggs_config.breeding_allowed = false;
+    eggs_config.breed_base_price = 0;
+    eggs_config.breed_curve_a = 100;
 
     msg!("   ✅ EggConfig initialized");
-    msg!("   Base Price: {} lamports", base_price);
-    msg!("   Curve A: {}", curve_a);
-    msg!("   Max Supply: {}", max_supply);
+    msg!("   Base Price: {} lamports, Max Supply: {}", base_price, max_supply);
 
     Ok(())
 }
@@ -1222,10 +1223,26 @@ pub fn update_egg_config_internal(
     eggs_config.base_price = base_price;
     eggs_config.curve_a = curve_a;
 
-    msg!("   ✅ EggConfig initialized");
+    msg!("   ✅ EggConfig updated");
     msg!("   Base Price: {} lamports", base_price);
     msg!("   Curve A: {}", curve_a);
 
+    Ok(())
+}
+
+/// Update breeding config (admin only)
+pub fn update_breeding_config_internal(
+    ctx: Context<UpdateEggsConfig>,
+    breeding_allowed: bool,
+    breed_base_price: u64,
+    breed_curve_a: u64,
+) -> Result<()> {
+    msg!("🧬 [update_breeding_config] Updating breeding config");
+    let eggs_config = &mut ctx.accounts.eggs_config;
+    eggs_config.breeding_allowed = breeding_allowed;
+    eggs_config.breed_base_price = breed_base_price;
+    eggs_config.breed_curve_a = breed_curve_a;
+    msg!("   ✅ Breeding: {}, Base: {} SOL, CurveA: {}", breeding_allowed, breed_base_price as f64 / 1e9, breed_curve_a);
     Ok(())
 }
 

@@ -1157,6 +1157,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     // Initialize new egg metadata (generation is in DNA bits 4-6)
                     let new_egg_meta_data = EggMetadata {
                         mint: new_egg_asset.key(),
+                        mom: Pubkey::default(),
+                        dad: Pubkey::default(),
+                        breed_count: 0,
+                        cooldown_end: 0,
                         accumulated_val: 0,
                         dna,
                         incubated_player_data: Pubkey::default(),

@@ -142,4 +142,17 @@ pub enum ErrorCode {
 
     #[msg("Position not unlocked")]
     PositionNotLocked,
+
+    // ========== BREEDING ERRORS ========== //
+    #[msg("Breeding is not currently allowed")]
+    BreedingNotAllowed,
+
+    #[msg("Maximum breed count reached for this egg")]
+    MaxBreedCountReached,
+
+    #[msg("Breeding cooldown has not ended yet")]
+    CooldownNotEnded,
+
+    #[msg("Maximum evolution stage reached")]
+    MaxEvolutionReached,
 }
