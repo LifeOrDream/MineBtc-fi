@@ -252,19 +252,16 @@ pub fn batch_mint_eggs<'info>(
             )?;
         }
 
-        // Write data to the metadata account
+        // Write data to the metadata account (generation is in DNA bits 4-6)
         let metadata_data = EggMetadata {
             mint: egg_asset_key,
             accumulated_val: 0,
             dna,
-            // FIX: Use Pubkey::default() instead of None
-            // This ensures the account is always exactly 32 bytes here
             incubated_player_data: Pubkey::default(),
             multiplier,
             faction_id,
             last_update_ts: Clock::get()?.unix_timestamp,
             created_at: Clock::get()?.unix_timestamp,
-            generation: 0,
             xp: 0,
             bump: metadata_bump,
         };

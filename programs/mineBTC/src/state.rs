@@ -856,8 +856,6 @@ pub struct PlayerData {
     pub active_multiplier: u32,
     /// Cached DNA of gameplay egg (for mutation calculations without loading EggMetadata)
     pub gameplay_egg_dna: [u8; 32],
-    /// Cached generation of gameplay egg
-    pub gameplay_egg_generation: u8,
     /// Cached XP of gameplay egg (updated during gameplay, synced to EggMetadata on withdraw)
     pub gameplay_egg_xp: u32,
 }
@@ -904,7 +902,6 @@ impl PlayerData {
         32 +    // gameplay_egg
         4 +     // active_multiplier (u32)
         32 +    // gameplay_egg_dna [u8; 32]
-        1 +     // gameplay_egg_generation (u8)
         4; // gameplay_egg_xp (u32)
 }
 
@@ -1000,8 +997,6 @@ pub struct EggMetadata {
     /// Last power update timestamp
     pub last_update_ts: i64,
 
-    /// Evolution generation (0-7), increases on evolution mutations
-    pub generation: u8,
 
     /// Experience points, reset to 0 on evolution
     pub xp: u32,
@@ -1020,7 +1015,6 @@ impl EggMetadata {
         32 +    // dna [u8; 32]
         32 +    // incubated_player_data Pubkey
         8 +     // last_update_ts (i64)
-        1 +     // generation (u8)
         4 +     // xp (u32)
         1; // bump
 }

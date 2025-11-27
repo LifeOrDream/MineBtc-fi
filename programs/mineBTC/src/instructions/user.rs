@@ -1065,15 +1065,14 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 msg!("💎 Egg accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
 
                 // Sync DNA/XP/multiplier from PlayerData cache
+                // Note: generation is stored in DNA bits 4-6, not as separate field
                 egg_metadata.dna = player_data.gameplay_egg_dna;
                 egg_metadata.xp = player_data.gameplay_egg_xp;
                 egg_metadata.multiplier = player_data.active_multiplier;
                 
-                // For Evolution, increment generation and reset XP
-                if user_bet.mutation_type == 1 && egg_metadata.generation < 7 {
-                    egg_metadata.generation += 1;
+                // For Evolution, reset XP (DNA already updated by evolve_stage)
+                if user_bet.mutation_type == 1 {
                     egg_metadata.xp = 0;
-                    player_data.gameplay_egg_generation = egg_metadata.generation;
                     player_data.gameplay_egg_xp = 0;
                 }
 
@@ -1155,7 +1154,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                         Some(&[collection_authority_seeds]),
                     )?;
 
-                    // Initialize new egg metadata via raw account write
+                    // Initialize new egg metadata (generation is in DNA bits 4-6)
                     let new_egg_meta_data = EggMetadata {
                         mint: new_egg_asset.key(),
                         accumulated_val: 0,
@@ -1163,11 +1162,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                         incubated_player_data: Pubkey::default(),
                         multiplier,
                         faction_id: player_data.faction_id,
-                        generation: 0,
                         xp: 0,
                         last_update_ts: clock.unix_timestamp,
                         created_at: clock.unix_timestamp,
-                        bump: 0, // Will be set by anchor
+                        bump: 0,
                     };
                     
                     // Serialize and write to account
@@ -1543,13 +1541,12 @@ fn internal_process_bets<'info>(
             game_session.highest_sol_bet_per_faction[faction_id] = user_game_bet.total_sol_bet;
         }
 
-        // Calculate mutation result
+        // Calculate mutation result (generation derived from DNA)
         let mutation_result = calculate_mutation_result(
             user_game_bet.total_sol_bet,
             game_session.highest_sol_bet_per_faction[faction_id],
             player_data.active_multiplier,
             player_data.gameplay_egg_dna,
-            player_data.gameplay_egg_generation,
             player_data.gameplay_egg_xp,
             game_session.total_sol_bets,
             game_session.total_points_bets,
@@ -2440,10 +2437,10 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     )?;
 
     // Update player data - cache egg fields for mutation calculations
+    // Note: generation is stored in DNA bits 4-6, not separately
     player_data.gameplay_egg = egg_mint;
     player_data.active_multiplier = egg_metadata.multiplier;
     player_data.gameplay_egg_dna = egg_metadata.dna;
-    player_data.gameplay_egg_generation = egg_metadata.generation;
     player_data.gameplay_egg_xp = egg_metadata.xp;
 
     // Update faction state
@@ -2453,8 +2450,9 @@ pub fn use_egg_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result<()> {
     egg_metadata.incubated_player_data = player_data.owner;
     egg_metadata.last_update_ts = current_time;
 
+    let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
     msg!("✅ Egg {} now active for gameplay", egg_mint);
-    msg!("   Multiplier: {}, Gen: {}, XP: {}", egg_metadata.multiplier, egg_metadata.generation, egg_metadata.xp);
+    msg!("   Multiplier: {}, Gen: {}, XP: {}", egg_metadata.multiplier, gen, egg_metadata.xp);
     msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
 
     emit!(EggUsedForGameplay {
@@ -2504,20 +2502,19 @@ pub fn withdraw_egg_from_gameplay(ctx: Context<WithdrawEggFromGameplay>) -> Resu
     )?;
 
     // Sync cached data back to egg metadata before withdrawal
+    // Note: generation is stored in DNA bits 4-6
     msg!("   Syncing gameplay progress to egg...");
     egg_metadata.dna = player_data.gameplay_egg_dna;
-    egg_metadata.generation = player_data.gameplay_egg_generation;
     egg_metadata.xp = player_data.gameplay_egg_xp;
     egg_metadata.multiplier = player_data.active_multiplier;
 
-    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", 
-        egg_metadata.multiplier, egg_metadata.generation, egg_metadata.xp);
+    let gen = crate::genescience::get_evolution_stage(&egg_metadata.dna);
+    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", egg_metadata.multiplier, gen, egg_metadata.xp);
 
     // Clear player data gameplay fields
     player_data.gameplay_egg = Pubkey::default();
     player_data.active_multiplier = 100; // Reset to 1x
     player_data.gameplay_egg_dna = [0u8; 32];
-    player_data.gameplay_egg_generation = 0;
     player_data.gameplay_egg_xp = 0;
 
     // Update faction state

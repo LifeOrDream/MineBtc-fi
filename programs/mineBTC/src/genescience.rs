@@ -150,7 +150,6 @@ pub fn calculate_mutation_result(
     highest_round_bet_for_faction: u64,
     current_multiplier: u32,
     mut gameplay_egg_dna: [u8; 32],
-    gameplay_egg_generation: u8,
     gameplay_egg_xp: u32,
     total_sol_bets: u64,
     total_points_bets: u64,
@@ -163,6 +162,10 @@ pub fn calculate_mutation_result(
     msg!("   Current multiplier: {}. Gameplay egg generation: {}. Gameplay egg XP: {}", current_multiplier, gameplay_egg_generation, gameplay_egg_xp);
     msg!("   Total sol bets: {}, Total points bets: {}, Total wgtd points bets: {}", total_sol_bets as f64 / 1e9, total_points_bets as f64 / 1e9, total_wgtd_points_bets as f64 / 1e9);
     msg!("   Slot: {}. User key: {}", slot, user_key);
+    // Derive generation from DNA (bits 4-6 of byte 0)
+    let generation = get_evolution_stage(&gameplay_egg_dna);
+    
+    msg!("🧬 Mutation calc: bet={}, gen={}, xp={}", user_total_bet as f64 / 1e9, generation, gameplay_egg_xp);
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 
@@ -210,7 +213,7 @@ pub fn calculate_mutation_result(
 
     // Mutation triggered - determine type
     let type_roll = seed[2];
-    let evo_chance = 10 / (gameplay_egg_generation as u64 + 1);
+    let evo_chance = 10 / (generation as u64 + 1);
     let evo_threshold = (255 * evo_chance) / 100;
     let power_threshold = evo_threshold + ((255 * 30) / 100);
 
