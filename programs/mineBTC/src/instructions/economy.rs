@@ -165,7 +165,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
             buybacks_ac.total_sol_accumulated =
                 buybacks_ac.total_sol_accumulated + egg_treasury_amt;
             msg!(
-                "🥚 Transferred {} SOL from Eggs Treasury to Buybacks (1% of 10x buyback)",
+                "🥚 Transferred {} SOL from Doge Treasury to Buybacks (1% of 10x buyback)",
                 egg_treasury_amt as f64 / 1e9
             );
         }
@@ -1442,7 +1442,7 @@ pub struct DistributeSolFees<'info> {
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
 
-    /// CHECK: Eggs treasury PDA (System Account) - holds egg minting fees
+    /// CHECK: Doge treasury PDA (System Account) - holds egg minting fees
     #[account(
         mut,
         seeds = [EGGS_TREASURY_SEED.as_ref()],

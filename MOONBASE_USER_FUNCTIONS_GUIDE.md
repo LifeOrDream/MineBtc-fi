@@ -37,7 +37,7 @@ MineBTC is a revolutionary faction-based betting and mining game that combines s
 - **Provably Fair Randomness**: Commit-reveal scheme ensures transparency and prevents manipulation
 - **Multi-Layered Rewards**: Earn through betting, staking, referrals, and faction performance
 - **Deflationary Tokenomics**: 1% transfer tax with burns and buybacks
-- **NFT Power System**: Eggs provide persistent hashpower multipliers
+- **NFT Power System**: Doge provide persistent hashpower multipliers
 - **Dynamic Emission**: Mining rate adjusts based on market prices to maintain sustainability
 
 ---
@@ -115,7 +115,7 @@ When claiming MineBTC rewards, a 5% refining fee is charged and **redistributed 
 
 ### Bonding Curve Pricing
 
-Eggs use a bonding curve pricing model:
+Doge use a bonding curve pricing model:
 
 ```
 Price = Base_Price + (Current_Supply² / Curve_A)
@@ -135,21 +135,21 @@ Free tickets can be used for betting instead of SOL.
 
 ### Hashpower Multipliers
 
-Stake up to **5 Eggs** to boost your mining hashpower:
+Stake up to **5 Doge** to boost your mining hashpower:
 
 ```
 1 Egg:  1.3x multiplier
-2 Eggs: 1.6x multiplier
-3 Eggs: 2.0x multiplier
-4 Eggs: 2.5x multiplier
-5 Eggs: 3.0x multiplier
+2 Doge: 1.6x multiplier
+3 Doge: 2.0x multiplier
+4 Doge: 2.5x multiplier
+5 Doge: 3.0x multiplier
 ```
 
 **Max Multiplier**: 6.9x (with 5 eggs + max lockup)
 
 ### Power System
 
-Eggs accumulate "power" over time:
+Doge accumulate "power" over time:
 
 - Power is earned when claiming MineBTC rewards
 - Power is distributed proportionally to all staked eggs
@@ -304,14 +304,14 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
 initialize_player --faction-id 0 --referral-code <optional>
 ```
 
-### 2. Mint Eggs (Optional)
+### 2. Mint Doge (Optional)
 
 ```bash
 # Mint 3 eggs for your faction with Silver tier tickets
 batch_mint_eggs --faction-id 0 --count 3 --tier 1
 ```
 
-### 3. Stake Your Eggs
+### 3. Stake Your Doge
 
 ```bash
 # Stake an egg to boost hashpower
@@ -353,7 +353,7 @@ claim_minebtc_rewards
 ### Maximize Hashpower
 
 1. **Max Lockup**: 3-year lockup = 15x multiplier
-2. **5 Eggs Staked**: + 3x multiplier = **45x total hashpower**
+2. **5 Doge Staked**: + 3x multiplier = **45x total hashpower**
 3. **Compound Rewards**: Restake claimed MineBTC to grow your position
 
 ### Faction Warfare

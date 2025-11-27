@@ -195,7 +195,7 @@ function simulateEggMints() {
         
         if (shouldDisplay) {
             console.log(
-                `Egg #${eggNumber.toString().padStart(5)} ==> ${formatSol(price).padStart(15)} (${formatUsd(price).padStart(10)}) :: ` +
+                `Doge #${eggNumber.toString().padStart(5)} ==> ${formatSol(price).padStart(15)} (${formatUsd(price).padStart(10)}) :: ` +
                 `${formatSol(fees.dev).padStart(12)} (${formatUsd(fees.dev).padStart(10)}) DEV + ` +
                 `${formatSol(fees.treasury).padStart(12)} (${formatUsd(fees.treasury).padStart(10)}) GAME`
             );

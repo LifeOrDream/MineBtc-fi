@@ -175,7 +175,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     )?;
     msg!("     ✓ 1 lamport transferred to SOL treasury");
 
-    msg!("   Transferring 1 lamport to Eggs treasury for rent-exempt status...");
+    msg!("   Transferring 1 lamport to Doge treasury for rent-exempt status...");
     anchor_lang::system_program::transfer(
         CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
@@ -186,7 +186,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         ),
         1,
     )?;
-    msg!("     ✓ 1 lamport transferred to Eggs treasury");
+    msg!("     ✓ 1 lamport transferred to Doge treasury");
 
     msg!("   Transferring 1 lamport to Autominer custody for rent-exempt status...");
     anchor_lang::system_program::transfer(
@@ -944,9 +944,9 @@ pub fn update_hashpower_config_internal(
 /// This must be called before creating the Doge collection.
 ///
 /// # Parameters
-/// - `base_price`: Base price for Eggs in SOL (lamports)
+/// - `base_price`: Base price for Doge in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
-/// - `max_supply`: Maximum number of Eggs that can be minted
+/// - `max_supply`: Maximum number of Doge that can be minted
 pub fn initialize_egg_config_internal(
     ctx: Context<InitializeEggConfig>,
     base_price: u64,
@@ -1030,12 +1030,12 @@ pub fn create_egg_collection_internal(
 
 /// Set Doge URIs for all factions (admin only)
 ///
-/// Sets the metadata URIs for Eggs, one URI per faction.
+/// Sets the metadata URIs for Doge, one URI per faction.
 /// The number of URIs must match the number of supported factions.
 ///
 /// # Parameters
 /// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
-pub fn set_egg_uris_internal(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) -> Result<()> {
+pub fn set_egg_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let eggs_config = &mut ctx.accounts.eggs_config;
 
@@ -1062,7 +1062,7 @@ pub fn set_egg_uris_internal(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) 
 ///
 /// Removes all Doge metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
-pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+pub fn clear_egg_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
     let eggs_config = &mut ctx.accounts.eggs_config;
     eggs_config.egg_uris.clear();
 
@@ -1147,7 +1147,7 @@ pub fn init_egg_royalties_internal(
 
 /// Add or update ticket tier configs (admin only)
 ///
-/// Configures ticket tier options that users can choose when minting Eggs.
+/// Configures ticket tier options that users can choose when minting Doge.
 /// Users receive free tickets based on the selected tier when they mint.
 ///
 /// # Parameters
@@ -1159,7 +1159,7 @@ pub fn init_egg_royalties_internal(
 /// - Tier 0: 0.01 SOL × 1000 tickets
 /// - Tier 1: 0.1 SOL × 10 tickets
 pub fn add_ticket_tier_config_int(
-    ctx: Context<UpdateEggsConfig>,
+    ctx: Context<UpdateDogeConfig>,
     ticket_tier_index: u8,
     ticket_value: u64,
 ) -> Result<()> {
@@ -1205,10 +1205,10 @@ pub fn add_ticket_tier_config_int(
 /// Updates the EggConfig account that stores Doge collection configuration.
 ///
 /// # Parameters
-/// - `base_price`: Base price for Eggs in SOL (lamports)
+/// - `base_price`: Base price for Doge in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
 pub fn update_egg_config_internal(
-    ctx: Context<UpdateEggsConfig>,
+    ctx: Context<UpdateDogeConfig>,
     base_price: u64,
     curve_a: u64,
 ) -> Result<()> {
@@ -1227,7 +1227,7 @@ pub fn update_egg_config_internal(
 
 /// Update breeding config (admin only)
 pub fn update_breeding_config_internal(
-    ctx: Context<UpdateEggsConfig>,
+    ctx: Context<UpdateDogeConfig>,
     breeding_allowed: bool,
     breed_base_price: u64,
     breed_curve_a: u64,
@@ -1927,7 +1927,7 @@ pub struct CreateEggCollection<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateEggsConfig<'info> {
+pub struct UpdateDogeConfig<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,

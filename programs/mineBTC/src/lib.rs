@@ -137,7 +137,7 @@ pub mod minebtc {
 
     /// Update breeding configuration (admin only)
     pub fn update_breeding_config(
-        ctx: Context<UpdateEggsConfig>,
+        ctx: Context<UpdateDogeConfig>,
         breeding_allowed: bool,
         breed_base_price: u64,
         breed_curve_a: u64,
@@ -252,10 +252,10 @@ pub mod minebtc {
     /// Updates the EggConfig account that stores Doge collection configuration.
     ///
     /// # Parameters
-    /// - `base_price`: Base price for Eggs in SOL (lamports)
+    /// - `base_price`: Base price for Doge in SOL (lamports)
     /// - `curve_a`: Bonding curve parameter (controls price growth rate)
     pub fn update_egg_config(
-        ctx: Context<UpdateEggsConfig>,
+        ctx: Context<UpdateDogeConfig>,
         base_price: u64,
         curve_a: u64,
     ) -> Result<()> {
@@ -278,12 +278,12 @@ pub mod minebtc {
 
     /// Set Doge URIs for all factions (admin only)
     /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_egg_uris(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) -> Result<()> {
+    pub fn set_egg_uris(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
         admin::set_egg_uris_internal(ctx, uris)
     }
 
     /// Clear all Doge URIs (admin only)
-    pub fn clear_egg_uris(ctx: Context<UpdateEggsConfig>) -> Result<()> {
+    pub fn clear_egg_uris(ctx: Context<UpdateDogeConfig>) -> Result<()> {
         admin::clear_egg_uris_internal(ctx)
     }
 
@@ -299,7 +299,7 @@ pub mod minebtc {
     /// Add or update ticket tier configs (admin only)
     /// Max 4 ticket tier configs can be set
     pub fn add_ticket_tier_config(
-        ctx: Context<UpdateEggsConfig>,
+        ctx: Context<UpdateDogeConfig>,
         ticket_tier_index: u8,
         ticket_value: u64,
     ) -> Result<()> {
@@ -669,7 +669,7 @@ pub mod minebtc {
         doges::int_admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
     }
 
-    /// Batch mint multiple Eggs (anyone can call, max 10 per transaction)
+    /// Batch mint multiple Doge (anyone can call, max 10 per transaction)
     ///
     /// Mints multiple Doge NFTs in a single transaction.
     /// Each egg uses bonding curve pricing based on the current supply at mint time.
@@ -679,7 +679,7 @@ pub mod minebtc {
     /// - `mint_count`: Number of eggs to mint (1-10)
     /// - `ticket_tier_index`: Ticket tier index (0-2)
     pub fn batch_mint_eggs<'info>(
-        ctx: Context<'_, '_, '_, 'info, BatchMintEggs<'info>>,
+        ctx: Context<'_, '_, '_, 'info, BatchMintDoge<'info>>,
         faction_id: u8,
         mint_count: u8,
         ticket_tier_index: u8,
@@ -698,7 +698,7 @@ pub mod minebtc {
     }
 
     /// Breed two eggs to create offspring
-    pub fn breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
+    pub fn breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
         doges::int_breed_eggs(ctx)
     }
 

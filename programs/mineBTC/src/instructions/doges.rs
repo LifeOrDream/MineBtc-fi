@@ -16,7 +16,7 @@ use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // - `unstake_egg`: Unstakes an egg and removes the boost.
 // - `claim_power`: Distributes accumulated power points to staked eggs.
 //
-// Eggs are a core mechanic for increasing mining efficiency and earning potential.
+// Doge are a core mechanic for increasing mining efficiency and earning potential.
 //
 
 use crate::events::*;
@@ -79,7 +79,7 @@ pub fn int_simulate_mint_cost(
     Ok((total_price, prices, ticket_amounts))
 }
 
-/// Batch mint multiple Eggs (max 10 per transaction)
+/// Batch mint multiple Doge (max 10 per transaction)
 /// Uses bonding curve pricing for each egg
 ///
 /// # Remaining Accounts
@@ -89,7 +89,7 @@ pub fn int_simulate_mint_cost(
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
 pub fn int_batch_mint_eggs<'info>(
-    ctx: Context<'_, '_, '_, 'info, BatchMintEggs<'info>>,
+    ctx: Context<'_, '_, '_, 'info, BatchMintDoge<'info>>,
     faction_id: u8,
     mint_count: u8,
     ticket_tier_index: u8,
@@ -309,7 +309,7 @@ pub fn int_batch_mint_eggs<'info>(
     }
 
     msg!(
-        "✅ Batch minted {} Eggs for faction {}",
+        "✅ Batch minted {} Doge for faction {}",
         mint_count,
         faction_id
     );
@@ -862,7 +862,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 }
 
 /// Breed two eggs to create offspring (both parents must not be incubated, same faction)
-pub fn int_breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
+pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     let egg_config = &mut ctx.accounts.egg_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
@@ -937,7 +937,7 @@ pub fn int_breed_eggs(ctx: Context<BreedEggs>) -> Result<()> {
 
     // Create offspring NFT
     let current_mint_number = egg_config.eggs_minted + 1;
-    let name = format!("Egg #{}", current_mint_number);
+    let name = format!("Doge #{}", current_mint_number);
     let uri = egg_config.egg_uris[mom.faction_id as usize].clone();
 
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -1025,7 +1025,7 @@ pub fn generate_egg_data(
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("Egg #{}", mint_number);
+    let name = format!("Doge #{}", mint_number);
     let uri = egg_config.egg_uris[faction_id as usize].clone();
     let multiplier = BASE_MULTIPLIER;
 
@@ -1145,7 +1145,7 @@ pub struct MintEgg<'info> {
     )]
     pub egg_config: Account<'info, EggConfig>,
 
-    /// CHECK: Eggs treasury PDA (for egg minting fees)
+    /// CHECK: Doge treasury PDA (for egg minting fees)
     #[account(
         mut,
         seeds = [EGGS_TREASURY_SEED.as_ref()],
@@ -1221,7 +1221,7 @@ pub struct MintEgg<'info> {
 
 #[derive(Accounts)]
 #[instruction(faction_id: u8, mint_count: u8)]
-pub struct BatchMintEggs<'info> {
+pub struct BatchMintDoge<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1243,7 +1243,7 @@ pub struct BatchMintEggs<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    /// CHECK: Eggs treasury PDA (for egg minting fees)
+    /// CHECK: Doge treasury PDA (for egg minting fees)
     #[account(
         mut,
         seeds = [EGGS_TREASURY_SEED.as_ref()],
@@ -1537,7 +1537,7 @@ pub struct SendToHeaven<'info> {
 }
 
 #[derive(Accounts)]
-pub struct BreedEggs<'info> {
+pub struct BreedDoge<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -1555,7 +1555,7 @@ pub struct BreedEggs<'info> {
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
-    /// CHECK: Eggs treasury PDA
+    /// CHECK: Doge treasury PDA
     #[account(mut, seeds = [EGGS_TREASURY_SEED.as_ref()], bump)]
     pub eggs_treasury: UncheckedAccount<'info>,
 
