@@ -963,7 +963,6 @@ pub fn initialize_doge_config_internal(
     doges_config.base_price = base_price;
     doges_config.curve_a = curve_a;
     doges_config.max_supply = max_supply;
-    doges_config.doge_uris = Vec::new();
     doges_config.ticket_tiers = Vec::new();
     doges_config.breeding_allowed = false;
     doges_config.breed_base_price = 0;
@@ -1028,48 +1027,6 @@ pub fn create_doge_collection_internal(
     Ok(())
 }
 
-/// Set Doge URIs for all factions (admin only)
-///
-/// Sets the metadata URIs for Doge, one URI per faction.
-/// The number of URIs must match the number of supported factions.
-///
-/// # Parameters
-/// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
-pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
-    let global_config = &ctx.accounts.global_config;
-    let doges_config = &mut ctx.accounts.doges_config;
-
-    require!(
-        uris.len() == global_config.supported_factions.len(),
-        ErrorCode::InvalidParameters
-    );
-
-    // Validate URIs
-    for uri in &uris {
-        require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
-    }
-
-    // Set URIs for all factions
-    doges_config.doge_uris = uris.clone();
-
-    msg!("✅ Set {} Doge URIs (one per faction)", uris.len());
-    msg!("   Factions: {}", global_config.supported_factions.len());
-
-    Ok(())
-}
-
-/// Clear all Doge URIs (admin only)
-///
-/// Removes all Doge metadata URIs from the configuration.
-/// This can be used to reset URIs before setting new ones.
-pub fn clear_doge_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
-    let doges_config = &mut ctx.accounts.doges_config;
-    doges_config.doge_uris.clear();
-
-    msg!("✅ Cleared all Doge URIs");
-
-    Ok(())
-}
 
 /// Initialize royalties on the Doge collection (admin only)
 ///

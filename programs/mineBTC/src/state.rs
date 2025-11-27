@@ -406,10 +406,6 @@ pub struct DogeConfig {
     /// Doge collection address (Metaplex Core)
     pub doge_collection: Pubkey,
 
-    /// Doge URIs organized by faction
-    /// Structure: [faction_id] = URI
-    pub doge_uris: Vec<String>, // [faction_index] = URI
-
     /// Maximum supply of doges that can be minted
     pub max_supply: u64,
 
@@ -440,7 +436,6 @@ impl DogeConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // doge_collection
-        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // doge_uris Vec<String>
         8 +     // max_supply
         8 +     // doges_minted
         8 +     // base_price

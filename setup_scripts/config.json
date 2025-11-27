@@ -1,7 +1,7 @@
 {
     "network": {
-        "cluster": "devnet",  
-        "rpc_url":  "https://api.devnet.solana.com",    
+        "cluster": "localnet",  
+        "rpc_url":  "http://127.0.0.1:8899",    
         "commitment": "confirmed"
     },
     "deployment": {
@@ -95,7 +95,7 @@
         { "name": "Argentina" }
     ],
     "doges": {
-        "collection_name": "DogeTech Doge",
+        "collection_name": "Bitcoin doges",
         "collection_uri": "https://arweave.net/doge-collection-metadata.json",
         "uris": [
             "https://arweave.net/doge-usa.json",
@@ -113,8 +113,9 @@
         ]
     },
     "tax": {
-        "nft_floor_sweep_pct": 33,
-        "faction_treasury_pct": 33,
+        "nft_floor_sweep_pct": 25,
+        "faction_treasury_pct": 25,
+        "burnt_pct": 25,
         "nft_floor_sweep_whitelisted_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
     },
     "game": {

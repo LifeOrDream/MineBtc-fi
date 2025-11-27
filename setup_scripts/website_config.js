@@ -161,10 +161,6 @@ function generateWebsiteConfig(config, deployment) {
       nft_floor_sweep_vault:
         deployment.tax_config_initialized?.nft_floor_sweep_vault,
       nft_sale_sol_vault: deployment.tax_config_initialized?.nft_sale_sol_vault,
-      nft_floor_sweep_pct:
-        deployment.tax_config_initialized?.nft_floor_sweep_pct,
-      faction_treasury_pct:
-        deployment.tax_config_initialized?.faction_treasury_pct,
 
       // ========== CRANKER BOTS ==========
       cranker_bots: deployment.cranker_bots_added?.bots || [],

@@ -1,15 +1,20 @@
 {
-  "RAYDIUM_CP_PROGRAM_ID": "CD5ocftPAwWtMaghgcf2jZhZgCSEUmTZx3eX5Xr6AUA7",
+  "RAYDIUM_CP_PROGRAM_ID": "BoEToqt9aDDHAwxH1jHPJc8vC516Q9HmgBUwRjeiWNsp",
   "raydium_last_deployment": {
-    "timestamp": "2025-11-21T12:18:45.964Z",
+    "timestamp": "2025-11-27T20:49:43.990Z",
+    "cluster": "localnet"
+  },
+  "MINE_BTC_PROGRAM_ID": "HdJERHvtRZ8cLcoL5K5zMcaY1Lih8Wd6x5v88KVxnQaX",
+  "game_programs_deployment": {
+    "timestamp": "2025-11-27T20:51:07.545Z",
     "cluster": "localnet"
   },
   "dbtc_mint_created": {
-    "mint_address": "H3BHHcN1tgGrotA5g7CT9ihDivbn2tAgK5yKP6RgKbrD",
+    "mint_address": "Fz5qUr1Q9XUc26KCM85Y2kMBZUAf1jGsM4h4TX42sUAY",
     "mint_authority": null,
     "freeze_authority": null,
     "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "withdraw_withheld_authority": "6XdXXTKTzbLgsDQcSttai1pKAiug1pYAxN1NSF4RaRro",
+    "withdraw_withheld_authority": "B3gdB6K1CuV6htvHwC4MSztpqshPNiwgdTTEu5Ni6Hvz",
     "decimals": 6,
     "burn_tax_bps": 100,
     "max_burn_amount": 1000000,
@@ -17,56 +22,56 @@
     "metadata_name": "DogeWifBTC",
     "metadata_symbol": "DBTC",
     "metadata_uri": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
-    "creation_signature": "2yyCtpsjr6Y32JD9SKaZN22YjSHLAyNBYPCwHaPTzFxA8w7X3b4QiCPXRVLrUTFhneYzo8WZW1tQehRPEruSbv36",
-    "timestamp": "2025-11-21T15:41:32.930Z",
+    "creation_signature": "4tnr7uZiM8ptBwoE3fG3GG8RSuWWV399cyGPkp1DPyRGph1Yn5t95QeWapp8FMo7BFMR6is7FDPhjE4a6K2GN7nn",
+    "timestamp": "2025-11-27T20:51:23.258Z",
     "mint_authority_status": "removed",
     "withdraw_withheld_authority_status": "set_to_pda",
     "transfer_fee_config_authority_status": "transferred"
   },
   "dbtc_token_account_created": {
-    "token_account_address": "59SM3gxKt26f9Q2AD2JNFahJbh75N2GAUgtAuYKZsCja",
+    "token_account_address": "9RUEPX2gNmD7qFG3yY8Hfvmu1E7cqxS16cwy6UPrzirr",
     "owner_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "mint_address": "H3BHHcN1tgGrotA5g7CT9ihDivbn2tAgK5yKP6RgKbrD",
-    "timestamp": "2025-11-21T15:41:33.401Z"
+    "mint_address": "Fz5qUr1Q9XUc26KCM85Y2kMBZUAf1jGsM4h4TX42sUAY",
+    "timestamp": "2025-11-27T20:51:23.651Z"
   },
   "initial_supply_minted": {
     "amount": "21000000000000000",
     "actual_minted_amount": "21000000000000000",
     "amount_readable": "21,000,000,000 DBTC",
-    "token_account_address": "59SM3gxKt26f9Q2AD2JNFahJbh75N2GAUgtAuYKZsCja",
-    "mint_signature": "3HbsCTuuLm434AFpqHuven6zaTydEUp3eMXxD3P4CcqGZyrAPtuSw7r38BuLjt8hR2Zm6YFoQmr4WnKtGcG4xyDD",
+    "token_account_address": "9RUEPX2gNmD7qFG3yY8Hfvmu1E7cqxS16cwy6UPrzirr",
+    "mint_signature": "23EuzGYoibJu2ZdzqmdP7qgbL8e3E327BoX14VjYrXAL3UtqFZvBHCXTgm981wJRTEHHrBCZ4kh9NwXEYkj8MEd2",
     "bigint_verification": {
       "expected": "21000000000000000",
       "actual": "21000000000000000",
       "match": true
     },
-    "timestamp": "2025-11-21T15:41:33.861Z"
+    "timestamp": "2025-11-27T20:51:24.120Z"
   },
-  "dbtc_mint_address": "H3BHHcN1tgGrotA5g7CT9ihDivbn2tAgK5yKP6RgKbrD",
+  "dbtc_mint_address": "Fz5qUr1Q9XUc26KCM85Y2kMBZUAf1jGsM4h4TX42sUAY",
   "mint_authority_removed": {
     "previous_mint_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_mint_authority": null,
-    "removal_signature": "3jiNAF4pFSEn6kuFq3Vu9Zh5oE4AuT21ELS674Fks9vokuxKr7TsJ7jFfGHzvJ2ufJnX2mfZDGoqwPLPYhceGkbz",
-    "timestamp": "2025-11-21T15:41:34.335Z",
+    "removal_signature": "5UTa9EaREsDrY9NtcxGrP6LGFq4v4UCNFTjwFHkd1Ko1kqbyNvTRaDb1S5foLs3dUgKnveVq6CoLcXRYLrv1kYPW",
+    "timestamp": "2025-11-27T20:51:24.593Z",
     "total_supply_locked": "21,000,000,000 DBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "pda_authority": "6XdXXTKTzbLgsDQcSttai1pKAiug1pYAxN1NSF4RaRro",
-    "pda_bump": 253,
-    "program_id": "83A69ZNUj4nWBvXoZJ8fqcZ1EaSNVHayi7tTPRBqarFq",
-    "transfer_signature": "exiD23rSC1UyE3UB4SxvbwEYtVLHKp59rg8dtxKBguFWP8jGqbAAyk6Dx6bLqFmmTYfvDjdPfeoqFMeo92zY1TT",
-    "timestamp": "2025-11-21T15:41:34.811Z"
+    "pda_authority": "B3gdB6K1CuV6htvHwC4MSztpqshPNiwgdTTEu5Ni6Hvz",
+    "pda_bump": 255,
+    "program_id": "HdJERHvtRZ8cLcoL5K5zMcaY1Lih8Wd6x5v88KVxnQaX",
+    "transfer_signature": "5Jm6wJSGUXYgP9hrHG7nJcc5rNZAjct9yakffebDQXcv1i8ndyevdKAnce3US1yKG4gayc77d2W5kbPSqrNSkbCU",
+    "timestamp": "2025-11-27T20:51:25.109Z"
   },
   "transfer_fee_config_authority_transferred": {
     "previous_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
     "new_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "transfer_signature": "3FPDrbEwtTq5fF2qScR2T7qFSDCbGMP5X7JU69k4iotvwuKY8kVWzVA5oXMcMsXZF5BpLkYR96rZX57MYBgWVDN4",
-    "timestamp": "2025-11-21T15:41:35.283Z"
+    "transfer_signature": "33j41xw2bfzsbBFD5DDynHwSByhsLofwmax9s99ZQjJYVU8PhhF7pT9Yp2kk754945yvG4NZrGEN26cqDDrq7y81",
+    "timestamp": "2025-11-27T20:51:25.508Z"
   },
   "raydium_amm_config_created": {
-    "amm_config_pda": "DwdLM1hCcDMME4fY6XAeQYonvhNKdoYQNzz8bHwCuvVd",
-    "raydium_program_id": "CD5ocftPAwWtMaghgcf2jZhZgCSEUmTZx3eX5Xr6AUA7",
+    "amm_config_pda": "8mmZp2zuQU92MBdpEhbP3qCuJyWvGcfLzyYGBLDNQ5j6",
+    "raydium_program_id": "BoEToqt9aDDHAwxH1jHPJc8vC516Q9HmgBUwRjeiWNsp",
     "config_index": 0,
     "trade_fee_rate": 25,
     "protocol_fee_rate": 5,
@@ -78,195 +83,190 @@
     "fund_fee_readable": "2.5%",
     "creator_fee_readable": "0%",
     "create_pool_fee_readable": "0.04 SOL",
-    "creation_signature": "5jipSVBo8S2gpbmVjE8GcwD86S76wWG6naWgjQfZTayqFYXbSuonCsQvrx6e5j7XKvrwhjxpVwcj3j6fGTrmrWNm",
-    "pda_bump": 248,
+    "creation_signature": "4A7DXj7dA1ACSd5CTmhAr32xkrG3cy432rAtq93Y1RG8WvR76rmbKkBN8um26RzsSXtwXY2J2gGubUKLZZ7Bj8r5",
+    "pda_bump": 255,
     "status": "created",
-    "timestamp": "2025-11-21T15:41:39.987Z"
+    "timestamp": "2025-11-27T20:51:35.759Z"
   },
   "dbtc_sol_pool_created": {
-    "poolStatePDA": "GiMSZtrn1b9GXELiTK5zj8KHXitJmw66AyPYRYPdQdjx",
-    "lpMintPDA": "H1fAsBTyh6Ne7JbUEcdnVGXGSz9Kv1Hde7DKg1FgszHr",
-    "token0VaultPDA": "9sS723QaJeLQMLUZ1K8QxSBZxiEabQiAwKaTVTRuJsaR",
-    "token1VaultPDA": "CF7RFMhjhzXu1UU1mskLvVEDu5jdMTfSXBDAZKfMSZ3t",
-    "authorityPDA": "GZWfbPxDMDrfsGTV9dzZ9QJkZ5KXte1nrUtWt14D5BTi",
-    "observationStatePDA": "GuzYQFcGzkYhHuPsEF1WtyJ4DBiGinKP7YUprwWGfLUn",
+    "poolStatePDA": "6Ue3Xvr3x9dijUPMGPNz7xWUDdMTPaBhYUoZ24zaSJMk",
+    "lpMintPDA": "AkXnLUTKZ58m7pJArNvi9f8ZSrNcxcRF4fiyJGDPFD97",
+    "token0VaultPDA": "F8YBGihP5vpb6PWZHjjvks1hLCzt9Cipmc2Yf9bvxGmf",
+    "token1VaultPDA": "HVKgsZyfHMRMWVKQQRRcv2voRGLFCft5Wyu3jmadzdbf",
+    "authorityPDA": "H2MiDsXGCdosEgLYuzW3fASSDWiU77PT6esBU2epFQsT",
+    "observationStatePDA": "5cZfTHfGHUhLQagwaPjkHQdS4y2mkJs3sEjLTfAC9jQq",
     "token0Mint": "So11111111111111111111111111111111111111112",
-    "token1Mint": "H3BHHcN1tgGrotA5g7CT9ihDivbn2tAgK5yKP6RgKbrD",
+    "token1Mint": "Fz5qUr1Q9XUc26KCM85Y2kMBZUAf1jGsM4h4TX42sUAY",
     "isMdogeToken0": false,
-    "txid": "4WGuR2z3wAzBXtdENVLEzuDgZMokxArxdwcunY1RmCCPMti7w33BXw8xfGBhoedncVvn2yubUzicECu8mY3vkeya",
-    "wrapTxid": "2cMrEhrcvzhwXUG2ngaRT5EozPdB1FWAUaBAwfTLrVezVy4bjz2cUUDEzUuvHAFktdWH8Mp2z2FXd6uecrup9R1s",
+    "txid": "5iszuB8BceiLyYzAQ1KriNg2UfBc6oFEabfVzebmL7itnNKzwSvpyFoPM61xEnAzJVmufmuySskCVpbQHEhFCrUs",
+    "wrapTxid": "536oz62jppqYAN9zBgKUPFnKL8XVP49hBFRE8VBhiAwEcCofNuq6zpqCNaQZEANiHhq2YvUPmTmSsq52ZAVUiXuw",
     "initialMdogeAmount": "210000000000000",
     "initialSolAmount": "100000000",
     "openTime": 0,
-    "timestamp": "2025-11-21T15:41:41.463Z"
+    "timestamp": "2025-11-27T20:51:37.268Z"
   },
   "lp_tokens_burned": {
-    "pool_state": "GiMSZtrn1b9GXELiTK5zj8KHXitJmw66AyPYRYPdQdjx",
-    "lp_mint": "H1fAsBTyh6Ne7JbUEcdnVGXGSz9Kv1Hde7DKg1FgszHr",
-    "deployer_lp_account": "8gMoQDuPg9wY6DDYMD63CVs8xr3b6L6e5zqo31XofZt7",
+    "pool_state": "6Ue3Xvr3x9dijUPMGPNz7xWUDdMTPaBhYUoZ24zaSJMk",
+    "lp_mint": "AkXnLUTKZ58m7pJArNvi9f8ZSrNcxcRF4fiyJGDPFD97",
+    "deployer_lp_account": "7vQpPpz8XJQhqgRNHquTwoU6RPuMuhKRhLRkKLsy17j5",
     "burn_all_lp_tokens": true,
     "burned_amount": "144568322848",
     "burned_amount_readable": "144.568322848 LP",
-    "burn_signature": "5Zth2CjQxd4Gkh75vbHhzTaWvPEkdacp8yMhhvNvs2aBcWmwXUZpMknC2Nj9m7DBUF3Hz5d3pVZA7cUTgHgXCWBr",
+    "burn_signature": "3VmdQkCGHhfWxsupUJxR2ZKJN5voA7bbZ2vjE8x6FVJkyvMSdfX2k9LZxk3D54fd1jRwWQ5FwTQu5q498kWdDvEW",
     "burn_purpose": "Permanent liquidity lock - cannot remove initial liquidity",
     "dbtc_locked_amount": "210000000000000",
     "sol_locked_amount": "100000000",
     "status": "burned_successfully",
     "permanent_lock": true,
-    "timestamp": "2025-11-21T15:41:41.859Z"
-  },
-  "MINE_BTC_PROGRAM_ID": "GagRkqpDhF61L2BcjqurwBBBv2pwRxQR2BPoYJ8JGY8y",
-  "game_programs_deployment": {
-    "timestamp": "2025-11-21T20:57:36.122Z",
-    "cluster": "localnet"
+    "timestamp": "2025-11-27T20:51:37.646Z"
   },
   "minebtc_program_initialized": {
-    "globalConfig_address": "7nLNCNBHFsVymuTyoNHsXLWbTg7GPekLLGJvq9VYvuCh",
-    "mineBtcMining_address": "EXqq4MqiNhxNAxpJxJTocQDn5TSUCsGe4G9DkN7H7QBA",
-    "solTreasury_address": "GTL9gQHp1BuVcqgwNdFZcztZSgat9ivH6vR3HstPyR84",
-    "dogesTreasury_address": "A7whJZ92kcwzdtraQGVbdg42Dq91rsUDZcXsSDbrmiay",
-    "unrefinedRewards_address": "84m9Ng8DKj86cZo5r7VSxswu7giJTC87pEEx9Phm6BCq",
-    "autominerCustody_address": "Heh4qZn7b4JUiMaSooWUnN3zx1mK96mfi61gmPXCWhAt",
+    "globalConfig_address": "6Kzt24jwMWajhrXNYpHGhy68NCybUaiQPYBD8w8tmu9Q",
+    "mineBtcMining_address": "8dxzcy64ECTe3Qr1B6DTBYnMwwkcw641bc1GnksMYJDg",
+    "solTreasury_address": "Bfkdm3iBNyEwbiutfA5Hi8DNGJMFAmDtg2xC3cvY5Cu1",
+    "dogesTreasury_address": "9msR7m6jmTeeoiidWidvLFbgpk8JtbDeb45y4AqHwwqX",
+    "autominerCustody_address": "4BHn37TMAJVjCheskNdsTJKUquXKCyjpZjCz51V7a5wu",
+    "unrefinedRewards_address": "HwgmH5DtXZ9DoSQ4p1p1mfZiz984CGCXUkNCwGnAeyNj",
     "FEE_RECIPIENT_MULTISIG": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
-    "tx_signature": "2nEA6kTKkiDwrJd4fYdiEuXCsmCufiXqKxNhACtzSvbvGjpyQmY9Xjnf3xzjhdGzTaytLfYRC9dgNYvCwaa4zhGB",
-    "timestamp": "2025-11-21T20:58:37.793Z"
+    "tx_signature": "3bsFPDjmDEmNutbVr3DWPy3BDau9EetPmY13ZcjrNp39PN5dt4eHEAuScBCLRRDdYJY33UBwZkGjQcXGntwqfw7a",
+    "timestamp": "2025-11-27T20:52:28.127Z"
   },
   "raydium_pool_state_set": {
-    "pool_state_address": "GiMSZtrn1b9GXELiTK5zj8KHXitJmw66AyPYRYPdQdjx",
-    "sol_rewards_vault": "HrzgHe94nVEry671XWtWKjozh8Ed9ERNkcqSvfcvW8oN",
-    "sol_prize_pot_vault": "HszrtmYfyM8tMmpxJfoPXNxzTJ9iyXRJtkUmFr3crHav",
-    "tx_signature": "5YapEvghKFFzf6axYFWi6VsLMz5BAxWWb612eorSe56vze1X8tfHa4kgwRbieCuQMqs2SreNLAP9BA7ywTRiCwjd",
-    "timestamp": "2025-11-21T20:58:38.289Z"
+    "pool_state_address": "6Ue3Xvr3x9dijUPMGPNz7xWUDdMTPaBhYUoZ24zaSJMk",
+    "sol_rewards_vault": "31Xr52MruaNT8eS6CekJibvLQgPrB5PWCS9Rnbf9JqPL",
+    "sol_prize_pot_vault": "82TkVMV3iTkEHLyk659ZyqYcBsYTzEWFB6qzceFNtkM5",
+    "tx_signature": "SLzgdFVjLrXWm5pZovRMzGgPzyEhgZ9BKkKqPzBXSqwUqQ6xs23cJiFQJaDcR7d2PtXh9KiUSJ77YSacbt7fjgK",
+    "timestamp": "2025-11-27T20:52:28.583Z"
   },
   "factions_added": {
     "factions": [
       {
         "faction_id": 0,
         "name": "USA",
-        "faction_state_pda": "5WmegVFsAAGQRzJLkhm39vZYdSVC8ChbmSkkUEWH79q8",
-        "tx_signature": "62uyCqnRErTLYSsswsL5LFTchM4YKrjVc6sgmLKEJaTm4MUnxAhQgxP5DMjXTKFadD9WMunwkZiXTpuwUJJMfxSJ"
+        "faction_state_pda": "DFT6edv2VkJ1ifr2XXvqfw1VVKqhZ8SvMMLJvs5V6qvB",
+        "tx_signature": "TtaDU3imxcCYFXqtCp1gqFra3rTxAKmq8CFtbxkLXctKeHkNtGUrkpSYsABRjY5tss3HTheHjPiJCHjfYGbXgRe"
       },
       {
         "faction_id": 1,
         "name": "China",
-        "faction_state_pda": "5WxP6aezi44m15S3ByenkhhCm4jbov3pCWxC9a5yzLWN",
-        "tx_signature": "3JaHXmtWhrRVLWDj1V1aENhGSotKxbk2QG1CAft6q2F9xzUvAUgFBP7jVmHQFdJvtJ66f9nkuGEryjpWyp1i6CG1"
+        "faction_state_pda": "DPLyH1K4BaBcBfGPLdEHm5q5cEJfc8kt41MW5VxofM15",
+        "tx_signature": "3tSWHmgs4kLKWDKNcbBmuFk9G3K98xkPEfkdpqtFVGmqky3B1nT9i9rQcmULnK365zxHTh5acJtbtW953WLczkyM"
       },
       {
         "faction_id": 2,
         "name": "Russia",
-        "faction_state_pda": "HRcMca2u2rbXzMugZUP6cfGXtR1n1buc7wx3pvgLUb4Z",
-        "tx_signature": "3uSJKX81wq21uGkW1qv8srcTLaNCqruswJWmy3sDDnmdhFSxAPQi8z6yYPTWSyF13BL6e6K5W1WKgXxSrXJYrBLV"
+        "faction_state_pda": "BcSuCaQeGqDAHtCi4W4DryX8AjVXZHu4VdBxizrA4mZy",
+        "tx_signature": "3mD27EW6v41BRCbhkpaH4qEYrRh2qKYRmj5UYXpYU21YajyzuUZ2yvmLxrcoEoP3C1tYQU9cnbf5kmX4ak5rt8w7"
       },
       {
         "faction_id": 3,
         "name": "India",
-        "faction_state_pda": "CVe9H8VbVhFLB9NE8tXjLXa5Fbpwyu1x2FwN7Tf3ij8m",
-        "tx_signature": "v7T5umsySKRNLY2iJWV1FomKKLwRtiegFHMSDveXVLizMAkAuwbQPRXjFRPBbW9JebYXvz2iczZiENhZj7EHU41"
+        "faction_state_pda": "HnFFrRSuNnKc9EscnRfHdwSNAXJYdvzzbSMnVZvhjrLj",
+        "tx_signature": "44A13sX57i6KBxebVqSsNRHsZ19G2gmo8T1dLbR1itUKpHA2GEcPvoq968T4h24UhvwfHyJhp7j4QvWRMfFEDvja"
       },
       {
         "faction_id": 4,
         "name": "Japan",
-        "faction_state_pda": "9bRrqRaDLJZu61MwQtv3Gr9FSbJZY9xsrrewKfue7onr",
-        "tx_signature": "2ipDH2Ah1n3YrY2dS3sfFpYyWYT9Be7ewr2NdHir49cokD4rc3ewmxxUSjpiMYHweGRrKSMtQ4upyhbcbm4sTx1y"
+        "faction_state_pda": "564igakxGoD4gL1teq48SiaRE7NtQSvtStf5J4MgNxt9",
+        "tx_signature": "oY4vgnv5xMLmaEYXGEV6UoPpwCTnRcBFFgArcW4eRrBct6E2Ridf7HeN8C4Yhp5xRirq6n62QpY3XpgjqigmX4o"
       },
       {
         "faction_id": 5,
         "name": "South Korea",
-        "faction_state_pda": "D3PL1yPTJuzGrM9bmsAAh76dgdehtt26q5yu4ywKGdpg",
-        "tx_signature": "2DnEn22ABMSbHRpVL14obQ8vvcT1oPRSCxYFKvDAwTeJBh7cH7JP5RHRieVKMRyZDn7peUM6CU19eW5NbzPYwENC"
+        "faction_state_pda": "GMJPFcfktZ6aYu3iyp8CxMZPYVAXQppmLGqRoGbHyBvN",
+        "tx_signature": "5TeMqkk1mwyuDoBatocsgnSS1vmAS2F4J8xt1synQ7j96NM36DQ7E1rascAi1aFQN9Lm1gLj5RbrpfmsYiuAYTy7"
       },
       {
         "faction_id": 6,
         "name": "Vietnam",
-        "faction_state_pda": "9BZLiaiP1pDuwmbhQBvUzo3GtaGXzPfVyoZqBvnTAbH4",
-        "tx_signature": "TPQ4C63dGJGTswqiniPtuEr8NPFrLj4Ews1cEK84ajJWERpBWAobWnLv1YffiBhtwaG9Dnu2afvd65Meo7RJaVc"
+        "faction_state_pda": "8sKPjXQRYAdHPDzC1U6uPKmikqefRJDgeFq8Ejiqxnwq",
+        "tx_signature": "2MiwTEq1yB2cR38RaRXHq7tuK34SreQ3bQfnaRwaKhfjDpeGyy7vAc6k56t6rMjRuuq6issuph3rJPPgGaUHLGiC"
       },
       {
         "faction_id": 7,
         "name": "The Philippines",
-        "faction_state_pda": "3KZ3pmzVQRyNu6V5SZS3botgbZ2i4GuuSyCe2TuzPz71",
-        "tx_signature": "5VtCKACjvA4Lch6pQiQoEVNchNAcywLjH3QUekGYt6wX2SJMMuXcX8uX9Byry3NbFkSpHWQ5Rr7njWSpp2eUV7FD"
+        "faction_state_pda": "57E5zQLvpqtZStMNb9PoiZVyCGkUZ6bNH5JUDEdHbRzZ",
+        "tx_signature": "5gx9tukqBViNvBzfUAVM86zFty8KGEAbu7HzHV4thnfHJ84Jf5P6bH56SaFdWAK5zyF5JTD4UBqGeHVrdLSFx5MT"
       },
       {
         "faction_id": 8,
         "name": "North Korea",
-        "faction_state_pda": "ACZa6ZV6QG2G1c7h99p1ZCgFLBQtUD3ZmV9crXmGAs62",
-        "tx_signature": "56CYB3TpcU99mCKxZyS2c8rfT3ocLUcDy6iEDcVqzK73tcGhvsY1D6cuf8pCrhUQ8wmx53E3NAtEHrHjNM64VrXo"
+        "faction_state_pda": "BaQa6noFoxm2ddEUFSRCMj1VeJMDNwpgxVYfqUpL8Bwz",
+        "tx_signature": "21AeQgBLtiWFvwMkBfasYM5zLuFdhFDtTZj1r8ubcnCD1SQ8wmeuYJbPaSYxmWdYueE95f5ZkkDAdU9AES4aEZN7"
       },
       {
         "faction_id": 9,
         "name": "France",
-        "faction_state_pda": "5XtLsroeomL3nC6Th2RYszLXBav6CagqtTVv6nK87h1J",
-        "tx_signature": "3F4opabfBvrJach92fFTX2rMHKHVcywp3NBVyQMn9kaZJjJrwh1Dx6u9tP1DFLjC8JKJNSQNUP3hDVHaqD8faqwb"
+        "faction_state_pda": "HssLnz4VrWdafF4eziJ1XPJuSM9WhTpWwrMM2g3jZ1FL",
+        "tx_signature": "5RCBzirr2ubgshbz9hwwjs8A3kRyyta54tferzAEAoarTgS6sYDDEaC4g6adzhJx8xnZL3asQGt618SVr8hQWUm7"
       },
       {
         "faction_id": 10,
         "name": "Brazil",
-        "faction_state_pda": "65N8YhP3xkG2o6NuGfUSg18KmAdRVQ8S1GgxU19TP8Ym",
-        "tx_signature": "4apskjwUsEQvCurviLzpwYWbxNnr5PKPm68dLkLwCE4CjpfNmr3SzDqRQoK77cTSSz9nr7j2D54dJjjfpzcnPjnK"
+        "faction_state_pda": "3BE6ViARbNAquyrxQFwzwNYudNwRhqYr9cN3wWiGkwcJ",
+        "tx_signature": "23SK4qH5DBGyjKjFCzfZjEJC8JYPRfr125s67pMKNFatPvuR3wRiGSX1bCsZbHo3umMwYYjDkNrGpiqewqYZEz82"
       },
       {
         "faction_id": 11,
         "name": "Argentina",
-        "faction_state_pda": "5RP5s3XCLZPR4RJLuBpUnP1QfxiQBp7yifNso5i1ctHS",
-        "tx_signature": "4ztR1XMtHiGPU41kC47jZaYfW5WhjSL2uszZXiogijd9ZTnHYLVBA9Djc2Nvmuc764Z1N68epg6nkRLT4nQVz8Yz"
+        "faction_state_pda": "EVVvNFp56ntAC1YZW343PtxA2bn5BUh5a2ziyxtMuHfp",
+        "tx_signature": "4jaA4zaM6Xz9uPBGyexgZ4XKDfm8mNtC7wGPSrqkUHbmgHwhw1dLNF5LZqU3WhyHfnkJcmM7wEdrp3QrzXiAzG98"
       }
     ],
-    "timestamp": "2025-11-21T20:58:43.881Z"
+    "timestamp": "2025-11-27T20:52:52.429Z"
   },
   "system_accounts_initialized": {
-    "system_referral_rewards_pda": "6bvLP37Ev88CfrX8X1jYsDLQMpyaR41oGe1dYzbo7wRp",
-    "buybacks_account_pda": "ym1YCJzWVR2gj3cvCSSesdktjHndCCzApJvbckY3gPp",
-    "buybacks_sol_vault_pda": "EuT6fECURH2yjJP2owogf4Sfh7Xwr9RuMKQE4LM6gE5J",
-    "tx_signature": "3PCji2vPhdKrkCqDk9NDKA2x7CXjRseVm4L82ZQVGUwqHCBx7pqRSWRZH9fXb8HyU1LscVTDprqgkJ1uY55e2Mts",
-    "timestamp": "2025-11-21T20:58:44.366Z"
+    "system_referral_rewards_pda": "FykKiBmSqhZnwgya1aEzfPCZzyrg8vQBtudKRPniWjx1",
+    "buybacks_account_pda": "4tHQbUNMJhbi5ggv2gLsz7W63ZxCCFyfFUAh3J5mSGQ7",
+    "buybacks_sol_vault_pda": "FcPYHHoPT3rLKFT7xyFXfgpXa1KwKuTu9PeLv5izMhn5",
+    "tx_signature": "5PG7NLxTkDKqWtAghwcGacxwaNVwn36AUqWbGo6AjmqTzp1PCsL7EXDPz2CHPxuMXxTbEKhNw6dFw3FjnCjmWVL5",
+    "timestamp": "2025-11-27T20:52:52.897Z"
   },
   "mining_vault_initialized": {
-    "vault_address": "6YDTvMneQTEk7zPQKFAy1xUbis2PEs9dLagwquLnZByJ",
-    "vault_authority": "HyQ3neGotAvvesxtksAkfHNKYFtCeUNegxsetabAUqgG",
-    "start_timestamp": 1763758717,
+    "vault_address": "E6cfF17LQuqJdmsrrvbcuLrVmza4Q6TjbPFvvtr8zMU8",
+    "vault_authority": "6shXErTwkyi9ZiLpyznJzh1cLb9PCAwwBRKHCGB7LVBc",
+    "start_timestamp": 1764276766,
     "doge_btc_per_round": "1000000",
-    "tx_signature": "oth9ETEBYtbv5JKpGm9GwnnTPpYs8PRoturppdU1CpomgpvFuiTYvPGHe5utbW16DUKcLP4hFfgqUB8N4QmnHnu",
-    "timestamp": "2025-11-21T20:58:44.881Z"
+    "tx_signature": "5LTk9uZ39oJdxddmNzVG3ETVeY7jPsTu7cJkUS8g4HdikHRUPSXJFhddgxSG662C6Au8NyP6qwC5GXGNuY8XfD79",
+    "timestamp": "2025-11-27T20:52:53.373Z"
   },
   "mining_tokens_deposited": {
     "amount": "21000000000000",
-    "tx_signature": "5PHszJ93WVk5yb2Raur1U7tuALyKiKWU6vLLcKTSgLztzxbpMMhfc6DnaaVp27mtJp1BumcmTFCLzYxCT5apH2bZ",
-    "timestamp": "2025-11-21T20:58:45.396Z"
+    "tx_signature": "3b6Ura5z98a7BvEJ9dBrsPLi7cMuE6BX3kytC85hDaU5DP3Ei9KoDXvVLY2B19kAbMt3zZfCUaWx6aAaxCSvBs1y",
+    "timestamp": "2025-11-27T20:52:53.883Z"
   },
   "hashpower_config_initialized": {
-    "hashpowerConfig_pda": "EdJCRKYyD2tjM7Tqx14Borr7r4AzMTVkwHA8V7bkmtFH",
-    "tx_signature": "23rkCRo8xZKCXzQrYufPeHZSoird3SUSjhyVQBpatTLyDn4T5HQrA6wzY9fQ7tnS6pypiiZ72xZyMgt3Memuo5Z8",
-    "timestamp": "2025-11-21T20:58:45.768Z"
+    "hashpowerConfig_pda": "DfTA7vY43w2N8aYPJFUBi9KLaLZ1aUoriyDCfABAb3C4",
+    "tx_signature": "4gwqL1SJUk1Z8vDS23YeGngwtUh5mVCd2gH4NZPbwzqs1ZgsCX717bH9YMCEqj1t89t8Px8FWGaLodbvejQ24MQV",
+    "timestamp": "2025-11-27T20:52:54.397Z"
   },
   "custodian_accounts_initialized": {
-    "dbtc_custodian": "9cP85vih2EtNZj3VA2ZYGGPEu443smA9dY9nKRHvRohM",
-    "dbtc_custodian_authority": "2Nn3XCAacQn9tvwyz5JVYV7NZVyBE4oSYh6SQLrcLyMc",
-    "liquidity_custodian": "DGsviDfWtpRKKBWUB1QC51AL7A3wQLbxrKz2RMcmsYKH",
-    "liquidity_custodian_authority": "6EnrBcVCjg6XDXLmCBLHJ9DhcWV9xoDtHweLUstytBrg",
-    "dbtc_mint": "H3BHHcN1tgGrotA5g7CT9ihDivbn2tAgK5yKP6RgKbrD",
-    "lp_mint": "H1fAsBTyh6Ne7JbUEcdnVGXGSz9Kv1Hde7DKg1FgszHr",
-    "tx_signature": "37ySWNeGn3MxmrfBRch1W18CsU5sdK7FQDcdZvHnvbcGvRfsM3ZozGUXUFuZimpRH5bQ8EtC6LVZPQymzViVE1YS",
-    "timestamp": "2025-11-21T20:58:46.241Z"
+    "dbtc_custodian": "2KBKwor5kCg8of4Aa9v2GZM5mjVArmJYrfUDcp9HNuf3",
+    "dbtc_custodian_authority": "352AbfR3Z8dxwNANBJAzPWTuVPQZ9o1ngsLdhoe6jFuz",
+    "liquidity_custodian": "EJB31wb5GreH21iGExRY8sGE8hPrpfRY4Ujxm6ENr2DX",
+    "liquidity_custodian_authority": "FEyMri7HadZEuR1izs4URvhg1kjPxt3U6gJguyBYze7Z",
+    "dbtc_mint": "Fz5qUr1Q9XUc26KCM85Y2kMBZUAf1jGsM4h4TX42sUAY",
+    "lp_mint": "AkXnLUTKZ58m7pJArNvi9f8ZSrNcxcRF4fiyJGDPFD97",
+    "tx_signature": "3e7tkUwaFruyGEe1Y59ApL5P5U48qukKBtLU3AFnguDuxryCEJ1PuNf9KKfDm6FMpToPwsMJPM65F969xLfJEcPE",
+    "timestamp": "2025-11-27T20:52:54.766Z"
   },
   "doge_config_initialized": {
-    "doges_config_pda": "BKQQbrZ2Tr8Vsb1mXf9j6YmmaiQGjNfVF11depTbUsS",
+    "doges_config_pda": "EmpDTsxCMfu8jrjwoLP3557gWN4aUssVwfr1no4R9VK8",
     "base_price": "1000000000",
     "curve_a": "1111111",
     "max_supply": "24690",
-    "tx_signature": "5jNzTvPopSHojEKzknxvmxNX2gGim2oSkJD7oUEcNHKGmwccWAyxSDjQD9eqNc9eTiWd5nTZ9r4EZZdjjP3KHUpt",
-    "timestamp": "2025-11-21T20:58:46.750Z"
+    "tx_signature": "33x69tEcw4pC21Dhjm7M6xUGapL6tdtsEm2cAjhLPedJWoRkG4ndjXdK72mwc9UdoSKC6tqesADS8XLPBgTBZhDE",
+    "timestamp": "2025-11-27T20:53:52.825Z"
   },
-  "_doge_collection_created": {
-    "collection_address": "CDfocDAvadT2k4Aipqxpw8bWZ8rubcbNJdLkX45qWbvX",
-    "collection_name": "DogeTech Doge",
+  "doge_collection_created": {
+    "collection_address": "7SrPtkYreZsW1pydskkLGtcTzPG9Y1g92msmCig1wiZq",
+    "collection_name": "Bitcoin doges",
     "collection_uri": "https://arweave.net/doge-collection-metadata.json",
-    "collection_authority": "zJgj8NkdHueoXVyzw3cTNSwDSbVcyPNSAfYAcwWTmSz",
-    "tx_signature": "5BYx8nhTZhCRorTT96Km55t2ihbyKg7VFu72RoHCWPjRJkJtJd3nUZs4ng1pN43KwLddzHkcwABimZXxcYq7Zw4T",
-    "timestamp": "2025-11-21T20:58:47.268Z"
+    "collection_authority": "HPtupGrun25XRBw2wQ3HpGVyGcTL384Fntts69Abutwt",
+    "tx_signature": "2UswUY7uPxkd4VswZkaErnaawXUsSsF2a5NJ4QRJJXQagb54XTfsZcY16C3oDaRJsuGyvbcisk3hXKqr1BFWRf9L",
+    "timestamp": "2025-11-27T20:53:53.206Z"
   },
-  "_doge_uris_set": {
+  "doge_uris_set": {
     "uris": [
       "https://arweave.net/doge-usa.json",
       "https://arweave.net/doge-china.json",
@@ -281,10 +281,10 @@
       "https://arweave.net/doge-brazil.json",
       "https://arweave.net/doge-argentina.json"
     ],
-    "tx_signature": "5WT9MLTcqfxeoV2y2ci3Uf9Am67oW7WpZyDwzQjZbJNk9ubr2qq2B6N2KDcFnLS1DCQxsd8qVttFs6enira9RN7X",
-    "timestamp": "2025-11-21T20:58:47.652Z"
+    "tx_signature": "5e6dEvB1zkfEzvWKqvVhFG4Rx3qSK9q2YFhe8grjf1phG7SyAxYcQRyJ1LiAUThdgWRbqdpdZkLTCRpy4JyQJGzh",
+    "timestamp": "2025-11-27T20:54:12.832Z"
   },
-  "_doge_royalties_initialized": {
+  "doge_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {
@@ -292,62 +292,62 @@
         "percentage": 50
       },
       {
-        "address": "GTL9gQHp1BuVcqgwNdFZcztZSgat9ivH6vR3HstPyR84",
+        "address": "Bfkdm3iBNyEwbiutfA5Hi8DNGJMFAmDtg2xC3cvY5Cu1",
         "percentage": 50
       }
     ],
-    "tx_signature": "4tED5kfXTZ9bnpCPjRcaQUtN4AQ2gfoVkHBFCYRrbxBUh39EAWeqTiJhxokvToNYNq3y9E58gT4dEx22z8y4Aubh",
-    "timestamp": "2025-11-21T20:58:48.195Z"
+    "tx_signature": "3RnJKsE6gn2ogX7xrB8B3KXtPjFQjBwzzQADUpqpBpZJWrfEsRMvuKpLHWHwrtAP2BCmj7eaLKM5XVjSgA94KA1B",
+    "timestamp": "2025-11-27T20:54:13.300Z"
   },
   "ticket_tier_configs_initialized": {
     "ticket_tiers": [
       {
         "tier_index": 0,
         "ticket_value": 1000000,
-        "tx_signature": "3s9YebkkHwRwcyWaAFcRUgor5ehjTN5YPrXWzum5VtHjGospXcHCLVC4xVPh4rKY9cRMnKbtAsLi9gjmgRJxRdRv"
+        "tx_signature": "5TLG65CEDs2QYMByb8kmw2nr4H9TETa1RB5gBSqAA6nJj2VHtnEXejweJXQw3XFgaNycDw4c8xWrxWNGWmJUHGey"
       },
       {
         "tier_index": 1,
         "ticket_value": 10000000,
-        "tx_signature": "PBdNtAQ4JUGdRn1BgDkAAvSXam3Pmw5UtKEp3kdc5MymMgYGU7WZykFYzoyRwtk9J6dwzwdpHHwbKVpNfvTHMz9"
+        "tx_signature": "2UbWNJPN1rcvyVB6HhyLjoMLhDj4CYjb7VQUY6Lqrjo9mLnFsiJqghxKe4ASdcatgbJDwdifQegKuYDs8kXcHpy7"
       },
       {
         "tier_index": 2,
         "ticket_value": 100000000,
-        "tx_signature": "2FJ37ZA7kF1VdWx6T9QyWLnbWnDMCkaDcZoc4CeSSVbuxAyKZmCdD2nzQbgi5n62NJSnTCdbMowP6AXDFq16XaLR"
+        "tx_signature": "5abswHY8hXrVRpWQYYfanPHYNRhVmFTsUpXsFEzqTfk7kagWXrgCRQodSAAfUf24QogMD9NeUSEYUVu8bf6SWBq7"
       }
     ],
-    "timestamp": "2025-11-21T20:58:49.529Z"
+    "timestamp": "2025-11-27T20:54:37.649Z"
   },
   "tax_config_initialized": {
-    "tax_config_pda": "5rsFSLmUU4UNkrtADhRYP2DthQoHDTrR5rSZwd1x6rh4",
-    "withdraw_withheld_authority": "C5etqtH9MjtvnwtsnBJXofuzDmRwx2wQbAsanjuz3FsT",
-    "faction_treasury_vault": "5r3NVsY6vHuYdNt9RDhpjYbCRieAXoA5kZuh395TBPtm",
-    "nft_floor_sweep_vault": "DxxJ2Q2FPr1ybYbjndzZUamgusYgS8jE6ze8A5F6WX9b",
-    "nft_sale_sol_vault": "7SB8tZmD7iFrbZBuZDUTdnBVtixnpDJ6oCrS5aNEpwJx",
-    "nft_floor_sweep_pct": 33,
-    "faction_treasury_pct": 33,
+    "tax_config_pda": "3pzo4js87q3byg9uoQZ13t6D4cskkcFgjpwKAQx712DL",
+    "withdraw_withheld_authority": "B3gdB6K1CuV6htvHwC4MSztpqshPNiwgdTTEu5Ni6Hvz",
+    "faction_treasury_vault": "4k3GniWnn5v75JvtAH624uW5MiLG7eTufapihntd7Ybc",
+    "nft_floor_sweep_vault": "7ZUpmK74TCpKQYYuph1R7Yqk7NDUay8mLDrJ1YHH67wt",
+    "nft_sale_sol_vault": "EfVAYMXtYw9eHuhgjbkrLdtcd8BrYKDcs6U2o12N7RWQ",
+    "nft_floor_sweep_pct": 25,
+    "faction_treasury_pct": 25,
     "whitelisted_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
-    "tx_signature": "64rmFLh2hPvVRSiUvFR1zSZqi5xafqPJMjcjGRWkLijjb67Sy9oHQMxBWokuMHMYXwcVdegygZs9GKrvpNpxnx8R",
-    "timestamp": "2025-11-21T20:58:50.042Z"
+    "tx_signature": "3xnTGkhLLMfW8j25HFiFUtXR9PCBBZvHiFaLqgKZBf1xgL2995jFcnL8XyHTCD8Y7Gqjpm1zPLshfNXDp2QsDFku",
+    "timestamp": "2025-11-27T20:56:56.093Z"
   },
   "game_state_initialized": {
-    "global_game_state_pda": "EJcV2ERYXMWBeStrRJL9HjykeMJYqwotLagVuXRZvzy2",
+    "global_game_state_pda": "77B4LXg4fFQR1d1ct4trbhEQm26jHNXwngASDuucfss2",
     "round_duration_seconds": 60,
-    "tx_signature": "4bPymnV5jHgkf4Aq5wxBdvyQiLKm6gF2YLWJ9HFBTn6ZuL4fgjsrx2RfQ6XQvRpdGrHjxB2ZwnewEUrbSRqyzQSs",
-    "timestamp": "2025-11-21T20:58:50.560Z"
+    "tx_signature": "3FqLQuqpCMfsdbsvP9WFgbZSAN1Az8R51FjrdssQKn5LkDCLB58WMnJ49TrPAfNZ2E9e4ML8Lon1UchorkMgMUT6",
+    "timestamp": "2025-11-27T20:57:18.950Z"
   },
   "lp_token_accounts_initialized": {
-    "lp_token_account": "9VytYPC6Qfy36zPTDojGt62rby1dAkAVUYgmHSJhQaca",
-    "lp_token_owner": "HyQ3neGotAvvesxtksAkfHNKYFtCeUNegxsetabAUqgG",
-    "lp_mint": "H1fAsBTyh6Ne7JbUEcdnVGXGSz9Kv1Hde7DKg1FgszHr",
-    "timestamp": "2025-11-21T20:58:50.942Z"
+    "lp_token_account": "7Nhm3ZKzgjBgCkqDiXzgHGcZV9H8YZP6UkeAp6gJKUg3",
+    "lp_token_owner": "6shXErTwkyi9ZiLpyznJzh1cLb9PCAwwBRKHCGB7LVBc",
+    "lp_mint": "AkXnLUTKZ58m7pJArNvi9f8ZSrNcxcRF4fiyJGDPFD97",
+    "timestamp": "2025-11-27T20:57:19.430Z"
   },
   "cranker_bots_added": {
     "bots": [
       "6658Pu1vFuJuJMCbnv7v9LfjUgEfmaNpKN4xGfbfiZbr"
     ],
-    "tx_signature": "3dfXg49ouurh9GKagBgLrEdTyq9fNS6cBDtQKGregpNpkh2r8AzUGgkB7KAfXoiYZ3dG1ieTJLHZMwGeGEwdaBWj",
-    "timestamp": "2025-11-21T20:58:51.410Z"
+    "tx_signature": "vA59j6iwgXHxeDe5Kczb2Ly6FDzWEiEGVG8SA84fSowudaTGAG5uFAGZpHr6eDgqjUkAFXWPrSjdHmQ7QXEPUR5",
+    "timestamp": "2025-11-27T20:57:19.937Z"
   }
 }

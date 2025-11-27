@@ -250,16 +250,16 @@ async function main() {
     // // }
     // return;
 
-    // 1.6. Update Fees (if needed - can be called anytime after initialization)
-    // Example usage:
-    await updateFees(minebtcProgram, {
-        newProtocolFeePct: 10, // 10,
-        newBuybackPct: null, //40,
-        newStakersPct: null, //50,
-        changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
-        snapshotInterval:  10, // 30 minutes in seconds
-    });
-    return;
+    // // 1.6. Update Fees (if needed - can be called anytime after initialization)
+    // // Example usage:
+    // await updateFees(minebtcProgram, {
+    //     newProtocolFeePct: 10, // 10,
+    //     newBuybackPct: null, //40,
+    //     newStakersPct: null, //50,
+    //     changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
+    //     snapshotInterval:  10, // 30 minutes in seconds
+    // });
+    // return;
 
     // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // Example usage:
@@ -289,6 +289,7 @@ async function main() {
 
     // 6.5. Initialize Custodian Accounts (DBTC and Liquidity custodians)
     await initializeCustodianAccounts(minebtcProgram);
+    // return;
 
         // 7. Initialize DogeConfig
     await initializeDogeConfig(minebtcProgram);
@@ -296,17 +297,16 @@ async function main() {
         // 8. Create Doge Collection
     await createDogeCollection(minebtcProgram);
 
-        // 9. Set Doge URIs (one per faction)
-    await setDogeUris(minebtcProgram);
-
         // 10. Initialize Doge Royalties
     await initializeDogeRoyalties(minebtcProgram);
+    // return;
 
         // 11. Configure Ticket Tiers (for Doge minting)
     await configureTicketTiers(minebtcProgram);
 
         // 12. Initialize Tax Config (for tax distribution)
     await initializeTaxConfig(minebtcProgram);
+    // return;
 
         // 13. Initialize Game State (for Faction Surge rounds)
     await initializeGameState(minebtcProgram);
@@ -1462,68 +1462,6 @@ async function createDogeCollection(minebtcProgram) {
     }
 }
 
-async function setDogeUris(minebtcProgram) {
-    if (!deploymentFile.doge_collection_created) {
-    console.error(
-      COLOR_ERROR,
-      "❌ Doge collection must be created first"
-    );
-    throw new Error("Collection not created");
-    }
-
-    if (deploymentFile.doge_uris_set) {
-    console.log(COLOR_INFO, "ℹ️ Doge URIs already set");
-        return;
-    }
-
-  console.log(
-    COLOR_STEP,
-    "\n=================== [ SETTING  DOGE URIS ] ==================="
-  );
-
-  const globalConfigPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.globalConfig_address
-  );
-  const mineBtcMiningPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.mineBtcMining_address
-  );
-
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
-    minebtcProgram.programId
-    );
-
-  console.log(COLOR_INFO, "📝 Setting URIs:", config.doges.uris.length);
-    config.doges.uris.forEach((uri, index) => {
-        console.log(COLOR_DIM, `   ${index + 1}. ${uri}`);
-    });
-
-    try {
-    const tx = await minebtcProgram.methods
-            .setDogeUris(config.doges.uris)
-            .accounts({
-                globalConfig: globalConfigPDA,
-                dogesConfig: dogesConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
-                authority: walletKeypair.publicKey,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-
-    console.log(COLOR_SUCCESS, "✅ Doge URIs set successfully!");
-    console.log(COLOR_DIM, "🔗 Transaction:", tx);
-
-        deploymentFile.doge_uris_set = {
-            uris: config.doges.uris,
-            tx_signature: tx,
-      timestamp: new Date().toISOString(),
-        };
-        saveDeploymentData();
-    } catch (error) {
-    console.error(COLOR_ERROR, "❌ Failed to set Doge URIs:", error);
-        throw error;
-    }
-}
 
 async function initializeDogeRoyalties(minebtcProgram) {
     if (deploymentFile.doge_royalties_initialized) {
@@ -1745,6 +1683,7 @@ async function initializeTaxConfig(minebtcProgram) {
     const whitelistedAddress = config.tax.nft_floor_sweep_whitelisted_address;
     const nftFloorSweepPct = config.tax.nft_floor_sweep_pct;
     const factionTreasuryPct = config.tax.faction_treasury_pct;
+    const burntPct = config.tax.burnt_pct;
     const burnPct = 100 - nftFloorSweepPct - factionTreasuryPct;
 
     console.log(COLOR_INFO, `💰 Tax Distribution:`);
@@ -1758,6 +1697,7 @@ async function initializeTaxConfig(minebtcProgram) {
             .initializeTaxConfig(
                 nftFloorSweepPct,
                 factionTreasuryPct,
+                burntPct, 
                 new PublicKey(whitelistedAddress)
             )
             .accounts({
@@ -2558,10 +2498,6 @@ function printCompletionSummary() {
     `  • Doge Collection: ${
       deploymentFile.doge_collection_created ? "✅" : "❌"
     }`
-  );
-  console.log(
-    COLOR_INFO,
-    `  • Doge URIs: ${deploymentFile.doge_uris_set ? "✅" : "❌"}`
   );
   console.log(
     COLOR_INFO,

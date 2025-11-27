@@ -259,7 +259,7 @@
   },
   "doge_collection_created": {
     "collection_address": "e5egNeYHF2BAAYhvcEE7YMNHZRjtyqFR5vSgUbAFfVE",
-    "collection_name": "DogeTech Doge",
+    "collection_name": "Bitcoin doges",
     "collection_uri": "https://arweave.net/doge-collection-metadata.json",
     "collection_authority": "EzTKtgVWhoraeAGJRiEdau4i57SGfGtGmoSpokVtPsLD",
     "tx_signature": "5HLtLFaV2zFRARA92fevH3C4F6ijEkjazbCaNQxQLVpnhcaTANM5xrrtmmvTieGBiDyb9ptFGGBLbXU1BLGeNTWP",

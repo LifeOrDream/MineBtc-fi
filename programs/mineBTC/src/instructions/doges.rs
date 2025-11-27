@@ -181,7 +181,6 @@ pub fn int_batch_mint_doges<'info>(
         // Generate doge data (DNA, name, URI, multiplier)
         let slot = Clock::get()?.slot + i as u64;
         let (name, uri, dna, multiplier) = generate_doge_data(
-            doge_config,
             current_mint_number,
             &ctx.accounts.user.key(),
             slot,
@@ -361,7 +360,6 @@ pub fn int_admin_mint_doge(
     // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
     let (name, uri, dna, multiplier) = generate_doge_data(
-        doge_config,
         current_mint_number,
         &recipient,
         slot,
@@ -937,8 +935,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 
     // Create offspring NFT
     let current_mint_number = doge_config.doges_minted + 1;
-    let name = format!("Doge #{}", current_mint_number);
-    let uri = doge_config.doge_uris[mom.faction_id as usize].clone();
+    let name = format!("Bitcoin doges #{}", current_mint_number);
+    let uri = format!("Bitcoin doges #{}", current_mint_number);
 
     let collection_authority_bump = ctx.bumps.collection_authority;
     let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
@@ -1013,7 +1011,6 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 
 /// Generate doge data (DNA, name, URI, multiplier) for a new doge
 pub fn generate_doge_data(
-    doge_config: &DogeConfig,
     mint_number: u64,
     user_key: &Pubkey,
     slot_offset: u64,
@@ -1025,8 +1022,8 @@ pub fn generate_doge_data(
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("Doge #{}", mint_number);
-    let uri = doge_config.doge_uris[faction_id as usize].clone();
+    let name = format!("Bitcoin doges #{}", mint_number);
+    let uri = format!("Bitcoin doges #{}", mint_number);
     let multiplier = BASE_MULTIPLIER;
 
     Ok((name, uri, dna, multiplier))

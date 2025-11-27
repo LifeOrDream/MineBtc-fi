@@ -1109,7 +1109,6 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 if doge_config.doges_minted < doge_config.max_supply {
                     let mint_number = doge_config.doges_minted + 1;
                     let (name, uri, dna, multiplier) = crate::instructions::doges::generate_doge_data(
-                        doge_config,
                         mint_number,
                         &bet_owner,
                         clock.slot,

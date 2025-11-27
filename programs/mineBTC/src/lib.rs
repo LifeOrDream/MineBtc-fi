@@ -42,7 +42,7 @@ pub use state::{
     SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("4ybsV8wziB7Z4DMJjkc6x3ZhzaevRNgD4DbXNz6Ta5Ed");
+declare_id!("HdJERHvtRZ8cLcoL5K5zMcaY1Lih8Wd6x5v88KVxnQaX");
 
 #[program]
 pub mod minebtc {
@@ -274,17 +274,6 @@ pub mod minebtc {
         uri: String,
     ) -> Result<()> {
         admin::create_doge_collection_internal(ctx, name, uri)
-    }
-
-    /// Set Doge URIs for all factions (admin only)
-    /// uris: Vec of URIs, one per faction (must match number of factions)
-    pub fn set_doge_uris(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
-        admin::set_doge_uris_internal(ctx, uris)
-    }
-
-    /// Clear all Doge URIs (admin only)
-    pub fn clear_doge_uris(ctx: Context<UpdateDogeConfig>) -> Result<()> {
-        admin::clear_doge_uris_internal(ctx)
     }
 
     /// Initialize royalties on the Doge collection (admin only)
