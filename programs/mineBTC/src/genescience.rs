@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 
 use crate::errors::ErrorCode;
-use crate::state::{EggMetadata, BASE_MULTIPLIER, MAX_BASE_CHANCE};
+use crate::state::{BASE_MULTIPLIER, MAX_BASE_CHANCE};
 
 // ========================================================================================
 // ============================= DNA STRUCTURE & CONSTANTS ================================
@@ -135,8 +135,6 @@ pub struct MutationResult {
     pub new_dna: [u8; 32],
 }
 
-/// Calculate mutation result based on bet and game state.
-/// 
 /// **Chance Formula**: `base_chance * bet_strength * multiplier_penalty`
 /// - `base_chance` = 30%
 /// - `bet_strength` = min(user_bet / highest_bet, 1.0)
@@ -151,7 +149,7 @@ pub fn calculate_mutation_result(
     user_total_bet: u64,
     highest_round_bet_for_faction: u64,
     current_multiplier: u32,
-    gameplay_egg_dna: [u8; 32],
+    mut gameplay_egg_dna: [u8; 32],
     gameplay_egg_generation: u8,
     gameplay_egg_xp: u32,
     total_sol_bets: u64,
@@ -168,105 +166,76 @@ pub fn calculate_mutation_result(
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 
+    // XP always gained: 1 XP per 0.001 SOL, capped at 1000
+    let xp_gained = ((user_total_bet as u128 * 1) / 1_000_000).min(1000) as u32;
+    
+    if user_total_bet == 0 {
+        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_egg_dna };
+    }
+
     // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio.
     let effective_highest = if highest_round_bet_for_faction == 0 { user_total_bet } else { highest_round_bet_for_faction };
     let bet_strength = ((user_total_bet * 10000) / effective_highest).min(10000);
+
     msg!("   Bet strength: {}", bet_strength as f64 / 10000.0);
 
     // B. Multiplier Penalty (0 - 10,000 bps)
     // Formula: (BASE_MULTIPLIER / Current) * 10,000
     // 1.0x -> 1k/1k * 1k = 1000 (100% factor)
     // 6.9x -> 1k/6900 * 1k = 144.9 (14.5% factor)
-    let mult_factor = (BASE_MULTIPLIER   * 10000) / current_multiplier;
+    let mult_factor = (BASE_MULTIPLIER * 10000) / current_multiplier;
     msg!("   Multiplier factor: {}", mult_factor);
 
     // C. Final Chance Calculation
     // Chance = 30% * BetFactor * MultFactor
     // scale: 3000 * (0.0-1.0) * (0.14-1.0)
-    let final_chance_bps = (MAX_BASE_CHANCE * bet_strength * (mult_factor as u64)) 
-        / 100_000_000; // Divide by 10k * 10k
+    // Final Chance = 30% * bet_strength * mult_factor / 100M
+    let final_chance_bps = (MAX_BASE_CHANCE * bet_strength * (mult_factor as u64)) / 100_000_000;
     msg!("   Final chance: {}", final_chance_bps as f64 / 100.0);
 
     // --- STEP 2: ROLL THE DICE ---
 
-    // Calculate the sums first to get the values
-    let total_combined_points = total_points_bets + total_wgtd_points_bets;
-
-    // Use hashv which takes a slice of byte slices directly
-    let seed = keccak::hashv(&[
-        &slot.to_le_bytes(),
-        &total_sol_bets.to_le_bytes(),
-        &total_combined_points.to_le_bytes(),
-    ]).to_bytes();
+    // Roll the dice
+    let total_combined = total_sol_bets + total_points_bets + total_wgtd_points_bets;
+    let seed = keccak::hashv(&[&slot.to_le_bytes(), &total_sol_bets.to_le_bytes(), &total_combined.to_le_bytes(), user_key.as_ref(), &gameplay_egg_dna]).to_bytes();
 
     // Roll 1: Did we hit the mutation? (0-10000)
-    // Use first 2 bytes for higher precision (u16)
+    // Use first 2 bytes for higher precision (u16)    
     let roll_val = u16::from_le_bytes([seed[0], seed[1]]) as u64;
     let roll_normalized = (roll_val * 10_000) / 65535;
 
-    if roll_normalized < final_chance_bps as u64 {
-        // SUCCESS! Mutation triggered. Now decide TYPE.
-        // Use 3rd byte for type roll (0-100)
-        let type_roll = seed[2]; // 0-255
-        
-        // D. Determine Type
-        // Gen 0: Evo(10%), Power(30%), Trait(60%)
-        // Gen 9: Evo(1%), Power(30%), Trait(69%)
-        let evo_chance = 10 / (current_generation as u64 + 1);
-        let power_chance = 30;
-        
-        let evo_threshold = (255 * evo_chance) / 100;
-        let power_threshold = evo_threshold + ((255 * power_chance) / 100);
-
-        let mut base_boost = 0;
-        let m_type = if (type_roll as u64) < evo_threshold {
-            MutationType::Evolution
-        } else if (type_roll as u64) < power_threshold {
-            MutationType::Power
-        } else {
-            MutationType::Trait
-        };
-
-        match m_type {
-            MutationType::Evolution => {
-                // 1. Increment Generation in DNA
-                let new_gen = gameplay_egg_generation.saturating_add(1);
-                base_boost = 50; // +0.50x Base for Evolving
-            },
-            MutationType::Power => {
-                let new_gen = gameplay_egg_generation.saturating_add(1);
-                base_boost = 25; // +0.25x Base for Power
-            },
-            MutationType::Trait => {
-                let new_gen = gameplay_egg_generation.saturating_add(1);
-                base_boost = 5; // +0.05x Base for Trait
-            }
-        }        
-
-        // E. Calculate XP Bonus (The "Investment" Logic)
-        // We use a % of current XP to boost the multiplier.
-        // Evolution: Uses 50-100% of XP efficiency.
-        // Others: Uses 10-50% of XP efficiency.
-        let xp_roll = seed[3] as u64; // 0-255
-
-        let (min_pct, max_pct) = if m_type == MutationType::Evolution { (50, 100) } else { (10, 50) };
-        let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);        
-
-        // XP Boost Formula: (XP * Efficiency%) / 100 
-        // Example: 1000 XP * 80% efficiency = +800 basis points (+0.08x)
-        // We scale this down slightly so 1000 XP isn't too OP. Let's say 10 XP = 1 basis point.
-        let xp_mult_boost: u64 = ((gameplay_egg_xp as u64 * efficiency_pct) / 100) / 10;
-        msg!("   XP boost: {}", xp_mult_boost);
-
-        let total_boost = base_boost + xp_mult_boost as u32;
-        let new_multiplier = current_multiplier + total_boost;        
-        msg!("   New multiplier: {}", new_multiplier);
+    if roll_normalized >= final_chance_bps {
+        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_egg_dna };
     }
 
+    // Mutation triggered - determine type
+    let type_roll = seed[2];
+    let evo_chance = 10 / (gameplay_egg_generation as u64 + 1);
+    let evo_threshold = (255 * evo_chance) / 100;
+    let power_threshold = evo_threshold + ((255 * 30) / 100);
+
+    let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
+        let _ = evolve_stage(&mut gameplay_egg_dna, &seed);
+        (MutationType::Evolution, 50u32)
+    } else if (type_roll as u64) < power_threshold {
+        mutate_power_trait(&mut gameplay_egg_dna, &seed);
+        (MutationType::Power, 25u32)
+    } else {
+        mutate_visual_trait(&mut gameplay_egg_dna, &seed);
+        (MutationType::Trait, 5u32)
+    };
+
+    // XP Bonus: use % of current XP to boost multiplier
+    let xp_roll = seed[3] as u64;
+    let (min_pct, max_pct) = if m_type == MutationType::Evolution { (50, 100) } else { (10, 50) };
+    let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
+    let xp_mult_boost = ((gameplay_egg_xp as u64 * efficiency_pct) / 100) / 10;
+
     MutationResult {
-        mutation_type: Some(mutation_type),
+        mutation_type: Some(m_type),
         xp_gained,
-        multiplier_increase,
+        multiplier_increase: base_boost + xp_mult_boost as u32,
+        new_dna: gameplay_egg_dna,
     }
 }
 

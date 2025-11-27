@@ -1100,12 +1100,12 @@ pub struct UserGameBet {
     // --- Instant Mutation (applied during claim_rewards) ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
-    /// Random seed for mutation application (stored at bet time, used at claim time)
-    pub mutation_seed: [u8; 8],
     /// XP gained from betting (added to egg during claim_rewards)
     pub xp_gained: u32,
     /// Multiplier increase (added to egg's multiplier during claim_rewards)
     pub multiplier_increase: u32,
+    /// New DNA after mutation (copied to EggMetadata during claim_rewards)
+    pub new_dna: [u8; 32],
 }
 
 impl UserGameBet {
@@ -1125,9 +1125,9 @@ impl UserGameBet {
         8 +     // total_fee
         1 +     // bump
         1 +     // mutation_type
-        8 +     // mutation_seed
         4 +     // xp_gained
-        4; // multiplier_increase
+        4 +     // multiplier_increase
+        32;     // new_dna
 }
 
 /// Autominer configuration for blocks

@@ -23,7 +23,7 @@ use anchor_spl::token::Token;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
-use crate::genescience::{apply_mutation, calculate_mutation_result, MutationType};
+use crate::genescience::{calculate_mutation_result, MutationType};
 use crate::instructions::helper;
 use crate::state::*;
 
@@ -1067,24 +1067,19 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
             if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
                 if egg_metadata.mint == player_data.gameplay_egg {
-                    let mutation_type = match user_bet.mutation_type {
-                        1 => MutationType::Evolution,
-                        2 => MutationType::Power,
-                        3 => MutationType::Trait,
-                        _ => {
-                            msg!("   Invalid mutation type, skipping");
-                            return Ok(());
-                        }
-                    };
+                    // Apply stored new_dna directly
+                    egg_metadata.dna = user_bet.new_dna;
+                    
+                    // For Evolution, increment generation and reset XP
+                    if user_bet.mutation_type == 1 && egg_metadata.generation < 7 {
+                        egg_metadata.generation += 1;
+                        egg_metadata.xp = 0;
+                    }
 
-                    // Apply mutation using stored seed
-                    let slot = u64::from_le_bytes(user_bet.mutation_seed);
-                    apply_mutation(egg_metadata, mutation_type, slot, &user_bet.owner);
-
-                    // Sync PlayerData cache with egg state after mutation
+                    // Sync PlayerData cache with egg state
                     player_data.gameplay_egg_dna = egg_metadata.dna;
                     player_data.gameplay_egg_generation = egg_metadata.generation;
-                    player_data.active_multiplier = egg_metadata.multiplier;
+                    player_data.active_multiplier = player_data.active_multiplier;
 
                     msg!("   ✓ Mutation applied to egg: {}", egg_metadata.mint);
                 }
@@ -1453,15 +1448,18 @@ fn internal_process_bets<'info>(
 
         // Check if mutation triggered AND faction hasn't mutated this round
         if let Some(mutation_type) = mutation_result.mutation_type {
-            if faction_id < NUM_FACTIONS && !game_session.mutation_occurred_per_faction[faction_id] {
+            if !game_session.mutation_occurred_per_faction[faction_id] {
                 // Store mutation result in UserGameBet
                 user_game_bet.mutation_type = match mutation_type {
                     MutationType::Evolution => 1,
                     MutationType::Power => 2,
                     MutationType::Trait => 3,
                 };
-                user_game_bet.mutation_seed = clock.slot.to_le_bytes();
+                user_game_bet.new_dna = mutation_result.new_dna;
                 user_game_bet.multiplier_increase = mutation_result.multiplier_increase;
+
+                // Update PlayerData cache with mutated DNA
+                player_data.gameplay_egg_dna = mutation_result.new_dna;
 
                 // Mark mutation occurred for this faction this round
                 game_session.mutation_occurred_per_faction[faction_id] = true;
