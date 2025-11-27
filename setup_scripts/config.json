@@ -68,18 +68,15 @@
         "ticket_tiers": [
             {
                 "tier_index": 0,
-                "ticket_value": 1000000,
-                "ticket_count": 1000
+                "ticket_value": 1000000
             },
             {
                 "tier_index": 1,
-                "ticket_value": 10000000,
-                "ticket_count": 100
+                "ticket_value": 10000000
             },
             {
                 "tier_index": 2,
-                "ticket_value": 100000000,
-                "ticket_count": 50
+                "ticket_value": 100000000
             }
         ]        
     },

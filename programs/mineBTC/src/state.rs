@@ -392,12 +392,10 @@ impl HashpowerConfig {
 pub struct TicketTier {
     /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
     pub ticket_value: u64,
-    /// Number of tickets given with this tier (e.g., 200 tickets)
-    pub ticket_count: u16,
 }
 
 impl TicketTier {
-    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
+    pub const LEN: usize = 8 + 2; // ticket_value 
 }
 
 /// Global egg configuration
@@ -424,9 +422,6 @@ pub struct EggConfig {
     /// Curve steepness parameter (controls price growth rate, typically >= 100)
     pub curve_a: u64,
 
-    /// Global total power across all Eggs (sum of all egg powers)
-    pub global_egg_power: u64,
-
     /// Available ticket tier configs users can choose when minting (max 4 options)
     /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
     pub ticket_tiers: Vec<TicketTier>,
@@ -450,7 +445,6 @@ impl EggConfig {
         8 +     // eggs_minted
         8 +     // base_price
         8 +     // curve_a
-        8 +     // global_egg_power
         4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN) + // ticket_tiers
         1 +     // breeding_allowed
         8 +     // breed_base_price

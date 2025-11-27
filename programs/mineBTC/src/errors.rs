@@ -155,4 +155,7 @@ pub enum ErrorCode {
 
     #[msg("Maximum evolution stage reached")]
     MaxEvolutionReached,
+
+    #[msg("Egg metadata not found")]
+    EggMetadataNotFound,
 }

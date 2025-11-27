@@ -30,7 +30,7 @@ use crate::state::*;
 
 /// Simulate mint costs for multiple eggs accounting for bonding curve pricing
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
-/// ticket_amounts_per_tier: Vec of (ticket_value, ticket_count) for each of the 3 ticket tiers
+/// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
 pub fn int_simulate_mint_cost(
     egg_config: &EggConfig,
     mint_count: u64,
@@ -787,6 +787,8 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
 
 /// Send an egg to heaven (burn it) to claim accumulated rewards
 pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
+
+    let egg_config = &mut ctx.accounts.egg_config;
     let egg_metadata = &ctx.accounts.egg_metadata;
     let accumulated_val = egg_metadata.accumulated_val;
     let current_time = Clock::get()?.unix_timestamp;
@@ -796,6 +798,8 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         egg_metadata.incubated_player_data == Pubkey::default(),
         ErrorCode::EggAlreadyIncubated
     );
+
+    egg_config.eggs_minted -= 1;
 
     msg!("🔥 Burning Egg NFT to send to heaven...");
     msg!("   Accumulated Value: {}", accumulated_val);
@@ -1469,6 +1473,9 @@ pub struct SendToHeaven<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    #[account(mut, seeds = [EGG_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
+    pub egg_config: Account<'info, EggConfig>,
+
     #[account(
         mut,
         close = user,
@@ -1538,7 +1545,7 @@ pub struct BreedEggs<'info> {
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(mut, seeds = [EGG_CONFIG_SEED.as_ref()], bump = egg_config.bump)]
-    pub egg_config: Box<Account<'info, EggConfig>>,
+    pub egg_config: Account<'info, EggConfig>,
 
     #[account(
         mut,

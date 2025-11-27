@@ -302,9 +302,8 @@ pub mod minebtc {
         ctx: Context<UpdateEggsConfig>,
         ticket_tier_index: u8,
         ticket_value: u64,
-        ticket_count: u16,
     ) -> Result<()> {
-        admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value, ticket_count)
+        admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value)
     }
 
     // ----------------------------------------------------------------------------------------

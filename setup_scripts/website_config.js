@@ -179,7 +179,6 @@ function generateWebsiteConfig(config, deployment) {
           (tier) => ({
             tier_index: tier.tier_index,
             ticket_value: tier.ticket_value,
-            ticket_count: tier.ticket_count,
           })
         ) ||
         config.eggs_config?.ticket_tiers ||

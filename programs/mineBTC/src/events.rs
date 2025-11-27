@@ -121,7 +121,7 @@ pub struct EggMinted {
     pub faction_id: u8, // Faction/country the egg belongs to
     pub price: u64,
     pub ticket_tier: u64,
-    pub ticket_count: u64,
+    pub ticket_count: u64
 }
 
 #[event]

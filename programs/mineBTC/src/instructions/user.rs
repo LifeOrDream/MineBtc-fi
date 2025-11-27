@@ -1029,6 +1029,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
+        require!(ctx.accounts.egg_metadata.is_some(), ErrorCode::EggMetadataNotFound);
         if let Some(ref mut egg_metadata) = ctx.accounts.egg_metadata {
             if egg_metadata.mint == player_data.gameplay_egg {
                 // Calculate accumulated_val % based on mutation type
@@ -2117,23 +2118,23 @@ pub struct ClaimRoundRewards<'info> {
         seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
         bump = player_data.bump
     )]
-    pub player_data: Box<Account<'info, PlayerData>>,
+    pub player_data: Account<'info, PlayerData>,
 
     #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
     #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
-    pub game_session: Box<Account<'info, GameSession>>,
+    pub game_session: Account<'info, GameSession>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
+    pub global_config: Account<'info, GlobalConfig>,
 
     /// Global game state (for current round entropy)
     #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
+    pub global_game_state: Account<'info, GlobalGameSate>,
 
     /// Current ongoing round session (for randomness entropy)
-    pub current_game_session: Option<Box<Account<'info, GameSession>>>,
+    pub current_game_session: Option<Account<'info, GameSession>>,
 
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
@@ -2144,7 +2145,7 @@ pub struct ClaimRoundRewards<'info> {
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     #[account(mut, close = user_wallet)]
-    pub user_game_bet: Box<Account<'info, UserGameBet>>,
+    pub user_game_bet: Account<'info, UserGameBet>,
 
     /// CHECK: User whose bet this is
     #[account(mut)]

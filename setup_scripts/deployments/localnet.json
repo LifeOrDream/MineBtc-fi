@@ -304,19 +304,16 @@
       {
         "tier_index": 0,
         "ticket_value": 1000000,
-        "ticket_count": 1000,
         "tx_signature": "3s9YebkkHwRwcyWaAFcRUgor5ehjTN5YPrXWzum5VtHjGospXcHCLVC4xVPh4rKY9cRMnKbtAsLi9gjmgRJxRdRv"
       },
       {
         "tier_index": 1,
         "ticket_value": 10000000,
-        "ticket_count": 100,
         "tx_signature": "PBdNtAQ4JUGdRn1BgDkAAvSXam3Pmw5UtKEp3kdc5MymMgYGU7WZykFYzoyRwtk9J6dwzwdpHHwbKVpNfvTHMz9"
       },
       {
         "tier_index": 2,
         "ticket_value": 100000000,
-        "ticket_count": 50,
         "tx_signature": "2FJ37ZA7kF1VdWx6T9QyWLnbWnDMCkaDcZoc4CeSSVbuxAyKZmCdD2nzQbgi5n62NJSnTCdbMowP6AXDFq16XaLR"
       }
     ],

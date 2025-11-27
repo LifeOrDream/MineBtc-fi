@@ -965,7 +965,6 @@ pub fn initialize_egg_config_internal(
     eggs_config.max_supply = max_supply;
     eggs_config.egg_uris = Vec::new();
     eggs_config.ticket_tiers = Vec::new();
-    eggs_config.global_egg_power = 0;
     eggs_config.breeding_allowed = false;
     eggs_config.breed_base_price = 0;
     eggs_config.breed_curve_a = 100;
@@ -1163,7 +1162,6 @@ pub fn add_ticket_tier_config_int(
     ctx: Context<UpdateEggsConfig>,
     ticket_tier_index: u8,
     ticket_value: u64,
-    ticket_count: u16,
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let eggs_config = &mut ctx.accounts.eggs_config;
@@ -1185,21 +1183,18 @@ pub fn add_ticket_tier_config_int(
     // Ensure vector is large enough
     while eggs_config.ticket_tiers.len() <= tier_index {
         eggs_config.ticket_tiers.push(TicketTier {
-            ticket_value: 0,
-            ticket_count: 0,
+            ticket_value: 0
         });
     }
 
     // Update or add ticket tier
     eggs_config.ticket_tiers[tier_index] = TicketTier {
         ticket_value,
-        ticket_count,
     };
 
     msg!(
-        "✅ Updated ticket tier config #{}: {} tickets of {} SOL",
+        "✅ Updated ticket tier config #{}: {} SOL",
         ticket_tier_index,
-        ticket_count,
         ticket_value as f64 / 1e9
     );
     Ok(())
