@@ -264,6 +264,8 @@ pub fn batch_mint_eggs<'info>(
             faction_id,
             last_update_ts: Clock::get()?.unix_timestamp,
             created_at: Clock::get()?.unix_timestamp,
+            generation: 0,
+            xp: 0,
             bump: metadata_bump,
         };
 

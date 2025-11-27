@@ -111,6 +111,11 @@ pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) ->
     game_session.sol_bets_indexes = vec![0u64; NUM_BLOCKS];
     game_session.points_bets_indexes = vec![0u64; NUM_BLOCKS];
     game_session.wgtd_points_bets_indexes = vec![0u64; NUM_BLOCKS];
+
+    // Initialize instant mutation tracking per faction
+    game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
+    game_session.mutation_occurred_per_faction = [false; NUM_FACTIONS];
+
     msg!(
         "   Initialized block tracking arrays (24 blocks). Round starts at: {} and ends at: {}",
         game_session.round_start_timestamp,

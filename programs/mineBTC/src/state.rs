@@ -731,6 +731,12 @@ pub struct GameSession {
     pub motherlode_hit: bool,
     /// Motherlode pot size when hit (if applicable)
     pub motherlode_pot_size_on_hit: u64,
+
+    // --- Instant Mutation tracking per faction ---
+    /// Highest SOL bet placed per faction this round (for mutation probability calc)
+    pub highest_sol_bet_per_faction: [u64; NUM_FACTIONS],
+    /// Whether mutation has occurred for each faction this round (1 per faction per round)
+    pub mutation_occurred_per_faction: [bool; NUM_FACTIONS],
 }
 
 impl GameSession {
@@ -763,7 +769,9 @@ impl GameSession {
         16 +    // minebtc_rewards_index (u128)
         16 +    // same_faction_minebtc_rewards_index (u128)
         1 +     // motherlode_hit (bool)
-        8; // motherlode_pot_size_on_hit
+        8 +     // motherlode_pot_size_on_hit
+        (NUM_FACTIONS * 8) + // highest_sol_bet_per_faction [u64; 12]
+        (NUM_FACTIONS * 1); // mutation_occurred_per_faction [bool; 12]
 }
 
 // ========================================================================================
@@ -979,13 +987,17 @@ pub struct EggMetadata {
     /// Last power update timestamp
     pub last_update_ts: i64,
 
+    /// Evolution generation (0-7), increases on evolution mutations
+    pub generation: u8,
+
+    /// Experience points, reset to 0 on evolution
+    pub xp: u32,
+
     /// PDA bump
     pub bump: u8,
 }
 
 impl EggMetadata {
-    // discriminator + mint + created_at + faction + mult + accumulated_val + dna + player + update + bump
-    // 8 + 32 + 8 + 1 + 4 + 8 + 32 + 32 + 8 + 1 = 134 bytes
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
         8 +     // created_at (i64)
@@ -993,8 +1005,10 @@ impl EggMetadata {
         4 +     // multiplier (u32)
         8 +     // accumulated_val (u64)
         32 +    // dna [u8; 32]
-        32 +    // incubated_player_data Pubkey (always 32 bytes, Pubkey::default() if not incubated)
+        32 +    // incubated_player_data Pubkey
         8 +     // last_update_ts (i64)
+        1 +     // generation (u8)
+        4 +     // xp (u32)
         1; // bump
 }
 
@@ -1071,6 +1085,12 @@ pub struct UserGameBet {
     /// Total fees paid across all bets
     pub total_fee: u64,
     pub bump: u8,
+
+    // --- Instant Mutation (applied during claim_rewards) ---
+    /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
+    pub mutation_type: u8,
+    /// Random seed for mutation application (stored at bet time, used at claim time)
+    pub mutation_seed: [u8; 8],
 }
 
 impl UserGameBet {
@@ -1088,7 +1108,9 @@ impl UserGameBet {
         8 +     // total_points_bet
         8 +     // total_wgtd_points_bet
         8 +     // total_fee
-        1; // bump
+        1 +     // bump
+        1 +     // mutation_type
+        8; // mutation_seed
 }
 
 /// Autominer configuration for blocks
