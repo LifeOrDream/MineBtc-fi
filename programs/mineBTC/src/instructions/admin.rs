@@ -181,7 +181,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
             ctx.accounts.system_program.to_account_info(),
             system_program::Transfer {
                 from: ctx.accounts.authority.to_account_info(),
-                to: ctx.accounts.eggs_treasury.to_account_info(),
+                to: ctx.accounts.doges_treasury.to_account_info(),
             },
         ),
         1,
@@ -955,19 +955,19 @@ pub fn initialize_doge_config_internal(
 ) -> Result<()> {
     msg!("🥚 [initialize_doge_config_internal] Initializing EggConfig");
 
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
 
-    eggs_config.bump = ctx.bumps.eggs_config;
-    eggs_config.doge_collection = Pubkey::default();
-    eggs_config.eggs_minted = 0;
-    eggs_config.base_price = base_price;
-    eggs_config.curve_a = curve_a;
-    eggs_config.max_supply = max_supply;
-    eggs_config.doge_uris = Vec::new();
-    eggs_config.ticket_tiers = Vec::new();
-    eggs_config.breeding_allowed = false;
-    eggs_config.breed_base_price = 0;
-    eggs_config.breed_curve_a = 100;
+    doges_config.bump = ctx.bumps.doges_config;
+    doges_config.doge_collection = Pubkey::default();
+    doges_config.doges_minted = 0;
+    doges_config.base_price = base_price;
+    doges_config.curve_a = curve_a;
+    doges_config.max_supply = max_supply;
+    doges_config.doge_uris = Vec::new();
+    doges_config.ticket_tiers = Vec::new();
+    doges_config.breeding_allowed = false;
+    doges_config.breed_base_price = 0;
+    doges_config.breed_curve_a = 100;
 
     msg!("   ✅ EggConfig initialized");
     msg!("   Base Price: {} lamports, Max Supply: {}", base_price, max_supply);
@@ -989,7 +989,7 @@ pub fn create_doge_collection_internal(
     name: String,
     uri: String,
 ) -> Result<()> {
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
 
     msg!("Creating Doge collection with program PDA as update authority");
     msg!("Collection: {}", ctx.accounts.collection.key());
@@ -1016,7 +1016,7 @@ pub fn create_doge_collection_internal(
         .invoke()?;
 
     // Store the collection address in global config
-    eggs_config.doge_collection = ctx.accounts.collection.key();
+    doges_config.doge_collection = ctx.accounts.collection.key();
 
     emit!(EggCollectionCreated {
         collection: ctx.accounts.collection.key(),
@@ -1037,7 +1037,7 @@ pub fn create_doge_collection_internal(
 /// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
 pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
 
     require!(
         uris.len() == global_config.supported_factions.len(),
@@ -1050,7 +1050,7 @@ pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>)
     }
 
     // Set URIs for all factions
-    eggs_config.doge_uris = uris.clone();
+    doges_config.doge_uris = uris.clone();
 
     msg!("✅ Set {} Doge URIs (one per faction)", uris.len());
     msg!("   Factions: {}", global_config.supported_factions.len());
@@ -1063,8 +1063,8 @@ pub fn set_doge_uris_internal(ctx: Context<UpdateDogeConfig>, uris: Vec<String>)
 /// Removes all Doge metadata URIs from the configuration.
 /// This can be used to reset URIs before setting new ones.
 pub fn clear_doge_uris_internal(ctx: Context<UpdateDogeConfig>) -> Result<()> {
-    let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.doge_uris.clear();
+    let doges_config = &mut ctx.accounts.doges_config;
+    doges_config.doge_uris.clear();
 
     msg!("✅ Cleared all Doge URIs");
 
@@ -1164,7 +1164,7 @@ pub fn add_ticket_tier_config_int(
     ticket_value: u64,
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
     let authority = &ctx.accounts.authority;
 
     // Authority check
@@ -1181,14 +1181,14 @@ pub fn add_ticket_tier_config_int(
     let tier_index = ticket_tier_index as usize;
 
     // Ensure vector is large enough
-    while eggs_config.ticket_tiers.len() <= tier_index {
-        eggs_config.ticket_tiers.push(TicketTier {
+    while doges_config.ticket_tiers.len() <= tier_index {
+        doges_config.ticket_tiers.push(TicketTier {
             ticket_value: 0
         });
     }
 
     // Update or add ticket tier
-    eggs_config.ticket_tiers[tier_index] = TicketTier {
+    doges_config.ticket_tiers[tier_index] = TicketTier {
         ticket_value,
     };
 
@@ -1214,9 +1214,9 @@ pub fn update_doge_config_internal(
 ) -> Result<()> {
     msg!("🥚 [update_doge_config_internal] Updating EggConfig");
 
-    let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.base_price = base_price;
-    eggs_config.curve_a = curve_a;
+    let doges_config = &mut ctx.accounts.doges_config;
+    doges_config.base_price = base_price;
+    doges_config.curve_a = curve_a;
 
     msg!("   ✅ EggConfig updated");
     msg!("   Base Price: {} lamports", base_price);
@@ -1233,10 +1233,10 @@ pub fn update_breeding_config_internal(
     breed_curve_a: u64,
 ) -> Result<()> {
     msg!("🧬 [update_breeding_config] Updating breeding config");
-    let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.breeding_allowed = breeding_allowed;
-    eggs_config.breed_base_price = breed_base_price;
-    eggs_config.breed_curve_a = breed_curve_a;
+    let doges_config = &mut ctx.accounts.doges_config;
+    doges_config.breeding_allowed = breeding_allowed;
+    doges_config.breed_base_price = breed_base_price;
+    doges_config.breed_curve_a = breed_curve_a;
     msg!("   ✅ Breeding: {}, Base: {} SOL, CurveA: {}", breeding_allowed, breed_base_price as f64 / 1e9, breed_curve_a);
     Ok(())
 }
@@ -1607,7 +1607,7 @@ pub struct Initialize<'info> {
         bump,
         owner = system_program.key()  // System-owned account for native SOL
     )]
-    pub eggs_treasury: UncheckedAccount<'info>,
+    pub doges_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
     #[account(
@@ -1873,7 +1873,7 @@ pub struct InitializeEggConfig<'info> {
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, EggConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1904,9 +1904,9 @@ pub struct CreateEggCollection<'info> {
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED],
-        bump = eggs_config.bump,
+        bump = doges_config.bump,
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, EggConfig>,
 
     /// CHECK: Doge collection account (will be created by MPL Core)
     #[account(mut, signer)]
@@ -1938,9 +1938,9 @@ pub struct UpdateDogeConfig<'info> {
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = eggs_config.bump,
+        bump = doges_config.bump,
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, EggConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1964,14 +1964,14 @@ pub struct InitEggRoyalties<'info> {
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = eggs_config.bump,
+        bump = doges_config.bump,
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, EggConfig>,
 
     /// CHECK: Doge collection (already created via MPL Core)
     #[account(
         mut,
-        address = eggs_config.doge_collection @ ErrorCode::InvalidAccount
+        address = doges_config.doge_collection @ ErrorCode::InvalidAccount
     )]
     pub collection: UncheckedAccount<'info>,
 

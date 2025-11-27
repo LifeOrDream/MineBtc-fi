@@ -373,8 +373,8 @@ async function initializeMinebtcProgram(minebtcProgram) {
     minebtcProgram.programId
   );
 
-  const [eggsTreasuryPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("eggs-treasury")],
+  const [dogesTreasuryPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doges-treasury")],
     minebtcProgram.programId
   );
 
@@ -414,7 +414,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
         mineBtcMining: mineBtcMiningPDA,
         unrefinedRewards: unrefinedRewardsPDA,
                 solTreasury: solTreasuryPDA,
-        eggsTreasury: eggsTreasuryPDA,
+        dogesTreasury: dogesTreasuryPDA,
         autominerCustody: autominerCustodyPDA,        
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
@@ -432,7 +432,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
             globalConfig_address: globalConfigPDA.toString(),
       mineBtcMining_address: mineBtcMiningPDA.toString(),
             solTreasury_address: solTreasuryPDA.toString(),
-      eggsTreasury_address: eggsTreasuryPDA.toString(),
+      dogesTreasury_address: dogesTreasuryPDA.toString(),
       autominerCustody_address: autominerCustodyPDA.toString(),
       unrefinedRewards_address: unrefinedRewardsPDA.toString(),
             FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
@@ -448,7 +448,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
         mineBtcMining_address: mineBtcMiningPDA.toString(),
         unrefinedRewards: unrefinedRewardsPDA.toString(),
                 solTreasury_address: solTreasuryPDA.toString(),
-        eggsTreasury_address: eggsTreasuryPDA.toString(),
+        dogesTreasury_address: dogesTreasuryPDA.toString(),
             };
             saveDeploymentData();
         } else {
@@ -1309,22 +1309,22 @@ async function initializeEggConfig(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
     );
 
     // Get doge config values
-    const basePrice = config.eggs_config.base_price; 
-    const curveA = config.eggs_config.curve_a; // Curve steepness
-    const maxSupply = config.eggs_config.max_supply; // Max 10k eggs
+    const basePrice = config.doges_config.base_price; 
+    const curveA = config.doges_config.curve_a; // Curve steepness
+    const maxSupply = config.doges_config.max_supply; // Max 10k doges
 
     if (!basePrice || !curveA || !maxSupply) {
     console.error(COLOR_ERROR, "❌ Doge config values not found in config.json");
     throw new Error("Doge config values not found");
     }
 
-    console.log(COLOR_INFO, `🔑 EggConfig PDA: ${eggsConfigPDA.toString()}`);
+    console.log(COLOR_INFO, `🔑 EggConfig PDA: ${dogesConfigPDA.toString()}`);
     console.log(COLOR_INFO, `💰 Base Price: ${basePrice / 1e9} SOL`);
     console.log(COLOR_INFO, `📈 Curve A: ${curveA}`);
     console.log(COLOR_INFO, `🥚 Max Supply: ${maxSupply}`);
@@ -1333,7 +1333,7 @@ async function initializeEggConfig(minebtcProgram) {
     const tx = await minebtcProgram.methods
       .initializeEggConfig(new BN(basePrice), new BN(curveA), new BN(maxSupply))
             .accounts({
-                eggsConfig: eggsConfigPDA,
+                dogesConfig: dogesConfigPDA,
                 globalConfig: globalConfigPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
@@ -1344,7 +1344,7 @@ async function initializeEggConfig(minebtcProgram) {
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.doge_config_initialized = {
-            eggs_config_pda: eggsConfigPDA.toString(),
+            doges_config_pda: dogesConfigPDA.toString(),
             base_price: basePrice.toString(),
             curve_a: curveA.toString(),
             max_supply: maxSupply.toString(),
@@ -1356,7 +1356,7 @@ async function initializeEggConfig(minebtcProgram) {
         if (error.toString().includes("already in use")) {
       console.log(COLOR_INFO, "ℹ️ EggConfig already initialized. Skipping...");
             deploymentFile.doge_config_initialized = {
-                eggs_config_pda: eggsConfigPDA.toString(),
+                doges_config_pda: dogesConfigPDA.toString(),
             };
             saveDeploymentData();
         } else {
@@ -1388,7 +1388,7 @@ async function createEggCollection(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
     );
@@ -1399,8 +1399,8 @@ async function createEggCollection(minebtcProgram) {
     );
 
   console.log(COLOR_INFO, "🎨 Creating Metaplex Core collection...");
-    console.log(COLOR_DIM, `   Name: ${config.eggs.collection_name}`);
-    console.log(COLOR_DIM, `   URI: ${config.eggs.collection_uri}`);
+    console.log(COLOR_DIM, `   Name: ${config.doges.collection_name}`);
+    console.log(COLOR_DIM, `   URI: ${config.doges.collection_uri}`);
   console.log(
     COLOR_INFO,
     "🔐 Collection Authority PDA:",
@@ -1413,13 +1413,13 @@ async function createEggCollection(minebtcProgram) {
     try {
     const tx = await minebtcProgram.methods
             .createEggCollection(
-                config.eggs.collection_name,
-                config.eggs.collection_uri
+                config.doges.collection_name,
+                config.doges.collection_uri
             )
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
-                eggsConfig: eggsConfigPDA,
+                dogesConfig: dogesConfigPDA,
                 collection: collectionKeypair.publicKey,
                 collectionAuthority: collectionAuthorityPDA,
         mplCoreProgram: new PublicKey(
@@ -1449,8 +1449,8 @@ async function createEggCollection(minebtcProgram) {
 
         deploymentFile.doge_collection_created = {
             collection_address: collectionPubkey.toString(),
-            collection_name: config.eggs.collection_name,
-            collection_uri: config.eggs.collection_uri,
+            collection_name: config.doges.collection_name,
+            collection_uri: config.doges.collection_uri,
       collection_authority: collectionAuthorityPDA.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1488,22 +1488,22 @@ async function setEggUris(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.mineBtcMining_address
   );
 
-    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
     );
 
-  console.log(COLOR_INFO, "📝 Setting URIs:", config.eggs.uris.length);
-    config.eggs.uris.forEach((uri, index) => {
+  console.log(COLOR_INFO, "📝 Setting URIs:", config.doges.uris.length);
+    config.doges.uris.forEach((uri, index) => {
         console.log(COLOR_DIM, `   ${index + 1}. ${uri}`);
     });
 
     try {
     const tx = await minebtcProgram.methods
-            .setEggUris(config.eggs.uris)
+            .setEggUris(config.doges.uris)
             .accounts({
                 globalConfig: globalConfigPDA,
-                eggsConfig: eggsConfigPDA,
+                dogesConfig: dogesConfigPDA,
         mineBtcMining: mineBtcMiningPDA,
                 authority: walletKeypair.publicKey,
                 systemProgram: SystemProgram.programId,
@@ -1514,7 +1514,7 @@ async function setEggUris(minebtcProgram) {
     console.log(COLOR_DIM, "🔗 Transaction:", tx);
 
         deploymentFile.doge_uris_set = {
-            uris: config.eggs.uris,
+            uris: config.doges.uris,
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -1546,7 +1546,7 @@ async function initializeEggRoyalties(minebtcProgram) {
     deploymentFile.doge_collection_created.collection_address
   );
 
-    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
     );
@@ -1557,7 +1557,7 @@ async function initializeEggRoyalties(minebtcProgram) {
     );
 
     // Configure royalties
-  const basisPoints = config.eggs_config.royalties;
+  const basisPoints = config.doges_config.royalties;
     let creators = [];
 
   // Convert addresses to PublicKey objects
@@ -1571,14 +1571,14 @@ async function initializeEggRoyalties(minebtcProgram) {
   creators.push({
     address: multisigAddress,
     percentage:
-      config.eggs_config.creators.find(
+      config.doges_config.creators.find(
         (creator) => creator.identifier === "multisig_fee_recipient"
       )?.percentage || 50,
   });
   creators.push({
     address: treasuryAddress,
     percentage:
-      config.eggs_config.creators.find(
+      config.doges_config.creators.find(
         (creator) => creator.identifier === "treasury"
       )?.percentage || 50,
   });
@@ -1598,7 +1598,7 @@ async function initializeEggRoyalties(minebtcProgram) {
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
-                eggsConfig: eggsConfigPDA,
+                dogesConfig: dogesConfigPDA,
                 collection: collectionPubkey,
                 collectionAuthority: collectionAuthorityPDA,
         mplCoreProgram: new PublicKey(
@@ -1645,12 +1645,12 @@ async function configureTicketTiers(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.mineBtcMining_address
   );
 
-    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("egg-config")],
     minebtcProgram.programId
     );
 
-  const ticketTiers = config.eggs_config.ticket_tiers || [];
+  const ticketTiers = config.doges_config.ticket_tiers || [];
 
   console.log(
     COLOR_INFO,
@@ -1672,7 +1672,7 @@ async function configureTicketTiers(minebtcProgram) {
                 )
                 .accounts({
                     globalConfig: globalConfigPDA,
-                    eggsConfig: eggsConfigPDA,
+                    dogesConfig: dogesConfigPDA,
           mineBtcMining: mineBtcMiningPDA,
                     authority: wallet.publicKey,
                     systemProgram: SystemProgram.programId,
@@ -2309,37 +2309,37 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       deploymentFile.minebtc_program_initialized.globalConfig_address
     );
 
-    const [eggsConfigPDA] = PublicKey.findProgramAddressSync(
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("egg-config")],
       minebtcProgram.programId
     );
 
     // Get current config
-    const eggsConfig = await minebtcProgram.account.eggConfig.fetch(
-      eggsConfigPDA
+    const dogesConfig = await minebtcProgram.account.eggConfig.fetch(
+      dogesConfigPDA
     );
 
     console.log(COLOR_INFO, "   Current Doge Config:");
     console.log(
       COLOR_INFO,
-      `     Base Price: ${eggsConfig.basePrice.toString()} lamports (${eggsConfig.basePrice.toNumber() / 1e9} SOL)`
+      `     Base Price: ${dogesConfig.basePrice.toString()} lamports (${dogesConfig.basePrice.toNumber() / 1e9} SOL)`
     );
     console.log(
       COLOR_INFO,
-      `     Curve A: ${eggsConfig.curveA.toString()}`
+      `     Curve A: ${dogesConfig.curveA.toString()}`
     );
     console.log(
       COLOR_INFO,
-      `     Max Supply: ${eggsConfig.maxSupply.toString()}`
+      `     Max Supply: ${dogesConfig.maxSupply.toString()}`
     );
 
     // Get values from config or use provided values
     const basePrice = eggConfig?.basePrice 
       ? new BN(eggConfig.basePrice)
-      : new BN(config.eggs_config.base_price);
+      : new BN(config.doges_config.base_price);
     const curveA = eggConfig?.curveA 
       ? new BN(eggConfig.curveA)
-      : new BN(config.eggs_config.curve_a);
+      : new BN(config.doges_config.curve_a);
 
     console.log(COLOR_INFO, "\n   Updating Doge Config:");
     console.log(
@@ -2352,7 +2352,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       COLOR_INFO,
       `   Global Config PDA: ${globalConfigPDA.toString()}`
     );
-    console.log(COLOR_INFO, `   Doge Config PDA: ${eggsConfigPDA.toString()}`);
+    console.log(COLOR_INFO, `   Doge Config PDA: ${dogesConfigPDA.toString()}`);
     console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
 
     // Build and send transaction
@@ -2360,7 +2360,7 @@ async function updateEggConfig(minebtcProgram, eggConfig) {
       .updateEggConfig(basePrice, curveA)
       .accounts({
         globalConfig: globalConfigPDA,
-        eggsConfig: eggsConfigPDA,
+        dogesConfig: dogesConfigPDA,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })

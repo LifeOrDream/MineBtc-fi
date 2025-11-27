@@ -50,7 +50,7 @@
         "doge_btc_per_round": 1000000,
         "initial_deposit": "21000000000000"
     },
-    "eggs_config": {
+    "doges_config": {
         "base_price": 1000000000,
         "curve_a": 1111111,
         "max_supply": 24690,
@@ -94,7 +94,7 @@
         { "name": "Brazil" },
         { "name": "Argentina" }
     ],
-    "eggs": {
+    "doges": {
         "collection_name": "DogeTech Doge",
         "collection_uri": "https://arweave.net/doge-collection-metadata.json",
         "uris": [

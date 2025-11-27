@@ -125,7 +125,7 @@ Each subsequent doge costs more, creating natural scarcity.
 
 ### Doge Tiers & Free Tickets
 
-When minting eggs, choose a ticket tier:
+When minting doges, choose a ticket tier:
 
 - **Bronze**: 0.01 SOL × 1000 tickets
 - **Silver**: 0.05 SOL × 200 tickets
@@ -145,14 +145,14 @@ Stake up to **5 Doge** to boost your mining hashpower:
 5 Doge: 3.0x multiplier
 ```
 
-**Max Multiplier**: 6.9x (with 5 eggs + max lockup)
+**Max Multiplier**: 6.9x (with 5 doges + max lockup)
 
 ### Power System
 
 Doge accumulate "power" over time:
 
 - Power is earned when claiming MineBTC rewards
-- Power is distributed proportionally to all staked eggs
+- Power is distributed proportionally to all staked doges
 - Higher power = rarer/more valuable NFTs
 
 ---
@@ -307,8 +307,8 @@ initialize_player --faction-id 0 --referral-code <optional>
 ### 2. Mint Doge (Optional)
 
 ```bash
-# Mint 3 eggs for your faction with Silver tier tickets
-batch_mint_eggs --faction-id 0 --count 3 --tier 1
+# Mint 3 doges for your faction with Silver tier tickets
+batch_mint_doges --faction-id 0 --count 3 --tier 1
 ```
 
 ### 3. Stake Your Doge

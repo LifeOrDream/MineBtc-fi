@@ -117,7 +117,7 @@
     "globalConfig_address": "35gFskQqYa2rftECVSsPbFMoRbcTzz6gpcqppMrA3HhD",
     "mineBtcMining_address": "69T4yMCghz8rAYAQNJS1JhTTnQocY4Ghmcxd2iU6LYts",
     "solTreasury_address": "HoBLYBz5gVE3iTbpComGwkH7KheRFs3Z74bpNzcPNUJt",
-    "eggsTreasury_address": "HBwJZZFu7K4kH2hFQSmXCoTsmKborhZmvQPttaSA5b2d",
+    "dogesTreasury_address": "HBwJZZFu7K4kH2hFQSmXCoTsmKborhZmvQPttaSA5b2d",
     "autominerCustody_address": "3GFyBwVQwkDUHANjAmVEaX3pgCneSYrzwyt8yHJbnMWL",
     "unrefinedRewards_address": "2aNHW6AgPrw73vfAweFsFXdE9K8svctXtgo1upDD5Hdj",
     "FEE_RECIPIENT_MULTISIG": "B4Q5BNqjpZRyo9ZJ1dhKfJqHcR3TpksG5BKJjQ3V4ZvQ",
@@ -250,7 +250,7 @@
     "timestamp": "2025-11-24T18:50:22.684Z"
   },
   "doge_config_initialized": {
-    "eggs_config_pda": "3Bg1bucbYgWjtZcfwASh5sASe3hQKeVkbRaUWtRizTgL",
+    "doges_config_pda": "3Bg1bucbYgWjtZcfwASh5sASe3hQKeVkbRaUWtRizTgL",
     "base_price": "1000000000",
     "curve_a": "1111111",
     "max_supply": "24690",

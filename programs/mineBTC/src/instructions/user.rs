@@ -118,9 +118,9 @@ pub fn internal_initialize_player(
     msg!("     Position tracking initialized");
 
     // Initialize doge staking
-    player_data.staked_eggs = Vec::new();
-    player_data.doge_multiplier = 100; // Default 1.0x (no eggs staked)
-    msg!("     Doge staking initialized (0 eggs, 1.0x multiplier)");
+    player_data.staked_doges = Vec::new();
+    player_data.doge_multiplier = 100; // Default 1.0x (no doges staked)
+    msg!("     Doge staking initialized (0 doges, 1.0x multiplier)");
 
     // Initialize free tickets vectors
     player_data.free_tickets = Vec::new();
@@ -166,7 +166,7 @@ pub fn internal_initialize_player(
 /// Requires:
 /// - No minebtc hashpower (minebtc_hashpower == 0)
 /// - No lp hashpower (lp_hashpower == 0)
-/// - No eggs staked (staked_eggs.is_empty())
+/// - No doges staked (staked_doges.is_empty())
 /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
 pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
     msg!(
@@ -197,7 +197,7 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
     require!(
         player_data.minebtc_hashpower == 0
             && player_data.lp_hashpower == 0
-            && player_data.staked_eggs.is_empty(),
+            && player_data.staked_doges.is_empty(),
         ErrorCode::InvalidParameters
     );
 
@@ -1106,8 +1106,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 ctx.accounts.mpl_core_program.as_ref(),
                 ctx.accounts.new_doge_metadata.as_ref(),
             ) {
-                if doge_config.eggs_minted < doge_config.max_supply {
-                    let mint_number = doge_config.eggs_minted + 1;
+                if doge_config.doges_minted < doge_config.max_supply {
+                    let mint_number = doge_config.doges_minted + 1;
                     let (name, uri, dna, multiplier) = crate::instructions::doges::generate_doge_data(
                         doge_config,
                         mint_number,
@@ -1156,7 +1156,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                     let mut cursor = std::io::Cursor::new(&mut data[8..]); // Skip discriminator
                     new_doge_meta_data.serialize(&mut cursor)?;
 
-                    doge_config.eggs_minted += 1;
+                    doge_config.doges_minted += 1;
 
                     emit!(crate::events::DogeMinted {
                         doge_metadata_account: new_doge_metadata_info.key(),
@@ -2402,7 +2402,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     player_data.gameplay_doge_xp = doge_metadata.xp;
 
     // Update faction state
-    faction_state.eggs_playing += 1;
+    faction_state.doges_playing += 1;
 
     // Update doge metadata
     doge_metadata.incubated_player_data = player_data.owner;
@@ -2411,7 +2411,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
     msg!("✅ Doge {} now active for gameplay", doge_mint);
     msg!("   Multiplier: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
-    msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
+    msg!("   Faction doges playing: {}", faction_state.doges_playing);
 
     emit!(EggUsedForGameplay {
         user: ctx.accounts.user.key(),
@@ -2476,14 +2476,14 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     player_data.gameplay_doge_xp = 0;
 
     // Update faction state
-    faction_state.eggs_playing = faction_state.eggs_playing.saturating_sub(1);
+    faction_state.doges_playing = faction_state.doges_playing.saturating_sub(1);
 
     // Update doge metadata
     doge_metadata.incubated_player_data = Pubkey::default();
     doge_metadata.last_update_ts = current_time;
 
     msg!("✅ Doge {} withdrawn from gameplay", doge_mint);
-    msg!("   Faction eggs playing: {}", faction_state.eggs_playing);
+    msg!("   Faction doges playing: {}", faction_state.doges_playing);
 
     emit!(EggWithdrawnFromGameplay {
         user: ctx.accounts.user.key(),

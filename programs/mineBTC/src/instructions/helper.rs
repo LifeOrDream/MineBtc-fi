@@ -31,10 +31,10 @@ pub fn transfer_to_sol_treasury<'info>(
     )
 }
 
-// Helper function to transfer SOL to the program's eggs_treasury PDA
-pub fn transfer_to_eggs_treasury<'info>(
+// Helper function to transfer SOL to the program's doges_treasury PDA
+pub fn transfer_to_doges_treasury<'info>(
     from: &AccountInfo<'info>,
-    eggs_treasury: &AccountInfo<'info>,
+    doges_treasury: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
@@ -43,7 +43,7 @@ pub fn transfer_to_eggs_treasury<'info>(
             system_program.to_account_info(),
             Transfer {
                 from: from.to_account_info(),
-                to: eggs_treasury.to_account_info(),
+                to: doges_treasury.to_account_info(),
             },
         ),
         amount,

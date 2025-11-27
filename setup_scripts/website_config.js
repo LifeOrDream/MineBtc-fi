@@ -85,8 +85,8 @@ function generateWebsiteConfig(config, deployment) {
         deployment.minebtc_program_initialized?.mineBtcMining_address,
       sol_treasury_pda:
         deployment.minebtc_program_initialized?.solTreasury_address,
-      eggs_treasury_pda:
-        deployment.minebtc_program_initialized?.eggsTreasury_address,
+      doges_treasury_pda:
+        deployment.minebtc_program_initialized?.dogesTreasury_address,
       unrefinedRewards_pda:
         deployment.minebtc_program_initialized?.unrefinedRewards_address,
       autominerCustody_pda:
@@ -147,7 +147,7 @@ function generateWebsiteConfig(config, deployment) {
           ?.liquidity_custodian_authority,
 
       // ========== DOGE CONFIG ==========
-      doge_config_pda: deployment.doge_config_initialized?.eggs_config_pda,
+      doge_config_pda: deployment.doge_config_initialized?.doges_config_pda,
       doge_base_price: deployment.doge_config_initialized?.base_price,
       doge_curve_a: deployment.doge_config_initialized?.curve_a,
       doge_max_supply: deployment.doge_config_initialized?.max_supply,
@@ -181,7 +181,7 @@ function generateWebsiteConfig(config, deployment) {
             ticket_value: tier.ticket_value,
           })
         ) ||
-        config.eggs_config?.ticket_tiers ||
+        config.doges_config?.ticket_tiers ||
         [],
 
       // ========== FACTION CONFIGURATION ==========

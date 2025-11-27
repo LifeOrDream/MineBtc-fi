@@ -60,7 +60,7 @@ pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
-pub const DOGES_TREASURY_SEED: &[u8] = b"eggs-treasury";
+pub const DOGES_TREASURY_SEED: &[u8] = b"doges-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
@@ -108,7 +108,7 @@ pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
 // ==========  DOGE NFT CONSTANTS ========== //
-pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of eggs a user can stake
+pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of doges a user can stake
 pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x)
 
 pub const MAX_DOGE_URIS: usize = 20; // Max URIs in GlobalConfig
@@ -387,7 +387,7 @@ impl HashpowerConfig {
 // ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
 
 /// Ticket tier option for doge minting
-/// When users mint eggs, they choose a ticket tier which gives them free tickets
+/// When users mint doges, they choose a ticket tier which gives them free tickets
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct TicketTier {
     /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
@@ -410,11 +410,11 @@ pub struct EggConfig {
     /// Structure: [faction_id] = URI
     pub doge_uris: Vec<String>, // [faction_index] = URI
 
-    /// Maximum supply of eggs that can be minted
+    /// Maximum supply of doges that can be minted
     pub max_supply: u64,
 
-    /// Number of eggs minted so far
-    pub eggs_minted: u64,
+    /// Number of doges minted so far
+    pub doges_minted: u64,
 
     /// Base price for bonding curve (in lamports)
     pub base_price: u64,
@@ -442,7 +442,7 @@ impl EggConfig {
         32 +    // doge_collection
         4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + // doge_uris Vec<String>
         8 +     // max_supply
-        8 +     // eggs_minted
+        8 +     // doges_minted
         8 +     // base_price
         8 +     // curve_a
         4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN) + // ticket_tiers
@@ -626,9 +626,9 @@ pub struct FactionState {
     pub lp_sol_reward_index: u128,
     pub lp_minebtc_reward_index: u128,
 
-    pub eggs_staked: u64,
-    /// Total eggs currently being used in gameplay
-    pub eggs_playing: u64,
+    pub doges_staked: u64,
+    /// Total doges currently being used in gameplay
+    pub doges_playing: u64,
 
     /// Total SOL bet on this faction across all rounds (cumulative)
     pub total_sol_bets: u64,
@@ -655,8 +655,8 @@ impl FactionState {
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_index (u128)
         16 +    // lp_minebtc_reward_index (u128)
-        8 +     // eggs_staked (u64)
-        8 +     // eggs_playing (u64)
+        8 +     // doges_staked (u64)
+        8 +     // doges_playing (u64)
         8 +     // total_sol_bets (u64)
         8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
@@ -832,11 +832,11 @@ pub struct PlayerData {
     pub minebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
 
-    /// Staked dragon eggs (max 5 eggs)
-    /// Stores the mint addresses of staked eggs
-    pub staked_eggs: Vec<Pubkey>,
+    /// Staked dragon doges (max 5 doges)
+    /// Stores the mint addresses of staked doges
+    pub staked_doges: Vec<Pubkey>,
     /// Current doge multiplier (100 = 1x, 150 = 1.5x, etc.)
-    /// Calculated based on number of staked eggs
+    /// Calculated based on number of staked doges
     pub doge_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
@@ -890,7 +890,7 @@ impl PlayerData {
         8 +     // unrefined_minebtc_rewards (u64)
         4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
-        4 + (MAX_STAKED_DOGES * 32) + // staked_eggs Vec<Pubkey>
+        4 + (MAX_STAKED_DOGES * 32) + // staked_doges Vec<Pubkey>
         2 +     // doge_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
@@ -968,9 +968,9 @@ impl ReferralRewards {
 pub struct EggMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
-    /// Parent 1 mint (Pubkey::default() for genesis eggs)
+    /// Parent 1 mint (Pubkey::default() for genesis doges)
     pub mom: Pubkey,
-    /// Parent 2 mint (Pubkey::default() for genesis eggs)
+    /// Parent 2 mint (Pubkey::default() for genesis doges)
     pub dad: Pubkey,
     /// Number of times this doge has bred (max 5)
     pub breed_count: u8,

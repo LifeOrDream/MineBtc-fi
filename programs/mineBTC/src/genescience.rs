@@ -139,7 +139,7 @@ pub struct MutationResult {
 /// - `base_chance` = 30%
 /// - `bet_strength` = min(user_bet / highest_bet, 1.0)
 /// - `multiplier_penalty` = 100 / (100 + current_multiplier - 100) = 100 / current_multiplier
-///   (Higher multiplier = lower chance, slowing progression for advanced eggs)
+///   (Higher multiplier = lower chance, slowing progression for advanced doges)
 ///
 /// **XP Gain**: Always gained on SOL bets, scaled by bet size relative to 0.1 SOL
 /// - Base XP per 0.1 SOL = 10 XP

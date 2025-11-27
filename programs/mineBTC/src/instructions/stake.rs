@@ -189,16 +189,16 @@ pub fn int_stake_minebtc(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
-    let eggs_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_eggs = (weighted_amount * eggs_multiplier) / M_HUNDRED;
+    let doges_multiplier = player_data.doge_multiplier as u64;
+    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / M_HUNDRED;
 
     // Update player data state
-    player_data.minebtc_hashpower += weighted_amount_with_eggs;
+    player_data.minebtc_hashpower += weighted_amount_with_doges;
     player_data.minebtc_staked += actual_amount;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
     faction_state.minebtc_staked += actual_amount;
-    faction_state.total_minebtc_hashpower += weighted_amount_with_eggs;
+    faction_state.total_minebtc_hashpower += weighted_amount_with_doges;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
         faction_state.minebtc_staked as f64 / 1e6,
@@ -234,7 +234,7 @@ pub fn int_stake_minebtc(
         position_index,
         position_key: ctx.accounts.user_position.key(),
         lockup_duration,
-        hashpower_contribution: weighted_amount_with_eggs,
+        hashpower_contribution: weighted_amount_with_doges,
         new_sol_rewards,
         new_minebtc_rewards,
         unrefined_minebtc: accrued_minebtc_rewards,
@@ -591,16 +591,16 @@ pub fn int_stake_lp_tokens(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
-    let eggs_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_eggs = (weighted_amount * eggs_multiplier) / M_HUNDRED;
+    let doges_multiplier = player_data.doge_multiplier as u64;
+    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / M_HUNDRED;
 
     // Update player data state
-    player_data.lp_hashpower += weighted_amount_with_eggs;
+    player_data.lp_hashpower += weighted_amount_with_doges;
     player_data.lp_staked += actual_amount;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
     faction_state.lp_staked += actual_amount;
-    faction_state.total_lp_hashpower += weighted_amount_with_eggs;
+    faction_state.total_lp_hashpower += weighted_amount_with_doges;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
         faction_state.lp_staked as f64 / 1e6,
@@ -636,7 +636,7 @@ pub fn int_stake_lp_tokens(
         position_key: ctx.accounts.user_position.key(),
         faction_id,
         lockup_duration,
-        hashpower_contribution: weighted_amount_with_eggs,
+        hashpower_contribution: weighted_amount_with_doges,
         new_sol_rewards,
         new_minebtc_rewards,
         unrefined_minebtc: accrued_minebtc_rewards,
@@ -980,7 +980,7 @@ pub fn int_claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
 
 /// Claim MineBtc token rewards from staking MineBtc and LP tokens
 /// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
-/// Also increases power of all staked eggs proportionally to claimed amount
+/// Also increases power of all staked doges proportionally to claimed amount
 pub fn int_claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     msg!("💰 [claim_minebtc_rewards] Claiming MineBtc token rewards with refining fee");
 

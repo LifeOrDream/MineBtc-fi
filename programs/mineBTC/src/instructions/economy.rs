@@ -137,27 +137,27 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         );
     }
 
-    // Transfer from eggs treasury to buybacks (1% of 10x buyback amount, whichever is lower)
-    let eggs_treasury_balance = ctx.accounts.eggs_treasury.lamports();
-    let eggs_treasury_rent = Rent::get()?.minimum_balance(0);
-    let eggs_treasury_available = eggs_treasury_balance.saturating_sub(eggs_treasury_rent);
+    // Transfer from doges treasury to buybacks (1% of 10x buyback amount, whichever is lower)
+    let doges_treasury_balance = ctx.accounts.doges_treasury.lamports();
+    let doges_treasury_rent = Rent::get()?.minimum_balance(0);
+    let doges_treasury_available = doges_treasury_balance.saturating_sub(doges_treasury_rent);
     let mut doge_treasury_amt = 0;
 
-    if eggs_treasury_available > 0 && sol_for_buybacks > 0 {
-        // Transfer whichever is lower: 1% of available eggs treasury balance or 10x of buyback amount
-        doge_treasury_amt = (eggs_treasury_available / 100).min(sol_for_buybacks * 10);
+    if doges_treasury_available > 0 && sol_for_buybacks > 0 {
+        // Transfer whichever is lower: 1% of available doges treasury balance or 10x of buyback amount
+        doge_treasury_amt = (doges_treasury_available / 100).min(sol_for_buybacks * 10);
         if doge_treasury_amt > 0 {
-            let eggs_treasury_seeds = &[DOGES_TREASURY_SEED.as_ref(), &[ctx.bumps.eggs_treasury]];
-            let eggs_treasury_signer_seeds = &[&eggs_treasury_seeds[..]];
+            let doges_treasury_seeds = &[DOGES_TREASURY_SEED.as_ref(), &[ctx.bumps.doges_treasury]];
+            let doges_treasury_signer_seeds = &[&doges_treasury_seeds[..]];
 
             anchor_lang::system_program::transfer(
                 CpiContext::new_with_signer(
                     ctx.accounts.system_program.to_account_info(),
                     anchor_lang::system_program::Transfer {
-                        from: ctx.accounts.eggs_treasury.to_account_info(),
+                        from: ctx.accounts.doges_treasury.to_account_info(),
                         to: ctx.accounts.buybacks_sol_vault.to_account_info(),
                     },
-                    eggs_treasury_signer_seeds,
+                    doges_treasury_signer_seeds,
                 ),
                 doge_treasury_amt,
             )?;
@@ -1448,7 +1448,7 @@ pub struct DistributeSolFees<'info> {
         seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump
     )]
-    pub eggs_treasury: UncheckedAccount<'info>,
+    pub doges_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(

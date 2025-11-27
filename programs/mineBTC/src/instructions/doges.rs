@@ -11,10 +11,10 @@ use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 //
 // ## Key Functions
 //
-// - `batch_mint_eggs`: Mints new Doge NFTs using a bonding curve pricing model.
+// - `batch_mint_doges`: Mints new Doge NFTs using a bonding curve pricing model.
 // - `stake_egg`: Stakes an doge to boost a player's hashpower.
 // - `unstake_egg`: Unstakes an doge and removes the boost.
-// - `claim_power`: Distributes accumulated power points to staked eggs.
+// - `claim_power`: Distributes accumulated power points to staked doges.
 //
 // Doge are a core mechanic for increasing mining efficiency and earning potential.
 //
@@ -28,7 +28,7 @@ use crate::state::*;
 // --------------  DOGE NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Simulate mint costs for multiple eggs accounting for bonding curve pricing
+/// Simulate mint costs for multiple doges accounting for bonding curve pricing
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
 /// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
 pub fn int_simulate_mint_cost(
@@ -40,7 +40,7 @@ pub fn int_simulate_mint_cost(
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_config.eggs_minted + mint_count <= doge_config.max_supply,
+        doge_config.doges_minted + mint_count <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
     require!(
@@ -50,7 +50,7 @@ pub fn int_simulate_mint_cost(
 
     let mut prices = Vec::new();
     let mut total_price = 0u64;
-    let mut current_minted = doge_config.eggs_minted;
+    let mut current_minted = doge_config.doges_minted;
 
     for _ in 0..mint_count {
         let actual_price = crate::genescience::compute_gene_price(
@@ -88,7 +88,7 @@ pub fn int_simulate_mint_cost(
 /// 2.doge_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
-pub fn int_batch_mint_eggs<'info>(
+pub fn int_batch_mint_doges<'info>(
     ctx: Context<'_, '_, '_, 'info, BatchMintDoge<'info>>,
     faction_id: u8,
     mint_count: u8,
@@ -115,13 +115,13 @@ pub fn int_batch_mint_eggs<'info>(
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.eggs_minted + mint_count as u64 <= doge_config.max_supply,
+        doge_config.doges_minted + mint_count as u64 <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
 
     let (total_price, prices, _ticket_amounts) = int_simulate_mint_cost(doge_config, mint_count as u64)?;
     msg!(
-        "   Batch minting {} eggs, total cost: {} lamports",
+        "   Batch minting {} doges, total cost: {} lamports",
         mint_count,
         total_price
     );
@@ -129,10 +129,10 @@ pub fn int_batch_mint_eggs<'info>(
     let dev_amt = total_price * 80 / 100;
     let treasury_amt = total_price - dev_amt;
 
-    // Transfer to eggs treasury
-    helper::transfer_to_eggs_treasury(
+    // Transfer to doges treasury
+    helper::transfer_to_doges_treasury(
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.eggs_treasury.to_account_info(),
+        &ctx.accounts.doges_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         treasury_amt,
     )?;
@@ -176,7 +176,7 @@ pub fn int_batch_mint_eggs<'info>(
             ErrorCode::InvalidAccount
         );
 
-        let current_mint_number = doge_config.eggs_minted + 1;
+        let current_mint_number = doge_config.doges_minted + 1;
 
         // Generate doge data (DNA, name, URI, multiplier)
         let slot = Clock::get()?.slot + i as u64;
@@ -305,7 +305,7 @@ pub fn int_batch_mint_eggs<'info>(
             ticket_count,
         });
 
-        doge_config.eggs_minted += 1;
+        doge_config.doges_minted += 1;
     }
 
     msg!(
@@ -314,8 +314,8 @@ pub fn int_batch_mint_eggs<'info>(
         faction_id
     );
     msg!(
-        "   Total eggs minted: {} / {}",
-        doge_config.eggs_minted,
+        "   Total doges minted: {} / {}",
+        doge_config.doges_minted,
         doge_config.max_supply
     );
     Ok(())
@@ -345,7 +345,7 @@ pub fn int_admin_mint_egg(
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.eggs_minted < doge_config.max_supply,
+        doge_config.doges_minted < doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
 
@@ -354,9 +354,9 @@ pub fn int_admin_mint_egg(
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
-    msg!("   Doge number: {}", doge_config.eggs_minted + 1);
+    msg!("   Doge number: {}", doge_config.doges_minted + 1);
 
-    let current_mint_number = doge_config.eggs_minted + 1;
+    let current_mint_number = doge_config.doges_minted + 1;
 
     // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
@@ -403,7 +403,7 @@ pub fn int_admin_mint_egg(
     let cost_per_egg = crate::genescience::compute_gene_price(
         doge_config.base_price,
         doge_config.curve_a,
-        doge_config.eggs_minted,
+        doge_config.doges_minted,
     )?;
 
     msg!(
@@ -441,10 +441,10 @@ pub fn int_admin_mint_egg(
     };
 
     // Update doge config stats
-    doge_config.eggs_minted += 1;
+    doge_config.doges_minted += 1;
     msg!(
-        "   Total eggs minted: {} / {}",
-        doge_config.eggs_minted,
+        "   Total doges minted: {} / {}",
+        doge_config.doges_minted,
         doge_config.max_supply
     );
 
@@ -467,7 +467,7 @@ pub fn int_admin_mint_egg(
 
     msg!(
         "✅ Admin minted Doge #{} for faction {} to recipient {}",
-        doge_config.eggs_minted,
+        doge_config.doges_minted,
         faction_id,
         recipient
     );
@@ -475,8 +475,8 @@ pub fn int_admin_mint_egg(
 }
 
 /// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
-/// Users can stake up to 5 eggs, each additional doge increases multiplier by 0.5x
-/// Multipliers: 1 doge = 1.5x, 2 eggs = 2.0x, 3 eggs = 2.5x, 4 eggs = 3.0x, 5 eggs = 3.5x
+/// Users can stake up to 5 doges, each additional doge increases multiplier by 0.5x
+/// Multipliers: 1 doge = 1.5x, 2 doges = 2.0x, 3 doges = 2.5x, 4 doges = 3.0x, 5 doges = 3.5x
 pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
@@ -503,7 +503,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.staked_eggs.len() < MAX_STAKED_DOGES,
+        player_data.staked_doges.len() < MAX_STAKED_DOGES,
         ErrorCode::InvalidParameters
     );
 
@@ -537,10 +537,10 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
             faction_state,
         )?;
 
-    // Add doge to player's staked eggs list
-    player_data.staked_eggs.push(doge_mint);
+    // Add doge to player's staked doges list
+    player_data.staked_doges.push(doge_mint);
 
-    // Calculate new multiplier based on number of staked eggs
+    // Calculate new multiplier based on number of staked doges
     let old_multiplier = player_data.doge_multiplier as u64;
     let new_multiplier =
         calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, true) as u64;
@@ -597,8 +597,8 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
         faction_state.total_lp_hashpower as f64 / 1e6
     );
 
-    faction_state.eggs_staked += 1;
-    msg!("   Faction eggs staked: {} ", faction_state.eggs_staked);
+    faction_state.doges_staked += 1;
+    msg!("   Faction doges staked: {} ", faction_state.doges_staked);
 
     // Update doge metadata
     // Set new owner (using Pubkey instead of Option)
@@ -649,7 +649,7 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.staked_eggs.contains(&doge_mint),
+        player_data.staked_doges.contains(&doge_mint),
         ErrorCode::InvalidParameters
     );
     require!(
@@ -671,22 +671,22 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
             faction_state,
         )?;
 
-    // Remove doge from player's staked eggs list
+    // Remove doge from player's staked doges list
     if let Some(index) = player_data
-        .staked_eggs
+        .staked_doges
         .iter()
         .position(|&mint| mint == doge_mint)
     {
-        player_data.staked_eggs.remove(index);
+        player_data.staked_doges.remove(index);
         msg!(
-            "   Removed doge from staked eggs. Remaining: {}",
-            player_data.staked_eggs.len()
+            "   Removed doge from staked doges. Remaining: {}",
+            player_data.staked_doges.len()
         );
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
 
-    // Calculate new multiplier based on number of staked eggs
+    // Calculate new multiplier based on number of staked doges
     let old_multiplier = player_data.doge_multiplier as u64;
     let new_multiplier =
         calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, false) as u64;
@@ -737,11 +737,11 @@ pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
         faction_state.total_lp_hashpower as f64 / 1e6
     );
 
-    faction_state.eggs_staked -= 1;
+    faction_state.doges_staked -= 1;
     msg!(
-        "   Faction eggs staked: {} -> {}",
-        faction_state.eggs_staked,
-        faction_state.eggs_staked
+        "   Faction doges staked: {} -> {}",
+        faction_state.doges_staked,
+        faction_state.doges_staked
     );
 
     // Update doge metadata
@@ -799,7 +799,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         ErrorCode::DogeAlreadyAtGuard
     );
 
-    doge_config.eggs_minted -= 1;
+    doge_config.doges_minted -= 1;
 
     msg!("🔥 Burning Doge NFT to send to heaven...");
     msg!("   Accumulated Value: {}", accumulated_val);
@@ -861,8 +861,8 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
     Ok(())
 }
 
-/// Breed two eggs to create offspring (both parents must not be incubated, same faction)
-pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
+/// Breed two doges to create offspring (both parents must not be incubated, same faction)
+pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     let doge_config = &mut ctx.accounts.doge_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
@@ -875,7 +875,7 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
 
     // Validate breeding is allowed
     require!(doge_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
-    require!(doge_config.eggs_minted < doge_config.max_supply, ErrorCode::InvalidParameters);
+    require!(doge_config.doges_minted < doge_config.max_supply, ErrorCode::InvalidParameters);
     
     // Validate parents are not incubated
     require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
@@ -902,7 +902,7 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     let breed_cost = crate::genescience::compute_gene_price(
         doge_config.breed_base_price,
         doge_config.breed_curve_a,
-        doge_config.eggs_minted,
+        doge_config.doges_minted,
     )?;
     msg!("   Breed cost: {} SOL", breed_cost as f64 / 1e9);
 
@@ -910,9 +910,9 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     let dev_amt = breed_cost * 50 / 100;
     let treasury_amt = breed_cost - dev_amt;
 
-    helper::transfer_to_eggs_treasury(
+    helper::transfer_to_doges_treasury(
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.eggs_treasury.to_account_info(),
+        &ctx.accounts.doges_treasury.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         treasury_amt,
     )?;
@@ -936,7 +936,7 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
 
     // Create offspring NFT
-    let current_mint_number = doge_config.eggs_minted + 1;
+    let current_mint_number = doge_config.doges_minted + 1;
     let name = format!("Doge #{}", current_mint_number);
     let uri = doge_config.doge_uris[mom.faction_id as usize].clone();
 
@@ -982,7 +982,7 @@ pub fn int_breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
     dad.breed_count += 1;
     dad.cooldown_end = current_time + dad_cooldown;
 
-    doge_config.eggs_minted += 1;
+    doge_config.doges_minted += 1;
 
     msg!("✅ Bred offspring #{} from {} x {}", current_mint_number, mom.mint, dad.mint);
     msg!("   Mom next cooldown: {}s, Dad next cooldown: {}s", mom_cooldown, dad_cooldown);
@@ -1151,7 +1151,7 @@ pub struct MintEgg<'info> {
         seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump
     )]
-    pub eggs_treasury: UncheckedAccount<'info>,
+    pub doges_treasury: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -1249,7 +1249,7 @@ pub struct BatchMintDoge<'info> {
         seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump
     )]
-    pub eggs_treasury: UncheckedAccount<'info>,
+    pub doges_treasury: UncheckedAccount<'info>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
     /// MUST be owned by global_config.fee_recipient (the multisig address)
@@ -1557,7 +1557,7 @@ pub struct BreedDoge<'info> {
 
     /// CHECK: Doge treasury PDA
     #[account(mut, seeds = [DOGES_TREASURY_SEED.as_ref()], bump)]
-    pub eggs_treasury: UncheckedAccount<'info>,
+    pub doges_treasury: UncheckedAccount<'info>,
 
     #[account(
         mut,

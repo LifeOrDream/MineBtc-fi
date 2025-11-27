@@ -12,7 +12,7 @@
 // - `user`: User interactions, betting, and account management.
 // - `stake`: Staking logic for MineBTC and LP tokens.
 // - `game`: Core game loop, round management, and randomness.
-// - `eggs`: Doge NFT system for hashpower multipliers.
+// - `doges`: Doge NFT system for hashpower multipliers.
 // - `tax`: Tax system for deflationary mechanics and reward distribution.
 //
 // ## Architecture
@@ -514,7 +514,7 @@ pub mod minebtc {
     }
 
     /// Change user's faction
-    /// Requires no staked positions (minebtc/lp hashpower = 0, no eggs staked)
+    /// Requires no staked positions (minebtc/lp hashpower = 0, no doges staked)
     /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
     pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
         user::internal_change_faction(ctx, new_faction_id)
@@ -640,11 +640,11 @@ pub mod minebtc {
     // ------------  DOGE NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    ///Simulate mint costs for multiple eggs accounting for bonding curve pricing
+    ///Simulate mint costs for multiple doges accounting for bonding curve pricing
     ///
     /// # Parameters
     /// - `doge_config`: EggConfig account
-    /// - `mint_count`: Number of eggs to mint
+    /// - `mint_count`: Number of doges to mint
     pub fn simulate_purchase_cost(
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
@@ -675,16 +675,16 @@ pub mod minebtc {
     /// Each doge uses bonding curve pricing based on the current supply at mint time.
     ///
     /// # Parameters
-    /// - `faction_id`: Faction ID all eggs belong to
-    /// - `mint_count`: Number of eggs to mint (1-10)
+    /// - `faction_id`: Faction ID all doges belong to
+    /// - `mint_count`: Number of doges to mint (1-10)
     /// - `ticket_tier_index`: Ticket tier index (0-2)
-    pub fn batch_mint_eggs<'info>(
+    pub fn batch_mint_doges<'info>(
         ctx: Context<'_, '_, '_, 'info, BatchMintDoge<'info>>,
         faction_id: u8,
         mint_count: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        doges::int_batch_mint_eggs(ctx, faction_id, mint_count, ticket_tier_index)
+        doges::int_batch_mint_doges(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
     /// Stake a Doge to boost hashpower (if faction matches player's faction)
@@ -697,9 +697,9 @@ pub mod minebtc {
         doges::int_unstake_egg(ctx)
     }
 
-    /// Breed two eggs to create offspring
-    pub fn breed_eggs(ctx: Context<BreedDoge>) -> Result<()> {
-        doges::int_breed_eggs(ctx)
+    /// Breed two doges to create offspring
+    pub fn breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
+        doges::int_breed_doges(ctx)
     }
 
     /// Send an doge to heaven (burn for rewards)
