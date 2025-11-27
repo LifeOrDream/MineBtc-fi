@@ -660,13 +660,13 @@ pub mod minebtc {
     /// # Parameters
     /// - `recipient`: Address that will receive the minted NFT
     /// - `faction_id`: Faction ID the doge belongs to
-    pub fn admin_mint_egg(
+    pub fn admin_mint_doge(
         ctx: Context<AdminMintEgg>,
         recipient: Pubkey,
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        doges::int_admin_mint_egg(ctx, recipient, faction_id, ticket_tier_index)
+        doges::int_admin_mint_doge(ctx, recipient, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Doge (anyone can call, max 10 per transaction)
@@ -688,13 +688,13 @@ pub mod minebtc {
     }
 
     /// Stake a Doge to boost hashpower (if faction matches player's faction)
-    pub fn stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
-        doges::int_stake_egg(ctx)
+    pub fn stake_doge(ctx: Context<StakeEgg>) -> Result<()> {
+        doges::int_stake_doge(ctx)
     }
 
     /// Unstake a Doge (remove hashpower boost)
-    pub fn unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
-        doges::int_unstake_egg(ctx)
+    pub fn unstake_doge(ctx: Context<UnstakeEgg>) -> Result<()> {
+        doges::int_unstake_doge(ctx)
     }
 
     /// Breed two doges to create offspring

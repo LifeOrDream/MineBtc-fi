@@ -12,8 +12,8 @@ use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // ## Key Functions
 //
 // - `batch_mint_doges`: Mints new Doge NFTs using a bonding curve pricing model.
-// - `stake_egg`: Stakes an doge to boost a player's hashpower.
-// - `unstake_egg`: Unstakes an doge and removes the boost.
+// - `stake_doge`: Stakes an doge to boost a player's hashpower.
+// - `unstake_doge`: Unstakes an doge and removes the boost.
 // - `claim_power`: Distributes accumulated power points to staked doges.
 //
 // Doge are a core mechanic for increasing mining efficiency and earning potential.
@@ -326,7 +326,7 @@ pub fn int_batch_mint_doges<'info>(
 // ----------------------------------------------------------------------------------------
 
 /// Admin function to mint a Doge NFT for free to a specified recipient
-pub fn int_admin_mint_egg(
+pub fn int_admin_mint_doge(
     ctx: Context<AdminMintEgg>,
     recipient: Pubkey,
     faction_id: u8,
@@ -350,7 +350,7 @@ pub fn int_admin_mint_egg(
     );
 
     msg!(
-        "🎁 [admin_mint_egg] Admin minting free doge to recipient: {}",
+        "🎁 [admin_mint_doge] Admin minting free doge to recipient: {}",
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
@@ -400,7 +400,7 @@ pub fn int_admin_mint_egg(
 
     // Calculate actual price using bonding curve (same as regular mint)
     // This is used for ticket calculations - admin mint doesn't charge SOL but tickets are calculated based on actual price
-    let cost_per_egg = crate::genescience::compute_gene_price(
+    let cost_per_doge = crate::genescience::compute_gene_price(
         doge_config.base_price,
         doge_config.curve_a,
         doge_config.doges_minted,
@@ -408,7 +408,7 @@ pub fn int_admin_mint_egg(
 
     msg!(
         "   Calculated doge price: {} lamports (for ticket calculation)",
-        cost_per_egg as f64 / 1e9
+        cost_per_doge as f64 / 1e9
     );
 
     // Initialize Doge metadata
@@ -434,7 +434,7 @@ pub fn int_admin_mint_egg(
             &mut ctx.accounts.player_data,
             doge_config,
             ticket_tier_index,
-            cost_per_egg,
+            cost_per_doge,
         )?
     } else {
         0
@@ -460,7 +460,7 @@ pub fn int_admin_mint_egg(
         accumulated_val: 0,
         multiplier,
         faction_id,
-        price: cost_per_egg,
+        price: cost_per_doge,
         ticket_tier: ticket_tier_index as u64,
         ticket_count,
     });
@@ -477,7 +477,7 @@ pub fn int_admin_mint_egg(
 /// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
 /// Users can stake up to 5 doges, each additional doge increases multiplier by 0.5x
 /// Multipliers: 1 doge = 1.5x, 2 doges = 2.0x, 3 doges = 2.5x, 4 doges = 3.0x, 5 doges = 3.5x
-pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
+pub fn int_stake_doge(ctx: Context<StakeEgg>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -623,7 +623,7 @@ pub fn int_stake_egg(ctx: Context<StakeEgg>) -> Result<()> {
 }
 
 /// Unstake a Doge (reduces multiplier and recalculates hashpower)
-pub fn int_unstake_egg(ctx: Context<UnstakeEgg>) -> Result<()> {
+pub fn int_unstake_doge(ctx: Context<UnstakeEgg>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;

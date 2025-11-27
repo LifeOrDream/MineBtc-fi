@@ -1310,7 +1310,7 @@ async function initializeEggConfig(minebtcProgram) {
   );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("egg-config")],
+    [Buffer.from("doge-config")],
     minebtcProgram.programId
     );
 
@@ -1389,7 +1389,7 @@ async function createEggCollection(minebtcProgram) {
     );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("egg-config")],
+    [Buffer.from("doge-config")],
     minebtcProgram.programId
     );
 
@@ -1489,7 +1489,7 @@ async function setEggUris(minebtcProgram) {
   );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("egg-config")],
+    [Buffer.from("doge-config")],
     minebtcProgram.programId
     );
 
@@ -1547,7 +1547,7 @@ async function initializeEggRoyalties(minebtcProgram) {
   );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("egg-config")],
+    [Buffer.from("doge-config")],
     minebtcProgram.programId
     );
 
@@ -1646,7 +1646,7 @@ async function configureTicketTiers(minebtcProgram) {
   );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("egg-config")],
+    [Buffer.from("doge-config")],
     minebtcProgram.programId
     );
 
@@ -2310,7 +2310,7 @@ async function updateEggConfig(minebtcProgram, dogeConfig) {
     );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("egg-config")],
+      [Buffer.from("doge-config")],
       minebtcProgram.programId
     );
 

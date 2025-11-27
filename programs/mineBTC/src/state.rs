@@ -98,7 +98,7 @@ pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
-pub const DOGE_CONFIG_SEED: &[u8] = b"egg-config";
+pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -848,7 +848,7 @@ pub struct PlayerData {
     pub free_tickets_remaining: Vec<u64>,
 
     /// Doge currently being used in gameplay (Pubkey::default() if none)
-    pub gameplay_egg: Pubkey,
+    pub gameplay_doge: Pubkey,
     /// Active gameplay multiplier (100 = 1x, set from gameplay doge's multiplier, reset to 100 on withdraw)
     pub active_multiplier: u32,
     /// Cached DNA of gameplay doge (for mutation calculations without loading EggMetadata)
@@ -894,7 +894,7 @@ impl PlayerData {
         2 +     // doge_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
-        32 +    // gameplay_egg
+        32 +    // gameplay_doge
         4 +     // active_multiplier (u32)
         32 +    // gameplay_doge_dna [u8; 32]
         4; // gameplay_doge_xp (u32)

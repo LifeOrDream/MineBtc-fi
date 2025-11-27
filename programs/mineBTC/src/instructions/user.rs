@@ -1028,10 +1028,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
-    if player_data.gameplay_egg != Pubkey::default() && total_minebtc_reward > 0 {
+    if player_data.gameplay_doge != Pubkey::default() && total_minebtc_reward > 0 {
         require!(ctx.accounts.doge_metadata.is_some(), ErrorCode::DogeMetadataNotFound);
         if let Some(ref mut doge_metadata) = ctx.accounts.doge_metadata {
-            if doge_metadata.mint == player_data.gameplay_egg {
+            if doge_metadata.mint == player_data.gameplay_doge {
                 // Calculate accumulated_val % based on mutation type
                 // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
                 let accum_pct = match user_bet.mutation_type {
@@ -1504,13 +1504,13 @@ fn internal_process_bets<'info>(
     });
 
     // === INSTANT MUTATION & XP LOGIC ===
-    // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_egg
+    // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_doge
     let faction_id = player_data.faction_id as usize;
     if global_config.rpg_progression
         && amount_per_bet > 0
         && use_ticket.is_none()
         && user_game_bet.mutation_type == 0
-        && player_data.gameplay_egg != Pubkey::default()
+        && player_data.gameplay_doge != Pubkey::default()
     {
         // Update highest bet for faction
         if user_game_bet.total_sol_bet > game_session.highest_sol_bet_per_faction[faction_id] {
@@ -1556,7 +1556,7 @@ fn internal_process_bets<'info>(
 
                 emit!(MutationTriggered {
                     user: owner_key,
-                    doge_mint: player_data.gameplay_egg,
+                    doge_mint: player_data.gameplay_doge,
                     faction_id: player_data.faction_id,
                     round_id,
                     mutation_type: user_game_bet.mutation_type,
@@ -2374,7 +2374,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
     require!(doge_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
 
     // Verify no doge currently in gameplay
-    require!(player_data.gameplay_egg == Pubkey::default(), ErrorCode::InvalidParameters);
+    require!(player_data.gameplay_doge == Pubkey::default(), ErrorCode::InvalidParameters);
 
     // Verify faction matches
     require!(
@@ -2396,7 +2396,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseEggForGameplay>) -> Result
 
     // Update player data - cache doge fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
-    player_data.gameplay_egg = doge_mint;
+    player_data.gameplay_doge = doge_mint;
     player_data.active_multiplier = doge_metadata.multiplier;
     player_data.gameplay_doge_dna = doge_metadata.dna;
     player_data.gameplay_doge_xp = doge_metadata.xp;
@@ -2439,7 +2439,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     require!(nft_owner == ctx.accounts.doge_custody_pda.key(), ErrorCode::DogeNotAtGuard);
 
     // Verify this is the player's gameplay doge
-    require!(player_data.gameplay_egg == doge_mint, ErrorCode::InvalidParameters);
+    require!(player_data.gameplay_doge == doge_mint, ErrorCode::InvalidParameters);
 
     // Verify doge metadata matches player
     require!(doge_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
@@ -2470,7 +2470,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawEggFromGameplay
     msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
 
     // Clear player data gameplay fields
-    player_data.gameplay_egg = Pubkey::default();
+    player_data.gameplay_doge = Pubkey::default();
     player_data.active_multiplier = 100; // Reset to 1x
     player_data.gameplay_doge_dna = [0u8; 32];
     player_data.gameplay_doge_xp = 0;

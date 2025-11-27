@@ -315,7 +315,7 @@ batch_mint_doges --faction-id 0 --count 3 --tier 1
 
 ```bash
 # Stake an doge to boost hashpower
-stake_egg --egg-mint <doge_pubkey>
+stake_doge --doge-mint <doge_pubkey>
 ```
 
 ### 4. Stake MineBTC
