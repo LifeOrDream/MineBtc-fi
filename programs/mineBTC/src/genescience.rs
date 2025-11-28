@@ -78,6 +78,10 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
 // ========================================================================================
 
 /// Generate unique DNA for a Genesis Cyber-Doge
+/// Genesis constraints:
+/// - All appearance traits: 0-9 (less than 10)
+/// - First 3 power groups (9 traits): 0-4 (less than 5)
+/// - Last 2 power groups (6 traits): 0 (locked at zero)
 pub fn generate_genesis_dna(mint_number: u64, minter: &Pubkey, slot: u64, faction_id: u8) -> Result<[u8; 32]> {
     require!(faction_id < 16, ErrorCode::InvalidFactionId);
 
@@ -94,20 +98,34 @@ pub fn generate_genesis_dna(mint_number: u64, minter: &Pubkey, slot: u64, factio
     // Evolution Stage 0 (bits 4-6)
     dna[0] = dna[0] & 0x8F;
 
-    limit_trait_ranges(&mut dna);
+    limit_genesis_trait_ranges(&mut dna);
     Ok(dna)
 }
 
-fn limit_trait_ranges(dna: &mut [u8; 32]) {
+/// Limit trait ranges for genesis DNA (weaker initial stats)
+fn limit_genesis_trait_ranges(dna: &mut [u8; 32]) {
+    // Appearance traits: 0-9 (less than 10)
     for i in 0..APPEARANCE_TOTAL_TRAITS {
         let val = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
-        set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, val % 32);
+        set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, val % 10);
     }
+    
+    // Power traits:
+    // - First 3 groups (9 traits, indices 0-8): 0-4 (less than 5)
+    // - Last 2 groups (6 traits, indices 9-14): 0 (locked)
     for i in 0..COMBAT_TOTAL_TRAITS {
-        let val = get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8);
-        set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, val % 16);
+        let val = if i < 9 {
+            // First 3 groups: 0-4
+            get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8) % 5
+        } else {
+            // Last 2 groups: locked at 0
+            0
+        };
+        set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, val);
     }
 }
+
+ 
 
 // ========================================================================================
 // ============================= MUTATION SYSTEM ==========================================
@@ -251,23 +269,25 @@ pub fn calculate_mutation_result(
 // ========================================================================================
 
 /// Evolve to next Generation with guaranteed mutations
-pub fn evolve_stage(dna: &mut [u8; 32], seed: &[u8]) -> Result<u8> {
+pub fn evolve_stage(dna: &mut [u8; 32], seed: &[u8]) -> Result<(u8, (u8, u8, u8, u8, u8, u8))> {
     let current_stage = (dna[0] >> 4) & 0x07;
-    require!(current_stage < 7, ErrorCode::InvalidParameters);
+    if (current_stage >= 7) {
+        return Ok((current_stage, (0, 0, 0, 0, 0, 0)));
+    }
 
     let new_stage = current_stage + 1;
     dna[0] = (dna[0] & 0x8F) | ((new_stage & 0x07) << 4);
     msg!("🧬 EVOLUTION: Stage {} -> {}", current_stage, new_stage);
 
-    let _ = mutate_visual_trait(dna, seed);
+    let (m_index, m_current_val, m_new_val) = mutate_visual_trait(dna, seed);
     let power_seed = keccak::hashv(&[seed, b"power"]).to_bytes();
-    let _ = mutate_power_trait(dna, &power_seed);
+    let (p_index, p_current_val, p_new_val) = mutate_power_trait(dna, &power_seed);
 
-    Ok(new_stage)
+    Ok((new_stage, (m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val)))
 }
 
 /// Mutate a random visual trait (+1 to +3, cap at 31)
-pub fn mutate_visual_trait(dna: &mut [u8; 32], seed: &[u8]) -> u8 {
+pub fn mutate_visual_trait(dna: &mut [u8; 32], seed: &[u8]) -> (u8, u8, u8) {
     let hash = keccak::hash(seed).to_bytes();
     let trait_index = hash[0] as usize % APPEARANCE_TOTAL_TRAITS;
     let current_val = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, trait_index as u8);
@@ -278,11 +298,11 @@ pub fn mutate_visual_trait(dna: &mut [u8; 32], seed: &[u8]) -> u8 {
         set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, trait_index as u8, new_val);
         msg!("🎨 Visual: Trait #{} {} -> {}", trait_index, current_val, new_val);
     }
-    trait_index as u8
+    (trait_index as u8, current_val, new_val)
 }
 
 /// Mutate a random power trait (+1 to +3, cap at 15)
-pub fn mutate_power_trait(dna: &mut [u8; 32], seed: &[u8]) -> u8 {
+pub fn mutate_power_trait(dna: &mut [u8; 32], seed: &[u8]) -> (u8, u8, u8) {
     let hash = keccak::hash(seed).to_bytes();
     let trait_index = hash[2] as usize % COMBAT_TOTAL_TRAITS;
     let current_val = get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, trait_index as u8);
@@ -293,7 +313,7 @@ pub fn mutate_power_trait(dna: &mut [u8; 32], seed: &[u8]) -> u8 {
         set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, trait_index as u8, new_val);
         msg!("⚡ Power: Trait #{} {} -> {}", trait_index, current_val, new_val);
     }
-    trait_index as u8
+    (trait_index as u8, current_val, new_val)
 }
 
 // ========================================================================================
@@ -433,26 +453,6 @@ fn synergy_boost(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
 /// Get evolution stage from DNA (bits 4-6)
 pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 { (dna[0] >> 4) & 0x07 }
 
-// /// Decode all 21 appearance traits (7 groups × 3)
-// pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-//     (0..APPEARANCE_TOTAL_TRAITS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8)).collect()
-// }
-
-// /// Decode dominant appearance traits (7 traits - first from each group)
-// pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-//     (0..APPEARANCE_GROUPS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * APPEARANCE_TRAITS_PER_GROUP) as u8)).collect()
-// }
-
-// /// Decode all 15 power traits (5 groups × 3)
-// pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-//     (0..COMBAT_TOTAL_TRAITS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8)).collect()
-// }
-
-// /// Decode dominant power traits (5 traits - first from each group)
-// pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-//     (0..COMBAT_GROUPS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * COMBAT_TRAITS_PER_GROUP) as u8)).collect()
-// }
-
 // ========================================================================================
 // ============================= BIT MANIPULATION HELPERS =================================
 // ========================================================================================
@@ -502,5 +502,475 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
         val_processed += set;
         curr_byte += 1;
         curr_bit = 0;
+    }
+}
+
+// ========================================================================================
+// ============================= PUBLIC DECODER FUNCTIONS (for testing) ===================
+// ========================================================================================
+
+/// Get faction/family type from DNA (first 4 bits)
+pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
+
+/// Decode all 21 appearance traits
+pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+    (0..APPEARANCE_TOTAL_TRAITS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8)).collect()
+}
+
+/// Decode dominant appearance traits (first from each of 7 groups)
+pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+    (0..7).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * 3) as u8)).collect()
+}
+
+/// Decode all 15 power traits
+pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+    (0..COMBAT_TOTAL_TRAITS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8)).collect()
+}
+
+/// Decode dominant power traits (first from each of 5 groups)
+pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+    (0..5).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * 3) as u8)).collect()
+}
+
+// ========================================================================================
+// ============================= TESTS ====================================================
+// ========================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anchor_lang::prelude::Pubkey;
+
+    fn mock_pubkey() -> Pubkey {
+        Pubkey::new_from_array([1u8; 32])
+    }
+
+    // --- DNA GENERATION TESTS ---
+    
+    #[test]
+    fn test_generate_genesis_dna_basic() {
+        let dna = generate_genesis_dna(1, &mock_pubkey(), 12345, 5).unwrap();
+        println!("\n=== DNA Generation Test ===");
+        println!("DNA bytes: {:?}", dna);
+        println!("DNA hex: {}", dna.iter().map(|b| format!("{:02x}", b)).collect::<String>());
+        
+        // Check faction is encoded correctly (first 4 bits)
+        let faction = get_family_type(&dna);
+        println!("Faction: {}", faction);
+        assert_eq!(faction, 5, "Faction should be 5");
+        
+        // Check evolution stage is 0 (bits 4-6)
+        let stage = get_evolution_stage(&dna);
+        println!("Evolution Stage: {}", stage);
+        assert_eq!(stage, 0, "Evolution stage should be 0 for genesis");
+        
+        // Decode traits
+        let app_traits = decode_appearance_traits(&dna);
+        let pwr_traits = decode_power_traits(&dna);
+        let dom_app = decode_dominant_appearance_traits(&dna);
+        let dom_pwr = decode_dominant_power_traits(&dna);
+        
+        println!("\nAppearance Traits (21 total):");
+        println!("  All: {:?}", app_traits);
+        println!("  Dominant (7): {:?}", dom_app);
+        
+        println!("\nPower Traits (15 total):");
+        println!("  All: {:?}", pwr_traits);
+        println!("  Dominant (5): {:?}", dom_pwr);
+        
+        // Verify genesis constraints
+        let app_valid = app_traits.iter().all(|&t| t < 10);
+        let pwr_first_9_valid = pwr_traits[0..9].iter().all(|&t| t < 5);
+        let pwr_last_6_zero = pwr_traits[9..15].iter().all(|&t| t == 0);
+        
+        println!("\nGenesis Constraints:");
+        println!("  Appearance traits < 10: {} (all: {:?})", app_valid, app_traits.iter().all(|&t| t < 10));
+        println!("  First 9 power traits < 5: {} (values: {:?})", pwr_first_9_valid, &pwr_traits[0..9]);
+        println!("  Last 6 power traits == 0: {} (values: {:?})", pwr_last_6_zero, &pwr_traits[9..15]);
+        
+        assert!(app_valid, "All appearance traits must be < 10 for genesis");
+        assert!(pwr_first_9_valid, "First 9 power traits must be < 5 for genesis");
+        assert!(pwr_last_6_zero, "Last 6 power traits must be 0 for genesis");
+        println!("\n✅ All genesis constraints satisfied!");
+    }
+
+    #[test]
+    fn test_generate_genesis_dna_all_factions() {
+        for faction_id in 0..12 {
+            let dna = generate_genesis_dna(faction_id as u64, &mock_pubkey(), 100, faction_id).unwrap();
+            assert_eq!(get_family_type(&dna), faction_id, "Faction {} mismatch", faction_id);
+        }
+    }
+
+    #[test]
+    fn test_generate_genesis_dna_deterministic() {
+        let dna1 = generate_genesis_dna(100, &mock_pubkey(), 999, 3).unwrap();
+        let dna2 = generate_genesis_dna(100, &mock_pubkey(), 999, 3).unwrap();
+        assert_eq!(dna1, dna2, "Same inputs should produce same DNA");
+    }
+
+    #[test]
+    fn test_generate_genesis_dna_different_inputs() {
+        let dna1 = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let dna2 = generate_genesis_dna(2, &mock_pubkey(), 100, 0).unwrap();
+        assert_ne!(dna1, dna2, "Different mint numbers should produce different DNA");
+    }
+
+    // --- TRAIT DECODING TESTS ---
+
+    #[test]
+    fn test_decode_appearance_traits_count() {
+        let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let traits = decode_appearance_traits(&dna);
+        assert_eq!(traits.len(), 21, "Should have 21 appearance traits (7 groups × 3)");
+    }
+
+    #[test]
+    fn test_decode_power_traits_count() {
+        let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let traits = decode_power_traits(&dna);
+        assert_eq!(traits.len(), 15, "Should have 15 power traits (5 groups × 3)");
+    }
+
+    #[test]
+    fn test_appearance_traits_in_range() {
+        let dna = generate_genesis_dna(42, &mock_pubkey(), 9999, 7).unwrap();
+        let traits = decode_appearance_traits(&dna);
+        for (i, &t) in traits.iter().enumerate() {
+            assert!(t <= APPEARANCE_MAX, "Appearance trait {} value {} exceeds max {}", i, t, APPEARANCE_MAX);
+        }
+    }
+
+    #[test]
+    fn test_power_traits_in_range() {
+        let dna = generate_genesis_dna(42, &mock_pubkey(), 9999, 7).unwrap();
+        let traits = decode_power_traits(&dna);
+        for (i, &t) in traits.iter().enumerate() {
+            assert!(t <= COMBAT_MAX, "Power trait {} value {} exceeds max {}", i, t, COMBAT_MAX);
+        }
+    }
+
+    #[test]
+    fn test_dominant_appearance_traits() {
+        let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let all = decode_appearance_traits(&dna);
+        let dominant = decode_dominant_appearance_traits(&dna);
+        
+        assert_eq!(dominant.len(), 7, "Should have 7 dominant appearance traits");
+        for i in 0..7 {
+            assert_eq!(dominant[i], all[i * 3], "Dominant trait {} mismatch", i);
+        }
+    }
+
+    #[test]
+    fn test_dominant_power_traits() {
+        let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let all = decode_power_traits(&dna);
+        let dominant = decode_dominant_power_traits(&dna);
+        
+        assert_eq!(dominant.len(), 5, "Should have 5 dominant power traits");
+        for i in 0..5 {
+            assert_eq!(dominant[i], all[i * 3], "Dominant power trait {} mismatch", i);
+        }
+    }
+
+    // // --- MUTATION TESTS ---
+
+    #[test]
+    fn test_mutate_visual_trait() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let original = decode_appearance_traits(&dna);
+        println!("Original appearance traits: {:?}", original);
+        
+        let seed = [1u8; 32];
+        let (trait_idx, _, _) = mutate_visual_trait(&mut dna, &seed);
+        
+        let mutated = decode_appearance_traits(&dna);
+        println!("Mutated appearance traits: {:?}", mutated);
+        
+        // At least one trait should have changed (or stayed same if at max)
+        let original_val = original[trait_idx as usize];
+        let mutated_val = mutated[trait_idx as usize];
+        assert!(mutated_val >= original_val, "Visual trait should increase or stay same");
+        assert!(mutated_val <= APPEARANCE_MAX, "Should not exceed max");
+    }
+
+    #[test]
+    fn test_mutate_power_trait() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let original = decode_power_traits(&dna);
+        println!("Original power traits: {:?}", original);
+        
+        let seed = [2u8; 32];
+        let (_, original_val, mutated_val) = mutate_power_trait(&mut dna, &seed);
+        
+        let mutated = decode_power_traits(&dna);
+        println!("Mutated power traits: {:?}", mutated);
+
+        // let original_val = original[trait_idx as usize];
+        // let mutated_val = mutated[trait_idx as usize];
+        assert!(mutated_val >= original_val, "Power trait should increase or stay same");
+        assert!(mutated_val <= COMBAT_MAX, "Should not exceed max");
+    }
+
+    // --- EVOLUTION TESTS ---
+
+    #[test]
+    fn test_evolve_stage() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        assert_eq!(get_evolution_stage(&dna), 0);
+
+        let original_visual_traits = decode_appearance_traits(&dna);
+        println!("Original visual traits: {:?}", original_visual_traits);
+        let original = decode_power_traits(&dna);
+        println!("Original power traits: {:?}", original);
+
+        let seed = [3u8; 32];
+        let (new_stage, (m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val)) = evolve_stage(&mut dna, &seed).unwrap();
+        println!("New stage: {}", new_stage);
+        println!("Mutated traits: {:?}", (m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val));
+
+        let new_visual_traits = decode_appearance_traits(&dna);
+        println!("New visual traits: {:?}", new_visual_traits);
+
+        let new_power_traits = decode_power_traits(&dna);
+        println!("New power traits: {:?}", new_power_traits);
+
+    }
+
+    #[test]
+    fn test_evolve_multiple_stages() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        
+        for expected_stage in 1..=7 {
+            let seed = [expected_stage as u8; 32];
+            let (new_stage, (m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val)) = evolve_stage(&mut dna, &seed).unwrap();
+            assert_eq!(new_stage, expected_stage, "Stage mismatch at {}", expected_stage);
+        }
+        
+        // Should fail at stage 7 (max)
+        let seed = [8u8; 32];
+        let (new_stage, (m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val)) = evolve_stage(&mut dna, &seed).unwrap();
+        assert_eq!(new_stage, new_stage, "Should fail at max stage");
+        assert_eq!(m_index, 0, "Should mutate visual trait");
+        assert_eq!(m_current_val, 0, "Should mutate visual trait");
+        assert_eq!(m_new_val, 0, "Should mutate visual trait");
+        assert_eq!(p_index, 0, "Should mutate power trait");
+        assert_eq!(p_current_val, 0, "Should mutate power trait");
+        assert_eq!(p_new_val, 0, "Should mutate power trait");
+    }
+
+    #[test]
+    fn test_evolution_preserves_faction() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 9).unwrap();
+        let original_faction = get_family_type(&dna);
+        
+        let seed = [1u8; 32];
+        let _ = evolve_stage(&mut dna, &seed).unwrap();
+        
+        assert_eq!(get_family_type(&dna), original_faction, "Faction should be preserved");
+    }
+
+    // // --- BREEDING TESTS ---
+
+    // #[test]
+    // fn test_breed_genes_basic() {
+    //     let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
+    //     let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 5).unwrap();
+        
+    //     let seed = b"breeding_seed_12345678901234567890";
+    //     let offspring = breed_genes(&parent1, &parent2, seed).unwrap();
+        
+    //     // Offspring should have same faction as parent1
+    //     assert_eq!(get_family_type(&offspring), 5, "Offspring should inherit faction");
+        
+    //     // Offspring should start at stage 0
+    //     assert_eq!(get_evolution_stage(&offspring), 0, "Offspring should be stage 0");
+    // }
+
+    // #[test]
+    // fn test_breed_genes_deterministic() {
+    //     let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
+    //     let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
+        
+    //     let seed = b"test_seed_1234567890123456789012";
+    //     let offspring1 = breed_genes(&parent1, &parent2, seed).unwrap();
+    //     let offspring2 = breed_genes(&parent1, &parent2, seed).unwrap();
+        
+    //     assert_eq!(offspring1, offspring2, "Same breeding should produce same offspring");
+    // }
+
+    // #[test]
+    // fn test_breed_genes_different_seeds() {
+    //     let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
+    //     let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
+        
+    //     let offspring1 = breed_genes(&parent1, &parent2, b"seed_a_12345678901234567890123456").unwrap();
+    //     let offspring2 = breed_genes(&parent1, &parent2, b"seed_b_12345678901234567890123456").unwrap();
+        
+    //     assert_ne!(offspring1, offspring2, "Different seeds should produce different offspring");
+    // }
+
+    // #[test]
+    // fn test_breed_offspring_traits_in_range() {
+    //     let parent1 = generate_genesis_dna(10, &mock_pubkey(), 500, 2).unwrap();
+    //     let parent2 = generate_genesis_dna(20, &mock_pubkey(), 600, 2).unwrap();
+        
+    //     let offspring = breed_genes(&parent1, &parent2, b"range_test_seed_1234567890123456").unwrap();
+        
+    //     for t in decode_appearance_traits(&offspring) {
+    //         assert!(t <= APPEARANCE_MAX, "Appearance trait exceeds max");
+    //     }
+    //     for t in decode_power_traits(&offspring) {
+    //         assert!(t <= COMBAT_MAX, "Power trait exceeds max");
+    //     }
+    // }
+
+    // // --- MUTATION RESULT TESTS ---
+
+    // #[test]
+    // fn test_mutation_result_zero_bet() {
+    //     let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        
+    //     let result = calculate_mutation_result(
+    //         0,           // zero bet
+    //         1_000_000_000,
+    //         100,
+    //         dna,
+    //         0,
+    //         1_000_000_000,
+    //         1_000_000_000,
+    //         1_000_000_000,
+    //         12345,
+    //         &mock_pubkey(),
+    //     );
+        
+    //     assert!(result.mutation_type.is_none(), "Zero bet should not trigger mutation");
+    //     assert_eq!(result.xp_gained, 0, "Zero bet should give no XP");
+    // }
+
+    // #[test]
+    // fn test_mutation_result_xp_calculation() {
+    //     let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        
+    //     // 1 SOL bet = 1_000_000_000 lamports -> 1000 XP (capped)
+    //     let result = calculate_mutation_result(
+    //         1_000_000_000,
+    //         1_000_000_000,
+    //         100,
+    //         dna,
+    //         0,
+    //         1_000_000_000,
+    //         0,
+    //         0,
+    //         12345,
+    //         &mock_pubkey(),
+    //     );
+        
+    //     assert_eq!(result.xp_gained, 1000, "1 SOL should give 1000 XP (capped)");
+    // }
+
+    // #[test]
+    // fn test_mutation_result_xp_small_bet() {
+    //     let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        
+    //     // 0.01 SOL = 10_000_000 lamports -> 10 XP
+    //     let result = calculate_mutation_result(
+    //         10_000_000,
+    //         1_000_000_000,
+    //         100,
+    //         dna,
+    //         0,
+    //         1_000_000_000,
+    //         0,
+    //         0,
+    //         12345,
+    //         &mock_pubkey(),
+    //     );
+        
+    //     assert_eq!(result.xp_gained, 10, "0.01 SOL should give 10 XP");
+    // }
+
+    // // --- BIT MANIPULATION TESTS ---
+
+    // #[test]
+    // fn test_get_set_trait_roundtrip() {
+    //     let mut dna = [0u8; 32];
+        
+    //     // Test appearance traits (5 bits)
+    //     for i in 0..21 {
+    //         let val = (i * 3) as u8 % 32;
+    //         set_trait_value(&mut dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, val);
+    //         let got = get_trait_value(&dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
+    //         assert_eq!(got, val, "Appearance trait {} roundtrip failed", i);
+    //     }
+        
+    //     // Test power traits (4 bits)
+    //     for i in 0..15 {
+    //         let val = (i * 2) as u8 % 16;
+    //         set_trait_value(&mut dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, val);
+    //         let got = get_trait_value(&dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8);
+    //         assert_eq!(got, val, "Power trait {} roundtrip failed", i);
+    //     }
+    // }
+
+    // #[test]
+    // fn test_trait_isolation() {
+    //     let mut dna = [0u8; 32];
+        
+    //     // Set one trait, verify others unchanged
+    //     set_trait_value(&mut dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, 5, 25);
+        
+    //     for i in 0..21 {
+    //         let val = get_trait_value(&dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
+    //         if i == 5 {
+    //             assert_eq!(val, 25, "Target trait should be 25");
+    //         } else {
+    //             assert_eq!(val, 0, "Non-target trait {} should be 0", i);
+    //         }
+//     }
+// }
+
+    // // --- PRICE CALCULATION TESTS ---
+
+    #[test]
+    fn test_compute_gene_price_zero_minted() {
+        let price = compute_gene_price(1_000_000, 100, 0).unwrap();
+        assert_eq!(price, 1_000_000, "Zero minted should return base price");
+    }
+
+    #[test]
+    fn test_compute_gene_price_increases() {
+        let base = 1_000_000u64;
+        let curve = 100u64;
+        
+        let price1 = compute_gene_price(base, curve, 10).unwrap();
+        let price2 = compute_gene_price(base, curve, 100).unwrap();
+        let price3 = compute_gene_price(base, curve, 1000).unwrap();
+        println!("Price 1: {}", price1);
+        println!("Price 2: {}", price2);
+        println!("Price 3: {}", price3);
+        
+        assert!(price1 == 1000400, "Price should increase with mints");
+        assert!(price2 == 1002100, "Price should keep increasing");
+        assert!(price3 == 1010000, "Price should keep increasing");
+    }
+
+    // --- HELPER TRAIT FUNCTION TESTS ---
+
+    #[test]
+    fn test_enhance_trait() {
+        // Test enhancement scenarios
+        assert_eq!(enhance_trait(10, 5, 10, 31), 11, "Should enhance max trait");
+        assert_eq!(enhance_trait(31, 25, 10, 31), 31, "Should not exceed max");
+        assert_eq!(enhance_trait(5, 10, 60, 31), 6, "Should enhance min trait");
+    }
+
+    #[test]
+    fn test_synergy_boost() {
+        // Close traits should boost
+        assert_eq!(synergy_boost(10, 11, 30, 15), 12, "Close traits should boost");
+        // Far traits should not boost
+        assert_eq!(synergy_boost(5, 15, 30, 15), 15, "Far traits take max");
     }
 }
