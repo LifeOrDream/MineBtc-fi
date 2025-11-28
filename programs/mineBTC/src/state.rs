@@ -21,7 +21,7 @@ pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
-pub const MAX_BASE_CHANCE: u64 = 3000; // 30%
+pub const MAX_BASE_CHANCE: u64 = 5000; // 50%
 
 /// ------------ CONSTANTS ------------
 

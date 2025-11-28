@@ -9,8 +9,10 @@
  * 5. Reserved (84 bits): Future use
  */
 
-const { keccak_256 } = require("js-sha3");
-const { PublicKey } = require("@solana/web3.js");
+import pkg from 'js-sha3';
+const { keccak_256 } = pkg;
+import { PublicKey } from "@solana/web3.js";
+import { fileURLToPath } from 'url';
 
 // ============================================================================
 // CONSTANTS
@@ -346,6 +348,19 @@ function runTests() {
     
     // --- DNA Generation Tests ---
     console.log("\n--- DNA Generation ---");
+
+    let dna_ = [133, 68, 70, 49, 137, 148, 80, 78, 16, 104, 152, 128, 82, 0, 68, 52, 16, 64, 0, 0, 0, 48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57];
+    console.log(`Faction: ${getFamilyType(dna_)}`);
+    console.log(`Evolution Stage: ${getEvolutionStage(dna_)}`);
+    console.log(`Appearance Traits: ${decodeAppearanceTraits(dna_)}`);
+    console.log(`Power Traits: ${decodePowerTraits(dna_)}`);
+    console.log(`Dominant Appearance Traits: ${decodeDominantAppearanceTraits(dna_)}`);
+    console.log(`Dominant Power Traits: ${decodeDominantPowerTraits(dna_)}`);
+    // console.log(`Appearance Traits Grouped: ${getAppearanceTraitsGrouped(dna_)}`);
+    // console.log(`Power Traits Grouped: ${getPowerTraitsGrouped(dna_)}`);
+    console.log(`Raw DNA: ${Buffer.from(dna_).toString('hex')}`);
+    return;
+
     
     const dna1 = generateGenesisDna(1, testPubkey, 12345, 5);
     test("Genesis DNA has correct faction", getFamilyType(dna1) === 5);
@@ -455,8 +470,8 @@ function runTests() {
 // EXPORTS
 // ============================================================================
 
-module.exports = {
-    // Constants
+// Constants
+export {
     APPEARANCE_OFFSET,
     COMBAT_OFFSET,
     APPEARANCE_TRAIT_BITS,
@@ -465,36 +480,47 @@ module.exports = {
     COMBAT_TOTAL_TRAITS,
     APPEARANCE_MAX,
     COMBAT_MAX,
-    
-    // Core functions
+};
+
+// Core functions
+export {
     getTraitValue,
     setTraitValue,
     getFamilyType,
     getEvolutionStage,
-    
-    // Decoding
+};
+
+// Decoding
+export {
     decodeAppearanceTraits,
     decodeDominantAppearanceTraits,
     decodePowerTraits,
     decodeDominantPowerTraits,
     getAppearanceTraitsGrouped,
     getPowerTraitsGrouped,
-    
-    // Generation
+};
+
+// Generation
+export {
     generateGenesisDna,
     limitGenesisTraitRanges,
     limitTraitRanges,
-    
-    // Analysis
+};
+
+// Analysis
+export {
     analyzeDna,
     printDnaAnalysis,
-    
-    // Tests
+};
+
+// Tests
+export {
     runTests,
 };
 
 // Run tests if executed directly
-if (require.main === module) {
+const __filename = fileURLToPath(import.meta.url);
+if (process.argv[1] === __filename) {
     const success = runTests();
     process.exit(success ? 0 : 1);
 }

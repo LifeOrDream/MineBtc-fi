@@ -156,7 +156,7 @@ pub struct MutationResult {
 /// **Chance Formula**: `base_chance * bet_strength * multiplier_penalty`
 /// - `base_chance` = 30%
 /// - `bet_strength` = min(user_bet / highest_bet, 1.0)
-/// - `multiplier_penalty` = 100 / (100 + current_multiplier - 100) = 100 / current_multiplier
+/// - `multiplier_penalty` = 1000 / (1000 + current_multiplier - 1000) = 1000 / current_multiplier
 ///   (Higher multiplier = lower chance, slowing progression for advanced doges)
 ///
 /// **XP Gain**: Always gained on SOL bets, scaled by bet size relative to 0.1 SOL
@@ -176,45 +176,54 @@ pub fn calculate_mutation_result(
     user_key: &Pubkey,
 ) -> MutationResult {
     msg!("🧬 Calculating mutation result...");
-    msg!("   User total bet: {}, Highest round bet for faction: {}", user_total_bet as f64 / 1e9, highest_round_bet_for_faction as f64 / 1e9);
-    msg!("   Current multiplier: {}. Gameplay doge XP: {}", current_multiplier, gameplay_doge_xp);
-    msg!("   Total sol bets: {}, Total points bets: {}, Total wgtd points bets: {}", total_sol_bets as f64 / 1e9, total_points_bets as f64 / 1e9, total_wgtd_points_bets as f64 / 1e9);
+    msg!("   User total bet: {} SOL, Highest round bet for faction: {} SOL", 
+        format!("{:.4}", user_total_bet as f64 / 1e9),
+        format!("{:.4}", highest_round_bet_for_faction as f64 / 1e9));
+    msg!("   Current multiplier: {:.3}. Gameplay doge XP: {}", current_multiplier as f64 / 1000.0, gameplay_doge_xp);
+    msg!("   Total sol bets: {} SOL, Total points bets: {}, Total wgtd points bets: {}", 
+        format!("{:.4}", total_sol_bets as f64 / 1e9),
+        format!("{:.4}", total_points_bets as f64 / 1e9),
+        format!("{:.4}", total_wgtd_points_bets as f64 / 1e9));
     msg!("   Slot: {}. User key: {}", slot, user_key);
 
     // Derive generation from DNA (bits 4-6 of byte 0)
     let generation = get_evolution_stage(&gameplay_doge_dna);
     
-    msg!("🧬 Mutation calc: bet={}, gen={}, xp={}, mult={}", user_total_bet as f64 / 1e9, generation, gameplay_doge_xp, current_multiplier);
+    msg!("🧬 Mutation calc: bet={} SOL, gen={}, xp={}, mult={:.3}", 
+        format!("{:.4}", user_total_bet as f64 / 1e9), 
+        generation, 
+        gameplay_doge_xp, 
+        current_multiplier as f64 / 1000.0);
     
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 
     // XP always gained: 1 XP per 0.001 SOL, capped at 1000
-    let xp_gained = ((user_total_bet as u128 * 1) / 1_000_000).min(1000) as u32;
+    let xp_gained = ((user_total_bet as u128 * 1) / 1_000_000) as u32;
+    msg!("   XP gained: {}", xp_gained);
     
     if user_total_bet == 0 {
         return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_doge_dna };
     }
 
-    // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio.
+    // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio. (100% = 100,00)
     let effective_highest = if highest_round_bet_for_faction == 0 { user_total_bet } else { highest_round_bet_for_faction };
     let bet_strength = ((user_total_bet * 10000) / effective_highest).min(10000);
-
-    msg!("   Bet strength: {}", bet_strength as f64 / 10000.0);
+    msg!("   Bet strength: {:.2}%", bet_strength as f64 / 100.0);
 
     // B. Multiplier Penalty (0 - 10,000 bps)
     // Formula: (BASE_MULTIPLIER / Current) * 10,000
     // 1.0x -> 1k/1k * 1k = 1000 (100% factor)
     // 6.9x -> 1k/6900 * 1k = 144.9 (14.5% factor)
     let mult_factor = (BASE_MULTIPLIER * 10000) / current_multiplier;
-    msg!("   Multiplier factor: {}", mult_factor);
+    msg!("   Multiplier factor: {:.2}%", mult_factor as f64 / 100.0);
 
     // C. Final Chance Calculation
     // Chance = 30% * BetFactor * MultFactor
     // scale: 3000 * (0.0-1.0) * (0.14-1.0)
     // Final Chance = 30% * bet_strength * mult_factor / 100M
     let final_chance_bps = (MAX_BASE_CHANCE * bet_strength * (mult_factor as u64)) / 100_000_000;
-    msg!("   Final chance: {}", final_chance_bps as f64 / 100.0);
+    msg!("   Final chance: {:.2}%", final_chance_bps  as f64 / 100.0);
 
     // --- STEP 2: ROLL THE DICE ---
 
@@ -825,28 +834,28 @@ mod tests {
         }
     }
 
-    // // --- MUTATION RESULT TESTS ---
+    // --- MUTATION RESULT TESTS ---
 
-    // #[test]
-    // fn test_mutation_result_zero_bet() {
-    //     let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+    #[test]
+    fn test_mutation_result_zero_bet() {
+        let dna = [133, 68, 70, 49, 137, 148, 80, 78, 16, 104, 152, 128, 82, 0, 68, 52, 16, 64, 0, 0, 0, 48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57]; 
+         
+        let result = calculate_mutation_result(
+            1_000_000_000 / 100,           // 0.01 SOL bet
+            1_000_000_000,
+            1000,
+            dna,
+            0,
+            1_000_000_000,
+            1_000_000_000,
+            1_000_000_000,
+            12345,
+            &mock_pubkey(),
+        );
         
-    //     let result = calculate_mutation_result(
-    //         0,           // zero bet
-    //         1_000_000_000,
-    //         100,
-    //         dna,
-    //         0,
-    //         1_000_000_000,
-    //         1_000_000_000,
-    //         1_000_000_000,
-    //         12345,
-    //         &mock_pubkey(),
-    //     );
-        
-    //     assert!(result.mutation_type.is_none(), "Zero bet should not trigger mutation");
-    //     assert_eq!(result.xp_gained, 0, "Zero bet should give no XP");
-    // }
+        assert!(result.mutation_type.is_none(), "Zero bet should not trigger mutation");
+        assert_eq!(result.xp_gained, 0, "Zero bet should give no XP");
+    }
 
     // #[test]
     // fn test_mutation_result_xp_calculation() {
