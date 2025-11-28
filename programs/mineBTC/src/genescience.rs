@@ -375,7 +375,12 @@ fn enhance_trait(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
 }
 
 fn mutate_trait_value(base: u8, rand: u8, max: u8) -> u8 {
-    if rand == 0 { (rand << 1).min(max - 1) }
+    if rand == 0 { 
+        // Wild mutation: use a pseudo-random value up to max-1
+        // Since rand is 0, we use a deterministic but varied approach based on base
+        let max_val = max.saturating_sub(1) as u16;
+        ((base as u16 * 7 + 13) % (max_val + 1)) as u8
+    }
     else if rand < 48 && base > 0 { base - 1 }
     else if rand < 80 && base < max { base + 1 }
     else { base }
@@ -443,15 +448,6 @@ fn synergy_boost(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
 //     else { current }
 // }
 
-// ========================================================================================
-// ============================= DNA DECODER FUNCTIONS ====================================
-// ========================================================================================
-
-/// Get faction/family type from DNA (first 4 bits)
-// pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
-
-/// Get evolution stage from DNA (bits 4-6)
-pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 { (dna[0] >> 4) & 0x07 }
 
 // ========================================================================================
 // ============================= BIT MANIPULATION HELPERS =================================
@@ -511,6 +507,9 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 
 /// Get faction/family type from DNA (first 4 bits)
 pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
+
+/// Get evolution stage from DNA (bits 4-6)
+pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 { (dna[0] >> 4) & 0x07 }
 
 /// Decode all 21 appearance traits
 pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
@@ -771,60 +770,60 @@ mod tests {
         assert_eq!(get_family_type(&dna), original_faction, "Faction should be preserved");
     }
 
-    // // --- BREEDING TESTS ---
+    // --- BREEDING TESTS ---
 
-    // #[test]
-    // fn test_breed_genes_basic() {
-    //     let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
-    //     let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 5).unwrap();
+    #[test]
+    fn test_breed_genes_basic() {
+        let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
+        let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 5).unwrap();
         
-    //     let seed = b"breeding_seed_12345678901234567890";
-    //     let offspring = breed_genes(&parent1, &parent2, seed).unwrap();
+        let seed = b"breeding_seed_12345678901234567890";
+        let offspring = breed_genes(&parent1, &parent2, seed).unwrap();
         
-    //     // Offspring should have same faction as parent1
-    //     assert_eq!(get_family_type(&offspring), 5, "Offspring should inherit faction");
+        // Offspring should have same faction as parent1
+        assert_eq!(get_family_type(&offspring), 5, "Offspring should inherit faction");
         
-    //     // Offspring should start at stage 0
-    //     assert_eq!(get_evolution_stage(&offspring), 0, "Offspring should be stage 0");
-    // }
+        // Offspring should start at stage 0
+        assert_eq!(get_evolution_stage(&offspring), 0, "Offspring should be stage 0");
+    }
 
-    // #[test]
-    // fn test_breed_genes_deterministic() {
-    //     let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
-    //     let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
+    #[test]
+    fn test_breed_genes_deterministic() {
+        let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
+        let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
         
-    //     let seed = b"test_seed_1234567890123456789012";
-    //     let offspring1 = breed_genes(&parent1, &parent2, seed).unwrap();
-    //     let offspring2 = breed_genes(&parent1, &parent2, seed).unwrap();
+        let seed = b"test_seed_1234567890123456789012";
+        let offspring1 = breed_genes(&parent1, &parent2, seed).unwrap();
+        let offspring2 = breed_genes(&parent1, &parent2, seed).unwrap();
         
-    //     assert_eq!(offspring1, offspring2, "Same breeding should produce same offspring");
-    // }
+        assert_eq!(offspring1, offspring2, "Same breeding should produce same offspring");
+    }
 
-    // #[test]
-    // fn test_breed_genes_different_seeds() {
-    //     let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
-    //     let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
+    #[test]
+    fn test_breed_genes_different_seeds() {
+        let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
+        let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
         
-    //     let offspring1 = breed_genes(&parent1, &parent2, b"seed_a_12345678901234567890123456").unwrap();
-    //     let offspring2 = breed_genes(&parent1, &parent2, b"seed_b_12345678901234567890123456").unwrap();
+        let offspring1 = breed_genes(&parent1, &parent2, b"seed_a_12345678901234567890123456").unwrap();
+        let offspring2 = breed_genes(&parent1, &parent2, b"seed_b_12345678901234567890123456").unwrap();
         
-    //     assert_ne!(offspring1, offspring2, "Different seeds should produce different offspring");
-    // }
+        assert_ne!(offspring1, offspring2, "Different seeds should produce different offspring");
+    }
 
-    // #[test]
-    // fn test_breed_offspring_traits_in_range() {
-    //     let parent1 = generate_genesis_dna(10, &mock_pubkey(), 500, 2).unwrap();
-    //     let parent2 = generate_genesis_dna(20, &mock_pubkey(), 600, 2).unwrap();
+    #[test]
+    fn test_breed_offspring_traits_in_range() {
+        let parent1 = generate_genesis_dna(10, &mock_pubkey(), 500, 2).unwrap();
+        let parent2 = generate_genesis_dna(20, &mock_pubkey(), 600, 2).unwrap();
         
-    //     let offspring = breed_genes(&parent1, &parent2, b"range_test_seed_1234567890123456").unwrap();
+        let offspring = breed_genes(&parent1, &parent2, b"range_test_seed_1234567890123456").unwrap();
         
-    //     for t in decode_appearance_traits(&offspring) {
-    //         assert!(t <= APPEARANCE_MAX, "Appearance trait exceeds max");
-    //     }
-    //     for t in decode_power_traits(&offspring) {
-    //         assert!(t <= COMBAT_MAX, "Power trait exceeds max");
-    //     }
-    // }
+        for t in decode_appearance_traits(&offspring) {
+            assert!(t <= APPEARANCE_MAX, "Appearance trait exceeds max");
+        }
+        for t in decode_power_traits(&offspring) {
+            assert!(t <= COMBAT_MAX, "Power trait exceeds max");
+        }
+    }
 
     // // --- MUTATION RESULT TESTS ---
 
@@ -927,7 +926,7 @@ mod tests {
     //             assert_eq!(val, 25, "Target trait should be 25");
     //         } else {
     //             assert_eq!(val, 0, "Non-target trait {} should be 0", i);
-    //         }
+//         }
 //     }
 // }
 
@@ -960,17 +959,120 @@ mod tests {
 
     #[test]
     fn test_enhance_trait() {
-        // Test enhancement scenarios
-        assert_eq!(enhance_trait(10, 5, 10, 31), 11, "Should enhance max trait");
-        assert_eq!(enhance_trait(31, 25, 10, 31), 31, "Should not exceed max");
-        assert_eq!(enhance_trait(5, 10, 60, 31), 6, "Should enhance min trait");
+        println!("\n=== Testing enhance_trait ===");
+        
+        // Test appearance traits (max = 31)
+        // Case 1: rand < 48, max_t < max -> should enhance max_t
+        let result1 = enhance_trait(10, 5, 10, APPEARANCE_MAX);
+        println!("enhance_trait(10, 5, 10, {}) = {} (should be 11)", APPEARANCE_MAX, result1);
+        assert_eq!(result1, 11, "Should enhance max trait when rand < 48");
+        
+        // Case 2: max_t at max, but can enhance min_t
+        let result2 = enhance_trait(31, 25, 10, APPEARANCE_MAX);
+        println!("enhance_trait(31, 25, 10, {}) = {} (enhances min_t)", APPEARANCE_MAX, result2);
+        assert_eq!(result2, 26, "Should enhance min_t when max_t is at max");
+        
+        // Case 2b: Both at max -> should return max_t
+        let result2b = enhance_trait(31, 31, 10, APPEARANCE_MAX);
+        println!("enhance_trait(31, 31, 10, {}) = {} (should be 31)", APPEARANCE_MAX, result2b);
+        assert_eq!(result2b, APPEARANCE_MAX, "Both at max should return max");
+        
+        // Case 3: rand 48-95, min_t < max_t -> should enhance min_t
+        let result3 = enhance_trait(5, 10, 60, APPEARANCE_MAX);
+        println!("enhance_trait(5, 10, 60, {}) = {} (should be 6)", APPEARANCE_MAX, result3);
+        assert_eq!(result3, 6, "Should enhance min trait when rand 48-95");
+        
+        // Case 4: rand >= 96 -> should return max_t
+        let result4 = enhance_trait(8, 12, 100, APPEARANCE_MAX);
+        println!("enhance_trait(8, 12, 100, {}) = {} (should be 12)", APPEARANCE_MAX, result4);
+        assert_eq!(result4, 12, "Should return max_t when rand >= 96");
+        
+        // Test power traits (max = 15)
+        let result5 = enhance_trait(3, 5, 20, COMBAT_MAX);
+        println!("enhance_trait(3, 5, 20, {}) = {} (should be 6)", COMBAT_MAX, result5);
+        assert_eq!(result5, 6, "Power trait enhancement");
+        
+        let result6 = enhance_trait(15, 10, 10, COMBAT_MAX);
+        println!("enhance_trait(15, 10, 10, {}) = {} (enhances min_t)", COMBAT_MAX, result6);
+        assert_eq!(result6, 11, "Should enhance min_t when max_t is at max");
+        
+        let result6b = enhance_trait(15, 15, 10, COMBAT_MAX);
+        println!("enhance_trait(15, 15, 10, {}) = {} (should be 15)", COMBAT_MAX, result6b);
+        assert_eq!(result6b, COMBAT_MAX, "Both at max should return max");
     }
 
     #[test]
     fn test_synergy_boost() {
-        // Close traits should boost
-        assert_eq!(synergy_boost(10, 11, 30, 15), 12, "Close traits should boost");
-        // Far traits should not boost
-        assert_eq!(synergy_boost(5, 15, 30, 15), 15, "Far traits take max");
+        println!("\n=== Testing synergy_boost ===");
+        
+        // Test power traits (max = 15)
+        // Case 1: Close traits (diff <= 2), rand < 64, max_t < max -> should boost
+        let result1 = synergy_boost(10, 11, 30, COMBAT_MAX);
+        println!("synergy_boost(10, 11, 30, {}) = {} (should be 12)", COMBAT_MAX, result1);
+        assert_eq!(result1, 12, "Close traits should boost");
+        
+        // Case 2: Close traits but at max -> should not exceed
+        let result2 = synergy_boost(15, 14, 30, COMBAT_MAX);
+        println!("synergy_boost(15, 14, 30, {}) = {} (should be 15)", COMBAT_MAX, result2);
+        assert_eq!(result2, COMBAT_MAX, "Should not exceed max");
+        
+        // Case 3: Far traits (diff > 2) -> should return max_t
+        let result3 = synergy_boost(5, 15, 30, COMBAT_MAX);
+        println!("synergy_boost(5, 15, 30, {}) = {} (should be 15)", COMBAT_MAX, result3);
+        assert_eq!(result3, 15, "Far traits take max");
+        
+        // Case 4: Close traits but rand >= 64 -> should return max_t
+        let result4 = synergy_boost(8, 9, 100, COMBAT_MAX);
+        println!("synergy_boost(8, 9, 100, {}) = {} (should be 9)", COMBAT_MAX, result4);
+        assert_eq!(result4, 9, "High rand should return max_t");
+        
+        // Test appearance traits (max = 31)
+        let result5 = synergy_boost(20, 22, 40, APPEARANCE_MAX);
+        println!("synergy_boost(20, 22, 40, {}) = {} (should be 23)", APPEARANCE_MAX, result5);
+        assert_eq!(result5, 23, "Appearance trait synergy boost");
+        
+        let result6 = synergy_boost(25, 30, 50, APPEARANCE_MAX);
+        println!("synergy_boost(25, 30, 50, {}) = {} (should be 30)", APPEARANCE_MAX, result6);
+        assert_eq!(result6, 30, "Diff > 2 should return max_t");
+    }
+
+    #[test]
+    fn test_mutate_trait_value() {
+        println!("\n=== Testing mutate_trait_value ===");
+        
+        // Test appearance traits (max = 31)
+        // Case 1: rand == 0 -> significant mutation (but capped)
+        let result1 = mutate_trait_value(15, 0, APPEARANCE_MAX);
+        println!("mutate_trait_value(15, 0, {}) = {} (rand==0 mutation)", APPEARANCE_MAX, result1);
+        assert!(result1 <= APPEARANCE_MAX - 1, "Rand==0 should produce value <= max-1");
+        
+        // Case 2: rand 1-47, base > 0 -> decrease
+        let result2 = mutate_trait_value(10, 20, APPEARANCE_MAX);
+        println!("mutate_trait_value(10, 20, {}) = {} (should be 9)", APPEARANCE_MAX, result2);
+        assert_eq!(result2, 9, "Should decrease when rand < 48 and base > 0");
+        
+        // Case 3: rand 48-79, base < max -> increase
+        let result3 = mutate_trait_value(10, 60, APPEARANCE_MAX);
+        println!("mutate_trait_value(10, 60, {}) = {} (should be 11)", APPEARANCE_MAX, result3);
+        assert_eq!(result3, 11, "Should increase when rand 48-79 and base < max");
+        
+        // Case 4: rand >= 80 -> no change
+        let result4 = mutate_trait_value(15, 100, APPEARANCE_MAX);
+        println!("mutate_trait_value(15, 100, {}) = {} (should be 15)", APPEARANCE_MAX, result4);
+        assert_eq!(result4, 15, "Should not change when rand >= 80");
+        
+        // Case 5: At max -> should not exceed
+        let result5 = mutate_trait_value(31, 60, APPEARANCE_MAX);
+        println!("mutate_trait_value(31, 60, {}) = {} (should be 31)", APPEARANCE_MAX, result5);
+        assert_eq!(result5, APPEARANCE_MAX, "Should not exceed max");
+        
+        // Test power traits (max = 15)
+        let result6 = mutate_trait_value(5, 30, COMBAT_MAX);
+        println!("mutate_trait_value(5, 30, {}) = {} (should be 4)", COMBAT_MAX, result6);
+        assert_eq!(result6, 4, "Power trait decrease");
+        
+        let result7 = mutate_trait_value(8, 70, COMBAT_MAX);
+        println!("mutate_trait_value(8, 70, {}) = {} (should be 9)", COMBAT_MAX, result7);
+        assert_eq!(result7, 9, "Power trait increase");
     }
 }

@@ -22,6 +22,8 @@
 //
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::program::set_return_data;
+use borsh::{BorshSerialize, BorshDeserialize};
 mod errors;
 mod events;
 mod genescience;
@@ -695,4 +697,54 @@ pub mod minebtc {
     pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         doges::int_send_to_heaven(ctx)
     }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------  QUERY FUNCTIONS -------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    #[derive(BorshSerialize, BorshDeserialize)]
+    pub struct GeneBreakdown {
+        pub dna: [u8; 32],
+        pub family_type: u8,
+        pub evolution_stage: u8,
+        pub appearance_traits: Vec<u8>,
+        pub dominant_appearance_traits: Vec<u8>,
+        pub power_traits: Vec<u8>,
+        pub dominant_power_traits: Vec<u8>,
+    }
+
+    #[derive(Accounts)]
+    pub struct GetGeneBreakdown<'info> {
+        /// System program (required by Anchor but not used)
+        pub system_program: Program<'info, System>,
+    }
+
+    /// Query function to decode DNA and return gene breakdown
+    /// This is a read-only function that can be called via simulateTransaction
+    pub fn get_gene_breakdown(_ctx: Context<GetGeneBreakdown>, dna: [u8; 32]) -> Result<()> {
+        let family_type = genescience::get_family_type(&dna);
+        let evolution_stage = genescience::get_evolution_stage(&dna);
+        let appearance_traits = genescience::decode_appearance_traits(&dna);
+        let dominant_appearance_traits = genescience::decode_dominant_appearance_traits(&dna);
+        let power_traits = genescience::decode_power_traits(&dna);
+        let dominant_power_traits = genescience::decode_dominant_power_traits(&dna);
+        
+        let breakdown = GeneBreakdown {
+            dna,
+            family_type,
+            evolution_stage,
+            appearance_traits,
+            dominant_appearance_traits,
+            power_traits,
+            dominant_power_traits,
+        };
+        
+        let serialized = breakdown.try_to_vec()
+            .map_err(|_| crate::errors::ErrorCode::InvalidAccount)?;
+        
+        set_return_data(&serialized);
+        
+        Ok(())
+    }
+
 }
