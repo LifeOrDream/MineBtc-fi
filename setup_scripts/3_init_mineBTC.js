@@ -243,12 +243,12 @@ async function main() {
     // 1. Initialize MineBTC Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Doge Treasury)
     await initializeMinebtcProgram(minebtcProgram);
 
-    // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
-    // const feeRecipientFromConfig = "B4Q5BNqjpZRyo9ZJ1dhKfJqHcR3TpksG5BKJjQ3V4ZvQ";
-    // // if (feeRecipientFromConfig) {
-    //     await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
-    // // }
-    // return;
+    // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
+    const feeRecipientFromConfig = "5bWTkFiM5SnvofjFbxUAAFYfxVbW18MwEC4Zcc6H3xAb";
+    // if (feeRecipientFromConfig) {
+        await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
+    // }
+    return;
 
     // // 1.6. Update Fees (if needed - can be called anytime after initialization)
     // // Example usage:
