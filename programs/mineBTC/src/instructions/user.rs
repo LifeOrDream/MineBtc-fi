@@ -1517,6 +1517,7 @@ fn internal_process_bets<'info>(
         }
 
         // Calculate mutation result (generation derived from DNA)
+        let doge_mint = player_data.gameplay_doge;
         let mutation_result = calculate_mutation_result(
             user_game_bet.total_sol_bet,
             game_session.highest_sol_bet_per_faction[faction_id],
@@ -1528,6 +1529,7 @@ fn internal_process_bets<'info>(
             game_session.total_wgtd_points_bets,
             clock.slot,
             &owner_key,
+            &doge_mint,
         );
 
         // Always add XP to PlayerData (even without mutation)

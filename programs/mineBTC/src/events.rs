@@ -555,3 +555,36 @@ pub struct MutationTriggered {
     pub highest_bet: u64,
     pub timestamp: i64,
 }
+
+/// Event emitted when a doge evolves to a new stage
+#[event]
+pub struct DogeEvolution {
+    pub doge_mint: Pubkey,
+    pub new_stage: u8,
+    /// Visual trait mutation that happened during evolution
+    pub visual_trait_index: u8,
+    pub visual_old_val: u8,
+    pub visual_new_val: u8,
+    /// Power trait mutation that happened during evolution
+    pub power_trait_index: u8,
+    pub power_old_val: u8,
+    pub power_new_val: u8,
+}
+
+/// Event emitted when a doge's power trait is mutated
+#[event]
+pub struct DogePowerMutation {
+    pub doge_mint: Pubkey,
+    pub trait_index: u8,
+    pub old_val: u8,
+    pub new_val: u8,
+}
+
+/// Event emitted when a doge's visual trait is mutated
+#[event]
+pub struct DogeVisualMutation {
+    pub doge_mint: Pubkey,
+    pub trait_index: u8,
+    pub old_val: u8,
+    pub new_val: u8,
+}
