@@ -857,12 +857,13 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- CLAIM SOL REWARDS :: User earns SOL rewards from staking ------
+// ---- CLAIM STAKING REWARDS :: Updates indexes, transfers SOL, accumulates MineBTC to pending ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim SOL rewards from staking MineBtc and LP tokens
-pub fn int_claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-    msg!("💰 [claim_sol_rewards] Claiming SOL rewards from staking");
+/// Claim staking rewards - updates all staking indexes, transfers SOL directly to owner,
+/// and accumulates MineBTC to pending_minebtc_rewards (NOT transferred here)
+pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
+    msg!("💰 [claim_staking_rewards] Claiming SOL rewards + accumulating MineBTC");
 
     require!(
         ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id,
@@ -967,7 +968,7 @@ pub fn int_claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
     });
 
     msg!(
-        "✅ [claim_sol_rewards] Claimed {} SOL (fee: {} to referrer)",
+        "✅ [claim_staking_rewards] Claimed {} SOL (fee: {} to referrer). MineBTC accumulated to pending.",
         player_sol as f64 / 1e9,
         referral_fee as f64 / 1e9
     );
@@ -975,38 +976,23 @@ pub fn int_claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- CLAIM MINEBTC REWARDS :: User earns minebtc rewards from staking ------
+// ---- WITHDRAW DBTC REWARDS :: User withdraws accumulated MineBTC with fees ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim MineBtc token rewards from staking MineBtc and LP tokens
+/// Withdraw accumulated MineBtc token rewards
 /// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
-/// Also increases power of all staked doges proportionally to claimed amount
-pub fn int_claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-    msg!("💰 [claim_minebtc_rewards] Claiming MineBtc token rewards with refining fee");
-
-    require!(
-        ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
+/// NOTE: Call claim_staking_rewards first to update staking indexes and accumulate rewards
+pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
+    msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with refining fee");
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
-    let faction_id = ctx.accounts.faction_state.faction_id;
+    let faction_id = ctx.accounts.player_data.faction_id;
+    let player_owner = ctx.accounts.player_data.owner;
 
-    let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
     let unrefined_minebtc = &mut ctx.accounts.unrefined_rewards;
     let global_config = &ctx.accounts.global_config;
-
-    // Process MineBtc staking SOL rewards
-    let (
-        _st_minebtc_new_sol_rewards,
-        _st_minebtc_new_minebtc_rewards,
-        _st_minebtc_accrued_minebtc_rewards,
-    ) = int_update_minebtc_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
-    // Process LP staking SOL rewards
-    let (_st_lp_new_sol_rewards, _st_lp_new_minebtc_rewards, _st_lp_accrued_minebtc_rewards) =
-        int_update_lp_staking_rewards(player_data, unrefined_minebtc, faction_state)?;
 
     require!(
         player_data.pending_minebtc_rewards > 0,
@@ -1120,7 +1106,7 @@ pub fn int_claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
     }
 
     emit!(DbtcRewardsClaimed {
-        user: ctx.accounts.authority.key(),
+        user: player_owner,
         player_data: player_data_key,
         faction_id,
         minebtc_amount: claimable_by_user,
@@ -1129,6 +1115,8 @@ pub fn int_claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
         referrer: referrer_pubkey,
         timestamp: Clock::get()?.unix_timestamp,
     });
+    
+    msg!("✅ [withdraw_dbtc_rewards] Withdrew {} MineBTC to {}", claimable_by_user as f64 / 1e6, player_owner);
 
     Ok(())
 }
@@ -1639,16 +1627,16 @@ pub struct UnstakeLpTokens<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- CLAIM SOL REWARDS ---------
+// --------- CLAIM STAKING REWARDS (SOL transfer + MineBTC accumulate) ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
-pub struct ClaimSolRewards<'info> {
+pub struct ClaimStakingRewards<'info> {
     // Faction state
     #[account()]
     pub faction_state: Account<'info, FactionState>,
 
-    // Player data
+    // Player data - must be owned by authority
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
@@ -1680,7 +1668,7 @@ pub struct ClaimSolRewards<'info> {
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
 
-    /// User claiming rewards
+    /// User claiming rewards (must be player_data.owner)
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -1688,17 +1676,15 @@ pub struct ClaimSolRewards<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- CLAIM MINEBTC REWARDS ---------
+// --------- WITHDRAW DBTC REWARDS (MineBTC transfer with fees) ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
-pub struct ClaimDbtcRewards<'info> {
+pub struct WithdrawDbtcRewards<'info> {
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    #[account(mut)]
-    pub faction_state: Box<Account<'info, FactionState>>,
-
+    // Player data - must be owned by authority
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],

@@ -235,16 +235,21 @@ pub fn calculate_mutation_result(
     // Use first 2 bytes for higher precision (u16)    
     let roll_val = u16::from_le_bytes([seed[0], seed[1]]) as u64;
     let roll_normalized = (roll_val * 10_000) / 65535;
+    msg!("   Roll normalized: {:.2}%", roll_normalized as f64 / 100.0);
 
     if roll_normalized >= final_chance_bps {
         return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_doge_dna };
     }
+    msg!("   Mutation triggered!!!");
 
     // Mutation triggered - determine type
-    let type_roll = seed[2];
-    let evo_chance = 10 / (generation as u64 + 1);
-    let evo_threshold = (255 * evo_chance) / 100;
+    let type_roll = seed[2];                            // random dice roll for the type of mutation
+    let evo_chance = 10 / (generation as u64 + 1);     // base percentage chance (10%) for an Evolution to happen.
+    let evo_threshold = (255 * evo_chance) / 100;      // This is the "cutoff point" on the 0-255 scale for Evolution.
+
+    // Power threshold is the "cutoff point" on the 0-255 scale for Power. (30% on top of the Evolution threshold)
     let power_threshold = evo_threshold + ((255 * 30) / 100);
+    msg!( "Type roll: {}, Evo Chance: {}, Evo threshold: {}, Power threshold: {}", type_roll, evo_chance, evo_threshold, power_threshold);
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
         let _ = evolve_stage(&mut gameplay_doge_dna, &seed);
@@ -256,12 +261,14 @@ pub fn calculate_mutation_result(
         mutate_visual_trait(&mut gameplay_doge_dna, &seed);
         (MutationType::Trait, 5u32)
     };
+    msg!("   Mutation type: {:?}, Base boost: {}", m_type, base_boost);
 
     // XP Bonus: use % of current XP to boost multiplier
     let xp_roll = seed[3] as u64;
-    let (min_pct, max_pct) = if m_type == MutationType::Evolution { (50, 100) } else { (10, 50) };
-    let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
+    let (min_pct, max_pct) = if m_type == MutationType::Evolution { (75, 100) } else { (25, 75) };
+    let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);    
     let xp_mult_boost = ((gameplay_doge_xp as u64 * efficiency_pct) / 100) / 10;
+    msg!("   XP roll: {}, Efficiency: {}%, XP mult boost: {}", xp_roll, efficiency_pct, xp_mult_boost);
 
     MutationResult {
         mutation_type: Some(m_type),
@@ -841,14 +848,14 @@ mod tests {
         let dna = [133, 68, 70, 49, 137, 148, 80, 78, 16, 104, 152, 128, 82, 0, 68, 52, 16, 64, 0, 0, 0, 48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57]; 
          
         let result = calculate_mutation_result(
-            1_000_000_000 / 100,           // 0.01 SOL bet
+            1_000_000_000 / 2,           // 0.01 SOL bet
             1_000_000_000,
             1000,
             dna,
             0,
-            1_000_000_000,
-            1_000_000_000,
-            1_000_000_000,
+            1_000_00000,
+            1_000_00_000,
+            1_000_00_000,
             12345,
             &mock_pubkey(),
         );

@@ -612,14 +612,14 @@ pub mod minebtc {
         stake::int_unstake_lp_tokens(ctx, position_index)
     }
 
-    /// Claim SOL rewards from MineBtc and LP staking
-    pub fn claim_sol_rewards(ctx: Context<ClaimSolRewards>) -> Result<()> {
-        stake::int_claim_sol_rewards(ctx)
+    /// Claim staking rewards: transfers SOL directly, accumulates MineBTC to pending
+    pub fn claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
+        stake::int_claim_staking_rewards(ctx)
     }
 
-    /// Claim MineBtc token rewards from staking (with refining fee redistribution)
-    pub fn claim_minebtc_rewards(ctx: Context<ClaimDbtcRewards>) -> Result<()> {
-        stake::int_claim_minebtc_rewards(ctx)
+    /// Withdraw accumulated MineBTC rewards (with refining fee redistribution)
+    pub fn withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
+        stake::int_withdraw_dbtc_rewards(ctx)
     }
 
     /// Claim referral rewards (SOL and MineBtc earned from referrals)
