@@ -244,11 +244,11 @@ async function main() {
     await initializeMinebtcProgram(minebtcProgram);
 
     // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
-    const feeRecipientFromConfig = "5bWTkFiM5SnvofjFbxUAAFYfxVbW18MwEC4Zcc6H3xAb";
-    // if (feeRecipientFromConfig) {
-        await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
-    // }
-    return;
+    // const feeRecipientFromConfig = "FnrzA4EeTejsdPHrZnn9APVbMfCrJv9a5dUwNE9cFZbu";
+    // // if (feeRecipientFromConfig) {
+    //     await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
+    // // }
+    // return;
 
     // // 1.6. Update Fees (if needed - can be called anytime after initialization)
     // // Example usage:
@@ -263,11 +263,11 @@ async function main() {
 
     // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // Example usage:
-    // await updateDogeConfig(minebtcProgram, {
-    //     basePrice: 100000000, // 1 SOL in lamports
-    //     curveA: 1111111, // Curve parameter
-    // });
-    // return;
+    await updateDogeConfig(minebtcProgram, {
+        basePrice: 100000000, // 1 SOL in lamports
+        curveA: 1111111, // Curve parameter
+    });
+    return;
 
         // 6. Set Raydium Pool State (for price discovery and swaps)
     await setRaydiumPoolState(minebtcProgram);

@@ -551,7 +551,7 @@ pub fn internal_cal_faction_positions(
 
     // Calculate total hashpower for this faction (minebtc + lp)
     let total_hashpower = faction_state
-        .total_minebtc_hashpower
+        .total_dogebtc_hashpower
         .checked_add(faction_state.total_lp_hashpower)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -559,7 +559,7 @@ pub fn internal_cal_faction_positions(
     msg!(
         "   Total hashpower: {} (minebtc: {}, lp: {})",
         total_hashpower,
-        faction_state.total_minebtc_hashpower,
+        faction_state.total_dogebtc_hashpower,
         faction_state.total_lp_hashpower
     );
 
@@ -593,7 +593,7 @@ pub fn internal_cal_faction_positions(
 
     // Store values before emitting event
     let faction_id = faction_state.faction_id;
-    let minebtc_hashpower = faction_state.total_minebtc_hashpower;
+    let dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
     let lp_hashpower = faction_state.total_lp_hashpower;
     let leaderboard_count = tax_config.leaderboard_factions_count;
 
@@ -602,7 +602,7 @@ pub fn internal_cal_faction_positions(
         faction_id,
         faction_state: faction_state_key,
         total_hashpower,
-        minebtc_hashpower,
+        dogebtc_hashpower,
         lp_hashpower,
         rank: insert_index as u8,
         leaderboard_count,
@@ -781,22 +781,22 @@ pub fn internal_claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasury
     )?;
 
     // Update reward indexes for minebtc stakers
-    if minebtc_reward > 0 && faction_state.total_minebtc_hashpower > 0 {
+    if minebtc_reward > 0 && faction_state.total_dogebtc_hashpower > 0 {
         let index_increase = helper::mul_div(
             minebtc_reward,
             INDEX_PRECISION,
-            faction_state.total_minebtc_hashpower,
+            faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.minebtc_minebtc_reward_index =
-            faction_state.minebtc_minebtc_reward_index + index_increase;
+        faction_state.dogebtc_dogebtc_reward_index =
+            faction_state.dogebtc_dogebtc_reward_index + index_increase;
     }
 
     // Update reward indexes for lp stakers
     if lp_reward > 0 && faction_state.total_lp_hashpower > 0 {
         let index_increase =
             helper::mul_div(lp_reward, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_minebtc_reward_index =
-            faction_state.lp_minebtc_reward_index + index_increase;
+        faction_state.lp_dogebtc_reward_index =
+            faction_state.lp_dogebtc_reward_index + index_increase;
     }
 
     // Mark faction as claimed
@@ -808,12 +808,12 @@ pub fn internal_claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasury
 
     msg!("✅ [claim_faction_treasury_rewards] Rewards claimed and distributed");
     msg!(
-        "   Updated minebtc_minebtc_reward_index: {}",
-        faction_state.minebtc_minebtc_reward_index
+        "   Updated dogebtc_dogebtc_reward_index: {}",
+        faction_state.dogebtc_dogebtc_reward_index
     );
     msg!(
-        "   Updated lp_minebtc_reward_index: {}",
-        faction_state.lp_minebtc_reward_index
+        "   Updated lp_dogebtc_reward_index: {}",
+        faction_state.lp_dogebtc_reward_index
     );
 
     emit!(FactionTreasuryRewardsClaimed {

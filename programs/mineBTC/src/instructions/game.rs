@@ -722,18 +722,18 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     );
 
     // dBTC + SOL distribution to dBTC stakers of the winning faction
-    if faction_state.total_minebtc_hashpower > 0 {
+    if faction_state.total_dogebtc_hashpower > 0 {
         let minebtc_per_share = helper::mul_div(
             minebtc_staker_rewards / 2,
             INDEX_PRECISION,
-            faction_state.total_minebtc_hashpower,
+            faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.minebtc_minebtc_reward_index =
-            faction_state.minebtc_minebtc_reward_index + minebtc_per_share;
+        faction_state.dogebtc_dogebtc_reward_index =
+            faction_state.dogebtc_dogebtc_reward_index + minebtc_per_share;
         msg!(
             "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
-            faction_state.minebtc_minebtc_reward_index - minebtc_per_share,
-            faction_state.minebtc_minebtc_reward_index,
+            faction_state.dogebtc_dogebtc_reward_index - minebtc_per_share,
+            faction_state.dogebtc_dogebtc_reward_index,
             minebtc_per_share
         );
         minebtc_staker_rewards = minebtc_staker_rewards - (minebtc_staker_rewards / 2);
@@ -741,13 +741,13 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         let sol_reward_inc = helper::mul_div(
             sol_staker_fees / 2,
             INDEX_PRECISION,
-            faction_state.total_minebtc_hashpower,
+            faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.minebtc_sol_reward_index += sol_reward_inc;
+        faction_state.dogebtc_sol_reward_index += sol_reward_inc;
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
-            faction_state.minebtc_sol_reward_index - sol_reward_inc,
-            faction_state.minebtc_sol_reward_index,
+            faction_state.dogebtc_sol_reward_index - sol_reward_inc,
+            faction_state.dogebtc_sol_reward_index,
             sol_reward_inc
         );
         sol_staker_fees = sol_staker_fees - (sol_staker_fees / 2);
@@ -760,12 +760,12 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        faction_state.lp_minebtc_reward_index =
-            faction_state.lp_minebtc_reward_index + lp_per_share;
+        faction_state.lp_dogebtc_reward_index =
+            faction_state.lp_dogebtc_reward_index + lp_per_share;
         msg!(
             "   Faction stakers reward index: {} -> {} (+{})",
-            faction_state.lp_minebtc_reward_index - lp_per_share,
-            faction_state.lp_minebtc_reward_index,
+            faction_state.lp_dogebtc_reward_index - lp_per_share,
+            faction_state.lp_dogebtc_reward_index,
             lp_per_share
         );
 

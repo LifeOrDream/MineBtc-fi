@@ -4,19 +4,11 @@ use anchor_lang::prelude::*;
 // User management events
 // ------------------------------
 
-#[event]
-pub struct ReferralRewardsAdded {
-    pub referrer: Pubkey,
-    pub referred_user: Pubkey,
-    pub referral_rewards_account: Pubkey,
-    pub amount: u64,
-}
-
+ 
 #[event]
 pub struct ReferralRewardsClaimed {
     pub referrer: Pubkey,
     pub referral_rewards_account: Pubkey,
-    pub sol_amount: u64,
     pub minebtc_amount: u64,
     pub timestamp: i64,
 }
@@ -149,7 +141,7 @@ pub struct DogeStaked {
     /// Player's current multiplier after staking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after staking
-    pub minebtc_hashpower: u64,
+    pub dogebtc_hashpower: u64,
     /// Player's current LP hashpower after staking
     pub lp_hashpower: u64,
     /// Timestamp of the staking action
@@ -171,9 +163,9 @@ pub struct DogeUnstaked {
     /// Faction ID the doge belongs to
     pub faction_id: u8,
     /// Player's current multiplier after unstaking
-    pub doge_multiplier: u32,
+    pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after unstaking
-    pub minebtc_hashpower: u64,
+    pub dogebtc_hashpower: u64,
     /// Player's current LP hashpower after unstaking
     pub lp_hashpower: u64,
     /// Timestamp of the unstaking action
@@ -275,8 +267,6 @@ pub struct SolRewardsClaimed {
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub sol_amount: u64,
-    pub referral_fee: u64,
-    pub referrer: Option<Pubkey>,
     pub timestamp: i64,
 }
 
@@ -288,7 +278,8 @@ pub struct DbtcRewardsClaimed {
     pub faction_id: u8,
     pub minebtc_amount: u64,
     pub refining_fee: u64,
-    pub referral_fee: u64,
+    pub referral_bonus: u64, // 1% bonus to user if they have referral code
+    pub referral_reward: u64, // 3% reward to referrer
     pub referrer: Option<Pubkey>,
     pub timestamp: i64,
 }
@@ -474,7 +465,7 @@ pub struct FactionLeaderboardPositionCalculated {
     pub faction_id: u8,
     pub faction_state: Pubkey,
     pub total_hashpower: u64,
-    pub minebtc_hashpower: u64,
+    pub dogebtc_hashpower: u64,
     pub lp_hashpower: u64,
     pub rank: u8,
     pub leaderboard_count: u8,

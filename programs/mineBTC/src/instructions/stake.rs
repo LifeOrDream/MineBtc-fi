@@ -36,7 +36,9 @@ use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
-const REFERRAL_FEE_PCT: u64 = 5; // 5% referral fee
+pub const MAX_REFERRALS_PER_CODE: u16 = 15; // Maximum users per referral code
+pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
+pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // ---- STAKE DOGEBTC TOKENS :: User gets electricity and SOL rewards ------
@@ -82,6 +84,12 @@ pub fn int_stake_minebtc(
         ErrorCode::InvalidParameters
     );
 
+    // Cannot add more dogeBTC to existing position
+    require!(
+        user_position.staked_amount == 0,
+        ErrorCode::PositionAlreadyExists
+    );
+
     // Calculate actual amount after burn tax
     let burn_amount = amount * BURN_TAX_PERCENTAGE / M_HUNDRED;
     let actual_amount = amount - burn_amount;
@@ -94,23 +102,23 @@ pub fn int_stake_minebtc(
     );
     msg!(
         "📊 Current faction state - Total staked: {}, Total hashpower: {}",
-        faction_state.minebtc_staked as f64 / 1e6,
-        faction_state.total_minebtc_hashpower as f64 / 1e6
+        faction_state.dogebtc_staked as f64 / 1e6,
+        faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
 
     // Add position index to player data
-    helper::add_minebtc_position(player_data, position_index)?;
+    helper::add_dogebtc_position(player_data, position_index)?;
     msg!(
         "🔍 [stake_minebtc] Position index added: {}",
         position_index
     );
     msg!(
         "🔍 [stake_minebtc] Player data - Position indices: {:?}",
-        player_data.minebtc_position_indices
+        player_data.dogebtc_position_indices
     );
     msg!(
         "🔍 [stake_minebtc] Player data - Total positions: {}",
-        player_data.minebtc_position_indices.len()
+        player_data.dogebtc_position_indices.len()
     );
 
     // Calculate multiplier based on lockup duration
@@ -149,34 +157,11 @@ pub fn int_stake_minebtc(
 
     // -------------- UPDATE POSITION -------------- //
 
-    // If position exists, validate and update
-    if user_position.staked_amount > 0 {
-        msg!(
-            "🔄 Updating existing position - Current amount: {}",
-            user_position.staked_amount
-        );
-        require!(
-            user_position.lockup_end_timestamp > current_ts,
-            ErrorCode::PositionNotLocked
-        );
-        require!(
-            lockup_duration <= user_position.lockup_duration,
-            ErrorCode::InvalidParameters
-        );
-
-        // Update staked amount with actual_amount (post-tax)
-        user_position.staked_amount += actual_amount;
-        user_position.weighted_amount += weighted_amount;
-        msg!(
-            "   Position updated - staked: {}, weighted: {} mDoge",
-            user_position.staked_amount as f64 / 1e6,
-            user_position.weighted_amount as f64 / 1e6
-        );
-    } else {
-        msg!("🆕 Creating new position {}", position_index);
-        // Initialize new position
-        helper::init_position(
+    msg!("🆕 Creating new position {}", position_index);
+    // Initialize new position
+    helper::init_position(
             user_position,
+            0, // position_type
             player_data.faction_id,
             position_index,
             actual_amount,
@@ -185,7 +170,6 @@ pub fn int_stake_minebtc(
             current_ts,
             multiplier,
         )?;
-    }
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
@@ -193,16 +177,16 @@ pub fn int_stake_minebtc(
     let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / M_HUNDRED;
 
     // Update player data state
-    player_data.minebtc_hashpower += weighted_amount_with_doges;
-    player_data.minebtc_staked += actual_amount;
+    player_data.dogebtc_hashpower += weighted_amount_with_doges;
+    player_data.dogebtc_staked += actual_amount;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
-    faction_state.minebtc_staked += actual_amount;
-    faction_state.total_minebtc_hashpower += weighted_amount_with_doges;
+    faction_state.dogebtc_staked += actual_amount;
+    faction_state.total_dogebtc_hashpower += weighted_amount_with_doges;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
-        faction_state.minebtc_staked as f64 / 1e6,
-        faction_state.total_minebtc_hashpower as f64 / 1e6
+        faction_state.dogebtc_staked as f64 / 1e6,
+        faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
 
     // -------------- TRANSFER TOKENS -------------- //
@@ -276,7 +260,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     );
     require!(
         player_data
-            .minebtc_position_indices
+            .dogebtc_position_indices
             .contains(&position_index),
         ErrorCode::InvalidParameters
     );
@@ -316,26 +300,26 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
-    faction_state.minebtc_staked -= staked_amount;
-    faction_state.total_minebtc_hashpower -= hashpower_contribution;
+    faction_state.dogebtc_staked -= staked_amount;
+    faction_state.total_dogebtc_hashpower -= hashpower_contribution;
     msg!(
         "   New faction totals - Staked: {}, Hashpower: {}",
-        faction_state.minebtc_staked as f64 / 1e6,
-        faction_state.total_minebtc_hashpower as f64 / 1e6
+        faction_state.dogebtc_staked as f64 / 1e6,
+        faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
 
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.minebtc_hashpower -= hashpower_contribution;
-    player_data.minebtc_staked -= staked_amount;
+    player_data.dogebtc_hashpower -= hashpower_contribution;
+    player_data.dogebtc_staked -= staked_amount;
     msg!(
         "   New player totals - Hashpower: {}, Staked: {}",
-        player_data.minebtc_hashpower as f64 / 1e6,
-        player_data.minebtc_staked as f64 / 1e6
+        player_data.dogebtc_hashpower as f64 / 1e6,
+        player_data.dogebtc_staked as f64 / 1e6
     );
 
     // Remove position from user's active positions
-    helper::remove_minebtc_position(player_data, position_index)?;
+    helper::remove_dogebtc_position(player_data, position_index)?;
 
     // -------------- CHARGE EMERGENCY TAX -------------- //
 
@@ -409,11 +393,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         )?;
     }
 
-    // Reset position data
-    user_position.staked_amount = 0;
-    user_position.weighted_amount = 0;
-
-    // Store values for emergency withdrawal event before resetting position
+    // Store values for emergency withdrawal event before closing position
     let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
     let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
     let mut remaining_seconds_pct = 0u64;
@@ -427,7 +407,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         0
     };
 
-    // Emit events
+    // Emit events before closing account
     emit!(MineBtcUnstaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
@@ -456,7 +436,8 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         });
     }
 
-    msg!("✅ [unstake_minebtc] Unstake completed successfully");
+    // Account will be automatically closed by Anchor (close = authority in account struct)
+    msg!("✅ [unstake_minebtc] Unstake completed successfully. Position account will be closed.");
     Ok(())
 }
 
@@ -502,6 +483,12 @@ pub fn int_stake_lp_tokens(
         lockup_duration >= hashpower_config.min_lockup_days
             && lockup_duration <= hashpower_config.max_lockup_days,
         ErrorCode::InvalidParameters
+    );
+
+    // Cannot add more LP tokens to existing position
+    require!(
+        user_position.staked_amount == 0,
+        ErrorCode::PositionAlreadyExists
     );
 
     // Calculate actual amount after burn tax
@@ -551,34 +538,11 @@ pub fn int_stake_lp_tokens(
 
     // -------------- UPDATE POSITION -------------- //
 
-    // If position exists, validate and update
-    if user_position.staked_amount > 0 {
-        msg!(
-            "🔄 Updating existing position - Current amount: {}",
-            user_position.staked_amount as f64 / 1e6
-        );
-        require!(
-            user_position.lockup_end_timestamp > current_ts,
-            ErrorCode::PositionNotLocked
-        );
-        require!(
-            lockup_duration <= user_position.lockup_duration,
-            ErrorCode::InvalidParameters
-        );
-
-        // Update staked amount with actual_amount (post-tax)
-        user_position.staked_amount += actual_amount;
-        user_position.weighted_amount += weighted_amount;
-        msg!(
-            "   Position updated - staked: {}, weighted: {} mDoge",
-            user_position.staked_amount as f64 / 1e6,
-            user_position.weighted_amount as f64 / 1e6
-        );
-    } else {
-        msg!("🆕 Creating new position {}", position_index);
-        // Initialize new position
-        helper::init_position(
+    msg!("🆕 Creating new position {}", position_index);
+    // Initialize new position
+    helper::init_position(
             user_position,
+            1, // position_type
             player_data.faction_id,
             position_index,
             actual_amount,
@@ -587,7 +551,6 @@ pub fn int_stake_lp_tokens(
             current_ts,
             multiplier,
         )?;
-    }
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
@@ -801,11 +764,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         )?;
     }
 
-    // Reset position data
-    user_position.staked_amount = 0;
-    user_position.weighted_amount = 0;
-
-    // Store values before emitting events (to avoid borrow conflicts)
+    // Store values before emitting events and closing account
     let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
     let remaining_seconds = if is_early_withdrawal {
         user_position.lockup_end_timestamp - current_ts
@@ -823,7 +782,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         0
     };
 
-    // Emit events
+    // Emit events before closing account
     emit!(LiquidityUnstaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
@@ -852,7 +811,8 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         });
     }
 
-    msg!("✅ [unstake_minebtc] Unstake completed successfully");
+    // Account will be automatically closed by Anchor (close = authority in account struct)
+    msg!("✅ [unstake_lp_tokens] Unstake completed successfully. Position account will be closed.");
     Ok(())
 }
 
@@ -907,31 +867,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
     );
 
     // Check if user has a referrer (not system referral account)
-    let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
-
-    let (referral_fee, player_sol) = if has_referrer {
-        let referral_rewards = total_pending_sol_rewards * REFERRAL_FEE_PCT / 100; // 5% referral fee
-        msg!(
-            "     Referral fee (5%): {} lamports",
-            referral_rewards as f64 / 1e9
-        );
-
-        // Add fee to referrer's pending SOL rewards
-        if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
-            referrer_rewards.pending_sol_rewards += referral_rewards;
-            referrer_rewards.total_sol_earned += referral_rewards;
-            msg!(
-                "     Added {} SOL to referrer's rewards",
-                referral_rewards as f64 / 1e9
-            );
-        }
-        (
-            referral_rewards,
-            total_pending_sol_rewards - referral_rewards,
-        )
-    } else {
-        (0, total_pending_sol_rewards)
-    };
+    let player_sol = total_pending_sol_rewards;
 
     // Transfer SOL rewards to user (after referral fee)
     msg!(
@@ -947,12 +883,6 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
     )?;
     msg!("     ✓ SOL rewards transferred to user");
 
-    // Store referrer before resetting and emitting event
-    let referrer_pubkey = if has_referrer {
-        Some(player_data.referral_code)
-    } else {
-        None
-    };
 
     // Reset pending rewards
     player_data.pending_sol_rewards = 0;
@@ -962,15 +892,12 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         player_data: player_data_key,
         faction_id,
         sol_amount: player_sol,
-        referral_fee,
-        referrer: referrer_pubkey,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
     msg!(
-        "✅ [claim_staking_rewards] Claimed {} SOL (fee: {} to referrer). MineBTC accumulated to pending.",
+        "✅ [claim_staking_rewards] Claimed {} SOL",
         player_sol as f64 / 1e9,
-        referral_fee as f64 / 1e9
     );
     Ok(())
 }
@@ -1002,31 +929,36 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Apply refining fee (10% by default, or configured in global_config)
     let refining_fee_pct = global_config.minebtc_dist_config.refining_fee as u64;
     let refining_fee = (player_data.pending_minebtc_rewards * refining_fee_pct) / M_HUNDRED;
-    let claimable_amount = player_data.pending_minebtc_rewards - refining_fee;
+    let base_claimable_amount = player_data.pending_minebtc_rewards - refining_fee;
     msg!(
-        "Refining fee: {} minebtc. Claimable amount: {} minebtc",
+        "Refining fee: {} minebtc. Base claimable amount: {} minebtc",
         refining_fee as f64 / 1e6,
-        claimable_amount as f64 / 1e6
+        base_claimable_amount as f64 / 1e6
     );
 
-    // Apply referral fee first (5% of total)
+    // Apply referral logic: user gets +1% bonus, referrer gets 3%
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
-    let referral_fee = if has_referrer {
-        let fee = claimable_amount * REFERRAL_FEE_PCT / 100; // 5% referral fee
-        msg!("   Referral fee (5%): {} minebtc", fee);
+    let (referral_bonus, referral_reward) = if has_referrer {
+        // User gets +1% bonus on their rewards
+        let bonus = (base_claimable_amount * REFERRAL_BONUS_PCT) / 100;
+        // Referrer gets 3% of user's base claimable amount
+        let reward = (base_claimable_amount * REFERRAL_REWARD_PCT) / 100;
+        msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
+        msg!("   Referral reward to referrer (3%): {} minebtc", reward as f64 / 1e6);
 
-        // Add fee to referrer's pending minebtc rewards
+        // Add reward to referrer's pending minebtc rewards
         if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
-            referrer_rewards.pending_minebtc_rewards += fee;
-            referrer_rewards.total_minebtc_earned += fee;
-            msg!("     Added {} minebtc to referrer's rewards", fee);
+            referrer_rewards.pending_minebtc_rewards += reward;
+            referrer_rewards.total_minebtc_earned += reward;
+            msg!("     Added {} minebtc to referrer's rewards", reward as f64 / 1e6);
         }
-        fee
+        (bonus, reward)
     } else {
-        0
+        (0, 0)
     };
 
-    let claimable_by_user = claimable_amount - referral_fee;
+    // User gets base amount + referral bonus
+    let claimable_by_user = base_claimable_amount + referral_bonus;
     msg!(
         "Claimable by user: {} minebtc",
         claimable_by_user as f64 / 1e6
@@ -1036,7 +968,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     if claimable_by_user > 0 {
         msg!(
             "💱 Transferring {} MineBtc tokens to user",
-            claimable_amount as f64 / 1e6
+            claimable_by_user as f64 / 1e6
         );
 
         // Get PDA signer seeds for the minebtc vault authority
@@ -1063,10 +995,18 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         )?;
     }
 
-    // update total claimable minebtc amount
+    // Update total claimable minebtc amount
+    // Deduct user's base pending rewards + referral bonus + referral reward (all come from pool)
+    let base_pending = player_data.pending_minebtc_rewards;
+    let total_deducted = base_pending + referral_bonus + referral_reward;
     unrefined_minebtc.total_minebtc_claimable =
-        unrefined_minebtc.total_minebtc_claimable - player_data.pending_minebtc_rewards;
+        unrefined_minebtc.total_minebtc_claimable.saturating_sub(total_deducted);
     player_data.pending_minebtc_rewards = 0;
+    msg!("   Deducted {} minebtc from total claimable (base: {}, bonus: {}, referrer: {})",
+        total_deducted as f64 / 1e6,
+        base_pending as f64 / 1e6,
+        referral_bonus as f64 / 1e6,
+        referral_reward as f64 / 1e6);
 
     // Update total tokens distributed
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
@@ -1111,12 +1051,17 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         faction_id,
         minebtc_amount: claimable_by_user,
         refining_fee,
-        referral_fee,
+        referral_bonus,
+        referral_reward,
         referrer: referrer_pubkey,
         timestamp: Clock::get()?.unix_timestamp,
     });
     
-    msg!("✅ [withdraw_dbtc_rewards] Withdrew {} MineBTC to {}", claimable_by_user as f64 / 1e6, player_owner);
+    msg!("✅ [withdraw_dbtc_rewards] Withdrew {} MineBTC to {} (bonus: {}, referrer reward: {})", 
+        claimable_by_user as f64 / 1e6, 
+        player_owner,
+        referral_bonus as f64 / 1e6,
+        referral_reward as f64 / 1e6);
 
     Ok(())
 }
@@ -1131,35 +1076,18 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
 
     let referral_rewards = &mut ctx.accounts.referral_rewards;
 
-    let pending_sol = referral_rewards.pending_sol_rewards;
     let pending_minebtc = referral_rewards.pending_minebtc_rewards;
 
     require!(
-        pending_sol > 0 || pending_minebtc > 0,
+        pending_minebtc > 0,
         ErrorCode::InsufficientFunds
     );
 
     msg!(
-        "   Pending SOL: {} lamports. Pending MineBtc: {} minebtc",
-        pending_sol as f64 / 1e9,
+        "     Pending MineBtc: {} minebtc",
         pending_minebtc as f64 / 1e6
     );
-
-    // Transfer SOL if any
-    if pending_sol > 0 {
-        msg!(
-            "   Transferring {} SOL from sol_rewards_vault to referrer",
-            (pending_sol as f64 / 1e9)
-        );
-        helper::transfer_from_sol_rewards_vault(
-            &ctx.accounts.sol_rewards_vault.to_account_info(),
-            &ctx.accounts.authority.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            pending_sol,
-            ctx.bumps.sol_rewards_vault,
-        )?;
-        msg!("     ✓ Transferred {} SOL", pending_sol as f64 / 1e9);
-    }
+ 
 
     // Transfer MineBtc if any
     if pending_minebtc > 0 {
@@ -1198,13 +1126,11 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     );
 
     // Reset pending rewards
-    referral_rewards.pending_sol_rewards = 0;
     referral_rewards.pending_minebtc_rewards = 0;
 
     emit!(ReferralRewardsClaimed {
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
-        sol_amount: pending_sol,
         minebtc_amount: pending_minebtc,
         timestamp: Clock::get()?.unix_timestamp,
     });
@@ -1227,12 +1153,12 @@ pub fn int_update_minebtc_staking_rewards(
     let mut new_sol_rewards = 0;
     let mut accrued_minebtc_rewards = 0;
 
-    if player_data.minebtc_hashpower > 0 {
+    if player_data.dogebtc_hashpower > 0 {
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
         new_sol_rewards = helper::calculate_staking_rewards(
-            player_data.minebtc_hashpower,
-            faction_state.minebtc_sol_reward_index,
-            player_data.minebtc_sol_reward_debt,
+            player_data.dogebtc_hashpower,
+            faction_state.dogebtc_sol_reward_index,
+            player_data.dogebtc_sol_reward_debt,
         )?;
         player_data.pending_sol_rewards += new_sol_rewards;
         msg!(
@@ -1242,9 +1168,9 @@ pub fn int_update_minebtc_staking_rewards(
         );
 
         new_minebtc_rewards = helper::calculate_staking_rewards(
-            player_data.minebtc_hashpower,
-            faction_state.minebtc_minebtc_reward_index,
-            player_data.minebtc_minebtc_reward_debt,
+            player_data.dogebtc_hashpower,
+            faction_state.dogebtc_dogebtc_reward_index,
+            player_data.dogebtc_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards =
             helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards);
@@ -1256,8 +1182,8 @@ pub fn int_update_minebtc_staking_rewards(
     }
 
     // Update reward debt to current indexes
-    player_data.minebtc_sol_reward_debt = faction_state.minebtc_sol_reward_index;
-    player_data.minebtc_minebtc_reward_debt = faction_state.minebtc_minebtc_reward_index;
+    player_data.dogebtc_sol_reward_debt = faction_state.dogebtc_sol_reward_index;
+    player_data.dogebtc_dogebtc_reward_debt = faction_state.dogebtc_dogebtc_reward_index;
 
     Ok((
         new_sol_rewards,
@@ -1292,8 +1218,8 @@ pub fn int_update_lp_staking_rewards(
 
         new_minebtc_rewards = helper::calculate_staking_rewards(
             player_data.lp_hashpower,
-            faction_state.lp_minebtc_reward_index,
-            player_data.lp_minebtc_reward_debt,
+            faction_state.lp_dogebtc_reward_index,
+            player_data.lp_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards =
             helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards);
@@ -1305,7 +1231,7 @@ pub fn int_update_lp_staking_rewards(
 
         // Update reward debt to current indexes
         player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
-        player_data.lp_minebtc_reward_debt = faction_state.lp_minebtc_reward_index;
+        player_data.lp_dogebtc_reward_debt = faction_state.lp_dogebtc_reward_index;
     }
 
     Ok((
@@ -1349,6 +1275,7 @@ pub struct StakeMineBtc<'info> {
         payer = authority,
         space = StakedPosition::LEN,
         seeds = [
+            "0".as_ref(), // position_type
             STAKED_POSITION_SEED.as_ref(),
             authority.key().as_ref(),
             &[position_index]
@@ -1424,8 +1351,11 @@ pub struct UnstakeMineBtc<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    // Staked position
-    #[account(mut)]
+    // Staked position - will be closed and rent returned to authority
+    #[account(
+        mut,
+        close = authority
+    )]
     pub user_position: Account<'info, StakedPosition>,
 
     /// CHECK: MINE_BTC Mint - must be mut for burn instruction during emergency withdrawal
@@ -1504,6 +1434,7 @@ pub struct StakeLpTokens<'info> {
         payer = authority,
         space = StakedPosition::LEN,
         seeds = [
+            "1".as_ref(), // position_type
             LP_STAKED_POSITION_SEED.as_ref(),
             authority.key().as_ref(),
             &[position_index]
@@ -1575,8 +1506,11 @@ pub struct UnstakeLpTokens<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    // Staked position
-    #[account(mut)]
+    // Staked position - will be closed and rent returned to authority
+    #[account(
+        mut,
+        close = authority
+    )]
     pub user_position: Account<'info, StakedPosition>,
 
     #[account(
@@ -1644,14 +1578,6 @@ pub struct ClaimStakingRewards<'info> {
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
-
-    /// Optional referrer rewards account (if player has a referrer)
-    #[account(
-        mut,
-        seeds = [REFERRAL_REWARDS_SEED.as_ref(), player_data.referral_code.as_ref()],
-        bump
-    )]
-    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
 
     #[account(
         mut,

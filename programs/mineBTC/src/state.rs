@@ -611,15 +611,15 @@ pub struct FactionState {
     pub faction_id: u8,
 
     /// Total passive hashpower from stakers in this faction (cumulative)
-    pub total_minebtc_hashpower: u64,
-    pub minebtc_staked: u64,
-    pub minebtc_minebtc_reward_index: u128,
-    pub minebtc_sol_reward_index: u128,
+    pub total_dogebtc_hashpower: u64,
+    pub dogebtc_staked: u64,
+    pub dogebtc_dogebtc_reward_index: u128,
+    pub dogebtc_sol_reward_index: u128,
 
     pub total_lp_hashpower: u64,
     pub lp_staked: u64,
     pub lp_sol_reward_index: u128,
-    pub lp_minebtc_reward_index: u128,
+    pub lp_dogebtc_reward_index: u128,
 
     pub doges_staked: u64,
     /// Total doges currently being used in gameplay
@@ -642,14 +642,14 @@ impl FactionState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // faction_id
-        8 +     // total_minebtc_hashpower (u64)
-        8 +     // minebtc_staked (u64)
-        16 +    // minebtc_minebtc_reward_index (u128)
-        16 +    // minebtc_sol_reward_index (u128)
+        8 +     // total_dogebtc_hashpower (u64)
+        8 +     // dogebtc_staked (u64)
+        16 +    // dogebtc_dogebtc_reward_index (u128)
+        16 +    // dogebtc_sol_reward_index (u128)
         8 +     // total_lp_hashpower (u64)
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_index (u128)
-        16 +    // lp_minebtc_reward_index (u128)
+        16 +    // lp_dogebtc_reward_index (u128)
         8 +     // doges_staked (u64)
         8 +     // doges_playing (u64)
         8 +     // total_sol_bets (u64)
@@ -807,24 +807,24 @@ pub struct PlayerData {
     pub total_points_bet: u64,
 
     pub total_sol_won: u64,
-    pub total_minebtc_won: u64,
+    pub total_dogebtc_won: u64,
 
-    pub minebtc_hashpower: u64,
-    pub minebtc_staked: u64,
-    pub minebtc_minebtc_reward_debt: u128,
-    pub minebtc_sol_reward_debt: u128,
+    pub dogebtc_hashpower: u64,
+    pub dogebtc_staked: u64,
+    pub dogebtc_dogebtc_reward_debt: u128,
+    pub dogebtc_sol_reward_debt: u128,
 
     pub lp_hashpower: u64,
     pub lp_staked: u64,
     pub lp_sol_reward_debt: u128,
-    pub lp_minebtc_reward_debt: u128,
+    pub lp_dogebtc_reward_debt: u128,
 
     pub pending_sol_rewards: u64,
     pub unrefining_index: u128,
     pub pending_minebtc_rewards: u64,
     pub unrefined_minebtc_rewards: u64,
 
-    pub minebtc_position_indices: Vec<u8>,
+    pub dogebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
 
     /// Staked dragon doges (max 5 doges)
@@ -870,20 +870,20 @@ impl PlayerData {
         8 +     // total_sol_bet
         8 +     // total_points_bet
         8 +     // total_sol_won
-        8 +     // total_minebtc_won
-        8 +     // minebtc_hashpower (u64)
-        8 +     // minebtc_staked (u64)
-        16 +    // minebtc_minebtc_reward_debt (u128)
-        16 +    // minebtc_sol_reward_debt (u128)
+        8 +     // total_dogebtc_won
+        8 +     // dogebtc_hashpower (u64)
+        8 +     // dogebtc_staked (u64)
+        16 +    // dogebtc_dogebtc_reward_debt (u128)
+        16 +    // dogebtc_sol_reward_debt (u128)
         8 +     // lp_hashpower (u64)
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_debt (u128)
-        16 +    // lp_minebtc_reward_debt (u128)
+        16 +    // lp_dogebtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         16 +    // unrefining_index (u128)
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
-        4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
+        4 + (Self::MAX_POSITIONS * 1) + // dogebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_DOGES * 32) + // staked_doges Vec<Pubkey>
         2 +     // doge_multiplier (u16)
@@ -898,6 +898,9 @@ impl PlayerData {
 /// Individual MineBtc staking position
 #[account]
 pub struct StakedPosition {
+
+    pub position_type: u8, // 0 = minebtc, 1 = lp
+
     pub position_index: u8,
     pub faction_id: u8,
 
@@ -913,6 +916,7 @@ pub struct StakedPosition {
 
 impl StakedPosition {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +  // position_type
         1 +  // position_index
         1 +  // faction_id
         8 +  // staked_amount
@@ -932,13 +936,9 @@ pub struct ReferralRewards {
     /// Number of users who have used this user's referral code
     pub referrals_count: u16,
 
-    /// Pending SOL rewards from referrals (claimable)
-    pub pending_sol_rewards: u64,
     /// Pending MineBtc rewards from referrals (claimable)
     pub pending_minebtc_rewards: u64,
 
-    /// Total SOL earned from referrals (cumulative)
-    pub total_sol_earned: u64,
     /// Total MineBtc earned from referrals (cumulative)
     pub total_minebtc_earned: u64,
 }
@@ -948,9 +948,7 @@ impl ReferralRewards {
         32 +    // owner
         1 +     // bump
         2 +     // referrals_count
-        8 +     // pending_sol_rewards
         8 +     // pending_minebtc_rewards
-        8 +     // total_sol_earned
         8; // total_minebtc_earned
 }
 

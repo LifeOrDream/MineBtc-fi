@@ -1,8 +1,8 @@
 {
     "network": {
-        "cluster": "localnet",  
-        "rpc_url":  "http://127.0.0.1:8899",    
-        "commitment": "confirmed"
+        "cluster": "devnet",  
+        "rpc_url":  "https://api.devnet.solana.com",    
+        "commitment": "confirmed"   
     },
     "deployment": {
         "paths": {

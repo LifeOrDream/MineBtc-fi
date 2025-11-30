@@ -23,6 +23,9 @@ pub enum ErrorCode {
     #[msg("Referral pubkey cannot be the same as owner")]
     ReferralCannotBeSameAsOwner,
 
+    #[msg("Maximum referrals reached for this referral code (15 max)")]
+    MaxReferralsReached,
+
     #[msg("Invalid parameters provided for operation")]
     InvalidParameters,
 
@@ -158,4 +161,7 @@ pub enum ErrorCode {
 
     #[msg("Doge metadata not found")]
     DogeMetadataNotFound,
+
+    #[msg("Position already exists")]
+    PositionAlreadyExists,
 }

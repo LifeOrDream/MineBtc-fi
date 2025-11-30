@@ -409,13 +409,13 @@ pub fn add_faction_internal(
     msg!("   Initializing faction state data...");
     faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
-    faction_state.total_minebtc_hashpower = 0;
-    faction_state.minebtc_staked = 0;
-    faction_state.minebtc_minebtc_reward_index = 0;
-    faction_state.minebtc_sol_reward_index = 0;
+    faction_state.total_dogebtc_hashpower = 0;
+    faction_state.dogebtc_staked = 0;
+    faction_state.dogebtc_dogebtc_reward_index = 0;
+    faction_state.dogebtc_sol_reward_index = 0;
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
-    faction_state.lp_minebtc_reward_index = 0;
+    faction_state.lp_dogebtc_reward_index = 0;
     faction_state.total_sol_bets = 0;
     faction_state.total_wins = 0;
     faction_state.sol_reward_index = 0;
@@ -1472,9 +1472,7 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.owner = ctx.accounts.system_program.key();
     system_referral.bump = ctx.bumps.system_referral_rewards;
     system_referral.referrals_count = 0;
-    system_referral.pending_sol_rewards = 0;
     system_referral.pending_minebtc_rewards = 0;
-    system_referral.total_sol_earned = 0;
     system_referral.total_minebtc_earned = 0;
     msg!("     System referral account initialized");
     msg!("     Owner: {}", system_referral.owner);

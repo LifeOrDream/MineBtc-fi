@@ -25,6 +25,7 @@ use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::genescience::{calculate_mutation_result, MutationType};
 use crate::instructions::helper;
+use crate::instructions::stake;
 use crate::state::*;
 
 // ========================================================================================
@@ -72,7 +73,12 @@ pub fn internal_initialize_player(
                 referrer_rewards.owner == ref_code,
                 ErrorCode::InvalidReferralAccount
             );
+            require!(
+                referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
+                ErrorCode::MaxReferralsReached
+            );
             referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+            msg!("     Referrer's referral count: {}/{}", referrer_rewards.referrals_count, stake::MAX_REFERRALS_PER_CODE);
         }
 
         // Set player's referral code
@@ -91,20 +97,20 @@ pub fn internal_initialize_player(
     player_data.total_sol_bet = 0;
     player_data.total_points_bet = 0;
     player_data.total_sol_won = 0;
-    player_data.total_minebtc_won = 0;
+    player_data.total_dogebtc_won = 0;
 
     // Initialize MineBtc staking fields
-    player_data.minebtc_hashpower = 0;
-    player_data.minebtc_staked = 0;
-    player_data.minebtc_minebtc_reward_debt = 0;
-    player_data.minebtc_sol_reward_debt = 0;
+    player_data.dogebtc_hashpower = 0;
+    player_data.dogebtc_staked = 0;
+    player_data.dogebtc_dogebtc_reward_debt = 0;
+    player_data.dogebtc_sol_reward_debt = 0;
     msg!("     MineBtc staking fields initialized");
 
     // Initialize LP staking fields
     player_data.lp_hashpower = 0;
     player_data.lp_staked = 0;
     player_data.lp_sol_reward_debt = 0;
-    player_data.lp_minebtc_reward_debt = 0;
+    player_data.lp_dogebtc_reward_debt = 0;
     msg!("     LP staking fields initialized");
 
     // Initialize pending rewards
@@ -113,7 +119,7 @@ pub fn internal_initialize_player(
     msg!("     Pending rewards initialized");
 
     // Initialize position tracking vectors
-    player_data.minebtc_position_indices = Vec::new();
+    player_data.dogebtc_position_indices = Vec::new();
     player_data.lp_position_indices = Vec::new();
     msg!("     Position tracking initialized");
 
@@ -133,9 +139,7 @@ pub fn internal_initialize_player(
     new_player_rewards.owner = ctx.accounts.authority.key();
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
     new_player_rewards.referrals_count = 0;
-    new_player_rewards.pending_sol_rewards = 0;
     new_player_rewards.pending_minebtc_rewards = 0;
-    new_player_rewards.total_sol_earned = 0;
     new_player_rewards.total_minebtc_earned = 0;
     msg!("     Referral rewards account initialized");
 
@@ -164,7 +168,7 @@ pub fn internal_initialize_player(
 
 /// Change user's faction
 /// Requires:
-/// - No minebtc hashpower (minebtc_hashpower == 0)
+/// - No minebtc hashpower (dogebtc_hashpower == 0)
 /// - No lp hashpower (lp_hashpower == 0)
 /// - No doges staked (staked_doges.is_empty())
 /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
@@ -195,7 +199,7 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
     // Validate user has no staked positions
     msg!("   Validating user has no staked positions...");
     require!(
-        player_data.minebtc_hashpower == 0
+        player_data.dogebtc_hashpower == 0
             && player_data.lp_hashpower == 0
             && player_data.staked_doges.is_empty(),
         ErrorCode::InvalidParameters
@@ -997,7 +1001,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     msg!(
         "     Total MineBtc won: {} (+{})",
-        player_data.total_minebtc_won,
+        player_data.total_dogebtc_won,
         total_minebtc_reward
     );
 

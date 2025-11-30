@@ -549,26 +549,26 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
-    let existing_minebtc_hashpower = player_data.minebtc_hashpower;
+    let existing_dogebtc_hashpower = player_data.dogebtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
 
     // Recalculate hashpower with new multiplier (multiply first to avoid precision loss)
     // Formula: new_hashpower = (old_hashpower * new_multiplier) / old_multiplier
     if old_multiplier > 0 {
-        player_data.minebtc_hashpower = (existing_minebtc_hashpower as u128
+        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower as u128
             * new_multiplier as u128
             / old_multiplier as u128) as u64;
         player_data.lp_hashpower = (existing_lp_hashpower as u128 * new_multiplier as u128
             / old_multiplier as u128) as u64;
     } else {
         // If old_multiplier is 0 (shouldn't happen), use new_multiplier directly
-        player_data.minebtc_hashpower = (existing_minebtc_hashpower * new_multiplier) / M_HUNDRED;
+        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower * new_multiplier) / M_HUNDRED;
         player_data.lp_hashpower = (existing_lp_hashpower * new_multiplier) / M_HUNDRED;
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
-        existing_minebtc_hashpower as f64 / 1e6,
-        player_data.minebtc_hashpower as f64 / 1e6
+        existing_dogebtc_hashpower as f64 / 1e6,
+        player_data.dogebtc_hashpower as f64 / 1e6
     );
     msg!(
         "   LP hashpower: {} -> {}",
@@ -579,15 +579,15 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     // Update faction state totals
     update_faction_hashpower(
         faction_state,
-        existing_minebtc_hashpower,
-        player_data.minebtc_hashpower,
+        existing_dogebtc_hashpower,
+        player_data.dogebtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
     );
     msg!(
         "   Faction minebtc hashpower: {} -> {}",
-        faction_state.total_minebtc_hashpower as f64 / 1e6,
-        faction_state.total_minebtc_hashpower as f64 / 1e6
+        faction_state.total_dogebtc_hashpower as f64 / 1e6,
+        faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
     msg!(
         "   Faction LP hashpower: {} -> {}",
@@ -612,7 +612,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         faction_id: player_data.faction_id,
         doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.doge_multiplier,
-        minebtc_hashpower: player_data.minebtc_hashpower,
+        dogebtc_hashpower: player_data.dogebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
     });
@@ -695,11 +695,11 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
-    let existing_minebtc_hashpower = player_data.minebtc_hashpower;
+    let existing_dogebtc_hashpower = player_data.dogebtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
 
     if old_multiplier > 0 {
-        player_data.minebtc_hashpower = (existing_minebtc_hashpower as u128
+        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower as u128
             * new_multiplier as u128
             / old_multiplier as u128) as u64;
         player_data.lp_hashpower = (existing_lp_hashpower as u128 * new_multiplier as u128
@@ -707,8 +707,8 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
-        existing_minebtc_hashpower as f64 / 1e6,
-        player_data.minebtc_hashpower as f64 / 1e6
+        existing_dogebtc_hashpower as f64 / 1e6,
+        player_data.dogebtc_hashpower as f64 / 1e6
     );
     msg!(
         "   LP hashpower: {} -> {}",
@@ -719,15 +719,15 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     // Update faction state totals
     update_faction_hashpower(
         faction_state,
-        existing_minebtc_hashpower,
-        player_data.minebtc_hashpower,
+        existing_dogebtc_hashpower,
+        player_data.dogebtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
     );
     msg!(
         "   Faction minebtc hashpower: {} -> {}",
-        faction_state.total_minebtc_hashpower as f64 / 1e6,
-        faction_state.total_minebtc_hashpower as f64 / 1e6
+        faction_state.total_dogebtc_hashpower as f64 / 1e6,
+        faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
     msg!(
         "   Faction LP hashpower: {} -> {}",
@@ -774,8 +774,8 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         doge_mint: doge_mint,
         doge_metadata_account: doge_metadata.key(),
         faction_id: player_data.faction_id,
-        doge_multiplier: doge_multiplier,
-        minebtc_hashpower: player_data.minebtc_hashpower,
+        player_multiplier: player_data.doge_multiplier,
+        dogebtc_hashpower: player_data.dogebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
     });
@@ -1084,13 +1084,13 @@ fn add_tickets_to_player(
 /// Update faction state hashpower totals
 fn update_faction_hashpower(
     faction_state: &mut FactionState,
-    old_minebtc_hashpower: u64,
-    new_minebtc_hashpower: u64,
+    old_dogebtc_hashpower: u64,
+    new_dogebtc_hashpower: u64,
     old_lp_hashpower: u64,
     new_lp_hashpower: u64,
 ) {
-    faction_state.total_minebtc_hashpower =
-        faction_state.total_minebtc_hashpower - old_minebtc_hashpower + new_minebtc_hashpower;
+    faction_state.total_dogebtc_hashpower =
+        faction_state.total_dogebtc_hashpower - old_dogebtc_hashpower + new_dogebtc_hashpower;
     faction_state.total_lp_hashpower =
         faction_state.total_lp_hashpower - old_lp_hashpower + new_lp_hashpower;
 }
