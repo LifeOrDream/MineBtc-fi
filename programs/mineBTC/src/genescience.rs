@@ -217,7 +217,7 @@ pub fn calculate_mutation_result(
     // Formula: (BASE_MULTIPLIER / Current) * 10,000
     // 1.0x -> 1k/1k * 1k = 1000 (100% factor)
     // 6.9x -> 1k/6900 * 1k = 144.9 (14.5% factor)
-    let mult_factor = (BASE_MULTIPLIER * 10000) / current_multiplier;
+    let mult_factor = (BASE_MULTIPLIER as u32 * 10000) / current_multiplier as u32;
     msg!("   Multiplier factor: {:.2}%", mult_factor as f64 / 100.0);
 
     // C. Final Chance Calculation

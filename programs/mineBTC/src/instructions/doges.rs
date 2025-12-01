@@ -1103,9 +1103,12 @@ fn calc_player_multiplier(existing_multiplier: u16, doge_multiplier: u16, to_add
         }
         return new_multiplier;
     } else {
+        if (doge_multiplier > existing_multiplier) {
+            return BASE_MULTIPLIER as u16;
+        }
         let new_multiplier = existing_multiplier - doge_multiplier;
-        if new_multiplier < 100 {
-            return 100;
+        if new_multiplier < BASE_MULTIPLIER as u16 {
+            return BASE_MULTIPLIER as u16;
         }
         return new_multiplier;
     }
