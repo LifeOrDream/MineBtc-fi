@@ -23,6 +23,9 @@ pub enum ErrorCode {
     #[msg("Referral pubkey cannot be the same as owner")]
     ReferralCannotBeSameAsOwner,
 
+    #[msg("Maximum referrals reached for this referral code (15 max)")]
+    MaxReferralsReached,
+
     #[msg("Invalid parameters provided for operation")]
     InvalidParameters,
 
@@ -63,14 +66,14 @@ pub enum ErrorCode {
     #[msg("URI too long - maximum 200 characters")]
     UriTooLong,
 
-    #[msg("Egg is already incubated in a minebtc")]
-    EggAlreadyIncubated,
+    #[msg("Doge already at guard")]
+    DogeAlreadyAtGuard,
 
-    #[msg("Egg is not incubated in this minebtc")]
-    EggNotIncubated,
+    #[msg("Doge is not incubated in this minebtc")]
+    DogeNotAtGuard,
 
-    #[msg("Egg limit for this tier has been reached")]
-    EggLimitExceeded,
+    #[msg("Doge limit for this tier has been reached")]
+    DogeLimitExceeded,
 
     #[msg("NFT is not owned by the user")]
     NftNotOwnedByUser,
@@ -142,4 +145,23 @@ pub enum ErrorCode {
 
     #[msg("Position not unlocked")]
     PositionNotLocked,
+
+    // ========== BREEDING ERRORS ========== //
+    #[msg("Breeding is not currently allowed")]
+    BreedingNotAllowed,
+
+    #[msg("Maximum breed count reached for this doge")]
+    MaxBreedCountReached,
+
+    #[msg("Breeding cooldown has not ended yet")]
+    CooldownNotEnded,
+
+    #[msg("Maximum evolution stage reached")]
+    MaxEvolutionReached,
+
+    #[msg("Doge metadata not found")]
+    DogeMetadataNotFound,
+
+    #[msg("Position already exists")]
+    PositionAlreadyExists,
 }

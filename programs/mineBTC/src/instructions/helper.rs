@@ -31,10 +31,10 @@ pub fn transfer_to_sol_treasury<'info>(
     )
 }
 
-// Helper function to transfer SOL to the program's eggs_treasury PDA
-pub fn transfer_to_eggs_treasury<'info>(
+// Helper function to transfer SOL to the program's doges_treasury PDA
+pub fn transfer_to_doges_treasury<'info>(
     from: &AccountInfo<'info>,
-    eggs_treasury: &AccountInfo<'info>,
+    doges_treasury: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
@@ -43,7 +43,7 @@ pub fn transfer_to_eggs_treasury<'info>(
             system_program.to_account_info(),
             Transfer {
                 from: from.to_account_info(),
-                to: eggs_treasury.to_account_info(),
+                to: doges_treasury.to_account_info(),
             },
         ),
         amount,
@@ -246,13 +246,13 @@ pub fn calculate_multiplier(
 }
 
 /// Add position index to user's minebtc positions
-pub fn add_minebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+pub fn add_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     msg!(
-        "🔍 [add_minebtc_position] Adding position index: {}",
+        "🔍 [add_dogebtc_position] Adding position index: {}",
         position_index
     );
     msg!(
-        "🔍 [add_minebtc_position] MAX_ALLOWED_POSITIONS: {}",
+        "🔍 [add_dogebtc_position] MAX_ALLOWED_POSITIONS: {}",
         MAX_ALLOWED_POSITIONS
     );
 
@@ -261,16 +261,16 @@ pub fn add_minebtc_position(player_ac: &mut PlayerData, position_index: u8) -> R
     }
 
     // If this position index is not already active
-    if !player_ac.minebtc_position_indices.contains(&position_index) {
-        msg!("🔍 [add_minebtc_position] Position index is not already active");
+    if !player_ac.dogebtc_position_indices.contains(&position_index) {
+        msg!("🔍 [add_dogebtc_position] Position index is not already active");
         // Ensure we're not exceeding the max allowed positions
-        if player_ac.minebtc_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
-            msg!("🔍 [add_minebtc_position] Exceeding max allowed positions");
+        if player_ac.dogebtc_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            msg!("🔍 [add_dogebtc_position] Exceeding max allowed positions");
             return Err(ErrorCode::InvalidParameters.into());
         }
-        player_ac.minebtc_position_indices.push(position_index);
+        player_ac.dogebtc_position_indices.push(position_index);
         msg!(
-            "🔍 [add_minebtc_position] Position index added: {}",
+            "🔍 [add_dogebtc_position] Position index added: {}",
             position_index
         );
     }
@@ -279,14 +279,14 @@ pub fn add_minebtc_position(player_ac: &mut PlayerData, position_index: u8) -> R
 }
 
 /// Remove position index from user's minebtc positions
-pub fn remove_minebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     // Find the position index in the vector
     if let Some(pos) = player_ac
-        .minebtc_position_indices
+        .dogebtc_position_indices
         .iter()
         .position(|&x| x == position_index)
     {
-        player_ac.minebtc_position_indices.remove(pos);
+        player_ac.dogebtc_position_indices.remove(pos);
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
@@ -362,6 +362,7 @@ pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
 
 pub fn init_position(
     position: &mut StakedPosition,
+    position_type: u8,
     faction_id: u8,
     position_index: u8,
     staked_amount: u64,
@@ -371,6 +372,7 @@ pub fn init_position(
     multiplier: u16,
 ) -> Result<()> {
     position.position_index = position_index;
+    position.position_type = position_type;
 
     position.faction_id = faction_id;
     position.staked_amount = staked_amount;
@@ -405,7 +407,7 @@ pub fn add_to_total_claimable(
     unrefined_minebtc.total_minebtc_claimable += minebtc_rewards + accrued_rewards;
     player_data.unrefining_index = unrefined_minebtc.unrefining_index;
     player_data.pending_minebtc_rewards += minebtc_rewards + accrued_rewards;
-    player_data.total_minebtc_won += minebtc_rewards + accrued_rewards;
+    player_data.total_dogebtc_won += minebtc_rewards + accrued_rewards;
     player_data.unrefined_minebtc_rewards += accrued_rewards;
 
     return accrued_rewards;

@@ -8,7 +8,7 @@
 // - `update_config`: Updates global parameters like authorities and fees.
 // - `add_faction`: Registers new factions in the game.
 // - `initialize_mining`: Starts the token mining process.
-// - `initialize_egg_config`: Sets up the Egg NFT system.
+// - `initialize_doge_config`: Sets up the Doge NFT system.
 // - `initialize_tax_config`: Configures the tax and burn mechanisms.
 // - `initialize_game_state`: Prepares the game state for the first round.
 //
@@ -175,18 +175,18 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     )?;
     msg!("     ✓ 1 lamport transferred to SOL treasury");
 
-    msg!("   Transferring 1 lamport to Eggs treasury for rent-exempt status...");
+    msg!("   Transferring 1 lamport to Doge treasury for rent-exempt status...");
     anchor_lang::system_program::transfer(
         CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
             system_program::Transfer {
                 from: ctx.accounts.authority.to_account_info(),
-                to: ctx.accounts.eggs_treasury.to_account_info(),
+                to: ctx.accounts.doges_treasury.to_account_info(),
             },
         ),
         1,
     )?;
-    msg!("     ✓ 1 lamport transferred to Eggs treasury");
+    msg!("     ✓ 1 lamport transferred to Doge treasury");
 
     msg!("   Transferring 1 lamport to Autominer custody for rent-exempt status...");
     anchor_lang::system_program::transfer(
@@ -409,13 +409,13 @@ pub fn add_faction_internal(
     msg!("   Initializing faction state data...");
     faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
-    faction_state.total_minebtc_hashpower = 0;
-    faction_state.minebtc_staked = 0;
-    faction_state.minebtc_minebtc_reward_index = 0;
-    faction_state.minebtc_sol_reward_index = 0;
+    faction_state.total_dogebtc_hashpower = 0;
+    faction_state.dogebtc_staked = 0;
+    faction_state.dogebtc_dogebtc_reward_index = 0;
+    faction_state.dogebtc_sol_reward_index = 0;
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
-    faction_state.lp_minebtc_reward_index = 0;
+    faction_state.lp_dogebtc_reward_index = 0;
     faction_state.total_sol_bets = 0;
     faction_state.total_wins = 0;
     faction_state.sol_reward_index = 0;
@@ -700,6 +700,14 @@ pub fn update_fees_internal(
     Ok(())
 }
 
+/// Toggle RPG progression (mutations, XP) during gameplay
+pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
+    msg!("🎮 [update_rpg_progression] Setting rpg_progression to {}", enabled);
+    ctx.accounts.global_config.rpg_progression = enabled;
+    msg!("✅ RPG progression updated");
+    Ok(())
+}
+
 /// Update emission adjustment parameters (admin only)
 /// Allows updating price change threshold and emission increase/decrease percentages
 pub fn update_emission_params_internal(
@@ -927,63 +935,62 @@ pub fn update_hashpower_config_internal(
 }
 
 // ----------------------------------------------------------------------------------------
-// -------------- DRAGON EGG URI MANAGEMENT (ADMIN) ---------------------------------------
+// --------------  DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Initialize EggConfig account (admin only)
+/// Initialize DogeConfig account (admin only)
 ///
-/// Creates the EggConfig account that stores Egg collection configuration.
-/// This must be called before creating the Egg collection.
+/// Creates the DogeConfig account that stores Doge collection configuration.
+/// This must be called before creating the Doge collection.
 ///
 /// # Parameters
-/// - `base_price`: Base price for Eggs in SOL (lamports)
+/// - `base_price`: Base price for Doge in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
-/// - `max_supply`: Maximum number of Eggs that can be minted
-pub fn initialize_egg_config_internal(
-    ctx: Context<InitializeEggConfig>,
+/// - `max_supply`: Maximum number of Doge that can be minted
+pub fn initialize_doge_config_internal(
+    ctx: Context<InitializeDogeConfig>,
     base_price: u64,
     curve_a: u64,
     max_supply: u64,
 ) -> Result<()> {
-    msg!("🥚 [initialize_egg_config_internal] Initializing EggConfig");
+    msg!("🥚 [initialize_doge_config_internal] Initializing DogeConfig");
 
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
 
-    eggs_config.bump = ctx.bumps.eggs_config;
-    eggs_config.egg_collection = Pubkey::default(); // Will be set when collection is created
-    eggs_config.eggs_minted = 0;
-    eggs_config.base_price = base_price;
-    eggs_config.curve_a = curve_a;
-    eggs_config.max_supply = max_supply;
-    eggs_config.egg_uris = Vec::new();
-    eggs_config.ticket_tiers = Vec::new();
-    eggs_config.global_egg_power = 0;
+    doges_config.bump = ctx.bumps.doges_config;
+    doges_config.doge_collection = Pubkey::default();
+    doges_config.doges_minted = 0;
+    doges_config.base_price = base_price;
+    doges_config.curve_a = curve_a;
+    doges_config.max_supply = max_supply;
+    doges_config.ticket_tiers = Vec::new();
+    doges_config.breeding_allowed = false;
+    doges_config.breed_base_price = 0;
+    doges_config.breed_curve_a = 100;
 
-    msg!("   ✅ EggConfig initialized");
-    msg!("   Base Price: {} lamports", base_price);
-    msg!("   Curve A: {}", curve_a);
-    msg!("   Max Supply: {}", max_supply);
+    msg!("   ✅ DogeConfig initialized");
+    msg!("   Base Price: {} lamports, Max Supply: {}", base_price, max_supply);
 
     Ok(())
 }
 
-/// Create Egg collection with program PDA as authority (admin only)
+/// Create Doge collection with program PDA as authority (admin only)
 ///
-/// Creates a new Metaplex Core collection for Egg NFTs.
+/// Creates a new Metaplex Core collection for Doge NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
-/// Requires EggConfig to be initialized first.
+/// Requires DogeConfig to be initialized first.
 ///
 /// # Parameters
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
-pub fn create_egg_collection_internal(
-    ctx: Context<CreateEggCollection>,
+pub fn create_doge_collection_internal(
+    ctx: Context<CreateDogeCollection>,
     name: String,
     uri: String,
 ) -> Result<()> {
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
 
-    msg!("Creating Egg collection with program PDA as update authority");
+    msg!("Creating Doge collection with program PDA as update authority");
     msg!("Collection: {}", ctx.accounts.collection.key());
     msg!(
         "Collection Authority PDA: {}",
@@ -1008,9 +1015,9 @@ pub fn create_egg_collection_internal(
         .invoke()?;
 
     // Store the collection address in global config
-    eggs_config.egg_collection = ctx.accounts.collection.key();
+    doges_config.doge_collection = ctx.accounts.collection.key();
 
-    emit!(EggCollectionCreated {
+    emit!(DogeCollectionCreated {
         collection: ctx.accounts.collection.key(),
         update_authority: ctx.accounts.collection_authority.key(),
         name,
@@ -1020,52 +1027,10 @@ pub fn create_egg_collection_internal(
     Ok(())
 }
 
-/// Set Egg URIs for all factions (admin only)
+
+/// Initialize royalties on the Doge collection (admin only)
 ///
-/// Sets the metadata URIs for Eggs, one URI per faction.
-/// The number of URIs must match the number of supported factions.
-///
-/// # Parameters
-/// - `uris`: Vector of URIs, one per faction (must match `supported_factions.len()`)
-pub fn set_egg_uris_internal(ctx: Context<UpdateEggsConfig>, uris: Vec<String>) -> Result<()> {
-    let global_config = &ctx.accounts.global_config;
-    let eggs_config = &mut ctx.accounts.eggs_config;
-
-    require!(
-        uris.len() == global_config.supported_factions.len(),
-        ErrorCode::InvalidParameters
-    );
-
-    // Validate URIs
-    for uri in &uris {
-        require!(uri.len() <= MAX_URI_LENGTH, ErrorCode::UriTooLong);
-    }
-
-    // Set URIs for all factions
-    eggs_config.egg_uris = uris.clone();
-
-    msg!("✅ Set {} Egg URIs (one per faction)", uris.len());
-    msg!("   Factions: {}", global_config.supported_factions.len());
-
-    Ok(())
-}
-
-/// Clear all Egg URIs (admin only)
-///
-/// Removes all Egg metadata URIs from the configuration.
-/// This can be used to reset URIs before setting new ones.
-pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
-    let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.egg_uris.clear();
-
-    msg!("✅ Cleared all Egg URIs");
-
-    Ok(())
-}
-
-/// Initialize royalties on the Egg collection (admin only)
-///
-/// Sets up royalty configuration for the Egg NFT collection using Metaplex Core.
+/// Sets up royalty configuration for the Doge NFT collection using Metaplex Core.
 /// Initializes with an empty ProgramDenyList that can be updated later.
 ///
 /// # Parameters
@@ -1075,8 +1040,8 @@ pub fn clear_egg_uris_internal(ctx: Context<UpdateEggsConfig>) -> Result<()> {
 /// # Validation
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
-pub fn init_egg_royalties(
-    ctx: Context<InitEggRoyalties>,
+pub fn init_doge_royalties_internal(
+    ctx: Context<InitDogeRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
 ) -> Result<()> {
@@ -1131,7 +1096,7 @@ pub fn init_egg_royalties(
         .invoke_signed(signer_seeds)?;
 
     msg!(
-        "✅ Initialized Egg royalties: {} basis points",
+        "✅ Initialized Doge royalties: {} basis points",
         basis_points
     );
     Ok(())
@@ -1139,7 +1104,7 @@ pub fn init_egg_royalties(
 
 /// Add or update ticket tier configs (admin only)
 ///
-/// Configures ticket tier options that users can choose when minting Eggs.
+/// Configures ticket tier options that users can choose when minting Doge.
 /// Users receive free tickets based on the selected tier when they mint.
 ///
 /// # Parameters
@@ -1150,14 +1115,13 @@ pub fn init_egg_royalties(
 /// # Example
 /// - Tier 0: 0.01 SOL × 1000 tickets
 /// - Tier 1: 0.1 SOL × 10 tickets
-pub fn add_ticket_tier_config(
-    ctx: Context<UpdateEggsConfig>,
+pub fn add_ticket_tier_config_int(
+    ctx: Context<UpdateDogeConfig>,
     ticket_tier_index: u8,
     ticket_value: u64,
-    ticket_count: u16,
 ) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
-    let eggs_config = &mut ctx.accounts.eggs_config;
+    let doges_config = &mut ctx.accounts.doges_config;
     let authority = &ctx.accounts.authority;
 
     // Authority check
@@ -1167,57 +1131,70 @@ pub fn add_ticket_tier_config(
     );
 
     require!(
-        ticket_tier_index < EggConfig::MAX_TICKET_TIERS as u8,
+        ticket_tier_index < DogeConfig::MAX_TICKET_TIERS as u8,
         ErrorCode::InvalidParameters
     );
 
     let tier_index = ticket_tier_index as usize;
 
     // Ensure vector is large enough
-    while eggs_config.ticket_tiers.len() <= tier_index {
-        eggs_config.ticket_tiers.push(TicketTier {
-            ticket_value: 0,
-            ticket_count: 0,
+    while doges_config.ticket_tiers.len() <= tier_index {
+        doges_config.ticket_tiers.push(TicketTier {
+            ticket_value: 0
         });
     }
 
     // Update or add ticket tier
-    eggs_config.ticket_tiers[tier_index] = TicketTier {
+    doges_config.ticket_tiers[tier_index] = TicketTier {
         ticket_value,
-        ticket_count,
     };
 
     msg!(
-        "✅ Updated ticket tier config #{}: {} tickets of {} SOL",
+        "✅ Updated ticket tier config #{}: {} SOL",
         ticket_tier_index,
-        ticket_count,
         ticket_value as f64 / 1e9
     );
     Ok(())
 }
 
-/// Update EggConfig account (admin only)
+/// Update DogeConfig account (admin only)
 ///
-/// Updates the EggConfig account that stores Egg collection configuration.
+/// Updates the DogeConfig account that stores Doge collection configuration.
 ///
 /// # Parameters
-/// - `base_price`: Base price for Eggs in SOL (lamports)
+/// - `base_price`: Base price for Doge in SOL (lamports)
 /// - `curve_a`: Bonding curve parameter (controls price growth rate)
-pub fn update_egg_config_internal(
-    ctx: Context<UpdateEggsConfig>,
+pub fn update_doge_config_internal(
+    ctx: Context<UpdateDogeConfig>,
     base_price: u64,
     curve_a: u64,
 ) -> Result<()> {
-    msg!("🥚 [update_egg_config_internal] Updating EggConfig");
+    msg!("🥚 [update_doge_config_internal] Updating DogeConfig");
 
-    let eggs_config = &mut ctx.accounts.eggs_config;
-    eggs_config.base_price = base_price;
-    eggs_config.curve_a = curve_a;
+    let doges_config = &mut ctx.accounts.doges_config;
+    doges_config.base_price = base_price;
+    doges_config.curve_a = curve_a;
 
-    msg!("   ✅ EggConfig initialized");
+    msg!("   ✅ DogeConfig updated");
     msg!("   Base Price: {} lamports", base_price);
     msg!("   Curve A: {}", curve_a);
 
+    Ok(())
+}
+
+/// Update breeding config (admin only)
+pub fn update_breeding_config_internal(
+    ctx: Context<UpdateDogeConfig>,
+    breeding_allowed: bool,
+    breed_base_price: u64,
+    breed_curve_a: u64,
+) -> Result<()> {
+    msg!("🧬 [update_breeding_config] Updating breeding config");
+    let doges_config = &mut ctx.accounts.doges_config;
+    doges_config.breeding_allowed = breeding_allowed;
+    doges_config.breed_base_price = breed_base_price;
+    doges_config.breed_curve_a = breed_curve_a;
+    msg!("   ✅ Breeding: {}, Base: {} SOL, CurveA: {}", breeding_allowed, breed_base_price as f64 / 1e9, breed_curve_a);
     Ok(())
 }
 
@@ -1495,9 +1472,7 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.owner = ctx.accounts.system_program.key();
     system_referral.bump = ctx.bumps.system_referral_rewards;
     system_referral.referrals_count = 0;
-    system_referral.pending_sol_rewards = 0;
     system_referral.pending_minebtc_rewards = 0;
-    system_referral.total_sol_earned = 0;
     system_referral.total_minebtc_earned = 0;
     msg!("     System referral account initialized");
     msg!("     Owner: {}", system_referral.owner);
@@ -1578,16 +1553,16 @@ pub struct Initialize<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
-    /// CHECK: 0-byte PDA that only stores lamports (System Account) for egg minting fees
+    /// CHECK: 0-byte PDA that only stores lamports (System Account) for doge minting fees
     #[account(
         init,
         payer = authority,
         space = 0,
-        seeds = [EGGS_TREASURY_SEED.as_ref()],
+        seeds = [DOGES_TREASURY_SEED.as_ref()],
         bump,
         owner = system_program.key()  // System-owned account for native SOL
     )]
-    pub eggs_treasury: UncheckedAccount<'info>,
+    pub doges_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
     #[account(
@@ -1845,15 +1820,15 @@ pub struct UpdateHashpowerConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitializeEggConfig<'info> {
+pub struct InitializeDogeConfig<'info> {
     #[account(
         init,
         payer = authority,
-        space = EggConfig::LEN,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
+        space = DogeConfig::LEN,
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1869,7 +1844,7 @@ pub struct InitializeEggConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CreateEggCollection<'info> {
+pub struct CreateDogeCollection<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -1883,12 +1858,12 @@ pub struct CreateEggCollection<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED],
-        bump = eggs_config.bump,
+        seeds = [DOGE_CONFIG_SEED],
+        bump = doges_config.bump,
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
-    /// CHECK: Egg collection account (will be created by MPL Core)
+    /// CHECK: Doge collection account (will be created by MPL Core)
     #[account(mut, signer)]
     pub collection: UncheckedAccount<'info>,
 
@@ -1907,7 +1882,7 @@ pub struct CreateEggCollection<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateEggsConfig<'info> {
+pub struct UpdateDogeConfig<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1917,10 +1892,10 @@ pub struct UpdateEggsConfig<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
-        bump = eggs_config.bump,
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
+        bump = doges_config.bump,
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1929,7 +1904,7 @@ pub struct UpdateEggsConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitEggRoyalties<'info> {
+pub struct InitDogeRoyalties<'info> {
     #[account(mut)]
     pub authority: Signer<'info>, // ext authority EOA
 
@@ -1943,15 +1918,15 @@ pub struct InitEggRoyalties<'info> {
 
     #[account(
         mut,
-        seeds = [EGG_CONFIG_SEED.as_ref()],
-        bump = eggs_config.bump,
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
+        bump = doges_config.bump,
     )]
-    pub eggs_config: Account<'info, EggConfig>,
+    pub doges_config: Account<'info, DogeConfig>,
 
-    /// CHECK: Egg collection (already created via MPL Core)
+    /// CHECK: Doge collection (already created via MPL Core)
     #[account(
         mut,
-        address = eggs_config.egg_collection @ ErrorCode::InvalidAccount
+        address = doges_config.doge_collection @ ErrorCode::InvalidAccount
     )]
     pub collection: UncheckedAccount<'info>,
 
@@ -2070,7 +2045,7 @@ pub struct InitializeSystemAccounts<'info> {
 /// Initializes:
 /// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
 /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
-pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+pub fn int_initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
     msg!("🔧 [initialize_custodian_accounts] Initializing custodian token accounts");
 
     // Verify MINEBTC custodian

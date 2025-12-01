@@ -10,7 +10,7 @@
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
 // - `MineBtcMining`: Manages the mining emission and distribution logic.
-// - `EggConfig`: Configuration for the Egg NFT system.
+// - `DogeConfig`: Configuration for the Doge NFT system.
 // - `TaxConfig`: Configuration for the tax and burn system.
 //
 
@@ -19,7 +19,9 @@ use anchor_lang::prelude::*;
 pub const MINEBTC_DECIMALS: u8 = 6;
 pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
-pub const PRICE_CHANGE_THRESHOLD: u64 = 3; // 3% threshold for rate changes
+
+pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
+pub const MAX_BASE_CHANCE: u64 = 5000; // 50%
 
 /// ------------ CONSTANTS ------------
 
@@ -58,7 +60,7 @@ pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
-pub const EGGS_TREASURY_SEED: &[u8] = b"eggs-treasury";
+pub const DOGES_TREASURY_SEED: &[u8] = b"doges-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
@@ -67,9 +69,9 @@ pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 
-// PDAs for Egg NFT system
-pub const DRAGON_EGG_METADATA_SEED: &[u8] = b"dragon-egg-metadata";
-pub const DRAGON_EGG_CUSTODY_SEED: &[u8] = b"dragon-egg-custody"; // PDA that holds locked NFTs
+// PDAs for Doge NFT system
+pub const DOGE_METADATA_SEED: &[u8] = b"doge-metadata";
+pub const DOGE_CUSTODY_SEED: &[u8] = b"doge-custody"; // PDA that holds locked NFTs
 
 pub const BUYBACKS_SEED: &[u8] = b"buybacks";
 pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
@@ -96,7 +98,7 @@ pub const SOL_PRIZE_POT_VAULT_SEED: &[u8] = b"sol-prize-pot";
 pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
-pub const EGG_CONFIG_SEED: &[u8] = b"egg-config";
+pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -105,11 +107,11 @@ pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
 pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
-// ========== DRAGON EGG NFT CONSTANTS ========== //
-pub const MAX_STAKED_EGGS: usize = 5; // Maximum number of eggs a user can stake
+// ==========  DOGE NFT CONSTANTS ========== //
+pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of doges a user can stake
 pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x)
 
-pub const MAX_DRAGON_EGG_URIS: usize = 20; // Max URIs in GlobalConfig
+pub const MAX_DOGE_URIS: usize = 20; // Max URIs in GlobalConfig
 pub const MAX_URI_LENGTH: usize = 200;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
@@ -124,7 +126,7 @@ pub struct GlobalConfig {
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
-    /// Direct recipient for egg mints + dev earnings revenue
+    /// Direct recipient for doge mints + dev earnings revenue
     pub fee_recipient: Pubkey,
 
     /// PDA account that holds collected SOL fees
@@ -149,6 +151,9 @@ pub struct GlobalConfig {
     /// Minimum time interval between price snapshots (in seconds)
     /// Default: 1800 seconds (30 minutes)
     pub snapshot_interval: u64,
+
+    /// Enable RPG progression (mutations, XP, etc) during gameplay
+    pub rpg_progression: bool,
 
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
@@ -190,8 +195,6 @@ impl MineBtcDistConfig {
 }
 
 impl GlobalConfig {
-    // discriminator + total_players + ext_authority + fee_recipient + pda_sol_treasury + sol_fee_config + minebtc_dist_config + raydium_pool_state + change_faction_fee + snapshot_interval + bump + treasury_bump + supported_factions (vec)
-    // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_FACTION_NAME_LENGTH bytes)
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         8 +                     // total_players
         32 +                    // ext_authority
@@ -202,6 +205,7 @@ impl GlobalConfig {
         32 +                    // raydium_pool_state
         8 +                     // change_faction_fee
         8 +                     // snapshot_interval
+        1 +                     // rpg_progression
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
@@ -299,6 +303,10 @@ pub struct MineBtcMining {
     pub emission_increase_pct: u64,
     /// Emission decrease percentage when price goes down (e.g., 3 = 3% decrease)
     pub emission_decrease_pct: u64,
+
+    // ===== LP OPERATION STATE =====
+    /// Flag indicating LP operation is pending after rate update
+    pub lp_operation_pending: bool,
 }
 
 impl MineBtcMining {
@@ -323,7 +331,8 @@ impl MineBtcMining {
         + 8                     // lp_token_price_in_sol
         + 8                     // price_change_threshold
         + 8                     // emission_increase_pct
-        + 8; // emission_decrease_pct
+        + 8                     // emission_decrease_pct
+        + 1; // lp_operation_pending
 }
 
 /// Buybacks account that accumulates SOL for token buybacks
@@ -377,37 +386,31 @@ impl HashpowerConfig {
 
 // ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
 
-/// Ticket tier option for egg minting
-/// When users mint eggs, they choose a ticket tier which gives them free tickets
+/// Ticket tier option for doge minting
+/// When users mint doges, they choose a ticket tier which gives them free tickets
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct TicketTier {
     /// Ticket value in lamports (e.g., 10_000_000 = 0.01 SOL)
     pub ticket_value: u64,
-    /// Number of tickets given with this tier (e.g., 200 tickets)
-    pub ticket_count: u16,
 }
 
 impl TicketTier {
-    pub const LEN: usize = 8 + 2; // ticket_value + ticket_count
+    pub const LEN: usize = 8 + 2; // ticket_value 
 }
 
-/// Global egg configuration
+/// Global doge configuration
 #[account]
-pub struct EggConfig {
+pub struct DogeConfig {
     pub bump: u8,
 
-    /// Egg collection address (Metaplex Core)
-    pub egg_collection: Pubkey,
+    /// Doge collection address (Metaplex Core)
+    pub doge_collection: Pubkey,
 
-    /// Egg URIs organized by faction
-    /// Structure: [faction_id] = URI
-    pub egg_uris: Vec<String>, // [faction_index] = URI
-
-    /// Maximum supply of eggs that can be minted
+    /// Maximum supply of doges that can be minted
     pub max_supply: u64,
 
-    /// Number of eggs minted so far
-    pub eggs_minted: u64,
+    /// Number of doges minted so far
+    pub doges_minted: u64,
 
     /// Base price for bonding curve (in lamports)
     pub base_price: u64,
@@ -415,29 +418,32 @@ pub struct EggConfig {
     /// Curve steepness parameter (controls price growth rate, typically >= 100)
     pub curve_a: u64,
 
-    /// Global total power across all Eggs (sum of all egg powers)
-    pub global_egg_power: u64,
-
     /// Available ticket tier configs users can choose when minting (max 4 options)
     /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
     pub ticket_tiers: Vec<TicketTier>,
+    
+    /// Whether breeding is currently allowed
+    pub breeding_allowed: bool,
+    /// Base price for breeding cost bonding curve (in lamports)
+    pub breed_base_price: u64,
+    /// Curve steepness for breeding cost
+    pub breed_curve_a: u64,
 }
 
-impl EggConfig {
-    pub const MAX_TICKET_TIERS: usize = 3; // Only 3 ticket options now
+impl DogeConfig {
+    pub const MAX_TICKET_TIERS: usize = 3;
 
-    // Vec<String> = 4 bytes (vec length) + MAX_FACTIONS * (4 bytes string length + MAX_URI_LENGTH bytes)
-    // Vec<TicketTier> = 4 bytes (vec length) + MAX_TICKET_TIERS * TicketTier::LEN
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        32 +    //egg_collection
-        4 + (MAX_FACTIONS * (4 + MAX_URI_LENGTH)) + //egg_uris Vec<String> (max 12 factions)
+        32 +    // doge_collection
         8 +     // max_supply
-        8 +     // eggs_minted
+        8 +     // doges_minted
         8 +     // base_price
         8 +     // curve_a
-        8 +     // global_egg_power
-        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers Vec<TicketTier>
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN) + // ticket_tiers
+        1 +     // breeding_allowed
+        8 +     // breed_base_price
+        8;      // breed_curve_a
 }
 
 // ========================================================================================
@@ -454,6 +460,8 @@ pub struct TaxConfig {
     pub nft_floor_sweep_pct: u8,
     /// Percentage of withheld tax that goes to faction treasury
     pub faction_treasury_pct: u8,
+    /// Percentage of withheld tax that gets burned (remainder goes back to vault)
+    pub burn_pct: u8,
 
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
@@ -497,11 +505,11 @@ pub struct TaxConfig {
 impl TaxConfig {
     pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
 
-    // Note: burn_tax_pct is calculated as 100 - nft_floor_sweep_pct - faction_treasury_pct, not stored
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // nft_floor_sweep_pct
         1 +     // faction_treasury_pct
+        1 +     // burn_pct
         8 +     // total_burnt
         1 +     // round_active (bool)
         8 +     // start_timestamp (i64)
@@ -603,17 +611,19 @@ pub struct FactionState {
     pub faction_id: u8,
 
     /// Total passive hashpower from stakers in this faction (cumulative)
-    pub total_minebtc_hashpower: u64,
-    pub minebtc_staked: u64,
-    pub minebtc_minebtc_reward_index: u128,
-    pub minebtc_sol_reward_index: u128,
+    pub total_dogebtc_hashpower: u64,
+    pub dogebtc_staked: u64,
+    pub dogebtc_dogebtc_reward_index: u128,
+    pub dogebtc_sol_reward_index: u128,
 
     pub total_lp_hashpower: u64,
     pub lp_staked: u64,
     pub lp_sol_reward_index: u128,
-    pub lp_minebtc_reward_index: u128,
+    pub lp_dogebtc_reward_index: u128,
 
-    pub eggs_staked: u64,
+    pub doges_staked: u64,
+    /// Total doges currently being used in gameplay
+    pub doges_playing: u64,
 
     /// Total SOL bet on this faction across all rounds (cumulative)
     pub total_sol_bets: u64,
@@ -632,15 +642,16 @@ impl FactionState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // faction_id
-        8 +     // total_minebtc_hashpower (u64)
-        8 +     // minebtc_staked (u64)
-        16 +    // minebtc_minebtc_reward_index (u128)
-        16 +    // minebtc_sol_reward_index (u128)
+        8 +     // total_dogebtc_hashpower (u64)
+        8 +     // dogebtc_staked (u64)
+        16 +    // dogebtc_dogebtc_reward_index (u128)
+        16 +    // dogebtc_sol_reward_index (u128)
         8 +     // total_lp_hashpower (u64)
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_index (u128)
-        16 +    // lp_minebtc_reward_index (u128)
-        8 +     // eggs_staked (u64)
+        16 +    // lp_dogebtc_reward_index (u128)
+        8 +     // doges_staked (u64)
+        8 +     // doges_playing (u64)
         8 +     // total_sol_bets (u64)
         8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
@@ -678,6 +689,8 @@ pub struct GameSession {
     pub total_sol_bets: u64,
     /// Total points bets placed in this round
     pub total_points_bets: u64,
+    /// Total weighted points bets (for dogeBTC distribution)
+    pub total_wgtd_points_bets: u64,
     /// Total stakers fee paid in this round
     pub stakers_fee: u64,
 
@@ -691,6 +704,8 @@ pub struct GameSession {
     pub user_block_indexes: Vec<u64>,
     pub sol_bets_indexes: Vec<u64>,
     pub points_bets_indexes: Vec<u64>,
+    /// Weighted points per block (points * active_multiplier / 100 for SOL bets, else points) - for dogeBTC rewards
+    pub wgtd_points_bets_indexes: Vec<u64>,
 
     /// The winning block and faction ID for this round (0-indexed: 0-23), and the 2nd block with same faction ID
     pub winning_block: u8,
@@ -719,6 +734,12 @@ pub struct GameSession {
     pub motherlode_hit: bool,
     /// Motherlode pot size when hit (if applicable)
     pub motherlode_pot_size_on_hit: u64,
+
+    // --- Instant Mutation tracking per faction ---
+    /// Highest SOL bet placed per faction this round (for mutation probability calc)
+    pub highest_sol_bet_per_faction: [u64; NUM_FACTIONS],
+    /// Whether mutation has occurred for each faction this round (1 per faction per round)
+    pub mutation_occurred_per_faction: [bool; NUM_FACTIONS],
 }
 
 impl GameSession {
@@ -733,10 +754,12 @@ impl GameSession {
         8 +     // round_end_timestamp (i64)
         8 +     // total_sol_bets
         8 +     // total_points_bets
+        8 +     // total_wgtd_points_bets
         8 +     // stakers_fee
-        4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64> (24-sized array)
-        4 + (NUM_BLOCKS * 8) + // sol_bets_indexes Vec<u64> (24-sized array)
-        4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64> (24-sized array)
+        4 + (NUM_BLOCKS * 8) + // user_block_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // sol_bets_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // points_bets_indexes Vec<u64>
+        4 + (NUM_BLOCKS * 8) + // wgtd_points_bets_indexes Vec<u64>
         (NUM_BLOCKS * 1) + // block_assignments [u8; NUM_BLOCKS]
         1 +     // winning_block (u8)
         1 +     // winning_faction_id (u8)
@@ -749,7 +772,9 @@ impl GameSession {
         16 +    // minebtc_rewards_index (u128)
         16 +    // same_faction_minebtc_rewards_index (u128)
         1 +     // motherlode_hit (bool)
-        8; // motherlode_pot_size_on_hit
+        8 +     // motherlode_pot_size_on_hit
+        (NUM_FACTIONS * 8) + // highest_sol_bet_per_faction [u64; 12]
+        (NUM_FACTIONS * 1); // mutation_occurred_per_faction [bool; 12]
 }
 
 // ========================================================================================
@@ -775,13 +800,6 @@ pub struct PlayerData {
     /// The faction this player is assigned to
     pub faction_id: u8,
 
-    /// List of round IDs where the player has placed bets
-    /// Used to track rounds with unclaimed rewards or unclosed sessions
-    pub bets_rounds: Vec<u64>,
-    /// Corresponding SOL bet amounts for each round in bets_rounds
-    /// Index matches bets_rounds (e.g., bets_points[0] is the bet for bets_rounds[0])
-    pub bets_points: Vec<u64>,
-
     /// Cumulative statistics
     pub rounds_played: u64,
 
@@ -789,36 +807,32 @@ pub struct PlayerData {
     pub total_points_bet: u64,
 
     pub total_sol_won: u64,
-    pub total_minebtc_won: u64,
+    pub total_dogebtc_won: u64,
 
-    pub minebtc_hashpower: u64,
-    pub minebtc_staked: u64,
-    pub minebtc_minebtc_reward_debt: u128,
-    pub minebtc_sol_reward_debt: u128,
+    pub dogebtc_hashpower: u64,
+    pub dogebtc_staked: u64,
+    pub dogebtc_dogebtc_reward_debt: u128,
+    pub dogebtc_sol_reward_debt: u128,
 
     pub lp_hashpower: u64,
     pub lp_staked: u64,
     pub lp_sol_reward_debt: u128,
-    pub lp_minebtc_reward_debt: u128,
+    pub lp_dogebtc_reward_debt: u128,
 
     pub pending_sol_rewards: u64,
     pub unrefining_index: u128,
     pub pending_minebtc_rewards: u64,
     pub unrefined_minebtc_rewards: u64,
 
-    /// Claimable power points (distributed to staked eggs via claim_power)
-    /// Power is accumulated when claiming minebtc rewards
-    pub claimable_power: u64,
-
-    pub minebtc_position_indices: Vec<u8>,
+    pub dogebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
 
-    /// Staked dragon eggs (max 5 eggs)
-    /// Stores the mint addresses of staked eggs
-    pub staked_eggs: Vec<Pubkey>,
-    /// Current egg multiplier (100 = 1x, 150 = 1.5x, etc.)
-    /// Calculated based on number of staked eggs
-    pub egg_multiplier: u16,
+    /// Staked dragon doges (max 5 doges)
+    /// Stores the mint addresses of staked doges
+    pub staked_doges: Vec<Pubkey>,
+    /// Current doge multiplier (100 = 1x, 150 = 1.5x, etc.)
+    /// Calculated based on number of staked doges
+    pub doge_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
     /// Example: [10000000, 100000000, ...] where 1 point = 1 SOL lamport
@@ -827,6 +841,15 @@ pub struct PlayerData {
     /// Free tickets remaining: count of each ticket type remaining
     /// Index matches free_tickets (e.g., free_tickets_remaining[0] is count for free_tickets[0])
     pub free_tickets_remaining: Vec<u64>,
+
+    /// Doge currently being used in gameplay (Pubkey::default() if none)
+    pub gameplay_doge: Pubkey,
+    /// Active gameplay multiplier (100 = 1x, set from gameplay doge's multiplier, reset to 100 on withdraw)
+    pub active_multiplier: u32,
+    /// Cached DNA of gameplay doge (for mutation calculations without loading DogeMetadata)
+    pub gameplay_doge_dna: [u8; 32],
+    /// Cached XP of gameplay doge (updated during gameplay, synced to DogeMetadata on withdraw)
+    pub gameplay_doge_xp: u32,
 }
 
 impl PlayerData {
@@ -843,37 +866,41 @@ impl PlayerData {
         32 +    // owner
         32 +    // referral_code
         1 +     // faction_id
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_rounds Vec<u64>
-        4 + (Self::MAX_ACTIVE_ROUNDS * 8) + // bets_points Vec<u64>
         8 +     // rounds_played
         8 +     // total_sol_bet
         8 +     // total_points_bet
         8 +     // total_sol_won
-        8 +     // total_minebtc_won
-        8 +     // minebtc_hashpower (u64)
-        8 +     // minebtc_staked (u64)
-        16 +    // minebtc_minebtc_reward_debt (u128)
-        16 +    // minebtc_sol_reward_debt (u128)
+        8 +     // total_dogebtc_won
+        8 +     // dogebtc_hashpower (u64)
+        8 +     // dogebtc_staked (u64)
+        16 +    // dogebtc_dogebtc_reward_debt (u128)
+        16 +    // dogebtc_sol_reward_debt (u128)
         8 +     // lp_hashpower (u64)
         8 +     // lp_staked (u64)
         16 +    // lp_sol_reward_debt (u128)
-        16 +    // lp_minebtc_reward_debt (u128)
+        16 +    // lp_dogebtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         16 +    // unrefining_index (u128)
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
-        8 +     // claimable_power (u64)
-        4 + (Self::MAX_POSITIONS * 1) + // minebtc_position_indices Vec<u8>
+        4 + (Self::MAX_POSITIONS * 1) + // dogebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
-        4 + (MAX_STAKED_EGGS * 32) + // staked_eggs Vec<Pubkey>
-        2 +     // egg_multiplier (u16)
+        4 + (MAX_STAKED_DOGES * 32) + // staked_doges Vec<Pubkey>
+        2 +     // doge_multiplier (u16)
         4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets Vec<u64>
-        4 + (Self::MAX_TICKET_TYPES * 8); // free_tickets_remaining Vec<u64>
+        4 + (Self::MAX_TICKET_TYPES * 8) + // free_tickets_remaining Vec<u64>
+        32 +    // gameplay_doge
+        4 +     // active_multiplier (u32)
+        32 +    // gameplay_doge_dna [u8; 32]
+        4; // gameplay_doge_xp (u32)
 }
 
 /// Individual MineBtc staking position
 #[account]
 pub struct StakedPosition {
+
+    pub position_type: u8, // 0 = minebtc, 1 = lp
+
     pub position_index: u8,
     pub faction_id: u8,
 
@@ -889,6 +916,7 @@ pub struct StakedPosition {
 
 impl StakedPosition {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +  // position_type
         1 +  // position_index
         1 +  // faction_id
         8 +  // staked_amount
@@ -908,13 +936,9 @@ pub struct ReferralRewards {
     /// Number of users who have used this user's referral code
     pub referrals_count: u16,
 
-    /// Pending SOL rewards from referrals (claimable)
-    pub pending_sol_rewards: u64,
     /// Pending MineBtc rewards from referrals (claimable)
     pub pending_minebtc_rewards: u64,
 
-    /// Total SOL earned from referrals (cumulative)
-    pub total_sol_earned: u64,
     /// Total MineBtc earned from referrals (cumulative)
     pub total_minebtc_earned: u64,
 }
@@ -924,62 +948,68 @@ impl ReferralRewards {
         32 +    // owner
         1 +     // bump
         2 +     // referrals_count
-        8 +     // pending_sol_rewards
         8 +     // pending_minebtc_rewards
-        8 +     // total_sol_earned
         8; // total_minebtc_earned
 }
 
 // ========================================================================================
-// =============================== DRAGON EGG NFT METADATA ===============================
+// ===============================  DOGE NFT METADATA ===============================
 // ========================================================================================
 
-/// Egg NFT metadata (stored in minebtc program for simplicity)
+/// Doge NFT metadata (stored in minebtc program for simplicity)
 #[account]
-pub struct EggMetadata {
+pub struct DogeMetadata {
     /// The NFT mint address (Metaplex Core asset)
     pub mint: Pubkey,
-
+    /// Parent 1 mint (Pubkey::default() for genesis doges)
+    pub mom: Pubkey,
+    /// Parent 2 mint (Pubkey::default() for genesis doges)
+    pub dad: Pubkey,
+    /// Number of times this doge has bred (max 5)
+    pub breed_count: u8,
+    /// Unix timestamp when cooldown ends (can breed again after this)
+    pub cooldown_end: i64,
     /// Creation timestamp
     pub created_at: i64,
-
-    /// Faction ID (country) that the egg belongs to (matches minebtc faction)
+    /// Faction ID (country) that the doge belongs to (matches minebtc faction)
     pub faction_id: u8,
-
-    /// Multiplier for this egg based on pricing tier (basis points, e.g., 150 = 1.5x, 200 = 2.0x, 300 = 3.0x)
+    /// Multiplier for this doge (basis points, e.g., 150 = 1.5x)
     pub multiplier: u32,
-
-    /// Current power level
-    pub power: u32,
-
+    /// dogeBTC accumulated which can be claimed by sending this doge to heaven
+    pub accumulated_val: u64,
     /// DNA data (32 bytes for breeding/evolution)
     pub dna: [u8; 32],
-
-    /// The Player who is incubating this egg.
-    /// If NOT incubated, this is set to Pubkey::default() (111111...)
-    /// We use Pubkey instead of Option<Pubkey> to keep account size FIXED.
+    /// The Player who is incubating this doge. Pubkey::default() if not incubated.
     pub incubated_player_data: Pubkey,
-
     /// Last power update timestamp
     pub last_update_ts: i64,
-
+    /// Experience points, reset to 0 on evolution
+    pub xp: u32,
     /// PDA bump
     pub bump: u8,
 }
 
-impl EggMetadata {
-    // discriminator + mint + created_at + faction + mult + power + dna + player + update + bump
-    // 8 + 32 + 8 + 1 + 4 + 4 + 32 + 32 + 8 + 1 = 130 bytes
+impl DogeMetadata {
+    pub const MAX_BREED_COUNT: u8 = 5;
+    
+    /// Cooldown times in seconds: [0h, 24h, 72h, 120h, 336h]
+    pub const COOLDOWNS: [i64; 5] = [0, 86400, 259200, 432000, 1209600];
+    
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
-        8 +     // created_at (i64)
+        32 +    // mom
+        32 +    // dad
+        1 +     // breed_count
+        8 +     // cooldown_end
+        8 +     // created_at
         1 +     // faction_id
-        4 +     // multiplier (u32)
-        4 +     // power (u32)
-        32 +    // dna [u8; 32]
-        32 +    // incubated_player_data Pubkey (always 32 bytes, Pubkey::default() if not incubated)
-        8 +     // last_update_ts (i64)
-        1; // bump
+        4 +     // multiplier
+        8 +     // accumulated_val
+        32 +    // dna
+        32 +    // incubated_player_data
+        8 +     // last_update_ts
+        4 +     // xp
+        1;      // bump
 }
 
 // ========================================================================================
@@ -1042,31 +1072,42 @@ pub struct UserGameBet {
     pub sol_bets: Vec<u64>,
     /// Points bets for each block (index matches block_ids)
     pub points_bets: Vec<u64>,
+    /// Weighted points for each block (points * multiplier / 100 for SOL, else points) - for dogeBTC
+    pub wgtd_points_bets: Vec<u64>,
 
     /// Total SOL amount bet across all blocks (after protocol fee deduction)
     pub total_sol_bet: u64,
     /// Total points amount bet across all blocks
     pub total_points_bet: u64,
+    /// Total weighted points (for dogeBTC rewards)
+    pub total_wgtd_points_bet: u64,
 
     /// Total fees paid across all bets
     pub total_fee: u64,
     pub bump: u8,
+
+    // --- Instant Mutation (applied during claim_rewards) ---
+    /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
+    pub mutation_type: u8,
 }
 
 impl UserGameBet {
     // Maximum number of blocks a user can bet on in a single round
-    pub const MAX_BLOCKS_PER_BET: usize = 24; // One per block maximum
+    pub const MAX_BLOCKS_PER_BET: usize = 24;
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        4 + (Self::MAX_BLOCKS_PER_BET * 1) + // block_ids Vec<u8> (4 bytes length + MAX_BLOCKS_PER_BET * 1 byte)
-        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // sol_bets Vec<u64> (4 bytes length + MAX_BLOCKS_PER_BET * 8 bytes)
-        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // points_bets Vec<u64> (4 bytes length + MAX_BLOCKS_PER_BET * 8 bytes)
+        4 + (Self::MAX_BLOCKS_PER_BET * 1) + // block_ids Vec<u8>
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // sol_bets Vec<u64>
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // points_bets Vec<u64>
+        4 + (Self::MAX_BLOCKS_PER_BET * 8) + // wgtd_points_bets Vec<u64>
         8 +     // total_sol_bet
         8 +     // total_points_bet
+        8 +     // total_wgtd_points_bet
         8 +     // total_fee
-        1; // bump
+        1 +     // bump
+        1;      // mutation_type
 }
 
 /// Autominer configuration for blocks

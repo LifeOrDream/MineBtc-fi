@@ -39,7 +39,7 @@ use crate::state::*;
 /// 3. Initializes GameSession for the new round
 ///
 /// The commit hash should be hash(secret_seed) where secret_seed will be revealed in end_round.
-pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
+pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
     msg!("🎮 [start_round] Starting new round");
     msg!("   Authority: {}", ctx.accounts.authority.key());
 
@@ -110,6 +110,12 @@ pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) ->
     game_session.user_block_indexes = vec![0u64; NUM_BLOCKS];
     game_session.sol_bets_indexes = vec![0u64; NUM_BLOCKS];
     game_session.points_bets_indexes = vec![0u64; NUM_BLOCKS];
+    game_session.wgtd_points_bets_indexes = vec![0u64; NUM_BLOCKS];
+
+    // Initialize instant mutation tracking per faction
+    game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
+    game_session.mutation_occurred_per_faction = [false; NUM_FACTIONS];
+
     msg!(
         "   Initialized block tracking arrays (24 blocks). Round starts at: {} and ends at: {}",
         game_session.round_start_timestamp,
@@ -236,7 +242,7 @@ pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) ->
 /// 3. Selects winning block
 /// 4. Calculates winners and updates payout data
 /// 5. Commits hash for next round
-pub fn end_round(
+pub fn int_end_round(
     ctx: Context<EndRound>,
     revealed_seed: [u8; 32], // The secret seed that was hashed to create commit_hash
 ) -> Result<()> {
@@ -473,24 +479,15 @@ pub fn end_round(
         total_distributed_this_round
     );
 
-    // // Deserialize winning faction state
-    // msg!("   Loading winning faction state (faction {})...", winning_faction_id);
-    // let mut faction_state_data = ctx.accounts.winning_faction_state.try_borrow_mut_data()?;
-    // let mut faction_state: FactionState = AccountDeserialize::try_deserialize(&mut &faction_state_data[..])?;
+ 
 
-    // // Validate faction_id matches winning faction
-    // require!(
-    //     faction_state.faction_id == winning_faction_id,
-    //     ErrorCode::InvalidFactionId
-    // );
-    // msg!("   ✓ Faction state matches winning faction");
-
-    // Calculate SOL rewards index --> basically rewards claimable by a user = his points * sol_rewards_index / INDEX_PRECISION;
+    // Calculate SOL rewards index --> rewards = user's points * sol_rewards_index / INDEX_PRECISION
     let winning_block_pts = game_session.points_bets_indexes[winning_block as usize];
-    msg!("   Winning block points: {}", winning_block_pts);
+    let winning_block_wgtd_pts = game_session.wgtd_points_bets_indexes[winning_block as usize];
+    msg!("   Winning block points: {}, wgtd_points: {}", winning_block_pts, winning_block_wgtd_pts);
 
     if winning_block_pts > 0 {
-        // Calculate reward indexes (only if there are points bet on winning block)
+        // SOL rewards: use regular points
         let sol_rewards_delta = helper::mul_div(
             game_session.total_sol_bets,
             INDEX_PRECISION,
@@ -499,21 +496,23 @@ pub fn end_round(
         game_session.sol_rewards_index = game_session.sol_rewards_index + sol_rewards_delta;
         msg!("   SOL rewards index: {}", game_session.sol_rewards_index);
 
-        // Calculate MineBtc rewards index for winning block
-        let minebtc_rewards_delta =
-            helper::mul_div(winning_block_rewards, INDEX_PRECISION, winning_block_pts)?;
-        game_session.minebtc_rewards_index =
-            game_session.minebtc_rewards_index + minebtc_rewards_delta;
-        msg!(
-            "   MineBtc rewards index (winning block): {}",
-            game_session.minebtc_rewards_index
-        );
+        // MineBtc rewards: use wgtd_points (multiplier-weighted)
+        if winning_block_wgtd_pts > 0 {
+            let minebtc_rewards_delta =
+                helper::mul_div(winning_block_rewards, INDEX_PRECISION, winning_block_wgtd_pts)?;
+            game_session.minebtc_rewards_index =
+                game_session.minebtc_rewards_index + minebtc_rewards_delta;
+            msg!(
+                "   MineBtc rewards index (winning block): {}",
+                game_session.minebtc_rewards_index
+            );
+        }
 
-        // Calculate MineBtc rewards index for same-faction other block (0-indexed: 0-23)
-        let same_faction_pts = game_session.points_bets_indexes[same_faction_other_block as usize];
-        if same_faction_pts > 0 {
+        // Same-faction block: use wgtd_points for MineBtc
+        let same_faction_wgtd_pts = game_session.wgtd_points_bets_indexes[same_faction_other_block as usize];
+        if same_faction_wgtd_pts > 0 {
             let same_faction_minebtc_delta =
-                helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_pts)?;
+                helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_wgtd_pts)?;
             game_session.same_faction_minebtc_rewards_index =
                 game_session.same_faction_minebtc_rewards_index + same_faction_minebtc_delta;
             msg!(
@@ -521,14 +520,14 @@ pub fn end_round(
                 game_session.same_faction_minebtc_rewards_index
             );
         } else {
-            msg!("   ⚠️ No points bet on same-faction block {}, distributing rewards to winning block");
-
-            // Calculate MineBtc rewards index for winning block
-            let minebtc_rewards_delta =
-                helper::mul_div(same_faction_rewards, INDEX_PRECISION, winning_block_pts)?;
-            game_session.minebtc_rewards_index =
-                game_session.minebtc_rewards_index + minebtc_rewards_delta;
-            msg!("   MineBtc rewards index (winning block: after adding minebtc rewards from same-faction which has no points bet): {}", game_session.minebtc_rewards_index);
+            msg!("   ⚠️ No wgtd_points on same-faction block {}, distributing to winning block", same_faction_other_block);
+            if winning_block_wgtd_pts > 0 {
+                let minebtc_rewards_delta =
+                    helper::mul_div(same_faction_rewards, INDEX_PRECISION, winning_block_wgtd_pts)?;
+                game_session.minebtc_rewards_index =
+                    game_session.minebtc_rewards_index + minebtc_rewards_delta;
+                msg!("   MineBtc rewards index (winning block, +same-faction): {}", game_session.minebtc_rewards_index);
+            }
         }
     } else {
         msg!(
@@ -691,7 +690,7 @@ fn calculate_minebtc_split(
 /// 3. Selects winning block
 /// 4. Calculates winners and updates payout data
 /// 5. Commits hash for next round
-pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
+pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
     msg!("🏁 [end_round_faction_rewards] Ending current round");
 
     let game_session = &mut ctx.accounts.game_session;
@@ -723,18 +722,18 @@ pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result
     );
 
     // dBTC + SOL distribution to dBTC stakers of the winning faction
-    if faction_state.total_minebtc_hashpower > 0 {
+    if faction_state.total_dogebtc_hashpower > 0 {
         let minebtc_per_share = helper::mul_div(
             minebtc_staker_rewards / 2,
             INDEX_PRECISION,
-            faction_state.total_minebtc_hashpower,
+            faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.minebtc_minebtc_reward_index =
-            faction_state.minebtc_minebtc_reward_index + minebtc_per_share;
+        faction_state.dogebtc_dogebtc_reward_index =
+            faction_state.dogebtc_dogebtc_reward_index + minebtc_per_share;
         msg!(
             "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
-            faction_state.minebtc_minebtc_reward_index - minebtc_per_share,
-            faction_state.minebtc_minebtc_reward_index,
+            faction_state.dogebtc_dogebtc_reward_index - minebtc_per_share,
+            faction_state.dogebtc_dogebtc_reward_index,
             minebtc_per_share
         );
         minebtc_staker_rewards = minebtc_staker_rewards - (minebtc_staker_rewards / 2);
@@ -742,13 +741,13 @@ pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result
         let sol_reward_inc = helper::mul_div(
             sol_staker_fees / 2,
             INDEX_PRECISION,
-            faction_state.total_minebtc_hashpower,
+            faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.minebtc_sol_reward_index += sol_reward_inc;
+        faction_state.dogebtc_sol_reward_index += sol_reward_inc;
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
-            faction_state.minebtc_sol_reward_index - sol_reward_inc,
-            faction_state.minebtc_sol_reward_index,
+            faction_state.dogebtc_sol_reward_index - sol_reward_inc,
+            faction_state.dogebtc_sol_reward_index,
             sol_reward_inc
         );
         sol_staker_fees = sol_staker_fees - (sol_staker_fees / 2);
@@ -761,12 +760,12 @@ pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        faction_state.lp_minebtc_reward_index =
-            faction_state.lp_minebtc_reward_index + lp_per_share;
+        faction_state.lp_dogebtc_reward_index =
+            faction_state.lp_dogebtc_reward_index + lp_per_share;
         msg!(
             "   Faction stakers reward index: {} -> {} (+{})",
-            faction_state.lp_minebtc_reward_index - lp_per_share,
-            faction_state.lp_minebtc_reward_index,
+            faction_state.lp_dogebtc_reward_index - lp_per_share,
+            faction_state.lp_dogebtc_reward_index,
             lp_per_share
         );
 

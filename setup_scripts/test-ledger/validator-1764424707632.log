@@ -1,0 +1,17 @@
+[90m[[0m2025-11-29T13:58:27.632468000Z [32mINFO [0m solana_test_validator[90m][0m agave-validator 3.0.0 (src:b6c96e84; feat:128318206, client:Agave)
+[90m[[0m2025-11-29T13:58:27.632524000Z [32mINFO [0m solana_test_validator[90m][0m Starting validator with: ArgsOs {
+        inner: [
+            "solana-test-validator",
+            "--reset",
+            "--limit-ledger-size",
+            "100000000",
+            "--bpf-program",
+            "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+            "core.so",
+            "--clone",
+            "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+            "--url",
+            "https://api.mainnet-beta.solana.com",
+        ],
+    }
+[90m[[0m2025-11-29T13:58:27.632539000Z [33mWARN [0m solana_perf[90m][0m CUDA is disabled

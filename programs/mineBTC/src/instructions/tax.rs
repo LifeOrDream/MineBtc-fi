@@ -32,8 +32,8 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 // - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
 // - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
 // - `start_distribution_round`: Initiates a new 7-day distribution cycle.
-// - `calculate_faction_leaderboard_position`: Ranks one faction by hashpower.
-// - `calculate_faction_rewards`: Computes rewards for all factions.
+// - `cal_faction_positions`: Ranks one faction by hashpower.
+// - `cal_faction_rewards`: Computes rewards for all factions.
 // - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
 //
 
@@ -48,16 +48,17 @@ use crate::state::*;
 
 /// Initialize TaxConfig account and create vault token accounts
 /// Callable only by global config authority
-pub fn initialize_tax_config(
+pub fn internal_initialize_tax_config(
     ctx: Context<InitializeTaxConfig>,
     nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
+    burn_pct: u8,
     nft_floor_sweep_whitelisted_address: Pubkey,
 ) -> Result<()> {
     msg!("🔧 [initialize_tax_config] Initializing tax system");
 
     require!(
-        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) <= M_HUNDRED,
+        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) + (burn_pct as u64) <= M_HUNDRED,
         ErrorCode::InvalidAmount
     );
 
@@ -68,6 +69,7 @@ pub fn initialize_tax_config(
     tax_config.bump = ctx.bumps.tax_config;
     tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
     tax_config.faction_treasury_pct = faction_treasury_pct;
+    tax_config.burn_pct = burn_pct;
     tax_config.total_burnt = 0;
     tax_config.round_active = false;
     tax_config.start_timestamp = 0;
@@ -92,8 +94,9 @@ pub fn initialize_tax_config(
     msg!("   ✅ TaxConfig initialized");
     msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
     msg!("   Faction Treasury: {}%", faction_treasury_pct);
-    let burn_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct;
     msg!("   Burn: {}%", burn_pct);
+    let vault_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct - burn_pct;
+    msg!("   Back to Vault: {}%", vault_pct);
     msg!(
         "   Withdraw Authority: {}",
         tax_config.withdraw_withheld_authority
@@ -116,35 +119,36 @@ pub fn initialize_tax_config(
 
 /// Update tax distribution percentages
 /// Callable only by global config authority
-pub fn update_tax_config(
+pub fn internal_update_tax_config(
     ctx: Context<UpdateTaxConfig>,
     nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
+    burn_pct: u8,
 ) -> Result<()> {
     msg!("🔧 [update_tax_config] Updating tax distribution percentages");
 
     require!(
-        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) <= M_HUNDRED as u64,
+        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) + (burn_pct as u64) <= M_HUNDRED as u64,
         ErrorCode::InvalidAmount
     );
 
     let tax_config = &mut ctx.accounts.tax_config;
-
     tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
     tax_config.faction_treasury_pct = faction_treasury_pct;
+    tax_config.burn_pct = burn_pct;
 
     msg!("   ✅ TaxConfig updated");
-    msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
-    msg!("   Faction Treasury: {}%", faction_treasury_pct);
-    let burn_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct;
-    msg!("   Burn: {}%", burn_pct);
+    msg!("   NFT Floor Sweep: {}%, Faction Treasury: {}%, Burn: {}%", 
+        nft_floor_sweep_pct, faction_treasury_pct, burn_pct);
+    let vault_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct - burn_pct;
+    msg!("   Back to Vault: {}%", vault_pct);
 
     Ok(())
 }
 
 /// Update NFT floor sweep whitelisted address
 /// Callable only by global config authority
-pub fn update_nft_floor_sweep_whitelist(
+pub fn internal_update_nft_floor_sweep_whitelist(
     ctx: Context<UpdateNftFloorSweepWhitelist>,
     new_whitelisted_address: Pubkey,
 ) -> Result<()> {
@@ -165,7 +169,7 @@ pub fn update_nft_floor_sweep_whitelist(
 /// Callable only by the whitelisted address
 /// The whitelisted address will use this MineBtc to swap for SOL off-chain,
 /// buy NFTs, re-list them at 1.2x, and transfer SOL proceeds to SOL treasury
-pub fn withdraw_nft_floor_sweep_funds(
+pub fn internal_withdraw_nft_floor_sweep_funds(
     ctx: Context<WithdrawNftFloorSweepFunds>,
     amount: u64,
 ) -> Result<()> {
@@ -240,7 +244,7 @@ pub fn withdraw_nft_floor_sweep_funds(
 /// them into the minebtc_mint's own "withheld_amount" field.
 ///
 /// Callable by anyone - designed to be called many times in batches
-pub fn crank_harvest_fees<'info>(
+pub fn internal_crank_harvest_fees<'info>(
     ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
 ) -> Result<()> {
     msg!("🌱 [crank_harvest_fees] Harvesting withheld fees to mint...");
@@ -286,7 +290,7 @@ pub fn crank_harvest_fees<'info>(
 /// mint account and distributes it according to TaxConfig percentages.
 ///
 /// Callable by anyone - program-controlled withdraw authority
-pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
     msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
 
     // 1. Get the total amount of tax sitting on the mint account
@@ -344,31 +348,19 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
         helper::mul_div(withheld_amount, tax_config.nft_floor_sweep_pct as u64, 100)? as u64;
     let faction_treasury_amount =
         helper::mul_div(withheld_amount, tax_config.faction_treasury_pct as u64, 100)? as u64;
-    // Burn amount is the remainder
-    let burn_amount = withheld_amount
-        .checked_sub(nft_floor_sweep_amount)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_sub(faction_treasury_amount)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let burn_amount =
+        helper::mul_div(withheld_amount, tax_config.burn_pct as u64, 100)? as u64;
+    // Remainder goes back to the minebtc vault
+    let vault_return = withheld_amount
+        .saturating_sub(nft_floor_sweep_amount)
+        .saturating_sub(faction_treasury_amount)
+        .saturating_sub(burn_amount);
 
     msg!("   Splitting {} tokens:", (withheld_amount as f64) / 1e6);
-    msg!(
-        "   - NFT Floor Sweep: {} tokens ({}%)",
-        (nft_floor_sweep_amount as f64) / 1e6,
-        tax_config.nft_floor_sweep_pct
-    );
-    msg!(
-        "   - Faction Treasury: {} tokens ({}%)",
-        (faction_treasury_amount as f64) / 1e6,
-        tax_config.faction_treasury_pct
-    );
-    let burn_pct =
-        M_HUNDRED as u8 - tax_config.nft_floor_sweep_pct - tax_config.faction_treasury_pct;
-    msg!(
-        "   - Burn: {} tokens ({}%)",
-        (burn_amount as f64) / 1e6,
-        burn_pct
-    );
+    msg!("   - NFT Floor Sweep: {} ({}%)", (nft_floor_sweep_amount as f64) / 1e6, tax_config.nft_floor_sweep_pct);
+    msg!("   - Faction Treasury: {} ({}%)", (faction_treasury_amount as f64) / 1e6, tax_config.faction_treasury_pct);
+    msg!("   - Burn: {} ({}%)", (burn_amount as f64) / 1e6, tax_config.burn_pct);
+    msg!("   - Back to Vault: {}", (vault_return as f64) / 1e6);
 
     // 4. Distribute the funds (all signed by the same PDA)
 
@@ -422,17 +414,14 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
         );
     }
 
-    // Burn the remainder
+    // Burn
     if burn_amount > 0 {
         token_2022::burn(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
                 Burn {
                     mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    from: ctx
-                        .accounts
-                        .withdraw_authority_token_account
-                        .to_account_info(),
+                    from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
@@ -441,21 +430,30 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
         )?;
 
         let tax_config_mut = &mut ctx.accounts.tax_config;
-        tax_config_mut.total_burnt = tax_config_mut
-            .total_burnt
-            .checked_add(burn_amount)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-        msg!(
-            "   ✅ Burnt {} tokens (Total burnt: {})",
-            (burn_amount as f64) / 1e6,
-            (tax_config_mut.total_burnt as f64) / 1e6
-        );
+        tax_config_mut.total_burnt = tax_config_mut.total_burnt.saturating_add(burn_amount);
+        msg!("   ✅ Burnt {} tokens (Total burnt: {})", (burn_amount as f64) / 1e6, (tax_config_mut.total_burnt as f64) / 1e6);
     }
 
-    // Store total_burnt before emitting event (to avoid borrow checker issues)
-    let total_burnt = ctx.accounts.tax_config.total_burnt;
+    // Transfer remainder back to minebtc vault
+    if vault_return > 0 {
+        token_2022::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program_2022.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.withdraw_authority_token_account.to_account_info(),
+                    mint: ctx.accounts.minebtc_mint.to_account_info(),
+                    to: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                },
+                withdraw_authority_signer,
+            ),
+            vault_return,
+            ctx.accounts.minebtc_mint.decimals,
+        )?;
+        msg!("   ✅ Returned {} tokens to minebtc vault", (vault_return as f64) / 1e6);
+    }
 
+    let total_burnt = ctx.accounts.tax_config.total_burnt;
     emit!(TaxDistributed {
         total_tax_amount: withheld_amount,
         nft_floor_sweep_amount,
@@ -474,7 +472,7 @@ pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
 // ========================================================================================
 
 /// Start a new distribution round (callable by anyone after 7-day cooldown)
-pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
+pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
     msg!("🎯 [start_distribution_round] Starting new distribution round");
 
     let tax_config = &mut ctx.accounts.tax_config;
@@ -532,10 +530,10 @@ pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<
 
 /// Calculate and store leaderboard position for one faction
 /// Must be called 12 times (once per faction) to build complete leaderboard
-pub fn calculate_faction_leaderboard_position(
+pub fn internal_cal_faction_positions(
     ctx: Context<CalculateFactionLeaderboard>,
 ) -> Result<()> {
-    msg!("📊 [calculate_faction_leaderboard_position] Calculating leaderboard position");
+    msg!("📊 [cal_faction_positions] Calculating leaderboard position");
 
     // Store values before mutable borrow (for event emission)
     let tax_config_key = ctx.accounts.tax_config.key();
@@ -553,7 +551,7 @@ pub fn calculate_faction_leaderboard_position(
 
     // Calculate total hashpower for this faction (minebtc + lp)
     let total_hashpower = faction_state
-        .total_minebtc_hashpower
+        .total_dogebtc_hashpower
         .checked_add(faction_state.total_lp_hashpower)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -561,7 +559,7 @@ pub fn calculate_faction_leaderboard_position(
     msg!(
         "   Total hashpower: {} (minebtc: {}, lp: {})",
         total_hashpower,
-        faction_state.total_minebtc_hashpower,
+        faction_state.total_dogebtc_hashpower,
         faction_state.total_lp_hashpower
     );
 
@@ -595,7 +593,7 @@ pub fn calculate_faction_leaderboard_position(
 
     // Store values before emitting event
     let faction_id = faction_state.faction_id;
-    let minebtc_hashpower = faction_state.total_minebtc_hashpower;
+    let dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
     let lp_hashpower = faction_state.total_lp_hashpower;
     let leaderboard_count = tax_config.leaderboard_factions_count;
 
@@ -604,7 +602,7 @@ pub fn calculate_faction_leaderboard_position(
         faction_id,
         faction_state: faction_state_key,
         total_hashpower,
-        minebtc_hashpower,
+        dogebtc_hashpower,
         lp_hashpower,
         rank: insert_index as u8,
         leaderboard_count,
@@ -616,8 +614,8 @@ pub fn calculate_faction_leaderboard_position(
 
 /// Calculate rewards for all factions based on leaderboard
 /// Can only be called after all 12 factions are on leaderboard
-pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
-    msg!("💰 [calculate_faction_rewards] Calculating faction rewards");
+pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
+    msg!("💰 [cal_faction_rewards] Calculating faction rewards");
 
     // Store values before mutable borrow (for event emission)
     let tax_config_key = ctx.accounts.tax_config.key();
@@ -715,14 +713,14 @@ pub fn calculate_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Resul
         timestamp: clock.unix_timestamp,
     });
 
-    msg!("✅ [calculate_faction_rewards] Rewards calculated");
+    msg!("✅ [cal_faction_rewards] Rewards calculated");
 
     Ok(())
 }
 
 /// Claim treasury rewards for one faction
 /// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
-pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
+pub fn internal_claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
     msg!("🎁 [claim_faction_treasury_rewards] Claiming treasury rewards");
 
     let tax_config = &mut ctx.accounts.tax_config;
@@ -783,22 +781,22 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
     )?;
 
     // Update reward indexes for minebtc stakers
-    if minebtc_reward > 0 && faction_state.total_minebtc_hashpower > 0 {
+    if minebtc_reward > 0 && faction_state.total_dogebtc_hashpower > 0 {
         let index_increase = helper::mul_div(
             minebtc_reward,
             INDEX_PRECISION,
-            faction_state.total_minebtc_hashpower,
+            faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.minebtc_minebtc_reward_index =
-            faction_state.minebtc_minebtc_reward_index + index_increase;
+        faction_state.dogebtc_dogebtc_reward_index =
+            faction_state.dogebtc_dogebtc_reward_index + index_increase;
     }
 
     // Update reward indexes for lp stakers
     if lp_reward > 0 && faction_state.total_lp_hashpower > 0 {
         let index_increase =
             helper::mul_div(lp_reward, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_minebtc_reward_index =
-            faction_state.lp_minebtc_reward_index + index_increase;
+        faction_state.lp_dogebtc_reward_index =
+            faction_state.lp_dogebtc_reward_index + index_increase;
     }
 
     // Mark faction as claimed
@@ -810,12 +808,12 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
 
     msg!("✅ [claim_faction_treasury_rewards] Rewards claimed and distributed");
     msg!(
-        "   Updated minebtc_minebtc_reward_index: {}",
-        faction_state.minebtc_minebtc_reward_index
+        "   Updated dogebtc_dogebtc_reward_index: {}",
+        faction_state.dogebtc_dogebtc_reward_index
     );
     msg!(
-        "   Updated lp_minebtc_reward_index: {}",
-        faction_state.lp_minebtc_reward_index
+        "   Updated lp_dogebtc_reward_index: {}",
+        faction_state.lp_dogebtc_reward_index
     );
 
     emit!(FactionTreasuryRewardsClaimed {
@@ -834,7 +832,7 @@ pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>)
 }
 
 /// Finish distribution round (check all factions claimed and reset state)
-pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
+pub fn internal_finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
     msg!("🏁 [finish_distribution_round] Finishing distribution round");
 
     let tax_config = &mut ctx.accounts.tax_config;
@@ -1055,19 +1053,13 @@ pub struct CrankHarvestFees<'info> {
 
 #[derive(Accounts)]
 pub struct CrankDistributeTax<'info> {
-    // Authority
     /// CHECK: The PDA authority for withdrawing fees
-    #[account(
-        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
-        bump
-    )]
+    #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
 
-    // The Mint
     #[account(mut)]
     pub minebtc_mint: InterfaceAccount<'info, Mint>,
 
-    // Vaults
     /// The temporary vault that receives the full tax amount before splitting
     #[account(mut)]
     pub withdraw_authority_token_account: InterfaceAccount<'info, TokenAccount2022>,
@@ -1080,15 +1072,13 @@ pub struct CrankDistributeTax<'info> {
     #[account(mut)]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
-    // Config
-    #[account(
-        mut,
-        seeds = [TAX_CONFIG_SEED.as_ref()],
-        bump = tax_config.bump
-    )]
+    /// MineBtc token vault (receives remainder)
+    #[account(mut)]
+    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+
+    #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
 
-    // Programs
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Egg Minting Simulation Script
- * Simulates the cost of minting all eggs using the bonding curve pricing formula
+ * Doge Minting Simulation Script
+ * Simulates the cost of minting all doges using the bonding curve pricing formula
  * and displays fee distribution (DEV vs GAME treasury)
  */
 
@@ -12,10 +12,10 @@
 
 const BASE_PRICE = 1_000_000_000; // 1 SOL in lamports
 const CURVE_A = 1111_111; // Curve steepness parameter
-const TOTAL_SUPPLY = 24_690; // Maximum number of eggs to mint
+const TOTAL_SUPPLY = 24_690; // Maximum number of doges to mint
 const SOL_PRICE_USD = 140; // Current SOL price in USD (update as needed)
 
-// Fee distribution (from eggs.rs: single mint uses 20% treasury, 80% dev)
+// Fee distribution (from doges.rs: single mint uses 20% treasury, 80% dev)
 const TREASURY_PCT = 20; // Percentage going to game treasury
 const DEV_PCT = 80; // Percentage going to dev (fee_recipient)
 
@@ -153,13 +153,13 @@ function formatUsd(lamports) {
 // MAIN SIMULATION
 // ============================================================================
 
-function simulateEggMints() {
+function simulateDogeMints() {
     console.log("=".repeat(80));
-    console.log("EGG MINTING SIMULATION");
+    console.log("DOGE MINTING SIMULATION");
     console.log("=".repeat(80));
     console.log(`Base Price: ${formatSol(BASE_PRICE)}`);
     console.log(`Curve A: ${CURVE_A.toLocaleString()}`);
-    console.log(`Total Supply: ${TOTAL_SUPPLY.toLocaleString()} eggs`);
+    console.log(`Total Supply: ${TOTAL_SUPPLY.toLocaleString()} doges`);
     console.log(`SOL Price: $${SOL_PRICE_USD.toLocaleString()}`);
     console.log(`Fee Split: ${DEV_PCT}% DEV / ${TREASURY_PCT}% GAME`);
     console.log("=".repeat(80));
@@ -169,14 +169,14 @@ function simulateEggMints() {
     let totalTreasury = 0;
     let totalPrice = 0;
     
-    // Track every Nth egg (for display)
-    const displayInterval = Math.max(1, Math.floor(TOTAL_SUPPLY / 50)); // Show ~50 eggs
+    // Track every Nth doge (for display)
+    const displayInterval = Math.max(1, Math.floor(TOTAL_SUPPLY / 50)); // Show ~50 doges
     
-    for (let eggNumber = 1; eggNumber <= TOTAL_SUPPLY; eggNumber++) {
-        // items_minted is 0-indexed (0 = first egg, 1 = second egg, etc.)
-        const itemsMinted = eggNumber - 1;
+    for (let dogeNumber = 1; dogeNumber <= TOTAL_SUPPLY; dogeNumber++) {
+        // items_minted is 0-indexed (0 = first doge, 1 = second doge, etc.)
+        const itemsMinted = dogeNumber - 1;
         
-        // Calculate price for this egg
+        // Calculate price for this doge
         const price = computeGenePrice(BASE_PRICE, CURVE_A, itemsMinted);
         
         // Calculate fee distribution
@@ -187,15 +187,15 @@ function simulateEggMints() {
         totalDev += fees.dev;
         totalTreasury += fees.treasury;
         
-        // Display every Nth egg or last 10 eggs
-        const shouldDisplay = (eggNumber % displayInterval === 0) || 
-                             (eggNumber > TOTAL_SUPPLY - 10) ||
-                             eggNumber === 1 ||
-                             eggNumber === TOTAL_SUPPLY;
+        // Display every Nth doge or last 10 doges
+        const shouldDisplay = (dogeNumber % displayInterval === 0) || 
+                             (dogeNumber > TOTAL_SUPPLY - 10) ||
+                             dogeNumber === 1 ||
+                             dogeNumber === TOTAL_SUPPLY;
         
         if (shouldDisplay) {
             console.log(
-                `Egg #${eggNumber.toString().padStart(5)} ==> ${formatSol(price).padStart(15)} (${formatUsd(price).padStart(10)}) :: ` +
+                `Doge #${dogeNumber.toString().padStart(5)} ==> ${formatSol(price).padStart(15)} (${formatUsd(price).padStart(10)}) :: ` +
                 `${formatSol(fees.dev).padStart(12)} (${formatUsd(fees.dev).padStart(10)}) DEV + ` +
                 `${formatSol(fees.treasury).padStart(12)} (${formatUsd(fees.treasury).padStart(10)}) GAME`
             );
@@ -216,16 +216,16 @@ function simulateEggMints() {
     console.log("SUMMARY STATISTICS");
     console.log("-".repeat(80));
     const avgPrice = totalPrice / TOTAL_SUPPLY;
-    const firstEggPrice = computeGenePrice(BASE_PRICE, CURVE_A, 0);
-    const lastEggPrice = computeGenePrice(BASE_PRICE, CURVE_A, TOTAL_SUPPLY - 1);
+    const firstDogePrice = computeGenePrice(BASE_PRICE, CURVE_A, 0);
+    const lastDogePrice = computeGenePrice(BASE_PRICE, CURVE_A, TOTAL_SUPPLY - 1);
     
-    console.log(`Average Price per Egg: ${formatSol(avgPrice)} (${formatUsd(avgPrice)})`);
-    console.log(`First Egg Price:       ${formatSol(firstEggPrice)} (${formatUsd(firstEggPrice)})`);
-    console.log(`Last Egg Price:        ${formatSol(lastEggPrice)} (${formatUsd(lastEggPrice)})`);
-    console.log(`Price Increase:        ${formatNumber((lastEggPrice / firstEggPrice - 1) * 100)}%`);
+    console.log(`Average Price per Doge: ${formatSol(avgPrice)} (${formatUsd(avgPrice)})`);
+    console.log(`First Doge Price:       ${formatSol(firstDogePrice)} (${formatUsd(firstDogePrice)})`);
+    console.log(`Last Doge Price:        ${formatSol(lastDogePrice)} (${formatUsd(lastDogePrice)})`);
+    console.log(`Price Increase:        ${formatNumber((lastDogePrice / firstDogePrice - 1) * 100)}%`);
     console.log("-".repeat(80));
 }
 
 // Run simulation
-simulateEggMints();
+simulateDogeMints();
 

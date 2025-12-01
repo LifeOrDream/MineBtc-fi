@@ -37,7 +37,7 @@ MineBTC is a revolutionary faction-based betting and mining game that combines s
 - **Provably Fair Randomness**: Commit-reveal scheme ensures transparency and prevents manipulation
 - **Multi-Layered Rewards**: Earn through betting, staking, referrals, and faction performance
 - **Deflationary Tokenomics**: 1% transfer tax with burns and buybacks
-- **NFT Power System**: Eggs provide persistent hashpower multipliers
+- **NFT Power System**: Doge provide persistent hashpower multipliers
 - **Dynamic Emission**: Mining rate adjusts based on market prices to maintain sustainability
 
 ---
@@ -90,7 +90,7 @@ Stake your MineBTC tokens to earn **dual rewards**:
 **Hashpower Formula**: Your reward share depends on your hashpower
 
 ```
-Hashpower = Amount × Lockup Multiplier × Egg Multiplier
+Hashpower = Amount × Lockup Multiplier × Doge Multiplier
 ```
 
 **Lockup Periods**:
@@ -111,21 +111,21 @@ When claiming MineBTC rewards, a 5% refining fee is charged and **redistributed 
 
 ---
 
-## 🐉 Egg NFT System
+## 🐉 Doge NFT System
 
 ### Bonding Curve Pricing
 
-Eggs use a bonding curve pricing model:
+Doge use a bonding curve pricing model:
 
 ```
 Price = Base_Price + (Current_Supply² / Curve_A)
 ```
 
-Each subsequent egg costs more, creating natural scarcity.
+Each subsequent doge costs more, creating natural scarcity.
 
-### Egg Tiers & Free Tickets
+### Doge Tiers & Free Tickets
 
-When minting eggs, choose a ticket tier:
+When minting doges, choose a ticket tier:
 
 - **Bronze**: 0.01 SOL × 1000 tickets
 - **Silver**: 0.05 SOL × 200 tickets
@@ -135,24 +135,24 @@ Free tickets can be used for betting instead of SOL.
 
 ### Hashpower Multipliers
 
-Stake up to **5 Eggs** to boost your mining hashpower:
+Stake up to **5 Doge** to boost your mining hashpower:
 
 ```
-1 Egg:  1.3x multiplier
-2 Eggs: 1.6x multiplier
-3 Eggs: 2.0x multiplier
-4 Eggs: 2.5x multiplier
-5 Eggs: 3.0x multiplier
+1 Doge:  1.3x multiplier
+2 Doge: 1.6x multiplier
+3 Doge: 2.0x multiplier
+4 Doge: 2.5x multiplier
+5 Doge: 3.0x multiplier
 ```
 
-**Max Multiplier**: 6.9x (with 5 eggs + max lockup)
+**Max Multiplier**: 6.9x (with 5 doges + max lockup)
 
 ### Power System
 
-Eggs accumulate "power" over time:
+Doge accumulate "power" over time:
 
 - Power is earned when claiming MineBTC rewards
-- Power is distributed proportionally to all staked eggs
+- Power is distributed proportionally to all staked doges
 - Higher power = rarer/more valuable NFTs
 
 ---
@@ -248,7 +248,7 @@ Deposit SOL into your autominer vault, and a keeper bot will execute bets for yo
 ### Solana Programs
 
 - **Token-2022**: MineBTC uses transfer fees for deflationary mechanics
-- **Metaplex Core**: Egg NFTs with royalties and on-chain metadata
+- **Metaplex Core**: Doge NFTs with royalties and on-chain metadata
 - **Raydium CLMM**: Liquidity pool for MineBTC-SOL trading
 
 ### Security Features
@@ -265,7 +265,7 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
               → GameSession (per round)
               → MineBtcMining
               → TaxConfig
-              → EggConfig
+              → DogeConfig
 ```
 
 ---
@@ -304,18 +304,18 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
 initialize_player --faction-id 0 --referral-code <optional>
 ```
 
-### 2. Mint Eggs (Optional)
+### 2. Mint Doge (Optional)
 
 ```bash
-# Mint 3 eggs for your faction with Silver tier tickets
-batch_mint_eggs --faction-id 0 --count 3 --tier 1
+# Mint 3 doges for your faction with Silver tier tickets
+batch_mint_doges --faction-id 0 --count 3 --tier 1
 ```
 
-### 3. Stake Your Eggs
+### 3. Stake Your Doge
 
 ```bash
-# Stake an egg to boost hashpower
-stake_egg --egg-mint <egg_pubkey>
+# Stake an doge to boost hashpower
+stake_doge --doge-mint <doge_pubkey>
 ```
 
 ### 4. Stake MineBTC
@@ -353,7 +353,7 @@ claim_minebtc_rewards
 ### Maximize Hashpower
 
 1. **Max Lockup**: 3-year lockup = 15x multiplier
-2. **5 Eggs Staked**: + 3x multiplier = **45x total hashpower**
+2. **5 Doge Staked**: + 3x multiplier = **45x total hashpower**
 3. **Compound Rewards**: Restake claimed MineBTC to grow your position
 
 ### Faction Warfare

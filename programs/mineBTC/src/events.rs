@@ -4,19 +4,11 @@ use anchor_lang::prelude::*;
 // User management events
 // ------------------------------
 
-#[event]
-pub struct ReferralRewardsAdded {
-    pub referrer: Pubkey,
-    pub referred_user: Pubkey,
-    pub referral_rewards_account: Pubkey,
-    pub amount: u64,
-}
-
+ 
 #[event]
 pub struct ReferralRewardsClaimed {
     pub referrer: Pubkey,
     pub referral_rewards_account: Pubkey,
-    pub sol_amount: u64,
     pub minebtc_amount: u64,
     pub timestamp: i64,
 }
@@ -25,7 +17,7 @@ pub struct ReferralRewardsClaimed {
 pub struct SolFeesWithdrawn {
     pub available_solana: u64,
     pub buyback_amount: u64,
-    pub egg_treasury_amt: u64,
+    pub doge_treasury_amt: u64,
     pub dev_earnings_amount: u64,
 }
 
@@ -87,11 +79,6 @@ pub struct DistributionRateUpdated {
     pub track_price: u64,
     pub recent_price: u64,
     pub rate_changed: bool,
-    pub sol_received: u64,
-    pub price_history_count: u8, // Number of price snapshots used (should be 8)
-    pub sol_for_pol_used: u64,   // SOL used for POL (lamports)
-    pub sol_for_pol_remaining: u64, // SOL remaining for POL (lamports)
-    pub lp_tokens_burned: u64,   // LP tokens burned (0 if no LP added)
     pub timestamp: i64,
 }
 
@@ -103,19 +90,18 @@ pub struct LpTokensBurned {
     pub sol_amount_added: u64,
     pub sol_vault_balance: u64, // SOL vault balance after LP addition (lamports)
     pub minebtc_vault_balance: u64, // MINE_BTC vault balance after LP addition (6 decimals)
-    pub lp_supply: u64,         // LP token supply after burn (6 decimals)
     pub lp_token_price: u64,    // LP token price in SOL (9 decimals)
     pub timestamp: i64,
 }
 
 // ========================================================================================
-// =============================== DRAGON EGG NFT EVENTS =================================
+// ===============================  DOGE NFT EVENTS =================================
 // ========================================================================================
 
 #[event]
-pub struct EggMinted {
-    pub egg_metadata_account: Pubkey,
-    pub egg_asset_signer: Pubkey,
+pub struct DogeMinted {
+    pub doge_metadata_account: Pubkey,
+    pub doge_asset_signer: Pubkey,
     pub owner: Pubkey,
     pub player: Pubkey,
     pub mint: Pubkey,
@@ -123,80 +109,79 @@ pub struct EggMinted {
     pub uri: String,
     pub dna: [u8; 32],
     pub multiplier: u32,
-    pub initial_power: u32,
-    pub faction_id: u8, // Faction/country the egg belongs to
+    pub accumulated_val: u64,
+    pub faction_id: u8, // Faction/country the doge belongs to
     pub price: u64,
     pub ticket_tier: u64,
-    pub ticket_count: u64,
+    pub ticket_count: u64
 }
 
 #[event]
-pub struct EggCollectionCreated {
+pub struct DogeCollectionCreated {
     pub collection: Pubkey,
     pub update_authority: Pubkey,
     pub name: String,
     pub uri: String,
 }
 
-/// Event emitted when a Egg is staked
+/// Event emitted when a Doge is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct EggStaked {
-    /// User who staked the egg
+pub struct DogeStaked {
+    /// User who staked the doge
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
-    /// Egg mint address
-    pub egg_mint: Pubkey,
-    /// Faction ID the egg belongs to
+    /// Doge mint address
+    pub doge_mint: Pubkey,
+    /// Faction ID the doge belongs to
     pub faction_id: u8,
-    /// Egg metadata account address
-    pub egg_metadata_account: Pubkey,
+    /// Doge metadata account address
+    pub doge_metadata_account: Pubkey,
     /// Player's current multiplier after staking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after staking
-    pub minebtc_hashpower: u64,
+    pub dogebtc_hashpower: u64,
     /// Player's current LP hashpower after staking
     pub lp_hashpower: u64,
     /// Timestamp of the staking action
     pub timestamp: i64,
 }
 
-/// Event emitted when a Egg is unstaked
+/// Event emitted when a Doge is unstaked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct EggUnstaked {
-    /// User who unstaked the egg
+pub struct DogeUnstaked {
+    /// User who unstaked the doge
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
-    /// Egg mint address
-    pub egg_mint: Pubkey,
-    /// Egg metadata account address
-    pub egg_metadata_account: Pubkey,
-    /// Faction ID the egg belongs to
+    /// Doge mint address
+    pub doge_mint: Pubkey,
+    /// Doge metadata account address
+    pub doge_metadata_account: Pubkey,
+    /// Faction ID the doge belongs to
     pub faction_id: u8,
     /// Player's current multiplier after unstaking
-    pub egg_multiplier: u32,
+    pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after unstaking
-    pub minebtc_hashpower: u64,
+    pub dogebtc_hashpower: u64,
     /// Player's current LP hashpower after unstaking
     pub lp_hashpower: u64,
     /// Timestamp of the unstaking action
     pub timestamp: i64,
 }
 
-/// Event emitted when power is claimed and distributed to a staked egg
-/// Tracks power distribution for indexing (emitted per egg)
+/// Event emitted when an doge is sent to heaven (burnt) for rewards
 #[event]
-pub struct EggPowerClaimed {
-    /// Egg mint address that received power
-    pub egg_mint: Pubkey,
-    /// Power added to this egg
-    pub to_add: u64,
-    /// New total power for this egg after distribution
-    pub power: u32,
-    /// Timestamp of the power claim action
+pub struct DogeSentToHeaven {
+    /// Doge mint address that was burnt
+    pub doge_mint: Pubkey,
+    /// User who sent the doge to heaven
+    pub user: Pubkey,
+    /// Accumulated value claimed
+    pub accumulated_val: u64,
+    /// Timestamp of the action
     pub timestamp: i64,
 }
 
@@ -282,8 +267,6 @@ pub struct SolRewardsClaimed {
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub sol_amount: u64,
-    pub referral_fee: u64,
-    pub referrer: Option<Pubkey>,
     pub timestamp: i64,
 }
 
@@ -295,8 +278,8 @@ pub struct DbtcRewardsClaimed {
     pub faction_id: u8,
     pub minebtc_amount: u64,
     pub refining_fee: u64,
-    pub referral_fee: u64,
-    pub power_points_earned: u64,
+    pub referral_bonus: u64, // 1% bonus to user if they have referral code
+    pub referral_reward: u64, // 3% reward to referrer
     pub referrer: Option<Pubkey>,
     pub timestamp: i64,
 }
@@ -482,7 +465,7 @@ pub struct FactionLeaderboardPositionCalculated {
     pub faction_id: u8,
     pub faction_state: Pubkey,
     pub total_hashpower: u64,
-    pub minebtc_hashpower: u64,
+    pub dogebtc_hashpower: u64,
     pub lp_hashpower: u64,
     pub rank: u8,
     pub leaderboard_count: u8,
@@ -526,4 +509,73 @@ pub struct DistributionRoundFinished {
     pub end_timestamp: i64,
     pub next_round_start_after: i64,
     pub timestamp: i64,
+}
+
+// ========================================================================================
+// =============================== GAMEPLAY DOGE EVENTS ====================================
+// ========================================================================================
+
+/// Event emitted when an doge is used for gameplay
+#[event]
+pub struct DogeUsedForGameplay {
+    pub user: Pubkey,
+    pub doge_mint: Pubkey,
+    pub faction_id: u8,
+    pub timestamp: i64,
+}
+
+/// Event emitted when an doge is withdrawn from gameplay
+#[event]
+pub struct DogeWithdrawnFromGameplay {
+    pub user: Pubkey,
+    pub doge_mint: Pubkey,
+    pub faction_id: u8,
+    pub timestamp: i64,
+}
+
+/// Event emitted when an instant mutation is triggered during betting
+#[event]
+pub struct MutationTriggered {
+    pub user: Pubkey,
+    pub doge_mint: Pubkey,
+    pub faction_id: u8,
+    pub round_id: u64,
+    /// 0 = Evolution, 1 = Power, 2 = Trait
+    pub mutation_type: u8,
+    pub bet_amount: u64,
+    pub highest_bet: u64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a doge evolves to a new stage
+#[event]
+pub struct DogeEvolution {
+    pub doge_mint: Pubkey,
+    pub new_stage: u8,
+    /// Visual trait mutation that happened during evolution
+    pub visual_trait_index: u8,
+    pub visual_old_val: u8,
+    pub visual_new_val: u8,
+    /// Power trait mutation that happened during evolution
+    pub power_trait_index: u8,
+    pub power_old_val: u8,
+    pub power_new_val: u8,
+}
+
+/// Event emitted when a doge's power trait is mutated
+#[event]
+pub struct DogePowerMutation {
+    pub doge_mint: Pubkey,
+    pub trait_index: u8,
+    pub old_val: u8,
+    pub new_val: u8,
+}
+
+/// Event emitted when a doge's visual trait is mutated
+#[event]
+pub struct DogeVisualMutation {
+    pub doge_mint: Pubkey,
+    pub trait_index: u8,
+    pub old_val: u8,
+    pub new_val: u8,
 }

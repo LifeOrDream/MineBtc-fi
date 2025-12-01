@@ -23,7 +23,9 @@ use anchor_spl::token::Token;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
+use crate::genescience::{calculate_mutation_result, MutationType};
 use crate::instructions::helper;
+use crate::instructions::stake;
 use crate::state::*;
 
 // ========================================================================================
@@ -31,7 +33,7 @@ use crate::state::*;
 // ========================================================================================
 
 /// Initialize a player account for the Faction Surge game
-pub fn initialize_player(
+pub fn internal_initialize_player(
     ctx: Context<InitializePlayer>,
     faction_id: u8,
     referral_code: Option<Pubkey>,
@@ -71,7 +73,12 @@ pub fn initialize_player(
                 referrer_rewards.owner == ref_code,
                 ErrorCode::InvalidReferralAccount
             );
+            require!(
+                referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
+                ErrorCode::MaxReferralsReached
+            );
             referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+            msg!("     Referrer's referral count: {}/{}", referrer_rewards.referrals_count, stake::MAX_REFERRALS_PER_CODE);
         }
 
         // Set player's referral code
@@ -84,29 +91,26 @@ pub fn initialize_player(
         system_referral_pubkey
     };
 
-    player_data.bets_rounds = Vec::new();
-    player_data.bets_points = Vec::new();
-
     // Initialize statistics
     player_data.rounds_played = 0;
 
     player_data.total_sol_bet = 0;
     player_data.total_points_bet = 0;
     player_data.total_sol_won = 0;
-    player_data.total_minebtc_won = 0;
+    player_data.total_dogebtc_won = 0;
 
     // Initialize MineBtc staking fields
-    player_data.minebtc_hashpower = 0;
-    player_data.minebtc_staked = 0;
-    player_data.minebtc_minebtc_reward_debt = 0;
-    player_data.minebtc_sol_reward_debt = 0;
+    player_data.dogebtc_hashpower = 0;
+    player_data.dogebtc_staked = 0;
+    player_data.dogebtc_dogebtc_reward_debt = 0;
+    player_data.dogebtc_sol_reward_debt = 0;
     msg!("     MineBtc staking fields initialized");
 
     // Initialize LP staking fields
     player_data.lp_hashpower = 0;
     player_data.lp_staked = 0;
     player_data.lp_sol_reward_debt = 0;
-    player_data.lp_minebtc_reward_debt = 0;
+    player_data.lp_dogebtc_reward_debt = 0;
     msg!("     LP staking fields initialized");
 
     // Initialize pending rewards
@@ -115,14 +119,14 @@ pub fn initialize_player(
     msg!("     Pending rewards initialized");
 
     // Initialize position tracking vectors
-    player_data.minebtc_position_indices = Vec::new();
+    player_data.dogebtc_position_indices = Vec::new();
     player_data.lp_position_indices = Vec::new();
     msg!("     Position tracking initialized");
 
-    // Initialize egg staking
-    player_data.staked_eggs = Vec::new();
-    player_data.egg_multiplier = 100; // Default 1.0x (no eggs staked)
-    msg!("     Egg staking initialized (0 eggs, 1.0x multiplier)");
+    // Initialize doge staking
+    player_data.staked_doges = Vec::new();
+    player_data.doge_multiplier = 100; // Default 1.0x (no doges staked)
+    msg!("     Doge staking initialized (0 doges, 1.0x multiplier)");
 
     // Initialize free tickets vectors
     player_data.free_tickets = Vec::new();
@@ -135,9 +139,7 @@ pub fn initialize_player(
     new_player_rewards.owner = ctx.accounts.authority.key();
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
     new_player_rewards.referrals_count = 0;
-    new_player_rewards.pending_sol_rewards = 0;
     new_player_rewards.pending_minebtc_rewards = 0;
-    new_player_rewards.total_sol_earned = 0;
     new_player_rewards.total_minebtc_earned = 0;
     msg!("     Referral rewards account initialized");
 
@@ -166,11 +168,11 @@ pub fn initialize_player(
 
 /// Change user's faction
 /// Requires:
-/// - No minebtc hashpower (minebtc_hashpower == 0)
+/// - No minebtc hashpower (dogebtc_hashpower == 0)
 /// - No lp hashpower (lp_hashpower == 0)
-/// - No eggs staked (staked_eggs.is_empty())
+/// - No doges staked (staked_doges.is_empty())
 /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
     msg!(
         "🔄 [change_faction] User changing faction. User: {}",
         ctx.accounts.authority.key()
@@ -197,9 +199,9 @@ pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result
     // Validate user has no staked positions
     msg!("   Validating user has no staked positions...");
     require!(
-        player_data.minebtc_hashpower == 0
+        player_data.dogebtc_hashpower == 0
             && player_data.lp_hashpower == 0
-            && player_data.staked_eggs.is_empty(),
+            && player_data.staked_doges.is_empty(),
         ErrorCode::InvalidParameters
     );
 
@@ -270,7 +272,7 @@ pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result
 ///
 /// Note: Faction accounts are not required for user betting functions. Faction-related calculations
 /// are handled in end_round_faction_rewards by cranker bots.
-pub fn join_round(
+pub fn internal_join_round(
     ctx: Context<JoinRound>,
     amount: u64,
     bet_type: BetType,
@@ -320,7 +322,7 @@ pub fn join_round(
 ///
 /// Note: Faction accounts are not required for user betting functions. Faction-related calculations
 /// are handled in end_round_faction_rewards by cranker bots.
-pub fn join_round_batch(
+pub fn internal_join_round_batch(
     ctx: Context<JoinRoundBatch>,
     bet_types: Vec<BetType>,
     amount_per_bet: u64,
@@ -403,7 +405,7 @@ pub fn join_round_batch(
 /// Can be called multiple times, but only when rounds_remaining == 0
 /// Total SOL = sol_per_round × num_rounds
 /// Bet size per bet = sol_per_round / total_bets_per_round
-pub fn init_autominer(
+pub fn internal_init_autominer(
     ctx: Context<InitAutominer>,
     blocks_config: Option<BlocksConfig>,
     factions_config: Option<FactionsConfig>,
@@ -584,7 +586,7 @@ fn get_strategy_multiplier(strategy: FactionStrategy) -> u64 {
 /// Generates bet types dynamically from blocks_config and factions_config
 /// Pays caller 1% of bet size (max 0.005 SOL) per bet for tx costs
 /// Uses join_round_batch to place all bets efficiently
-pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
     msg!("   Caller: {}", ctx.accounts.caller.key());
@@ -818,7 +820,7 @@ pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
 /// Stop autominer and refund remaining SOL
 /// Can only be called by vault owner
 /// Refunds all remaining SOL (after rent) and resets rounds_remaining to 0
-pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     msg!("🛑 [stop_autominer] Stopping autominer");
 
     // Read values before mutable borrow
@@ -894,6 +896,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     msg!("   Round ID: {}", round_id);
 
+    let player_data_key = ctx.accounts.player_data.key();
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
@@ -933,11 +936,13 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
         let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
+        let wgtd_points_bet_on_block = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
 
         msg!(
-            "     Block {}: Points bet: {} SOL",
+            "     Block {}: Points: {}, Wgtd: {}",
             block_id,
-            points_bet_on_block as f64 / 1_000_000_000.0
+            points_bet_on_block as f64 / 1_000_000_000.0,
+            wgtd_points_bet_on_block as f64 / 1_000_000_000.0
         );
 
         let is_winning_block = block_id == game_session.winning_block;
@@ -946,7 +951,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         if is_winning_block {
             msg!("       ✓ Winning block - calculating rewards...");
 
-            // SOL rewards (only for winning block)
+            // SOL rewards: use regular points
             if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
                 let sol_reward = helper::mul_div(
                     points_bet_on_block,
@@ -957,10 +962,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
                 msg!("         SOL reward: {} lamports", sol_reward);
             }
 
-            // MineBtc rewards (winning block)
-            if game_session.minebtc_rewards_index > 0 && points_bet_on_block > 0 {
+            // MineBtc rewards: use wgtd_points
+            if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
                 let minebtc_reward = helper::mul_div(
-                    points_bet_on_block,
+                    wgtd_points_bet_on_block,
                     game_session.minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
@@ -970,10 +975,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         } else if is_same_faction_block {
             msg!("       ✓ Same-faction other block - calculating MineBtc rewards...");
 
-            // MineBtc rewards (same-faction other block)
-            if game_session.same_faction_minebtc_rewards_index > 0 && points_bet_on_block > 0 {
+            // MineBtc rewards: use wgtd_points
+            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
                 let minebtc_reward = helper::mul_div(
-                    points_bet_on_block,
+                    wgtd_points_bet_on_block,
                     game_session.same_faction_minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
@@ -996,7 +1001,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     msg!(
         "     Total MineBtc won: {} (+{})",
-        player_data.total_minebtc_won,
+        player_data.total_dogebtc_won,
         total_minebtc_reward
     );
 
@@ -1026,22 +1031,159 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         total_minebtc_reward
     );
 
-    // Remove round from player's active rounds list
-    msg!("   Removing round from player's active rounds list...");
-    if let Some(index) = player_data
-        .bets_rounds
-        .iter()
-        .position(|&r| r == user_bet.round_id)
-    {
-        let old_count = player_data.bets_rounds.len();
-        player_data.bets_rounds.remove(index);
-        player_data.bets_points.remove(index);
-        msg!(
-            "     Removed round {} from active rounds (count: {} -> {})",
-            user_bet.round_id,
-            old_count,
-            player_data.bets_rounds.len()
-        );
+    // === ACCUMULATED VALUE & MUTATION SYNC ===
+    if player_data.gameplay_doge != Pubkey::default() && total_minebtc_reward > 0 {
+        require!(ctx.accounts.doge_metadata.is_some(), ErrorCode::DogeMetadataNotFound);
+        if let Some(ref mut doge_metadata) = ctx.accounts.doge_metadata {
+            if doge_metadata.mint == player_data.gameplay_doge {
+                // Calculate accumulated_val % based on mutation type
+                // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
+                let accum_pct = match user_bet.mutation_type {
+                    1 => 69u64,  // Evolution: 6.9%
+                    2 => 42u64,  // Power: 4.2%
+                    3 => 30u64,  // Trait: 3%
+                    _ => 10u64,  // No mutation: 1%
+                };
+                let accum_add = (total_minebtc_reward * accum_pct) / 1000;
+                doge_metadata.accumulated_val = doge_metadata.accumulated_val + accum_add;
+                msg!("💎 Doge accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
+
+                // Sync DNA/XP/multiplier from PlayerData cache
+                // Note: generation is stored in DNA bits 4-6, not as separate field
+                doge_metadata.dna = player_data.gameplay_doge_dna;
+                doge_metadata.xp = player_data.gameplay_doge_xp;
+                doge_metadata.multiplier = player_data.active_multiplier;
+                
+                // For Evolution, reset XP (DNA already updated by evolve_stage)
+                if user_bet.mutation_type == 1 {
+                    doge_metadata.xp = 0;
+                    player_data.gameplay_doge_xp = 0;
+                }
+
+                msg!("🧬 Synced to doge: {}", doge_metadata.mint);
+            }
+        }
+    }
+
+    // === FREE DOGE MINT CHANCE ===
+    // Conditions: won on winning block, same faction, no mutation, 50% random chance
+    let bet_owner = user_bet.owner;
+    let won_on_winning_block = user_bet.block_ids.iter().any(|&b| b == game_session.winning_block);
+    let same_faction = player_data.faction_id == game_session.winning_faction_id;
+    let no_mutation = user_bet.mutation_type == 0;
+
+    if won_on_winning_block && same_faction && no_mutation {
+        // Use current ongoing round for entropy (harder to game)
+        let entropy_sol = ctx.accounts.current_game_session.as_ref()
+            .map(|s| s.total_sol_bets).unwrap_or(0);
+        let entropy_pts = ctx.accounts.current_game_session.as_ref()
+            .map(|s| s.total_points_bets).unwrap_or(0);
+        let current_round = ctx.accounts.global_game_state.current_round_id;
+        let clock = Clock::get()?;
+
+        let seed = anchor_lang::solana_program::keccak::hashv(&[
+            &clock.slot.to_le_bytes(),
+            &clock.unix_timestamp.to_le_bytes(),
+            &current_round.to_le_bytes(),
+            &entropy_sol.to_le_bytes(),
+            &entropy_pts.to_le_bytes(),
+            bet_owner.as_ref(),
+            &game_session.round_id.to_le_bytes(),
+        ]).to_bytes();
+
+        // 50% chance: check if first byte < 128
+        let roll = seed[0];
+        if roll < 128 {
+            msg!("🎁 FREE DOGE! Roll: {} < 128", roll);
+
+            // Mint free doge if all accounts provided
+            if let (
+                Some(ref mut doge_config),
+                Some(ref new_doge_asset),
+                Some(ref collection_authority),
+                Some(ref mpl_core_program),
+                Some(ref new_doge_metadata_info),
+            ) = (
+                ctx.accounts.doge_config.as_mut(),
+                ctx.accounts.new_doge_asset.as_ref(),
+                ctx.accounts.collection_authority.as_ref(),
+                ctx.accounts.mpl_core_program.as_ref(),
+                ctx.accounts.new_doge_metadata.as_ref(),
+            ) {
+                if doge_config.doges_minted < doge_config.max_supply {
+                    let mint_number = doge_config.doges_minted + 1;
+                    let (name, uri, dna, multiplier) = crate::instructions::doges::generate_doge_data(
+                        mint_number,
+                        &bet_owner,
+                        clock.slot,
+                        player_data.faction_id
+                    )?;
+
+                    // Create NFT via MPL Core - owner is bet_owner (not caller)
+                    let collection_authority_bump = ctx.bumps.collection_authority.unwrap_or(0);
+                    let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
+                    
+                    crate::mpl_core_helpers::create_mpl_core_asset(
+                        &new_doge_asset.to_account_info(),
+                        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+                        &collection_authority.to_account_info(),
+                        &ctx.accounts.caller.to_account_info(),
+                        &ctx.accounts.user_wallet.to_account_info(), // Owner is bet_owner
+                        &ctx.accounts.system_program.to_account_info(),
+                        &mpl_core_program.to_account_info(),
+                        name.clone(),
+                        uri.clone(),
+                        Some(&[collection_authority_seeds]),
+                    )?;
+
+                    // Initialize new doge metadata (generation is in DNA bits 4-6)
+                    let new_doge_meta_data = DogeMetadata {
+                        mint: new_doge_asset.key(),
+                        mom: Pubkey::default(),
+                        dad: Pubkey::default(),
+                        breed_count: 0,
+                        cooldown_end: 0,
+                        accumulated_val: 0,
+                        dna,
+                        incubated_player_data: Pubkey::default(),
+                        multiplier,
+                        faction_id: player_data.faction_id,
+                        xp: 0,
+                        last_update_ts: clock.unix_timestamp,
+                        created_at: clock.unix_timestamp,
+                        bump: 0,
+                    };
+                    
+                    // Serialize and write to account
+                    let mut data = new_doge_metadata_info.try_borrow_mut_data()?;
+                    let mut cursor = std::io::Cursor::new(&mut data[8..]); // Skip discriminator
+                    new_doge_meta_data.serialize(&mut cursor)?;
+
+                    doge_config.doges_minted += 1;
+
+                    emit!(crate::events::DogeMinted {
+                        doge_metadata_account: new_doge_metadata_info.key(),
+                        doge_asset_signer: new_doge_asset.key(),
+                        owner: bet_owner,
+                        player: player_data_key,
+                        mint: new_doge_asset.key(),
+                        name,
+                        uri,
+                        dna,
+                        accumulated_val: 0,
+                        multiplier,
+                        faction_id: player_data.faction_id,
+                        price: 0,
+                        ticket_tier: 0,
+                        ticket_count: 0,
+                    });
+
+                    msg!("🥚 Free doge minted to {}!", bet_owner);
+                }
+            }
+        } else {
+            msg!("🎲 No free doge this time. Roll: {} >= 128", roll);
+        }
     }
 
     // Close bet account and return rent
@@ -1132,9 +1274,13 @@ fn internal_process_bets<'info>(
     let mut total_protocol_fee = 0u64;
     let mut total_net_to_pot = 0u64;
 
+    // Get multiplier (default 100 = 1x if not set)
+    let active_mult = if player_data.active_multiplier == 0 { 100u64 } else { player_data.active_multiplier as u64 };
+
     // Calculate amounts per bet (uniform across batch)
-    let (net_per_bet, fee_per_bet, points_per_bet) = if let Some(ticket_type_index) = use_ticket {
-        // Ticket Logic
+    // wgtd_points: points * multiplier / 100 for SOL bets, else points (tickets)
+    let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) = if let Some(ticket_type_index) = use_ticket {
+        // Ticket Logic - no multiplier applied
         require!(
             (ticket_type_index as usize) < player_data.free_tickets.len(),
             ErrorCode::InvalidParameters
@@ -1163,9 +1309,9 @@ fn internal_process_bets<'info>(
             ticket_type_index
         );
 
-        (0, 0, amount_per_bet)
+        (0, 0, amount_per_bet, amount_per_bet) // wgtd_points = points for tickets
     } else {
-        // SOL Logic
+        // SOL Logic - apply multiplier for wgtd_points
         require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
         let (net, fee) = handle_fee(
             amount_per_bet,
@@ -1181,7 +1327,9 @@ fn internal_process_bets<'info>(
         total_protocol_fee = protocol_fee * num_bets;
         total_net_to_pot = net * num_bets;
 
-        (net, fee, net) // Points = Net Amount for SOL bets
+        // wgtd_points = points * multiplier / 100 for SOL bets
+        let wgtd = net * active_mult / 100;
+        (net, fee, net, wgtd)
     };
 
     // Perform Bulk Transfers
@@ -1244,7 +1392,10 @@ fn internal_process_bets<'info>(
         user_game_bet.block_ids = Vec::new();
         user_game_bet.sol_bets = Vec::new();
         user_game_bet.points_bets = Vec::new();
+        user_game_bet.wgtd_points_bets = Vec::new();
         user_game_bet.bump = user_game_bet_bump;
+
+        player_data.rounds_played += 1;
         msg!("     New bet account initialized");
     } else {
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
@@ -1265,10 +1416,12 @@ fn internal_process_bets<'info>(
         {
             user_game_bet.sol_bets[index] += net_per_bet;
             user_game_bet.points_bets[index] += points_per_bet;
+            user_game_bet.wgtd_points_bets[index] += wgtd_points_per_bet;
         } else {
             user_game_bet.block_ids.push(target_block);
             user_game_bet.sol_bets.push(net_per_bet);
             user_game_bet.points_bets.push(points_per_bet);
+            user_game_bet.wgtd_points_bets.push(wgtd_points_per_bet);
 
             // Increment user count for this block only if new
             game_session.user_block_indexes[block_index] += 1;
@@ -1277,6 +1430,7 @@ fn internal_process_bets<'info>(
         // Update GameSession stats
         game_session.sol_bets_indexes[block_index] += net_per_bet;
         game_session.points_bets_indexes[block_index] += points_per_bet;
+        game_session.wgtd_points_bets_indexes[block_index] += wgtd_points_per_bet;
 
         // Record for events
         evt_target_blocks.push(target_block);
@@ -1288,25 +1442,19 @@ fn internal_process_bets<'info>(
     // Update Totals
     let total_net_added = net_per_bet * num_bets;
     let total_points_added = points_per_bet * num_bets;
+    let total_wgtd_points_added = wgtd_points_per_bet * num_bets;
     let total_fee_added = fee_per_bet * num_bets;
 
     user_game_bet.total_sol_bet += total_net_added;
     user_game_bet.total_points_bet += total_points_added;
+    user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
     user_game_bet.total_fee += total_fee_added;
 
     game_session.total_sol_bets += total_net_added;
     game_session.total_points_bets += total_points_added;
+    game_session.total_wgtd_points_bets += total_wgtd_points_added;
     game_session.stakers_fee += total_stakers_fee;
 
-    // Update PlayerData
-    if !player_data.bets_rounds.contains(&round_id) {
-        player_data.rounds_played += 1;
-        player_data.bets_rounds.push(round_id);
-        player_data.bets_points.push(0);
-    }
-    if let Some(index) = player_data.bets_rounds.iter().position(|&r| r == round_id) {
-        player_data.bets_points[index] += total_points_added;
-    }
     player_data.total_sol_bet += total_net_added;
     player_data.total_points_bet += total_points_added;
 
@@ -1337,6 +1485,7 @@ fn internal_process_bets<'info>(
         (false, None, None, 0, None, None)
     };
 
+    let clock = Clock::get()?;
     emit!(BetsPlaced {
         user: owner_key,
         player_data: player_data.key(),
@@ -1354,8 +1503,79 @@ fn internal_process_bets<'info>(
         caller_compensation,
         rounds_remaining,
         vault_closed,
-        timestamp: Clock::get()?.unix_timestamp,
+        timestamp: clock.unix_timestamp,
     });
+
+    // === INSTANT MUTATION & XP LOGIC ===
+    // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_doge
+    let faction_id = player_data.faction_id as usize;
+    if global_config.rpg_progression
+        && amount_per_bet > 0
+        && use_ticket.is_none()
+        && user_game_bet.mutation_type == 0
+        && player_data.gameplay_doge != Pubkey::default()
+    {
+        // Update highest bet for faction
+        if user_game_bet.total_sol_bet > game_session.highest_sol_bet_per_faction[faction_id] {
+            game_session.highest_sol_bet_per_faction[faction_id] = user_game_bet.total_sol_bet;
+        }
+
+        // Calculate mutation result (generation derived from DNA)
+        let doge_mint = player_data.gameplay_doge;
+        let mutation_result = calculate_mutation_result(
+            user_game_bet.total_sol_bet,
+            game_session.highest_sol_bet_per_faction[faction_id],
+            player_data.active_multiplier,
+            player_data.gameplay_doge_dna,
+            player_data.gameplay_doge_xp,
+            game_session.total_sol_bets,
+            game_session.total_points_bets,
+            game_session.total_wgtd_points_bets,
+            clock.slot,
+            &owner_key,
+            &doge_mint,
+        );
+
+        // Always add XP to PlayerData (even without mutation)
+        player_data.gameplay_doge_xp = player_data.gameplay_doge_xp + mutation_result.xp_gained;
+
+        // Process mutation if triggered
+        if let Some(mutation_type) = mutation_result.mutation_type {
+            // Evolution: only 1 per faction per round. Power/Trait: unlimited
+            let is_evolution = matches!(mutation_type, MutationType::Evolution);
+            let can_apply = !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
+
+            player_data.active_multiplier = player_data.active_multiplier + mutation_result.multiplier_increase;
+
+            if can_apply {
+                user_game_bet.mutation_type = match mutation_type {
+                    MutationType::Evolution => 1,
+                    MutationType::Power => 2,
+                    MutationType::Trait => 3,
+                };
+                player_data.gameplay_doge_dna = mutation_result.new_dna;
+
+                if is_evolution {
+                    game_session.mutation_occurred_per_faction[faction_id] = true;
+                }
+
+                emit!(MutationTriggered {
+                    user: owner_key,
+                    doge_mint: player_data.gameplay_doge,
+                    faction_id: player_data.faction_id,
+                    round_id,
+                    mutation_type: user_game_bet.mutation_type,
+                    bet_amount: total_net_added,
+                    highest_bet: game_session.highest_sol_bet_per_faction[faction_id],
+                    timestamp: clock.unix_timestamp,
+                });
+
+                msg!("🧬 Mutation! Type: {}, Mult: {}", user_game_bet.mutation_type, player_data.active_multiplier);
+            }
+        }
+
+        msg!("   XP: {}", player_data.gameplay_doge_xp);
+    }
 
     Ok(())
 }
@@ -1905,24 +2125,21 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(
-        mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
-        bump
-    )]
+    #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
-    #[account(
-        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
-        bump = game_session.bump
-    )]
+    #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
     pub game_session: Account<'info, GameSession>,
 
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump
-    )]
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
     pub global_config: Account<'info, GlobalConfig>,
+
+    /// Global game state (for current round entropy)
+    #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+
+    /// Current ongoing round session (for randomness entropy)
+    pub current_game_session: Option<Account<'info, GameSession>>,
 
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
@@ -1932,20 +2149,42 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// CHECK: UserGameBet PDA (validated in instruction)
-    #[account(
-        mut,
-        close = user_wallet
-    )]
+    #[account(mut, close = user_wallet)]
     pub user_game_bet: Account<'info, UserGameBet>,
 
-    /// User whose bet this is (doesn't need to be signer - anyone can claim for them)
-    /// CHECK: Validated via player_data.owner matching user_wallet
+    /// CHECK: User whose bet this is
     #[account(mut)]
     pub user_wallet: UncheckedAccount<'info>,
 
-    /// Caller (bot or user themselves) - can be anyone
+    /// Caller (bot or user themselves)
     pub caller: Signer<'info>,
+
+    /// Optional DogeMetadata account for syncing mutation
+    #[account(mut)]
+    pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
+
+    // === Free Doge Mint Accounts (optional) ===
+    #[account(mut)]
+    pub doge_config: Option<Box<Account<'info, DogeConfig>>>,
+
+    /// CHECK: New doge asset to be created
+    #[account(mut)]
+    pub new_doge_asset: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Doge collection
+    pub doge_collection: Option<UncheckedAccount<'info>>,
+
+    /// New doge metadata account (init if minting)
+    /// CHECK: Will be initialized via remaining_accounts if needed
+    #[account(mut)]
+    pub new_doge_metadata: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Collection authority PDA
+    #[account(seeds = [COLLECTION_AUTHORITY_SEED], bump)]
+    pub collection_authority: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: Option<UncheckedAccount<'info>>,
 
     pub system_program: Program<'info, System>,
 }
@@ -2113,6 +2352,234 @@ pub struct ExecuteAutominerBet<'info> {
     /// Caller (bot or anyone) - doesn't need to be owner
     #[account(mut)]
     pub caller: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// ========================================================================================
+// =============================== GAMEPLAY DOGE FUNCTIONS =================================
+// ========================================================================================
+
+/// Use an doge for gameplay - deposits doge to program custody and sets it as active gameplay doge
+pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let faction_state = &mut ctx.accounts.faction_state;
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
+    let doge_mint = doge_metadata.mint;
+    let current_time = Clock::get()?.unix_timestamp;
+
+    msg!("🎮 === USING DOGE FOR GAMEPLAY ===");
+    msg!("   Doge mint: {}", doge_mint);
+
+    // Verify ownership
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
+    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+
+    // Verify doge is not already incubated (staked)
+    require!(doge_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
+
+    // Verify no doge currently in gameplay
+    require!(player_data.gameplay_doge == Pubkey::default(), ErrorCode::InvalidParameters);
+
+    // Verify faction matches
+    require!(
+        doge_metadata.faction_id == faction_state.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+
+    // Transfer NFT to custody PDA
+    msg!("🔒 Transferring doge to custody PDA for gameplay");
+    crate::mpl_core_helpers::transfer_mpl_core_asset(
+        &ctx.accounts.doge_asset.to_account_info(),
+        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        None,
+    )?;
+
+    // Update player data - cache doge fields for mutation calculations
+    // Note: generation is stored in DNA bits 4-6, not separately
+    player_data.gameplay_doge = doge_mint;
+    player_data.active_multiplier = doge_metadata.multiplier;
+    player_data.gameplay_doge_dna = doge_metadata.dna;
+    player_data.gameplay_doge_xp = doge_metadata.xp;
+
+    // Update faction state
+    faction_state.doges_playing += 1;
+
+    // Update doge metadata
+    doge_metadata.incubated_player_data = player_data.owner;
+    doge_metadata.last_update_ts = current_time;
+
+    let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
+    msg!("✅ Doge {} now active for gameplay", doge_mint);
+    msg!("   Multiplier: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
+    msg!("   Faction doges playing: {}", faction_state.doges_playing);
+
+    emit!(DogeUsedForGameplay {
+        user: ctx.accounts.user.key(),
+        doge_mint,
+        faction_id: player_data.faction_id,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+/// Withdraw doge from gameplay - returns doge to user and clears gameplay doge
+pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let faction_state = &mut ctx.accounts.faction_state;
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
+    let doge_mint = doge_metadata.mint;
+    let current_time = Clock::get()?.unix_timestamp;
+
+    msg!("🎮 === WITHDRAWING DOGE FROM GAMEPLAY ===");
+    msg!("   Doge mint: {}", doge_mint);
+
+    // Verify NFT is in custody PDA
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
+    require!(nft_owner == ctx.accounts.doge_custody_pda.key(), ErrorCode::DogeNotAtGuard);
+
+    // Verify this is the player's gameplay doge
+    require!(player_data.gameplay_doge == doge_mint, ErrorCode::InvalidParameters);
+
+    // Verify doge metadata matches player
+    require!(doge_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
+
+    // Transfer NFT back to user
+    msg!("🔓 Transferring doge back to user");
+    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.doge_custody_pda]];
+    let signer_seeds = &[&custody_seeds[..]];
+
+    crate::mpl_core_helpers::transfer_mpl_core_asset(
+        &ctx.accounts.doge_asset.to_account_info(),
+        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        &ctx.accounts.user.to_account_info(),             // Payer (User pays) 
+        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        Some(signer_seeds),
+    )?;
+
+    // Sync cached data back to doge metadata before withdrawal
+    // Note: generation is stored in DNA bits 4-6
+    msg!("   Syncing gameplay progress to doge...");
+    doge_metadata.dna = player_data.gameplay_doge_dna;
+    doge_metadata.xp = player_data.gameplay_doge_xp;
+    doge_metadata.multiplier = player_data.active_multiplier;
+
+    let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
+    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
+
+    // Clear player data gameplay fields
+    player_data.gameplay_doge = Pubkey::default();
+    player_data.active_multiplier = 100; // Reset to 1x
+    player_data.gameplay_doge_dna = [0u8; 32];
+    player_data.gameplay_doge_xp = 0;
+
+    // Update faction state
+    faction_state.doges_playing = faction_state.doges_playing.saturating_sub(1);
+
+    // Update doge metadata
+    doge_metadata.incubated_player_data = Pubkey::default();
+    doge_metadata.last_update_ts = current_time;
+
+    msg!("✅ Doge {} withdrawn from gameplay", doge_mint);
+    msg!("   Faction doges playing: {}", faction_state.doges_playing);
+
+    emit!(DogeWithdrawnFromGameplay {
+        user: ctx.accounts.user.key(),
+        doge_mint,
+        faction_id: player_data.faction_id,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct UseDogeForGameplay<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub faction_state: Account<'info, FactionState>,
+
+    /// Metaplex Core asset
+    #[account(mut)]
+    /// CHECK: Verified via get_mpl_core_owner helper
+    pub doge_asset: UncheckedAccount<'info>,
+
+    /// CHECK: Optional collection
+    pub doge_collection: Option<UncheckedAccount<'info>>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_metadata.mint.as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub doge_metadata: Account<'info, DogeMetadata>,
+
+    /// CHECK: PDA for NFT custody
+    #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
+    pub doge_custody_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawDogeFromGameplay<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub faction_state: Account<'info, FactionState>,
+
+    /// Metaplex Core asset (in custody)
+    #[account(mut)]
+    /// CHECK: Verified via get_mpl_core_owner helper
+    pub doge_asset: UncheckedAccount<'info>,
+
+    /// CHECK: Optional collection
+    pub doge_collection: Option<UncheckedAccount<'info>>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_metadata.mint.as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
+    )]
+    pub doge_metadata: Account<'info, DogeMetadata>,
+
+    /// CHECK: PDA for NFT custody
+    #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
+    pub doge_custody_pda: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }

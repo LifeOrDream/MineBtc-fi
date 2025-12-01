@@ -85,8 +85,8 @@ function generateWebsiteConfig(config, deployment) {
         deployment.minebtc_program_initialized?.mineBtcMining_address,
       sol_treasury_pda:
         deployment.minebtc_program_initialized?.solTreasury_address,
-      eggs_treasury_pda:
-        deployment.minebtc_program_initialized?.eggsTreasury_address,
+      doges_treasury_pda:
+        deployment.minebtc_program_initialized?.dogesTreasury_address,
       unrefinedRewards_pda:
         deployment.minebtc_program_initialized?.unrefinedRewards_address,
       autominerCustody_pda:
@@ -116,11 +116,11 @@ function generateWebsiteConfig(config, deployment) {
       sol_prize_pot_vault:
         deployment.raydium_pool_state_set?.sol_prize_pot_vault,
 
-      // ========== DRAGON EGG COLLECTION ==========
-     egg_collection:
-        deployment.egg_collection_created?.collection_address,
-     egg_collection_authority:
-        deployment.egg_collection_created?.collection_authority,
+      // ==========  DOGE COLLECTION ==========
+     doge_collection:
+        deployment.doge_collection_created?.collection_address,
+     doge_collection_authority:
+        deployment.doge_collection_created?.collection_authority,
 
       // ========== LP TOKEN MANAGEMENT ==========
       lp_token_account:
@@ -146,11 +146,11 @@ function generateWebsiteConfig(config, deployment) {
         deployment.custodian_accounts_initialized
           ?.liquidity_custodian_authority,
 
-      // ========== EGG CONFIG ==========
-      egg_config_pda: deployment.egg_config_initialized?.eggs_config_pda,
-      egg_base_price: deployment.egg_config_initialized?.base_price,
-      egg_curve_a: deployment.egg_config_initialized?.curve_a,
-      egg_max_supply: deployment.egg_config_initialized?.max_supply,
+      // ========== DOGE CONFIG ==========
+      doge_config_pda: deployment.doge_config_initialized?.doges_config_pda,
+      doge_base_price: deployment.doge_config_initialized?.base_price,
+      doge_curve_a: deployment.doge_config_initialized?.curve_a,
+      doge_max_supply: deployment.doge_config_initialized?.max_supply,
 
       // ========== TAX CONFIG ==========
       tax_config_pda: deployment.tax_config_initialized?.tax_config_pda,
@@ -161,10 +161,6 @@ function generateWebsiteConfig(config, deployment) {
       nft_floor_sweep_vault:
         deployment.tax_config_initialized?.nft_floor_sweep_vault,
       nft_sale_sol_vault: deployment.tax_config_initialized?.nft_sale_sol_vault,
-      nft_floor_sweep_pct:
-        deployment.tax_config_initialized?.nft_floor_sweep_pct,
-      faction_treasury_pct:
-        deployment.tax_config_initialized?.faction_treasury_pct,
 
       // ========== CRANKER BOTS ==========
       cranker_bots: deployment.cranker_bots_added?.bots || [],
@@ -179,10 +175,9 @@ function generateWebsiteConfig(config, deployment) {
           (tier) => ({
             tier_index: tier.tier_index,
             ticket_value: tier.ticket_value,
-            ticket_count: tier.ticket_count,
           })
         ) ||
-        config.eggs_config?.ticket_tiers ||
+        config.doges_config?.ticket_tiers ||
         [],
 
       // ========== FACTION CONFIGURATION ==========
@@ -285,8 +280,8 @@ function main() {
       }`
     );
     console.log(
-      `  🥚 Egg Collection: ${
-        websiteConfig[cluster].egg_collection || "Not created"
+      `  🥚 Doge Collection: ${
+        websiteConfig[cluster].doge_collection || "Not created"
       }`
     );
     console.log(
