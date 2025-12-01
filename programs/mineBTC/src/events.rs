@@ -88,8 +88,6 @@ pub struct LpTokensBurned {
     pub total_lp_burnt: u64,
     pub minebtc_amount_added: u64,
     pub sol_amount_added: u64,
-    pub sol_vault_balance: u64, // SOL vault balance after LP addition (lamports)
-    pub minebtc_vault_balance: u64, // MINE_BTC vault balance after LP addition (6 decimals)
     pub lp_token_price: u64,    // LP token price in SOL (9 decimals)
     pub timestamp: i64,
 }

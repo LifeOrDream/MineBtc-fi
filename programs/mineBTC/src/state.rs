@@ -21,6 +21,8 @@ pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
 pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
+pub const MAX_MULTIPLIER: u16 = 10000; // Maximum multiplier a user can have (10.0x)
+
 pub const MAX_BASE_CHANCE: u64 = 5000; // 50%
 
 /// ------------ CONSTANTS ------------
@@ -109,10 +111,6 @@ pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
 // ==========  DOGE NFT CONSTANTS ========== //
 pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of doges a user can stake
-pub const MAX_MULTIPLIER: u16 = 690; // Maximum multiplier a user can have (6.9x)
-
-pub const MAX_DOGE_URIS: usize = 20; // Max URIs in GlobalConfig
-pub const MAX_URI_LENGTH: usize = 200;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
 

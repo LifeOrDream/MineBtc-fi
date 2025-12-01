@@ -950,19 +950,30 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         let data = ctx.accounts.lp_token_account.try_borrow_data()?;
         anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
+    msg!("   💰 LP balance after: {}", lp_balance_after);
+    msg!("   💰 LP balance before: {}", lp_balance_before);
     let lp_tokens_minted = lp_balance_after - lp_balance_before;
+    msg!("   💰 LP tokens minted: {}", lp_tokens_minted);
 
     let sol_balance_after = {
         let data = ctx.accounts.sol_token_account.try_borrow_data()?;
         anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
+    msg!("   💰 SOL balance after: {}", sol_balance_after);
+    msg!("   💰 SOL balance before: {}", total_sol_for_lp);
     let sol_consumed = total_sol_for_lp - sol_balance_after;
+    msg!("   💰 SOL consumed: {}", sol_consumed);
 
-    let minebtc_vault_after = {
-        let data = ctx.accounts.minebtc_vault.try_borrow_data()?;
-        anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
-    };
-    let minebtc_consumed = minebtc_vault_balance - minebtc_vault_after;
+// ✅ RIGHT: Reloads fresh data from the account info
+let available_minebtc_after = {
+    let account_info = ctx.accounts.minebtc_token_account.to_account_info();
+    let data = account_info.try_borrow_data()?;
+    anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
+};
+    msg!("   💰 MINEBTC balance after: {}", available_minebtc_after);
+    msg!("   💰 MINEBTC balance before: {}", available_minebtc);
+    let minebtc_consumed = available_minebtc - available_minebtc_after;
+    msg!("   💰 MINEBTC consumed: {}", minebtc_consumed);
 
     msg!(
         "   ✅ LP minted: {}, SOL consumed: {}, MINEBTC consumed: {}",
@@ -1022,8 +1033,6 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             total_lp_burnt: mine_btc_mining.pol_stats.total_lp_burnt,
             minebtc_amount_added: minebtc_consumed,
             sol_amount_added: sol_consumed,
-            sol_vault_balance: sol_vault_balance.saturating_sub(sol_consumed),
-            minebtc_vault_balance: minebtc_vault_after,
             lp_token_price: mine_btc_mining.lp_token_price_in_sol,
             timestamp: Clock::get()?.unix_timestamp,
         });

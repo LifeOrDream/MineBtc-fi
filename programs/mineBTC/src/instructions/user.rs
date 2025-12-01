@@ -125,7 +125,7 @@ pub fn internal_initialize_player(
 
     // Initialize doge staking
     player_data.staked_doges = Vec::new();
-    player_data.doge_multiplier = 100; // Default 1.0x (no doges staked)
+    player_data.doge_multiplier = BASE_MULTIPLIER as u16; // Default 1.0x (no doges staked)
     msg!("     Doge staking initialized (0 doges, 1.0x multiplier)");
 
     // Initialize free tickets vectors
