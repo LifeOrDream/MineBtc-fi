@@ -760,7 +760,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
-        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &&ctx.accounts.user.to_account_info(),
         &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),

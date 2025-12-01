@@ -250,16 +250,16 @@ async function main() {
     // // }
     // return;
 
-    // // 1.6. Update Fees (if needed - can be called anytime after initialization)
-    // // Example usage:
-    // await updateFees(minebtcProgram, {
-    //     newProtocolFeePct: 10, // 10,
-    //     newBuybackPct: null, //40,
-    //     newStakersPct: null, //50,
-    //     changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
-    //     snapshotInterval:  10, // 30 minutes in seconds
-    // });
-    // return;
+    // 1.6. Update Fees (if needed - can be called anytime after initialization)
+    // Example usage:
+    await updateFees(minebtcProgram, {
+        newProtocolFeePct: 10, // 10,
+        newBuybackPct: null, //40,
+        newStakersPct: null, //50,
+        changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
+        snapshotInterval:  10, // 30 minutes in seconds
+    });
+    return;
 
     // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // Example usage:

@@ -347,7 +347,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
         // Charge emergency tax if any penalty
         if penalty_amount > 0 {
-            // Charge emergency tax: 50% to burn, 50% to MINEBTC vault
+            // Charge emergency tax: 50% to burn 
             helper::charge_emergency_tax(
                 &ctx.accounts.minebtc_custodian.to_account_info(),
                 &ctx.accounts.minebtc_custodian_authority.to_account_info(),

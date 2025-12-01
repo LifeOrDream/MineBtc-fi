@@ -194,6 +194,12 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     let mine_btc_mining: &mut Account<'_, MineBtcMining> = &mut ctx.accounts.mine_btc_mining;
     let current_time = Clock::get()?.unix_timestamp;
 
+    // Check if LP operation is pending
+    require!(
+        !mine_btc_mining.lp_operation_pending,
+        ErrorCode::InvalidAccount
+    );
+
     msg!("   📅 Current timestamp: {}", current_time);
     msg!(
         "   ⏰ Last update timestamp: {}",

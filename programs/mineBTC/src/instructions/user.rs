@@ -2457,7 +2457,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.doge_asset.to_account_info(),
         ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
-        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.user.to_account_info(),             // Payer (User pays) 
         &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),

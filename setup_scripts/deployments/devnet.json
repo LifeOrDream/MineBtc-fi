@@ -343,5 +343,16 @@
     "curve_a": "1111111",
     "tx_signature": "W4jdonfXg8V8jGuBzqGndm468HX5vM9yTPtM41swNSYQzBUVKwgeMuCAwFTFATx4YVVQzf445ou6zdTnTTuTumo",
     "timestamp": "2025-11-30T11:17:47.620Z"
+  },
+  "fees_updated": {
+    "fee_config": {
+      "newProtocolFeePct": 10,
+      "newBuybackPct": null,
+      "newStakersPct": null,
+      "changeFactionFee": null,
+      "snapshotInterval": 10
+    },
+    "tx_signature": "5m1YJgjeNfj3JAWwQGb3fGCrQxm5goTeAHYzsDYi9cbsVMFcaZGaCLMDRZZUUL2tvp6yWVQzjFRwHida7AaPW4u6",
+    "timestamp": "2025-12-01T09:07:36.377Z"
   }
 }
