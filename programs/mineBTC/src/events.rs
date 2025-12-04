@@ -310,6 +310,11 @@ pub struct FactionChanged {
 pub struct BetsPlaced {
     pub user: Pubkey,
     pub player_data: Pubkey,
+
+    pub gameplay_doge: Pubkey,
+    pub gameplay_doge_dna: [u8; 32],
+    pub active_multiplier: u32,
+
     pub round_id: u64,
     pub num_bets: u8,
     pub target_blocks: Vec<u8>,

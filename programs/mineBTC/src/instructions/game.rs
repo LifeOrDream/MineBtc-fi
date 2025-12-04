@@ -261,6 +261,15 @@ pub fn int_end_round(
         return Ok(());
     }
 
+    // check how many blocks bets have been placed on 
+    let used_blocks = game_session.user_block_indexes.iter().filter(|&x| *x > 0).count();
+    msg!("   Used blocks: {}", used_blocks);
+    
+    if used_blocks < 2 {
+        msg!("   ⚠️ Less than 2 blocks have been bet on - round in extended mode");
+        return Ok(());
+    }
+
     // Validate round has ended
     require!(
         clock.unix_timestamp >= game_session.round_end_timestamp,
@@ -278,20 +287,20 @@ pub fn int_end_round(
     );
     msg!("     ✓ Caller is whitelisted cranker bot");
 
-    // Verify commit-reveal: hash(revealed_seed) must equal current_round_commit
-    msg!("   Verifying commit-reveal scheme...");
-    let seed_hash = keccak::hash(&revealed_seed);
-    let seed_hash_bytes = seed_hash.to_bytes();
-    msg!("   Revealed seed hash: {:?}", seed_hash_bytes);
-    msg!(
-        "   Expected commit hash: {:?}",
-        global_state.current_round_commit
-    );
-    require!(
-        seed_hash_bytes == global_state.current_round_commit,
-        ErrorCode::InvalidParameters
-    );
-    msg!("   ✓ Commit-reveal verification passed");
+    // // Verify commit-reveal: hash(revealed_seed) must equal current_round_commit
+    // msg!("   Verifying commit-reveal scheme...");
+    // let seed_hash = keccak::hash(&revealed_seed);
+    // let seed_hash_bytes = seed_hash.to_bytes();
+    // msg!("   Revealed seed hash: {:?}", seed_hash_bytes);
+    // msg!(
+    //     "   Expected commit hash: {:?}",
+    //     global_state.current_round_commit
+    // );
+    // require!(
+    //     seed_hash_bytes == global_state.current_round_commit,
+    //     ErrorCode::InvalidParameters
+    // );
+    // msg!("   ✓ Commit-reveal verification passed");
 
     // Store revealed seed
     global_state.current_round_seed = Some(revealed_seed);

@@ -1159,6 +1159,9 @@ pub struct AutominerVault {
     pub vault_bump: u8,
     /// Remaining SOL balance reserved for this autominer (held in autominer custody PDA)
     pub sol_balance: u64,
+
+    /// If set to true, SOL rewards can be used to reload Autominer and continue mining dogeBTC
+    pub can_reload: bool,
 }
 
 impl AutominerVault {
@@ -1179,5 +1182,6 @@ impl AutominerVault {
         4 +     // rounds_remaining (u32)
         8 +     // last_bet_round_id
         1 +     // vault_bump
-        8; // sol_balance
+        8 +     // sol_balance
+        1; // can_reload (bool)
 }

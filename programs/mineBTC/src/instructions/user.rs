@@ -411,6 +411,7 @@ pub fn internal_init_autominer(
     factions_config: Option<FactionsConfig>,
     sol_per_round: u64,
     num_rounds: u32,
+    can_reload: bool,
 ) -> Result<()> {
     msg!("🤖 [init_autominer] Initializing autominer vault");
     msg!("   Owner: {}", ctx.accounts.user_wallet.key());
@@ -537,6 +538,7 @@ pub fn internal_init_autominer(
     autominer_vault.last_bet_round_id = 0;
     autominer_vault.vault_bump = ctx.bumps.autominer_vault;
     autominer_vault.sol_balance = total_sol;
+    autominer_vault.can_reload = can_reload;
     msg!(
         "     Vault initialized for owner: {}",
         autominer_vault.owner
@@ -606,7 +608,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     let custody_bump = ctx.bumps.autominer_custody;
     let autominer_custody_info = ctx.accounts.autominer_custody.to_account_info();
 
-    if rounds_remaining == 0 {
+    if rounds_remaining == 0 || last_bet_round_id == global_state.current_round_id {
         return Ok(());
     }
 
@@ -617,22 +619,13 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         last_bet_round_id,
         (sol_per_round as f64 / 1e9)
     );
-    msg!(
-        "   Current round ID: {}. Current timestamp: {}. Round end timestamp: {}",
-        global_state.current_round_id,
-        clock.unix_timestamp,
-        global_state.round_end_timestamp
-    );
+
 
     require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
     require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
     require!(
         clock.unix_timestamp < global_state.round_end_timestamp,
         ErrorCode::RoundEnded
-    );
-    require!(
-        last_bet_round_id != global_state.current_round_id,
-        ErrorCode::InvalidRound
     );
 
     // Generate bet types dynamically from configuration
@@ -1489,6 +1482,9 @@ fn internal_process_bets<'info>(
     emit!(BetsPlaced {
         user: owner_key,
         player_data: player_data.key(),
+        gameplay_doge: player_data.gameplay_doge,
+        gameplay_doge_dna: player_data.gameplay_doge_dna,
+        active_multiplier: player_data.active_multiplier,
         round_id,
         num_bets: num_bets as u8,
         target_blocks: evt_target_blocks,
