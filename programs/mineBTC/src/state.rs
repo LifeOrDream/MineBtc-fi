@@ -546,8 +546,6 @@ pub struct GlobalGameSate {
 
     /// The currently active round ID (e.g., 48636).
     pub current_round_id: u64,
-    /// The timestamp when the current round ends.
-    pub round_end_timestamp: i64,
     /// Round duration in seconds (configurable)
     pub round_duration_seconds: i64,
 
@@ -577,7 +575,6 @@ impl GlobalGameSate {
         1 +     // can_begin_round
         16 +    // total_sol_bets (u128)
         8 +     // current_round_id
-        8 +     // round_end_timestamp
         8 +     // round_duration_seconds
         8 +     // last_round_id
         1 +     // winning_faction_id
@@ -681,7 +678,6 @@ pub struct GameSession {
     pub round_id: u64,
 
     pub round_start_timestamp: i64,
-    pub round_end_timestamp: i64,
 
     /// Total SOL bets placed in this round
     pub total_sol_bets: u64,
@@ -749,7 +745,6 @@ impl GameSession {
         1 +     // stage (u8)
         8 +     // round_id
         8 +     // round_start_timestamp (i64)
-        8 +     // round_end_timestamp (i64)
         8 +     // total_sol_bets
         8 +     // total_points_bets
         8 +     // total_wgtd_points_bets

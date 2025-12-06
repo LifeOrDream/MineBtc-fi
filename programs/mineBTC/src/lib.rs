@@ -44,7 +44,7 @@ pub use state::{
     SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("pW6DL8Vqa725Ux76Lziu5yqGrGaKdED6UhqmZQrRdk8");
+declare_id!("CRK5URwPBsxErwgUeN4ESGgDEf4hobnh6kd149mt9GMa");
 
 #[program]
 pub mod minebtc {
@@ -539,6 +539,7 @@ pub mod minebtc {
         factions_config: Option<FactionsConfig>,
         sol_per_round: u64,
         num_rounds: u32,
+        can_reload: bool,
     ) -> Result<()> {
         user::internal_init_autominer(
             ctx,
@@ -546,6 +547,7 @@ pub mod minebtc {
             factions_config,
             sol_per_round,
             num_rounds,
+            can_reload,
         )
     }
 
@@ -562,6 +564,12 @@ pub mod minebtc {
     /// Claim rewards for a user after round ends
     pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>, round_id: u64) -> Result<()> {
         user::internal_claim_round_rewards(round_id, ctx)
+    }
+
+    /// Claim autominer rewards with auto-reload (keeper instruction)
+    /// Uses SOL rewards to add more rounds to autominer, leftover SOL goes to owner
+    pub fn claim_autominer_rewards(ctx: Context<ClaimAutominerRewards>, round_id: u64) -> Result<()> {
+        user::internal_claim_autominer_rewards(round_id, ctx)
     }
 
     // ----------------------------------------------------------------------------------------

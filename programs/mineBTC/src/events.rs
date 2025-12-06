@@ -314,6 +314,7 @@ pub struct BetsPlaced {
     pub gameplay_doge: Pubkey,
     pub gameplay_doge_dna: [u8; 32],
     pub active_multiplier: u32,
+    pub gameplay_doge_xp: u32,
 
     pub round_id: u64,
     pub num_bets: u8,
@@ -321,6 +322,7 @@ pub struct BetsPlaced {
     pub net_amounts: Vec<u64>,
     pub fee_amounts: Vec<u64>,
     pub points_amounts: Vec<u64>,
+    pub wgtd_points_amounts: Vec<u64>,
 
     pub used_ticket: bool,
     pub ticket_type_index: Option<u8>,
@@ -389,7 +391,6 @@ pub struct RoundStarted {
     pub commit_hash: [u8; 32],
     pub block_assignments: [u8; 24], // 24 blocks, each assigned to a faction (0-11)
     pub round_start_timestamp: i64,
-    pub round_end_timestamp: i64,
     pub timestamp: i64,
 }
 
@@ -405,8 +406,9 @@ pub struct RoundEnded {
     pub total_points_bets: u64,
 
     pub user_bets_count: Vec<u64>,
-    pub block_bet_counts: Vec<u64>,
+    pub block_sol_bets: Vec<u64>,
     pub block_points: Vec<u64>,
+    pub block_wgtd_points: Vec<u64>,
 
     pub minebtc_winner_pool: u64,
     pub minebtc_same_faction_pool: u64,
@@ -539,20 +541,16 @@ pub struct DogeWithdrawnFromGameplay {
 /// Event emitted when an instant mutation is triggered during betting
 #[event]
 pub struct MutationTriggered {
+    pub round_id: u64,
     pub user: Pubkey,
     pub doge_mint: Pubkey,
-    pub faction_id: u8,
-    pub round_id: u64,
-    /// 0 = Evolution, 1 = Power, 2 = Trait
-    pub mutation_type: u8,
-    pub bet_amount: u64,
-    pub highest_bet: u64,
-    pub timestamp: i64,
+    pub xp_gained: u32,
 }
 
 /// Event emitted when a doge evolves to a new stage
 #[event]
 pub struct DogeEvolution {
+    pub round_id: u64,
     pub doge_mint: Pubkey,
     pub new_stage: u8,
     /// Visual trait mutation that happened during evolution
@@ -568,6 +566,7 @@ pub struct DogeEvolution {
 /// Event emitted when a doge's power trait is mutated
 #[event]
 pub struct DogePowerMutation {
+    pub round_id: u64,
     pub doge_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,
@@ -577,6 +576,7 @@ pub struct DogePowerMutation {
 /// Event emitted when a doge's visual trait is mutated
 #[event]
 pub struct DogeVisualMutation {
+    pub round_id: u64,
     pub doge_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,

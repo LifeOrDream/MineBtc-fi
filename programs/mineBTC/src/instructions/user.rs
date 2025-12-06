@@ -623,10 +623,6 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
 
     require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
     require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
-    require!(
-        clock.unix_timestamp < global_state.round_end_timestamp,
-        ErrorCode::RoundEnded
-    );
 
     // Generate bet types dynamically from configuration
     msg!("   Generating bet types from configuration...");
@@ -1206,6 +1202,144 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     Ok(())
 }
 
+/// Claim autominer rewards with auto-reload feature
+/// Called by backend script - no owner check, uses SOL rewards to reload autominer
+pub fn internal_claim_autominer_rewards(round_id: u64, ctx: Context<ClaimAutominerRewards>) -> Result<()> {
+    msg!("🤖 [claim_autominer_rewards] Claiming rewards with auto-reload");
+    msg!("   Round ID: {}", round_id);
+    msg!("   Autominer owner: {}", ctx.accounts.autominer_vault.owner);
+
+    let game_session = &ctx.accounts.game_session;
+    let user_bet = &ctx.accounts.user_game_bet;
+    let player_data = &mut ctx.accounts.player_data;
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+
+    // Round should be completely over
+    require!(game_session.stage == 2, ErrorCode::InvalidStage);
+    require!(
+        round_id == user_bet.round_id && round_id == game_session.round_id,
+        ErrorCode::InvalidRound
+    );
+
+    // Calculate rewards (same logic as internal_claim_round_rewards)
+    let mut total_sol_reward = 0u64;
+    let mut total_minebtc_reward = 0u64;
+
+    for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
+        let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
+        let wgtd_points_bet_on_block = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
+
+        let is_winning_block = block_id == game_session.winning_block;
+        let is_same_faction_block = block_id == game_session.same_faction_other_block;
+
+        if is_winning_block {
+            if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
+                let sol_reward = helper::mul_div(
+                    points_bet_on_block,
+                    game_session.sol_rewards_index as u64,
+                    INDEX_PRECISION,
+                )? as u64;
+                total_sol_reward += sol_reward;
+            }
+            if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
+                let minebtc_reward = helper::mul_div(
+                    wgtd_points_bet_on_block,
+                    game_session.minebtc_rewards_index as u64,
+                    INDEX_PRECISION,
+                )? as u64;
+                total_minebtc_reward += minebtc_reward;
+            }
+        } else if is_same_faction_block {
+            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
+                let minebtc_reward = helper::mul_div(
+                    wgtd_points_bet_on_block,
+                    game_session.same_faction_minebtc_rewards_index as u64,
+                    INDEX_PRECISION,
+                )? as u64;
+                total_minebtc_reward += minebtc_reward;
+            }
+        }
+    }
+
+    msg!("   Total SOL reward: {} lamports", total_sol_reward);
+    msg!("   Total MineBtc reward: {} tokens", total_minebtc_reward);
+
+    player_data.total_sol_won += total_sol_reward;
+
+    // Add MineBtc to pending rewards
+    helper::add_to_total_claimable(
+        &mut ctx.accounts.unrefined_rewards,
+        player_data,
+        total_minebtc_reward,
+    );
+
+    // === AUTO-RELOAD LOGIC ===
+    if total_sol_reward > 0 && autominer_vault.can_reload && autominer_vault.sol_per_round > 0 {
+        msg!("🔄 Auto-reload enabled, processing SOL rewards...");
+        
+        let sol_per_round = autominer_vault.sol_per_round;
+        let rounds_to_add = total_sol_reward / sol_per_round;
+        let leftover_sol = total_sol_reward % sol_per_round;
+
+        msg!("   SOL per round: {} lamports", sol_per_round);
+        msg!("   Rounds to add: {}", rounds_to_add);
+        msg!("   Leftover SOL: {} lamports", leftover_sol);
+
+        if rounds_to_add > 0 {
+            let sol_for_rounds = rounds_to_add * sol_per_round;
+            
+            // Transfer SOL from prize pot to autominer custody
+            helper::transfer_from_sol_prize_pot_vault(
+                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                &ctx.accounts.autominer_custody.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                sol_for_rounds,
+                ctx.bumps.sol_prize_pot_vault,
+            )?;
+
+            // Update autominer state
+            autominer_vault.sol_balance += sol_for_rounds;
+            autominer_vault.rounds_remaining += rounds_to_add as u32;
+
+            msg!("   ✓ Added {} rounds, {} SOL to autominer", rounds_to_add, sol_for_rounds);
+        }
+
+        // Transfer leftover SOL to owner
+        if leftover_sol > 0 {
+            helper::transfer_from_sol_prize_pot_vault(
+                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                &ctx.accounts.owner_wallet.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                leftover_sol,
+                ctx.bumps.sol_prize_pot_vault,
+            )?;
+            msg!("   ✓ Transferred {} leftover SOL to owner", leftover_sol);
+        }
+    } else if total_sol_reward > 0 {
+        // Auto-reload disabled or no sol_per_round set - transfer all SOL to owner
+        msg!("   Auto-reload disabled, transferring all SOL to owner...");
+        helper::transfer_from_sol_prize_pot_vault(
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            &ctx.accounts.owner_wallet.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            total_sol_reward,
+            ctx.bumps.sol_prize_pot_vault,
+        )?;
+    }
+
+    msg!("✅ [claim_autominer_rewards] Completed");
+    emit!(RoundRewardsClaimed {
+        user: ctx.accounts.autominer_vault.owner,
+        player_data: ctx.accounts.player_data.key(),
+        round_id: user_bet.round_id,
+        sol_reward: total_sol_reward,
+        minebtc_reward: total_minebtc_reward,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
+}
+
 /// Helper struct for passing autominer info to internal_process_bets
 pub struct AutominerBetInfo {
     pub vault: Pubkey,
@@ -1260,6 +1394,7 @@ fn internal_process_bets<'info>(
     let mut evt_net_amounts = Vec::new();
     let mut evt_fee_amounts = Vec::new();
     let mut evt_points_amounts = Vec::new();
+    let mut evt_wgtd_points_amounts = Vec::new();
 
     // Initialize totals
     let num_bets = bet_types.len() as u64;
@@ -1430,6 +1565,7 @@ fn internal_process_bets<'info>(
         evt_net_amounts.push(net_per_bet);
         evt_fee_amounts.push(fee_per_bet);
         evt_points_amounts.push(points_per_bet);
+        evt_wgtd_points_amounts.push(wgtd_points_per_bet);
     }
 
     // Update Totals
@@ -1485,12 +1621,14 @@ fn internal_process_bets<'info>(
         gameplay_doge: player_data.gameplay_doge,
         gameplay_doge_dna: player_data.gameplay_doge_dna,
         active_multiplier: player_data.active_multiplier,
+        gameplay_doge_xp: player_data.gameplay_doge_xp,
         round_id,
         num_bets: num_bets as u8,
         target_blocks: evt_target_blocks,
         net_amounts: evt_net_amounts,
         fee_amounts: evt_fee_amounts,
         points_amounts: evt_points_amounts,
+        wgtd_points_amounts: evt_wgtd_points_amounts,
         used_ticket: use_ticket.is_some(),
         ticket_type_index: use_ticket,
         is_autominer,
@@ -1519,6 +1657,7 @@ fn internal_process_bets<'info>(
         // Calculate mutation result (generation derived from DNA)
         let doge_mint = player_data.gameplay_doge;
         let mutation_result = calculate_mutation_result(
+            round_id,
             user_game_bet.total_sol_bet,
             game_session.highest_sol_bet_per_faction[faction_id],
             player_data.active_multiplier,
@@ -1556,14 +1695,10 @@ fn internal_process_bets<'info>(
                 }
 
                 emit!(MutationTriggered {
+                    round_id,
                     user: owner_key,
                     doge_mint: player_data.gameplay_doge,
-                    faction_id: player_data.faction_id,
-                    round_id,
-                    mutation_type: user_game_bet.mutation_type,
-                    bet_amount: total_net_added,
-                    highest_bet: game_session.highest_sol_bet_per_faction[faction_id],
-                    timestamp: clock.unix_timestamp,
+                    xp_gained: mutation_result.xp_gained,
                 });
 
                 msg!("🧬 Mutation! Type: {}, Mult: {}", user_game_bet.mutation_type, player_data.active_multiplier);
@@ -2181,6 +2316,61 @@ pub struct ClaimRoundRewards<'info> {
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: Option<UncheckedAccount<'info>>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for claiming autominer rewards with auto-reload
+#[derive(Accounts)]
+#[instruction(round_id: u64)]
+pub struct ClaimAutominerRewards<'info> {
+    /// Autominer vault to reload
+    #[account(
+        mut,
+        seeds = [AUTOMINER_VAULT_SEED.as_ref(), autominer_vault.owner.as_ref()],
+        bump = autominer_vault.vault_bump
+    )]
+    pub autominer_vault: Account<'info, AutominerVault>,
+
+    /// CHECK: Global autominer custody PDA holding SOL deposits
+    #[account(
+        mut,
+        seeds = [AUTOMINER_CUSTODY_SEED.as_ref()],
+        bump
+    )]
+    pub autominer_custody: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
+        bump = player_data.bump
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
+    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
+    #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
+    pub game_session: Account<'info, GameSession>,
+
+    /// CHECK: SOL prize pot vault (PDA)
+    #[account(
+        mut,
+        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// User game bet account - will be closed
+    #[account(mut, close = owner_wallet)]
+    pub user_game_bet: Account<'info, UserGameBet>,
+
+    /// CHECK: Owner wallet to receive leftover SOL / rent
+    #[account(mut, constraint = owner_wallet.key() == autominer_vault.owner @ ErrorCode::Unauthorized)]
+    pub owner_wallet: UncheckedAccount<'info>,
+
+    /// Caller (backend script)
+    pub caller: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }

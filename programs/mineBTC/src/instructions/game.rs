@@ -56,11 +56,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
         global_state.current_round_id,
         round_id
     );
-    msg!(
-        "   Current timestamp: {}, Round end timestamp: {}",
-        clock.unix_timestamp,
-        global_state.round_end_timestamp
-    );
 
     // Validate round_id matches expected value (current_round_id + 1)
     let expected_round_id = global_state.current_round_id + 1;
@@ -75,11 +70,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     );
     msg!("     ✓ Caller is whitelisted cranker bot");
 
-    // Validate that previous round has ended (if not first round)
-    require!(
-        clock.unix_timestamp >= global_state.round_end_timestamp,
-        ErrorCode::RoundNotEnded
-    );
     msg!("   Commit hash: {:?}", commit);
 
     // Set commit hash for this round
@@ -89,12 +79,9 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
 
     // Update global state
     global_state.current_round_id = round_id;
-    global_state.round_end_timestamp =
-        game_session.round_end_timestamp + global_state.round_duration_seconds;
     msg!(
-        "   Global state updated: current_round_id={}, round_end_timestamp={}",
+        "   Global state updated: current_round_id={}",
         round_id,
-        game_session.round_end_timestamp
     );
 
     // Initialize GameSession for the new round
@@ -102,7 +89,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     game_session.bump = ctx.bumps.game_session;
     game_session.round_id = round_id;
     game_session.round_start_timestamp = clock.unix_timestamp;
-    game_session.round_end_timestamp = clock.unix_timestamp + global_state.round_duration_seconds;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
 
@@ -115,12 +101,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     // Initialize instant mutation tracking per faction
     game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
     game_session.mutation_occurred_per_faction = [false; NUM_FACTIONS];
-
-    msg!(
-        "   Initialized block tracking arrays (24 blocks). Round starts at: {} and ends at: {}",
-        game_session.round_start_timestamp,
-        game_session.round_end_timestamp
-    );
 
     // Randomly assign 12 factions to 24 blocks (2 blocks per faction)
     // Use commit hash + slot for deterministic but unpredictable randomness
@@ -217,10 +197,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
 
     msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);
-    msg!(
-        "   Round ends at timestamp: {}",
-        game_session.round_end_timestamp
-    );
 
     emit!(RoundStarted {
         round_id,
@@ -228,7 +204,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
         commit_hash: commit,
         block_assignments: block_assignments,
         round_start_timestamp: game_session.round_start_timestamp,
-        round_end_timestamp: game_session.round_end_timestamp,
         timestamp: clock.unix_timestamp,
     });
 
@@ -272,11 +247,11 @@ pub fn int_end_round(
 
     // Validate round has ended
     require!(
-        clock.unix_timestamp >= game_session.round_end_timestamp,
+        clock.unix_timestamp >= game_session.round_start_timestamp + global_state.round_duration_seconds,
         ErrorCode::RoundNotEnded
     );
     require!(game_session.stage == 0, ErrorCode::InvalidStage);
-    msg!("   ✓ Round has ended. Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", game_session.round_id, clock.unix_timestamp, game_session.round_end_timestamp);
+    msg!("   ✓ Round has ended. Current round ID: {}, Current timestamp: {}, ", game_session.round_id, clock.unix_timestamp );
 
     // Validate caller is a whitelisted cranker bot
     require!(
@@ -287,20 +262,20 @@ pub fn int_end_round(
     );
     msg!("     ✓ Caller is whitelisted cranker bot");
 
-    // // Verify commit-reveal: hash(revealed_seed) must equal current_round_commit
-    // msg!("   Verifying commit-reveal scheme...");
-    // let seed_hash = keccak::hash(&revealed_seed);
-    // let seed_hash_bytes = seed_hash.to_bytes();
-    // msg!("   Revealed seed hash: {:?}", seed_hash_bytes);
-    // msg!(
-    //     "   Expected commit hash: {:?}",
-    //     global_state.current_round_commit
-    // );
-    // require!(
-    //     seed_hash_bytes == global_state.current_round_commit,
-    //     ErrorCode::InvalidParameters
-    // );
-    // msg!("   ✓ Commit-reveal verification passed");
+    // Verify commit-reveal: hash(revealed_seed) must equal current_round_commit
+    msg!("   Verifying commit-reveal scheme...");
+    let seed_hash = keccak::hash(&revealed_seed);
+    let seed_hash_bytes = seed_hash.to_bytes();
+    msg!("   Revealed seed hash: {:?}", seed_hash_bytes);
+    msg!(
+        "   Expected commit hash: {:?}",
+        global_state.current_round_commit
+    );
+    require!(
+        seed_hash_bytes == global_state.current_round_commit,
+        ErrorCode::InvalidParameters
+    );
+    msg!("   ✓ Commit-reveal verification passed");
 
     // Store revealed seed
     global_state.current_round_seed = Some(revealed_seed);
@@ -389,8 +364,9 @@ pub fn int_end_round(
             total_sol_bets: game_session.total_sol_bets,
             total_points_bets: game_session.total_points_bets,
             user_bets_count: game_session.user_block_indexes.clone(),
-            block_bet_counts: game_session.sol_bets_indexes.clone(),
+            block_sol_bets: game_session.sol_bets_indexes.clone(),
             block_points: game_session.points_bets_indexes.clone(),
+            block_wgtd_points: game_session.wgtd_points_bets_indexes.clone(),
             minebtc_winner_pool: 0,
             minebtc_same_faction_pool: 0,
             minebtc_faction_stakers: 0,
@@ -580,8 +556,9 @@ pub fn int_end_round(
         total_points_bets: game_session.total_points_bets,
 
         user_bets_count: game_session.user_block_indexes.clone(),
-        block_bet_counts: game_session.sol_bets_indexes.clone(),
+        block_sol_bets: game_session.sol_bets_indexes.clone(),
         block_points: game_session.points_bets_indexes.clone(),
+        block_wgtd_points: game_session.wgtd_points_bets_indexes.clone(),
 
         minebtc_winner_pool: winning_block_rewards,
         minebtc_same_faction_pool: same_faction_rewards,

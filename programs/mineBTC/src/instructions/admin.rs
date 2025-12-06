@@ -1229,7 +1229,6 @@ pub fn initialize_game_state_internal(
     global_game_state.can_begin_round = true;
 
     global_game_state.current_round_id = 0; // Will be incremented to 1 in start_round
-    global_game_state.round_end_timestamp = 0;
     global_game_state.round_duration_seconds = round_duration_seconds;
     msg!("     Bump: {}", global_game_state.bump);
     msg!("     Is active: {}", global_game_state.is_active);
@@ -1240,10 +1239,6 @@ pub fn initialize_game_state_internal(
     msg!(
         "     Round duration: {} seconds",
         global_game_state.round_duration_seconds
-    );
-    msg!(
-        "     Round end timestamp: {}",
-        global_game_state.round_end_timestamp
     );
 
     // Initialize previous round data
@@ -1280,10 +1275,6 @@ pub fn initialize_game_state_internal(
 
     msg!("✅ [initialize_game_state_internal] Global game state initialized successfully");
     msg!("   Round duration: {} seconds", round_duration_seconds);
-    msg!(
-        "   First round ends at: {}",
-        global_game_state.round_end_timestamp
-    );
 
     Ok(())
 }
