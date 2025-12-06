@@ -407,7 +407,6 @@ pub fn add_to_total_claimable(
     unrefined_minebtc.total_minebtc_claimable += minebtc_rewards + accrued_rewards;
     player_data.unrefining_index = unrefined_minebtc.unrefining_index;
     player_data.pending_minebtc_rewards += minebtc_rewards + accrued_rewards;
-    player_data.total_dogebtc_won += minebtc_rewards + accrued_rewards;
     player_data.unrefined_minebtc_rewards += accrued_rewards;
 
     return accrued_rewards;

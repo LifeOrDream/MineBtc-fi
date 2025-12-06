@@ -418,16 +418,39 @@ pub struct RoundEnded {
     pub timestamp: i64,
 }
 
-/// Event emitted when faction rewards are distributed for a round
 #[event]
-pub struct RoundFactionRewardsDistributed {
+pub struct DogeBtcStakingRewardsDistributed {
     pub round_id: u64,
-    pub game_session: Pubkey,
-    pub winning_faction_id: u8,
-    pub sol_stakers_fee: u64,
-    pub motherlode_hit: bool,
-    pub motherlode_pot_size_on_hit: u64,
-    pub timestamp: i64,
+    pub faction_id: u8,
+    pub minebtc_staker_rewards: u64,
+    pub sol_staker_rewards: u64,
+    pub dogebtc_dogebtc_reward_index: u128,
+    pub dogebtc_sol_reward_index: u128,
+}
+
+#[event]
+pub struct LpStakingRewardsDistributed {
+    pub round_id: u64,
+    pub faction_id: u8,
+    pub minebtc_staker_rewards: u64,
+    pub sol_staker_rewards: u64,
+    pub lp_dogebtc_reward_index: u128,
+    pub lp_sol_reward_index: u128,
+}
+
+#[event]
+pub struct MotherlodeHit {
+    pub round_id: u64,
+    pub faction_id: u8,
+    pub wining_block_rewards: u64,
+    pub same_faction_rewards: u64,
+    pub minebtc_rewards_index: u128,
+    pub same_faction_minebtc_rewards_index: u128,
+}
+
+#[event]
+pub struct RewardsDistributedForRound {
+    pub round_id: u64,
 }
 
 // ========================================================================================

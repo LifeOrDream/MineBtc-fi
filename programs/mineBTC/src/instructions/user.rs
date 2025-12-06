@@ -1014,6 +1014,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         player_data,
         total_minebtc_reward,
     );
+    player_data.total_dogebtc_won += total_minebtc_reward;
     msg!(
         "     Pending MineBtc rewards: {} (+{})",
         player_data.pending_minebtc_rewards,
