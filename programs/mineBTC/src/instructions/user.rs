@@ -938,23 +938,11 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     process_mutation_sync(user_bet, player_data, ctx.accounts.doge_metadata.as_mut(), total_minebtc_reward)?;
 
-    // Close bet account and return rent
-    msg!("   Closing bet account and returning rent...");
-    let signer_key = ctx.accounts.user_wallet.key();
-    let rent = Rent::get()?.minimum_balance(UserGameBet::LEN);
-    **ctx
-        .accounts
-        .user_wallet
-        .to_account_info()
-        .try_borrow_mut_lamports()? += rent;
-    msg!("     Returned {} lamports rent to user", rent);
-
     msg!("✅ [claim_rewards] Rewards claimed successfully");
-    msg!("   User: {}", signer_key);
     msg!("   Round: {}", user_bet.round_id);
 
     emit!(RoundRewardsClaimed {
-        user: signer_key,
+        user: ctx.accounts.player_data.owner,
         player_data: ctx.accounts.player_data.key(),
         round_id: user_bet.round_id,
         sol_reward: total_sol_reward,
@@ -2128,9 +2116,6 @@ pub struct ClaimRoundRewards<'info> {
     #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
     pub global_game_state: Account<'info, GlobalGameSate>,
 
-    /// Current ongoing round session (for randomness entropy)
-    pub current_game_session: Option<Account<'info, GameSession>>,
-
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
@@ -2152,29 +2137,6 @@ pub struct ClaimRoundRewards<'info> {
     /// Optional DogeMetadata account for syncing mutation
     #[account(mut)]
     pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
-
-    // === Free Doge Mint Accounts (optional) ===
-    #[account(mut)]
-    pub doge_config: Option<Box<Account<'info, DogeConfig>>>,
-
-    /// CHECK: New doge asset to be created
-    #[account(mut)]
-    pub new_doge_asset: Option<UncheckedAccount<'info>>,
-
-    /// CHECK: Doge collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
-
-    /// New doge metadata account (init if minting)
-    /// CHECK: Will be initialized via remaining_accounts if needed
-    #[account(mut)]
-    pub new_doge_metadata: Option<UncheckedAccount<'info>>,
-
-    /// CHECK: Collection authority PDA
-    #[account(seeds = [COLLECTION_AUTHORITY_SEED], bump)]
-    pub collection_authority: Option<UncheckedAccount<'info>>,
-
-    /// CHECK: Metaplex Core program
-    pub mpl_core_program: Option<UncheckedAccount<'info>>,
 
     pub system_program: Program<'info, System>,
 }
