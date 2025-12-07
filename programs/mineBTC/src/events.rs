@@ -338,6 +338,19 @@ pub struct BetsPlaced {
     pub timestamp: i64,
 }
 
+
+#[event]
+pub struct DogeSynced {
+    pub doge_mint: Pubkey,
+    pub doge_metadata_account: Pubkey,
+    pub dna: Vec<u8>,
+    pub xp: u32,
+    pub multiplier: u32,
+    pub accumulated_val: u64,
+    pub accum_pct: u32,
+}
+
+
 /// Event emitted when a user claims rewards for a round
 #[event]
 pub struct RoundRewardsClaimed {
@@ -376,6 +389,15 @@ pub struct AutominerStopped {
     pub autominer_vault: Pubkey,
     pub rounds_remaining: u32,
     pub refund_amount: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct AutominerReloaded {
+    pub autominer_vault: Pubkey,
+    pub rounds_to_add: u32,
+    pub sol_for_rounds: u64,
+    pub leftover_sol: u64,
     pub timestamp: i64,
 }
 

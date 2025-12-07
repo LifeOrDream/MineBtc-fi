@@ -1077,6 +1077,8 @@ pub struct UserGameBet {
 
     /// Total fees paid across all bets
     pub total_fee: u64,
+    pub gameplay_doge: Pubkey,
+
     pub bump: u8,
 
     // --- Instant Mutation (applied during claim_rewards) ---
@@ -1099,6 +1101,7 @@ impl UserGameBet {
         8 +     // total_points_bet
         8 +     // total_wgtd_points_bet
         8 +     // total_fee
+        32 +     // gameplay_doge
         1 +     // bump
         1;      // mutation_type
 }

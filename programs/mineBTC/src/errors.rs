@@ -164,4 +164,7 @@ pub enum ErrorCode {
 
     #[msg("Position already exists")]
     PositionAlreadyExists,
+
+    #[msg("Doge DNA mismatch")]
+    ClaimPendingRoundRewards,
 }
