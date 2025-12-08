@@ -56,11 +56,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
         global_state.current_round_id,
         round_id
     );
-    msg!(
-        "   Current timestamp: {}, Round end timestamp: {}",
-        clock.unix_timestamp,
-        global_state.round_end_timestamp
-    );
 
     // Validate round_id matches expected value (current_round_id + 1)
     let expected_round_id = global_state.current_round_id + 1;
@@ -75,11 +70,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     );
     msg!("     ✓ Caller is whitelisted cranker bot");
 
-    // Validate that previous round has ended (if not first round)
-    require!(
-        clock.unix_timestamp >= global_state.round_end_timestamp,
-        ErrorCode::RoundNotEnded
-    );
     msg!("   Commit hash: {:?}", commit);
 
     // Set commit hash for this round
@@ -89,12 +79,9 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
 
     // Update global state
     global_state.current_round_id = round_id;
-    global_state.round_end_timestamp =
-        game_session.round_end_timestamp + global_state.round_duration_seconds;
     msg!(
-        "   Global state updated: current_round_id={}, round_end_timestamp={}",
+        "   Global state updated: current_round_id={}",
         round_id,
-        game_session.round_end_timestamp
     );
 
     // Initialize GameSession for the new round
@@ -102,7 +89,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     game_session.bump = ctx.bumps.game_session;
     game_session.round_id = round_id;
     game_session.round_start_timestamp = clock.unix_timestamp;
-    game_session.round_end_timestamp = clock.unix_timestamp + global_state.round_duration_seconds;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
 
@@ -115,12 +101,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     // Initialize instant mutation tracking per faction
     game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
     game_session.mutation_occurred_per_faction = [false; NUM_FACTIONS];
-
-    msg!(
-        "   Initialized block tracking arrays (24 blocks). Round starts at: {} and ends at: {}",
-        game_session.round_start_timestamp,
-        game_session.round_end_timestamp
-    );
 
     // Randomly assign 12 factions to 24 blocks (2 blocks per faction)
     // Use commit hash + slot for deterministic but unpredictable randomness
@@ -217,10 +197,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
 
     msg!("✅ [start_round] Round {} started successfully", round_id);
     msg!("   Commit hash: {:?}", commit);
-    msg!(
-        "   Round ends at timestamp: {}",
-        game_session.round_end_timestamp
-    );
 
     emit!(RoundStarted {
         round_id,
@@ -228,7 +204,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
         commit_hash: commit,
         block_assignments: block_assignments,
         round_start_timestamp: game_session.round_start_timestamp,
-        round_end_timestamp: game_session.round_end_timestamp,
         timestamp: clock.unix_timestamp,
     });
 
@@ -261,13 +236,22 @@ pub fn int_end_round(
         return Ok(());
     }
 
+    // check how many blocks bets have been placed on 
+    let used_blocks = game_session.user_block_indexes.iter().filter(|&x| *x > 0).count();
+    msg!("   Used blocks: {}", used_blocks);
+    
+    if used_blocks < 2 {
+        msg!("   ⚠️ Less than 2 blocks have been bet on - round in extended mode");
+        return Ok(());
+    }
+
     // Validate round has ended
     require!(
-        clock.unix_timestamp >= game_session.round_end_timestamp,
+        clock.unix_timestamp >= game_session.round_start_timestamp + global_state.round_duration_seconds,
         ErrorCode::RoundNotEnded
     );
     require!(game_session.stage == 0, ErrorCode::InvalidStage);
-    msg!("   ✓ Round has ended. Current round ID: {}, Current timestamp: {}, Round end timestamp: {}", game_session.round_id, clock.unix_timestamp, game_session.round_end_timestamp);
+    msg!("   ✓ Round has ended. Current round ID: {}, Current timestamp: {}, ", game_session.round_id, clock.unix_timestamp );
 
     // Validate caller is a whitelisted cranker bot
     require!(
@@ -380,8 +364,9 @@ pub fn int_end_round(
             total_sol_bets: game_session.total_sol_bets,
             total_points_bets: game_session.total_points_bets,
             user_bets_count: game_session.user_block_indexes.clone(),
-            block_bet_counts: game_session.sol_bets_indexes.clone(),
+            block_sol_bets: game_session.sol_bets_indexes.clone(),
             block_points: game_session.points_bets_indexes.clone(),
+            block_wgtd_points: game_session.wgtd_points_bets_indexes.clone(),
             minebtc_winner_pool: 0,
             minebtc_same_faction_pool: 0,
             minebtc_faction_stakers: 0,
@@ -571,8 +556,9 @@ pub fn int_end_round(
         total_points_bets: game_session.total_points_bets,
 
         user_bets_count: game_session.user_block_indexes.clone(),
-        block_bet_counts: game_session.sol_bets_indexes.clone(),
+        block_sol_bets: game_session.sol_bets_indexes.clone(),
         block_points: game_session.points_bets_indexes.clone(),
+        block_wgtd_points: game_session.wgtd_points_bets_indexes.clone(),
 
         minebtc_winner_pool: winning_block_rewards,
         minebtc_same_faction_pool: same_faction_rewards,
@@ -695,97 +681,34 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
     let game_session = &mut ctx.accounts.game_session;
     let faction_state = &mut ctx.accounts.faction_state;
-
     let global_state = &mut ctx.accounts.global_game_state;
 
     if game_session.stage == 0 || game_session.stage == 2 {
         msg!("   Round has not ended yet or already distributed faction rewards, skipping");
         return Ok(());
     }
-
     // Validate round has ended
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
 
     // Get winning faction from block assignments
     let winning_faction_id = game_session.winning_faction_id;
-    require!(
-        faction_state.faction_id == winning_faction_id,
-        ErrorCode::InvalidFactionId
-    );
+    require!( faction_state.faction_id == winning_faction_id, ErrorCode::InvalidFactionId);
 
-    let mut minebtc_staker_rewards = game_session.faction_stakers;
-    let mut sol_staker_fees = game_session.stakers_fee;
+    // dogeBTC rewards to be distributed among stakers (50% to dogeBTC stakers, 50% to LP stakers)
+    let minebtc_staker_rewards = game_session.faction_stakers;
+    // SOL rewards to be distributed among stakers (50% to dogeBTC stakers, 50% to LP stakers)
+    let sol_staker_fees = game_session.stakers_fee;
     msg!(
         "   Dbtc staker rewards: {} SOL. Sol staker fees: {} SOL",
         (minebtc_staker_rewards as f64 / 1_000_000.0),
         (sol_staker_fees as f64 / 1_000_000_000.0)
-    );
+        );
 
     // dBTC + SOL distribution to dBTC stakers of the winning faction
-    if faction_state.total_dogebtc_hashpower > 0 {
-        let minebtc_per_share = helper::mul_div(
-            minebtc_staker_rewards / 2,
-            INDEX_PRECISION,
-            faction_state.total_dogebtc_hashpower,
-        )?;
-        faction_state.dogebtc_dogebtc_reward_index =
-            faction_state.dogebtc_dogebtc_reward_index + minebtc_per_share;
-        msg!(
-            "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
-            faction_state.dogebtc_dogebtc_reward_index - minebtc_per_share,
-            faction_state.dogebtc_dogebtc_reward_index,
-            minebtc_per_share
-        );
-        minebtc_staker_rewards = minebtc_staker_rewards - (minebtc_staker_rewards / 2);
-
-        let sol_reward_inc = helper::mul_div(
-            sol_staker_fees / 2,
-            INDEX_PRECISION,
-            faction_state.total_dogebtc_hashpower,
-        )?;
-        faction_state.dogebtc_sol_reward_index += sol_reward_inc;
-        msg!(
-            "   Faction stakers SOL reward index: {} -> {} (+{})",
-            faction_state.dogebtc_sol_reward_index - sol_reward_inc,
-            faction_state.dogebtc_sol_reward_index,
-            sol_reward_inc
-        );
-        sol_staker_fees = sol_staker_fees - (sol_staker_fees / 2);
-    }
-
-    // dBTC + SOL distribution to LP stakers of the winning faction
-    if faction_state.total_lp_hashpower > 0 {
-        let lp_per_share = helper::mul_div(
-            minebtc_staker_rewards,
-            INDEX_PRECISION,
-            faction_state.total_lp_hashpower,
-        )?;
-        faction_state.lp_dogebtc_reward_index =
-            faction_state.lp_dogebtc_reward_index + lp_per_share;
-        msg!(
-            "   Faction stakers reward index: {} -> {} (+{})",
-            faction_state.lp_dogebtc_reward_index - lp_per_share,
-            faction_state.lp_dogebtc_reward_index,
-            lp_per_share
-        );
-
-        let sol_reward_inc = helper::mul_div(
-            sol_staker_fees,
-            INDEX_PRECISION,
-            faction_state.total_lp_hashpower,
-        )?;
-        faction_state.lp_sol_reward_index += sol_reward_inc;
-        msg!(
-            "   Faction stakers SOL reward index: {} -> {} (+{})",
-            faction_state.lp_sol_reward_index - sol_reward_inc,
-            faction_state.lp_sol_reward_index,
-            sol_reward_inc
-        );
-    }
+    distribute_rewards_amg_stakers(minebtc_staker_rewards, sol_staker_fees, faction_state, game_session.round_id)?;
 
     // Increment motherlode pot size (always, regardless of hit)
-    faction_state.motherlode_pot_size =
-        faction_state.motherlode_pot_size + game_session.motherlode_rewards;
+    faction_state.motherlode_pot_size = faction_state.motherlode_pot_size + game_session.motherlode_rewards;
     msg!(
         "   Motherlode pot: {} -> {} (+{})",
         (faction_state.motherlode_pot_size - game_session.motherlode_rewards) as f64 / 1_000_000.0,
@@ -795,15 +718,17 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
     // boolean to check if motherlode was hit
     let motherlode_hit = game_session.motherlode_hit;
-    let winning_block_pts = game_session.points_bets_indexes[game_session.winning_block as usize];
-    let same_faction_pts =
-        game_session.points_bets_indexes[game_session.same_faction_other_block as usize];
+    let winning_block_wgtd_pts = game_session.wgtd_points_bets_indexes[game_session.winning_block as usize];
+    let same_faction_wgtd_pts = game_session.wgtd_points_bets_indexes[game_session.same_faction_other_block as usize];
     msg!(
-        "   Winning block points: {}, Same-faction points: {}",
-        winning_block_pts,
-        same_faction_pts
+        "   Winning block weighted points: {}, Same-faction weighted points: {}",
+        winning_block_wgtd_pts,
+        same_faction_wgtd_pts
     );
 
+    // -----------------------------------
+    // MOTHERLODE HIT LOGIC
+    // -----------------------------------
     if motherlode_hit && faction_state.motherlode_pot_size > 0 {
         msg!("   🎰 MOTHERLODE HIT!");
 
@@ -839,15 +764,13 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
         // Update reward indexes with motherlode split (only if there are points bet)
         if wining_block_rewards > 0 {
-            let minebtc_rewards_delta =
-                helper::mul_div(wining_block_rewards, INDEX_PRECISION, winning_block_pts)?;
+            let minebtc_rewards_delta = helper::mul_div(wining_block_rewards, INDEX_PRECISION, winning_block_wgtd_pts)?;
             game_session.minebtc_rewards_index += minebtc_rewards_delta;
             msg!("   MineBtc rewards index (winning block) updated with motherlode: +{}. (Total: {})", minebtc_rewards_delta, game_session.minebtc_rewards_index);
         }
 
         if same_faction_rewards > 0 {
-            let minebtc_rewards_delta =
-                helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_pts)?;
+            let minebtc_rewards_delta =  helper::mul_div(same_faction_rewards, INDEX_PRECISION, same_faction_wgtd_pts)?;
             game_session.same_faction_minebtc_rewards_index += minebtc_rewards_delta;
             msg!(
                 "   MineBtc rewards index (same-faction) updated with motherlode: +{}. (Total: {})",
@@ -855,6 +778,16 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
                 game_session.same_faction_minebtc_rewards_index
             );
         }
+
+        emit!(MotherlodeHit {
+            round_id: game_session.round_id,
+            faction_id: faction_state.faction_id,
+            wining_block_rewards: wining_block_rewards,
+            same_faction_rewards: same_faction_rewards,
+            minebtc_rewards_index: game_session.minebtc_rewards_index,
+            same_faction_minebtc_rewards_index: game_session.same_faction_minebtc_rewards_index
+        });
+
     } else {
         msg!("   Motherlode miss.");
     }
@@ -885,14 +818,8 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     global_state.can_begin_round = true;
     msg!("   Can begin new round: {}", global_state.can_begin_round);
 
-    emit!(RoundFactionRewardsDistributed {
+    emit!(RewardsDistributedForRound {
         round_id: game_session.round_id,
-        game_session: game_session.key(),
-        winning_faction_id,
-        sol_stakers_fee: game_session.stakers_fee,
-        motherlode_hit: game_session.motherlode_hit,
-        motherlode_pot_size_on_hit: game_session.motherlode_pot_size_on_hit,
-        timestamp: Clock::get()?.unix_timestamp,
     });
 
     msg!(
@@ -901,6 +828,87 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     );
     Ok(())
 }
+
+
+/// Internal function, called by int_end_round_faction_rewards to distribute rewards among AMG stakers (50% to dogeBTC stakers, 50% to LP stakers)
+fn distribute_rewards_amg_stakers(mut minebtc_staker_rewards: u64, mut sol_staker_fees: u64, faction_state: &mut FactionState, round_id: u64) -> Result<()> {
+
+    if faction_state.total_dogebtc_hashpower > 0 {
+        let minebtc_per_share = helper::mul_div( minebtc_staker_rewards / 2, INDEX_PRECISION, faction_state.total_dogebtc_hashpower)?;
+        faction_state.dogebtc_dogebtc_reward_index = faction_state.dogebtc_dogebtc_reward_index + minebtc_per_share;        
+        msg!(
+            "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
+            faction_state.dogebtc_dogebtc_reward_index - minebtc_per_share,
+            faction_state.dogebtc_dogebtc_reward_index,
+            minebtc_per_share
+        );
+
+        let sol_reward_inc = helper::mul_div( sol_staker_fees / 2, INDEX_PRECISION, faction_state.total_dogebtc_hashpower)?;
+        faction_state.dogebtc_sol_reward_index += sol_reward_inc;
+        sol_staker_fees = sol_staker_fees - (sol_staker_fees / 2);
+        msg!(
+            "   Faction stakers SOL reward index: {} -> {} (+{})",
+            faction_state.dogebtc_sol_reward_index - sol_reward_inc,
+            faction_state.dogebtc_sol_reward_index,
+            sol_reward_inc
+        );
+
+        emit!(DogeBtcStakingRewardsDistributed {
+            round_id: round_id,
+            faction_id: faction_state.faction_id,
+            minebtc_staker_rewards: minebtc_staker_rewards / 2,
+            sol_staker_rewards: sol_staker_fees / 2,
+            dogebtc_dogebtc_reward_index: faction_state.dogebtc_dogebtc_reward_index,
+            dogebtc_sol_reward_index: faction_state.dogebtc_sol_reward_index
+        });
+        minebtc_staker_rewards = minebtc_staker_rewards - (minebtc_staker_rewards / 2);
+    }
+
+    if faction_state.total_lp_hashpower > 0 {
+        let minebtc_per_share = helper::mul_div( minebtc_staker_rewards, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_dogebtc_reward_index = faction_state.lp_dogebtc_reward_index + minebtc_per_share;
+        msg!(
+            "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
+            faction_state.lp_dogebtc_reward_index - minebtc_per_share,
+            faction_state.lp_dogebtc_reward_index,
+            minebtc_per_share
+        );
+
+        let sol_reward_inc = helper::mul_div( sol_staker_fees, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
+        faction_state.lp_sol_reward_index += sol_reward_inc;
+        msg!(
+            "   Faction stakers SOL reward index: {} -> {} (+{})",
+            faction_state.lp_sol_reward_index - sol_reward_inc,
+            faction_state.lp_sol_reward_index,
+            sol_reward_inc
+        );
+
+        emit!(LpStakingRewardsDistributed {
+            round_id: round_id,
+            faction_id: faction_state.faction_id,
+            minebtc_staker_rewards: minebtc_staker_rewards,
+            sol_staker_rewards: sol_staker_fees,
+            lp_dogebtc_reward_index: faction_state.lp_dogebtc_reward_index,
+            lp_sol_reward_index: faction_state.lp_sol_reward_index
+        });
+    }
+
+    Ok(())
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ========================================================================================
 // =============================== ACCOUNT CONTEXTS ======================================

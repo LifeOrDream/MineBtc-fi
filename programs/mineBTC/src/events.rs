@@ -310,12 +310,19 @@ pub struct FactionChanged {
 pub struct BetsPlaced {
     pub user: Pubkey,
     pub player_data: Pubkey,
+
+    pub gameplay_doge: Pubkey,
+    pub gameplay_doge_dna: [u8; 32],
+    pub active_multiplier: u32,
+    pub gameplay_doge_xp: u32,
+
     pub round_id: u64,
     pub num_bets: u8,
     pub target_blocks: Vec<u8>,
     pub net_amounts: Vec<u64>,
     pub fee_amounts: Vec<u64>,
     pub points_amounts: Vec<u64>,
+    pub wgtd_points_amounts: Vec<u64>,
 
     pub used_ticket: bool,
     pub ticket_type_index: Option<u8>,
@@ -330,6 +337,19 @@ pub struct BetsPlaced {
 
     pub timestamp: i64,
 }
+
+
+#[event]
+pub struct DogeSynced {
+    pub doge_mint: Pubkey,
+    pub doge_metadata_account: Pubkey,
+    pub dna: Vec<u8>,
+    pub xp: u32,
+    pub multiplier: u32,
+    pub accumulated_val: u64,
+    pub accum_pct: u32,
+}
+
 
 /// Event emitted when a user claims rewards for a round
 #[event]
@@ -372,6 +392,15 @@ pub struct AutominerStopped {
     pub timestamp: i64,
 }
 
+#[event]
+pub struct AutominerReloaded {
+    pub autominer_vault: Pubkey,
+    pub rounds_to_add: u32,
+    pub sol_for_rounds: u64,
+    pub leftover_sol: u64,
+    pub timestamp: i64,
+}
+
 // ========================================================================================
 // =============================== GAME ROUND EVENTS =====================================
 // ========================================================================================
@@ -384,7 +413,6 @@ pub struct RoundStarted {
     pub commit_hash: [u8; 32],
     pub block_assignments: [u8; 24], // 24 blocks, each assigned to a faction (0-11)
     pub round_start_timestamp: i64,
-    pub round_end_timestamp: i64,
     pub timestamp: i64,
 }
 
@@ -400,8 +428,9 @@ pub struct RoundEnded {
     pub total_points_bets: u64,
 
     pub user_bets_count: Vec<u64>,
-    pub block_bet_counts: Vec<u64>,
+    pub block_sol_bets: Vec<u64>,
     pub block_points: Vec<u64>,
+    pub block_wgtd_points: Vec<u64>,
 
     pub minebtc_winner_pool: u64,
     pub minebtc_same_faction_pool: u64,
@@ -411,16 +440,39 @@ pub struct RoundEnded {
     pub timestamp: i64,
 }
 
-/// Event emitted when faction rewards are distributed for a round
 #[event]
-pub struct RoundFactionRewardsDistributed {
+pub struct DogeBtcStakingRewardsDistributed {
     pub round_id: u64,
-    pub game_session: Pubkey,
-    pub winning_faction_id: u8,
-    pub sol_stakers_fee: u64,
-    pub motherlode_hit: bool,
-    pub motherlode_pot_size_on_hit: u64,
-    pub timestamp: i64,
+    pub faction_id: u8,
+    pub minebtc_staker_rewards: u64,
+    pub sol_staker_rewards: u64,
+    pub dogebtc_dogebtc_reward_index: u128,
+    pub dogebtc_sol_reward_index: u128,
+}
+
+#[event]
+pub struct LpStakingRewardsDistributed {
+    pub round_id: u64,
+    pub faction_id: u8,
+    pub minebtc_staker_rewards: u64,
+    pub sol_staker_rewards: u64,
+    pub lp_dogebtc_reward_index: u128,
+    pub lp_sol_reward_index: u128,
+}
+
+#[event]
+pub struct MotherlodeHit {
+    pub round_id: u64,
+    pub faction_id: u8,
+    pub wining_block_rewards: u64,
+    pub same_faction_rewards: u64,
+    pub minebtc_rewards_index: u128,
+    pub same_faction_minebtc_rewards_index: u128,
+}
+
+#[event]
+pub struct RewardsDistributedForRound {
+    pub round_id: u64,
 }
 
 // ========================================================================================
@@ -534,20 +586,16 @@ pub struct DogeWithdrawnFromGameplay {
 /// Event emitted when an instant mutation is triggered during betting
 #[event]
 pub struct MutationTriggered {
+    pub round_id: u64,
     pub user: Pubkey,
     pub doge_mint: Pubkey,
-    pub faction_id: u8,
-    pub round_id: u64,
-    /// 0 = Evolution, 1 = Power, 2 = Trait
-    pub mutation_type: u8,
-    pub bet_amount: u64,
-    pub highest_bet: u64,
-    pub timestamp: i64,
+    pub xp_gained: u32,
 }
 
 /// Event emitted when a doge evolves to a new stage
 #[event]
 pub struct DogeEvolution {
+    pub round_id: u64,
     pub doge_mint: Pubkey,
     pub new_stage: u8,
     /// Visual trait mutation that happened during evolution
@@ -563,6 +611,7 @@ pub struct DogeEvolution {
 /// Event emitted when a doge's power trait is mutated
 #[event]
 pub struct DogePowerMutation {
+    pub round_id: u64,
     pub doge_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,
@@ -572,6 +621,7 @@ pub struct DogePowerMutation {
 /// Event emitted when a doge's visual trait is mutated
 #[event]
 pub struct DogeVisualMutation {
+    pub round_id: u64,
     pub doge_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,

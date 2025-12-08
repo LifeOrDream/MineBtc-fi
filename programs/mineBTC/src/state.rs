@@ -546,8 +546,6 @@ pub struct GlobalGameSate {
 
     /// The currently active round ID (e.g., 48636).
     pub current_round_id: u64,
-    /// The timestamp when the current round ends.
-    pub round_end_timestamp: i64,
     /// Round duration in seconds (configurable)
     pub round_duration_seconds: i64,
 
@@ -577,7 +575,6 @@ impl GlobalGameSate {
         1 +     // can_begin_round
         16 +    // total_sol_bets (u128)
         8 +     // current_round_id
-        8 +     // round_end_timestamp
         8 +     // round_duration_seconds
         8 +     // last_round_id
         1 +     // winning_faction_id
@@ -681,7 +678,6 @@ pub struct GameSession {
     pub round_id: u64,
 
     pub round_start_timestamp: i64,
-    pub round_end_timestamp: i64,
 
     /// Total SOL bets placed in this round
     pub total_sol_bets: u64,
@@ -749,7 +745,6 @@ impl GameSession {
         1 +     // stage (u8)
         8 +     // round_id
         8 +     // round_start_timestamp (i64)
-        8 +     // round_end_timestamp (i64)
         8 +     // total_sol_bets
         8 +     // total_points_bets
         8 +     // total_wgtd_points_bets
@@ -1082,6 +1077,8 @@ pub struct UserGameBet {
 
     /// Total fees paid across all bets
     pub total_fee: u64,
+    pub gameplay_doge: Pubkey,
+
     pub bump: u8,
 
     // --- Instant Mutation (applied during claim_rewards) ---
@@ -1104,6 +1101,7 @@ impl UserGameBet {
         8 +     // total_points_bet
         8 +     // total_wgtd_points_bet
         8 +     // total_fee
+        32 +     // gameplay_doge
         1 +     // bump
         1;      // mutation_type
 }
@@ -1159,6 +1157,9 @@ pub struct AutominerVault {
     pub vault_bump: u8,
     /// Remaining SOL balance reserved for this autominer (held in autominer custody PDA)
     pub sol_balance: u64,
+
+    /// If set to true, SOL rewards can be used to reload Autominer and continue mining dogeBTC
+    pub can_reload: bool,
 }
 
 impl AutominerVault {
@@ -1179,5 +1180,6 @@ impl AutominerVault {
         4 +     // rounds_remaining (u32)
         8 +     // last_bet_round_id
         1 +     // vault_bump
-        8; // sol_balance
+        8 +     // sol_balance
+        1; // can_reload (bool)
 }
