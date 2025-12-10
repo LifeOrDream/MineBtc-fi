@@ -556,6 +556,16 @@ pub mod minebtc {
         user::internal_execute_autominer_bet(ctx)
     }
 
+    /// Update autominer configuration (sol_per_round, num_rounds, can_reload)
+    pub fn update_autominer(
+        ctx: Context<UpdateAutominer>,
+        sol_per_round: Option<u64>,
+        num_rounds: Option<u32>,
+        can_reload: Option<bool>,
+    ) -> Result<()> {
+        user::internal_update_autominer(ctx, sol_per_round, num_rounds, can_reload)
+    }
+
     /// Stop autominer and refund remaining SOL
     pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
         user::internal_stop_autominer(ctx)

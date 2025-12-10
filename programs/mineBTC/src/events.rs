@@ -378,7 +378,20 @@ pub struct AutominerInitialized {
     pub bet_size_per_bet: u64,
     pub has_blocks_config: bool,
     pub has_factions_config: bool,
+    pub can_reload: bool,
     pub timestamp: i64,
+}
+
+/// Event emitted when autominer is initialized
+#[event]
+pub struct AutominerUpdated {
+    pub owner: Pubkey,
+    pub player_data: Pubkey,
+    pub autominer_vault: Pubkey,
+    pub sol_per_round: u64,
+    pub rounds_remaining: u32,
+    pub can_reload: bool,
+    pub sol_diff: i64,
 }
 
 /// Event emitted when autominer is stopped
@@ -401,6 +414,7 @@ pub struct AutominerReloaded {
     pub timestamp: i64,
 }
 
+ 
 // ========================================================================================
 // =============================== GAME ROUND EVENTS =====================================
 // ========================================================================================

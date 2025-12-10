@@ -572,7 +572,122 @@ pub fn internal_init_autominer(
         bet_size_per_bet,
         has_blocks_config,
         has_factions_config,
+        can_reload,
         timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
+}
+
+/// Update autominer configuration (sol_per_round, num_rounds, can_reload)
+/// Can only be called by vault owner
+/// Handles SOL transfers automatically (deposit more if needed, refund excess)
+pub fn internal_update_autominer(
+    ctx: Context<UpdateAutominer>,
+    sol_per_round: Option<u64>,
+    rounds_added_: Option<u32>,
+    can_reload: Option<bool>,
+) -> Result<()> {
+    msg!("🔄 [update_autominer] Updating autominer configuration");
+    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
+
+    let autominer_vault = &mut ctx.accounts.autominer_vault;
+
+    // Verify caller is owner
+    require!(
+        ctx.accounts.user_wallet.key() == autominer_vault.owner,
+        ErrorCode::Unauthorized
+    );
+    msg!("     ✓ Caller is owner");
+
+    // Read current values
+    let old_sol_per_round = autominer_vault.sol_per_round;
+    let rounds_remaining = autominer_vault.rounds_remaining;
+    let old_can_reload = autominer_vault.can_reload;
+    let old_sol_balance = autominer_vault.sol_balance;
+
+    // Apply updates
+    let new_sol_per_round = sol_per_round.unwrap_or(old_sol_per_round);
+    let new_can_reload = can_reload.unwrap_or(old_can_reload);
+    let rounds_added = rounds_added_.unwrap_or(0);
+
+    msg!("   Current configuration:");
+    msg!("     SOL per round: {} lamports", old_sol_per_round);
+    msg!("     Rounds remaining: {}", rounds_remaining);
+    msg!("     SOL balance (remaining): {} lamports", old_sol_balance);
+    msg!("     Can reload: {}", old_can_reload);
+
+    msg!("   New configuration:");
+    msg!("     SOL per round: {} lamports", new_sol_per_round);
+    msg!("     Rounds remaining: {}", rounds_remaining + rounds_added);
+    msg!("     Can reload: {}", new_can_reload);
+
+    // Validate new values
+    require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
+
+    if rounds_added > 0 {
+        msg!("     ✓ Adding {} more rounds (total: {} rounds)", rounds_added, rounds_remaining + rounds_added);
+    } else {
+        msg!("     ✓ Rounds unchanged ({} rounds)", rounds_remaining);
+    }
+
+    // Calculate SOL needed for remaining rounds with old config
+    let current_sol_needed = rounds_remaining as u64 * old_sol_per_round;
+    msg!("     Current SOL needed for {} remaining rounds: {} lamports", rounds_remaining, current_sol_needed);
+
+    // Calculate new SOL needed for new rounds with new config
+    let new_sol_needed = (rounds_remaining + rounds_added) as u64 * new_sol_per_round;
+    msg!("     New SOL needed for {} rounds: {} lamports", rounds_remaining + rounds_added, new_sol_needed);
+
+    // Calculate SOL difference: new_sol_needed - current_sol_balance
+    // This tells us how much SOL to transfer to/from the user
+    let sol_diff = new_sol_needed as i64 - old_sol_balance as i64;
+    msg!("     SOL difference: {} lamports", sol_diff);
+
+    // Handle SOL transfers
+    if sol_diff > 0 {
+        // Need to deposit more SOL
+        let deposit_amount = sol_diff as u64;
+        msg!("   Depositing {} SOL to autominer custody...", deposit_amount as f64 / 1e9);
+        helper::transfer_to_autominer_custody(
+            &ctx.accounts.user_wallet.to_account_info(),
+            &ctx.accounts.autominer_custody.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            deposit_amount,
+        )?;
+        msg!("     ✓ Deposited {} SOL", deposit_amount as f64 / 1e9);
+    } else if sol_diff < 0 {
+        // Need to refund excess SOL
+        let refund_amount = (-sol_diff) as u64;
+        msg!("   Refunding {} SOL from autominer custody...", refund_amount as f64 / 1e9);
+        helper::transfer_from_autominer_custody(
+            &ctx.accounts.autominer_custody.to_account_info(),
+            &ctx.accounts.user_wallet.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            refund_amount,
+            ctx.bumps.autominer_custody,
+        )?;
+        msg!("     ✓ Refunded {} SOL", refund_amount as f64 / 1e9);
+    } else {
+        msg!("   No SOL transfer needed");
+    }
+
+    // Update vault state
+    autominer_vault.sol_per_round = new_sol_per_round;
+    autominer_vault.rounds_remaining += rounds_added;
+    autominer_vault.can_reload = new_can_reload;
+    autominer_vault.sol_balance = new_sol_needed;
+
+    msg!("✅ [update_autominer] Autominer updated successfully");
+
+    emit!(AutominerUpdated {
+        owner: autominer_vault.owner,
+        player_data: ctx.accounts.player_data.key(),
+        autominer_vault: autominer_vault.key(),
+        sol_per_round: new_sol_per_round,
+        rounds_remaining: rounds_remaining + rounds_added,
+        can_reload: new_can_reload,
+        sol_diff,
     });
 
     Ok(())
@@ -717,10 +832,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     );
 
     // Update remaining SOL balance tracked for this autominer
-    autominer_vault.sol_balance = autominer_vault
-        .sol_balance
-        .checked_sub(sol_per_round)
-        .ok_or(ErrorCode::InsufficientFunds)?;
+    autominer_vault.sol_balance = autominer_vault.sol_balance - sol_per_round;
 
     // Place bets using join_round_batch
     msg!(
@@ -831,6 +943,10 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     msg!("     Rounds remaining: {}", rounds_remaining);
     msg!("     Remaining SOL to refund: {}", sol_balance);
 
+    // Calculate rent that will be returned
+    let rent = Rent::get()?.minimum_balance(AutominerVault::LEN);
+    msg!("     Rent to be returned: {} lamports", rent);
+
     // Refund remaining SOL to owner (transfer from custody PDA to owner)
     if sol_balance > 0 {
         msg!(
@@ -850,20 +966,12 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
         );
     }
 
-    // Now borrow mutably to update state
-    let autominer_vault = &mut ctx.accounts.autominer_vault;
-
-    // Reset vault state
-    autominer_vault.rounds_remaining = 0;
-    autominer_vault.last_bet_round_id = 0;
-    autominer_vault.blocks_config = None;
-    autominer_vault.factions_config = None;
-    autominer_vault.sol_per_round = 0;
-    autominer_vault.sol_balance = 0;
-    msg!("   Reset vault state: rounds_remaining = 0, last_bet_round_id = 0");
+    msg!("   Closing autominer vault account and returning rent...");
+    msg!("     Rent returned: {} lamports", rent);
 
     msg!("✅ [stop_autominer] Autominer stopped successfully");
     msg!("   Refunded {} SOL to owner", (sol_balance as f64 / 1e9));
+    msg!("   Returned {} lamports rent to authority", rent);
 
     emit!(AutominerStopped {
         owner: owner_key,
@@ -2239,9 +2347,39 @@ pub struct InitAutominer<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateAutominer<'info> {
+    #[account(
+        mut,
+        seeds = [AUTOMINER_VAULT_SEED.as_ref(), autominer_vault.owner.as_ref()],
+        bump = autominer_vault.vault_bump
+    )]
+    pub autominer_vault: Account<'info, AutominerVault>,
+
+    /// CHECK: Global autominer custody PDA holding SOL deposits
+    #[account(
+        mut,
+        seeds = [AUTOMINER_CUSTODY_SEED.as_ref()],
+        bump
+    )]
+    pub autominer_custody: UncheckedAccount<'info>,
+
+    #[account(
+        seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
+        bump
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub user_wallet: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct StopAutominer<'info> {
     #[account(
         mut,
+        close = authority,
         seeds = [AUTOMINER_VAULT_SEED.as_ref(), autominer_vault.owner.as_ref()],
         bump = autominer_vault.vault_bump
     )]
