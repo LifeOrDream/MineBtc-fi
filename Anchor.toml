@@ -10,7 +10,7 @@ minebtc = "EkLZDQo3vKytwoDj1PHcLPti13SZULZr8KsRkpu28zpd"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]
-minebtc = "EazYQcEkdJokAiMYqxMiqFFNySLGsKAREBoksQLoSFaX"
+minebtc = "E4Bqhmc5vwfHuraMmiv2zuj28oDy9Mcp1DprazPLwXuL"
 mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
 raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 
@@ -26,3 +26,6 @@ members = ["programs/*"]
 startup_wait = 5000
 shutdown_wait = 2000
 upgradeable = false
+
+[programs.mainnet]
+minebtc = "EtASnhoGb6Wwmy7KEpP3uc4XFMVt2z21YFxzPfRRyqq6"
