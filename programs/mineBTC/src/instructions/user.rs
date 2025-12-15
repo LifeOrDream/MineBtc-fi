@@ -565,6 +565,7 @@ pub fn internal_init_autominer(
     emit!(AutominerInitialized {
         owner: ctx.accounts.user_wallet.key(),
         player_data: ctx.accounts.player_data.key(),
+        gameplay_doge: ctx.accounts.player_data.gameplay_doge.clone(),
         autominer_vault: ctx.accounts.autominer_vault.key(),
         sol_per_round,
         num_rounds,
@@ -1246,8 +1247,13 @@ fn process_mutation_sync<'info>(
     doge_metadata: Option<&mut Box<Account<'info, DogeMetadata>>>,
     total_minebtc_reward: u64,
 ) -> Result<()> {
-    if user_bet.gameplay_doge != Pubkey::default() 
-        && user_bet.gameplay_doge == player_data.gameplay_doge 
+
+    // If no doge is being used for gameplay, return
+    if player_data.gameplay_doge_xp == 0 && player_data.gameplay_doge == Pubkey::default() {
+        return Ok(());
+    }
+
+    if user_bet.gameplay_doge == player_data.gameplay_doge 
         && total_minebtc_reward > 0 
     {
         require!(doge_metadata.is_some() && doge_metadata.as_ref().unwrap().mint == user_bet.gameplay_doge, ErrorCode::DogeMetadataNotFound);
@@ -2616,7 +2622,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     // Sync cached data back to doge metadata before withdrawal
     // Note: generation is stored in DNA bits 4-6
     msg!("   Syncing gameplay progress to doge...");
-    require!( doge_metadata.dna == player_data.gameplay_doge_dna, ErrorCode::ClaimPendingRoundRewards);
+    require!( doge_metadata.dna == player_data.gameplay_doge_dna || player_data.gameplay_doge_xp > 0, ErrorCode::ClaimPendingRoundRewards);
     doge_metadata.dna = player_data.gameplay_doge_dna;
     doge_metadata.xp = player_data.gameplay_doge_xp;
     doge_metadata.multiplier = player_data.active_multiplier;

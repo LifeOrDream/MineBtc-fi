@@ -16,12 +16,12 @@
     },
     "token": {
         "name": "DogeWifBTC",
-        "symbol": "DBTC",
-        "description": "The ONLY price-aware $BTC$ in existence. $DBTC$ fuels the entire Lunar Playground economy: Stake for Electricity, Mine for adaptive emissions, and earn $SOL$ rewards from game fees.",
-        "image": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
+        "symbol": "DogeBTC",
+        "description": "Fuel for the first Speculative Entertainment protocol. Bet SOL to mine $DogeBTC in live arcade battles while your Cyber-Doge runs a 24/7 Auto-RPG. Mined by degens, marketed by doges",
+        "image": "http://d2mswiunr1bn1l.cloudfront.net/assets/LOGO.png",
         "external_url": "https://minebtc.fun/",
         "decimals": 6,
-        "initial_supply": 21000000000,
+        "initial_supply": 2100000000,
         "burn_tax_bps": 100,
         "max_burn_amount": 1000000
     },
@@ -53,7 +53,7 @@
     "doges_config": {
         "base_price": 1000000000,
         "curve_a": 1111111,
-        "max_supply": 24690,
+        "max_supply": 42690,
         "royalties": 420,
         "creators": [
             {
@@ -96,21 +96,7 @@
     ],
     "doges": {
         "collection_name": "Bitcoin doges",
-        "collection_uri": "https://arweave.net/doge-collection-metadata.json",
-        "uris": [
-            "https://arweave.net/doge-usa.json",
-            "https://arweave.net/doge-china.json",
-            "https://arweave.net/doge-russia.json",
-            "https://arweave.net/doge-india.json",
-            "https://arweave.net/doge-japan.json",
-            "https://arweave.net/doge-korea.json",
-            "https://arweave.net/doge-vietnam.json",
-            "https://arweave.net/doge-philippines.json",
-            "https://arweave.net/doge-northkorea.json",
-            "https://arweave.net/doge-france.json",
-            "https://arweave.net/doge-brazil.json",
-            "https://arweave.net/doge-argentina.json"
-        ]
+        "collection_uri": "https://assets.minebtc.fun/collection"
     },
     "tax": {
         "nft_floor_sweep_pct": 25,

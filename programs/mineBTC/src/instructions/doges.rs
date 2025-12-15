@@ -111,6 +111,11 @@ pub fn int_batch_mint_doges<'info>(
     let player_data = &mut ctx.accounts.player_data;
 
     require!(
+        doge_config.is_active,
+        ErrorCode::MintingNotAllowed
+    );
+
+    require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );

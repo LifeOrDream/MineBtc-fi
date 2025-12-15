@@ -91,7 +91,7 @@ pub fn int_stake_minebtc(
     );
 
     // Calculate actual amount after burn tax
-    let burn_amount = amount * BURN_TAX_PERCENTAGE / M_HUNDRED;
+    let burn_amount = (amount * BURN_TAX_PERCENTAGE / M_HUNDRED) + 1;
     let actual_amount = amount - burn_amount;
     msg!(
         "🔥 mDoge burn tax: {}% - Amount: {}, Burn: {}, Actual amount: {}",
@@ -365,6 +365,10 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Transfer remaining tokens back to user
     if return_amount > 0 {
+        return_amount = return_amount - 1;
+        // Get and print custodian balance before transfer
+        let custodian_balance = ctx.accounts.minebtc_custodian.amount;
+        msg!("💱 Custodian balance before transfer: {} MINE_BTC tokens", custodian_balance);
         msg!("💱 Transferring {} MINE_BTC tokens to user", return_amount);
 
         // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)

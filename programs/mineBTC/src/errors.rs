@@ -167,4 +167,7 @@ pub enum ErrorCode {
 
     #[msg("Doge DNA mismatch")]
     ClaimPendingRoundRewards,
+
+    #[msg("Minting not allowed")]
+    MintingNotAllowed,
 }

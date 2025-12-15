@@ -371,6 +371,7 @@ pub struct RoundRewardsClaimed {
 pub struct AutominerInitialized {
     pub owner: Pubkey,
     pub player_data: Pubkey,
+    pub gameplay_doge: Pubkey,
     pub autominer_vault: Pubkey,
     pub sol_per_round: u64,
     pub num_rounds: u32,

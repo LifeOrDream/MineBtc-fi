@@ -401,6 +401,9 @@ impl TicketTier {
 pub struct DogeConfig {
     pub bump: u8,
 
+    /// Whether the mining of doges is currently active
+    pub is_active: bool,
+
     /// Doge collection address (Metaplex Core)
     pub doge_collection: Pubkey,
 
@@ -433,6 +436,7 @@ impl DogeConfig {
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
+        1 +     // is_active
         32 +    // doge_collection
         8 +     // max_supply
         8 +     // doges_minted
