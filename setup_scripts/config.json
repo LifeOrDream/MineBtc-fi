@@ -53,7 +53,7 @@
     "doges_config": {
         "base_price": 1000000000,
         "curve_a": 1111111,
-        "max_supply": 24690,
+        "max_supply": 42690,
         "royalties": 420,
         "creators": [
             {
@@ -96,21 +96,7 @@
     ],
     "doges": {
         "collection_name": "Bitcoin doges",
-        "collection_uri": "https://arweave.net/doge-collection-metadata.json",
-        "uris": [
-            "https://arweave.net/doge-usa.json",
-            "https://arweave.net/doge-china.json",
-            "https://arweave.net/doge-russia.json",
-            "https://arweave.net/doge-india.json",
-            "https://arweave.net/doge-japan.json",
-            "https://arweave.net/doge-korea.json",
-            "https://arweave.net/doge-vietnam.json",
-            "https://arweave.net/doge-philippines.json",
-            "https://arweave.net/doge-northkorea.json",
-            "https://arweave.net/doge-france.json",
-            "https://arweave.net/doge-brazil.json",
-            "https://arweave.net/doge-argentina.json"
-        ]
+        "collection_uri": "https://assets.minebtc.fun/collection"
     },
     "tax": {
         "nft_floor_sweep_pct": 25,
