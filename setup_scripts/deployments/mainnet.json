@@ -325,5 +325,20 @@
     ],
     "tx_signature": "3zRFFhd2JFjg84KHGVZCcBpNegAk4XLYxQtaSVHPQAZTLC2r7vXv9WqezS8c9EjbJG4BfmSkwCL4nbpq3teK2K73",
     "timestamp": "2025-12-16T19:06:23.367Z"
+  },
+  "fees_updated": {
+    "fee_config": {
+      "newProtocolFeePct": 10,
+      "newStakersPct": 10,
+      "newBuybackPct": 80,
+      "changeFactionFee": 100000000,
+      "newMinebtcStakersPct": 3,
+      "newMinebtcWinnersPct": 50,
+      "newMinebtcSameFactionPct": 42,
+      "newMinebtcMotherlodePct": 5,
+      "newRefiningFee": 10
+    },
+    "tx_signature": "37mf9wSaLhRySuNuvqJ8ZDnS9otevbPVa6KgT8NHkvSasR81JdJTSdMJ1qmZU5HjWQ5k4TJvfdezjrCuLDCb1ytZ",
+    "timestamp": "2025-12-16T19:40:04.164Z"
   }
 }
