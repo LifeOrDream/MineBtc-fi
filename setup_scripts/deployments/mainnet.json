@@ -63,5 +63,34 @@
     "new_transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
     "transfer_signature": "5WQ81othynLPjFPkqEXr3Uqg7D6mGa1UKPNLjev3A2hFju9aWmFmL2fpZWCcYfxcMjKELVYbnK86ReDo29xtBvcE",
     "timestamp": "2025-12-16T14:18:41.253Z"
+  },
+  "RAYDIUM_CP_PROGRAM_ID": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+  "raydium_amm_config_created": {
+    "amm_config_pda": "G95xxie3XbkCqtE39GgQ9Ggc7xBC8Uceve7HFDEFApkc",
+    "raydium_program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+    "config_index": 1,
+    "trade_fee_rate": 10000,
+    "create_pool_fee": "0",
+    "status": "using_official_raydium_config",
+    "is_official_raydium": true,
+    "timestamp": "2025-12-16T15:13:15.170Z"
+  },
+  "dbtc_sol_pool_created": {
+    "poolStatePDA": "HmPwHy2z9aQa2Ce2kMhwvjaiqCBiE7kdHppkUP6jZ7nf",
+    "lpMintPDA": "9bArpNW5ak7qrosXhZicU9bM6WXfrScAVDQAKkY218xg",
+    "token0VaultPDA": "4YGosu8THGYPVToa8YttLe8kefNNhsc66wWScT9ZaDxc",
+    "token1VaultPDA": "AnPauy18Yi2YCPiKcgg69mzrhSH6wVxvCNtvfe8gaxp",
+    "authorityPDA": "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL",
+    "observationStatePDA": "Ahq5Uqcci8xQkaetqrRPKQgJFEHzwPXQSg8EgFXEDQt7",
+    "token0Mint": "So11111111111111111111111111111111111111112",
+    "token1Mint": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
+    "isMdogeToken0": false,
+    "txid": "4AUSKzTuTHkYaFGd8xeXdridWuMbzDvQbYCQXT5nkj1H4uL7t1DiB4K9niKHgJF8BfGoxneGDwwDapBmjNhSFaQf",
+    "initialMdogeAmount": "99000000000",
+    "initialSolAmount": "1000000000",
+    "initialMdogeReadable": "99,000 DogeBTC",
+    "initialSolReadable": "1 SOL",
+    "openTime": "0",
+    "timestamp": "2025-12-16T15:13:15.170Z"
   }
 }
