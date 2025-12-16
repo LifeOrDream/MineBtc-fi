@@ -852,7 +852,6 @@ pub fn initialize_game_state_internal(
     round_duration_seconds: i64,
 ) -> Result<()> {
     let global_game_state = &mut ctx.accounts.global_game_state;
-    let clock = Clock::get()?;
 
     // Initialize game state
     global_game_state.bump = ctx.bumps.global_game_state;

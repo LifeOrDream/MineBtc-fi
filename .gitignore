@@ -21,3 +21,5 @@ raydium/target/*
 setup_scripts/node_modules/*
 .env
 game_keypair.json
+devnet-wallet-keypair.json
+mainnet-wallet-keypair.json

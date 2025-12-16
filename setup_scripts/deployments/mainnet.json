@@ -1,0 +1,67 @@
+{
+  "MINE_BTC_PROGRAM_ID": "Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx",
+  "game_programs_deployment": {
+    "timestamp": "2025-12-16T13:21:59.185Z",
+    "cluster": "mainnet"
+  },
+  "dbtc_mint_created": {
+    "mint_address": "AFMjYqr2sGuf7z5PWsq95MPchHFmdCLdvx15xuKiyMUs",
+    "mint_authority": null,
+    "freeze_authority": null,
+    "transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "withdraw_withheld_authority": "7uWKPXddd62NkXiSDPF8e6T87BScw7dQsHiFa7tEtYo3",
+    "decimals": 6,
+    "burn_tax_bps": 100,
+    "max_burn_amount": 1000000,
+    "metadata_included": true,
+    "metadata_name": "DogeWifBTC",
+    "metadata_symbol": "DogeBTC",
+    "metadata_uri": "http://d2mswiunr1bn1l.cloudfront.net/assets/LOGO.png",
+    "creation_signature": "3VGTgNnRTtzrppMeM8tVQfNqf7AQUD3tqK6QN3Po9eLi4Pt57SV7QuoJga6KqamQynh2Nmc4NVn3FLaAGynEBVYD",
+    "timestamp": "2025-12-16T13:28:19.814Z",
+    "mint_authority_status": "removed",
+    "withdraw_withheld_authority_status": "set_to_pda",
+    "transfer_fee_config_authority_status": "transferred"
+  },
+  "dbtc_token_account_created": {
+    "token_account_address": "MA3Y6eAvgJty9kKGcFHoqpPBLkCBsvPbZuyARXFLUwP",
+    "owner_address": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "mint_address": "AFMjYqr2sGuf7z5PWsq95MPchHFmdCLdvx15xuKiyMUs",
+    "timestamp": "2025-12-16T13:28:21.069Z"
+  },
+  "initial_supply_minted": {
+    "amount": "2100000000000000",
+    "actual_minted_amount": "2100000000000000",
+    "amount_readable": "2,100,000,000 DogeBTC",
+    "token_account_address": "MA3Y6eAvgJty9kKGcFHoqpPBLkCBsvPbZuyARXFLUwP",
+    "mint_signature": "4R1PJ6sGtFg8azBJuPKu7NZKaWTJ1k37qXb2y2Su9t3CpYV4buSoxUQ44pxZZJBCffmZVt8eVi54FANm2vUFB2NH",
+    "bigint_verification": {
+      "expected": "2100000000000000",
+      "actual": "2100000000000000",
+      "match": true
+    },
+    "timestamp": "2025-12-16T13:28:22.619Z"
+  },
+  "dbtc_mint_address": "AFMjYqr2sGuf7z5PWsq95MPchHFmdCLdvx15xuKiyMUs",
+  "mint_authority_removed": {
+    "previous_mint_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "new_mint_authority": null,
+    "removal_signature": "CgLfoyvesyuAHEf5jxFjr7BCXeopt5LrHUeqtRYZXvkDJiwDtUPjdnV9ULw4kN8yqwJeE9sKCSRtXqVMdTmxrGg",
+    "timestamp": "2025-12-16T13:28:23.626Z",
+    "total_supply_locked": "2,100,000,000 DogeBTC"
+  },
+  "withdraw_withheld_authority_set_to_pda": {
+    "previous_withdraw_withheld_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "pda_authority": "7uWKPXddd62NkXiSDPF8e6T87BScw7dQsHiFa7tEtYo3",
+    "pda_bump": 255,
+    "program_id": "Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx",
+    "transfer_signature": "2iSfwfbadM5HBBZdHnnBBb6z3Livj1DXte4WkxaRMkZAH5bz5yvXS3GZLWgHzd9Ag9LVtwFNCrt5B9TPC8tQ4eX6",
+    "timestamp": "2025-12-16T13:28:24.480Z"
+  },
+  "transfer_fee_config_authority_transferred": {
+    "previous_transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "new_transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "transfer_signature": "64cCr2892D3LPqesaGzJv7wA6zLKY23aGrr6RdgAuJf23Tfi7cBNRxZP6fi5RoaVuHuQSjAfscs71oSPfmLDkcSR",
+    "timestamp": "2025-12-16T13:28:25.175Z"
+  }
+}

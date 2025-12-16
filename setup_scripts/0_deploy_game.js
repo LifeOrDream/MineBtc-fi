@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 // Configuration
 const ROOT_DIR = path.join(__dirname, "..");
 const RAYDIUM_DIR = path.join(ROOT_DIR, "raydium");
-const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "wallet-keypair.json");
+const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "mainnet-wallet-keypair.json");
 const ANCHOR_TOML_PATH = path.join(ROOT_DIR, "Anchor.toml");
 const DEPLOYMENTS_DIR = path.join(__dirname, "deployments");
 
@@ -28,7 +28,7 @@ const PROGRAMS = {
       "minebtc-keypair.json"
     ),
     soPath: path.join(ROOT_DIR, "target", "deploy", "minebtc.so"),
-    libPath: path.join(ROOT_DIR, "programs", "minebtc", "src", "lib.rs"),
+    libPath: path.join(ROOT_DIR, "programs", "mineBTC", "src", "lib.rs"),
     buildDir: ROOT_DIR,
   },
 };
@@ -431,13 +431,26 @@ function deployProgram(programConfig, walletPath) {
 
   const configPath = path.join(__dirname, "config.json");
   let clusterUrl = "http://127.0.0.1:8899";
+  let cluster = "localnet";
 
   try {
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
     clusterUrl = config.network?.rpc_url || clusterUrl;
+    cluster = config.network?.cluster || cluster;
   } catch (error) {}
 
-  const deployCommand = `solana program deploy ${programConfig.soPath} --program-id ${programConfig.keypairPath} --keypair ${walletPath} --url ${clusterUrl}`;
+  // Safety check for mainnet deployment
+  if (cluster === "mainnet") {
+    console.log(`\x1b[33m⚠️  WARNING: Deploying to MAINNET!\x1b[0m`);
+    console.log(`\x1b[33m   RPC URL: ${clusterUrl}\x1b[0m`);
+    console.log(`\x1b[33m   Program: ${programConfig.displayName}\x1b[0m`);
+    console.log(`\x1b[33m   Make sure you have sufficient SOL and correct keypair!\x1b[0m`);
+  }
+
+  // Quote the URL to handle query parameters properly
+  // Add priority fees for mainnet to ensure transactions land
+  const priorityFee = cluster === "mainnet" ? "--with-compute-unit-price 100000 --max-sign-attempts 50" : "";
+  const deployCommand = `solana program deploy ${programConfig.soPath} --program-id ${programConfig.keypairPath} --keypair ${walletPath} --url "${clusterUrl}" ${priorityFee}`;
 
   try {
     runCommand(deployCommand);
@@ -502,10 +515,12 @@ async function printWalletInfo() {
   try {
     const configPath = path.join(__dirname, "config.json");
     let clusterUrl = "http://127.0.0.1:8899";
+    let cluster = "localnet";
 
     try {
       const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
       clusterUrl = config.network?.rpc_url || clusterUrl;
+      cluster = config.network?.cluster || cluster;
     } catch (error) {}
 
     const connection = new Connection(clusterUrl, "confirmed");
@@ -518,6 +533,7 @@ async function printWalletInfo() {
     const balance = await connection.getBalance(publicKey);
     const balanceSOL = balance / LAMPORTS_PER_SOL;
 
+    console.log(`\x1b[36m🌐 Network: ${cluster.toUpperCase()}\x1b[0m`);
     console.log(`\x1b[36m👤 Wallet Address: ${publicKey.toString()}\x1b[0m`);
     console.log(
       `\x1b[36m💰 Balance: ${balanceSOL.toFixed(
@@ -525,7 +541,18 @@ async function printWalletInfo() {
       )} SOL (${balance} lamports)\x1b[0m`
     );
 
-    if (balanceSOL < 1) {
+    if (cluster === "mainnet") {
+      if (balanceSOL < 5) {
+        console.log(
+          `\x1b[31m❌ ERROR: Insufficient balance for mainnet deployment! Need at least 5 SOL.\x1b[0m`
+        );
+        throw new Error("Insufficient SOL balance for mainnet deployment");
+      } else if (balanceSOL < 10) {
+        console.log(
+          `\x1b[33m⚠️  Warning: Low balance for mainnet! Recommended at least 10 SOL for deployment.\x1b[0m`
+        );
+      }
+    } else if (balanceSOL < 1) {
       console.log(
         `\x1b[33m⚠️  Warning: Low balance! You may need more SOL for deployment.\x1b[0m`
       );
@@ -534,11 +561,30 @@ async function printWalletInfo() {
     console.log(
       `\x1b[33m⚠️  Could not fetch wallet info: ${error.message}\x1b[0m`
     );
+    throw error;
   }
 }
 
 async function main() {
   try {
+    // Check network configuration first
+    const configPath = path.join(__dirname, "config.json");
+    let cluster = "localnet";
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      cluster = config.network?.cluster || cluster;
+    } catch (error) {}
+
+    if (cluster === "mainnet") {
+      console.log(`\x1b[31m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
+      console.log(`\x1b[31m║  ⚠️   MAINNET DEPLOYMENT - REAL MONEY AT RISK  ⚠️          ║\x1b[0m`);
+      console.log(`\x1b[31m╚═══════════════════════════════════════════════════════════╝\x1b[0m`);
+      console.log(`\x1b[33m   • Ensure you have the correct wallet keypair\x1b[0m`);
+      console.log(`\x1b[33m   • Ensure you have sufficient SOL balance (10+ SOL recommended)\x1b[0m`);
+      console.log(`\x1b[33m   • Double-check program addresses before deployment\x1b[0m`);
+      console.log("");
+    }
+
     console.log(`\x1b[35m🚀 Starting automated program deployment...\x1b[0m`);
     console.log(
       `\x1b[35m==============================================\x1b[0m`

@@ -1,18 +1,18 @@
 {
     "network": {
-        "cluster": "devnet",  
-        "rpc_url":  "https://api.devnet.solana.com",    
+        "cluster": "mainnet",  
+        "rpc_url":  "https://mainnet.helius-rpc.com/?api-key=c417fa1e-1c1d-4e2a-b03c-71c86f6f2d74",    
         "commitment": "confirmed"   
     },
     "deployment": {
         "paths": {
-            "deployer_key": "../wallet-keypair.json",
+            "deployer_key": "../mainnet-wallet-keypair.json",
             "minebtc_idl": "../target/idl/minebtc.json",
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
         "FEE_RECIPIENT_MULTISIG": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
-        "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
+        "transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN"
     },
     "token": {
         "name": "DogeWifBTC",
@@ -102,7 +102,7 @@
         "nft_floor_sweep_pct": 25,
         "faction_treasury_pct": 25,
         "burnt_pct": 25,
-        "nft_floor_sweep_whitelisted_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
+        "nft_floor_sweep_whitelisted_address": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN"
     },
     "game": {
         "round_duration_seconds": 60

@@ -23,21 +23,13 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.join(__dirname, '..', '..');
 
 // Get filename from command line arguments
 const args = process.argv.slice(2);
 
-if (args.length === 0) {
-  console.error('❌ Error: Please provide a filename for the wallet');
-  console.log('\nUsage:');
-  console.log('  node create_wallet.js <filename>');
-  console.log('\nExample:');
-  console.log('  node create_wallet.js game_bot');
-  console.log('  This will create game_bot.json in the user_activity directory');
-  process.exit(1);
-}
-
-const filename = args[0];
+// Default to mainnet-wallet-keypair if no argument provided
+const filename = args.length > 0 ? args[0] : 'mainnet-wallet-keypair';
 
 // Validate filename (basic validation)
 if (!/^[a-zA-Z0-9_-]+$/.test(filename)) {
@@ -52,8 +44,11 @@ const keypair = Keypair.generate();
 // Convert keypair secret key to array format (for JSON storage)
 const secretKeyArray = Array.from(keypair.secretKey);
 
-// Determine output path (in user_activity directory)
-const outputPath = path.join(__dirname, `${filename}.json`);
+// Determine output path
+// If filename is mainnet-wallet-keypair, save to project root, otherwise save to user_activity directory
+const outputPath = filename === 'mainnet-wallet-keypair' 
+  ? path.join(ROOT_DIR, `${filename}.json`)
+  : path.join(__dirname, `${filename}.json`);
 
 // Check if file already exists
 if (fs.existsSync(outputPath)) {
@@ -69,7 +64,19 @@ try {
   
   console.log('✅ Wallet created successfully!');
   console.log(`\n📁 File: ${outputPath}`);
-  console.log(`🔑 Public Key: ${keypair.publicKey.toString()}`);
+  console.log(`\n🔑 Wallet Address (Public Key):`);
+  console.log(`   ${keypair.publicKey.toString()}`);
+  console.log(`\n🔐 Private Key (Secret Key Array):`);
+  // Print in a readable format (first 10 and last 10 bytes for brevity)
+  if (secretKeyArray.length > 20) {
+    const firstPart = secretKeyArray.slice(0, 10).join(', ');
+    const lastPart = secretKeyArray.slice(-10).join(', ');
+    console.log(`   [${firstPart}, ..., ${lastPart}]`);
+    console.log(`\n   Full private key (64 bytes):`);
+    console.log(`   [${secretKeyArray.join(', ')}]`);
+  } else {
+    console.log(`   [${secretKeyArray.join(', ')}]`);
+  }
   console.log(`\n💡 To load this keypair in your scripts:`);
   console.log(`   const keypair = Keypair.fromSecretKey(`);
   console.log(`     new Uint8Array(JSON.parse(fs.readFileSync('${path.relative(process.cwd(), outputPath)}', 'utf8')))`);

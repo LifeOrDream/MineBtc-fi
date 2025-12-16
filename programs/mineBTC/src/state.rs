@@ -17,8 +17,6 @@
 use anchor_lang::prelude::*;
 
 pub const MINEBTC_DECIMALS: u8 = 6;
-pub const THIRTY_MINS: u64 = 5; //  1800; // 30 minutes in seconds
-pub const FOUR_HOURS: u64 = 90; //  14400; // 4 hours in seconds
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
 pub const MAX_MULTIPLIER: u16 = 10000; // Maximum multiplier a user can have (10.0x)
@@ -505,7 +503,7 @@ pub struct TaxConfig {
 }
 
 impl TaxConfig {
-    pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = 7 * DAY_IN_SECONDS as i64; // 7 days
+    pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = DAY_IN_SECONDS as i64; // 1 day
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump

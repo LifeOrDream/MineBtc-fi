@@ -582,14 +582,13 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     );
 
     // Check if 4 hours have passed AND we have 8 price entries
-    let four_hours = FOUR_HOURS as i64;
     let time_since_last = mine_btc_mining
         .price_history
         .first()
         .map(|e| current_time - e.timestamp)
         .unwrap_or(0);
 
-    if mine_btc_mining.price_history.len() < 8 || time_since_last < four_hours {
+    if mine_btc_mining.price_history.len() < 8 {
         msg!(
             "   ❌ Conditions NOT met: {} snapshots, {}s elapsed",
             mine_btc_mining.price_history.len(),
