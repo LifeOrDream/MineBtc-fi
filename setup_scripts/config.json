@@ -11,7 +11,7 @@
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
-        "FEE_RECIPIENT_MULTISIG": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
+        "FEE_RECIPIENT_MULTISIG": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
         "transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN"
     },
     "token": {
@@ -104,7 +104,7 @@
         "nft_floor_sweep_pct": 25,
         "faction_treasury_pct": 25,
         "burnt_pct": 25,
-        "nft_floor_sweep_whitelisted_address": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN"
+        "nft_floor_sweep_whitelisted_address": "3tfDJza2xS5GWCE8yQ1dvRLrJ9AYDZCzkFz1jcBpiRC3"
     },
     "game": {
         "round_duration_seconds": 60

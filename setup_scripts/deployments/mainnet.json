@@ -115,7 +115,7 @@
     "dogesTreasury_address": "3burVzSiwhZgix68DyWqa8rhd5USUhBq9sAHZDBtxRSq",
     "autominerCustody_address": "9DeiVvqN1K3sfsXMkd4YFWKG3oUuY3UC9xqfkssgYh9z",
     "unrefinedRewards_address": "3TWC812X9Z9bWk3aNHVtx2gSxKULHEYaf5CzTvKELYZz",
-    "FEE_RECIPIENT_MULTISIG": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
+    "FEE_RECIPIENT_MULTISIG": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
     "tx_signature": "4BrqnHqDD7g2MkfaUPeLZUJ17NZ2BwdSPPg5BEn8FbDPZwzaBGi7xry3TzEer8JGYoLDx4xYDWPZFTTYzYsrHYRp",
     "timestamp": "2025-12-16T15:20:34.232Z"
   },
@@ -273,5 +273,57 @@
       }
     ],
     "timestamp": "2025-12-16T15:44:01.451Z"
+  },
+  "lp_token_accounts_initialized": {
+    "lp_token_account": "5qe1HLZHTGyNorBiBbPBWKK7qFSBNn1G6Fs3HDtB8ed8",
+    "lp_token_owner": "7z1Z6XBqz8AHBZoDRTPWrAm23YJomDRsp7CJiZsuxLF4",
+    "lp_mint": "9bArpNW5ak7qrosXhZicU9bM6WXfrScAVDQAKkY218xg",
+    "timestamp": "2025-12-16T18:18:28.913Z"
+  },
+  "game_state_initialized": {
+    "global_game_state_pda": "CZHpEXEConFbGmwb1MnWD5Bhtc7G5bzjRam8nBzDCvRg",
+    "round_duration_seconds": 60,
+    "tx_signature": "4CyQr15v3X562vmHG8mFGn5Zp5ti8e9RUFUiDz91RQjfH64Do1GeLAFTCgk5jyQLGcPdZFL8jNnE4NrBECmRZ9Ru",
+    "timestamp": "2025-12-16T18:18:58.666Z"
+  },
+  "fee_recipient_updated": {
+    "old_fee_recipient": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
+    "new_fee_recipient": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
+    "tx_signature": "3RoQ9YtQp9ntfu4Qr23EJfa7bbpRy9UaGyp3XuysX23B22P3Rnhku3ZyuGUVWVeGDgYuu1hyHiz3Rw8cWegFqAhp",
+    "timestamp": "2025-12-16T18:59:00.365Z"
+  },
+  "doge_royalties_initialized": {
+    "basis_points": 420,
+    "creators": [
+      {
+        "address": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
+        "percentage": 50
+      },
+      {
+        "address": "6rBKBaVK2m8rGjHXa65ohjWjD3B3VGDSKUpJrxraPmX1",
+        "percentage": 50
+      }
+    ],
+    "tx_signature": "3yhMrpH2bGazYYSQrZ9oXU8b5ogjHoJvFVuAEd1aLZ8AZeijK84HZszB8TuDjawQR3coy5bsAYHJaV7GYQoC5MgK",
+    "timestamp": "2025-12-16T19:02:05.893Z"
+  },
+  "tax_config_initialized": {
+    "tax_config_pda": "9W4BC9P9jz2FLPmy7u2GCaVPP9girPzS1j4fYZPLkHpd",
+    "withdraw_withheld_authority": "7uWKPXddd62NkXiSDPF8e6T87BScw7dQsHiFa7tEtYo3",
+    "faction_treasury_vault": "GUrrK4c1RmTDqYbEbWSjq6mfUcujpgTtasU4JXVzEKMA",
+    "nft_floor_sweep_vault": "DRvR4WpLj85Lfvwk3im7Ucrz1s9FPLPUtrTihUiqaPve",
+    "nft_sale_sol_vault": "AhQLtQaExz9rd3CZysjFeE47CkSmTUhbacwS6vURTDqv",
+    "nft_floor_sweep_pct": 25,
+    "faction_treasury_pct": 25,
+    "whitelisted_address": "3tfDJza2xS5GWCE8yQ1dvRLrJ9AYDZCzkFz1jcBpiRC3",
+    "tx_signature": "5GrTBxhhMu56oNSVV6WPgAHwLZYwUf11b6CZiTaAEPA3rjXYRD6ZspNpMPuVUzMfo2xZg1h4eNRqTh8xc92GEZBo",
+    "timestamp": "2025-12-16T19:04:58.112Z"
+  },
+  "cranker_bots_added": {
+    "bots": [
+      "GyZL2mfkMsqk9R2EGhjqGABwd6A5NHn5TkoBxvS5MSSh"
+    ],
+    "tx_signature": "3zRFFhd2JFjg84KHGVZCcBpNegAk4XLYxQtaSVHPQAZTLC2r7vXv9WqezS8c9EjbJG4BfmSkwCL4nbpq3teK2K73",
+    "timestamp": "2025-12-16T19:06:23.367Z"
   }
 }
