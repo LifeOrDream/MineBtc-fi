@@ -252,63 +252,42 @@ export async function createMintAccountWithMetadata(
   metadata
 ) {
   try {
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      "📝 Creating mint account with transfer fee and metadata extensions (2-TX method)..."
-    );
+    console.log("\x1b[36m%s\x1b[0m", "📝 Creating mint with MetadataPointer + TransferFeeConfig extensions...");
 
     const MAX_BURN_TAX = BigInt(burn_tax) * BigInt(10) ** BigInt(decimals);
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`
-    );
+    console.log("\x1b[36m%s\x1b[0m", `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`);
 
-    // 1. Define ALL extensions
-    const extensions = [
-      ExtensionType.MetadataPointer,
-      ExtensionType.TransferFeeConfig, // <-- This was missing in your original code
-    ];
+    // Extensions: MetadataPointer + TransferFeeConfig
+    const extensions = [ExtensionType.MetadataPointer, ExtensionType.TransferFeeConfig];
     const mintLen = getMintLen(extensions);
 
-    const metadataPayloadLen = pack({
-      updateAuthority: deployer.publicKey,
-      mint: dogeBtcMint.publicKey,
-      name: metadata.name,
-      symbol: metadata.symbol,
-      uri: metadata.uri,
-      additionalMetadata: metadata.additionalMetadata ?? [],
-    }).length;
-    const tlvLen = TYPE_SIZE + LENGTH_SIZE + metadataPayloadLen;
+    console.log("\x1b[36m%s\x1b[0m", `   • Mint Length (extensions only): ${mintLen}`);
 
-    // external metadata account (token-owned)
-    const metaKp = Keypair.generate();
+    // TX1: Create account with ONLY extension space, init extensions, init mint
+    const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
 
-    console.log("\x1b[36m%s\x1b[0m", `   • Mint+Extensions Length: ${mintLen}`);
-    console.log("\x1b[36m%s\x1b[0m", `   • Metadata TLV Length: ${tlvLen}`);
-
-    console.log("\x1b[36m%s\x1b[0m", "🔧 Preparing instructions...");
-
-    // ---------- lamports ----------
-    const mintLamports = await connection.getMinimumBalanceForRentExemption(
-      mintLen
-    );
-    const metaLamports = await connection.getMinimumBalanceForRentExemption(
-      tlvLen
-    );
-
-    // === Transaction 1: Create Account + Init Native Extensions + Init Mint ===
-
-    // ---------- TX 1: create + InitializeMint ----------
     const tx1 = new Transaction().add(
-      // create mint (EXACT size = mintLen)
       SystemProgram.createAccount({
         fromPubkey: deployer.publicKey,
         newAccountPubkey: dogeBtcMint.publicKey,
-        lamports: mintLamports,
+        lamports,
         space: mintLen,
         programId: TOKEN_2022_PROGRAM_ID,
       }),
-      // initialize base mint FIRST (strict builds prefer this order)
+      createInitializeMetadataPointerInstruction(
+        dogeBtcMint.publicKey,
+        deployer.publicKey,
+        dogeBtcMint.publicKey,
+        TOKEN_2022_PROGRAM_ID
+      ),
+      createInitializeTransferFeeConfigInstruction(
+        dogeBtcMint.publicKey,
+        transferFeeConfigAuthority,
+        withdrawWithheldAuthority,
+        BURN_TAX_BPS,
+        MAX_BURN_TAX,
+        TOKEN_2022_PROGRAM_ID
+      ),
       createInitializeMintInstruction(
         dogeBtcMint.publicKey,
         decimals,
@@ -317,93 +296,63 @@ export async function createMintAccountWithMetadata(
         TOKEN_2022_PROGRAM_ID
       )
     );
-    let sig1 = await sendAndConfirmTransaction(
-      connection,
-      tx1,
-      [deployer, dogeBtcMint],
-      {
-        commitment: "confirmed",
-        preflightCommitment: "confirmed",
-        maxRetries: 3,
-      }
+
+    console.log("\x1b[36m%s\x1b[0m", "📤 Sending TX1: Create + Extensions + InitMint...");
+    const sig1 = await sendAndConfirmTransaction(connection, tx1, [deployer, dogeBtcMint], {
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+      maxRetries: 3,
+    });
+    console.log("\x1b[32m%s\x1b[0m", `✅ TX1 confirmed: ${sig1}`);
+
+    // Calculate additional rent needed for metadata TLV
+    const metadataPayload = pack({
+      updateAuthority: deployer.publicKey,
+      mint: dogeBtcMint.publicKey,
+      name: metadata.name,
+      symbol: metadata.symbol,
+      uri: metadata.uri,
+      additionalMetadata: metadata.additionalMetadata ?? [],
+    });
+    const metadataTlvLen = TYPE_SIZE + LENGTH_SIZE + metadataPayload.length;
+    const totalSpace = mintLen + metadataTlvLen;
+    const totalLamports = await connection.getMinimumBalanceForRentExemption(totalSpace);
+    const additionalLamports = totalLamports - lamports;
+
+    console.log("\x1b[36m%s\x1b[0m", `   • Metadata TLV: ${metadataTlvLen} bytes`);
+    console.log("\x1b[36m%s\x1b[0m", `   • Additional rent needed: ${additionalLamports} lamports`);
+
+    // TX2: Transfer additional rent + Initialize metadata
+    const tx2 = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: deployer.publicKey,
+        toPubkey: dogeBtcMint.publicKey,
+        lamports: additionalLamports,
+      }),
+      createInitializeInstruction({
+        programId: TOKEN_2022_PROGRAM_ID,
+        mint: dogeBtcMint.publicKey,
+        metadata: dogeBtcMint.publicKey,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        uri: metadata.uri,
+        mintAuthority: mintAuthority,
+        updateAuthority: deployer.publicKey,
+      })
     );
-    console.log("\x1b[32m%s\x1b[0m", `✅ Mint initialized (tx1): ${sig1}`);
 
-    // // 2. Init Metadata Pointer
-    // const initMetadataPointerIx = createInitializeMetadataPointerInstruction(
-    //     dogeBtcMint.publicKey,
-    //     deployer.publicKey, // update authority
-    //     dogeBtcMint.publicKey, // metadata stored on the mint (TLV)
-    //     TOKEN_2022_PROGRAM_ID
-    // );
+    console.log("\x1b[36m%s\x1b[0m", "📤 Sending TX2: Fund rent + Initialize Metadata...");
+    const sig2 = await sendAndConfirmTransaction(connection, tx2, [deployer], {
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+      maxRetries: 3,
+    });
+    console.log("\x1b[32m%s\x1b[0m", `✅ TX2 confirmed: ${sig2}`);
+    console.log("\x1b[32m%s\x1b[0m", `✅ Token created with metadata: ${metadata.name} (${metadata.symbol})`);
 
-    // // 3. Init Transfer Fee Config
-    // const initTransferFeeIx = createInitializeTransferFeeConfigInstruction(
-    //     dogeBtcMint.publicKey,
-    //     transferFeeConfigAuthority,
-    //     withdrawWithheldAuthority,
-    //     BURN_TAX_BPS,
-    //     MAX_BURN_TAX,
-    //     TOKEN_2022_PROGRAM_ID
-    // );
-
-    // // 4. Init Mint (MUST BE LAST in this group)
-    // const initMintIx = createInitializeMintInstruction(
-    //     dogeBtcMint.publicKey,
-    //     decimals,
-    //     mintAuthority,
-    //     freezeAuthority,
-    //     TOKEN_2022_PROGRAM_ID
-    // );
-
-    // console.log('\x1b[36m%s\x1b[0m', '📤 Building and sending transaction 1 (Initialize Mint)...');
-
-    // const tx1 = new Transaction()
-    //     .add(createAccountIx)
-    //     .add(initMetadataPointerIx)
-    //     .add(initTransferFeeIx) // <-- This was the critical missing piece
-    //     .add(initMintIx);
-
-    // const sig1 = await sendAndConfirmTransaction(
-    //     connection,
-    //     tx1,
-    //     [deployer, dogeBtcMint],
-    //     { commitment: 'confirmed', preflightCommitment: 'confirmed', maxRetries: 3 }
-    // );
-    // console.log('\x1b[32m%s\x1b[0m', `✅ Mint + Extensions initialized (tx1): ${sig1}`);
-
-    // // === Transaction 2: Write Metadata using spl-token-metadata library ===
-
-    // // 5. Init Metadata TLV
-    // const initMetadataIx = createInitializeInstruction({
-    //     programId: TOKEN_2022_PROGRAM_ID, // Must be 2022 program
-    //     mint: dogeBtcMint.publicKey,
-    //     metadata: dogeBtcMint.publicKey, // Write to the mint itself
-    //     name: metadata.name,
-    //     symbol: metadata.symbol,
-    //     uri: metadata.uri,
-    //     mintAuthority: deployer.publicKey,
-    //     updateAuthority: deployer.publicKey,
-    // });
-
-    // console.log('\x1b[36m%s\x1b[0m', '📤 Building and sending transaction 2 (Write Metadata)...');
-
-    // const tx2 = new Transaction().add(initMetadataIx);
-
-    // const sig2 = await sendAndConfirmTransaction(
-    //     connection,
-    //     tx2,
-    //     [deployer],
-    //     { commitment: 'confirmed', preflightCommitment: 'confirmed', maxRetries: 3 }
-    // );
-    // console.log('\x1b[32m%s\x1b[0m', `✅ Metadata TLV initialized (tx2): ${sig2}`);
-
-    // return sig2; // Return the signature for the final step
+    return sig2;
   } catch (error) {
-    console.error(
-      "\x1b[31m%s\x1b[0m",
-      `❌ Error in createMintAccountWithMetadata: ${error.message}`
-    );
+    console.error("\x1b[31m%s\x1b[0m", `❌ Error in createMintAccountWithMetadata: ${error.message}`);
     throw error;
   }
 }

@@ -527,22 +527,20 @@ async function createMintAccountTx(
   );
 
   try {
-    // const signature = await createMintAccountWithMetadata(
-    //     connection, deployer, dogeBtcMint, burnTaxBps, maxBurnAmount, decimals,
-    //     mintAuthority, freezeAuthority, transferFeeConfigAuthority, withdrawWithheldAuthority,
-    //     metadata
-    // );
-    let signature = await createMintAccount_T22_TransferFeeOnly(
+    // Use createMintAccountWithMetadata to include MetadataPointer extension
+    // This ensures token shows name/symbol in explorers and wallets
+    let signature = await createMintAccountWithMetadata(
       connection,
       deployer,
       dogeBtcMint,
+      burnTaxBps,
+      maxBurnAmount,
       decimals,
       mintAuthority,
       freezeAuthority,
       transferFeeConfigAuthority,
       withdrawWithheldAuthority,
-      burnTaxBps,
-      maxBurnAmount
+      metadata
     );
 
     console.log(
