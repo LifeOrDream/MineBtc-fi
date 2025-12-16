@@ -18,10 +18,10 @@ const ROOT_DIR = path.join(__dirname, '..', '..');
 
 // Get filename from command line arguments or use default
 const args = process.argv.slice(2);
-const filename = args.length > 0 ? args[0] : 'mainnet-wallet-keypair';
+const filename = args.length > 0 ? args[0] : 'devnet-wallet-keypair';
 
 // Determine file path
-const keypairPath = filename === 'mainnet-wallet-keypair'
+const keypairPath = filename === 'devnet-wallet-keypair'
   ? path.join(ROOT_DIR, `${filename}.json`)
   : path.join(__dirname, `${filename}.json`);
 

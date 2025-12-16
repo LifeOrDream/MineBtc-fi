@@ -102,9 +102,13 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     // Validate prerequisites
     validatePrerequisites(deploymentData);
     
-    // Get Raydium program ID from deployment data
-    const RAYDIUM_CP_PROGRAM_ID = new PublicKey(deploymentData.RAYDIUM_CP_PROGRAM_ID);
+    // Get Raydium program ID - use official mainnet program from config if specified
+    const RAYDIUM_CP_PROGRAM_ID = config.raydium.use_official_program 
+        ? new PublicKey(config.raydium.program_id)
+        : new PublicKey(deploymentData.RAYDIUM_CP_PROGRAM_ID);
+    const useOfficialProgram = config.raydium.use_official_program;
     console.log('\x1b[36m%s\x1b[0m', '🔑 Raydium CP Program:', RAYDIUM_CP_PROGRAM_ID.toBase58());
+    console.log('\x1b[36m%s\x1b[0m', '🔑 Using Official Raydium:', useOfficialProgram ? 'YES' : 'NO (custom deployed)');
     
     // Setup Raydium program with wallet wrapper
     const wallet = new Wallet(deployer);
@@ -121,8 +125,8 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     const cpProgram = new Program(cpIdl, provider);
     
     try {
-        // 1. Create AMM Config
-        await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
+        // 1. Create AMM Config (skip for official Raydium - use existing configs)
+        await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID, useOfficialProgram);
         
         // 2. Initialize Pool :: Automatically adds initial liquidity
         await initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
@@ -346,8 +350,9 @@ function validatePrerequisites(deploymentData) {
     
     const errors = [];
     
-    if (!deploymentData.RAYDIUM_CP_PROGRAM_ID) {
-        errors.push('Raydium CP program not deployed - run 0_deploy_game.js first');
+    // Only require deployed Raydium if not using official program
+    if (!config.raydium.use_official_program && !deploymentData.RAYDIUM_CP_PROGRAM_ID) {
+        errors.push('Raydium CP program not deployed - run 0_deploy_game.js first or set use_official_program: true');
     }
     
     if (!deploymentData.dbtc_mint_address) {
@@ -373,38 +378,34 @@ function validatePrerequisites(deploymentData) {
 }
 
 /**
- * Creates the AMM configuration for the Raydium pool
+ * Creates or uses existing AMM configuration for the Raydium pool
+ * For official Raydium mainnet, uses existing pre-created configs
  * @param {Connection} connection - Solana connection
  * @param {Program} cpProgram - Raydium CP program instance
  * @param {Keypair} deployer - Deployer keypair
  * @param {Object} deploymentData - Deployment state data
  * @param {string} deploymentPath - Path to deployment file
  * @param {PublicKey} RAYDIUM_CP_PROGRAM_ID - Raydium program ID
+ * @param {boolean} useOfficialProgram - Whether using official Raydium mainnet program
  */
-async function createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID) {
+async function createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID, useOfficialProgram) {
     if (deploymentData.raydium_amm_config_created) {
         console.log('\x1b[34m%s\x1b[0m', 'ℹ️ Raydium AMM config already exists. Skipping...');
         console.log('\x1b[36m%s\x1b[0m', '🔑 AMM Config:', deploymentData.raydium_amm_config_created.amm_config_pda);
         return;
     }
 
-    console.log('\x1b[35m%s\x1b[0m', '\n=================== [ CREATING AMM CONFIG ] ===================');
+    console.log('\x1b[35m%s\x1b[0m', '\n=================== [ SETTING UP AMM CONFIG ] ===================');
     console.log(`deployer.publicKey: ${deployer.publicKey.toBase58()}`);
     console.log(`RAYDIUM_CP_PROGRAM_ID: ${RAYDIUM_CP_PROGRAM_ID.toBase58()}`);
     
     const configIndex = config.raydium.amm_config_index;
     const tradeFeeRate = new BN(config.raydium.trade_fee_rate);
-    const protocolFeeRate = new BN(config.raydium.protocol_fee_rate);
-    const fundFeeRate = new BN(config.raydium.fund_fee_rate);
     const createPoolFee = new BN(config.raydium.create_pool_fee);
-    const creatorFeeRate = new BN(config.raydium.creator_fee_rate || 0); // Default to 0 if not specified
             
     console.log('\x1b[36m%s\x1b[0m', '⚙️ AMM Config Parameters:');
     console.log('\x1b[36m%s\x1b[0m', `   • Config Index: ${configIndex}`);
     console.log('\x1b[36m%s\x1b[0m', `   • Trade Fee Rate: ${tradeFeeRate.toNumber() / 10000}%`);
-    console.log('\x1b[36m%s\x1b[0m', `   • Protocol Fee Rate: ${protocolFeeRate.toNumber() / 10000}%`);
-    console.log('\x1b[36m%s\x1b[0m', `   • Fund Fee Rate: ${fundFeeRate.toNumber() / 10000}%`);
-    console.log('\x1b[36m%s\x1b[0m', `   • Creator Fee Rate: ${creatorFeeRate.toNumber() / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `   • Create Pool Fee: ${createPoolFee.toNumber() / 1e9} SOL`);
             
     try {
@@ -420,46 +421,57 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
         console.log('\x1b[36m%s\x1b[0m', '🔑 AMM Config PDA:', ammConfigPDA.toBase58());
         console.log('\x1b[36m%s\x1b[0m', '🔑 PDA Bump:', bump);
                 
-        // Check if config already exists
-        try {
-            const configInfo = await connection.getAccountInfo(ammConfigPDA);
-            if (configInfo) {
-                console.log('\x1b[33m%s\x1b[0m', '⚠️ AMM config already exists on-chain');
-                
-                // Update deployment data
-                deploymentData.RAYDIUM_CP_PROGRAM_ID = RAYDIUM_CP_PROGRAM_ID.toBase58();
-                deploymentData.raydium_amm_config_created = {
-                    amm_config_pda: ammConfigPDA.toBase58(),
-                    raydium_program_id: RAYDIUM_CP_PROGRAM_ID.toBase58(),
-                    config_index: configIndex,
-                    trade_fee_rate: tradeFeeRate.toNumber(),
-                    protocol_fee_rate: protocolFeeRate.toNumber(),
-                    fund_fee_rate: fundFeeRate.toNumber(),
-                    create_pool_fee: createPoolFee.toString(),
-                    creator_fee_rate: creatorFeeRate.toNumber(),
-                    status: 'already_exists',
-                    timestamp: new Date().toISOString()
-                };
-                
-                fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-                console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data updated');
-                return;
+        // Check if config already exists on-chain
+        const configInfo = await connection.getAccountInfo(ammConfigPDA);
+        
+        if (configInfo) {
+            console.log('\x1b[32m%s\x1b[0m', '✅ AMM config exists on-chain');
+            
+            // For official Raydium, this is expected - just record it
+            if (useOfficialProgram) {
+                console.log('\x1b[36m%s\x1b[0m', '📝 Using existing Raydium mainnet AMM config');
             }
-        } catch (error) {
-            // Config doesn't exist, continue with creation
+            
+            // Update deployment data
+            deploymentData.RAYDIUM_CP_PROGRAM_ID = RAYDIUM_CP_PROGRAM_ID.toBase58();
+            deploymentData.raydium_amm_config_created = {
+                amm_config_pda: ammConfigPDA.toBase58(),
+                raydium_program_id: RAYDIUM_CP_PROGRAM_ID.toBase58(),
+                config_index: configIndex,
+                trade_fee_rate: tradeFeeRate.toNumber(),
+                create_pool_fee: createPoolFee.toString(),
+                status: useOfficialProgram ? 'using_official_raydium_config' : 'already_exists',
+                is_official_raydium: useOfficialProgram,
+                timestamp: new Date().toISOString()
+            };
+            
+            fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+            console.log('\x1b[32m%s\x1b[0m', '✅ Deployment data updated');
+            return;
         }
         
-        console.log('\x1b[33m%s\x1b[0m', '📡 Creating AMM config on-chain...');
+        // If using official Raydium and config doesn't exist, that's an error
+        if (useOfficialProgram) {
+            console.error('\x1b[31m%s\x1b[0m', `❌ AMM config index ${configIndex} not found on official Raydium program`);
+            console.log('\x1b[33m%s\x1b[0m', '⚠️ Try using a different amm_config_index (0, 1, 2, 3 are common)');
+            throw new Error(`AMM config index ${configIndex} not found on Raydium mainnet`);
+        }
         
-        // Call the createAmmConfig instruction
+        // Only create config if NOT using official program (custom deployed)
+        console.log('\x1b[33m%s\x1b[0m', '📡 Creating AMM config on custom Raydium program...');
+        
+        const protocolFeeRate = new BN(config.raydium.protocol_fee_rate);
+        const fundFeeRate = new BN(config.raydium.fund_fee_rate);
+        const creatorFeeRate = new BN(config.raydium.creator_fee_rate || 0);
+        
         const txid = await cpProgram.methods
             .createAmmConfig(
-                configIndex,           // index: u16
-                tradeFeeRate,         // trade_fee_rate: u64  
-                protocolFeeRate,      // protocol_fee_rate: u64
-                fundFeeRate,          // fund_fee_rate: u64
-                createPoolFee,        // create_pool_fee: u64
-                creatorFeeRate        // creator_fee_rate: u64
+                configIndex,
+                tradeFeeRate,
+                protocolFeeRate,
+                fundFeeRate,
+                createPoolFee,
+                creatorFeeRate
             )
             .accounts({
                 owner: deployer.publicKey,
@@ -470,27 +482,17 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
             
         console.log('\x1b[32m%s\x1b[0m', '✅ AMM config created successfully!');
         console.log('\x1b[90m%s\x1b[0m', '🔗 Transaction:', txid);
-        console.log('\x1b[90m%s\x1b[0m', `🔍 Explorer URL: https://explorer.solana.com/tx/${txid}?cluster=${CLUSTER}`);
-    
         
-        // Record the successful configuration
         deploymentData.raydium_amm_config_created = {
             amm_config_pda: ammConfigPDA.toBase58(),
             raydium_program_id: RAYDIUM_CP_PROGRAM_ID.toBase58(),
             config_index: configIndex,
             trade_fee_rate: tradeFeeRate.toNumber(),
-            protocol_fee_rate: protocolFeeRate.toNumber(),
-            fund_fee_rate: fundFeeRate.toNumber(),
             create_pool_fee: createPoolFee.toString(),
-            creator_fee_rate: creatorFeeRate.toNumber(),
-            trade_fee_readable: `${tradeFeeRate.toNumber() / 10000}%`,
-            protocol_fee_readable: `${protocolFeeRate.toNumber() / 10000}%`,
-            fund_fee_readable: `${fundFeeRate.toNumber() / 10000}%`,
-            creator_fee_readable: `${creatorFeeRate.toNumber() / 10000}%`,
-            create_pool_fee_readable: `${createPoolFee.toNumber() / 1e9} SOL`,
             creation_signature: txid,
             pda_bump: bump,
             status: 'created',
+            is_official_raydium: false,
             timestamp: new Date().toISOString()
         };
         
@@ -498,7 +500,7 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
         console.log('\x1b[32m%s\x1b[0m', '✅ AMM config creation complete');
         
     } catch (error) {
-        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to create AMM config:', error);
+        console.error('\x1b[31m%s\x1b[0m', '❌ Failed to setup AMM config:', error);
         throw error;
     }
 }

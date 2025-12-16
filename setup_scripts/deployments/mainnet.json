@@ -5,7 +5,7 @@
     "cluster": "mainnet"
   },
   "dbtc_mint_created": {
-    "mint_address": "7aBbV9urPUZnCUe4bNTGGgZHmyB2qUC9FtbHQVNB1Ct8",
+    "mint_address": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
     "mint_authority": null,
     "freeze_authority": null,
     "transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
@@ -16,38 +16,38 @@
     "metadata_included": true,
     "metadata_name": "DogeWifBTC",
     "metadata_symbol": "DogeBTC",
-    "metadata_uri": "http://d2mswiunr1bn1l.cloudfront.net/assets/LOGO.png",
-    "creation_signature": "41AsECGLFg5nMZBaTZq5rMbU6Xd4ri4qXr4tzXQ8pwpbUg3FfTZsWRh1JFG52V5v7vf2kex41FTFn1gE4pXK72NK",
-    "timestamp": "2025-12-16T13:51:23.434Z",
+    "metadata_uri": "https://assets.minebtc.fun/btc",
+    "creation_signature": "38NCSRDPCrXJaKSTpnNyxmC7qtrjM8Cx2Ht2868EQ8oW6CGtqbZMwKStsW6nfF83cUMFHcbYq28Cm35PfzUFzNAT",
+    "timestamp": "2025-12-16T14:18:36.554Z",
     "mint_authority_status": "removed",
     "withdraw_withheld_authority_status": "set_to_pda",
     "transfer_fee_config_authority_status": "transferred"
   },
   "dbtc_token_account_created": {
-    "token_account_address": "2pNWwt83dYjQYGwWs1U79kwsKciZtQJneBnBSLGJovmL",
+    "token_account_address": "DAs237zS3UHkf3aVAoGPeHSzkwHF3DVK4yJ43uQYYpHV",
     "owner_address": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
-    "mint_address": "7aBbV9urPUZnCUe4bNTGGgZHmyB2qUC9FtbHQVNB1Ct8",
-    "timestamp": "2025-12-16T13:51:24.839Z"
+    "mint_address": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
+    "timestamp": "2025-12-16T14:18:37.995Z"
   },
   "initial_supply_minted": {
     "amount": "2100000000000000",
     "actual_minted_amount": "2100000000000000",
     "amount_readable": "2,100,000,000 DogeBTC",
-    "token_account_address": "2pNWwt83dYjQYGwWs1U79kwsKciZtQJneBnBSLGJovmL",
-    "mint_signature": "4oR2kbfszjwFd5qkEMU5pGzo4Eovp9uvAJCsgHV2wHGrFhEdGHxvBQP1QPE4DoLQJuFxNDQMK59bYwrxiZzpa56T",
+    "token_account_address": "DAs237zS3UHkf3aVAoGPeHSzkwHF3DVK4yJ43uQYYpHV",
+    "mint_signature": "5X4WG55PWXKBbkf9GaZkT7JfE2v5ghttfkUiW8GHkVnGSS8wVKTa3WcLZaNYZBYvrZcqFeiX3YS3j7Y6ZmefM9Uj",
     "bigint_verification": {
       "expected": "2100000000000000",
       "actual": "2100000000000000",
       "match": true
     },
-    "timestamp": "2025-12-16T13:51:26.413Z"
+    "timestamp": "2025-12-16T14:18:38.730Z"
   },
-  "dbtc_mint_address": "7aBbV9urPUZnCUe4bNTGGgZHmyB2qUC9FtbHQVNB1Ct8",
+  "dbtc_mint_address": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
   "mint_authority_removed": {
     "previous_mint_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
     "new_mint_authority": null,
-    "removal_signature": "QAJvev2MaupkT6ZPiHpSVp1MPLgmwaNAqGBfYGigPSjQXwnKUqwV47oXY4G97CyZypuhyEBk6emXNnc4VpEXBnN",
-    "timestamp": "2025-12-16T13:51:27.039Z",
+    "removal_signature": "3DJeoveV6Mm5yasE8zLu2vGZxpjQMnyeZBUGfFQLinoNrs3HuGPrxYjLf4etLzuHCiVyhsBYtvDEtwvXvMGExu7M",
+    "timestamp": "2025-12-16T14:18:39.747Z",
     "total_supply_locked": "2,100,000,000 DogeBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
@@ -55,13 +55,13 @@
     "pda_authority": "7uWKPXddd62NkXiSDPF8e6T87BScw7dQsHiFa7tEtYo3",
     "pda_bump": 255,
     "program_id": "Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx",
-    "transfer_signature": "ctB9EVst9WGtgfsEn1Rzskbanj9wWrkGEJ4cxdce3zLspFtgEMFtMyUxT4fL4YBY4mmDuhpPi2cWcQJyYvCNCS1",
-    "timestamp": "2025-12-16T13:51:27.849Z"
+    "transfer_signature": "2Uic2FM5q7SPBczhmf66sWQYHnCaZEFNBqUeqxQgCk6jrF1SNGGCShEtZ1L6C5FfaJpHb1ZiJoczBf5L2hNwP7HY",
+    "timestamp": "2025-12-16T14:18:40.514Z"
   },
   "transfer_fee_config_authority_transferred": {
     "previous_transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
     "new_transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
-    "transfer_signature": "2LdzqyBgYwUWKUStzfCXUTAVV5uErZWQbGc7BF9CQTjhXn7FpyQJLVxYUujoq1H4u5feHDemqqmoRn4xCyvDXxrW",
-    "timestamp": "2025-12-16T13:51:28.507Z"
+    "transfer_signature": "5WQ81othynLPjFPkqEXr3Uqg7D6mGa1UKPNLjev3A2hFju9aWmFmL2fpZWCcYfxcMjKELVYbnK86ReDo29xtBvcE",
+    "timestamp": "2025-12-16T14:18:41.253Z"
   }
 }
