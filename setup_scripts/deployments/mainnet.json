@@ -222,5 +222,56 @@
     "amount": "2099897900100000",
     "tx_signature": "E5QMHUhjhLrw4uUTCtrQZWSevkyWPeFajvH8avMBhYF9ajEWLyfCKGXG2w61WLRV9h7Kex3L25M19vyUjKWm7vy",
     "timestamp": "2025-12-16T15:33:00.485Z"
+  },
+  "hashpower_config_initialized": {
+    "hashpowerConfig_pda": "63JW33PLY5cr6QAkifcgZFT4T5SwgiijSbH1QREUSdf",
+    "tx_signature": "VPQT7zy4cs7n2iiH3ZVshAqMRfPHWgLkrzpfcVuUzMVjkTJBpZUCQAMSkpUcm6d5BYqTSQGpGfVDjEvTvrJMjA6",
+    "timestamp": "2025-12-16T15:37:19.596Z"
+  },
+  "custodian_accounts_initialized": {
+    "dbtc_custodian": "523EuRZDDyvCaVJGsqgcAuifcLiVvgAYynmjVWd1RXDR",
+    "dbtc_custodian_authority": "ALs47TkK2T5jXGtTyp3LRfjKQXATbMKsXYkFEK3KyKaH",
+    "liquidity_custodian": "Eyzfok5go6ddaKHEddVza5QTKzo4tcYF282cM1nU8GqV",
+    "liquidity_custodian_authority": "8TGzSpee7xLu8S2n8kDvERWP4RfJ3DzDana6EGibvpsH",
+    "dbtc_mint": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
+    "lp_mint": "9bArpNW5ak7qrosXhZicU9bM6WXfrScAVDQAKkY218xg",
+    "tx_signature": "3bFf5Ecaxs9yuh5McuapGiUqFjLXiTBGm7rvtufaebyB3AFgEdToa3emY2faSsgYLPSGCuw3vFfC1UAoatzvBWhV",
+    "timestamp": "2025-12-16T15:37:41.486Z"
+  },
+  "doge_config_initialized": {
+    "doges_config_pda": "3uHmcWqbHPbsk2dLvLgQoC5ZNLWdP5xYCBZ5Ay9scYmx",
+    "base_price": "1000000000",
+    "curve_a": "1111111",
+    "max_supply": "42690",
+    "tx_signature": "49Cvvoyo11zr43us9RodjGgmDMtQMWP2Vvsyn9XaRSQGWVrifpgEeuaXjaTcYgTcE61DstQnmMVWU3X1feoGmtY8",
+    "timestamp": "2025-12-16T15:38:43.418Z"
+  },
+  "doge_collection_created": {
+    "collection_address": "6S85vw5zZJHC3KvmVfGmfWMpTY1aSbUCcU6xdz5bhmo5",
+    "collection_name": "Bitcoin doges",
+    "collection_uri": "https://assets.minebtc.fun/collection",
+    "collection_authority": "8j8h3m1WvqeUberNCMPqEY8Auc7eK8kdbEoU8DmrN6oP",
+    "tx_signature": "i8kmXoYnN5ac6yrNoFBzcaNhNLP26R4Qj67c44uMpB4DuTkxvH3FmnPUJKrkTxcnJJanpV6tA4LGyyQfs2TNQyE",
+    "timestamp": "2025-12-16T15:41:44.883Z"
+  },
+  "ticket_tier_configs_initialized": {
+    "ticket_tiers": [
+      {
+        "tier_index": 0,
+        "ticket_value": 1000000,
+        "tx_signature": "48xEghXD8oZ5DE173foszAkdptuf9qPXbxw3e5XF5S5PK3tunqRCcj5j1T6AhYtreJQFAe9RjDZ8cdB7eB31RmkU"
+      },
+      {
+        "tier_index": 1,
+        "ticket_value": 10000000,
+        "tx_signature": "5GD7UuA4b4nB6K2wfreXWeTsRk5NiDhoKGZUzixbskM7gmh2VC86mSDi1APxkhWrkJJ965Nv9ywZwRxdf4Uov1hh"
+      },
+      {
+        "tier_index": 2,
+        "ticket_value": 100000000,
+        "tx_signature": "4UdnEgF9FzBWTcvC1YPxtgGDvjJjt3uumpQYSXNtpsZoxUpBq1dPFKi4rTq5APrXy6n4Av5BTuB9D9F2kXkk2uXo"
+      }
+    ],
+    "timestamp": "2025-12-16T15:44:01.451Z"
   }
 }

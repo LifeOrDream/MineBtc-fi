@@ -70,7 +70,7 @@
         "ticket_tiers": [
             {
                 "tier_index": 0,
-                "ticket_value": 1000000
+                "ticket_value": 1000000  
             },
             {
                 "tier_index": 1,
