@@ -49,8 +49,8 @@
     },
     "mining": {
         "start_timestamp": 0,
-        "doge_btc_per_round": 1000000,
-        "initial_deposit": "21000000000000"
+        "doge_btc_per_round": 1000000000,
+        "initial_deposit": "2099897900100000"
     },
     "doges_config": {
         "base_price": 1000000000,
