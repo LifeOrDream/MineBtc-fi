@@ -8,7 +8,7 @@
     "mint_address": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
     "mint_authority": null,
     "freeze_authority": null,
-    "transfer_fee_config_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "transfer_fee_config_authority": "2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd",
     "withdraw_withheld_authority": "7uWKPXddd62NkXiSDPF8e6T87BScw7dQsHiFa7tEtYo3",
     "decimals": 6,
     "burn_tax_bps": 100,
@@ -117,7 +117,8 @@
     "unrefinedRewards_address": "3TWC812X9Z9bWk3aNHVtx2gSxKULHEYaf5CzTvKELYZz",
     "FEE_RECIPIENT_MULTISIG": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
     "tx_signature": "4BrqnHqDD7g2MkfaUPeLZUJ17NZ2BwdSPPg5BEn8FbDPZwzaBGi7xry3TzEer8JGYoLDx4xYDWPZFTTYzYsrHYRp",
-    "timestamp": "2025-12-16T15:20:34.232Z"
+    "timestamp": "2025-12-16T15:20:34.232Z",
+    "EXT_AUTHORITY": "2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd"
   },
   "raydium_pool_state_set": {
     "pool_state_address": "HmPwHy2z9aQa2Ce2kMhwvjaiqCBiE7kdHppkUP6jZ7nf",
@@ -340,5 +341,17 @@
     },
     "tx_signature": "37mf9wSaLhRySuNuvqJ8ZDnS9otevbPVa6KgT8NHkvSasR81JdJTSdMJ1qmZU5HjWQ5k4TJvfdezjrCuLDCb1ytZ",
     "timestamp": "2025-12-16T19:40:04.164Z"
+  },
+  "authority_updated": {
+    "old_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "new_authority": "2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd",
+    "tx_signature": "RiWQ3CPanrpYsa4qB725pNHQXxvCs3WK76miaGL6U6y7wsorfKVWRJRFZ4q3fMYEy1EoG9TrtAycBEUk2TxyR37",
+    "timestamp": "2025-12-16T21:43:12.363Z"
+  },
+  "transfer_fee_authority_updated_to_multisig": {
+    "previous_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
+    "new_authority": "2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd",
+    "signature": "5HUgWK45Y5tJcib7yDLxTTYxvdeXbVsqeuUMwR1Y8VWfv4YNuK1BTZynCFyTWb9L4nnXXVvGu1PJ3u61gUuw8q5k",
+    "timestamp": "2025-12-16T22:14:32.713Z"
   }
 }
