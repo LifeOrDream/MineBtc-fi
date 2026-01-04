@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 // Configuration
 const ROOT_DIR = path.join(__dirname, "..");
 const RAYDIUM_DIR = path.join(ROOT_DIR, "raydium");
-const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "mainnet-wallet-keypair.json");
+const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "devnet-wallet-keypair.json");
 const ANCHOR_TOML_PATH = path.join(ROOT_DIR, "Anchor.toml");
 const DEPLOYMENTS_DIR = path.join(__dirname, "deployments");
 

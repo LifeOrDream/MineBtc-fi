@@ -342,3 +342,4 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
     process.exit(1);
   }
 })();
+

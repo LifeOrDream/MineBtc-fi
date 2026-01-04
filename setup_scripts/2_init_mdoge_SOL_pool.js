@@ -125,14 +125,14 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     const cpProgram = new Program(cpIdl, provider);
     
     try {
-        // // 1. Create AMM Config (skip for official Raydium - use existing configs)
-        // await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID, useOfficialProgram);
+        // 1. Create AMM Config (skip for official Raydium - use existing configs)
+        await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID, useOfficialProgram);
         
-        // // 2. Initialize Pool :: Automatically adds initial liquidity
-        // await initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
+        // 2. Initialize Pool :: Automatically adds initial liquidity
+        await initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
         
         // 3. Add Initial Liquidity
-        // await addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath);
+        await addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath);
         // return
         
         // 4. Burn LP Tokens (if configured)

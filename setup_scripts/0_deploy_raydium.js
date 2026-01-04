@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const ROOT_DIR = path.join(__dirname, "..");
 const RAYDIUM_DIR = path.join(ROOT_DIR, "raydium");
-const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "wallet-keypair.json");
+const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "devnet-wallet-keypair.json");
 const RAYDIUM_DEPLOY_DIR = path.join(RAYDIUM_DIR, "target", "deploy");
 const RAYDIUM_KEYPAIR_PATH = path.join(
   RAYDIUM_DEPLOY_DIR,

@@ -243,31 +243,49 @@ async function main() {
     // 1. Initialize MineBTC Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Doge Treasury)
     await initializeMinebtcProgram(minebtcProgram);
 
-    // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
-    // const feeRecipientFromConfig = "FnrzA4EeTejsdPHrZnn9APVbMfCrJv9a5dUwNE9cFZbu";
+    // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
+    // const feeRecipientFromConfig = "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz";
     // // if (feeRecipientFromConfig) {
     //     await updateFeeRecipient(minebtcProgram, feeRecipientFromConfig);
     // // }
+
+    // 1.5.1. Update Authority (if needed - can be called anytime after initialization)
+    // const newAuthorityFromConfig = "2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd"; // Set to authority address string, or null to skip
+    // // Example: const newAuthorityFromConfig = "YourMultisigAddressHere";
+    // if (newAuthorityFromConfig) {
+    //     await updateAuthority(minebtcProgram, newAuthorityFromConfig);
+    // }
+    
     // return;
 
     // 1.6. Update Fees (if needed - can be called anytime after initialization)
     // Example usage:
     await updateFees(minebtcProgram, {
+      // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
         newProtocolFeePct: 10, // 10,
-        newBuybackPct: null, //40,
-        newStakersPct: null, //50,
-        changeFactionFee: null, // 100000000, // 0.1 SOL in lamports
-        snapshotInterval:  10, // 30 minutes in seconds
-    });
-    return;
+        newStakersPct: 10, // 10 of 10% = 1%,
+        // deducted from treasury balance and used for buybacks + protocol owned liquidity 
+        newBuybackPct: 80, // 80% (remaining 20% goes to devs)
+        // split 50:50 between sol_treasury and fee_recipient (as WSOL)
+        changeFactionFee: 100000000, // 0.1 SOL
 
-    // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
-    // Example usage:
-    await updateDogeConfig(minebtcProgram, {
-        basePrice: 100000000, // 1 SOL in lamports
-        curveA: 1111111, // Curve parameter
+        // dogeBTC distribution config:
+        newMinebtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
+        newMinebtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
+        newMinebtcSameFactionPct: 42, // 42% of dogeBTC rewards go to same-faction winners
+        newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
+
+        newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
     });
-    return;
+    // return;
+
+    // // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
+    // // Example usage:
+    // await updateDogeConfig(minebtcProgram, {
+    //     basePrice: 100000000, // 1 SOL in lamports
+    //     curveA: 1111111, // Curve parameter
+    // });
+    // return;
 
         // 6. Set Raydium Pool State (for price discovery and swaps)
     await setRaydiumPoolState(minebtcProgram);
@@ -276,7 +294,7 @@ async function main() {
         // 3. Add Factions (12 factions for the raffle)
     await addFactions(minebtcProgram);
 
-        // 2. Initialize System Accounts (Referral + Buybacks)
+    //     // 2. Initialize System Accounts (Referral + Buybacks)
     await initializeSystemAccounts(minebtcProgram);
 
         // 4. Initialize Mining System (Token Vault + Mining Parameters)
@@ -299,7 +317,6 @@ async function main() {
 
         // 10. Initialize Doge Royalties
     await initializeDogeRoyalties(minebtcProgram);
-    // return;
 
         // 11. Configure Ticket Tiers (for Doge minting)
     await configureTicketTiers(minebtcProgram);
@@ -1703,7 +1720,7 @@ async function initializeTaxConfig(minebtcProgram) {
             .accounts({
                 globalConfig: globalConfigPDA,
                 taxConfig: taxConfigPDA,
-        minebtcMint: DOGEBTC_TOKEN_MINT,
+                minebtcMint: DOGEBTC_TOKEN_MINT,
                 withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
                 factionTreasuryVault: factionTreasuryVaultPDA,
                 nftFloorSweepVault: nftFloorSweepVaultPDA,
@@ -1920,26 +1937,47 @@ async function initializeLpTokenAccounts(minebtcProgram) {
   }
 }
 
-async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
+/**
+ * Update program configuration (authority and/or fee recipient)
+ * @param {Program} minebtcProgram - MineBTC program instance
+ * @param {Object} options - Update options
+ * @param {string|null} options.newAuthorityAddress - New authority address (null to skip)
+ * @param {string|null} options.newFeeRecipientAddress - New fee recipient address (null to skip)
+ */
+async function updateConfig(minebtcProgram, options = {}) {
+  const { newAuthorityAddress, newFeeRecipientAddress } = options;
+  
+  // Determine what we're updating
+  const updatingAuthority = newAuthorityAddress !== null && newAuthorityAddress !== undefined;
+  const updatingFeeRecipient = newFeeRecipientAddress !== null && newFeeRecipientAddress !== undefined;
+  
+  if (!updatingAuthority && !updatingFeeRecipient) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ No updates specified. Skipping config update..."
+    );
+    return;
+  }
+
+  const updateType = updatingAuthority && updatingFeeRecipient 
+    ? "AUTHORITY & FEE RECIPIENT"
+    : updatingAuthority 
+    ? "AUTHORITY"
+    : "FEE RECIPIENT";
+
   console.log(
     COLOR_STEP,
-    "\n================ [ UPDATING FEE RECIPIENT ] ================"
+    `\n================ [ UPDATING ${updateType} ] ================`
   );
 
   // Check if program is initialized
   if (!deploymentFile.minebtc_program_initialized) {
     console.log(
       COLOR_WARNING,
-      "⚠️ MineBTC program not initialized. Skipping fee recipient update..."
+      "⚠️ MineBTC program not initialized. Skipping config update..."
     );
     return;
   }
-
-  const newFeeRecipient = new PublicKey(newFeeRecipientAddress);
-  console.log(
-    COLOR_INFO,
-    `💰 Updating fee recipient to: ${newFeeRecipient.toString()}`
-  );
 
   try {
     // Load PDAs
@@ -1947,26 +1985,64 @@ async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
       deploymentFile.minebtc_program_initialized.globalConfig_address
     );
 
-    // Get current fee recipient
+    // Get current config
     const globalConfig = await minebtcProgram.account.globalConfig.fetch(
       globalConfigPDA
     );
+    const currentAuthority = globalConfig.extAuthority;
     const currentFeeRecipient = globalConfig.feeRecipient;
 
-    console.log(
-      COLOR_INFO,
-      `   Current fee recipient: ${currentFeeRecipient.toString()}`
-    );
-    console.log(
-      COLOR_INFO,
-      `   New fee recipient: ${newFeeRecipient.toString()}`
-    );
+    // Prepare new values
+    let newAuthority = null;
+    let newFeeRecipient = null;
 
-    // Check if already set
-    if (currentFeeRecipient.equals(newFeeRecipient)) {
+    if (updatingAuthority) {
+      newAuthority = new PublicKey(newAuthorityAddress);
+      console.log(
+        COLOR_INFO,
+        `🔑 Current authority: ${currentAuthority.toString()}`
+      );
+      console.log(
+        COLOR_INFO,
+        `🔑 New authority: ${newAuthority.toString()}`
+      );
+
+      // Check if already set
+      if (currentAuthority.equals(newAuthority)) {
+        console.log(
+          COLOR_WARNING,
+          `   ⚠️ Authority is already set to ${newAuthority.toString()}`
+        );
+        newAuthority = null; // Skip update
+      }
+    }
+
+    if (updatingFeeRecipient) {
+      newFeeRecipient = new PublicKey(newFeeRecipientAddress);
+      console.log(
+        COLOR_INFO,
+        `💰 Current fee recipient: ${currentFeeRecipient.toString()}`
+      );
+      console.log(
+        COLOR_INFO,
+        `💰 New fee recipient: ${newFeeRecipient.toString()}`
+      );
+
+      // Check if already set
+      if (currentFeeRecipient.equals(newFeeRecipient)) {
+        console.log(
+          COLOR_WARNING,
+          `   ⚠️ Fee recipient is already set to ${newFeeRecipient.toString()}`
+        );
+        newFeeRecipient = null; // Skip update
+      }
+    }
+
+    // If both are already set correctly, skip
+    if (!newAuthority && !newFeeRecipient) {
       console.log(
         COLOR_WARNING,
-        `   ⚠️ Fee recipient is already set to ${newFeeRecipient.toString()}`
+        "⚠️ All values are already set correctly. Skipping update..."
       );
       return;
     }
@@ -1981,12 +2057,12 @@ async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
       COLOR_INFO,
       `   Global Config PDA: ${globalConfigPDA.toString()}`
     );
-    console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
+    console.log(COLOR_INFO, `   Current Authority: ${wallet.publicKey.toString()}`);
 
     // Build and send transaction
-    // Pass null for new_authority (don't change it) and newFeeRecipient for new_fee_recipient
+    // Pass null for values we don't want to change
     const tx = await minebtcProgram.methods
-      .updateConfig(null, newFeeRecipient)
+      .updateConfig(newAuthority, newFeeRecipient)
       .accounts({
         globalConfig: globalConfigPDA,
         mineBtcMining: mineBtcMiningPDA,
@@ -1995,7 +2071,7 @@ async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
       })
       .rpc();
 
-    console.log(COLOR_SUCCESS, `✅ Fee recipient updated successfully!`);
+    console.log(COLOR_SUCCESS, `✅ Config updated successfully!`);
     console.log(COLOR_DIM, `   Transaction: ${tx}`);
     console.log(
       COLOR_DIM,
@@ -2003,27 +2079,87 @@ async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
     );
 
     // Update deployment file
-    if (!deploymentFile.fee_recipient_updated) {
-      deploymentFile.fee_recipient_updated = {};
-    }
-    deploymentFile.fee_recipient_updated = {
-      old_fee_recipient: currentFeeRecipient.toString(),
-      new_fee_recipient: newFeeRecipient.toString(),
+    const updateData = {
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };
 
-    // Also update the initial deployment data
-    if (deploymentFile.minebtc_program_initialized) {
-      deploymentFile.minebtc_program_initialized.FEE_RECIPIENT_MULTISIG =
-        newFeeRecipient.toString();
+    if (newAuthority) {
+      updateData.old_authority = currentAuthority.toString();
+      updateData.new_authority = newAuthority.toString();
     }
 
-    saveDeploymentData();
+    if (newFeeRecipient) {
+      updateData.old_fee_recipient = currentFeeRecipient.toString();
+      updateData.new_fee_recipient = newFeeRecipient.toString();
+    }
+
+    if (newAuthority) {
+      if (!deploymentFile.authority_updated) {
+        deploymentFile.authority_updated = {};
+      }
+      deploymentFile.authority_updated = {
+        old_authority: currentAuthority.toString(),
+        new_authority: newAuthority.toString(),
+        tx_signature: tx,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    if (newFeeRecipient) {
+      if (!deploymentFile.fee_recipient_updated) {
+        deploymentFile.fee_recipient_updated = {};
+      }
+      deploymentFile.fee_recipient_updated = {
+        old_fee_recipient: currentFeeRecipient.toString(),
+        new_fee_recipient: newFeeRecipient.toString(),
+        tx_signature: tx,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Also update the initial deployment data
+      if (deploymentFile.minebtc_program_initialized) {
+        deploymentFile.minebtc_program_initialized.FEE_RECIPIENT_MULTISIG =
+          newFeeRecipient.toString();
+      }
+    }
+
+    if (newAuthority && deploymentFile.minebtc_program_initialized) {
+      deploymentFile.minebtc_program_initialized.EXT_AUTHORITY =
+        newAuthority.toString();
+    }
+
+    // Save deployment file
+    fs.writeFileSync(deploymentPath, JSON.stringify(deploymentFile, null, 2));
+
   } catch (error) {
-    console.error(COLOR_ERROR, "❌ Failed to update fee recipient:", error);
+    console.error(COLOR_ERROR, "❌ Error updating config:", error);
     throw error;
   }
+}
+
+/**
+ * Update fee recipient (backward compatibility wrapper)
+ * @param {Program} minebtcProgram - MineBTC program instance
+ * @param {string} newFeeRecipientAddress - New fee recipient address
+ */
+async function updateFeeRecipient(minebtcProgram, newFeeRecipientAddress) {
+  await updateConfig(minebtcProgram, {
+    newFeeRecipientAddress: newFeeRecipientAddress,
+    newAuthorityAddress: null,
+  });
+}
+
+/**
+ * Update authority (convenience wrapper)
+ * @param {Program} minebtcProgram - MineBTC program instance
+ * @param {string} newAuthorityAddress - New authority address
+ */
+async function updateAuthority(minebtcProgram, newAuthorityAddress) {
+  await updateConfig(minebtcProgram, {
+    newAuthorityAddress: newAuthorityAddress,
+    newFeeRecipientAddress: null,
+  });
 }
 
 async function updateFees(minebtcProgram, feeConfig) {
