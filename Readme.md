@@ -1,6 +1,6 @@
-# � MineBTC: Faction Surge - Complete Game Guide
+# MineBTC: Faction Surge
 
-**The Next-Generation Blockchain Gaming Economy on Solana**
+**Blockchain Gaming Economy on Solana**
 
 solana-test-validator --reset \
  --limit-ledger-size 100000000 \
@@ -27,10 +27,9 @@ solana program deploy target/deploy/minebtc.so \
  --program-id target/deploy/minebtc-keypair.json \
  --keypair wallet-keypair.json \
  --url https://api.devnet.solana.com
-
 ---
 
-## 🌟 Overview
+## Overview
 
 MineBTC is a revolutionary faction-based betting and mining game that combines strategic gameplay, DeFi mechanics, and NFT utility to create a sustainable, deflationary economy. Built on Solana's high-performance blockchain, MineBTC offers:
 
@@ -42,7 +41,7 @@ MineBTC is a revolutionary faction-based betting and mining game that combines s
 
 ---
 
-## 🎯 Core Game Mechanics
+## Core Game Mechanics
 
 ### Faction Surge: The Betting Game
 
@@ -78,7 +77,7 @@ Every bet is split as follows:
 
 ---
 
-## 💎 Staking System
+## Staking System
 
 ### MineBTC Staking
 
@@ -111,7 +110,7 @@ When claiming MineBTC rewards, a 5% refining fee is charged and **redistributed 
 
 ---
 
-## 🐉 Doge NFT System
+## Doge NFT System
 
 ### Bonding Curve Pricing
 
@@ -157,7 +156,7 @@ Doge accumulate "power" over time:
 
 ---
 
-## 🔥 Deflationary Tax System
+## Deflationary Tax System
 
 ### 1% Transfer Tax (Token-2022)
 
@@ -183,7 +182,7 @@ This creates **faction tribalism** and incentivizes players to stake within thei
 
 ---
 
-## 📈 Dynamic Emission & Protocol-Owned Liquidity
+## Dynamic Emission and Protocol-Owned Liquidity
 
 ### Price Oracle System
 
@@ -216,7 +215,7 @@ This creates a **self-sustaining liquidity flywheel**.
 
 ---
 
-## 🎁 Referral & Autominer Systems
+## Referral and Autominer Systems
 
 ### Referral System
 
@@ -243,7 +242,7 @@ Deposit SOL into your autominer vault, and a keeper bot will execute bets for yo
 
 ---
 
-## 🛠️ Technical Architecture
+## Technical Architecture
 
 ### Solana Programs
 
@@ -270,7 +269,7 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
 
 ---
 
-## 📊 Tokenomics Summary
+## Tokenomics Summary
 
 ### Supply Distribution
 
@@ -295,7 +294,7 @@ GlobalConfig → FactionState (×12) → PlayerData (per user)
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Initialize Your Account
 
@@ -348,7 +347,7 @@ claim_minebtc_rewards
 
 ---
 
-## 🏆 Pro Strategies
+## Pro Strategies
 
 ### Maximize Hashpower
 
@@ -370,7 +369,7 @@ claim_minebtc_rewards
 
 ---
 
-## 🔗 Developer Resources
+## Developer Resources
 
 ### Deployment Commands
 
@@ -406,7 +405,7 @@ solana-test-validator --reset \
 
 ---
 
-## 💰 Economic Flywheel
+## Economic Flywheel
 
 ```mermaid
 graph TD
@@ -441,15 +440,10 @@ graph TD
 
 ---
 
-## 🎬 Conclusion
+## Conclusion
 
-MineBTC represents the convergence of **GameFi**, **DeFi**, and **NFTfi** into a cohesive, sustainable ecosystem. With provably fair mechanics, deflationary tokenomics, and multiple earning strategies, it creates a **multi-billion dollar gaming economy** where players, stakers, and factions compete for dominance.
-
-**Join your faction. Stake your claim. Win the surge.**
+MineBTC represents the convergence of GameFi, DeFi, and NFT utility into a cohesive, sustainable ecosystem. With provably fair mechanics, deflationary tokenomics, and multiple earning strategies, it creates a gaming economy where players, stakers, and factions compete for dominance.
 
 ---
 
-**📱 Community Links**  
-Discord | Twitter | Website | Documentation
-
-**⚠️ Disclaimer**: This is a high-risk, high-reward game. Never invest more than you can afford to lose. Always DYOR.
+**Disclaimer**: This is a high-risk, high-reward game. Never invest more than you can afford to lose. Always do your own research.
