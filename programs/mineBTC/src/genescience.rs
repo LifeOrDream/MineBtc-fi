@@ -24,9 +24,11 @@ const FACTION_TYPE_BITS: u8 = 4;
 const EVOLUTION_STAGE_BITS: u8 = 3;
 const APPEARANCE_TRAIT_BITS: u8 = 5;  // 0-31 values
 const POWER_TRAIT_BITS: u8 = 4;       // 0-15 values
+const BREED_BITS: u8 = 2;             // 0-3 breed values per faction
 
 const APPEARANCE_OFFSET: u8 = FACTION_TYPE_BITS + EVOLUTION_STAGE_BITS; // 7
 const COMBAT_OFFSET: u8 = APPEARANCE_OFFSET + (21 * APPEARANCE_TRAIT_BITS); // 7 + 105 = 112
+const BREED_OFFSET: u8 = COMBAT_OFFSET + (15 * POWER_TRAIT_BITS); // 112 + 60 = 172 (in reserved area)
 
 // const APPEARANCE_GROUPS: usize = 7;
 // const APPEARANCE_TRAITS_PER_GROUP: usize = 3;  // Dominant, Recessive, Minor Recessive
@@ -100,6 +102,11 @@ pub fn generate_genesis_dna(mint_number: u64, minter: &Pubkey, slot: u64, factio
     dna[0] = dna[0] & 0x8F;
 
     limit_genesis_trait_ranges(&mut dna);
+
+    // Encode Breed (2 bits at BREED_OFFSET, value 0-3 from hash randomness)
+    let breed_val = (hash.to_bytes()[31] & 0x03) as u8; // Use last byte for breed randomness
+    set_trait_value(&mut dna, BREED_OFFSET, BREED_BITS, 0, breed_val);
+
     Ok(dna)
 }
 
@@ -392,6 +399,14 @@ pub fn breed_genes(parent1_dna: &[u8; 32], parent2_dna: &[u8; 32], seed: &[u8]) 
     mix_appearance_traits(&mut offspring_dna, parent1_dna, parent2_dna, &hash);
     mix_power_traits(&mut offspring_dna, parent1_dna, parent2_dna, &hash);
 
+    // Inherit breed from one parent (50/50 chance)
+    let parent_breed = if hash[31] % 2 == 0 {
+        get_trait_value(parent1_dna, BREED_OFFSET, BREED_BITS, 0)
+    } else {
+        get_trait_value(parent2_dna, BREED_OFFSET, BREED_BITS, 0)
+    };
+    set_trait_value(&mut offspring_dna, BREED_OFFSET, BREED_BITS, 0, parent_breed);
+
     Ok(offspring_dna)
 }
 
@@ -566,6 +581,9 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 // ========================================================================================
 // ============================= PUBLIC DECODER FUNCTIONS (for testing) ===================
 // ========================================================================================
+
+/// Get breed value from DNA (2 bits at BREED_OFFSET)
+pub fn get_breed(dna: &[u8; 32]) -> u8 { get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0) }
 
 /// Get faction/family type from DNA (first 4 bits)
 pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
