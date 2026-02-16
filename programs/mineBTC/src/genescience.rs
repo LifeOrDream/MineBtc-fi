@@ -12,21 +12,28 @@ use crate::state::{BASE_MULTIPLIER, MAX_BASE_CHANCE};
 /// DNA Generation and Manipulation for Cyber-Doge Assets
 ///
 /// DNA STRUCTURE (256 bits / 32 bytes):
-/// 1. Faction/Family (4 bits): Maps to Faction ID (0-11)
-/// 2. Evolution Stage (3 bits): Current level (0-7)
-/// 3. Appearance Genes (105 bits): 7 groups × 3 traits × 5 bits (0-31)
+/// 1. Faction/Family (4 bits, offset 0): Maps to Faction ID (0-11)
+/// 2. Evolution Stage (3 bits, offset 4): Current level (0-7)
+/// 3. Appearance Genes (105 bits, offset 7): 7 groups × 3 traits × 5 bits (0-31)
 ///    - Per group: [Dominant][Recessive][Minor Recessive]
-/// 4. Combat Genes (60 bits): 5 groups × 3 traits × 4 bits (0-15)
+/// 4. Combat Genes (60 bits, offset 112): 5 groups × 3 traits × 4 bits (0-15)
 ///    - Per group: [Dominant][Recessive][Minor Recessive]
-/// 5. Reserved (84 bits): Future use
+/// 5. Breed/Body Type (2 bits, offset 172): Dog breed per faction (0-3). IMMUTABLE.
+/// 6. Reserved (82 bits): Future use
+///
+/// IMMUTABLE FIELDS (never change after creation):
+/// - Faction (inherited from parent faction or chosen at genesis)
+/// - Breed (random at genesis, inherited from one parent during breeding)
 
 const FACTION_TYPE_BITS: u8 = 4;
 const EVOLUTION_STAGE_BITS: u8 = 3;
 const APPEARANCE_TRAIT_BITS: u8 = 5;  // 0-31 values
 const POWER_TRAIT_BITS: u8 = 4;       // 0-15 values
+const BREED_BITS: u8 = 2;             // 0-3 breed values per faction
 
 const APPEARANCE_OFFSET: u8 = FACTION_TYPE_BITS + EVOLUTION_STAGE_BITS; // 7
 const COMBAT_OFFSET: u8 = APPEARANCE_OFFSET + (21 * APPEARANCE_TRAIT_BITS); // 7 + 105 = 112
+const BREED_OFFSET: u8 = COMBAT_OFFSET + (15 * POWER_TRAIT_BITS); // 112 + 60 = 172 (in reserved area)
 
 // const APPEARANCE_GROUPS: usize = 7;
 // const APPEARANCE_TRAITS_PER_GROUP: usize = 3;  // Dominant, Recessive, Minor Recessive
@@ -100,6 +107,11 @@ pub fn generate_genesis_dna(mint_number: u64, minter: &Pubkey, slot: u64, factio
     dna[0] = dna[0] & 0x8F;
 
     limit_genesis_trait_ranges(&mut dna);
+
+    // Encode Breed (2 bits at BREED_OFFSET, value 0-3 from hash randomness)
+    let breed_val = (hash.to_bytes()[31] & 0x03) as u8; // Use last byte for breed randomness
+    set_trait_value(&mut dna, BREED_OFFSET, BREED_BITS, 0, breed_val);
+
     Ok(dna)
 }
 
@@ -392,6 +404,14 @@ pub fn breed_genes(parent1_dna: &[u8; 32], parent2_dna: &[u8; 32], seed: &[u8]) 
     mix_appearance_traits(&mut offspring_dna, parent1_dna, parent2_dna, &hash);
     mix_power_traits(&mut offspring_dna, parent1_dna, parent2_dna, &hash);
 
+    // Inherit breed from one parent (50/50 chance)
+    let parent_breed = if hash[31] % 2 == 0 {
+        get_trait_value(parent1_dna, BREED_OFFSET, BREED_BITS, 0)
+    } else {
+        get_trait_value(parent2_dna, BREED_OFFSET, BREED_BITS, 0)
+    };
+    set_trait_value(&mut offspring_dna, BREED_OFFSET, BREED_BITS, 0, parent_breed);
+
     Ok(offspring_dna)
 }
 
@@ -566,6 +586,9 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 // ========================================================================================
 // ============================= PUBLIC DECODER FUNCTIONS (for testing) ===================
 // ========================================================================================
+
+/// Get breed value from DNA (2 bits at BREED_OFFSET)
+pub fn get_breed(dna: &[u8; 32]) -> u8 { get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0) }
 
 /// Get faction/family type from DNA (first 4 bits)
 pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
@@ -999,6 +1022,112 @@ mod tests {
 // }
 
     // // --- PRICE CALCULATION TESTS ---
+
+    // --- BREED TESTS ---
+
+    #[test]
+    fn test_genesis_breed_in_range() {
+        // Test many genesis doges to ensure breed is always 0-3
+        for i in 0..100 {
+            let dna = generate_genesis_dna(i, &mock_pubkey(), i * 7 + 100, (i % 12) as u8).unwrap();
+            let breed = get_breed(&dna);
+            assert!(breed <= 3, "Breed {} out of range for mint {}", breed, i);
+        }
+    }
+
+    #[test]
+    fn test_genesis_breed_has_variety() {
+        // Generate many doges and check we get all 4 breed values
+        let mut seen = [false; 4];
+        for i in 0..200 {
+            let dna = generate_genesis_dna(i, &mock_pubkey(), i * 13 + 42, 0).unwrap();
+            let breed = get_breed(&dna) as usize;
+            seen[breed] = true;
+        }
+        assert!(seen.iter().all(|&s| s), "Should see all 4 breed values across 200 mints, saw: {:?}", seen);
+    }
+
+    #[test]
+    fn test_breed_preserved_through_evolution() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
+        let original_breed = get_breed(&dna);
+        let doge_mint = mock_pubkey();
+
+        // Evolve through all stages
+        for stage in 1..=7 {
+            let seed = [stage as u8; 32];
+            evolve_stage(stage as u64, &mut dna, &seed, &doge_mint);
+            assert_eq!(get_breed(&dna), original_breed,
+                "Breed changed during evolution to stage {}", stage);
+        }
+    }
+
+    #[test]
+    fn test_breed_preserved_through_visual_mutation() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
+        let original_breed = get_breed(&dna);
+        let doge_mint = mock_pubkey();
+
+        for i in 0..50 {
+            let seed = [i as u8; 32];
+            mutate_visual_trait(i, &mut dna, &seed, &doge_mint);
+            assert_eq!(get_breed(&dna), original_breed,
+                "Breed changed during visual mutation {}", i);
+        }
+    }
+
+    #[test]
+    fn test_breed_preserved_through_power_mutation() {
+        let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 7).unwrap();
+        let original_breed = get_breed(&dna);
+        let doge_mint = mock_pubkey();
+
+        for i in 0..50 {
+            let seed = [i as u8; 32];
+            mutate_power_trait(i, &mut dna, &seed, &doge_mint);
+            assert_eq!(get_breed(&dna), original_breed,
+                "Breed changed during power mutation {}", i);
+        }
+    }
+
+    #[test]
+    fn test_breed_inherited_in_breeding() {
+        let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
+        let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 5).unwrap();
+        let p1_breed = get_breed(&parent1);
+        let p2_breed = get_breed(&parent2);
+
+        let offspring = breed_genes(&parent1, &parent2, b"breed_inherit_test_1234567890123").unwrap();
+        let offspring_breed = get_breed(&offspring);
+
+        assert!(offspring_breed == p1_breed || offspring_breed == p2_breed,
+            "Offspring breed {} must be from parent1 ({}) or parent2 ({})",
+            offspring_breed, p1_breed, p2_breed);
+    }
+
+    #[test]
+    fn test_breed_breeding_both_parents_possible() {
+        // Generate parents with different breeds by trying many seeds
+        let mut saw_p1 = false;
+        let mut saw_p2 = false;
+
+        for i in 0..500 {
+            let p1 = generate_genesis_dna(i * 2, &mock_pubkey(), i * 3, 0).unwrap();
+            let p2 = generate_genesis_dna(i * 2 + 1, &mock_pubkey(), i * 5, 0).unwrap();
+            if get_breed(&p1) == get_breed(&p2) { continue; }
+
+            let seed_bytes = format!("seed_{:032}", i);
+            let offspring = breed_genes(&p1, &p2, seed_bytes.as_bytes()).unwrap();
+            let ob = get_breed(&offspring);
+
+            if ob == get_breed(&p1) { saw_p1 = true; }
+            if ob == get_breed(&p2) { saw_p2 = true; }
+            if saw_p1 && saw_p2 { break; }
+        }
+        assert!(saw_p1 && saw_p2, "Should see inheritance from both parents");
+    }
+
+    // --- PRICE CALCULATION TESTS ---
 
     #[test]
     fn test_compute_gene_price_zero_minted() {
