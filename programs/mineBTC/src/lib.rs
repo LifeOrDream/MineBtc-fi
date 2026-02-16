@@ -274,6 +274,13 @@ pub mod minebtc {
         admin::update_doge_max_supply_internal(ctx, new_max_supply)
     }
 
+    /// Toggle Doge NFT minting on/off (admin only)
+    ///
+    /// Flips is_active between true and false.
+    pub fn switch_doge_mining(ctx: Context<SwitchDogeMiningState>) -> Result<()> {
+        admin::switch_doge_mining_internal(ctx)
+    }
+
     /// Create Doge collection with program PDA as authority (admin only)
     ///
     /// Creates a new Metaplex Core collection for Doge NFTs.
