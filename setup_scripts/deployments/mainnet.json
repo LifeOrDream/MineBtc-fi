@@ -252,9 +252,9 @@
   },
   "doge_config_initialized": {
     "doges_config_pda": "3uHmcWqbHPbsk2dLvLgQoC5ZNLWdP5xYCBZ5Ay9scYmx",
-    "base_price": "1000000000",
-    "curve_a": "1111111",
-    "max_supply": "42690",
+    "base_price": "690000000",
+    "curve_a": "4868384",
+    "max_supply": "24690",
     "tx_signature": "49Cvvoyo11zr43us9RodjGgmDMtQMWP2Vvsyn9XaRSQGWVrifpgEeuaXjaTcYgTcE61DstQnmMVWU3X1feoGmtY8",
     "timestamp": "2025-12-16T15:38:43.418Z"
   },
@@ -299,10 +299,11 @@
     "timestamp": "2025-12-16T18:18:58.666Z"
   },
   "fee_recipient_updated": {
-    "old_fee_recipient": "JDsJMkYdUWSPZvHT57AVaEJUaeoGSzXS18i2aA9w4Do3",
-    "new_fee_recipient": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
-    "tx_signature": "3RoQ9YtQp9ntfu4Qr23EJfa7bbpRy9UaGyp3XuysX23B22P3Rnhku3ZyuGUVWVeGDgYuu1hyHiz3Rw8cWegFqAhp",
-    "timestamp": "2025-12-16T18:59:00.365Z"
+    "old_fee_recipient": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
+    "new_fee_recipient": "4XbSNcy77rEyx4VT48w46UXCYFrAz3HR98w9Zp53nm5f",
+    "new_fee_recipient_type": "SPL Token Multisig (2-of-3)",
+    "multisig_wsol_vault": "CUbi2biNpQhfYyuVu8UwRtZ7TjXdjscAHhuc4kLXEHRQ",
+    "timestamp": "2026-02-16T19:08:00.000Z"
   },
   "doge_royalties_initialized": {
     "basis_points": 420,
@@ -344,10 +345,10 @@
       "newStakersPct": 10,
       "newBuybackPct": 80,
       "changeFactionFee": 100000000,
-      "newMinebtcStakersPct": 3,
+      "newMinebtcStakersPct": 15,
       "newMinebtcWinnersPct": 50,
-      "newMinebtcSameFactionPct": 42,
-      "newMinebtcMotherlodePct": 5,
+      "newMinebtcSameFactionPct": 25,
+      "newMinebtcMotherlodePct": 10,
       "newRefiningFee": 10
     },
     "tx_signature": "37mf9wSaLhRySuNuvqJ8ZDnS9otevbPVa6KgT8NHkvSasR81JdJTSdMJ1qmZU5HjWQ5k4TJvfdezjrCuLDCb1ytZ",
