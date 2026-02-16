@@ -37,9 +37,11 @@ Bet SOL on 24 blocks across 12 factions. Win the prize pot. Mine dogeBTC. Stake 
 |---|---------|
 | **MineBTC Program** | [`Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx`](https://solscan.io/account/Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx) |
 | **DogeBTC Token** (Token-2022) | [`BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE`](https://solscan.io/token/BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE) |
+| **Token Vault** (~2.1B DogeBTC) | [`6Cc43qKbxHqtSDZJQMfbQ8BkKpYECEmHwxL4ZoQUbinZ`](https://solscan.io/account/6Cc43qKbxHqtSDZJQMfbQ8BkKpYECEmHwxL4ZoQUbinZ) |
 | **Doge NFT Collection** | [`6S85vw5zZJHC3KvmVfGmfWMpTY1aSbUCcU6xdz5bhmo5`](https://solscan.io/account/6S85vw5zZJHC3KvmVfGmfWMpTY1aSbUCcU6xdz5bhmo5) |
 | **Raydium Pool** (DogeBTC/SOL) | [`HmPwHy2z9aQa2Ce2kMhwvjaiqCBiE7kdHppkUP6jZ7nf`](https://solscan.io/account/HmPwHy2z9aQa2Ce2kMhwvjaiqCBiE7kdHppkUP6jZ7nf) |
-| **Upgrade Authority** (Multisig) | [`2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd`](https://solscan.io/account/2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd) |
+| **Fee Recipient** (2-of-3 Multisig) | [`4XbSNcy77rEyx4VT48w46UXCYFrAz3HR98w9Zp53nm5f`](https://solscan.io/account/4XbSNcy77rEyx4VT48w46UXCYFrAz3HR98w9Zp53nm5f) |
+| **Upgrade Authority** | [`2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd`](https://solscan.io/account/2Xze8BhdWV3GoJUyzpQPF7d1N2KUCS1TCkdVECfkDTcd) |
 
 ---
 
