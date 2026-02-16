@@ -214,63 +214,200 @@ pub fn new_instruction(ctx: Context<NewInstruction>, args: Args) -> Result<()> {
 
 ## Key Account PDAs
 
+**IMPORTANT**: These are the EXACT seeds from `state.rs`. Use these when deriving PDAs.
+
+### Global State
+
 ```rust
 // GlobalConfig - singleton
-seeds = [b"global_config"]
+seeds = [b"global-config"]
 
-// FactionState - per faction
-seeds = [b"faction", &faction_id.to_le_bytes()]
-
-// PlayerData - per user
-seeds = [b"player", user.key().as_ref()]
-
-// GameSession - per round
-seeds = [b"game", &round_id.to_le_bytes()]
+// HashpowerConfig - singleton
+seeds = [b"hashpower-config"]
 
 // MineBtcMining - singleton
-seeds = [b"minebtc_mining"]
+seeds = [b"mine-btc-mining"]
 
-// AutominerVault - per user
+// GlobalGameState - singleton
+seeds = [b"global-game-state"]
+
+// DogeConfig - singleton
+seeds = [b"doge-config"]
+
+// TaxConfig - singleton
+seeds = [b"tax-config"]
+
+// UnrefinedRewards - singleton
+seeds = [b"unrefined-rewards"]
+
+// BuybacksAccount - singleton
+seeds = [b"buybacks"]
+```
+
+### Vault PDAs
+
+```rust
+// SOL Treasury
+seeds = [b"sol-treasury"]
+
+// Doges Treasury (NFT sale SOL)
+seeds = [b"doges-treasury"]
+
+// MineBTC Vault Authority
+seeds = [b"minebtc-vault-authority"]
+
+// MineBTC Vault (token account)
+seeds = [b"minebtc_vault"]
+
+// Buybacks SOL Vault
+seeds = [b"buybacks-sol-vault"]
+
+// SOL Prize Pot
+seeds = [b"sol-prize-pot"]
+
+// Motherlode Pot
+seeds = [b"motherlode-pot"]
+
+// Staker SOL Reward Vault
+seeds = [b"staker-sol-reward-vault"]
+
+// MineBTC Custodian (holds all staked dogeBTC)
+seeds = [b"minebtc-custodian"]
+
+// MineBTC Custodian Authority
+seeds = [b"minebtc-custodian-authority"]
+
+// LP Custodian (holds all staked LP tokens)
+seeds = [b"lp-custodian"]
+
+// LP Custodian Authority
+seeds = [b"lp-custodian-authority"]
+```
+
+### Tax System PDAs
+
+```rust
+// Withdraw Withheld Authority (Token-2022)
+seeds = [b"withdraw-withheld-authority"]
+
+// Faction Treasury Vault
+seeds = [b"faction-treasury-vault"]
+
+// NFT Floor Sweep Vault
+seeds = [b"nft-floor-sweep-vault"]
+
+// NFT Sale SOL Vault
+seeds = [b"nft-sale-sol-vault"]
+```
+
+### Per-Entity PDAs
+
+```rust
+// FactionState - one per faction (faction_id is u8)
+seeds = [b"faction", &[faction_id]]
+
+// PlayerData - one per user
+seeds = [b"player", user.key().as_ref()]
+
+// GameSession - one per round (round_id is u64)
+seeds = [b"game-session", &round_id.to_le_bytes()]
+
+// UserGameBet - one per user per round
+seeds = [b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
+
+// AutominerVault - one per user
 seeds = [b"autominer", user.key().as_ref()]
 
-// FactionStakeInfo - per user per faction
-seeds = [b"faction_stake", user.key().as_ref(), &faction_id.to_le_bytes()]
+// AutominerCustody - global
+seeds = [b"autominer-custody"]
+
+// StakedPosition - per user per position (position_index is u8)
+seeds = [b"staked-position", user.key().as_ref(), &[position_index]]
+
+// LP StakedPosition - per user per position
+seeds = [b"lp-staked-position", user.key().as_ref(), &[position_index]]
+
+// ReferralRewards - one per user
+seeds = [b"referral-rewards", user.key().as_ref()]
+
+// DogeMetadata - per NFT mint
+seeds = [b"doge-metadata", doge_mint.key().as_ref()]
+
+// DogeCustody - global (holds staked NFTs)
+seeds = [b"doge-custody"]
+
+// Collection Authority
+seeds = [b"collection_authority"]
 ```
 
 ## Important Constants
 
+### From `state.rs`
+
 ```rust
-// Betting
-pub const MIN_BET_AMOUNT: u64 = 1_000_000;  // 0.001 SOL
-pub const MAX_BETS_PER_ROUND: u8 = 40;
-pub const ROUND_DURATION_SECS: i64 = 60;
+// Game Grid
+pub const NUM_BLOCKS: usize = 24;           // Total blocks in game
+pub const NUM_FACTIONS: usize = 12;         // Total factions
+pub const BLOCKS_PER_FACTION: usize = 2;    // Each faction owns 2 blocks
+pub const MAX_CRANKER_BOTS: usize = 3;      // Whitelisted cranker bots
 
-// Factions
-pub const NUM_FACTIONS: u8 = 12;
-pub const BLOCKS_PER_ROUND: u8 = 24;  // 2 per faction
+// Staking
+pub const MAX_STAKED_DOGES: usize = 5;      // Max doges user can stake
+pub const MAX_ALLOWED_POSITIONS: u8 = 7;    // Max staking positions per type
+pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;  // Early unstake penalty
 
-// Fees (basis points)
-pub const PROTOCOL_FEE_BPS: u64 = 1000;  // 10%
-pub const STAKERS_FEE_BPS: u64 = 4000;   // 40%
-pub const PRIZE_POT_BPS: u64 = 5000;     // 50%
+// Token
+pub const MINEBTC_DECIMALS: u8 = 6;
+pub const BURN_TAX_PERCENTAGE: u64 = 1;     // 1% transfer tax
 
-// Rewards distribution
-pub const WINNING_BLOCK_SHARE: u64 = 60;     // 60%
-pub const SAME_FACTION_SHARE: u64 = 25;       // 25%
-pub const STAKERS_SHARE: u64 = 15;            // 15%
+// Precision
+pub const INDEX_PRECISION: u64 = 1_000_000; // Reward index scaling
 
 // Motherlode
-pub const MOTHERLODE_HIT_CHANCE: u64 = 16;   // 0.16% = 16/10000
+pub const MOTHERLODE_CHANCE: u64 = 625;     // 1 in 625 (0.16%)
 
-// Staking lockup multipliers (scaled by 100)
-pub const LOCKUP_30D_MULT: u64 = 100;   // 1.0x
-pub const LOCKUP_90D_MULT: u64 = 250;   // 2.5x
-pub const LOCKUP_180D_MULT: u64 = 500;  // 5.0x
-pub const LOCKUP_1Y_MULT: u64 = 900;    // 9.0x
-pub const LOCKUP_3Y_MULT: u64 = 1500;   // 15.0x
+// Time
+pub const DAY_IN_SECONDS: u64 = 86400;
+```
 
-// Precision for reward index calculations
-pub const PRECISION: u128 = 1_000_000_000_000;  // 10^12
+### From `config.json`
+
+```rust
+// Game
+round_duration_seconds = 60;                // 60 seconds per round
+
+// Hashpower Lockup (linear interpolation)
+min_lockup_days = 7;                        // Minimum lockup
+max_lockup_days = 365;                      // Maximum lockup
+base_multiplier = 100;                      // 1x at min lockup
+max_multiplier = 420;                       // 4.2x at max lockup
+
+// Doge NFT Bonding Curve
+doge_base_price = 1_000_000_000;           // 1 SOL
+doge_curve_a = 1_111_111;                  // Curve steepness
+doge_max_supply = 42_690;                  // Max mintable
+
+// Tax Distribution (of 1% transfer fee)
+tax_burn_pct = 25;                         // 25% burned
+tax_nft_floor_sweep_pct = 25;              // 25% to NFT sweep
+tax_faction_treasury_pct = 25;             // 25% to factions
+
+// Ticket Tiers (additional SOL on Doge mint)
+tier_0 = 1_000_000;                        // 0.001 SOL
+tier_1 = 10_000_000;                       // 0.01 SOL
+tier_2 = 100_000_000;                      // 0.1 SOL
+```
+
+### Doge Multipliers (staked count -> multiplier)
+
+```rust
+// Multiplier = BASE_MULTIPLIER (1000) + bonus
+// 0 doges: 1000 (1.0x)
+// 1 doge:  1300 (1.3x)
+// 2 doges: 1600 (1.6x)
+// 3 doges: 2000 (2.0x)
+// 4 doges: 2500 (2.5x)
+// 5 doges: 3000 (3.0x)
 ```
 
 ## Common Gotchas

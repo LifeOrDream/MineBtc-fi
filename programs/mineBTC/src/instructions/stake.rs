@@ -41,7 +41,7 @@ pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
 pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- STAKE DOGEBTC TOKENS :: User gets electricity and SOL rewards ------
+// ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Stake MineBtc tokens

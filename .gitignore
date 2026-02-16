@@ -1,6 +1,6 @@
 raydium/*/target/*
 */*/target/*
-
+*/node_modules/*
 
 target/*
 v2/*
@@ -17,6 +17,11 @@ tweets/*
 p_tweets/*
 
 raydium/target/*
+raydium/node_modules/
+raydium/package.json
+raydium/tsconfig.json
+raydium/yarn.lock
+raydium/tests/
 
 setup_scripts/node_modules/*
 .env
