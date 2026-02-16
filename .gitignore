@@ -1,30 +1,49 @@
-raydium/*/target/*
-*/*/target/*
-*/node_modules/*
+# Build artifacts
+target/
+**/target/
 
-target/*
-v2/*
+# Dependencies
+**/node_modules/
 
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Environment & secrets
+.env
+*.keypair.json
 wallet-keypair.json
-outdated_dump/setup_scripts/node_modules/*
+game_keypair.json
+devnet-wallet-keypair.json
+mainnet-wallet-keypair.json
 
+# Deployment secrets (contains API keys)
+setup_scripts/deployments/website.json
 
-future_scope/*/target/*
+# Test user wallets & activity scripts
+setup_scripts/user_activity/
 
-test-ledger/*
+# Runtime state
+**/game_loop_state.json
 
-tweets/*
-p_tweets/*
+# Test validator state & logs
+**/test-ledger/
 
-raydium/target/*
-raydium/node_modules/
+# Binary blobs (can be cloned at runtime)
+*.so
+
+# Dev scripts
+refactor.sh
+
+# Legacy / unused directories
+v2/
+outdated_dump/
+future_scope/
+tweets/
+p_tweets/
+
+# Raydium local files
 raydium/package.json
 raydium/tsconfig.json
 raydium/yarn.lock
 raydium/tests/
-
-setup_scripts/node_modules/*
-.env
-game_keypair.json
-devnet-wallet-keypair.json
-mainnet-wallet-keypair.json

@@ -16,7 +16,7 @@ raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 
 [provider]
 cluster = "mainnet"
-wallet = "~/Desktop/LifeOrDream Labs/DogeWifBtc/MineBtc-fi/mainnet-wallet-keypair.json"
+wallet = "./mainnet-wallet-keypair.json"
 
 [workspace]
 members = ["programs/*"]

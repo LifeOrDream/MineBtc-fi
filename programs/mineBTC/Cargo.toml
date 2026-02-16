@@ -1,8 +1,11 @@
 [package]
 name = "minebtc"
 version = "1.0.0"
-description = "MineBTC game"
+description = "MineBTC — Faction warfare game on Solana with betting, staking, NFTs, and deflationary tokenomics"
 edition = "2021"
+license = "Apache-2.0"
+homepage = "https://minebtc.fun"
+repository = "https://github.com/LifeOrDream/MineBtc-fi"
 
 [lib]
 crate-type = ["cdylib", "lib"]
