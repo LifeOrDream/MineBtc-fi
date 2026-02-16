@@ -23,7 +23,7 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;
-use borsh::{BorshSerialize, BorshDeserialize};
+use borsh::{BorshDeserialize, BorshSerialize};
 mod errors;
 mod events;
 mod genescience;
@@ -33,8 +33,8 @@ pub mod state;
 
 pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
-pub use instructions::economy::*;
 pub use instructions::doges::*;
+pub use instructions::economy::*;
 pub use instructions::game::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
@@ -50,8 +50,8 @@ declare_id!("Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx");
 pub mod minebtc {
     use super::*;
     use instructions::admin::{self};
-    use instructions::economy::{self};
     use instructions::doges::{self};
+    use instructions::economy::{self};
     use instructions::game::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
@@ -144,7 +144,12 @@ pub mod minebtc {
         breed_base_price: u64,
         breed_curve_a: u64,
     ) -> Result<()> {
-        admin::update_breeding_config_internal(ctx, breeding_allowed, breed_base_price, breed_curve_a)
+        admin::update_breeding_config_internal(
+            ctx,
+            breeding_allowed,
+            breed_base_price,
+            breed_curve_a,
+        )
     }
 
     /// Update emission adjustment parameters (admin only)
@@ -326,7 +331,13 @@ pub mod minebtc {
         burn_pct: u8,
         nft_floor_sweep_whitelisted_address: Pubkey,
     ) -> Result<()> {
-        tax::internal_initialize_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct, nft_floor_sweep_whitelisted_address)
+        tax::internal_initialize_tax_config(
+            ctx,
+            nft_floor_sweep_pct,
+            faction_treasury_pct,
+            burn_pct,
+            nft_floor_sweep_whitelisted_address,
+        )
     }
 
     /// Update tax distribution percentages (admin only)
@@ -462,9 +473,7 @@ pub mod minebtc {
 
     /// Calculate leaderboard position for one faction
     /// Must be called 12 times to build complete leaderboard
-    pub fn cal_faction_positions(
-        ctx: Context<CalculateFactionLeaderboard>,
-    ) -> Result<()> {
+    pub fn cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
         tax::internal_cal_faction_positions(ctx)
     }
 
@@ -595,7 +604,10 @@ pub mod minebtc {
 
     /// Claim autominer rewards with auto-reload (keeper instruction)
     /// Uses SOL rewards to add more rounds to autominer, leftover SOL goes to owner
-    pub fn claim_autominer_rewards(ctx: Context<ClaimAutominerRewards>, round_id: u64) -> Result<()> {
+    pub fn claim_autominer_rewards(
+        ctx: Context<ClaimAutominerRewards>,
+        round_id: u64,
+    ) -> Result<()> {
         user::internal_claim_autominer_rewards(round_id, ctx)
     }
 
@@ -763,7 +775,7 @@ pub mod minebtc {
         let dominant_appearance_traits = genescience::decode_dominant_appearance_traits(&dna);
         let power_traits = genescience::decode_power_traits(&dna);
         let dominant_power_traits = genescience::decode_dominant_power_traits(&dna);
-        
+
         let breakdown = GeneBreakdown {
             dna,
             family_type,
@@ -773,13 +785,13 @@ pub mod minebtc {
             power_traits,
             dominant_power_traits,
         };
-        
-        let serialized = breakdown.try_to_vec()
+
+        let serialized = breakdown
+            .try_to_vec()
             .map_err(|_| crate::errors::ErrorCode::InvalidAccount)?;
-        
+
         set_return_data(&serialized);
-        
+
         Ok(())
     }
-
 }

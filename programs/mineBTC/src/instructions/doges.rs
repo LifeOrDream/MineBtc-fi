@@ -110,10 +110,7 @@ pub fn int_batch_mint_doges<'info>(
     let doge_config = &mut ctx.accounts.doge_config;
     let player_data = &mut ctx.accounts.player_data;
 
-    require!(
-        doge_config.is_active,
-        ErrorCode::MintingNotAllowed
-    );
+    require!(doge_config.is_active, ErrorCode::MintingNotAllowed);
 
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
@@ -124,7 +121,8 @@ pub fn int_batch_mint_doges<'info>(
         ErrorCode::InvalidParameters
     );
 
-    let (total_price, prices, _ticket_amounts) = int_simulate_mint_cost(doge_config, mint_count as u64)?;
+    let (total_price, prices, _ticket_amounts) =
+        int_simulate_mint_cost(doge_config, mint_count as u64)?;
     msg!(
         "   Batch minting {} doges, total cost: {} lamports",
         mint_count,
@@ -278,7 +276,10 @@ pub fn int_batch_mint_doges<'info>(
         let mut data = doge_metadata_info.try_borrow_mut_data()?;
 
         // Ensure the account has enough space
-        require!(data.len() >= DogeMetadata::LEN, ErrorCode::InvalidParameters);
+        require!(
+            data.len() >= DogeMetadata::LEN,
+            ErrorCode::InvalidParameters
+        );
 
         // Write the 8-byte discriminator (required by Anchor for account deserialization)
         // Anchor calculates discriminator as first 8 bytes of sha256("account:DogeMetadata")
@@ -364,12 +365,8 @@ pub fn int_admin_mint_doge(
 
     // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
-    let (name, uri, dna, multiplier) = generate_doge_data(
-        current_mint_number,
-        &recipient,
-        slot,
-        faction_id,
-    )?;
+    let (name, uri, dna, multiplier) =
+        generate_doge_data(current_mint_number, &recipient, slot, faction_id)?;
 
     // Get collection authority seeds
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -790,7 +787,6 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
 
 /// Send an doge to heaven (burn it) to claim accumulated rewards
 pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
-
     let doge_config = &mut ctx.accounts.doge_config;
     let doge_metadata = &ctx.accounts.doge_metadata;
     let accumulated_val = doge_metadata.accumulated_val;
@@ -878,28 +874,58 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 
     // Validate breeding is allowed
     require!(doge_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
-    require!(doge_config.doges_minted < doge_config.max_supply, ErrorCode::InvalidParameters);
-    
+    require!(
+        doge_config.doges_minted < doge_config.max_supply,
+        ErrorCode::InvalidParameters
+    );
+
     // Validate parents are not incubated
-    require!(mom.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
-    require!(dad.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
-    
+    require!(
+        mom.incubated_player_data == Pubkey::default(),
+        ErrorCode::DogeAlreadyAtGuard
+    );
+    require!(
+        dad.incubated_player_data == Pubkey::default(),
+        ErrorCode::DogeAlreadyAtGuard
+    );
+
     // Validate same faction
-    require!(mom.faction_id == dad.faction_id, ErrorCode::InvalidFactionId);
-    
+    require!(
+        mom.faction_id == dad.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+
     // Validate breed counts
-    require!(mom.breed_count < DogeMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
-    require!(dad.breed_count < DogeMetadata::MAX_BREED_COUNT, ErrorCode::MaxBreedCountReached);
-    
+    require!(
+        mom.breed_count < DogeMetadata::MAX_BREED_COUNT,
+        ErrorCode::MaxBreedCountReached
+    );
+    require!(
+        dad.breed_count < DogeMetadata::MAX_BREED_COUNT,
+        ErrorCode::MaxBreedCountReached
+    );
+
     // Validate cooldowns
-    require!(mom.cooldown_end <= current_time, ErrorCode::CooldownNotEnded);
-    require!(dad.cooldown_end <= current_time, ErrorCode::CooldownNotEnded);
+    require!(
+        mom.cooldown_end <= current_time,
+        ErrorCode::CooldownNotEnded
+    );
+    require!(
+        dad.cooldown_end <= current_time,
+        ErrorCode::CooldownNotEnded
+    );
 
     // Verify NFT ownership
     let mom_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.mom_asset)?;
     let dad_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.dad_asset)?;
-    require!(mom_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
-    require!(dad_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+    require!(
+        mom_owner == ctx.accounts.user.key(),
+        ErrorCode::NftNotOwnedByUser
+    );
+    require!(
+        dad_owner == ctx.accounts.user.key(),
+        ErrorCode::NftNotOwnedByUser
+    );
 
     // Calculate breeding cost
     let breed_cost = crate::genescience::compute_gene_price(
@@ -935,7 +961,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         ctx.accounts.user.key().as_ref(),
         mom.mint.as_ref(),
         dad.mint.as_ref(),
-    ].concat();
+    ]
+    .concat();
     let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
 
     // Create offspring NFT
@@ -948,7 +975,11 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 
     crate::mpl_core_helpers::create_mpl_core_asset(
         &ctx.accounts.offspring_asset.to_account_info(),
-        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        ctx.accounts
+            .doge_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
         &ctx.accounts.collection_authority.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
@@ -977,9 +1008,15 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     offspring.bump = ctx.bumps.offspring_metadata;
 
     // Update parent cooldowns and breed counts
-    let mom_cooldown = DogeMetadata::COOLDOWNS.get(mom.breed_count as usize).copied().unwrap_or(1209600);
-    let dad_cooldown = DogeMetadata::COOLDOWNS.get(dad.breed_count as usize).copied().unwrap_or(1209600);
-    
+    let mom_cooldown = DogeMetadata::COOLDOWNS
+        .get(mom.breed_count as usize)
+        .copied()
+        .unwrap_or(1209600);
+    let dad_cooldown = DogeMetadata::COOLDOWNS
+        .get(dad.breed_count as usize)
+        .copied()
+        .unwrap_or(1209600);
+
     mom.breed_count += 1;
     mom.cooldown_end = current_time + mom_cooldown;
     dad.breed_count += 1;
@@ -987,8 +1024,17 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 
     doge_config.doges_minted += 1;
 
-    msg!("✅ Bred offspring #{} from {} x {}", current_mint_number, mom.mint, dad.mint);
-    msg!("   Mom next cooldown: {}s, Dad next cooldown: {}s", mom_cooldown, dad_cooldown);
+    msg!(
+        "✅ Bred offspring #{} from {} x {}",
+        current_mint_number,
+        mom.mint,
+        dad.mint
+    );
+    msg!(
+        "   Mom next cooldown: {}s, Dad next cooldown: {}s",
+        mom_cooldown,
+        dad_cooldown
+    );
 
     emit!(DogeMinted {
         doge_metadata_account: offspring.key(),

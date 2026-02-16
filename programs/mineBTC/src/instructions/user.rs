@@ -78,7 +78,11 @@ pub fn internal_initialize_player(
                 ErrorCode::MaxReferralsReached
             );
             referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
-            msg!("     Referrer's referral count: {}/{}", referrer_rewards.referrals_count, stake::MAX_REFERRALS_PER_CODE);
+            msg!(
+                "     Referrer's referral count: {}/{}",
+                referrer_rewards.referrals_count,
+                stake::MAX_REFERRALS_PER_CODE
+            );
         }
 
         // Set player's referral code
@@ -627,18 +631,30 @@ pub fn internal_update_autominer(
     require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
 
     if rounds_added > 0 {
-        msg!("     ✓ Adding {} more rounds (total: {} rounds)", rounds_added, rounds_remaining + rounds_added);
+        msg!(
+            "     ✓ Adding {} more rounds (total: {} rounds)",
+            rounds_added,
+            rounds_remaining + rounds_added
+        );
     } else {
         msg!("     ✓ Rounds unchanged ({} rounds)", rounds_remaining);
     }
 
     // Calculate SOL needed for remaining rounds with old config
     let current_sol_needed = rounds_remaining as u64 * old_sol_per_round;
-    msg!("     Current SOL needed for {} remaining rounds: {} lamports", rounds_remaining, current_sol_needed);
+    msg!(
+        "     Current SOL needed for {} remaining rounds: {} lamports",
+        rounds_remaining,
+        current_sol_needed
+    );
 
     // Calculate new SOL needed for new rounds with new config
     let new_sol_needed = (rounds_remaining + rounds_added) as u64 * new_sol_per_round;
-    msg!("     New SOL needed for {} rounds: {} lamports", rounds_remaining + rounds_added, new_sol_needed);
+    msg!(
+        "     New SOL needed for {} rounds: {} lamports",
+        rounds_remaining + rounds_added,
+        new_sol_needed
+    );
 
     // Calculate SOL difference: new_sol_needed - current_sol_balance
     // This tells us how much SOL to transfer to/from the user
@@ -649,7 +665,10 @@ pub fn internal_update_autominer(
     if sol_diff > 0 {
         // Need to deposit more SOL
         let deposit_amount = sol_diff as u64;
-        msg!("   Depositing {} SOL to autominer custody...", deposit_amount as f64 / 1e9);
+        msg!(
+            "   Depositing {} SOL to autominer custody...",
+            deposit_amount as f64 / 1e9
+        );
         helper::transfer_to_autominer_custody(
             &ctx.accounts.user_wallet.to_account_info(),
             &ctx.accounts.autominer_custody.to_account_info(),
@@ -660,7 +679,10 @@ pub fn internal_update_autominer(
     } else if sol_diff < 0 {
         // Need to refund excess SOL
         let refund_amount = (-sol_diff) as u64;
-        msg!("   Refunding {} SOL from autominer custody...", refund_amount as f64 / 1e9);
+        msg!(
+            "   Refunding {} SOL from autominer custody...",
+            refund_amount as f64 / 1e9
+        );
         helper::transfer_from_autominer_custody(
             &ctx.accounts.autominer_custody.to_account_info(),
             &ctx.accounts.user_wallet.to_account_info(),
@@ -736,7 +758,6 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         last_bet_round_id,
         (sol_per_round as f64 / 1e9)
     );
-
 
     require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
     require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
@@ -986,14 +1007,13 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     Ok(())
 }
 
-
-
-
-
 /// Claim rewards for a user after round ends
 /// Checks if user won based on their bet type and the winning block
 pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
-    msg!(  "💰 [claim_rewards] User claiming rewards. User: {}", ctx.accounts.user_wallet.key());
+    msg!(
+        "💰 [claim_rewards] User claiming rewards. User: {}",
+        ctx.accounts.user_wallet.key()
+    );
     msg!("   Round ID: {}", round_id);
 
     let game_session = &ctx.accounts.game_session;
@@ -1024,10 +1044,15 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
 
     // Calculate rewards using helper function
-    let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards( user_bet, game_session)?;
+    let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards(user_bet, game_session)?;
 
     // Update player rewards using helper function
-    update_player_rewards(player_data, &mut ctx.accounts.unrefined_rewards, total_sol_reward, total_minebtc_reward)?;
+    update_player_rewards(
+        player_data,
+        &mut ctx.accounts.unrefined_rewards,
+        total_sol_reward,
+        total_minebtc_reward,
+    )?;
 
     // Transfer SOL winnings directly to user from prize pot vault
     if total_sol_reward > 0 {
@@ -1045,7 +1070,12 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     }
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
-    process_mutation_sync(user_bet, player_data, ctx.accounts.doge_metadata.as_mut(), total_minebtc_reward)?;
+    process_mutation_sync(
+        user_bet,
+        player_data,
+        ctx.accounts.doge_metadata.as_mut(),
+        total_minebtc_reward,
+    )?;
 
     msg!("✅ [claim_rewards] Rewards claimed successfully");
     msg!("   Round: {}", user_bet.round_id);
@@ -1064,7 +1094,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
 /// Claim autominer rewards with auto-reload feature
 /// Called by backend script - no owner check, uses SOL rewards to reload autominer
-pub fn internal_claim_autominer_rewards(round_id: u64, ctx: Context<ClaimAutominerRewards>) -> Result<()> {
+pub fn internal_claim_autominer_rewards(
+    round_id: u64,
+    ctx: Context<ClaimAutominerRewards>,
+) -> Result<()> {
     msg!("🤖 [claim_autominer_rewards] Claiming rewards with auto-reload");
     msg!("   Round ID: {}", round_id);
     msg!("   Autominer owner: {}", ctx.accounts.autominer_vault.owner);
@@ -1085,7 +1118,12 @@ pub fn internal_claim_autominer_rewards(round_id: u64, ctx: Context<ClaimAutomin
     let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards(user_bet, game_session)?;
 
     // Update player rewards using helper function
-    update_player_rewards(player_data, &mut ctx.accounts.unrefined_rewards, total_sol_reward, total_minebtc_reward)?;
+    update_player_rewards(
+        player_data,
+        &mut ctx.accounts.unrefined_rewards,
+        total_sol_reward,
+        total_minebtc_reward,
+    )?;
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
     process_mutation_sync(
@@ -1098,7 +1136,7 @@ pub fn internal_claim_autominer_rewards(round_id: u64, ctx: Context<ClaimAutomin
     // === AUTO-RELOAD LOGIC ===
     if total_sol_reward > 0 && autominer_vault.can_reload && autominer_vault.sol_per_round > 0 {
         msg!("🔄 Auto-reload enabled, processing SOL rewards...");
-        
+
         let sol_per_round = autominer_vault.sol_per_round;
         let rounds_to_add = total_sol_reward / sol_per_round;
         let leftover_sol = total_sol_reward % sol_per_round;
@@ -1109,7 +1147,7 @@ pub fn internal_claim_autominer_rewards(round_id: u64, ctx: Context<ClaimAutomin
 
         if rounds_to_add > 0 {
             let sol_for_rounds = rounds_to_add * sol_per_round;
-            
+
             // Transfer SOL from prize pot to autominer custody
             helper::transfer_from_sol_prize_pot_vault(
                 &ctx.accounts.sol_prize_pot_vault.to_account_info(),
@@ -1131,7 +1169,11 @@ pub fn internal_claim_autominer_rewards(round_id: u64, ctx: Context<ClaimAutomin
                 timestamp: Clock::get()?.unix_timestamp,
             });
 
-            msg!("   ✓ Added {} rounds, {} SOL to autominer", rounds_to_add, sol_for_rounds);
+            msg!(
+                "   ✓ Added {} rounds, {} SOL to autominer",
+                rounds_to_add,
+                sol_for_rounds
+            );
         }
 
         // Transfer leftover SOL to owner
@@ -1183,7 +1225,12 @@ fn calculate_round_rewards(
         let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
         let wgtd_points_bet_on_block = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
 
-        msg!("     Block {}: Points: {} SOL, Wgtd: {} DogeBTC", block_id, points_bet_on_block as f64 / 1e9, wgtd_points_bet_on_block as f64 / 1e6);
+        msg!(
+            "     Block {}: Points: {} SOL, Wgtd: {} DogeBTC",
+            block_id,
+            points_bet_on_block as f64 / 1e9,
+            wgtd_points_bet_on_block as f64 / 1e6
+        );
 
         let is_winning_block = block_id == game_session.winning_block;
         let is_same_faction_block = block_id == game_session.same_faction_other_block;
@@ -1193,25 +1240,43 @@ fn calculate_round_rewards(
 
             // SOL rewards: use regular points
             if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
-                let sol_reward = helper::mul_div(points_bet_on_block, game_session.sol_rewards_index as u64, INDEX_PRECISION)? as u64;
+                let sol_reward = helper::mul_div(
+                    points_bet_on_block,
+                    game_session.sol_rewards_index as u64,
+                    INDEX_PRECISION,
+                )? as u64;
                 total_sol_reward += sol_reward;
                 msg!("         SOL reward: {} SOL", sol_reward as f64 / 1e9);
             }
 
             // MineBtc rewards: use wgtd_points
             if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
-                let minebtc_reward = helper::mul_div( wgtd_points_bet_on_block, game_session.minebtc_rewards_index as u64, INDEX_PRECISION)? as u64;
+                let minebtc_reward = helper::mul_div(
+                    wgtd_points_bet_on_block,
+                    game_session.minebtc_rewards_index as u64,
+                    INDEX_PRECISION,
+                )? as u64;
                 total_minebtc_reward += minebtc_reward;
-                msg!("         MineBtc reward: {} DogeBTC", minebtc_reward as f64 / 1e6);
+                msg!(
+                    "         MineBtc reward: {} DogeBTC",
+                    minebtc_reward as f64 / 1e6
+                );
             }
         } else if is_same_faction_block {
             msg!("       ✓ Same-faction other block - calculating MineBtc rewards...");
 
             // MineBtc rewards: use wgtd_points
             if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
-                let minebtc_reward = helper::mul_div( wgtd_points_bet_on_block, game_session.same_faction_minebtc_rewards_index as u64, INDEX_PRECISION)? as u64;
+                let minebtc_reward = helper::mul_div(
+                    wgtd_points_bet_on_block,
+                    game_session.same_faction_minebtc_rewards_index as u64,
+                    INDEX_PRECISION,
+                )? as u64;
                 total_minebtc_reward += minebtc_reward;
-                msg!("         MineBtc reward: {} DogeBTC", minebtc_reward as f64 / 1e6);
+                msg!(
+                    "         MineBtc reward: {} DogeBTC",
+                    minebtc_reward as f64 / 1e6
+                );
             }
         } else {
             msg!("       ✗ Not a winning or same-faction block - no rewards");
@@ -1221,7 +1286,6 @@ fn calculate_round_rewards(
     Ok((total_sol_reward, total_minebtc_reward))
 }
 
-
 /// Update player rewards stats and add MineBTC to pending rewards
 fn update_player_rewards(
     player_data: &mut PlayerData,
@@ -1230,12 +1294,24 @@ fn update_player_rewards(
     total_minebtc_reward: u64,
 ) -> Result<()> {
     player_data.total_sol_won += total_sol_reward;
-    msg!("     Total SOL won: {} (+{})", player_data.total_sol_won as f64 / 1e9, total_sol_reward as f64 / 1e9 );
+    msg!(
+        "     Total SOL won: {} (+{})",
+        player_data.total_sol_won as f64 / 1e9,
+        total_sol_reward as f64 / 1e9
+    );
 
     helper::add_to_total_claimable(unrefined_rewards, player_data, total_minebtc_reward);
     player_data.total_dogebtc_won += total_minebtc_reward;
-    msg!("     Total MineBtc won: {} (+{})", player_data.total_dogebtc_won as f64 / 1e6, total_minebtc_reward as f64 / 1e6);
-    msg!("     Pending MineBtc rewards: {} (+{})", player_data.pending_minebtc_rewards as f64 / 1e6, total_minebtc_reward as f64 / 1e6);
+    msg!(
+        "     Total MineBtc won: {} (+{})",
+        player_data.total_dogebtc_won as f64 / 1e6,
+        total_minebtc_reward as f64 / 1e6
+    );
+    msg!(
+        "     Pending MineBtc rewards: {} (+{})",
+        player_data.pending_minebtc_rewards as f64 / 1e6,
+        total_minebtc_reward as f64 / 1e6
+    );
 
     Ok(())
 }
@@ -1247,58 +1323,61 @@ fn process_mutation_sync<'info>(
     doge_metadata: Option<&mut Box<Account<'info, DogeMetadata>>>,
     total_minebtc_reward: u64,
 ) -> Result<()> {
-
     // If no doge is being used for gameplay, return
     if player_data.gameplay_doge_xp == 0 && player_data.gameplay_doge == Pubkey::default() {
         return Ok(());
     }
 
-    if user_bet.gameplay_doge == player_data.gameplay_doge 
-        && total_minebtc_reward > 0 
-    {
-        require!(doge_metadata.is_some() && doge_metadata.as_ref().unwrap().mint == user_bet.gameplay_doge, ErrorCode::DogeMetadataNotFound);
+    if user_bet.gameplay_doge == player_data.gameplay_doge && total_minebtc_reward > 0 {
+        require!(
+            doge_metadata.is_some()
+                && doge_metadata.as_ref().unwrap().mint == user_bet.gameplay_doge,
+            ErrorCode::DogeMetadataNotFound
+        );
         if let Some(doge_metadata) = doge_metadata {
-                // Calculate accumulated_val % based on mutation type
-                // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
-                let accum_pct = match user_bet.mutation_type {
-                    1 => 69u64,  // Evolution: 6.9%
-                    2 => 42u64,  // Power: 4.2%
-                    3 => 30u64,  // Trait: 3%
-                    _ => 10u64,  // No mutation: 1%
-                };
-                let accum_add = (total_minebtc_reward * accum_pct) / 1000;
-                doge_metadata.accumulated_val = doge_metadata.accumulated_val + accum_add;
-                msg!("💎 Doge accumulated_val +{} ({}%)", accum_add, accum_pct as f64 / 10.0);
+            // Calculate accumulated_val % based on mutation type
+            // 0 = no mutation (1%), 1 = Evolution (6.9%), 2 = Power (4.2%), 3 = Trait (3%)
+            let accum_pct = match user_bet.mutation_type {
+                1 => 69u64, // Evolution: 6.9%
+                2 => 42u64, // Power: 4.2%
+                3 => 30u64, // Trait: 3%
+                _ => 10u64, // No mutation: 1%
+            };
+            let accum_add = (total_minebtc_reward * accum_pct) / 1000;
+            doge_metadata.accumulated_val = doge_metadata.accumulated_val + accum_add;
+            msg!(
+                "💎 Doge accumulated_val +{} ({}%)",
+                accum_add,
+                accum_pct as f64 / 10.0
+            );
 
-                // Sync DNA/XP/multiplier from PlayerData cache
-                // Note: generation is stored in DNA bits 4-6, not as separate field
-                doge_metadata.dna = player_data.gameplay_doge_dna;
-                doge_metadata.xp = player_data.gameplay_doge_xp;
-                doge_metadata.multiplier = player_data.active_multiplier;
-                
-                // For Evolution, reset XP (DNA already updated by evolve_stage)
-                if user_bet.mutation_type == 1 {
-                    doge_metadata.xp = 0;
-                    player_data.gameplay_doge_xp = 0;
-                }
+            // Sync DNA/XP/multiplier from PlayerData cache
+            // Note: generation is stored in DNA bits 4-6, not as separate field
+            doge_metadata.dna = player_data.gameplay_doge_dna;
+            doge_metadata.xp = player_data.gameplay_doge_xp;
+            doge_metadata.multiplier = player_data.active_multiplier;
 
-                emit!(DogeSynced {
-                    doge_mint: doge_metadata.mint,
-                    doge_metadata_account: doge_metadata.key(),
-                    dna: doge_metadata.dna.to_vec(),
-                    xp: doge_metadata.xp,
-                    multiplier: doge_metadata.multiplier as u32,
-                    accumulated_val: doge_metadata.accumulated_val,
-                    accum_pct: accum_pct as u32,
-                });
+            // For Evolution, reset XP (DNA already updated by evolve_stage)
+            if user_bet.mutation_type == 1 {
+                doge_metadata.xp = 0;
+                player_data.gameplay_doge_xp = 0;
+            }
 
-                msg!("🧬 Synced to doge: {}", doge_metadata.mint);            
+            emit!(DogeSynced {
+                doge_mint: doge_metadata.mint,
+                doge_metadata_account: doge_metadata.key(),
+                dna: doge_metadata.dna.to_vec(),
+                xp: doge_metadata.xp,
+                multiplier: doge_metadata.multiplier as u32,
+                accumulated_val: doge_metadata.accumulated_val,
+                accum_pct: accum_pct as u32,
+            });
+
+            msg!("🧬 Synced to doge: {}", doge_metadata.mint);
         }
     }
     Ok(())
 }
-
-
 
 /// Helper struct for passing autominer info to internal_process_bets
 pub struct AutominerBetInfo {
@@ -1363,62 +1442,67 @@ fn internal_process_bets<'info>(
     let mut total_net_to_pot = 0u64;
 
     // Get multiplier (default 100 = 1x if not set)
-    let active_mult = if player_data.active_multiplier == 0 { BASE_MULTIPLIER as u64 } else { player_data.active_multiplier as u64 };
+    let active_mult = if player_data.active_multiplier == 0 {
+        BASE_MULTIPLIER as u64
+    } else {
+        player_data.active_multiplier as u64
+    };
 
     // Calculate amounts per bet (uniform across batch)
     // wgtd_points: points * multiplier / 100 for SOL bets, else points (tickets)
-    let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) = if let Some(ticket_type_index) = use_ticket {
-        // Ticket Logic - no multiplier applied
-        require!(
-            (ticket_type_index as usize) < player_data.free_tickets.len(),
-            ErrorCode::InvalidParameters
-        );
-        let ticket_value = player_data.free_tickets[ticket_type_index as usize];
-        require!(amount_per_bet == ticket_value, ErrorCode::InvalidAmount);
+    let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) =
+        if let Some(ticket_type_index) = use_ticket {
+            // Ticket Logic - no multiplier applied
+            require!(
+                (ticket_type_index as usize) < player_data.free_tickets.len(),
+                ErrorCode::InvalidParameters
+            );
+            let ticket_value = player_data.free_tickets[ticket_type_index as usize];
+            require!(amount_per_bet == ticket_value, ErrorCode::InvalidAmount);
 
-        require!(
-            player_data.free_tickets_remaining[ticket_type_index as usize] >= num_bets,
-            ErrorCode::InsufficientFunds
-        );
+            require!(
+                player_data.free_tickets_remaining[ticket_type_index as usize] >= num_bets,
+                ErrorCode::InsufficientFunds
+            );
 
-        // Validate total points limit
-        let total_points = amount_per_bet * num_bets;
-        validate_points_percentage_limit(
-            game_session.total_points_bets,
-            game_session.total_sol_bets,
-            total_points,
-        )?;
+            // Validate total points limit
+            let total_points = amount_per_bet * num_bets;
+            validate_points_percentage_limit(
+                game_session.total_points_bets,
+                game_session.total_sol_bets,
+                total_points,
+            )?;
 
-        // Deduct tickets
-        player_data.free_tickets_remaining[ticket_type_index as usize] -= num_bets;
-        msg!(
-            "     Deducted {} tickets of tier {}",
-            num_bets,
-            ticket_type_index
-        );
+            // Deduct tickets
+            player_data.free_tickets_remaining[ticket_type_index as usize] -= num_bets;
+            msg!(
+                "     Deducted {} tickets of tier {}",
+                num_bets,
+                ticket_type_index
+            );
 
-        (0, 0, amount_per_bet, amount_per_bet) // wgtd_points = points for tickets
-    } else {
-        // SOL Logic - apply multiplier for wgtd_points
-        require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
-        let (net, fee) = handle_fee(
-            amount_per_bet,
-            global_config.sol_fee_config.protocol_fee_pct as u64,
-        )?;
+            (0, 0, amount_per_bet, amount_per_bet) // wgtd_points = points for tickets
+        } else {
+            // SOL Logic - apply multiplier for wgtd_points
+            require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
+            let (net, fee) = handle_fee(
+                amount_per_bet,
+                global_config.sol_fee_config.protocol_fee_pct as u64,
+            )?;
 
-        // Split fee
-        let stakers_fee = fee * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
-        let protocol_fee = fee - stakers_fee;
+            // Split fee
+            let stakers_fee = fee * global_config.sol_fee_config.stakers_pct as u64 / M_HUNDRED;
+            let protocol_fee = fee - stakers_fee;
 
-        // Accumulate totals for transfer
-        total_stakers_fee = stakers_fee * num_bets;
-        total_protocol_fee = protocol_fee * num_bets;
-        total_net_to_pot = net * num_bets;
+            // Accumulate totals for transfer
+            total_stakers_fee = stakers_fee * num_bets;
+            total_protocol_fee = protocol_fee * num_bets;
+            total_net_to_pot = net * num_bets;
 
-        // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
-        let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
-        (net, fee, net, wgtd)
-    };
+            // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
+            let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
+            (net, fee, net, wgtd)
+        };
 
     // Perform Bulk Transfers
     let do_transfer = |to: &AccountInfo<'info>, amount: u64| -> Result<()> {
@@ -1639,9 +1723,11 @@ fn internal_process_bets<'info>(
         if let Some(mutation_type) = mutation_result.mutation_type {
             // Evolution: only 1 per faction per round. Power/Trait: unlimited
             let is_evolution = matches!(mutation_type, MutationType::Evolution);
-            let can_apply = !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
+            let can_apply =
+                !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
 
-            player_data.active_multiplier = player_data.active_multiplier + mutation_result.multiplier_increase;
+            player_data.active_multiplier =
+                player_data.active_multiplier + mutation_result.multiplier_increase;
 
             if can_apply {
                 user_game_bet.mutation_type = match mutation_type {
@@ -1662,7 +1748,11 @@ fn internal_process_bets<'info>(
                     xp_gained: mutation_result.xp_gained,
                 });
 
-                msg!("🧬 Mutation! Type: {}, Mult: {}", user_game_bet.mutation_type, player_data.active_multiplier);
+                msg!(
+                    "🧬 Mutation! Type: {}, Mult: {}",
+                    user_game_bet.mutation_type,
+                    player_data.active_multiplier
+                );
             }
         }
 
@@ -2528,13 +2618,22 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
 
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
-    require!(nft_owner == ctx.accounts.user.key(), ErrorCode::NftNotOwnedByUser);
+    require!(
+        nft_owner == ctx.accounts.user.key(),
+        ErrorCode::NftNotOwnedByUser
+    );
 
     // Verify doge is not already incubated (staked)
-    require!(doge_metadata.incubated_player_data == Pubkey::default(), ErrorCode::DogeAlreadyAtGuard);
+    require!(
+        doge_metadata.incubated_player_data == Pubkey::default(),
+        ErrorCode::DogeAlreadyAtGuard
+    );
 
     // Verify no doge currently in gameplay
-    require!(player_data.gameplay_doge == Pubkey::default(), ErrorCode::InvalidParameters);
+    require!(
+        player_data.gameplay_doge == Pubkey::default(),
+        ErrorCode::InvalidParameters
+    );
 
     // Verify faction matches
     require!(
@@ -2546,7 +2645,11 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     msg!("🔒 Transferring doge to custody PDA for gameplay");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.doge_asset.to_account_info(),
-        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
+        ctx.accounts
+            .doge_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.doge_custody_pda.to_account_info(),
@@ -2570,7 +2673,12 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
 
     let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
     msg!("✅ Doge {} now active for gameplay", doge_mint);
-    msg!("   Multiplier: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
+    msg!(
+        "   Multiplier: {}, Gen: {}, XP: {}",
+        doge_metadata.multiplier,
+        gen,
+        doge_metadata.xp
+    );
     msg!("   Faction doges playing: {}", faction_state.doges_playing);
 
     emit!(DogeUsedForGameplay {
@@ -2596,13 +2704,22 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
 
     // Verify NFT is in custody PDA
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
-    require!(nft_owner == ctx.accounts.doge_custody_pda.key(), ErrorCode::DogeNotAtGuard);
+    require!(
+        nft_owner == ctx.accounts.doge_custody_pda.key(),
+        ErrorCode::DogeNotAtGuard
+    );
 
     // Verify this is the player's gameplay doge
-    require!(player_data.gameplay_doge == doge_mint, ErrorCode::InvalidParameters);
+    require!(
+        player_data.gameplay_doge == doge_mint,
+        ErrorCode::InvalidParameters
+    );
 
     // Verify doge metadata matches player
-    require!(doge_metadata.incubated_player_data == player_data.owner, ErrorCode::Unauthorized);
+    require!(
+        doge_metadata.incubated_player_data == player_data.owner,
+        ErrorCode::Unauthorized
+    );
 
     // Transfer NFT back to user
     msg!("🔓 Transferring doge back to user");
@@ -2611,8 +2728,12 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.doge_asset.to_account_info(),
-        ctx.accounts.doge_collection.as_ref().map(|c| c.to_account_info()).as_ref(),
-        &ctx.accounts.user.to_account_info(),             // Payer (User pays) 
+        ctx.accounts
+            .doge_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
+        &ctx.accounts.user.to_account_info(), // Payer (User pays)
         &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
@@ -2622,13 +2743,21 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     // Sync cached data back to doge metadata before withdrawal
     // Note: generation is stored in DNA bits 4-6
     msg!("   Syncing gameplay progress to doge...");
-    require!( doge_metadata.dna == player_data.gameplay_doge_dna || player_data.gameplay_doge_xp > 0, ErrorCode::ClaimPendingRoundRewards);
+    require!(
+        doge_metadata.dna == player_data.gameplay_doge_dna || player_data.gameplay_doge_xp > 0,
+        ErrorCode::ClaimPendingRoundRewards
+    );
     doge_metadata.dna = player_data.gameplay_doge_dna;
     doge_metadata.xp = player_data.gameplay_doge_xp;
     doge_metadata.multiplier = player_data.active_multiplier;
 
     let gen = crate::genescience::get_evolution_stage(&doge_metadata.dna);
-    msg!("   Final stats - Mult: {}, Gen: {}, XP: {}", doge_metadata.multiplier, gen, doge_metadata.xp);
+    msg!(
+        "   Final stats - Mult: {}, Gen: {}, XP: {}",
+        doge_metadata.multiplier,
+        gen,
+        doge_metadata.xp
+    );
 
     // Clear player data gameplay fields
     player_data.gameplay_doge = Pubkey::default();

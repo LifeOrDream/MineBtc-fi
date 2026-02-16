@@ -160,16 +160,16 @@ pub fn int_stake_minebtc(
     msg!("🆕 Creating new position {}", position_index);
     // Initialize new position
     helper::init_position(
-            user_position,
-            0, // position_type
-            player_data.faction_id,
-            position_index,
-            actual_amount,
-            weighted_amount,
-            lockup_duration,
-            current_ts,
-            multiplier,
-        )?;
+        user_position,
+        0, // position_type
+        player_data.faction_id,
+        position_index,
+        actual_amount,
+        weighted_amount,
+        lockup_duration,
+        current_ts,
+        multiplier,
+    )?;
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
@@ -347,7 +347,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
         // Charge emergency tax if any penalty
         if penalty_amount > 0 {
-            // Charge emergency tax: 50% to burn 
+            // Charge emergency tax: 50% to burn
             helper::charge_emergency_tax(
                 &ctx.accounts.minebtc_custodian.to_account_info(),
                 &ctx.accounts.minebtc_custodian_authority.to_account_info(),
@@ -368,7 +368,10 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         return_amount = return_amount - 1;
         // Get and print custodian balance before transfer
         let custodian_balance = ctx.accounts.minebtc_custodian.amount;
-        msg!("💱 Custodian balance before transfer: {} MINE_BTC tokens", custodian_balance);
+        msg!(
+            "💱 Custodian balance before transfer: {} MINE_BTC tokens",
+            custodian_balance
+        );
         msg!("💱 Transferring {} MINE_BTC tokens to user", return_amount);
 
         // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
@@ -545,16 +548,16 @@ pub fn int_stake_lp_tokens(
     msg!("🆕 Creating new position {}", position_index);
     // Initialize new position
     helper::init_position(
-            user_position,
-            1, // position_type
-            player_data.faction_id,
-            position_index,
-            actual_amount,
-            weighted_amount,
-            lockup_duration,
-            current_ts,
-            multiplier,
-        )?;
+        user_position,
+        1, // position_type
+        player_data.faction_id,
+        position_index,
+        actual_amount,
+        weighted_amount,
+        lockup_duration,
+        current_ts,
+        multiplier,
+    )?;
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
@@ -887,7 +890,6 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
     )?;
     msg!("     ✓ SOL rewards transferred to user");
 
-
     // Reset pending rewards
     player_data.pending_sol_rewards = 0;
 
@@ -948,13 +950,19 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         // Referrer gets 3% of user's base claimable amount
         let reward = (base_claimable_amount * REFERRAL_REWARD_PCT) / 100;
         msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
-        msg!("   Referral reward to referrer (3%): {} minebtc", reward as f64 / 1e6);
+        msg!(
+            "   Referral reward to referrer (3%): {} minebtc",
+            reward as f64 / 1e6
+        );
 
         // Add reward to referrer's pending minebtc rewards
         if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
             referrer_rewards.pending_minebtc_rewards += reward;
             referrer_rewards.total_minebtc_earned += reward;
-            msg!("     Added {} minebtc to referrer's rewards", reward as f64 / 1e6);
+            msg!(
+                "     Added {} minebtc to referrer's rewards",
+                reward as f64 / 1e6
+            );
         }
         (bonus, reward)
     } else {
@@ -1003,14 +1011,17 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Deduct user's base pending rewards + referral bonus + referral reward (all come from pool)
     let base_pending = player_data.pending_minebtc_rewards;
     let total_deducted = base_pending + referral_bonus + referral_reward;
-    unrefined_minebtc.total_minebtc_claimable =
-        unrefined_minebtc.total_minebtc_claimable.saturating_sub(total_deducted);
+    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
+        .total_minebtc_claimable
+        .saturating_sub(total_deducted);
     player_data.pending_minebtc_rewards = 0;
-    msg!("   Deducted {} minebtc from total claimable (base: {}, bonus: {}, referrer: {})",
+    msg!(
+        "   Deducted {} minebtc from total claimable (base: {}, bonus: {}, referrer: {})",
         total_deducted as f64 / 1e6,
         base_pending as f64 / 1e6,
         referral_bonus as f64 / 1e6,
-        referral_reward as f64 / 1e6);
+        referral_reward as f64 / 1e6
+    );
 
     // Update total tokens distributed
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
@@ -1060,12 +1071,14 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         referrer: referrer_pubkey,
         timestamp: Clock::get()?.unix_timestamp,
     });
-    
-    msg!("✅ [withdraw_dbtc_rewards] Withdrew {} MineBTC to {} (bonus: {}, referrer reward: {})", 
-        claimable_by_user as f64 / 1e6, 
+
+    msg!(
+        "✅ [withdraw_dbtc_rewards] Withdrew {} MineBTC to {} (bonus: {}, referrer reward: {})",
+        claimable_by_user as f64 / 1e6,
         player_owner,
         referral_bonus as f64 / 1e6,
-        referral_reward as f64 / 1e6);
+        referral_reward as f64 / 1e6
+    );
 
     Ok(())
 }
@@ -1082,16 +1095,12 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
 
     let pending_minebtc = referral_rewards.pending_minebtc_rewards;
 
-    require!(
-        pending_minebtc > 0,
-        ErrorCode::InsufficientFunds
-    );
+    require!(pending_minebtc > 0, ErrorCode::InsufficientFunds);
 
     msg!(
         "     Pending MineBtc: {} minebtc",
         pending_minebtc as f64 / 1e6
     );
- 
 
     // Transfer MineBtc if any
     if pending_minebtc > 0 {

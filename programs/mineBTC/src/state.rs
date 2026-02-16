@@ -391,7 +391,7 @@ pub struct TicketTier {
 }
 
 impl TicketTier {
-    pub const LEN: usize = 8 + 2; // ticket_value 
+    pub const LEN: usize = 8 + 2; // ticket_value
 }
 
 /// Global doge configuration
@@ -420,7 +420,7 @@ pub struct DogeConfig {
     /// Available ticket tier configs users can choose when minting (max 4 options)
     /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
     pub ticket_tiers: Vec<TicketTier>,
-    
+
     /// Whether breeding is currently allowed
     pub breeding_allowed: bool,
     /// Base price for breeding cost bonding curve (in lamports)
@@ -443,7 +443,7 @@ impl DogeConfig {
         4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN) + // ticket_tiers
         1 +     // breeding_allowed
         8 +     // breed_base_price
-        8;      // breed_curve_a
+        8; // breed_curve_a
 }
 
 // ========================================================================================
@@ -893,7 +893,6 @@ impl PlayerData {
 /// Individual MineBtc staking position
 #[account]
 pub struct StakedPosition {
-
     pub position_type: u8, // 0 = minebtc, 1 = lp
 
     pub position_index: u8,
@@ -986,10 +985,10 @@ pub struct DogeMetadata {
 
 impl DogeMetadata {
     pub const MAX_BREED_COUNT: u8 = 5;
-    
+
     /// Cooldown times in seconds: [0h, 24h, 72h, 120h, 336h]
     pub const COOLDOWNS: [i64; 5] = [0, 86400, 259200, 432000, 1209600];
-    
+
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // mint
         32 +    // mom
@@ -1004,7 +1003,7 @@ impl DogeMetadata {
         32 +    // incubated_player_data
         8 +     // last_update_ts
         4 +     // xp
-        1;      // bump
+        1; // bump
 }
 
 // ========================================================================================
@@ -1105,7 +1104,7 @@ impl UserGameBet {
         8 +     // total_fee
         32 +     // gameplay_doge
         1 +     // bump
-        1;      // mutation_type
+        1; // mutation_type
 }
 
 /// Autominer configuration for blocks
