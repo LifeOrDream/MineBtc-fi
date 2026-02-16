@@ -4,6 +4,17 @@
     "timestamp": "2025-12-16T13:21:59.185Z",
     "cluster": "mainnet"
   },
+  "game_programs_upgrade_1": {
+    "timestamp": "2026-02-12T00:00:00.000Z",
+    "cluster": "mainnet",
+    "slot": 400549066,
+    "idl_account": "GeebYrjrhprgKc4dsgM1SA7ijxz5zMG6wcXoy4h4B8tz",
+    "metadata_idl_account": "E5dYyXnhaLr8eanq2NqFR3F1dqQp5W3qdjuttEvXFiWc",
+    "security_metadata_account": "HEqG2K6VkGWtdvGRzCBvsDbBrJipT13dKbQXzHeUGhCk",
+    "domains_metadata_account": "J2PX9FL9rTtiqzE9J4CvMijue1boaFGRP3YKiF22dupD",
+    "binary_size": 2222272,
+    "changes": "genescience overhaul, staking logic updates, tax distribution changes, economy instruction modifications, update_doge_max_supply admin function"
+  },
   "dbtc_mint_created": {
     "mint_address": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
     "mint_authority": null,
