@@ -264,6 +264,16 @@ pub mod minebtc {
         admin::update_doge_config_internal(ctx, base_price, curve_a)
     }
 
+    /// Update max supply for Doge NFTs (admin only)
+    ///
+    /// New supply must be >= doges_minted.
+    pub fn update_doge_max_supply(
+        ctx: Context<UpdateDogeConfig>,
+        new_max_supply: u64,
+    ) -> Result<()> {
+        admin::update_doge_max_supply_internal(ctx, new_max_supply)
+    }
+
     /// Create Doge collection with program PDA as authority (admin only)
     ///
     /// Creates a new Metaplex Core collection for Doge NFTs.

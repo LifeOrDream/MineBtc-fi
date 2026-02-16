@@ -820,6 +820,25 @@ pub fn update_doge_config_internal(
     Ok(())
 }
 
+/// Update max supply for Doge NFTs (admin only)
+///
+/// Can only increase or decrease supply as long as it doesn't go below doges_minted.
+///
+/// # Parameters
+/// - `new_max_supply`: New maximum supply for Doge NFTs
+pub fn update_doge_max_supply_internal(
+    ctx: Context<UpdateDogeConfig>,
+    new_max_supply: u64,
+) -> Result<()> {
+    let doges_config = &mut ctx.accounts.doges_config;
+    require!(
+        new_max_supply >= doges_config.doges_minted,
+        ErrorCode::InvalidParameters
+    );
+    doges_config.max_supply = new_max_supply;
+    Ok(())
+}
+
 /// Update breeding config (admin only)
 pub fn update_breeding_config_internal(
     ctx: Context<UpdateDogeConfig>,
