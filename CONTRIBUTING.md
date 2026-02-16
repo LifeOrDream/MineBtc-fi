@@ -55,4 +55,4 @@ Please report them via email to gm@minebtc.fun. See [SECURITY.md](SECURITY.md) f
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
+By contributing, you agree that your contributions will be licensed under the [Business Source License 1.1](LICENSE).

@@ -3,7 +3,7 @@ name = "minebtc"
 version = "1.0.0"
 description = "MineBTC — Faction warfare game on Solana with betting, staking, NFTs, and deflationary tokenomics"
 edition = "2021"
-license = "Apache-2.0"
+license = "BUSL-1.1"
 homepage = "https://minebtc.fun"
 repository = "https://github.com/LifeOrDream/MineBtc-fi"
 
