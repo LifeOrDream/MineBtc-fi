@@ -1441,7 +1441,7 @@ fn internal_process_bets<'info>(
     let mut total_protocol_fee = 0u64;
     let mut total_net_to_pot = 0u64;
 
-    // Get multiplier (default 100 = 1x if not set)
+    // Get multiplier (default 1000 = 1x if not set)
     let active_mult = if player_data.active_multiplier == 0 {
         BASE_MULTIPLIER as u64
     } else {
@@ -1449,7 +1449,7 @@ fn internal_process_bets<'info>(
     };
 
     // Calculate amounts per bet (uniform across batch)
-    // wgtd_points: points * multiplier / 100 for SOL bets, else points (tickets)
+    // wgtd_points: points * multiplier / BASE_MULTIPLIER for SOL bets, else points (tickets)
     let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) =
         if let Some(ticket_type_index) = use_ticket {
             // Ticket Logic - no multiplier applied

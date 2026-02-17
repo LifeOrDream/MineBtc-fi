@@ -700,7 +700,7 @@ pub struct GameSession {
     pub user_block_indexes: Vec<u64>,
     pub sol_bets_indexes: Vec<u64>,
     pub points_bets_indexes: Vec<u64>,
-    /// Weighted points per block (points * active_multiplier / 100 for SOL bets, else points) - for dogeBTC rewards
+    /// Weighted points per block (points * active_multiplier / BASE_MULTIPLIER for SOL bets, else points) - for dogeBTC rewards
     pub wgtd_points_bets_indexes: Vec<u64>,
 
     /// The winning block and faction ID for this round (0-indexed: 0-23), and the 2nd block with same faction ID
@@ -825,8 +825,8 @@ pub struct PlayerData {
     /// Staked dragon doges (max 5 doges)
     /// Stores the mint addresses of staked doges
     pub staked_doges: Vec<Pubkey>,
-    /// Current doge multiplier (100 = 1x, 150 = 1.5x, etc.)
-    /// Calculated based on number of staked doges
+    /// Current doge multiplier (1000 = 1x, 1500 = 1.5x, etc.)
+    /// Calculated based on number of staked doges (same scale as BASE_MULTIPLIER)
     pub doge_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
@@ -839,7 +839,7 @@ pub struct PlayerData {
 
     /// Doge currently being used in gameplay (Pubkey::default() if none)
     pub gameplay_doge: Pubkey,
-    /// Active gameplay multiplier (100 = 1x, set from gameplay doge's multiplier, reset to 100 on withdraw)
+    /// Active gameplay multiplier (1000 = 1x, set from gameplay doge's multiplier, reset to BASE_MULTIPLIER on withdraw)
     pub active_multiplier: u32,
     /// Cached DNA of gameplay doge (for mutation calculations without loading DogeMetadata)
     pub gameplay_doge_dna: [u8; 32],
@@ -967,7 +967,7 @@ pub struct DogeMetadata {
     pub created_at: i64,
     /// Faction ID (country) that the doge belongs to (matches minebtc faction)
     pub faction_id: u8,
-    /// Multiplier for this doge (basis points, e.g., 150 = 1.5x)
+    /// Multiplier for this doge (1000 = 1x, same scale as BASE_MULTIPLIER)
     pub multiplier: u32,
     /// dogeBTC accumulated which can be claimed by sending this doge to heaven
     pub accumulated_val: u64,
