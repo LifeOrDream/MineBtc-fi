@@ -59,7 +59,6 @@ pub struct CreatorInput {
 /// - MineBtcMining account
 /// - SOL treasury PDA
 pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
-
     let global_config = &mut ctx.accounts.global_config;
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
@@ -237,7 +236,6 @@ pub fn add_faction_internal(
     faction_name: String,
     faction_id: u8,
 ) -> Result<()> {
-
     let global_config = &mut ctx.accounts.global_config;
     let faction_state = &mut ctx.accounts.faction_state;
 
@@ -604,7 +602,6 @@ pub fn initialize_doge_config_internal(
     curve_a: u64,
     max_supply: u64,
 ) -> Result<()> {
-
     let doges_config = &mut ctx.accounts.doges_config;
 
     doges_config.bump = ctx.bumps.doges_config;
@@ -621,7 +618,6 @@ pub fn initialize_doge_config_internal(
 
     Ok(())
 }
-
 
 /// Switch doge mining state (toggle is_active) (admin only)
 ///
@@ -680,7 +676,6 @@ pub fn create_doge_collection_internal(
 
     Ok(())
 }
-
 
 /// Initialize royalties on the Doge collection (admin only)
 ///
@@ -789,15 +784,13 @@ pub fn add_ticket_tier_config_int(
 
     // Ensure vector is large enough
     while doges_config.ticket_tiers.len() <= tier_index {
-        doges_config.ticket_tiers.push(TicketTier {
-            ticket_value: 0
-        });
+        doges_config
+            .ticket_tiers
+            .push(TicketTier { ticket_value: 0 });
     }
 
     // Update or add ticket tier
-    doges_config.ticket_tiers[tier_index] = TicketTier {
-        ticket_value,
-    };
+    doges_config.ticket_tiers[tier_index] = TicketTier { ticket_value };
 
     Ok(())
 }
@@ -846,7 +839,6 @@ pub fn update_breeding_config_internal(
     breed_base_price: u64,
     breed_curve_a: u64,
 ) -> Result<()> {
-
     let doges_config = &mut ctx.accounts.doges_config;
     doges_config.breeding_allowed = breeding_allowed;
     doges_config.breed_base_price = breed_base_price;
@@ -906,7 +898,6 @@ pub fn initialize_game_state_internal(
 /// # Parameters
 /// - `bot_pubkey`: Public key of the bot to whitelist
 pub fn add_cranker_bot_internal(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-
     let global_game_state = &mut ctx.accounts.global_game_state;
 
     // Check if bot is already whitelisted

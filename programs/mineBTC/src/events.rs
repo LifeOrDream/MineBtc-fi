@@ -4,7 +4,6 @@ use anchor_lang::prelude::*;
 // User management events
 // ------------------------------
 
- 
 #[event]
 pub struct ReferralRewardsClaimed {
     pub referrer: Pubkey,
@@ -88,7 +87,7 @@ pub struct LpTokensBurned {
     pub total_lp_burnt: u64,
     pub minebtc_amount_added: u64,
     pub sol_amount_added: u64,
-    pub lp_token_price: u64,    // LP token price in SOL (9 decimals)
+    pub lp_token_price: u64, // LP token price in SOL (9 decimals)
     pub timestamp: i64,
 }
 
@@ -111,7 +110,7 @@ pub struct DogeMinted {
     pub faction_id: u8, // Faction/country the doge belongs to
     pub price: u64,
     pub ticket_tier: u64,
-    pub ticket_count: u64
+    pub ticket_count: u64,
 }
 
 #[event]
@@ -276,7 +275,7 @@ pub struct DbtcRewardsClaimed {
     pub faction_id: u8,
     pub minebtc_amount: u64,
     pub refining_fee: u64,
-    pub referral_bonus: u64, // 1% bonus to user if they have referral code
+    pub referral_bonus: u64,  // 1% bonus to user if they have referral code
     pub referral_reward: u64, // 3% reward to referrer
     pub referrer: Option<Pubkey>,
     pub timestamp: i64,
@@ -338,7 +337,6 @@ pub struct BetsPlaced {
     pub timestamp: i64,
 }
 
-
 #[event]
 pub struct DogeSynced {
     pub doge_mint: Pubkey,
@@ -349,7 +347,6 @@ pub struct DogeSynced {
     pub accumulated_val: u64,
     pub accum_pct: u32,
 }
-
 
 /// Event emitted when a user claims rewards for a round
 #[event]
@@ -415,7 +412,6 @@ pub struct AutominerReloaded {
     pub timestamp: i64,
 }
 
- 
 // ========================================================================================
 // =============================== GAME ROUND EVENTS =====================================
 // ========================================================================================

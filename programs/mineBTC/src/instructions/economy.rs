@@ -963,12 +963,12 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     let sol_consumed = total_sol_for_lp - sol_balance_after;
     msg!("   💰 SOL consumed: {}", sol_consumed);
 
-// ✅ RIGHT: Reloads fresh data from the account info
-let available_minebtc_after = {
-    let account_info = ctx.accounts.minebtc_token_account.to_account_info();
-    let data = account_info.try_borrow_data()?;
-    anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
-};
+    // ✅ RIGHT: Reloads fresh data from the account info
+    let available_minebtc_after = {
+        let account_info = ctx.accounts.minebtc_token_account.to_account_info();
+        let data = account_info.try_borrow_data()?;
+        anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
+    };
     msg!("   💰 MINEBTC balance after: {}", available_minebtc_after);
     msg!("   💰 MINEBTC balance before: {}", available_minebtc);
     let minebtc_consumed = available_minebtc - available_minebtc_after;

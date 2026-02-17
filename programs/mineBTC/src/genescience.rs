@@ -27,9 +27,9 @@ use crate::state::{BASE_MULTIPLIER, MAX_BASE_CHANCE};
 
 const FACTION_TYPE_BITS: u8 = 4;
 const EVOLUTION_STAGE_BITS: u8 = 3;
-const APPEARANCE_TRAIT_BITS: u8 = 5;  // 0-31 values
-const POWER_TRAIT_BITS: u8 = 4;       // 0-15 values
-const BREED_BITS: u8 = 2;             // 0-3 breed values per faction
+const APPEARANCE_TRAIT_BITS: u8 = 5; // 0-31 values
+const POWER_TRAIT_BITS: u8 = 4; // 0-15 values
+const BREED_BITS: u8 = 2; // 0-3 breed values per faction
 
 const APPEARANCE_OFFSET: u8 = FACTION_TYPE_BITS + EVOLUTION_STAGE_BITS; // 7
 const COMBAT_OFFSET: u8 = APPEARANCE_OFFSET + (21 * APPEARANCE_TRAIT_BITS); // 7 + 105 = 112
@@ -37,11 +37,11 @@ const BREED_OFFSET: u8 = COMBAT_OFFSET + (15 * POWER_TRAIT_BITS); // 112 + 60 = 
 
 // const APPEARANCE_GROUPS: usize = 7;
 // const APPEARANCE_TRAITS_PER_GROUP: usize = 3;  // Dominant, Recessive, Minor Recessive
-const APPEARANCE_TOTAL_TRAITS: usize = 21;     // 7 × 3
+const APPEARANCE_TOTAL_TRAITS: usize = 21; // 7 × 3
 
 // const COMBAT_GROUPS: usize = 5;
 // const COMBAT_TRAITS_PER_GROUP: usize = 3;
-const COMBAT_TOTAL_TRAITS: usize = 15;         // 5 × 3
+const COMBAT_TOTAL_TRAITS: usize = 15; // 5 × 3
 
 // const EVOLUTION_STAGES: u8 = 8;
 const APPEARANCE_MAX: u8 = 31;
@@ -58,7 +58,9 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
     }
 
     let items_u128 = items_minted as u128;
-    let squared = items_u128.checked_mul(items_u128).ok_or(ErrorCode::ArithmeticOverflow)?;
+    let squared = items_u128
+        .checked_mul(items_u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     let mut low: u128 = 1;
     let mut high = squared.min(1_000_000_000_000_000_000);
@@ -66,19 +68,28 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
 
     while low <= high {
         let mid = (low + high) / 2;
-        let cube = mid.checked_mul(mid).and_then(|x| x.checked_mul(mid)).ok_or(ErrorCode::ArithmeticOverflow)?;
+        let cube = mid
+            .checked_mul(mid)
+            .and_then(|x| x.checked_mul(mid))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         if cube <= squared {
             result = mid;
             low = mid + 1;
         } else {
-            if mid == 0 { break; }
+            if mid == 0 {
+                break;
+            }
             high = mid - 1;
         }
     }
 
     let exponent_component = result.min(u64::MAX as u128) as u64;
-    let price_increase = curve_a.checked_mul(exponent_component).ok_or(ErrorCode::ArithmeticOverflow)?;
-    base_price.checked_add(price_increase).ok_or(ErrorCode::ArithmeticOverflow.into())
+    let price_increase = curve_a
+        .checked_mul(exponent_component)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    base_price
+        .checked_add(price_increase)
+        .ok_or(ErrorCode::ArithmeticOverflow.into())
 }
 
 // ========================================================================================
@@ -90,7 +101,12 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
 /// - All appearance traits: 0-9 (less than 10)
 /// - First 3 power groups (9 traits): 0-4 (less than 5)
 /// - Last 2 power groups (6 traits): 0 (locked at zero)
-pub fn generate_genesis_dna(mint_number: u64, minter: &Pubkey, slot: u64, faction_id: u8) -> Result<[u8; 32]> {
+pub fn generate_genesis_dna(
+    mint_number: u64,
+    minter: &Pubkey,
+    slot: u64,
+    faction_id: u8,
+) -> Result<[u8; 32]> {
     require!(faction_id < 16, ErrorCode::InvalidFactionId);
 
     let mut seed_data = Vec::new();
@@ -120,9 +136,15 @@ fn limit_genesis_trait_ranges(dna: &mut [u8; 32]) {
     // Appearance traits: 0-9 (less than 10)
     for i in 0..APPEARANCE_TOTAL_TRAITS {
         let val = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
-        set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, val % 10);
+        set_trait_value(
+            dna,
+            APPEARANCE_OFFSET,
+            APPEARANCE_TRAIT_BITS,
+            i as u8,
+            val % 10,
+        );
     }
-    
+
     // Power traits:
     // - First 3 groups (9 traits, indices 0-8): 0-4 (less than 5)
     // - Last 2 groups (6 traits, indices 9-14): 0 (locked)
@@ -137,8 +159,6 @@ fn limit_genesis_trait_ranges(dna: &mut [u8; 32]) {
         set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, val);
     }
 }
-
- 
 
 // ========================================================================================
 // ============================= MUTATION SYSTEM ==========================================
@@ -174,7 +194,7 @@ pub struct MutationResult {
 ///
 /// **XP Gain**: Always gained on SOL bets, scaled by bet size relative to 0.1 SOL
 /// - Base XP per 0.1 SOL = 10 XP
-/// 
+///
 /// **Multiplier Increase**: Only on Power mutation, +25 (0.25x)
 pub fn calculate_mutation_result(
     round_id: u64,
@@ -191,38 +211,56 @@ pub fn calculate_mutation_result(
     doge_mint: &Pubkey,
 ) -> MutationResult {
     msg!("🧬 Calculating mutation result...");
-    msg!("   User total bet: {} SOL, Highest round bet for faction: {} SOL", 
+    msg!(
+        "   User total bet: {} SOL, Highest round bet for faction: {} SOL",
         format!("{:.4}", user_total_bet as f64 / 1e9),
-        format!("{:.4}", highest_round_bet_for_faction as f64 / 1e9));
-    msg!("   Current multiplier: {:.3}. Gameplay doge XP: {}", current_multiplier as f64 / 1000.0, gameplay_doge_xp);
-    msg!("   Total sol bets: {} SOL, Total points bets: {}, Total wgtd points bets: {}", 
+        format!("{:.4}", highest_round_bet_for_faction as f64 / 1e9)
+    );
+    msg!(
+        "   Current multiplier: {:.3}. Gameplay doge XP: {}",
+        current_multiplier as f64 / 1000.0,
+        gameplay_doge_xp
+    );
+    msg!(
+        "   Total sol bets: {} SOL, Total points bets: {}, Total wgtd points bets: {}",
         format!("{:.4}", total_sol_bets as f64 / 1e9),
         format!("{:.4}", total_points_bets as f64 / 1e9),
-        format!("{:.4}", total_wgtd_points_bets as f64 / 1e9));
+        format!("{:.4}", total_wgtd_points_bets as f64 / 1e9)
+    );
     msg!("   Slot: {}. User key: {}", slot, user_key);
 
     // Derive generation from DNA (bits 4-6 of byte 0)
     let generation = get_evolution_stage(&gameplay_doge_dna);
-    
-    msg!("🧬 Mutation calc: bet={} SOL, gen={}, xp={}, mult={:.3}", 
-        format!("{:.4}", user_total_bet as f64 / 1e9), 
-        generation, 
-        gameplay_doge_xp, 
-        current_multiplier as f64 / 1000.0);
-    
+
+    msg!(
+        "🧬 Mutation calc: bet={} SOL, gen={}, xp={}, mult={:.3}",
+        format!("{:.4}", user_total_bet as f64 / 1e9),
+        generation,
+        gameplay_doge_xp,
+        current_multiplier as f64 / 1000.0
+    );
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 
     // XP always gained: 1 XP per 0.001 SOL, capped at 1000
     let xp_gained = ((user_total_bet as u128 * 1) / 1_000_000) as u32;
     msg!("   XP gained: {}", xp_gained);
-    
+
     if user_total_bet == 0 {
-        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_doge_dna };
+        return MutationResult {
+            mutation_type: None,
+            xp_gained,
+            multiplier_increase: 0,
+            new_dna: gameplay_doge_dna,
+        };
     }
 
     // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio. (100% = 100,00)
-    let effective_highest = if highest_round_bet_for_faction == 0 { user_total_bet } else { highest_round_bet_for_faction };
+    let effective_highest = if highest_round_bet_for_faction == 0 {
+        user_total_bet
+    } else {
+        highest_round_bet_for_faction
+    };
     let bet_strength = ((user_total_bet * 10000) / effective_highest).min(10000);
     msg!("   Bet strength: {:.2}%", bet_strength as f64 / 100.0);
 
@@ -238,33 +276,51 @@ pub fn calculate_mutation_result(
     // scale: 3000 * (0.0-1.0) * (0.14-1.0)
     // Final Chance = 30% * bet_strength * mult_factor / 100M
     let final_chance_bps = (MAX_BASE_CHANCE * bet_strength * (mult_factor as u64)) / 100_000_000;
-    msg!("   Final chance: {:.2}%", final_chance_bps  as f64 / 100.0);
+    msg!("   Final chance: {:.2}%", final_chance_bps as f64 / 100.0);
 
     // --- STEP 2: ROLL THE DICE ---
 
     // Roll the dice
     let total_combined = total_sol_bets + total_points_bets + total_wgtd_points_bets;
-    let seed = keccak::hashv(&[&slot.to_le_bytes(), &total_sol_bets.to_le_bytes(), &total_combined.to_le_bytes(), user_key.as_ref(), &gameplay_doge_dna]).to_bytes();
+    let seed = keccak::hashv(&[
+        &slot.to_le_bytes(),
+        &total_sol_bets.to_le_bytes(),
+        &total_combined.to_le_bytes(),
+        user_key.as_ref(),
+        &gameplay_doge_dna,
+    ])
+    .to_bytes();
 
     // Roll 1: Did we hit the mutation? (0-10000)
-    // Use first 2 bytes for higher precision (u16)    
+    // Use first 2 bytes for higher precision (u16)
     let roll_val = u16::from_le_bytes([seed[0], seed[1]]) as u64;
     let roll_normalized = (roll_val * 10_000) / 65535;
     msg!("   Roll normalized: {:.2}%", roll_normalized as f64 / 100.0);
 
     if roll_normalized >= final_chance_bps {
-        return MutationResult { mutation_type: None, xp_gained, multiplier_increase: 0, new_dna: gameplay_doge_dna };
+        return MutationResult {
+            mutation_type: None,
+            xp_gained,
+            multiplier_increase: 0,
+            new_dna: gameplay_doge_dna,
+        };
     }
     msg!("   Mutation triggered!!!");
 
     // Mutation triggered - determine type
-    let type_roll = seed[2];                            // random dice roll for the type of mutation
-    let evo_chance = 10 / (generation as u64 + 1);     // base percentage chance (10%) for an Evolution to happen.
-    let evo_threshold = (255 * evo_chance) / 100;      // This is the "cutoff point" on the 0-255 scale for Evolution.
+    let type_roll = seed[2]; // random dice roll for the type of mutation
+    let evo_chance = 10 / (generation as u64 + 1); // base percentage chance (10%) for an Evolution to happen.
+    let evo_threshold = (255 * evo_chance) / 100; // This is the "cutoff point" on the 0-255 scale for Evolution.
 
     // Power threshold is the "cutoff point" on the 0-255 scale for Power. (30% on top of the Evolution threshold)
     let power_threshold = evo_threshold + ((255 * 30) / 100);
-    msg!( "Type roll: {}, Evo Chance: {}, Evo threshold: {}, Power threshold: {}", type_roll, evo_chance, evo_threshold, power_threshold);
+    msg!(
+        "Type roll: {}, Evo Chance: {}, Evo threshold: {}, Power threshold: {}",
+        type_roll,
+        evo_chance,
+        evo_threshold,
+        power_threshold
+    );
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
         evolve_stage(round_id, &mut gameplay_doge_dna, &seed, doge_mint);
@@ -280,10 +336,19 @@ pub fn calculate_mutation_result(
 
     // XP Bonus: use % of current XP to boost multiplier
     let xp_roll = seed[3] as u64;
-    let (min_pct, max_pct) = if m_type == MutationType::Evolution { (75, 100) } else { (25, 75) };
-    let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);    
+    let (min_pct, max_pct) = if m_type == MutationType::Evolution {
+        (75, 100)
+    } else {
+        (25, 75)
+    };
+    let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
     let xp_mult_boost = (gameplay_doge_xp as u64 * efficiency_pct) / 100;
-    msg!("   XP roll: {}, Efficiency: {}%, XP mult boost: {}", xp_roll, efficiency_pct, xp_mult_boost);
+    msg!(
+        "   XP roll: {}, Efficiency: {}%, XP mult boost: {}",
+        xp_roll,
+        efficiency_pct,
+        xp_mult_boost
+    );
 
     MutationResult {
         mutation_type: Some(m_type),
@@ -293,14 +358,17 @@ pub fn calculate_mutation_result(
     }
 }
 
-
- 
 // ========================================================================================
 // ============================= TRAIT MUTATION FUNCTIONS =================================
 // ========================================================================================
 
 /// Evolve to next Generation with guaranteed mutations
-pub fn evolve_stage(round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_mint: &Pubkey) -> (u8, u8, u8, u8, u8, u8, u8) {
+pub fn evolve_stage(
+    round_id: u64,
+    dna: &mut [u8; 32],
+    seed: &[u8],
+    doge_mint: &Pubkey,
+) -> (u8, u8, u8, u8, u8, u8, u8) {
     let current_stage = (dna[0] >> 4) & 0x07;
     if current_stage >= 7 {
         return (current_stage, 0, 0, 0, 0, 0, 0);
@@ -327,13 +395,26 @@ pub fn evolve_stage(round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_mint: &
         power_new_val: p_new_val,
     });
 
-    (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val)
+    (
+        new_stage,
+        m_index,
+        m_current_val,
+        m_new_val,
+        p_index,
+        p_current_val,
+        p_new_val,
+    )
 }
 
 /// Mutate a random visual trait (+1 to +3, cap at 31) with event emission
-pub fn mutate_visual_trait(round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_mint: &Pubkey) -> (u8, u8, u8) {
+pub fn mutate_visual_trait(
+    round_id: u64,
+    dna: &mut [u8; 32],
+    seed: &[u8],
+    doge_mint: &Pubkey,
+) -> (u8, u8, u8) {
     let (trait_index, current_val, new_val) = mutate_visual_trait_internal(dna, seed);
-    
+
     emit!(DogeVisualMutation {
         round_id,
         doge_mint: *doge_mint,
@@ -341,7 +422,7 @@ pub fn mutate_visual_trait(round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_
         old_val: current_val,
         new_val,
     });
-    
+
     (trait_index, current_val, new_val)
 }
 
@@ -349,21 +430,42 @@ pub fn mutate_visual_trait(round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_
 fn mutate_visual_trait_internal(dna: &mut [u8; 32], seed: &[u8]) -> (u8, u8, u8) {
     let hash = keccak::hash(seed).to_bytes();
     let trait_index = hash[0] as usize % APPEARANCE_TOTAL_TRAITS;
-    let current_val = get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, trait_index as u8);
+    let current_val = get_trait_value(
+        dna,
+        APPEARANCE_OFFSET,
+        APPEARANCE_TRAIT_BITS,
+        trait_index as u8,
+    );
     let increase = (hash[1] % 3) + 1;
     let new_val = (current_val + increase).min(APPEARANCE_MAX);
 
     if new_val > current_val {
-        set_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, trait_index as u8, new_val);
-        msg!("🎨 Visual: Trait #{} {} -> {}", trait_index, current_val, new_val);
+        set_trait_value(
+            dna,
+            APPEARANCE_OFFSET,
+            APPEARANCE_TRAIT_BITS,
+            trait_index as u8,
+            new_val,
+        );
+        msg!(
+            "🎨 Visual: Trait #{} {} -> {}",
+            trait_index,
+            current_val,
+            new_val
+        );
     }
     (trait_index as u8, current_val, new_val)
 }
 
 /// Mutate a random power trait (+1 to +3, cap at 15) with event emission
-pub fn mutate_power_trait( round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_mint: &Pubkey) -> (u8, u8, u8) {
+pub fn mutate_power_trait(
+    round_id: u64,
+    dna: &mut [u8; 32],
+    seed: &[u8],
+    doge_mint: &Pubkey,
+) -> (u8, u8, u8) {
     let (trait_index, current_val, new_val) = mutate_power_trait_internal(dna, seed);
-    
+
     emit!(DogePowerMutation {
         round_id: round_id,
         doge_mint: *doge_mint,
@@ -371,7 +473,7 @@ pub fn mutate_power_trait( round_id: u64, dna: &mut [u8; 32], seed: &[u8], doge_
         old_val: current_val,
         new_val,
     });
-    
+
     (trait_index, current_val, new_val)
 }
 
@@ -384,8 +486,19 @@ fn mutate_power_trait_internal(dna: &mut [u8; 32], seed: &[u8]) -> (u8, u8, u8) 
     let new_val = (current_val + increase).min(COMBAT_MAX);
 
     if new_val > current_val {
-        set_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, trait_index as u8, new_val);
-        msg!("⚡ Power: Trait #{} {} -> {}", trait_index, current_val, new_val);
+        set_trait_value(
+            dna,
+            COMBAT_OFFSET,
+            POWER_TRAIT_BITS,
+            trait_index as u8,
+            new_val,
+        );
+        msg!(
+            "⚡ Power: Trait #{} {} -> {}",
+            trait_index,
+            current_val,
+            new_val
+        );
     }
     (trait_index as u8, current_val, new_val)
 }
@@ -395,7 +508,11 @@ fn mutate_power_trait_internal(dna: &mut [u8; 32], seed: &[u8]) -> (u8, u8, u8) 
 // ========================================================================================
 
 /// Breed two characters to create offspring
-pub fn breed_genes(parent1_dna: &[u8; 32], parent2_dna: &[u8; 32], seed: &[u8]) -> Result<[u8; 32]> {
+pub fn breed_genes(
+    parent1_dna: &[u8; 32],
+    parent2_dna: &[u8; 32],
+    seed: &[u8],
+) -> Result<[u8; 32]> {
     let hash = keccak::hash(seed).to_bytes();
     let mut offspring_dna = [0u8; 32];
 
@@ -410,12 +527,23 @@ pub fn breed_genes(parent1_dna: &[u8; 32], parent2_dna: &[u8; 32], seed: &[u8]) 
     } else {
         get_trait_value(parent2_dna, BREED_OFFSET, BREED_BITS, 0)
     };
-    set_trait_value(&mut offspring_dna, BREED_OFFSET, BREED_BITS, 0, parent_breed);
+    set_trait_value(
+        &mut offspring_dna,
+        BREED_OFFSET,
+        BREED_BITS,
+        0,
+        parent_breed,
+    );
 
     Ok(offspring_dna)
 }
 
-fn mix_appearance_traits(offspring: &mut [u8; 32], p1: &[u8; 32], p2: &[u8; 32], random: &[u8; 32]) {
+fn mix_appearance_traits(
+    offspring: &mut [u8; 32],
+    p1: &[u8; 32],
+    p2: &[u8; 32],
+    random: &[u8; 32],
+) {
     for i in 0..APPEARANCE_TOTAL_TRAITS {
         let t1 = get_trait_value(p1, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
         let t2 = get_trait_value(p2, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
@@ -423,12 +551,24 @@ fn mix_appearance_traits(offspring: &mut [u8; 32], p1: &[u8; 32], p2: &[u8; 32],
         let rand = random[(i + 16) % 32];
 
         let selected = match method {
-            0 => if rand % 2 == 0 { t1 } else { t2 },
+            0 => {
+                if rand % 2 == 0 {
+                    t1
+                } else {
+                    t2
+                }
+            }
             1 => ((t1 as u16 + t2 as u16) / 2) as u8,
             2 => enhance_trait(t1, t2, rand, APPEARANCE_MAX),
             _ => mutate_trait_value(t1.max(t2), rand, APPEARANCE_MAX),
         };
-        set_trait_value(offspring, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8, selected);
+        set_trait_value(
+            offspring,
+            APPEARANCE_OFFSET,
+            APPEARANCE_TRAIT_BITS,
+            i as u8,
+            selected,
+        );
     }
 }
 
@@ -444,34 +584,51 @@ fn mix_power_traits(offspring: &mut [u8; 32], p1: &[u8; 32], p2: &[u8; 32], rand
             1 => enhance_trait(t1, t2, rand, COMBAT_MAX),
             _ => synergy_boost(t1, t2, rand, COMBAT_MAX),
         };
-        set_trait_value(offspring, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8, selected);
+        set_trait_value(
+            offspring,
+            COMBAT_OFFSET,
+            POWER_TRAIT_BITS,
+            i as u8,
+            selected,
+        );
     }
 }
 
 fn enhance_trait(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
     let max_t = t1.max(t2);
     let min_t = t1.min(t2);
-    if rand < 48 && max_t < max { max_t + 1 }
-    else if rand < 96 && min_t < max_t { min_t + 1 }
-    else { max_t }
+    if rand < 48 && max_t < max {
+        max_t + 1
+    } else if rand < 96 && min_t < max_t {
+        min_t + 1
+    } else {
+        max_t
+    }
 }
 
 fn mutate_trait_value(base: u8, rand: u8, max: u8) -> u8 {
-    if rand == 0 { 
+    if rand == 0 {
         // Wild mutation: use a pseudo-random value up to max-1
         // Since rand is 0, we use a deterministic but varied approach based on base
         let max_val = max.saturating_sub(1) as u16;
         ((base as u16 * 7 + 13) % (max_val + 1)) as u8
+    } else if rand < 48 && base > 0 {
+        base - 1
+    } else if rand < 80 && base < max {
+        base + 1
+    } else {
+        base
     }
-    else if rand < 48 && base > 0 { base - 1 }
-    else if rand < 80 && base < max { base + 1 }
-    else { base }
 }
 
 fn synergy_boost(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
     let max_t = t1.max(t2);
     let diff = if t1 > t2 { t1 - t2 } else { t2 - t1 };
-    if diff <= 2 && rand < 64 && max_t < max { max_t + 1 } else { max_t }
+    if diff <= 2 && rand < 64 && max_t < max {
+        max_t + 1
+    } else {
+        max_t
+    }
 }
 
 // ========================================================================================
@@ -530,7 +687,6 @@ fn synergy_boost(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
 //     else { current }
 // }
 
-
 // ========================================================================================
 // ============================= BIT MANIPULATION HELPERS =================================
 // ========================================================================================
@@ -539,7 +695,9 @@ fn get_trait_value(dna: &[u8; 32], base_offset: u8, trait_bits: u8, index: u8) -
     let start_bit = base_offset as usize + (index as usize * trait_bits as usize);
     let byte_idx = start_bit / 8;
     let bit_idx = start_bit % 8;
-    if byte_idx >= 32 { return 0; }
+    if byte_idx >= 32 {
+        return 0;
+    }
 
     let mut val = 0u8;
     let mut remaining = trait_bits as usize;
@@ -563,7 +721,9 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
     let start_bit = base_offset as usize + (index as usize * trait_bits as usize);
     let byte_idx = start_bit / 8;
     let bit_idx = start_bit % 8;
-    if byte_idx >= 32 { return; }
+    if byte_idx >= 32 {
+        return;
+    }
 
     let mut remaining = trait_bits as usize;
     let mut curr_byte = byte_idx;
@@ -588,32 +748,46 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 // ========================================================================================
 
 /// Get breed value from DNA (2 bits at BREED_OFFSET)
-pub fn get_breed(dna: &[u8; 32]) -> u8 { get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0) }
+pub fn get_breed(dna: &[u8; 32]) -> u8 {
+    get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0)
+}
 
 /// Get faction/family type from DNA (first 4 bits)
-pub fn get_family_type(dna: &[u8; 32]) -> u8 { dna[0] & 0x0F }
+pub fn get_family_type(dna: &[u8; 32]) -> u8 {
+    dna[0] & 0x0F
+}
 
 /// Get evolution stage from DNA (bits 4-6)
-pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 { (dna[0] >> 4) & 0x07 }
+pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 {
+    (dna[0] >> 4) & 0x07
+}
 
 /// Decode all 21 appearance traits
 pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..APPEARANCE_TOTAL_TRAITS).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8)).collect()
+    (0..APPEARANCE_TOTAL_TRAITS)
+        .map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8))
+        .collect()
 }
 
 /// Decode dominant appearance traits (first from each of 7 groups)
 pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..7).map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * 3) as u8)).collect()
+    (0..7)
+        .map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * 3) as u8))
+        .collect()
 }
 
 /// Decode all 15 power traits
 pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..COMBAT_TOTAL_TRAITS).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8)).collect()
+    (0..COMBAT_TOTAL_TRAITS)
+        .map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8))
+        .collect()
 }
 
 /// Decode dominant power traits (first from each of 5 groups)
 pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
-    (0..5).map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * 3) as u8)).collect()
+    (0..5)
+        .map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * 3) as u8))
+        .collect()
 }
 
 // ========================================================================================
@@ -630,50 +804,68 @@ mod tests {
     }
 
     // --- DNA GENERATION TESTS ---
-    
+
     #[test]
     fn test_generate_genesis_dna_basic() {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 12345, 5).unwrap();
         println!("\n=== DNA Generation Test ===");
         println!("DNA bytes: {:?}", dna);
-        println!("DNA hex: {}", dna.iter().map(|b| format!("{:02x}", b)).collect::<String>());
-        
+        println!(
+            "DNA hex: {}",
+            dna.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+        );
+
         // Check faction is encoded correctly (first 4 bits)
         let faction = get_family_type(&dna);
         println!("Faction: {}", faction);
         assert_eq!(faction, 5, "Faction should be 5");
-        
+
         // Check evolution stage is 0 (bits 4-6)
         let stage = get_evolution_stage(&dna);
         println!("Evolution Stage: {}", stage);
         assert_eq!(stage, 0, "Evolution stage should be 0 for genesis");
-        
+
         // Decode traits
         let app_traits = decode_appearance_traits(&dna);
         let pwr_traits = decode_power_traits(&dna);
         let dom_app = decode_dominant_appearance_traits(&dna);
         let dom_pwr = decode_dominant_power_traits(&dna);
-        
+
         println!("\nAppearance Traits (21 total):");
         println!("  All: {:?}", app_traits);
         println!("  Dominant (7): {:?}", dom_app);
-        
+
         println!("\nPower Traits (15 total):");
         println!("  All: {:?}", pwr_traits);
         println!("  Dominant (5): {:?}", dom_pwr);
-        
+
         // Verify genesis constraints
         let app_valid = app_traits.iter().all(|&t| t < 10);
         let pwr_first_9_valid = pwr_traits[0..9].iter().all(|&t| t < 5);
         let pwr_last_6_zero = pwr_traits[9..15].iter().all(|&t| t == 0);
-        
+
         println!("\nGenesis Constraints:");
-        println!("  Appearance traits < 10: {} (all: {:?})", app_valid, app_traits.iter().all(|&t| t < 10));
-        println!("  First 9 power traits < 5: {} (values: {:?})", pwr_first_9_valid, &pwr_traits[0..9]);
-        println!("  Last 6 power traits == 0: {} (values: {:?})", pwr_last_6_zero, &pwr_traits[9..15]);
-        
+        println!(
+            "  Appearance traits < 10: {} (all: {:?})",
+            app_valid,
+            app_traits.iter().all(|&t| t < 10)
+        );
+        println!(
+            "  First 9 power traits < 5: {} (values: {:?})",
+            pwr_first_9_valid,
+            &pwr_traits[0..9]
+        );
+        println!(
+            "  Last 6 power traits == 0: {} (values: {:?})",
+            pwr_last_6_zero,
+            &pwr_traits[9..15]
+        );
+
         assert!(app_valid, "All appearance traits must be < 10 for genesis");
-        assert!(pwr_first_9_valid, "First 9 power traits must be < 5 for genesis");
+        assert!(
+            pwr_first_9_valid,
+            "First 9 power traits must be < 5 for genesis"
+        );
         assert!(pwr_last_6_zero, "Last 6 power traits must be 0 for genesis");
         println!("\n✅ All genesis constraints satisfied!");
     }
@@ -681,8 +873,14 @@ mod tests {
     #[test]
     fn test_generate_genesis_dna_all_factions() {
         for faction_id in 0..12 {
-            let dna = generate_genesis_dna(faction_id as u64, &mock_pubkey(), 100, faction_id).unwrap();
-            assert_eq!(get_family_type(&dna), faction_id, "Faction {} mismatch", faction_id);
+            let dna =
+                generate_genesis_dna(faction_id as u64, &mock_pubkey(), 100, faction_id).unwrap();
+            assert_eq!(
+                get_family_type(&dna),
+                faction_id,
+                "Faction {} mismatch",
+                faction_id
+            );
         }
     }
 
@@ -697,7 +895,10 @@ mod tests {
     fn test_generate_genesis_dna_different_inputs() {
         let dna1 = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let dna2 = generate_genesis_dna(2, &mock_pubkey(), 100, 0).unwrap();
-        assert_ne!(dna1, dna2, "Different mint numbers should produce different DNA");
+        assert_ne!(
+            dna1, dna2,
+            "Different mint numbers should produce different DNA"
+        );
     }
 
     // --- TRAIT DECODING TESTS ---
@@ -706,14 +907,22 @@ mod tests {
     fn test_decode_appearance_traits_count() {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let traits = decode_appearance_traits(&dna);
-        assert_eq!(traits.len(), 21, "Should have 21 appearance traits (7 groups × 3)");
+        assert_eq!(
+            traits.len(),
+            21,
+            "Should have 21 appearance traits (7 groups × 3)"
+        );
     }
 
     #[test]
     fn test_decode_power_traits_count() {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let traits = decode_power_traits(&dna);
-        assert_eq!(traits.len(), 15, "Should have 15 power traits (5 groups × 3)");
+        assert_eq!(
+            traits.len(),
+            15,
+            "Should have 15 power traits (5 groups × 3)"
+        );
     }
 
     #[test]
@@ -721,7 +930,13 @@ mod tests {
         let dna = generate_genesis_dna(42, &mock_pubkey(), 9999, 7).unwrap();
         let traits = decode_appearance_traits(&dna);
         for (i, &t) in traits.iter().enumerate() {
-            assert!(t <= APPEARANCE_MAX, "Appearance trait {} value {} exceeds max {}", i, t, APPEARANCE_MAX);
+            assert!(
+                t <= APPEARANCE_MAX,
+                "Appearance trait {} value {} exceeds max {}",
+                i,
+                t,
+                APPEARANCE_MAX
+            );
         }
     }
 
@@ -730,7 +945,13 @@ mod tests {
         let dna = generate_genesis_dna(42, &mock_pubkey(), 9999, 7).unwrap();
         let traits = decode_power_traits(&dna);
         for (i, &t) in traits.iter().enumerate() {
-            assert!(t <= COMBAT_MAX, "Power trait {} value {} exceeds max {}", i, t, COMBAT_MAX);
+            assert!(
+                t <= COMBAT_MAX,
+                "Power trait {} value {} exceeds max {}",
+                i,
+                t,
+                COMBAT_MAX
+            );
         }
     }
 
@@ -739,8 +960,12 @@ mod tests {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let all = decode_appearance_traits(&dna);
         let dominant = decode_dominant_appearance_traits(&dna);
-        
-        assert_eq!(dominant.len(), 7, "Should have 7 dominant appearance traits");
+
+        assert_eq!(
+            dominant.len(),
+            7,
+            "Should have 7 dominant appearance traits"
+        );
         for i in 0..7 {
             assert_eq!(dominant[i], all[i * 3], "Dominant trait {} mismatch", i);
         }
@@ -751,10 +976,15 @@ mod tests {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let all = decode_power_traits(&dna);
         let dominant = decode_dominant_power_traits(&dna);
-        
+
         assert_eq!(dominant.len(), 5, "Should have 5 dominant power traits");
         for i in 0..5 {
-            assert_eq!(dominant[i], all[i * 3], "Dominant power trait {} mismatch", i);
+            assert_eq!(
+                dominant[i],
+                all[i * 3],
+                "Dominant power trait {} mismatch",
+                i
+            );
         }
     }
 
@@ -765,18 +995,21 @@ mod tests {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let original = decode_appearance_traits(&dna);
         println!("Original appearance traits: {:?}", original);
-        
+
         let seed = [1u8; 32];
         let doge_mint = mock_pubkey();
         let (trait_idx, _, _) = mutate_visual_trait(1, &mut dna, &seed, &doge_mint);
-        
+
         let mutated = decode_appearance_traits(&dna);
         println!("Mutated appearance traits: {:?}", mutated);
-        
+
         // At least one trait should have changed (or stayed same if at max)
         let original_val = original[trait_idx as usize];
         let mutated_val = mutated[trait_idx as usize];
-        assert!(mutated_val >= original_val, "Visual trait should increase or stay same");
+        assert!(
+            mutated_val >= original_val,
+            "Visual trait should increase or stay same"
+        );
         assert!(mutated_val <= APPEARANCE_MAX, "Should not exceed max");
     }
 
@@ -785,15 +1018,18 @@ mod tests {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let original = decode_power_traits(&dna);
         println!("Original power traits: {:?}", original);
-        
+
         let seed = [2u8; 32];
         let doge_mint = mock_pubkey();
         let (_, original_val, mutated_val) = mutate_power_trait(1, &mut dna, &seed, &doge_mint);
-        
+
         let mutated = decode_power_traits(&dna);
         println!("Mutated power traits: {:?}", mutated);
 
-        assert!(mutated_val >= original_val, "Power trait should increase or stay same");
+        assert!(
+            mutated_val >= original_val,
+            "Power trait should increase or stay same"
+        );
         assert!(mutated_val <= COMBAT_MAX, "Should not exceed max");
     }
 
@@ -811,9 +1047,20 @@ mod tests {
 
         let seed = [3u8; 32];
         let doge_mint = mock_pubkey();
-        let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) = evolve_stage(1, &mut dna, &seed, &doge_mint);
+        let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
+            evolve_stage(1, &mut dna, &seed, &doge_mint);
         println!("New stage: {}", new_stage);
-        println!("Mutated traits: {:?}", (m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val));
+        println!(
+            "Mutated traits: {:?}",
+            (
+                m_index,
+                m_current_val,
+                m_new_val,
+                p_index,
+                p_current_val,
+                p_new_val
+            )
+        );
 
         let new_visual_traits = decode_appearance_traits(&dna);
         println!("New visual traits: {:?}", new_visual_traits);
@@ -826,16 +1073,21 @@ mod tests {
     fn test_evolve_multiple_stages() {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let doge_mint = mock_pubkey();
-        
+
         for expected_stage in 1..=7 {
             let seed = [expected_stage as u8; 32];
             let (new_stage, _, _, _, _, _, _) = evolve_stage(1, &mut dna, &seed, &doge_mint);
-            assert_eq!(new_stage, expected_stage, "Stage mismatch at {}", expected_stage);
+            assert_eq!(
+                new_stage, expected_stage,
+                "Stage mismatch at {}",
+                expected_stage
+            );
         }
-        
+
         // Should return current stage when at max (7)
         let seed = [8u8; 32];
-        let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) = evolve_stage(1, &mut dna, &seed, &doge_mint);
+        let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
+            evolve_stage(1, &mut dna, &seed, &doge_mint);
         assert_eq!(new_stage, 7, "Should stay at max stage");
         assert_eq!(m_index, 0, "No mutation at max");
         assert_eq!(m_current_val, 0, "No mutation at max");
@@ -849,12 +1101,16 @@ mod tests {
     fn test_evolution_preserves_faction() {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 9).unwrap();
         let original_faction = get_family_type(&dna);
-        
+
         let seed = [1u8; 32];
         let doge_mint = mock_pubkey();
         let _ = evolve_stage(1, &mut dna, &seed, &doge_mint);
-        
-        assert_eq!(get_family_type(&dna), original_faction, "Faction should be preserved");
+
+        assert_eq!(
+            get_family_type(&dna),
+            original_faction,
+            "Faction should be preserved"
+        );
     }
 
     // --- BREEDING TESTS ---
@@ -863,47 +1119,64 @@ mod tests {
     fn test_breed_genes_basic() {
         let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
         let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 5).unwrap();
-        
+
         let seed = b"breeding_seed_12345678901234567890";
         let offspring = breed_genes(&parent1, &parent2, seed).unwrap();
-        
+
         // Offspring should have same faction as parent1
-        assert_eq!(get_family_type(&offspring), 5, "Offspring should inherit faction");
-        
+        assert_eq!(
+            get_family_type(&offspring),
+            5,
+            "Offspring should inherit faction"
+        );
+
         // Offspring should start at stage 0
-        assert_eq!(get_evolution_stage(&offspring), 0, "Offspring should be stage 0");
+        assert_eq!(
+            get_evolution_stage(&offspring),
+            0,
+            "Offspring should be stage 0"
+        );
     }
 
     #[test]
     fn test_breed_genes_deterministic() {
         let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
         let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
-        
+
         let seed = b"test_seed_1234567890123456789012";
         let offspring1 = breed_genes(&parent1, &parent2, seed).unwrap();
         let offspring2 = breed_genes(&parent1, &parent2, seed).unwrap();
-        
-        assert_eq!(offspring1, offspring2, "Same breeding should produce same offspring");
+
+        assert_eq!(
+            offspring1, offspring2,
+            "Same breeding should produce same offspring"
+        );
     }
 
     #[test]
     fn test_breed_genes_different_seeds() {
         let parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
         let parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 3).unwrap();
-        
-        let offspring1 = breed_genes(&parent1, &parent2, b"seed_a_12345678901234567890123456").unwrap();
-        let offspring2 = breed_genes(&parent1, &parent2, b"seed_b_12345678901234567890123456").unwrap();
-        
-        assert_ne!(offspring1, offspring2, "Different seeds should produce different offspring");
+
+        let offspring1 =
+            breed_genes(&parent1, &parent2, b"seed_a_12345678901234567890123456").unwrap();
+        let offspring2 =
+            breed_genes(&parent1, &parent2, b"seed_b_12345678901234567890123456").unwrap();
+
+        assert_ne!(
+            offspring1, offspring2,
+            "Different seeds should produce different offspring"
+        );
     }
 
     #[test]
     fn test_breed_offspring_traits_in_range() {
         let parent1 = generate_genesis_dna(10, &mock_pubkey(), 500, 2).unwrap();
         let parent2 = generate_genesis_dna(20, &mock_pubkey(), 600, 2).unwrap();
-        
-        let offspring = breed_genes(&parent1, &parent2, b"range_test_seed_1234567890123456").unwrap();
-        
+
+        let offspring =
+            breed_genes(&parent1, &parent2, b"range_test_seed_1234567890123456").unwrap();
+
         for t in decode_appearance_traits(&offspring) {
             assert!(t <= APPEARANCE_MAX, "Appearance trait exceeds max");
         }
@@ -916,12 +1189,15 @@ mod tests {
 
     #[test]
     fn test_mutation_result_zero_bet() {
-        let dna = [133, 68, 70, 49, 137, 148, 80, 78, 16, 104, 152, 128, 82, 0, 68, 52, 16, 64, 0, 0, 0, 48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57]; 
+        let dna = [
+            133, 68, 70, 49, 137, 148, 80, 78, 16, 104, 152, 128, 82, 0, 68, 52, 16, 64, 0, 0, 0,
+            48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57,
+        ];
         let doge_mint = mock_pubkey();
-         
+
         let result = calculate_mutation_result(
             1,
-            1_000_000_000 / 2,           // 0.5 SOL bet
+            1_000_000_000 / 2, // 0.5 SOL bet
             1_000_000_000,
             1000,
             dna,
@@ -933,16 +1209,19 @@ mod tests {
             &mock_pubkey(),
             &doge_mint,
         );
-        
+
         // Note: with 0.5 SOL bet against 1 SOL highest, there's a chance of mutation
         // This test just verifies the function runs without error
-        println!("Mutation result: {:?}, XP: {}", result.mutation_type, result.xp_gained);
+        println!(
+            "Mutation result: {:?}, XP: {}",
+            result.mutation_type, result.xp_gained
+        );
     }
 
     // #[test]
     // fn test_mutation_result_xp_calculation() {
     //     let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
-        
+
     //     // 1 SOL bet = 1_000_000_000 lamports -> 1000 XP (capped)
     //     let result = calculate_mutation_result(
     //         1_000_000_000,
@@ -956,14 +1235,14 @@ mod tests {
     //         12345,
     //         &mock_pubkey(),
     //     );
-        
+
     //     assert_eq!(result.xp_gained, 1000, "1 SOL should give 1000 XP (capped)");
     // }
 
     // #[test]
     // fn test_mutation_result_xp_small_bet() {
     //     let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
-        
+
     //     // 0.01 SOL = 10_000_000 lamports -> 10 XP
     //     let result = calculate_mutation_result(
     //         10_000_000,
@@ -977,7 +1256,7 @@ mod tests {
     //         12345,
     //         &mock_pubkey(),
     //     );
-        
+
     //     assert_eq!(result.xp_gained, 10, "0.01 SOL should give 10 XP");
     // }
 
@@ -986,7 +1265,7 @@ mod tests {
     // #[test]
     // fn test_get_set_trait_roundtrip() {
     //     let mut dna = [0u8; 32];
-        
+
     //     // Test appearance traits (5 bits)
     //     for i in 0..21 {
     //         let val = (i * 3) as u8 % 32;
@@ -994,7 +1273,7 @@ mod tests {
     //         let got = get_trait_value(&dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
     //         assert_eq!(got, val, "Appearance trait {} roundtrip failed", i);
     //     }
-        
+
     //     // Test power traits (4 bits)
     //     for i in 0..15 {
     //         let val = (i * 2) as u8 % 16;
@@ -1007,19 +1286,19 @@ mod tests {
     // #[test]
     // fn test_trait_isolation() {
     //     let mut dna = [0u8; 32];
-        
+
     //     // Set one trait, verify others unchanged
     //     set_trait_value(&mut dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, 5, 25);
-        
+
     //     for i in 0..21 {
     //         let val = get_trait_value(&dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8);
     //         if i == 5 {
     //             assert_eq!(val, 25, "Target trait should be 25");
     //         } else {
     //             assert_eq!(val, 0, "Non-target trait {} should be 0", i);
-//         }
-//     }
-// }
+    //         }
+    //     }
+    // }
 
     // // --- PRICE CALCULATION TESTS ---
 
@@ -1044,7 +1323,11 @@ mod tests {
             let breed = get_breed(&dna) as usize;
             seen[breed] = true;
         }
-        assert!(seen.iter().all(|&s| s), "Should see all 4 breed values across 200 mints, saw: {:?}", seen);
+        assert!(
+            seen.iter().all(|&s| s),
+            "Should see all 4 breed values across 200 mints, saw: {:?}",
+            seen
+        );
     }
 
     #[test]
@@ -1057,8 +1340,12 @@ mod tests {
         for stage in 1..=7 {
             let seed = [stage as u8; 32];
             evolve_stage(stage as u64, &mut dna, &seed, &doge_mint);
-            assert_eq!(get_breed(&dna), original_breed,
-                "Breed changed during evolution to stage {}", stage);
+            assert_eq!(
+                get_breed(&dna),
+                original_breed,
+                "Breed changed during evolution to stage {}",
+                stage
+            );
         }
     }
 
@@ -1071,8 +1358,12 @@ mod tests {
         for i in 0..50 {
             let seed = [i as u8; 32];
             mutate_visual_trait(i, &mut dna, &seed, &doge_mint);
-            assert_eq!(get_breed(&dna), original_breed,
-                "Breed changed during visual mutation {}", i);
+            assert_eq!(
+                get_breed(&dna),
+                original_breed,
+                "Breed changed during visual mutation {}",
+                i
+            );
         }
     }
 
@@ -1085,8 +1376,12 @@ mod tests {
         for i in 0..50 {
             let seed = [i as u8; 32];
             mutate_power_trait(i, &mut dna, &seed, &doge_mint);
-            assert_eq!(get_breed(&dna), original_breed,
-                "Breed changed during power mutation {}", i);
+            assert_eq!(
+                get_breed(&dna),
+                original_breed,
+                "Breed changed during power mutation {}",
+                i
+            );
         }
     }
 
@@ -1097,12 +1392,17 @@ mod tests {
         let p1_breed = get_breed(&parent1);
         let p2_breed = get_breed(&parent2);
 
-        let offspring = breed_genes(&parent1, &parent2, b"breed_inherit_test_1234567890123").unwrap();
+        let offspring =
+            breed_genes(&parent1, &parent2, b"breed_inherit_test_1234567890123").unwrap();
         let offspring_breed = get_breed(&offspring);
 
-        assert!(offspring_breed == p1_breed || offspring_breed == p2_breed,
+        assert!(
+            offspring_breed == p1_breed || offspring_breed == p2_breed,
             "Offspring breed {} must be from parent1 ({}) or parent2 ({})",
-            offspring_breed, p1_breed, p2_breed);
+            offspring_breed,
+            p1_breed,
+            p2_breed
+        );
     }
 
     #[test]
@@ -1114,15 +1414,23 @@ mod tests {
         for i in 0..500 {
             let p1 = generate_genesis_dna(i * 2, &mock_pubkey(), i * 3, 0).unwrap();
             let p2 = generate_genesis_dna(i * 2 + 1, &mock_pubkey(), i * 5, 0).unwrap();
-            if get_breed(&p1) == get_breed(&p2) { continue; }
+            if get_breed(&p1) == get_breed(&p2) {
+                continue;
+            }
 
             let seed_bytes = format!("seed_{:032}", i);
             let offspring = breed_genes(&p1, &p2, seed_bytes.as_bytes()).unwrap();
             let ob = get_breed(&offspring);
 
-            if ob == get_breed(&p1) { saw_p1 = true; }
-            if ob == get_breed(&p2) { saw_p2 = true; }
-            if saw_p1 && saw_p2 { break; }
+            if ob == get_breed(&p1) {
+                saw_p1 = true;
+            }
+            if ob == get_breed(&p2) {
+                saw_p2 = true;
+            }
+            if saw_p1 && saw_p2 {
+                break;
+            }
         }
         assert!(saw_p1 && saw_p2, "Should see inheritance from both parents");
     }
@@ -1139,14 +1447,14 @@ mod tests {
     fn test_compute_gene_price_increases() {
         let base = 1_000_000u64;
         let curve = 100u64;
-        
+
         let price1 = compute_gene_price(base, curve, 10).unwrap();
         let price2 = compute_gene_price(base, curve, 100).unwrap();
         let price3 = compute_gene_price(base, curve, 1000).unwrap();
         println!("Price 1: {}", price1);
         println!("Price 2: {}", price2);
         println!("Price 3: {}", price3);
-        
+
         assert!(price1 == 1000400, "Price should increase with mints");
         assert!(price2 == 1002100, "Price should keep increasing");
         assert!(price3 == 1010000, "Price should keep increasing");
@@ -1157,119 +1465,188 @@ mod tests {
     #[test]
     fn test_enhance_trait() {
         println!("\n=== Testing enhance_trait ===");
-        
+
         // Test appearance traits (max = 31)
         // Case 1: rand < 48, max_t < max -> should enhance max_t
         let result1 = enhance_trait(10, 5, 10, APPEARANCE_MAX);
-        println!("enhance_trait(10, 5, 10, {}) = {} (should be 11)", APPEARANCE_MAX, result1);
+        println!(
+            "enhance_trait(10, 5, 10, {}) = {} (should be 11)",
+            APPEARANCE_MAX, result1
+        );
         assert_eq!(result1, 11, "Should enhance max trait when rand < 48");
-        
+
         // Case 2: max_t at max, but can enhance min_t
         let result2 = enhance_trait(31, 25, 10, APPEARANCE_MAX);
-        println!("enhance_trait(31, 25, 10, {}) = {} (enhances min_t)", APPEARANCE_MAX, result2);
+        println!(
+            "enhance_trait(31, 25, 10, {}) = {} (enhances min_t)",
+            APPEARANCE_MAX, result2
+        );
         assert_eq!(result2, 26, "Should enhance min_t when max_t is at max");
-        
+
         // Case 2b: Both at max -> should return max_t
         let result2b = enhance_trait(31, 31, 10, APPEARANCE_MAX);
-        println!("enhance_trait(31, 31, 10, {}) = {} (should be 31)", APPEARANCE_MAX, result2b);
+        println!(
+            "enhance_trait(31, 31, 10, {}) = {} (should be 31)",
+            APPEARANCE_MAX, result2b
+        );
         assert_eq!(result2b, APPEARANCE_MAX, "Both at max should return max");
-        
+
         // Case 3: rand 48-95, min_t < max_t -> should enhance min_t
         let result3 = enhance_trait(5, 10, 60, APPEARANCE_MAX);
-        println!("enhance_trait(5, 10, 60, {}) = {} (should be 6)", APPEARANCE_MAX, result3);
+        println!(
+            "enhance_trait(5, 10, 60, {}) = {} (should be 6)",
+            APPEARANCE_MAX, result3
+        );
         assert_eq!(result3, 6, "Should enhance min trait when rand 48-95");
-        
+
         // Case 4: rand >= 96 -> should return max_t
         let result4 = enhance_trait(8, 12, 100, APPEARANCE_MAX);
-        println!("enhance_trait(8, 12, 100, {}) = {} (should be 12)", APPEARANCE_MAX, result4);
+        println!(
+            "enhance_trait(8, 12, 100, {}) = {} (should be 12)",
+            APPEARANCE_MAX, result4
+        );
         assert_eq!(result4, 12, "Should return max_t when rand >= 96");
-        
+
         // Test power traits (max = 15)
         let result5 = enhance_trait(3, 5, 20, COMBAT_MAX);
-        println!("enhance_trait(3, 5, 20, {}) = {} (should be 6)", COMBAT_MAX, result5);
+        println!(
+            "enhance_trait(3, 5, 20, {}) = {} (should be 6)",
+            COMBAT_MAX, result5
+        );
         assert_eq!(result5, 6, "Power trait enhancement");
-        
+
         let result6 = enhance_trait(15, 10, 10, COMBAT_MAX);
-        println!("enhance_trait(15, 10, 10, {}) = {} (enhances min_t)", COMBAT_MAX, result6);
+        println!(
+            "enhance_trait(15, 10, 10, {}) = {} (enhances min_t)",
+            COMBAT_MAX, result6
+        );
         assert_eq!(result6, 11, "Should enhance min_t when max_t is at max");
-        
+
         let result6b = enhance_trait(15, 15, 10, COMBAT_MAX);
-        println!("enhance_trait(15, 15, 10, {}) = {} (should be 15)", COMBAT_MAX, result6b);
+        println!(
+            "enhance_trait(15, 15, 10, {}) = {} (should be 15)",
+            COMBAT_MAX, result6b
+        );
         assert_eq!(result6b, COMBAT_MAX, "Both at max should return max");
     }
 
     #[test]
     fn test_synergy_boost() {
         println!("\n=== Testing synergy_boost ===");
-        
+
         // Test power traits (max = 15)
         // Case 1: Close traits (diff <= 2), rand < 64, max_t < max -> should boost
         let result1 = synergy_boost(10, 11, 30, COMBAT_MAX);
-        println!("synergy_boost(10, 11, 30, {}) = {} (should be 12)", COMBAT_MAX, result1);
+        println!(
+            "synergy_boost(10, 11, 30, {}) = {} (should be 12)",
+            COMBAT_MAX, result1
+        );
         assert_eq!(result1, 12, "Close traits should boost");
-        
+
         // Case 2: Close traits but at max -> should not exceed
         let result2 = synergy_boost(15, 14, 30, COMBAT_MAX);
-        println!("synergy_boost(15, 14, 30, {}) = {} (should be 15)", COMBAT_MAX, result2);
+        println!(
+            "synergy_boost(15, 14, 30, {}) = {} (should be 15)",
+            COMBAT_MAX, result2
+        );
         assert_eq!(result2, COMBAT_MAX, "Should not exceed max");
-        
+
         // Case 3: Far traits (diff > 2) -> should return max_t
         let result3 = synergy_boost(5, 15, 30, COMBAT_MAX);
-        println!("synergy_boost(5, 15, 30, {}) = {} (should be 15)", COMBAT_MAX, result3);
+        println!(
+            "synergy_boost(5, 15, 30, {}) = {} (should be 15)",
+            COMBAT_MAX, result3
+        );
         assert_eq!(result3, 15, "Far traits take max");
-        
+
         // Case 4: Close traits but rand >= 64 -> should return max_t
         let result4 = synergy_boost(8, 9, 100, COMBAT_MAX);
-        println!("synergy_boost(8, 9, 100, {}) = {} (should be 9)", COMBAT_MAX, result4);
+        println!(
+            "synergy_boost(8, 9, 100, {}) = {} (should be 9)",
+            COMBAT_MAX, result4
+        );
         assert_eq!(result4, 9, "High rand should return max_t");
-        
+
         // Test appearance traits (max = 31)
         let result5 = synergy_boost(20, 22, 40, APPEARANCE_MAX);
-        println!("synergy_boost(20, 22, 40, {}) = {} (should be 23)", APPEARANCE_MAX, result5);
+        println!(
+            "synergy_boost(20, 22, 40, {}) = {} (should be 23)",
+            APPEARANCE_MAX, result5
+        );
         assert_eq!(result5, 23, "Appearance trait synergy boost");
-        
+
         let result6 = synergy_boost(25, 30, 50, APPEARANCE_MAX);
-        println!("synergy_boost(25, 30, 50, {}) = {} (should be 30)", APPEARANCE_MAX, result6);
+        println!(
+            "synergy_boost(25, 30, 50, {}) = {} (should be 30)",
+            APPEARANCE_MAX, result6
+        );
         assert_eq!(result6, 30, "Diff > 2 should return max_t");
     }
 
     #[test]
     fn test_mutate_trait_value() {
         println!("\n=== Testing mutate_trait_value ===");
-        
+
         // Test appearance traits (max = 31)
         // Case 1: rand == 0 -> significant mutation (but capped)
         let result1 = mutate_trait_value(15, 0, APPEARANCE_MAX);
-        println!("mutate_trait_value(15, 0, {}) = {} (rand==0 mutation)", APPEARANCE_MAX, result1);
-        assert!(result1 <= APPEARANCE_MAX - 1, "Rand==0 should produce value <= max-1");
-        
+        println!(
+            "mutate_trait_value(15, 0, {}) = {} (rand==0 mutation)",
+            APPEARANCE_MAX, result1
+        );
+        assert!(
+            result1 <= APPEARANCE_MAX - 1,
+            "Rand==0 should produce value <= max-1"
+        );
+
         // Case 2: rand 1-47, base > 0 -> decrease
         let result2 = mutate_trait_value(10, 20, APPEARANCE_MAX);
-        println!("mutate_trait_value(10, 20, {}) = {} (should be 9)", APPEARANCE_MAX, result2);
+        println!(
+            "mutate_trait_value(10, 20, {}) = {} (should be 9)",
+            APPEARANCE_MAX, result2
+        );
         assert_eq!(result2, 9, "Should decrease when rand < 48 and base > 0");
-        
+
         // Case 3: rand 48-79, base < max -> increase
         let result3 = mutate_trait_value(10, 60, APPEARANCE_MAX);
-        println!("mutate_trait_value(10, 60, {}) = {} (should be 11)", APPEARANCE_MAX, result3);
-        assert_eq!(result3, 11, "Should increase when rand 48-79 and base < max");
-        
+        println!(
+            "mutate_trait_value(10, 60, {}) = {} (should be 11)",
+            APPEARANCE_MAX, result3
+        );
+        assert_eq!(
+            result3, 11,
+            "Should increase when rand 48-79 and base < max"
+        );
+
         // Case 4: rand >= 80 -> no change
         let result4 = mutate_trait_value(15, 100, APPEARANCE_MAX);
-        println!("mutate_trait_value(15, 100, {}) = {} (should be 15)", APPEARANCE_MAX, result4);
+        println!(
+            "mutate_trait_value(15, 100, {}) = {} (should be 15)",
+            APPEARANCE_MAX, result4
+        );
         assert_eq!(result4, 15, "Should not change when rand >= 80");
-        
+
         // Case 5: At max -> should not exceed
         let result5 = mutate_trait_value(31, 60, APPEARANCE_MAX);
-        println!("mutate_trait_value(31, 60, {}) = {} (should be 31)", APPEARANCE_MAX, result5);
+        println!(
+            "mutate_trait_value(31, 60, {}) = {} (should be 31)",
+            APPEARANCE_MAX, result5
+        );
         assert_eq!(result5, APPEARANCE_MAX, "Should not exceed max");
-        
+
         // Test power traits (max = 15)
         let result6 = mutate_trait_value(5, 30, COMBAT_MAX);
-        println!("mutate_trait_value(5, 30, {}) = {} (should be 4)", COMBAT_MAX, result6);
+        println!(
+            "mutate_trait_value(5, 30, {}) = {} (should be 4)",
+            COMBAT_MAX, result6
+        );
         assert_eq!(result6, 4, "Power trait decrease");
-        
+
         let result7 = mutate_trait_value(8, 70, COMBAT_MAX);
-        println!("mutate_trait_value(8, 70, {}) = {} (should be 9)", COMBAT_MAX, result7);
+        println!(
+            "mutate_trait_value(8, 70, {}) = {} (should be 9)",
+            COMBAT_MAX, result7
+        );
         assert_eq!(result7, 9, "Power trait increase");
     }
 }
