@@ -553,7 +553,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     player_data.doge_multiplier = new_multiplier as u16;
     msg!(
         "⚡ Updated doge multiplier: ({})x",
-        player_data.doge_multiplier as f64 / 100.0
+        player_data.doge_multiplier as f64 / 1000.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
@@ -570,8 +570,8 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             / old_multiplier as u128) as u64;
     } else {
         // If old_multiplier is 0 (shouldn't happen), use new_multiplier directly
-        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower * new_multiplier) / M_HUNDRED;
-        player_data.lp_hashpower = (existing_lp_hashpower * new_multiplier) / M_HUNDRED;
+        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower * new_multiplier) / BASE_MULTIPLIER as u64;
+        player_data.lp_hashpower = (existing_lp_hashpower * new_multiplier) / BASE_MULTIPLIER as u64;
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
@@ -699,7 +699,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     player_data.doge_multiplier = new_multiplier as u16;
     msg!(
         "⚡ Updated doge multiplier: ({})x",
-        player_data.doge_multiplier as f64 / 100.0
+        player_data.doge_multiplier as f64 / 1000.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE

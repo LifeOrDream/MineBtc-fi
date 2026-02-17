@@ -174,7 +174,7 @@ pub fn int_stake_minebtc(
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
     let doges_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / M_HUNDRED;
+    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / BASE_MULTIPLIER as u64;
 
     // Update player data state
     player_data.dogebtc_hashpower += weighted_amount_with_doges;
@@ -294,7 +294,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
     let hashpower_contribution =
-        (original_weighted * player_data.doge_multiplier as u64) / M_HUNDRED;
+        (original_weighted * player_data.doge_multiplier as u64) / BASE_MULTIPLIER as u64;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
 
@@ -562,7 +562,7 @@ pub fn int_stake_lp_tokens(
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
     let doges_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / M_HUNDRED;
+    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / BASE_MULTIPLIER as u64;
 
     // Update player data state
     player_data.lp_hashpower += weighted_amount_with_doges;
@@ -672,7 +672,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
     let hashpower_contribution =
-        (original_weighted * player_data.doge_multiplier as u64) / M_HUNDRED;
+        (original_weighted * player_data.doge_multiplier as u64) / BASE_MULTIPLIER as u64;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
 
