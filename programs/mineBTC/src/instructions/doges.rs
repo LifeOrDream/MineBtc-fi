@@ -188,6 +188,7 @@ pub fn int_batch_mint_doges<'info>(
             &ctx.accounts.user.key(),
             slot,
             faction_id,
+            &doge_asset_key,
         )?;
 
         // Create Metaplex Core Asset
@@ -365,8 +366,13 @@ pub fn int_admin_mint_doge(
 
     // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
-    let (name, uri, dna, multiplier) =
-        generate_doge_data(current_mint_number, &recipient, slot, faction_id)?;
+    let (name, uri, dna, multiplier) = generate_doge_data(
+        current_mint_number,
+        &recipient,
+        slot,
+        faction_id,
+        &ctx.accounts.doge_asset.key(),
+    )?;
 
     // Get collection authority seeds
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -968,7 +974,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     // Create offspring NFT
     let current_mint_number = doge_config.doges_minted + 1;
     let name = format!("Bitcoin doges #{}", current_mint_number);
-    let uri = format!("Bitcoin doges #{}", current_mint_number);
+    let uri = format!("https://assets.minebtc.fun/doges/{}.json", ctx.accounts.offspring_asset.key());
 
     let collection_authority_bump = ctx.bumps.collection_authority;
     let collection_authority_seeds = &[COLLECTION_AUTHORITY_SEED, &[collection_authority_bump]];
@@ -1066,6 +1072,7 @@ pub fn generate_doge_data(
     user_key: &Pubkey,
     slot_offset: u64,
     faction_id: u8,
+    asset_key: &Pubkey,
 ) -> Result<(String, String, [u8; 32], u32)> {
     let dna = crate::genescience::generate_genesis_dna(
         mint_number,
@@ -1074,7 +1081,7 @@ pub fn generate_doge_data(
         faction_id,
     )?;
     let name = format!("Bitcoin doges #{}", mint_number);
-    let uri = format!("Bitcoin doges #{}", mint_number);
+    let uri = format!("https://assets.minebtc.fun/doges/{}.json", asset_key);
     let multiplier = BASE_MULTIPLIER;
 
     Ok((name, uri, dna, multiplier))
