@@ -168,7 +168,7 @@ fn limit_genesis_trait_ranges(dna: &mut [u8; 32]) {
 pub enum MutationType {
     /// Evolution: generation += 1, xp = 0 (~10%)
     Evolution,
-    /// Power: multiplier += 25 (0.25x) (~30%)
+    /// Power: multiplier += 25 (0.025x since BASE_MULTIPLIER=1000) (~30%)
     Power,
     /// Trait: reroll a visual gene in dna (~60%)
     Trait,
@@ -195,7 +195,7 @@ pub struct MutationResult {
 /// **XP Gain**: Always gained on SOL bets, scaled by bet size relative to 0.1 SOL
 /// - Base XP per 0.1 SOL = 10 XP
 ///
-/// **Multiplier Increase**: Only on Power mutation, +25 (0.25x)
+/// **Multiplier Increase**: Only on Power mutation, +25 (0.025x since BASE_MULTIPLIER=1000)
 pub fn calculate_mutation_result(
     round_id: u64,
     user_total_bet: u64,

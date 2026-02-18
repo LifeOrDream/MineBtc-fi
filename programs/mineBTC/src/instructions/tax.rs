@@ -22,7 +22,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // ## Distribution Rounds
 //
-// Every 7 days, a distribution round calculates faction rankings based on total hashpower:
+// Every day, a distribution round calculates faction rankings based on total hashpower:
 // 1. Factions are ranked by hashpower (highest to lowest).
 // 2. Rewards are distributed using a tiered model (top factions earn more).
 // 3. Each faction claims rewards, which are distributed to their stakers.
@@ -31,7 +31,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
 // - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
-// - `start_distribution_round`: Initiates a new 7-day distribution cycle.
+// - `start_distribution_round`: Initiates a new distribution cycle (1-day cooldown).
 // - `cal_faction_positions`: Ranks one faction by hashpower.
 // - `cal_faction_rewards`: Computes rewards for all factions.
 // - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
@@ -501,7 +501,7 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
 // ============================= DISTRIBUTION ROUND MANAGEMENT ===========================
 // ========================================================================================
 
-/// Start a new distribution round (callable by anyone after 7-day cooldown)
+/// Start a new distribution round (callable by anyone after 1-day cooldown)
 pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
     msg!("🎯 [start_distribution_round] Starting new distribution round");
 
@@ -509,7 +509,7 @@ pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -
     let clock = Clock::get()?;
     let current_time = clock.unix_timestamp;
 
-    // Check if 7 days have passed since last distribution round ended
+    // Check if 1 day has passed since last distribution round ended
     require!(!tax_config.round_active, ErrorCode::InvalidState);
 
     require!(

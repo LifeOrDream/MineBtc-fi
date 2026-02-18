@@ -361,7 +361,7 @@ pub struct HashpowerConfig {
     /// Maximum lockup period in days
     pub max_lockup_days: u64,
 
-    /// Base multiplier (100 = 1x)
+    /// Base multiplier for lockup duration (100 = 1x, separate from BASE_MULTIPLIER=1000 used for doges)
     pub base_multiplier: u16,
     /// Maximum multiplier for longest lockup (e.g., 900 = 9x for 3 years)
     pub max_multiplier: u16,
@@ -470,7 +470,7 @@ pub struct TaxConfig {
     pub round_active: bool,
     /// Timestamp when current distribution round started
     pub start_timestamp: i64,
-    /// Timestamp when last distribution round ended (for 7-day cooldown)
+    /// Timestamp when last distribution round ended (for 1-day cooldown)
     pub end_timestamp: i64,
 
     /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)

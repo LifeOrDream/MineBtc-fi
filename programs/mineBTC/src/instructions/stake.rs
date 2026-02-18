@@ -1241,11 +1241,12 @@ pub fn int_update_lp_staking_rewards(
             player_data.pending_minebtc_rewards as f64 / 1e6,
             new_minebtc_rewards as f64 / 1e6
         );
-
-        // Update reward debt to current indexes
-        player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
-        player_data.lp_dogebtc_reward_debt = faction_state.lp_dogebtc_reward_index;
     }
+
+    // Update reward debt to current indexes (MUST be outside if block to prevent
+    // phantom rewards when user unstakes all LP and re-stakes later)
+    player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
+    player_data.lp_dogebtc_reward_debt = faction_state.lp_dogebtc_reward_index;
 
     Ok((
         new_sol_rewards,
