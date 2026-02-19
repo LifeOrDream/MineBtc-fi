@@ -1188,5 +1188,5 @@ impl AutominerVault {
         1 +     // vault_bump
         8 +     // sol_balance
         1 +     // can_reload (bool)
-        1 + 1;  // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
+        1 + 1; // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
 }

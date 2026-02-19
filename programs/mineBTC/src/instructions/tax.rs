@@ -809,10 +809,7 @@ pub fn internal_claim_faction_treasury_rewards(
                 from: ctx.accounts.faction_treasury_vault.to_account_info(),
                 mint: ctx.accounts.minebtc_mint.to_account_info(),
                 to: ctx.accounts.minebtc_emission_vault.to_account_info(),
-                authority: ctx
-                    .accounts
-                    .withdraw_withheld_authority
-                    .to_account_info(),
+                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
             },
             withdraw_authority_signer,
         ),

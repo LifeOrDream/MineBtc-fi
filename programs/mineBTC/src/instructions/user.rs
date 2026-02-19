@@ -1220,12 +1220,18 @@ pub fn internal_claim_autominer_rewards(
                 total_sol_reward,
                 ctx.bumps.sol_prize_pot_vault,
             )?;
-            msg!("   ✓ Transferred {} SOL to owner", total_sol_reward as f64 / 1e9);
+            msg!(
+                "   ✓ Transferred {} SOL to owner",
+                total_sol_reward as f64 / 1e9
+            );
         }
 
         // Add 1 round back (each execution consumed 1 round, reload gives it back)
         autominer_vault.rounds_remaining += 1;
-        msg!("   ✓ Ticket reload: rounds_remaining restored to {}", autominer_vault.rounds_remaining);
+        msg!(
+            "   ✓ Ticket reload: rounds_remaining restored to {}",
+            autominer_vault.rounds_remaining
+        );
 
         emit!(AutominerReloaded {
             autominer_vault: autominer_vault.key(),
@@ -1234,7 +1240,10 @@ pub fn internal_claim_autominer_rewards(
             leftover_sol: total_sol_reward,
             timestamp: Clock::get()?.unix_timestamp,
         });
-    } else if total_sol_reward > 0 && autominer_vault.can_reload && autominer_vault.sol_per_round > 0 {
+    } else if total_sol_reward > 0
+        && autominer_vault.can_reload
+        && autominer_vault.sol_per_round > 0
+    {
         // SOL MODE RELOAD: Use SOL winnings to fund more rounds
         msg!("🔄 SOL mode reload, processing SOL rewards...");
 
