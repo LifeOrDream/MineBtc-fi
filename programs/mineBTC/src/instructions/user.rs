@@ -428,10 +428,11 @@ pub fn internal_init_autominer(
     let global_config = &ctx.accounts.global_config;
 
     msg!("   Validating parameters...");
-    require!(
-        sol_per_round > 0 && num_rounds > 0,
-        ErrorCode::InvalidAmount
-    );
+    require!(num_rounds > 0, ErrorCode::InvalidAmount);
+    // SOL mode requires sol_per_round > 0; ticket mode allows 0
+    if use_ticket.is_none() {
+        require!(sol_per_round > 0, ErrorCode::InvalidAmount);
+    }
     require!(
         blocks_config.is_some() || factions_config.is_some(),
         ErrorCode::InvalidParameters
@@ -668,8 +669,10 @@ pub fn internal_update_autominer(
     msg!("     Rounds remaining: {}", rounds_remaining + rounds_added);
     msg!("     Can reload: {}", new_can_reload);
 
-    // Validate new values
-    require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
+    // Validate new values (SOL mode requires sol_per_round > 0)
+    if autominer_vault.use_ticket.is_none() {
+        require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
+    }
 
     if rounds_added > 0 {
         msg!(
@@ -681,66 +684,74 @@ pub fn internal_update_autominer(
         msg!("     ✓ Rounds unchanged ({} rounds)", rounds_remaining);
     }
 
-    // Calculate SOL needed for remaining rounds with old config
-    let current_sol_needed = rounds_remaining as u64 * old_sol_per_round;
-    msg!(
-        "     Current SOL needed for {} remaining rounds: {} lamports",
-        rounds_remaining,
-        current_sol_needed
-    );
-
-    // Calculate new SOL needed for new rounds with new config
-    let new_sol_needed = (rounds_remaining + rounds_added) as u64 * new_sol_per_round;
-    msg!(
-        "     New SOL needed for {} rounds: {} lamports",
-        rounds_remaining + rounds_added,
-        new_sol_needed
-    );
-
-    // Calculate SOL difference: new_sol_needed - current_sol_balance
-    // This tells us how much SOL to transfer to/from the user
-    let sol_diff = new_sol_needed as i64 - old_sol_balance as i64;
-    msg!("     SOL difference: {} lamports", sol_diff);
-
-    // Handle SOL transfers
-    if sol_diff > 0 {
-        // Need to deposit more SOL
-        let deposit_amount = sol_diff as u64;
-        msg!(
-            "   Depositing {} SOL to autominer custody...",
-            deposit_amount as f64 / 1e9
-        );
-        helper::transfer_to_autominer_custody(
-            &ctx.accounts.user_wallet.to_account_info(),
-            &ctx.accounts.autominer_custody.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            deposit_amount,
-        )?;
-        msg!("     ✓ Deposited {} SOL", deposit_amount as f64 / 1e9);
-    } else if sol_diff < 0 {
-        // Need to refund excess SOL
-        let refund_amount = (-sol_diff) as u64;
-        msg!(
-            "   Refunding {} SOL from autominer custody...",
-            refund_amount as f64 / 1e9
-        );
-        helper::transfer_from_autominer_custody(
-            &ctx.accounts.autominer_custody.to_account_info(),
-            &ctx.accounts.user_wallet.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            refund_amount,
-            ctx.bumps.autominer_custody,
-        )?;
-        msg!("     ✓ Refunded {} SOL", refund_amount as f64 / 1e9);
+    // SOL accounting: only for SOL mode. Ticket mode has no SOL balance.
+    let sol_diff = if autominer_vault.use_ticket.is_some() {
+        // Ticket mode: no SOL transfers, just update rounds and can_reload
+        msg!("   Ticket mode: no SOL accounting needed");
+        0i64
     } else {
-        msg!("   No SOL transfer needed");
-    }
+        // Calculate SOL needed for remaining rounds with old config
+        let current_sol_needed = rounds_remaining as u64 * old_sol_per_round;
+        msg!(
+            "     Current SOL needed for {} remaining rounds: {} lamports",
+            rounds_remaining,
+            current_sol_needed
+        );
+
+        // Calculate new SOL needed for new rounds with new config
+        let new_sol_needed = (rounds_remaining + rounds_added) as u64 * new_sol_per_round;
+        msg!(
+            "     New SOL needed for {} rounds: {} lamports",
+            rounds_remaining + rounds_added,
+            new_sol_needed
+        );
+
+        // Calculate SOL difference: new_sol_needed - current_sol_balance
+        let diff = new_sol_needed as i64 - old_sol_balance as i64;
+        msg!("     SOL difference: {} lamports", diff);
+
+        // Handle SOL transfers
+        if diff > 0 {
+            let deposit_amount = diff as u64;
+            msg!(
+                "   Depositing {} SOL to autominer custody...",
+                deposit_amount as f64 / 1e9
+            );
+            helper::transfer_to_autominer_custody(
+                &ctx.accounts.user_wallet.to_account_info(),
+                &ctx.accounts.autominer_custody.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                deposit_amount,
+            )?;
+            msg!("     ✓ Deposited {} SOL", deposit_amount as f64 / 1e9);
+        } else if diff < 0 {
+            let refund_amount = (-diff) as u64;
+            msg!(
+                "   Refunding {} SOL from autominer custody...",
+                refund_amount as f64 / 1e9
+            );
+            helper::transfer_from_autominer_custody(
+                &ctx.accounts.autominer_custody.to_account_info(),
+                &ctx.accounts.user_wallet.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                refund_amount,
+                ctx.bumps.autominer_custody,
+            )?;
+            msg!("     ✓ Refunded {} SOL", refund_amount as f64 / 1e9);
+        } else {
+            msg!("   No SOL transfer needed");
+        }
+
+        diff
+    };
 
     // Update vault state
     autominer_vault.sol_per_round = new_sol_per_round;
     autominer_vault.rounds_remaining += rounds_added;
     autominer_vault.can_reload = new_can_reload;
-    autominer_vault.sol_balance = new_sol_needed;
+    if autominer_vault.use_ticket.is_none() {
+        autominer_vault.sol_balance = (old_sol_balance as i64 + sol_diff) as u64;
+    }
 
     msg!("✅ [update_autominer] Autominer updated successfully");
 
@@ -1194,8 +1205,38 @@ pub fn internal_claim_autominer_rewards(
     )?;
 
     // === AUTO-RELOAD LOGIC ===
-    if total_sol_reward > 0 && autominer_vault.can_reload && autominer_vault.sol_per_round > 0 {
-        msg!("🔄 Auto-reload enabled, processing SOL rewards...");
+    // Ticket mode + reload: just keep running (add rounds back), send SOL winnings to owner.
+    // SOL mode + reload: use SOL winnings to fund more rounds.
+    if autominer_vault.can_reload && autominer_vault.use_ticket.is_some() {
+        // TICKET MODE RELOAD: Add rounds back, send all SOL rewards to owner
+        // Tickets are consumed from player's balance — no SOL needed to reload.
+        // The autominer just keeps going until all tickets are exhausted.
+        if total_sol_reward > 0 {
+            msg!("🔄 Ticket mode reload: sending SOL winnings to owner...");
+            helper::transfer_from_sol_prize_pot_vault(
+                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                &ctx.accounts.owner_wallet.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                total_sol_reward,
+                ctx.bumps.sol_prize_pot_vault,
+            )?;
+            msg!("   ✓ Transferred {} SOL to owner", total_sol_reward as f64 / 1e9);
+        }
+
+        // Add 1 round back (each execution consumed 1 round, reload gives it back)
+        autominer_vault.rounds_remaining += 1;
+        msg!("   ✓ Ticket reload: rounds_remaining restored to {}", autominer_vault.rounds_remaining);
+
+        emit!(AutominerReloaded {
+            autominer_vault: autominer_vault.key(),
+            rounds_to_add: 1,
+            sol_for_rounds: 0,
+            leftover_sol: total_sol_reward,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+    } else if total_sol_reward > 0 && autominer_vault.can_reload && autominer_vault.sol_per_round > 0 {
+        // SOL MODE RELOAD: Use SOL winnings to fund more rounds
+        msg!("🔄 SOL mode reload, processing SOL rewards...");
 
         let sol_per_round = autominer_vault.sol_per_round;
         let rounds_to_add = total_sol_reward / sol_per_round;
@@ -1248,8 +1289,8 @@ pub fn internal_claim_autominer_rewards(
             msg!("   ✓ Transferred {} leftover SOL to owner", leftover_sol);
         }
     } else if total_sol_reward > 0 {
-        // Auto-reload disabled or no sol_per_round set - transfer all SOL to owner
-        msg!("   Auto-reload disabled, transferring all SOL to owner...");
+        // No reload (or no sol_per_round) - transfer all SOL to owner
+        msg!("   Reload disabled, transferring all SOL to owner...");
         helper::transfer_from_sol_prize_pot_vault(
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
             &ctx.accounts.owner_wallet.to_account_info(),
