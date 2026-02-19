@@ -121,6 +121,19 @@ pub struct DogeCollectionCreated {
     pub uri: String,
 }
 
+#[event]
+pub struct CollectionDelegateAdded {
+    pub collection: Pubkey,
+    pub delegate: Pubkey,
+}
+
+#[event]
+pub struct CollectionInfoUpdated {
+    pub collection: Pubkey,
+    pub new_name: Option<String>,
+    pub new_uri: Option<String>,
+}
+
 /// Event emitted when a Doge is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]

@@ -309,6 +309,26 @@ pub mod minebtc {
         admin::init_doge_royalties_internal(ctx, basis_points, creators)
     }
 
+    /// Add an UpdateDelegate to the collection (admin only)
+    /// Allows delegate wallet to sign for marketplace verification without
+    /// transferring the update authority (which would break minting)
+    pub fn add_collection_delegate(
+        ctx: Context<AddCollectionDelegate>,
+        delegate: Pubkey,
+    ) -> Result<()> {
+        admin::add_collection_delegate_internal(ctx, delegate)
+    }
+
+    /// Update collection metadata — name and/or URI (admin only)
+    /// Useful for fixing dead image URLs or updating collection info
+    pub fn update_collection_info(
+        ctx: Context<AddCollectionDelegate>,
+        new_name: Option<String>,
+        new_uri: Option<String>,
+    ) -> Result<()> {
+        admin::update_collection_info_internal(ctx, new_name, new_uri)
+    }
+
     /// Add or update ticket tier configs (admin only)
     /// Max 4 ticket tier configs can be set
     pub fn add_ticket_tier_config(
