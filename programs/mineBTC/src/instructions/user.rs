@@ -555,10 +555,14 @@ pub fn internal_init_autominer(
     let has_blocks_config = blocks_config.is_some();
     let has_factions_config = factions_config.is_some();
 
-    // Calculate total SOL needed: sol_per_round × num_rounds
-    // Note: Rent is already handled by init_if_needed if account is new
-    msg!("   Calculating total SOL needed...");
-    let total_sol = sol_per_round * num_rounds as u64;
+    // Calculate total SOL needed
+    // Ticket mode: no SOL needed (bets use tickets, no caller compensation)
+    // SOL mode: sol_per_round × num_rounds
+    let total_sol = if use_ticket.is_some() {
+        0 // Ticket mode: no SOL deposit needed
+    } else {
+        sol_per_round * num_rounds as u64
+    };
     msg!(
         "     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)",
         (total_sol as f64 / 1e9),
@@ -581,14 +585,18 @@ pub fn internal_init_autominer(
         autominer_vault.owner
     );
 
-    // Transfer SOL to global autominer custody
-    msg!("   Transferring SOL to autominer custody...");
-    helper::transfer_to_autominer_custody(
-        &ctx.accounts.user_wallet.to_account_info(),
-        &ctx.accounts.autominer_custody.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        total_sol,
-    )?;
+    // Transfer SOL to global autominer custody (SOL mode only)
+    if total_sol > 0 {
+        msg!("   Transferring SOL to autominer custody...");
+        helper::transfer_to_autominer_custody(
+            &ctx.accounts.user_wallet.to_account_info(),
+            &ctx.accounts.autominer_custody.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            total_sol,
+        )?;
+    } else {
+        msg!("   Ticket mode: no SOL deposit needed");
+    }
 
     msg!("✅ [init_autominer] Autominer initialized successfully");
     msg!(
@@ -794,7 +802,10 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     );
 
     require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
-    require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
+    // SOL balance check only for SOL mode (ticket mode doesn't need SOL for bets)
+    if use_ticket.is_none() {
+        require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
+    }
 
     // Generate bet types dynamically from configuration
     msg!("   Generating bet types from configuration...");
@@ -825,7 +836,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     // Determine bet parameters based on mode (SOL vs tickets)
     let (bet_size_per_bet, effective_use_ticket) = if let Some(ticket_tier_index) = use_ticket {
         // Ticket mode: bet amount comes from player's ticket value
-        // sol_per_round is only for caller compensation in this mode
+        // No SOL needed for bets — tickets are free. No caller compensation either.
         let player_data = &ctx.accounts.player_data;
         require!(
             (ticket_tier_index as usize) < player_data.free_tickets.len(),
@@ -856,8 +867,8 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         (bet_per, None)
     };
 
-    // Pay caller compensation (transfer from custody PDA to caller)
-    if total_caller_compensation > 0 {
+    // Pay caller compensation (SOL mode only — ticket mode skips compensation)
+    if total_caller_compensation > 0 && use_ticket.is_none() {
         msg!("   Paying caller compensation...");
         let autominer_seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
         transfer(
@@ -900,8 +911,10 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         new_rounds_remaining
     );
 
-    // Update remaining SOL balance tracked for this autominer
-    autominer_vault.sol_balance = autominer_vault.sol_balance - sol_per_round;
+    // Update remaining SOL balance tracked for this autominer (SOL mode only)
+    if use_ticket.is_none() {
+        autominer_vault.sol_balance = autominer_vault.sol_balance - sol_per_round;
+    }
 
     // Place bets using join_round_batch
     msg!(
