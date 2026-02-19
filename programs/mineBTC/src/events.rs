@@ -377,6 +377,7 @@ pub struct AutominerInitialized {
     pub has_blocks_config: bool,
     pub has_factions_config: bool,
     pub can_reload: bool,
+    pub use_ticket: Option<u8>,
     pub timestamp: i64,
 }
 

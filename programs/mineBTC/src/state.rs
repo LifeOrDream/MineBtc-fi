@@ -1161,6 +1161,11 @@ pub struct AutominerVault {
 
     /// If set to true, SOL rewards can be used to reload Autominer and continue mining dogeBTC
     pub can_reload: bool,
+
+    /// Optional ticket tier index. If Some, autominer uses tickets instead of SOL for bets.
+    /// sol_per_round then covers only caller compensation (gas fees for keeper bots).
+    /// Bet amount is determined by the ticket value in player_data.free_tickets[tier].
+    pub use_ticket: Option<u8>,
 }
 
 impl AutominerVault {
@@ -1182,5 +1187,6 @@ impl AutominerVault {
         8 +     // last_bet_round_id
         1 +     // vault_bump
         8 +     // sol_balance
-        1; // can_reload (bool)
+        1 +     // can_reload (bool)
+        1 + 1;  // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
 }

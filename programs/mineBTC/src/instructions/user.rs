@@ -417,6 +417,7 @@ pub fn internal_init_autominer(
     sol_per_round: u64,
     num_rounds: u32,
     can_reload: bool,
+    use_ticket: Option<u8>,
 ) -> Result<()> {
     msg!("🤖 [init_autominer] Initializing autominer vault");
     msg!("   Owner: {}", ctx.accounts.user_wallet.key());
@@ -508,15 +509,45 @@ pub fn internal_init_autominer(
     require!(bets_per_round > 0, ErrorCode::InvalidParameters);
     msg!("     ✓ Bets per round: {}", bets_per_round);
 
+    // Validate ticket configuration if provided
+    if let Some(ticket_tier_index) = use_ticket {
+        let player_data = &ctx.accounts.player_data;
+        require!(
+            (ticket_tier_index as usize) < player_data.free_tickets.len(),
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            player_data.free_tickets_remaining[ticket_tier_index as usize] > 0,
+            ErrorCode::InvalidParameters
+        );
+        let ticket_value = player_data.free_tickets[ticket_tier_index as usize];
+        msg!(
+            "     ✓ Ticket tier {} selected: {} SOL value, {} remaining",
+            ticket_tier_index,
+            (ticket_value as f64 / 1e9),
+            player_data.free_tickets_remaining[ticket_tier_index as usize]
+        );
+    }
+
     // Calculate bet size per bet
-    let bet_size_per_bet = sol_per_round / bets_per_round;
-    require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
-    msg!(
-        "     Bet size per bet:{} SOL per bet ({} SOL / {} bets)",
-        (bet_size_per_bet as f64 / 1e9),
-        (sol_per_round as f64 / 1e9),
-        bets_per_round
-    );
+    // In ticket mode, sol_per_round is only for caller compensation (gas fees)
+    // Actual bet amount is determined at execution time from ticket value
+    let bet_size_per_bet = if use_ticket.is_some() {
+        0 // Resolved at execution time from player_data.free_tickets[tier]
+    } else {
+        sol_per_round / bets_per_round
+    };
+    if use_ticket.is_none() {
+        require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
+        msg!(
+            "     Bet size per bet: {} SOL per bet ({} SOL / {} bets)",
+            (bet_size_per_bet as f64 / 1e9),
+            (sol_per_round as f64 / 1e9),
+            bets_per_round
+        );
+    } else {
+        msg!("     Ticket mode: bet size determined at execution time");
+    }
 
     msg!("   Initializing autominer vault...");
 
@@ -544,6 +575,7 @@ pub fn internal_init_autominer(
     autominer_vault.vault_bump = ctx.bumps.autominer_vault;
     autominer_vault.sol_balance = total_sol;
     autominer_vault.can_reload = can_reload;
+    autominer_vault.use_ticket = use_ticket;
     msg!(
         "     Vault initialized for owner: {}",
         autominer_vault.owner
@@ -578,6 +610,7 @@ pub fn internal_init_autominer(
         has_blocks_config,
         has_factions_config,
         can_reload,
+        use_ticket,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -744,6 +777,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     let blocks_config = ctx.accounts.autominer_vault.blocks_config.clone(); // Already Option<BlocksConfig>
     let factions_config = ctx.accounts.autominer_vault.factions_config.clone();
     let sol_balance = ctx.accounts.autominer_vault.sol_balance;
+    let use_ticket = ctx.accounts.autominer_vault.use_ticket;
     let custody_bump = ctx.bumps.autominer_custody;
     let autominer_custody_info = ctx.accounts.autominer_custody.to_account_info();
 
@@ -788,26 +822,39 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         (sol_per_round as f64 / 1e9)
     );
 
-    // Deduct caller compensation from sol_per_round to get actual betting amount
-    let sol_for_betting = sol_per_round
-        .checked_sub(total_caller_compensation)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "     SOL for betting: {} SOL ({} SOL - {} SOL compensation)",
-        (sol_for_betting as f64 / 1e9),
-        (sol_per_round as f64 / 1e9),
-        (total_caller_compensation as f64 / 1e9)
-    );
-
-    // Calculate bet size per bet (distributed across all bets)
-    let bet_size_per_bet = sol_for_betting / bet_types.len() as u64;
-    require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
-    msg!(
-        "     Bet size per bet: {} SOL ({} SOL / {} bets)",
-        (bet_size_per_bet as f64 / 1e9),
-        (sol_for_betting as f64 / 1e9),
-        bet_types.len()
-    );
+    // Determine bet parameters based on mode (SOL vs tickets)
+    let (bet_size_per_bet, effective_use_ticket) = if let Some(ticket_tier_index) = use_ticket {
+        // Ticket mode: bet amount comes from player's ticket value
+        // sol_per_round is only for caller compensation in this mode
+        let player_data = &ctx.accounts.player_data;
+        require!(
+            (ticket_tier_index as usize) < player_data.free_tickets.len(),
+            ErrorCode::InvalidParameters
+        );
+        let ticket_value = player_data.free_tickets[ticket_tier_index as usize];
+        require!(ticket_value > 0, ErrorCode::InvalidAmount);
+        msg!(
+            "     Ticket mode: tier {}, value {} SOL, bets: {}",
+            ticket_tier_index,
+            (ticket_value as f64 / 1e9),
+            bet_types.len()
+        );
+        (ticket_value, Some(ticket_tier_index))
+    } else {
+        // SOL mode: deduct caller compensation from sol_per_round to get betting amount
+        let sol_for_betting = sol_per_round
+            .checked_sub(total_caller_compensation)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let bet_per = sol_for_betting / bet_types.len() as u64;
+        require!(bet_per > 0, ErrorCode::InvalidAmount);
+        msg!(
+            "     SOL mode: {} SOL per bet ({} SOL / {} bets)",
+            (bet_per as f64 / 1e9),
+            (sol_for_betting as f64 / 1e9),
+            bet_types.len()
+        );
+        (bet_per, None)
+    };
 
     // Pay caller compensation (transfer from custody PDA to caller)
     if total_caller_compensation > 0 {
@@ -920,7 +967,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         owner_key,
         bet_size_per_bet,
         expanded_bet_types.clone(),
-        None,                  // autominer always uses SOL, not tickets
+        effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
     )?;
