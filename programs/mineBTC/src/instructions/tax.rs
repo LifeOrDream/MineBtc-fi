@@ -793,8 +793,17 @@ pub fn internal_claim_faction_treasury_rewards(
     );
 
     // Transfer tokens from treasury vault to emission vault
+    // faction_treasury_vault authority is withdraw_withheld_authority (set at init),
+    // so we must sign with that PDA
+    let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
+    let withdraw_authority_seeds = &[
+        WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
+        &[withdraw_authority_bump],
+    ];
+    let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
+
     token_2022::transfer_checked(
-        CpiContext::new(
+        CpiContext::new_with_signer(
             ctx.accounts.token_program_2022.to_account_info(),
             token_2022::TransferChecked {
                 from: ctx.accounts.faction_treasury_vault.to_account_info(),
@@ -802,9 +811,10 @@ pub fn internal_claim_faction_treasury_rewards(
                 to: ctx.accounts.minebtc_emission_vault.to_account_info(),
                 authority: ctx
                     .accounts
-                    .minebtc_emission_vault_authority
+                    .withdraw_withheld_authority
                     .to_account_info(),
             },
+            withdraw_authority_signer,
         ),
         reward_amount,
         ctx.accounts.minebtc_mint.decimals,
@@ -1166,19 +1176,20 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     pub faction_state: Account<'info, FactionState>,
 
     #[account(mut)]
-    /// CHECK: Faction treasury vault
+    /// CHECK: Faction treasury vault (authority = withdraw_withheld_authority)
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(mut)]
     /// CHECK: MineBtc emission vault (receives transferred tokens)
     pub minebtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
 
+    /// CHECK: Withdraw withheld authority PDA — signs transfers from faction_treasury_vault
+    /// (this is the authority that was set when faction_treasury_vault was initialized)
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
         bump
     )]
-    /// CHECK: Emission vault authority PDA
-    pub minebtc_emission_vault_authority: UncheckedAccount<'info>,
+    pub withdraw_withheld_authority: AccountInfo<'info>,
 
     /// CHECK: MineBtc mint (for transfer decimals)
     pub minebtc_mint: InterfaceAccount<'info, Mint>,
