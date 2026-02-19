@@ -22,7 +22,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // ## Distribution Rounds
 //
-// Every 7 days, a distribution round calculates faction rankings based on total hashpower:
+// Every day, a distribution round calculates faction rankings based on total hashpower:
 // 1. Factions are ranked by hashpower (highest to lowest).
 // 2. Rewards are distributed using a tiered model (top factions earn more).
 // 3. Each faction claims rewards, which are distributed to their stakers.
@@ -31,7 +31,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
 // - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
-// - `start_distribution_round`: Initiates a new 7-day distribution cycle.
+// - `start_distribution_round`: Initiates a new distribution cycle (1-day cooldown).
 // - `cal_faction_positions`: Ranks one faction by hashpower.
 // - `cal_faction_rewards`: Computes rewards for all factions.
 // - `claim_faction_treasury_rewards`: Claims rewards for a faction's stakers.
@@ -501,7 +501,7 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
 // ============================= DISTRIBUTION ROUND MANAGEMENT ===========================
 // ========================================================================================
 
-/// Start a new distribution round (callable by anyone after 7-day cooldown)
+/// Start a new distribution round (callable by anyone after 1-day cooldown)
 pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
     msg!("🎯 [start_distribution_round] Starting new distribution round");
 
@@ -509,7 +509,7 @@ pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -
     let clock = Clock::get()?;
     let current_time = clock.unix_timestamp;
 
-    // Check if 7 days have passed since last distribution round ended
+    // Check if 1 day has passed since last distribution round ended
     require!(!tax_config.round_active, ErrorCode::InvalidState);
 
     require!(
@@ -793,18 +793,25 @@ pub fn internal_claim_faction_treasury_rewards(
     );
 
     // Transfer tokens from treasury vault to emission vault
+    // faction_treasury_vault authority is withdraw_withheld_authority (set at init),
+    // so we must sign with that PDA
+    let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
+    let withdraw_authority_seeds = &[
+        WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
+        &[withdraw_authority_bump],
+    ];
+    let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
+
     token_2022::transfer_checked(
-        CpiContext::new(
+        CpiContext::new_with_signer(
             ctx.accounts.token_program_2022.to_account_info(),
             token_2022::TransferChecked {
                 from: ctx.accounts.faction_treasury_vault.to_account_info(),
                 mint: ctx.accounts.minebtc_mint.to_account_info(),
                 to: ctx.accounts.minebtc_emission_vault.to_account_info(),
-                authority: ctx
-                    .accounts
-                    .minebtc_emission_vault_authority
-                    .to_account_info(),
+                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
             },
+            withdraw_authority_signer,
         ),
         reward_amount,
         ctx.accounts.minebtc_mint.decimals,
@@ -1166,19 +1173,20 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     pub faction_state: Account<'info, FactionState>,
 
     #[account(mut)]
-    /// CHECK: Faction treasury vault
+    /// CHECK: Faction treasury vault (authority = withdraw_withheld_authority)
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(mut)]
     /// CHECK: MineBtc emission vault (receives transferred tokens)
     pub minebtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
 
+    /// CHECK: Withdraw withheld authority PDA — signs transfers from faction_treasury_vault
+    /// (this is the authority that was set when faction_treasury_vault was initialized)
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
         bump
     )]
-    /// CHECK: Emission vault authority PDA
-    pub minebtc_emission_vault_authority: UncheckedAccount<'info>,
+    pub withdraw_withheld_authority: AccountInfo<'info>,
 
     /// CHECK: MineBtc mint (for transfer decimals)
     pub minebtc_mint: InterfaceAccount<'info, Mint>,

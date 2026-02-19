@@ -361,7 +361,7 @@ pub struct HashpowerConfig {
     /// Maximum lockup period in days
     pub max_lockup_days: u64,
 
-    /// Base multiplier (100 = 1x)
+    /// Base multiplier for lockup duration (100 = 1x, separate from BASE_MULTIPLIER=1000 used for doges)
     pub base_multiplier: u16,
     /// Maximum multiplier for longest lockup (e.g., 900 = 9x for 3 years)
     pub max_multiplier: u16,
@@ -470,7 +470,7 @@ pub struct TaxConfig {
     pub round_active: bool,
     /// Timestamp when current distribution round started
     pub start_timestamp: i64,
-    /// Timestamp when last distribution round ended (for 7-day cooldown)
+    /// Timestamp when last distribution round ended (for 1-day cooldown)
     pub end_timestamp: i64,
 
     /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)
@@ -1161,6 +1161,11 @@ pub struct AutominerVault {
 
     /// If set to true, SOL rewards can be used to reload Autominer and continue mining dogeBTC
     pub can_reload: bool,
+
+    /// Optional ticket tier index. If Some, autominer uses tickets instead of SOL for bets.
+    /// sol_per_round then covers only caller compensation (gas fees for keeper bots).
+    /// Bet amount is determined by the ticket value in player_data.free_tickets[tier].
+    pub use_ticket: Option<u8>,
 }
 
 impl AutominerVault {
@@ -1182,5 +1187,6 @@ impl AutominerVault {
         8 +     // last_bet_round_id
         1 +     // vault_bump
         8 +     // sol_balance
-        1; // can_reload (bool)
+        1 +     // can_reload (bool)
+        1 + 1; // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
 }

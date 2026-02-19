@@ -711,6 +711,14 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     // Validate round has ended
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
 
+    // Validate caller is a whitelisted cranker bot
+    require!(
+        global_state
+            .cranker_bots
+            .contains(&ctx.accounts.authority.key()),
+        ErrorCode::Unauthorized
+    );
+
     // Get winning faction from block assignments
     let winning_faction_id = game_session.winning_faction_id;
     require!(
@@ -873,8 +881,12 @@ fn distribute_rewards_amg_stakers(
     round_id: u64,
 ) -> Result<()> {
     if faction_state.total_dogebtc_hashpower > 0 {
+        // Calculate shares BEFORE modifying the totals
+        let dogebtc_minebtc_share = minebtc_staker_rewards / 2;
+        let dogebtc_sol_share = sol_staker_fees / 2;
+
         let minebtc_per_share = helper::mul_div(
-            minebtc_staker_rewards / 2,
+            dogebtc_minebtc_share,
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
@@ -888,12 +900,11 @@ fn distribute_rewards_amg_stakers(
         );
 
         let sol_reward_inc = helper::mul_div(
-            sol_staker_fees / 2,
+            dogebtc_sol_share,
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
         faction_state.dogebtc_sol_reward_index += sol_reward_inc;
-        sol_staker_fees = sol_staker_fees - (sol_staker_fees / 2);
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
             faction_state.dogebtc_sol_reward_index - sol_reward_inc,
@@ -904,12 +915,15 @@ fn distribute_rewards_amg_stakers(
         emit!(DogeBtcStakingRewardsDistributed {
             round_id: round_id,
             faction_id: faction_state.faction_id,
-            minebtc_staker_rewards: minebtc_staker_rewards / 2,
-            sol_staker_rewards: sol_staker_fees / 2,
+            minebtc_staker_rewards: dogebtc_minebtc_share,
+            sol_staker_rewards: dogebtc_sol_share,
             dogebtc_dogebtc_reward_index: faction_state.dogebtc_dogebtc_reward_index,
             dogebtc_sol_reward_index: faction_state.dogebtc_sol_reward_index
         });
-        minebtc_staker_rewards = minebtc_staker_rewards - (minebtc_staker_rewards / 2);
+
+        // Deduct shares AFTER event emission
+        minebtc_staker_rewards = minebtc_staker_rewards - dogebtc_minebtc_share;
+        sol_staker_fees = sol_staker_fees - dogebtc_sol_share;
     }
 
     if faction_state.total_lp_hashpower > 0 {

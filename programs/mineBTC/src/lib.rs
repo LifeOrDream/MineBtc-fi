@@ -559,6 +559,7 @@ pub mod minebtc {
     }
 
     /// Initialize autominer vault with flexible block/faction configuration
+    /// use_ticket: Optional ticket tier index. If Some, autominer uses tickets instead of SOL for bets.
     pub fn init_autominer(
         ctx: Context<InitAutominer>,
         blocks_config: Option<BlocksConfig>,
@@ -566,6 +567,7 @@ pub mod minebtc {
         sol_per_round: u64,
         num_rounds: u32,
         can_reload: bool,
+        use_ticket: Option<u8>,
     ) -> Result<()> {
         user::internal_init_autominer(
             ctx,
@@ -574,6 +576,7 @@ pub mod minebtc {
             sol_per_round,
             num_rounds,
             can_reload,
+            use_ticket,
         )
     }
 

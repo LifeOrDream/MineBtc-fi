@@ -481,8 +481,9 @@ pub fn int_admin_mint_doge(
 }
 
 /// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
-/// Users can stake up to 5 doges, each additional doge increases multiplier by 0.5x
-/// Multipliers: 1 doge = 1.5x, 2 doges = 2.0x, 3 doges = 2.5x, 4 doges = 3.0x, 5 doges = 3.5x
+/// Each doge's multiplier (BASE_MULTIPLIER=1000 = 1.0x at genesis) is ADDED to the player's doge_multiplier.
+/// Example: 2 genesis doges = 1000+1000 = 2000 (2.0x). Mutated doges with higher multipliers add more.
+/// Max player multiplier capped at MAX_MULTIPLIER (10000 = 10.0x).
 pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;

@@ -1008,16 +1008,17 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     }
 
     // Update total claimable minebtc amount
-    // Deduct user's base pending rewards + referral bonus + referral reward (all come from pool)
+    // Only deduct the user's base pending rewards (what was actually tracked in total_minebtc_claimable).
+    // Referral bonus + reward are paid from the emissions vault directly and were never
+    // added to total_minebtc_claimable, so subtracting them would cause accounting drift
+    // and inflate the refining fee index for remaining stakers.
     let base_pending = player_data.pending_minebtc_rewards;
-    let total_deducted = base_pending + referral_bonus + referral_reward;
     unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
         .total_minebtc_claimable
-        .saturating_sub(total_deducted);
+        .saturating_sub(base_pending);
     player_data.pending_minebtc_rewards = 0;
     msg!(
-        "   Deducted {} minebtc from total claimable (base: {}, bonus: {}, referrer: {})",
-        total_deducted as f64 / 1e6,
+        "   Deducted {} minebtc from total claimable (referral bonus: {}, referrer reward: {} paid from emissions vault)",
         base_pending as f64 / 1e6,
         referral_bonus as f64 / 1e6,
         referral_reward as f64 / 1e6
@@ -1241,11 +1242,12 @@ pub fn int_update_lp_staking_rewards(
             player_data.pending_minebtc_rewards as f64 / 1e6,
             new_minebtc_rewards as f64 / 1e6
         );
-
-        // Update reward debt to current indexes
-        player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
-        player_data.lp_dogebtc_reward_debt = faction_state.lp_dogebtc_reward_index;
     }
+
+    // Update reward debt to current indexes (MUST be outside if block to prevent
+    // phantom rewards when user unstakes all LP and re-stakes later)
+    player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
+    player_data.lp_dogebtc_reward_debt = faction_state.lp_dogebtc_reward_index;
 
     Ok((
         new_sol_rewards,
