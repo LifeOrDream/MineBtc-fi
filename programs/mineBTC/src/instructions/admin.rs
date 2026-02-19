@@ -19,7 +19,10 @@ use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use mpl_core::{instructions::CreateCollectionV1CpiBuilder, ID as MPL_CORE_PROGRAM_ID};
+use mpl_core::{
+    instructions::{CreateCollectionV1CpiBuilder, UpdateCollectionV1CpiBuilder},
+    ID as MPL_CORE_PROGRAM_ID,
+};
 
 use crate::errors::ErrorCode;
 
@@ -31,7 +34,7 @@ use anchor_spl::token_interface::{
 
 use mpl_core::{
     instructions::AddCollectionPluginV1CpiBuilder,
-    types::{Creator, Plugin, PluginAuthority, Royalties, RuleSet},
+    types::{Creator, Plugin, PluginAuthority, Royalties, RuleSet, UpdateDelegate},
 };
 
 /// Helper type for passing creators from client
@@ -747,6 +750,97 @@ pub fn init_doge_royalties_internal(
     Ok(())
 }
 
+/// Add an UpdateDelegate to the collection (admin only)
+///
+/// Adds an external wallet as an UpdateDelegate on the Metaplex Core collection.
+/// This allows the delegate to sign verification messages for marketplace registration
+/// (e.g. Magic Eden) WITHOUT transferring the update authority away from the program PDA.
+/// Minting continues to work since the PDA remains the update authority.
+///
+/// # Parameters
+/// - `delegate`: The wallet address to add as a delegate
+pub fn add_collection_delegate_internal(
+    ctx: Context<AddCollectionDelegate>,
+    delegate: Pubkey,
+) -> Result<()> {
+    let bump = ctx.bumps.collection_authority;
+    let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[seeds];
+
+    let mpl_core_info = ctx.accounts.mpl_core_program.to_account_info();
+    let collection_info = ctx.accounts.collection.to_account_info();
+    let authority_info = ctx.accounts.authority.to_account_info();
+    let collection_auth_info = ctx.accounts.collection_authority.to_account_info();
+    let system_info = ctx.accounts.system_program.to_account_info();
+
+    let mut cpi = AddCollectionPluginV1CpiBuilder::new(&mpl_core_info);
+
+    cpi.collection(&collection_info)
+        .payer(&authority_info)
+        .authority(Some(&collection_auth_info))
+        .plugin(Plugin::UpdateDelegate(UpdateDelegate {
+            additional_delegates: vec![delegate],
+        }))
+        .init_authority(PluginAuthority::UpdateAuthority)
+        .system_program(&system_info)
+        .invoke_signed(signer_seeds)?;
+
+    emit!(CollectionDelegateAdded {
+        collection: ctx.accounts.collection.key(),
+        delegate,
+    });
+
+    Ok(())
+}
+
+/// Update collection metadata (name, URI) via the program PDA (admin only)
+///
+/// Updates the collection's on-chain name and/or URI. Useful for fixing
+/// dead image URLs or updating collection metadata.
+///
+/// # Parameters
+/// - `new_name`: Optional new collection name
+/// - `new_uri`: Optional new collection URI
+pub fn update_collection_info_internal(
+    ctx: Context<AddCollectionDelegate>,
+    new_name: Option<String>,
+    new_uri: Option<String>,
+) -> Result<()> {
+    let bump = ctx.bumps.collection_authority;
+    let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[seeds];
+
+    let mpl_core_info = ctx.accounts.mpl_core_program.to_account_info();
+    let collection_info = ctx.accounts.collection.to_account_info();
+    let authority_info = ctx.accounts.authority.to_account_info();
+    let collection_auth_info = ctx.accounts.collection_authority.to_account_info();
+    let system_info = ctx.accounts.system_program.to_account_info();
+
+    let mut cpi = UpdateCollectionV1CpiBuilder::new(&mpl_core_info);
+
+    cpi.collection(&collection_info)
+        .payer(&authority_info)
+        .authority(Some(&collection_auth_info))
+        .system_program(&system_info);
+
+    if let Some(name) = &new_name {
+        cpi.new_name(name.clone());
+    }
+    if let Some(uri) = &new_uri {
+        cpi.new_uri(uri.clone());
+    }
+
+    cpi.invoke_signed(signer_seeds)?;
+
+    emit!(CollectionInfoUpdated {
+        collection: ctx.accounts.collection.key(),
+        new_name,
+        new_uri,
+    });
+
+    Ok(())
+}
+
 /// Add or update ticket tier configs (admin only)
 ///
 /// Configures ticket tier options that users can choose when minting Doge.
@@ -1395,6 +1489,45 @@ pub struct UpdateDogeConfig<'info> {
 
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AddCollectionDelegate<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
+        bump = doges_config.bump,
+    )]
+    pub doges_config: Account<'info, DogeConfig>,
+
+    /// CHECK: Doge collection (already created via MPL Core)
+    #[account(
+        mut,
+        address = doges_config.doge_collection @ ErrorCode::InvalidAccount
+    )]
+    pub collection: UncheckedAccount<'info>,
+
+    /// CHECK: PDA that is update_authority for the collection
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED.as_ref()],
+        bump
+    )]
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    #[account(address = mpl_core::ID @ ErrorCode::InvalidMplCoreProgram)]
+    pub mpl_core_program: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
