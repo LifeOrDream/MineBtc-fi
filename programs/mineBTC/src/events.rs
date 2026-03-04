@@ -40,6 +40,14 @@ pub struct FactionAdded {
     pub faction_key: Pubkey,
 }
 
+#[event]
+pub struct FactionRenamed {
+    pub authority: Pubkey,
+    pub faction_id: u8,
+    pub old_name: String,
+    pub new_name: String,
+}
+
 // ------------------------------
 // Dynamic distribution events
 // ------------------------------

@@ -289,6 +289,52 @@ pub fn add_faction_internal(
     Ok(())
 }
 
+/// Rename a faction in the supported_factions list (admin only)
+///
+/// Updates the faction name string at the given index. This only changes the
+/// display name stored in GlobalConfig.supported_factions — the FactionState PDA
+/// (derived from the original name during add_faction) is unaffected.
+///
+/// # Parameters
+/// - `faction_id`: Index in supported_factions to rename (0-based)
+/// - `new_name`: New faction name (max MAX_FACTION_NAME_LENGTH characters)
+///
+/// # Constraints
+/// - Only ext_authority can call this
+/// - faction_id must be within bounds
+/// - new_name must be non-empty and within length limit
+pub fn rename_faction_internal(
+    ctx: Context<UpdateConfigAc>,
+    faction_id: u8,
+    new_name: String,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+
+    // Validate faction_id is within bounds
+    require!(
+        (faction_id as usize) < global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+
+    // Validate new name
+    require!(
+        new_name.len() > 0 && new_name.len() <= MAX_FACTION_NAME_LENGTH,
+        ErrorCode::InvalidFactionName
+    );
+
+    let old_name = global_config.supported_factions[faction_id as usize].clone();
+    global_config.supported_factions[faction_id as usize] = new_name.clone();
+
+    emit!(FactionRenamed {
+        authority: ctx.accounts.authority.key(),
+        faction_id,
+        old_name,
+        new_name,
+    });
+
+    Ok(())
+}
+
 /// Update the global configuration parameters (admin only)
 ///
 /// Updates the program authority and/or fee recipient address.

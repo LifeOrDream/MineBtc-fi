@@ -87,6 +87,15 @@ pub mod minebtc {
         admin::add_faction_internal(ctx, faction_name, faction_id)
     }
 
+    /// Rename a faction in supported_factions (admin only)
+    pub fn rename_faction(
+        ctx: Context<UpdateConfigAc>,
+        faction_id: u8,
+        new_name: String,
+    ) -> Result<()> {
+        admin::rename_faction_internal(ctx, faction_id, new_name)
+    }
+
     /// Initialize system referral account and buybacks system (admin only)
     pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
         admin::initialize_system_accounts_internal(ctx)
