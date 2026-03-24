@@ -39,6 +39,7 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 pub const MAX_REFERRALS_PER_CODE: u16 = 15; // Maximum users per referral code
 pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
 pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
+pub const CROSS_FACTION_PENALTY_PCT: u64 = 30; // 30% hashpower penalty for staking in non-home faction
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
@@ -73,10 +74,6 @@ pub fn int_stake_minebtc(
     let hashpower_config = &ctx.accounts.hashpower_config;
 
     // Validate inputs
-    require!(
-        faction_state.faction_id == player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(
         lockup_duration >= hashpower_config.min_lockup_days
@@ -138,6 +135,15 @@ pub fn int_stake_minebtc(
 
     // Calculate weighted amount for this position
     let weighted_amount = (actual_amount * multiplier as u64) / M_HUNDRED;
+    // Apply cross-faction penalty: 30% hashpower reduction if staking outside home faction
+    let is_cross_faction = faction_state.faction_id != player_data.faction_id;
+    let weighted_amount = if is_cross_faction {
+        let penalized = (weighted_amount * (100 - CROSS_FACTION_PENALTY_PCT)) / M_HUNDRED;
+        msg!("   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}", CROSS_FACTION_PENALTY_PCT, weighted_amount as f64 / 1e6, penalized as f64 / 1e6);
+        penalized
+    } else {
+        weighted_amount
+    };
     msg!(
         "⚖️ Weighted amount: {} (actual amount: {} × multiplier: {}%)",
         weighted_amount as f64 / 1e6,
@@ -162,7 +168,7 @@ pub fn int_stake_minebtc(
     helper::init_position(
         user_position,
         0, // position_type
-        player_data.faction_id,
+        faction_state.faction_id,
         position_index,
         actual_amount,
         weighted_amount,
@@ -481,10 +487,6 @@ pub fn int_stake_lp_tokens(
     let hashpower_config = &ctx.accounts.hashpower_config;
 
     // Validate inputs
-    require!(
-        faction_state.faction_id == player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(
         lockup_duration >= hashpower_config.min_lockup_days
@@ -526,6 +528,15 @@ pub fn int_stake_lp_tokens(
 
     // Calculate weighted amount for this position
     let weighted_amount = actual_amount * multiplier as u64 / M_HUNDRED;
+    // Apply cross-faction penalty: 30% hashpower reduction if staking outside home faction
+    let is_cross_faction = faction_state.faction_id != player_data.faction_id;
+    let weighted_amount = if is_cross_faction {
+        let penalized = (weighted_amount * (100 - CROSS_FACTION_PENALTY_PCT)) / M_HUNDRED;
+        msg!("   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}", CROSS_FACTION_PENALTY_PCT, weighted_amount as f64 / 1e6, penalized as f64 / 1e6);
+        penalized
+    } else {
+        weighted_amount
+    };
     msg!(
         "⚖️ Weighted amount: {} (amount: {} × multiplier: {}%)",
         weighted_amount as f64 / 1e6,
@@ -550,7 +561,7 @@ pub fn int_stake_lp_tokens(
     helper::init_position(
         user_position,
         1, // position_type
-        player_data.faction_id,
+        faction_state.faction_id,
         position_index,
         actual_amount,
         weighted_amount,
@@ -831,11 +842,6 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 /// and accumulates MineBTC to pending_minebtc_rewards (NOT transferred here)
 pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
     msg!("💰 [claim_staking_rewards] Claiming SOL rewards + accumulating MineBTC");
-
-    require!(
-        ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();

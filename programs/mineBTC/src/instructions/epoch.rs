@@ -310,11 +310,12 @@ pub struct UpdateRiskFactor<'info> {
 /// the GameSession's block_assignments. Also accumulates into EpochState totals.
 pub fn accumulate_epoch_bets_internal(ctx: Context<AccumulateEpochBets>) -> Result<()> {
     let game_session = &ctx.accounts.game_session;
-    let user_game_bet = &ctx.accounts.user_game_bet;
+    let user_game_bet = &mut ctx.accounts.user_game_bet;
     let epoch_state = &mut ctx.accounts.epoch_state;
     let user_epoch_bets = &mut ctx.accounts.user_epoch_bets;
 
     require!(epoch_state.stage == 0, ErrorCode::EpochAlreadySettled);
+    require!(!user_game_bet.epoch_accumulated, ErrorCode::EpochAlreadySettled);
 
     // Verify this round falls within the epoch window
     require!(
@@ -351,6 +352,8 @@ pub fn accumulate_epoch_bets_internal(ctx: Context<AccumulateEpochBets>) -> Resu
     msg!("🌍 [accumulate_epoch_bets] User {} round {} -> epoch {}",
         user_game_bet.owner, game_session.round_id, epoch_state.epoch_id);
 
+    user_game_bet.epoch_accumulated = true;
+
     Ok(())
 }
 
@@ -368,6 +371,7 @@ pub struct AccumulateEpochBets<'info> {
     pub game_session: Account<'info, GameSession>,
 
     /// The user's bet for that round
+    #[account(mut)]
     pub user_game_bet: Account<'info, UserGameBet>,
 
     #[account(
@@ -381,6 +385,14 @@ pub struct AccumulateEpochBets<'info> {
 
     #[account(mut)]
     pub payer: Signer<'info>,
+
+    #[account(
+        seeds = [EPOCH_CONFIG_SEED],
+        bump = epoch_config.bump,
+        constraint = epoch_config.oracle_authority == payer.key() @ ErrorCode::InvalidOracleAuthority,
+    )]
+    pub epoch_config: Account<'info, EpochConfig>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -418,6 +430,7 @@ pub struct RecordEpochRoundMining<'info> {
     #[account(
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
+        constraint = epoch_config.oracle_authority == authority.key() @ ErrorCode::InvalidOracleAuthority,
     )]
     pub epoch_config: Account<'info, EpochConfig>,
 
@@ -490,6 +503,7 @@ pub struct SettleEpoch<'info> {
     #[account(
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
+        constraint = epoch_config.oracle_authority == authority.key() @ ErrorCode::InvalidOracleAuthority,
     )]
     pub epoch_config: Account<'info, EpochConfig>,
 
@@ -514,7 +528,7 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>) -> Result<(
     let epoch_state = &ctx.accounts.epoch_state;
     let user_epoch_bets = &mut ctx.accounts.user_epoch_bets;
     let player_data = &mut ctx.accounts.player_data;
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    let _mine_btc_mining = &ctx.accounts.mine_btc_mining;
     let clock = Clock::get()?;
 
     require!(epoch_state.stage == 2, ErrorCode::EpochNotSettled);
@@ -548,7 +562,6 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>) -> Result<(
     if reward > 0 {
         // Add to pending rewards (same path as round rewards, claimed via withdraw_dbtc_rewards)
         player_data.pending_minebtc_rewards += reward;
-        mine_btc_mining.total_tokens_distributed += reward;
 
         msg!("🌍 [claim_epoch_rewards] User {} earned {} dogeBTC from epoch {}",
             user_epoch_bets.owner, reward, epoch_state.epoch_id);
@@ -592,7 +605,6 @@ pub struct ClaimEpochRewards<'info> {
     pub player_data: Account<'info, PlayerData>,
 
     #[account(
-        mut,
         seeds = [MINE_BTC_MINING_SEED],
         bump = mine_btc_mining.bump,
     )]

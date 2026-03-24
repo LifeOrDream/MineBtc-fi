@@ -1090,6 +1090,8 @@ pub struct UserGameBet {
     // --- Instant Mutation (applied during claim_rewards) ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
+    /// Whether this bet has been accumulated into epoch bets
+    pub epoch_accumulated: bool,
 }
 
 impl UserGameBet {
@@ -1109,7 +1111,8 @@ impl UserGameBet {
         8 +     // total_fee
         32 +     // gameplay_doge
         1 +     // bump
-        1; // mutation_type
+        1 +     // mutation_type
+        1; // epoch_accumulated
 }
 
 /// Autominer configuration for blocks
@@ -1274,7 +1277,7 @@ pub struct EpochState {
     /// Scores are accumulated additively: oracle calls update_epoch_scores multiple times.
     pub faction_scores: [u16; NUM_FACTIONS],
 
-    /// Total SOL bet per faction during this epoch (accumulated from round bets)
+    /// Total weighted bets per faction during this epoch (accumulated from round bets)
     /// Used as weights: user's epoch reward = their_faction_weighted_score / total_weighted_score * pool
     pub faction_total_sol_bets: [u64; NUM_FACTIONS],
 
