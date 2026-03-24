@@ -35,6 +35,7 @@ pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::doges::*;
 pub use instructions::economy::*;
+pub use instructions::epoch::*;
 pub use instructions::game::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
@@ -52,6 +53,7 @@ pub mod minebtc {
     use instructions::admin::{self};
     use instructions::doges::{self};
     use instructions::economy::{self};
+    use instructions::epoch::{self};
     use instructions::game::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
@@ -521,6 +523,71 @@ pub mod minebtc {
     /// Finish distribution round (check all factions claimed and reset state)
     pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
         tax::internal_finish_distribution_round(ctx)
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ EPOCH MINING SYSTEM -------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize epoch mining configuration (admin only)
+    pub fn initialize_epoch_config(
+        ctx: Context<InitializeEpochConfig>,
+        oracle_authority: Pubkey,
+        epoch_duration: u64,
+        risk_factor: u16,
+    ) -> Result<()> {
+        epoch::initialize_epoch_config_internal(ctx, oracle_authority, epoch_duration, risk_factor)
+    }
+
+    /// Update epoch mining configuration (admin only)
+    pub fn update_epoch_config(
+        ctx: Context<UpdateEpochConfig>,
+        oracle_authority: Option<Pubkey>,
+        epoch_duration: Option<u64>,
+        is_active: Option<bool>,
+    ) -> Result<()> {
+        epoch::update_epoch_config_internal(ctx, oracle_authority, epoch_duration, is_active)
+    }
+
+    /// Start a new 24-hour epoch
+    pub fn start_epoch(ctx: Context<StartEpoch>) -> Result<()> {
+        epoch::start_epoch_internal(ctx)
+    }
+
+    /// AI Oracle posts additive faction score deltas (with reason in tx memo)
+    pub fn update_epoch_scores(
+        ctx: Context<UpdateEpochScores>,
+        score_deltas: [u16; 12],
+    ) -> Result<()> {
+        epoch::update_epoch_scores_internal(ctx, score_deltas)
+    }
+
+    /// AI Oracle updates global risk factor based on world volatility
+    pub fn update_risk_factor(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
+        epoch::update_risk_factor_internal(ctx, risk_factor)
+    }
+
+    /// Cranker records user's per-faction bets from a completed round into epoch
+    pub fn accumulate_epoch_bets(ctx: Context<AccumulateEpochBets>) -> Result<()> {
+        epoch::accumulate_epoch_bets_internal(ctx)
+    }
+
+    /// Cranker records dogeBTC mined in a round towards epoch total
+    pub fn record_epoch_round_mining(
+        ctx: Context<RecordEpochRoundMining>,
+        dogebtc_mined: u64,
+    ) -> Result<()> {
+        epoch::record_epoch_round_mining_internal(ctx, dogebtc_mined)
+    }
+
+    /// Settle epoch: finalize scores and compute reward pool
+    pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
+        epoch::settle_epoch_internal(ctx)
+    }
+
+    /// User claims their epoch mining rewards
+    pub fn claim_epoch_rewards(ctx: Context<ClaimEpochRewards>) -> Result<()> {
+        epoch::claim_epoch_rewards_internal(ctx)
     }
 
     // ----------------------------------------------------------------------------------------

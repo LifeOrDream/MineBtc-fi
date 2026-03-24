@@ -660,3 +660,57 @@ pub struct DogeVisualMutation {
     pub old_val: u8,
     pub new_val: u8,
 }
+
+// ========================================================================================
+// =============================== EPOCH MINING EVENTS ====================================
+// ========================================================================================
+
+/// Event emitted when a new epoch starts
+#[event]
+pub struct EpochStarted {
+    pub epoch_id: u64,
+    pub start_timestamp: u64,
+    pub end_timestamp: u64,
+    pub risk_factor: u16,
+    pub timestamp: i64,
+}
+
+/// Event emitted when AI oracle updates faction scores
+#[event]
+pub struct EpochScoresUpdated {
+    pub epoch_id: u64,
+    pub score_deltas: [u16; 12],
+    pub cumulative_scores: [u16; 12],
+    pub update_number: u16,
+    pub timestamp: i64,
+}
+
+/// Event emitted when risk factor is updated
+#[event]
+pub struct RiskFactorUpdated {
+    pub old_risk_factor: u16,
+    pub new_risk_factor: u16,
+    pub timestamp: i64,
+}
+
+/// Event emitted when an epoch is settled
+#[event]
+pub struct EpochSettled {
+    pub epoch_id: u64,
+    pub total_dogebtc_mined: u64,
+    pub risk_factor: u16,
+    pub epoch_mining_pool: u64,
+    pub faction_scores: [u16; 12],
+    pub total_score_weighted_bets: u128,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user claims epoch rewards
+#[event]
+pub struct EpochRewardsClaimed {
+    pub epoch_id: u64,
+    pub user: Pubkey,
+    pub reward_amount: u64,
+    pub user_weighted_score: u128,
+    pub timestamp: i64,
+}

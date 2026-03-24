@@ -100,6 +100,11 @@ pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
 
+// PDAs for Epoch Mining system
+pub const EPOCH_CONFIG_SEED: &[u8] = b"epoch-config";
+pub const EPOCH_STATE_SEED: &[u8] = b"epoch"; // Seed: [b"epoch", epoch_id_u64]
+pub const USER_EPOCH_BETS_SEED: &[u8] = b"user-epoch"; // Seed: [b"user-epoch", user_pubkey, epoch_id_u64]
+
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
 pub const WITHDRAW_WITHHELD_AUTHORITY_SEED: &[u8] = b"withdraw-withheld-authority";
@@ -1189,4 +1194,138 @@ impl AutominerVault {
         8 +     // sol_balance
         1 +     // can_reload (bool)
         1 + 1; // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
+}
+
+// ========================================================================================
+// ============================= EPOCH MINING ACCOUNTS ==============================
+// ========================================================================================
+
+/// Maximum number of score update entries stored per epoch (for audit trail)
+pub const MAX_EPOCH_SCORE_UPDATES: usize = 96; // ~48 per day at 30min intervals, 96 for safety
+
+/// Epoch Configuration PDA (Seed: `[b"epoch-config"]`)
+/// Global configuration for the epoch mining system.
+/// Controls epoch duration, oracle authority, and risk factor.
+#[account]
+pub struct EpochConfig {
+    pub bump: u8,
+
+    /// Authority that can post epoch scores (AI oracle cranker)
+    pub oracle_authority: Pubkey,
+
+    /// Duration of each epoch in seconds (default: 86400 = 24h)
+    pub epoch_duration: u64,
+
+    /// Current epoch ID (incrementing counter, 0 = no epoch started yet)
+    pub current_epoch_id: u64,
+
+    /// Timestamp when the current epoch started
+    pub last_epoch_start: u64,
+
+    /// Global risk factor (0-1000, representing 0.00 to 10.00)
+    /// Multiplied against total dogeBTC mined in an epoch to determine epoch mining pool.
+    /// Updated by the AI oracle based on world volatility.
+    pub risk_factor: u16,
+
+    /// Whether epoch mining is active
+    pub is_active: bool,
+}
+
+impl EpochConfig {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        32 +    // oracle_authority
+        8 +     // epoch_duration
+        8 +     // current_epoch_id
+        8 +     // last_epoch_start
+        2 +     // risk_factor (u16)
+        1;      // is_active
+}
+
+/// Epoch State PDA (Seed: `[b"epoch", epoch_id_u64_le]`)
+/// Tracks a single epoch's state: accumulated dogeBTC from rounds,
+/// faction scores from AI oracle, and settlement state.
+#[account]
+pub struct EpochState {
+    pub bump: u8,
+
+    /// Epoch ID
+    pub epoch_id: u64,
+    /// Start timestamp
+    pub start_timestamp: u64,
+    /// End timestamp (start + epoch_duration)
+    pub end_timestamp: u64,
+
+    /// Stage: 0 = active, 1 = scores finalized, 2 = settled (claims open)
+    pub stage: u8,
+
+    /// Total dogeBTC mined via raffle rounds during this epoch
+    /// Accumulated by end_round as rounds complete within the epoch window.
+    pub total_dogebtc_mined_in_epoch: u64,
+
+    /// Risk factor snapshot at epoch settlement (copied from EpochConfig at settle time)
+    pub risk_factor_snapshot: u16,
+
+    /// Epoch mining pool = total_dogebtc_mined_in_epoch * risk_factor_snapshot / 100
+    /// This is the total dogeBTC distributed to epoch predictors.
+    pub epoch_mining_pool: u64,
+
+    /// Faction scores set by AI oracle (0-10000 basis points each, index = faction_id)
+    /// Scores are accumulated additively: oracle calls update_epoch_scores multiple times.
+    pub faction_scores: [u16; NUM_FACTIONS],
+
+    /// Total SOL bet per faction during this epoch (accumulated from round bets)
+    /// Used as weights: user's epoch reward = their_faction_weighted_score / total_weighted_score * pool
+    pub faction_total_sol_bets: [u64; NUM_FACTIONS],
+
+    /// Denominator for reward calculations: sum(faction_total_sol_bets[i] * faction_scores[i])
+    /// Computed at settlement time.
+    pub total_score_weighted_bets: u128,
+
+    /// Number of score updates received from oracle this epoch
+    pub score_updates_count: u16,
+}
+
+impl EpochState {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // epoch_id
+        8 +     // start_timestamp
+        8 +     // end_timestamp
+        1 +     // stage
+        8 +     // total_dogebtc_mined_in_epoch
+        2 +     // risk_factor_snapshot
+        8 +     // epoch_mining_pool
+        (NUM_FACTIONS * 2) + // faction_scores [u16; 12]
+        (NUM_FACTIONS * 8) + // faction_total_sol_bets [u64; 12]
+        16 +    // total_score_weighted_bets (u128)
+        2;      // score_updates_count
+}
+
+/// User Epoch Bets PDA (Seed: `[b"user-epoch", user_pubkey, epoch_id_u64_le]`)
+/// Tracks how much SOL a user bet on each faction during a specific epoch.
+/// Accumulated automatically from round bets (block → faction mapping).
+#[account]
+pub struct UserEpochBets {
+    pub bump: u8,
+
+    /// The user who placed these bets
+    pub owner: Pubkey,
+    /// The epoch ID this tracks
+    pub epoch_id: u64,
+
+    /// SOL bet per faction during this epoch (index = faction_id)
+    pub faction_bets: [u64; NUM_FACTIONS],
+
+    /// Whether rewards have been claimed
+    pub claimed: bool,
+}
+
+impl UserEpochBets {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        32 +    // owner
+        8 +     // epoch_id
+        (NUM_FACTIONS * 8) + // faction_bets [u64; 12]
+        1;      // claimed
 }
