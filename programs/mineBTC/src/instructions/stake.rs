@@ -214,15 +214,26 @@ pub fn int_stake_minebtc(
     token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.minebtc_mint.decimals)?;
     msg!("✅ [stake_minebtc] MineBtc staking successful");
 
-    // Store faction_id before emitting event
-    let faction_id = player_data.faction_id;
+    // Compute cross-faction penalty amount for event
+    let pre_penalty_weighted = (actual_amount * multiplier as u64) / M_HUNDRED;
+    let cross_faction_penalty = if is_cross_faction {
+        pre_penalty_weighted - weighted_amount
+    } else {
+        0
+    };
 
     emit!(MineBtcStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
-        faction_id,
+        faction_id: faction_state.faction_id,  // target faction (staked INTO)
+        player_faction_id: player_data.faction_id,  // player's home faction
+        is_cross_faction,
         position_index,
         position_key: ctx.accounts.user_position.key(),
+        staked_amount: actual_amount,
+        weighted_amount,
+        multiplier,
+        cross_faction_penalty,
         lockup_duration,
         hashpower_contribution: weighted_amount_with_doges,
         new_sol_rewards,
@@ -607,15 +618,26 @@ pub fn int_stake_lp_tokens(
     token::transfer(transfer_ctx, amount)?;
     msg!("   ✓ Transferred {} LP tokens", actual_amount as f64 / 1e6);
 
-    // Store faction_id before emitting event
-    let faction_id = player_data.faction_id;
+    // Compute cross-faction penalty amount for event
+    let pre_penalty_weighted = actual_amount * multiplier as u64 / M_HUNDRED;
+    let cross_faction_penalty = if is_cross_faction {
+        pre_penalty_weighted - weighted_amount
+    } else {
+        0
+    };
 
     emit!(LiquidityStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
+        faction_id: faction_state.faction_id,  // target faction (staked INTO)
+        player_faction_id: player_data.faction_id,  // player's home faction
+        is_cross_faction,
         position_index,
         position_key: ctx.accounts.user_position.key(),
-        faction_id,
+        staked_amount: actual_amount,
+        weighted_amount,
+        multiplier,
+        cross_faction_penalty,
         lockup_duration,
         hashpower_contribution: weighted_amount_with_doges,
         new_sol_rewards,
