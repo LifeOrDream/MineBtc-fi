@@ -549,11 +549,6 @@ pub mod minebtc {
         epoch::update_epoch_config_internal(ctx, oracle_authority, epoch_duration, is_active)
     }
 
-    /// Start a new 24-hour epoch
-    pub fn start_epoch(ctx: Context<StartEpoch>) -> Result<()> {
-        epoch::start_epoch_internal(ctx)
-    }
-
     /// AI Oracle posts additive faction score deltas (with reason in tx memo)
     pub fn update_epoch_scores(
         ctx: Context<UpdateEpochScores>,
@@ -567,27 +562,14 @@ pub mod minebtc {
         epoch::update_risk_factor_internal(ctx, risk_factor)
     }
 
-    /// Cranker records user's per-faction bets from a completed round into epoch
-    pub fn accumulate_epoch_bets(ctx: Context<AccumulateEpochBets>) -> Result<()> {
-        epoch::accumulate_epoch_bets_internal(ctx)
-    }
-
-    /// Cranker records dogeBTC mined in a round towards epoch total
-    pub fn record_epoch_round_mining(
-        ctx: Context<RecordEpochRoundMining>,
-        dogebtc_mined: u64,
-    ) -> Result<()> {
-        epoch::record_epoch_round_mining_internal(ctx, dogebtc_mined)
-    }
-
-    /// Settle epoch: finalize scores and compute reward pool
+    /// Settle epoch: finalize scores and compute reward pool (fallback - anyone can call)
     pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
         epoch::settle_epoch_internal(ctx)
     }
 
-    /// User claims their epoch mining rewards
-    pub fn claim_epoch_rewards(ctx: Context<ClaimEpochRewards>) -> Result<()> {
-        epoch::claim_epoch_rewards_internal(ctx)
+    /// User claims their epoch mining rewards (closes user_epoch_bets account)
+    pub fn claim_epoch_rewards(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
+        epoch::claim_epoch_rewards_internal(ctx, epoch_id)
     }
 
     // ----------------------------------------------------------------------------------------

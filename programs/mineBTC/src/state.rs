@@ -1319,9 +1319,6 @@ pub struct UserEpochBets {
 
     /// SOL bet per faction during this epoch (index = faction_id)
     pub faction_bets: [u64; NUM_FACTIONS],
-
-    /// Whether rewards have been claimed
-    pub claimed: bool,
 }
 
 impl UserEpochBets {
@@ -1329,6 +1326,5 @@ impl UserEpochBets {
         1 +     // bump
         32 +    // owner
         8 +     // epoch_id
-        (NUM_FACTIONS * 8) + // faction_bets [u64; 12]
-        1;      // claimed
+        (NUM_FACTIONS * 8); // faction_bets [u64; 12]
 }

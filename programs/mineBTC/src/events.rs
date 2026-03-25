@@ -726,3 +726,19 @@ pub struct EpochRewardsClaimed {
     pub user_weighted_score: u128,
     pub timestamp: i64,
 }
+
+/// Event emitted when an epoch is auto-started inline (during join_round or end_round_faction_rewards)
+#[event]
+pub struct EpochAutoStarted {
+    pub epoch_id: u64,
+    pub start_timestamp: u64,
+    pub end_timestamp: u64,
+}
+
+/// Event emitted when an epoch is auto-settled inline (during end_round_faction_rewards)
+#[event]
+pub struct EpochAutoSettled {
+    pub epoch_id: u64,
+    pub mining_pool: u64,
+    pub total_weighted_bets: u128,
+}
