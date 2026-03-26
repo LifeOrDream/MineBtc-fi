@@ -348,7 +348,7 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
 
     require!(epoch_state.stage == 1, ErrorCode::EpochNotActive);
     require!(
-        clock.unix_timestamp as u64 >= epoch_state.end_timestamp,
+        clock.unix_timestamp >= epoch_state.end_timestamp as i64,
         ErrorCode::EpochNotEnded
     );
 
@@ -369,7 +369,7 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
 
     // Auto-start next epoch
     epoch_config.current_epoch_id += 1;
-    epoch_config.last_epoch_start = clock.unix_timestamp as u64;
+    epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
 
     msg!("🌍 [settle_epoch] Epoch {} settled:", epoch_state.epoch_id);
     msg!(

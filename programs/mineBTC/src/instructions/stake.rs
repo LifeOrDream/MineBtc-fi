@@ -425,11 +425,11 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     // Store values for emergency withdrawal event before closing position
     let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
     let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
-    let mut remaining_seconds_pct = 0u64;
-    if total_lockup_seconds > 0 {
-        remaining_seconds_pct =
-            (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
-    }
+    let remaining_seconds_pct = if total_lockup_seconds > 0 && remaining_seconds > 0 {
+        ((M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds) as u64
+    } else {
+        0u64
+    };
     let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
         (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
     } else {
@@ -821,11 +821,12 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     } else {
         0
     };
-    let mut remaining_seconds_pct = 0u64;
-    if total_lockup_seconds > 0 && is_early_withdrawal {
-        remaining_seconds_pct =
-            (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
-    }
+    let remaining_seconds_pct =
+        if total_lockup_seconds > 0 && is_early_withdrawal && remaining_seconds > 0 {
+            ((M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds) as u64
+        } else {
+            0u64
+        };
     let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
         (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
     } else {

@@ -878,7 +878,7 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
         // --- AUTO-SETTLE if epoch expired and scores are posted (stage == 1) ---
         let clock = Clock::get()?;
-        if clock.unix_timestamp as u64 >= epoch_state.end_timestamp && epoch_state.stage == 1 {
+        if clock.unix_timestamp >= epoch_state.end_timestamp as i64 && epoch_state.stage == 1 {
             // Settle: compute pool
             epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
             epoch_state.epoch_mining_pool = (epoch_state.total_dogebtc_mined_in_epoch as u128)
@@ -906,7 +906,7 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
             // --- AUTO-START next epoch ---
             epoch_config.current_epoch_id += 1;
-            epoch_config.last_epoch_start = clock.unix_timestamp as u64;
+            epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
 
             msg!(
                 "   🌍 Next epoch_id set to {}",

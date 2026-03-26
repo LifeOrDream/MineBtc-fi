@@ -570,7 +570,9 @@ pub fn internal_init_autominer(
     let total_sol = if use_ticket.is_some() {
         0 // Ticket mode: no SOL deposit needed
     } else {
-        sol_per_round * num_rounds as u64
+        sol_per_round
+            .checked_mul(num_rounds as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
     };
     msg!(
         "     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)",
@@ -758,7 +760,12 @@ pub fn internal_update_autominer(
     autominer_vault.rounds_remaining += rounds_added;
     autominer_vault.can_reload = new_can_reload;
     if autominer_vault.use_ticket.is_none() {
-        autominer_vault.sol_balance = (old_sol_balance as i64 + sol_diff) as u64;
+        let new_balance = (old_sol_balance as i64).saturating_add(sol_diff);
+        autominer_vault.sol_balance = if new_balance > 0 {
+            new_balance as u64
+        } else {
+            0
+        };
     }
 
     msg!("✅ [update_autominer] Autominer updated successfully");
