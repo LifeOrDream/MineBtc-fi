@@ -234,15 +234,20 @@ pub fn calculate_multiplier(
     let duration_range = max_lockup.saturating_sub(min_lockup);
     let multiplier_range = max_multiplier.saturating_sub(base_multiplier);
 
+    // Guard: if min == max lockup, return base multiplier (avoid div by zero)
+    if duration_range == 0 {
+        return Ok(base_multiplier);
+    }
+
     let duration_above_min = lockup_duration.saturating_sub(min_lockup);
 
     let multiplier_increase = (duration_above_min as u128)
         .checked_mul(multiplier_range as u128)
-        .unwrap()
+        .unwrap_or(0)
         .checked_div(duration_range as u128)
-        .unwrap() as u16;
+        .unwrap_or(0) as u16;
 
-    Ok(base_multiplier.checked_add(multiplier_increase).unwrap())
+    Ok(base_multiplier.saturating_add(multiplier_increase))
 }
 
 /// Add position index to user's minebtc positions
@@ -382,8 +387,8 @@ pub fn init_position(
     position.start_timestamp = current_ts;
     position.multiplier = multiplier;
 
-    let seconds_to_add = lockup_duration * DAY_IN_SECONDS;
-    position.lockup_end_timestamp = current_ts + seconds_to_add as i64;
+    let seconds_to_add = lockup_duration.saturating_mul(DAY_IN_SECONDS);
+    position.lockup_end_timestamp = current_ts.saturating_add(seconds_to_add as i64);
 
     Ok(())
 }
@@ -404,10 +409,11 @@ pub fn add_to_total_claimable(
     .unwrap() as u64;
     msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
-    unrefined_minebtc.total_minebtc_claimable += minebtc_rewards + accrued_rewards;
+    let total_new = minebtc_rewards.saturating_add(accrued_rewards);
+    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc.total_minebtc_claimable.saturating_add(total_new);
     player_data.unrefining_index = unrefined_minebtc.unrefining_index;
-    player_data.pending_minebtc_rewards += minebtc_rewards + accrued_rewards;
-    player_data.unrefined_minebtc_rewards += accrued_rewards;
+    player_data.pending_minebtc_rewards = player_data.pending_minebtc_rewards.saturating_add(total_new);
+    player_data.unrefined_minebtc_rewards = player_data.unrefined_minebtc_rewards.saturating_add(accrued_rewards);
 
     return accrued_rewards;
 }
@@ -420,12 +426,16 @@ pub fn calculate_emergency_tax(
     let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
     let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
 
-    let mut remaining_seconds_pct = 0;
-    if total_lockup_seconds > 0 {
-        remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds;
+    // Guard: if lockup already expired, no penalty (remaining <= 0)
+    if remaining_seconds <= 0 || total_lockup_seconds <= 0 {
+        msg!("   Lockup expired or invalid — no penalty");
+        return 0;
     }
+
+    let remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds;
     msg!("   Lockup remaining: {}%", remaining_seconds_pct);
 
+    // remaining_seconds_pct is guaranteed positive here, safe to cast
     let calc_penalty_pct = (emergency_tax * (remaining_seconds_pct as u64)) / M_HUNDRED;
     let penalty_amount = (user_position.staked_amount * calc_penalty_pct) / M_HUNDRED;
 
@@ -527,5 +537,8 @@ pub fn charge_lp_emergency_tax<'info>(
 
 /// Calculate number of tickets given minting price
 pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
-    return ((total_price * 150) / ticket_value) / 100;
+    if ticket_value == 0 {
+        return 0;
+    }
+    return total_price.saturating_mul(150) / ticket_value / 100;
 }

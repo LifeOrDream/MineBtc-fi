@@ -932,7 +932,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
 
     // Update remaining SOL balance tracked for this autominer (SOL mode only)
     if use_ticket.is_none() {
-        autominer_vault.sol_balance = autominer_vault.sol_balance - sol_per_round;
+        autominer_vault.sol_balance = autominer_vault.sol_balance.saturating_sub(sol_per_round);
     }
 
     // Place bets using join_round_batch
@@ -1466,7 +1466,7 @@ fn process_mutation_sync<'info>(
                 _ => 10u64, // No mutation: 1%
             };
             let accum_add = (total_minebtc_reward * accum_pct) / 1000;
-            doge_metadata.accumulated_val = doge_metadata.accumulated_val + accum_add;
+            doge_metadata.accumulated_val = doge_metadata.accumulated_val.saturating_add(accum_add);
             msg!(
                 "💎 Doge accumulated_val +{} ({}%)",
                 accum_add,
@@ -1621,9 +1621,9 @@ fn internal_process_bets<'info>(
             let protocol_fee = fee - stakers_fee;
 
             // Accumulate totals for transfer
-            total_stakers_fee = stakers_fee * num_bets;
-            total_protocol_fee = protocol_fee * num_bets;
-            total_net_to_pot = net * num_bets;
+        total_stakers_fee = stakers_fee.saturating_mul(num_bets);
+        total_protocol_fee = protocol_fee.saturating_mul(num_bets);
+        total_net_to_pot = net.saturating_mul(num_bets);
 
             // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
             let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
@@ -1745,17 +1745,17 @@ fn internal_process_bets<'info>(
     let total_wgtd_points_added = wgtd_points_per_bet * num_bets;
     let total_fee_added = fee_per_bet * num_bets;
 
-    user_game_bet.total_sol_bet += total_net_added;
+    user_game_bet.total_sol_bet = user_game_bet.total_sol_bet.saturating_add(total_net_added);
     user_game_bet.total_points_bet += total_points_added;
     user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
     user_game_bet.total_fee += total_fee_added;
 
-    game_session.total_sol_bets += total_net_added;
+    game_session.total_sol_bets = game_session.total_sol_bets.saturating_add(total_net_added);
     game_session.total_points_bets += total_points_added;
     game_session.total_wgtd_points_bets += total_wgtd_points_added;
     game_session.stakers_fee += total_stakers_fee;
 
-    player_data.total_sol_bet += total_net_added;
+    player_data.total_sol_bet = player_data.total_sol_bet.saturating_add(total_net_added);
     player_data.total_points_bet += total_points_added;
 
     msg!(
@@ -1825,7 +1825,7 @@ fn internal_process_bets<'info>(
             epoch_state.total_dogebtc_mined_in_epoch = 0;
             epoch_state.risk_factor_snapshot = 0;
             epoch_state.epoch_mining_pool = 0;
-            epoch_state.total_score_weighted_bets = 0;
+            epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
             epoch_state.score_updates_count = 0;
 
             emit!(crate::events::EpochAutoStarted {
@@ -2000,8 +2000,8 @@ fn get_target_block_from_bet_type(
 }
 
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
-    let fee = amount * protocol_fee_pct / M_HUNDRED;
-    let net_amount = amount - fee;
+    let fee = amount.saturating_mul(protocol_fee_pct) / M_HUNDRED;
+    let net_amount = amount.saturating_sub(fee);
     msg!(
         "     Net amount (after fee): {} SOL. Protocol fee ({}%): {} SOL",
         (net_amount as f64) / 1_000_000_000.0,

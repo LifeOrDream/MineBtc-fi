@@ -875,7 +875,7 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         // --- AUTO-SETTLE if epoch expired and scores are posted (stage == 1) ---
         let clock = Clock::get()?;
         if clock.unix_timestamp as u64 >= epoch_state.end_timestamp && epoch_state.stage == 1 {
-            // Settle: compute pool and denominator
+            // Settle: compute pool
             epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
             epoch_state.epoch_mining_pool = (epoch_state.total_dogebtc_mined_in_epoch as u128)
                 .checked_mul(epoch_state.risk_factor_snapshot as u128)
@@ -883,21 +883,17 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
                 .checked_div(100)
                 .unwrap_or(0) as u64;
 
-            let mut total: u128 = 0;
-            for i in 0..NUM_FACTIONS {
-                total += (epoch_state.faction_total_sol_bets[i] as u128)
-                    * (epoch_state.faction_scores[i] as u128);
-            }
-            epoch_state.total_score_weighted_bets = total;
+            // Compute faction reward pools (Model 5 + Top 3)
+            crate::instructions::epoch::compute_faction_reward_pools(epoch_state, epoch_config);
+
             epoch_state.stage = 2; // settled
 
-            msg!("   🌍 Auto-settled epoch {}: pool={}, weighted_bets={}",
-                epoch_state.epoch_id, epoch_state.epoch_mining_pool, total);
+            msg!("   🌍 Auto-settled epoch {}: pool={}", epoch_state.epoch_id, epoch_state.epoch_mining_pool);
 
             emit!(EpochAutoSettled {
                 epoch_id: epoch_state.epoch_id,
                 mining_pool: epoch_state.epoch_mining_pool,
-                total_weighted_bets: total,
+                total_weighted_bets: 0, // deprecated, kept for event compat
             });
 
             // --- AUTO-START next epoch ---

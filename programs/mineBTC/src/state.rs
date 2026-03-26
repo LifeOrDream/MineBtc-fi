@@ -1232,6 +1232,16 @@ pub struct EpochConfig {
 
     /// Whether epoch mining is active
     pub is_active: bool,
+
+    /// Reward distribution config (must sum to 100):
+    /// Percentage of epoch pool distributed via Model 5 (parimutuel by score ratio)
+    pub model5_pct: u8,
+    /// Percentage of epoch pool given as bonus to #1 ranked faction bettors
+    pub top1_pct: u8,
+    /// Percentage of epoch pool given as bonus to #2 ranked faction bettors
+    pub top2_pct: u8,
+    /// Percentage of epoch pool given as bonus to #3 ranked faction bettors
+    pub top3_pct: u8,
 }
 
 impl EpochConfig {
@@ -1242,7 +1252,11 @@ impl EpochConfig {
         8 +     // current_epoch_id
         8 +     // last_epoch_start
         2 +     // risk_factor (u16)
-        1;      // is_active
+        1 +     // is_active
+        1 +     // model5_pct
+        1 +     // top1_pct
+        1 +     // top2_pct
+        1;      // top3_pct
 }
 
 /// Epoch State PDA (Seed: `[b"epoch", epoch_id_u64_le]`)
@@ -1281,9 +1295,9 @@ pub struct EpochState {
     /// Used as weights: user's epoch reward = their_faction_weighted_score / total_weighted_score * pool
     pub faction_total_sol_bets: [u64; NUM_FACTIONS],
 
-    /// Denominator for reward calculations: sum(faction_total_sol_bets[i] * faction_scores[i])
-    /// Computed at settlement time.
-    pub total_score_weighted_bets: u128,
+    /// Pre-computed reward pool per faction (Model 5 + Top 3 bonus combined)
+    /// Computed at settlement time. User reward = faction_reward_pools[i] * user_bets[i] / total_bets[i]
+    pub faction_reward_pools: [u64; NUM_FACTIONS],
 
     /// Number of score updates received from oracle this epoch
     pub score_updates_count: u16,
@@ -1301,7 +1315,7 @@ impl EpochState {
         8 +     // epoch_mining_pool
         (NUM_FACTIONS * 2) + // faction_scores [u16; 12]
         (NUM_FACTIONS * 8) + // faction_total_sol_bets [u64; 12]
-        16 +    // total_score_weighted_bets (u128)
+        (NUM_FACTIONS * 8) + // faction_reward_pools [u64; 12]
         2;      // score_updates_count
 }
 

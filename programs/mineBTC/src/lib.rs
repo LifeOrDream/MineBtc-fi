@@ -530,13 +530,21 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
 
     /// Initialize epoch mining configuration (admin only)
+    /// model5_pct + top1_pct + top2_pct + top3_pct must <= 100
     pub fn initialize_epoch_config(
         ctx: Context<InitializeEpochConfig>,
         oracle_authority: Pubkey,
         epoch_duration: u64,
         risk_factor: u16,
+        model5_pct: u8,
+        top1_pct: u8,
+        top2_pct: u8,
+        top3_pct: u8,
     ) -> Result<()> {
-        epoch::initialize_epoch_config_internal(ctx, oracle_authority, epoch_duration, risk_factor)
+        epoch::initialize_epoch_config_internal(
+            ctx, oracle_authority, epoch_duration, risk_factor,
+            model5_pct, top1_pct, top2_pct, top3_pct,
+        )
     }
 
     /// Update epoch mining configuration (admin only)
@@ -545,8 +553,15 @@ pub mod minebtc {
         oracle_authority: Option<Pubkey>,
         epoch_duration: Option<u64>,
         is_active: Option<bool>,
+        model5_pct: Option<u8>,
+        top1_pct: Option<u8>,
+        top2_pct: Option<u8>,
+        top3_pct: Option<u8>,
     ) -> Result<()> {
-        epoch::update_epoch_config_internal(ctx, oracle_authority, epoch_duration, is_active)
+        epoch::update_epoch_config_internal(
+            ctx, oracle_authority, epoch_duration, is_active,
+            model5_pct, top1_pct, top2_pct, top3_pct,
+        )
     }
 
     /// AI Oracle posts additive faction score deltas (with reason in tx memo)
