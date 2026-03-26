@@ -344,7 +344,8 @@ pub fn calculate_staking_rewards(
         reward_diff,
         INDEX_PRECISION as u128,
     )?;
-    Ok(new_rewards as u64)
+    // Cap to u64::MAX to prevent silent truncation of large rewards
+    Ok(new_rewards.min(u64::MAX as u128) as u64)
 }
 
 pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
@@ -406,7 +407,8 @@ pub fn add_to_total_claimable(
         index_dif,
         INDEX_PRECISION as u128,
     )
-    .unwrap() as u64;
+    .unwrap_or(0)
+    .min(u64::MAX as u128) as u64;
     msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
     let total_new = minebtc_rewards.saturating_add(accrued_rewards);
