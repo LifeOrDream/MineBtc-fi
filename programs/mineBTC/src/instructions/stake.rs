@@ -315,8 +315,8 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let hashpower_contribution =
-        (original_weighted * player_data.doge_multiplier as u64) / BASE_MULTIPLIER as u64;
+    let hashpower_contribution = ((original_weighted as u128 * player_data.doge_multiplier as u128)
+        / BASE_MULTIPLIER as u128) as u64;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
 
@@ -714,8 +714,8 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let hashpower_contribution =
-        (original_weighted * player_data.doge_multiplier as u64) / BASE_MULTIPLIER as u64;
+    let hashpower_contribution = ((original_weighted as u128 * player_data.doge_multiplier as u128)
+        / BASE_MULTIPLIER as u128) as u64;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
 
