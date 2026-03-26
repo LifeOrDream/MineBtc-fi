@@ -39,10 +39,7 @@ use crate::state::*;
 
 /// Computes faction_reward_pools using Model 5 (parimutuel by score) + Top 3 bonus.
 /// This is shared by settle_epoch (fallback) and auto-settle (in end_round_faction_rewards).
-pub fn compute_faction_reward_pools(
-    epoch_state: &mut EpochState,
-    epoch_config: &EpochConfig,
-) {
+pub fn compute_faction_reward_pools(epoch_state: &mut EpochState, epoch_config: &EpochConfig) {
     let pool = epoch_state.epoch_mining_pool;
     if pool == 0 {
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
@@ -56,7 +53,8 @@ pub fn compute_faction_reward_pools(
     let mut reward_pools = [0u64; NUM_FACTIONS];
     if total_scores > 0 {
         for i in 0..NUM_FACTIONS {
-            reward_pools[i] = (model5_pool * epoch_state.faction_scores[i] as u128 / total_scores) as u64;
+            reward_pools[i] =
+                (model5_pool * epoch_state.faction_scores[i] as u128 / total_scores) as u64;
         }
     }
 
@@ -208,8 +206,10 @@ pub fn update_epoch_config_internal(
     }
 
     // Validate sum
-    let total_pct = epoch_config.model5_pct as u16 + epoch_config.top1_pct as u16
-        + epoch_config.top2_pct as u16 + epoch_config.top3_pct as u16;
+    let total_pct = epoch_config.model5_pct as u16
+        + epoch_config.top1_pct as u16
+        + epoch_config.top2_pct as u16
+        + epoch_config.top3_pct as u16;
     require!(total_pct <= 100, ErrorCode::InvalidParameters);
 
     Ok(())
@@ -250,11 +250,15 @@ pub fn update_epoch_scores_internal(
 
     require!(epoch_state.stage == 0, ErrorCode::EpochAlreadySettled);
 
-    msg!("🌍 [update_epoch_scores] Epoch {} score update #{}",
-        epoch_state.epoch_id, epoch_state.score_updates_count + 1);
+    msg!(
+        "🌍 [update_epoch_scores] Epoch {} score update #{}",
+        epoch_state.epoch_id,
+        epoch_state.score_updates_count + 1
+    );
 
     for i in 0..NUM_FACTIONS {
-        epoch_state.faction_scores[i] = epoch_state.faction_scores[i].saturating_add(score_deltas[i]);
+        epoch_state.faction_scores[i] =
+            epoch_state.faction_scores[i].saturating_add(score_deltas[i]);
     }
 
     epoch_state.score_updates_count += 1;
@@ -303,7 +307,11 @@ pub fn update_risk_factor_internal(ctx: Context<UpdateRiskFactor>, risk_factor: 
     ctx.accounts.epoch_config.risk_factor = risk_factor;
 
     let clock = Clock::get()?;
-    msg!("🌍 [update_risk_factor] {} -> {}", old_risk_factor, risk_factor);
+    msg!(
+        "🌍 [update_risk_factor] {} -> {}",
+        old_risk_factor,
+        risk_factor
+    );
 
     emit!(RiskFactorUpdated {
         old_risk_factor,
@@ -364,7 +372,11 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     epoch_config.last_epoch_start = clock.unix_timestamp as u64;
 
     msg!("🌍 [settle_epoch] Epoch {} settled:", epoch_state.epoch_id);
-    msg!("   Pool: {}, Faction pools: {:?}", epoch_state.epoch_mining_pool, epoch_state.faction_reward_pools);
+    msg!(
+        "   Pool: {}, Faction pools: {:?}",
+        epoch_state.epoch_mining_pool,
+        epoch_state.faction_reward_pools
+    );
     msg!("   Next epoch_id: {}", epoch_config.current_epoch_id);
 
     emit!(EpochSettled {
@@ -447,8 +459,11 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
         msg!("🌍 [claim_epoch_rewards] User {} earned {} dogeBTC from epoch {} (accrued refining bonus: {})",
             user_epoch_bets.owner, total_reward, epoch_id, accrued);
     } else {
-        msg!("🌍 [claim_epoch_rewards] User {} has no rewards for epoch {}",
-            user_epoch_bets.owner, epoch_id);
+        msg!(
+            "🌍 [claim_epoch_rewards] User {} has no rewards for epoch {}",
+            user_epoch_bets.owner,
+            epoch_id
+        );
     }
 
     emit!(EpochRewardsClaimed {

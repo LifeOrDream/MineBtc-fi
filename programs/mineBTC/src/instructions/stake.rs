@@ -139,7 +139,12 @@ pub fn int_stake_minebtc(
     let is_cross_faction = faction_state.faction_id != player_data.faction_id;
     let weighted_amount = if is_cross_faction {
         let penalized = (weighted_amount * (100 - CROSS_FACTION_PENALTY_PCT)) / M_HUNDRED;
-        msg!("   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}", CROSS_FACTION_PENALTY_PCT, weighted_amount as f64 / 1e6, penalized as f64 / 1e6);
+        msg!(
+            "   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}",
+            CROSS_FACTION_PENALTY_PCT,
+            weighted_amount as f64 / 1e6,
+            penalized as f64 / 1e6
+        );
         penalized
     } else {
         weighted_amount
@@ -225,8 +230,8 @@ pub fn int_stake_minebtc(
     emit!(MineBtcStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
-        faction_id: faction_state.faction_id,  // target faction (staked INTO)
-        player_faction_id: player_data.faction_id,  // player's home faction
+        faction_id: faction_state.faction_id, // target faction (staked INTO)
+        player_faction_id: player_data.faction_id, // player's home faction
         is_cross_faction,
         position_index,
         position_key: ctx.accounts.user_position.key(),
@@ -543,7 +548,12 @@ pub fn int_stake_lp_tokens(
     let is_cross_faction = faction_state.faction_id != player_data.faction_id;
     let weighted_amount = if is_cross_faction {
         let penalized = (weighted_amount * (100 - CROSS_FACTION_PENALTY_PCT)) / M_HUNDRED;
-        msg!("   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}", CROSS_FACTION_PENALTY_PCT, weighted_amount as f64 / 1e6, penalized as f64 / 1e6);
+        msg!(
+            "   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}",
+            CROSS_FACTION_PENALTY_PCT,
+            weighted_amount as f64 / 1e6,
+            penalized as f64 / 1e6
+        );
         penalized
     } else {
         weighted_amount
@@ -629,8 +639,8 @@ pub fn int_stake_lp_tokens(
     emit!(LiquidityStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
-        faction_id: faction_state.faction_id,  // target faction (staked INTO)
-        player_faction_id: player_data.faction_id,  // player's home faction
+        faction_id: faction_state.faction_id, // target faction (staked INTO)
+        player_faction_id: player_data.faction_id, // player's home faction
         is_cross_faction,
         position_index,
         position_key: ctx.accounts.user_position.key(),

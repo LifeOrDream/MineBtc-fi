@@ -410,10 +410,16 @@ pub fn add_to_total_claimable(
     msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
     let total_new = minebtc_rewards.saturating_add(accrued_rewards);
-    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc.total_minebtc_claimable.saturating_add(total_new);
+    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
+        .total_minebtc_claimable
+        .saturating_add(total_new);
     player_data.unrefining_index = unrefined_minebtc.unrefining_index;
-    player_data.pending_minebtc_rewards = player_data.pending_minebtc_rewards.saturating_add(total_new);
-    player_data.unrefined_minebtc_rewards = player_data.unrefined_minebtc_rewards.saturating_add(accrued_rewards);
+    player_data.pending_minebtc_rewards = player_data
+        .pending_minebtc_rewards
+        .saturating_add(total_new);
+    player_data.unrefined_minebtc_rewards = player_data
+        .unrefined_minebtc_rewards
+        .saturating_add(accrued_rewards);
 
     return accrued_rewards;
 }

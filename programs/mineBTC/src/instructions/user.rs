@@ -1621,9 +1621,9 @@ fn internal_process_bets<'info>(
             let protocol_fee = fee - stakers_fee;
 
             // Accumulate totals for transfer
-        total_stakers_fee = stakers_fee.saturating_mul(num_bets);
-        total_protocol_fee = protocol_fee.saturating_mul(num_bets);
-        total_net_to_pot = net.saturating_mul(num_bets);
+            total_stakers_fee = stakers_fee.saturating_mul(num_bets);
+            total_protocol_fee = protocol_fee.saturating_mul(num_bets);
+            total_net_to_pot = net.saturating_mul(num_bets);
 
             // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
             let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
@@ -1814,7 +1814,10 @@ fn internal_process_bets<'info>(
     // === EPOCH BET ACCUMULATION (inline) ===
     if epoch_config.is_active && epoch_state.stage == 0 {
         // Initialize epoch_state if freshly created (init_if_needed)
-        if epoch_state.epoch_id == 0 && epoch_state.start_timestamp == 0 && epoch_config.current_epoch_id > 0 {
+        if epoch_state.epoch_id == 0
+            && epoch_state.start_timestamp == 0
+            && epoch_config.current_epoch_id > 0
+        {
             let clock_now = Clock::get()?;
             epoch_state.epoch_id = epoch_config.current_epoch_id;
             epoch_state.start_timestamp = clock_now.unix_timestamp as u64;
@@ -1833,8 +1836,12 @@ fn internal_process_bets<'info>(
                 start_timestamp: epoch_state.start_timestamp,
                 end_timestamp: epoch_state.end_timestamp,
             });
-            msg!("   🌍 Auto-initialized epoch {} ({} -> {})",
-                epoch_state.epoch_id, epoch_state.start_timestamp, epoch_state.end_timestamp);
+            msg!(
+                "   🌍 Auto-initialized epoch {} ({} -> {})",
+                epoch_state.epoch_id,
+                epoch_state.start_timestamp,
+                epoch_state.end_timestamp
+            );
         }
 
         // Initialize user_epoch_bets if first bet this epoch

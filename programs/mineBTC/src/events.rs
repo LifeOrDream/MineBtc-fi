@@ -211,15 +211,15 @@ pub struct DogeSentToHeaven {
 pub struct MineBtcStaked {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub faction_id: u8,              // faction staked INTO (target faction)
-    pub player_faction_id: u8,       // player's home faction
-    pub is_cross_faction: bool,      // true if staking outside home faction
+    pub faction_id: u8,         // faction staked INTO (target faction)
+    pub player_faction_id: u8,  // player's home faction
+    pub is_cross_faction: bool, // true if staking outside home faction
     pub position_index: u8,
     pub position_key: Pubkey,
-    pub staked_amount: u64,          // actual amount staked (after burn tax)
-    pub weighted_amount: u64,        // weighted amount (before doge multiplier)
-    pub multiplier: u16,             // lockup multiplier (100 = 1x)
-    pub cross_faction_penalty: u64,  // hashpower lost to penalty (0 if same faction)
+    pub staked_amount: u64,         // actual amount staked (after burn tax)
+    pub weighted_amount: u64,       // weighted amount (before doge multiplier)
+    pub multiplier: u16,            // lockup multiplier (100 = 1x)
+    pub cross_faction_penalty: u64, // hashpower lost to penalty (0 if same faction)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -246,15 +246,15 @@ pub struct MineBtcUnstaked {
 pub struct LiquidityStaked {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub faction_id: u8,              // faction staked INTO (target faction)
-    pub player_faction_id: u8,       // player's home faction
-    pub is_cross_faction: bool,      // true if staking outside home faction
+    pub faction_id: u8,         // faction staked INTO (target faction)
+    pub player_faction_id: u8,  // player's home faction
+    pub is_cross_faction: bool, // true if staking outside home faction
     pub position_index: u8,
     pub position_key: Pubkey,
-    pub staked_amount: u64,          // actual amount staked
-    pub weighted_amount: u64,        // weighted amount (before doge multiplier)
-    pub multiplier: u16,             // lockup multiplier (100 = 1x)
-    pub cross_faction_penalty: u64,  // hashpower lost to penalty (0 if same faction)
+    pub staked_amount: u64,         // actual amount staked
+    pub weighted_amount: u64,       // weighted amount (before doge multiplier)
+    pub multiplier: u16,            // lockup multiplier (100 = 1x)
+    pub cross_faction_penalty: u64, // hashpower lost to penalty (0 if same faction)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,

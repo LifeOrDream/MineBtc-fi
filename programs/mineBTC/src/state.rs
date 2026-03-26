@@ -1256,7 +1256,7 @@ impl EpochConfig {
         1 +     // model5_pct
         1 +     // top1_pct
         1 +     // top2_pct
-        1;      // top3_pct
+        1; // top3_pct
 }
 
 /// Epoch State PDA (Seed: `[b"epoch", epoch_id_u64_le]`)
@@ -1316,7 +1316,7 @@ impl EpochState {
         (NUM_FACTIONS * 2) + // faction_scores [u16; 12]
         (NUM_FACTIONS * 8) + // faction_total_sol_bets [u64; 12]
         (NUM_FACTIONS * 8) + // faction_reward_pools [u64; 12]
-        2;      // score_updates_count
+        2; // score_updates_count
 }
 
 /// User Epoch Bets PDA (Seed: `[b"user-epoch", user_pubkey, epoch_id_u64_le]`)

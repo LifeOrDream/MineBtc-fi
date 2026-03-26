@@ -542,8 +542,14 @@ pub mod minebtc {
         top3_pct: u8,
     ) -> Result<()> {
         epoch::initialize_epoch_config_internal(
-            ctx, oracle_authority, epoch_duration, risk_factor,
-            model5_pct, top1_pct, top2_pct, top3_pct,
+            ctx,
+            oracle_authority,
+            epoch_duration,
+            risk_factor,
+            model5_pct,
+            top1_pct,
+            top2_pct,
+            top3_pct,
         )
     }
 
@@ -559,8 +565,14 @@ pub mod minebtc {
         top3_pct: Option<u8>,
     ) -> Result<()> {
         epoch::update_epoch_config_internal(
-            ctx, oracle_authority, epoch_duration, is_active,
-            model5_pct, top1_pct, top2_pct, top3_pct,
+            ctx,
+            oracle_authority,
+            epoch_duration,
+            is_active,
+            model5_pct,
+            top1_pct,
+            top2_pct,
+            top3_pct,
         )
     }
 

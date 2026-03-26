@@ -869,8 +869,12 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
     if epoch_config.is_active && epoch_state.stage < 2 {
         epoch_state.total_dogebtc_mined_in_epoch += mine_btc_per_round;
-        msg!("   🌍 Epoch {}: +{} dogeBTC mined (total: {})",
-            epoch_state.epoch_id, mine_btc_per_round, epoch_state.total_dogebtc_mined_in_epoch);
+        msg!(
+            "   🌍 Epoch {}: +{} dogeBTC mined (total: {})",
+            epoch_state.epoch_id,
+            mine_btc_per_round,
+            epoch_state.total_dogebtc_mined_in_epoch
+        );
 
         // --- AUTO-SETTLE if epoch expired and scores are posted (stage == 1) ---
         let clock = Clock::get()?;
@@ -888,7 +892,11 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
             epoch_state.stage = 2; // settled
 
-            msg!("   🌍 Auto-settled epoch {}: pool={}", epoch_state.epoch_id, epoch_state.epoch_mining_pool);
+            msg!(
+                "   🌍 Auto-settled epoch {}: pool={}",
+                epoch_state.epoch_id,
+                epoch_state.epoch_mining_pool
+            );
 
             emit!(EpochAutoSettled {
                 epoch_id: epoch_state.epoch_id,
@@ -900,7 +908,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
             epoch_config.current_epoch_id += 1;
             epoch_config.last_epoch_start = clock.unix_timestamp as u64;
 
-            msg!("   🌍 Next epoch_id set to {}", epoch_config.current_epoch_id);
+            msg!(
+                "   🌍 Next epoch_id set to {}",
+                epoch_config.current_epoch_id
+            );
         }
     }
 
