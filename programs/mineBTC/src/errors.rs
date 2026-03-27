@@ -10,6 +10,8 @@ pub enum ErrorCode {
 
     #[msg("User not authorized to perform this action")]
     Unauthorized,
+    #[msg("No pending authority transfer to accept")]
+    NoPendingAuthority,
 
     #[msg("Invalid mint")]
     InvalidMint,

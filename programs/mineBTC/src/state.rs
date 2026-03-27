@@ -127,6 +127,8 @@ pub struct GlobalConfig {
 
     /// Authority that can update config parameters
     pub ext_authority: Pubkey,
+    /// Pending authority for 2-step transfer (Pubkey::default() = no pending transfer)
+    pub pending_authority: Pubkey,
     /// Direct recipient for doge mints + dev earnings revenue
     pub fee_recipient: Pubkey,
 
@@ -199,6 +201,7 @@ impl GlobalConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         8 +                     // total_players
         32 +                    // ext_authority
+        32 +                    // pending_authority
         32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config

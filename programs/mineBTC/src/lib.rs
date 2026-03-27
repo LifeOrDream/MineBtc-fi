@@ -103,14 +103,24 @@ pub mod minebtc {
         admin::initialize_system_accounts_internal(ctx)
     }
 
-    /// Update the global configuration parameters
-    /// Can only be called by the current authority
+    /// Propose a new authority (2-step transfer). Only current authority can call.
+    /// The proposed authority must call `accept_authority` to complete the transfer.
     pub fn update_config(
         ctx: Context<UpdateConfigAc>,
         new_authority: Option<Pubkey>,
         new_fee_recipient: Option<Pubkey>,
     ) -> Result<()> {
         admin::update_config_internal(ctx, new_authority, new_fee_recipient)
+    }
+
+    /// Cancel a pending authority transfer. Only current authority can call.
+    pub fn cancel_authority_transfer(ctx: Context<UpdateConfigAc>) -> Result<()> {
+        admin::cancel_authority_transfer_internal(ctx)
+    }
+
+    /// Accept a proposed authority transfer (step 2). Only the pending authority can call.
+    pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
+        admin::accept_authority_internal(ctx)
     }
 
     /// Update fee configuration (admin only)
