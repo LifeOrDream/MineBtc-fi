@@ -548,5 +548,6 @@ pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
     if ticket_value == 0 {
         return 0;
     }
-    return total_price.saturating_mul(150) / ticket_value / 100;
+    // 1.0x: users get 100% of their mint price as tickets
+    return total_price / ticket_value;
 }

@@ -66,12 +66,11 @@ pub fn int_simulate_mint_cost(
         current_minted += 1;
     }
 
-    // Calculate ticket amounts for each tier: sol_price / ticket_value * 1.5
-    // This gives users tickets worth 1.5x the SOL they spent
+    // Calculate ticket amounts for each tier: sol_price / ticket_value
+    // Users get 100% of their mint price as game tickets
     let mut ticket_amounts = Vec::new();
     for tier in &doge_config.ticket_tiers {
-        // Calculate: (total_price / ticket_value) * 1.5
-        // Using fixed-point math: multiply by 150, then divide by 100
+        // Calculate: total_price / ticket_value (1.0x)
         let ticket_count = helper::calc_tickets_count(total_price, tier.ticket_value);
         ticket_amounts.push((tier.ticket_value, ticket_count));
     }
