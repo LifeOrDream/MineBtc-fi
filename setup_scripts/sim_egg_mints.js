@@ -10,9 +10,9 @@
 // CONFIGURATION - Edit these values
 // ============================================================================
 
-const BASE_PRICE = 1_000_000_000; // 1 SOL in lamports
-const CURVE_A = 1111_111; // Curve steepness parameter
-const TOTAL_SUPPLY = 24_690; // Maximum number of doges to mint
+const BASE_PRICE = 1_000_000_000; // 1 SOL in lamports (updated: was 0.69 SOL)
+const CURVE_A = 5_263_158; // Curve steepness: 1 SOL → 4.2 SOL over 15k mints
+const TOTAL_SUPPLY = 15_000; // Maximum number of doges to mint (updated: was 24,690)
 const SOL_PRICE_USD = 140; // Current SOL price in USD (update as needed)
 
 // Fee distribution (from doges.rs: single mint uses 20% treasury, 80% dev)

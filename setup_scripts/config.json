@@ -53,9 +53,9 @@
         "initial_deposit": "2076697169067604"
     },
     "doges_config": {
-        "base_price": 1000000000,
-        "curve_a": 1111111,
-        "max_supply": 42690,
+    "base_price": 1000000000,
+    "curve_a": 5263158,
+    "max_supply": 15000,
         "royalties": 420,
         "creators": [
             {
