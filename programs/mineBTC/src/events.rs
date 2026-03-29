@@ -40,6 +40,14 @@ pub struct FactionAdded {
     pub faction_key: Pubkey,
 }
 
+#[event]
+pub struct FactionRenamed {
+    pub authority: Pubkey,
+    pub faction_id: u8,
+    pub old_name: String,
+    pub new_name: String,
+}
+
 // ------------------------------
 // Dynamic distribution events
 // ------------------------------
@@ -203,11 +211,17 @@ pub struct DogeSentToHeaven {
 pub struct MineBtcStaked {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub faction_id: u8,
+    pub faction_id: u8,         // faction staked INTO (target faction)
+    pub player_faction_id: u8,  // player's home faction
+    pub is_cross_faction: bool, // true if staking outside home faction
     pub position_index: u8,
     pub position_key: Pubkey,
+    pub staked_amount: u64,         // actual amount staked (after burn tax)
+    pub weighted_amount: u64,       // weighted amount (before doge multiplier)
+    pub multiplier: u16,            // lockup multiplier (100 = 1x)
+    pub cross_faction_penalty: u64, // hashpower lost to penalty (0 if same faction)
     pub lockup_duration: u64,
-    pub hashpower_contribution: u64,
+    pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
     pub new_minebtc_rewards: u64,
     pub unrefined_minebtc: u64,
@@ -232,11 +246,17 @@ pub struct MineBtcUnstaked {
 pub struct LiquidityStaked {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub faction_id: u8,
+    pub faction_id: u8,         // faction staked INTO (target faction)
+    pub player_faction_id: u8,  // player's home faction
+    pub is_cross_faction: bool, // true if staking outside home faction
     pub position_index: u8,
     pub position_key: Pubkey,
+    pub staked_amount: u64,         // actual amount staked
+    pub weighted_amount: u64,       // weighted amount (before doge multiplier)
+    pub multiplier: u16,            // lockup multiplier (100 = 1x)
+    pub cross_faction_penalty: u64, // hashpower lost to penalty (0 if same faction)
     pub lockup_duration: u64,
-    pub hashpower_contribution: u64,
+    pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
     pub new_minebtc_rewards: u64,
     pub unrefined_minebtc: u64,
@@ -651,4 +671,74 @@ pub struct DogeVisualMutation {
     pub trait_index: u8,
     pub old_val: u8,
     pub new_val: u8,
+}
+
+// ========================================================================================
+// =============================== EPOCH MINING EVENTS ====================================
+// ========================================================================================
+
+/// Event emitted when a new epoch starts
+#[event]
+pub struct EpochStarted {
+    pub epoch_id: u64,
+    pub start_timestamp: u64,
+    pub end_timestamp: u64,
+    pub risk_factor: u16,
+    pub timestamp: i64,
+}
+
+/// Event emitted when AI oracle updates faction scores
+#[event]
+pub struct EpochScoresUpdated {
+    pub epoch_id: u64,
+    pub score_deltas: [u16; 12],
+    pub cumulative_scores: [u16; 12],
+    pub update_number: u16,
+    pub timestamp: i64,
+}
+
+/// Event emitted when risk factor is updated
+#[event]
+pub struct RiskFactorUpdated {
+    pub old_risk_factor: u16,
+    pub new_risk_factor: u16,
+    pub timestamp: i64,
+}
+
+/// Event emitted when an epoch is settled
+#[event]
+pub struct EpochSettled {
+    pub epoch_id: u64,
+    pub total_dogebtc_mined: u64,
+    pub risk_factor: u16,
+    pub epoch_mining_pool: u64,
+    pub faction_scores: [u16; 12],
+    pub total_score_weighted_bets: u128,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a user claims epoch rewards
+#[event]
+pub struct EpochRewardsClaimed {
+    pub epoch_id: u64,
+    pub user: Pubkey,
+    pub reward_amount: u64,
+    pub user_weighted_score: u128,
+    pub timestamp: i64,
+}
+
+/// Event emitted when an epoch is auto-started inline (during join_round or end_round_faction_rewards)
+#[event]
+pub struct EpochAutoStarted {
+    pub epoch_id: u64,
+    pub start_timestamp: u64,
+    pub end_timestamp: u64,
+}
+
+/// Event emitted when an epoch is auto-settled inline (during end_round_faction_rewards)
+#[event]
+pub struct EpochAutoSettled {
+    pub epoch_id: u64,
+    pub mining_pool: u64,
+    pub total_weighted_bets: u128,
 }

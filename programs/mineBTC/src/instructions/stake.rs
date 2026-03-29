@@ -39,6 +39,7 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 pub const MAX_REFERRALS_PER_CODE: u16 = 15; // Maximum users per referral code
 pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
 pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
+pub const CROSS_FACTION_PENALTY_PCT: u64 = 30; // 30% hashpower penalty for staking in non-home faction
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
@@ -73,10 +74,6 @@ pub fn int_stake_minebtc(
     let hashpower_config = &ctx.accounts.hashpower_config;
 
     // Validate inputs
-    require!(
-        faction_state.faction_id == player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(
         lockup_duration >= hashpower_config.min_lockup_days
@@ -138,6 +135,20 @@ pub fn int_stake_minebtc(
 
     // Calculate weighted amount for this position
     let weighted_amount = (actual_amount * multiplier as u64) / M_HUNDRED;
+    // Apply cross-faction penalty: 30% hashpower reduction if staking outside home faction
+    let is_cross_faction = faction_state.faction_id != player_data.faction_id;
+    let weighted_amount = if is_cross_faction {
+        let penalized = (weighted_amount * (100 - CROSS_FACTION_PENALTY_PCT)) / M_HUNDRED;
+        msg!(
+            "   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}",
+            CROSS_FACTION_PENALTY_PCT,
+            weighted_amount as f64 / 1e6,
+            penalized as f64 / 1e6
+        );
+        penalized
+    } else {
+        weighted_amount
+    };
     msg!(
         "⚖️ Weighted amount: {} (actual amount: {} × multiplier: {}%)",
         weighted_amount as f64 / 1e6,
@@ -162,7 +173,7 @@ pub fn int_stake_minebtc(
     helper::init_position(
         user_position,
         0, // position_type
-        player_data.faction_id,
+        faction_state.faction_id,
         position_index,
         actual_amount,
         weighted_amount,
@@ -208,15 +219,26 @@ pub fn int_stake_minebtc(
     token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.minebtc_mint.decimals)?;
     msg!("✅ [stake_minebtc] MineBtc staking successful");
 
-    // Store faction_id before emitting event
-    let faction_id = player_data.faction_id;
+    // Compute cross-faction penalty amount for event
+    let pre_penalty_weighted = (actual_amount * multiplier as u64) / M_HUNDRED;
+    let cross_faction_penalty = if is_cross_faction {
+        pre_penalty_weighted - weighted_amount
+    } else {
+        0
+    };
 
     emit!(MineBtcStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
-        faction_id,
+        faction_id: faction_state.faction_id, // target faction (staked INTO)
+        player_faction_id: player_data.faction_id, // player's home faction
+        is_cross_faction,
         position_index,
         position_key: ctx.accounts.user_position.key(),
+        staked_amount: actual_amount,
+        weighted_amount,
+        multiplier,
+        cross_faction_penalty,
         lockup_duration,
         hashpower_contribution: weighted_amount_with_doges,
         new_sol_rewards,
@@ -293,8 +315,8 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let hashpower_contribution =
-        (original_weighted * player_data.doge_multiplier as u64) / BASE_MULTIPLIER as u64;
+    let hashpower_contribution = ((original_weighted as u128 * player_data.doge_multiplier as u128)
+        / BASE_MULTIPLIER as u128) as u64;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
 
@@ -403,11 +425,11 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     // Store values for emergency withdrawal event before closing position
     let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
     let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
-    let mut remaining_seconds_pct = 0u64;
-    if total_lockup_seconds > 0 {
-        remaining_seconds_pct =
-            (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
-    }
+    let remaining_seconds_pct = if total_lockup_seconds > 0 && remaining_seconds > 0 {
+        ((M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds) as u64
+    } else {
+        0u64
+    };
     let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
         (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
     } else {
@@ -481,10 +503,6 @@ pub fn int_stake_lp_tokens(
     let hashpower_config = &ctx.accounts.hashpower_config;
 
     // Validate inputs
-    require!(
-        faction_state.faction_id == player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
     require!(amount > 0, ErrorCode::InvalidAmount);
     require!(
         lockup_duration >= hashpower_config.min_lockup_days
@@ -526,6 +544,20 @@ pub fn int_stake_lp_tokens(
 
     // Calculate weighted amount for this position
     let weighted_amount = actual_amount * multiplier as u64 / M_HUNDRED;
+    // Apply cross-faction penalty: 30% hashpower reduction if staking outside home faction
+    let is_cross_faction = faction_state.faction_id != player_data.faction_id;
+    let weighted_amount = if is_cross_faction {
+        let penalized = (weighted_amount * (100 - CROSS_FACTION_PENALTY_PCT)) / M_HUNDRED;
+        msg!(
+            "   ⚠️ Cross-faction staking! {}% penalty applied. Weighted: {} -> {}",
+            CROSS_FACTION_PENALTY_PCT,
+            weighted_amount as f64 / 1e6,
+            penalized as f64 / 1e6
+        );
+        penalized
+    } else {
+        weighted_amount
+    };
     msg!(
         "⚖️ Weighted amount: {} (amount: {} × multiplier: {}%)",
         weighted_amount as f64 / 1e6,
@@ -550,7 +582,7 @@ pub fn int_stake_lp_tokens(
     helper::init_position(
         user_position,
         1, // position_type
-        player_data.faction_id,
+        faction_state.faction_id,
         position_index,
         actual_amount,
         weighted_amount,
@@ -596,15 +628,26 @@ pub fn int_stake_lp_tokens(
     token::transfer(transfer_ctx, amount)?;
     msg!("   ✓ Transferred {} LP tokens", actual_amount as f64 / 1e6);
 
-    // Store faction_id before emitting event
-    let faction_id = player_data.faction_id;
+    // Compute cross-faction penalty amount for event
+    let pre_penalty_weighted = actual_amount * multiplier as u64 / M_HUNDRED;
+    let cross_faction_penalty = if is_cross_faction {
+        pre_penalty_weighted - weighted_amount
+    } else {
+        0
+    };
 
     emit!(LiquidityStaked {
         owner: ctx.accounts.authority.key(),
         player_data: player_data_key,
+        faction_id: faction_state.faction_id, // target faction (staked INTO)
+        player_faction_id: player_data.faction_id, // player's home faction
+        is_cross_faction,
         position_index,
         position_key: ctx.accounts.user_position.key(),
-        faction_id,
+        staked_amount: actual_amount,
+        weighted_amount,
+        multiplier,
+        cross_faction_penalty,
         lockup_duration,
         hashpower_contribution: weighted_amount_with_doges,
         new_sol_rewards,
@@ -671,8 +714,8 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let hashpower_contribution =
-        (original_weighted * player_data.doge_multiplier as u64) / BASE_MULTIPLIER as u64;
+    let hashpower_contribution = ((original_weighted as u128 * player_data.doge_multiplier as u128)
+        / BASE_MULTIPLIER as u128) as u64;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
 
@@ -778,11 +821,12 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     } else {
         0
     };
-    let mut remaining_seconds_pct = 0u64;
-    if total_lockup_seconds > 0 && is_early_withdrawal {
-        remaining_seconds_pct =
-            (M_HUNDRED as i64 * remaining_seconds / total_lockup_seconds) as u64;
-    }
+    let remaining_seconds_pct =
+        if total_lockup_seconds > 0 && is_early_withdrawal && remaining_seconds > 0 {
+            ((M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds) as u64
+        } else {
+            0u64
+        };
     let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
         (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
     } else {
@@ -831,11 +875,6 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 /// and accumulates MineBTC to pending_minebtc_rewards (NOT transferred here)
 pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
     msg!("💰 [claim_staking_rewards] Claiming SOL rewards + accumulating MineBTC");
-
-    require!(
-        ctx.accounts.faction_state.faction_id == ctx.accounts.player_data.faction_id,
-        ErrorCode::InvalidFactionId
-    );
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();

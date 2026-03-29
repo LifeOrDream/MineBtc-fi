@@ -862,6 +862,59 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     global_state.can_begin_round = true;
     msg!("   Can begin new round: {}", global_state.can_begin_round);
 
+    // --- EPOCH MINING TRACKING (inline) ---
+    let epoch_config = &mut ctx.accounts.epoch_config;
+    let epoch_state = &mut ctx.accounts.epoch_state;
+    let mine_btc_per_round = ctx.accounts.mine_btc_mining.mine_btc_per_round;
+
+    if epoch_config.is_active && epoch_state.stage < 2 {
+        epoch_state.total_dogebtc_mined_in_epoch += mine_btc_per_round;
+        msg!(
+            "   🌍 Epoch {}: +{} dogeBTC mined (total: {})",
+            epoch_state.epoch_id,
+            mine_btc_per_round,
+            epoch_state.total_dogebtc_mined_in_epoch
+        );
+
+        // --- AUTO-SETTLE if epoch expired and scores are posted (stage == 1) ---
+        let clock = Clock::get()?;
+        if clock.unix_timestamp >= epoch_state.end_timestamp as i64 && epoch_state.stage == 1 {
+            // Settle: compute pool
+            epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
+            epoch_state.epoch_mining_pool = (epoch_state.total_dogebtc_mined_in_epoch as u128)
+                .checked_mul(epoch_state.risk_factor_snapshot as u128)
+                .unwrap_or(0)
+                .checked_div(100)
+                .unwrap_or(0) as u64;
+
+            // Compute faction reward pools (Model 5 + Top 3)
+            crate::instructions::epoch::compute_faction_reward_pools(epoch_state, epoch_config);
+
+            epoch_state.stage = 2; // settled
+
+            msg!(
+                "   🌍 Auto-settled epoch {}: pool={}",
+                epoch_state.epoch_id,
+                epoch_state.epoch_mining_pool
+            );
+
+            emit!(EpochAutoSettled {
+                epoch_id: epoch_state.epoch_id,
+                mining_pool: epoch_state.epoch_mining_pool,
+                total_weighted_bets: 0, // deprecated, kept for event compat
+            });
+
+            // --- AUTO-START next epoch ---
+            epoch_config.current_epoch_id += 1;
+            epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
+
+            msg!(
+                "   🌍 Next epoch_id set to {}",
+                epoch_config.current_epoch_id
+            );
+        }
+    }
+
     emit!(RewardsDistributedForRound {
         round_id: game_session.round_id,
     });
@@ -1066,6 +1119,22 @@ pub struct EndRoundFactionRewards<'info> {
         bump
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
+
+    /// Epoch config (mut for auto-settle + auto-start)
+    #[account(
+        mut,
+        seeds = [EPOCH_CONFIG_SEED],
+        bump = epoch_config.bump,
+    )]
+    pub epoch_config: Account<'info, EpochConfig>,
+
+    /// Epoch state for current epoch (mut for mining tracking + settlement)
+    #[account(
+        mut,
+        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
+        bump = epoch_state.bump,
+    )]
+    pub epoch_state: Account<'info, EpochState>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

@@ -67,6 +67,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     // Initialize GlobalConfig
     global_config.ext_authority = ctx.accounts.authority.key();
+    global_config.pending_authority = Pubkey::default();
     global_config.fee_recipient = fee_recipient;
 
     // Store both PDA bumps for future derivation
@@ -289,13 +290,60 @@ pub fn add_faction_internal(
     Ok(())
 }
 
-/// Update the global configuration parameters (admin only)
+/// Rename a faction in the supported_factions list (admin only)
 ///
-/// Updates the program authority and/or fee recipient address.
-/// Only the current `ext_authority` can call this function.
+/// Updates the faction name string at the given index. This only changes the
+/// display name stored in GlobalConfig.supported_factions — the FactionState PDA
+/// (derived from the original name during add_faction) is unaffected.
 ///
 /// # Parameters
-/// - `new_authority`: Optional new program authority (if None, authority unchanged)
+/// - `faction_id`: Index in supported_factions to rename (0-based)
+/// - `new_name`: New faction name (max MAX_FACTION_NAME_LENGTH characters)
+///
+/// # Constraints
+/// - Only ext_authority can call this
+/// - faction_id must be within bounds
+/// - new_name must be non-empty and within length limit
+pub fn rename_faction_internal(
+    ctx: Context<UpdateConfigAc>,
+    faction_id: u8,
+    new_name: String,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+
+    // Validate faction_id is within bounds
+    require!(
+        (faction_id as usize) < global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+
+    // Validate new name
+    require!(
+        new_name.len() > 0 && new_name.len() <= MAX_FACTION_NAME_LENGTH,
+        ErrorCode::InvalidFactionName
+    );
+
+    let old_name = global_config.supported_factions[faction_id as usize].clone();
+    global_config.supported_factions[faction_id as usize] = new_name.clone();
+
+    emit!(FactionRenamed {
+        authority: ctx.accounts.authority.key(),
+        faction_id,
+        old_name,
+        new_name,
+    });
+
+    Ok(())
+}
+
+/// Update the global configuration parameters (admin only)
+///
+/// Proposes a new program authority (2-step transfer).
+/// Only the current `ext_authority` can call this function.
+/// The new authority must call `accept_authority` to complete the transfer.
+///
+/// # Parameters
+/// - `new_authority`: Optional new program authority to propose (if None, cancels pending transfer)
 /// - `new_fee_recipient`: Optional new fee recipient (if None, fee recipient unchanged)
 pub fn update_config_internal(
     ctx: Context<UpdateConfigAc>,
@@ -304,15 +352,62 @@ pub fn update_config_internal(
 ) -> Result<()> {
     let global_config = &mut ctx.accounts.global_config;
 
-    // Update fields if provided
+    // 2-step authority transfer: set pending_authority instead of immediate transfer
+    // If new_authority is Some, set it as pending. If None, cancel any pending transfer.
     if let Some(authority) = new_authority {
-        global_config.ext_authority = authority;
+        msg!(
+            "🔐 Authority transfer proposed: {} → {}",
+            global_config.ext_authority,
+            authority
+        );
+        global_config.pending_authority = authority;
     }
 
-    // Update creation fee recipient if provided
+    // Update creation fee recipient if provided (this takes effect immediately)
     if let Some(fee_recipient) = new_fee_recipient {
         global_config.fee_recipient = fee_recipient;
     }
+    Ok(())
+}
+
+/// Cancel a pending authority transfer.
+/// Only the current `ext_authority` can call this function.
+pub fn cancel_authority_transfer_internal(ctx: Context<UpdateConfigAc>) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+    msg!(
+        "🔐 Authority transfer cancelled (was pending: {})",
+        global_config.pending_authority
+    );
+    global_config.pending_authority = Pubkey::default();
+    Ok(())
+}
+
+/// Accept a proposed authority transfer (2-step transfer, step 2).
+/// Only the `pending_authority` can call this function.
+/// Completes the transfer: ext_authority = pending_authority, pending_authority = default.
+pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+
+    // Verify there is a pending transfer
+    require!(
+        global_config.pending_authority != Pubkey::default(),
+        ErrorCode::NoPendingAuthority
+    );
+
+    // Verify the caller is the pending authority
+    require!(
+        global_config.pending_authority == ctx.accounts.new_authority.key(),
+        ErrorCode::Unauthorized
+    );
+
+    msg!(
+        "🔐 Authority transfer accepted: {} → {}",
+        global_config.ext_authority,
+        global_config.pending_authority
+    );
+
+    global_config.ext_authority = global_config.pending_authority;
+    global_config.pending_authority = Pubkey::default();
     Ok(())
 }
 
@@ -1228,6 +1323,24 @@ pub struct UpdateConfigAc<'info> {
 
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Accept authority transfer — only the pending_authority can call this
+#[derive(Accounts)]
+pub struct AcceptAuthority<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.pending_authority == new_authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// The new authority (must match pending_authority)
+    #[account(mut)]
+    pub new_authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }

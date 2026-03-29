@@ -827,6 +827,12 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             required_minebtc + 100,
         )
     } else {
+        // Guard against division by zero if pool state is empty
+        if sol_vault_balance == 0 || lp_supply == 0 {
+            msg!("   ⚠️ Pool vault balance is zero, skipping LP operation");
+            mine_btc_mining.lp_operation_pending = false;
+            return Ok(());
+        }
         let lp_from_sol =
             (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
         let required_minebtc =

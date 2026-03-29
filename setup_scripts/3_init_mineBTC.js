@@ -346,6 +346,9 @@ async function main() {
       "6658Pu1vFuJuJMCbnv7v9LfjUgEfmaNpKN4xGfbfiZbr"
     );
 
+    // 15. Initialize Epoch Config (for epoch-based risk/oracle system)
+    await initializeEpochConfig(minebtcProgram);
+
     // Print completion summary
     // printCompletionSummary();
     } catch (error) {
@@ -2584,6 +2587,80 @@ async function addGameCrankerBot(minebtcProgram, botWalletAddress) {
       throw error;
     }
     }
+}
+
+async function initializeEpochConfig(minebtcProgram) {
+  if (deploymentFile.epoch_config_initialized) {
+    console.log(COLOR_INFO, 'ℹ️ Epoch config already initialized. Skipping...');
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    '\n================ [ INITIALIZING EPOCH CONFIG ] ================'
+  );
+
+  try {
+    const [epochConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('epoch-config')],
+      minebtcProgram.programId
+    );
+
+    const [globalConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('global-config')],
+      minebtcProgram.programId
+    );
+
+    // Oracle authority = the cranker bot wallet (same as game cranker)
+    const oracleAuthority = wallet.publicKey;
+    const epochDuration = 86400; // 24 hours in seconds
+    const initialRiskFactor = 100; // 1.00x (100 basis points of 1000 max)
+
+    console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
+    console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
+    console.log(COLOR_INFO, `🔑 Oracle Authority: ${oracleAuthority.toBase58()}`);
+    console.log(COLOR_INFO, `⏱️  Epoch Duration: ${epochDuration}s (24h)`);
+    console.log(COLOR_INFO, `📊 Initial Risk Factor: ${initialRiskFactor} (1.00x)`);
+
+    const tx = await minebtcProgram.methods
+      .initializeEpochConfig(oracleAuthority, new BN(epochDuration), initialRiskFactor)
+      .accounts({
+        epochConfig: epochConfigPda,
+        globalConfig: globalConfigPda,
+        authority: wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, `✅ Epoch config initialized successfully!`);
+    console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
+    console.log(
+      COLOR_DIM,
+      `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
+    );
+
+    deploymentFile.epoch_config_initialized = {
+      epoch_config_pda: epochConfigPda.toBase58(),
+      oracle_authority: oracleAuthority.toBase58(),
+      epoch_duration: epochDuration,
+      initial_risk_factor: initialRiskFactor,
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    if (error.toString().includes('already in use')) {
+      console.log(COLOR_INFO, 'ℹ️ Epoch config already exists on-chain. Skipping...');
+      deploymentFile.epoch_config_initialized = {
+        status: 'already_exists',
+        timestamp: new Date().toISOString(),
+      };
+      saveDeploymentData();
+    } else {
+      console.error(COLOR_ERROR, '❌ Failed to initialize epoch config:', error);
+      throw error;
+    }
+  }
 }
 
 function printCompletionSummary() {

@@ -309,6 +309,10 @@ pub fn internal_join_round(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
+        &mut ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_state,
+        &mut ctx.accounts.user_epoch_bets,
+        ctx.bumps.user_epoch_bets,
     )?;
 
     msg!("✅ [join_round] Bet placed successfully");
@@ -396,6 +400,10 @@ pub fn internal_join_round_batch(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
+        &mut ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_state,
+        &mut ctx.accounts.user_epoch_bets,
+        ctx.bumps.user_epoch_bets,
     )?;
 
     msg!(
@@ -562,7 +570,9 @@ pub fn internal_init_autominer(
     let total_sol = if use_ticket.is_some() {
         0 // Ticket mode: no SOL deposit needed
     } else {
-        sol_per_round * num_rounds as u64
+        sol_per_round
+            .checked_mul(num_rounds as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
     };
     msg!(
         "     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)",
@@ -750,7 +760,12 @@ pub fn internal_update_autominer(
     autominer_vault.rounds_remaining += rounds_added;
     autominer_vault.can_reload = new_can_reload;
     if autominer_vault.use_ticket.is_none() {
-        autominer_vault.sol_balance = (old_sol_balance as i64 + sol_diff) as u64;
+        let new_balance = (old_sol_balance as i64).saturating_add(sol_diff);
+        autominer_vault.sol_balance = if new_balance > 0 {
+            new_balance as u64
+        } else {
+            0
+        };
     }
 
     msg!("✅ [update_autominer] Autominer updated successfully");
@@ -924,7 +939,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
 
     // Update remaining SOL balance tracked for this autominer (SOL mode only)
     if use_ticket.is_none() {
-        autominer_vault.sol_balance = autominer_vault.sol_balance - sol_per_round;
+        autominer_vault.sol_balance = autominer_vault.sol_balance.saturating_sub(sol_per_round);
     }
 
     // Place bets using join_round_batch
@@ -994,6 +1009,10 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
+        &mut ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_state,
+        &mut ctx.accounts.user_epoch_bets,
+        ctx.bumps.user_epoch_bets,
     )?;
 
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
@@ -1454,7 +1473,7 @@ fn process_mutation_sync<'info>(
                 _ => 10u64, // No mutation: 1%
             };
             let accum_add = (total_minebtc_reward * accum_pct) / 1000;
-            doge_metadata.accumulated_val = doge_metadata.accumulated_val + accum_add;
+            doge_metadata.accumulated_val = doge_metadata.accumulated_val.saturating_add(accum_add);
             msg!(
                 "💎 Doge accumulated_val +{} ({}%)",
                 accum_add,
@@ -1518,6 +1537,10 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
+    epoch_config: &mut Account<'info, EpochConfig>,
+    epoch_state: &mut Account<'info, EpochState>,
+    user_epoch_bets: &mut Account<'info, UserEpochBets>,
+    user_epoch_bets_bump: u8,
 ) -> Result<()> {
     let round_id = global_state.current_round_id;
 
@@ -1605,9 +1628,9 @@ fn internal_process_bets<'info>(
             let protocol_fee = fee - stakers_fee;
 
             // Accumulate totals for transfer
-            total_stakers_fee = stakers_fee * num_bets;
-            total_protocol_fee = protocol_fee * num_bets;
-            total_net_to_pot = net * num_bets;
+            total_stakers_fee = stakers_fee.saturating_mul(num_bets);
+            total_protocol_fee = protocol_fee.saturating_mul(num_bets);
+            total_net_to_pot = net.saturating_mul(num_bets);
 
             // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
             let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
@@ -1729,17 +1752,17 @@ fn internal_process_bets<'info>(
     let total_wgtd_points_added = wgtd_points_per_bet * num_bets;
     let total_fee_added = fee_per_bet * num_bets;
 
-    user_game_bet.total_sol_bet += total_net_added;
+    user_game_bet.total_sol_bet = user_game_bet.total_sol_bet.saturating_add(total_net_added);
     user_game_bet.total_points_bet += total_points_added;
     user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
     user_game_bet.total_fee += total_fee_added;
 
-    game_session.total_sol_bets += total_net_added;
+    game_session.total_sol_bets = game_session.total_sol_bets.saturating_add(total_net_added);
     game_session.total_points_bets += total_points_added;
     game_session.total_wgtd_points_bets += total_wgtd_points_added;
     game_session.stakers_fee += total_stakers_fee;
 
-    player_data.total_sol_bet += total_net_added;
+    player_data.total_sol_bet = player_data.total_sol_bet.saturating_add(total_net_added);
     player_data.total_points_bet += total_points_added;
 
     msg!(
@@ -1779,7 +1802,7 @@ fn internal_process_bets<'info>(
         gameplay_doge_xp: player_data.gameplay_doge_xp,
         round_id,
         num_bets: num_bets as u8,
-        target_blocks: evt_target_blocks,
+        target_blocks: evt_target_blocks.clone(),
         net_amounts: evt_net_amounts,
         fee_amounts: evt_fee_amounts,
         points_amounts: evt_points_amounts,
@@ -1794,6 +1817,57 @@ fn internal_process_bets<'info>(
         vault_closed,
         timestamp: clock.unix_timestamp,
     });
+
+    // === EPOCH BET ACCUMULATION (inline) ===
+    if epoch_config.is_active && epoch_state.stage == 0 {
+        // Initialize epoch_state if freshly created (init_if_needed)
+        if epoch_state.epoch_id == 0
+            && epoch_state.start_timestamp == 0
+            && epoch_config.current_epoch_id > 0
+        {
+            let clock_now = Clock::get()?;
+            epoch_state.epoch_id = epoch_config.current_epoch_id;
+            epoch_state.start_timestamp = clock_now.unix_timestamp as u64;
+            epoch_state.end_timestamp = epoch_state.start_timestamp + epoch_config.epoch_duration;
+            epoch_state.stage = 0;
+            epoch_state.faction_scores = [0u16; NUM_FACTIONS];
+            epoch_state.faction_total_sol_bets = [0u64; NUM_FACTIONS];
+            epoch_state.total_dogebtc_mined_in_epoch = 0;
+            epoch_state.risk_factor_snapshot = 0;
+            epoch_state.epoch_mining_pool = 0;
+            epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+            epoch_state.score_updates_count = 0;
+
+            emit!(crate::events::EpochAutoStarted {
+                epoch_id: epoch_state.epoch_id,
+                start_timestamp: epoch_state.start_timestamp,
+                end_timestamp: epoch_state.end_timestamp,
+            });
+            msg!(
+                "   🌍 Auto-initialized epoch {} ({} -> {})",
+                epoch_state.epoch_id,
+                epoch_state.start_timestamp,
+                epoch_state.end_timestamp
+            );
+        }
+
+        // Initialize user_epoch_bets if first bet this epoch
+        if user_epoch_bets.owner == Pubkey::default() {
+            user_epoch_bets.owner = owner_key;
+            user_epoch_bets.epoch_id = epoch_state.epoch_id;
+            user_epoch_bets.faction_bets = [0u64; NUM_FACTIONS];
+            user_epoch_bets.bump = user_epoch_bets_bump;
+        }
+
+        // Map each block bet to faction and accumulate
+        for block_id in evt_target_blocks.iter() {
+            let faction = game_session.block_assignments[*block_id as usize] as usize;
+            if faction < NUM_FACTIONS {
+                user_epoch_bets.faction_bets[faction] += wgtd_points_per_bet;
+                epoch_state.faction_total_sol_bets[faction] += wgtd_points_per_bet;
+            }
+        }
+    }
 
     // === INSTANT MUTATION & XP LOGIC ===
     // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_doge
@@ -1940,8 +2014,8 @@ fn get_target_block_from_bet_type(
 }
 
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
-    let fee = amount * protocol_fee_pct / M_HUNDRED;
-    let net_amount = amount - fee;
+    let fee = amount.saturating_mul(protocol_fee_pct) / M_HUNDRED;
+    let net_amount = amount.saturating_sub(fee);
     msg!(
         "     Net amount (after fee): {} SOL. Protocol fee ({}%): {} SOL",
         (net_amount as f64) / 1_000_000_000.0,
@@ -2288,7 +2362,7 @@ pub struct JoinRound<'info> {
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump = game_session.bump
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     /// UserGameBet PDA for this user's bet in this round
     #[account(
@@ -2298,7 +2372,7 @@ pub struct JoinRound<'info> {
         seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
-    pub user_game_bet: Account<'info, UserGameBet>,
+    pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: SOL treasury PDA (fees go here)
     #[account(
@@ -2323,6 +2397,34 @@ pub struct JoinRound<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// Epoch config (read for current_epoch_id)
+    #[account(
+        mut,
+        seeds = [EPOCH_CONFIG_SEED],
+        bump = epoch_config.bump,
+    )]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    /// Epoch state for current epoch (init_if_needed for new epochs)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = EpochState::LEN,
+        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
+        bump,
+    )]
+    pub epoch_state: Box<Account<'info, EpochState>>,
+
+    /// User epoch bets for current epoch (init_if_needed for first bet)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = UserEpochBets::LEN,
+        seeds = [USER_EPOCH_BETS_SEED, authority.key().as_ref(), &epoch_config.current_epoch_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
 
     #[account(mut)]
     pub user_wallet: Signer<'info>,
@@ -2362,7 +2464,7 @@ pub struct JoinRoundBatch<'info> {
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump = game_session.bump
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     /// UserGameBet PDA (shared across all bets in batch)
     #[account(
@@ -2372,7 +2474,7 @@ pub struct JoinRoundBatch<'info> {
         seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
-    pub user_game_bet: Account<'info, UserGameBet>,
+    pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: SOL treasury PDA (fees go here)
     #[account(
@@ -2397,6 +2499,34 @@ pub struct JoinRoundBatch<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// Epoch config (read for current_epoch_id)
+    #[account(
+        mut,
+        seeds = [EPOCH_CONFIG_SEED],
+        bump = epoch_config.bump,
+    )]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    /// Epoch state for current epoch (init_if_needed for new epochs)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = EpochState::LEN,
+        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
+        bump,
+    )]
+    pub epoch_state: Box<Account<'info, EpochState>>,
+
+    /// User epoch bets for current epoch (init_if_needed for first bet)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = UserEpochBets::LEN,
+        seeds = [USER_EPOCH_BETS_SEED, authority.key().as_ref(), &epoch_config.current_epoch_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
 
     #[account(mut)]
     pub user_wallet: Signer<'info>,
@@ -2626,7 +2756,7 @@ pub struct ExecuteAutominerBet<'info> {
         seeds = [AUTOMINER_VAULT_SEED.as_ref(), autominer_vault.owner.as_ref()],
         bump = autominer_vault.vault_bump
     )]
-    pub autominer_vault: Account<'info, AutominerVault>,
+    pub autominer_vault: Box<Account<'info, AutominerVault>>,
 
     /// CHECK: Autominer custody PDA holding SOL deposits
     #[account(
@@ -2641,27 +2771,27 @@ pub struct ExecuteAutominerBet<'info> {
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
         bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     #[account(
         mut,
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     /// UserGameBet PDA for autominer bets (aggregates all bets from this vault for this round)
     #[account(
@@ -2671,7 +2801,7 @@ pub struct ExecuteAutominerBet<'info> {
         seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump
     )]
-    pub user_game_bet: Account<'info, UserGameBet>,
+    pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: SOL treasury PDA
     #[account(
@@ -2703,6 +2833,34 @@ pub struct ExecuteAutominerBet<'info> {
         constraint = owner.key() == autominer_vault.owner @ ErrorCode::Unauthorized
     )]
     pub owner: UncheckedAccount<'info>,
+
+    /// Epoch config (read for current_epoch_id)
+    #[account(
+        mut,
+        seeds = [EPOCH_CONFIG_SEED],
+        bump = epoch_config.bump,
+    )]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    /// Epoch state for current epoch (init_if_needed for new epochs)
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = EpochState::LEN,
+        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
+        bump,
+    )]
+    pub epoch_state: Box<Account<'info, EpochState>>,
+
+    /// User epoch bets for vault OWNER (init_if_needed, payer=caller)
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = UserEpochBets::LEN,
+        seeds = [USER_EPOCH_BETS_SEED, autominer_vault.owner.as_ref(), &epoch_config.current_epoch_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
 
     /// Caller (bot or anyone) - doesn't need to be owner
     #[account(mut)]

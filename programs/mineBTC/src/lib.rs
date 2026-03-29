@@ -35,6 +35,7 @@ pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::doges::*;
 pub use instructions::economy::*;
+pub use instructions::epoch::*;
 pub use instructions::game::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
@@ -52,6 +53,7 @@ pub mod minebtc {
     use instructions::admin::{self};
     use instructions::doges::{self};
     use instructions::economy::{self};
+    use instructions::epoch::{self};
     use instructions::game::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
@@ -87,19 +89,38 @@ pub mod minebtc {
         admin::add_faction_internal(ctx, faction_name, faction_id)
     }
 
+    /// Rename a faction in supported_factions (admin only)
+    pub fn rename_faction(
+        ctx: Context<UpdateConfigAc>,
+        faction_id: u8,
+        new_name: String,
+    ) -> Result<()> {
+        admin::rename_faction_internal(ctx, faction_id, new_name)
+    }
+
     /// Initialize system referral account and buybacks system (admin only)
     pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
         admin::initialize_system_accounts_internal(ctx)
     }
 
-    /// Update the global configuration parameters
-    /// Can only be called by the current authority
+    /// Propose a new authority (2-step transfer). Only current authority can call.
+    /// The proposed authority must call `accept_authority` to complete the transfer.
     pub fn update_config(
         ctx: Context<UpdateConfigAc>,
         new_authority: Option<Pubkey>,
         new_fee_recipient: Option<Pubkey>,
     ) -> Result<()> {
         admin::update_config_internal(ctx, new_authority, new_fee_recipient)
+    }
+
+    /// Cancel a pending authority transfer. Only current authority can call.
+    pub fn cancel_authority_transfer(ctx: Context<UpdateConfigAc>) -> Result<()> {
+        admin::cancel_authority_transfer_internal(ctx)
+    }
+
+    /// Accept a proposed authority transfer (step 2). Only the pending authority can call.
+    pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
+        admin::accept_authority_internal(ctx)
     }
 
     /// Update fee configuration (admin only)
@@ -512,6 +533,80 @@ pub mod minebtc {
     /// Finish distribution round (check all factions claimed and reset state)
     pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
         tax::internal_finish_distribution_round(ctx)
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ EPOCH MINING SYSTEM -------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Initialize epoch mining configuration (admin only)
+    /// model5_pct + top1_pct + top2_pct + top3_pct must <= 100
+    pub fn initialize_epoch_config(
+        ctx: Context<InitializeEpochConfig>,
+        oracle_authority: Pubkey,
+        epoch_duration: u64,
+        risk_factor: u16,
+        model5_pct: u8,
+        top1_pct: u8,
+        top2_pct: u8,
+        top3_pct: u8,
+    ) -> Result<()> {
+        epoch::initialize_epoch_config_internal(
+            ctx,
+            oracle_authority,
+            epoch_duration,
+            risk_factor,
+            model5_pct,
+            top1_pct,
+            top2_pct,
+            top3_pct,
+        )
+    }
+
+    /// Update epoch mining configuration (admin only)
+    pub fn update_epoch_config(
+        ctx: Context<UpdateEpochConfig>,
+        oracle_authority: Option<Pubkey>,
+        epoch_duration: Option<u64>,
+        is_active: Option<bool>,
+        model5_pct: Option<u8>,
+        top1_pct: Option<u8>,
+        top2_pct: Option<u8>,
+        top3_pct: Option<u8>,
+    ) -> Result<()> {
+        epoch::update_epoch_config_internal(
+            ctx,
+            oracle_authority,
+            epoch_duration,
+            is_active,
+            model5_pct,
+            top1_pct,
+            top2_pct,
+            top3_pct,
+        )
+    }
+
+    /// AI Oracle posts additive faction score deltas (with reason in tx memo)
+    pub fn update_epoch_scores(
+        ctx: Context<UpdateEpochScores>,
+        score_deltas: [u16; 12],
+    ) -> Result<()> {
+        epoch::update_epoch_scores_internal(ctx, score_deltas)
+    }
+
+    /// AI Oracle updates global risk factor based on world volatility
+    pub fn update_risk_factor(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
+        epoch::update_risk_factor_internal(ctx, risk_factor)
+    }
+
+    /// Settle epoch: finalize scores and compute reward pool (fallback - anyone can call)
+    pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
+        epoch::settle_epoch_internal(ctx)
+    }
+
+    /// User claims their epoch mining rewards (closes user_epoch_bets account)
+    pub fn claim_epoch_rewards(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
+        epoch::claim_epoch_rewards_internal(ctx, epoch_id)
     }
 
     // ----------------------------------------------------------------------------------------

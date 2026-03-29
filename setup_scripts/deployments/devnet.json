@@ -267,9 +267,9 @@
   },
   "doge_config_initialized": {
     "doges_config_pda": "aisEXBjRwHVXDcw9sSxFLmw6hCknWjwTVGQEfrycV1X",
-    "base_price": "1000000000",
-    "curve_a": "1111111",
-    "max_supply": "42690",
+            "base_price": "1000000000",
+            "curve_a": "5263158",
+            "max_supply": "15000",
     "tx_signature": "5jy473hjHsT9Q2y8LyUUWNtP6P9SqWumNg9ZiQgxLEWGF6A61eCcFcsMkNMGBrWiGNgy2VrT9Safwk3XR5hPBBMh",
     "timestamp": "2026-01-05T08:15:56.189Z"
   },

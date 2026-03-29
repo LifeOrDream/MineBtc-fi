@@ -10,6 +10,8 @@ pub enum ErrorCode {
 
     #[msg("User not authorized to perform this action")]
     Unauthorized,
+    #[msg("No pending authority transfer to accept")]
+    NoPendingAuthority,
 
     #[msg("Invalid mint")]
     InvalidMint,
@@ -170,4 +172,23 @@ pub enum ErrorCode {
 
     #[msg("Minting not allowed")]
     MintingNotAllowed,
+
+    // ========== EPOCH MINING ERRORS ========== //
+    #[msg("Epoch is not currently active")]
+    EpochNotActive,
+
+    #[msg("Epoch has not ended yet")]
+    EpochNotEnded,
+
+    #[msg("Epoch has not been settled yet")]
+    EpochNotSettled,
+
+    #[msg("Epoch has already been settled")]
+    EpochAlreadySettled,
+
+    #[msg("Epoch rewards have already been claimed")]
+    EpochRewardsAlreadyClaimed,
+
+    #[msg("Invalid oracle authority")]
+    InvalidOracleAuthority,
 }
