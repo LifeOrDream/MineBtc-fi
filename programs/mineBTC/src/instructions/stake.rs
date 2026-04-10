@@ -1182,17 +1182,32 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     // Reset pending minebtc rewards
     referral_rewards.pending_minebtc_rewards = 0;
 
-    // Transfer pending SOL from doges_treasury to user
+    // Transfer pending SOL from ReferralRewards PDA to user
+    // SOL is stored as extra lamports on the PDA account
     if pending_sol > 0 {
-        helper::transfer_from_doges_treasury(
-            &ctx.accounts.doges_treasury.to_account_info(),
-            &ctx.accounts.authority.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            pending_sol,
-            ctx.bumps.doges_treasury,
-        )?;
-        referral_rewards.pending_sol_rewards = 0;
-        msg!("   ✓ Transferred {} SOL referral rewards", pending_sol as f64 / 1e9);
+        // Ensure we don't withdraw below rent-exempt minimum
+        let rent_exempt_min = Rent::get()?.minimum_balance(ReferralRewards::LEN);
+        let referral_info = referral_rewards.to_account_info();
+        let current_lamports = referral_info.lamports();
+        let withdrawable = current_lamports.saturating_sub(rent_exempt_min);
+        
+        // Only transfer what's actually available (capped at withdrawable)
+        let transfer_amount = pending_sol.min(withdrawable);
+        require!(transfer_amount > 0, ErrorCode::InsufficientFunds);
+        
+        // Transfer lamports from ReferralRewards PDA to user
+        // This is safe because the PDA is owned by our program
+        let user_info = ctx.accounts.authority.to_account_info();
+        **referral_info.try_borrow_mut_lamports()? -= transfer_amount;
+        **user_info.try_borrow_mut_lamports()? += transfer_amount;
+        
+        // Update pending to reflect any remainder (if withdrawable < pending_sol)
+        referral_rewards.pending_sol_rewards = pending_sol - transfer_amount;
+        msg!("   ✓ Transferred {} SOL referral rewards from PDA", transfer_amount as f64 / 1e9);
+        if transfer_amount < pending_sol {
+            msg!("   ⚠️ Partial claim: {} SOL still pending (rent-exempt reserve)", 
+                (pending_sol - transfer_amount) as f64 / 1e9);
+        }
     }
 
     emit!(ReferralRewardsClaimed {
@@ -1772,22 +1787,6 @@ pub struct ClaimReferralRewards<'info> {
     )]
     /// Referrer's MineBtc token account to receive rewards
     pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
-
-    /// CHECK: Doges treasury PDA (holds SOL referral rewards for claim)
-    #[account(
-        mut,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
-
-    /// CHECK: SOL rewards vault (System Account)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
 
     /// CHECK: MineBtc mining state (needed for vault PDA derivation)
     #[account(
