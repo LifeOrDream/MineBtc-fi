@@ -240,8 +240,164 @@ async function main() {
   }
 
   try {
-    // 1. Initialize MineBTC Program (GlobalConfig + DogeBtcMining + SOL Treasury + Unrefined Rewards + Doge Treasury)
+    // 1. Initialize MineBTC Program
+    // Instruction: initialize(fee_recipient: Pubkey)
+    // Creates 6 PDAs in one tx:
+    //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
+    //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
+    //   - UnrefinedRewards [seeds: "unrefined-rewards"]       — unrefined MineBTC reward pool
+    //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
+    //   - Doges Treasury   [seeds: "doges-treasury"]          — 0-byte system PDA for doge mint fees
+    //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
+    // Params: fee_recipient (Pubkey) — initial fee recipient address
     await initializeMinebtcProgram(minebtcProgram);
+
+    // 2. Set Raydium Pool State
+    // Instruction: set_raydium_pool_state(raydium_pool_state: Pubkey)
+    // Stores the authorized Raydium CPMM pool address in GlobalConfig for price discovery.
+    // Also init_if_needed two SOL vault PDAs:
+    //   - SOL Rewards Vault  [seeds: "staker-sol-reward-vault"] — holds SOL for staker distribution
+    //   - SOL Prize Pot Vault[seeds: "sol-prize-pot"]           — holds SOL for round prize pots
+    // Accounts: globalConfig, solRewardsVault, solPrizePotVault, authority, systemProgram
+    await setRaydiumPoolState(minebtcProgram);
+    // return;
+
+    // 3. Add Factions (12 factions)
+    // Instruction: add_faction(faction_name: String, faction_id: u8)
+    // Creates a FactionState PDA per faction [seeds: "faction", faction_name.as_bytes()]
+    // Each stores: bump, faction_id, staking indexes, bet/win totals, motherlode pot
+    // Accounts: globalConfig, factionState, authority, systemProgram
+    await addFactions(minebtcProgram);
+
+    // 4. Initialize System Accounts (Referral + Buybacks)
+    // Instruction: initialize_system_accounts() — no args
+    // Creates 3 PDAs:
+    //   - SystemReferralRewards [seeds: "referral-rewards", system_program_id] — tracks system referrals
+    //   - BuybacksAccount       [seeds: "buybacks"]                            — buyback SOL tracker
+    //   - BuybacksSolVault      [seeds: "buybacks-sol-vault"]                  — 0-byte PDA for buyback SOL
+    // Accounts: globalConfig, systemReferralRewards, buybacksAccount, buybacksSolVault, authority, systemProgram
+    await initializeSystemAccounts(minebtcProgram);
+
+    // 1.6. Update Fees
+    // Instruction: update_fees(
+    //   new_protocol_fee_pct: Option<u8>,          — % of SOL bets taken as protocol fee
+    //   new_buyback_pct: Option<u8>,               — % of treasury SOL used for buybacks + POL
+    //   new_stakers_pct: Option<u8>,               — % of protocol fee redirected to staker rewards vault
+    //   new_minebtc_stakers_pct: Option<u8>,       — % of mined MineBTC going to stakers
+    //   new_minebtc_winners_pct: Option<u8>,       — % of mined MineBTC going to round winners
+    //   new_minebtc_same_faction_pct: Option<u8>,  — % of mined MineBTC going to same-faction bettors
+    //   new_minebtc_motherlode_pct: Option<u8>,    — % of mined MineBTC going to motherlode pot
+    //   new_refining_fee: Option<u8>,              — % fee when withdrawing unrefined MineBTC rewards
+    //   change_faction_fee: Option<u64>,           — SOL cost to change faction (lamports)
+    //   snapshot_interval: Option<u64>,            — min seconds between price snapshots
+    // )
+    // Accounts: globalConfig, mineBtcMining (optional), authority, systemProgram
+    await updateFees(minebtcProgram, {
+      // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
+        newProtocolFeePct: 15, // 10,
+        newBuybackPct: 80, // 80% (remaining 20% goes to devs)
+        newStakersPct: 10, // 10 of 10% = 1%,
+
+        // dogeBTC distribution config:
+        newDbtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
+        newDbtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
+        newDbtcSameFactionPct: 42, // 42% of dogeBTC rewards go to same-faction winners
+        newDbtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
+
+        newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
+
+        // split 50:50 between sol_treasury and fee_recipient (as WSOL)
+        changeFactionFee: 100000000, // 0.1 SOL
+
+        snapshot_interval: 30 * 60, // 5 minutes between price snapshots
+    });
+    // return;
+
+    // 5. Initialize Mining System (Token Vault + Mining Parameters)
+    // Instruction: initialize_mining(start_timestamp: u64, mine_btc_per_round: u64, pool_state: Pubkey)
+    // Sets up the mining emission vault:
+    //   - VaultAuthority [seeds: "minebtc-vault-authority"] — signer-only PDA
+    //   - TokenVault     [seeds: "minebtc_vault", mine_btc_mining.key()] — Token-2022 vault for MineBTC
+    // Stores start_timestamp, emission rate, and Raydium pool state in MineBtcMining
+    // Accounts: globalConfig, mineBtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
+    await initializeMiningSystem(minebtcProgram);
+
+    // 6. Deposit Mining Tokens
+    // Instruction: deposit_mine_btc_tokens(amount: u64)
+    // Transfers MineBTC from depositor's Token-2022 ATA to the mining vault
+    // Accounts: depositor, depositorTokenAccount, minebtcTokenVault, mineBtcMining, tokenMint, tokenProgram(T22)
+    await depositMiningTokens(minebtcProgram);
+
+    // 7. Initialize Hashpower Config
+    // Instruction: initialize_hashpower_config(min_lockup_days: u64, max_lockup_days: u64, base_multiplier: u16, max_multiplier: u16)
+    // Creates HashpowerConfig PDA [seeds: "hashpower-config"] with lockup duration and multiplier ranges
+    // Accounts: globalConfig, hashpowerConfig, authority, systemProgram
+    await initializeHashpowerConfig(minebtcProgram);
+
+    // 8. Initialize Custodian Accounts (DBTC and Liquidity custodians)
+    // Instruction: initialize_custodian_accounts() — no args
+    // Creates 4 PDAs:
+    //   - minebtcCustodian           [seeds: "minebtc-custodian"]           — Token-2022 account for staked MineBTC
+    //   - minebtcCustodianAuthority  [seeds: "minebtc-custodian-authority"] — signer PDA for MineBTC custodian
+    //   - liquidityCustodian         [seeds: "lp-custodian"]                — SPL Token account for staked LP tokens
+    //   - liquidityCustodianAuthority[seeds: "lp-custodian-authority"]      — signer PDA for LP custodian
+    // Accounts: globalConfig, minebtcMint, minebtcCustodian, minebtcCustodianAuthority,
+    //           lpMint, liquidityCustodian, liquidityCustodianAuthority, authority,
+    //           systemProgram, token2022Program, tokenProgram, rent
+    await initializeCustodianAccounts(minebtcProgram);
+    // return;
+
+    // 9. Initialize DogeConfig
+    // Instruction: initialize_doge_config(base_price: u64, curve_a: u64, max_supply: u64)
+    // Creates DogeConfig PDA [seeds: "doge-config"] with bonding curve pricing params
+    // Accounts: dogesConfig, globalConfig, authority, systemProgram
+    await initializeDogeConfig(minebtcProgram);
+
+    // 10. Create Doge Collection (Metaplex Core)
+    // Instruction: create_doge_collection(name: String, uri: String)
+    // Creates a Metaplex Core NFT collection with PDA as update authority
+    // CollectionAuthority PDA [seeds: "collection_authority"] becomes the update authority
+    // Accounts: authority, globalConfig, dogesConfig, collection (signer keypair),
+    //           collectionAuthority, mplCoreProgram, systemProgram
+    await createDogeCollection(minebtcProgram);
+
+    // 11. Initialize Doge Royalties
+    // Instruction: init_doge_royalties(basis_points: u16, creators: Vec<CreatorInput>)
+    // Sets royalty config on the Metaplex Core collection (e.g. 5% split between multisig + treasury)
+    // Accounts: authority, globalConfig, dogesConfig, collection, collectionAuthority, mplCoreProgram, systemProgram
+    await initializeDogeRoyalties(minebtcProgram);
+
+    // 12. Configure Ticket Tiers (for Doge minting)
+    // Instruction: add_ticket_tier_config(ticket_tier_index: u8, ticket_value: u64)
+    // Adds/updates a ticket tier in DogeConfig (max 4 tiers)
+    // Accounts: globalConfig, dogesConfig, authority, systemProgram
+    await configureTicketTiers(minebtcProgram);
+
+    // 13. Initialize Tax Config (for tax distribution)
+    // Instruction: initialize_tax_config(nft_floor_sweep_pct: u8, faction_treasury_pct: u8, burn_pct: u8, nft_floor_sweep_whitelisted_address: Pubkey)
+    // Creates TaxConfig PDA [seeds: "tax-config"] and associated vaults:
+    //   - WithdrawWithheldAuthority [seeds: "withdraw-withheld-authority"] — 0-byte signer PDA
+    //   - FactionTreasuryVault      [seeds: "faction-treasury-vault"]      — Token-2022 vault
+    //   - NftFloorSweepVault        [seeds: "nft-floor-sweep-vault"]       — Token-2022 vault
+    //   - NftSaleSolVault           [seeds: "nft-sale-sol-vault"]          — 0-byte system PDA for SOL
+    // Accounts: globalConfig, taxConfig, minebtcMint, withdrawWithheldAuthority,
+    //           factionTreasuryVault, nftFloorSweepVault, nftSaleSolVault, authority,
+    //           tokenProgram2022, systemProgram
+    await initializeTaxConfig(minebtcProgram);
+    // return;
+
+    // 14. Initialize Game State (for Faction Surge rounds)
+    // Instruction: initialize_game_state(round_duration_seconds: i64)
+    // Creates GlobalGameState PDA [seeds: "global-game-state"] with round timing
+    // Accounts: globalGameState, globalConfig, authority, systemProgram
+    await initializeGameState(minebtcProgram);
+
+    // 15. Initialize LP Token Accounts (for Raydium LP integration)
+    // Off-chain helper: creates an ATA for LP tokens owned by vaultAuthority PDA
+    // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
+    await initializeLpTokenAccounts(minebtcProgram);
+
+
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
     // const feeRecipientFromConfig = "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz";
@@ -258,26 +414,6 @@ async function main() {
     
     // return;
 
-    // 1.6. Update Fees (if needed - can be called anytime after initialization)
-    // Example usage:
-    await updateFees(minebtcProgram, {
-      // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
-        newProtocolFeePct: 10, // 10,
-        newStakersPct: 10, // 10 of 10% = 1%,
-        // deducted from treasury balance and used for buybacks + protocol owned liquidity 
-        newBuybackPct: 80, // 80% (remaining 20% goes to devs)
-        // split 50:50 between sol_treasury and fee_recipient (as WSOL)
-        changeFactionFee: 100000000, // 0.1 SOL
-
-        // dogeBTC distribution config:
-        newMinebtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
-        newMinebtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
-        newMinebtcSameFactionPct: 42, // 42% of dogeBTC rewards go to same-faction winners
-        newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
-
-        newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
-    });
-    // return;
 
     // // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // // Example usage:
@@ -286,50 +422,13 @@ async function main() {
     //     curveA: 1111111, // Curve parameter
     // });
     // return;
+ 
 
-        // 6. Set Raydium Pool State (for price discovery and swaps)
-    await setRaydiumPoolState(minebtcProgram);
-    // return;
 
-        // 3. Add Factions (12 factions for the raffle)
-    await addFactions(minebtcProgram);
 
-    //     // 2. Initialize System Accounts (Referral + Buybacks)
-    await initializeSystemAccounts(minebtcProgram);
 
-        // 4. Initialize Mining System (Token Vault + Mining Parameters)
-    await initializeMiningSystem(minebtcProgram);
 
-        // 5. Deposit Mining Tokens
-    await depositMiningTokens(minebtcProgram);
 
-    await initializeHashpowerConfig(minebtcProgram);
-
-    // 6.5. Initialize Custodian Accounts (DBTC and Liquidity custodians)
-    await initializeCustodianAccounts(minebtcProgram);
-    // return;
-
-        // 7. Initialize DogeConfig
-    await initializeDogeConfig(minebtcProgram);
-
-        // 8. Create Doge Collection
-    await createDogeCollection(minebtcProgram);
-
-        // 10. Initialize Doge Royalties
-    await initializeDogeRoyalties(minebtcProgram);
-
-        // 11. Configure Ticket Tiers (for Doge minting)
-    await configureTicketTiers(minebtcProgram);
-
-        // 12. Initialize Tax Config (for tax distribution)
-    await initializeTaxConfig(minebtcProgram);
-    // return;
-
-        // 13. Initialize Game State (for Faction Surge rounds)
-    await initializeGameState(minebtcProgram);
-
-        // 14. Initialize LP Token Accounts (for Raydium integration)
-    await initializeLpTokenAccounts(minebtcProgram);
     // return;
 
     console.log(
@@ -341,12 +440,20 @@ async function main() {
       `🔑 Game Cranker Bot: ${gameKeypair.publicKey.toString()}`
     );
 
+    // 16. Add Game Cranker Bot
+    // Instruction: add_cranker_bot(bot_pubkey: Pubkey)
+    // Whitelists a keeper bot wallet to call start_round / end_round
+    // Accounts: globalGameState, globalConfig, authority, systemProgram
     await addGameCrankerBot(
       minebtcProgram,
       "6658Pu1vFuJuJMCbnv7v9LfjUgEfmaNpKN4xGfbfiZbr"
     );
 
-    // 15. Initialize Epoch Config (for epoch-based risk/oracle system)
+    // 17. Initialize Epoch Config (for epoch-based risk/oracle system)
+    // Instruction: initialize_epoch_config(oracle_authority: Pubkey, epoch_duration: u64,
+    //              risk_factor: u16, model5_pct: u8, top1_pct: u8, top2_pct: u8, top3_pct: u8)
+    // Creates EpochConfig PDA [seeds: "epoch-config"] with oracle authority and reward distribution splits
+    // Accounts: epochConfig, globalConfig, authority, systemProgram
     await initializeEpochConfig(minebtcProgram);
 
     // Print completion summary
@@ -961,7 +1068,7 @@ async function depositMiningTokens(minebtcProgram) {
             .accounts({
                 depositor: wallet.publicKey,
                 depositorTokenAccount: userTokenAccount,
-                dbtcTokenVault: vaultPDA,
+                minebtcTokenVault: vaultPDA,
         mineBtcMining: mineBtcMiningPDA,
         tokenMint: DOGEBTC_TOKEN_MINT,
                 tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
@@ -1599,9 +1706,6 @@ async function configureTicketTiers(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const mineBtcMiningPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.mineBtcMining_address
-  );
 
     const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("doge-config")],
@@ -1631,7 +1735,6 @@ async function configureTicketTiers(minebtcProgram) {
                 .accounts({
                     globalConfig: globalConfigPDA,
                     dogesConfig: dogesConfigPDA,
-          mineBtcMining: mineBtcMiningPDA,
                     authority: wallet.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -2611,19 +2714,25 @@ async function initializeEpochConfig(minebtcProgram) {
       minebtcProgram.programId
     );
 
-    // Oracle authority = the cranker bot wallet (same as game cranker)
-    const oracleAuthority = wallet.publicKey;
-    const epochDuration = 86400; // 24 hours in seconds
-    const initialRiskFactor = 100; // 1.00x (100 basis points of 1000 max)
+    // Oracle authority = cranker bot wallet (same as game cranker)
+    const oracleAuthority = gameKeypair.publicKey;
+    // Read epoch config values from config.json
+    const epochDuration = config.epoch.epoch_duration_seconds;
+    const initialRiskFactor = config.epoch.initial_risk_factor;
+    const model5Pct = config.epoch.model5_pct;
+    const top1Pct = config.epoch.top1_pct;
+    const top2Pct = config.epoch.top2_pct;
+    const top3Pct = config.epoch.top3_pct;
 
     console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Oracle Authority: ${oracleAuthority.toBase58()}`);
     console.log(COLOR_INFO, `⏱️  Epoch Duration: ${epochDuration}s (24h)`);
     console.log(COLOR_INFO, `📊 Initial Risk Factor: ${initialRiskFactor} (1.00x)`);
+    console.log(COLOR_INFO, `📊 Model5 Pct: ${model5Pct}%, Top1: ${top1Pct}%, Top2: ${top2Pct}%, Top3: ${top3Pct}%`);
 
     const tx = await minebtcProgram.methods
-      .initializeEpochConfig(oracleAuthority, new BN(epochDuration), initialRiskFactor)
+      .initializeEpochConfig(oracleAuthority, new BN(epochDuration), initialRiskFactor, model5Pct, top1Pct, top2Pct, top3Pct)
       .accounts({
         epochConfig: epochConfigPda,
         globalConfig: globalConfigPda,

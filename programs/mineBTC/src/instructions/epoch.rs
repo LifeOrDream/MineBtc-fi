@@ -428,11 +428,15 @@ pub struct SettleEpoch<'info> {
 // ============================= CLAIM EPOCH REWARDS ==============================
 // ========================================================================================
 
-/// User claims their epoch mining rewards using parimutuel formula:
+/// Claim epoch mining rewards for a player using parimutuel formula:
 /// reward = sum over factions { faction_reward_pools[i] * user_bets[i] / total_bets[i] }
 /// Rewards go through the refining system (add_to_total_claimable) so the 10% refining
 /// fee applies when user later withdraws, and other holders accrue from it.
-/// The user_epoch_bets account is CLOSED (rent returned to user).
+/// The user_epoch_bets account is CLOSED (rent returned to the player, not the cranker).
+///
+/// CRANKER-COMPATIBLE: Anyone can call this instruction. The `cranker` pays the tx fee,
+/// but rewards are credited to the actual `player` and rent is returned to the `player`.
+/// This enables automated bots to batch-claim epoch rewards for all participants.
 pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
     let epoch_state = &ctx.accounts.epoch_state;
     let user_epoch_bets = &ctx.accounts.user_epoch_bets;
@@ -469,11 +473,11 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
         // Track in player stats
         player_data.total_dogebtc_won += total_reward;
 
-        msg!("🌍 [claim_epoch_rewards] User {} earned {} dogeBTC from epoch {} (accrued refining bonus: {})",
-            user_epoch_bets.owner, total_reward, epoch_id, accrued);
+        msg!("🌍 [claim_epoch_rewards] Cranker {} claimed {} dogeBTC for player {} from epoch {} (accrued refining bonus: {})",
+            ctx.accounts.cranker.key(), total_reward, user_epoch_bets.owner, epoch_id, accrued);
     } else {
         msg!(
-            "🌍 [claim_epoch_rewards] User {} has no rewards for epoch {}",
+            "🌍 [claim_epoch_rewards] Player {} has no rewards for epoch {}",
             user_epoch_bets.owner,
             epoch_id
         );
@@ -499,20 +503,22 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub epoch_state: Account<'info, EpochState>,
 
+    /// The player's epoch bets account. Seeded by the PLAYER's key, not the cranker's.
+    /// Closed on claim — rent returned to the player (not the cranker).
     #[account(
         mut,
-        seeds = [USER_EPOCH_BETS_SEED, authority.key().as_ref(), &epoch_id.to_le_bytes()],
+        seeds = [USER_EPOCH_BETS_SEED, user_epoch_bets.owner.as_ref(), &epoch_id.to_le_bytes()],
         bump = user_epoch_bets.bump,
-        constraint = user_epoch_bets.owner == authority.key() @ ErrorCode::InvalidOwner,
-        close = authority,
+        close = player,
     )]
     pub user_epoch_bets: Account<'info, UserEpochBets>,
 
+    /// The player's persistent data account. Rewards are credited here.
     #[account(
         mut,
-        seeds = [PLAYER_DATA_SEED, authority.key().as_ref()],
+        seeds = [PLAYER_DATA_SEED, user_epoch_bets.owner.as_ref()],
         bump = player_data.bump,
-        constraint = player_data.owner == authority.key() @ ErrorCode::InvalidOwner,
+        constraint = player_data.owner == user_epoch_bets.owner @ ErrorCode::InvalidOwner,
     )]
     pub player_data: Account<'info, PlayerData>,
 
@@ -524,8 +530,19 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
+    /// The actual player wallet — receives rent from closed user_epoch_bets account.
+    /// Does NOT need to sign. Validated via user_epoch_bets.owner match.
+    /// CHECK: Validated by constraint that player.key() == user_epoch_bets.owner
+    #[account(
+        mut,
+        constraint = player.key() == user_epoch_bets.owner @ ErrorCode::InvalidOwner,
+    )]
+    pub player: AccountInfo<'info>,
+
+    /// Anyone can call — the cranker/bot that pays the transaction fee.
+    /// Does NOT need to be the player. Enables automated batch claiming.
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub cranker: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
