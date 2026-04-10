@@ -46,23 +46,23 @@ pub fn compute_faction_reward_pools(epoch_state: &mut EpochState, epoch_config: 
         return;
     }
 
-    // --- Step 1: Model 5 — distribute model5_pct% of pool by score ratio ---
+    // --- Step 1: Model 5 — distribute model5_pct% of pool by score ratio (using composite scores) ---
     let model5_pool = pool as u128 * epoch_config.model5_pct as u128 / 100;
-    let total_scores: u128 = epoch_state.faction_scores.iter().map(|&s| s as u128).sum();
+    let total_scores: u128 = epoch_state.faction_composite_scores.iter().map(|&s| s as u128).sum();
 
     let mut reward_pools = [0u64; NUM_FACTIONS];
     if total_scores > 0 {
         for i in 0..NUM_FACTIONS {
             reward_pools[i] =
-                (model5_pool * epoch_state.faction_scores[i] as u128 / total_scores) as u64;
+                (model5_pool * epoch_state.faction_composite_scores[i] as u128 / total_scores) as u64;
         }
     }
 
-    // --- Step 2: Find top 3 factions by score ---
+    // --- Step 2: Find top 3 factions by composite score ---
     // Build (score, faction_index) pairs and find top 3
     let mut ranked: [(u16, usize); NUM_FACTIONS] = [(0, 0); NUM_FACTIONS];
     for i in 0..NUM_FACTIONS {
-        ranked[i] = (epoch_state.faction_scores[i], i);
+        ranked[i] = (epoch_state.faction_composite_scores[i], i);
     }
     // Sort descending by score (simple selection sort — only 12 elements)
     for i in 0..NUM_FACTIONS {
@@ -238,12 +238,13 @@ pub struct UpdateEpochConfig<'info> {
 // ============================= UPDATE EPOCH SCORES (AI ORACLE) ==============================
 // ========================================================================================
 
-/// AI Oracle posts additive score deltas for factions.
-/// Called every 15-30 min with score increments and a reason in the tx memo.
-/// Scores accumulate over the epoch. Each faction's score is a u16 (0-10000 bps).
+/// AI Oracle posts additive score deltas for factions across all dimensions.
+/// Called every 15-30 min with per-dimension score increments and a reason in the tx memo.
+/// Scores accumulate over the epoch. Each dimension score is a u16.
+/// Composite score = sum of all 5 dimension scores per faction.
 pub fn update_epoch_scores_internal(
     ctx: Context<UpdateEpochScores>,
-    score_deltas: [u16; NUM_FACTIONS],
+    score_deltas: [[u16; NUM_DIMENSIONS]; NUM_FACTIONS],
 ) -> Result<()> {
     let epoch_state = &mut ctx.accounts.epoch_state;
     let clock = Clock::get()?;
@@ -257,19 +258,30 @@ pub fn update_epoch_scores_internal(
     );
 
     for i in 0..NUM_FACTIONS {
-        epoch_state.faction_scores[i] =
-            epoch_state.faction_scores[i].saturating_add(score_deltas[i]);
+        let mut composite: u32 = 0;
+        for d in 0..NUM_DIMENSIONS {
+            epoch_state.faction_dimension_scores[i][d] =
+                epoch_state.faction_dimension_scores[i][d].saturating_add(score_deltas[i][d]);
+            composite += epoch_state.faction_dimension_scores[i][d] as u32;
+        }
+        // Saturate composite to u16::MAX if it overflows
+        epoch_state.faction_composite_scores[i] = if composite > u16::MAX as u32 {
+            u16::MAX
+        } else {
+            composite as u16
+        };
     }
 
     epoch_state.score_updates_count += 1;
     epoch_state.stage = 1; // scores posted, enables auto-settlement
 
-    msg!("   Scores after update: {:?}", epoch_state.faction_scores);
+    msg!("   Composite scores after update: {:?}", epoch_state.faction_composite_scores);
 
     emit!(EpochScoresUpdated {
         epoch_id: epoch_state.epoch_id,
         score_deltas,
-        cumulative_scores: epoch_state.faction_scores,
+        cumulative_dimension_scores: epoch_state.faction_dimension_scores,
+        composite_scores: epoch_state.faction_composite_scores,
         update_number: epoch_state.score_updates_count,
         timestamp: clock.unix_timestamp,
     });
@@ -384,7 +396,8 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
         total_dogebtc_mined: epoch_state.total_dogebtc_mined_in_epoch,
         risk_factor: epoch_state.risk_factor_snapshot,
         epoch_mining_pool: epoch_state.epoch_mining_pool,
-        faction_scores: epoch_state.faction_scores,
+        faction_composite_scores: epoch_state.faction_composite_scores,
+        faction_dimension_scores: epoch_state.faction_dimension_scores,
         total_score_weighted_bets: 0, // deprecated, kept for event compat
         timestamp: clock.unix_timestamp,
     });

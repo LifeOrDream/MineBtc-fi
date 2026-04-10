@@ -43,6 +43,7 @@ pub const MOTHERLODE_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
 pub const MAX_FACTIONS: usize = 12; // 12 factions for the raffle
 pub const NUM_FACTIONS: usize = 12; // Same as MAX_FACTIONS, used for array sizes
+pub const NUM_DIMENSIONS: usize = 5; // Scoring dimensions: economic=0, military=1, diplomatic=2, tech=3, social=4
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 
 // ========== BLOCK RAFFLE CONSTANTS ========== //
@@ -943,6 +944,12 @@ pub struct ReferralRewards {
 
     /// Total MineBtc earned from referrals (cumulative)
     pub total_minebtc_earned: u64,
+
+    /// Pending SOL rewards from NFT mint/breed referral commissions (for stats tracking)
+    pub pending_sol_rewards: u64,
+
+    /// Total SOL earned from NFT mint/breed referral commissions (cumulative)
+    pub total_sol_earned: u64,
 }
 
 impl ReferralRewards {
@@ -951,7 +958,9 @@ impl ReferralRewards {
         1 +     // bump
         2 +     // referrals_count
         8 +     // pending_minebtc_rewards
-        8; // total_minebtc_earned
+        8 +     // total_minebtc_earned
+        8 +     // pending_sol_rewards
+        8; // total_sol_earned
 }
 
 // ========================================================================================
@@ -1290,9 +1299,13 @@ pub struct EpochState {
     /// This is the total dogeBTC distributed to epoch predictors.
     pub epoch_mining_pool: u64,
 
-    /// Faction scores set by AI oracle (0-10000 basis points each, index = faction_id)
+    /// Per-dimension faction scores set by AI oracle (index = [faction_id][dimension])
+    /// Dimensions: economic=0, military=1, diplomatic=2, tech=3, social=4
     /// Scores are accumulated additively: oracle calls update_epoch_scores multiple times.
-    pub faction_scores: [u16; NUM_FACTIONS],
+    pub faction_dimension_scores: [[u16; NUM_DIMENSIONS]; NUM_FACTIONS],
+
+    /// Composite scores per faction (sum of all dimensions, used for settlement/rewards)
+    pub faction_composite_scores: [u16; NUM_FACTIONS],
 
     /// Total weighted bets per faction during this epoch (accumulated from round bets)
     /// Used as weights: user's epoch reward = their_faction_weighted_score / total_weighted_score * pool
@@ -1316,7 +1329,8 @@ impl EpochState {
         8 +     // total_dogebtc_mined_in_epoch
         2 +     // risk_factor_snapshot
         8 +     // epoch_mining_pool
-        (NUM_FACTIONS * 2) + // faction_scores [u16; 12]
+        (NUM_FACTIONS * NUM_DIMENSIONS * 2) + // faction_dimension_scores [[u16; 5]; 12]
+        (NUM_FACTIONS * 2) + // faction_composite_scores [u16; 12]
         (NUM_FACTIONS * 8) + // faction_total_sol_bets [u64; 12]
         (NUM_FACTIONS * 8) + // faction_reward_pools [u64; 12]
         2; // score_updates_count

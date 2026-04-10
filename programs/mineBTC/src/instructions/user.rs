@@ -146,6 +146,8 @@ pub fn internal_initialize_player(
     new_player_rewards.referrals_count = 0;
     new_player_rewards.pending_minebtc_rewards = 0;
     new_player_rewards.total_minebtc_earned = 0;
+    new_player_rewards.pending_sol_rewards = 0;
+    new_player_rewards.total_sol_earned = 0;
     msg!("     Referral rewards account initialized");
 
     msg!("✅ [initialize_player] Player initialized successfully");
@@ -1830,7 +1832,8 @@ fn internal_process_bets<'info>(
             epoch_state.start_timestamp = clock_now.unix_timestamp as u64;
             epoch_state.end_timestamp = epoch_state.start_timestamp + epoch_config.epoch_duration;
             epoch_state.stage = 0;
-            epoch_state.faction_scores = [0u16; NUM_FACTIONS];
+            epoch_state.faction_dimension_scores = [[0u16; NUM_DIMENSIONS]; NUM_FACTIONS];
+            epoch_state.faction_composite_scores = [0u16; NUM_FACTIONS];
             epoch_state.faction_total_sol_bets = [0u64; NUM_FACTIONS];
             epoch_state.total_dogebtc_mined_in_epoch = 0;
             epoch_state.risk_factor_snapshot = 0;

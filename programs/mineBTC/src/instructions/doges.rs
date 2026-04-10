@@ -128,8 +128,34 @@ pub fn int_batch_mint_doges<'info>(
         total_price
     );
 
-    let dev_amt = total_price * 80 / 100;
-    let treasury_amt = total_price - dev_amt;
+    // --- Referral commission: 10% of total_price sent directly to referrer's ReferralRewards PDA ---
+    let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
+    let (_referral_cut, remaining) = if has_referrer {
+        let cut = total_price * 10 / 100; // 10% referral commission
+        // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
+        if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
+            // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.user.to_account_info(),
+                        to: referrer_rewards.to_account_info(),
+                    },
+                ),
+                cut,
+            )?;
+            referrer_rewards.pending_sol_rewards += cut;
+            referrer_rewards.total_sol_earned += cut;
+        }
+        msg!("   Referral commission: {} lamports sent to referrer PDA", cut);
+        (cut, total_price - cut)
+    } else {
+        (0, total_price)
+    };
+
+    let dev_amt = remaining * 80 / 100;
+    let treasury_amt = remaining - dev_amt; // No referral cut in treasury — it went directly to PDA
 
     // Transfer to doges treasury
     helper::transfer_to_doges_treasury(
@@ -943,9 +969,35 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     )?;
     msg!("   Breed cost: {} SOL", breed_cost as f64 / 1e9);
 
-    // Transfer breeding cost
-    let dev_amt = breed_cost * 50 / 100;
-    let treasury_amt = breed_cost - dev_amt;
+    // --- Referral commission: 10% of breed_cost sent directly to referrer's ReferralRewards PDA ---
+    let has_referrer = ctx.accounts.player_data.referral_code != ctx.accounts.system_program.key();
+    let (_referral_cut, remaining) = if has_referrer {
+        let cut = breed_cost * 10 / 100; // 10% referral commission
+        // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
+        if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
+            // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.user.to_account_info(),
+                        to: referrer_rewards.to_account_info(),
+                    },
+                ),
+                cut,
+            )?;
+            referrer_rewards.pending_sol_rewards += cut;
+            referrer_rewards.total_sol_earned += cut;
+        }
+        msg!("   Breed referral commission: {} lamports sent to referrer PDA", cut);
+        (cut, breed_cost - cut)
+    } else {
+        (0, breed_cost)
+    };
+
+    // Transfer breeding cost (remaining after referral cut) to treasury — referral cut already sent to PDA
+    let dev_amt = remaining * 50 / 100;
+    let treasury_amt = remaining - dev_amt; // No referral cut in treasury — it went directly to PDA
 
     helper::transfer_to_doges_treasury(
         &ctx.accounts.user.to_account_info(),
@@ -1355,6 +1407,14 @@ pub struct BatchMintDoge<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    /// Referrer rewards tracker (for stats). Optional — only needed if minter has a referrer.
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED, player_data.referral_code.as_ref()],
+        bump = referrer_rewards.bump,
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -1686,6 +1746,14 @@ pub struct BreedDoge<'info> {
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
+
+    /// Referrer rewards tracker (for stats). Optional — only needed if breeder has a referrer.
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED, player_data.referral_code.as_ref()],
+        bump = referrer_rewards.bump,
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Program<'info, Token>,

@@ -586,10 +586,10 @@ pub mod minebtc {
         )
     }
 
-    /// AI Oracle posts additive faction score deltas (with reason in tx memo)
+    /// AI Oracle posts additive faction score deltas per dimension (with reason in tx memo)
     pub fn update_epoch_scores(
         ctx: Context<UpdateEpochScores>,
-        score_deltas: [u16; 12],
+        score_deltas: [[u16; 5]; 12],
     ) -> Result<()> {
         epoch::update_epoch_scores_internal(ctx, score_deltas)
     }

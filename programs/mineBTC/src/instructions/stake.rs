@@ -36,7 +36,7 @@ use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
-pub const MAX_REFERRALS_PER_CODE: u16 = 15; // Maximum users per referral code
+pub const MAX_REFERRALS_PER_CODE: u16 = 50; // Maximum users per referral code
 pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
 pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
 pub const CROSS_FACTION_PENALTY_PCT: u64 = 30; // 30% hashpower penalty for staking in non-home faction
@@ -1134,8 +1134,9 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     let referral_rewards = &mut ctx.accounts.referral_rewards;
 
     let pending_minebtc = referral_rewards.pending_minebtc_rewards;
+    let pending_sol = referral_rewards.pending_sol_rewards;
 
-    require!(pending_minebtc > 0, ErrorCode::InsufficientFunds);
+    require!(pending_minebtc > 0 || pending_sol > 0, ErrorCode::InsufficientFunds);
 
     msg!(
         "     Pending MineBtc: {} minebtc",
@@ -1178,13 +1179,42 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
         pending_minebtc as f64 / 1e6
     );
 
-    // Reset pending rewards
+    // Reset pending minebtc rewards
     referral_rewards.pending_minebtc_rewards = 0;
+
+    // Transfer pending SOL from ReferralRewards PDA to user
+    // SOL is stored as extra lamports on the PDA account
+    if pending_sol > 0 {
+        // Ensure we don't withdraw below rent-exempt minimum
+        let rent_exempt_min = Rent::get()?.minimum_balance(ReferralRewards::LEN);
+        let referral_info = referral_rewards.to_account_info();
+        let current_lamports = referral_info.lamports();
+        let withdrawable = current_lamports.saturating_sub(rent_exempt_min);
+        
+        // Only transfer what's actually available (capped at withdrawable)
+        let transfer_amount = pending_sol.min(withdrawable);
+        require!(transfer_amount > 0, ErrorCode::InsufficientFunds);
+        
+        // Transfer lamports from ReferralRewards PDA to user
+        // This is safe because the PDA is owned by our program
+        let user_info = ctx.accounts.authority.to_account_info();
+        **referral_info.try_borrow_mut_lamports()? -= transfer_amount;
+        **user_info.try_borrow_mut_lamports()? += transfer_amount;
+        
+        // Update pending to reflect any remainder (if withdrawable < pending_sol)
+        referral_rewards.pending_sol_rewards = pending_sol - transfer_amount;
+        msg!("   ✓ Transferred {} SOL referral rewards from PDA", transfer_amount as f64 / 1e9);
+        if transfer_amount < pending_sol {
+            msg!("   ⚠️ Partial claim: {} SOL still pending (rent-exempt reserve)", 
+                (pending_sol - transfer_amount) as f64 / 1e9);
+        }
+    }
 
     emit!(ReferralRewardsClaimed {
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
         minebtc_amount: pending_minebtc,
+        sol_amount: pending_sol,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -1757,14 +1787,6 @@ pub struct ClaimReferralRewards<'info> {
     )]
     /// Referrer's MineBtc token account to receive rewards
     pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
-
-    /// CHECK: SOL rewards vault (System Account)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
 
     /// CHECK: MineBtc mining state (needed for vault PDA derivation)
     #[account(
