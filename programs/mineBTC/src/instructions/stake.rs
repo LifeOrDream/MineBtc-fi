@@ -36,7 +36,7 @@ use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
-pub const MAX_REFERRALS_PER_CODE: u16 = 15; // Maximum users per referral code
+pub const MAX_REFERRALS_PER_CODE: u16 = 50; // Maximum users per referral code
 pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
 pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
 pub const CROSS_FACTION_PENALTY_PCT: u64 = 30; // 30% hashpower penalty for staking in non-home faction

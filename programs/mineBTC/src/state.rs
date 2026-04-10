@@ -944,6 +944,12 @@ pub struct ReferralRewards {
 
     /// Total MineBtc earned from referrals (cumulative)
     pub total_minebtc_earned: u64,
+
+    /// Pending SOL rewards from NFT mint/breed referral commissions (for stats tracking)
+    pub pending_sol_rewards: u64,
+
+    /// Total SOL earned from NFT mint/breed referral commissions (cumulative)
+    pub total_sol_earned: u64,
 }
 
 impl ReferralRewards {
@@ -952,7 +958,9 @@ impl ReferralRewards {
         1 +     // bump
         2 +     // referrals_count
         8 +     // pending_minebtc_rewards
-        8; // total_minebtc_earned
+        8 +     // total_minebtc_earned
+        8 +     // pending_sol_rewards
+        8; // total_sol_earned
 }
 
 // ========================================================================================

@@ -146,6 +146,8 @@ pub fn internal_initialize_player(
     new_player_rewards.referrals_count = 0;
     new_player_rewards.pending_minebtc_rewards = 0;
     new_player_rewards.total_minebtc_earned = 0;
+    new_player_rewards.pending_sol_rewards = 0;
+    new_player_rewards.total_sol_earned = 0;
     msg!("     Referral rewards account initialized");
 
     msg!("✅ [initialize_player] Player initialized successfully");
