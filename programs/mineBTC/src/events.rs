@@ -9,6 +9,7 @@ pub struct ReferralRewardsClaimed {
     pub referrer: Pubkey,
     pub referral_rewards_account: Pubkey,
     pub minebtc_amount: u64,
+    pub sol_amount: u64,
     pub timestamp: i64,
 }
 

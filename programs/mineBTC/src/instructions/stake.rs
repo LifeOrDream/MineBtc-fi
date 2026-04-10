@@ -1134,8 +1134,9 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     let referral_rewards = &mut ctx.accounts.referral_rewards;
 
     let pending_minebtc = referral_rewards.pending_minebtc_rewards;
+    let pending_sol = referral_rewards.pending_sol_rewards;
 
-    require!(pending_minebtc > 0, ErrorCode::InsufficientFunds);
+    require!(pending_minebtc > 0 || pending_sol > 0, ErrorCode::InsufficientFunds);
 
     msg!(
         "     Pending MineBtc: {} minebtc",
@@ -1178,13 +1179,27 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
         pending_minebtc as f64 / 1e6
     );
 
-    // Reset pending rewards
+    // Reset pending minebtc rewards
     referral_rewards.pending_minebtc_rewards = 0;
+
+    // Transfer pending SOL from doges_treasury to user
+    if pending_sol > 0 {
+        helper::transfer_from_doges_treasury(
+            &ctx.accounts.doges_treasury.to_account_info(),
+            &ctx.accounts.authority.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            pending_sol,
+            ctx.bumps.doges_treasury,
+        )?;
+        referral_rewards.pending_sol_rewards = 0;
+        msg!("   ✓ Transferred {} SOL referral rewards", pending_sol as f64 / 1e9);
+    }
 
     emit!(ReferralRewardsClaimed {
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
         minebtc_amount: pending_minebtc,
+        sol_amount: pending_sol,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -1757,6 +1772,14 @@ pub struct ClaimReferralRewards<'info> {
     )]
     /// Referrer's MineBtc token account to receive rewards
     pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// CHECK: Doges treasury PDA (holds SOL referral rewards for claim)
+    #[account(
+        mut,
+        seeds = [DOGES_TREASURY_SEED.as_ref()],
+        bump
+    )]
+    pub doges_treasury: UncheckedAccount<'info>,
 
     /// CHECK: SOL rewards vault (System Account)
     #[account(

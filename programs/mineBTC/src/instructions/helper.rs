@@ -50,6 +50,31 @@ pub fn transfer_to_doges_treasury<'info>(
     )
 }
 
+// Helper function to transfer SOL FROM doges_treasury PDA to a user
+// Uses PDA signer to authorize the transfer from the System Program-owned account
+pub fn transfer_from_doges_treasury<'info>(
+    doges_treasury: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    amount: u64,
+    treasury_bump: u8,
+) -> Result<()> {
+    let seeds = &[DOGES_TREASURY_SEED.as_ref(), &[treasury_bump]];
+    let signer_seeds = &[&seeds[..]];
+
+    transfer(
+        CpiContext::new_with_signer(
+            system_program.to_account_info(),
+            Transfer {
+                from: doges_treasury.to_account_info(),
+                to: to.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        amount,
+    )
+}
+
 pub fn transfer_to_autominer_custody<'info>(
     from: &AccountInfo<'info>,
     autominer_custody: &AccountInfo<'info>,
