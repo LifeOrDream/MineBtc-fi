@@ -1,8 +1,8 @@
 {
     "network": {
-        "cluster": "devnet",  
-        "rpc_url":  "https://api.devnet.solana.com",    
-        "commitment": "confirmed"   
+        "cluster": "devnet",
+        "rpc_url": "https://api.devnet.solana.com",
+        "commitment": "confirmed"
     },
     "deployment": {
         "paths": {
@@ -11,13 +11,13 @@
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
-        "FEE_RECIPIENT_MULTISIG": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+        "FEE_RECIPIENT_MULTISIG": "96T3ccW9CTdeLxiCct9yi3A34X6btHTES5BntmM7nVS9",
         "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
     },
     "token": {
         "name": "DogeWifBTC",
         "symbol": "DogeBTC",
-        "description": "Fuel for the first Speculative Entertainment protocol. Bet SOL to mine $DogeBTC in live arcade battles while your Cyber-Doge runs a 24/7 Auto-RPG. Mined by degens, marketed by doges",
+        "description": "$DogeBTC is the native token of MineBTC \u2014 the world's first geopolitical prediction game on Solana. 12 nations clash in 60-second arena rounds where players bet SOL, mine $DogeBTC, and evolve AI-generated doge NFTs with 256-bit DNA. 2.1B fixed supply, 1% transfer tax (Token-2022), deflationary by design.",
         "image": "https://assets.minebtc.fun/btc",
         "external_url": "https://assets.minebtc.fun/btc",
         "decimals": 6,
@@ -38,7 +38,7 @@
         "initial_dbtc_percentage": 1,
         "open_time": 0,
         "burn_lp_tokens": true
-    },    
+    },
     "minebtc": {
         "base_creation_cost": 100000000,
         "loot_percentage": 10,
@@ -53,9 +53,9 @@
         "initial_deposit": "2076697169067604"
     },
     "doges_config": {
-    "base_price": 1000000000,
-    "curve_a": 5263158,
-    "max_supply": 15000,
+        "base_price": 1000000000,
+        "curve_a": 5263158,
+        "max_supply": 15000,
         "royalties": 420,
         "creators": [
             {
@@ -70,7 +70,7 @@
         "ticket_tiers": [
             {
                 "tier_index": 0,
-                "ticket_value": 1000000  
+                "ticket_value": 1000000
             },
             {
                 "tier_index": 1,
@@ -80,21 +80,45 @@
                 "tier_index": 2,
                 "ticket_value": 100000000
             }
-        ]        
+        ]
     },
     "factions": [
-        { "name": "USA" },
-        { "name": "China" },
-        { "name": "Russia" },
-        { "name": "India" },
-        { "name": "Japan" },
-        { "name": "South Korea" },
-        { "name": "Vietnam" },
-        { "name": "The Philippines" },
-        { "name": "North Korea" },
-        { "name": "France" },
-        { "name": "Brazil" },
-        { "name": "Argentina" }
+        {
+            "name": "USA"
+        },
+        {
+            "name": "China"
+        },
+        {
+            "name": "Russia"
+        },
+        {
+            "name": "India"
+        },
+        {
+            "name": "Japan"
+        },
+        {
+            "name": "South Korea"
+        },
+        {
+            "name": "Iran"
+        },
+        {
+            "name": "UK"
+        },
+        {
+            "name": "North Korea"
+        },
+        {
+            "name": "France"
+        },
+        {
+            "name": "UAE"
+        },
+        {
+            "name": "Israel"
+        }
     ],
     "doges": {
         "collection_name": "Bitcoin doges",
@@ -114,6 +138,13 @@
         "max_lockup_days": 365,
         "base_multiplier": 100,
         "max_multiplier": 420
+    },
+    "epoch": {
+        "epoch_duration_seconds": 86400,
+        "initial_risk_factor": 100,
+        "model5_pct": 50,
+        "top1_pct": 25,
+        "top2_pct": 15,
+        "top3_pct": 10
     }
-
 }
