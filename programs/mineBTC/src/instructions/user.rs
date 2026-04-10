@@ -1830,7 +1830,8 @@ fn internal_process_bets<'info>(
             epoch_state.start_timestamp = clock_now.unix_timestamp as u64;
             epoch_state.end_timestamp = epoch_state.start_timestamp + epoch_config.epoch_duration;
             epoch_state.stage = 0;
-            epoch_state.faction_scores = [0u16; NUM_FACTIONS];
+            epoch_state.faction_dimension_scores = [[0u16; NUM_DIMENSIONS]; NUM_FACTIONS];
+            epoch_state.faction_composite_scores = [0u16; NUM_FACTIONS];
             epoch_state.faction_total_sol_bets = [0u64; NUM_FACTIONS];
             epoch_state.total_dogebtc_mined_in_epoch = 0;
             epoch_state.risk_factor_snapshot = 0;

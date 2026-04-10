@@ -691,8 +691,9 @@ pub struct EpochStarted {
 #[event]
 pub struct EpochScoresUpdated {
     pub epoch_id: u64,
-    pub score_deltas: [u16; 12],
-    pub cumulative_scores: [u16; 12],
+    pub score_deltas: [[u16; 5]; 12],
+    pub cumulative_dimension_scores: [[u16; 5]; 12],
+    pub composite_scores: [u16; 12],
     pub update_number: u16,
     pub timestamp: i64,
 }
@@ -712,7 +713,8 @@ pub struct EpochSettled {
     pub total_dogebtc_mined: u64,
     pub risk_factor: u16,
     pub epoch_mining_pool: u64,
-    pub faction_scores: [u16; 12],
+    pub faction_composite_scores: [u16; 12],
+    pub faction_dimension_scores: [[u16; 5]; 12],
     pub total_score_weighted_bets: u128,
     pub timestamp: i64,
 }
