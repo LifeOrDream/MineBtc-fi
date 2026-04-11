@@ -132,7 +132,7 @@ pub fn int_batch_mint_doges<'info>(
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
         let cut = total_price * 10 / 100; // 10% referral commission
-        // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
+                                          // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
         if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
             // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
             anchor_lang::system_program::transfer(
@@ -148,7 +148,10 @@ pub fn int_batch_mint_doges<'info>(
             referrer_rewards.pending_sol_rewards += cut;
             referrer_rewards.total_sol_earned += cut;
         }
-        msg!("   Referral commission: {} lamports sent to referrer PDA", cut);
+        msg!(
+            "   Referral commission: {} lamports sent to referrer PDA",
+            cut
+        );
         (cut, total_price - cut)
     } else {
         (0, total_price)
@@ -973,7 +976,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     let has_referrer = ctx.accounts.player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
         let cut = breed_cost * 10 / 100; // 10% referral commission
-        // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
+                                         // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
         if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
             // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
             anchor_lang::system_program::transfer(
@@ -989,7 +992,10 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
             referrer_rewards.pending_sol_rewards += cut;
             referrer_rewards.total_sol_earned += cut;
         }
-        msg!("   Breed referral commission: {} lamports sent to referrer PDA", cut);
+        msg!(
+            "   Breed referral commission: {} lamports sent to referrer PDA",
+            cut
+        );
         (cut, breed_cost - cut)
     } else {
         (0, breed_cost)

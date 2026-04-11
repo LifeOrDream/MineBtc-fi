@@ -633,9 +633,15 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
 
     if price_change_pct.abs() >= price_change_threshold {
         if direction > 0 {
-            let increase_multiplier = 100 + mine_btc_mining.emission_increase_pct;
-            mine_btc_mining.mine_btc_per_round =
-                (mine_btc_mining.mine_btc_per_round * increase_multiplier) / 100;
+            let increase_multiplier = 100u64
+                .checked_add(mine_btc_mining.emission_increase_pct)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            mine_btc_mining.mine_btc_per_round = mine_btc_mining
+                .mine_btc_per_round
+                .checked_mul(increase_multiplier)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(100)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
                 "   📈 Price increased {}%! Rate increased by {}%",
                 price_change_pct,
@@ -643,8 +649,12 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
             );
         } else {
             let decrease_multiplier = 100u64.saturating_sub(mine_btc_mining.emission_decrease_pct);
-            mine_btc_mining.mine_btc_per_round =
-                (mine_btc_mining.mine_btc_per_round * decrease_multiplier) / 100;
+            mine_btc_mining.mine_btc_per_round = mine_btc_mining
+                .mine_btc_per_round
+                .checked_mul(decrease_multiplier)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(100)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
                 "   📉 Price decreased {}%! Rate decreased by {}%",
                 price_change_pct,

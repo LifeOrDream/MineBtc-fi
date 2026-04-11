@@ -1136,7 +1136,10 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     let pending_minebtc = referral_rewards.pending_minebtc_rewards;
     let pending_sol = referral_rewards.pending_sol_rewards;
 
-    require!(pending_minebtc > 0 || pending_sol > 0, ErrorCode::InsufficientFunds);
+    require!(
+        pending_minebtc > 0 || pending_sol > 0,
+        ErrorCode::InsufficientFunds
+    );
 
     msg!(
         "     Pending MineBtc: {} minebtc",
@@ -1190,23 +1193,28 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
         let referral_info = referral_rewards.to_account_info();
         let current_lamports = referral_info.lamports();
         let withdrawable = current_lamports.saturating_sub(rent_exempt_min);
-        
+
         // Only transfer what's actually available (capped at withdrawable)
         let transfer_amount = pending_sol.min(withdrawable);
         require!(transfer_amount > 0, ErrorCode::InsufficientFunds);
-        
+
         // Transfer lamports from ReferralRewards PDA to user
         // This is safe because the PDA is owned by our program
         let user_info = ctx.accounts.authority.to_account_info();
         **referral_info.try_borrow_mut_lamports()? -= transfer_amount;
         **user_info.try_borrow_mut_lamports()? += transfer_amount;
-        
+
         // Update pending to reflect any remainder (if withdrawable < pending_sol)
         referral_rewards.pending_sol_rewards = pending_sol - transfer_amount;
-        msg!("   ✓ Transferred {} SOL referral rewards from PDA", transfer_amount as f64 / 1e9);
+        msg!(
+            "   ✓ Transferred {} SOL referral rewards from PDA",
+            transfer_amount as f64 / 1e9
+        );
         if transfer_amount < pending_sol {
-            msg!("   ⚠️ Partial claim: {} SOL still pending (rent-exempt reserve)", 
-                (pending_sol - transfer_amount) as f64 / 1e9);
+            msg!(
+                "   ⚠️ Partial claim: {} SOL still pending (rent-exempt reserve)",
+                (pending_sol - transfer_amount) as f64 / 1e9
+            );
         }
     }
 
@@ -1256,7 +1264,7 @@ pub fn int_update_minebtc_staking_rewards(
             player_data.dogebtc_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards =
-            helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards);
+            helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards)?;
         msg!(
             "   Updated pending MineBtc rewards: {} (+{})",
             player_data.pending_minebtc_rewards as f64 / 1e6,
@@ -1305,7 +1313,7 @@ pub fn int_update_lp_staking_rewards(
             player_data.lp_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards =
-            helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards);
+            helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards)?;
         msg!(
             "   Updated pending MineBtc rewards: {} (+{})",
             player_data.pending_minebtc_rewards as f64 / 1e6,

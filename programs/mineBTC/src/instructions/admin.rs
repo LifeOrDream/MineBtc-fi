@@ -586,6 +586,7 @@ pub fn initialize_mining_internal(
         mine_btc_mining.mining_start_timestamp == 0,
         ErrorCode::MiningAlreadyInitialized
     );
+    require!(mine_btc_per_round > 0, ErrorCode::InvalidParameters);
 
     // ───── persist vault + bump(s) ─────
     mine_btc_mining.minebtc_token_vault = ctx.accounts.token_vault.key();

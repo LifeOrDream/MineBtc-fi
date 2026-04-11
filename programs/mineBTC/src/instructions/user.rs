@@ -1431,8 +1431,11 @@ fn update_player_rewards(
         total_sol_reward as f64 / 1e9
     );
 
-    helper::add_to_total_claimable(unrefined_rewards, player_data, total_minebtc_reward);
-    player_data.total_dogebtc_won += total_minebtc_reward;
+    helper::add_to_total_claimable(unrefined_rewards, player_data, total_minebtc_reward)?;
+    player_data.total_dogebtc_won = player_data
+        .total_dogebtc_won
+        .checked_add(total_minebtc_reward)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "     Total MineBtc won: {} (+{})",
         player_data.total_dogebtc_won as f64 / 1e6,

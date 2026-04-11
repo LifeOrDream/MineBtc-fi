@@ -606,7 +606,7 @@ impl UnrefinedRewards {
         8; // total_minebtc_claimable (u64)
 }
 
-/// Faction State PDA (Seed: `[b"faction", faction_id_u8]`)
+/// Faction State PDA (Seed: `[b"faction", faction_name.as_bytes()]`)
 /// Tracks cumulative statistics and reward indexes for a specific faction.
 /// One account per faction (up to MAX_FACTIONS factions).
 /// Used for calculating staker rewards based on faction performance.
