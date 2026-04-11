@@ -868,7 +868,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     let mine_btc_per_round = ctx.accounts.mine_btc_mining.mine_btc_per_round;
 
     if epoch_config.is_active && epoch_state.stage < 2 {
-        epoch_state.total_dogebtc_mined_in_epoch += mine_btc_per_round;
+        epoch_state.total_dogebtc_mined_in_epoch = epoch_state
+            .total_dogebtc_mined_in_epoch
+            .checked_add(mine_btc_per_round)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   🌍 Epoch {}: +{} dogeBTC mined (total: {})",
             epoch_state.epoch_id,
@@ -881,14 +884,16 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         if clock.unix_timestamp >= epoch_state.end_timestamp as i64 && epoch_state.stage == 1 {
             // Settle: compute pool
             epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
-            epoch_state.epoch_mining_pool = (epoch_state.total_dogebtc_mined_in_epoch as u128)
+            let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
                 .checked_mul(epoch_state.risk_factor_snapshot as u128)
-                .unwrap_or(0)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(100)
-                .unwrap_or(0) as u64;
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            epoch_state.epoch_mining_pool =
+                u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
             // Compute faction reward pools (Model 5 + Top 3)
-            crate::instructions::epoch::compute_faction_reward_pools(epoch_state, epoch_config);
+            crate::instructions::epoch::compute_faction_reward_pools(epoch_state, epoch_config)?;
 
             epoch_state.stage = 2; // settled
 

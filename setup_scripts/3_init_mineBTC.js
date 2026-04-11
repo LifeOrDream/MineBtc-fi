@@ -446,7 +446,7 @@ async function main() {
     // Accounts: globalGameState, globalConfig, authority, systemProgram
     await addGameCrankerBot(
       minebtcProgram,
-      "6658Pu1vFuJuJMCbnv7v9LfjUgEfmaNpKN4xGfbfiZbr"
+      gameKeypair.publicKey.toBase58()
     );
 
     // 17. Initialize Epoch Config (for epoch-based risk/oracle system)
@@ -986,7 +986,8 @@ async function initializeMiningSystem(minebtcProgram) {
             .initializeMining(
                 new BN(MINING_START_TIMESTAMP),
                 MINING_DOGE_BTC_PER_SLOT,
-                new PublicKey(raydiumPoolState)
+                new PublicKey(raydiumPoolState),
+                DBTC_DEPOSIT_AMOUNT
             )
             .accounts({
                 globalConfig: globalConfigPDA,
@@ -1806,8 +1807,15 @@ async function initializeTaxConfig(minebtcProgram) {
     const whitelistedAddress = config.tax.nft_floor_sweep_whitelisted_address;
     const nftFloorSweepPct = config.tax.nft_floor_sweep_pct;
     const factionTreasuryPct = config.tax.faction_treasury_pct;
-    const burntPct = config.tax.burnt_pct;
-    const burnPct = 100 - nftFloorSweepPct - factionTreasuryPct;
+    const burnPct = config.tax.burnt_pct;
+
+    // Splits must sum to exactly 100% — validated here so a misconfigured
+    // config.json fails before the transaction is built.
+    if (nftFloorSweepPct + factionTreasuryPct + burnPct !== 100) {
+        throw new Error(
+            `Tax splits must sum to 100 (got ${nftFloorSweepPct}+${factionTreasuryPct}+${burnPct}=${nftFloorSweepPct + factionTreasuryPct + burnPct})`
+        );
+    }
 
     console.log(COLOR_INFO, `💰 Tax Distribution:`);
     console.log(COLOR_INFO, `   NFT Floor Sweep: ${nftFloorSweepPct}%`);
@@ -1820,7 +1828,7 @@ async function initializeTaxConfig(minebtcProgram) {
             .initializeTaxConfig(
                 nftFloorSweepPct,
                 factionTreasuryPct,
-                burntPct, 
+                burnPct,
                 new PublicKey(whitelistedAddress)
             )
             .accounts({

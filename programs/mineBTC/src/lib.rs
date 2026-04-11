@@ -45,7 +45,7 @@ pub use state::{
     SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx");
+declare_id!("E4Bqhmc5vwfHuraMmiv2zuj28oDy9Mcp1DprazPLwXuL");
 
 #[program]
 pub mod minebtc {
@@ -200,8 +200,15 @@ pub mod minebtc {
         start_timestamp: u64,
         mine_btc_per_round: u64,
         pool_state: Pubkey,
+        required_initial_deposit: u64,
     ) -> Result<()> {
-        admin::initialize_mining_internal(ctx, start_timestamp, mine_btc_per_round, pool_state)
+        admin::initialize_mining_internal(
+            ctx,
+            start_timestamp,
+            mine_btc_per_round,
+            pool_state,
+            required_initial_deposit,
+        )
     }
 
     /// Deposit MineBtc tokens to the mining vault (anyone can call)

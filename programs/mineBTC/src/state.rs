@@ -312,6 +312,15 @@ pub struct MineBtcMining {
     // ===== LP OPERATION STATE =====
     /// Flag indicating LP operation is pending after rate update
     pub lp_operation_pending: bool,
+
+    // ===== VAULT FUNDING GUARD =====
+    /// Expected vault balance set at initialize_mining time. Used by
+    /// deposit_mine_btc_tokens to flag the mining system as `is_funded` once
+    /// the vault contains at least this amount. 0 means no guard (legacy).
+    pub required_initial_deposit: u64,
+    /// True once cumulative vault balance has reached required_initial_deposit.
+    /// Reward-distributing paths should check this before emitting rewards.
+    pub is_funded: bool,
 }
 
 impl MineBtcMining {
@@ -337,7 +346,9 @@ impl MineBtcMining {
         + 8                     // price_change_threshold
         + 8                     // emission_increase_pct
         + 8                     // emission_decrease_pct
-        + 1; // lp_operation_pending
+        + 1                     // lp_operation_pending
+        + 8                     // required_initial_deposit
+        + 1; // is_funded
 }
 
 /// Buybacks account that accumulates SOL for token buybacks

@@ -15,8 +15,8 @@ mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
 raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 
 [provider]
-cluster = "mainnet"
-wallet = "./mainnet-wallet-keypair.json"
+cluster = "devnet"
+wallet = "./devnet-wallet-keypair.json"
 
 [workspace]
 members = ["programs/*"]

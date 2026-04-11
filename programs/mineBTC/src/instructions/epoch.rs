@@ -39,22 +39,47 @@ use crate::state::*;
 
 /// Computes faction_reward_pools using Model 5 (parimutuel by score) + Top 3 bonus.
 /// This is shared by settle_epoch (fallback) and auto-settle (in end_round_faction_rewards).
-pub fn compute_faction_reward_pools(epoch_state: &mut EpochState, epoch_config: &EpochConfig) {
+#[allow(clippy::needless_range_loop)]
+pub fn compute_faction_reward_pools(
+    epoch_state: &mut EpochState,
+    epoch_config: &EpochConfig,
+) -> Result<()> {
     let pool = epoch_state.epoch_mining_pool;
     if pool == 0 {
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
-        return;
+        return Ok(());
     }
 
+    // Helper: compute pool * pct / 100 with checked ops. All operands fit in u128
+    // and the result is <= pool (a u64), so u64::try_from is guaranteed to succeed
+    // in practice but we still check it for defense-in-depth.
+    let pct_of_pool = |pct: u8| -> Result<u64> {
+        let value = (pool as u128)
+            .checked_mul(pct as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        u64::try_from(value).map_err(|_| error!(ErrorCode::ArithmeticOverflow))
+    };
+
     // --- Step 1: Model 5 — distribute model5_pct% of pool by score ratio (using composite scores) ---
-    let model5_pool = pool as u128 * epoch_config.model5_pct as u128 / 100;
-    let total_scores: u128 = epoch_state.faction_composite_scores.iter().map(|&s| s as u128).sum();
+    let model5_pool = pct_of_pool(epoch_config.model5_pct)? as u128;
+    let total_scores: u128 = epoch_state
+        .faction_composite_scores
+        .iter()
+        .map(|&s| s as u128)
+        .sum();
 
     let mut reward_pools = [0u64; NUM_FACTIONS];
     if total_scores > 0 {
         for i in 0..NUM_FACTIONS {
+            let share_u128 = model5_pool
+                .checked_mul(epoch_state.faction_composite_scores[i] as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(total_scores)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             reward_pools[i] =
-                (model5_pool * epoch_state.faction_composite_scores[i] as u128 / total_scores) as u64;
+                u64::try_from(share_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
         }
     }
 
@@ -76,24 +101,32 @@ pub fn compute_faction_reward_pools(epoch_state: &mut EpochState, epoch_config: 
     }
 
     // --- Step 3: Add top 3 bonus pools ---
-    let top1_bonus = pool as u128 * epoch_config.top1_pct as u128 / 100;
-    let top2_bonus = pool as u128 * epoch_config.top2_pct as u128 / 100;
-    let top3_bonus = pool as u128 * epoch_config.top3_pct as u128 / 100;
+    let top1_bonus = pct_of_pool(epoch_config.top1_pct)?;
+    let top2_bonus = pct_of_pool(epoch_config.top2_pct)?;
+    let top3_bonus = pct_of_pool(epoch_config.top3_pct)?;
 
     if ranked[0].0 > 0 {
-        reward_pools[ranked[0].1] += top1_bonus as u64;
+        reward_pools[ranked[0].1] = reward_pools[ranked[0].1]
+            .checked_add(top1_bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if NUM_FACTIONS > 1 && ranked[1].0 > 0 {
-        reward_pools[ranked[1].1] += top2_bonus as u64;
+        reward_pools[ranked[1].1] = reward_pools[ranked[1].1]
+            .checked_add(top2_bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if NUM_FACTIONS > 2 && ranked[2].0 > 0 {
-        reward_pools[ranked[2].1] += top3_bonus as u64;
+        reward_pools[ranked[2].1] = reward_pools[ranked[2].1]
+            .checked_add(top3_bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     epoch_state.faction_reward_pools = reward_pools;
 
     msg!("   🌍 Faction reward pools computed. Top3: #1={} (faction {}), #2={} (faction {}), #3={} (faction {})",
         ranked[0].0, ranked[0].1, ranked[1].0, ranked[1].1, ranked[2].0, ranked[2].1);
+
+    Ok(())
 }
 
 // ========================================================================================
@@ -275,7 +308,10 @@ pub fn update_epoch_scores_internal(
     epoch_state.score_updates_count += 1;
     epoch_state.stage = 1; // scores posted, enables auto-settlement
 
-    msg!("   Composite scores after update: {:?}", epoch_state.faction_composite_scores);
+    msg!(
+        "   Composite scores after update: {:?}",
+        epoch_state.faction_composite_scores
+    );
 
     emit!(EpochScoresUpdated {
         epoch_id: epoch_state.epoch_id,
@@ -368,14 +404,16 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
 
     // Calculate epoch mining pool: total_dogebtc_mined * risk_factor / 100
-    epoch_state.epoch_mining_pool = (epoch_state.total_dogebtc_mined_in_epoch as u128)
+    let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
         .checked_mul(epoch_state.risk_factor_snapshot as u128)
-        .unwrap_or(0)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(100)
-        .unwrap_or(0) as u64;
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    epoch_state.epoch_mining_pool =
+        u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     // Compute faction reward pools (Model 5 + Top 3)
-    compute_faction_reward_pools(epoch_state, epoch_config);
+    compute_faction_reward_pools(epoch_state, epoch_config)?;
 
     epoch_state.stage = 2; // settled, claims open
 
@@ -456,22 +494,28 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
 
         if user_bet > 0 && total_bet > 0 && faction_pool > 0 {
             // reward_from_faction = faction_pool * user_bet / total_bet
-            let reward = (faction_pool as u128)
+            let reward_u128 = (faction_pool as u128)
                 .checked_mul(user_bet as u128)
-                .unwrap_or(0)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(total_bet as u128)
-                .unwrap_or(0) as u64;
-            total_reward += reward;
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            let reward = u64::try_from(reward_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+            total_reward = total_reward
+                .checked_add(reward)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
     }
 
     if total_reward > 0 {
         // Use refining system: accrues unrefined rewards, updates total_minebtc_claimable,
         // syncs player unrefining_index. This ensures the 10% refining fee applies on withdrawal.
-        let accrued = helper::add_to_total_claimable(unrefined_rewards, player_data, total_reward);
+        let accrued = helper::add_to_total_claimable(unrefined_rewards, player_data, total_reward)?;
 
         // Track in player stats
-        player_data.total_dogebtc_won += total_reward;
+        player_data.total_dogebtc_won = player_data
+            .total_dogebtc_won
+            .checked_add(total_reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         msg!("🌍 [claim_epoch_rewards] Cranker {} claimed {} dogeBTC for player {} from epoch {} (accrued refining bonus: {})",
             ctx.accounts.cranker.key(), total_reward, user_epoch_bets.owner, epoch_id, accrued);

@@ -241,11 +241,13 @@ pub fn calculate_multiplier(
 
     let duration_above_min = lockup_duration.saturating_sub(min_lockup);
 
-    let multiplier_increase = (duration_above_min as u128)
+    let multiplier_increase_u128 = (duration_above_min as u128)
         .checked_mul(multiplier_range as u128)
-        .unwrap_or(0)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(duration_range as u128)
-        .unwrap_or(0) as u16;
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let multiplier_increase =
+        u16::try_from(multiplier_increase_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     Ok(base_multiplier.saturating_add(multiplier_increase))
 }
@@ -399,16 +401,21 @@ pub fn add_to_total_claimable(
     unrefined_minebtc: &mut UnrefinedRewards,
     player_data: &mut PlayerData,
     minebtc_rewards: u64,
-) -> u64 {
-    // Calculate extra dogeBtc rewards due to unrefining
-    let index_dif = unrefined_minebtc.unrefining_index - player_data.unrefining_index;
-    let accrued_rewards = mul_div_u128(
+) -> Result<u64> {
+    // Calculate extra dogeBtc rewards due to unrefining. The global unrefining_index
+    // is monotonically non-decreasing, so checked_sub should never fail — but we
+    // validate it to surface any state corruption rather than panicking.
+    let index_dif = unrefined_minebtc
+        .unrefining_index
+        .checked_sub(player_data.unrefining_index)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let accrued_u128 = mul_div_u128(
         player_data.pending_minebtc_rewards as u128,
         index_dif,
         INDEX_PRECISION as u128,
-    )
-    .unwrap_or(0)
-    .min(u64::MAX as u128) as u64;
+    )?;
+    let accrued_rewards = u64::try_from(accrued_u128.min(u64::MAX as u128))
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
     msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
     let total_new = minebtc_rewards.saturating_add(accrued_rewards);
@@ -423,7 +430,7 @@ pub fn add_to_total_claimable(
         .unrefined_minebtc_rewards
         .saturating_add(accrued_rewards);
 
-    return accrued_rewards;
+    Ok(accrued_rewards)
 }
 
 pub fn calculate_emergency_tax(
