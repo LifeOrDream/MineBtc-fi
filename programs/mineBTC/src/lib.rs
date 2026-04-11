@@ -200,15 +200,8 @@ pub mod minebtc {
         start_timestamp: u64,
         mine_btc_per_round: u64,
         pool_state: Pubkey,
-        required_initial_deposit: u64,
     ) -> Result<()> {
-        admin::initialize_mining_internal(
-            ctx,
-            start_timestamp,
-            mine_btc_per_round,
-            pool_state,
-            required_initial_deposit,
-        )
+        admin::initialize_mining_internal(ctx, start_timestamp, mine_btc_per_round, pool_state)
     }
 
     /// Deposit MineBtc tokens to the mining vault (anyone can call)

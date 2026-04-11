@@ -573,13 +573,11 @@ pub fn update_emission_params_internal(
 /// - `start_timestamp`: Unix timestamp when mining should start
 /// - `mine_btc_per_round`: Base MineBtc emission rate per slot
 /// - `pool_state`: Raydium pool state address for price discovery
-/// - `required_initial_deposit`: Expected vault balance before mining is considered armed
 pub fn initialize_mining_internal(
     ctx: Context<InitializeMining>,
     start_timestamp: u64,
     mine_btc_per_round: u64,
     pool_state: Pubkey,
-    required_initial_deposit: u64,
 ) -> Result<()> {
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
@@ -589,7 +587,6 @@ pub fn initialize_mining_internal(
         ErrorCode::MiningAlreadyInitialized
     );
     require!(mine_btc_per_round > 0, ErrorCode::InvalidParameters);
-    require!(required_initial_deposit > 0, ErrorCode::InvalidParameters);
 
     // ───── persist vault + bump(s) ─────
     mine_btc_mining.minebtc_token_vault = ctx.accounts.token_vault.key();
@@ -598,8 +595,6 @@ pub fn initialize_mining_internal(
     // Initialize mining parameters
     mine_btc_mining.mining_start_timestamp = start_timestamp;
     mine_btc_mining.mine_btc_per_round = mine_btc_per_round;
-    mine_btc_mining.required_initial_deposit = required_initial_deposit;
-    mine_btc_mining.is_funded = false;
 
     // Initialize dynamic distribution fields
     mine_btc_mining.raydium_pool_state = pool_state;
@@ -644,23 +639,6 @@ pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
         amount,
         MINEBTC_DECIMALS,
     )?;
-
-    // Reload the vault to get the post-transfer balance and arm the mining
-    // system once the vault has been funded to the required level set in
-    // initialize_mining. is_funded is one-way: once true, it stays true.
-    ctx.accounts.minebtc_token_vault.reload()?;
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
-    if !mine_btc_mining.is_funded
-        && mine_btc_mining.required_initial_deposit > 0
-        && ctx.accounts.minebtc_token_vault.amount >= mine_btc_mining.required_initial_deposit
-    {
-        mine_btc_mining.is_funded = true;
-        msg!(
-            "✅ Mining vault armed: balance {} >= required {}",
-            ctx.accounts.minebtc_token_vault.amount,
-            mine_btc_mining.required_initial_deposit
-        );
-    }
 
     Ok(())
 }
@@ -1488,7 +1466,6 @@ pub struct DepositTokens<'info> {
     pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
-        mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]

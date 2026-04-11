@@ -986,8 +986,7 @@ async function initializeMiningSystem(minebtcProgram) {
             .initializeMining(
                 new BN(MINING_START_TIMESTAMP),
                 MINING_DOGE_BTC_PER_SLOT,
-                new PublicKey(raydiumPoolState),
-                DBTC_DEPOSIT_AMOUNT
+                new PublicKey(raydiumPoolState)
             )
             .accounts({
                 globalConfig: globalConfigPDA,
