@@ -260,7 +260,6 @@ async function main() {
     //   - SOL Prize Pot Vault[seeds: "sol-prize-pot"]           — holds SOL for round prize pots
     // Accounts: globalConfig, solRewardsVault, solPrizePotVault, authority, systemProgram
     await setRaydiumPoolState(minebtcProgram);
-    // return;
 
     // 3. Add Factions (12 factions)
     // Instruction: add_faction(faction_name: String, faction_id: u8)
@@ -294,9 +293,9 @@ async function main() {
     // Accounts: globalConfig, mineBtcMining (optional), authority, systemProgram
     await updateFees(minebtcProgram, {
       // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
-        newProtocolFeePct: 15, // 10,
+        newProtocolFeePct: 15, // 15,
         newBuybackPct: 80, // 80% (remaining 20% goes to devs)
-        newStakersPct: 10, // 10 of 10% = 1%,
+        newStakersPct: 10, // 10 of 15% = 1.5%,
 
         // dogeBTC distribution config:
         newDbtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
@@ -309,9 +308,8 @@ async function main() {
         // split 50:50 between sol_treasury and fee_recipient (as WSOL)
         changeFactionFee: 100000000, // 0.1 SOL
 
-        snapshot_interval: 30 * 60, // 5 minutes between price snapshots
+        snapshot_interval: 10 * 60, // 10 minutes between price snapshots
     });
-    // return;
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
     // Instruction: initialize_mining(start_timestamp: u64, mine_btc_per_round: u64, pool_state: Pubkey)
@@ -384,7 +382,6 @@ async function main() {
     //           factionTreasuryVault, nftFloorSweepVault, nftSaleSolVault, authority,
     //           tokenProgram2022, systemProgram
     await initializeTaxConfig(minebtcProgram);
-    // return;
 
     // 14. Initialize Game State (for Faction Surge rounds)
     // Instruction: initialize_game_state(round_duration_seconds: i64)
@@ -1444,7 +1441,7 @@ async function initializeDogeConfig(minebtcProgram) {
     // Get doge config values
     const basePrice = config.doges_config.base_price; 
     const curveA = config.doges_config.curve_a; // Curve steepness
-    const maxSupply = config.doges_config.max_supply; // Max 10k doges
+    const maxSupply = config.doges_config.max_supply; // Genesis supply (15K), total 100K via breeding
 
     if (!basePrice || !curveA || !maxSupply) {
     console.error(COLOR_ERROR, "❌ Doge config values not found in config.json");

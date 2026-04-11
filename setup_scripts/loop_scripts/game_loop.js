@@ -223,10 +223,16 @@ function deriveGameSessionPDA(roundId) {
 }
 
 function deriveFactionStatePDA(factionId) {
-  const factionIdBuffer = Buffer.from([factionId]);
+  // CRITICAL: Rust seeds are [b"faction", faction_name.as_bytes()]
+  // The PDA is derived using the faction NAME, not the numeric ID.
+  // Faction names come from config.json factions array (index = faction_id).
+  const factionName = config.factions[factionId]?.name;
+  if (!factionName) {
+    throw new Error(`Unknown faction ID ${factionId} — not found in config.factions`);
+  }
 
   const [factionStatePDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from(FACTION_STATE_SEED), factionIdBuffer],
+    [Buffer.from(FACTION_STATE_SEED), Buffer.from(factionName)],
     mineBTCProgramId
   );
 
