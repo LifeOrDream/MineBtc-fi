@@ -115,6 +115,7 @@ pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of doges a user can sta
 pub const MAX_INDEX_NAME_LENGTH: usize = 24;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
+pub const MIN_SOL_BET_PER_POSITION: u64 = 100_000; // 0.0001 SOL minimum per country-direction bet
 
 /// ------------ GLOBAL CONFIG ------------
 

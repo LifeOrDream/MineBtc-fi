@@ -384,6 +384,28 @@ pub fn internal_join_round_batch(
     Ok(())
 }
 
+fn validate_min_sol_bet_per_position(amount: u64) -> Result<()> {
+    require!(
+        amount >= MIN_SOL_BET_PER_POSITION,
+        ErrorCode::BetBelowMinimum
+    );
+    Ok(())
+}
+
+fn count_autominer_bets_per_round(factions_config: &Option<FactionsConfig>) -> Result<u64> {
+    match factions_config {
+        Some(FactionsConfig::Specific { picks }) => {
+            require!(!picks.is_empty(), ErrorCode::InvalidParameters);
+            Ok(picks.len() as u64)
+        }
+        Some(FactionsConfig::Random { count, .. }) => {
+            require!(*count > 0, ErrorCode::InvalidParameters);
+            Ok(*count as u64)
+        }
+        None => err!(ErrorCode::InvalidParameters),
+    }
+}
+
 /// Initialize autominer vault for recurring faction-direction bets.
 /// Block-based autominers are no longer supported.
 /// Can be called multiple times, but only when rounds_remaining == 0
@@ -502,7 +524,7 @@ pub fn internal_init_autominer(
         sol_for_betting / bets_per_round
     };
     if use_ticket.is_none() {
-        require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
+        validate_min_sol_bet_per_position(bet_size_per_bet)?;
         msg!(
             "     Bet size per bet: {} SOL per bet ({} SOL / {} bets)",
             (bet_size_per_bet as f64 / 1e9),
@@ -634,6 +656,13 @@ pub fn internal_update_autominer(
     // Validate new values based on autominer mode.
     if autominer_vault.use_ticket.is_none() {
         require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
+        let bets_per_round = count_autominer_bets_per_round(&autominer_vault.factions_config)?;
+        let caller_compensation = get_caller_compensation(new_sol_per_round)?;
+        let sol_for_betting = new_sol_per_round
+            .checked_sub(caller_compensation)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let bet_size_per_bet = sol_for_betting / bets_per_round;
+        validate_min_sol_bet_per_position(bet_size_per_bet)?;
     } else {
         require!(new_sol_per_round == 0, ErrorCode::InvalidAmount);
     }
@@ -827,7 +856,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
             .checked_sub(total_caller_compensation)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         let bet_per = sol_for_betting / bet_types.len() as u64;
-        require!(bet_per > 0, ErrorCode::InvalidAmount);
+        validate_min_sol_bet_per_position(bet_per)?;
         msg!(
             "     SOL mode: {} SOL per bet ({} SOL / {} bets)",
             (bet_per as f64 / 1e9),
@@ -1479,6 +1508,9 @@ fn internal_process_bets<'info>(
         amount_per_bet > 0 || use_ticket.is_some(),
         ErrorCode::InvalidAmount
     );
+    if use_ticket.is_none() {
+        validate_min_sol_bet_per_position(amount_per_bet)?;
+    }
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
     require!(epoch_config.is_active, ErrorCode::EpochNotActive);
     require!(index_state.is_active, ErrorCode::InvalidIndexState);

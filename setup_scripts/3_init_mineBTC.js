@@ -446,10 +446,11 @@ async function main() {
       gameKeypair.publicKey.toBase58()
     );
 
-    // 17. Initialize Epoch Config (for epoch-based risk/oracle system)
+    // 17. Initialize Epoch Config (for active-index, oracle-settled epoch markets)
     // Instruction: initialize_epoch_config(oracle_authority: Pubkey, epoch_duration: u64,
     //              risk_factor: u16, model5_pct: u8, top1_pct: u8, top2_pct: u8, top3_pct: u8)
-    // Creates EpochConfig PDA [seeds: "epoch-config"] with oracle authority and reward distribution splits
+    // Creates EpochConfig PDA [seeds: "epoch-config"] with oracle authority, active-index rotation,
+    // and rank-weighted epoch reward splits
     // Accounts: epochConfig, globalConfig, authority, systemProgram
     await initializeEpochConfig(minebtcProgram);
 
@@ -2736,7 +2737,10 @@ async function initializeEpochConfig(minebtcProgram) {
       `⏱️  Epoch Duration: ${epochDuration}s (${(epochDuration / 3600).toFixed(2)}h from config)`
     );
     console.log(COLOR_INFO, `📊 Initial Risk Factor: ${initialRiskFactor} (1.00x)`);
-    console.log(COLOR_INFO, `📊 Model5 Pct: ${model5Pct}%, Top1: ${top1Pct}%, Top2: ${top2Pct}%, Top3: ${top3Pct}%`);
+    console.log(
+      COLOR_INFO,
+      `📊 Epoch pool splits -> base rank pool: ${model5Pct}%, top1 bonus: ${top1Pct}%, top2 bonus: ${top2Pct}%, top3 bonus: ${top3Pct}%`
+    );
 
     const tx = await minebtcProgram.methods
       .initializeEpochConfig(oracleAuthority, new BN(epochDuration), initialRiskFactor, model5Pct, top1Pct, top2Pct, top3Pct)

@@ -120,6 +120,9 @@ pub enum ErrorCode {
     #[msg("Invalid amount")]
     InvalidAmount,
 
+    #[msg("Minimum SOL bet per country-direction position is 0.0001 SOL")]
+    BetBelowMinimum,
+
     #[msg("Insufficient funds")]
     InsufficientFunds,
 

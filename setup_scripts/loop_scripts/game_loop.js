@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+/**
+ * Round cranker for the live MineBTC country-direction arena.
+ *
+ * This loop starts 60-second rounds, commits and reveals randomness, ends the
+ * round, and then settles country-level rewards. The same bets also feed the
+ * active epoch index selected in EpochConfig.
+ */
+
 import {
   Connection,
   PublicKey,
