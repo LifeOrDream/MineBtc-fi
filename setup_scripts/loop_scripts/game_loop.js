@@ -5,11 +5,9 @@ import {
   PublicKey,
   Keypair,
   SystemProgram,
-  Transaction,
   sendAndConfirmTransaction,
   LAMPORTS_PER_SOL,
   ComputeBudgetProgram,
-  SYSVAR_SLOT_HASHES_PUBKEY,
 } from "@solana/web3.js";
 import anchorPkg from "@coral-xyz/anchor";
 const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
@@ -17,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
+import { keccak_256 } from "js-sha3";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,6 +81,10 @@ const GLOBAL_CONFIG_SEED = "global-config";
 const GLOBAL_GAME_STATE_SEED = "global-game-state";
 const GAME_SESSION_SEED = "game-session";
 const FACTION_STATE_SEED = "faction";
+const EPOCH_CONFIG_SEED = "epoch-config";
+const EPOCH_STATE_SEED = "epoch";
+const INDEX_STATE_SEED = "index-state";
+const STAKER_SOL_REWARD_VAULT_SEED = "staker-sol-reward-vault";
 
 // Derive PDAs
 const [globalConfigPDA] = PublicKey.findProgramAddressSync(
@@ -99,13 +102,13 @@ const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
   mineBTCProgramId
 );
 
-const [solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from("sol-prize-pot")],
+const [solRewardsVaultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(STAKER_SOL_REWARD_VAULT_SEED)],
   mineBTCProgramId
 );
 
-const [dbtcEmissionVaultPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from("dbtc-emission-vault")],
+const [epochConfigPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(EPOCH_CONFIG_SEED)],
   mineBTCProgramId
 );
 
@@ -175,14 +178,30 @@ function generateRandomSeed() {
 }
 
 function hashSeed(seed) {
-  // TODO: Replace with keccak256 to match Rust implementation
-  return crypto.createHash("sha256").update(seed).digest();
+  return Buffer.from(keccak_256.arrayBuffer(seed));
 }
 
 async function getGlobalGameState() {
   const globalState = await mineBTCProgram.account.globalGameSate.fetch(
     globalGameStatePDA
   );
+
+  let roundEndTimestamp = 0;
+  if (globalState.currentRoundId && globalState.currentRoundId.toNumber() > 0) {
+    try {
+      const gameSessionPDA = deriveGameSessionPDA(
+        globalState.currentRoundId.toNumber()
+      );
+      const gameSession = await mineBTCProgram.account.gameSession.fetch(
+        gameSessionPDA
+      );
+      roundEndTimestamp =
+        Number(gameSession.roundStartTimestamp) +
+        Number(globalState.roundDurationSeconds);
+    } catch (error) {
+      console.warn(`⚠️  Could not derive current round end time: ${error.message}`);
+    }
+  }
 
   return {
     isActive: globalState.isActive,
@@ -192,9 +211,7 @@ async function getGlobalGameState() {
     lastRoundId: globalState.lastRoundId
       ? globalState.lastRoundId.toNumber()
       : 0,
-    roundEndTimestamp: globalState.roundEndTimestamp
-      ? globalState.roundEndTimestamp.toNumber()
-      : 0,
+    roundEndTimestamp,
     roundDurationSeconds: globalState.roundDurationSeconds
       ? globalState.roundDurationSeconds.toNumber()
       : 0,
@@ -203,9 +220,6 @@ async function getGlobalGameState() {
       : null,
     currentRoundSeed: globalState.currentRoundSeed
       ? Buffer.from(globalState.currentRoundSeed).toString("hex")
-      : null,
-    nextRoundCommit: globalState.nextRoundCommit
-      ? Buffer.from(globalState.nextRoundCommit).toString("hex")
       : null,
   };
 }
@@ -253,6 +267,7 @@ async function startRound(roundId, commitHash) {
     .accounts({
       globalGameState: globalGameStatePDA,
       gameSession: gameSessionPDA,
+      epochConfig: epochConfigPDA,
       authority: walletKeypair.publicKey,
       systemProgram: SystemProgram.programId,
     })
@@ -273,126 +288,89 @@ async function startRound(roundId, commitHash) {
   return { success: true, signature };
 }
 
-async function endRound(roundId, revealedSeed, nextRoundCommit) {
+function u64Buffer(value) {
+  const buffer = Buffer.alloc(8);
+  buffer.writeBigUInt64LE(BigInt(value), 0);
+  return buffer;
+}
+
+async function endRound(roundId, revealedSeed) {
   console.log(`\n🏁 Ending round ${roundId}...`);
 
   const gameSessionPDA = deriveGameSessionPDA(roundId);
 
-  // Try to estimate winning faction
-  let winningFactionId = await estimateWinningFaction(roundId);
-
-  // Try ending with estimated faction
-  try {
-    return await tryEndRound(
-      roundId,
-      gameSessionPDA,
-      revealedSeed,
-      nextRoundCommit,
-      winningFactionId
-    );
-  } catch (error) {
-    // If wrong faction, try all factions
-    if (
-      error.message.includes("InvalidFactionId") ||
-      error.message.includes("faction")
-    ) {
-      console.log(`   Retrying with all factions...`);
-      for (let factionId = 0; factionId < 12; factionId++) {
-        try {
-          return await tryEndRound(
-            roundId,
-            gameSessionPDA,
-            revealedSeed,
-            nextRoundCommit,
-            factionId
-          );
-        } catch (retryError) {
-          if (!retryError.message.includes("InvalidFactionId")) {
-            throw retryError;
-          }
-        }
-      }
-      throw new Error("Failed to find correct winning faction");
-    }
-    throw error;
-  }
-}
-
-async function tryEndRound(
-  roundId,
-  gameSessionPDA,
-  revealedSeed,
-  nextRoundCommit,
-  factionId
-) {
-  const factionStatePDA = deriveFactionStatePDA(factionId);
-
-  const tx = await mineBTCProgram.methods
-    .endRound(Array.from(revealedSeed), Array.from(nextRoundCommit))
+  const endRoundTx = await mineBTCProgram.methods
+    .endRound(Array.from(revealedSeed))
     .accounts({
       globalGameState: globalGameStatePDA,
       gameSession: gameSessionPDA,
       globalConfig: globalConfigPDA,
       mineBtcMining: mineBtcMiningPDA,
-      winningFactionState: factionStatePDA,
-      solPrizePotVault: solPrizePotVaultPDA,
-      dbtcEmissionVault: dbtcEmissionVaultPDA,
-      slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
       authority: walletKeypair.publicKey,
       systemProgram: SystemProgram.programId,
     })
     .transaction();
 
-  tx.instructions.unshift(
+  endRoundTx.instructions.unshift(
     ComputeBudgetProgram.setComputeUnitLimit({ units: 1000000 })
   );
 
-  const signature = await sendAndConfirmTransaction(
+  const roundSignature = await sendAndConfirmTransaction(
     connection,
-    tx,
+    endRoundTx,
+    [walletKeypair],
+    { commitment: "confirmed" }
+  );
+
+  const gameSession = await mineBTCProgram.account.gameSession.fetch(gameSessionPDA);
+  const winningFactionId = gameSession.winningFactionId;
+  const winningDirection = gameSession.winningDirection;
+  console.log(
+    `   Winning country: ${winningFactionId}, direction: ${winningDirection}`
+  );
+
+  const epochConfig = await mineBTCProgram.account.epochConfig.fetch(epochConfigPDA);
+  const epochStatePDA = PublicKey.findProgramAddressSync(
+    [Buffer.from(EPOCH_STATE_SEED), u64Buffer(epochConfig.currentEpochId.toNumber())],
+    mineBTCProgramId
+  )[0];
+  const indexStatePDA = PublicKey.findProgramAddressSync(
+    [Buffer.from(INDEX_STATE_SEED), Buffer.from([epochConfig.activeIndexId])],
+    mineBTCProgramId
+  )[0];
+  const factionStatePDA = deriveFactionStatePDA(winningFactionId);
+
+  const rewardsTx = await mineBTCProgram.methods
+    .endRoundFactionRewards()
+    .accounts({
+      globalGameState: globalGameStatePDA,
+      gameSession: gameSessionPDA,
+      mineBtcMining: mineBtcMiningPDA,
+      factionState: factionStatePDA,
+      solRewardsVault: solRewardsVaultPDA,
+      epochConfig: epochConfigPDA,
+      epochState: epochStatePDA,
+      indexState: indexStatePDA,
+      authority: walletKeypair.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  rewardsTx.instructions.unshift(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 1000000 })
+  );
+
+  const rewardsSignature = await sendAndConfirmTransaction(
+    connection,
+    rewardsTx,
     [walletKeypair],
     { commitment: "confirmed" }
   );
 
   console.log(
-    `✅ Round ${roundId} ended with faction ${factionId}: ${signature}`
+    `✅ Round ${roundId} ended and finalized: ${roundSignature} / ${rewardsSignature}`
   );
-  return { success: true, signature };
-}
-
-async function estimateWinningFaction(roundId) {
-  try {
-    const gameSessionPDA = deriveGameSessionPDA(roundId);
-    const gameSession = await mineBTCProgram.account.gameSession.fetch(
-      gameSessionPDA
-    );
-
-    const userBlockIndexes = gameSession.userBlockIndexes;
-    let maxUsers = 0;
-    let estimatedBlock = 0;
-
-    for (let i = 0; i < userBlockIndexes.length; i++) {
-      if (userBlockIndexes[i] > maxUsers) {
-        maxUsers = userBlockIndexes[i];
-        estimatedBlock = i;
-      }
-    }
-
-    if (maxUsers > 0) {
-      const estimatedFaction = gameSession.blockAssignments[estimatedBlock];
-      console.log(
-        `   Estimated winning faction: ${estimatedFaction} (block ${
-          estimatedBlock + 1
-        })`
-      );
-      return estimatedFaction;
-    }
-
-    return 0;
-  } catch (error) {
-    console.warn(`   Could not estimate faction:`, error.message);
-    return 0;
-  }
+  return { success: true, roundSignature, rewardsSignature };
 }
 
 // ============================================================================
@@ -419,13 +397,6 @@ async function syncStateWithChain(state, onChainState) {
     console.log(`   ✓ Stored commit for round ${currentRoundId} from chain`);
   }
 
-  // If we have a next round commit on-chain, store it
-  if (onChainState.nextRoundCommit) {
-    const nextRoundId = currentRoundId + 1;
-    state.commits[nextRoundId] = onChainState.nextRoundCommit;
-    console.log(`   ✓ Stored commit for round ${nextRoundId} from chain`);
-  }
-
   // If we have a revealed seed on-chain, store it
   if (onChainState.currentRoundSeed && currentRoundId > 0) {
     state.seeds[currentRoundId] = onChainState.currentRoundSeed;
@@ -449,11 +420,11 @@ async function syncStateWithChain(state, onChainState) {
       console.log(`   ✓ Generated seed for round ${roundId}`);
     }
 
-    if (!state.commits[roundId + 1]) {
+    if (!state.commits[roundId]) {
       const seed = hexToBuffer(state.seeds[roundId]);
       const commit = hashSeed(seed);
-      state.commits[roundId + 1] = bufferToHex(commit);
-      console.log(`   ✓ Generated commit for round ${roundId + 1}`);
+      state.commits[roundId] = bufferToHex(commit);
+      console.log(`   ✓ Generated commit for round ${roundId}`);
     }
   }
 
@@ -486,9 +457,9 @@ function getCommitForRound(state, roundId) {
     return hexToBuffer(state.commits[roundId]);
   }
 
-  // Generate from seed if we have it
-  if (state.seeds[roundId - 1]) {
-    const seed = hexToBuffer(state.seeds[roundId - 1]);
+  // Generate from the round's own seed if we have it
+  if (state.seeds[roundId]) {
+    const seed = hexToBuffer(state.seeds[roundId]);
     const commit = hashSeed(seed);
     state.commits[roundId] = bufferToHex(commit);
     saveState(state);
@@ -497,7 +468,7 @@ function getCommitForRound(state, roundId) {
 
   // Generate new seed and commit
   const seed = generateRandomSeed();
-  state.seeds[roundId - 1] = bufferToHex(seed);
+  state.seeds[roundId] = bufferToHex(seed);
   const commit = hashSeed(seed);
   state.commits[roundId] = bufferToHex(commit);
   saveState(state);
@@ -529,13 +500,7 @@ async function processRound(state, onChainState) {
   // If round has ended or no round exists, end current round first
   if (roundHasEnded && currentRoundId > 0) {
     const revealedSeed = getSeedForRound(state, currentRoundId);
-    const nextRoundCommit = getCommitForRound(state, currentRoundId + 1);
-
-    const result = await endRound(
-      currentRoundId,
-      revealedSeed,
-      nextRoundCommit
-    );
+    const result = await endRound(currentRoundId, revealedSeed);
     if (!result.success) {
       console.log(`⚠️  Failed to end round, will retry`);
       return false;

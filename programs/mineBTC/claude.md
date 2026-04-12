@@ -1,467 +1,268 @@
-# MineBTC Solana Program - AI Assistant Guide
+# MineBTC Program Guide
 
-This document helps AI assistants understand the MineBTC Anchor program for making code changes effectively.
+This file is the source-of-truth orientation note for anyone editing the `mineBTC` Anchor program.
 
-## Codebase Overview
+## Product Framing
 
-Anchor-based Solana program implementing a faction-based raffle game with staking, NFTs, and deflationary tokenomics.
+Use this framing everywhere in code comments, docs, setup scripts, and assistant output:
 
-**Key Technologies:**
-- Anchor Framework (Solana smart contracts)
-- Token-2022 (transfer fees)
-- Metaplex Core (NFT doges)
-- Raydium CP-Swap (liquidity pool integration)
+- MineBTC is a **live country arena game** with an **index-driven epoch prediction layer**
+- the same bet powers both the round game and the epoch market
+- the game is also a **data pipeline**
+- the category is **Geopolitical Risk Intelligence**
 
-## Architecture
+Do **not** describe the current system as:
 
-```
-GlobalConfig (singleton)
-    |
-    +-- FactionState (x12) -- Per-faction staking pools and reward indexes
-    |
-    +-- GameSession (per round) -- Round bets, winning info
-    |
-    +-- MineBtcMining -- Emissions, price history, POL state
-    |
-    +-- TaxConfig -- Transfer tax distribution settings
-    |
-    +-- DogeConfig -- NFT bonding curve parameters
+- a 24-block betting game
+- block-high / block-low betting
+- players choosing block numbers
 
-PlayerData (per user)
-    |
-    +-- FactionStakeInfo (per faction) -- User's stakes in each faction
-    |
-    +-- AutominerVault -- User's autominer configuration
-    |
-    +-- BtcDoge (NFTs) -- Owned/staked doges
-```
+Use these canonical terms instead:
 
-## Critical Files
+- `country` or `faction`
+- `direction`: `Down`, `Neutral`, `Up`
+- `round`: fast 60-second loop
+- `epoch`: slower index settlement loop
+- `active index`: the oracle-scored market that current bets feed into
+- `operator doge`: the live gameplay doge locked for rounds
 
-| File | Purpose | Lines | Modify When |
-|------|---------|-------|-------------|
-| `instructions/game.rs` | Round lifecycle | ~1200 | Round start/end logic, reward distribution |
-| `instructions/user.rs` | Player actions | ~1800 | Betting, claiming, autominer |
-| `instructions/stake.rs` | Staking system | ~1500 | Staking/unstaking, reward indexes |
-| `instructions/doges.rs` | NFT system | ~800 | Doge minting, mutations, evolution |
-| `instructions/economy.rs` | Price/emissions | ~600 | Snapshots, rate updates, POL |
-| `instructions/tax.rs` | Transfer tax | ~400 | Tax distribution logic |
-| `state.rs` | All accounts | ~800 | Adding new fields to accounts |
-| `events.rs` | Event definitions | ~400 | Adding new events for backend |
-| `errors.rs` | Custom errors | ~100 | Adding new error types |
+When in doubt, lead with what is already live and measurable, then describe what the current contract state enables next.
 
-## Directory Structure
+## Core Game Model
 
-```
-programs/mineBTC/src/
-├── lib.rs                    # Entry point, instruction routing
-├── state.rs                  # Account state structs
-├── events.rs                 # Event definitions for backend indexing
-├── errors.rs                 # Custom error types
-├── genescience.rs            # Doge DNA/mutation algorithms
-├── mpl_core_helpers.rs       # Metaplex Core integration
-└── instructions/
-    ├── mod.rs                # Module exports
-    ├── game.rs               # Round lifecycle (MOST IMPORTANT)
-    ├── user.rs               # Player betting/claiming
-    ├── stake.rs              # Staking mechanics
-    ├── doges.rs              # NFT doge system
-    ├── economy.rs            # Price snapshots, emissions
-    ├── tax.rs                # Transfer tax handling
-    ├── admin.rs              # Admin/config functions
-    └── helper.rs             # Shared utilities
-```
+### Round Layer
 
-## Key Concepts
+Players place one or more `country + direction` bets during an active round.
 
-### Round Lifecycle (game.rs)
+At round end:
 
-1. **`int_start_round`**: Cranker starts new round
-   - Generates block assignments (24 blocks -> 12 factions, 2 each)
-   - Creates commit hash for VRF
-   - Emits `RoundStarted` event
+1. the contract randomly chooses a winning country from countries that actually received bets
+2. it randomly chooses a winning direction from active directions on that country
+3. payouts are split into:
 
-2. **`int_end_round`**: Cranker ends round after 60s + minimum bettors
-   - Reveals VRF to determine winning block
-   - Identifies winning faction (2 blocks win)
-   - Emits `RoundEnded` event
+- exact `country + direction` winners: main SOL + dBTC round rewards
+- same-country wrong-direction bettors: consolation dBTC rewards
+- winning-country stakers: staking reward share
+- motherlode jackpot: extra dBTC for exact winners when hit
 
-3. **`int_end_round_faction_rewards`**: Distribute rewards per faction
-   - Called once per faction (12 calls total)
-   - Updates reward indexes for proportional distribution
-   - Handles motherlode jackpot (0.16% chance)
-   - Emits `RewardsDistributedForFaction` event
+The important implication: **round direction matters again for round rewards**, not just for epoch accounting.
 
-### Reward Index Pattern (stake.rs)
+### Epoch Layer
 
-Rewards use a "global index" pattern for gas-efficient proportional distribution:
+Each round bet is also accumulated into the active epoch market.
 
-```rust
-// When distributing rewards:
-faction.sol_reward_index += rewards * PRECISION / total_hashpower;
+An epoch is defined by:
 
-// When claiming:
-pending = (current_index - user.last_index) * user_hashpower / PRECISION;
-user.last_index = current_index;
-```
+- `epoch_id`
+- `index_id`
+- `question_hash`
+- `start_scores` / `start_ranks`
+- `final_scores` / `final_ranks`
+- per-country direction totals
 
-This allows O(1) reward distribution regardless of user count.
+Typical index families may be `Economics`, `Military`, `AI Race`, or `Space Race`, but the contract models them generically as index states instead of hardcoded product lanes.
 
-### Staking Mechanics (stake.rs)
+The oracle updates index scores during the epoch. At settlement:
 
-- **MineBTC Staking**: `stake_minebtc` / `unstake_minebtc`
-  - Lockup multipliers: 30d=1x, 90d=2.5x, 180d=5x, 1y=9x, 3y=15x
-  - Emergency unstake: 15% penalty
+- each country resolves to `Down`, `Neutral`, or `Up` from rank change
+- reward pools are weighted by final ranking
+- users only earn on countries where they chose the correct direction
 
-- **LP Staking**: `stake_lp` / `unstake_lp`
-  - Same lockup multipliers
-  - Higher APR than token staking
+### Doge Layer
 
-- **Hashpower Calculation**:
-```rust
-hashpower = amount * lockup_multiplier * doge_multiplier;
-```
+There are two distinct doge roles:
 
-### Doge NFT System (doges.rs)
+- `gameplay_doge`: one operator doge locked for live play, carrying multiplier, DNA, and XP cache
+- `staked_doges`: passive staking boosts for hashpower
 
-- **Minting**: `batch_mint_doges` - Bonding curve pricing
-- **Staking**: `stake_doge` / `unstake_doge` - Boost hashpower
-- **Mutations**: `trigger_mutation` - Random stat changes
-- **Evolution**: `trigger_evolution` - Stage progression
+Current behavior:
 
-Doge multipliers (staked count):
-- 1: 1.3x, 2: 1.6x, 3: 2.0x, 4: 2.5x, 5: 3.0x
+- gameplay rounds can update cached doge XP / mutation state
+- sync back into `DogeMetadata` still happens during round reward claim or gameplay withdrawal
+- there is not yet an epoch-lock rule preventing immediate operator withdrawal after an epoch bet
 
-### Economy System (economy.rs)
+If you change operator-doge progression, keep the separation between:
 
-- **Price Snapshots**: `snapshot_price` - Every 30 minutes via Raydium swap
-- **Rate Updates**: `update_rate` - After 8 snapshots (4 hours)
-  - Price down >3%: Reduce emissions 10%
-  - Price up >3%: Increase emissions 10%
-- **POL Addition**: `add_lp_and_burn` - Add liquidity, burn LP tokens
+- short-term round fun / XP
+- long-term epoch accuracy / progression
 
-### Transfer Tax (tax.rs)
+## Important Accounts
 
-Token-2022 transfer hook distributes 1% tax:
-- 50% burned
-- 25% NFT floor sweep vault
-- 25% Faction treasury (weekly distribution)
+### Global / Shared
 
-## Common Tasks
+- `GlobalConfig`
+- `GlobalGameSate`
+- `MineBtcMining`
+- `EpochConfig`
+- `IndexState`
+- `EpochState`
+- `UnrefinedRewards`
 
-### Adding a New Event
+### Per Country
 
-1. Define in `events.rs`:
-```rust
-#[event]
-pub struct NewEvent {
-    pub field1: u64,
-    pub field2: Pubkey,
-}
-```
+- `FactionState`
 
-2. Emit in instruction:
-```rust
-emit!(NewEvent {
-    field1: value,
-    field2: pubkey,
-});
-```
+### Per Player
 
-3. Add handler in backend `processEvents.ts`
+- `PlayerData`
+- `UserGameBet`
+- `UserEpochBets`
+- `AutominerVault`
+- `StakedPosition`
+- `DogeMetadata`
 
-### Adding a New Account Field
+## Main File Ownership
 
-1. Add to struct in `state.rs`:
-```rust
-pub struct GlobalConfig {
-    // ... existing fields
-    pub new_field: u64,  // Add at END to avoid migration
-}
-```
+| File | Main Responsibility |
+|------|----------------------|
+| `instructions/game.rs` | Round start/end, winner selection, round reward indexes |
+| `instructions/user.rs` | Manual betting, batch betting, autominers, round claims, gameplay doges |
+| `instructions/epoch.rs` | Index initialization, oracle score updates, epoch settlement, epoch claims |
+| `instructions/stake.rs` | MineBTC and LP staking |
+| `instructions/doges.rs` | Doge minting, breeding, staking |
+| `instructions/economy.rs` | Price snapshots, emissions, POL |
+| `instructions/tax.rs` | Transfer-tax accounting |
+| `state.rs` | Account layouts and canonical constants |
+| `events.rs` | Indexer-facing event contracts |
+| `errors.rs` | Reusable program errors |
 
-2. Update space calculation if needed
-3. Initialize in relevant instruction
+## Critical Flows
 
-### Adding a New Instruction
+### Betting
 
-1. Create function in appropriate `instructions/*.rs`:
-```rust
-pub fn int_new_instruction(ctx: Context<NewInstruction>, args: Args) -> Result<()> {
-    // Implementation
-    Ok(())
-}
-```
+`instructions/user.rs`
 
-2. Create context struct:
-```rust
-#[derive(Accounts)]
-pub struct NewInstruction<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    // ... accounts
-}
-```
+- `internal_join_round`
+- `internal_join_round_batch`
+- `internal_process_bets`
 
-3. Add to `lib.rs` instruction enum:
-```rust
-pub fn new_instruction(ctx: Context<NewInstruction>, args: Args) -> Result<()> {
-    instructions::int_new_instruction(ctx, args)
-}
-```
+Important rules:
 
-4. Export from `instructions/mod.rs`
+- bets are `BetType::FactionDirection`
+- one transaction can include multiple countries
+- the same country cannot appear with two different directions in one round
+- the same bet updates both `GameSession` totals and `EpochState` / `UserEpochBets`
 
-## Key Account PDAs
+### Round Settlement
 
-**IMPORTANT**: These are the EXACT seeds from `state.rs`. Use these when deriving PDAs.
+`instructions/game.rs`
 
-### Global State
+- `int_start_round`
+- `int_end_round`
+- `int_end_round_faction_rewards`
+
+Important rules:
+
+- randomness is commit-reveal based
+- winner selection is `country -> direction`
+- same-country, wrong-direction bettors can still earn the consolation dBTC pool
+- `end_round_faction_rewards` also advances epoch mining accounting
+
+### Epoch Settlement
+
+`instructions/epoch.rs`
+
+- `schedule_next_epoch_market_internal`
+- `update_epoch_scores_internal`
+- `settle_epoch_internal`
+- `claim_epoch_rewards_internal`
+
+Important rules:
+
+- `EpochConfig.active_index_id` tells you which index current round bets feed into
+- first-market bootstrap matters
+- epoch rewards are paid from per-country correct-direction totals, not from a flat country exposure pool
+
+### Autominers
+
+`instructions/user.rs`
+
+Autominer supports:
+
+- `FactionsConfig::Specific { picks }`
+- `FactionsConfig::Random { count, direction }`
+
+Important rules:
+
+- no block-based autominer config exists anymore
+- SOL mode uses `sol_per_round` as the full round budget
+- ticket mode requires `sol_per_round == 0`
+- ticket mode does not reserve SOL and does not pay keeper compensation
+
+## PDA Notes
+
+Use seeds from `state.rs`, not memory or stale docs.
+
+Common ones:
 
 ```rust
-// GlobalConfig - singleton
-seeds = [b"global-config"]
+// Global
+[b"global-config"]
+[b"global-game-state"]
+[b"mine-btc-mining"]
+[b"epoch-config"]
+[b"unrefined-rewards"]
 
-// HashpowerConfig - singleton
-seeds = [b"hashpower-config"]
-
-// MineBtcMining - singleton
-seeds = [b"mine-btc-mining"]
-
-// GlobalGameState - singleton
-seeds = [b"global-game-state"]
-
-// DogeConfig - singleton
-seeds = [b"doge-config"]
-
-// TaxConfig - singleton
-seeds = [b"tax-config"]
-
-// UnrefinedRewards - singleton
-seeds = [b"unrefined-rewards"]
-
-// BuybacksAccount - singleton
-seeds = [b"buybacks"]
+// Per entity
+[b"faction", faction_name.as_bytes()]
+[b"player", user.key().as_ref()]
+[b"game-session", &round_id.to_le_bytes()]
+[b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
+[b"epoch", &epoch_id.to_le_bytes()]
+[b"user-epoch", user.key().as_ref(), &epoch_id.to_le_bytes()]
+[b"index-state", &[index_id]]
+[b"autominer", user.key().as_ref()]
+[b"autominer-custody"]
+[b"doge-metadata", doge_mint.key().as_ref()]
+[b"doge-custody"]
 ```
 
-### Vault PDAs
+Important gotcha:
 
-```rust
-// SOL Treasury
-seeds = [b"sol-treasury"]
+- `FactionState` uses the **faction name bytes**, not the numeric faction id
 
-// Doges Treasury (NFT sale SOL)
-seeds = [b"doges-treasury"]
+## Event Expectations
 
-// MineBTC Vault Authority
-seeds = [b"minebtc-vault-authority"]
+Indexers and off-chain systems should expect these as the key product events:
 
-// MineBTC Vault (token account)
-seeds = [b"minebtc_vault"]
+- `RoundStarted`
+- `BetsPlaced`
+- `RoundEnded`
+- `MotherlodeHit`
+- `RoundRewardsClaimed`
+- `EpochMarketScheduled`
+- `EpochScoresUpdated`
+- `EpochSettled`
+- `EpochRewardsClaimed`
+- `AutominerInitialized`
+- `AutominerReloaded`
+- `DogeUsedForGameplay`
+- `DogeSynced`
 
-// Buybacks SOL Vault
-seeds = [b"buybacks-sol-vault"]
+If you change gameplay semantics, update events and docs together.
 
-// SOL Prize Pot
-seeds = [b"sol-prize-pot"]
+## Documentation Rules
 
-// Motherlode Pot
-seeds = [b"motherlode-pot"]
+When changing this repo:
 
-// Staker SOL Reward Vault
-seeds = [b"staker-sol-reward-vault"]
+- keep README language aligned with the current contract model
+- avoid reintroducing old block-betting language
+- prefer describing the product as **round arena + epoch market**
+- avoid making "prediction market" the primary label when "live game + intelligence data pipeline" is more precise
+- if setup scripts still initialize a 24h epoch, say that clearly and point to `setup_scripts/config.json`
 
-// MineBTC Custodian (holds all staked dogeBTC)
-seeds = [b"minebtc-custodian"]
+## Verification Checklist
 
-// MineBTC Custodian Authority
-seeds = [b"minebtc-custodian-authority"]
-
-// LP Custodian (holds all staked LP tokens)
-seeds = [b"lp-custodian"]
-
-// LP Custodian Authority
-seeds = [b"lp-custodian-authority"]
-```
-
-### Tax System PDAs
-
-```rust
-// Withdraw Withheld Authority (Token-2022)
-seeds = [b"withdraw-withheld-authority"]
-
-// Faction Treasury Vault
-seeds = [b"faction-treasury-vault"]
-
-// NFT Floor Sweep Vault
-seeds = [b"nft-floor-sweep-vault"]
-
-// NFT Sale SOL Vault
-seeds = [b"nft-sale-sol-vault"]
-```
-
-### Per-Entity PDAs
-
-```rust
-// FactionState - one per faction (faction_id is u8)
-seeds = [b"faction", &[faction_id]]
-
-// PlayerData - one per user
-seeds = [b"player", user.key().as_ref()]
-
-// GameSession - one per round (round_id is u64)
-seeds = [b"game-session", &round_id.to_le_bytes()]
-
-// UserGameBet - one per user per round
-seeds = [b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
-
-// AutominerVault - one per user
-seeds = [b"autominer", user.key().as_ref()]
-
-// AutominerCustody - global
-seeds = [b"autominer-custody"]
-
-// StakedPosition - per user per position (position_index is u8)
-seeds = [b"staked-position", user.key().as_ref(), &[position_index]]
-
-// LP StakedPosition - per user per position
-seeds = [b"lp-staked-position", user.key().as_ref(), &[position_index]]
-
-// ReferralRewards - one per user
-seeds = [b"referral-rewards", user.key().as_ref()]
-
-// DogeMetadata - per NFT mint
-seeds = [b"doge-metadata", doge_mint.key().as_ref()]
-
-// DogeCustody - global (holds staked NFTs)
-seeds = [b"doge-custody"]
-
-// Collection Authority
-seeds = [b"collection_authority"]
-```
-
-## Important Constants
-
-### From `state.rs`
-
-```rust
-// Game Grid
-pub const NUM_BLOCKS: usize = 24;           // Total blocks in game
-pub const NUM_FACTIONS: usize = 12;         // Total factions
-pub const BLOCKS_PER_FACTION: usize = 2;    // Each faction owns 2 blocks
-pub const MAX_CRANKER_BOTS: usize = 3;      // Whitelisted cranker bots
-
-// Staking
-pub const MAX_STAKED_DOGES: usize = 5;      // Max doges user can stake
-pub const MAX_ALLOWED_POSITIONS: u8 = 7;    // Max staking positions per type
-pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;  // Early unstake penalty
-
-// Token
-pub const MINEBTC_DECIMALS: u8 = 6;
-pub const BURN_TAX_PERCENTAGE: u64 = 1;     // 1% transfer tax
-
-// Precision
-pub const INDEX_PRECISION: u64 = 1_000_000; // Reward index scaling
-
-// Motherlode
-pub const MOTHERLODE_CHANCE: u64 = 625;     // 1 in 625 (0.16%)
-
-// Time
-pub const DAY_IN_SECONDS: u64 = 86400;
-```
-
-### From `config.json`
-
-```rust
-// Game
-round_duration_seconds = 60;                // 60 seconds per round
-
-// Hashpower Lockup (linear interpolation)
-min_lockup_days = 7;                        // Minimum lockup
-max_lockup_days = 365;                      // Maximum lockup
-base_multiplier = 100;                      // 1x at min lockup
-max_multiplier = 420;                       // 4.2x at max lockup
-
-// Doge NFT Bonding Curve
-doge_base_price = 1_000_000_000;           // 1 SOL
-doge_curve_a = 1_111_111;                  // Curve steepness
-doge_max_supply = 42_690;                  // Max mintable
-
-// Tax Distribution (of 1% transfer fee)
-tax_burn_pct = 25;                         // 25% burned
-tax_nft_floor_sweep_pct = 25;              // 25% to NFT sweep
-tax_faction_treasury_pct = 25;             // 25% to factions
-
-// Ticket Tiers (additional SOL on Doge mint)
-tier_0 = 1_000_000;                        // 0.001 SOL
-tier_1 = 10_000_000;                       // 0.01 SOL
-tier_2 = 100_000_000;                      // 0.1 SOL
-```
-
-### Doge Multipliers (staked count -> multiplier)
-
-```rust
-// Multiplier = BASE_MULTIPLIER (1000) + bonus
-// 0 doges: 1000 (1.0x)
-// 1 doge:  1300 (1.3x)
-// 2 doges: 1600 (1.6x)
-// 3 doges: 2000 (2.0x)
-// 4 doges: 2500 (2.5x)
-// 5 doges: 3000 (3.0x)
-```
-
-## Common Gotchas
-
-1. **BN vs u64**: Anchor returns BN objects in JS. Convert with `.toNumber()` or `.toString()` for large values.
-
-2. **Account Size**: Space must be declared upfront. Add new fields at END of structs.
-
-3. **PDA Derivation**: Always verify seeds match between client and program.
-
-4. **Reward Index Precision**: Use `u128` for intermediate calculations to prevent overflow.
-
-5. **Token-2022 Transfers**: Must use `transfer_checked` with correct decimals.
-
-6. **Metaplex Core**: Doge NFTs use Metaplex Core (not Token Metadata).
-
-7. **Lockup Timestamps**: Use `Clock::get()?.unix_timestamp` for time comparisons.
-
-8. **Emergency Unstake**: 15% penalty goes to other stakers via reward index.
-
-## Testing Commands
+Run these after meaningful contract edits:
 
 ```bash
-# Build program
-anchor build -p minebtc
-
-# Run tests
-anchor test
-
-# Deploy to devnet
-anchor deploy --provider.cluster devnet
-
-# Generate IDL
-anchor idl build -p minebtc
+cargo fmt --all
+cargo check -p minebtc
+cargo test -p minebtc --lib
 ```
 
-## Event Reference
+If you touch tracked setup scripts, also syntax-check them:
 
-Key events for backend indexing:
-
-| Event | When Emitted | Key Fields |
-|-------|--------------|------------|
-| `RoundStarted` | Round begins | round_id, block_assignments |
-| `RoundEnded` | Round ends | round_id, winning_block, winning_faction |
-| `BetsPlaced` | User bets | round_id, user, amounts, blocks |
-| `RewardsDistributedForFaction` | Rewards calc'd | round_id, faction_id |
-| `RoundRewardsClaimed` | User claims | round_id, user, sol_reward, minebtc_reward |
-| `DogeBtcStaked` | User stakes | user, amount, lockup_days |
-| `DogeBtcUnstaked` | User unstakes | user, amount |
-| `SolRewardsClaimed` | User claims SOL | user, amount |
-| `MinebtcRewardsClaimed` | User claims token | user, amount |
-| `AutominerInitialized` | Autominer created | user, sol_amount, num_rounds |
-| `AutominerBetsPlaced` | Autominer bets | user, round_id, amounts |
-| `DogeEvolved` | Doge evolves | doge_mint, new_stage |
-| `DogePowerMutation` | Doge mutates | doge_mint, trait_index, new_value |
-| `PriceSnapshotTaken` | Price recorded | price, snapshot_index |
-| `RateUpdated` | Emissions change | old_rate, new_rate |
+```bash
+node --check setup_scripts/loop_scripts/game_loop.js
+```

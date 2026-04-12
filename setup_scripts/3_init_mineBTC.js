@@ -284,7 +284,7 @@ async function main() {
     //   new_stakers_pct: Option<u8>,               — % of protocol fee redirected to staker rewards vault
     //   new_minebtc_stakers_pct: Option<u8>,       — % of mined MineBTC going to stakers
     //   new_minebtc_winners_pct: Option<u8>,       — % of mined MineBTC going to round winners
-    //   new_minebtc_same_faction_pct: Option<u8>,  — % of mined MineBTC going to same-faction bettors
+    //   new_minebtc_same_faction_pct: Option<u8>,  — % of mined MineBTC going to bettors on the winning country but wrong direction
     //   new_minebtc_motherlode_pct: Option<u8>,    — % of mined MineBTC going to motherlode pot
     //   new_refining_fee: Option<u8>,              — % fee when withdrawing unrefined MineBTC rewards
     //   change_faction_fee: Option<u64>,           — SOL cost to change faction (lamports)
@@ -300,7 +300,7 @@ async function main() {
         // dogeBTC distribution config:
         newDbtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
         newDbtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
-        newDbtcSameFactionPct: 42, // 42% of dogeBTC rewards go to same-faction winners
+        newDbtcSameFactionPct: 42, // 42% of dogeBTC rewards go to winning-country, non-winning-direction bettors
         newDbtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
 
         newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
@@ -2731,7 +2731,10 @@ async function initializeEpochConfig(minebtcProgram) {
     console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Oracle Authority: ${oracleAuthority.toBase58()}`);
-    console.log(COLOR_INFO, `⏱️  Epoch Duration: ${epochDuration}s (24h)`);
+    console.log(
+      COLOR_INFO,
+      `⏱️  Epoch Duration: ${epochDuration}s (${(epochDuration / 3600).toFixed(2)}h from config)`
+    );
     console.log(COLOR_INFO, `📊 Initial Risk Factor: ${initialRiskFactor} (1.00x)`);
     console.log(COLOR_INFO, `📊 Model5 Pct: ${model5Pct}%, Top1: ${top1Pct}%, Top2: ${top2Pct}%, Top3: ${top3Pct}%`);
 

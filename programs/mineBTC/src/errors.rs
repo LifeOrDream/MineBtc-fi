@@ -114,6 +114,9 @@ pub enum ErrorCode {
     #[msg("Invalid owner")]
     InvalidOwner,
 
+    #[msg("Cannot place multiple directions on the same faction in one round")]
+    ConflictingFactionDirection,
+
     #[msg("Invalid amount")]
     InvalidAmount,
 
@@ -194,4 +197,7 @@ pub enum ErrorCode {
 
     #[msg("Invalid oracle authority")]
     InvalidOracleAuthority,
+
+    #[msg("Invalid or unexpected index state")]
+    InvalidIndexState,
 }

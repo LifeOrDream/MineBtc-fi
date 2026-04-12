@@ -3,7 +3,7 @@
 // The main entry point for the MineBTC program.
 //
 // This program implements a faction-based betting and mining game on Solana.
-// Users can join factions, place bets on blocks, mine MineBTC tokens, and stake assets for rewards.
+// Users join factions, place directional country bets, mine MineBTC tokens, and stake assets for rewards.
 //
 // ## Modules
 //
@@ -41,8 +41,8 @@ pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    BetType, BlocksConfig, DogeConfig, FactionStrategy, FactionsConfig, MineBtcDistConfig,
-    SolFeeConfig, TaxConfig, TicketTier,
+    AutominerFactionPick, BetType, DogeConfig, FactionsConfig, MineBtcDistConfig,
+    PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
 declare_id!("ChkxZrkZa9GZU7Q4R8qxwV3eqXoWzmskwRz5WCnxJYk7");
@@ -586,10 +586,29 @@ pub mod minebtc {
         )
     }
 
-    /// AI Oracle posts additive faction score deltas per dimension (with reason in tx memo)
+    /// Initialize an index state that the oracle can update over time.
+    pub fn initialize_index_state(
+        ctx: Context<InitializeIndexState>,
+        index_id: u8,
+        name: String,
+        initial_scores: [i64; 12],
+    ) -> Result<()> {
+        epoch::initialize_index_state_internal(ctx, index_id, name, initial_scores)
+    }
+
+    /// Oracle schedules which index/question should become active for the next epoch.
+    pub fn schedule_next_epoch_market(
+        ctx: Context<ScheduleNextEpochMarket>,
+        next_index_id: u8,
+        question_hash: [u8; 32],
+    ) -> Result<()> {
+        epoch::schedule_next_epoch_market_internal(ctx, next_index_id, question_hash)
+    }
+
+    /// AI Oracle posts additive score deltas for an index.
     pub fn update_epoch_scores(
         ctx: Context<UpdateEpochScores>,
-        score_deltas: [[u16; 5]; 12],
+        score_deltas: [i64; 12],
     ) -> Result<()> {
         epoch::update_epoch_scores_internal(ctx, score_deltas)
     }
@@ -613,21 +632,18 @@ pub mod minebtc {
     // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Start a new round by committing a hash and initializing GameSession
-    /// This commits randomness hash and randomly assigns factions to blocks
+    /// Start a new round by committing a hash and initializing GameSession.
     /// round_id should be current_round_id + 1 (validated in the function)
     pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
         game::int_start_round(ctx, round_id, commit)
     }
 
-    /// End the current round by revealing seed, selecting winner, and starting next round
-    /// Verifies commit-reveal, generates final randomness, selects winning block
+    /// End the current round by revealing seed and selecting the winning faction.
     pub fn end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
         game::int_end_round(ctx, revealed_seed)
     }
 
-    /// End the current round by revealing seed, selecting winner, and starting next round
-    /// Verifies commit-reveal, generates final randomness, selects winning block
+    /// Finalize the round's faction-level staking/motherlode distribution and track epoch mining.
     pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
         game::int_end_round_faction_rewards(ctx)
     }
@@ -652,8 +668,7 @@ pub mod minebtc {
         user::internal_change_faction(ctx, new_faction_id)
     }
 
-    /// Join a round by betting SOL
-    /// Users can bet on either a specific block (1-24) or a faction + highest/lowest option
+    /// Join a round by placing a faction-direction bet.
     pub fn join_round(
         ctx: Context<JoinRound>,
         amount: u64,
@@ -673,11 +688,10 @@ pub mod minebtc {
         user::internal_join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
     }
 
-    /// Initialize autominer vault with flexible block/faction configuration
+    /// Initialize autominer vault with flexible faction-direction configuration
     /// use_ticket: Optional ticket tier index. If Some, autominer uses tickets instead of SOL for bets.
     pub fn init_autominer(
         ctx: Context<InitAutominer>,
-        blocks_config: Option<BlocksConfig>,
         factions_config: Option<FactionsConfig>,
         sol_per_round: u64,
         num_rounds: u32,
@@ -686,7 +700,6 @@ pub mod minebtc {
     ) -> Result<()> {
         user::internal_init_autominer(
             ctx,
-            blocks_config,
             factions_config,
             sol_per_round,
             num_rounds,

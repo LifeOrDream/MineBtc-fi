@@ -2,6 +2,8 @@
 ## MineBtc-fi Solana Contract — All .rs files
 ## Date: 2026-03-26
 
+> Historical note: this report is a point-in-time audit snapshot from before the country-direction round and index-epoch refactor. Treat gameplay descriptions and line references here as archival, and verify against current source before acting on them.
+
 ---
 
 ## CRITICAL FINDINGS (Bugs / Potential Exploits)

@@ -1,31 +1,3 @@
-// # Epoch Mining Instructions (Inline Design — Parimutuel + Top 3)
-//
-// Implements the geopolitical prediction epoch mining system (Nation Pulse Index).
-// Each 24-hour epoch distributes additional dogeBTC based on:
-//   epoch_pool = total_dogebtc_mined_in_epoch * risk_factor / 100
-//
-// ## Reward Model (Model 5 + Top 3 Bonus):
-//   1. model5_pct% of pool distributed to ALL factions proportionally by score
-//      faction_model5[i] = model5_pool * score[i] / total_scores
-//   2. Top 3 bonus: top1_pct/top2_pct/top3_pct% of pool given to #1/#2/#3 ranked factions
-//   3. faction_reward_pools[i] = model5[i] + top3_bonus[i]
-//   4. User reward = sum over factions { faction_reward_pools[i] * user_bets[i] / total_bets[i] }
-//
-// This creates parimutuel dynamics: fewer bettors on a faction = higher reward per SOL.
-// Contrarian bets on underdog factions that score well = massive payouts.
-//
-// ## Inline Design:
-// - Epoch bet accumulation happens inline in join_round/join_round_batch/execute_autominer_bet
-// - Epoch mining tracking + auto-settle + auto-start happens inline in end_round_faction_rewards
-//
-// ## Instructions:
-// - `initialize_epoch_config`: Admin setup (with reward split percentages)
-// - `update_epoch_config`: Admin updates
-// - `update_epoch_scores`: AI oracle posts faction score deltas
-// - `update_risk_factor`: AI oracle updates global risk factor
-// - `settle_epoch`: Fallback settlement (anyone can call)
-// - `claim_epoch_rewards`: User claims their epoch dogeBTC rewards (closes account)
-
 use anchor_lang::prelude::*;
 
 use crate::errors::ErrorCode;
@@ -33,13 +5,39 @@ use crate::events::*;
 use crate::instructions::helper;
 use crate::state::*;
 
-// ========================================================================================
-// ============================= SETTLEMENT HELPER ==============================
-// ========================================================================================
+pub fn compute_rankings(scores: &[i64; NUM_FACTIONS]) -> ([u8; NUM_FACTIONS], [u8; NUM_FACTIONS]) {
+    let mut ordered = [0u8; NUM_FACTIONS];
+    for (idx, slot) in ordered.iter_mut().enumerate() {
+        *slot = idx as u8;
+    }
 
-/// Computes faction_reward_pools using Model 5 (parimutuel by score) + Top 3 bonus.
-/// This is shared by settle_epoch (fallback) and auto-settle (in end_round_faction_rewards).
-#[allow(clippy::needless_range_loop)]
+    ordered.sort_by(|a, b| {
+        scores[*b as usize]
+            .cmp(&scores[*a as usize])
+            .then_with(|| a.cmp(b))
+    });
+
+    let mut ranks = [0u8; NUM_FACTIONS];
+    for (rank, faction_id) in ordered.iter().enumerate() {
+        ranks[*faction_id as usize] = rank as u8;
+    }
+
+    (ranks, ordered)
+}
+
+pub fn resolve_direction_from_ranks(start_rank: u8, final_rank: u8) -> (PredictionDirection, i8) {
+    let delta = start_rank as i8 - final_rank as i8;
+    let direction = if delta > 0 {
+        PredictionDirection::Up
+    } else if delta < 0 {
+        PredictionDirection::Down
+    } else {
+        PredictionDirection::Neutral
+    };
+
+    (direction, delta)
+}
+
 pub fn compute_faction_reward_pools(
     epoch_state: &mut EpochState,
     epoch_config: &EpochConfig,
@@ -50,9 +48,6 @@ pub fn compute_faction_reward_pools(
         return Ok(());
     }
 
-    // Helper: compute pool * pct / 100 with checked ops. All operands fit in u128
-    // and the result is <= pool (a u64), so u64::try_from is guaranteed to succeed
-    // in practice but we still check it for defense-in-depth.
     let pct_of_pool = |pct: u8| -> Result<u64> {
         let value = (pool as u128)
             .checked_mul(pct as u128)
@@ -62,76 +57,49 @@ pub fn compute_faction_reward_pools(
         u64::try_from(value).map_err(|_| error!(ErrorCode::ArithmeticOverflow))
     };
 
-    // --- Step 1: Model 5 — distribute model5_pct% of pool by score ratio (using composite scores) ---
-    let model5_pool = pct_of_pool(epoch_config.model5_pct)? as u128;
-    let total_scores: u128 = epoch_state
-        .faction_composite_scores
+    let base_pool = pct_of_pool(epoch_config.model5_pct)? as u128;
+    let total_rank_points: u128 = epoch_state
+        .final_ranks
         .iter()
-        .map(|&s| s as u128)
+        .map(|&rank| (NUM_FACTIONS - rank as usize) as u128)
         .sum();
 
     let mut reward_pools = [0u64; NUM_FACTIONS];
-    if total_scores > 0 {
-        for i in 0..NUM_FACTIONS {
-            let share_u128 = model5_pool
-                .checked_mul(epoch_state.faction_composite_scores[i] as u128)
+    if total_rank_points > 0 {
+        for faction_id in 0..NUM_FACTIONS {
+            let rank_points = (NUM_FACTIONS - epoch_state.final_ranks[faction_id] as usize) as u128;
+            let share = base_pool
+                .checked_mul(rank_points)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(total_scores)
+                .checked_div(total_rank_points)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            reward_pools[i] =
-                u64::try_from(share_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+            reward_pools[faction_id] =
+                u64::try_from(share).map_err(|_| ErrorCode::ArithmeticOverflow)?;
         }
     }
 
-    // --- Step 2: Find top 3 factions by composite score ---
-    // Build (score, faction_index) pairs and find top 3
-    let mut ranked: [(u16, usize); NUM_FACTIONS] = [(0, 0); NUM_FACTIONS];
-    for i in 0..NUM_FACTIONS {
-        ranked[i] = (epoch_state.faction_composite_scores[i], i);
-    }
-    // Sort descending by score (simple selection sort — only 12 elements)
-    for i in 0..NUM_FACTIONS {
-        let mut max_idx = i;
-        for j in (i + 1)..NUM_FACTIONS {
-            if ranked[j].0 > ranked[max_idx].0 {
-                max_idx = j;
-            }
-        }
-        ranked.swap(i, max_idx);
-    }
-
-    // --- Step 3: Add top 3 bonus pools ---
+    let (_, ordered) = compute_rankings(&epoch_state.final_scores);
     let top1_bonus = pct_of_pool(epoch_config.top1_pct)?;
     let top2_bonus = pct_of_pool(epoch_config.top2_pct)?;
     let top3_bonus = pct_of_pool(epoch_config.top3_pct)?;
 
-    if ranked[0].0 > 0 {
-        reward_pools[ranked[0].1] = reward_pools[ranked[0].1]
-            .checked_add(top1_bonus)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-    }
-    if NUM_FACTIONS > 1 && ranked[1].0 > 0 {
-        reward_pools[ranked[1].1] = reward_pools[ranked[1].1]
+    reward_pools[ordered[0] as usize] = reward_pools[ordered[0] as usize]
+        .checked_add(top1_bonus)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    if NUM_FACTIONS > 1 {
+        reward_pools[ordered[1] as usize] = reward_pools[ordered[1] as usize]
             .checked_add(top2_bonus)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
-    if NUM_FACTIONS > 2 && ranked[2].0 > 0 {
-        reward_pools[ranked[2].1] = reward_pools[ranked[2].1]
+    if NUM_FACTIONS > 2 {
+        reward_pools[ordered[2] as usize] = reward_pools[ordered[2] as usize]
             .checked_add(top3_bonus)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     epoch_state.faction_reward_pools = reward_pools;
-
-    msg!("   🌍 Faction reward pools computed. Top3: #1={} (faction {}), #2={} (faction {}), #3={} (faction {})",
-        ranked[0].0, ranked[0].1, ranked[1].0, ranked[1].1, ranked[2].0, ranked[2].1);
-
     Ok(())
 }
-
-// ========================================================================================
-// ============================= INITIALIZE EPOCH CONFIG ==============================
-// ========================================================================================
 
 pub fn initialize_epoch_config_internal(
     ctx: Context<InitializeEpochConfig>,
@@ -143,8 +111,6 @@ pub fn initialize_epoch_config_internal(
     top2_pct: u8,
     top3_pct: u8,
 ) -> Result<()> {
-    msg!("🌍 [initialize_epoch_config] Setting up epoch mining system");
-
     require!(epoch_duration > 0, ErrorCode::InvalidParameters);
     require!(risk_factor <= 1000, ErrorCode::InvalidParameters);
     require!(
@@ -156,17 +122,18 @@ pub fn initialize_epoch_config_internal(
     epoch_config.bump = ctx.bumps.epoch_config;
     epoch_config.oracle_authority = oracle_authority;
     epoch_config.epoch_duration = epoch_duration;
-    epoch_config.current_epoch_id = 0;
+    epoch_config.current_epoch_id = 1;
     epoch_config.last_epoch_start = 0;
     epoch_config.risk_factor = risk_factor;
     epoch_config.is_active = true;
+    epoch_config.active_index_id = 0;
+    epoch_config.active_question_hash = [0u8; 32];
+    epoch_config.next_index_id = 0;
+    epoch_config.next_question_hash = [0u8; 32];
     epoch_config.model5_pct = model5_pct;
     epoch_config.top1_pct = top1_pct;
     epoch_config.top2_pct = top2_pct;
     epoch_config.top3_pct = top3_pct;
-
-    msg!("   ✅ Epoch config initialized: oracle={}, duration={}s, risk_factor={}, split={}/{}+{}+{}",
-        oracle_authority, epoch_duration, risk_factor, model5_pct, top1_pct, top2_pct, top3_pct);
 
     Ok(())
 }
@@ -194,10 +161,6 @@ pub struct InitializeEpochConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
-// ========================================================================================
-// ============================= UPDATE EPOCH CONFIG ==============================
-// ========================================================================================
-
 pub fn update_epoch_config_internal(
     ctx: Context<UpdateEpochConfig>,
     oracle_authority: Option<Pubkey>,
@@ -208,22 +171,17 @@ pub fn update_epoch_config_internal(
     top2_pct: Option<u8>,
     top3_pct: Option<u8>,
 ) -> Result<()> {
-    msg!("🌍 [update_epoch_config] Updating epoch config");
-
     let epoch_config = &mut ctx.accounts.epoch_config;
 
     if let Some(auth) = oracle_authority {
         epoch_config.oracle_authority = auth;
-        msg!("   Updated oracle_authority: {}", auth);
     }
-    if let Some(dur) = epoch_duration {
-        require!(dur > 0, ErrorCode::InvalidParameters);
-        epoch_config.epoch_duration = dur;
-        msg!("   Updated epoch_duration: {}s", dur);
+    if let Some(duration) = epoch_duration {
+        require!(duration > 0, ErrorCode::InvalidParameters);
+        epoch_config.epoch_duration = duration;
     }
     if let Some(active) = is_active {
         epoch_config.is_active = active;
-        msg!("   Updated is_active: {}", active);
     }
     if let Some(pct) = model5_pct {
         epoch_config.model5_pct = pct;
@@ -238,7 +196,6 @@ pub fn update_epoch_config_internal(
         epoch_config.top3_pct = pct;
     }
 
-    // Validate sum
     let total_pct = epoch_config.model5_pct as u16
         + epoch_config.top1_pct as u16
         + epoch_config.top2_pct as u16
@@ -267,58 +224,140 @@ pub struct UpdateEpochConfig<'info> {
     pub authority: Signer<'info>,
 }
 
-// ========================================================================================
-// ============================= UPDATE EPOCH SCORES (AI ORACLE) ==============================
-// ========================================================================================
+pub fn initialize_index_state_internal(
+    ctx: Context<InitializeIndexState>,
+    index_id: u8,
+    name: String,
+    initial_scores: [i64; NUM_FACTIONS],
+) -> Result<()> {
+    require!(
+        !name.is_empty() && name.len() <= MAX_INDEX_NAME_LENGTH,
+        ErrorCode::InvalidParameters
+    );
 
-/// AI Oracle posts additive score deltas for factions across all dimensions.
-/// Called every 15-30 min with per-dimension score increments and a reason in the tx memo.
-/// Scores accumulate over the epoch. Each dimension score is a u16.
-/// Composite score = sum of all 5 dimension scores per faction.
+    let (ranks, _) = compute_rankings(&initial_scores);
+    let index_state = &mut ctx.accounts.index_state;
+    index_state.bump = ctx.bumps.index_state;
+    index_state.index_id = index_id;
+    index_state.name = name.clone();
+    index_state.is_active = true;
+    index_state.latest_scores = initial_scores;
+    index_state.latest_ranks = ranks;
+    index_state.score_updates_count = 0;
+    index_state.last_update_ts = Clock::get()?.unix_timestamp;
+
+    emit!(IndexInitialized {
+        index_id,
+        name,
+        initial_scores,
+        initial_ranks: ranks,
+        timestamp: index_state.last_update_ts,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(index_id: u8)]
+pub struct InitializeIndexState<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = IndexState::LEN,
+        seeds = [INDEX_STATE_SEED, &[index_id]],
+        bump,
+    )]
+    pub index_state: Account<'info, IndexState>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn schedule_next_epoch_market_internal(
+    ctx: Context<ScheduleNextEpochMarket>,
+    next_index_id: u8,
+    question_hash: [u8; 32],
+) -> Result<()> {
+    require!(
+        ctx.accounts.index_state.index_id == next_index_id && ctx.accounts.index_state.is_active,
+        ErrorCode::InvalidIndexState
+    );
+
+    let epoch_config = &mut ctx.accounts.epoch_config;
+    let bootstrap_active_market =
+        epoch_config.last_epoch_start == 0 && epoch_config.active_question_hash == [0u8; 32];
+
+    if bootstrap_active_market {
+        epoch_config.active_index_id = next_index_id;
+        epoch_config.active_question_hash = question_hash;
+    }
+    epoch_config.next_index_id = next_index_id;
+    epoch_config.next_question_hash = question_hash;
+
+    emit!(EpochMarketScheduled {
+        active_index_id: epoch_config.active_index_id,
+        next_index_id,
+        next_question_hash: question_hash,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ScheduleNextEpochMarket<'info> {
+    #[account(
+        mut,
+        seeds = [EPOCH_CONFIG_SEED],
+        bump = epoch_config.bump,
+        constraint = epoch_config.oracle_authority == authority.key() @ ErrorCode::InvalidOracleAuthority,
+    )]
+    pub epoch_config: Account<'info, EpochConfig>,
+
+    #[account(
+        seeds = [INDEX_STATE_SEED, &[index_state.index_id]],
+        bump = index_state.bump,
+    )]
+    pub index_state: Account<'info, IndexState>,
+
+    pub authority: Signer<'info>,
+}
+
 pub fn update_epoch_scores_internal(
     ctx: Context<UpdateEpochScores>,
-    score_deltas: [[u16; NUM_DIMENSIONS]; NUM_FACTIONS],
+    score_deltas: [i64; NUM_FACTIONS],
 ) -> Result<()> {
-    let epoch_state = &mut ctx.accounts.epoch_state;
+    let index_state = &mut ctx.accounts.index_state;
     let clock = Clock::get()?;
 
-    require!(epoch_state.stage == 0, ErrorCode::EpochAlreadySettled);
-
-    msg!(
-        "🌍 [update_epoch_scores] Epoch {} score update #{}",
-        epoch_state.epoch_id,
-        epoch_state.score_updates_count + 1
-    );
-
-    for i in 0..NUM_FACTIONS {
-        let mut composite: u32 = 0;
-        for d in 0..NUM_DIMENSIONS {
-            epoch_state.faction_dimension_scores[i][d] =
-                epoch_state.faction_dimension_scores[i][d].saturating_add(score_deltas[i][d]);
-            composite += epoch_state.faction_dimension_scores[i][d] as u32;
-        }
-        // Saturate composite to u16::MAX if it overflows
-        epoch_state.faction_composite_scores[i] = if composite > u16::MAX as u32 {
-            u16::MAX
-        } else {
-            composite as u16
-        };
+    for (idx, delta) in score_deltas.iter().enumerate() {
+        index_state.latest_scores[idx] = index_state.latest_scores[idx]
+            .checked_add(*delta)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    epoch_state.score_updates_count += 1;
-    epoch_state.stage = 1; // scores posted, enables auto-settlement
-
-    msg!(
-        "   Composite scores after update: {:?}",
-        epoch_state.faction_composite_scores
-    );
+    let (ranks, _) = compute_rankings(&index_state.latest_scores);
+    index_state.latest_ranks = ranks;
+    index_state.score_updates_count = index_state
+        .score_updates_count
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    index_state.last_update_ts = clock.unix_timestamp;
 
     emit!(EpochScoresUpdated {
-        epoch_id: epoch_state.epoch_id,
+        index_id: index_state.index_id,
         score_deltas,
-        cumulative_dimension_scores: epoch_state.faction_dimension_scores,
-        composite_scores: epoch_state.faction_composite_scores,
-        update_number: epoch_state.score_updates_count,
+        cumulative_scores: index_state.latest_scores,
+        ranks,
+        update_number: index_state.score_updates_count,
         timestamp: clock.unix_timestamp,
     });
 
@@ -329,10 +368,10 @@ pub fn update_epoch_scores_internal(
 pub struct UpdateEpochScores<'info> {
     #[account(
         mut,
-        seeds = [EPOCH_STATE_SEED, &epoch_state.epoch_id.to_le_bytes()],
-        bump = epoch_state.bump,
+        seeds = [INDEX_STATE_SEED, &[index_state.index_id]],
+        bump = index_state.bump,
     )]
-    pub epoch_state: Account<'info, EpochState>,
+    pub index_state: Account<'info, IndexState>,
 
     #[account(
         seeds = [EPOCH_CONFIG_SEED],
@@ -344,27 +383,16 @@ pub struct UpdateEpochScores<'info> {
     pub authority: Signer<'info>,
 }
 
-// ========================================================================================
-// ============================= UPDATE RISK FACTOR ==============================
-// ========================================================================================
-
 pub fn update_risk_factor_internal(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
     require!(risk_factor <= 1000, ErrorCode::InvalidParameters);
 
     let old_risk_factor = ctx.accounts.epoch_config.risk_factor;
     ctx.accounts.epoch_config.risk_factor = risk_factor;
 
-    let clock = Clock::get()?;
-    msg!(
-        "🌍 [update_risk_factor] {} -> {}",
-        old_risk_factor,
-        risk_factor
-    );
-
     emit!(RiskFactorUpdated {
         old_risk_factor,
         new_risk_factor: risk_factor,
-        timestamp: clock.unix_timestamp,
+        timestamp: Clock::get()?.unix_timestamp,
     });
 
     Ok(())
@@ -383,27 +411,23 @@ pub struct UpdateRiskFactor<'info> {
     pub authority: Signer<'info>,
 }
 
-// ========================================================================================
-// ============================= SETTLE EPOCH (FALLBACK) ==============================
-// ========================================================================================
-
-/// Fallback settlement: anyone can call after epoch end_timestamp has passed and scores posted.
-/// Normally auto-settled in end_round_faction_rewards.
 pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     let epoch_config = &mut ctx.accounts.epoch_config;
     let epoch_state = &mut ctx.accounts.epoch_state;
+    let index_state = &ctx.accounts.index_state;
     let clock = Clock::get()?;
 
-    require!(epoch_state.stage == 1, ErrorCode::EpochNotActive);
+    require!(epoch_state.stage == 0, ErrorCode::EpochNotActive);
     require!(
         clock.unix_timestamp >= epoch_state.end_timestamp as i64,
         ErrorCode::EpochNotEnded
     );
+    require!(
+        index_state.index_id == epoch_state.index_id,
+        ErrorCode::InvalidIndexState
+    );
 
-    // Snapshot risk factor
     epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
-
-    // Calculate epoch mining pool: total_dogebtc_mined * risk_factor / 100
     let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
         .checked_mul(epoch_state.risk_factor_snapshot as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -412,31 +436,45 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     epoch_state.epoch_mining_pool =
         u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
-    // Compute faction reward pools (Model 5 + Top 3)
+    epoch_state.final_scores = index_state.latest_scores;
+    epoch_state.final_ranks = index_state.latest_ranks;
+
+    for faction_id in 0..NUM_FACTIONS {
+        let (direction, rank_delta) = resolve_direction_from_ranks(
+            epoch_state.start_ranks[faction_id],
+            epoch_state.final_ranks[faction_id],
+        );
+        epoch_state.rank_deltas[faction_id] = rank_delta;
+        epoch_state.resolved_directions[faction_id] = direction.as_index() as u8;
+    }
+
     compute_faction_reward_pools(epoch_state, epoch_config)?;
+    epoch_state.stage = 1;
 
-    epoch_state.stage = 2; // settled, claims open
-
-    // Auto-start next epoch
-    epoch_config.current_epoch_id += 1;
+    epoch_config.current_epoch_id = epoch_config
+        .current_epoch_id
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
-
-    msg!("🌍 [settle_epoch] Epoch {} settled:", epoch_state.epoch_id);
-    msg!(
-        "   Pool: {}, Faction pools: {:?}",
-        epoch_state.epoch_mining_pool,
-        epoch_state.faction_reward_pools
-    );
-    msg!("   Next epoch_id: {}", epoch_config.current_epoch_id);
+    epoch_config.active_index_id = epoch_config.next_index_id;
+    epoch_config.active_question_hash = epoch_config.next_question_hash;
+    epoch_config.next_index_id = epoch_config.active_index_id;
+    epoch_config.next_question_hash = epoch_config.active_question_hash;
 
     emit!(EpochSettled {
         epoch_id: epoch_state.epoch_id,
+        index_id: epoch_state.index_id,
+        question_hash: epoch_state.question_hash,
         total_dogebtc_mined: epoch_state.total_dogebtc_mined_in_epoch,
         risk_factor: epoch_state.risk_factor_snapshot,
         epoch_mining_pool: epoch_state.epoch_mining_pool,
-        faction_composite_scores: epoch_state.faction_composite_scores,
-        faction_dimension_scores: epoch_state.faction_dimension_scores,
-        total_score_weighted_bets: 0, // deprecated, kept for event compat
+        start_scores: epoch_state.start_scores,
+        final_scores: epoch_state.final_scores,
+        start_ranks: epoch_state.start_ranks,
+        final_ranks: epoch_state.final_ranks,
+        rank_deltas: epoch_state.rank_deltas,
+        resolved_directions: epoch_state.resolved_directions,
+        faction_reward_pools: epoch_state.faction_reward_pools,
         timestamp: clock.unix_timestamp,
     });
 
@@ -459,22 +497,16 @@ pub struct SettleEpoch<'info> {
     )]
     pub epoch_state: Account<'info, EpochState>,
 
+    #[account(
+        seeds = [INDEX_STATE_SEED, &[index_state.index_id]],
+        bump = index_state.bump,
+        constraint = index_state.index_id == epoch_state.index_id @ ErrorCode::InvalidIndexState,
+    )]
+    pub index_state: Account<'info, IndexState>,
+
     pub authority: Signer<'info>,
 }
 
-// ========================================================================================
-// ============================= CLAIM EPOCH REWARDS ==============================
-// ========================================================================================
-
-/// Claim epoch mining rewards for a player using parimutuel formula:
-/// reward = sum over factions { faction_reward_pools[i] * user_bets[i] / total_bets[i] }
-/// Rewards go through the refining system (add_to_total_claimable) so the 10% refining
-/// fee applies when user later withdraws, and other holders accrue from it.
-/// The user_epoch_bets account is CLOSED (rent returned to the player, not the cranker).
-///
-/// CRANKER-COMPATIBLE: Anyone can call this instruction. The `cranker` pays the tx fee,
-/// but rewards are credited to the actual `player` and rent is returned to the `player`.
-/// This enables automated bots to batch-claim epoch rewards for all participants.
 pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
     let epoch_state = &ctx.accounts.epoch_state;
     let user_epoch_bets = &ctx.accounts.user_epoch_bets;
@@ -482,18 +514,17 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
     let clock = Clock::get()?;
 
-    require!(epoch_state.stage == 2, ErrorCode::EpochNotSettled);
+    require!(epoch_state.stage == 1, ErrorCode::EpochNotSettled);
     require!(epoch_state.epoch_mining_pool > 0, ErrorCode::InvalidState);
 
-    // Calculate user reward: sum across all factions
-    let mut total_reward: u64 = 0;
-    for i in 0..NUM_FACTIONS {
-        let user_bet = user_epoch_bets.faction_bets[i];
-        let total_bet = epoch_state.faction_total_sol_bets[i];
-        let faction_pool = epoch_state.faction_reward_pools[i];
+    let mut total_reward = 0u64;
+    for faction_id in 0..NUM_FACTIONS {
+        let resolved_direction = epoch_state.resolved_directions[faction_id] as usize;
+        let user_bet = user_epoch_bets.direction_bets[faction_id][resolved_direction];
+        let total_bet = epoch_state.faction_direction_totals[faction_id][resolved_direction];
+        let faction_pool = epoch_state.faction_reward_pools[faction_id];
 
         if user_bet > 0 && total_bet > 0 && faction_pool > 0 {
-            // reward_from_faction = faction_pool * user_bet / total_bet
             let reward_u128 = (faction_pool as u128)
                 .checked_mul(user_bet as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -507,31 +538,18 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
     }
 
     if total_reward > 0 {
-        // Use refining system: accrues unrefined rewards, updates total_minebtc_claimable,
-        // syncs player unrefining_index. This ensures the 10% refining fee applies on withdrawal.
-        let accrued = helper::add_to_total_claimable(unrefined_rewards, player_data, total_reward)?;
-
-        // Track in player stats
+        helper::add_to_total_claimable(unrefined_rewards, player_data, total_reward)?;
         player_data.total_dogebtc_won = player_data
             .total_dogebtc_won
             .checked_add(total_reward)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-        msg!("🌍 [claim_epoch_rewards] Cranker {} claimed {} dogeBTC for player {} from epoch {} (accrued refining bonus: {})",
-            ctx.accounts.cranker.key(), total_reward, user_epoch_bets.owner, epoch_id, accrued);
-    } else {
-        msg!(
-            "🌍 [claim_epoch_rewards] Player {} has no rewards for epoch {}",
-            user_epoch_bets.owner,
-            epoch_id
-        );
     }
 
     emit!(EpochRewardsClaimed {
         epoch_id,
+        index_id: epoch_state.index_id,
         user: user_epoch_bets.owner,
         reward_amount: total_reward,
-        user_weighted_score: 0, // deprecated field, kept for event compat
         timestamp: clock.unix_timestamp,
     });
 
@@ -547,8 +565,6 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub epoch_state: Account<'info, EpochState>,
 
-    /// The player's epoch bets account. Seeded by the PLAYER's key, not the cranker's.
-    /// Closed on claim — rent returned to the player (not the cranker).
     #[account(
         mut,
         seeds = [USER_EPOCH_BETS_SEED, user_epoch_bets.owner.as_ref(), &epoch_id.to_le_bytes()],
@@ -557,7 +573,6 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub user_epoch_bets: Account<'info, UserEpochBets>,
 
-    /// The player's persistent data account. Rewards are credited here.
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED, user_epoch_bets.owner.as_ref()],
@@ -566,7 +581,6 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    /// Unrefined rewards tracker (for refining index system)
     #[account(
         mut,
         seeds = [UNREFINED_REWARDS_SEED],
@@ -574,8 +588,6 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
-    /// The actual player wallet — receives rent from closed user_epoch_bets account.
-    /// Does NOT need to sign. Validated via user_epoch_bets.owner match.
     /// CHECK: Validated by constraint that player.key() == user_epoch_bets.owner
     #[account(
         mut,
@@ -583,8 +595,6 @@ pub struct ClaimEpochRewards<'info> {
     )]
     pub player: AccountInfo<'info>,
 
-    /// Anyone can call — the cranker/bot that pays the transaction fee.
-    /// Does NOT need to be the player. Enables automated batch claiming.
     #[account(mut)]
     pub cranker: Signer<'info>,
 
