@@ -336,7 +336,25 @@ pub fn update_epoch_scores_internal(
     score_deltas: [i64; NUM_FACTIONS],
 ) -> Result<()> {
     let index_state = &mut ctx.accounts.index_state;
+    let epoch_state = &mut ctx.accounts.epoch_state;
+    let epoch_config = &ctx.accounts.epoch_config;
     let clock = Clock::get()?;
+
+    require!(epoch_config.is_active, ErrorCode::EpochNotActive);
+    require!(
+        epoch_state.epoch_id == epoch_config.current_epoch_id,
+        ErrorCode::InvalidState
+    );
+    require!(epoch_state.stage == 0, ErrorCode::EpochNotActive);
+    require!(
+        epoch_state.index_id == index_state.index_id
+            && epoch_state.index_id == epoch_config.active_index_id,
+        ErrorCode::InvalidIndexState
+    );
+    require!(
+        clock.unix_timestamp < epoch_state.end_timestamp as i64,
+        ErrorCode::EpochNotActive
+    );
 
     for (idx, delta) in score_deltas.iter().enumerate() {
         index_state.latest_scores[idx] = index_state.latest_scores[idx]
@@ -351,6 +369,8 @@ pub fn update_epoch_scores_internal(
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     index_state.last_update_ts = clock.unix_timestamp;
+    epoch_state.final_scores = index_state.latest_scores;
+    epoch_state.final_ranks = ranks;
 
     emit!(EpochScoresUpdated {
         index_id: index_state.index_id,
@@ -380,7 +400,53 @@ pub struct UpdateEpochScores<'info> {
     )]
     pub epoch_config: Account<'info, EpochConfig>,
 
+    #[account(
+        mut,
+        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
+        bump = epoch_state.bump,
+    )]
+    pub epoch_state: Account<'info, EpochState>,
+
     pub authority: Signer<'info>,
+}
+
+pub fn finalize_epoch_settlement(
+    epoch_config: &mut EpochConfig,
+    epoch_state: &mut EpochState,
+    clock: &Clock,
+) -> Result<()> {
+    epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
+    let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
+        .checked_mul(epoch_state.risk_factor_snapshot as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(100)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    epoch_state.epoch_mining_pool =
+        u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+    for faction_id in 0..NUM_FACTIONS {
+        let (direction, rank_delta) = resolve_direction_from_ranks(
+            epoch_state.start_ranks[faction_id],
+            epoch_state.final_ranks[faction_id],
+        );
+        epoch_state.rank_deltas[faction_id] = rank_delta;
+        epoch_state.resolved_directions[faction_id] = direction.as_index() as u8;
+    }
+
+    compute_faction_reward_pools(epoch_state, epoch_config)?;
+    epoch_state.stage = 1;
+
+    epoch_config.current_epoch_id = epoch_config
+        .current_epoch_id
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
+    epoch_config.active_index_id = epoch_config.next_index_id;
+    epoch_config.active_question_hash = epoch_config.next_question_hash;
+    epoch_config.next_index_id = epoch_config.active_index_id;
+    epoch_config.next_question_hash = epoch_config.active_question_hash;
+
+    Ok(())
 }
 
 pub fn update_risk_factor_internal(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
@@ -414,7 +480,6 @@ pub struct UpdateRiskFactor<'info> {
 pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     let epoch_config = &mut ctx.accounts.epoch_config;
     let epoch_state = &mut ctx.accounts.epoch_state;
-    let index_state = &ctx.accounts.index_state;
     let clock = Clock::get()?;
 
     require!(epoch_state.stage == 0, ErrorCode::EpochNotActive);
@@ -423,43 +488,11 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
         ErrorCode::EpochNotEnded
     );
     require!(
-        index_state.index_id == epoch_state.index_id,
+        ctx.accounts.index_state.index_id == epoch_state.index_id,
         ErrorCode::InvalidIndexState
     );
 
-    epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
-    let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
-        .checked_mul(epoch_state.risk_factor_snapshot as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    epoch_state.epoch_mining_pool =
-        u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-
-    epoch_state.final_scores = index_state.latest_scores;
-    epoch_state.final_ranks = index_state.latest_ranks;
-
-    for faction_id in 0..NUM_FACTIONS {
-        let (direction, rank_delta) = resolve_direction_from_ranks(
-            epoch_state.start_ranks[faction_id],
-            epoch_state.final_ranks[faction_id],
-        );
-        epoch_state.rank_deltas[faction_id] = rank_delta;
-        epoch_state.resolved_directions[faction_id] = direction.as_index() as u8;
-    }
-
-    compute_faction_reward_pools(epoch_state, epoch_config)?;
-    epoch_state.stage = 1;
-
-    epoch_config.current_epoch_id = epoch_config
-        .current_epoch_id
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
-    epoch_config.active_index_id = epoch_config.next_index_id;
-    epoch_config.active_question_hash = epoch_config.next_question_hash;
-    epoch_config.next_index_id = epoch_config.active_index_id;
-    epoch_config.next_question_hash = epoch_config.active_question_hash;
+    finalize_epoch_settlement(epoch_config, epoch_state, &clock)?;
 
     emit!(EpochSettled {
         epoch_id: epoch_state.epoch_id,
@@ -513,9 +546,17 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
     let player_data = &mut ctx.accounts.player_data;
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
     let clock = Clock::get()?;
+    let owner_key = user_epoch_bets.owner;
+
+    helper::validate_reward_claim_caller(
+        ctx.accounts.cranker.key(),
+        owner_key,
+        player_data.allow_bots_to_claim,
+    )?;
 
     require!(epoch_state.stage == 1, ErrorCode::EpochNotSettled);
     require!(epoch_state.epoch_mining_pool > 0, ErrorCode::InvalidState);
+    require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
 
     let mut total_reward = 0u64;
     for faction_id in 0..NUM_FACTIONS {
@@ -567,9 +608,9 @@ pub struct ClaimEpochRewards<'info> {
 
     #[account(
         mut,
+        close = cranker,
         seeds = [USER_EPOCH_BETS_SEED, user_epoch_bets.owner.as_ref(), &epoch_id.to_le_bytes()],
         bump = user_epoch_bets.bump,
-        close = player,
     )]
     pub user_epoch_bets: Account<'info, UserEpochBets>,
 

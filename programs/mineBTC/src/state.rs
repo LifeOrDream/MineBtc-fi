@@ -794,6 +794,9 @@ pub struct PlayerData {
     /// The user's wallet address
     pub owner: Pubkey,
 
+    /// Whether third-party bots may claim rewards on this player's behalf.
+    pub allow_bots_to_claim: bool,
+
     /// Referral code used by this player
     pub referral_code: Pubkey,
 
@@ -864,6 +867,7 @@ impl PlayerData {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
+        1 +     // allow_bots_to_claim
         32 +    // referral_code
         1 +     // faction_id
         8 +     // rounds_played

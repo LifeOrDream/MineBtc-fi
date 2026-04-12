@@ -57,6 +57,7 @@ pub fn internal_initialize_player(
     // Initialize player data
     player_data.owner = ctx.accounts.authority.key();
     player_data.bump = ctx.bumps.player_data;
+    player_data.allow_bots_to_claim = true;
     player_data.faction_id = faction_id;
 
     // Treat the system-program sentinel as "no referral" so users can register without
@@ -270,6 +271,21 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
         new_faction_id,
         timestamp: Clock::get()?.unix_timestamp,
     });
+
+    Ok(())
+}
+
+pub fn internal_set_player_claim_settings(
+    ctx: Context<SetPlayerClaimSettings>,
+    allow_bots_to_claim: bool,
+) -> Result<()> {
+    ctx.accounts.player_data.allow_bots_to_claim = allow_bots_to_claim;
+
+    msg!(
+        "✅ [set_player_claim_settings] owner={} allow_bots_to_claim={}",
+        ctx.accounts.user.key(),
+        allow_bots_to_claim
+    );
 
     Ok(())
 }
@@ -1055,6 +1071,13 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
+    let owner_key = ctx.accounts.user_wallet.key();
+
+    helper::validate_reward_claim_caller(
+        ctx.accounts.caller.key(),
+        owner_key,
+        player_data.allow_bots_to_claim,
+    )?;
 
     // Round should be completely over before user can claim rewards
     require!(game_session.stage == 2, ErrorCode::InvalidStage);
@@ -1062,6 +1085,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         round_id == user_bet.round_id && round_id == game_session.round_id,
         ErrorCode::InvalidRound
     );
+    require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
+    require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
 
     // Check which factions user bet on and calculate rewards.
     msg!(
@@ -1138,6 +1163,13 @@ pub fn internal_claim_autominer_rewards(
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
     let autominer_vault = &mut ctx.accounts.autominer_vault;
+    let owner_key = autominer_vault.owner;
+
+    helper::validate_reward_claim_caller(
+        ctx.accounts.caller.key(),
+        owner_key,
+        player_data.allow_bots_to_claim,
+    )?;
 
     // Round should be completely over
     require!(game_session.stage == 2, ErrorCode::InvalidStage);
@@ -1145,6 +1177,8 @@ pub fn internal_claim_autominer_rewards(
         round_id == user_bet.round_id && round_id == game_session.round_id,
         ErrorCode::InvalidRound
     );
+    require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
+    require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
 
     // Calculate rewards using helper function
     let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards(user_bet, game_session)?;
@@ -1541,8 +1575,8 @@ fn internal_process_bets<'info>(
         epoch_state.epoch_mining_pool = 0;
         epoch_state.start_scores = index_state.latest_scores;
         epoch_state.start_ranks = index_state.latest_ranks;
-        epoch_state.final_scores = [0i64; NUM_FACTIONS];
-        epoch_state.final_ranks = [0u8; NUM_FACTIONS];
+        epoch_state.final_scores = epoch_state.start_scores;
+        epoch_state.final_ranks = epoch_state.start_ranks;
         epoch_state.rank_deltas = [0i8; NUM_FACTIONS];
         epoch_state.resolved_directions =
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
@@ -2416,6 +2450,20 @@ pub struct JoinRoundBatch<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SetPlayerClaimSettings<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+}
+
+#[derive(Accounts)]
 #[instruction(round_id: u64)]
 pub struct ClaimRoundRewards<'info> {
     #[account(
@@ -2446,7 +2494,13 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    #[account(mut, close = user_wallet)]
+    #[account(
+        mut,
+        close = caller,
+        seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &round_id.to_le_bytes()],
+        bump = user_game_bet.bump,
+        constraint = user_game_bet.owner == user_wallet.key() @ ErrorCode::InvalidOwner
+    )]
     pub user_game_bet: Account<'info, UserGameBet>,
 
     /// CHECK: User whose bet this is
@@ -2454,6 +2508,7 @@ pub struct ClaimRoundRewards<'info> {
     pub user_wallet: UncheckedAccount<'info>,
 
     /// Caller (bot or user themselves)
+    #[account(mut)]
     pub caller: Signer<'info>,
 
     /// Optional DogeMetadata account for syncing mutation
@@ -2505,7 +2560,13 @@ pub struct ClaimAutominerRewards<'info> {
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     /// User game bet account - will be closed
-    #[account(mut, close = owner_wallet)]
+    #[account(
+        mut,
+        close = caller,
+        seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &round_id.to_le_bytes()],
+        bump = user_game_bet.bump,
+        constraint = user_game_bet.owner == autominer_vault.owner @ ErrorCode::InvalidOwner
+    )]
     pub user_game_bet: Account<'info, UserGameBet>,
 
     /// CHECK: Owner wallet to receive leftover SOL / rent
@@ -2513,6 +2574,7 @@ pub struct ClaimAutominerRewards<'info> {
     pub owner_wallet: UncheckedAccount<'info>,
 
     /// Caller (backend script)
+    #[account(mut)]
     pub caller: Signer<'info>,
 
     /// Optional DogeMetadata account for syncing mutation

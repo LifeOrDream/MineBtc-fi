@@ -522,46 +522,21 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
         let clock = Clock::get()?;
         if clock.unix_timestamp >= epoch_state.end_timestamp as i64 {
-            epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
-            let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
-                .checked_mul(epoch_state.risk_factor_snapshot as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(100)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            epoch_state.epoch_mining_pool =
-                u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-
             require!(
                 ctx.accounts.index_state.index_id == epoch_state.index_id,
                 ErrorCode::InvalidIndexState
             );
-            epoch_state.final_scores = ctx.accounts.index_state.latest_scores;
-            epoch_state.final_ranks = ctx.accounts.index_state.latest_ranks;
-            for faction_id in 0..NUM_FACTIONS {
-                let (direction, rank_delta) =
-                    crate::instructions::epoch::resolve_direction_from_ranks(
-                        epoch_state.start_ranks[faction_id],
-                        epoch_state.final_ranks[faction_id],
-                    );
-                epoch_state.rank_deltas[faction_id] = rank_delta;
-                epoch_state.resolved_directions[faction_id] = direction.as_index() as u8;
-            }
-            crate::instructions::epoch::compute_faction_reward_pools(epoch_state, epoch_config)?;
-
-            epoch_state.stage = 1;
+            crate::instructions::epoch::finalize_epoch_settlement(
+                epoch_config,
+                epoch_state,
+                &clock,
+            )?;
 
             emit!(EpochAutoSettled {
                 epoch_id: epoch_state.epoch_id,
                 index_id: epoch_state.index_id,
                 mining_pool: epoch_state.epoch_mining_pool,
             });
-
-            epoch_config.current_epoch_id += 1;
-            epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
-            epoch_config.active_index_id = epoch_config.next_index_id;
-            epoch_config.active_question_hash = epoch_config.next_question_hash;
-            epoch_config.next_index_id = epoch_config.active_index_id;
-            epoch_config.next_question_hash = epoch_config.active_question_hash;
         }
     }
 

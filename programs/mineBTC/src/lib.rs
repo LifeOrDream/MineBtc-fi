@@ -668,6 +668,14 @@ pub mod minebtc {
         user::internal_change_faction(ctx, new_faction_id)
     }
 
+    /// Opt in or out of letting third-party bots claim rewards on the user's behalf.
+    pub fn set_player_claim_settings(
+        ctx: Context<SetPlayerClaimSettings>,
+        allow_bots_to_claim: bool,
+    ) -> Result<()> {
+        user::internal_set_player_claim_settings(ctx, allow_bots_to_claim)
+    }
+
     /// Join a round by placing a faction-direction bet.
     pub fn join_round(
         ctx: Context<JoinRound>,

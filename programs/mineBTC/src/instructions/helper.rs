@@ -40,6 +40,18 @@ pub fn validate_referrer_rewards_account<'info>(
     Ok(())
 }
 
+pub fn validate_reward_claim_caller(
+    caller: Pubkey,
+    owner: Pubkey,
+    allow_bots_to_claim: bool,
+) -> Result<()> {
+    require!(
+        caller == owner || allow_bots_to_claim,
+        ErrorCode::PermissionlessRewardClaimsDisabled
+    );
+    Ok(())
+}
+
 // Helper function to transfer SOL to the program's sol_treasury PDA
 pub fn transfer_to_sol_treasury<'info>(
     from: &AccountInfo<'info>,
