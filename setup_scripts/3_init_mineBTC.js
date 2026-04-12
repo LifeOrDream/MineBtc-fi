@@ -271,7 +271,7 @@ async function main() {
     // 4. Initialize System Accounts (Referral + Buybacks)
     // Instruction: initialize_system_accounts() — no args
     // Creates 3 PDAs:
-    //   - SystemReferralRewards [seeds: "referral-rewards", system_program_id] — tracks system referrals
+    //   - SystemReferralRewards [seeds: "referral-rewards", system_program_id] — reserved sentinel for no-referral players
     //   - BuybacksAccount       [seeds: "buybacks"]                            — buyback SOL tracker
     //   - BuybacksSolVault      [seeds: "buybacks-sol-vault"]                  — 0-byte PDA for buyback SOL
     // Accounts: globalConfig, systemReferralRewards, buybacksAccount, buybacksSolVault, authority, systemProgram

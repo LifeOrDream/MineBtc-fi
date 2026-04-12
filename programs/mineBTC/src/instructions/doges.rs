@@ -128,26 +128,34 @@ pub fn int_batch_mint_doges<'info>(
         total_price
     );
 
-    // --- Referral commission: 10% of total_price sent directly to referrer's ReferralRewards PDA ---
+    // --- Referral commission: 10% of total_price sent directly to the canonical referrer's ReferralRewards PDA ---
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
+        helper::validate_referrer_rewards_account(
+            &player_data.referral_code,
+            ctx.accounts.referrer_rewards.as_ref(),
+        )?;
+
         let cut = total_price * 10 / 100; // 10% referral commission
-                                          // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
-        if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
-            // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
-            anchor_lang::system_program::transfer(
-                CpiContext::new(
-                    ctx.accounts.system_program.to_account_info(),
-                    anchor_lang::system_program::Transfer {
-                        from: ctx.accounts.user.to_account_info(),
-                        to: referrer_rewards.to_account_info(),
-                    },
-                ),
-                cut,
-            )?;
-            referrer_rewards.pending_sol_rewards += cut;
-            referrer_rewards.total_sol_earned += cut;
-        }
+        let referrer_rewards = ctx
+            .accounts
+            .referrer_rewards
+            .as_mut()
+            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
+
+        // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.user.to_account_info(),
+                    to: referrer_rewards.to_account_info(),
+                },
+            ),
+            cut,
+        )?;
+        referrer_rewards.pending_sol_rewards += cut;
+        referrer_rewards.total_sol_earned += cut;
         msg!(
             "   Referral commission: {} lamports sent to referrer PDA",
             cut
@@ -972,26 +980,34 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     )?;
     msg!("   Breed cost: {} SOL", breed_cost as f64 / 1e9);
 
-    // --- Referral commission: 10% of breed_cost sent directly to referrer's ReferralRewards PDA ---
+    // --- Referral commission: 10% of breed_cost sent directly to the canonical referrer's ReferralRewards PDA ---
     let has_referrer = ctx.accounts.player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
+        helper::validate_referrer_rewards_account(
+            &ctx.accounts.player_data.referral_code,
+            ctx.accounts.referrer_rewards.as_ref(),
+        )?;
+
         let cut = breed_cost * 10 / 100; // 10% referral commission
-                                         // Transfer SOL directly to referrer's ReferralRewards PDA and track stats
-        if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
-            // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
-            anchor_lang::system_program::transfer(
-                CpiContext::new(
-                    ctx.accounts.system_program.to_account_info(),
-                    anchor_lang::system_program::Transfer {
-                        from: ctx.accounts.user.to_account_info(),
-                        to: referrer_rewards.to_account_info(),
-                    },
-                ),
-                cut,
-            )?;
-            referrer_rewards.pending_sol_rewards += cut;
-            referrer_rewards.total_sol_earned += cut;
-        }
+        let referrer_rewards = ctx
+            .accounts
+            .referrer_rewards
+            .as_mut()
+            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
+
+        // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.user.to_account_info(),
+                    to: referrer_rewards.to_account_info(),
+                },
+            ),
+            cut,
+        )?;
+        referrer_rewards.pending_sol_rewards += cut;
+        referrer_rewards.total_sol_earned += cut;
         msg!(
             "   Breed referral commission: {} lamports sent to referrer PDA",
             cut
@@ -1413,7 +1429,8 @@ pub struct BatchMintDoge<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    /// Referrer rewards tracker (for stats). Optional — only needed if minter has a referrer.
+    /// Optional only when the minter has no referrer.
+    /// Referred minters must provide the canonical referrer's ReferralRewards PDA.
     #[account(
         mut,
         seeds = [REFERRAL_REWARDS_SEED, player_data.referral_code.as_ref()],
@@ -1753,7 +1770,8 @@ pub struct BreedDoge<'info> {
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
 
-    /// Referrer rewards tracker (for stats). Optional — only needed if breeder has a referrer.
+    /// Optional only when the breeder has no referrer.
+    /// Referred breeders must provide the canonical referrer's ReferralRewards PDA.
     #[account(
         mut,
         seeds = [REFERRAL_REWARDS_SEED, player_data.referral_code.as_ref()],

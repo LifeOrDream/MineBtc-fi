@@ -25,7 +25,10 @@ pub enum ErrorCode {
     #[msg("Referral pubkey cannot be the same as owner")]
     ReferralCannotBeSameAsOwner,
 
-    #[msg("Maximum referrals reached for this referral code (15 max)")]
+    #[msg("Referral rewards account required when referral code is provided")]
+    ReferralRewardsAccountRequired,
+
+    #[msg("Maximum referrals reached for this referral code (50 max)")]
     MaxReferralsReached,
 
     #[msg("Invalid parameters provided for operation")]

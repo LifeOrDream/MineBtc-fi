@@ -427,7 +427,7 @@ export async function createMintAccount_T22_TransferFeeOnly(
 }
 
 /**
- * Create a system referral account
+ * Create the system referral sentinel account used for players without a referrer
  * @param {Connection} connection Solana connection
  * @param {Program} program MineBTC program instance
  * @param {Object} wallet Wallet instance

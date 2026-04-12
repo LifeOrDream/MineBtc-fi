@@ -981,9 +981,15 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         base_claimable_amount as f64 / 1e6
     );
 
-    // Apply referral logic: user gets +1% bonus, referrer gets 3%
+    // Apply referral logic: user gets +1% bonus, referrer gets 3%.
+    // A real referral must resolve to the referrer's canonical ReferralRewards PDA.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (referral_bonus, referral_reward) = if has_referrer {
+        helper::validate_referrer_rewards_account(
+            &player_data.referral_code,
+            ctx.accounts.referrer_rewards.as_ref(),
+        )?;
+
         // User gets +1% bonus on their rewards
         let bonus = (base_claimable_amount * REFERRAL_BONUS_PCT) / 100;
         // Referrer gets 3% of user's base claimable amount
@@ -995,14 +1001,17 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         );
 
         // Add reward to referrer's pending minebtc rewards
-        if let Some(referrer_rewards) = &mut ctx.accounts.referrer_rewards {
-            referrer_rewards.pending_minebtc_rewards += reward;
-            referrer_rewards.total_minebtc_earned += reward;
-            msg!(
-                "     Added {} minebtc to referrer's rewards",
-                reward as f64 / 1e6
-            );
-        }
+        let referrer_rewards = ctx
+            .accounts
+            .referrer_rewards
+            .as_mut()
+            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
+        referrer_rewards.pending_minebtc_rewards += reward;
+        referrer_rewards.total_minebtc_earned += reward;
+        msg!(
+            "     Added {} minebtc to referrer's rewards",
+            reward as f64 / 1e6
+        );
         (bonus, reward)
     } else {
         (0, 0)
@@ -1145,6 +1154,7 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
         "     Pending MineBtc: {} minebtc",
         pending_minebtc as f64 / 1e6
     );
+    let mut claimed_sol = 0u64;
 
     // Transfer MineBtc if any
     if pending_minebtc > 0 {
@@ -1206,6 +1216,7 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
 
         // Update pending to reflect any remainder (if withdrawable < pending_sol)
         referral_rewards.pending_sol_rewards = pending_sol - transfer_amount;
+        claimed_sol = transfer_amount;
         msg!(
             "   ✓ Transferred {} SOL referral rewards from PDA",
             transfer_amount as f64 / 1e9
@@ -1222,7 +1233,7 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
         minebtc_amount: pending_minebtc,
-        sol_amount: pending_sol,
+        sol_amount: claimed_sol,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -1711,7 +1722,8 @@ pub struct WithdrawDbtcRewards<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    /// Optional referrer rewards account (if player has a referrer)
+    /// Optional only when the player has no referrer.
+    /// Referred players must provide the canonical referrer's ReferralRewards PDA.
     #[account(
         mut,
         seeds = [REFERRAL_REWARDS_SEED.as_ref(), player_data.referral_code.as_ref()],

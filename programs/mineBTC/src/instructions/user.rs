@@ -59,6 +59,10 @@ pub fn internal_initialize_player(
     player_data.bump = ctx.bumps.player_data;
     player_data.faction_id = faction_id;
 
+    // Treat the system-program sentinel as "no referral" so users can register without
+    // providing a real referral code, even if the client forwards the sentinel explicitly.
+    let referral_code = referral_code.filter(|code| *code != ctx.accounts.system_program.key());
+
     // Handle referral code logic
     let referrer_pubkey = if let Some(ref_code) = referral_code {
         msg!("     Referral code provided: {}", ref_code);
@@ -67,23 +71,26 @@ pub fn internal_initialize_player(
             ErrorCode::ReferralCannotBeSameAsOwner
         );
 
-        // Update referrer's referral count if referrer_rewards account is provided
-        if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
-            require!(
-                referrer_rewards.owner == ref_code,
-                ErrorCode::InvalidReferralAccount
-            );
-            require!(
-                referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
-                ErrorCode::MaxReferralsReached
-            );
-            referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
-            msg!(
-                "     Referrer's referral count: {}/{}",
-                referrer_rewards.referrals_count,
-                stake::MAX_REFERRALS_PER_CODE
-            );
-        }
+        helper::validate_referrer_rewards_account(
+            &ref_code,
+            ctx.accounts.referrer_rewards.as_ref(),
+        )?;
+
+        let referrer_rewards = ctx
+            .accounts
+            .referrer_rewards
+            .as_mut()
+            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
+        require!(
+            referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
+            ErrorCode::MaxReferralsReached
+        );
+        referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+        msg!(
+            "     Referrer's referral count: {}/{}",
+            referrer_rewards.referrals_count,
+            stake::MAX_REFERRALS_PER_CODE
+        );
 
         // Set player's referral code
         player_data.referral_code = ref_code;
@@ -2262,8 +2269,9 @@ pub struct InitializePlayer<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// Optional: Referrer's referral rewards account (if referral code is provided)
-    /// CHECK: Validated manually that owner matches referral_code pubkey
+    /// Optional only when no referral code is supplied.
+    /// If a referral code is provided, this account must be the canonical referrer's
+    /// ReferralRewards PDA and is validated in the instruction handler.
     #[account(mut)]
     pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
 
