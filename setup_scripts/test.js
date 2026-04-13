@@ -11,7 +11,7 @@ import fs from "fs";
 import path from "path";
 
 // Get the current file's directory
-const __dirname = new URL(".", import.meta.url).pathname;
+const __dirname = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 // Load configuration
 const configPath = path.resolve(__dirname, "./config.json");

@@ -4,11 +4,12 @@ const { AnchorProvider, BN, Program, setProvider, web3, Wallet } = pkg;
 import { SystemProgram } from "@solana/web3.js";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import * as anchor_spl from "@solana/spl-token";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
 // Get the current file's directory
-const __dirname = new URL(".", import.meta.url).pathname;
+const __dirname = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 // Load configuration
 const configPath = path.resolve(__dirname, "./config.json");
@@ -94,7 +95,10 @@ const walletKeypair = (() => {
 
 const gameKeypair = (() => {
   try {
-    const gameKeypairPath = path.resolve(__dirname, "../game_keypair.json");
+    const gameKeypairPath = path.resolve(
+      __dirname,
+      config.deployment.paths.game_keypair || "../game_keypair.json"
+    );
     return Keypair.fromSecretKey(
       new Uint8Array(JSON.parse(fs.readFileSync(gameKeypairPath, "utf-8")))
     );
@@ -113,16 +117,16 @@ const gameKeypair = (() => {
 
 // Create wallet interface
 const wallet = {
-    publicKey: walletKeypair.publicKey,
-    signTransaction: async (tx) => {
-        tx.partialSign(walletKeypair);
-        return tx;
-    },
-    signAllTransactions: async (txs) => {
+  publicKey: walletKeypair.publicKey,
+  signTransaction: async (tx) => {
+    tx.partialSign(walletKeypair);
+    return tx;
+  },
+  signAllTransactions: async (txs) => {
     return txs.map((tx) => {
-            tx.partialSign(walletKeypair);
-            return tx;
-        });
+      tx.partialSign(walletKeypair);
+      return tx;
+    });
   },
 };
 
@@ -134,20 +138,73 @@ setProvider(provider);
 
 // Helper function to save deployment data
 function saveDeploymentData() {
-    fs.writeFileSync(deploymentPath, JSON.stringify(deploymentFile, null, 2));
+  fs.writeFileSync(deploymentPath, JSON.stringify(deploymentFile, null, 2));
   console.log(COLOR_SUCCESS, "✅ Deployment file updated");
 }
 
 async function getSolanaBalance(pubkey) {
-    try {
-        return await connection.getBalance(pubkey);
-    } catch (error) {
+  try {
+    return await connection.getBalance(pubkey);
+  } catch (error) {
     console.error(
       COLOR_ERROR,
       `❌ Error getting SOL balance: ${error.message}`
     );
-        throw error;
-    }
+    throw error;
+  }
+}
+
+function toByteArray32FromHex(hexString) {
+  const sanitized = hexString.startsWith("0x")
+    ? hexString.slice(2)
+    : hexString;
+  if (!/^[0-9a-fA-F]{64}$/.test(sanitized)) {
+    throw new Error(
+      `initial_question_hash_hex must be 32 bytes / 64 hex chars, got: ${hexString}`
+    );
+  }
+  return Array.from(Buffer.from(sanitized, "hex"));
+}
+
+function deriveQuestionHashFromConfig() {
+  if (config.epoch?.initial_question_hash_hex) {
+    return toByteArray32FromHex(config.epoch.initial_question_hash_hex);
+  }
+
+  const questionSource =
+    config.epoch?.initial_question ||
+    config.epoch?.initial_index_name ||
+    "Will country rankings move up or down this epoch?";
+  return Array.from(
+    crypto.createHash("sha256").update(questionSource).digest()
+  );
+}
+
+function getInitialIndexConfig() {
+  const initialIndexId = config.epoch?.initial_index_id ?? 0;
+  const initialIndexName =
+    config.epoch?.initial_index_name ?? "Geopolitical Risk Index";
+  const initialScores = Array.isArray(config.epoch?.initial_scores)
+    ? config.epoch.initial_scores
+    : Array(config.factions.length).fill(0);
+
+  if (config.factions.length !== 12) {
+    throw new Error(
+      `Expected exactly 12 factions for epoch index initialization, found ${config.factions.length}`
+    );
+  }
+  if (initialScores.length !== 12) {
+    throw new Error(
+      `epoch.initial_scores must contain exactly 12 values, found ${initialScores.length}`
+    );
+  }
+
+  return {
+    indexId: initialIndexId,
+    name: initialIndexName,
+    initialScores: initialScores.map((score) => Number(score)),
+    questionHash: deriveQuestionHashFromConfig(),
+  };
 }
 
 // ==================== [ MAIN SCRIPT ] ====================
@@ -251,6 +308,7 @@ async function main() {
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
     await initializeMinebtcProgram(minebtcProgram);
+    return;
 
     // 2. Set Raydium Pool State
     // Instruction: set_raydium_pool_state(raydium_pool_state: Pubkey)
@@ -287,12 +345,10 @@ async function main() {
     //   new_minebtc_same_faction_pct: Option<u8>,    — % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
     //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
-    //   new_minebtc_transfer_fee_bps: Option<u16>,   — must match the live Token-2022 mint fee
-    //   new_minebtc_max_transfer_fee: Option<u64>,   — raw base units; must match the live mint max fee
     //   change_faction_fee: Option<u64>,             — SOL cost to change faction (lamports)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
-    // Accounts: globalConfig, minebtcMint, authority, systemProgram
+    // Accounts: globalConfig, mineBtcMining, authority, systemProgram
     await updateFees(minebtcProgram, {
       // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
         newProtocolFeePct: 15, // 15,
@@ -306,13 +362,11 @@ async function main() {
         newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
 
         newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
-        newMinebtcTransferFeeBps: config.token.burn_tax_bps, // assert live mint matches config
-        newMinebtcMaxTransferFeeTokens: config.token.max_burn_amount, // whole-token cap, converted to base units inside helper
 
         // split 50:50 between sol_treasury and fee_recipient (as WSOL)
         changeFactionFee: 100000000, // 0.1 SOL
 
-        snapshot_interval: 10 * 60, // 10 minutes between price snapshots
+        snapshotInterval: 10 * 60, // 10 minutes between price snapshots
     });
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
@@ -457,6 +511,15 @@ async function main() {
     // and rank-weighted epoch reward splits
     // Accounts: epochConfig, globalConfig, authority, systemProgram
     await initializeEpochConfig(minebtcProgram);
+
+    // 18. Initialize bootstrap index state for epoch markets
+    // Without an on-chain IndexState for active_index_id=0, join_round / autominer flows
+    // will fail because they always pass the active index account.
+    await initializeBootstrapIndexState(minebtcProgram);
+
+    // 19. Schedule the initial epoch market using the oracle wallet so the first epoch
+    // has a non-empty active market/question hash before gameplay starts.
+    await scheduleInitialEpochMarket(minebtcProgram);
 
     // Print completion summary
     // printCompletionSummary();
@@ -2297,19 +2360,9 @@ async function updateFees(minebtcProgram, feeConfig) {
     const globalConfigPDA = new PublicKey(
       deploymentFile.minebtc_program_initialized.globalConfig_address
     );
-    if (!DOGEBTC_TOKEN_MINT) {
-      throw new Error(
-        "DOGE_BTC mint address required for update_fees fee-sync validation"
-      );
-    }
-    const minebtcMint = DOGEBTC_TOKEN_MINT;
-    const expectedMaxTransferFeeTokens =
-      feeConfig?.newMinebtcMaxTransferFeeTokens ?? config.token.max_burn_amount;
-    const expectedMaxTransferFeeBaseUnits = new BN(
-      (
-        BigInt(expectedMaxTransferFeeTokens) *
-        10n ** BigInt(config.token.decimals)
-      ).toString()
+    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("mine-btc-mining")],
+      minebtcProgram.programId
     );
 
     // Get current config
@@ -2371,14 +2424,14 @@ async function updateFees(minebtcProgram, feeConfig) {
       newMinebtcSameFactionPct: feeConfig?.newMinebtcSameFactionPct ?? null,
       newMinebtcMotherlodePct: feeConfig?.newMinebtcMotherlodePct ?? null,
       newRefiningFee: feeConfig?.newRefiningFee ?? null,
-      newMinebtcTransferFeeBps:
-        feeConfig?.newMinebtcTransferFeeBps ?? config.token.burn_tax_bps,
-      newMinebtcMaxTransferFeeBaseUnits: expectedMaxTransferFeeBaseUnits,
       changeFactionFee: feeConfig?.changeFactionFee
         ? new BN(feeConfig.changeFactionFee)
         : null,
-      snapshotInterval: feeConfig?.snapshotInterval
-        ? new BN(feeConfig.snapshotInterval)
+      snapshotInterval:
+        (feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval) != null
+          ? new BN(
+              feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval
+            )
         : null,
     };
 
@@ -2418,10 +2471,6 @@ async function updateFees(minebtcProgram, feeConfig) {
         COLOR_INFO,
         `     Refining fee: ${feeParams.newRefiningFee}%`
       );
-    console.log(
-      COLOR_INFO,
-      `     Transfer fee sync: ${feeParams.newMinebtcTransferFeeBps / 100}% / ${expectedMaxTransferFeeTokens.toLocaleString()} tokens (${feeParams.newMinebtcMaxTransferFeeBaseUnits.toString()} base units)`
-    );
     if (feeParams.changeFactionFee !== null)
       console.log(
         COLOR_INFO,
@@ -2437,6 +2486,10 @@ async function updateFees(minebtcProgram, feeConfig) {
       COLOR_INFO,
       `   Global Config PDA: ${globalConfigPDA.toString()}`
     );
+    console.log(
+      COLOR_INFO,
+      `   MineBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
+    );
     console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
 
     // Build and send transaction
@@ -2450,14 +2503,12 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcSameFactionPct,
         feeParams.newMinebtcMotherlodePct,
         feeParams.newRefiningFee,
-        feeParams.newMinebtcTransferFeeBps,
-        feeParams.newMinebtcMaxTransferFeeBaseUnits,
         feeParams.changeFactionFee,
         feeParams.snapshotInterval
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        minebtcMint: minebtcMint,
+        mineBtcMining: mineBtcMiningPDA,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -2802,6 +2853,160 @@ async function initializeEpochConfig(minebtcProgram) {
       throw error;
     }
   }
+}
+
+async function initializeBootstrapIndexState(minebtcProgram) {
+  if (deploymentFile.epoch_index_state_initialized) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Bootstrap epoch index state already initialized. Skipping..."
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n================ [ INITIALIZING BOOTSTRAP INDEX STATE ] ================"
+  );
+
+  const { indexId, name, initialScores } = getInitialIndexConfig();
+  const [globalConfigPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global-config")],
+    minebtcProgram.programId
+  );
+  const [indexStatePda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("index-state"), Buffer.from([indexId])],
+    minebtcProgram.programId
+  );
+
+  try {
+    const existing = await minebtcProgram.account.indexState.fetch(indexStatePda);
+    console.log(
+      COLOR_INFO,
+      `ℹ️ Index state ${existing.indexId} already exists at ${indexStatePda.toBase58()}. Skipping...`
+    );
+    deploymentFile.epoch_index_state_initialized = {
+      index_id: indexId,
+      name,
+      index_state_pda: indexStatePda.toBase58(),
+      status: "already_exists",
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+    return;
+  } catch (_) {
+    // continue and create
+  }
+
+  console.log(COLOR_INFO, `🔑 Index State PDA: ${indexStatePda.toBase58()}`);
+  console.log(COLOR_INFO, `📊 Index ID: ${indexId}`);
+  console.log(COLOR_INFO, `📝 Name: ${name}`);
+  console.log(COLOR_INFO, `📈 Initial Scores: ${initialScores.join(", ")}`);
+
+  const tx = await minebtcProgram.methods
+    .initializeIndexState(indexId, name, initialScores)
+    .accounts({
+      indexState: indexStatePda,
+      globalConfig: globalConfigPda,
+      authority: wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+
+  console.log(COLOR_SUCCESS, "✅ Bootstrap index state initialized!");
+  console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+  deploymentFile.epoch_index_state_initialized = {
+    index_id: indexId,
+    name,
+    index_state_pda: indexStatePda.toBase58(),
+    initial_scores: initialScores,
+    tx_signature: tx,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
+}
+
+async function scheduleInitialEpochMarket(minebtcProgram) {
+  if (deploymentFile.epoch_market_scheduled) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Initial epoch market already scheduled. Skipping..."
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n================ [ SCHEDULING INITIAL EPOCH MARKET ] ================"
+  );
+
+  const { indexId, questionHash } = getInitialIndexConfig();
+  const [epochConfigPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("epoch-config")],
+    minebtcProgram.programId
+  );
+  const [indexStatePda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("index-state"), Buffer.from([indexId])],
+    minebtcProgram.programId
+  );
+
+  const epochConfig = await minebtcProgram.account.epochConfig.fetch(epochConfigPda);
+  const activeQuestionHash = Array.from(epochConfig.activeQuestionHash || []);
+  const nextQuestionHash = Array.from(epochConfig.nextQuestionHash || []);
+  const hasAnyScheduledHash =
+    activeQuestionHash.some((byte) => byte !== 0) ||
+    nextQuestionHash.some((byte) => byte !== 0);
+
+  if (
+    hasAnyScheduledHash &&
+    Number(epochConfig.activeIndexId) === indexId &&
+    activeQuestionHash.length === 32
+  ) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Epoch market already scheduled on-chain. Skipping..."
+    );
+    deploymentFile.epoch_market_scheduled = {
+      index_id: indexId,
+      epoch_config_pda: epochConfigPda.toBase58(),
+      index_state_pda: indexStatePda.toBase58(),
+      active_question_hash: activeQuestionHash,
+      status: "already_exists",
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+    return;
+  }
+
+  console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
+  console.log(COLOR_INFO, `🔑 Index State PDA: ${indexStatePda.toBase58()}`);
+  console.log(COLOR_INFO, `🔑 Oracle Authority: ${gameKeypair.publicKey.toBase58()}`);
+  console.log(COLOR_INFO, `🧠 Question Hash: ${Buffer.from(questionHash).toString("hex")}`);
+
+  const tx = await minebtcProgram.methods
+    .scheduleNextEpochMarket(indexId, questionHash)
+    .accounts({
+      epochConfig: epochConfigPda,
+      indexState: indexStatePda,
+      authority: gameKeypair.publicKey,
+    })
+    .signers([gameKeypair])
+    .rpc();
+
+  console.log(COLOR_SUCCESS, "✅ Initial epoch market scheduled!");
+  console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+  deploymentFile.epoch_market_scheduled = {
+    index_id: indexId,
+    epoch_config_pda: epochConfigPda.toBase58(),
+    index_state_pda: indexStatePda.toBase58(),
+    oracle_authority: gameKeypair.publicKey.toBase58(),
+    question_hash: questionHash,
+    tx_signature: tx,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
 }
 
 function printCompletionSummary() {
