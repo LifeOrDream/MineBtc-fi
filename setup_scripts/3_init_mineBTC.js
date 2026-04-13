@@ -308,7 +308,6 @@ async function main() {
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
     await initializeMinebtcProgram(minebtcProgram);
-    return;
 
     // 2. Set Raydium Pool State
     // Instruction: set_raydium_pool_state(raydium_pool_state: Pubkey)
@@ -366,7 +365,7 @@ async function main() {
         // split 50:50 between sol_treasury and fee_recipient (as WSOL)
         changeFactionFee: 100000000, // 0.1 SOL
 
-        snapshotInterval: 10 * 60, // 10 minutes between price snapshots
+        snapshotInterval: 5 * 60, // 5 minutes between price snapshots
     });
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
@@ -401,7 +400,6 @@ async function main() {
     //           lpMint, liquidityCustodian, liquidityCustodianAuthority, authority,
     //           systemProgram, token2022Program, tokenProgram, rent
     await initializeCustodianAccounts(minebtcProgram);
-    // return;
 
     // 9. Initialize DogeConfig
     // Instruction: initialize_doge_config(base_price: u64, curve_a: u64, max_supply: u64)
@@ -2904,7 +2902,7 @@ async function initializeBootstrapIndexState(minebtcProgram) {
   console.log(COLOR_INFO, `📈 Initial Scores: ${initialScores.join(", ")}`);
 
   const tx = await minebtcProgram.methods
-    .initializeIndexState(indexId, name, initialScores)
+    .initializeIndexState(indexId, name, initialScores.map((s) => new BN(s)))
     .accounts({
       indexState: indexStatePda,
       globalConfig: globalConfigPda,
