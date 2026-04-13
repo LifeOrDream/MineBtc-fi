@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { execSync, spawnSync } from "child_process";
+import { execSync } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Keypair, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
@@ -15,6 +16,18 @@ const RAYDIUM_DIR = path.join(ROOT_DIR, "raydium");
 const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "devnet-wallet-keypair.json");
 const ANCHOR_TOML_PATH = path.join(ROOT_DIR, "Anchor.toml");
 const DEPLOYMENTS_DIR = path.join(__dirname, "deployments");
+
+function shellEscape(value) {
+  return `"${String(value).replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function stageForSolanaCli(sourcePath, stagedName = path.basename(sourcePath)) {
+  const stagingDir = path.join(os.tmpdir(), "minebtc-solana-cli");
+  ensureDirectoryExists(stagingDir);
+  const stagedPath = path.join(stagingDir, stagedName);
+  fs.copyFileSync(sourcePath, stagedPath);
+  return stagedPath;
+}
 
 // Program configurations
 // Note: `name` is the anchor program name (lowercase, matches declare_id! and
@@ -40,26 +53,17 @@ const PROGRAMS = {
 // Utility functions
 function runCommand(command, cwd = ROOT_DIR) {
   console.log(`\x1b[36m🔧 Running: ${command}\x1b[0m`);
-
-  // Parse command and args
-  const parts = command.split(" ");
-  const cmd = parts[0];
-  const args = parts.slice(1);
-
-  const result = spawnSync(cmd, args, {
-    cwd,
-    stdio: "inherit",
-    shell: true,
-  });
-
-  if (result.status !== 0) {
-    console.error(
-      `\x1b[31m❌ Command failed with exit code ${result.status}: ${command}\x1b[0m`
-    );
-    throw new Error(`Command failed: ${command}`);
+  try {
+    execSync(command, {
+      cwd,
+      stdio: "inherit",
+      shell: true,
+    });
+  } catch (error) {
+    console.error(`\x1b[31m❌ Command failed: ${command}\x1b[0m`);
+    throw error;
   }
-
-  return ""; // Success
+  return "";
 }
 
 function runCommandWithOutput(command, cwd = ROOT_DIR) {
@@ -235,7 +239,9 @@ function generateOrReadKeypair(outputPath) {
 
   console.log(`\x1b[33m🔑 Generating new keypair: ${outputPath}\x1b[0m`);
   runCommand(
-    `solana-keygen new -o ${outputPath} --force --no-bip39-passphrase`
+    `solana-keygen new -o ${shellEscape(
+      outputPath
+    )} --force --no-bip39-passphrase`
   );
 
   const keypairData = JSON.parse(fs.readFileSync(outputPath, "utf8"));
@@ -488,7 +494,26 @@ function deployProgram(programConfig, walletPath) {
   // Quote the URL to handle query parameters properly
   // Add priority fees for mainnet to ensure transactions land
   const priorityFee = cluster === "mainnet" ? "--with-compute-unit-price 100000 --max-sign-attempts 50" : "";
-  const deployCommand = `solana program deploy ${programConfig.soPath} --program-id ${programConfig.keypairPath} --keypair ${walletPath} --url "${clusterUrl}" ${priorityFee}`;
+  const stagedSoPath = stageForSolanaCli(
+    programConfig.soPath,
+    `${programConfig.name}.so`
+  );
+  const stagedProgramKeypairPath = stageForSolanaCli(
+    programConfig.keypairPath,
+    `${programConfig.name}-keypair.json`
+  );
+  const stagedWalletPath = stageForSolanaCli(
+    walletPath,
+    path.basename(walletPath)
+  );
+
+  const deployCommand = `solana program deploy ${shellEscape(
+    stagedSoPath
+  )} --program-id ${shellEscape(
+    stagedProgramKeypairPath
+  )} --keypair ${shellEscape(stagedWalletPath)} --url ${shellEscape(
+    clusterUrl
+  )} ${priorityFee}`;
 
   try {
     runCommand(deployCommand);
@@ -687,7 +712,7 @@ async function main() {
     console.log(`\x1b[33m\n🔗 Next Steps:\x1b[0m`);
     console.log(`\x1b[33m  1. Run 1_init_mdoge_token.js\x1b[0m`);
     console.log(`\x1b[33m  2. Run 2_init_mdoge_SOL_pool.js\x1b[0m`);
-    console.log(`\x1b[33m  3. Run 4_init_minebtc.js\x1b[0m`);
+    console.log(`\x1b[33m  3. Run 3_init_mineBTC.js\x1b[0m`);
   } catch (error) {
     console.error(`\x1b[31m\n💥 DEPLOYMENT FAILED! 💥\x1b[0m`);
     console.error(`\x1b[31m${error.message}\x1b[0m`);
@@ -696,7 +721,7 @@ async function main() {
 }
 
 // Run the deployment if this script is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main();
 }
 
