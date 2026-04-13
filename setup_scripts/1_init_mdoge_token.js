@@ -214,8 +214,20 @@ function validateConfiguration() {
   ) {
     errors.push("Burn tax basis points must be between 0 and 10000 (0-100%)");
   }
-  if (!config.token.max_burn_amount || config.token.max_burn_amount <= 0) {
-    errors.push("Max burn amount must be greater than 0");
+  if (
+    config.token.max_burn_amount === undefined ||
+    config.token.max_burn_amount < 0 ||
+    !Number.isInteger(config.token.max_burn_amount)
+  ) {
+    errors.push(
+      "Max burn amount must be a non-negative whole-token value (not base units)"
+    );
+  }
+  if (
+    config.token.burn_tax_bps > 0 &&
+    config.token.max_burn_amount === 0
+  ) {
+    errors.push("Max burn amount must be greater than 0 when burn tax is enabled");
   }
 
   // Network validation
@@ -480,6 +492,7 @@ async function createMintAccountTx(
   const decimals = config.token.decimals;
   const burnTaxBps = config.token.burn_tax_bps;
   const maxBurnAmount = config.token.max_burn_amount;
+  const maxBurnBaseUnits = BigInt(maxBurnAmount) * 10n ** BigInt(decimals);
 
   // Authority configuration
   const mintAuthority = deployer.publicKey;
@@ -508,6 +521,10 @@ async function createMintAccountTx(
   console.log(
     "\x1b[36m%s\x1b[0m",
     `   • Max Burn: ${maxBurnAmount.toLocaleString()} tokens`
+  );
+  console.log(
+    "\x1b[36m%s\x1b[0m",
+    `   • Max Burn (base units): ${maxBurnBaseUnits.toString()}`
   );
   console.log(
     "\x1b[36m%s\x1b[0m",
