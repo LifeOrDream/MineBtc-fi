@@ -790,9 +790,41 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
     msg!("   Caller: {}", ctx.accounts.caller.key());
+    require!(
+        ctx.accounts.system_program.key() == anchor_lang::system_program::ID,
+        ErrorCode::InvalidProgramId
+    );
+    let (expected_sol_treasury, _) =
+        Pubkey::find_program_address(&[SOL_TREASURY_SEED.as_ref()], &crate::ID);
+    require!(
+        ctx.accounts.sol_treasury.key() == expected_sol_treasury,
+        ErrorCode::InvalidAccount
+    );
 
     let global_state = &ctx.accounts.global_game_state;
-    let global_config = &ctx.accounts.global_config;
+    let global_config = {
+        let global_config_info = ctx.accounts.global_config.to_account_info();
+        require!(
+            global_config_info.owner == &crate::ID,
+            ErrorCode::InvalidAccount
+        );
+        let global_config_data = global_config_info.try_borrow_data()?;
+        let mut global_config_slice: &[u8] = &global_config_data;
+        GlobalConfig::try_deserialize(&mut global_config_slice)?
+    };
+    let index_state = {
+        let index_state_info = ctx.accounts.index_state.to_account_info();
+        require!(index_state_info.owner == &crate::ID, ErrorCode::InvalidAccount);
+        let index_state_data = index_state_info.try_borrow_data()?;
+        let mut index_state_slice: &[u8] = &index_state_data;
+        let index_state = IndexState::try_deserialize(&mut index_state_slice)?;
+        require!(
+            index_state.index_id == ctx.accounts.epoch_config.active_index_id,
+            ErrorCode::InvalidIndexState
+        );
+        require!(index_state.is_active, ErrorCode::InvalidIndexState);
+        index_state
+    };
     let clock = Clock::get()?;
 
     // Read values before mutable borrow
@@ -953,7 +985,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     // Process all bets at once
     internal_process_bets(
         &ctx.accounts.global_game_state,
-        &ctx.accounts.global_config,
+        &global_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
         &mut ctx.accounts.user_game_bet,
@@ -969,7 +1001,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
-        &ctx.accounts.index_state,
+        &index_state,
         &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
@@ -1511,7 +1543,7 @@ fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)>
 #[allow(clippy::too_many_arguments)]
 fn internal_process_bets<'info>(
     global_state: &Account<'info, GlobalGameSate>,
-    global_config: &Account<'info, GlobalConfig>,
+    global_config: &GlobalConfig,
     player_data: &mut Account<'info, PlayerData>,
     game_session: &mut Account<'info, GameSession>,
     user_game_bet: &mut Account<'info, UserGameBet>,
@@ -1527,7 +1559,7 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
-    index_state: &Account<'info, IndexState>,
+    index_state: &IndexState,
     epoch_config: &mut Account<'info, EpochConfig>,
     epoch_state: &mut Account<'info, EpochState>,
     epoch_state_bump: u8,
@@ -2058,10 +2090,10 @@ fn validate_points_percentage_limit(
 
 /// Generate faction-direction bet types from the autominer configuration.
 /// Returns vector of bet types to place
-fn make_bets_vec<'info>(
+fn make_bets_vec(
     factions_config: Option<FactionsConfig>,
     clock: &Clock,
-    global_config: &Account<'info, GlobalConfig>,
+    global_config: &GlobalConfig,
 ) -> Result<Vec<BetType>> {
     let mut bet_types = Vec::new();
 
@@ -2235,20 +2267,20 @@ pub struct JoinRound<'info> {
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
         bump = player_data.bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     /// GameSession PDA for the current round (must be initialized by crank function)
     #[account(
@@ -2346,20 +2378,20 @@ pub struct JoinRoundBatch<'info> {
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
         bump = player_data.bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     /// GameSession PDA for the current round
     #[account(
@@ -2471,20 +2503,20 @@ pub struct ClaimRoundRewards<'info> {
         seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
         bump = player_data.bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
     #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     /// Global game state (for current round entropy)
     #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
@@ -2501,7 +2533,7 @@ pub struct ClaimRoundRewards<'info> {
         bump = user_game_bet.bump,
         constraint = user_game_bet.owner == user_wallet.key() @ ErrorCode::InvalidOwner
     )]
-    pub user_game_bet: Account<'info, UserGameBet>,
+    pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: User whose bet this is
     #[account(mut)]
@@ -2528,7 +2560,7 @@ pub struct ClaimAutominerRewards<'info> {
         seeds = [AUTOMINER_VAULT_SEED.as_ref(), autominer_vault.owner.as_ref()],
         bump = autominer_vault.vault_bump
     )]
-    pub autominer_vault: Account<'info, AutominerVault>,
+    pub autominer_vault: Box<Account<'info, AutominerVault>>,
 
     /// CHECK: Global autominer custody PDA holding SOL deposits
     #[account(
@@ -2543,13 +2575,13 @@ pub struct ClaimAutominerRewards<'info> {
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
         bump = player_data.bump
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
     #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
@@ -2567,7 +2599,7 @@ pub struct ClaimAutominerRewards<'info> {
         bump = user_game_bet.bump,
         constraint = user_game_bet.owner == autominer_vault.owner @ ErrorCode::InvalidOwner
     )]
-    pub user_game_bet: Account<'info, UserGameBet>,
+    pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: Owner wallet to receive leftover SOL / rent
     #[account(mut, constraint = owner_wallet.key() == autominer_vault.owner @ ErrorCode::Unauthorized)]
@@ -2713,11 +2745,12 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
+    /// CHECK: PDA + owner/type validated in handler to keep account parser stack small
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
+    pub global_config: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -2744,11 +2777,7 @@ pub struct ExecuteAutominerBet<'info> {
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: SOL treasury PDA
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
+    #[account(mut)]
     pub sol_treasury: UncheckedAccount<'info>,
 
     /// CHECK: SOL rewards vault (staker fees go here)
@@ -2767,13 +2796,6 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// CHECK: Owner account (to receive remaining SOL when vault closes)
-    #[account(
-        mut,
-        constraint = owner.key() == autominer_vault.owner @ ErrorCode::Unauthorized
-    )]
-    pub owner: UncheckedAccount<'info>,
-
     /// Epoch config (read for current_epoch_id)
     #[account(
         mut,
@@ -2783,13 +2805,12 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
 
+    /// CHECK: PDA + owner/type validated in handler to keep account parser stack small
     #[account(
         seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
-        bump = index_state.bump,
-        constraint = index_state.index_id == epoch_config.active_index_id @ ErrorCode::InvalidIndexState,
-        constraint = index_state.is_active @ ErrorCode::InvalidIndexState
+        bump
     )]
-    pub index_state: Box<Account<'info, IndexState>>,
+    pub index_state: UncheckedAccount<'info>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2815,7 +2836,8 @@ pub struct ExecuteAutominerBet<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
-    pub system_program: Program<'info, System>,
+    /// CHECK: Validated in handler
+    pub system_program: UncheckedAccount<'info>,
 }
 
 // ========================================================================================
