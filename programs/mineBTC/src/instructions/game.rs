@@ -718,26 +718,26 @@ pub struct EndRoundFactionRewards<'info> {
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     #[account(
         mut,
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump = game_session.bump
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump = mine_btc_mining.bump
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// Winning faction state (for updating staker rewards and motherlode)
     /// CHECK: Validated manually that faction_id matches winning_faction_id
     #[account(mut)]
-    pub faction_state: Account<'info, FactionState>,
+    pub faction_state: Box<Account<'info, FactionState>>,
 
     /// CHECK: SOL rewards vault for stakers (PDA)
     #[account(
@@ -753,7 +753,7 @@ pub struct EndRoundFactionRewards<'info> {
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
     )]
-    pub epoch_config: Account<'info, EpochConfig>,
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     /// Epoch state for current epoch (mut for mining tracking + settlement)
     #[account(
@@ -761,14 +761,14 @@ pub struct EndRoundFactionRewards<'info> {
         seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
         bump = epoch_state.bump,
     )]
-    pub epoch_state: Account<'info, EpochState>,
+    pub epoch_state: Box<Account<'info, EpochState>>,
 
     #[account(
         seeds = [INDEX_STATE_SEED, &[index_state.index_id]],
         bump = index_state.bump,
         constraint = index_state.index_id == epoch_state.index_id @ ErrorCode::InvalidIndexState,
     )]
-    pub index_state: Account<'info, IndexState>,
+    pub index_state: Box<Account<'info, IndexState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
