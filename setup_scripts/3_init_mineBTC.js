@@ -279,18 +279,20 @@ async function main() {
 
     // 1.6. Update Fees
     // Instruction: update_fees(
-    //   new_protocol_fee_pct: Option<u8>,          — % of SOL bets taken as protocol fee
-    //   new_buyback_pct: Option<u8>,               — % of treasury SOL used for buybacks + POL
-    //   new_stakers_pct: Option<u8>,               — % of protocol fee redirected to staker rewards vault
-    //   new_minebtc_stakers_pct: Option<u8>,       — % of mined MineBTC going to stakers
-    //   new_minebtc_winners_pct: Option<u8>,       — % of mined MineBTC going to round winners
-    //   new_minebtc_same_faction_pct: Option<u8>,  — % of mined MineBTC going to bettors on the winning country but wrong direction
-    //   new_minebtc_motherlode_pct: Option<u8>,    — % of mined MineBTC going to motherlode pot
-    //   new_refining_fee: Option<u8>,              — % fee when withdrawing unrefined MineBTC rewards
-    //   change_faction_fee: Option<u64>,           — SOL cost to change faction (lamports)
-    //   snapshot_interval: Option<u64>,            — min seconds between price snapshots
+    //   new_protocol_fee_pct: Option<u8>,            — % of SOL bets taken as protocol fee
+    //   new_buyback_pct: Option<u8>,                 — % of treasury SOL used for buybacks + POL
+    //   new_stakers_pct: Option<u8>,                 — % of protocol fee redirected to staker rewards vault
+    //   new_minebtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
+    //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
+    //   new_minebtc_same_faction_pct: Option<u8>,    — % of mined MineBTC going to winning-country non-exact bettors
+    //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
+    //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
+    //   new_minebtc_transfer_fee_bps: Option<u16>,   — must match the live Token-2022 mint fee
+    //   new_minebtc_max_transfer_fee: Option<u64>,   — raw base units; must match the live mint max fee
+    //   change_faction_fee: Option<u64>,             — SOL cost to change faction (lamports)
+    //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
-    // Accounts: globalConfig, mineBtcMining (optional), authority, systemProgram
+    // Accounts: globalConfig, minebtcMint, authority, systemProgram
     await updateFees(minebtcProgram, {
       // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
         newProtocolFeePct: 15, // 15,
@@ -298,12 +300,14 @@ async function main() {
         newStakersPct: 10, // 10 of 15% = 1.5%,
 
         // dogeBTC distribution config:
-        newDbtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
-        newDbtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
-        newDbtcSameFactionPct: 42, // 42% of dogeBTC rewards go to winning-country, non-winning-direction bettors
-        newDbtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
+        newMinebtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
+        newMinebtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
+        newMinebtcSameFactionPct: 42, // 42% of dogeBTC rewards go to winning-country, non-winning-direction bettors
+        newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
 
         newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
+        newMinebtcTransferFeeBps: config.token.burn_tax_bps, // assert live mint matches config
+        newMinebtcMaxTransferFeeTokens: config.token.max_burn_amount, // whole-token cap, converted to base units inside helper
 
         // split 50:50 between sol_treasury and fee_recipient (as WSOL)
         changeFactionFee: 100000000, // 0.1 SOL
@@ -2293,11 +2297,19 @@ async function updateFees(minebtcProgram, feeConfig) {
     const globalConfigPDA = new PublicKey(
       deploymentFile.minebtc_program_initialized.globalConfig_address
     );
-
-    // Derive DogeBtcMining PDA (optional account)
-    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("mine-btc-mining")],
-      minebtcProgram.programId
+    if (!DOGEBTC_TOKEN_MINT) {
+      throw new Error(
+        "DOGE_BTC mint address required for update_fees fee-sync validation"
+      );
+    }
+    const minebtcMint = DOGEBTC_TOKEN_MINT;
+    const expectedMaxTransferFeeTokens =
+      feeConfig?.newMinebtcMaxTransferFeeTokens ?? config.token.max_burn_amount;
+    const expectedMaxTransferFeeBaseUnits = new BN(
+      (
+        BigInt(expectedMaxTransferFeeTokens) *
+        10n ** BigInt(config.token.decimals)
+      ).toString()
     );
 
     // Get current config
@@ -2326,15 +2338,15 @@ async function updateFees(minebtcProgram, feeConfig) {
     );
     console.log(
       COLOR_INFO,
-      `     Winners: ${globalConfig.minebtcDistConfig.dbtcWinnersPct}%`
+      `     Winners: ${globalConfig.minebtcDistConfig.minebtcWinnersPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Same-faction: ${globalConfig.minebtcDistConfig.dbtcSameFactionPct}%`
+      `     Same-faction: ${globalConfig.minebtcDistConfig.minebtcSameFactionPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Motherlode: ${globalConfig.minebtcDistConfig.dbtcMotherlodePct}%`
+      `     Motherlode: ${globalConfig.minebtcDistConfig.minebtcMotherlodePct}%`
     );
     console.log(
       COLOR_INFO,
@@ -2354,11 +2366,14 @@ async function updateFees(minebtcProgram, feeConfig) {
       newProtocolFeePct: feeConfig?.newProtocolFeePct ?? null,
       newBuybackPct: feeConfig?.newBuybackPct ?? null,
       newStakersPct: feeConfig?.newStakersPct ?? null,
-      newDbtcStakersPct: feeConfig?.newDbtcStakersPct ?? null,
-      newDbtcWinnersPct: feeConfig?.newDbtcWinnersPct ?? null,
-      newDbtcSameFactionPct: feeConfig?.newDbtcSameFactionPct ?? null,
-      newDbtcMotherlodePct: feeConfig?.newDbtcMotherlodePct ?? null,
+      newMinebtcStakersPct: feeConfig?.newMinebtcStakersPct ?? null,
+      newMinebtcWinnersPct: feeConfig?.newMinebtcWinnersPct ?? null,
+      newMinebtcSameFactionPct: feeConfig?.newMinebtcSameFactionPct ?? null,
+      newMinebtcMotherlodePct: feeConfig?.newMinebtcMotherlodePct ?? null,
       newRefiningFee: feeConfig?.newRefiningFee ?? null,
+      newMinebtcTransferFeeBps:
+        feeConfig?.newMinebtcTransferFeeBps ?? config.token.burn_tax_bps,
+      newMinebtcMaxTransferFeeBaseUnits: expectedMaxTransferFeeBaseUnits,
       changeFactionFee: feeConfig?.changeFactionFee
         ? new BN(feeConfig.changeFactionFee)
         : null,
@@ -2378,31 +2393,35 @@ async function updateFees(minebtcProgram, feeConfig) {
       console.log(COLOR_INFO, `     Buyback: ${feeParams.newBuybackPct}%`);
     if (feeParams.newStakersPct !== null)
       console.log(COLOR_INFO, `     Stakers: ${feeParams.newStakersPct}%`);
-    if (feeParams.newDbtcStakersPct !== null)
+    if (feeParams.newMinebtcStakersPct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Stakers: ${feeParams.newDbtcStakersPct}%`
+        `     DBTC Stakers: ${feeParams.newMinebtcStakersPct}%`
       );
-    if (feeParams.newDbtcWinnersPct !== null)
+    if (feeParams.newMinebtcWinnersPct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Winners: ${feeParams.newDbtcWinnersPct}%`
+        `     DBTC Winners: ${feeParams.newMinebtcWinnersPct}%`
       );
-    if (feeParams.newDbtcSameFactionPct !== null)
+    if (feeParams.newMinebtcSameFactionPct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Same-faction: ${feeParams.newDbtcSameFactionPct}%`
+        `     DBTC Same-faction: ${feeParams.newMinebtcSameFactionPct}%`
       );
-    if (feeParams.newDbtcMotherlodePct !== null)
+    if (feeParams.newMinebtcMotherlodePct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Motherlode: ${feeParams.newDbtcMotherlodePct}%`
+        `     DBTC Motherlode: ${feeParams.newMinebtcMotherlodePct}%`
       );
     if (feeParams.newRefiningFee !== null)
       console.log(
         COLOR_INFO,
         `     Refining fee: ${feeParams.newRefiningFee}%`
       );
+    console.log(
+      COLOR_INFO,
+      `     Transfer fee sync: ${feeParams.newMinebtcTransferFeeBps / 100}% / ${expectedMaxTransferFeeTokens.toLocaleString()} tokens (${feeParams.newMinebtcMaxTransferFeeBaseUnits.toString()} base units)`
+    );
     if (feeParams.changeFactionFee !== null)
       console.log(
         COLOR_INFO,
@@ -2426,17 +2445,19 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newProtocolFeePct,
         feeParams.newBuybackPct,
         feeParams.newStakersPct,
-        feeParams.newDbtcStakersPct,
-        feeParams.newDbtcWinnersPct,
-        feeParams.newDbtcSameFactionPct,
-        feeParams.newDbtcMotherlodePct,
+        feeParams.newMinebtcStakersPct,
+        feeParams.newMinebtcWinnersPct,
+        feeParams.newMinebtcSameFactionPct,
+        feeParams.newMinebtcMotherlodePct,
         feeParams.newRefiningFee,
+        feeParams.newMinebtcTransferFeeBps,
+        feeParams.newMinebtcMaxTransferFeeBaseUnits,
         feeParams.changeFactionFee,
         feeParams.snapshotInterval
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
+        minebtcMint: minebtcMint,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
