@@ -17,7 +17,7 @@
     "token": {
         "name": "DogeWifBTC",
         "symbol": "DogeBTC",
-        "description": "$DogeBTC is the native token of MineBTC \u2014 the world's first geopolitical prediction game on Solana. 12 nations clash in 60-second arena rounds where players bet SOL, mine $DogeBTC, and evolve AI-generated doge NFTs with 256-bit DNA. 2.1B fixed supply, 1% transfer tax (Token-2022), deflationary by design.",
+        "description": "$DogeBTC is the native token of MineBTC \u2014 a live Solana country-arena game that turns country + direction bets into Geopolitical Risk Intelligence. Players place 60-second round bets, feed oracle-settled epoch indexes, lock operator doges with 256-bit DNA, and compete across rotating markets such as economics, military, AI race, and space race. 2.1B fixed supply, 1% transfer tax (Token-2022), deflationary by design.",
         "image": "https://assets.minebtc.fun/btc",
         "external_url": "https://assets.minebtc.fun/btc",
         "decimals": 6,
@@ -53,9 +53,13 @@
         "initial_deposit": "2076697169067604"
     },
     "doges_config": {
+        "_supply_plan": "15K genesis mint via bonding curve, 100K total cap via breeding (admin enables later)",
         "base_price": 1000000000,
         "curve_a": 5263158,
         "max_supply": 15000,
+        "breeding_allowed": false,
+        "breed_base_price": 2000000000,
+        "breed_curve_a": 5263158,
         "royalties": 420,
         "creators": [
             {

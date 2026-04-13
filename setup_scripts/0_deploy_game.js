@@ -16,10 +16,14 @@ const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "devnet-wallet-keypair.json");
 const ANCHOR_TOML_PATH = path.join(ROOT_DIR, "Anchor.toml");
 const DEPLOYMENTS_DIR = path.join(__dirname, "deployments");
 
-// Program configurations 
+// Program configurations
+// Note: `name` is the anchor program name (lowercase, matches declare_id! and
+// Anchor.toml) while `dirName` is the on-disk program directory (case-sensitive
+// on Linux — the actual folder is `mineBTC`, not `minebtc`).
 const PROGRAMS = {
   minebtc: {
     name: "minebtc",
+    dirName: "mineBTC",
     displayName: "MineBTC",
     keypairPath: path.join(
       ROOT_DIR,
@@ -370,8 +374,42 @@ function buildProgram(programConfig) {
   const programDir = path.join(
     programConfig.buildDir,
     "programs",
-    programConfig.name
+    programConfig.dirName || programConfig.name
   );
+
+  // cargo-build-sbf's post-processing looks for every cdylib crate in the dep
+  // graph (including raydium-cp-swap, which lives in a separate workspace at
+  // ../raydium and is referenced via path = ...) at
+  //   target/sbf-solana-solana/release/raydium_cp_swap.so
+  // The build itself only produces a no-entrypoint stub under deps/, so
+  // post-processing errors with "Unable to get file metadata". Copy the real
+  // raydium .so produced by 0_deploy_raydium.js into the expected location
+  // before we compile so the post-processing step finds it.
+  const workspaceSbfReleaseDir = path.join(
+    ROOT_DIR,
+    "target",
+    "sbf-solana-solana",
+    "release"
+  );
+  const raydiumSoSrc = path.join(
+    RAYDIUM_DIR,
+    "target",
+    "sbf-solana-solana",
+    "release",
+    "raydium_cp_swap.so"
+  );
+  const raydiumSoDst = path.join(workspaceSbfReleaseDir, "raydium_cp_swap.so");
+  if (fs.existsSync(raydiumSoSrc)) {
+    ensureDirectoryExists(workspaceSbfReleaseDir);
+    fs.copyFileSync(raydiumSoSrc, raydiumSoDst);
+    console.log(
+      `\x1b[36m  🔗 Staged raydium_cp_swap.so for workspace build post-processing\x1b[0m`
+    );
+  } else {
+    console.log(
+      `\x1b[33m  ⚠️  ${raydiumSoSrc} not found — run 0_deploy_raydium.js first\x1b[0m`
+    );
+  }
 
   // Actually build the program using cargo build-sbf from the program's directory
   console.log(

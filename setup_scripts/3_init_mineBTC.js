@@ -260,7 +260,6 @@ async function main() {
     //   - SOL Prize Pot Vault[seeds: "sol-prize-pot"]           — holds SOL for round prize pots
     // Accounts: globalConfig, solRewardsVault, solPrizePotVault, authority, systemProgram
     await setRaydiumPoolState(minebtcProgram);
-    // return;
 
     // 3. Add Factions (12 factions)
     // Instruction: add_faction(faction_name: String, faction_id: u8)
@@ -272,7 +271,7 @@ async function main() {
     // 4. Initialize System Accounts (Referral + Buybacks)
     // Instruction: initialize_system_accounts() — no args
     // Creates 3 PDAs:
-    //   - SystemReferralRewards [seeds: "referral-rewards", system_program_id] — tracks system referrals
+    //   - SystemReferralRewards [seeds: "referral-rewards", system_program_id] — reserved sentinel for no-referral players
     //   - BuybacksAccount       [seeds: "buybacks"]                            — buyback SOL tracker
     //   - BuybacksSolVault      [seeds: "buybacks-sol-vault"]                  — 0-byte PDA for buyback SOL
     // Accounts: globalConfig, systemReferralRewards, buybacksAccount, buybacksSolVault, authority, systemProgram
@@ -285,7 +284,7 @@ async function main() {
     //   new_stakers_pct: Option<u8>,               — % of protocol fee redirected to staker rewards vault
     //   new_minebtc_stakers_pct: Option<u8>,       — % of mined MineBTC going to stakers
     //   new_minebtc_winners_pct: Option<u8>,       — % of mined MineBTC going to round winners
-    //   new_minebtc_same_faction_pct: Option<u8>,  — % of mined MineBTC going to same-faction bettors
+    //   new_minebtc_same_faction_pct: Option<u8>,  — % of mined MineBTC going to bettors on the winning country but wrong direction
     //   new_minebtc_motherlode_pct: Option<u8>,    — % of mined MineBTC going to motherlode pot
     //   new_refining_fee: Option<u8>,              — % fee when withdrawing unrefined MineBTC rewards
     //   change_faction_fee: Option<u64>,           — SOL cost to change faction (lamports)
@@ -294,14 +293,14 @@ async function main() {
     // Accounts: globalConfig, mineBtcMining (optional), authority, systemProgram
     await updateFees(minebtcProgram, {
       // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
-        newProtocolFeePct: 15, // 10,
+        newProtocolFeePct: 15, // 15,
         newBuybackPct: 80, // 80% (remaining 20% goes to devs)
-        newStakersPct: 10, // 10 of 10% = 1%,
+        newStakersPct: 10, // 10 of 15% = 1.5%,
 
         // dogeBTC distribution config:
         newDbtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
         newDbtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
-        newDbtcSameFactionPct: 42, // 42% of dogeBTC rewards go to same-faction winners
+        newDbtcSameFactionPct: 42, // 42% of dogeBTC rewards go to winning-country, non-winning-direction bettors
         newDbtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
 
         newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
@@ -309,9 +308,8 @@ async function main() {
         // split 50:50 between sol_treasury and fee_recipient (as WSOL)
         changeFactionFee: 100000000, // 0.1 SOL
 
-        snapshot_interval: 30 * 60, // 5 minutes between price snapshots
+        snapshot_interval: 10 * 60, // 10 minutes between price snapshots
     });
-    // return;
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
     // Instruction: initialize_mining(start_timestamp: u64, mine_btc_per_round: u64, pool_state: Pubkey)
@@ -384,7 +382,6 @@ async function main() {
     //           factionTreasuryVault, nftFloorSweepVault, nftSaleSolVault, authority,
     //           tokenProgram2022, systemProgram
     await initializeTaxConfig(minebtcProgram);
-    // return;
 
     // 14. Initialize Game State (for Faction Surge rounds)
     // Instruction: initialize_game_state(round_duration_seconds: i64)
@@ -449,10 +446,11 @@ async function main() {
       gameKeypair.publicKey.toBase58()
     );
 
-    // 17. Initialize Epoch Config (for epoch-based risk/oracle system)
+    // 17. Initialize Epoch Config (for active-index, oracle-settled epoch markets)
     // Instruction: initialize_epoch_config(oracle_authority: Pubkey, epoch_duration: u64,
     //              risk_factor: u16, model5_pct: u8, top1_pct: u8, top2_pct: u8, top3_pct: u8)
-    // Creates EpochConfig PDA [seeds: "epoch-config"] with oracle authority and reward distribution splits
+    // Creates EpochConfig PDA [seeds: "epoch-config"] with oracle authority, active-index rotation,
+    // and rank-weighted epoch reward splits
     // Accounts: epochConfig, globalConfig, authority, systemProgram
     await initializeEpochConfig(minebtcProgram);
 
@@ -1444,7 +1442,7 @@ async function initializeDogeConfig(minebtcProgram) {
     // Get doge config values
     const basePrice = config.doges_config.base_price; 
     const curveA = config.doges_config.curve_a; // Curve steepness
-    const maxSupply = config.doges_config.max_supply; // Max 10k doges
+    const maxSupply = config.doges_config.max_supply; // Genesis supply (15K), total 100K via breeding
 
     if (!basePrice || !curveA || !maxSupply) {
     console.error(COLOR_ERROR, "❌ Doge config values not found in config.json");
@@ -2734,9 +2732,15 @@ async function initializeEpochConfig(minebtcProgram) {
     console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Oracle Authority: ${oracleAuthority.toBase58()}`);
-    console.log(COLOR_INFO, `⏱️  Epoch Duration: ${epochDuration}s (24h)`);
+    console.log(
+      COLOR_INFO,
+      `⏱️  Epoch Duration: ${epochDuration}s (${(epochDuration / 3600).toFixed(2)}h from config)`
+    );
     console.log(COLOR_INFO, `📊 Initial Risk Factor: ${initialRiskFactor} (1.00x)`);
-    console.log(COLOR_INFO, `📊 Model5 Pct: ${model5Pct}%, Top1: ${top1Pct}%, Top2: ${top2Pct}%, Top3: ${top3Pct}%`);
+    console.log(
+      COLOR_INFO,
+      `📊 Epoch pool splits -> base rank pool: ${model5Pct}%, top1 bonus: ${top1Pct}%, top2 bonus: ${top2Pct}%, top3 bonus: ${top3Pct}%`
+    );
 
     const tx = await minebtcProgram.methods
       .initializeEpochConfig(oracleAuthority, new BN(epochDuration), initialRiskFactor, model5Pct, top1Pct, top2Pct, top3Pct)

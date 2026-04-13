@@ -1172,7 +1172,8 @@ pub fn update_round_duration_internal(
 /// Initialize system referral account and buybacks system (admin only)
 ///
 /// Creates and initializes both the system referral rewards account and the buybacks tracking account.
-/// The system referral account tracks rewards for the system referral code.
+/// The system referral account reserves the sentinel PDA used for players who register
+/// without a referral code.
 /// The buybacks account tracks SOL accumulated for token buybacks.
 ///
 /// # Initializes
@@ -1187,6 +1188,8 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.referrals_count = 0;
     system_referral.pending_minebtc_rewards = 0;
     system_referral.total_minebtc_earned = 0;
+    system_referral.pending_sol_rewards = 0;
+    system_referral.total_sol_earned = 0;
 
     // Initialize buybacks account
     let buybacks_ac = &mut ctx.accounts.buybacks_account;
@@ -1743,7 +1746,7 @@ pub struct InitializeSystemAccounts<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// System referral rewards account (can be initialized by anyone)
+    /// Reserved sentinel referral rewards PDA for users who register without a referrer
     #[account(
         init,
         payer = authority,

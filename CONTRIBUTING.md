@@ -27,6 +27,8 @@ anchor build -p minebtc
    ```bash
    cargo fmt --all -- --check
    cargo clippy --all-targets -- -D warnings
+   cargo check -p minebtc
+   cargo test -p minebtc --lib
    anchor build -p minebtc
    ```
 5. Commit with a descriptive message
@@ -39,6 +41,29 @@ anchor build -p minebtc
 - Follow existing naming conventions (`_internal` suffix for instruction implementations)
 - Keep instruction logic in `programs/mineBTC/src/instructions/`
 - Expose instructions in `programs/mineBTC/src/lib.rs`
+
+## Product Terminology
+
+Please keep docs, comments, setup scripts, and PR descriptions aligned with the current game model.
+
+Use:
+
+- `country` / `faction`
+- `direction` (`Down`, `Neutral`, `Up`)
+- `round`
+- `epoch`
+- `active index`
+- `operator doge`
+
+Avoid reintroducing:
+
+- block-number betting language
+- block-high / block-low wording
+- legacy `factionHighestLowest` / `factionBoth` phrasing
+
+The current product story is: **one country-direction bet powers both the live round game and the active epoch index market**.
+
+Lead documentation with what is already live in the contracts. Prefer "live country arena", "active index", and "data pipeline" over generic "prediction market" shorthand when the latter is less precise.
 
 ## Pull Request Guidelines
 

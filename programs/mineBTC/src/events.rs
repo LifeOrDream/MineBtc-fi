@@ -350,8 +350,11 @@ pub struct BetsPlaced {
     pub gameplay_doge_xp: u32,
 
     pub round_id: u64,
+    pub epoch_id: u64,
+    pub index_id: u8,
     pub num_bets: u8,
-    pub target_blocks: Vec<u8>,
+    pub faction_ids: Vec<u8>,
+    pub directions: Vec<u8>,
     pub net_amounts: Vec<u64>,
     pub fee_amounts: Vec<u64>,
     pub points_amounts: Vec<u64>,
@@ -408,7 +411,6 @@ pub struct AutominerInitialized {
     pub num_rounds: u32,
     pub bets_per_round: u64,
     pub bet_size_per_bet: u64,
-    pub has_blocks_config: bool,
     pub has_factions_config: bool,
     pub can_reload: bool,
     pub use_ticket: Option<u8>,
@@ -457,7 +459,9 @@ pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
     pub commit_hash: [u8; 32],
-    pub block_assignments: [u8; 24], // 24 blocks, each assigned to a faction (0-11)
+    pub epoch_id: u64,
+    pub active_index_id: u8,
+    pub active_question_hash: [u8; 32],
     pub round_start_timestamp: i64,
     pub timestamp: i64,
 }
@@ -467,16 +471,15 @@ pub struct RoundStarted {
 pub struct RoundEnded {
     pub round_id: u64,
     pub game_session: Pubkey,
-    pub winning_block: u8, // 0-indexed: 0-23
     pub winning_faction_id: u8,
-    pub same_faction_other_block: u8, // 0-indexed: 0-23
+    pub winning_direction: u8,
     pub total_sol_bets: u64,
     pub total_points_bets: u64,
 
-    pub user_bets_count: Vec<u64>,
-    pub block_sol_bets: Vec<u64>,
-    pub block_points: Vec<u64>,
-    pub block_wgtd_points: Vec<u64>,
+    pub user_bets_count: [u64; 12],
+    pub faction_sol_bets: [u64; 12],
+    pub faction_points: [u64; 12],
+    pub faction_wgtd_points: [u64; 12],
 
     pub minebtc_winner_pool: u64,
     pub minebtc_same_faction_pool: u64,
@@ -510,10 +513,9 @@ pub struct LpStakingRewardsDistributed {
 pub struct MotherlodeHit {
     pub round_id: u64,
     pub faction_id: u8,
-    pub wining_block_rewards: u64,
-    pub same_faction_rewards: u64,
+    pub winning_direction: u8,
+    pub winning_faction_rewards: u64,
     pub minebtc_rewards_index: u128,
-    pub same_faction_minebtc_rewards_index: u128,
 }
 
 #[event]
@@ -682,20 +684,41 @@ pub struct DogeVisualMutation {
 #[event]
 pub struct EpochStarted {
     pub epoch_id: u64,
+    pub index_id: u8,
+    pub question_hash: [u8; 32],
     pub start_timestamp: u64,
     pub end_timestamp: u64,
     pub risk_factor: u16,
     pub timestamp: i64,
 }
 
-/// Event emitted when AI oracle updates faction scores
+/// Event emitted when an index state is initialized.
+#[event]
+pub struct IndexInitialized {
+    pub index_id: u8,
+    pub name: String,
+    pub initial_scores: [i64; 12],
+    pub initial_ranks: [u8; 12],
+    pub timestamp: i64,
+}
+
+/// Event emitted when the oracle schedules the next epoch market.
+#[event]
+pub struct EpochMarketScheduled {
+    pub active_index_id: u8,
+    pub next_index_id: u8,
+    pub next_question_hash: [u8; 32],
+    pub timestamp: i64,
+}
+
+/// Event emitted when AI oracle updates index scores.
 #[event]
 pub struct EpochScoresUpdated {
-    pub epoch_id: u64,
-    pub score_deltas: [[u16; 5]; 12],
-    pub cumulative_dimension_scores: [[u16; 5]; 12],
-    pub composite_scores: [u16; 12],
-    pub update_number: u16,
+    pub index_id: u8,
+    pub score_deltas: [i64; 12],
+    pub cumulative_scores: [i64; 12],
+    pub ranks: [u8; 12],
+    pub update_number: u32,
     pub timestamp: i64,
 }
 
@@ -711,12 +734,18 @@ pub struct RiskFactorUpdated {
 #[event]
 pub struct EpochSettled {
     pub epoch_id: u64,
+    pub index_id: u8,
+    pub question_hash: [u8; 32],
     pub total_dogebtc_mined: u64,
     pub risk_factor: u16,
     pub epoch_mining_pool: u64,
-    pub faction_composite_scores: [u16; 12],
-    pub faction_dimension_scores: [[u16; 5]; 12],
-    pub total_score_weighted_bets: u128,
+    pub start_scores: [i64; 12],
+    pub final_scores: [i64; 12],
+    pub start_ranks: [u8; 12],
+    pub final_ranks: [u8; 12],
+    pub rank_deltas: [i8; 12],
+    pub resolved_directions: [u8; 12],
+    pub faction_reward_pools: [u64; 12],
     pub timestamp: i64,
 }
 
@@ -724,9 +753,9 @@ pub struct EpochSettled {
 #[event]
 pub struct EpochRewardsClaimed {
     pub epoch_id: u64,
+    pub index_id: u8,
     pub user: Pubkey,
     pub reward_amount: u64,
-    pub user_weighted_score: u128,
     pub timestamp: i64,
 }
 
@@ -734,6 +763,8 @@ pub struct EpochRewardsClaimed {
 #[event]
 pub struct EpochAutoStarted {
     pub epoch_id: u64,
+    pub index_id: u8,
+    pub question_hash: [u8; 32],
     pub start_timestamp: u64,
     pub end_timestamp: u64,
 }
@@ -742,6 +773,6 @@ pub struct EpochAutoStarted {
 #[event]
 pub struct EpochAutoSettled {
     pub epoch_id: u64,
+    pub index_id: u8,
     pub mining_pool: u64,
-    pub total_weighted_bets: u128,
 }

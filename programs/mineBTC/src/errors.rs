@@ -10,6 +10,8 @@ pub enum ErrorCode {
 
     #[msg("User not authorized to perform this action")]
     Unauthorized,
+    #[msg("Permissionless reward claims are disabled for this player")]
+    PermissionlessRewardClaimsDisabled,
     #[msg("No pending authority transfer to accept")]
     NoPendingAuthority,
 
@@ -25,7 +27,10 @@ pub enum ErrorCode {
     #[msg("Referral pubkey cannot be the same as owner")]
     ReferralCannotBeSameAsOwner,
 
-    #[msg("Maximum referrals reached for this referral code (15 max)")]
+    #[msg("Referral rewards account required when referral code is provided")]
+    ReferralRewardsAccountRequired,
+
+    #[msg("Maximum referrals reached for this referral code (50 max)")]
     MaxReferralsReached,
 
     #[msg("Invalid parameters provided for operation")]
@@ -111,8 +116,14 @@ pub enum ErrorCode {
     #[msg("Invalid owner")]
     InvalidOwner,
 
+    #[msg("Cannot place multiple directions on the same faction in one round")]
+    ConflictingFactionDirection,
+
     #[msg("Invalid amount")]
     InvalidAmount,
+
+    #[msg("Minimum SOL bet per country-direction position is 0.0001 SOL")]
+    BetBelowMinimum,
 
     #[msg("Insufficient funds")]
     InsufficientFunds,
@@ -191,4 +202,7 @@ pub enum ErrorCode {
 
     #[msg("Invalid oracle authority")]
     InvalidOracleAuthority,
+
+    #[msg("Invalid or unexpected index state")]
+    InvalidIndexState,
 }

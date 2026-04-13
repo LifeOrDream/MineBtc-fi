@@ -6,13 +6,13 @@
 //
 // - `initialize_player`: Creates a new player account and assigns them to a faction.
 // - `change_faction`: Allows players to switch factions (requires no active stakes).
-// - `join_round`: Places a bet on a block or faction for the current round.
-// - `join_round_batch`: Places multiple bets in a single transaction.
+// - `join_round`: Places a faction-direction bet for the current round.
+// - `join_round_batch`: Places multiple faction-direction bets in a single transaction.
 // - `claim_round_rewards`: Claims winnings from completed rounds.
-// - `init_autominer`: Sets up an automated betting system for recurring bets.
+// - `init_autominer`: Sets up an automated recurring faction-direction betting system.
 // - `execute_autominer_bet`: Executes an autominer bet (keeper function).
 //
-// Players can earn rewards through winning bets, same-faction bonuses, motherlode jackpots, and referrals.
+// The same bet now powers both round rewards and directional epoch prediction rewards.
 //
 
 use anchor_lang::prelude::*;
@@ -57,7 +57,12 @@ pub fn internal_initialize_player(
     // Initialize player data
     player_data.owner = ctx.accounts.authority.key();
     player_data.bump = ctx.bumps.player_data;
+    player_data.allow_bots_to_claim = true;
     player_data.faction_id = faction_id;
+
+    // Treat the system-program sentinel as "no referral" so users can register without
+    // providing a real referral code, even if the client forwards the sentinel explicitly.
+    let referral_code = referral_code.filter(|code| *code != ctx.accounts.system_program.key());
 
     // Handle referral code logic
     let referrer_pubkey = if let Some(ref_code) = referral_code {
@@ -67,23 +72,26 @@ pub fn internal_initialize_player(
             ErrorCode::ReferralCannotBeSameAsOwner
         );
 
-        // Update referrer's referral count if referrer_rewards account is provided
-        if let Some(ref mut referrer_rewards) = ctx.accounts.referrer_rewards {
-            require!(
-                referrer_rewards.owner == ref_code,
-                ErrorCode::InvalidReferralAccount
-            );
-            require!(
-                referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
-                ErrorCode::MaxReferralsReached
-            );
-            referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
-            msg!(
-                "     Referrer's referral count: {}/{}",
-                referrer_rewards.referrals_count,
-                stake::MAX_REFERRALS_PER_CODE
-            );
-        }
+        helper::validate_referrer_rewards_account(
+            &ref_code,
+            ctx.accounts.referrer_rewards.as_ref(),
+        )?;
+
+        let referrer_rewards = ctx
+            .accounts
+            .referrer_rewards
+            .as_mut()
+            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
+        require!(
+            referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
+            ErrorCode::MaxReferralsReached
+        );
+        referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+        msg!(
+            "     Referrer's referral count: {}/{}",
+            referrer_rewards.referrals_count,
+            stake::MAX_REFERRALS_PER_CODE
+        );
 
         // Set player's referral code
         player_data.referral_code = ref_code;
@@ -267,18 +275,28 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
     Ok(())
 }
 
-/// Join a round by betting SOL or using free tickets (single bet)
-/// Users can bet on either:
-/// - A specific block (block_id: 0-23, 0-indexed)
-/// - A faction + highest/lowest option (faction_id + is_highest)
+pub fn internal_set_player_claim_settings(
+    ctx: Context<SetPlayerClaimSettings>,
+    allow_bots_to_claim: bool,
+) -> Result<()> {
+    ctx.accounts.player_data.allow_bots_to_claim = allow_bots_to_claim;
+
+    msg!(
+        "✅ [set_player_claim_settings] owner={} allow_bots_to_claim={}",
+        ctx.accounts.user.key(),
+        allow_bots_to_claim
+    );
+
+    Ok(())
+}
+
+/// Join a round by betting SOL or using free tickets (single prediction).
+/// Each bet selects a faction and an epoch direction.
 ///
 /// Parameters:
 /// - amount: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
-/// - bet_type: The bet type (Block, FactionHighestLowest, FactionBoth, or RandomBlock)
+/// - bet_type: The bet type (`FactionDirection { faction_id, direction }`)
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-///
-/// Note: Faction accounts are not required for user betting functions. Faction-related calculations
-/// are handled in end_round_faction_rewards by cranker bots.
 pub fn internal_join_round(
     ctx: Context<JoinRound>,
     amount: u64,
@@ -311,8 +329,10 @@ pub fn internal_join_round(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
+        &ctx.accounts.index_state,
         &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
+        ctx.bumps.epoch_state,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
@@ -321,18 +341,12 @@ pub fn internal_join_round(
     Ok(())
 }
 
-/// Join a round with multiple bets in a single transaction
-/// Users can bet on:
-/// - Multiple blocks (e.g., [0, 4, 9, 14] - 0-indexed: 0-23)
-/// - Multiple factions with settings: "low", "high", "both", or "random"
+/// Join a round with multiple faction-direction bets in a single transaction.
 ///
 /// Parameters:
-/// - bet_types: Vector of bet types to place (all must be for the same faction)
+/// - bet_types: Vector of faction-direction bets to place
 /// - amount_per_bet: Bet amount per bet type in lamports (for SOL) or points (for tickets)
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-///
-/// Note: Faction accounts are not required for user betting functions. Faction-related calculations
-/// are handled in end_round_faction_rewards by cranker bots.
 pub fn internal_join_round_batch(
     ctx: Context<JoinRoundBatch>,
     bet_types: Vec<BetType>,
@@ -347,41 +361,10 @@ pub fn internal_join_round_batch(
     msg!("   Amount per bet: {} lamports", amount_per_bet);
 
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
-    require!(bet_types.len() <= 24, ErrorCode::InvalidParameters); // Max 24 bets (one per block)
-
-    // Expand bet types (handle FactionBoth and RandomBlock)
-    let mut expanded_bet_types = Vec::new();
-    for bet_type in bet_types.iter() {
-        match bet_type {
-            BetType::FactionBoth { faction_id } => {
-                // Expand to both highest and lowest
-                expanded_bet_types.push(BetType::FactionHighestLowest {
-                    faction_id: *faction_id,
-                    is_highest: true,
-                });
-                expanded_bet_types.push(BetType::FactionHighestLowest {
-                    faction_id: *faction_id,
-                    is_highest: false,
-                });
-            }
-            BetType::RandomBlock => {
-                // For random block, we need to select a random block at runtime
-                // Use slot hash or similar for randomness
-                let clock = Clock::get()?;
-                let slot_bytes = clock.slot.to_le_bytes();
-                let random_block = (slot_bytes[0] % 24) as u8; // 0-23 (0-indexed)
-                expanded_bet_types.push(BetType::Block {
-                    block_id: random_block,
-                });
-                msg!("   Random block selected: {}", random_block);
-            }
-            _ => {
-                expanded_bet_types.push(bet_type.clone());
-            }
-        }
-    }
-
-    msg!("   Expanded to {} bet types", expanded_bet_types.len());
+    require!(
+        bet_types.len() <= UserGameBet::MAX_FACTIONS_PER_BET,
+        ErrorCode::InvalidParameters
+    );
 
     // Call internal_process_bets for all bets at once
     internal_process_bets(
@@ -398,31 +381,54 @@ pub fn internal_join_round_batch(
         ctx.bumps.user_game_bet,
         ctx.accounts.authority.key(),
         amount_per_bet,
-        expanded_bet_types.clone(),
+        bet_types.clone(),
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
+        &ctx.accounts.index_state,
         &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
+        ctx.bumps.epoch_state,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
 
     msg!(
         "✅ [join_round_batch] All {} bets placed successfully",
-        expanded_bet_types.len()
+        bet_types.len()
     );
     Ok(())
 }
 
-/// Initialize autominer vault with flexible block/faction configuration
-/// Users configure either blocks OR factions (at least one required)
+fn validate_min_sol_bet_per_position(amount: u64) -> Result<()> {
+    require!(
+        amount >= MIN_SOL_BET_PER_POSITION,
+        ErrorCode::BetBelowMinimum
+    );
+    Ok(())
+}
+
+fn count_autominer_bets_per_round(factions_config: &Option<FactionsConfig>) -> Result<u64> {
+    match factions_config {
+        Some(FactionsConfig::Specific { picks }) => {
+            require!(!picks.is_empty(), ErrorCode::InvalidParameters);
+            Ok(picks.len() as u64)
+        }
+        Some(FactionsConfig::Random { count, .. }) => {
+            require!(*count > 0, ErrorCode::InvalidParameters);
+            Ok(*count as u64)
+        }
+        None => err!(ErrorCode::InvalidParameters),
+    }
+}
+
+/// Initialize autominer vault for recurring faction-direction bets.
+/// Block-based autominers are no longer supported.
 /// Can be called multiple times, but only when rounds_remaining == 0
-/// Total SOL = sol_per_round × num_rounds
-/// Bet size per bet = sol_per_round / total_bets_per_round
+/// SOL mode reserves `sol_per_round × num_rounds`.
+/// Ticket mode requires `sol_per_round == 0` and uses ticket value per generated bet.
 pub fn internal_init_autominer(
     ctx: Context<InitAutominer>,
-    blocks_config: Option<BlocksConfig>,
     factions_config: Option<FactionsConfig>,
     sol_per_round: u64,
     num_rounds: u32,
@@ -439,18 +445,12 @@ pub fn internal_init_autominer(
 
     msg!("   Validating parameters...");
     require!(num_rounds > 0, ErrorCode::InvalidAmount);
-    // SOL mode requires sol_per_round > 0; ticket mode allows 0
     if use_ticket.is_none() {
         require!(sol_per_round > 0, ErrorCode::InvalidAmount);
+    } else {
+        require!(sol_per_round == 0, ErrorCode::InvalidAmount);
     }
-    require!(
-        blocks_config.is_some() || factions_config.is_some(),
-        ErrorCode::InvalidParameters
-    );
-    require!(
-        !(blocks_config.is_some() && factions_config.is_some()),
-        ErrorCode::InvalidParameters
-    ); // Only one config allowed
+    require!(factions_config.is_some(), ErrorCode::InvalidParameters);
 
     // Check if vault already exists and has remaining rounds
     // Only allow initialization if rounds_remaining == 0 (must stop first if in progress)
@@ -460,59 +460,41 @@ pub fn internal_init_autominer(
     );
     let mut bets_per_round = 0;
 
-    // Validate blocks_config if provided
-    if let Some(ref blocks_cfg) = blocks_config {
-        match blocks_cfg {
-            BlocksConfig::Specific { blocks } => {
-                require!(!blocks.is_empty(), ErrorCode::InvalidParameters);
-                require!(
-                    blocks.len() <= AutominerVault::MAX_BLOCKS,
-                    ErrorCode::InvalidParameters
-                );
-                for &block_id in blocks.iter() {
-                    require!(block_id < NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
-                }
-                bets_per_round = blocks.len() as u64;
-                msg!("     ✓ Blocks: {} specific blocks", blocks.len());
-            }
-            BlocksConfig::Random { count } => {
-                require!(
-                    *count > 0 && *count <= NUM_BLOCKS as u8,
-                    ErrorCode::InvalidParameters
-                );
-                msg!("     ✓ Blocks: {} random blocks", count);
-                bets_per_round = *count as u64;
-            }
-        }
-    }
-
     // Validate factions_config if provided
     if let Some(ref factions_cfg) = factions_config {
         match factions_cfg {
-            FactionsConfig::Specific { factions, strategy } => {
-                require!(!factions.is_empty(), ErrorCode::InvalidParameters);
+            FactionsConfig::Specific { picks } => {
+                require!(!picks.is_empty(), ErrorCode::InvalidParameters);
                 require!(
-                    factions.len() <= AutominerVault::MAX_FACTIONS,
+                    picks.len() <= AutominerVault::MAX_FACTIONS,
                     ErrorCode::InvalidParameters
                 );
-                for &faction_id in factions.iter() {
+                let mut seen = [false; NUM_FACTIONS];
+                for pick in picks.iter() {
                     require!(
-                        (faction_id as usize) < global_config.supported_factions.len(),
+                        (pick.faction_id as usize) < global_config.supported_factions.len(),
                         ErrorCode::InvalidFactionId
                     );
+                    require!(
+                        !seen[pick.faction_id as usize],
+                        ErrorCode::ConflictingFactionDirection
+                    );
+                    seen[pick.faction_id as usize] = true;
                 }
-                let strategy_multiplier = get_strategy_multiplier(strategy.clone());
-                bets_per_round = factions.len() as u64 * strategy_multiplier;
-                msg!("     ✓ Factions: {} specific factions", factions.len());
+                bets_per_round = picks.len() as u64;
+                msg!("     ✓ Specific autominer picks: {}", picks.len());
             }
-            FactionsConfig::Random { count, strategy } => {
+            FactionsConfig::Random { count, direction } => {
                 require!(
                     *count > 0 && *count <= global_config.supported_factions.len() as u8,
                     ErrorCode::InvalidParameters
                 );
-                msg!("     ✓ Factions: {} random factions", count);
-                let strategy_multiplier = get_strategy_multiplier(strategy.clone());
-                bets_per_round = *count as u64 * strategy_multiplier;
+                msg!(
+                    "     ✓ Factions: {} random factions with direction {:?}",
+                    count,
+                    direction
+                );
+                bets_per_round = *count as u64;
             }
         }
     }
@@ -540,16 +522,25 @@ pub fn internal_init_autominer(
         );
     }
 
-    // Calculate bet size per bet
-    // In ticket mode, sol_per_round is only for caller compensation (gas fees)
-    // Actual bet amount is determined at execution time from ticket value
+    let total_caller_compensation = if use_ticket.is_some() {
+        0
+    } else {
+        get_caller_compensation(sol_per_round)?
+    };
+
+    // Calculate bet size per bet.
+    // In SOL mode, reserve keeper compensation first and split the remaining round budget
+    // evenly across generated country+direction picks.
     let bet_size_per_bet = if use_ticket.is_some() {
         0 // Resolved at execution time from player_data.free_tickets[tier]
     } else {
-        sol_per_round / bets_per_round
+        let sol_for_betting = sol_per_round
+            .checked_sub(total_caller_compensation)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        sol_for_betting / bets_per_round
     };
     if use_ticket.is_none() {
-        require!(bet_size_per_bet > 0, ErrorCode::InvalidAmount);
+        validate_min_sol_bet_per_position(bet_size_per_bet)?;
         msg!(
             "     Bet size per bet: {} SOL per bet ({} SOL / {} bets)",
             (bet_size_per_bet as f64 / 1e9),
@@ -563,14 +554,13 @@ pub fn internal_init_autominer(
     msg!("   Initializing autominer vault...");
 
     // Store config flags before moving values
-    let has_blocks_config = blocks_config.is_some();
     let has_factions_config = factions_config.is_some();
 
-    // Calculate total SOL needed
-    // Ticket mode: no SOL needed (bets use tickets, no caller compensation)
-    // SOL mode: sol_per_round × num_rounds
+    // Calculate total SOL needed.
+    // Ticket mode: no SOL needed.
+    // SOL mode: sol_per_round × num_rounds.
     let total_sol = if use_ticket.is_some() {
-        0 // Ticket mode: no SOL deposit needed
+        0
     } else {
         sol_per_round
             .checked_mul(num_rounds as u64)
@@ -584,7 +574,6 @@ pub fn internal_init_autominer(
     );
 
     autominer_vault.owner = ctx.accounts.user_wallet.key();
-    autominer_vault.blocks_config = blocks_config;
     autominer_vault.factions_config = factions_config;
     autominer_vault.sol_per_round = sol_per_round;
     autominer_vault.rounds_remaining = num_rounds;
@@ -628,7 +617,6 @@ pub fn internal_init_autominer(
         num_rounds,
         bets_per_round,
         bet_size_per_bet,
-        has_blocks_config,
         has_factions_config,
         can_reload,
         use_ticket,
@@ -681,9 +669,18 @@ pub fn internal_update_autominer(
     msg!("     Rounds remaining: {}", rounds_remaining + rounds_added);
     msg!("     Can reload: {}", new_can_reload);
 
-    // Validate new values (SOL mode requires sol_per_round > 0)
+    // Validate new values based on autominer mode.
     if autominer_vault.use_ticket.is_none() {
         require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
+        let bets_per_round = count_autominer_bets_per_round(&autominer_vault.factions_config)?;
+        let caller_compensation = get_caller_compensation(new_sol_per_round)?;
+        let sol_for_betting = new_sol_per_round
+            .checked_sub(caller_compensation)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let bet_size_per_bet = sol_for_betting / bets_per_round;
+        validate_min_sol_bet_per_position(bet_size_per_bet)?;
+    } else {
+        require!(new_sol_per_round == 0, ErrorCode::InvalidAmount);
     }
 
     if rounds_added > 0 {
@@ -785,17 +782,10 @@ pub fn internal_update_autominer(
     Ok(())
 }
 
-fn get_strategy_multiplier(strategy: FactionStrategy) -> u64 {
-    match strategy {
-        FactionStrategy::Both => 2,
-        _ => 1,
-    }
-}
-
-/// Execute autominer bets (keeper instruction - callable by anyone)
-/// Generates bet types dynamically from blocks_config and factions_config
-/// Pays caller 1% of bet size (max 0.005 SOL) per bet for tx costs
-/// Uses join_round_batch to place all bets efficiently
+/// Execute autominer bets (keeper instruction - callable by anyone).
+/// Generates faction-direction bets dynamically from the configured country set.
+/// In SOL mode, pays the caller 1% of `sol_per_round` (max 0.005 SOL) for tx costs.
+/// Uses the same round/epoch betting path as manual users.
 pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
@@ -810,7 +800,6 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
     let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
     let sol_per_round = ctx.accounts.autominer_vault.sol_per_round;
-    let blocks_config = ctx.accounts.autominer_vault.blocks_config.clone(); // Already Option<BlocksConfig>
     let factions_config = ctx.accounts.autominer_vault.factions_config.clone();
     let sol_balance = ctx.accounts.autominer_vault.sol_balance;
     let use_ticket = ctx.accounts.autominer_vault.use_ticket;
@@ -838,33 +827,31 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     // Generate bet types dynamically from configuration
     msg!("   Generating bet types from configuration...");
 
-    // Determine blocks to bet on (if blocks_config provided)
-    let blocks_to_bet = compute_blocks_to_bet(blocks_config, &clock)?;
-
     // Generate bet types using helper function
-    let bet_types = make_bets_vec(
-        factions_config.clone(),
-        blocks_to_bet.clone(),
-        &ctx.accounts.game_session,
-        &clock,
-        &global_config,
-    )?;
+    let bet_types = make_bets_vec(factions_config.clone(), &clock, &global_config)?;
     msg!("     Generated {} bet types", bet_types.len());
 
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
 
-    // Calculate caller compensation FIRST: 1% of sol_per_round, max 0.005 SOL
-    let total_caller_compensation = get_caller_compensation(sol_per_round)?;
-    msg!(
-        "     Caller compensation: {} SOL (1% of {} SOL, max 0.005 SOL)",
-        (total_caller_compensation as f64 / 1e9),
-        (sol_per_round as f64 / 1e9)
-    );
+    let total_caller_compensation = if use_ticket.is_some() {
+        0
+    } else {
+        get_caller_compensation(sol_per_round)?
+    };
+    if use_ticket.is_some() {
+        msg!("     Ticket mode: caller compensation disabled");
+    } else {
+        msg!(
+            "     Caller compensation: {} SOL (1% of {} SOL, max 0.005 SOL)",
+            (total_caller_compensation as f64 / 1e9),
+            (sol_per_round as f64 / 1e9)
+        );
+    }
 
     // Determine bet parameters based on mode (SOL vs tickets)
     let (bet_size_per_bet, effective_use_ticket) = if let Some(ticket_tier_index) = use_ticket {
-        // Ticket mode: bet amount comes from player's ticket value
-        // No SOL needed for bets — tickets are free. No caller compensation either.
+        // Ticket mode: bet amount comes from player's ticket value.
+        // No SOL is reserved for tickets and no caller compensation is paid.
         let player_data = &ctx.accounts.player_data;
         require!(
             (ticket_tier_index as usize) < player_data.free_tickets.len(),
@@ -885,7 +872,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
             .checked_sub(total_caller_compensation)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         let bet_per = sol_for_betting / bet_types.len() as u64;
-        require!(bet_per > 0, ErrorCode::InvalidAmount);
+        validate_min_sol_bet_per_position(bet_per)?;
         msg!(
             "     SOL mode: {} SOL per bet ({} SOL / {} bets)",
             (bet_per as f64 / 1e9),
@@ -895,7 +882,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         (bet_per, None)
     };
 
-    // Pay caller compensation (SOL mode only — ticket mode skips compensation)
+    // Pay caller compensation (SOL mode only).
     if total_caller_compensation > 0 && use_ticket.is_none() {
         msg!("   Paying caller compensation...");
         let autominer_seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
@@ -944,41 +931,12 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         autominer_vault.sol_balance = autominer_vault.sol_balance.saturating_sub(sol_per_round);
     }
 
-    // Place bets using join_round_batch
+    // Place bets using the shared round/epoch prediction path.
     msg!(
-        "   Placing {} bets for round {} using join_round_batch...",
+        "   Placing {} bets for round {}...",
         bet_types.len(),
         current_round_id
     );
-
-    // Expand bet types (handle FactionBoth and RandomBlock)
-    let mut expanded_bet_types = Vec::new();
-    for bet_type in bet_types.iter() {
-        match bet_type {
-            BetType::FactionBoth { faction_id } => {
-                expanded_bet_types.push(BetType::FactionHighestLowest {
-                    faction_id: *faction_id,
-                    is_highest: true,
-                });
-                expanded_bet_types.push(BetType::FactionHighestLowest {
-                    faction_id: *faction_id,
-                    is_highest: false,
-                });
-            }
-            BetType::RandomBlock => {
-                let slot_bytes = clock.slot.to_le_bytes();
-                let random_block = (slot_bytes[0] % 24) as u8;
-                expanded_bet_types.push(BetType::Block {
-                    block_id: random_block,
-                });
-            }
-            _ => {
-                expanded_bet_types.push(bet_type.clone());
-            }
-        }
-    }
-
-    msg!("     Expanded to {} bet types", expanded_bet_types.len());
 
     // Prepare PDA signer seeds for autominer custody
     let autominer_seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
@@ -1007,12 +965,14 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         ctx.bumps.user_game_bet,
         owner_key,
         bet_size_per_bet,
-        expanded_bet_types.clone(),
+        bet_types.clone(),
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
+        &ctx.accounts.index_state,
         &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
+        ctx.bumps.epoch_state,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
@@ -1020,7 +980,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
     msg!(
         "   {} bets of {} SOL each for round {}",
-        expanded_bet_types.len(),
+        bet_types.len(),
         (bet_size_per_bet as f64 / 1e9),
         current_round_id
     );
@@ -1099,8 +1059,8 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     Ok(())
 }
 
-/// Claim rewards for a user after round ends
-/// Checks if user won based on their bet type and the winning block
+/// Claim rewards for a user after round ends.
+/// Round payouts depend on the winning faction plus the randomly resolved round direction.
 pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
     msg!(
         "💰 [claim_rewards] User claiming rewards. User: {}",
@@ -1111,6 +1071,13 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
+    let owner_key = ctx.accounts.user_wallet.key();
+
+    helper::validate_reward_claim_caller(
+        ctx.accounts.caller.key(),
+        owner_key,
+        player_data.allow_bots_to_claim,
+    )?;
 
     // Round should be completely over before user can claim rewards
     require!(game_session.stage == 2, ErrorCode::InvalidStage);
@@ -1118,21 +1085,19 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         round_id == user_bet.round_id && round_id == game_session.round_id,
         ErrorCode::InvalidRound
     );
+    require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
+    require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
 
-    // Check which blocks user bet on and calculate rewards
+    // Check which factions user bet on and calculate rewards.
     msg!(
-        "   User bet on {} blocks: {:?}",
-        user_bet.block_ids.len(),
-        user_bet.block_ids
+        "   User bet on {} factions: {:?}",
+        user_bet.faction_ids.len(),
+        user_bet.faction_ids
     );
     msg!(
-        "   Winning block: {}. Follow-up block: {}",
-        game_session.winning_block,
-        game_session.same_faction_other_block
-    );
-    msg!(
-        "     Winning faction ID: {}",
-        game_session.winning_faction_id
+        "     Winning faction ID: {}, Winning direction: {}",
+        game_session.winning_faction_id,
+        game_session.winning_direction
     );
 
     // Calculate rewards using helper function
@@ -1198,6 +1163,13 @@ pub fn internal_claim_autominer_rewards(
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
     let autominer_vault = &mut ctx.accounts.autominer_vault;
+    let owner_key = autominer_vault.owner;
+
+    helper::validate_reward_claim_caller(
+        ctx.accounts.caller.key(),
+        owner_key,
+        player_data.allow_bots_to_claim,
+    )?;
 
     // Round should be completely over
     require!(game_session.stage == 2, ErrorCode::InvalidStage);
@@ -1205,6 +1177,8 @@ pub fn internal_claim_autominer_rewards(
         round_id == user_bet.round_id && round_id == game_session.round_id,
         ErrorCode::InvalidRound
     );
+    require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
+    require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
 
     // Calculate rewards using helper function
     let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards(user_bet, game_session)?;
@@ -1343,7 +1317,7 @@ pub fn internal_claim_autominer_rewards(
     Ok(())
 }
 
-/// Calculate SOL and MineBTC rewards for a user bet
+/// Calculate SOL and MineBTC rewards for a user bet.
 /// Returns (total_sol_reward, total_minebtc_reward)
 fn calculate_round_rewards(
     user_bet: &UserGameBet,
@@ -1352,27 +1326,29 @@ fn calculate_round_rewards(
     let mut total_sol_reward = 0u64;
     let mut total_minebtc_reward = 0u64;
 
-    for (idx, &block_id) in user_bet.block_ids.iter().enumerate() {
-        let points_bet_on_block = user_bet.points_bets.get(idx).copied().unwrap_or(0);
-        let wgtd_points_bet_on_block = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
+    for (idx, &faction_id) in user_bet.faction_ids.iter().enumerate() {
+        let direction = user_bet.directions.get(idx).copied().unwrap_or(0);
+        let points_bet_on_faction = user_bet.points_bets.get(idx).copied().unwrap_or(0);
+        let wgtd_points_bet_on_faction = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
 
         msg!(
-            "     Block {}: Points: {} SOL, Wgtd: {} DogeBTC",
-            block_id,
-            points_bet_on_block as f64 / 1e9,
-            wgtd_points_bet_on_block as f64 / 1e6
+            "     Faction {} (direction {}): Points: {} SOL, Wgtd: {} DogeBTC",
+            faction_id,
+            direction,
+            points_bet_on_faction as f64 / 1e9,
+            wgtd_points_bet_on_faction as f64 / 1e6
         );
 
-        let is_winning_block = block_id == game_session.winning_block;
-        let is_same_faction_block = block_id == game_session.same_faction_other_block;
+        let is_winning_faction = faction_id == game_session.winning_faction_id;
+        let is_winning_direction = direction == game_session.winning_direction;
 
-        if is_winning_block {
-            msg!("       ✓ Winning block - calculating rewards...");
+        if is_winning_faction && is_winning_direction {
+            msg!("       ✓ Exact winning faction+direction - calculating rewards...");
 
-            // SOL rewards: use regular points
-            if game_session.sol_rewards_index > 0 && points_bet_on_block > 0 {
+            // SOL rewards only go to the exact winning direction.
+            if game_session.sol_rewards_index > 0 && points_bet_on_faction > 0 {
                 let sol_reward = helper::mul_div(
-                    points_bet_on_block,
+                    points_bet_on_faction,
                     game_session.sol_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
@@ -1380,10 +1356,10 @@ fn calculate_round_rewards(
                 msg!("         SOL reward: {} SOL", sol_reward as f64 / 1e9);
             }
 
-            // MineBtc rewards: use wgtd_points
-            if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
+            // Exact-direction MineBTC rewards.
+            if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0 {
                 let minebtc_reward = helper::mul_div(
-                    wgtd_points_bet_on_block,
+                    wgtd_points_bet_on_faction,
                     game_session.minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
@@ -1393,24 +1369,24 @@ fn calculate_round_rewards(
                     minebtc_reward as f64 / 1e6
                 );
             }
-        } else if is_same_faction_block {
-            msg!("       ✓ Same-faction other block - calculating MineBtc rewards...");
+        } else if is_winning_faction {
+            msg!("       ✓ Same faction, different direction - consolation MineBTC rewards...");
 
-            // MineBtc rewards: use wgtd_points
-            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_block > 0 {
+            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0
+            {
                 let minebtc_reward = helper::mul_div(
-                    wgtd_points_bet_on_block,
+                    wgtd_points_bet_on_faction,
                     game_session.same_faction_minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
                 total_minebtc_reward += minebtc_reward;
                 msg!(
-                    "         MineBtc reward: {} DogeBTC",
+                    "         Same-faction MineBtc reward: {} DogeBTC",
                     minebtc_reward as f64 / 1e6
                 );
             }
         } else {
-            msg!("       ✗ Not a winning or same-faction block - no rewards");
+            msg!("       ✗ Not the winning faction - no round rewards");
         }
     }
 
@@ -1521,6 +1497,15 @@ pub struct AutominerBetInfo {
     pub rounds_remaining: u32,
 }
 
+fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)> {
+    match bet_type {
+        BetType::FactionDirection {
+            faction_id,
+            direction,
+        } => Ok((*faction_id, *direction)),
+    }
+}
+
 /// Internal join_round logic for batched processing
 /// Calculates totals, performs single transfers, and updates state for all bets
 #[allow(clippy::too_many_arguments)]
@@ -1542,23 +1527,31 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
+    index_state: &Account<'info, IndexState>,
     epoch_config: &mut Account<'info, EpochConfig>,
     epoch_state: &mut Account<'info, EpochState>,
+    epoch_state_bump: u8,
     user_epoch_bets: &mut Account<'info, UserEpochBets>,
     user_epoch_bets_bump: u8,
 ) -> Result<()> {
     let round_id = global_state.current_round_id;
+    let clock = Clock::get()?;
 
     require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
-    require!(
-        game_session.block_assignments.iter().any(|&f| f != 0),
-        ErrorCode::InvalidParameters
-    );
     require!(
         amount_per_bet > 0 || use_ticket.is_some(),
         ErrorCode::InvalidAmount
     );
+    if use_ticket.is_none() {
+        validate_min_sol_bet_per_position(amount_per_bet)?;
+    }
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
+    require!(epoch_config.is_active, ErrorCode::EpochNotActive);
+    require!(index_state.is_active, ErrorCode::InvalidIndexState);
+    require!(
+        index_state.index_id == epoch_config.active_index_id,
+        ErrorCode::InvalidIndexState
+    );
 
     msg!(
         "   Processing batch of {} bets for round {}",
@@ -1566,8 +1559,77 @@ fn internal_process_bets<'info>(
         round_id
     );
 
+    if epoch_state.epoch_id == 0 {
+        epoch_state.bump = epoch_state_bump;
+        epoch_state.epoch_id = epoch_config.current_epoch_id;
+        epoch_state.index_id = index_state.index_id;
+        epoch_state.question_hash = epoch_config.active_question_hash;
+        epoch_state.start_timestamp = clock.unix_timestamp.max(0) as u64;
+        epoch_state.end_timestamp = epoch_state
+            .start_timestamp
+            .checked_add(epoch_config.epoch_duration)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        epoch_state.stage = 0;
+        epoch_state.total_dogebtc_mined_in_epoch = 0;
+        epoch_state.risk_factor_snapshot = 0;
+        epoch_state.epoch_mining_pool = 0;
+        epoch_state.start_scores = index_state.latest_scores;
+        epoch_state.start_ranks = index_state.latest_ranks;
+        epoch_state.final_scores = epoch_state.start_scores;
+        epoch_state.final_ranks = epoch_state.start_ranks;
+        epoch_state.rank_deltas = [0i8; NUM_FACTIONS];
+        epoch_state.resolved_directions =
+            [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
+        epoch_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+
+        emit!(crate::events::EpochAutoStarted {
+            epoch_id: epoch_state.epoch_id,
+            index_id: epoch_state.index_id,
+            question_hash: epoch_state.question_hash,
+            start_timestamp: epoch_state.start_timestamp,
+            end_timestamp: epoch_state.end_timestamp,
+        });
+        msg!(
+            "   🌍 Auto-initialized epoch {} on index {} ({} -> {})",
+            epoch_state.epoch_id,
+            epoch_state.index_id,
+            epoch_state.start_timestamp,
+            epoch_state.end_timestamp
+        );
+    } else {
+        require!(
+            epoch_state.epoch_id == epoch_config.current_epoch_id,
+            ErrorCode::InvalidState
+        );
+        require!(epoch_state.stage == 0, ErrorCode::EpochNotActive);
+        require!(
+            epoch_state.index_id == index_state.index_id,
+            ErrorCode::InvalidIndexState
+        );
+    }
+
+    if user_epoch_bets.owner == Pubkey::default() {
+        user_epoch_bets.bump = user_epoch_bets_bump;
+        user_epoch_bets.owner = owner_key;
+        user_epoch_bets.epoch_id = epoch_state.epoch_id;
+        user_epoch_bets.index_id = epoch_state.index_id;
+        user_epoch_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    } else {
+        require!(user_epoch_bets.owner == owner_key, ErrorCode::Unauthorized);
+        require!(
+            user_epoch_bets.epoch_id == epoch_state.epoch_id,
+            ErrorCode::InvalidState
+        );
+        require!(
+            user_epoch_bets.index_id == epoch_state.index_id,
+            ErrorCode::InvalidIndexState
+        );
+    }
+
     // Arrays to return for events
-    let mut evt_target_blocks = Vec::new();
+    let mut evt_faction_ids = Vec::new();
+    let mut evt_directions = Vec::new();
     let mut evt_net_amounts = Vec::new();
     let mut evt_fee_amounts = Vec::new();
     let mut evt_points_amounts = Vec::new();
@@ -1695,16 +1757,23 @@ fn internal_process_bets<'info>(
         do_transfer(sol_prize_pot_vault, total_net_to_pot)?;
     }
 
-    // Initialize UserGameBet if needed
+    // Initialize UserGameBet if needed.
     if user_game_bet.owner == Pubkey::default() {
         user_game_bet.owner = owner_key;
         user_game_bet.round_id = round_id;
-        user_game_bet.block_ids = Vec::new();
+        user_game_bet.faction_ids = Vec::new();
+        user_game_bet.directions = Vec::new();
         user_game_bet.sol_bets = Vec::new();
         user_game_bet.points_bets = Vec::new();
         user_game_bet.wgtd_points_bets = Vec::new();
         user_game_bet.gameplay_doge = player_data.gameplay_doge;
+        user_game_bet.total_sol_bet = 0;
+        user_game_bet.total_points_bet = 0;
+        user_game_bet.total_wgtd_points_bet = 0;
+        user_game_bet.total_fee = 0;
         user_game_bet.bump = user_game_bet_bump;
+        user_game_bet.mutation_type = 0;
+        user_game_bet.epoch_accumulated = false;
 
         player_data.rounds_played += 1;
         msg!("     New bet account initialized");
@@ -1712,39 +1781,74 @@ fn internal_process_bets<'info>(
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
     }
 
-    // Process each bet state
+    // Process each faction-direction bet.
     for bet_type in bet_types {
-        let target_block =
-            get_target_block_from_bet_type(&bet_type, &game_session.block_assignments)?;
-        let block_index = target_block as usize;
-        require!(block_index < NUM_BLOCKS, ErrorCode::InvalidParameters);
+        let (faction_id, direction) = prediction_bet_parts(&bet_type)?;
+        require!(
+            (faction_id as usize) < global_config.supported_factions.len(),
+            ErrorCode::InvalidFactionId
+        );
+        let faction_index = faction_id as usize;
+        let direction_index = direction.as_index();
+        let direction_u8 = direction_index as u8;
 
-        // Update UserGameBet vectors
         if let Some(index) = user_game_bet
-            .block_ids
+            .faction_ids
             .iter()
-            .position(|&b| b == target_block)
+            .position(|&existing_faction| existing_faction == faction_id)
         {
-            user_game_bet.sol_bets[index] += net_per_bet;
-            user_game_bet.points_bets[index] += points_per_bet;
-            user_game_bet.wgtd_points_bets[index] += wgtd_points_per_bet;
+            let existing_direction = user_game_bet.directions.get(index).copied().unwrap_or(255);
+            require!(
+                existing_direction == direction_u8,
+                ErrorCode::ConflictingFactionDirection
+            );
+
+            user_game_bet.sol_bets[index] =
+                user_game_bet.sol_bets[index].saturating_add(net_per_bet);
+            user_game_bet.points_bets[index] =
+                user_game_bet.points_bets[index].saturating_add(points_per_bet);
+            user_game_bet.wgtd_points_bets[index] =
+                user_game_bet.wgtd_points_bets[index].saturating_add(wgtd_points_per_bet);
         } else {
-            user_game_bet.block_ids.push(target_block);
+            require!(
+                user_game_bet.faction_ids.len() < UserGameBet::MAX_FACTIONS_PER_BET,
+                ErrorCode::InvalidParameters
+            );
+            user_game_bet.faction_ids.push(faction_id);
+            user_game_bet.directions.push(direction_u8);
             user_game_bet.sol_bets.push(net_per_bet);
             user_game_bet.points_bets.push(points_per_bet);
             user_game_bet.wgtd_points_bets.push(wgtd_points_per_bet);
 
-            // Increment user count for this block only if new
-            game_session.user_block_indexes[block_index] += 1;
+            game_session.user_faction_indexes[faction_index] =
+                game_session.user_faction_indexes[faction_index].saturating_add(1);
         }
 
         // Update GameSession stats
-        game_session.sol_bets_indexes[block_index] += net_per_bet;
-        game_session.points_bets_indexes[block_index] += points_per_bet;
-        game_session.wgtd_points_bets_indexes[block_index] += wgtd_points_per_bet;
+        game_session.sol_bets_by_faction[faction_index] =
+            game_session.sol_bets_by_faction[faction_index].saturating_add(net_per_bet);
+        game_session.points_bets_by_faction[faction_index] =
+            game_session.points_bets_by_faction[faction_index].saturating_add(points_per_bet);
+        game_session.wgtd_points_bets_by_faction[faction_index] = game_session
+            .wgtd_points_bets_by_faction[faction_index]
+            .saturating_add(wgtd_points_per_bet);
+        game_session.points_bets_by_faction_direction[faction_index][direction_index] =
+            game_session.points_bets_by_faction_direction[faction_index][direction_index]
+                .saturating_add(points_per_bet);
+        game_session.wgtd_points_bets_by_faction_direction[faction_index][direction_index] =
+            game_session.wgtd_points_bets_by_faction_direction[faction_index][direction_index]
+                .saturating_add(wgtd_points_per_bet);
+
+        user_epoch_bets.direction_bets[faction_index][direction_index] = user_epoch_bets
+            .direction_bets[faction_index][direction_index]
+            .saturating_add(wgtd_points_per_bet);
+        epoch_state.faction_direction_totals[faction_index][direction_index] = epoch_state
+            .faction_direction_totals[faction_index][direction_index]
+            .saturating_add(wgtd_points_per_bet);
 
         // Record for events
-        evt_target_blocks.push(target_block);
+        evt_faction_ids.push(faction_id);
+        evt_directions.push(direction_u8);
         evt_net_amounts.push(net_per_bet);
         evt_fee_amounts.push(fee_per_bet);
         evt_points_amounts.push(points_per_bet);
@@ -1752,15 +1856,24 @@ fn internal_process_bets<'info>(
     }
 
     // Update Totals
-    let total_net_added = net_per_bet * num_bets;
-    let total_points_added = points_per_bet * num_bets;
-    let total_wgtd_points_added = wgtd_points_per_bet * num_bets;
-    let total_fee_added = fee_per_bet * num_bets;
+    let total_net_added = net_per_bet
+        .checked_mul(num_bets)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let total_points_added = points_per_bet
+        .checked_mul(num_bets)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let total_wgtd_points_added = wgtd_points_per_bet
+        .checked_mul(num_bets)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let total_fee_added = fee_per_bet
+        .checked_mul(num_bets)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     user_game_bet.total_sol_bet = user_game_bet.total_sol_bet.saturating_add(total_net_added);
     user_game_bet.total_points_bet += total_points_added;
     user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
     user_game_bet.total_fee += total_fee_added;
+    user_game_bet.epoch_accumulated = true;
 
     game_session.total_sol_bets = game_session.total_sol_bets.saturating_add(total_net_added);
     game_session.total_points_bets += total_points_added;
@@ -1806,8 +1919,11 @@ fn internal_process_bets<'info>(
         active_multiplier: player_data.active_multiplier,
         gameplay_doge_xp: player_data.gameplay_doge_xp,
         round_id,
+        epoch_id: epoch_state.epoch_id,
+        index_id: epoch_state.index_id,
         num_bets: num_bets as u8,
-        target_blocks: evt_target_blocks.clone(),
+        faction_ids: evt_faction_ids,
+        directions: evt_directions,
         net_amounts: evt_net_amounts,
         fee_amounts: evt_fee_amounts,
         points_amounts: evt_points_amounts,
@@ -1822,58 +1938,6 @@ fn internal_process_bets<'info>(
         vault_closed,
         timestamp: clock.unix_timestamp,
     });
-
-    // === EPOCH BET ACCUMULATION (inline) ===
-    if epoch_config.is_active && epoch_state.stage == 0 {
-        // Initialize epoch_state if freshly created (init_if_needed)
-        if epoch_state.epoch_id == 0
-            && epoch_state.start_timestamp == 0
-            && epoch_config.current_epoch_id > 0
-        {
-            let clock_now = Clock::get()?;
-            epoch_state.epoch_id = epoch_config.current_epoch_id;
-            epoch_state.start_timestamp = clock_now.unix_timestamp as u64;
-            epoch_state.end_timestamp = epoch_state.start_timestamp + epoch_config.epoch_duration;
-            epoch_state.stage = 0;
-            epoch_state.faction_dimension_scores = [[0u16; NUM_DIMENSIONS]; NUM_FACTIONS];
-            epoch_state.faction_composite_scores = [0u16; NUM_FACTIONS];
-            epoch_state.faction_total_sol_bets = [0u64; NUM_FACTIONS];
-            epoch_state.total_dogebtc_mined_in_epoch = 0;
-            epoch_state.risk_factor_snapshot = 0;
-            epoch_state.epoch_mining_pool = 0;
-            epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
-            epoch_state.score_updates_count = 0;
-
-            emit!(crate::events::EpochAutoStarted {
-                epoch_id: epoch_state.epoch_id,
-                start_timestamp: epoch_state.start_timestamp,
-                end_timestamp: epoch_state.end_timestamp,
-            });
-            msg!(
-                "   🌍 Auto-initialized epoch {} ({} -> {})",
-                epoch_state.epoch_id,
-                epoch_state.start_timestamp,
-                epoch_state.end_timestamp
-            );
-        }
-
-        // Initialize user_epoch_bets if first bet this epoch
-        if user_epoch_bets.owner == Pubkey::default() {
-            user_epoch_bets.owner = owner_key;
-            user_epoch_bets.epoch_id = epoch_state.epoch_id;
-            user_epoch_bets.faction_bets = [0u64; NUM_FACTIONS];
-            user_epoch_bets.bump = user_epoch_bets_bump;
-        }
-
-        // Map each block bet to faction and accumulate
-        for block_id in evt_target_blocks.iter() {
-            let faction = game_session.block_assignments[*block_id as usize] as usize;
-            if faction < NUM_FACTIONS {
-                user_epoch_bets.faction_bets[faction] += wgtd_points_per_bet;
-                epoch_state.faction_total_sol_bets[faction] += wgtd_points_per_bet;
-            }
-        }
-    }
 
     // === INSTANT MUTATION & XP LOGIC ===
     // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_doge
@@ -1952,73 +2016,6 @@ fn internal_process_bets<'info>(
     Ok(())
 }
 
-/// Get the target block ID from bet_type (0-indexed: 0-23)
-/// For Block bets, returns the block_id directly (0-indexed)
-/// For FactionHighestLowest bets, finds the faction's blocks and returns highest/lowest (0-indexed)
-fn get_target_block_from_bet_type(
-    bet_type: &BetType,
-    block_assignments: &[u8; NUM_BLOCKS],
-) -> Result<u8> {
-    match bet_type {
-        BetType::Block { block_id } => {
-            require!(*block_id < NUM_BLOCKS as u8, ErrorCode::InvalidParameters);
-            Ok(*block_id)
-        }
-        BetType::FactionHighestLowest {
-            faction_id,
-            is_highest,
-        } => {
-            require!(
-                (*faction_id as usize) < block_assignments.len(),
-                ErrorCode::InvalidParameters
-            );
-            // Find the two blocks assigned to this faction (0-indexed)
-            let mut faction_blocks: Vec<u8> = Vec::new();
-            for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
-                if *assigned_faction == *faction_id {
-                    faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
-                }
-            }
-
-            require!(
-                faction_blocks.len() == BLOCKS_PER_FACTION as usize,
-                ErrorCode::InvalidParameters
-            );
-
-            if *is_highest {
-                Ok(*faction_blocks.iter().max().unwrap())
-            } else {
-                Ok(*faction_blocks.iter().min().unwrap())
-            }
-        }
-        BetType::FactionBoth { faction_id } => {
-            // For "both", return the highest block (will be expanded in batch function)
-            require!(
-                (*faction_id as usize) < block_assignments.len(),
-                ErrorCode::InvalidParameters
-            );
-            let mut faction_blocks: Vec<u8> = Vec::new();
-            for (block_idx, assigned_faction) in block_assignments.iter().enumerate() {
-                if *assigned_faction == *faction_id {
-                    faction_blocks.push(block_idx as u8); // 0-indexed (0-23)
-                }
-            }
-            require!(
-                faction_blocks.len() == BLOCKS_PER_FACTION as usize,
-                ErrorCode::InvalidParameters
-            );
-            Ok(*faction_blocks.iter().max().unwrap()) // Return highest, but will be expanded
-        }
-        BetType::RandomBlock => {
-            // Random block - use clock slot for randomness (0-indexed: 0-23)
-            let clock = Clock::get()?;
-            let slot_bytes = clock.slot.to_le_bytes();
-            let random_block = (slot_bytes[0] % 24) as u8; // 0-23
-            Ok(random_block)
-        }
-    }
-}
-
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
     let fee = amount.saturating_mul(protocol_fee_pct) / M_HUNDRED;
     let net_amount = amount.saturating_sub(fee);
@@ -2059,73 +2056,40 @@ fn validate_points_percentage_limit(
     Ok(())
 }
 
-// Compute blocks to bet on based on blocks_config and clock
-fn compute_blocks_to_bet(
-    blocks_config: Option<BlocksConfig>,
-    clock: &Clock,
-) -> Result<Option<Vec<u8>>> {
-    let blocks_to_bet = if let Some(ref blocks_cfg) = blocks_config {
-        match blocks_cfg {
-            BlocksConfig::Specific { blocks } => Some(blocks.clone()),
-            BlocksConfig::Random { count } => {
-                // Generate random blocks using slot hash
-                let mut random_blocks = Vec::new();
-                let mut used_blocks = [false; 24];
-                let mut attempts: u64 = 0;
-                while random_blocks.len() < *count as usize && attempts < 100 {
-                    let slot_bytes = clock.slot.to_le_bytes();
-                    let hash = keccak::hash(&[slot_bytes, attempts.to_le_bytes()].concat());
-                    let block_id = (hash.0[0] % 24) as u8;
-                    if !used_blocks[block_id as usize] {
-                        random_blocks.push(block_id);
-                        used_blocks[block_id as usize] = true;
-                    }
-                    attempts += 1;
-                }
-                require!(
-                    random_blocks.len() == *count as usize,
-                    ErrorCode::InvalidParameters
-                );
-                Some(random_blocks)
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(ref blocks) = blocks_to_bet {
-        msg!("     Blocks to bet on: {:?}", blocks);
-    }
-
-    Ok(blocks_to_bet)
-}
-
-/// Generate bet types from blocks_config and factions_config
+/// Generate faction-direction bet types from the autominer configuration.
 /// Returns vector of bet types to place
 fn make_bets_vec<'info>(
     factions_config: Option<FactionsConfig>,
-    blocks_to_bet: Option<Vec<u8>>,
-    game_session: &Account<'info, GameSession>,
     clock: &Clock,
     global_config: &Account<'info, GlobalConfig>,
 ) -> Result<Vec<BetType>> {
     let mut bet_types = Vec::new();
 
-    // Generate faction bets if factions_config is provided
     if let Some(ref factions_cfg) = factions_config {
-        let factions_to_bet = match factions_cfg {
-            FactionsConfig::Specific { factions, .. } => factions.clone(),
-            FactionsConfig::Random { count, .. } => {
-                // Generate random factions
+        match factions_cfg {
+            FactionsConfig::Specific { picks } => {
+                msg!("     Specific autominer picks: {:?}", picks);
+                for pick in picks.iter() {
+                    require!(
+                        (pick.faction_id as usize) < global_config.supported_factions.len(),
+                        ErrorCode::InvalidFactionId
+                    );
+                    bet_types.push(BetType::FactionDirection {
+                        faction_id: pick.faction_id,
+                        direction: pick.direction,
+                    });
+                }
+            }
+            FactionsConfig::Random { count, direction } => {
                 let mut random_factions = Vec::new();
-                let mut used_factions = [false; 12];
+                let mut used_factions = [false; NUM_FACTIONS];
                 let mut attempts: u64 = 0;
                 let max_factions = global_config.supported_factions.len();
                 while random_factions.len() < *count as usize && attempts < 100 {
                     let slot_bytes = clock.slot.to_le_bytes();
                     let hash =
                         keccak::hash(&[slot_bytes, (attempts + 100u64).to_le_bytes()].concat());
-                    let faction_id = (hash.0[0] % max_factions as u8) as u8;
+                    let faction_id = hash.0[0] % max_factions as u8;
                     if !used_factions[faction_id as usize] && (faction_id as usize) < max_factions {
                         random_factions.push(faction_id);
                         used_factions[faction_id as usize] = true;
@@ -2136,95 +2100,18 @@ fn make_bets_vec<'info>(
                     random_factions.len() == *count as usize,
                     ErrorCode::InvalidParameters
                 );
-                random_factions
-            }
-        };
-
-        let strategy = match factions_cfg {
-            FactionsConfig::Specific { strategy, .. } => strategy,
-            FactionsConfig::Random { strategy, .. } => strategy,
-        };
-
-        msg!(
-            "     Factions to bet on: {:?} (strategy: {:?})",
-            factions_to_bet,
-            strategy
-        );
-
-        // Generate bet types for each faction
-        // If blocks_to_bet provided, bet on those blocks for each faction
-        // If no blocks_to_bet, bet on all blocks assigned to those factions in current round
-        if let Some(ref blocks) = blocks_to_bet {
-            // Blocks config provided - bet on specified blocks for each faction
-            for &faction_id in factions_to_bet.iter() {
-                match strategy {
-                    FactionStrategy::Highest => {
-                        for _block_id in blocks.iter() {
-                            bet_types.push(BetType::FactionHighestLowest {
-                                faction_id,
-                                is_highest: true,
-                            });
-                        }
-                    }
-                    FactionStrategy::Lowest => {
-                        for _block_id in blocks.iter() {
-                            bet_types.push(BetType::FactionHighestLowest {
-                                faction_id,
-                                is_highest: false,
-                            });
-                        }
-                    }
-                    FactionStrategy::Both => {
-                        for _block_id in blocks.iter() {
-                            bet_types.push(BetType::FactionHighestLowest {
-                                faction_id,
-                                is_highest: true,
-                            });
-                            bet_types.push(BetType::FactionHighestLowest {
-                                faction_id,
-                                is_highest: false,
-                            });
-                        }
-                    }
+                msg!(
+                    "     Random autominer factions: {:?} (direction: {:?})",
+                    random_factions,
+                    direction
+                );
+                for faction_id in random_factions {
+                    bet_types.push(BetType::FactionDirection {
+                        faction_id,
+                        direction: *direction,
+                    });
                 }
             }
-        } else {
-            // No blocks config - bet on all blocks assigned to selected factions in current round
-            for &faction_id in factions_to_bet.iter() {
-                for block_id in 0..NUM_BLOCKS as u8 {
-                    if game_session.block_assignments[block_id as usize] == faction_id {
-                        match strategy {
-                            FactionStrategy::Highest => {
-                                bet_types.push(BetType::FactionHighestLowest {
-                                    faction_id,
-                                    is_highest: true,
-                                });
-                            }
-                            FactionStrategy::Lowest => {
-                                bet_types.push(BetType::FactionHighestLowest {
-                                    faction_id,
-                                    is_highest: false,
-                                });
-                            }
-                            FactionStrategy::Both => {
-                                bet_types.push(BetType::FactionHighestLowest {
-                                    faction_id,
-                                    is_highest: true,
-                                });
-                                bet_types.push(BetType::FactionHighestLowest {
-                                    faction_id,
-                                    is_highest: false,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } else if let Some(ref blocks) = blocks_to_bet {
-        // Only blocks config - bet on blocks directly
-        for &block_id in blocks.iter() {
-            bet_types.push(BetType::Block { block_id });
         }
     } else {
         return Err(ErrorCode::InvalidParameters.into());
@@ -2262,8 +2149,9 @@ pub struct InitializePlayer<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// Optional: Referrer's referral rewards account (if referral code is provided)
-    /// CHECK: Validated manually that owner matches referral_code pubkey
+    /// Optional only when no referral code is supplied.
+    /// If a referral code is provided, this account must be the canonical referrer's
+    /// ReferralRewards PDA and is validated in the instruction handler.
     #[account(mut)]
     pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
 
@@ -2409,8 +2297,17 @@ pub struct JoinRound<'info> {
         mut,
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
+        constraint = epoch_config.is_active @ ErrorCode::EpochNotActive,
     )]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    #[account(
+        seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
+        bump = index_state.bump,
+        constraint = index_state.index_id == epoch_config.active_index_id @ ErrorCode::InvalidIndexState,
+        constraint = index_state.is_active @ ErrorCode::InvalidIndexState
+    )]
+    pub index_state: Box<Account<'info, IndexState>>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2441,8 +2338,8 @@ pub struct JoinRound<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Account struct for batch betting
-/// Note: All bets must be for the same faction (same faction_state account)
+/// Account struct for batch betting.
+/// Batch bets can include multiple country+direction picks in one transaction.
 #[derive(Accounts)]
 pub struct JoinRoundBatch<'info> {
     #[account(
@@ -2511,8 +2408,17 @@ pub struct JoinRoundBatch<'info> {
         mut,
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
+        constraint = epoch_config.is_active @ ErrorCode::EpochNotActive,
     )]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    #[account(
+        seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
+        bump = index_state.bump,
+        constraint = index_state.index_id == epoch_config.active_index_id @ ErrorCode::InvalidIndexState,
+        constraint = index_state.is_active @ ErrorCode::InvalidIndexState
+    )]
+    pub index_state: Box<Account<'info, IndexState>>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2541,6 +2447,20 @@ pub struct JoinRoundBatch<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetPlayerClaimSettings<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -2574,7 +2494,13 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    #[account(mut, close = user_wallet)]
+    #[account(
+        mut,
+        close = caller,
+        seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &round_id.to_le_bytes()],
+        bump = user_game_bet.bump,
+        constraint = user_game_bet.owner == user_wallet.key() @ ErrorCode::InvalidOwner
+    )]
     pub user_game_bet: Account<'info, UserGameBet>,
 
     /// CHECK: User whose bet this is
@@ -2582,6 +2508,7 @@ pub struct ClaimRoundRewards<'info> {
     pub user_wallet: UncheckedAccount<'info>,
 
     /// Caller (bot or user themselves)
+    #[account(mut)]
     pub caller: Signer<'info>,
 
     /// Optional DogeMetadata account for syncing mutation
@@ -2633,7 +2560,13 @@ pub struct ClaimAutominerRewards<'info> {
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     /// User game bet account - will be closed
-    #[account(mut, close = owner_wallet)]
+    #[account(
+        mut,
+        close = caller,
+        seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &round_id.to_le_bytes()],
+        bump = user_game_bet.bump,
+        constraint = user_game_bet.owner == autominer_vault.owner @ ErrorCode::InvalidOwner
+    )]
     pub user_game_bet: Account<'info, UserGameBet>,
 
     /// CHECK: Owner wallet to receive leftover SOL / rent
@@ -2641,6 +2574,7 @@ pub struct ClaimAutominerRewards<'info> {
     pub owner_wallet: UncheckedAccount<'info>,
 
     /// Caller (backend script)
+    #[account(mut)]
     pub caller: Signer<'info>,
 
     /// Optional DogeMetadata account for syncing mutation
@@ -2651,7 +2585,7 @@ pub struct ClaimAutominerRewards<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(blocks_config: Option<BlocksConfig>, factions_config: Option<FactionsConfig>, sol_per_round: u64, num_rounds: u32)]
+#[instruction(factions_config: Option<FactionsConfig>, sol_per_round: u64, num_rounds: u32)]
 pub struct InitAutominer<'info> {
     #[account(
         init_if_needed,
@@ -2845,8 +2779,17 @@ pub struct ExecuteAutominerBet<'info> {
         mut,
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
+        constraint = epoch_config.is_active @ ErrorCode::EpochNotActive,
     )]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    #[account(
+        seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
+        bump = index_state.bump,
+        constraint = index_state.index_id == epoch_config.active_index_id @ ErrorCode::InvalidIndexState,
+        constraint = index_state.is_active @ ErrorCode::InvalidIndexState
+    )]
+    pub index_state: Box<Account<'info, IndexState>>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(

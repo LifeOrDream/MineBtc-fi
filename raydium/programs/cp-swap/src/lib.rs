@@ -20,14 +20,14 @@ solana_security_txt::security_txt! {
 }
 
 #[cfg(feature = "devnet")]
-declare_id!("6TvNibkd8vhvvfJ3kdVM6sWbyFjE1BwhSugzV8iGqTAH");
+declare_id!("3uC51kHesun2x1nxM9dzZvzZfiMLEesBZJe6xv6EtwBN");
 #[cfg(not(feature = "devnet"))]
-declare_id!("6TvNibkd8vhvvfJ3kdVM6sWbyFjE1BwhSugzV8iGqTAH");
+declare_id!("3uC51kHesun2x1nxM9dzZvzZfiMLEesBZJe6xv6EtwBN");
 
 pub mod admin {
     use super::{pubkey, Pubkey};
     #[cfg(feature = "devnet")]
-    pub const ID: Pubkey = pubkey!("DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61");
+    pub const ID: Pubkey = pubkey!("H4ZNAsjrXCxZ6ZjzRWPhh1XWXqHrMJZ8EmBVcyCgVxLj");
     #[cfg(not(feature = "devnet"))]
     pub const ID: Pubkey = pubkey!("DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61");
 }
@@ -35,7 +35,7 @@ pub mod admin {
 pub mod create_pool_fee_reveiver {
     use super::{pubkey, Pubkey};
     #[cfg(feature = "devnet")]
-    pub const ID: Pubkey = pubkey!("DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61");
+    pub const ID: Pubkey = pubkey!("H4ZNAsjrXCxZ6ZjzRWPhh1XWXqHrMJZ8EmBVcyCgVxLj");
     #[cfg(not(feature = "devnet"))]
     pub const ID: Pubkey = pubkey!("DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61");
 }

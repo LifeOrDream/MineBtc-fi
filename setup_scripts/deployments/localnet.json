@@ -178,13 +178,13 @@
       },
       {
         "faction_id": 6,
-        "name": "Vietnam",
+        "name": "Iran",
         "faction_state_pda": "FJ8pdXMMNhWm7FK1JNauhxQvSWMt43yRfa4ws7DM4v38",
         "tx_signature": "4F7KGvhq6EkMx6MzvPsNcQF3fwP58vvHuBVxDQrKz71HXxbZT7aeFWX8nXk31Bj3MJrjoZ3mf8n53V6LzUAPnRs5"
       },
       {
         "faction_id": 7,
-        "name": "The Philippines",
+        "name": "UK",
         "faction_state_pda": "BGVbCneznH5VpTw9sxCjnnMLbgz8EM9M3e8oDDakCpnk",
         "tx_signature": "4KtC6Ej6XG4zH4h1fRR7b8En6xEC1Pvah23BQ52cFzDzbk2b7h9UJJENzEJP8n7GfW6n5MARJfitcAnWtRJdrgit"
       },
@@ -202,13 +202,13 @@
       },
       {
         "faction_id": 10,
-        "name": "Brazil",
+        "name": "Ukraine",
         "faction_state_pda": "4z5bHdAJK58CR27gtMKq8p5DnokvAg1U6RQrf4Pszh1P",
         "tx_signature": "4eT5Pwhn4as19bVryfsK8v6cxV1iRbFcbzV9zfd4p3Hn51FicKmHcqT3keX77eocMhsSFcpLYYCgNivbkoa9wfEn"
       },
       {
         "faction_id": 11,
-        "name": "Argentina",
+        "name": "Israel",
         "faction_state_pda": "CrQqb52s8YY6UweVgkroK93hpyXTZg1dCwFgwkSGbKJ1",
         "tx_signature": "4pV2eqW8rmtij9DZsPmqdc3Nr1ziuUzWMghhfom5vjFNzytp3EKUPmaH7fgxxEsJR3qaBds8NvzyqrHMesKRrztL"
       }

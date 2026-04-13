@@ -28,7 +28,8 @@ Please include:
 - MineBTC Solana program (`Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx`)
 - Program-derived accounts (PDAs) and associated vaults
 - Token-2022 transfer fee logic
-- Staking, betting, and reward distribution logic
+- Staking, country-direction betting, round settlement, active-index score updates, epoch settlement, and reward distribution logic
+- Autominer execution and gameplay-doge custody / synchronization flows
 - NFT minting and bonding curve logic
 
 **Out of scope:**

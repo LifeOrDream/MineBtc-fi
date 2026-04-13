@@ -12,6 +12,46 @@ pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
 // ------------ REFERRAL SYSTEM HELPERS ----------------
 // -----------------------------------------------------
 
+/// Derive the canonical referral rewards PDA for a referrer.
+pub fn referral_rewards_pda(referrer: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[REFERRAL_REWARDS_SEED, referrer.as_ref()], &crate::id()).0
+}
+
+/// Validate that the provided referral rewards account matches the expected PDA for `referral_code`.
+pub fn validate_referrer_rewards_account<'info>(
+    referral_code: &Pubkey,
+    referrer_rewards: Option<&Account<'info, ReferralRewards>>,
+) -> Result<()> {
+    let Some(referrer_rewards) = referrer_rewards else {
+        return err!(ErrorCode::ReferralRewardsAccountRequired);
+    };
+
+    require_keys_eq!(
+        referrer_rewards.key(),
+        referral_rewards_pda(referral_code),
+        ErrorCode::InvalidReferralAccount
+    );
+    require_keys_eq!(
+        referrer_rewards.owner,
+        *referral_code,
+        ErrorCode::InvalidReferralAccount
+    );
+
+    Ok(())
+}
+
+pub fn validate_reward_claim_caller(
+    caller: Pubkey,
+    owner: Pubkey,
+    allow_bots_to_claim: bool,
+) -> Result<()> {
+    require!(
+        caller == owner || allow_bots_to_claim,
+        ErrorCode::PermissionlessRewardClaimsDisabled
+    );
+    Ok(())
+}
+
 // Helper function to transfer SOL to the program's sol_treasury PDA
 pub fn transfer_to_sol_treasury<'info>(
     from: &AccountInfo<'info>,
