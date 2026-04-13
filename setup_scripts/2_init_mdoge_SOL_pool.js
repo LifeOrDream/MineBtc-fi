@@ -302,9 +302,15 @@ async function setupDeployerAccount(connection) {
         if (CLUSTER.includes('devnet')) {
             console.log('\x1b[33m%s\x1b[0m', '💧 Requesting airdrop...');
             try {
+                const shortfall = Math.max(
+                    0,
+                    config.raydium.create_pool_fee + config.raydium.initial_sol_amount - balance
+                );
+                const airdropAmount = config.dev?.airdrop_amount
+                    ?? Math.max(shortfall + LAMPORTS_PER_SOL / 2, LAMPORTS_PER_SOL);
                 const airdropSignature = await connection.requestAirdrop(
                     deployer.publicKey,
-                    config.dev.airdrop_amount
+                    airdropAmount
                 );
                 await connection.confirmTransaction(airdropSignature);
                 console.log('\x1b[32m%s\x1b[0m', '✅ Airdrop successful!');
@@ -352,7 +358,7 @@ function validatePrerequisites(deploymentData) {
     
     // Only require deployed Raydium if not using official program
     if (!config.raydium.use_official_program && !deploymentData.RAYDIUM_CP_PROGRAM_ID) {
-        errors.push('Raydium CP program not deployed - run 0_deploy_game.js first or set use_official_program: true');
+        errors.push('Raydium CP program not deployed - run 0_deploy_raydium.js first or set use_official_program: true');
     }
     
     if (!deploymentData.dbtc_mint_address) {
@@ -1288,4 +1294,3 @@ function printCompletionSummary(deploymentData) {
     console.log('\x1b[35m%s\x1b[0m', '========================================================================================');
     console.log('\x1b[36m%s\x1b[0m', '📁 Pool configuration saved to:', path.resolve(__dirname, config.deployment.paths.deployments_dir, `${CLUSTER}.json`));
 }
-  

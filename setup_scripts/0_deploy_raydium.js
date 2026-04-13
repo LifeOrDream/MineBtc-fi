@@ -2,6 +2,7 @@
 
 import { execSync } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Keypair } from "@solana/web3.js";
@@ -27,6 +28,18 @@ const RAYDIUM_LIB_PATH = path.join(
 );
 const RAYDIUM_BUILD_DIR = path.join(RAYDIUM_DIR, "programs", "cp-swap");
 const DEPLOYMENTS_DIR = path.join(__dirname, "deployments");
+
+function shellEscape(value) {
+  return `"${String(value).replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function stageForSolanaCli(sourcePath, stagedName = path.basename(sourcePath)) {
+  const stagingDir = path.join(os.tmpdir(), "minebtc-solana-cli");
+  ensureDirectoryExists(stagingDir);
+  const stagedPath = path.join(stagingDir, stagedName);
+  fs.copyFileSync(sourcePath, stagedPath);
+  return stagedPath;
+}
 
 function runCommand(command, cwd = ROOT_DIR) {
   console.log(`\x1b[36m🔧 Running: ${command}\x1b[0m`);
@@ -177,7 +190,24 @@ function deployRaydium(programId) {
     clusterUrl = config.network?.rpc_url || clusterUrl;
   } catch (error) {}
 
-  const deployCommand = `solana program deploy ${RAYDIUM_SO_PATH} --program-id ${RAYDIUM_KEYPAIR_PATH} --url ${clusterUrl}`;
+  const stagedSoPath = stageForSolanaCli(
+    RAYDIUM_SO_PATH,
+    "raydium_cp_swap.so"
+  );
+  const stagedProgramKeypairPath = stageForSolanaCli(
+    RAYDIUM_KEYPAIR_PATH,
+    "raydium_cp_swap-keypair.json"
+  );
+  const stagedWalletPath = stageForSolanaCli(
+    WALLET_KEYPAIR_PATH,
+    "devnet-wallet-keypair.json"
+  );
+
+  const deployCommand = `solana program deploy ${shellEscape(
+    stagedSoPath
+  )} --program-id ${shellEscape(
+    stagedProgramKeypairPath
+  )} --keypair ${shellEscape(stagedWalletPath)} --url ${shellEscape(clusterUrl)}`;
   runCommand(deployCommand);
 
   console.log(`\x1b[32m✅ Raydium deployed to: ${programId}\x1b[0m`);
@@ -331,7 +361,13 @@ function checkIfDeployed() {
     } catch (error) {}
 
     try {
-      const checkCommand = `solana program show ${programId} --url ${clusterUrl}`;
+      const stagedWalletPath = stageForSolanaCli(
+        WALLET_KEYPAIR_PATH,
+        "devnet-wallet-keypair.json"
+      );
+      const checkCommand = `solana program show ${programId} --keypair ${shellEscape(
+        stagedWalletPath
+      )} --url ${shellEscape(clusterUrl)}`;
       execSync(checkCommand, { stdio: "pipe", encoding: "utf8" });
       return programId;
     } catch (error) {
@@ -388,7 +424,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main();
 }
 
