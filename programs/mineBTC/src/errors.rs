@@ -52,7 +52,7 @@ pub enum ErrorCode {
     #[msg("Invalid faction name: must be 1-16 characters")]
     InvalidFactionName,
 
-    #[msg("Maximum number of factions reached (10 max)")]
+    #[msg("Maximum number of factions reached (15 max)")]
     MaxFactionsReached,
 
     #[msg("Faction with this name already exists")]

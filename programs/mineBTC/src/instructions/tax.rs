@@ -42,6 +42,12 @@ use crate::events::*;
 use crate::instructions::helper;
 use crate::state::*;
 
+fn distribution_faction_count(tax_config: &TaxConfig) -> Result<usize> {
+    let count = tax_config.distribution_faction_count as usize;
+    require!(count > 0 && count <= MAX_FACTIONS, ErrorCode::InvalidState);
+    Ok(count)
+}
+
 // ========================================================================================
 // ============================= ADMIN FUNCTIONS ==========================================
 // ========================================================================================
@@ -76,6 +82,7 @@ pub fn internal_initialize_tax_config(
     tax_config.start_timestamp = 0;
     tax_config.end_timestamp = clock.unix_timestamp;
     tax_config.leaderboard_factions_count = 0;
+    tax_config.distribution_faction_count = 0;
     tax_config.rewards_calculated = false;
     tax_config.factions_claimed_count = 0;
 
@@ -527,9 +534,16 @@ pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -
     );
 
     // Reset distribution round state
+    let active_faction_count = ctx.accounts.global_config.supported_factions.len();
+    require!(
+        active_faction_count > 0 && active_faction_count <= MAX_FACTIONS,
+        ErrorCode::InvalidState
+    );
+
     tax_config.round_active = true;
     tax_config.start_timestamp = current_time;
     tax_config.leaderboard_factions_count = 0;
+    tax_config.distribution_faction_count = active_faction_count as u8;
     tax_config.rewards_calculated = false;
     tax_config.factions_claimed_count = 0;
 
@@ -559,7 +573,7 @@ pub fn internal_start_distribution_round(ctx: Context<StartDistributionRound>) -
 }
 
 /// Calculate and store leaderboard position for one faction
-/// Must be called 12 times (once per faction) to build complete leaderboard
+/// Must be called once per active faction to build the complete leaderboard
 pub fn internal_cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
     msg!("📊 [cal_faction_positions] Calculating leaderboard position");
 
@@ -569,11 +583,21 @@ pub fn internal_cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>)
 
     let tax_config = &mut ctx.accounts.tax_config;
     let faction_state = &ctx.accounts.faction_state;
+    let active_faction_count = distribution_faction_count(tax_config)?;
 
     require!(tax_config.round_active, ErrorCode::InvalidState);
 
     require!(
-        tax_config.leaderboard_factions_count < MAX_FACTIONS as u8,
+        tax_config.leaderboard_factions_count < active_faction_count as u8,
+        ErrorCode::InvalidState
+    );
+    require!(
+        faction_state.faction_id < active_faction_count as u8,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        !tax_config.leaderboard_faction_ids[..tax_config.leaderboard_factions_count as usize]
+            .contains(&faction_state.faction_id),
         ErrorCode::InvalidState
     );
 
@@ -602,7 +626,7 @@ pub fn internal_cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>)
 
     // Shift existing entries down
     for i in (insert_index..tax_config.leaderboard_factions_count as usize).rev() {
-        if i + 1 < MAX_FACTIONS {
+        if i + 1 < active_faction_count {
             tax_config.leaderboard_faction_ids[i + 1] = tax_config.leaderboard_faction_ids[i];
             tax_config.leaderboard_hashpower[i + 1] = tax_config.leaderboard_hashpower[i];
         }
@@ -615,8 +639,9 @@ pub fn internal_cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>)
 
     msg!("   Rank: {} (0 = highest)", insert_index);
     msg!(
-        "   Leaderboard count: {}/12",
-        tax_config.leaderboard_factions_count
+        "   Leaderboard count: {}/{}",
+        tax_config.leaderboard_factions_count,
+        active_faction_count
     );
 
     // Store values before emitting event
@@ -641,7 +666,7 @@ pub fn internal_cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>)
 }
 
 /// Calculate rewards for all factions based on leaderboard
-/// Can only be called after all 12 factions are on leaderboard
+/// Can only be called after all active factions are on leaderboard
 pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
     msg!("💰 [cal_faction_rewards] Calculating faction rewards");
 
@@ -649,11 +674,12 @@ pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Re
     let tax_config_key = ctx.accounts.tax_config.key();
 
     let tax_config = &mut ctx.accounts.tax_config;
+    let active_faction_count = distribution_faction_count(tax_config)?;
 
     require!(tax_config.round_active, ErrorCode::InvalidState);
 
     require!(
-        tax_config.leaderboard_factions_count == MAX_FACTIONS as u8,
+        tax_config.leaderboard_factions_count == active_faction_count as u8,
         ErrorCode::InvalidState
     );
 
@@ -677,11 +703,15 @@ pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Re
     let remaining_amount =
         total_treasury - first_place_reward - second_place_reward - third_place_reward;
 
-    // Randomly select one faction from ranks 3-11 to get remaining 50%
-    // Use current timestamp as seed for pseudo-random selection
+    // Randomly select one faction from ranks 3..active_count-1 to get remaining 50%.
+    // If there are only 1-3 factions, the remaining amount stays with the last available rank.
     let clock = Clock::get()?;
     let random_seed = clock.unix_timestamp as u64;
-    let random_index = 3 + (random_seed % 9) as usize; // Random index between 3-11
+    let random_index = if active_faction_count > 3 {
+        3 + (random_seed % (active_faction_count - 3) as u64) as usize
+    } else {
+        active_faction_count - 1
+    };
 
     msg!("   Reward distribution:");
     msg!(
@@ -706,14 +736,36 @@ pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Re
         remaining_amount
     );
 
-    // Set rewards
-    tax_config.faction_rewards[0] = first_place_reward;
-    tax_config.faction_rewards[1] = second_place_reward;
-    tax_config.faction_rewards[2] = third_place_reward;
-    tax_config.faction_rewards[random_index] = remaining_amount;
+    for reward in tax_config.faction_rewards.iter_mut() {
+        *reward = 0;
+    }
 
-    // All other ranks get 0
-    for i in 0..MAX_FACTIONS {
+    tax_config.faction_rewards[0] = tax_config.faction_rewards[0]
+        .checked_add(first_place_reward)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    if active_faction_count > 1 {
+        tax_config.faction_rewards[1] = tax_config.faction_rewards[1]
+            .checked_add(second_place_reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    } else {
+        tax_config.faction_rewards[0] = tax_config.faction_rewards[0]
+            .checked_add(second_place_reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    if active_faction_count > 2 {
+        tax_config.faction_rewards[2] = tax_config.faction_rewards[2]
+            .checked_add(third_place_reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    } else {
+        tax_config.faction_rewards[random_index] = tax_config.faction_rewards[random_index]
+            .checked_add(third_place_reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    tax_config.faction_rewards[random_index] = tax_config.faction_rewards[random_index]
+        .checked_add(remaining_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    for i in 0..active_faction_count {
         if i != 0 && i != 1 && i != 2 && i != random_index {
             tax_config.faction_rewards[i] = 0;
         }
@@ -881,7 +933,8 @@ pub fn internal_finish_distribution_round(ctx: Context<FinishDistributionRound>)
 
     // Check all factions with rewards have claimed
     let mut all_claimed = true;
-    for i in 0..MAX_FACTIONS {
+    let active_faction_count = distribution_faction_count(tax_config)?;
+    for i in 0..active_faction_count {
         if tax_config.faction_rewards[i] > 0 {
             let faction_id = tax_config.leaderboard_faction_ids[i];
             if !tax_config.faction_claimed[faction_id as usize] {
@@ -902,6 +955,7 @@ pub fn internal_finish_distribution_round(ctx: Context<FinishDistributionRound>)
     tax_config.end_timestamp = clock.unix_timestamp;
     tax_config.rewards_calculated = false;
     tax_config.leaderboard_factions_count = 0;
+    tax_config.distribution_faction_count = 0;
     tax_config.factions_claimed_count = 0;
 
     // Clear leaderboard and rewards
@@ -1131,6 +1185,12 @@ pub struct StartDistributionRound<'info> {
     #[account(mut)]
     /// CHECK: Faction treasury vault (checked for balance)
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
 }
 
 #[derive(Accounts)]

@@ -114,6 +114,12 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     let global_state = &mut ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
+    let active_faction_count = global_config.supported_factions.len();
+
+    require!(
+        active_faction_count > 0 && active_faction_count <= NUM_FACTIONS,
+        ErrorCode::InvalidFactionId
+    );
 
     if game_session.stage == 1 || game_session.stage == 2 {
         return Ok(());
@@ -145,7 +151,9 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     final_randomness_seed.extend_from_slice(&clock.unix_timestamp.to_le_bytes());
     let final_hash_bytes = keccak::hash(&final_randomness_seed).to_bytes();
 
-    let total_users: u64 = game_session.user_faction_indexes.iter().sum();
+    let total_users: u64 = game_session.user_faction_indexes[..active_faction_count]
+        .iter()
+        .sum();
     let winning_faction_id = if total_users == 0 {
         (u64::from_le_bytes([
             final_hash_bytes[0],
@@ -156,9 +164,9 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
             0,
             0,
             0,
-        ]) % NUM_FACTIONS as u64) as u8
+        ]) % active_faction_count as u64) as u8
     } else {
-        let initial_faction = (u64::from_le_bytes([
+        let faction_random_seed = u64::from_le_bytes([
             final_hash_bytes[0],
             final_hash_bytes[1],
             final_hash_bytes[2],
@@ -167,8 +175,12 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
             0,
             0,
             0,
-        ]) % NUM_FACTIONS as u64) as u8;
-        find_valid_winning_faction(initial_faction, &game_session.user_faction_indexes)?
+        ]);
+        find_valid_winning_faction(
+            faction_random_seed,
+            &game_session.user_faction_indexes,
+            active_faction_count,
+        )?
     };
 
     game_session.winning_faction_id = winning_faction_id;
@@ -186,7 +198,16 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         initial_direction
     } else {
         find_valid_winning_direction(
-            initial_direction,
+            u64::from_le_bytes([
+                final_hash_bytes[4],
+                final_hash_bytes[5],
+                final_hash_bytes[6],
+                final_hash_bytes[7],
+                0,
+                0,
+                0,
+                0,
+            ]),
             &game_session.points_bets_by_faction_direction[winning_faction_id as usize],
         )?
     };
@@ -320,57 +341,42 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
 /// Find a valid winning faction that has at least one bettor.
 /// Starts from the initial faction and decrements until finding a faction with active users.
 fn find_valid_winning_faction(
-    initial_faction: u8,
+    random_seed: u64,
     user_faction_indexes: &[u64; NUM_FACTIONS],
+    active_faction_count: usize,
 ) -> Result<u8> {
-    let mut current_faction = initial_faction;
-    let mut attempts = 0;
-    const MAX_ATTEMPTS: u8 = NUM_FACTIONS as u8;
+    let mut active_factions = [0u8; NUM_FACTIONS];
+    let mut active_count = 0usize;
 
-    loop {
-        if attempts >= MAX_ATTEMPTS {
-            return Err(ErrorCode::InvalidParameters.into());
+    for faction_id in 0..active_faction_count {
+        if user_faction_indexes[faction_id] > 0 {
+            active_factions[active_count] = faction_id as u8;
+            active_count += 1;
         }
-
-        if user_faction_indexes[current_faction as usize] > 0 {
-            return Ok(current_faction);
-        }
-
-        if current_faction == 0 {
-            current_faction = (NUM_FACTIONS - 1) as u8;
-        } else {
-            current_faction -= 1;
-        }
-
-        attempts += 1;
     }
+
+    require!(active_count > 0, ErrorCode::InvalidParameters);
+
+    Ok(active_factions[(random_seed % active_count as u64) as usize])
 }
 
 fn find_valid_winning_direction(
-    initial_direction: u8,
+    random_seed: u64,
     direction_points: &[u64; PredictionDirection::COUNT],
 ) -> Result<u8> {
-    let mut current_direction = initial_direction;
-    let mut attempts = 0;
-    const MAX_ATTEMPTS: u8 = PredictionDirection::COUNT as u8;
+    let mut active_directions = [0u8; PredictionDirection::COUNT];
+    let mut active_count = 0usize;
 
-    loop {
-        if attempts >= MAX_ATTEMPTS {
-            return Err(ErrorCode::InvalidParameters.into());
+    for direction in 0..PredictionDirection::COUNT {
+        if direction_points[direction] > 0 {
+            active_directions[active_count] = direction as u8;
+            active_count += 1;
         }
-
-        if direction_points[current_direction as usize] > 0 {
-            return Ok(current_direction);
-        }
-
-        if current_direction == 0 {
-            current_direction = (PredictionDirection::COUNT - 1) as u8;
-        } else {
-            current_direction -= 1;
-        }
-
-        attempts += 1;
     }
+
+    require!(active_count > 0, ErrorCode::InvalidParameters);
+
+    Ok(active_directions[(random_seed % active_count as u64) as usize])
 }
 
 fn calculate_minebtc_split(
@@ -448,8 +454,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     )?;
 
     // Increment motherlode pot size (always, regardless of hit)
-    faction_state.motherlode_pot_size =
-        faction_state.motherlode_pot_size + game_session.motherlode_rewards;
+    faction_state.motherlode_pot_size = faction_state
+        .motherlode_pot_size
+        .checked_add(game_session.motherlode_rewards)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Motherlode pot: {} -> {} (+{})",
         (faction_state.motherlode_pot_size - game_session.motherlode_rewards) as f64 / 1_000_000.0,

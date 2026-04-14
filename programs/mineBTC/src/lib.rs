@@ -89,15 +89,6 @@ pub mod minebtc {
         admin::add_faction_internal(ctx, faction_name, faction_id)
     }
 
-    /// Rename a faction in supported_factions (admin only)
-    pub fn rename_faction(
-        ctx: Context<UpdateConfigAc>,
-        faction_id: u8,
-        new_name: String,
-    ) -> Result<()> {
-        admin::rename_faction_internal(ctx, faction_id, new_name)
-    }
-
     /// Initialize system referral account and buybacks system (admin only)
     pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
         admin::initialize_system_accounts_internal(ctx)
@@ -513,13 +504,13 @@ pub mod minebtc {
     }
 
     /// Calculate leaderboard position for one faction
-    /// Must be called 12 times to build complete leaderboard
+    /// Must be called once per active faction to build the complete leaderboard
     pub fn cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
         tax::internal_cal_faction_positions(ctx)
     }
 
     /// Calculate rewards for all factions based on leaderboard
-    /// Can only be called after all 12 factions are on leaderboard
+    /// Can only be called after all active factions are on leaderboard
     pub fn cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
         tax::internal_cal_faction_rewards(ctx)
     }
@@ -591,7 +582,7 @@ pub mod minebtc {
         ctx: Context<InitializeIndexState>,
         index_id: u8,
         name: String,
-        initial_scores: [i64; 12],
+        initial_scores: [i64; state::NUM_FACTIONS],
     ) -> Result<()> {
         epoch::initialize_index_state_internal(ctx, index_id, name, initial_scores)
     }
@@ -608,7 +599,7 @@ pub mod minebtc {
     /// AI Oracle posts additive score deltas for an index.
     pub fn update_epoch_scores(
         ctx: Context<UpdateEpochScores>,
-        score_deltas: [i64; 12],
+        score_deltas: [i64; state::NUM_FACTIONS],
     ) -> Result<()> {
         epoch::update_epoch_scores_internal(ctx, score_deltas)
     }

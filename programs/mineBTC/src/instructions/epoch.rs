@@ -5,24 +5,37 @@ use crate::events::*;
 use crate::instructions::helper;
 use crate::state::*;
 
-pub fn compute_rankings(scores: &[i64; NUM_FACTIONS]) -> ([u8; NUM_FACTIONS], [u8; NUM_FACTIONS]) {
+fn validate_active_faction_count(active_factions: usize) -> Result<()> {
+    require!(
+        active_factions > 0 && active_factions <= NUM_FACTIONS,
+        ErrorCode::InvalidFactionId
+    );
+    Ok(())
+}
+
+pub fn compute_rankings(
+    scores: &[i64; NUM_FACTIONS],
+    active_factions: usize,
+) -> Result<([u8; NUM_FACTIONS], [u8; NUM_FACTIONS])> {
+    validate_active_faction_count(active_factions)?;
+
     let mut ordered = [0u8; NUM_FACTIONS];
     for (idx, slot) in ordered.iter_mut().enumerate() {
         *slot = idx as u8;
     }
 
-    ordered.sort_by(|a, b| {
+    ordered[..active_factions].sort_by(|a, b| {
         scores[*b as usize]
             .cmp(&scores[*a as usize])
             .then_with(|| a.cmp(b))
     });
 
     let mut ranks = [0u8; NUM_FACTIONS];
-    for (rank, faction_id) in ordered.iter().enumerate() {
+    for (rank, faction_id) in ordered[..active_factions].iter().enumerate() {
         ranks[*faction_id as usize] = rank as u8;
     }
 
-    (ranks, ordered)
+    Ok((ranks, ordered))
 }
 
 pub fn resolve_direction_from_ranks(start_rank: u8, final_rank: u8) -> (PredictionDirection, i8) {
@@ -42,6 +55,9 @@ pub fn compute_faction_reward_pools(
     epoch_state: &mut EpochState,
     epoch_config: &EpochConfig,
 ) -> Result<()> {
+    let active_factions = epoch_state.active_faction_count as usize;
+    validate_active_faction_count(active_factions)?;
+
     let pool = epoch_state.epoch_mining_pool;
     if pool == 0 {
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
@@ -61,13 +77,15 @@ pub fn compute_faction_reward_pools(
     let total_rank_points: u128 = epoch_state
         .final_ranks
         .iter()
-        .map(|&rank| (NUM_FACTIONS - rank as usize) as u128)
+        .take(active_factions)
+        .map(|&rank| (active_factions - rank as usize) as u128)
         .sum();
 
     let mut reward_pools = [0u64; NUM_FACTIONS];
     if total_rank_points > 0 {
-        for faction_id in 0..NUM_FACTIONS {
-            let rank_points = (NUM_FACTIONS - epoch_state.final_ranks[faction_id] as usize) as u128;
+        for faction_id in 0..active_factions {
+            let rank_points =
+                (active_factions - epoch_state.final_ranks[faction_id] as usize) as u128;
             let share = base_pool
                 .checked_mul(rank_points)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -78,7 +96,7 @@ pub fn compute_faction_reward_pools(
         }
     }
 
-    let (_, ordered) = compute_rankings(&epoch_state.final_scores);
+    let (_, ordered) = compute_rankings(&epoch_state.final_scores, active_factions)?;
     let top1_bonus = pct_of_pool(epoch_config.top1_pct)?;
     let top2_bonus = pct_of_pool(epoch_config.top2_pct)?;
     let top3_bonus = pct_of_pool(epoch_config.top3_pct)?;
@@ -86,12 +104,12 @@ pub fn compute_faction_reward_pools(
     reward_pools[ordered[0] as usize] = reward_pools[ordered[0] as usize]
         .checked_add(top1_bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    if NUM_FACTIONS > 1 {
+    if active_factions > 1 {
         reward_pools[ordered[1] as usize] = reward_pools[ordered[1] as usize]
             .checked_add(top2_bonus)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
-    if NUM_FACTIONS > 2 {
+    if active_factions > 2 {
         reward_pools[ordered[2] as usize] = reward_pools[ordered[2] as usize]
             .checked_add(top3_bonus)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -234,8 +252,16 @@ pub fn initialize_index_state_internal(
         !name.is_empty() && name.len() <= MAX_INDEX_NAME_LENGTH,
         ErrorCode::InvalidParameters
     );
+    let active_factions = ctx.accounts.global_config.supported_factions.len();
+    validate_active_faction_count(active_factions)?;
+    require!(
+        initial_scores[active_factions..]
+            .iter()
+            .all(|score| *score == 0),
+        ErrorCode::InvalidParameters
+    );
 
-    let (ranks, _) = compute_rankings(&initial_scores);
+    let (ranks, _) = compute_rankings(&initial_scores, active_factions)?;
     let index_state = &mut ctx.accounts.index_state;
     index_state.bump = ctx.bumps.index_state;
     index_state.index_id = index_id;
@@ -356,13 +382,22 @@ pub fn update_epoch_scores_internal(
         ErrorCode::EpochNotActive
     );
 
+    let active_factions = epoch_state.active_faction_count as usize;
+    validate_active_faction_count(active_factions)?;
+    require!(
+        score_deltas[active_factions..]
+            .iter()
+            .all(|delta| *delta == 0),
+        ErrorCode::InvalidParameters
+    );
+
     for (idx, delta) in score_deltas.iter().enumerate() {
         index_state.latest_scores[idx] = index_state.latest_scores[idx]
             .checked_add(*delta)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    let (ranks, _) = compute_rankings(&index_state.latest_scores);
+    let (ranks, _) = compute_rankings(&index_state.latest_scores, active_factions)?;
     index_state.latest_ranks = ranks;
     index_state.score_updates_count = index_state
         .score_updates_count
@@ -415,6 +450,9 @@ pub fn finalize_epoch_settlement(
     epoch_state: &mut EpochState,
     clock: &Clock,
 ) -> Result<()> {
+    let active_factions = epoch_state.active_faction_count as usize;
+    validate_active_faction_count(active_factions)?;
+
     epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
     let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
         .checked_mul(epoch_state.risk_factor_snapshot as u128)
@@ -424,7 +462,7 @@ pub fn finalize_epoch_settlement(
     epoch_state.epoch_mining_pool =
         u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
-    for faction_id in 0..NUM_FACTIONS {
+    for faction_id in 0..active_factions {
         let (direction, rank_delta) = resolve_direction_from_ranks(
             epoch_state.start_ranks[faction_id],
             epoch_state.final_ranks[faction_id],
@@ -558,8 +596,11 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
     require!(epoch_state.epoch_mining_pool > 0, ErrorCode::InvalidState);
     require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
 
+    let active_factions = epoch_state.active_faction_count as usize;
+    validate_active_faction_count(active_factions)?;
+
     let mut total_reward = 0u64;
-    for faction_id in 0..NUM_FACTIONS {
+    for faction_id in 0..active_factions {
         let resolved_direction = epoch_state.resolved_directions[faction_id] as usize;
         let user_bet = user_epoch_bets.direction_bets[faction_id][resolved_direction];
         let total_bet = epoch_state.faction_direction_totals[faction_id][resolved_direction];
