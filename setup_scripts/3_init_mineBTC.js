@@ -188,14 +188,19 @@ function getInitialIndexConfig() {
     ? config.epoch.initial_scores
     : Array(config.factions.length).fill(0);
 
-  if (config.factions.length !== 12) {
+  const NUM_FACTIONS = 15; // Must match program's NUM_FACTIONS constant
+  if (config.factions.length > NUM_FACTIONS) {
     throw new Error(
-      `Expected exactly 12 factions for epoch index initialization, found ${config.factions.length}`
+      `Expected at most ${NUM_FACTIONS} factions for epoch index initialization, found ${config.factions.length}`
     );
   }
-  if (initialScores.length !== 12) {
+  // Pad initialScores to NUM_FACTIONS (program expects fixed-size array)
+  while (initialScores.length < NUM_FACTIONS) {
+    initialScores.push(0);
+  }
+  if (initialScores.length !== NUM_FACTIONS) {
     throw new Error(
-      `epoch.initial_scores must contain exactly 12 values, found ${initialScores.length}`
+      `epoch.initial_scores must contain exactly ${NUM_FACTIONS} values, found ${initialScores.length}`
     );
   }
 
