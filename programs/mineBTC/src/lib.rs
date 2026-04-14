@@ -45,7 +45,7 @@ pub use state::{
     PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("EsHgYsWcLUHjvacKwMJuNEhGFxKA3sAdaJkNnmpk97ap");
+declare_id!("AEt7txAbtcm5yHbVJc6W1Y8WqBAoq2mJgg1DJ8ZusYfj");
 
 #[program]
 pub mod minebtc {
