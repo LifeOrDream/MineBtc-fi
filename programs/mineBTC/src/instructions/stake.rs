@@ -62,7 +62,8 @@ pub fn int_stake_minebtc(
         position_index
     );
 
-    let current_ts = Clock::get()?.unix_timestamp;
+    let clock = Clock::get()?;
+    let current_ts = clock.unix_timestamp;
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
@@ -87,14 +88,21 @@ pub fn int_stake_minebtc(
         ErrorCode::PositionAlreadyExists
     );
 
-    // Calculate actual amount after burn tax
-    let burn_amount = (amount * BURN_TAX_PERCENTAGE / M_HUNDRED) + 1;
-    let actual_amount = amount - burn_amount;
+    // Credit the position with the exact post-fee amount implied by the live
+    // Token-2022 mint config so staking stays correct if the mint fee changes.
+    let transfer_fee_info = helper::get_token2022_transfer_fee_info(
+        &ctx.accounts.minebtc_mint.to_account_info(),
+        amount,
+        clock.epoch,
+    )?;
+    let actual_amount = transfer_fee_info.post_fee_amount;
+    require!(actual_amount > 0, ErrorCode::InvalidAmount);
     msg!(
-        "🔥 mDoge burn tax: {}% - Amount: {}, Burn: {}, Actual amount: {}",
-        BURN_TAX_PERCENTAGE,
+        "🔥 mDoge transfer fee: {} bps (max {}) - Amount: {}, Fee: {}, Actual amount: {}",
+        transfer_fee_info.transfer_fee_basis_points,
+        transfer_fee_info.max_fee as f64 / 1e6,
         amount as f64 / 1e6,
-        burn_amount as f64 / 1e6,
+        transfer_fee_info.fee_amount as f64 / 1e6,
         actual_amount as f64 / 1e6
     );
     msg!(
@@ -387,7 +395,6 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Transfer remaining tokens back to user
     if return_amount > 0 {
-        return_amount = return_amount - 1;
         // Get and print custodian balance before transfer
         let custodian_balance = ctx.accounts.minebtc_custodian.amount;
         msg!(
