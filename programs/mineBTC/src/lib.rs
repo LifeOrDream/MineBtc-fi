@@ -708,8 +708,11 @@ pub mod minebtc {
     }
 
     /// Execute autominer bet (keeper instruction)
-    pub fn execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
-        user::internal_execute_autominer_bet(ctx)
+    pub fn execute_autominer_bet(
+        ctx: Context<ExecuteAutominerBet>,
+        current_round_id: u64,
+    ) -> Result<()> {
+        user::internal_execute_autominer_bet(ctx, current_round_id)
     }
 
     /// Update autominer configuration (sol_per_round, num_rounds, can_reload)

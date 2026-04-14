@@ -3,7 +3,16 @@ use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
 use anchor_spl::token::{self as token_standard, Burn as StandardBurn};
-use anchor_spl::token_2022::{self, Burn};
+use anchor_spl::token_2022::{
+    self,
+    spl_token_2022::{
+        extension::{
+            transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensions,
+        },
+        state::Mint as SplToken2022Mint,
+    },
+    Burn,
+};
 
 // WSOL mint address (Wrapped SOL)
 pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
@@ -50,6 +59,42 @@ pub fn validate_reward_claim_caller(
         ErrorCode::PermissionlessRewardClaimsDisabled
     );
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Token2022TransferFeeInfo {
+    pub transfer_fee_basis_points: u16,
+    pub max_fee: u64,
+    pub fee_amount: u64,
+    pub post_fee_amount: u64,
+}
+
+pub fn get_token2022_transfer_fee_info<'info>(
+    mint_account_info: &AccountInfo<'info>,
+    pre_fee_amount: u64,
+    epoch: u64,
+) -> Result<Token2022TransferFeeInfo> {
+    let mint_data = mint_account_info.try_borrow_data()?;
+    let mint = StateWithExtensions::<SplToken2022Mint>::unpack(&mint_data)
+        .map_err(|_| ErrorCode::InvalidMint)?;
+    let transfer_fee_config = <StateWithExtensions<SplToken2022Mint> as BaseStateWithExtensions<
+        SplToken2022Mint,
+    >>::get_extension::<TransferFeeConfig>(&mint)
+    .map_err(|_| ErrorCode::InvalidMint)?;
+    let epoch_fee = transfer_fee_config.get_epoch_fee(epoch);
+    let fee_amount = transfer_fee_config
+        .calculate_epoch_fee(epoch, pre_fee_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let post_fee_amount = pre_fee_amount
+        .checked_sub(fee_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    Ok(Token2022TransferFeeInfo {
+        transfer_fee_basis_points: u16::from(epoch_fee.transfer_fee_basis_points),
+        max_fee: u64::from(epoch_fee.maximum_fee),
+        fee_amount,
+        post_fee_amount,
+    })
 }
 
 // Helper function to transfer SOL to the program's sol_treasury PDA
