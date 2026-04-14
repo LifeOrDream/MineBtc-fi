@@ -645,7 +645,7 @@ pub struct ClaimEpochRewards<'info> {
         seeds = [EPOCH_STATE_SEED, &epoch_id.to_le_bytes()],
         bump = epoch_state.bump,
     )]
-    pub epoch_state: Account<'info, EpochState>,
+    pub epoch_state: Box<Account<'info, EpochState>>,
 
     #[account(
         mut,
@@ -653,7 +653,7 @@ pub struct ClaimEpochRewards<'info> {
         seeds = [USER_EPOCH_BETS_SEED, user_epoch_bets.owner.as_ref(), &epoch_id.to_le_bytes()],
         bump = user_epoch_bets.bump,
     )]
-    pub user_epoch_bets: Account<'info, UserEpochBets>,
+    pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
 
     #[account(
         mut,
@@ -661,14 +661,14 @@ pub struct ClaimEpochRewards<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == user_epoch_bets.owner @ ErrorCode::InvalidOwner,
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     #[account(
         mut,
         seeds = [UNREFINED_REWARDS_SEED],
         bump,
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
     /// CHECK: Validated by constraint that player.key() == user_epoch_bets.owner
     #[account(

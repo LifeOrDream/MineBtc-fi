@@ -145,11 +145,12 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     );
     global_state.current_round_seed = Some(revealed_seed);
 
-    let mut final_randomness_seed = Vec::new();
-    final_randomness_seed.extend_from_slice(&revealed_seed);
-    final_randomness_seed.extend_from_slice(&clock.slot.to_le_bytes());
-    final_randomness_seed.extend_from_slice(&clock.unix_timestamp.to_le_bytes());
-    let final_hash_bytes = keccak::hash(&final_randomness_seed).to_bytes();
+    let final_hash_bytes = keccak::hashv(&[
+        &revealed_seed,
+        &clock.slot.to_le_bytes(),
+        &clock.unix_timestamp.to_le_bytes(),
+    ])
+    .to_bytes();
 
     let total_users: u64 = game_session.user_faction_indexes[..active_faction_count]
         .iter()
@@ -220,24 +221,16 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         global_state.can_begin_round = true;
         game_session.stage = 2;
 
-        emit!(RoundEnded {
-            round_id: game_session.round_id,
-            game_session: game_session.key(),
+        emit_round_ended(
+            game_session,
+            game_session.key(),
             winning_faction_id,
             winning_direction,
-            total_sol_bets: game_session.total_sol_bets,
-            total_points_bets: game_session.total_points_bets,
-            user_bets_count: game_session.user_faction_indexes,
-            faction_sol_bets: game_session.sol_bets_by_faction,
-            faction_points: game_session.points_bets_by_faction,
-            faction_wgtd_points: game_session.wgtd_points_bets_by_faction,
-            minebtc_winner_pool: 0,
-            minebtc_same_faction_pool: 0,
-            minebtc_faction_stakers: 0,
-            minebtc_motherlode: 0,
-            motherlode_hit: false,
-            timestamp: clock.unix_timestamp,
-        });
+            0,
+            0,
+            false,
+            clock.unix_timestamp,
+        );
 
         return Ok(());
     }
@@ -316,9 +309,34 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     game_session.motherlode_hit = motherlode_random == 0;
     game_session.stage = 1;
 
+    emit_round_ended(
+        game_session,
+        game_session.key(),
+        winning_faction_id,
+        winning_direction,
+        faction_stakers,
+        motherlode_rewards,
+        game_session.motherlode_hit,
+        clock.unix_timestamp,
+    );
+
+    Ok(())
+}
+
+#[inline(never)]
+fn emit_round_ended(
+    game_session: &GameSession,
+    game_session_key: Pubkey,
+    winning_faction_id: u8,
+    winning_direction: u8,
+    minebtc_faction_stakers: u64,
+    minebtc_motherlode: u64,
+    motherlode_hit: bool,
+    timestamp: i64,
+) {
     emit!(RoundEnded {
         round_id: game_session.round_id,
-        game_session: game_session.key(),
+        game_session: game_session_key,
         winning_faction_id,
         winning_direction,
         total_sol_bets: game_session.total_sol_bets,
@@ -329,13 +347,11 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         faction_wgtd_points: game_session.wgtd_points_bets_by_faction,
         minebtc_winner_pool: game_session.minebtc_winner_pool,
         minebtc_same_faction_pool: game_session.minebtc_same_faction_pool,
-        minebtc_faction_stakers: faction_stakers,
-        minebtc_motherlode: motherlode_rewards,
-        motherlode_hit: game_session.motherlode_hit,
-        timestamp: clock.unix_timestamp,
+        minebtc_faction_stakers,
+        minebtc_motherlode,
+        motherlode_hit,
+        timestamp,
     });
-
-    Ok(())
 }
 
 /// Find a valid winning faction that has at least one bettor.
@@ -661,7 +677,7 @@ pub struct StartRound<'info> {
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     #[account(
         init,
@@ -670,13 +686,13 @@ pub struct StartRound<'info> {
         seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
         seeds = [EPOCH_CONFIG_SEED],
         bump = epoch_config.bump,
     )]
-    pub epoch_config: Account<'info, EpochConfig>,
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -691,27 +707,27 @@ pub struct EndRound<'info> {
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
         bump = game_session.bump
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump = mine_btc_mining.bump
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     #[account(
         mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
         bump = global_game_state.bump
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

@@ -28,6 +28,26 @@ use crate::instructions::helper;
 use crate::instructions::stake;
 use crate::state::*;
 
+fn load_program_account<T: AccountDeserialize>(account: &AccountInfo<'_>) -> Result<T> {
+    require!(account.owner == &crate::ID, ErrorCode::InvalidAccount);
+    let data = account.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    T::try_deserialize(&mut data_slice)
+}
+
+fn load_global_config(account: &AccountInfo<'_>) -> Result<GlobalConfig> {
+    load_program_account(account)
+}
+
+fn load_index_state(account: &AccountInfo<'_>, expected_index_id: u8) -> Result<IndexState> {
+    let index_state: IndexState = load_program_account(account)?;
+    require!(
+        index_state.index_id == expected_index_id && index_state.is_active,
+        ErrorCode::InvalidIndexState
+    );
+    Ok(index_state)
+}
+
 // ========================================================================================
 // =============================== FACTION SURGE INSTRUCTIONS ============================
 // ========================================================================================
@@ -308,16 +328,21 @@ pub fn internal_join_round(
         ctx.accounts.authority.key()
     );
     msg!("   Bet type: {:?}", bet_type);
+    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
+    let index_state = load_index_state(
+        &ctx.accounts.index_state.to_account_info(),
+        ctx.accounts.epoch_config.active_index_id,
+    )?;
 
     // Call internal_process_bets with user as payer (None for signer_seeds - user signs the tx)
     // Wrap single bet in vector
     internal_process_bets(
-        &ctx.accounts.global_game_state,
-        &ctx.accounts.global_config,
+        ctx.accounts.game_session.round_id,
+        &global_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
         &mut ctx.accounts.user_game_bet,
-        &ctx.accounts.user_wallet.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.sol_rewards_vault.to_account_info(),
         &ctx.accounts.sol_prize_pot_vault.to_account_info(),
@@ -329,8 +354,8 @@ pub fn internal_join_round(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &ctx.accounts.index_state,
-        &mut ctx.accounts.epoch_config,
+        &index_state,
+        &ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
         &mut ctx.accounts.user_epoch_bets,
@@ -359,6 +384,11 @@ pub fn internal_join_round_batch(
     );
     msg!("   User: {}", ctx.accounts.authority.key());
     msg!("   Amount per bet: {} lamports", amount_per_bet);
+    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
+    let index_state = load_index_state(
+        &ctx.accounts.index_state.to_account_info(),
+        ctx.accounts.epoch_config.active_index_id,
+    )?;
 
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
     require!(
@@ -368,12 +398,12 @@ pub fn internal_join_round_batch(
 
     // Call internal_process_bets for all bets at once
     internal_process_bets(
-        &ctx.accounts.global_game_state,
-        &ctx.accounts.global_config,
+        ctx.accounts.game_session.round_id,
+        &global_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
         &mut ctx.accounts.user_game_bet,
-        &ctx.accounts.user_wallet.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
         &ctx.accounts.sol_treasury.to_account_info(),
         &ctx.accounts.sol_rewards_vault.to_account_info(),
         &ctx.accounts.sol_prize_pot_vault.to_account_info(),
@@ -385,8 +415,8 @@ pub fn internal_join_round_batch(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &ctx.accounts.index_state,
-        &mut ctx.accounts.epoch_config,
+        &index_state,
+        &ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
         &mut ctx.accounts.user_epoch_bets,
@@ -786,7 +816,10 @@ pub fn internal_update_autominer(
 /// Generates faction-direction bets dynamically from the configured country set.
 /// In SOL mode, pays the caller 1% of `sol_per_round` (max 0.005 SOL) for tx costs.
 /// Uses the same round/epoch betting path as manual users.
-pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Result<()> {
+pub fn internal_execute_autominer_bet(
+    ctx: Context<ExecuteAutominerBet>,
+    current_round_id: u64,
+) -> Result<()> {
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
     msg!("   Caller: {}", ctx.accounts.caller.key());
@@ -801,33 +834,13 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         ErrorCode::InvalidAccount
     );
 
-    let global_state = &ctx.accounts.global_game_state;
-    let global_config = {
-        let global_config_info = ctx.accounts.global_config.to_account_info();
-        require!(
-            global_config_info.owner == &crate::ID,
-            ErrorCode::InvalidAccount
-        );
-        let global_config_data = global_config_info.try_borrow_data()?;
-        let mut global_config_slice: &[u8] = &global_config_data;
-        GlobalConfig::try_deserialize(&mut global_config_slice)?
-    };
-    let index_state = {
-        let index_state_info = ctx.accounts.index_state.to_account_info();
-        require!(
-            index_state_info.owner == &crate::ID,
-            ErrorCode::InvalidAccount
-        );
-        let index_state_data = index_state_info.try_borrow_data()?;
-        let mut index_state_slice: &[u8] = &index_state_data;
-        let index_state = IndexState::try_deserialize(&mut index_state_slice)?;
-        require!(
-            index_state.index_id == ctx.accounts.epoch_config.active_index_id,
-            ErrorCode::InvalidIndexState
-        );
-        require!(index_state.is_active, ErrorCode::InvalidIndexState);
-        index_state
-    };
+    let global_state: GlobalGameSate =
+        load_program_account(&ctx.accounts.global_game_state.to_account_info())?;
+    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
+    let index_state = load_index_state(
+        &ctx.accounts.index_state.to_account_info(),
+        ctx.accounts.epoch_config.active_index_id,
+    )?;
     let clock = Clock::get()?;
 
     // Read values before mutable borrow
@@ -841,7 +854,16 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     let custody_bump = ctx.bumps.autominer_custody;
     let autominer_custody_info = ctx.accounts.autominer_custody.to_account_info();
 
-    if rounds_remaining == 0 || last_bet_round_id == global_state.current_round_id {
+    require!(
+        ctx.accounts.game_session.round_id == current_round_id,
+        ErrorCode::InvalidRound
+    );
+    require!(
+        global_state.current_round_id == current_round_id,
+        ErrorCode::InvalidRound
+    );
+
+    if rounds_remaining == 0 || last_bet_round_id == current_round_id {
         return Ok(());
     }
 
@@ -940,8 +962,6 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
 
     // Now borrow mutably to update state
     let autominer_vault = &mut ctx.accounts.autominer_vault;
-    let current_round_id = global_state.current_round_id;
-
     // Mark bets as placed for this round
     autominer_vault.last_bet_round_id = current_round_id;
     msg!(
@@ -987,7 +1007,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
     internal_process_bets(
-        &ctx.accounts.global_game_state,
+        current_round_id,
         &global_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
@@ -1005,7 +1025,7 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
         &index_state,
-        &mut ctx.accounts.epoch_config,
+        &ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
         &mut ctx.accounts.user_epoch_bets,
@@ -1545,7 +1565,7 @@ fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)>
 /// Calculates totals, performs single transfers, and updates state for all bets
 #[allow(clippy::too_many_arguments)]
 fn internal_process_bets<'info>(
-    global_state: &Account<'info, GlobalGameSate>,
+    round_id: u64,
     global_config: &GlobalConfig,
     player_data: &mut Account<'info, PlayerData>,
     game_session: &mut Account<'info, GameSession>,
@@ -1563,13 +1583,12 @@ fn internal_process_bets<'info>(
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
     index_state: &IndexState,
-    epoch_config: &mut Account<'info, EpochConfig>,
+    epoch_config: &Account<'info, EpochConfig>,
     epoch_state: &mut Account<'info, EpochState>,
     epoch_state_bump: u8,
     user_epoch_bets: &mut Account<'info, UserEpochBets>,
     user_epoch_bets_bump: u8,
 ) -> Result<()> {
-    let round_id = global_state.current_round_id;
     let clock = Clock::get()?;
 
     require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
@@ -2281,11 +2300,9 @@ pub struct JoinRound<'info> {
     )]
     pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
+    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
+    pub global_config: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -2337,21 +2354,12 @@ pub struct JoinRound<'info> {
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     /// Epoch config (read for current_epoch_id)
-    #[account(
-        mut,
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
-        constraint = epoch_config.is_active @ ErrorCode::EpochNotActive,
-    )]
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
 
-    #[account(
-        seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
-        bump = index_state.bump,
-        constraint = index_state.index_id == epoch_config.active_index_id @ ErrorCode::InvalidIndexState,
-        constraint = index_state.is_active @ ErrorCode::InvalidIndexState
-    )]
-    pub index_state: Box<Account<'info, IndexState>>,
+    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
+    #[account(seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]], bump)]
+    pub index_state: UncheckedAccount<'info>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2374,9 +2382,6 @@ pub struct JoinRound<'info> {
     pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
 
     #[account(mut)]
-    pub user_wallet: Signer<'info>,
-
-    #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
@@ -2392,11 +2397,9 @@ pub struct JoinRoundBatch<'info> {
     )]
     pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
+    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
+    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
+    pub global_config: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -2448,21 +2451,12 @@ pub struct JoinRoundBatch<'info> {
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     /// Epoch config (read for current_epoch_id)
-    #[account(
-        mut,
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
-        constraint = epoch_config.is_active @ ErrorCode::EpochNotActive,
-    )]
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
 
-    #[account(
-        seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
-        bump = index_state.bump,
-        constraint = index_state.index_id == epoch_config.active_index_id @ ErrorCode::InvalidIndexState,
-        constraint = index_state.is_active @ ErrorCode::InvalidIndexState
-    )]
-    pub index_state: Box<Account<'info, IndexState>>,
+    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
+    #[account(seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]], bump)]
+    pub index_state: UncheckedAccount<'info>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2483,9 +2477,6 @@ pub struct JoinRoundBatch<'info> {
         bump,
     )]
     pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
-
-    #[account(mut)]
-    pub user_wallet: Signer<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2734,6 +2725,7 @@ pub struct StopAutominer<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(current_round_id: u64)]
 pub struct ExecuteAutominerBet<'info> {
     #[account(
         mut,
@@ -2750,12 +2742,9 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub autominer_custody: UncheckedAccount<'info>,
 
-    #[account(
-        mut,
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
+    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
+    #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump)]
+    pub global_game_state: UncheckedAccount<'info>,
 
     /// CHECK: PDA + owner/type validated in handler to keep account parser stack small
     #[account(
@@ -2773,7 +2762,7 @@ pub struct ExecuteAutominerBet<'info> {
 
     #[account(
         mut,
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [GAME_SESSION_SEED.as_ref(), &current_round_id.to_le_bytes()],
         bump
     )]
     pub game_session: Box<Account<'info, GameSession>>,
@@ -2783,7 +2772,7 @@ pub struct ExecuteAutominerBet<'info> {
         init_if_needed,
         payer = caller,
         space = UserGameBet::LEN,
-        seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &current_round_id.to_le_bytes()],
         bump
     )]
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
@@ -2809,12 +2798,7 @@ pub struct ExecuteAutominerBet<'info> {
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     /// Epoch config (read for current_epoch_id)
-    #[account(
-        mut,
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
-        constraint = epoch_config.is_active @ ErrorCode::EpochNotActive,
-    )]
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     /// CHECK: PDA + owner/type validated in handler to keep account parser stack small
