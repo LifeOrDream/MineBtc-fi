@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use crate::state::NUM_FACTIONS;
+
 // ------------------------------
 // User management events
 // ------------------------------
@@ -39,14 +41,6 @@ pub struct FactionAdded {
     pub faction_name: String,
     pub faction_id: u8,
     pub faction_key: Pubkey,
-}
-
-#[event]
-pub struct FactionRenamed {
-    pub authority: Pubkey,
-    pub faction_id: u8,
-    pub old_name: String,
-    pub new_name: String,
 }
 
 // ------------------------------
@@ -476,10 +470,10 @@ pub struct RoundEnded {
     pub total_sol_bets: u64,
     pub total_points_bets: u64,
 
-    pub user_bets_count: [u64; 12],
-    pub faction_sol_bets: [u64; 12],
-    pub faction_points: [u64; 12],
-    pub faction_wgtd_points: [u64; 12],
+    pub user_bets_count: [u64; NUM_FACTIONS],
+    pub faction_sol_bets: [u64; NUM_FACTIONS],
+    pub faction_points: [u64; NUM_FACTIONS],
+    pub faction_wgtd_points: [u64; NUM_FACTIONS],
 
     pub minebtc_winner_pool: u64,
     pub minebtc_same_faction_pool: u64,
@@ -697,8 +691,8 @@ pub struct EpochStarted {
 pub struct IndexInitialized {
     pub index_id: u8,
     pub name: String,
-    pub initial_scores: [i64; 12],
-    pub initial_ranks: [u8; 12],
+    pub initial_scores: [i64; NUM_FACTIONS],
+    pub initial_ranks: [u8; NUM_FACTIONS],
     pub timestamp: i64,
 }
 
@@ -715,9 +709,9 @@ pub struct EpochMarketScheduled {
 #[event]
 pub struct EpochScoresUpdated {
     pub index_id: u8,
-    pub score_deltas: [i64; 12],
-    pub cumulative_scores: [i64; 12],
-    pub ranks: [u8; 12],
+    pub score_deltas: [i64; NUM_FACTIONS],
+    pub cumulative_scores: [i64; NUM_FACTIONS],
+    pub ranks: [u8; NUM_FACTIONS],
     pub update_number: u32,
     pub timestamp: i64,
 }
@@ -739,13 +733,13 @@ pub struct EpochSettled {
     pub total_dogebtc_mined: u64,
     pub risk_factor: u16,
     pub epoch_mining_pool: u64,
-    pub start_scores: [i64; 12],
-    pub final_scores: [i64; 12],
-    pub start_ranks: [u8; 12],
-    pub final_ranks: [u8; 12],
-    pub rank_deltas: [i8; 12],
-    pub resolved_directions: [u8; 12],
-    pub faction_reward_pools: [u64; 12],
+    pub start_scores: [i64; NUM_FACTIONS],
+    pub final_scores: [i64; NUM_FACTIONS],
+    pub start_ranks: [u8; NUM_FACTIONS],
+    pub final_ranks: [u8; NUM_FACTIONS],
+    pub rank_deltas: [i8; NUM_FACTIONS],
+    pub resolved_directions: [u8; NUM_FACTIONS],
+    pub faction_reward_pools: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
 

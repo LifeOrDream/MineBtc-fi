@@ -41,8 +41,8 @@ pub const DISCRIMINATOR_SIZE: usize = 8;
 
 pub const MOTHERLODE_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
-pub const MAX_FACTIONS: usize = 12; // 12 factions for the raffle
-pub const NUM_FACTIONS: usize = 12; // Same as MAX_FACTIONS, used for array sizes
+pub const MAX_FACTIONS: usize = 15; // Up to 15 factions for the raffle
+pub const NUM_FACTIONS: usize = 15; // Same as MAX_FACTIONS, used for array sizes
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 
 pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker bots
@@ -486,8 +486,10 @@ pub struct TaxConfig {
     pub leaderboard_faction_ids: Vec<u8>,
     /// Leaderboard hashpower values (index = rank, value = hashpower)
     pub leaderboard_hashpower: Vec<u64>,
-    /// Number of factions added to leaderboard so far (0-12)
+    /// Number of factions added to leaderboard so far (0-active_faction_count)
     pub leaderboard_factions_count: u8,
+    /// Snapshot of active faction count when the current distribution round started
+    pub distribution_faction_count: u8,
 
     /// Faction rewards: MineBtc amount each faction gets (index = rank, value = minebtc_amount)
     pub faction_rewards: Vec<u64>,
@@ -525,6 +527,7 @@ impl TaxConfig {
         4 + (MAX_FACTIONS * 1) + // leaderboard_faction_ids Vec<u8>
         4 + (MAX_FACTIONS * 8) + // leaderboard_hashpower Vec<u64>
         1 +     // leaderboard_factions_count
+        1 +     // distribution_faction_count
         4 + (MAX_FACTIONS * 8) + // faction_rewards Vec<u64>
         1 +     // rewards_calculated (bool)
         4 + (MAX_FACTIONS * 1) + // faction_claimed Vec<bool>
@@ -612,7 +615,7 @@ impl UnrefinedRewards {
 #[account]
 pub struct FactionState {
     pub bump: u8,
-    /// The faction ID (0-10, matching index in supported_factions)
+    /// The faction ID (matching index in supported_factions)
     pub faction_id: u8,
 
     /// Total passive hashpower from stakers in this faction (cumulative)
@@ -1189,7 +1192,7 @@ pub struct AutominerVault {
 }
 
 impl AutominerVault {
-    pub const MAX_FACTIONS: usize = 12; // Max 12 factions
+    pub const MAX_FACTIONS: usize = NUM_FACTIONS; // Match program-wide faction capacity
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
@@ -1325,6 +1328,8 @@ pub struct EpochState {
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
+    /// Snapshot of how many factions were active when this epoch started
+    pub active_faction_count: u8,
 
     /// Total dogeBTC mined via raffle rounds during this epoch
     /// Accumulated by end_round as rounds complete within the epoch window.
@@ -1366,6 +1371,7 @@ impl EpochState {
         8 +     // start_timestamp
         8 +     // end_timestamp
         1 +     // stage
+        1 +     // active_faction_count
         8 +     // total_dogebtc_mined_in_epoch
         2 +     // risk_factor_snapshot
         8 +     // epoch_mining_pool

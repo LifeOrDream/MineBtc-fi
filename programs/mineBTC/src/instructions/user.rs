@@ -814,7 +814,10 @@ pub fn internal_execute_autominer_bet(ctx: Context<ExecuteAutominerBet>) -> Resu
     };
     let index_state = {
         let index_state_info = ctx.accounts.index_state.to_account_info();
-        require!(index_state_info.owner == &crate::ID, ErrorCode::InvalidAccount);
+        require!(
+            index_state_info.owner == &crate::ID,
+            ErrorCode::InvalidAccount
+        );
         let index_state_data = index_state_info.try_borrow_data()?;
         let mut index_state_slice: &[u8] = &index_state_data;
         let index_state = IndexState::try_deserialize(&mut index_state_slice)?;
@@ -1592,6 +1595,12 @@ fn internal_process_bets<'info>(
     );
 
     if epoch_state.epoch_id == 0 {
+        let active_faction_count = global_config.supported_factions.len();
+        let (current_ranks, _) = crate::instructions::epoch::compute_rankings(
+            &index_state.latest_scores,
+            active_faction_count,
+        )?;
+
         epoch_state.bump = epoch_state_bump;
         epoch_state.epoch_id = epoch_config.current_epoch_id;
         epoch_state.index_id = index_state.index_id;
@@ -1602,13 +1611,14 @@ fn internal_process_bets<'info>(
             .checked_add(epoch_config.epoch_duration)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         epoch_state.stage = 0;
+        epoch_state.active_faction_count = active_faction_count as u8;
         epoch_state.total_dogebtc_mined_in_epoch = 0;
         epoch_state.risk_factor_snapshot = 0;
         epoch_state.epoch_mining_pool = 0;
         epoch_state.start_scores = index_state.latest_scores;
-        epoch_state.start_ranks = index_state.latest_ranks;
+        epoch_state.start_ranks = current_ranks;
         epoch_state.final_scores = epoch_state.start_scores;
-        epoch_state.final_ranks = epoch_state.start_ranks;
+        epoch_state.final_ranks = current_ranks;
         epoch_state.rank_deltas = [0i8; NUM_FACTIONS];
         epoch_state.resolved_directions =
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
@@ -1658,6 +1668,8 @@ fn internal_process_bets<'info>(
             ErrorCode::InvalidIndexState
         );
     }
+
+    let active_epoch_faction_count = epoch_state.active_faction_count as usize;
 
     // Arrays to return for events
     let mut evt_faction_ids = Vec::new();
@@ -1817,7 +1829,7 @@ fn internal_process_bets<'info>(
     for bet_type in bet_types {
         let (faction_id, direction) = prediction_bet_parts(&bet_type)?;
         require!(
-            (faction_id as usize) < global_config.supported_factions.len(),
+            (faction_id as usize) < active_epoch_faction_count,
             ErrorCode::InvalidFactionId
         );
         let faction_index = faction_id as usize;
