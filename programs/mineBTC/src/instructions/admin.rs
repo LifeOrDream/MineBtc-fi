@@ -1121,9 +1121,10 @@ pub fn initialize_game_state_internal(
 /// Switch game state (toggle is_active) (admin only)
 ///
 /// Toggles the `is_active` field in the global game state.
-/// When `is_active` is false, rounds cannot be started or ended.
+/// When `is_active` is false, new rounds cannot be started.
+/// Already-ended rounds can still be permissionlessly finalized.
 ///
-/// This allows admins to pause/resume the game without losing state.
+/// This allows admins to pause/resume round creation without losing state.
 pub fn switch_game_state_internal(ctx: Context<UpdateGameState>) -> Result<()> {
     let global_game_state = &mut ctx.accounts.global_game_state;
     global_game_state.is_active = !global_game_state.is_active;

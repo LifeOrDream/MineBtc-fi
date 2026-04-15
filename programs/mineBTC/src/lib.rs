@@ -417,7 +417,8 @@ pub mod minebtc {
 
     /// Switch game state (toggle is_active) (admin only)
     ///
-    /// Toggles the game's active state. When paused, rounds cannot be started or ended.
+    /// Toggles the game's active state. When paused, new rounds cannot be started.
+    /// Already-ended rounds can still be permissionlessly finalized.
     pub fn switch_game_state(ctx: Context<UpdateGameState>) -> Result<()> {
         admin::switch_game_state_internal(ctx)
     }
