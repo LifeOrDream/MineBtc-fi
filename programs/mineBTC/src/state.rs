@@ -30,7 +30,12 @@ pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
 
 pub const MAX_ALLOWED_POSITIONS: u8 = 7;
 pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;
-pub const M_HUNDRED: u64 = 100;
+/// Whole-percent precision used by fee and reward split config fields.
+/// Example: `25` means 25%, `100` means 100%.
+pub const PERCENTAGE_DENOMINATOR: u64 = 100;
+pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
+pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
+pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
@@ -167,11 +172,11 @@ pub struct GlobalConfig {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct SolFeeConfig {
-    /// Percentage of SOL fees that go to protocol  
+    /// Whole-percent share of SOL fees that goes to protocol. `100` = 100%.
     pub protocol_fee_pct: u8,
-    /// Percentage of SOL fees that go to buybacks
+    /// Whole-percent share of SOL fees that goes to buybacks. `100` = 100%.
     pub buyback_pct: u8,
-    /// Percentage of SOL fees that go to stakers
+    /// Whole-percent share of SOL fees that goes to stakers. `100` = 100%.
     pub stakers_pct: u8,
 }
 
@@ -181,15 +186,15 @@ impl SolFeeConfig {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct MineBtcDistConfig {
-    /// Percentage of MineBtc emission that goes to stakers
+    /// Whole-percent share of MineBtc emission that goes to stakers. `100` = 100%.
     pub minebtc_stakers_pct: u8,
-    /// Percentage of MineBtc emission that goes to winning faction bettors
+    /// Whole-percent share of MineBtc emission that goes to winning faction bettors. `100` = 100%.
     pub minebtc_winners_pct: u8,
-    /// Percentage of MineBtc emission that goes to non-winning directions on the winning faction
+    /// Whole-percent share of MineBtc emission that goes to non-winning directions on the winning faction. `100` = 100%.
     pub minebtc_same_faction_pct: u8,
-    /// Percentage of MineBtc emission that goes to motherlode
+    /// Whole-percent share of MineBtc emission that goes to motherlode. `100` = 100%.
     pub minebtc_motherlode_pct: u8,
-    /// Refining fee
+    /// Whole-percent refining fee applied to pending MineBtc rewards. `100` = 100%.
     pub refining_fee: u8,
 }
 

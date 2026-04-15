@@ -16,6 +16,7 @@ use anchor_spl::token;
 //
 
 use crate::events::*;
+use crate::instructions::helper;
 use crate::state::*;
 use anchor_lang::prelude::*;
 
@@ -28,6 +29,41 @@ use anchor_spl::{
 
 // Import Raydium CP-Swap for CPI calls
 use raydium_cp_swap;
+use raydium_cp_swap::states::PoolState as RaydiumPoolState;
+use raydium_cp_swap::utils::AccountLoad as RaydiumAccountLoad;
+
+fn gross_up_for_token2022_fee<'info>(
+    mint_account_info: &AccountInfo<'info>,
+    desired_post_fee_amount: u64,
+    epoch: u64,
+) -> Result<u64> {
+    if desired_post_fee_amount == 0 {
+        return Ok(0);
+    }
+
+    let mut low = desired_post_fee_amount;
+    let mut high = desired_post_fee_amount;
+
+    loop {
+        let fee_info = helper::get_token2022_transfer_fee_info(mint_account_info, high, epoch)?;
+        if fee_info.post_fee_amount >= desired_post_fee_amount {
+            break;
+        }
+        high = high.checked_mul(2).ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let fee_info = helper::get_token2022_transfer_fee_info(mint_account_info, mid, epoch)?;
+        if fee_info.post_fee_amount >= desired_post_fee_amount {
+            high = mid;
+        } else {
+            low = mid.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+    }
+
+    Ok(low)
+}
 
 pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<()> {
     let sol_treasury = &ctx.accounts.sol_treasury;
@@ -703,6 +739,7 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
 /// Handles the heavy LP operations separately to avoid stack overflow
 pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64) -> Result<()> {
     msg!("🌟 === STARTING LP ADDITION AND BURN ===");
+    let clock = Clock::get()?;
 
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
     let buybacks_account = &mut ctx.accounts.buybacks_account;
@@ -796,16 +833,10 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
 
     let lp_supply = {
-        // Read lp_supply directly from pool_state account
-        // PoolState layout: discriminator (8) + fields before lp_supply (325) + lp_supply (8)
-        // lp_supply offset: 8 (discriminator) + 10*32 (pubkeys) + 5 (u8s) = 333
-        let data = ctx.accounts.pool_state.try_borrow_data()?;
-        require!(data.len() >= 341, ErrorCode::InvalidAccount);
-        u64::from_le_bytes(
-            data[333..341]
-                .try_into()
-                .map_err(|_| ErrorCode::InvalidAccount)?,
-        )
+        let pool_state = RaydiumAccountLoad::<RaydiumPoolState>::load_data_mut(
+            ctx.accounts.pool_state.as_ref(),
+        )?;
+        pool_state.lp_supply
     };
 
     msg!(
@@ -826,15 +857,20 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         } else {
             available_sol
         };
-        let required_minebtc = if lp_supply > 0 && minebtc_vault_balance > 0 {
+        let required_minebtc_post_fee = if lp_supply > 0 && minebtc_vault_balance > 0 {
             (lp_token_amount as u128 * minebtc_vault_balance as u128 / lp_supply as u128) as u64
         } else {
             0
         };
+        let required_minebtc = gross_up_for_token2022_fee(
+            &ctx.accounts.minebtc_mint.to_account_info(),
+            required_minebtc_post_fee,
+            clock.epoch,
+        )?;
         (
             lp_token_amount,
             required_sol.min(available_sol),
-            required_minebtc + 100,
+            required_minebtc,
         )
     } else {
         // Guard against division by zero if pool state is empty
@@ -845,9 +881,14 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         }
         let lp_from_sol =
             (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
-        let required_minebtc =
+        let required_minebtc_post_fee =
             (lp_from_sol as u128 * minebtc_vault_balance as u128 / lp_supply as u128) as u64;
-        (lp_from_sol, available_sol, required_minebtc + 100)
+        let required_minebtc = gross_up_for_token2022_fee(
+            &ctx.accounts.minebtc_mint.to_account_info(),
+            required_minebtc_post_fee,
+            clock.epoch,
+        )?;
+        (lp_from_sol, available_sol, required_minebtc)
     };
 
     let max_minebtc_with_buffer = adjusted_minebtc_amount + (adjusted_minebtc_amount / 50);
@@ -874,6 +915,8 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
                 lp_supply,
                 adjusted_sol_amount,
                 adjusted_minebtc_amount,
+                &ctx.accounts.minebtc_mint.to_account_info(),
+                clock.epoch,
             )?
         } else {
             (
@@ -1312,6 +1355,8 @@ fn adjust_sol_for_minebtc_limit(
     lp_supply: u64,
     original_sol_amount: u64,
     original_minebtc_amount: u64,
+    minebtc_mint: &AccountInfo<'_>,
+    epoch: u64,
 ) -> Result<(u64, u64, u64)> {
     // Calculate maximum MINEBTC we can use (1% of available_minebtc)
     let max_minebtc_allowed = available_minebtc / 100; // 1% of available_minebtc
@@ -1320,24 +1365,19 @@ fn adjust_sol_for_minebtc_limit(
         max_minebtc_allowed as f64 / 1e6
     );
 
-    // Account for 1% burn tax on MINEBTC transfers
-    // We want max_minebtc_allowed to reach the pool AFTER burn
-    // After burn: minebtc_received = minebtc_sent * 0.99
-    // So: minebtc_sent = minebtc_received / 0.99 = max_minebtc_allowed * 100/99
-    // But we also have the buffer: max_minebtc_with_buffer = minebtc_amount * 51/50
-    // We want: max_minebtc_with_buffer * 0.99 <= max_minebtc_allowed
-    // So: minebtc_amount * 51/50 * 0.99 <= max_minebtc_allowed
-    //     minebtc_amount <= max_minebtc_allowed * 50/51 * 100/99
-    let max_base_minebtc = (max_minebtc_allowed as u128 * 50 * 100 / (51 * 99)) as u64;
+    // Leave room for the 2% buffer on the pre-fee amount.
+    let max_base_minebtc = (max_minebtc_allowed as u128 * 50 / 51) as u64;
     msg!(
-        "   📊 Max base MINEBTC (accounting for 1% burn tax): {} MINEBTC",
+        "   📊 Max base MINEBTC before transfer fee: {} MINEBTC",
         max_base_minebtc as f64 / 1e6
     );
 
-    // Calculate MINEBTC that will actually reach the pool (after 1% burn)
-    let minebtc_received_in_pool = (max_base_minebtc as u128 * 99 / 100) as u64;
+    // Calculate MINEBTC that will actually reach the pool using the live Token-2022 fee config.
+    let minebtc_received_in_pool =
+        helper::get_token2022_transfer_fee_info(minebtc_mint, max_base_minebtc, epoch)?
+            .post_fee_amount;
     msg!(
-        "   📊 MINEBTC that will reach pool (after burn): {} MINEBTC",
+        "   📊 MINEBTC that will reach pool (after transfer fee): {} MINEBTC",
         minebtc_received_in_pool as f64 / 1e6
     );
 
@@ -1352,8 +1392,12 @@ fn adjust_sol_for_minebtc_limit(
     } else {
         // Pool is empty or invalid, use original ratio
         if original_minebtc_amount > 0 {
-            // Account for burn tax in original ratio too
-            let original_minebtc_received = (original_minebtc_amount as u128 * 99 / 100) as u64;
+            let original_minebtc_received = helper::get_token2022_transfer_fee_info(
+                minebtc_mint,
+                original_minebtc_amount,
+                epoch,
+            )?
+            .post_fee_amount;
             (minebtc_received_in_pool as u128 * original_sol_amount as u128
                 / original_minebtc_received as u128) as u64
         } else {

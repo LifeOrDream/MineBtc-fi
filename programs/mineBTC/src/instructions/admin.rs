@@ -375,7 +375,8 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// Update fee configuration (admin only)
 ///
 /// Updates SOL fee distribution percentages and/or MineBtc distribution percentages.
-/// All percentages must sum to 100% for their respective categories.
+/// These config fields use whole-percent precision (`100` = 100%).
+/// All percentage splits must sum to the percentage denominator for their category.
 ///
 /// # Parameters
 /// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
@@ -390,8 +391,8 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
 /// # Validation
-/// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == 100
-/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct == 100
+/// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == `PERCENTAGE_DENOMINATOR`
+/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct == `PERCENTAGE_DENOMINATOR`
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -413,6 +414,19 @@ pub fn update_fees_internal(
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
+
+        require!(
+            protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            buyback_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
 
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
@@ -436,12 +450,32 @@ pub fn update_fees_internal(
         let minebtc_motherlode_pct = new_minebtc_motherlode_pct
             .unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
 
+        require!(
+            minebtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            minebtc_winners_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            minebtc_same_faction_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            minebtc_motherlode_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+
         let total = minebtc_stakers_pct as u16
             + minebtc_winners_pct as u16
             + minebtc_same_faction_pct as u16
             + minebtc_motherlode_pct as u16;
 
-        require!(total == 100, ErrorCode::InvalidParameters);
+        require!(
+            total == PERCENTAGE_DENOMINATOR_U16,
+            ErrorCode::InvalidParameters
+        );
 
         // Get current refining_fee to preserve it
         let current_refining_fee = global_config.minebtc_dist_config.refining_fee;
@@ -457,6 +491,10 @@ pub fn update_fees_internal(
 
     // Update refining fee if provided
     if let Some(refining_fee) = new_refining_fee {
+        require!(
+            refining_fee <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
         global_config.minebtc_dist_config.refining_fee = refining_fee;
     }
 
@@ -492,7 +530,7 @@ pub fn update_emission_params_internal(
     // Update price change threshold if provided
     if let Some(threshold) = price_change_threshold {
         require!(
-            threshold > 0 && threshold <= 100,
+            threshold > 0 && threshold <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
         mine_btc_mining.price_change_threshold = threshold;
@@ -501,7 +539,7 @@ pub fn update_emission_params_internal(
     // Update emission increase percentage if provided
     if let Some(increase_pct) = emission_increase_pct {
         require!(
-            increase_pct > 0 && increase_pct <= 100,
+            increase_pct > 0 && increase_pct <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
         mine_btc_mining.emission_increase_pct = increase_pct;
@@ -510,7 +548,7 @@ pub fn update_emission_params_internal(
     // Update emission decrease percentage if provided
     if let Some(decrease_pct) = emission_decrease_pct {
         require!(
-            decrease_pct > 0 && decrease_pct <= 100,
+            decrease_pct > 0 && decrease_pct <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
         mine_btc_mining.emission_decrease_pct = decrease_pct;
@@ -766,7 +804,10 @@ pub fn init_doge_royalties_internal(
     // Basic creator validation
     require!(!creators.is_empty(), ErrorCode::NoCreators);
     let total_pct: u16 = creators.iter().map(|c| c.percentage as u16).sum();
-    require!(total_pct == 100, ErrorCode::InvalidCreatorShare);
+    require!(
+        total_pct == PERCENTAGE_DENOMINATOR_U16,
+        ErrorCode::InvalidCreatorShare
+    );
 
     // Convert to mpl-core creators
     let creators_mpl: Vec<Creator> = creators

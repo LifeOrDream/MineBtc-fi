@@ -218,8 +218,14 @@ pub fn int_batch_mint_doges<'info>(
             ),
             cut,
         )?;
-        referrer_rewards.pending_sol_rewards += cut;
-        referrer_rewards.total_sol_earned += cut;
+        referrer_rewards.pending_sol_rewards = referrer_rewards
+            .pending_sol_rewards
+            .checked_add(cut)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        referrer_rewards.total_sol_earned = referrer_rewards
+            .total_sol_earned
+            .checked_add(cut)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Referral commission: {} lamports sent to referrer PDA",
             cut
@@ -411,7 +417,10 @@ pub fn int_batch_mint_doges<'info>(
             ticket_count,
         });
 
-        doge_config.doges_minted += 1;
+        doge_config.doges_minted = doge_config
+            .doges_minted
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     msg!(
@@ -547,7 +556,10 @@ pub fn int_admin_mint_doge(
     };
 
     // Update doge config stats
-    doge_config.doges_minted += 1;
+    doge_config.doges_minted = doge_config
+        .doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Total doges minted: {} / {}",
         doge_config.doges_minted,
@@ -592,6 +604,10 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let current_time = Clock::get()?.unix_timestamp;
     let doge_mint = doge_metadata.mint;
     let doge_multiplier = doge_metadata.multiplier;
+    require!(
+        !ctx.accounts.tax_config.round_active,
+        ErrorCode::TaxRoundActive
+    );
     msg!(
         "🧭 [stake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
         ctx.accounts.user.key(),
@@ -799,6 +815,10 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let incubated_by_player = doge_metadata.incubated_player_data;
     let current_time = Clock::get()?.unix_timestamp;
     let doge_multiplier = doge_metadata.multiplier;
+    require!(
+        !ctx.accounts.tax_config.round_active,
+        ErrorCode::TaxRoundActive
+    );
     msg!(
         "🧭 [unstake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
         ctx.accounts.user.key(),
@@ -1079,7 +1099,10 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
         // Update mining stats
         let mining_state = &mut ctx.accounts.mine_btc_mining;
-        mining_state.total_tokens_distributed += accumulated_val;
+        mining_state.total_tokens_distributed = mining_state
+            .total_tokens_distributed
+            .checked_add(accumulated_val)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     // Emit event
@@ -1196,8 +1219,14 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
             ),
             cut,
         )?;
-        referrer_rewards.pending_sol_rewards += cut;
-        referrer_rewards.total_sol_earned += cut;
+        referrer_rewards.pending_sol_rewards = referrer_rewards
+            .pending_sol_rewards
+            .checked_add(cut)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        referrer_rewards.total_sol_earned = referrer_rewards
+            .total_sol_earned
+            .checked_add(cut)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Breed referral commission: {} lamports sent to referrer PDA",
             cut
@@ -1292,12 +1321,25 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         .copied()
         .unwrap_or(1209600);
 
-    mom.breed_count += 1;
-    mom.cooldown_end = current_time + mom_cooldown;
-    dad.breed_count += 1;
-    dad.cooldown_end = current_time + dad_cooldown;
+    mom.breed_count = mom
+        .breed_count
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    mom.cooldown_end = current_time
+        .checked_add(mom_cooldown)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    dad.breed_count = dad
+        .breed_count
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    dad.cooldown_end = current_time
+        .checked_add(dad_cooldown)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    doge_config.doges_minted += 1;
+    doge_config.doges_minted = doge_config
+        .doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!(
         "✅ Bred offspring #{} from {} x {}",
@@ -1769,6 +1811,9 @@ pub struct StakeDoge<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
+    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
+    pub tax_config: Account<'info, TaxConfig>,
+
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
@@ -1822,6 +1867,9 @@ pub struct UnstakeDoge<'info> {
         bump
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
+    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
+    pub tax_config: Account<'info, TaxConfig>,
 
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]

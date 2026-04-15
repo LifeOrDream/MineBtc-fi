@@ -48,6 +48,22 @@ fn distribution_faction_count(tax_config: &TaxConfig) -> Result<usize> {
     Ok(count)
 }
 
+fn split_staker_rewards_for_claim(
+    total_reward: u64,
+    dogebtc_active: bool,
+    lp_active: bool,
+) -> (u64, u64) {
+    match (dogebtc_active, lp_active) {
+        (true, true) => {
+            let dogebtc_reward = total_reward / 2;
+            (dogebtc_reward, total_reward - dogebtc_reward)
+        }
+        (true, false) => (total_reward, 0),
+        (false, true) => (0, total_reward),
+        (false, false) => (0, 0),
+    }
+}
+
 // ========================================================================================
 // ============================= ADMIN FUNCTIONS ==========================================
 // ========================================================================================
@@ -635,7 +651,10 @@ pub fn internal_cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>)
     // Insert new entry
     tax_config.leaderboard_faction_ids[insert_index] = faction_state.faction_id;
     tax_config.leaderboard_hashpower[insert_index] = total_hashpower;
-    tax_config.leaderboard_factions_count += 1;
+    tax_config.leaderboard_factions_count = tax_config
+        .leaderboard_factions_count
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("   Rank: {} (0 = highest)", insert_index);
     msg!(
@@ -834,40 +853,45 @@ pub fn internal_claim_faction_treasury_rewards(
     msg!("   Rank: {}", rank);
     msg!("   Reward amount: {} tokens", reward_amount);
 
-    // Split reward 50/50 between minebtc and lp stakers
-    let minebtc_reward = reward_amount / 2;
-    let lp_reward = reward_amount - minebtc_reward; // Handle odd amounts
+    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let lp_active = faction_state.total_lp_hashpower > 0;
+    let (minebtc_reward, lp_reward) =
+        split_staker_rewards_for_claim(reward_amount, dogebtc_active, lp_active);
+    let distributed_reward = minebtc_reward
+        .checked_add(lp_reward)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!(
-        "   Split: {} to minebtc stakers, {} to lp stakers",
+        "   Split: {} to minebtc stakers, {} to lp stakers ({} retained in treasury)",
         minebtc_reward,
-        lp_reward
+        lp_reward,
+        reward_amount.saturating_sub(distributed_reward)
     );
 
-    // Transfer tokens from treasury vault to emission vault
-    // faction_treasury_vault authority is withdraw_withheld_authority (set at init),
-    // so we must sign with that PDA
-    let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
-    let withdraw_authority_seeds = &[
-        WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
-        &[withdraw_authority_bump],
-    ];
-    let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
+    if distributed_reward > 0 {
+        // Transfer only the amount that is actually distributed to active stakers.
+        let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
+        let withdraw_authority_seeds = &[
+            WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
+            &[withdraw_authority_bump],
+        ];
+        let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
 
-    token_2022::transfer_checked(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program_2022.to_account_info(),
-            token_2022::TransferChecked {
-                from: ctx.accounts.faction_treasury_vault.to_account_info(),
-                mint: ctx.accounts.minebtc_mint.to_account_info(),
-                to: ctx.accounts.minebtc_emission_vault.to_account_info(),
-                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
-            },
-            withdraw_authority_signer,
-        ),
-        reward_amount,
-        ctx.accounts.minebtc_mint.decimals,
-    )?;
+        token_2022::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program_2022.to_account_info(),
+                token_2022::TransferChecked {
+                    from: ctx.accounts.faction_treasury_vault.to_account_info(),
+                    mint: ctx.accounts.minebtc_mint.to_account_info(),
+                    to: ctx.accounts.minebtc_emission_vault.to_account_info(),
+                    authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                },
+                withdraw_authority_signer,
+            ),
+            distributed_reward,
+            ctx.accounts.minebtc_mint.decimals,
+        )?;
+    }
 
     // Update reward indexes for minebtc stakers
     if minebtc_reward > 0 && faction_state.total_dogebtc_hashpower > 0 {
@@ -876,23 +900,31 @@ pub fn internal_claim_faction_treasury_rewards(
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.dogebtc_dogebtc_reward_index =
-            faction_state.dogebtc_dogebtc_reward_index + index_increase;
+        faction_state.dogebtc_dogebtc_reward_index = faction_state
+            .dogebtc_dogebtc_reward_index
+            .checked_add(index_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     // Update reward indexes for lp stakers
     if lp_reward > 0 && faction_state.total_lp_hashpower > 0 {
         let index_increase =
             helper::mul_div(lp_reward, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_dogebtc_reward_index =
-            faction_state.lp_dogebtc_reward_index + index_increase;
+        faction_state.lp_dogebtc_reward_index = faction_state
+            .lp_dogebtc_reward_index
+            .checked_add(index_increase)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     // Mark faction as claimed
     tax_config.faction_claimed[faction_state.faction_id as usize] = true;
-    tax_config.factions_claimed_count += 1;
+    tax_config.factions_claimed_count = tax_config
+        .factions_claimed_count
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    // Clear reward for this faction
+    // Clear reward for this faction. Any undistributed amount stays in the treasury vault
+    // and will naturally be part of future distribution rounds.
     tax_config.faction_rewards[rank] = 0;
 
     msg!("✅ [claim_faction_treasury_rewards] Rewards claimed and distributed");

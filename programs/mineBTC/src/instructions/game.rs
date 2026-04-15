@@ -217,7 +217,10 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     if total_users == 0 {
         global_state.last_round_id = game_session.round_id;
         global_state.winning_faction_id = winning_faction_id;
-        global_state.total_sol_bets += game_session.total_sol_bets as u128;
+        global_state.total_sol_bets = global_state
+            .total_sol_bets
+            .checked_add(game_session.total_sol_bets as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         global_state.can_begin_round = true;
         game_session.stage = 2;
 
@@ -271,29 +274,48 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     game_session.faction_stakers = faction_stakers;
     game_session.motherlode_rewards = motherlode_rewards;
 
-    let total_distributed_this_round = game_session.minebtc_winner_pool
-        + game_session.minebtc_same_faction_pool
-        + faction_stakers
-        + motherlode_rewards;
-    ctx.accounts.mine_btc_mining.total_tokens_mined += total_distributed_this_round;
+    let total_distributed_this_round = game_session
+        .minebtc_winner_pool
+        .checked_add(game_session.minebtc_same_faction_pool)
+        .and_then(|total| total.checked_add(faction_stakers))
+        .and_then(|total| total.checked_add(motherlode_rewards))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    ctx.accounts.mine_btc_mining.total_tokens_mined = ctx
+        .accounts
+        .mine_btc_mining
+        .total_tokens_mined
+        .checked_add(total_distributed_this_round)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     if winning_points > 0 {
-        game_session.sol_rewards_index +=
-            helper::mul_div(game_session.total_sol_bets, INDEX_PRECISION, winning_points)?;
+        game_session.sol_rewards_index = game_session
+            .sol_rewards_index
+            .checked_add(helper::mul_div(
+                game_session.total_sol_bets,
+                INDEX_PRECISION,
+                winning_points,
+            )?)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if winning_wgtd_points > 0 {
-        game_session.minebtc_rewards_index += helper::mul_div(
-            game_session.minebtc_winner_pool,
-            INDEX_PRECISION,
-            winning_wgtd_points,
-        )?;
+        game_session.minebtc_rewards_index = game_session
+            .minebtc_rewards_index
+            .checked_add(helper::mul_div(
+                game_session.minebtc_winner_pool,
+                INDEX_PRECISION,
+                winning_wgtd_points,
+            )?)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if same_faction_wgtd_points > 0 && game_session.minebtc_same_faction_pool > 0 {
-        game_session.same_faction_minebtc_rewards_index += helper::mul_div(
-            game_session.minebtc_same_faction_pool,
-            INDEX_PRECISION,
-            same_faction_wgtd_points,
-        )?;
+        game_session.same_faction_minebtc_rewards_index = game_session
+            .same_faction_minebtc_rewards_index
+            .checked_add(helper::mul_div(
+                game_session.minebtc_same_faction_pool,
+                INDEX_PRECISION,
+                same_faction_wgtd_points,
+            )?)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     let motherlode_random = u64::from_le_bytes([
@@ -417,6 +439,22 @@ fn calculate_minebtc_split(
     )
 }
 
+fn split_staker_lane_rewards(
+    total_rewards: u64,
+    dogebtc_active: bool,
+    lp_active: bool,
+) -> (u64, u64) {
+    match (dogebtc_active, lp_active) {
+        (true, true) => {
+            let dogebtc_share = total_rewards / 2;
+            (dogebtc_share, total_rewards - dogebtc_share)
+        }
+        (true, false) => (total_rewards, 0),
+        (false, true) => (0, total_rewards),
+        (false, false) => (0, 0),
+    }
+}
+
 /// Finalize the faction-level reward distribution for the round.
 /// This function:
 /// 1. Verifies revealed seed matches commit hash
@@ -436,14 +474,6 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     // Validate round has ended
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
 
-    // Validate caller is a whitelisted cranker bot
-    require!(
-        global_state
-            .cranker_bots
-            .contains(&ctx.accounts.authority.key()),
-        ErrorCode::Unauthorized
-    );
-
     // Get winning faction from the round result
     let winning_faction_id = game_session.winning_faction_id;
     require!(
@@ -461,13 +491,51 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         (sol_staker_fees as f64 / 1_000_000_000.0)
     );
 
-    // dBTC + SOL distribution to dBTC stakers of the winning faction
-    distribute_rewards_amg_stakers(
-        minebtc_staker_rewards,
-        sol_staker_fees,
-        faction_state,
-        game_session.round_id,
-    )?;
+    let winning_direction = game_session.winning_direction;
+    let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction
+        [winning_faction_id as usize][winning_direction as usize];
+    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let lp_active = faction_state.total_lp_hashpower > 0;
+
+    if dogebtc_active || lp_active {
+        // dBTC + SOL distribution to staking lanes of the winning faction.
+        distribute_rewards_amg_stakers(
+            minebtc_staker_rewards,
+            sol_staker_fees,
+            faction_state,
+            game_session.round_id,
+        )?;
+    } else {
+        msg!(
+            "   Winning faction {} has no active stakers. Redirecting {} MINEBTC and {} SOL staker rewards to exact winners",
+            faction_state.faction_id,
+            minebtc_staker_rewards as f64 / 1_000_000.0,
+            sol_staker_fees as f64 / 1_000_000_000.0
+        );
+
+        let winning_points = game_session.points_bets_by_faction_direction
+            [winning_faction_id as usize][winning_direction as usize];
+        if sol_staker_fees > 0 && winning_points > 0 {
+            let sol_reward_delta =
+                helper::mul_div(sol_staker_fees, INDEX_PRECISION, winning_points)?;
+            game_session.sol_rewards_index = game_session
+                .sol_rewards_index
+                .checked_add(sol_reward_delta)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+
+        if minebtc_staker_rewards > 0 && exact_winning_wgtd_pts > 0 {
+            let minebtc_reward_delta = helper::mul_div(
+                minebtc_staker_rewards,
+                INDEX_PRECISION,
+                exact_winning_wgtd_pts,
+            )?;
+            game_session.minebtc_rewards_index = game_session
+                .minebtc_rewards_index
+                .checked_add(minebtc_reward_delta)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+    }
 
     // Increment motherlode pot size (always, regardless of hit)
     faction_state.motherlode_pot_size = faction_state
@@ -480,22 +548,24 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         faction_state.motherlode_pot_size as f64 / 1_000_000.0,
         game_session.motherlode_rewards as f64 / 1_000_000.0
     );
-
     let motherlode_hit = game_session.motherlode_hit;
-    let winning_direction = game_session.winning_direction;
-    let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction
-        [winning_faction_id as usize][winning_direction as usize];
 
     if motherlode_hit && faction_state.motherlode_pot_size > 0 {
         let motherlode_bonus = faction_state.motherlode_pot_size;
         faction_state.motherlode_pot_size = 0;
-        game_session.minebtc_winner_pool += motherlode_bonus;
+        game_session.minebtc_winner_pool = game_session
+            .minebtc_winner_pool
+            .checked_add(motherlode_bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.motherlode_pot_size_on_hit = motherlode_bonus;
 
         if motherlode_bonus > 0 && exact_winning_wgtd_pts > 0 {
             let minebtc_rewards_delta =
                 helper::mul_div(motherlode_bonus, INDEX_PRECISION, exact_winning_wgtd_pts)?;
-            game_session.minebtc_rewards_index += minebtc_rewards_delta;
+            game_session.minebtc_rewards_index = game_session
+                .minebtc_rewards_index
+                .checked_add(minebtc_rewards_delta)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 
         emit!(MotherlodeHit {
@@ -508,7 +578,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     }
 
     // Update faction wins
-    faction_state.total_wins = faction_state.total_wins + 1;
+    faction_state.total_wins = faction_state
+        .total_wins
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update global state with previous round results
     global_state.last_round_id = game_session.round_id;
@@ -520,8 +593,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     );
 
     // Update total SOL bets in global state (cumulative)
-    global_state.total_sol_bets =
-        global_state.total_sol_bets + (game_session.total_sol_bets as u128);
+    global_state.total_sol_bets = global_state
+        .total_sol_bets
+        .checked_add(game_session.total_sol_bets as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated global state. Total SOL bets: {}",
         global_state.total_sol_bets as f64 / 1_000_000_000.0
@@ -573,23 +648,29 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
 /// Internal function, called by int_end_round_faction_rewards to distribute rewards among AMG stakers (50% to dogeBTC stakers, 50% to LP stakers)
 fn distribute_rewards_amg_stakers(
-    mut minebtc_staker_rewards: u64,
-    mut sol_staker_fees: u64,
+    minebtc_staker_rewards: u64,
+    sol_staker_fees: u64,
     faction_state: &mut FactionState,
     round_id: u64,
 ) -> Result<()> {
-    if faction_state.total_dogebtc_hashpower > 0 {
-        // Calculate shares BEFORE modifying the totals
-        let dogebtc_minebtc_share = minebtc_staker_rewards / 2;
-        let dogebtc_sol_share = sol_staker_fees / 2;
+    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let lp_active = faction_state.total_lp_hashpower > 0;
 
+    let (dogebtc_minebtc_share, lp_minebtc_share) =
+        split_staker_lane_rewards(minebtc_staker_rewards, dogebtc_active, lp_active);
+    let (dogebtc_sol_share, lp_sol_share) =
+        split_staker_lane_rewards(sol_staker_fees, dogebtc_active, lp_active);
+
+    if dogebtc_active && (dogebtc_minebtc_share > 0 || dogebtc_sol_share > 0) {
         let minebtc_per_share = helper::mul_div(
             dogebtc_minebtc_share,
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.dogebtc_dogebtc_reward_index =
-            faction_state.dogebtc_dogebtc_reward_index + minebtc_per_share;
+        faction_state.dogebtc_dogebtc_reward_index = faction_state
+            .dogebtc_dogebtc_reward_index
+            .checked_add(minebtc_per_share)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
             faction_state.dogebtc_dogebtc_reward_index - minebtc_per_share,
@@ -602,7 +683,10 @@ fn distribute_rewards_amg_stakers(
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.dogebtc_sol_reward_index += sol_reward_inc;
+        faction_state.dogebtc_sol_reward_index = faction_state
+            .dogebtc_sol_reward_index
+            .checked_add(sol_reward_inc)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
             faction_state.dogebtc_sol_reward_index - sol_reward_inc,
@@ -618,20 +702,18 @@ fn distribute_rewards_amg_stakers(
             dogebtc_dogebtc_reward_index: faction_state.dogebtc_dogebtc_reward_index,
             dogebtc_sol_reward_index: faction_state.dogebtc_sol_reward_index
         });
-
-        // Deduct shares AFTER event emission
-        minebtc_staker_rewards = minebtc_staker_rewards - dogebtc_minebtc_share;
-        sol_staker_fees = sol_staker_fees - dogebtc_sol_share;
     }
 
-    if faction_state.total_lp_hashpower > 0 {
+    if lp_active && (lp_minebtc_share > 0 || lp_sol_share > 0) {
         let minebtc_per_share = helper::mul_div(
-            minebtc_staker_rewards,
+            lp_minebtc_share,
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        faction_state.lp_dogebtc_reward_index =
-            faction_state.lp_dogebtc_reward_index + minebtc_per_share;
+        faction_state.lp_dogebtc_reward_index = faction_state
+            .lp_dogebtc_reward_index
+            .checked_add(minebtc_per_share)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
             faction_state.lp_dogebtc_reward_index - minebtc_per_share,
@@ -640,11 +722,14 @@ fn distribute_rewards_amg_stakers(
         );
 
         let sol_reward_inc = helper::mul_div(
-            sol_staker_fees,
+            lp_sol_share,
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        faction_state.lp_sol_reward_index += sol_reward_inc;
+        faction_state.lp_sol_reward_index = faction_state
+            .lp_sol_reward_index
+            .checked_add(sol_reward_inc)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
             faction_state.lp_sol_reward_index - sol_reward_inc,
@@ -655,8 +740,8 @@ fn distribute_rewards_amg_stakers(
         emit!(LpStakingRewardsDistributed {
             round_id: round_id,
             faction_id: faction_state.faction_id,
-            minebtc_staker_rewards: minebtc_staker_rewards,
-            sol_staker_rewards: sol_staker_fees,
+            minebtc_staker_rewards: lp_minebtc_share,
+            sol_staker_rewards: lp_sol_share,
             lp_dogebtc_reward_index: faction_state.lp_dogebtc_reward_index,
             lp_sol_reward_index: faction_state.lp_sol_reward_index
         });

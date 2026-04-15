@@ -66,7 +66,10 @@ pub fn internal_initialize_player(
 
     let player_data = &mut ctx.accounts.player_data;
     let global_config = &mut ctx.accounts.global_config;
-    global_config.total_players = global_config.total_players + 1;
+    global_config.total_players = global_config
+        .total_players
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Validate faction_id
     require!(
@@ -106,7 +109,10 @@ pub fn internal_initialize_player(
             referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
             ErrorCode::MaxReferralsReached
         );
-        referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+        referrer_rewards.referrals_count = referrer_rewards
+            .referrals_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "     Referrer's referral count: {}/{}",
             referrer_rewards.referrals_count,
@@ -791,7 +797,10 @@ pub fn internal_update_autominer(
 
     // Update vault state
     autominer_vault.sol_per_round = new_sol_per_round;
-    autominer_vault.rounds_remaining += rounds_added;
+    autominer_vault.rounds_remaining = autominer_vault
+        .rounds_remaining
+        .checked_add(rounds_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     autominer_vault.can_reload = new_can_reload;
     if autominer_vault.use_ticket.is_none() {
         let new_balance = (old_sol_balance as i64).saturating_add(sol_diff);
@@ -1282,7 +1291,10 @@ pub fn internal_claim_autominer_rewards(
         }
 
         // Add 1 round back (each execution consumed 1 round, reload gives it back)
-        autominer_vault.rounds_remaining += 1;
+        autominer_vault.rounds_remaining = autominer_vault
+            .rounds_remaining
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   ✓ Ticket reload: rounds_remaining restored to {}",
             autominer_vault.rounds_remaining
@@ -1323,8 +1335,14 @@ pub fn internal_claim_autominer_rewards(
             )?;
 
             // Update autominer state
-            autominer_vault.sol_balance += sol_for_rounds;
-            autominer_vault.rounds_remaining += rounds_to_add as u32;
+            autominer_vault.sol_balance = autominer_vault
+                .sol_balance
+                .checked_add(sol_for_rounds)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            autominer_vault.rounds_remaining = autominer_vault
+                .rounds_remaining
+                .checked_add(rounds_to_add as u32)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             emit!(AutominerReloaded {
                 autominer_vault: autominer_vault.key(),
@@ -1412,7 +1430,9 @@ fn calculate_round_rewards(
                     game_session.sol_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
-                total_sol_reward += sol_reward;
+                total_sol_reward = total_sol_reward
+                    .checked_add(sol_reward)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!("         SOL reward: {} SOL", sol_reward as f64 / 1e9);
             }
 
@@ -1423,7 +1443,9 @@ fn calculate_round_rewards(
                     game_session.minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
-                total_minebtc_reward += minebtc_reward;
+                total_minebtc_reward = total_minebtc_reward
+                    .checked_add(minebtc_reward)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "         MineBtc reward: {} DogeBTC",
                     minebtc_reward as f64 / 1e6
@@ -1439,7 +1461,9 @@ fn calculate_round_rewards(
                     game_session.same_faction_minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
-                total_minebtc_reward += minebtc_reward;
+                total_minebtc_reward = total_minebtc_reward
+                    .checked_add(minebtc_reward)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "         Same-faction MineBtc reward: {} DogeBTC",
                     minebtc_reward as f64 / 1e6
@@ -1460,7 +1484,10 @@ fn update_player_rewards(
     total_sol_reward: u64,
     total_minebtc_reward: u64,
 ) -> Result<()> {
-    player_data.total_sol_won += total_sol_reward;
+    player_data.total_sol_won = player_data
+        .total_sol_won
+        .checked_add(total_sol_reward)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "     Total SOL won: {} (+{})",
         player_data.total_sol_won as f64 / 1e9,
@@ -1763,9 +1790,15 @@ fn internal_process_bets<'info>(
             let protocol_fee = fee - stakers_fee;
 
             // Accumulate totals for transfer
-            total_stakers_fee = stakers_fee.saturating_mul(num_bets);
-            total_protocol_fee = protocol_fee.saturating_mul(num_bets);
-            total_net_to_pot = net.saturating_mul(num_bets);
+            total_stakers_fee = stakers_fee
+                .checked_mul(num_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            total_protocol_fee = protocol_fee
+                .checked_mul(num_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            total_net_to_pot = net
+                .checked_mul(num_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
             let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
@@ -1843,7 +1876,10 @@ fn internal_process_bets<'info>(
         user_game_bet.mutation_type = 0;
         user_game_bet.epoch_accumulated = false;
 
-        player_data.rounds_played += 1;
+        player_data.rounds_played = player_data
+            .rounds_played
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!("     New bet account initialized");
     } else {
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
@@ -1871,12 +1907,15 @@ fn internal_process_bets<'info>(
                 ErrorCode::ConflictingFactionDirection
             );
 
-            user_game_bet.sol_bets[index] =
-                user_game_bet.sol_bets[index].saturating_add(net_per_bet);
-            user_game_bet.points_bets[index] =
-                user_game_bet.points_bets[index].saturating_add(points_per_bet);
-            user_game_bet.wgtd_points_bets[index] =
-                user_game_bet.wgtd_points_bets[index].saturating_add(wgtd_points_per_bet);
+            user_game_bet.sol_bets[index] = user_game_bet.sol_bets[index]
+                .checked_add(net_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            user_game_bet.points_bets[index] = user_game_bet.points_bets[index]
+                .checked_add(points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            user_game_bet.wgtd_points_bets[index] = user_game_bet.wgtd_points_bets[index]
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         } else {
             require!(
                 user_game_bet.faction_ids.len() < UserGameBet::MAX_FACTIONS_PER_BET,
@@ -1888,31 +1927,42 @@ fn internal_process_bets<'info>(
             user_game_bet.points_bets.push(points_per_bet);
             user_game_bet.wgtd_points_bets.push(wgtd_points_per_bet);
 
-            game_session.user_faction_indexes[faction_index] =
-                game_session.user_faction_indexes[faction_index].saturating_add(1);
+            game_session.user_faction_indexes[faction_index] = game_session.user_faction_indexes
+                [faction_index]
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 
         // Update GameSession stats
-        game_session.sol_bets_by_faction[faction_index] =
-            game_session.sol_bets_by_faction[faction_index].saturating_add(net_per_bet);
-        game_session.points_bets_by_faction[faction_index] =
-            game_session.points_bets_by_faction[faction_index].saturating_add(points_per_bet);
+        game_session.sol_bets_by_faction[faction_index] = game_session.sol_bets_by_faction
+            [faction_index]
+            .checked_add(net_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        game_session.points_bets_by_faction[faction_index] = game_session.points_bets_by_faction
+            [faction_index]
+            .checked_add(points_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.wgtd_points_bets_by_faction[faction_index] = game_session
             .wgtd_points_bets_by_faction[faction_index]
-            .saturating_add(wgtd_points_per_bet);
+            .checked_add(wgtd_points_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.points_bets_by_faction_direction[faction_index][direction_index] =
             game_session.points_bets_by_faction_direction[faction_index][direction_index]
-                .saturating_add(points_per_bet);
+                .checked_add(points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.wgtd_points_bets_by_faction_direction[faction_index][direction_index] =
             game_session.wgtd_points_bets_by_faction_direction[faction_index][direction_index]
-                .saturating_add(wgtd_points_per_bet);
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         user_epoch_bets.direction_bets[faction_index][direction_index] = user_epoch_bets
             .direction_bets[faction_index][direction_index]
-            .saturating_add(wgtd_points_per_bet);
+            .checked_add(wgtd_points_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         epoch_state.faction_direction_totals[faction_index][direction_index] = epoch_state
             .faction_direction_totals[faction_index][direction_index]
-            .saturating_add(wgtd_points_per_bet);
+            .checked_add(wgtd_points_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Record for events
         evt_faction_ids.push(faction_id);
@@ -1937,19 +1987,49 @@ fn internal_process_bets<'info>(
         .checked_mul(num_bets)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    user_game_bet.total_sol_bet = user_game_bet.total_sol_bet.saturating_add(total_net_added);
-    user_game_bet.total_points_bet += total_points_added;
-    user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
-    user_game_bet.total_fee += total_fee_added;
+    user_game_bet.total_sol_bet = user_game_bet
+        .total_sol_bet
+        .checked_add(total_net_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_game_bet.total_points_bet = user_game_bet
+        .total_points_bet
+        .checked_add(total_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_game_bet.total_wgtd_points_bet = user_game_bet
+        .total_wgtd_points_bet
+        .checked_add(total_wgtd_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_game_bet.total_fee = user_game_bet
+        .total_fee
+        .checked_add(total_fee_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     user_game_bet.epoch_accumulated = true;
 
-    game_session.total_sol_bets = game_session.total_sol_bets.saturating_add(total_net_added);
-    game_session.total_points_bets += total_points_added;
-    game_session.total_wgtd_points_bets += total_wgtd_points_added;
-    game_session.stakers_fee += total_stakers_fee;
+    game_session.total_sol_bets = game_session
+        .total_sol_bets
+        .checked_add(total_net_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.total_points_bets = game_session
+        .total_points_bets
+        .checked_add(total_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.total_wgtd_points_bets = game_session
+        .total_wgtd_points_bets
+        .checked_add(total_wgtd_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.stakers_fee = game_session
+        .stakers_fee
+        .checked_add(total_stakers_fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    player_data.total_sol_bet = player_data.total_sol_bet.saturating_add(total_net_added);
-    player_data.total_points_bet += total_points_added;
+    player_data.total_sol_bet = player_data
+        .total_sol_bet
+        .checked_add(total_net_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    player_data.total_points_bet = player_data
+        .total_points_bet
+        .checked_add(total_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!(
         "   Batch processed: {} bets. Total Net: {} SOL",
@@ -2039,7 +2119,10 @@ fn internal_process_bets<'info>(
         );
 
         // Always add XP to PlayerData (even without mutation)
-        player_data.gameplay_doge_xp = player_data.gameplay_doge_xp + mutation_result.xp_gained;
+        player_data.gameplay_doge_xp = player_data
+            .gameplay_doge_xp
+            .checked_add(mutation_result.xp_gained)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
@@ -2048,8 +2131,10 @@ fn internal_process_bets<'info>(
             let can_apply =
                 !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
 
-            player_data.active_multiplier =
-                player_data.active_multiplier + mutation_result.multiplier_increase;
+            player_data.active_multiplier = player_data
+                .active_multiplier
+                .checked_add(mutation_result.multiplier_increase)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             if can_apply {
                 user_game_bet.mutation_type = match mutation_type {
@@ -2085,8 +2170,13 @@ fn internal_process_bets<'info>(
 }
 
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
-    let fee = amount.saturating_mul(protocol_fee_pct) / M_HUNDRED;
-    let net_amount = amount.saturating_sub(fee);
+    let fee = amount
+        .checked_mul(protocol_fee_pct)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        / M_HUNDRED;
+    let net_amount = amount
+        .checked_sub(fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "     Net amount (after fee): {} SOL. Protocol fee ({}%): {} SOL",
         (net_amount as f64) / 1_000_000_000.0,
@@ -2101,24 +2191,31 @@ fn validate_points_percentage_limit(
     current_sol_bets: u64,
     amount: u64,
 ) -> Result<()> {
-    // Validate points percentage limit: points bets must stay at or below 25% of SOL bets for this session
-    // Tickets can only be used when: (total_points_bets + ticket_amount) <= (total_sol_bets * 25 / 100)
-    let new_points_bets = current_points_bets + amount;
-    msg!("     Current session stats: SOL bets: {} lamports, Points bets: {} lamports, New points bets if allowed: {} lamports", current_sol_bets, current_points_bets, new_points_bets);
+    // total_points_bets includes SOL-backed points plus ticket-backed points.
+    // Enforce the 25% cap only on the ticket-backed portion.
+    let current_ticket_points = current_points_bets.saturating_sub(current_sol_bets);
+    let new_ticket_points = current_ticket_points
+        .checked_add(amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!(
+        "     Current session stats: SOL bets: {} lamports, Total points: {} lamports, Ticket-backed points: {} lamports, New ticket-backed points if allowed: {} lamports",
+        current_sol_bets,
+        current_points_bets,
+        current_ticket_points,
+        new_ticket_points
+    );
 
-    // Require that SOL bets exist before allowing ticket bets -  This ensures points percentage can be calculated and stays within 25% limit
     require!(current_sol_bets > 0, ErrorCode::InvalidParameters);
     msg!("     ✓ SOL bets exist in session");
 
-    // Calculate max allowed points bets (25% of SOL bets) -  This ensures points percentage can be calculated and stays within 25% limit
     let max_allowed_points = current_sol_bets * 25 / 100;
     msg!(
-        "       Max allowed points (25% of SOL): {} lamports",
+        "       Max allowed ticket-backed points (25% of SOL): {} lamports",
         max_allowed_points
     );
     require!(
-        new_points_bets <= max_allowed_points,
-        ErrorCode::InvalidParameters
+        new_ticket_points <= max_allowed_points,
+        ErrorCode::TicketBetCapExceeded
     );
     msg!("     ✓ Points bets stay within 25% limit");
     Ok(())

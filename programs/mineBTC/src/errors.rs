@@ -205,4 +205,10 @@ pub enum ErrorCode {
 
     #[msg("Invalid or unexpected index state")]
     InvalidIndexState,
+
+    #[msg("Ticket-backed bets exceed the session cap")]
+    TicketBetCapExceeded,
+
+    #[msg("Hashpower-changing staking actions are paused while a tax round is active")]
+    TaxRoundActive,
 }

@@ -43,6 +43,18 @@ pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
                                         // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
                                         // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
+fn require_tax_round_inactive(tax_config: &TaxConfig, action: &str) -> Result<()> {
+    if tax_config.round_active {
+        msg!(
+            "⏸️ [{}] Tax round is active; hashpower-changing staking action is temporarily paused",
+            action
+        );
+        return err!(ErrorCode::TaxRoundActive);
+    }
+
+    Ok(())
+}
+
 /// Stake MineBtc tokens
 /// Users stake MineBtc tokens to their home faction and earn SOL and minebtc rewards
 /// SOL rewards are distributed per round via join_round function
@@ -71,6 +83,7 @@ pub fn int_stake_minebtc(
     let user_position = &mut ctx.accounts.user_position;
 
     let hashpower_config = &ctx.accounts.hashpower_config;
+    require_tax_round_inactive(&ctx.accounts.tax_config, "stake_minebtc")?;
 
     msg!(
         "🧭 [stake_minebtc] owner={} player={} faction_state={} faction_id={} current_position_count={}",
@@ -227,12 +240,24 @@ pub fn int_stake_minebtc(
     );
 
     // Update player data state
-    player_data.dogebtc_hashpower += weighted_amount_with_doges;
-    player_data.dogebtc_staked += actual_amount;
+    player_data.dogebtc_hashpower = player_data
+        .dogebtc_hashpower
+        .checked_add(weighted_amount_with_doges)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    player_data.dogebtc_staked = player_data
+        .dogebtc_staked
+        .checked_add(actual_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
-    faction_state.dogebtc_staked += actual_amount;
-    faction_state.total_dogebtc_hashpower += weighted_amount_with_doges;
+    faction_state.dogebtc_staked = faction_state
+        .dogebtc_staked
+        .checked_add(actual_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_state.total_dogebtc_hashpower = faction_state
+        .total_dogebtc_hashpower
+        .checked_add(weighted_amount_with_doges)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
         faction_state.dogebtc_staked as f64 / 1e6,
@@ -306,6 +331,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
+    require_tax_round_inactive(&ctx.accounts.tax_config, "unstake_minebtc")?;
 
     msg!(
         "🔓 [unstake_lp_tokens] Processing unstake for position {}",
@@ -602,6 +628,7 @@ pub fn int_stake_lp_tokens(
     let user_position = &mut ctx.accounts.user_position;
 
     let hashpower_config = &ctx.accounts.hashpower_config;
+    require_tax_round_inactive(&ctx.accounts.tax_config, "stake_lp_tokens")?;
     msg!(
         "🧭 [stake_lp_tokens] owner={} player={} faction_state={} faction_id={} current_position_count={}",
         ctx.accounts.authority.key(),
@@ -730,12 +757,24 @@ pub fn int_stake_lp_tokens(
     );
 
     // Update player data state
-    player_data.lp_hashpower += weighted_amount_with_doges;
-    player_data.lp_staked += actual_amount;
+    player_data.lp_hashpower = player_data
+        .lp_hashpower
+        .checked_add(weighted_amount_with_doges)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    player_data.lp_staked = player_data
+        .lp_staked
+        .checked_add(actual_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
-    faction_state.lp_staked += actual_amount;
-    faction_state.total_lp_hashpower += weighted_amount_with_doges;
+    faction_state.lp_staked = faction_state
+        .lp_staked
+        .checked_add(actual_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_state.total_lp_hashpower = faction_state
+        .total_lp_hashpower
+        .checked_add(weighted_amount_with_doges)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
         faction_state.lp_staked as f64 / 1e6,
@@ -805,6 +844,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
+    require_tax_round_inactive(&ctx.accounts.tax_config, "unstake_lp_tokens")?;
 
     msg!(
         "🔓 [unstake_minebtc] Processing unstake for position {}",
@@ -1234,8 +1274,14 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
             .referrer_rewards
             .as_mut()
             .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
-        referrer_rewards.pending_minebtc_rewards += reward;
-        referrer_rewards.total_minebtc_earned += reward;
+        referrer_rewards.pending_minebtc_rewards = referrer_rewards
+            .pending_minebtc_rewards
+            .checked_add(reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        referrer_rewards.total_minebtc_earned = referrer_rewards
+            .total_minebtc_earned
+            .checked_add(reward)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "     Added {} minebtc to referrer's rewards",
             reward as f64 / 1e6
@@ -1246,7 +1292,9 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     };
 
     // User gets base amount + referral bonus
-    let claimable_by_user = base_claimable_amount + referral_bonus;
+    let claimable_by_user = base_claimable_amount
+        .checked_add(referral_bonus)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "Claimable by user: {} minebtc",
         claimable_by_user as f64 / 1e6
@@ -1302,7 +1350,10 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
 
     // Update total tokens distributed
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
-    mine_btc_mining.total_tokens_distributed += claimable_by_user;
+    mine_btc_mining.total_tokens_distributed = mine_btc_mining
+        .total_tokens_distributed
+        .checked_add(claimable_by_user)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated total tokens distributed: {} (+{})",
         mine_btc_mining.total_tokens_distributed as f64 / 1e6,
@@ -1326,7 +1377,10 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
                 INDEX_PRECISION,
                 unrefined_minebtc.total_minebtc_claimable,
             )?;
-            unrefined_minebtc.unrefining_index += increment;
+            unrefined_minebtc.unrefining_index = unrefined_minebtc
+                .unrefining_index
+                .checked_add(increment)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
                 "   Updated unrefining index: {} (+{})",
                 unrefined_minebtc.unrefining_index,
@@ -1413,7 +1467,10 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
 
     // Update total tokens distributed
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
-    mine_btc_mining.total_tokens_distributed += pending_minebtc;
+    mine_btc_mining.total_tokens_distributed = mine_btc_mining
+        .total_tokens_distributed
+        .checked_add(pending_minebtc)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated total tokens distributed: {} (+{})",
         mine_btc_mining.total_tokens_distributed as f64 / 1e6,
@@ -1500,7 +1557,10 @@ pub fn int_update_minebtc_staking_rewards(
             faction_state.dogebtc_sol_reward_index,
             player_data.dogebtc_sol_reward_debt,
         )?;
-        player_data.pending_sol_rewards += new_sol_rewards;
+        player_data.pending_sol_rewards = player_data
+            .pending_sol_rewards
+            .checked_add(new_sol_rewards)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Updated pending SOL rewards: {} (+{})",
             player_data.pending_sol_rewards as f64 / 1e9,
@@ -1568,7 +1628,10 @@ pub fn int_update_lp_staking_rewards(
             faction_state.lp_sol_reward_index,
             player_data.lp_sol_reward_debt,
         )?;
-        player_data.pending_sol_rewards += new_sol_rewards;
+        player_data.pending_sol_rewards = player_data
+            .pending_sol_rewards
+            .checked_add(new_sol_rewards)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Updated pending SOL rewards: {} (+{})",
             player_data.pending_sol_rewards as f64 / 1e9,
@@ -1682,6 +1745,9 @@ pub struct StakeMineBtc<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
+    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
+    pub tax_config: Account<'info, TaxConfig>,
+
     /// User who is staking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1724,6 +1790,13 @@ pub struct UnstakeMineBtc<'info> {
     #[account(
         mut,
         close = authority,
+        seeds = [
+            "0".as_ref(),
+            STAKED_POSITION_SEED.as_ref(),
+            authority.key().as_ref(),
+            &[position_index]
+        ],
+        bump = user_position.bump,
         constraint = user_position.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId,
         constraint = user_position.position_type == 0 @ ErrorCode::InvalidParameters
     )]
@@ -1764,6 +1837,9 @@ pub struct UnstakeMineBtc<'info> {
         bump
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
+    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
+    pub tax_config: Account<'info, TaxConfig>,
 
     /// User who is unstaking tokens
     #[account(mut)]
@@ -1820,6 +1896,9 @@ pub struct StakeLpTokens<'info> {
         bump
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
+    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
+    pub tax_config: Account<'info, TaxConfig>,
 
     /// CHECK: LP Mint (validated manually)
     pub lp_mint: Account<'info, token::Mint>,
@@ -1881,6 +1960,13 @@ pub struct UnstakeLpTokens<'info> {
     #[account(
         mut,
         close = authority,
+        seeds = [
+            "1".as_ref(),
+            LP_STAKED_POSITION_SEED.as_ref(),
+            authority.key().as_ref(),
+            &[position_index]
+        ],
+        bump = user_position.bump,
         constraint = user_position.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId,
         constraint = user_position.position_type == 1 @ ErrorCode::InvalidParameters
     )]
@@ -1892,6 +1978,9 @@ pub struct UnstakeLpTokens<'info> {
         bump
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+
+    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
+    pub tax_config: Account<'info, TaxConfig>,
 
     /// CHECK: LP Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
