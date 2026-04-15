@@ -531,78 +531,24 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
 
     /// Initialize epoch mining configuration (admin only)
-    /// model5_pct + top1_pct + top2_pct + top3_pct must <= 100
     pub fn initialize_epoch_config(
         ctx: Context<InitializeEpochConfig>,
-        oracle_authority: Pubkey,
         epoch_duration: u64,
-        model5_pct: u8,
-        top1_pct: u8,
-        top2_pct: u8,
-        top3_pct: u8,
     ) -> Result<()> {
-        epoch::initialize_epoch_config_internal(
-            ctx,
-            oracle_authority,
-            epoch_duration,
-            model5_pct,
-            top1_pct,
-            top2_pct,
-            top3_pct,
-        )
+        epoch::initialize_epoch_config_internal(ctx, epoch_duration)
     }
 
     /// Update epoch mining configuration (admin only)
     pub fn update_epoch_config(
         ctx: Context<UpdateEpochConfig>,
-        oracle_authority: Option<Pubkey>,
         epoch_duration: Option<u64>,
         is_active: Option<bool>,
-        model5_pct: Option<u8>,
-        top1_pct: Option<u8>,
-        top2_pct: Option<u8>,
-        top3_pct: Option<u8>,
     ) -> Result<()> {
-        epoch::update_epoch_config_internal(
-            ctx,
-            oracle_authority,
-            epoch_duration,
-            is_active,
-            model5_pct,
-            top1_pct,
-            top2_pct,
-            top3_pct,
-        )
+        epoch::update_epoch_config_internal(ctx, epoch_duration, is_active)
     }
 
-    /// Initialize an index state that the oracle can update over time.
-    pub fn initialize_index_state(
-        ctx: Context<InitializeIndexState>,
-        index_id: u8,
-        name: String,
-        initial_scores: [i64; state::NUM_FACTIONS],
-    ) -> Result<()> {
-        epoch::initialize_index_state_internal(ctx, index_id, name, initial_scores)
-    }
-
-    /// Oracle schedules which index/question should become active for the next epoch.
-    pub fn schedule_next_epoch_market(
-        ctx: Context<ScheduleNextEpochMarket>,
-        next_index_id: u8,
-        question_hash: [u8; 32],
-    ) -> Result<()> {
-        epoch::schedule_next_epoch_market_internal(ctx, next_index_id, question_hash)
-    }
-
-    /// AI Oracle posts additive score deltas for an index.
-    pub fn update_epoch_scores(
-        ctx: Context<UpdateEpochScores>,
-        score_deltas: [i64; state::NUM_FACTIONS],
-    ) -> Result<()> {
-        epoch::update_epoch_scores_internal(ctx, score_deltas)
-    }
-
-    /// Settle epoch: finalize scores and compute reward pool (fallback - anyone can call)
+    /// Settle epoch: finalize mutation-based rankings and compute reward pools.
+    /// Anyone can call once the epoch window has closed.
     pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
         epoch::settle_epoch_internal(ctx)
     }

@@ -197,12 +197,6 @@ pub enum ErrorCode {
     #[msg("Epoch rewards have already been claimed")]
     EpochRewardsAlreadyClaimed,
 
-    #[msg("Invalid oracle authority")]
-    InvalidOracleAuthority,
-
-    #[msg("Invalid or unexpected index state")]
-    InvalidIndexState,
-
     #[msg("Ticket-backed bets exceed the session cap")]
     TicketBetCapExceeded,
 

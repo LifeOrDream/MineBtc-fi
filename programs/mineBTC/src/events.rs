@@ -342,7 +342,6 @@ pub struct BetsPlaced {
 
     pub round_id: u64,
     pub epoch_id: u64,
-    pub index_id: u8,
     pub num_bets: u8,
     pub faction_ids: Vec<u8>,
     pub directions: Vec<u8>,
@@ -450,8 +449,6 @@ pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
     pub epoch_id: u64,
-    pub active_index_id: u8,
-    pub active_question_hash: [u8; 32],
     pub round_start_slot: u64,
     pub round_start_timestamp: i64,
     pub round_end_timestamp: i64,
@@ -671,73 +668,49 @@ pub struct DogeVisualMutation {
 }
 
 // ========================================================================================
-// =============================== EPOCH MINING EVENTS ====================================
+// =============================== EPOCH EVENTS ============================================
 // ========================================================================================
 
-/// Event emitted when an index state is initialized.
-#[event]
-pub struct IndexInitialized {
-    pub index_id: u8,
-    pub name: String,
-    pub initial_scores: [i64; NUM_FACTIONS],
-    pub initial_ranks: [u8; NUM_FACTIONS],
-    pub timestamp: i64,
-}
-
-/// Event emitted when the oracle schedules the next epoch market.
-#[event]
-pub struct EpochMarketScheduled {
-    pub active_index_id: u8,
-    pub next_index_id: u8,
-    pub next_question_hash: [u8; 32],
-    pub timestamp: i64,
-}
-
-/// Event emitted when AI oracle updates index scores.
-#[event]
-pub struct EpochScoresUpdated {
-    pub index_id: u8,
-    pub score_deltas: [i64; NUM_FACTIONS],
-    pub cumulative_scores: [i64; NUM_FACTIONS],
-    pub ranks: [u8; NUM_FACTIONS],
-    pub update_number: u32,
-    pub timestamp: i64,
-}
-
-/// Event emitted when an epoch is settled
+/// Event emitted when an epoch is settled.
+/// Rankings driven by on-chain mutation scores accumulated during the epoch.
 #[event]
 pub struct EpochSettled {
     pub epoch_id: u64,
-    pub index_id: u8,
-    pub question_hash: [u8; 32],
     pub total_dogebtc_mined: u64,
     pub epoch_mining_pool: u64,
-    pub start_scores: [i64; NUM_FACTIONS],
-    pub final_scores: [i64; NUM_FACTIONS],
     pub start_ranks: [u8; NUM_FACTIONS],
     pub final_ranks: [u8; NUM_FACTIONS],
     pub rank_deltas: [i8; NUM_FACTIONS],
     pub resolved_directions: [u8; NUM_FACTIONS],
     pub faction_reward_pools: [u64; NUM_FACTIONS],
+    pub faction_mutation_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
+}
+
+/// Event emitted when a mutation contributes score to a faction's epoch total.
+#[event]
+pub struct MutationScoreAccumulated {
+    pub epoch_id: u64,
+    pub faction_id: u8,
+    pub mutation_type: u8,
+    pub score_added: u64,
+    pub faction_total_score: u64,
+    pub user: Pubkey,
 }
 
 /// Event emitted when a user claims epoch rewards
 #[event]
 pub struct EpochRewardsClaimed {
     pub epoch_id: u64,
-    pub index_id: u8,
     pub user: Pubkey,
     pub reward_amount: u64,
     pub timestamp: i64,
 }
 
-/// Event emitted when an epoch is auto-started inline (during join_round or end_round_faction_rewards)
+/// Event emitted when an epoch is auto-started inline (during join_round)
 #[event]
 pub struct EpochAutoStarted {
     pub epoch_id: u64,
-    pub index_id: u8,
-    pub question_hash: [u8; 32],
     pub start_timestamp: u64,
     pub end_timestamp: u64,
 }
@@ -746,6 +719,5 @@ pub struct EpochAutoStarted {
 #[event]
 pub struct EpochAutoSettled {
     pub epoch_id: u64,
-    pub index_id: u8,
     pub mining_pool: u64,
 }

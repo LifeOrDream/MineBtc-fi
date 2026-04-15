@@ -105,8 +105,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
         round_id,
         game_session: game_session.key(),
         epoch_id: ctx.accounts.epoch_config.current_epoch_id,
-        active_index_id: ctx.accounts.epoch_config.active_index_id,
-        active_question_hash: ctx.accounts.epoch_config.active_question_hash,
         round_start_slot: game_session.round_start_slot,
         round_start_timestamp: game_session.round_start_timestamp,
         round_end_timestamp: game_session.round_end_timestamp,
@@ -696,10 +694,6 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
         let clock = Clock::get()?;
         if clock.unix_timestamp >= epoch_state.end_timestamp as i64 {
-            require!(
-                ctx.accounts.index_state.index_id == epoch_state.index_id,
-                ErrorCode::InvalidIndexState
-            );
             crate::instructions::epoch::finalize_epoch_settlement(
                 epoch_config,
                 epoch_state,
@@ -708,7 +702,6 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
             emit!(EpochAutoSettled {
                 epoch_id: epoch_state.epoch_id,
-                index_id: epoch_state.index_id,
                 mining_pool: epoch_state.epoch_mining_pool,
             });
         }
@@ -950,13 +943,6 @@ pub struct EndRoundFactionRewards<'info> {
         bump = epoch_state.bump,
     )]
     pub epoch_state: Box<Account<'info, EpochState>>,
-
-    #[account(
-        seeds = [INDEX_STATE_SEED, &[index_state.index_id]],
-        bump = index_state.bump,
-        constraint = index_state.index_id == epoch_state.index_id @ ErrorCode::InvalidIndexState,
-    )]
-    pub index_state: Box<Account<'info, IndexState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
