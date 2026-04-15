@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::state::NUM_FACTIONS;
+use crate::state::{PredictionDirection, NUM_FACTIONS};
 
 // ------------------------------
 // User management events
@@ -114,6 +114,13 @@ pub struct DogeMinted {
     pub price: u64,
     pub ticket_tier: u64,
     pub ticket_count: u64,
+}
+
+#[event]
+pub struct DogeFreeMintAllowanceUpdated {
+    pub authority: Pubkey,
+    pub user: Pubkey,
+    pub remaining_free_mints: u8,
 }
 
 #[event]
@@ -442,11 +449,13 @@ pub struct AutominerReloaded {
 pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
-    pub commit_hash: [u8; 32],
     pub epoch_id: u64,
     pub active_index_id: u8,
     pub active_question_hash: [u8; 32],
+    pub round_start_slot: u64,
     pub round_start_timestamp: i64,
+    pub round_end_timestamp: i64,
+    pub scheduled_entropy_slot: u64,
     pub timestamp: i64,
 }
 
@@ -457,6 +466,8 @@ pub struct RoundEnded {
     pub game_session: Pubkey,
     pub winning_faction_id: u8,
     pub winning_direction: u8,
+    pub entropy_slot_used: u64,
+    pub used_entropy_fallback: bool,
     pub total_sol_bets: u64,
     pub total_points_bets: u64,
 
@@ -467,6 +478,7 @@ pub struct RoundEnded {
 
     pub minebtc_winner_pool: u64,
     pub minebtc_same_faction_pool: u64,
+    pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
     pub minebtc_faction_stakers: u64,
     pub minebtc_motherlode: u64,
     pub motherlode_hit: bool,

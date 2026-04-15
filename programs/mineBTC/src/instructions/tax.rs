@@ -263,40 +263,26 @@ pub fn internal_withdraw_nft_floor_sweep_funds(
 // ============================= TAX HARVESTING & DISTRIBUTION ===========================
 // ========================================================================================
 
-/// STEP 1: "Harvest" fees from user accounts to the mint
+/// STEP 1: Harvest withheld fees from token accounts → mint.
 ///
-/// This is the "stupid crank." A keeper bot must find all token accounts
-/// with withheld fees (off-chain) and pass them into this function
-/// in batches using `ctx.remaining_accounts`.
+/// A keeper bot discovers token accounts with withheld fees off-chain (via Helius
+/// DAS API or getProgramAccounts) and passes them as `remaining_accounts`.
+/// This CPI aggregates their fees into `minebtc_mint.withheld_amount`.
 ///
-/// This instruction "sucks" the fees from user accounts and deposits
-/// them into the minebtc_mint's own "withheld_amount" field.
-///
-/// Callable by anyone - designed to be called many times in batches
+/// Callable by anyone. Designed to be called in batches (~20 accounts per tx).
 pub fn internal_crank_harvest_fees<'info>(
     ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
 ) -> Result<()> {
-    msg!("🌱 [crank_harvest_fees] Harvesting withheld fees to mint...");
-
-    // Get all the token accounts that were passed in by the keeper bot
-    msg!(
-        "   Harvesting from {} accounts...",
-        ctx.remaining_accounts.len()
-    );
-
-    if ctx.remaining_accounts.is_empty() {
-        msg!("   No source accounts provided. Exiting.");
+    let sources = ctx.remaining_accounts;
+    if sources.is_empty() {
+        msg!("🌱 Harvest: no source accounts, skipping");
         return Ok(());
     }
+    msg!(
+        "🌱 Harvesting withheld fees from {} accounts → mint",
+        sources.len()
+    );
 
-    // Get all the token accounts that were passed in by the keeper bot
-    // This is already a slice: &[AccountInfo<'info>]
-    let source_accounts = ctx.remaining_accounts;
-    msg!("   Harvesting from {} accounts...", source_accounts.len());
-
-    // Call `harvest_withheld_tokens_to_mint`
-    // This CPI will pull the fees from all `remaining_accounts`
-    // and aggregate them into `minebtc_mint.withheld_amount`.
     harvest_withheld_tokens_to_mint(
         CpiContext::new(
             ctx.accounts.token_program_2022.to_account_info(),
@@ -305,10 +291,10 @@ pub fn internal_crank_harvest_fees<'info>(
                 token_program_id: ctx.accounts.token_program_2022.to_account_info(),
             },
         ),
-        source_accounts.to_vec(),
+        sources.to_vec(),
     )?;
 
-    msg!("   ✅ Harvest complete. Fees moved to mint.");
+    msg!("   ✅ Harvest complete");
     Ok(())
 }
 
@@ -326,18 +312,22 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     // We must reload to get the most up-to-date data after harvesting
     ctx.accounts.minebtc_mint.reload()?;
 
-    // Read mint data and get TransferFeeConfig extension
-    let mint_account_info = ctx.accounts.minebtc_mint.to_account_info();
-    let mint_data = mint_account_info.try_borrow_data()?;
-    let mint = StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(
-        &mint_data,
-    )?;
-    let transfer_fee_config = <StateWithExtensions<
-        anchor_spl::token_2022::spl_token_2022::state::Mint,
-    > as BaseStateWithExtensions<
-        anchor_spl::token_2022::spl_token_2022::state::Mint,
-    >>::get_extension::<TransferFeeConfig>(&mint)?;
-    let withheld_amount = u64::from(transfer_fee_config.withheld_amount);
+    // Read withheld_amount from TransferFeeConfig extension.
+    // Scoped block so the borrow is dropped before CPI calls below.
+    let withheld_amount = {
+        let mint_account_info = ctx.accounts.minebtc_mint.to_account_info();
+        let mint_data = mint_account_info.try_borrow_data()?;
+        let mint =
+            StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(
+                &mint_data,
+            )?;
+        let transfer_fee_config = <StateWithExtensions<
+            anchor_spl::token_2022::spl_token_2022::state::Mint,
+        > as BaseStateWithExtensions<
+            anchor_spl::token_2022::spl_token_2022::state::Mint,
+        >>::get_extension::<TransferFeeConfig>(&mint)?;
+        u64::from(transfer_fee_config.withheld_amount)
+    }; // borrow dropped here
 
     if withheld_amount == 0 {
         msg!("   ❌ No withheld tokens on mint to withdraw. Run harvest crank first.");
@@ -704,52 +694,47 @@ pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Re
 
     require!(!tax_config.rewards_calculated, ErrorCode::InvalidState);
 
-    // Get total faction treasury balance
-    let total_treasury = ctx.accounts.faction_treasury_vault.amount;
-    require!(total_treasury > 0, ErrorCode::InvalidAmount);
+    let total = ctx.accounts.faction_treasury_vault.amount;
+    require!(total > 0, ErrorCode::InvalidAmount);
 
-    msg!("   Total treasury: {} tokens", total_treasury);
+    // Fixed tier allocation from treasury:
+    //   1st = 25%  |  2nd = 15%  |  3rd = 10%  |  random from ranks 3+ = 50%
+    let total_treasury = total;
+    let first_place_reward = total * 25 / M_HUNDRED;
+    let second_place_reward = total * 15 / M_HUNDRED;
+    let third_place_reward = total * 10 / M_HUNDRED;
+    let remaining_amount = total - first_place_reward - second_place_reward - third_place_reward;
 
-    // Calculate rewards based on rank:
-    // Rank 0 (1st): 25%
-    // Rank 1 (2nd): 15%
-    // Rank 2 (3rd): 10%
-    // Ranks 3-11: Randomly select one to get remaining 50%
-
-    let first_place_reward = total_treasury * 25 / M_HUNDRED;
-    let second_place_reward = total_treasury * 15 / M_HUNDRED;
-    let third_place_reward = total_treasury * 10 / M_HUNDRED;
-    let remaining_amount =
-        total_treasury - first_place_reward - second_place_reward - third_place_reward;
-
-    // Randomly select one faction from ranks 3..active_count-1 to get remaining 50%.
-    // If there are only 1-3 factions, the remaining amount stays with the last available rank.
+    // Pick one random faction from ranks 3+ for the 50% pot
     let clock = Clock::get()?;
-    let random_seed = clock.unix_timestamp as u64;
     let random_index = if active_faction_count > 3 {
-        3 + (random_seed % (active_faction_count - 3) as u64) as usize
+        3 + (clock.unix_timestamp as usize % (active_faction_count - 3))
     } else {
         active_faction_count - 1
     };
 
     msg!("   Reward distribution:");
     msg!(
-        "     Rank 0 ({}): {} tokens (25%)",
+        "     Rank 0 (faction {}): {} tokens (25%)",
         tax_config.leaderboard_faction_ids[0],
         first_place_reward
     );
+    if active_faction_count > 1 {
+        msg!(
+            "     Rank 1 (faction {}): {} tokens (15%)",
+            tax_config.leaderboard_faction_ids[1],
+            second_place_reward
+        );
+    }
+    if active_faction_count > 2 {
+        msg!(
+            "     Rank 2 (faction {}): {} tokens (10%)",
+            tax_config.leaderboard_faction_ids[2],
+            third_place_reward
+        );
+    }
     msg!(
-        "     Rank 1 ({}): {} tokens (15%)",
-        tax_config.leaderboard_faction_ids[1],
-        second_place_reward
-    );
-    msg!(
-        "     Rank 2 ({}): {} tokens (10%)",
-        tax_config.leaderboard_faction_ids[2],
-        third_place_reward
-    );
-    msg!(
-        "     Rank {} ({}): {} tokens (50% - randomly selected)",
+        "     Rank {} (faction {}): {} tokens (50% - randomly selected)",
         random_index,
         tax_config.leaderboard_faction_ids[random_index],
         remaining_amount
@@ -792,28 +777,32 @@ pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Re
 
     tax_config.rewards_calculated = true;
 
-    // Store values before emitting event
     let first_place_faction_id = tax_config.leaderboard_faction_ids[0];
-    let second_place_faction_id = tax_config.leaderboard_faction_ids[1];
-    let third_place_faction_id = tax_config.leaderboard_faction_ids[2];
+    let second_place_faction_id = if active_faction_count > 1 {
+        tax_config.leaderboard_faction_ids[1]
+    } else {
+        first_place_faction_id
+    };
+    let third_place_faction_id = if active_faction_count > 2 {
+        tax_config.leaderboard_faction_ids[2]
+    } else {
+        first_place_faction_id
+    };
     let random_winner_faction_id = tax_config.leaderboard_faction_ids[random_index];
 
     emit!(FactionRewardsCalculated {
         tax_config: tax_config_key,
         total_treasury,
         first_place_faction_id,
-        first_place_reward: first_place_reward,
+        first_place_reward,
         second_place_faction_id,
-        second_place_reward: second_place_reward,
+        second_place_reward,
         third_place_faction_id,
-        third_place_reward: third_place_reward,
+        third_place_reward,
         random_winner_faction_id,
         random_winner_reward: remaining_amount,
         timestamp: clock.unix_timestamp,
     });
-
-    msg!("✅ [cal_faction_rewards] Rewards calculated");
-
     Ok(())
 }
 
@@ -822,61 +811,47 @@ pub fn internal_cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Re
 pub fn internal_claim_faction_treasury_rewards(
     ctx: Context<ClaimFactionTreasuryRewards>,
 ) -> Result<()> {
-    msg!("🎁 [claim_faction_treasury_rewards] Claiming treasury rewards");
+    let tc = &mut ctx.accounts.tax_config;
+    let fs = &mut ctx.accounts.faction_state;
+    let fid = fs.faction_id as usize;
 
-    let tax_config = &mut ctx.accounts.tax_config;
-    let faction_state = &mut ctx.accounts.faction_state;
+    require!(tc.round_active, ErrorCode::InvalidState);
+    require!(tc.rewards_calculated, ErrorCode::InvalidState);
+    require!(!tc.faction_claimed[fid], ErrorCode::InvalidState);
 
-    require!(tax_config.round_active, ErrorCode::InvalidState);
+    // Find faction's rank in the sorted leaderboard
+    let rank = (0..tc.leaderboard_factions_count as usize)
+        .find(|&i| tc.leaderboard_faction_ids[i] == fs.faction_id)
+        .ok_or(ErrorCode::InvalidFactionId)?;
 
-    require!(tax_config.rewards_calculated, ErrorCode::InvalidState);
-
-    // Find faction's rank in leaderboard
-    let mut faction_rank: Option<usize> = None;
-    for i in 0..tax_config.leaderboard_factions_count as usize {
-        if tax_config.leaderboard_faction_ids[i] == faction_state.faction_id {
-            faction_rank = Some(i);
-            break;
-        }
-    }
-
-    let rank = faction_rank.ok_or(ErrorCode::InvalidFactionId)?;
-    let reward_amount = tax_config.faction_rewards[rank];
+    let reward_amount = tc.faction_rewards[rank];
 
     require!(reward_amount > 0, ErrorCode::InvalidAmount);
-    require!(
-        !tax_config.faction_claimed[faction_state.faction_id as usize],
-        ErrorCode::InvalidState
+
+    // Split between staker pools
+    let (dbtc_share, lp_share) = split_staker_rewards_for_claim(
+        reward_amount,
+        fs.total_dogebtc_hashpower > 0,
+        fs.total_lp_hashpower > 0,
     );
+    let distributed = dbtc_share + lp_share;
 
-    msg!("   Faction ID: {}", faction_state.faction_id);
-    msg!("   Rank: {}", rank);
-    msg!("   Reward amount: {} tokens", reward_amount);
-
-    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
-    let lp_active = faction_state.total_lp_hashpower > 0;
-    let (minebtc_reward, lp_reward) =
-        split_staker_rewards_for_claim(reward_amount, dogebtc_active, lp_active);
-    let distributed_reward = minebtc_reward
-        .checked_add(lp_reward)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
+    let fmt = |v: u64| (v as f64) / 1e6;
     msg!(
-        "   Split: {} to minebtc stakers, {} to lp stakers ({} retained in treasury)",
-        minebtc_reward,
-        lp_reward,
-        reward_amount.saturating_sub(distributed_reward)
+        "🎁 Faction {} (rank {}) → {:.6} DBTC (dbtc={:.6}, lp={:.6})",
+        fs.faction_id,
+        rank,
+        fmt(reward_amount),
+        fmt(dbtc_share),
+        fmt(lp_share)
     );
 
-    if distributed_reward > 0 {
-        // Transfer only the amount that is actually distributed to active stakers.
-        let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
-        let withdraw_authority_seeds = &[
+    // Transfer distributed amount to emission vault
+    if distributed > 0 {
+        let seeds: &[&[&[u8]]] = &[&[
             WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
-            &[withdraw_authority_bump],
-        ];
-        let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
-
+            &[ctx.bumps.withdraw_withheld_authority],
+        ]];
         token_2022::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program_2022.to_account_info(),
@@ -886,132 +861,96 @@ pub fn internal_claim_faction_treasury_rewards(
                     to: ctx.accounts.minebtc_emission_vault.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
-                withdraw_authority_signer,
+                seeds,
             ),
-            distributed_reward,
+            distributed,
             ctx.accounts.minebtc_mint.decimals,
         )?;
     }
 
-    // Update reward indexes for minebtc stakers
-    if minebtc_reward > 0 && faction_state.total_dogebtc_hashpower > 0 {
-        let index_increase = helper::mul_div(
-            minebtc_reward,
-            INDEX_PRECISION,
-            faction_state.total_dogebtc_hashpower,
-        )?;
-        faction_state.dogebtc_dogebtc_reward_index = faction_state
+    // Update per-faction reward indexes for staker APR
+    if dbtc_share > 0 && fs.total_dogebtc_hashpower > 0 {
+        fs.dogebtc_dogebtc_reward_index = fs
             .dogebtc_dogebtc_reward_index
-            .checked_add(index_increase)
+            .checked_add(helper::mul_div(
+                dbtc_share,
+                INDEX_PRECISION,
+                fs.total_dogebtc_hashpower,
+            )?)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
-
-    // Update reward indexes for lp stakers
-    if lp_reward > 0 && faction_state.total_lp_hashpower > 0 {
-        let index_increase =
-            helper::mul_div(lp_reward, INDEX_PRECISION, faction_state.total_lp_hashpower)?;
-        faction_state.lp_dogebtc_reward_index = faction_state
+    if lp_share > 0 && fs.total_lp_hashpower > 0 {
+        fs.lp_dogebtc_reward_index = fs
             .lp_dogebtc_reward_index
-            .checked_add(index_increase)
+            .checked_add(helper::mul_div(
+                lp_share,
+                INDEX_PRECISION,
+                fs.total_lp_hashpower,
+            )?)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    // Mark faction as claimed
-    tax_config.faction_claimed[faction_state.faction_id as usize] = true;
-    tax_config.factions_claimed_count = tax_config
+    // Bookkeeping: mark claimed, clear reward (undistributed stays in vault)
+    tc.faction_claimed[fid] = true;
+    tc.factions_claimed_count = tc
         .factions_claimed_count
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-    // Clear reward for this faction. Any undistributed amount stays in the treasury vault
-    // and will naturally be part of future distribution rounds.
-    tax_config.faction_rewards[rank] = 0;
-
-    msg!("✅ [claim_faction_treasury_rewards] Rewards claimed and distributed");
-    msg!(
-        "   Updated dogebtc_dogebtc_reward_index: {}",
-        faction_state.dogebtc_dogebtc_reward_index
-    );
-    msg!(
-        "   Updated lp_dogebtc_reward_index: {}",
-        faction_state.lp_dogebtc_reward_index
-    );
+    tc.faction_rewards[rank] = 0;
 
     emit!(FactionTreasuryRewardsClaimed {
         tax_config: ctx.accounts.tax_config.key(),
-        faction_id: faction_state.faction_id,
+        faction_id: fs.faction_id,
         faction_state: ctx.accounts.faction_state.key(),
         rank: rank as u8,
         total_reward: reward_amount,
-        minebtc_staker_reward: minebtc_reward,
-        lp_staker_reward: lp_reward,
+        minebtc_staker_reward: dbtc_share,
+        lp_staker_reward: lp_share,
         minebtc_emission_vault: ctx.accounts.minebtc_emission_vault.key(),
         timestamp: Clock::get()?.unix_timestamp,
     });
-
     Ok(())
 }
 
-/// Finish distribution round (check all factions claimed and reset state)
+/// ROUND STEP 5: Finish the distribution round.
+/// Validates every winning faction has claimed, resets state, starts 24h cooldown.
 pub fn internal_finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
-    msg!("🏁 [finish_distribution_round] Finishing distribution round");
+    let tc = &mut ctx.accounts.tax_config;
+    let now = Clock::get()?.unix_timestamp;
 
-    let tax_config = &mut ctx.accounts.tax_config;
-    let clock = Clock::get()?;
+    require!(tc.round_active, ErrorCode::InvalidState);
+    require!(tc.rewards_calculated, ErrorCode::InvalidState);
 
-    require!(tax_config.round_active, ErrorCode::InvalidState);
-
-    require!(tax_config.rewards_calculated, ErrorCode::InvalidState);
-
-    // Check all factions with rewards have claimed
-    let mut all_claimed = true;
-    let active_faction_count = distribution_faction_count(tax_config)?;
-    for i in 0..active_faction_count {
-        if tax_config.faction_rewards[i] > 0 {
-            let faction_id = tax_config.leaderboard_faction_ids[i];
-            if !tax_config.faction_claimed[faction_id as usize] {
-                all_claimed = false;
-                msg!(
-                    "   ⚠️ Faction {} (rank {}) has not claimed rewards",
-                    faction_id,
-                    i
-                );
-            }
+    // Every faction with a non-zero reward must have claimed
+    let n = distribution_faction_count(tc)?;
+    for rank in 0..n {
+        if tc.faction_rewards[rank] > 0 {
+            let fid = tc.leaderboard_faction_ids[rank];
+            require!(tc.faction_claimed[fid as usize], ErrorCode::InvalidState);
         }
     }
 
-    require!(all_claimed, ErrorCode::InvalidState);
+    // Reset for next round
+    tc.round_active = false;
+    tc.end_timestamp = now;
+    tc.rewards_calculated = false;
+    tc.leaderboard_factions_count = 0;
+    tc.distribution_faction_count = 0;
+    tc.factions_claimed_count = 0;
+    tc.leaderboard_faction_ids.clear();
+    tc.leaderboard_hashpower.clear();
+    tc.faction_rewards.clear();
+    tc.faction_claimed.clear();
 
-    // Reset distribution round state
-    tax_config.round_active = false;
-    tax_config.end_timestamp = clock.unix_timestamp;
-    tax_config.rewards_calculated = false;
-    tax_config.leaderboard_factions_count = 0;
-    tax_config.distribution_faction_count = 0;
-    tax_config.factions_claimed_count = 0;
-
-    // Clear leaderboard and rewards
-    tax_config.leaderboard_faction_ids.clear();
-    tax_config.leaderboard_hashpower.clear();
-    tax_config.faction_rewards.clear();
-    tax_config.faction_claimed.clear();
-
-    let end_timestamp = tax_config.end_timestamp;
-    let next_round_start_after = end_timestamp + TaxConfig::DISTRIBUTION_COOLDOWN_SECONDS;
-
-    msg!("✅ [finish_distribution_round] Distribution round finished");
-    msg!(
-        "   Next round can start after: {} seconds",
-        TaxConfig::DISTRIBUTION_COOLDOWN_SECONDS
-    );
+    let next = now + TaxConfig::DISTRIBUTION_COOLDOWN_SECONDS;
+    msg!("🏁 Round finished. Next available at unix {}", next);
 
     emit!(DistributionRoundFinished {
         tax_config: ctx.accounts.tax_config.key(),
-        end_timestamp,
-        next_round_start_after,
-        timestamp: clock.unix_timestamp,
+        end_timestamp: now,
+        next_round_start_after: next,
+        timestamp: now,
     });
-
     Ok(())
 }
 
@@ -1149,7 +1088,10 @@ pub struct WithdrawNftFloorSweepFunds<'info> {
     )]
     pub withdraw_withheld_authority: AccountInfo<'info>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = nft_floor_sweep_vault.key() == tax_config.nft_floor_sweep_vault @ ErrorCode::InvalidAccount
+    )]
     pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(mut)]
@@ -1188,11 +1130,17 @@ pub struct CrankDistributeTax<'info> {
     pub withdraw_authority_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
     /// NFT Floor Sweep vault
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = nft_floor_sweep_vault.key() == tax_config.nft_floor_sweep_vault @ ErrorCode::InvalidAccount
+    )]
     pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     /// Faction Treasury vault
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount
+    )]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     /// MineBtc token vault (receives remainder)
@@ -1214,8 +1162,10 @@ pub struct StartDistributionRound<'info> {
     )]
     pub tax_config: Account<'info, TaxConfig>,
 
-    #[account(mut)]
-    /// CHECK: Faction treasury vault (checked for balance)
+    #[account(
+        mut,
+        constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount
+    )]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
@@ -1247,8 +1197,10 @@ pub struct CalculateFactionRewards<'info> {
     )]
     pub tax_config: Account<'info, TaxConfig>,
 
-    #[account(mut)]
-    /// CHECK: Faction treasury vault (checked for balance)
+    #[account(
+        mut,
+        constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount
+    )]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 }
 
@@ -1264,23 +1216,25 @@ pub struct ClaimFactionTreasuryRewards<'info> {
     #[account(mut)]
     pub faction_state: Account<'info, FactionState>,
 
-    #[account(mut)]
-    /// CHECK: Faction treasury vault (authority = withdraw_withheld_authority)
+    #[account(
+        mut,
+        constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount
+    )]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(mut)]
-    /// CHECK: MineBtc emission vault (receives transferred tokens)
+    /// MineBtc emission vault (receives transferred tokens)
     pub minebtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
 
-    /// CHECK: Withdraw withheld authority PDA — signs transfers from faction_treasury_vault
-    /// (this is the authority that was set when faction_treasury_vault was initialized)
+    /// Withdraw withheld authority PDA — signs transfers from faction_treasury_vault
+    /// CHECK: PDA signer derived from WITHDRAW_WITHHELD_AUTHORITY_SEED, used only as transfer authority.
     #[account(
         seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()],
         bump
     )]
     pub withdraw_withheld_authority: AccountInfo<'info>,
 
-    /// CHECK: MineBtc mint (for transfer decimals)
+    /// MineBtc mint (for transfer decimals)
     pub minebtc_mint: InterfaceAccount<'info, Mint>,
 
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,

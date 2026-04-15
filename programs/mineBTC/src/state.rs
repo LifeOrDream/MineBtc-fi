@@ -51,6 +51,13 @@ pub const NUM_FACTIONS: usize = 15; // Same as MAX_FACTIONS, used for array size
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 
 pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker bots
+/// Conservative upper-bound slot estimate used to schedule round entropy at round start.
+/// This keeps the entropy slot after the round closes under normal slot timing, while the
+/// finalize path can still fall back to the latest available slot hash if the scheduled hash
+/// ages out before anybody settles the round.
+pub const ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE: u64 = 4;
+/// Extra slot buffer added on top of the estimated end slot before sampling entropy.
+pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 8;
 
 // ----- [SEEDS] -----
 
@@ -74,6 +81,7 @@ pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
 // PDAs for Doge NFT system
 pub const DOGE_METADATA_SEED: &[u8] = b"doge-metadata";
 pub const DOGE_CUSTODY_SEED: &[u8] = b"doge-custody"; // PDA that holds locked NFTs
+pub const DOGE_FREE_MINT_ALLOWANCE_SEED: &[u8] = b"doge-free-mint-allowance";
 
 pub const BUYBACKS_SEED: &[u8] = b"buybacks";
 pub const BUYBACKS_SOL_VAULT_SEED: &[u8] = b"buybacks-sol-vault";
@@ -117,6 +125,7 @@ pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
 // ==========  DOGE NFT CONSTANTS ========== //
 pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of doges a user can stake
+pub const MAX_FREE_DOGE_MINTS_PER_USER: u8 = 5;
 pub const MAX_INDEX_NAME_LENGTH: usize = 24;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
@@ -190,7 +199,9 @@ pub struct MineBtcDistConfig {
     pub minebtc_stakers_pct: u8,
     /// Whole-percent share of MineBtc emission that goes to winning faction bettors. `100` = 100%.
     pub minebtc_winners_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to non-winning directions on the winning faction. `100` = 100%.
+    /// Whole-percent share of MineBtc emission that goes to each non-winning
+    /// direction on the winning faction. With 3 total directions, up to two
+    /// losing directions may each receive this share if they have bettors.
     pub minebtc_same_faction_pct: u8,
     /// Whole-percent share of MineBtc emission that goes to motherlode. `100` = 100%.
     pub minebtc_motherlode_pct: u8,
@@ -459,6 +470,22 @@ impl DogeConfig {
         8; // breed_curve_a
 }
 
+/// Per-user whitelist allowance for free Doge mints.
+/// The whitelisted user still pays transaction/account rent, but not the mint fee.
+#[account]
+pub struct DogeFreeMintAllowance {
+    pub user: Pubkey,
+    pub remaining_free_mints: u8,
+    pub bump: u8,
+}
+
+impl DogeFreeMintAllowance {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        32 +    // user
+        1 +     // remaining_free_mints
+        1; // bump
+}
+
 // ========================================================================================
 // ============================= TAX CONFIG ACCOUNT ==============================
 // ========================================================================================
@@ -573,16 +600,8 @@ pub struct GlobalGameSate {
     /// The winning faction ID from the last completed round
     pub winning_faction_id: u8,
 
-    // --- Commit-Reveal Randomness (ORE-style) ---
-    /// Committed hash for the current round (set before round starts)
-    /// This is hash(secret_seed) - the secret is revealed after betting closes
-    pub current_round_commit: [u8; 32],
-    /// Revealed seed for the current round (set after betting closes)
-    /// Must verify: hash(revealed_seed) == current_round_commit
-    pub current_round_seed: Option<[u8; 32]>,
-
-    /// Whitelisted cranker bots that can call start_round and end_round
-    /// Maximum MAX_CRANKER_BOTS bots
+    /// Optional automation bot allowlist retained for operational tooling.
+    /// Round start/finalize is permissionless in the slot-hash flow.
     pub cranker_bots: Vec<Pubkey>,
 }
 
@@ -596,8 +615,6 @@ impl GlobalGameSate {
         8 +     // round_duration_seconds
         8 +     // last_round_id
         1 +     // winning_faction_id
-        32 +    // current_round_commit [u8; 32]
-        33 +    // current_round_seed Option<[u8; 32]> (1 byte discriminator + 32 bytes)
         4 + (MAX_CRANKER_BOTS * 32); // cranker_bots Vec<Pubkey> (4 bytes length + MAX_CRANKER_BOTS * 32 bytes)
 }
 
@@ -695,7 +712,19 @@ pub struct GameSession {
     /// The round ID this session belongs to
     pub round_id: u64,
 
+    /// Slot when the round started.
+    pub round_start_slot: u64,
     pub round_start_timestamp: i64,
+    /// Timestamp after which betting is closed.
+    pub round_end_timestamp: i64,
+    /// Primary future slot whose hash should be used as round entropy.
+    pub scheduled_entropy_slot: u64,
+    /// Actual slot whose hash was used to derive the winner.
+    pub entropy_slot_used: u64,
+    /// Stored slot hash used for winner derivation.
+    pub entropy_hash: [u8; 32],
+    /// Whether the round had to fall back to latest-available slot hash instead of the scheduled one.
+    pub used_entropy_fallback: bool,
 
     /// Total SOL bets placed in this round
     pub total_sol_bets: u64,
@@ -727,8 +756,11 @@ pub struct GameSession {
     // --- MineBtc reward pools for this round ---
     /// MineBtc allocated for exact winning faction+direction bettors in this round.
     pub minebtc_winner_pool: u64,
-    /// MineBtc allocated for the non-winning directions on the winning faction.
+    /// Aggregate MineBtc allocated for the non-winning directions on the winning faction.
     pub minebtc_same_faction_pool: u64,
+    /// MineBtc allocated per losing direction on the winning faction.
+    /// The winning direction index remains zero in this array.
+    pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
     /// MineBtc allocated for stakers in this round
     pub faction_stakers: u64,
     /// MineBtc allocated for motherlode in this round
@@ -738,9 +770,6 @@ pub struct GameSession {
     pub sol_rewards_index: u128,
     /// MineBtc rewards index for this round's exact winning faction+direction.
     pub minebtc_rewards_index: u128,
-    /// MineBtc rewards index for the non-winning directions on the winning faction.
-    pub same_faction_minebtc_rewards_index: u128,
-
     // --- Motherlode data for this round ---
     /// Whether motherlode was hit in this round
     pub motherlode_hit: bool,
@@ -759,7 +788,13 @@ impl GameSession {
         1 +     // bump
         1 +     // stage (u8)
         8 +     // round_id
+        8 +     // round_start_slot
         8 +     // round_start_timestamp (i64)
+        8 +     // round_end_timestamp (i64)
+        8 +     // scheduled_entropy_slot
+        8 +     // entropy_slot_used
+        32 +    // entropy_hash
+        1 +     // used_entropy_fallback
         8 +     // total_sol_bets
         8 +     // total_points_bets
         8 +     // total_wgtd_points_bets
@@ -774,11 +809,11 @@ impl GameSession {
         1 +     // winning_direction (u8)
         8 +     // minebtc_winner_pool
         8 +     // minebtc_same_faction_pool
+        (PredictionDirection::COUNT * 8) + // minebtc_same_faction_direction_pools [u64; 3]
         8 +     // faction_stakers (u64)
         8 +     // motherlode_rewards (u64)
         16 +    // sol_rewards_index (u128)
         16 +    // minebtc_rewards_index (u128)
-        16 +    // same_faction_minebtc_rewards_index (u128)
         1 +     // motherlode_hit (bool)
         8 +     // motherlode_pot_size_on_hit
         (NUM_FACTIONS * 8) + // highest_sol_bet_per_faction [u64; 12]
@@ -1077,7 +1112,8 @@ impl BetType {
 
 /// User Game Bet PDA (Seed: `[b"user-bet", user_pubkey, round_id_u64]`)
 /// Each user bet in a round has its own PDA account.
-/// Users can bet on multiple factions in a single round.
+/// Users can bet on multiple faction-direction positions in a single round,
+/// including multiple directions on the same faction.
 ///
 /// Structure:
 /// - `faction_ids`: List of factions user bet on
@@ -1128,17 +1164,17 @@ pub struct UserGameBet {
 }
 
 impl UserGameBet {
-    // Maximum number of factions a user can bet on in a single round.
-    pub const MAX_FACTIONS_PER_BET: usize = NUM_FACTIONS;
+    // Maximum number of faction-direction positions a user can bet on in a single round.
+    pub const MAX_POSITIONS_PER_BET: usize = NUM_FACTIONS * PredictionDirection::COUNT;
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        4 + (Self::MAX_FACTIONS_PER_BET * 1) + // faction_ids Vec<u8>
-        4 + (Self::MAX_FACTIONS_PER_BET * 1) + // directions Vec<u8>
-        4 + (Self::MAX_FACTIONS_PER_BET * 8) + // sol_bets Vec<u64>
-        4 + (Self::MAX_FACTIONS_PER_BET * 8) + // points_bets Vec<u64>
-        4 + (Self::MAX_FACTIONS_PER_BET * 8) + // wgtd_points_bets Vec<u64>
+        4 + (Self::MAX_POSITIONS_PER_BET * 1) + // faction_ids Vec<u8>
+        4 + (Self::MAX_POSITIONS_PER_BET * 1) + // directions Vec<u8>
+        4 + (Self::MAX_POSITIONS_PER_BET * 8) + // sol_bets Vec<u64>
+        4 + (Self::MAX_POSITIONS_PER_BET * 8) + // points_bets Vec<u64>
+        4 + (Self::MAX_POSITIONS_PER_BET * 8) + // wgtd_points_bets Vec<u64>
         8 +     // total_sol_bet
         8 +     // total_points_bet
         8 +     // total_wgtd_points_bet
@@ -1197,14 +1233,14 @@ pub struct AutominerVault {
 }
 
 impl AutominerVault {
-    pub const MAX_FACTIONS: usize = NUM_FACTIONS; // Match program-wide faction capacity
+    pub const MAX_PICKS: usize = NUM_FACTIONS * PredictionDirection::COUNT;
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         // factions_config Option<FactionsConfig>
         // Option discriminator: 1 byte
         // Max variant: Specific { picks: Vec<AutominerFactionPick> }.
-        1 + (1 + 4 + (Self::MAX_FACTIONS * 2)) + // factions_config Option<FactionsConfig>
+        1 + (1 + 4 + (Self::MAX_PICKS * 2)) + // factions_config Option<FactionsConfig>
         8 +     // sol_per_round
         4 +     // rounds_remaining (u32)
         8 +     // last_bet_round_id

@@ -37,11 +37,16 @@ use mpl_core::{
     types::{Creator, Plugin, PluginAuthority, Royalties, RuleSet, UpdateDelegate},
 };
 
+const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
+const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
+const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
+const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
+
 /// Helper type for passing creators from client
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct CreatorInput {
     pub address: Pubkey,
-    /// Percentage share (0–100). Sum must be exactly 100.
+    /// Whole-percent share (`100` = 100%). Sum must equal the percentage denominator.
     pub percentage: u8,
 }
 
@@ -83,10 +88,11 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     // Initialize MineBtc distribution config with defaults
     global_config.minebtc_dist_config = MineBtcDistConfig {
-        minebtc_stakers_pct: 50,
-        minebtc_winners_pct: 30,
-        minebtc_same_faction_pct: 10,
-        minebtc_motherlode_pct: 10,
+        // Invariant: stakers + winners + 2 * same_faction + motherlode = 100
+        minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
+        minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
+        minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
+        minebtc_motherlode_pct: DEFAULT_MINEBTC_MOTHERLODE_PCT,
         refining_fee: 5,
     };
 
@@ -392,7 +398,9 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 ///
 /// # Validation
 /// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == `PERCENTAGE_DENOMINATOR`
-/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct == `PERCENTAGE_DENOMINATOR`
+/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct +
+///   (`PredictionDirection::COUNT - 1`) * minebtc_same_faction_pct +
+///   minebtc_motherlode_pct == `PERCENTAGE_DENOMINATOR`
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -467,9 +475,12 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
 
+        // `minebtc_same_faction_pct` is applied once for each losing direction on the
+        // winning faction. With Up / Down / Neutral that means two losing directions.
+        let losing_direction_count = (PredictionDirection::COUNT - 1) as u16;
         let total = minebtc_stakers_pct as u16
             + minebtc_winners_pct as u16
-            + minebtc_same_faction_pct as u16
+            + (minebtc_same_faction_pct as u16 * losing_direction_count)
             + minebtc_motherlode_pct as u16;
 
         require!(
@@ -987,6 +998,39 @@ pub fn add_ticket_tier_config_int(
     Ok(())
 }
 
+/// Set or update a user's free Doge mint allowance (admin only).
+/// The whitelisted user still pays transaction fees and rent, but not the Doge mint fee.
+pub fn set_doge_free_mint_allowance_internal(
+    ctx: Context<SetDogeFreeMintAllowance>,
+    user: Pubkey,
+    remaining_free_mints: u8,
+) -> Result<()> {
+    require!(
+        remaining_free_mints <= MAX_FREE_DOGE_MINTS_PER_USER,
+        ErrorCode::MaxFreeDogeMintsExceeded
+    );
+
+    let allowance = &mut ctx.accounts.doge_free_mint_allowance;
+    allowance.user = user;
+    allowance.remaining_free_mints = remaining_free_mints;
+    allowance.bump = ctx.bumps.doge_free_mint_allowance;
+
+    msg!(
+        "🎟️ [set_doge_free_mint_allowance] authority={} user={} remaining_free_mints={}",
+        ctx.accounts.authority.key(),
+        user,
+        remaining_free_mints
+    );
+
+    emit!(DogeFreeMintAllowanceUpdated {
+        authority: ctx.accounts.authority.key(),
+        user,
+        remaining_free_mints,
+    });
+
+    Ok(())
+}
+
 /// Update DogeConfig account (admin only)
 ///
 /// Updates the DogeConfig account that stores Doge collection configuration.
@@ -1068,10 +1112,6 @@ pub fn initialize_game_state_internal(
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
 
-    // Initialize commit-reveal randomness fields
-    global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
-    global_game_state.current_round_seed = None;
-
     // Initialize cumulative stats
     global_game_state.total_sol_bets = 0;
 
@@ -1083,8 +1123,7 @@ pub fn initialize_game_state_internal(
 
 /// Add a cranker bot to the whitelist (admin only)
 ///
-/// Adds a bot address to the whitelist of authorized cranker bots.
-/// Only whitelisted bots can call `start_round` and `end_round` functions.
+/// Adds a bot address to the optional automation bot allowlist.
 /// Maximum of MAX_CRANKER_BOTS (3) bots can be whitelisted.
 ///
 /// # Parameters
@@ -1104,7 +1143,7 @@ pub fn add_cranker_bot_internal(ctx: Context<UpdateGameState>, bot_pubkey: Pubke
         ErrorCode::InvalidParameters // Max cranker bots reached
     );
 
-    // Add bot to whitelist
+    // Add bot to optional allowlist
     global_game_state.cranker_bots.push(bot_pubkey);
 
     Ok(())
@@ -1112,7 +1151,7 @@ pub fn add_cranker_bot_internal(ctx: Context<UpdateGameState>, bot_pubkey: Pubke
 
 /// Remove a cranker bot from the whitelist (admin only)
 ///
-/// Removes a bot address from the whitelist of authorized cranker bots.
+/// Removes a bot address from the optional automation bot allowlist.
 ///
 /// # Parameters
 /// - `bot_pubkey`: Public key of the bot to remove from whitelist
@@ -1605,6 +1644,31 @@ pub struct UpdateDogeConfig<'info> {
         bump = doges_config.bump,
     )]
     pub doges_config: Account<'info, DogeConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(user: Pubkey)]
+pub struct SetDogeFreeMintAllowance<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = DogeFreeMintAllowance::LEN,
+        seeds = [DOGE_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.as_ref()],
+        bump
+    )]
+    pub doge_free_mint_allowance: Account<'info, DogeFreeMintAllowance>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

@@ -351,6 +351,16 @@ pub mod minebtc {
         admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value)
     }
 
+    /// Set or update a user's free Doge mint allowance (admin only).
+    /// The user still pays transaction fees and account rent, but not the mint price.
+    pub fn set_doge_free_mint_allowance(
+        ctx: Context<SetDogeFreeMintAllowance>,
+        user: Pubkey,
+        remaining_free_mints: u8,
+    ) -> Result<()> {
+        admin::set_doge_free_mint_allowance_internal(ctx, user, remaining_free_mints)
+    }
+
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
@@ -405,13 +415,13 @@ pub mod minebtc {
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
-    /// Add a cranker bot to the whitelist (admin only)
+    /// Add a bot to the optional automation allowlist (admin only)
     /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
     pub fn add_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
         admin::add_cranker_bot_internal(ctx, bot_pubkey)
     }
 
-    /// Remove a cranker bot from the whitelist (admin only)
+    /// Remove a bot from the optional automation allowlist (admin only)
     pub fn remove_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
         admin::remove_cranker_bot_internal(ctx, bot_pubkey)
     }
@@ -620,18 +630,18 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
+    // ------------ GAME ROUND MANAGEMENT (SLOT-HASH RANDOMNESS) ------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Start a new round by committing a hash and initializing GameSession.
+    /// Start a new round and initialize its GameSession.
     /// round_id should be current_round_id + 1 (validated in the function)
-    pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
-        game::int_start_round(ctx, round_id, commit)
+    pub fn start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
+        game::int_start_round(ctx, round_id)
     }
 
-    /// End the current round by revealing seed and selecting the winning faction.
-    pub fn end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
-        game::int_end_round(ctx, revealed_seed)
+    /// Finalize the current round using scheduled slot-hash entropy.
+    pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
+        game::int_end_round(ctx)
     }
 
     /// Finalize the round's faction-level staking/motherlode distribution and track epoch mining.
@@ -667,24 +677,15 @@ pub mod minebtc {
         user::internal_set_player_claim_settings(ctx, allow_bots_to_claim)
     }
 
-    /// Join a round by placing a faction-direction bet.
-    pub fn join_round(
-        ctx: Context<JoinRound>,
-        amount: u64,
-        bet_type: BetType,
-        use_ticket: Option<u8>,
-    ) -> Result<()> {
-        user::internal_join_round(ctx, amount, bet_type, use_ticket)
-    }
-
-    /// Join a round with multiple bets in a single transaction
-    pub fn join_round_batch(
-        ctx: Context<JoinRoundBatch>,
+    /// Join a round by placing one or more faction-direction bets.
+    pub fn join_bets(
+        ctx: Context<JoinBets>,
+        round_id: u64,
         bet_types: Vec<BetType>,
         amount_per_bet: u64,
         use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::internal_join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
+        user::internal_join_bets(ctx, round_id, bet_types, amount_per_bet, use_ticket)
     }
 
     /// Initialize autominer vault with flexible faction-direction configuration
@@ -838,6 +839,16 @@ pub mod minebtc {
         ticket_tier_index: u8,
     ) -> Result<()> {
         doges::int_admin_mint_doge(ctx, recipient, faction_id, ticket_tier_index)
+    }
+
+    /// Mint a single Doge for free using a per-user whitelist allowance.
+    /// The caller pays transaction fees and rent, but no Doge mint price.
+    pub fn whitelist_mint_doge(
+        ctx: Context<WhitelistMintDoge>,
+        faction_id: u8,
+        ticket_tier_index: u8,
+    ) -> Result<()> {
+        doges::int_whitelist_mint_doge(ctx, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Doge (anyone can call, max 10 per transaction)

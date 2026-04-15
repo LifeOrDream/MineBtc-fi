@@ -5,24 +5,27 @@
 // ## Game Mechanics
 //
 // The game operates in rounds where:
-// 1. A cranker bot starts a new round by committing a randomness hash (commit-reveal scheme).
+// 1. A caller starts a new round.
 // 2. Players place faction-direction bets that also count toward the active epoch market.
-// 3. After the round ends, the cranker reveals the seed to select a winning faction and direction.
-// 4. Exact faction+direction bettors receive the main round rewards, while other directions on the
+// 3. Once the round duration passes, anyone can finalize the round from its pre-scheduled
+//    slot-hash entropy source.
+// 4. If the scheduled slot-hash aged out before anyone finalized the round, settlement falls back
+//    to the latest available slot-hash.
+// 5. Exact faction+direction bettors receive the main round rewards, while other directions on the
 //    winning faction can still share a consolation MineBTC pool.
 //
 // ## Key Functions
 //
-// - `start_round`: Initializes a new round with committed randomness.
-// - `end_round`: Reveals the seed, selects the winning faction and direction, and calculates initial rewards.
+// - `start_round`: Initializes a new round.
+// - `end_round`: Finalizes the round using slot-hash entropy and calculates initial rewards.
 // - `end_round_faction_rewards`: Distributes MineBTC rewards to stakers and faction pools.
 //
-// The commit-reveal randomness system ensures fairness and prevents manipulation.
+// The slot-hash system avoids reveal-timing manipulation while keeping finalization permissionless.
 //
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
-use anchor_lang::solana_program::sysvar::Sysvar;
+use anchor_lang::solana_program::sysvar::slot_hashes;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -33,11 +36,14 @@ use crate::state::*;
 // =============================== GAME ROUND MANAGEMENT ============================
 // ========================================================================================
 
-/// Start a new round by committing a hash and initializing GameSession.
-pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
+/// Start a new round and initialize its GameSession.
+pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
+    let round_duration_seconds = u64::try_from(global_state.round_duration_seconds)
+        .map_err(|_| ErrorCode::InvalidParameters)?;
+    require!(round_duration_seconds > 0, ErrorCode::InvalidParameters);
 
     require!(global_state.is_active, ErrorCode::InvalidParameters);
     require!(global_state.can_begin_round, ErrorCode::CannotBeginRound);
@@ -45,21 +51,28 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     let expected_round_id = global_state.current_round_id + 1;
     require!(round_id == expected_round_id, ErrorCode::InvalidRound);
 
-    require!(
-        global_state
-            .cranker_bots
-            .contains(&ctx.accounts.authority.key()),
-        ErrorCode::Unauthorized
-    );
-
-    global_state.current_round_commit = commit;
-    global_state.current_round_seed = None;
-
     global_state.current_round_id = round_id;
 
     game_session.bump = ctx.bumps.game_session;
     game_session.round_id = round_id;
+    game_session.round_start_slot = clock.slot;
     game_session.round_start_timestamp = clock.unix_timestamp;
+    game_session.round_end_timestamp = clock
+        .unix_timestamp
+        .checked_add(global_state.round_duration_seconds)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.scheduled_entropy_slot = clock
+        .slot
+        .checked_add(
+            round_duration_seconds
+                .checked_mul(ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE)
+                .ok_or(ErrorCode::ArithmeticOverflow)?,
+        )
+        .and_then(|slot| slot.checked_add(ROUND_PRIMARY_ENTROPY_DELAY_SLOTS))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.entropy_slot_used = 0;
+    game_session.entropy_hash = [0u8; 32];
+    game_session.used_entropy_fallback = false;
     game_session.stage = 0;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
@@ -77,11 +90,11 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     game_session.winning_direction = PredictionDirection::Neutral.as_index() as u8;
     game_session.minebtc_winner_pool = 0;
     game_session.minebtc_same_faction_pool = 0;
+    game_session.minebtc_same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     game_session.faction_stakers = 0;
     game_session.motherlode_rewards = 0;
     game_session.sol_rewards_index = 0;
     game_session.minebtc_rewards_index = 0;
-    game_session.same_faction_minebtc_rewards_index = 0;
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
     game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
@@ -91,25 +104,75 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     emit!(RoundStarted {
         round_id,
         game_session: game_session.key(),
-        commit_hash: commit,
         epoch_id: ctx.accounts.epoch_config.current_epoch_id,
         active_index_id: ctx.accounts.epoch_config.active_index_id,
         active_question_hash: ctx.accounts.epoch_config.active_question_hash,
+        round_start_slot: game_session.round_start_slot,
         round_start_timestamp: game_session.round_start_timestamp,
+        round_end_timestamp: game_session.round_end_timestamp,
+        scheduled_entropy_slot: game_session.scheduled_entropy_slot,
         timestamp: clock.unix_timestamp,
     });
 
     Ok(())
 }
 
-/// End the current round by revealing seed, selecting winner, and starting next round.
-/// This function:
-/// 1. Verifies revealed seed matches commit hash
-/// 2. Generates final randomness using seed + current slot + current timestamp
-/// 3. Selects a winning faction from factions that actually received bets
-/// 4. Selects a winning direction inside that faction from active directional bets
-/// 5. Calculates winners and updates payout data
-pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
+fn slot_hash_entry_count(data: &[u8]) -> Result<usize> {
+    let length_bytes: [u8; 8] = data
+        .get(..8)
+        .ok_or(ErrorCode::InvalidAccount)?
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    Ok(u64::from_le_bytes(length_bytes) as usize)
+}
+
+fn read_slot_hash_entry(data: &[u8], index: usize) -> Result<(u64, [u8; 32])> {
+    let offset = 8 + (index * 40);
+    let slot_bytes: [u8; 8] = data
+        .get(offset..offset + 8)
+        .ok_or(ErrorCode::InvalidAccount)?
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    let hash_bytes: [u8; 32] = data
+        .get(offset + 8..offset + 40)
+        .ok_or(ErrorCode::InvalidAccount)?
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    Ok((u64::from_le_bytes(slot_bytes), hash_bytes))
+}
+
+fn resolve_round_entropy(
+    slot_hashes_account: &AccountInfo<'_>,
+    scheduled_entropy_slot: u64,
+) -> Result<(u64, [u8; 32], bool)> {
+    require!(
+        slot_hashes_account.key() == slot_hashes::id(),
+        ErrorCode::InvalidAccount
+    );
+
+    let data = slot_hashes_account.try_borrow_data()?;
+    let entry_count = slot_hash_entry_count(&data)?;
+    require!(entry_count > 0, ErrorCode::InvalidAccount);
+
+    let mut latest: Option<(u64, [u8; 32])> = None;
+    for index in 0..entry_count {
+        let (slot, hash) = read_slot_hash_entry(&data, index)?;
+        if index == 0 {
+            latest = Some((slot, hash));
+        }
+        if slot == scheduled_entropy_slot {
+            return Ok((slot, hash, false));
+        }
+    }
+
+    latest
+        .map(|(slot, hash)| (slot, hash, true))
+        .ok_or(ErrorCode::InvalidAccount.into())
+}
+
+/// Finalize the current round using its pre-scheduled slot-hash entropy.
+/// If the scheduled slot hash aged out of the sysvar, fall back to the latest available slot hash.
+pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     let game_session = &mut ctx.accounts.game_session;
     let global_state = &mut ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
@@ -126,29 +189,36 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     }
 
     require!(
-        clock.unix_timestamp
-            >= game_session.round_start_timestamp + global_state.round_duration_seconds,
+        clock.unix_timestamp >= game_session.round_end_timestamp,
         ErrorCode::RoundNotEnded
     );
     require!(game_session.stage == 0, ErrorCode::InvalidStage);
+
     require!(
-        global_state
-            .cranker_bots
-            .contains(&ctx.accounts.authority.key()),
-        ErrorCode::Unauthorized
+        clock.slot > game_session.scheduled_entropy_slot,
+        ErrorCode::RoundEntropyNotReady
     );
 
-    let seed_hash = keccak::hash(&revealed_seed);
-    require!(
-        seed_hash.to_bytes() == global_state.current_round_commit,
-        ErrorCode::InvalidParameters
+    let (entropy_slot_used, entropy_hash, used_entropy_fallback) = resolve_round_entropy(
+        &ctx.accounts.slot_hashes.to_account_info(),
+        game_session.scheduled_entropy_slot,
+    )?;
+    game_session.entropy_slot_used = entropy_slot_used;
+    game_session.entropy_hash = entropy_hash;
+    game_session.used_entropy_fallback = used_entropy_fallback;
+    msg!(
+        "🎲 [end_round] round_id={} scheduled_entropy_slot={} entropy_slot_used={} fallback={}",
+        game_session.round_id,
+        game_session.scheduled_entropy_slot,
+        game_session.entropy_slot_used,
+        game_session.used_entropy_fallback
     );
-    global_state.current_round_seed = Some(revealed_seed);
 
     let final_hash_bytes = keccak::hashv(&[
-        &revealed_seed,
-        &clock.slot.to_le_bytes(),
-        &clock.unix_timestamp.to_le_bytes(),
+        &game_session.entropy_hash,
+        &game_session.round_id.to_le_bytes(),
+        &game_session.total_sol_bets.to_le_bytes(),
+        &game_session.total_wgtd_points_bets.to_le_bytes(),
     ])
     .to_bytes();
 
@@ -229,6 +299,8 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
             game_session.key(),
             winning_faction_id,
             winning_direction,
+            game_session.entropy_slot_used,
+            game_session.used_entropy_fallback,
             0,
             0,
             false,
@@ -240,8 +312,8 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
 
     let minebtc_rewards = ctx.accounts.mine_btc_mining.mine_btc_per_round;
     let (
-        mut winning_direction_rewards,
-        mut same_faction_direction_rewards,
+        winning_direction_rewards,
+        same_faction_direction_rewards_each,
         faction_stakers,
         motherlode_rewards,
     ) = calculate_minebtc_split(
@@ -256,21 +328,27 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         [winning_direction as usize];
     let winning_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
         [winning_faction_id as usize][winning_direction as usize];
-    let same_faction_wgtd_points = game_session.wgtd_points_bets_by_faction
-        [winning_faction_id as usize]
-        .saturating_sub(winning_wgtd_points);
+    let mut same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
+    let mut same_faction_total = 0u64;
 
-    // If the winning faction only had one active direction, roll the consolation pool into
-    // the exact winner pool so emission is still fully claimable.
-    if same_faction_wgtd_points == 0 && same_faction_direction_rewards > 0 {
-        winning_direction_rewards = winning_direction_rewards
-            .checked_add(same_faction_direction_rewards)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        same_faction_direction_rewards = 0;
+    for direction_idx in 0..PredictionDirection::COUNT {
+        if direction_idx == winning_direction as usize {
+            continue;
+        }
+
+        let losing_direction_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
+            [winning_faction_id as usize][direction_idx];
+        if losing_direction_wgtd_points > 0 && same_faction_direction_rewards_each > 0 {
+            same_faction_direction_pools[direction_idx] = same_faction_direction_rewards_each;
+            same_faction_total = same_faction_total
+                .checked_add(same_faction_direction_rewards_each)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
     }
 
     game_session.minebtc_winner_pool = winning_direction_rewards;
-    game_session.minebtc_same_faction_pool = same_faction_direction_rewards;
+    game_session.minebtc_same_faction_pool = same_faction_total;
+    game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
     game_session.faction_stakers = faction_stakers;
     game_session.motherlode_rewards = motherlode_rewards;
 
@@ -307,16 +385,6 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
             )?)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
-    if same_faction_wgtd_points > 0 && game_session.minebtc_same_faction_pool > 0 {
-        game_session.same_faction_minebtc_rewards_index = game_session
-            .same_faction_minebtc_rewards_index
-            .checked_add(helper::mul_div(
-                game_session.minebtc_same_faction_pool,
-                INDEX_PRECISION,
-                same_faction_wgtd_points,
-            )?)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-    }
 
     let motherlode_random = u64::from_le_bytes([
         final_hash_bytes[8],
@@ -336,6 +404,8 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         game_session.key(),
         winning_faction_id,
         winning_direction,
+        game_session.entropy_slot_used,
+        game_session.used_entropy_fallback,
         faction_stakers,
         motherlode_rewards,
         game_session.motherlode_hit,
@@ -351,6 +421,8 @@ fn emit_round_ended(
     game_session_key: Pubkey,
     winning_faction_id: u8,
     winning_direction: u8,
+    entropy_slot_used: u64,
+    used_entropy_fallback: bool,
     minebtc_faction_stakers: u64,
     minebtc_motherlode: u64,
     motherlode_hit: bool,
@@ -361,6 +433,8 @@ fn emit_round_ended(
         game_session: game_session_key,
         winning_faction_id,
         winning_direction,
+        entropy_slot_used,
+        used_entropy_fallback,
         total_sol_bets: game_session.total_sol_bets,
         total_points_bets: game_session.total_points_bets,
         user_bets_count: game_session.user_faction_indexes,
@@ -369,6 +443,7 @@ fn emit_round_ended(
         faction_wgtd_points: game_session.wgtd_points_bets_by_faction,
         minebtc_winner_pool: game_session.minebtc_winner_pool,
         minebtc_same_faction_pool: game_session.minebtc_same_faction_pool,
+        minebtc_same_faction_direction_pools: game_session.minebtc_same_faction_direction_pools,
         minebtc_faction_stakers,
         minebtc_motherlode,
         motherlode_hit,
@@ -426,14 +501,14 @@ fn calculate_minebtc_split(
 ) -> (u64, u64, u64, u64) {
     let winning_direction_rewards =
         (minebtc_rewards as u128 * minebtc_winners_pct as u128 / 100) as u64;
-    let same_faction_direction_rewards =
+    let same_faction_direction_rewards_each =
         (minebtc_rewards as u128 * minebtc_same_faction_pct as u128 / 100) as u64;
     let faction_stakers = (minebtc_rewards as u128 * minebtc_stakers_pct as u128 / 100) as u64;
     let motherlode_rewards =
         (minebtc_rewards as u128 * minebtc_motherlode_pct as u128 / 100) as u64;
     (
         winning_direction_rewards,
-        same_faction_direction_rewards,
+        same_faction_direction_rewards_each,
         faction_stakers,
         motherlode_rewards,
     )
@@ -457,7 +532,7 @@ fn split_staker_lane_rewards(
 
 /// Finalize the faction-level reward distribution for the round.
 /// This function:
-/// 1. Verifies revealed seed matches commit hash
+/// 1. Uses the already-finalized winning faction/direction from `end_round`
 /// 2. Distributes the winning faction's staker and motherlode rewards
 /// 3. Advances epoch accounting when the current epoch window has ended
 pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
@@ -813,6 +888,10 @@ pub struct EndRound<'info> {
         bump
     )]
     pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    /// CHECK: Recent slot hashes sysvar used for round entropy
+    #[account(address = slot_hashes::id() @ ErrorCode::InvalidAccount)]
+    pub slot_hashes: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

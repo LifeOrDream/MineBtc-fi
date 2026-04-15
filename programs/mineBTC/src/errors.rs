@@ -116,7 +116,7 @@ pub enum ErrorCode {
     #[msg("Invalid owner")]
     InvalidOwner,
 
-    #[msg("Cannot place multiple directions on the same faction in one round")]
+    #[msg("Duplicate faction-direction pair in the same round")]
     ConflictingFactionDirection,
 
     #[msg("Invalid amount")]
@@ -211,4 +211,13 @@ pub enum ErrorCode {
 
     #[msg("Hashpower-changing staking actions are paused while a tax round is active")]
     TaxRoundActive,
+
+    #[msg("Round entropy is not ready yet")]
+    RoundEntropyNotReady,
+
+    #[msg("Free Doge mint allowance exceeds the per-user maximum")]
+    MaxFreeDogeMintsExceeded,
+
+    #[msg("No free Doge mints remaining for this user")]
+    NoFreeDogeMintsRemaining,
 }

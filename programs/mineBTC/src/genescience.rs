@@ -748,6 +748,7 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 // ========================================================================================
 
 /// Get breed value from DNA (2 bits at BREED_OFFSET)
+#[allow(dead_code)]
 pub fn get_breed(dna: &[u8; 32]) -> u8 {
     get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0)
 }

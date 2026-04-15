@@ -6,8 +6,7 @@
 //
 // - `initialize_player`: Creates a new player account and assigns them to a faction.
 // - `change_faction`: Allows players to switch factions (requires no active stakes).
-// - `join_round`: Places a faction-direction bet for the current round.
-// - `join_round_batch`: Places multiple faction-direction bets in a single transaction.
+// - `join_bets`: Places one or more faction-direction bets for the current round.
 // - `claim_round_rewards`: Claims winnings from completed rounds.
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
 // - `execute_autominer_bet`: Executes an autominer bet (keeper function).
@@ -325,75 +324,21 @@ pub fn internal_set_player_claim_settings(
 /// Each bet selects a faction and an epoch direction.
 ///
 /// Parameters:
-/// - amount: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
-/// - bet_type: The bet type (`FactionDirection { faction_id, direction }`)
+/// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
+/// - amount_per_bet: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-pub fn internal_join_round(
-    ctx: Context<JoinRound>,
-    amount: u64,
-    bet_type: BetType,
-    use_ticket: Option<u8>,
-) -> Result<()> {
-    msg!(
-        "🎲 [join_round] User joining round (single bet). User: {}",
-        ctx.accounts.authority.key()
-    );
-    msg!("   Bet type: {:?}", bet_type);
-    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
-    let index_state = load_index_state(
-        &ctx.accounts.index_state.to_account_info(),
-        ctx.accounts.epoch_config.active_index_id,
-    )?;
-
-    // Call internal_process_bets with user as payer (None for signer_seeds - user signs the tx)
-    // Wrap single bet in vector
-    internal_process_bets(
-        ctx.accounts.game_session.round_id,
-        &global_config,
-        &mut ctx.accounts.player_data,
-        &mut ctx.accounts.game_session,
-        &mut ctx.accounts.user_game_bet,
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
-        &ctx.accounts.sol_rewards_vault.to_account_info(),
-        &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.user_game_bet,
-        ctx.accounts.authority.key(),
-        amount,
-        vec![bet_type.clone()],
-        use_ticket,
-        None, // User wallet signs the transaction
-        None, // No autominer info
-        &index_state,
-        &ctx.accounts.epoch_config,
-        &mut ctx.accounts.epoch_state,
-        ctx.bumps.epoch_state,
-        &mut ctx.accounts.user_epoch_bets,
-        ctx.bumps.user_epoch_bets,
-    )?;
-
-    msg!("✅ [join_round] Bet placed successfully");
-    Ok(())
-}
-
-/// Join a round with multiple faction-direction bets in a single transaction.
-///
-/// Parameters:
-/// - bet_types: Vector of faction-direction bets to place
-/// - amount_per_bet: Bet amount per bet type in lamports (for SOL) or points (for tickets)
-/// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-pub fn internal_join_round_batch(
-    ctx: Context<JoinRoundBatch>,
+pub fn internal_join_bets(
+    ctx: Context<JoinBets>,
+    round_id: u64,
     bet_types: Vec<BetType>,
     amount_per_bet: u64,
     use_ticket: Option<u8>,
 ) -> Result<()> {
     msg!(
-        "🎲 [join_round_batch] User joining round with {} bets",
-        bet_types.len()
+        "🎲 [join_bets] User joining round with {} bet positions. User: {}",
+        bet_types.len(),
+        ctx.accounts.authority.key()
     );
-    msg!("   User: {}", ctx.accounts.authority.key());
     msg!("   Amount per bet: {} lamports", amount_per_bet);
     let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
     let index_state = load_index_state(
@@ -401,15 +346,20 @@ pub fn internal_join_round_batch(
         ctx.accounts.epoch_config.active_index_id,
     )?;
 
+    require!(
+        ctx.accounts.game_session.round_id == round_id,
+        ErrorCode::InvalidRound
+    );
+
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
     require!(
-        bet_types.len() <= UserGameBet::MAX_FACTIONS_PER_BET,
+        bet_types.len() <= UserGameBet::MAX_POSITIONS_PER_BET,
         ErrorCode::InvalidParameters
     );
 
     // Call internal_process_bets for all bets at once
     internal_process_bets(
-        ctx.accounts.game_session.round_id,
+        round_id,
         &global_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
@@ -435,7 +385,7 @@ pub fn internal_join_round_batch(
     )?;
 
     msg!(
-        "✅ [join_round_batch] All {} bets placed successfully",
+        "✅ [join_bets] All {} bet positions placed successfully",
         bet_types.len()
     );
     Ok(())
@@ -507,20 +457,20 @@ pub fn internal_init_autominer(
             FactionsConfig::Specific { picks } => {
                 require!(!picks.is_empty(), ErrorCode::InvalidParameters);
                 require!(
-                    picks.len() <= AutominerVault::MAX_FACTIONS,
+                    picks.len() <= AutominerVault::MAX_PICKS,
                     ErrorCode::InvalidParameters
                 );
-                let mut seen = [false; NUM_FACTIONS];
+                let mut seen = [[false; PredictionDirection::COUNT]; NUM_FACTIONS];
                 for pick in picks.iter() {
                     require!(
                         (pick.faction_id as usize) < global_config.supported_factions.len(),
                         ErrorCode::InvalidFactionId
                     );
                     require!(
-                        !seen[pick.faction_id as usize],
+                        !seen[pick.faction_id as usize][pick.direction.as_index()],
                         ErrorCode::ConflictingFactionDirection
                     );
-                    seen[pick.faction_id as usize] = true;
+                    seen[pick.faction_id as usize][pick.direction.as_index()] = true;
                 }
                 bets_per_round = picks.len() as u64;
                 msg!("     ✓ Specific autominer picks: {}", picks.len());
@@ -1454,12 +1404,19 @@ fn calculate_round_rewards(
         } else if is_winning_faction {
             msg!("       ✓ Same faction, different direction - consolation MineBTC rewards...");
 
-            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0
+            let same_faction_pool =
+                game_session.minebtc_same_faction_direction_pools[direction as usize];
+            let same_faction_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
+                [faction_id as usize][direction as usize];
+
+            if same_faction_pool > 0
+                && same_faction_wgtd_points > 0
+                && wgtd_points_bet_on_faction > 0
             {
                 let minebtc_reward = helper::mul_div(
                     wgtd_points_bet_on_faction,
-                    game_session.same_faction_minebtc_rewards_index as u64,
-                    INDEX_PRECISION,
+                    same_faction_pool,
+                    same_faction_wgtd_points,
                 )? as u64;
                 total_minebtc_reward = total_minebtc_reward
                     .checked_add(minebtc_reward)
@@ -1593,7 +1550,7 @@ fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)>
     }
 }
 
-/// Internal join_round logic for batched processing
+/// Internal join_bets logic for batched processing
 /// Calculates totals, performs single transfers, and updates state for all bets
 #[allow(clippy::too_many_arguments)]
 fn internal_process_bets<'info>(
@@ -1624,6 +1581,11 @@ fn internal_process_bets<'info>(
     let clock = Clock::get()?;
 
     require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
+    require!(game_session.stage == 0, ErrorCode::RoundEnded);
+    require!(
+        clock.unix_timestamp < game_session.round_end_timestamp,
+        ErrorCode::RoundEnded
+    );
     require!(
         amount_per_bet > 0 || use_ticket.is_some(),
         ErrorCode::InvalidAmount
@@ -1896,17 +1858,19 @@ fn internal_process_bets<'info>(
         let direction_index = direction.as_index();
         let direction_u8 = direction_index as u8;
 
-        if let Some(index) = user_game_bet
+        let existing_position_index = user_game_bet
             .faction_ids
             .iter()
-            .position(|&existing_faction| existing_faction == faction_id)
-        {
-            let existing_direction = user_game_bet.directions.get(index).copied().unwrap_or(255);
-            require!(
-                existing_direction == direction_u8,
-                ErrorCode::ConflictingFactionDirection
-            );
+            .zip(user_game_bet.directions.iter())
+            .position(|(&existing_faction, &existing_direction)| {
+                existing_faction == faction_id && existing_direction == direction_u8
+            });
+        let faction_already_present = user_game_bet
+            .faction_ids
+            .iter()
+            .any(|&existing_faction| existing_faction == faction_id);
 
+        if let Some(index) = existing_position_index {
             user_game_bet.sol_bets[index] = user_game_bet.sol_bets[index]
                 .checked_add(net_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -1918,7 +1882,7 @@ fn internal_process_bets<'info>(
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
         } else {
             require!(
-                user_game_bet.faction_ids.len() < UserGameBet::MAX_FACTIONS_PER_BET,
+                user_game_bet.faction_ids.len() < UserGameBet::MAX_POSITIONS_PER_BET,
                 ErrorCode::InvalidParameters
             );
             user_game_bet.faction_ids.push(faction_id);
@@ -1927,10 +1891,12 @@ fn internal_process_bets<'info>(
             user_game_bet.points_bets.push(points_per_bet);
             user_game_bet.wgtd_points_bets.push(wgtd_points_per_bet);
 
-            game_session.user_faction_indexes[faction_index] = game_session.user_faction_indexes
-                [faction_index]
-                .checked_add(1)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            if !faction_already_present {
+                game_session.user_faction_indexes[faction_index] = game_session
+                    .user_faction_indexes[faction_index]
+                    .checked_add(1)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+            }
         }
 
         // Update GameSession stats
@@ -2395,13 +2361,8 @@ pub struct ChangeFaction<'info> {
 }
 
 #[derive(Accounts)]
-pub struct JoinRound<'info> {
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
-
+#[instruction(round_id: u64)]
+pub struct JoinBets<'info> {
     /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
     pub global_config: UncheckedAccount<'info>,
@@ -2416,7 +2377,7 @@ pub struct JoinRound<'info> {
     /// GameSession PDA for the current round (must be initialized by crank function)
     #[account(
         mut,
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump = game_session.bump
     )]
     pub game_session: Box<Account<'info, GameSession>>,
@@ -2426,104 +2387,7 @@ pub struct JoinRound<'info> {
         init_if_needed,
         payer = authority,
         space = UserGameBet::LEN,
-        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
-        bump
-    )]
-    pub user_game_bet: Box<Account<'info, UserGameBet>>,
-
-    /// CHECK: SOL treasury PDA (fees go here)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-
-    /// CHECK: SOL rewards vault (staker fees go here)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
-
-    /// CHECK: SOL prize pot vault (PDA)
-    #[account(
-        mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_prize_pot_vault: UncheckedAccount<'info>,
-
-    /// Epoch config (read for current_epoch_id)
-    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
-    pub epoch_config: Box<Account<'info, EpochConfig>>,
-
-    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
-    #[account(seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]], bump)]
-    pub index_state: UncheckedAccount<'info>,
-
-    /// Epoch state for current epoch (init_if_needed for new epochs)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = EpochState::LEN,
-        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
-        bump,
-    )]
-    pub epoch_state: Box<Account<'info, EpochState>>,
-
-    /// User epoch bets for current epoch (init_if_needed for first bet)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = UserEpochBets::LEN,
-        seeds = [USER_EPOCH_BETS_SEED, authority.key().as_ref(), &epoch_config.current_epoch_id.to_le_bytes()],
-        bump,
-    )]
-    pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-/// Account struct for batch betting.
-/// Batch bets can include multiple country+direction picks in one transaction.
-#[derive(Accounts)]
-pub struct JoinRoundBatch<'info> {
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
-
-    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
-    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
-    pub global_config: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
-    )]
-    pub player_data: Box<Account<'info, PlayerData>>,
-
-    /// GameSession PDA for the current round
-    #[account(
-        mut,
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
-        bump = game_session.bump
-    )]
-    pub game_session: Box<Account<'info, GameSession>>,
-
-    /// UserGameBet PDA (shared across all bets in batch)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = UserGameBet::LEN,
-        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &round_id.to_le_bytes()],
         bump
     )]
     pub user_game_bet: Box<Account<'info, UserGameBet>>,

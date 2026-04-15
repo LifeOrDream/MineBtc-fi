@@ -1771,7 +1771,7 @@ pub struct UnstakeMineBtc<'info> {
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     // Faction state
     #[account(mut)]
@@ -1784,7 +1784,7 @@ pub struct UnstakeMineBtc<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     // Staked position - will be closed and rent returned to authority
     #[account(
@@ -1800,11 +1800,11 @@ pub struct UnstakeMineBtc<'info> {
         constraint = user_position.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId,
         constraint = user_position.position_type == 0 @ ErrorCode::InvalidParameters
     )]
-    pub user_position: Account<'info, StakedPosition>,
+    pub user_position: Box<Account<'info, StakedPosition>>,
 
     /// CHECK: MINE_BTC Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
-    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
+    pub minebtc_mint: Box<InterfaceAccount<'info, Mint2022>>,
 
     // Token accounts
     #[account(
@@ -1813,7 +1813,7 @@ pub struct UnstakeMineBtc<'info> {
         constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
     /// User's MineBtc token account to receive the unstaked tokens
-    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub user_minebtc_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
         mut,
@@ -1822,7 +1822,7 @@ pub struct UnstakeMineBtc<'info> {
         constraint = minebtc_custodian.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
     /// Token-2022 account that holds staked MINE_BTC (global for all factions)
-    pub minebtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_custodian: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
         seeds = [MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
@@ -1836,10 +1836,10 @@ pub struct UnstakeMineBtc<'info> {
         seeds = [UNREFINED_REWARDS_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
+    pub tax_config: Box<Account<'info, TaxConfig>>,
 
     /// User who is unstaking tokens
     #[account(mut)]
@@ -1941,7 +1941,7 @@ pub struct UnstakeLpTokens<'info> {
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     // Faction state
     #[account(mut)]
@@ -1954,7 +1954,7 @@ pub struct UnstakeLpTokens<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     // Staked position - will be closed and rent returned to authority
     #[account(
@@ -1970,21 +1970,21 @@ pub struct UnstakeLpTokens<'info> {
         constraint = user_position.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId,
         constraint = user_position.position_type == 1 @ ErrorCode::InvalidParameters
     )]
-    pub user_position: Account<'info, StakedPosition>,
+    pub user_position: Box<Account<'info, StakedPosition>>,
 
     #[account(
         mut,
         seeds = [UNREFINED_REWARDS_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
+    pub tax_config: Box<Account<'info, TaxConfig>>,
 
     /// CHECK: LP Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
-    pub lp_mint: Account<'info, token::Mint>,
+    pub lp_mint: Box<Account<'info, token::Mint>>,
 
     // Token accounts
     #[account(
@@ -1993,7 +1993,7 @@ pub struct UnstakeLpTokens<'info> {
         constraint = user_lp_account.mint == lp_mint.key() @ ErrorCode::InvalidParameters,
     )]
     /// User's LP token account to receive the unstaked tokens
-    pub user_lp_account: Account<'info, token::TokenAccount>,
+    pub user_lp_account: Box<Account<'info, token::TokenAccount>>,
 
     #[account(
         mut,
@@ -2002,7 +2002,7 @@ pub struct UnstakeLpTokens<'info> {
         constraint = liquidity_custodian.mint == lp_mint.key() @ ErrorCode::InvalidParameters,
     )]
     /// Token account that holds staked LP tokens for this faction
-    pub liquidity_custodian: Account<'info, token::TokenAccount>,
+    pub liquidity_custodian: Box<Account<'info, token::TokenAccount>>,
 
     #[account(
         seeds = [LIQUIDITY_CUSTODIAN_AUTHORITY_SEED.as_ref()],

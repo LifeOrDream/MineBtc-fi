@@ -592,6 +592,147 @@ pub fn int_admin_mint_doge(
     Ok(())
 }
 
+/// User-callable free mint path backed by a per-user whitelist allowance.
+/// The caller pays transaction fees and account rent, but not the Doge mint price.
+pub fn int_whitelist_mint_doge(
+    ctx: Context<WhitelistMintDoge>,
+    faction_id: u8,
+    ticket_tier_index: u8,
+) -> Result<()> {
+    let global_config = &ctx.accounts.global_config;
+    let doge_config = &mut ctx.accounts.doge_config;
+    let player_data = &mut ctx.accounts.player_data;
+    let allowance = &mut ctx.accounts.doge_free_mint_allowance;
+    let user = ctx.accounts.user.key();
+
+    require!(doge_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(
+        (faction_id as usize) < global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        doge_config.doges_minted < doge_config.max_supply,
+        ErrorCode::InvalidParameters
+    );
+    require!(allowance.user == user, ErrorCode::Unauthorized);
+    require!(
+        allowance.remaining_free_mints > 0,
+        ErrorCode::NoFreeDogeMintsRemaining
+    );
+    require!(ctx.accounts.doge_asset.is_signer, ErrorCode::Unauthorized);
+
+    msg!(
+        "🎁 [whitelist_mint_doge] user={} faction_id={} remaining_before={} mint_number={}",
+        user,
+        faction_id,
+        allowance.remaining_free_mints,
+        doge_config.doges_minted + 1
+    );
+
+    let current_mint_number = doge_config.doges_minted + 1;
+    let slot = Clock::get()?.slot;
+    let (name, uri, dna, multiplier) = generate_doge_data(
+        current_mint_number,
+        &user,
+        slot,
+        faction_id,
+        &ctx.accounts.doge_asset.key(),
+    )?;
+
+    let collection_authority_bump = ctx.bumps.collection_authority;
+    let collection_authority_seeds = &[
+        crate::state::COLLECTION_AUTHORITY_SEED,
+        &[collection_authority_bump],
+    ];
+
+    crate::mpl_core_helpers::create_mpl_core_asset(
+        &ctx.accounts.doge_asset.to_account_info(),
+        ctx.accounts
+            .doge_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
+        &ctx.accounts.collection_authority.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        name.clone(),
+        uri.clone(),
+        Some(&[collection_authority_seeds]),
+    )?;
+
+    let notional_price = crate::genescience::compute_gene_price(
+        doge_config.base_price,
+        doge_config.curve_a,
+        doge_config.doges_minted,
+    )?;
+    msg!(
+        "   [whitelist_mint_doge] notional_price={} SOL ticket_tier_index={}",
+        notional_price as f64 / 1e9,
+        ticket_tier_index
+    );
+
+    let doge_metadata = &mut ctx.accounts.doge_metadata;
+    doge_metadata.mint = ctx.accounts.doge_asset.key();
+    doge_metadata.mom = Pubkey::default();
+    doge_metadata.dad = Pubkey::default();
+    doge_metadata.breed_count = 0;
+    doge_metadata.cooldown_end = 0;
+    doge_metadata.accumulated_val = 0;
+    doge_metadata.dna = dna;
+    doge_metadata.incubated_player_data = Pubkey::default();
+    doge_metadata.multiplier = multiplier;
+    doge_metadata.faction_id = faction_id;
+    doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    doge_metadata.created_at = Clock::get()?.unix_timestamp;
+    doge_metadata.xp = 0;
+    doge_metadata.bump = ctx.bumps.doge_metadata;
+
+    let ticket_count = if doge_config.ticket_tiers.is_empty() {
+        0
+    } else {
+        add_tickets_to_player(player_data, doge_config, ticket_tier_index, notional_price)?
+    };
+
+    doge_config.doges_minted = doge_config
+        .doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    allowance.remaining_free_mints = allowance
+        .remaining_free_mints
+        .checked_sub(1)
+        .ok_or(ErrorCode::NoFreeDogeMintsRemaining)?;
+
+    msg!(
+        "✅ [whitelist_mint_doge] user={} minted={} remaining_after={} total_minted={} / {}",
+        user,
+        ctx.accounts.doge_asset.key(),
+        allowance.remaining_free_mints,
+        doge_config.doges_minted,
+        doge_config.max_supply
+    );
+
+    emit!(DogeMinted {
+        doge_metadata_account: doge_metadata.key(),
+        doge_asset_signer: ctx.accounts.doge_asset.key(),
+        owner: user,
+        player: player_data.key(),
+        mint: doge_metadata.mint,
+        name,
+        uri,
+        dna,
+        accumulated_val: 0,
+        multiplier,
+        faction_id,
+        price: notional_price,
+        ticket_tier: ticket_tier_index as u64,
+        ticket_count,
+    });
+
+    Ok(())
+}
+
 /// Stake a Doge to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
 /// The Doge's own faction does not matter for staking boosts.
 /// The effective multiplier is capped at MAX_MULTIPLIER for reward-share math.
@@ -1787,6 +1928,73 @@ pub struct AdminMintDoge<'info> {
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(faction_id: u8)]
+pub struct WhitelistMintDoge<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_CONFIG_SEED.as_ref()],
+        bump = doge_config.bump,
+    )]
+    pub doge_config: Account<'info, DogeConfig>,
+
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.key().as_ref()],
+        bump = doge_free_mint_allowance.bump,
+        constraint = doge_free_mint_allowance.user == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub doge_free_mint_allowance: Account<'info, DogeFreeMintAllowance>,
+
+    /// Metaplex Core asset (will be created)
+    #[account(mut)]
+    /// CHECK: Will be created via MPL Core CPI
+    pub doge_asset: UncheckedAccount<'info>,
+
+    /// Optional collection account for the Doge
+    /// CHECK: Optional collection
+    pub doge_collection: Option<UncheckedAccount<'info>>,
+
+    #[account(
+        init,
+        payer = user,
+        space = DogeMetadata::LEN,
+        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
+        bump
+    )]
+    pub doge_metadata: Account<'info, DogeMetadata>,
+
+    #[account(
+        seeds = [COLLECTION_AUTHORITY_SEED],
+        bump
+    )]
+    /// CHECK: PDA authority for the collection
+    pub collection_authority: UncheckedAccount<'info>,
+
+    /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
