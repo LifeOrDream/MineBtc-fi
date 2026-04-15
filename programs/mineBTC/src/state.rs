@@ -50,7 +50,6 @@ pub const MAX_FACTIONS: usize = 15; // Up to 15 factions for the raffle
 pub const NUM_FACTIONS: usize = 15; // Same as MAX_FACTIONS, used for array sizes
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 
-pub const MAX_CRANKER_BOTS: usize = 3; // Maximum number of whitelisted cranker bots
 /// Conservative upper-bound slot estimate used to schedule round entropy at round start.
 /// This keeps the entropy slot after the round closes under normal slot timing, while the
 /// finalize path can still fall back to the latest available slot hash if the scheduled hash
@@ -599,10 +598,6 @@ pub struct GlobalGameSate {
     pub last_round_id: u64,
     /// The winning faction ID from the last completed round
     pub winning_faction_id: u8,
-
-    /// Optional automation bot allowlist retained for operational tooling.
-    /// Round start/finalize is permissionless in the slot-hash flow.
-    pub cranker_bots: Vec<Pubkey>,
 }
 
 impl GlobalGameSate {
@@ -614,8 +609,7 @@ impl GlobalGameSate {
         8 +     // current_round_id
         8 +     // round_duration_seconds
         8 +     // last_round_id
-        1 +     // winning_faction_id
-        4 + (MAX_CRANKER_BOTS * 32); // cranker_bots Vec<Pubkey> (4 bytes length + MAX_CRANKER_BOTS * 32 bytes)
+        1; // winning_faction_id
 }
 
 #[account]
@@ -1276,11 +1270,6 @@ pub struct EpochConfig {
     /// Timestamp when the current epoch started
     pub last_epoch_start: u64,
 
-    /// Global risk factor (0-1000, representing 0.00 to 10.00)
-    /// Multiplied against total dogeBTC mined in an epoch to determine epoch mining pool.
-    /// Updated by the AI oracle based on world volatility.
-    pub risk_factor: u16,
-
     /// Whether epoch mining is active
     pub is_active: bool,
 
@@ -1311,7 +1300,6 @@ impl EpochConfig {
         8 +     // epoch_duration
         8 +     // current_epoch_id
         8 +     // last_epoch_start
-        2 +     // risk_factor (u16)
         1 +     // is_active
         1 +     // active_index_id
         32 +    // active_question_hash
@@ -1375,12 +1363,8 @@ pub struct EpochState {
     /// Total dogeBTC mined via raffle rounds during this epoch
     /// Accumulated by end_round as rounds complete within the epoch window.
     pub total_dogebtc_mined_in_epoch: u64,
-
-    /// Risk factor snapshot at epoch settlement (copied from EpochConfig at settle time)
-    pub risk_factor_snapshot: u16,
-
-    /// Epoch mining pool = total_dogebtc_mined_in_epoch * risk_factor_snapshot / 100
-    /// This is the total dogeBTC distributed to epoch predictors.
+    /// Epoch mining pool distributed to epoch predictors.
+    /// This now matches the total dogeBTC mined in normal rounds during the epoch.
     pub epoch_mining_pool: u64,
 
     /// Score/rank snapshots at epoch open.
@@ -1414,7 +1398,6 @@ impl EpochState {
         1 +     // stage
         1 +     // active_faction_count
         8 +     // total_dogebtc_mined_in_epoch
-        2 +     // risk_factor_snapshot
         8 +     // epoch_mining_pool
         (NUM_FACTIONS * 8) + // start_scores [i64; 12]
         (NUM_FACTIONS * 1) + // start_ranks [u8; 12]

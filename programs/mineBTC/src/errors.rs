@@ -116,9 +116,6 @@ pub enum ErrorCode {
     #[msg("Invalid owner")]
     InvalidOwner,
 
-    #[msg("Duplicate faction-direction pair in the same round")]
-    ConflictingFactionDirection,
-
     #[msg("Invalid amount")]
     InvalidAmount,
 

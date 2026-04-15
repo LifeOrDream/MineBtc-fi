@@ -674,18 +674,6 @@ pub struct DogeVisualMutation {
 // =============================== EPOCH MINING EVENTS ====================================
 // ========================================================================================
 
-/// Event emitted when a new epoch starts
-#[event]
-pub struct EpochStarted {
-    pub epoch_id: u64,
-    pub index_id: u8,
-    pub question_hash: [u8; 32],
-    pub start_timestamp: u64,
-    pub end_timestamp: u64,
-    pub risk_factor: u16,
-    pub timestamp: i64,
-}
-
 /// Event emitted when an index state is initialized.
 #[event]
 pub struct IndexInitialized {
@@ -716,14 +704,6 @@ pub struct EpochScoresUpdated {
     pub timestamp: i64,
 }
 
-/// Event emitted when risk factor is updated
-#[event]
-pub struct RiskFactorUpdated {
-    pub old_risk_factor: u16,
-    pub new_risk_factor: u16,
-    pub timestamp: i64,
-}
-
 /// Event emitted when an epoch is settled
 #[event]
 pub struct EpochSettled {
@@ -731,7 +711,6 @@ pub struct EpochSettled {
     pub index_id: u8,
     pub question_hash: [u8; 32],
     pub total_dogebtc_mined: u64,
-    pub risk_factor: u16,
     pub epoch_mining_pool: u64,
     pub start_scores: [i64; NUM_FACTIONS],
     pub final_scores: [i64; NUM_FACTIONS],

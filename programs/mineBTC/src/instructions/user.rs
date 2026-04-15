@@ -460,17 +460,11 @@ pub fn internal_init_autominer(
                     picks.len() <= AutominerVault::MAX_PICKS,
                     ErrorCode::InvalidParameters
                 );
-                let mut seen = [[false; PredictionDirection::COUNT]; NUM_FACTIONS];
                 for pick in picks.iter() {
                     require!(
                         (pick.faction_id as usize) < global_config.supported_factions.len(),
                         ErrorCode::InvalidFactionId
                     );
-                    require!(
-                        !seen[pick.faction_id as usize][pick.direction.as_index()],
-                        ErrorCode::ConflictingFactionDirection
-                    );
-                    seen[pick.faction_id as usize][pick.direction.as_index()] = true;
                 }
                 bets_per_round = picks.len() as u64;
                 msg!("     ✓ Specific autominer picks: {}", picks.len());
@@ -1626,7 +1620,6 @@ fn internal_process_bets<'info>(
         epoch_state.stage = 0;
         epoch_state.active_faction_count = active_faction_count as u8;
         epoch_state.total_dogebtc_mined_in_epoch = 0;
-        epoch_state.risk_factor_snapshot = 0;
         epoch_state.epoch_mining_pool = 0;
         epoch_state.start_scores = index_state.latest_scores;
         epoch_state.start_ranks = current_ranks;

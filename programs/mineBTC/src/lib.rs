@@ -415,17 +415,6 @@ pub mod minebtc {
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
-    /// Add a bot to the optional automation allowlist (admin only)
-    /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
-    pub fn add_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-        admin::add_cranker_bot_internal(ctx, bot_pubkey)
-    }
-
-    /// Remove a bot from the optional automation allowlist (admin only)
-    pub fn remove_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-        admin::remove_cranker_bot_internal(ctx, bot_pubkey)
-    }
-
     /// Switch game state (toggle is_active) (admin only)
     ///
     /// Toggles the game's active state. When paused, rounds cannot be started or ended.
@@ -546,7 +535,6 @@ pub mod minebtc {
         ctx: Context<InitializeEpochConfig>,
         oracle_authority: Pubkey,
         epoch_duration: u64,
-        risk_factor: u16,
         model5_pct: u8,
         top1_pct: u8,
         top2_pct: u8,
@@ -556,7 +544,6 @@ pub mod minebtc {
             ctx,
             oracle_authority,
             epoch_duration,
-            risk_factor,
             model5_pct,
             top1_pct,
             top2_pct,
@@ -612,11 +599,6 @@ pub mod minebtc {
         score_deltas: [i64; state::NUM_FACTIONS],
     ) -> Result<()> {
         epoch::update_epoch_scores_internal(ctx, score_deltas)
-    }
-
-    /// AI Oracle updates global risk factor based on world volatility
-    pub fn update_risk_factor(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
-        epoch::update_risk_factor_internal(ctx, risk_factor)
     }
 
     /// Settle epoch: finalize scores and compute reward pool (fallback - anyone can call)

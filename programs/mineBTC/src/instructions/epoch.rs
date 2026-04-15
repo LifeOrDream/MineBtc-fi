@@ -123,14 +123,12 @@ pub fn initialize_epoch_config_internal(
     ctx: Context<InitializeEpochConfig>,
     oracle_authority: Pubkey,
     epoch_duration: u64,
-    risk_factor: u16,
     model5_pct: u8,
     top1_pct: u8,
     top2_pct: u8,
     top3_pct: u8,
 ) -> Result<()> {
     require!(epoch_duration > 0, ErrorCode::InvalidParameters);
-    require!(risk_factor <= 1000, ErrorCode::InvalidParameters);
     require!(
         model5_pct as u16 + top1_pct as u16 + top2_pct as u16 + top3_pct as u16 <= 100,
         ErrorCode::InvalidParameters
@@ -142,7 +140,6 @@ pub fn initialize_epoch_config_internal(
     epoch_config.epoch_duration = epoch_duration;
     epoch_config.current_epoch_id = 1;
     epoch_config.last_epoch_start = 0;
-    epoch_config.risk_factor = risk_factor;
     epoch_config.is_active = true;
     epoch_config.active_index_id = 0;
     epoch_config.active_question_hash = [0u8; 32];
@@ -453,14 +450,7 @@ pub fn finalize_epoch_settlement(
     let active_factions = epoch_state.active_faction_count as usize;
     validate_active_faction_count(active_factions)?;
 
-    epoch_state.risk_factor_snapshot = epoch_config.risk_factor;
-    let pool_u128 = (epoch_state.total_dogebtc_mined_in_epoch as u128)
-        .checked_mul(epoch_state.risk_factor_snapshot as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(100)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    epoch_state.epoch_mining_pool =
-        u64::try_from(pool_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    epoch_state.epoch_mining_pool = epoch_state.total_dogebtc_mined_in_epoch;
 
     for faction_id in 0..active_factions {
         let (direction, rank_delta) = resolve_direction_from_ranks(
@@ -487,34 +477,6 @@ pub fn finalize_epoch_settlement(
     Ok(())
 }
 
-pub fn update_risk_factor_internal(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
-    require!(risk_factor <= 1000, ErrorCode::InvalidParameters);
-
-    let old_risk_factor = ctx.accounts.epoch_config.risk_factor;
-    ctx.accounts.epoch_config.risk_factor = risk_factor;
-
-    emit!(RiskFactorUpdated {
-        old_risk_factor,
-        new_risk_factor: risk_factor,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
-
-    Ok(())
-}
-
-#[derive(Accounts)]
-pub struct UpdateRiskFactor<'info> {
-    #[account(
-        mut,
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
-        constraint = epoch_config.oracle_authority == authority.key() @ ErrorCode::InvalidOracleAuthority,
-    )]
-    pub epoch_config: Account<'info, EpochConfig>,
-
-    pub authority: Signer<'info>,
-}
-
 pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     let epoch_config = &mut ctx.accounts.epoch_config;
     let epoch_state = &mut ctx.accounts.epoch_state;
@@ -537,7 +499,6 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
         index_id: epoch_state.index_id,
         question_hash: epoch_state.question_hash,
         total_dogebtc_mined: epoch_state.total_dogebtc_mined_in_epoch,
-        risk_factor: epoch_state.risk_factor_snapshot,
         epoch_mining_pool: epoch_state.epoch_mining_pool,
         start_scores: epoch_state.start_scores,
         final_scores: epoch_state.final_scores,

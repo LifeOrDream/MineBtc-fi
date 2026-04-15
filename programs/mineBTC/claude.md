@@ -140,7 +140,7 @@ Important rules:
 
 - bets are `BetType::FactionDirection`
 - one transaction can include multiple countries
-- the same country cannot appear with two different directions in one round
+- a player can bet on the same country with different directions in the same round
 - the same bet updates both `GameSession` totals and `EpochState` / `UserEpochBets`
 
 ### Round Settlement

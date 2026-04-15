@@ -1115,63 +1115,6 @@ pub fn initialize_game_state_internal(
     // Initialize cumulative stats
     global_game_state.total_sol_bets = 0;
 
-    // Initialize empty cranker bots whitelist
-    global_game_state.cranker_bots = Vec::new();
-
-    Ok(())
-}
-
-/// Add a cranker bot to the whitelist (admin only)
-///
-/// Adds a bot address to the optional automation bot allowlist.
-/// Maximum of MAX_CRANKER_BOTS (3) bots can be whitelisted.
-///
-/// # Parameters
-/// - `bot_pubkey`: Public key of the bot to whitelist
-pub fn add_cranker_bot_internal(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-    let global_game_state = &mut ctx.accounts.global_game_state;
-
-    // Check if bot is already whitelisted
-    require!(
-        !global_game_state.cranker_bots.contains(&bot_pubkey),
-        ErrorCode::InvalidParameters // Bot already whitelisted
-    );
-
-    // Check if we've reached the maximum
-    require!(
-        global_game_state.cranker_bots.len() < MAX_CRANKER_BOTS,
-        ErrorCode::InvalidParameters // Max cranker bots reached
-    );
-
-    // Add bot to optional allowlist
-    global_game_state.cranker_bots.push(bot_pubkey);
-
-    Ok(())
-}
-
-/// Remove a cranker bot from the whitelist (admin only)
-///
-/// Removes a bot address from the optional automation bot allowlist.
-///
-/// # Parameters
-/// - `bot_pubkey`: Public key of the bot to remove from whitelist
-pub fn remove_cranker_bot_internal(
-    ctx: Context<UpdateGameState>,
-    bot_pubkey: Pubkey,
-) -> Result<()> {
-    let global_game_state = &mut ctx.accounts.global_game_state;
-
-    // Find and remove bot
-    let initial_count = global_game_state.cranker_bots.len();
-    global_game_state
-        .cranker_bots
-        .retain(|&bot| bot != bot_pubkey);
-
-    require!(
-        global_game_state.cranker_bots.len() < initial_count,
-        ErrorCode::InvalidParameters // Bot not found in whitelist
-    );
-
     Ok(())
 }
 
