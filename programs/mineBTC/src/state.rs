@@ -837,7 +837,7 @@ pub struct PlayerData {
     /// Stores the mint addresses of staked doges
     pub staked_doges: Vec<Pubkey>,
     /// Current doge multiplier (1000 = 1x, 1500 = 1.5x, etc.)
-    /// Calculated based on number of staked doges (same scale as BASE_MULTIPLIER)
+    /// Effective player multiplier after applying the MAX_MULTIPLIER cap.
     pub doge_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)

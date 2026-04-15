@@ -28,6 +28,70 @@ use crate::state::*;
 // --------------  DOGE NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
+fn load_program_account<T: AccountDeserialize>(account: &AccountInfo<'_>) -> Result<T> {
+    require!(account.owner == &crate::ID, ErrorCode::InvalidAccount);
+    let data = account.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    T::try_deserialize(&mut data_slice)
+}
+
+fn load_staked_doge_raw_multiplier(
+    remaining_accounts: &[AccountInfo<'_>],
+    expected_mints: &[Pubkey],
+) -> Result<u64> {
+    msg!(
+        "🧮 [load_staked_doge_raw_multiplier] expected_mints={} remaining_accounts={} expected={:?}",
+        expected_mints.len(),
+        remaining_accounts.len(),
+        expected_mints
+    );
+    require!(
+        remaining_accounts.len() == expected_mints.len(),
+        ErrorCode::InvalidParameters
+    );
+
+    let mut seen_mints: Vec<Pubkey> = Vec::with_capacity(expected_mints.len());
+    let mut raw_multiplier = BASE_MULTIPLIER as u64;
+
+    for account in remaining_accounts {
+        let doge_metadata: DogeMetadata = load_program_account(account)?;
+        let mint = doge_metadata.mint;
+        let (expected_pda, _) =
+            Pubkey::find_program_address(&[DOGE_METADATA_SEED.as_ref(), mint.as_ref()], &crate::ID);
+        require!(account.key() == expected_pda, ErrorCode::InvalidAccount);
+        require!(expected_mints.contains(&mint), ErrorCode::InvalidParameters);
+        require!(!seen_mints.contains(&mint), ErrorCode::InvalidParameters);
+        msg!(
+            "   [load_staked_doge_raw_multiplier] metadata={} mint={} multiplier={} faction_id={} expected_pda_match={}",
+            account.key(),
+            mint,
+            doge_metadata.multiplier as f64 / 1000.0,
+            doge_metadata.faction_id,
+            account.key() == expected_pda
+        );
+
+        raw_multiplier = raw_multiplier
+            .checked_add(doge_metadata.multiplier as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        seen_mints.push(mint);
+    }
+
+    for expected_mint in expected_mints {
+        require!(
+            seen_mints.contains(expected_mint),
+            ErrorCode::InvalidParameters
+        );
+    }
+
+    msg!(
+        "✅ [load_staked_doge_raw_multiplier] raw_multiplier={}x loaded_mints={:?}",
+        raw_multiplier as f64 / 1000.0,
+        seen_mints
+    );
+
+    Ok(raw_multiplier)
+}
+
 /// Simulate mint costs for multiple doges accounting for bonding curve pricing
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
 /// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
@@ -516,10 +580,11 @@ pub fn int_admin_mint_doge(
     Ok(())
 }
 
-/// Stake a Doge to boost hashpower (multiplier applies to staked minebtc and LP)
-/// Each doge's multiplier (BASE_MULTIPLIER=1000 = 1.0x at genesis) is ADDED to the player's doge_multiplier.
-/// Example: 2 genesis doges = 1000+1000 = 2000 (2.0x). Mutated doges with higher multipliers add more.
-/// Max player multiplier capped at MAX_MULTIPLIER (10000 = 10.0x).
+/// Stake a Doge to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
+/// The Doge's own faction does not matter for staking boosts.
+/// The effective multiplier is capped at MAX_MULTIPLIER for reward-share math.
+/// Clients must pass metadata accounts for all already-staked doges in `remaining_accounts`
+/// so the program can derive the exact pre-stake multiplier without storing extra state.
 pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
@@ -527,6 +592,34 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let current_time = Clock::get()?.unix_timestamp;
     let doge_mint = doge_metadata.mint;
     let doge_multiplier = doge_metadata.multiplier;
+    msg!(
+        "🧭 [stake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
+        ctx.accounts.user.key(),
+        player_data.key(),
+        faction_state.key(),
+        player_data.faction_id,
+        doge_mint,
+        doge_metadata.faction_id,
+        doge_multiplier as f64 / 1000.0
+    );
+    msg!(
+        "🧾 [stake_doge] player_before staked_doges={:?} doge_multiplier={}x dogebtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        player_data.staked_doges,
+        player_data.doge_multiplier as f64 / 1000.0,
+        player_data.dogebtc_hashpower as f64 / 1e6,
+        player_data.lp_hashpower as f64 / 1e6,
+        player_data.pending_sol_rewards as f64 / 1e9,
+        player_data.pending_minebtc_rewards as f64 / 1e6
+    );
+    let prev_faction_dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
+    let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
+    let prev_faction_doges_staked = faction_state.doges_staked;
+    msg!(
+        "🧾 [stake_doge] faction_before dogebtc_hashpower={} lp_hashpower={} doges_staked={}",
+        prev_faction_dogebtc_hashpower as f64 / 1e6,
+        prev_faction_lp_hashpower as f64 / 1e6,
+        prev_faction_doges_staked
+    );
 
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
@@ -541,8 +634,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         ErrorCode::DogeAlreadyAtGuard
     );
     require!(
-        doge_metadata.faction_id == player_data.faction_id
-            && doge_metadata.faction_id == faction_state.faction_id,
+        player_data.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
     require!(
@@ -579,18 +671,40 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
         )?;
-
-    // Add doge to player's staked doges list
-    player_data.staked_doges.push(doge_mint);
-
-    // Calculate new multiplier based on number of staked doges
-    let old_multiplier = player_data.doge_multiplier as u64;
-    let new_multiplier =
-        calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, true) as u64;
-    player_data.doge_multiplier = new_multiplier as u16;
     msg!(
-        "⚡ Updated doge multiplier: ({})x",
-        player_data.doge_multiplier as f64 / 1000.0
+        "💹 [stake_doge] pending_after_reward_sync sol={} minebtc={}",
+        player_data.pending_sol_rewards as f64 / 1e9,
+        player_data.pending_minebtc_rewards as f64 / 1e6
+    );
+
+    // Derive the exact multiplier from currently staked doges so cap-hit flows remain reversible
+    // without storing extra player state.
+    let existing_staked_doges = player_data.staked_doges.clone();
+    let existing_raw_multiplier =
+        load_staked_doge_raw_multiplier(ctx.remaining_accounts, &existing_staked_doges)?;
+    let old_multiplier = capped_player_multiplier(existing_raw_multiplier) as u64;
+    require!(
+        player_data.doge_multiplier == old_multiplier as u16,
+        ErrorCode::InvalidState
+    );
+    let (_, new_effective_multiplier) =
+        add_doge_multiplier(existing_raw_multiplier, doge_multiplier)?;
+    msg!(
+        "⚙️ [stake_doge] multiplier_math existing_raw={}x old_effective={}x added={}x new_raw={}x new_effective={}x",
+        existing_raw_multiplier as f64 / 1000.0,
+        old_multiplier as f64 / 1000.0,
+        doge_multiplier as f64 / 1000.0,
+        (existing_raw_multiplier + doge_multiplier as u64) as f64 / 1000.0,
+        new_effective_multiplier as f64 / 1000.0
+    );
+
+    // Add doge to player's staked doges list after validating the previous multiplier state.
+    player_data.staked_doges.push(doge_mint);
+    player_data.doge_multiplier = new_effective_multiplier;
+    msg!(
+        "⚡ Updated doge multiplier: effective=({})x raw_total=({})x",
+        player_data.doge_multiplier as f64 / 1000.0,
+        (existing_raw_multiplier + doge_multiplier as u64) as f64 / 1000.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
@@ -599,6 +713,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
 
     // Recalculate hashpower with new multiplier (multiply first to avoid precision loss)
     // Formula: new_hashpower = (old_hashpower * new_multiplier) / old_multiplier
+    let new_multiplier = player_data.doge_multiplier as u64;
     if old_multiplier > 0 {
         player_data.dogebtc_hashpower = (existing_dogebtc_hashpower as u128
             * new_multiplier as u128
@@ -630,20 +745,27 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         player_data.dogebtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
-    );
+    )?;
     msg!(
         "   Faction minebtc hashpower: {} -> {}",
-        faction_state.total_dogebtc_hashpower as f64 / 1e6,
+        prev_faction_dogebtc_hashpower as f64 / 1e6,
         faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
     msg!(
         "   Faction LP hashpower: {} -> {}",
-        faction_state.total_lp_hashpower as f64 / 1e6,
+        prev_faction_lp_hashpower as f64 / 1e6,
         faction_state.total_lp_hashpower as f64 / 1e6
     );
 
-    faction_state.doges_staked += 1;
-    msg!("   Faction doges staked: {} ", faction_state.doges_staked);
+    faction_state.doges_staked = faction_state
+        .doges_staked
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!(
+        "   Faction doges staked: {} -> {}",
+        prev_faction_doges_staked,
+        faction_state.doges_staked
+    );
 
     // Update doge metadata
     // Set new owner (using Pubkey instead of Option)
@@ -656,7 +778,6 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
         doge_mint: doge_mint,
-        faction_id: player_data.faction_id,
         doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.doge_multiplier,
         dogebtc_hashpower: player_data.dogebtc_hashpower,
@@ -668,6 +789,8 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
 }
 
 /// Unstake a Doge (reduces multiplier and recalculates hashpower)
+/// Clients must pass metadata accounts for all doges that remain staked after this unstake
+/// in `remaining_accounts` so the program can derive the exact post-unstake multiplier.
 pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data = &mut ctx.accounts.player_data;
@@ -676,6 +799,34 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let incubated_by_player = doge_metadata.incubated_player_data;
     let current_time = Clock::get()?.unix_timestamp;
     let doge_multiplier = doge_metadata.multiplier;
+    msg!(
+        "🧭 [unstake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
+        ctx.accounts.user.key(),
+        player_data.key(),
+        faction_state.key(),
+        player_data.faction_id,
+        doge_mint,
+        doge_metadata.faction_id,
+        doge_multiplier as f64 / 1000.0
+    );
+    msg!(
+        "🧾 [unstake_doge] player_before staked_doges={:?} doge_multiplier={}x dogebtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        player_data.staked_doges,
+        player_data.doge_multiplier as f64 / 1000.0,
+        player_data.dogebtc_hashpower as f64 / 1e6,
+        player_data.lp_hashpower as f64 / 1e6,
+        player_data.pending_sol_rewards as f64 / 1e9,
+        player_data.pending_minebtc_rewards as f64 / 1e6
+    );
+    let prev_faction_dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
+    let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
+    let prev_faction_doges_staked = faction_state.doges_staked;
+    msg!(
+        "🧾 [unstake_doge] faction_before dogebtc_hashpower={} lp_hashpower={} doges_staked={}",
+        prev_faction_dogebtc_hashpower as f64 / 1e6,
+        prev_faction_lp_hashpower as f64 / 1e6,
+        prev_faction_doges_staked
+    );
 
     // Verify NFT is in custody PDA
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
@@ -689,8 +840,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         ErrorCode::DogeNotAtGuard
     );
     require!(
-        doge_metadata.faction_id == player_data.faction_id
-            && doge_metadata.faction_id == faction_state.faction_id,
+        player_data.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
     require!(
@@ -715,6 +865,35 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
         )?;
+    msg!(
+        "💹 [unstake_doge] pending_after_reward_sync sol={} minebtc={}",
+        player_data.pending_sol_rewards as f64 / 1e9,
+        player_data.pending_minebtc_rewards as f64 / 1e6
+    );
+
+    // Build the expected post-unstake doge set before mutating state so we can validate
+    // `remaining_accounts` against it.
+    let mut remaining_staked_doges = player_data.staked_doges.clone();
+    if let Some(index) = remaining_staked_doges
+        .iter()
+        .position(|&mint| mint == doge_mint)
+    {
+        remaining_staked_doges.remove(index);
+    } else {
+        return Err(ErrorCode::InvalidParameters.into());
+    }
+
+    // Derive the exact pre/post unstake multipliers from Doge metadata instead of stored raw state.
+    let remaining_raw_multiplier =
+        load_staked_doge_raw_multiplier(ctx.remaining_accounts, &remaining_staked_doges)?;
+    let current_raw_multiplier = remaining_raw_multiplier
+        .checked_add(doge_multiplier as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let old_multiplier = capped_player_multiplier(current_raw_multiplier) as u64;
+    require!(
+        player_data.doge_multiplier == old_multiplier as u16,
+        ErrorCode::InvalidState
+    );
 
     // Remove doge from player's staked doges list
     if let Some(index) = player_data
@@ -731,19 +910,28 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         return Err(ErrorCode::InvalidParameters.into());
     }
 
-    // Calculate new multiplier based on number of staked doges
-    let old_multiplier = player_data.doge_multiplier as u64;
-    let new_multiplier =
-        calc_player_multiplier(old_multiplier as u16, doge_multiplier as u16, false) as u64;
-    player_data.doge_multiplier = new_multiplier as u16;
+    // Derive the new effective multiplier from the exact remaining raw sum.
+    let (_, new_effective_multiplier) =
+        remove_doge_multiplier(current_raw_multiplier, doge_multiplier)?;
+    player_data.doge_multiplier = new_effective_multiplier;
     msg!(
-        "⚡ Updated doge multiplier: ({})x",
-        player_data.doge_multiplier as f64 / 1000.0
+        "⚙️ [unstake_doge] multiplier_math current_raw={}x old_effective={}x removed={}x remaining_raw={}x new_effective={}x",
+        current_raw_multiplier as f64 / 1000.0,
+        old_multiplier as f64 / 1000.0,
+        doge_multiplier as f64 / 1000.0,
+        remaining_raw_multiplier as f64 / 1000.0,
+        new_effective_multiplier as f64 / 1000.0
+    );
+    msg!(
+        "⚡ Updated doge multiplier: effective=({})x raw_total=({})x",
+        player_data.doge_multiplier as f64 / 1000.0,
+        remaining_raw_multiplier as f64 / 1000.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
     let existing_dogebtc_hashpower = player_data.dogebtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
+    let new_multiplier = player_data.doge_multiplier as u64;
 
     if old_multiplier > 0 {
         player_data.dogebtc_hashpower = (existing_dogebtc_hashpower as u128
@@ -770,22 +958,25 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         player_data.dogebtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
-    );
+    )?;
     msg!(
         "   Faction minebtc hashpower: {} -> {}",
-        faction_state.total_dogebtc_hashpower as f64 / 1e6,
+        prev_faction_dogebtc_hashpower as f64 / 1e6,
         faction_state.total_dogebtc_hashpower as f64 / 1e6
     );
     msg!(
         "   Faction LP hashpower: {} -> {}",
-        faction_state.total_lp_hashpower as f64 / 1e6,
+        prev_faction_lp_hashpower as f64 / 1e6,
         faction_state.total_lp_hashpower as f64 / 1e6
     );
 
-    faction_state.doges_staked -= 1;
+    faction_state.doges_staked = faction_state
+        .doges_staked
+        .checked_sub(1)
+        .ok_or(ErrorCode::InvalidState)?;
     msg!(
         "   Faction doges staked: {} -> {}",
-        faction_state.doges_staked,
+        prev_faction_doges_staked,
         faction_state.doges_staked
     );
 
@@ -820,7 +1011,6 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         player: player_data.key(),
         doge_mint: doge_mint,
         doge_metadata_account: doge_metadata.key(),
-        faction_id: player_data.faction_id,
         player_multiplier: player_data.doge_multiplier,
         dogebtc_hashpower: player_data.dogebtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
@@ -1225,29 +1415,82 @@ fn update_faction_hashpower(
     new_dogebtc_hashpower: u64,
     old_lp_hashpower: u64,
     new_lp_hashpower: u64,
-) {
-    faction_state.total_dogebtc_hashpower =
-        faction_state.total_dogebtc_hashpower - old_dogebtc_hashpower + new_dogebtc_hashpower;
-    faction_state.total_lp_hashpower =
-        faction_state.total_lp_hashpower - old_lp_hashpower + new_lp_hashpower;
+) -> Result<()> {
+    msg!(
+        "🧮 [update_faction_hashpower] faction_id={} dogebtc_delta={} -> {} lp_delta={} -> {}",
+        faction_state.faction_id,
+        old_dogebtc_hashpower as f64 / 1e6,
+        new_dogebtc_hashpower as f64 / 1e6,
+        old_lp_hashpower as f64 / 1e6,
+        new_lp_hashpower as f64 / 1e6
+    );
+    faction_state.total_dogebtc_hashpower = faction_state
+        .total_dogebtc_hashpower
+        .checked_sub(old_dogebtc_hashpower)
+        .ok_or(ErrorCode::InvalidState)?
+        .checked_add(new_dogebtc_hashpower)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_state.total_lp_hashpower = faction_state
+        .total_lp_hashpower
+        .checked_sub(old_lp_hashpower)
+        .ok_or(ErrorCode::InvalidState)?
+        .checked_add(new_lp_hashpower)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    Ok(())
 }
 
-fn calc_player_multiplier(existing_multiplier: u16, doge_multiplier: u16, to_add: bool) -> u16 {
-    if to_add {
-        let new_multiplier = existing_multiplier + doge_multiplier;
-        if new_multiplier > MAX_MULTIPLIER {
-            return MAX_MULTIPLIER;
-        }
-        return new_multiplier;
-    } else {
-        if doge_multiplier > existing_multiplier {
-            return BASE_MULTIPLIER as u16;
-        }
-        let new_multiplier = existing_multiplier - doge_multiplier;
-        if new_multiplier < BASE_MULTIPLIER as u16 {
-            return BASE_MULTIPLIER as u16;
-        }
-        return new_multiplier;
+fn capped_player_multiplier(raw_multiplier: u64) -> u16 {
+    raw_multiplier.min(MAX_MULTIPLIER as u64) as u16
+}
+
+fn add_doge_multiplier(existing_raw_multiplier: u64, doge_multiplier: u32) -> Result<(u64, u16)> {
+    let new_raw_multiplier = existing_raw_multiplier
+        .checked_add(doge_multiplier as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    Ok((
+        new_raw_multiplier,
+        capped_player_multiplier(new_raw_multiplier),
+    ))
+}
+
+fn remove_doge_multiplier(
+    existing_raw_multiplier: u64,
+    doge_multiplier: u32,
+) -> Result<(u64, u16)> {
+    let reduced_raw_multiplier = existing_raw_multiplier
+        .checked_sub(doge_multiplier as u64)
+        .ok_or(ErrorCode::InvalidState)?;
+    let new_raw_multiplier = reduced_raw_multiplier.max(BASE_MULTIPLIER as u64);
+    Ok((
+        new_raw_multiplier,
+        capped_player_multiplier(new_raw_multiplier),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multiplier_cap_is_reversible_with_raw_sum() {
+        let starting_raw = 9_500u64;
+        let (raw_after_stake, effective_after_stake) =
+            add_doge_multiplier(starting_raw, 1_000).unwrap();
+        assert_eq!(raw_after_stake, 10_500);
+        assert_eq!(effective_after_stake, MAX_MULTIPLIER);
+
+        let (raw_after_unstake, effective_after_unstake) =
+            remove_doge_multiplier(raw_after_stake, 1_000).unwrap();
+        assert_eq!(raw_after_unstake, starting_raw);
+        assert_eq!(effective_after_unstake, 9_500);
+    }
+
+    #[test]
+    fn large_doge_multiplier_does_not_truncate() {
+        let (raw_after_stake, effective_after_stake) =
+            add_doge_multiplier(BASE_MULTIPLIER as u64, 70_000).unwrap();
+        assert_eq!(raw_after_stake, 71_000);
+        assert_eq!(effective_after_stake, MAX_MULTIPLIER);
     }
 }
 

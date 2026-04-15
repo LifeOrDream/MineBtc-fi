@@ -147,8 +147,6 @@ pub struct DogeStaked {
     pub player: Pubkey,
     /// Doge mint address
     pub doge_mint: Pubkey,
-    /// Faction ID the doge belongs to
-    pub faction_id: u8,
     /// Doge metadata account address
     pub doge_metadata_account: Pubkey,
     /// Player's current multiplier after staking
@@ -173,8 +171,6 @@ pub struct DogeUnstaked {
     pub doge_mint: Pubkey,
     /// Doge metadata account address
     pub doge_metadata_account: Pubkey,
-    /// Faction ID the doge belongs to
-    pub faction_id: u8,
     /// Player's current multiplier after unstaking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after unstaking
@@ -206,15 +202,12 @@ pub struct DogeSentToHeaven {
 pub struct MineBtcStaked {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub faction_id: u8,         // faction staked INTO (target faction)
-    pub player_faction_id: u8,  // player's home faction
-    pub is_cross_faction: bool, // true if staking outside home faction
+    pub faction_id: u8, // player's home faction (staking target)
     pub position_index: u8,
     pub position_key: Pubkey,
-    pub staked_amount: u64,         // actual amount staked (after burn tax)
-    pub weighted_amount: u64,       // weighted amount (before doge multiplier)
-    pub multiplier: u16,            // lockup multiplier (100 = 1x)
-    pub cross_faction_penalty: u64, // hashpower lost to penalty (0 if same faction)
+    pub staked_amount: u64,   // actual amount staked (after burn tax)
+    pub weighted_amount: u64, // weighted amount (before doge multiplier)
+    pub multiplier: u16,      // lockup multiplier (100 = 1x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -241,15 +234,12 @@ pub struct MineBtcUnstaked {
 pub struct LiquidityStaked {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub faction_id: u8,         // faction staked INTO (target faction)
-    pub player_faction_id: u8,  // player's home faction
-    pub is_cross_faction: bool, // true if staking outside home faction
+    pub faction_id: u8, // player's home faction (staking target)
     pub position_index: u8,
     pub position_key: Pubkey,
-    pub staked_amount: u64,         // actual amount staked
-    pub weighted_amount: u64,       // weighted amount (before doge multiplier)
-    pub multiplier: u16,            // lockup multiplier (100 = 1x)
-    pub cross_faction_penalty: u64, // hashpower lost to penalty (0 if same faction)
+    pub staked_amount: u64,   // actual amount staked
+    pub weighted_amount: u64, // weighted amount (before doge multiplier)
+    pub multiplier: u16,      // lockup multiplier (100 = 1x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -612,7 +602,6 @@ pub struct DistributionRoundFinished {
 pub struct DogeUsedForGameplay {
     pub user: Pubkey,
     pub doge_mint: Pubkey,
-    pub faction_id: u8,
     pub timestamp: i64,
 }
 
@@ -621,7 +610,6 @@ pub struct DogeUsedForGameplay {
 pub struct DogeWithdrawnFromGameplay {
     pub user: Pubkey,
     pub doge_mint: Pubkey,
-    pub faction_id: u8,
     pub timestamp: i64,
 }
 

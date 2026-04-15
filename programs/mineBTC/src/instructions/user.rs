@@ -236,8 +236,13 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
     require!(
         player_data.dogebtc_hashpower == 0
             && player_data.lp_hashpower == 0
-            && player_data.staked_doges.is_empty(),
-        ErrorCode::InvalidParameters
+            && player_data.staked_doges.is_empty()
+            && player_data.doge_multiplier == BASE_MULTIPLIER as u16
+            && player_data.gameplay_doge == Pubkey::default()
+            && player_data.active_multiplier == BASE_MULTIPLIER
+            && player_data.gameplay_doge_dna == [0u8; 32]
+            && player_data.gameplay_doge_xp == 0,
+        ErrorCode::InvalidState
     );
 
     // Charge change_faction_fee
@@ -2870,9 +2875,13 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
         ErrorCode::InvalidParameters
     );
 
-    // Verify faction matches
+    // Gameplay doges must match the player's current home faction.
     require!(
-        doge_metadata.faction_id == faction_state.faction_id,
+        player_data.faction_id == faction_state.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        doge_metadata.faction_id == player_data.faction_id,
         ErrorCode::InvalidFactionId
     );
 
@@ -2900,7 +2909,10 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     player_data.gameplay_doge_xp = doge_metadata.xp;
 
     // Update faction state
-    faction_state.doges_playing += 1;
+    faction_state.doges_playing = faction_state
+        .doges_playing
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update doge metadata
     doge_metadata.incubated_player_data = player_data.owner;
@@ -2919,7 +2931,6 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     emit!(DogeUsedForGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
-        faction_id: player_data.faction_id,
         timestamp: current_time,
     });
 
@@ -2954,6 +2965,14 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     require!(
         doge_metadata.incubated_player_data == player_data.owner,
         ErrorCode::Unauthorized
+    );
+    require!(
+        player_data.faction_id == faction_state.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        doge_metadata.faction_id == player_data.faction_id,
+        ErrorCode::InvalidFactionId
     );
 
     // Transfer NFT back to user
@@ -3001,7 +3020,10 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     player_data.gameplay_doge_xp = 0;
 
     // Update faction state
-    faction_state.doges_playing = faction_state.doges_playing.saturating_sub(1);
+    faction_state.doges_playing = faction_state
+        .doges_playing
+        .checked_sub(1)
+        .ok_or(ErrorCode::InvalidState)?;
 
     // Update doge metadata
     doge_metadata.incubated_player_data = Pubkey::default();
@@ -3013,7 +3035,6 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     emit!(DogeWithdrawnFromGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
-        faction_id: player_data.faction_id,
         timestamp: current_time,
     });
 
