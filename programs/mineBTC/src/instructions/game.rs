@@ -666,7 +666,29 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         .saturating_add(game_session.faction_stakers)
         .saturating_add(game_session.motherlode_rewards);
 
-    if rebase_config.is_active && rebase_state.stage == 0 {
+    // If settle_rebase fired mid-round (LP burn landed during this round's
+    // play window), rebase_config.current_rebase_id advanced but the new
+    // rebase_state was never initialized by a bet. The Accounts struct uses
+    // init_if_needed so we got an empty account — stamp its bump + rebase_id
+    // and align rebase_settle_cycle the same way the first bet would (see
+    // internal_process_bets init branch). After this, the next join_bets on
+    // the new rebase enters the existing populate branch (rebase_id != 0).
+    if rebase_state.rebase_id == 0 {
+        rebase_state.bump = ctx.bumps.rebase_state;
+        rebase_state.rebase_id = rebase_config.current_rebase_id;
+
+        let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+        rebase_config.rebase_settle_cycle = lp_ops
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
+            "   🧱 Initialized empty rebase_state for rebase {} (settle after LP cycle #{})",
+            rebase_state.rebase_id,
+            rebase_config.rebase_settle_cycle
+        );
+        // Nothing else to track here — the next bet will fill start_ranks,
+        // active_faction_count, etc.
+    } else if rebase_config.is_active && rebase_state.stage == 0 {
         rebase_state.total_dogebtc_mined_in_rebase = rebase_state
             .total_dogebtc_mined_in_rebase
             .checked_add(actually_distributed)
@@ -913,11 +935,21 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
-    /// Rebase state for current rebase (mut for mining tracking + settlement)
+    /// Rebase state for current rebase (mut for mining tracking + settlement).
+    /// `init_if_needed` so a settle_rebase that fires between end_round and
+    /// end_round_faction_rewards (e.g. economy-cycle-loop LP burn landing mid-round)
+    /// doesn't permanently brick can_begin_round: without this, current_rebase_id
+    /// advances but no bet has yet initialized the new rebase_state, and every
+    /// subsequent end_round_faction_rewards reverts with AccountNotInitialized,
+    /// leaving the game stuck at stage=1 forever. init_if_needed lets this
+    /// instruction create an empty rebase_state if needed; the first bet of the
+    /// new cycle will go through the same PDA and fill in real state.
     #[account(
-        mut,
+        init_if_needed,
+        payer = authority,
+        space = RebaseState::LEN,
         seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
-        bump = rebase_state.bump,
+        bump,
     )]
     pub rebase_state: Box<Account<'info, RebaseState>>,
 
