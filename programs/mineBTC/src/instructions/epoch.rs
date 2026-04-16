@@ -103,18 +103,12 @@ pub fn compute_faction_reward_pools(epoch_state: &mut EpochState) -> Result<()> 
 // ============================= EPOCH CONFIG ==============================================
 // ========================================================================================
 
-pub fn initialize_epoch_config_internal(
-    ctx: Context<InitializeEpochConfig>,
-    epoch_duration: u64,
-) -> Result<()> {
-    require!(epoch_duration > 0, ErrorCode::InvalidParameters);
-
+pub fn initialize_epoch_config_internal(ctx: Context<InitializeEpochConfig>) -> Result<()> {
     let epoch_config = &mut ctx.accounts.epoch_config;
     epoch_config.bump = ctx.bumps.epoch_config;
-    epoch_config.epoch_duration = epoch_duration;
     epoch_config.current_epoch_id = 1;
-    epoch_config.last_epoch_start = 0;
     epoch_config.is_active = true;
+    epoch_config.epoch_settle_cycle = 0;
 
     // Sequential starting ranks so the first epoch has a sensible baseline.
     let mut initial_ranks = [0u8; NUM_FACTIONS];
@@ -151,15 +145,10 @@ pub struct InitializeEpochConfig<'info> {
 
 pub fn update_epoch_config_internal(
     ctx: Context<UpdateEpochConfig>,
-    epoch_duration: Option<u64>,
     is_active: Option<bool>,
 ) -> Result<()> {
     let epoch_config = &mut ctx.accounts.epoch_config;
 
-    if let Some(duration) = epoch_duration {
-        require!(duration > 0, ErrorCode::InvalidParameters);
-        epoch_config.epoch_duration = duration;
-    }
     if let Some(active) = is_active {
         epoch_config.is_active = active;
     }
@@ -193,42 +182,54 @@ pub struct UpdateEpochConfig<'info> {
 pub fn finalize_epoch_settlement(
     epoch_config: &mut EpochConfig,
     epoch_state: &mut EpochState,
-    clock: &Clock,
 ) -> Result<()> {
     let active_factions = epoch_state.active_faction_count as usize;
     validate_active_faction_count(active_factions)?;
 
-    epoch_state.epoch_mining_pool = epoch_state.total_dogebtc_mined_in_epoch;
+    // Check if any mutations happened. If mutations were disabled (rpg_progression off),
+    // all scores will be 0 and no epoch rewards should be distributed.
+    let total_mutation_score: u64 = epoch_state
+        .faction_mutation_scores
+        .iter()
+        .take(active_factions)
+        .sum();
 
-    // Rank factions by their accumulated mutation scores.
-    let mut mutation_scores_i64 = [0i64; NUM_FACTIONS];
-    for i in 0..active_factions {
-        mutation_scores_i64[i] = epoch_state.faction_mutation_scores[i] as i64;
+    if total_mutation_score == 0 {
+        // No mutations this epoch -- skip reward distribution entirely.
+        // Mining pool stays at 0 so nobody can claim.
+        epoch_state.epoch_mining_pool = 0;
+        epoch_state.stage = 1;
+    } else {
+        epoch_state.epoch_mining_pool = epoch_state.total_dogebtc_mined_in_epoch;
+
+        // Rank factions by their accumulated mutation scores.
+        let mut mutation_scores_i64 = [0i64; NUM_FACTIONS];
+        for i in 0..active_factions {
+            mutation_scores_i64[i] = epoch_state.faction_mutation_scores[i] as i64;
+        }
+        let (final_ranks, _) = compute_rankings(&mutation_scores_i64, active_factions)?;
+        epoch_state.final_ranks = final_ranks;
+
+        for faction_id in 0..active_factions {
+            let (direction, rank_delta) = resolve_direction_from_ranks(
+                epoch_state.start_ranks[faction_id],
+                epoch_state.final_ranks[faction_id],
+            );
+            epoch_state.rank_deltas[faction_id] = rank_delta;
+            epoch_state.resolved_directions[faction_id] = direction.as_index() as u8;
+        }
+
+        compute_faction_reward_pools(epoch_state)?;
+        epoch_state.stage = 1;
+
+        // Persist mutation-based ranks for next epoch's start_ranks.
+        epoch_config.prev_epoch_mutation_ranks = final_ranks;
     }
-    let (final_ranks, _) = compute_rankings(&mutation_scores_i64, active_factions)?;
-    epoch_state.final_ranks = final_ranks;
-
-    // Resolve directions from rank deltas (start_ranks vs final_ranks).
-    for faction_id in 0..active_factions {
-        let (direction, rank_delta) = resolve_direction_from_ranks(
-            epoch_state.start_ranks[faction_id],
-            epoch_state.final_ranks[faction_id],
-        );
-        epoch_state.rank_deltas[faction_id] = rank_delta;
-        epoch_state.resolved_directions[faction_id] = direction.as_index() as u8;
-    }
-
-    compute_faction_reward_pools(epoch_state)?;
-    epoch_state.stage = 1;
-
-    // Persist mutation-based ranks for next epoch's start_ranks.
-    epoch_config.prev_epoch_mutation_ranks = final_ranks;
 
     epoch_config.current_epoch_id = epoch_config
         .current_epoch_id
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    epoch_config.last_epoch_start = clock.unix_timestamp.max(0) as u64;
 
     Ok(())
 }
@@ -236,16 +237,18 @@ pub fn finalize_epoch_settlement(
 pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     let epoch_config = &mut ctx.accounts.epoch_config;
     let epoch_state = &mut ctx.accounts.epoch_state;
-    let clock = Clock::get()?;
+    let mining = &ctx.accounts.mine_btc_mining;
 
     require!(epoch_state.stage == 0, ErrorCode::EpochNotActive);
+    // Settlement is gated by the economy cycle: the LP burn must have completed.
     require!(
-        clock.unix_timestamp >= epoch_state.end_timestamp as i64,
+        mining.pol_stats.lp_operations_count >= epoch_config.epoch_settle_cycle,
         ErrorCode::EpochNotEnded
     );
 
-    finalize_epoch_settlement(epoch_config, epoch_state, &clock)?;
+    finalize_epoch_settlement(epoch_config, epoch_state)?;
 
+    let clock = Clock::get()?;
     emit!(EpochSettled {
         epoch_id: epoch_state.epoch_id,
         total_dogebtc_mined: epoch_state.total_dogebtc_mined_in_epoch,
@@ -262,6 +265,8 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
     Ok(())
 }
 
+/// Fully permissionless -- all inputs (mutation scores) are already on-chain.
+/// Anyone can crank settlement once the economy cycle's LP burn has completed.
 #[derive(Accounts)]
 pub struct SettleEpoch<'info> {
     #[account(
@@ -278,7 +283,14 @@ pub struct SettleEpoch<'info> {
     )]
     pub epoch_state: Account<'info, EpochState>,
 
-    pub authority: Signer<'info>,
+    #[account(
+        seeds = [MINE_BTC_MINING_SEED],
+        bump = mine_btc_mining.bump,
+    )]
+    pub mine_btc_mining: Account<'info, MineBtcMining>,
+
+    /// Anyone can settle -- no authority check needed.
+    pub cranker: Signer<'info>,
 }
 
 // ========================================================================================

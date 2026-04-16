@@ -1258,22 +1258,22 @@ impl AutominerVault {
 
 /// Maximum number of score update entries stored per epoch (for audit trail)
 /// Epoch Configuration PDA (Seed: `[b"epoch-config"]`)
-/// Controls epoch duration and tracks mutation-driven rankings across epochs.
+/// Epochs are tied to the economy cycle: one epoch per LP-burn cycle.
+/// Settlement becomes possible once lp_operations_count reaches epoch_settle_cycle.
 #[account]
 pub struct EpochConfig {
     pub bump: u8,
 
-    /// Duration of each epoch in seconds (default: 86400 = 24h)
-    pub epoch_duration: u64,
-
     /// Current epoch ID (incrementing counter, starts at 1)
     pub current_epoch_id: u64,
 
-    /// Timestamp when the current epoch started
-    pub last_epoch_start: u64,
-
     /// Whether epoch mining is active
     pub is_active: bool,
+
+    /// The LP operations count that triggers settlement of the current epoch.
+    /// Set to `pol_stats.lp_operations_count + 1` when the epoch starts,
+    /// meaning the epoch settles after the next full economy cycle completes.
+    pub epoch_settle_cycle: u32,
 
     /// Rankings from the previous epoch's mutation scores.
     /// Used as start_ranks when the next epoch auto-starts.
@@ -1284,26 +1284,24 @@ pub struct EpochConfig {
 impl EpochConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // epoch_duration
         8 +     // current_epoch_id
-        8 +     // last_epoch_start
         1 +     // is_active
-        (NUM_FACTIONS * 1); // prev_epoch_mutation_ranks [u8; 15]
+        4 +     // epoch_settle_cycle
+        (NUM_FACTIONS * 1); // prev_epoch_mutation_ranks
 }
 
 /// Epoch State PDA (Seed: `[b"epoch", epoch_id_u64_le]`)
 /// Tracks a single mutation-driven prediction epoch: start/final ranks derived from
 /// doge mutation scores, directional bet totals, and settlement outputs.
+/// Epoch duration is tied to the economy cycle (one LP-burn cycle).
 #[account]
 pub struct EpochState {
     pub bump: u8,
 
     /// Epoch ID
     pub epoch_id: u64,
-    /// Start timestamp
+    /// Timestamp when this epoch was auto-started
     pub start_timestamp: u64,
-    /// End timestamp (start + epoch_duration)
-    pub end_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
@@ -1342,7 +1340,6 @@ impl EpochState {
         1 +     // bump
         8 +     // epoch_id
         8 +     // start_timestamp
-        8 +     // end_timestamp
         1 +     // stage
         1 +     // active_faction_count
         8 +     // total_dogebtc_mined_in_epoch

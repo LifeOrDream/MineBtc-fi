@@ -712,7 +712,8 @@ pub struct EpochRewardsClaimed {
 pub struct EpochAutoStarted {
     pub epoch_id: u64,
     pub start_timestamp: u64,
-    pub end_timestamp: u64,
+    /// LP operations count that will trigger settlement of this epoch.
+    pub settle_cycle: u32,
 }
 
 /// Event emitted when an epoch is auto-settled inline (during end_round_faction_rewards)

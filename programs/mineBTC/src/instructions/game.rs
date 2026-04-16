@@ -692,13 +692,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
             .checked_add(mine_btc_per_round)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        let clock = Clock::get()?;
-        if clock.unix_timestamp >= epoch_state.end_timestamp as i64 {
-            crate::instructions::epoch::finalize_epoch_settlement(
-                epoch_config,
-                epoch_state,
-                &clock,
-            )?;
+        // Auto-settle epoch when the economy cycle's LP burn has completed.
+        let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+        if lp_ops >= epoch_config.epoch_settle_cycle && epoch_config.epoch_settle_cycle > 0 {
+            crate::instructions::epoch::finalize_epoch_settlement(epoch_config, epoch_state)?;
 
             emit!(EpochAutoSettled {
                 epoch_id: epoch_state.epoch_id,

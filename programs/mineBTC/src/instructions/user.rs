@@ -344,6 +344,8 @@ pub fn internal_join_bets(
         ErrorCode::InvalidParameters
     );
 
+    let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+
     // Call internal_process_bets for all bets at once
     internal_process_bets(
         round_id,
@@ -363,9 +365,10 @@ pub fn internal_join_bets(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
+        lp_ops,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
@@ -944,6 +947,8 @@ pub fn internal_execute_autominer_bet(
         rounds_remaining: new_rounds_remaining,
     };
 
+    let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
     internal_process_bets(
@@ -964,9 +969,10 @@ pub fn internal_execute_autominer_bet(
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
-        &ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
+        lp_ops,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
@@ -1546,9 +1552,10 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
-    epoch_config: &Account<'info, EpochConfig>,
+    epoch_config: &mut Account<'info, EpochConfig>,
     epoch_state: &mut Account<'info, EpochState>,
     epoch_state_bump: u8,
+    lp_operations_count: u32,
     user_epoch_bets: &mut Account<'info, UserEpochBets>,
     user_epoch_bets_bump: u8,
 ) -> Result<()> {
@@ -1583,10 +1590,6 @@ fn internal_process_bets<'info>(
         epoch_state.bump = epoch_state_bump;
         epoch_state.epoch_id = epoch_config.current_epoch_id;
         epoch_state.start_timestamp = clock.unix_timestamp.max(0) as u64;
-        epoch_state.end_timestamp = epoch_state
-            .start_timestamp
-            .checked_add(epoch_config.epoch_duration)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
         epoch_state.stage = 0;
         epoch_state.active_faction_count = active_faction_count as u8;
         epoch_state.total_dogebtc_mined_in_epoch = 0;
@@ -1600,16 +1603,20 @@ fn internal_process_bets<'info>(
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         epoch_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
 
+        // Epoch settles after the next LP burn completes.
+        epoch_config.epoch_settle_cycle = lp_operations_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
         emit!(crate::events::EpochAutoStarted {
             epoch_id: epoch_state.epoch_id,
             start_timestamp: epoch_state.start_timestamp,
-            end_timestamp: epoch_state.end_timestamp,
+            settle_cycle: epoch_config.epoch_settle_cycle,
         });
         msg!(
-            "   🌍 Auto-initialized epoch {} ({} -> {})",
+            "   🌍 Auto-initialized epoch {} (settle after LP cycle #{})",
             epoch_state.epoch_id,
-            epoch_state.start_timestamp,
-            epoch_state.end_timestamp
+            epoch_config.epoch_settle_cycle
         );
     } else {
         require!(
@@ -2405,8 +2412,8 @@ pub struct JoinBets<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (read for current_epoch_id)
-    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
+    /// Epoch config (mut: epoch_settle_cycle written on epoch auto-start)
+    #[account(mut, seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
@@ -2418,6 +2425,10 @@ pub struct JoinBets<'info> {
         bump,
     )]
     pub epoch_state: Box<Account<'info, EpochState>>,
+
+    /// Economy state (read for lp_operations_count to tie epoch cycle to economy cycle)
+    #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// User epoch bets for current epoch (init_if_needed for first bet)
     #[account(
@@ -2748,8 +2759,8 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (read for current_epoch_id)
-    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
+    /// Epoch config (mut: epoch_settle_cycle written on epoch auto-start)
+    #[account(mut, seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
@@ -2761,6 +2772,10 @@ pub struct ExecuteAutominerBet<'info> {
         bump,
     )]
     pub epoch_state: Box<Account<'info, EpochState>>,
+
+    /// Economy state (read for lp_operations_count to tie epoch cycle to economy cycle)
+    #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// User epoch bets for vault OWNER (init_if_needed, payer=caller)
     #[account(

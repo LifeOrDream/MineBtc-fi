@@ -530,25 +530,22 @@ pub mod minebtc {
     // ------------ EPOCH MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize epoch mining configuration (admin only)
-    pub fn initialize_epoch_config(
-        ctx: Context<InitializeEpochConfig>,
-        epoch_duration: u64,
-    ) -> Result<()> {
-        epoch::initialize_epoch_config_internal(ctx, epoch_duration)
+    /// Initialize epoch mining configuration (admin only).
+    /// Epoch duration is tied to the economy cycle -- one epoch per LP burn.
+    pub fn initialize_epoch_config(ctx: Context<InitializeEpochConfig>) -> Result<()> {
+        epoch::initialize_epoch_config_internal(ctx)
     }
 
     /// Update epoch mining configuration (admin only)
     pub fn update_epoch_config(
         ctx: Context<UpdateEpochConfig>,
-        epoch_duration: Option<u64>,
         is_active: Option<bool>,
     ) -> Result<()> {
-        epoch::update_epoch_config_internal(ctx, epoch_duration, is_active)
+        epoch::update_epoch_config_internal(ctx, is_active)
     }
 
     /// Settle epoch: finalize mutation-based rankings and compute reward pools.
-    /// Anyone can call once the epoch window has closed.
+    /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
         epoch::settle_epoch_internal(ctx)
     }
