@@ -173,45 +173,10 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         );
     }
 
-    // Transfer from doges treasury to buybacks (1% of 10x buyback amount, whichever is lower)
-    let doges_treasury_balance = ctx.accounts.doges_treasury.lamports();
-    let doges_treasury_rent = Rent::get()?.minimum_balance(0);
-    let doges_treasury_available = doges_treasury_balance.saturating_sub(doges_treasury_rent);
-    let mut doge_treasury_amt = 0;
-
-    if doges_treasury_available > 0 && sol_for_buybacks > 0 {
-        // Transfer whichever is lower: 1% of available doges treasury balance or 10x of buyback amount
-        doge_treasury_amt = (doges_treasury_available / 100).min(sol_for_buybacks * 10);
-        if doge_treasury_amt > 0 {
-            let doges_treasury_seeds = &[DOGES_TREASURY_SEED.as_ref(), &[ctx.bumps.doges_treasury]];
-            let doges_treasury_signer_seeds = &[&doges_treasury_seeds[..]];
-
-            anchor_lang::system_program::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.system_program.to_account_info(),
-                    anchor_lang::system_program::Transfer {
-                        from: ctx.accounts.doges_treasury.to_account_info(),
-                        to: ctx.accounts.buybacks_sol_vault.to_account_info(),
-                    },
-                    doges_treasury_signer_seeds,
-                ),
-                doge_treasury_amt,
-            )?;
-
-            buybacks_ac.total_sol_accumulated =
-                buybacks_ac.total_sol_accumulated + doge_treasury_amt;
-            msg!(
-                "🥚 Transferred {} SOL from Doge Treasury to Buybacks (1% of 10x buyback)",
-                doge_treasury_amt as f64 / 1e9
-            );
-        }
-    }
-
     // Emit event
     emit!(SolFeesWithdrawn {
         available_solana: available_solana,
         buyback_amount: sol_for_buybacks,
-        doge_treasury_amt,
         dev_earnings_amount: dev_earnings,
     });
 
@@ -1515,14 +1480,6 @@ pub struct DistributeSolFees<'info> {
 
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
-
-    /// CHECK: Doge treasury PDA (System Account) - holds doge minting fees
-    #[account(
-        mut,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(

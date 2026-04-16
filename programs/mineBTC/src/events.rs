@@ -19,7 +19,6 @@ pub struct ReferralRewardsClaimed {
 pub struct SolFeesWithdrawn {
     pub available_solana: u64,
     pub buyback_amount: u64,
-    pub doge_treasury_amt: u64,
     pub dev_earnings_amount: u64,
 }
 

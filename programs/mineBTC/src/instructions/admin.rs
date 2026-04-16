@@ -119,17 +119,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
             ctx.accounts.system_program.to_account_info(),
             system_program::Transfer {
                 from: ctx.accounts.authority.to_account_info(),
-                to: ctx.accounts.doges_treasury.to_account_info(),
-            },
-        ),
-        1,
-    )?;
-
-    anchor_lang::system_program::transfer(
-        CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            system_program::Transfer {
-                from: ctx.accounts.authority.to_account_info(),
                 to: ctx.accounts.autominer_custody.to_account_info(),
             },
         ),
@@ -1193,16 +1182,6 @@ pub struct Initialize<'info> {
     pub sol_treasury: UncheckedAccount<'info>,
 
     /// CHECK: 0-byte PDA that only stores lamports (System Account) for doge minting fees
-    #[account(
-        init,
-        payer = authority,
-        space = 0,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump,
-        owner = system_program.key()  // System-owned account for native SOL
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
-
     /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
     #[account(
         init,
