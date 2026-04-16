@@ -546,13 +546,17 @@ pub fn internal_claim_faction_treasury_for_epoch(
         0
     };
 
-    // --- 20% lucky draw: one random faction wins the whole pot ---
-    // Deterministic from epoch_id so every caller computes the same winner.
-    let lucky_faction_index = (epoch_id as usize) % active_factions;
-    // Convert index to faction_id by finding which faction has that rank
-    let is_lucky_winner = rank == lucky_faction_index;
-
-    let lucky_reward = if is_lucky_winner {
+    // --- 20% lucky draw: one random faction from rank 5+ wins the whole pot ---
+    // Only lower-ranked countries are eligible (top 5 already benefit from rank weighting).
+    // If fewer than 6 factions exist, the lowest-ranked faction gets it.
+    let eligible_start = 5.min(active_factions.saturating_sub(1));
+    let eligible_count = active_factions.saturating_sub(eligible_start);
+    let lucky_rank = if eligible_count > 0 {
+        eligible_start + (epoch_id as usize % eligible_count)
+    } else {
+        active_factions.saturating_sub(1)
+    };
+    let lucky_reward = if rank == lucky_rank {
         (treasury_balance as u128)
             .checked_mul(TaxConfig::LUCKY_DRAW_BPS as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
