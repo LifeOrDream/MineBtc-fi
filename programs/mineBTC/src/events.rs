@@ -656,8 +656,8 @@ pub struct DogeVisualMutation {
 // =============================== EPOCH EVENTS ============================================
 // ========================================================================================
 
-/// Event emitted when an epoch is settled.
-/// Rankings driven by on-chain mutation scores accumulated during the epoch.
+/// Event emitted when a rebase is settled.
+/// Rankings driven by on-chain mutation scores accumulated during the rebase.
 #[event]
 pub struct RebaseSettled {
     pub rebase_id: u64,
@@ -695,16 +695,16 @@ pub struct RebaseRewardsClaimed {
     pub timestamp: i64,
 }
 
-/// Event emitted when an epoch is auto-started inline (during join_round)
+/// Event emitted when a rebase is auto-started inline (during join_round)
 #[event]
 pub struct RebaseAutoStarted {
     pub rebase_id: u64,
     pub start_timestamp: u64,
-    /// LP operations count that will trigger settlement of this epoch.
+    /// LP operations count that will trigger settlement of this rebase.
     pub settle_cycle: u32,
 }
 
-/// Event emitted when an epoch is auto-settled inline (during end_round_faction_rewards)
+/// Event emitted when a rebase is auto-settled inline (during end_round_faction_rewards)
 #[event]
 pub struct RebaseAutoSettled {
     pub rebase_id: u64,

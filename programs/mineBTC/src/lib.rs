@@ -491,7 +491,7 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
 
     /// Initialize epoch mining configuration (admin only).
-    /// Epoch duration is tied to the economy cycle -- one epoch per LP burn.
+    /// Rebase duration is tied to the economy cycle -- one epoch per LP burn.
     pub fn initialize_rebase_config(ctx: Context<InitializeRebaseConfig>) -> Result<()> {
         rebase::initialize_rebase_config_internal(ctx)
     }

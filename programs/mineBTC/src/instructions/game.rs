@@ -651,14 +651,25 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     msg!("   Can begin new round: {}", global_state.can_begin_round);
 
     // --- REBASE MINING TRACKING (inline) ---
+    // Only count dogeBTC that was actually distributed this round (not the full emission).
+    // Empty rounds or rounds with no bets on certain directions may distribute less.
     let rebase_config = &mut ctx.accounts.rebase_config;
     let rebase_state = &mut ctx.accounts.rebase_state;
-    let mine_btc_per_round = ctx.accounts.mine_btc_mining.mine_btc_per_round;
+    let actually_distributed = game_session
+        .minebtc_winner_pool
+        .saturating_add(
+            game_session
+                .minebtc_same_faction_direction_pools
+                .iter()
+                .sum::<u64>(),
+        )
+        .saturating_add(game_session.faction_stakers)
+        .saturating_add(game_session.motherlode_rewards);
 
     if rebase_config.is_active && rebase_state.stage == 0 {
         rebase_state.total_dogebtc_mined_in_rebase = rebase_state
             .total_dogebtc_mined_in_rebase
-            .checked_add(mine_btc_per_round)
+            .checked_add(actually_distributed)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Auto-settle epoch when the economy cycle's LP burn has completed.

@@ -320,7 +320,7 @@ pub fn internal_set_player_claim_settings(
 }
 
 /// Join a round by betting SOL or using free tickets (single prediction).
-/// Each bet selects a faction and an epoch direction.
+/// Each bet selects a faction and a rebase direction.
 ///
 /// Parameters:
 /// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)

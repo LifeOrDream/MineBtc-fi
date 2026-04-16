@@ -258,3 +258,122 @@ SOL from bets
    intentional — these are tiny 10%-of-10% amounts used for price oracle,
    not large trades. Sandwich attacks on these amounts are unprofitable
    relative to the gas cost.
+
+---
+
+# Rebase Cycle: Mutation Leaderboard
+
+Each economy cycle (LP burn) triggers a **rebase** — the competitive cycle where
+doge mutations determine country rankings and distribute dogeBTC rewards.
+
+## How It Works
+
+```
+Players bet SOL in 60-second rounds
+    │
+    ├─ Mutations fire (limited by global budget + per-faction penalty)
+    │   └─ Each mutation adds score: type_weight × bet_size × multiplier
+    │
+    ├─ mutation_scores accumulate on RebaseState per faction
+    │
+    └─ total_dogebtc_mined_in_rebase grows with each round
+```
+
+When the economy cycle completes (LP burn → `lp_operations_count` increments):
+
+```
+finalize_rebase_settlement():
+    1. Rank factions by faction_mutation_scores (highest = rank 0)
+    2. Compare with start_ranks → compute rank deltas → resolve directions
+    3. Split rebase_mining_pool:
+       - 90% user pool: proportional to winning-direction bets per faction
+       - 10% doge bonus pool: same split but only for users whose doge mutated
+    4. Stage = 1 (claims open)
+    5. Persist final_ranks as next rebase's start_ranks
+    6. Advance current_rebase_id
+```
+
+## Reward Pools
+
+```
+rebase_mining_pool (total dogeBTC mined in all rounds this cycle)
+    │
+    ├─ 90% → faction_reward_pools (split by winning-direction bet weight)
+    │         Users who bet correct direction on own faction get pro-rata share
+    │
+    └─ 10% → faction_doge_reward_pools (same split, doge-eligible users only)
+              Goes to doge's accumulated_val (claimable via burn)
+```
+
+**User claims:**
+- `user_reward = faction_pool × user_bet / total_bet` (on correct direction)
+- Only own-faction bets count
+- Doge bonus: same formula but using `eligible_doge_direction_totals` as denominator
+
+## Tax Treasury Distribution (also tied to rebase)
+
+After settlement, `claim_faction_treasury_for_rebase` distributes the faction
+treasury vault (accumulated from 1% transfer tax):
+
+```
+treasury_balance
+    ├─ 80% rank-weighted: rank_points = active_factions - rank
+    │   Higher rank = more reward, but every faction gets something
+    │
+    └─ 20% lucky draw: one random faction from rank 5+ wins the whole pot
+        Equal probability per eligible faction, deterministic from rebase_id
+```
+
+Rewards go to faction stakers (split 50/50 between dogeBTC and LP stakers).
+
+## State Accounts
+
+```
+RebaseConfig (singleton)
+    ├─ current_rebase_id: incrementing counter
+    ├─ is_active: admin toggle
+    ├─ rebase_settle_cycle: LP ops count that triggers settlement
+    └─ prev_rebase_mutation_ranks: carried forward to next rebase
+
+RebaseState (one per rebase)
+    ├─ rebase_id, start_timestamp, stage
+    ├─ total_dogebtc_mined_in_rebase → rebase_mining_pool
+    ├─ start_ranks ↔ final_ranks → rank_deltas → resolved_directions
+    ├─ faction_mutation_scores (drives rankings)
+    ├─ faction_direction_totals (denominator for user claims)
+    ├─ eligible_doge_direction_totals (denominator for doge bonus)
+    ├─ faction_reward_pools (90% user share)
+    └─ faction_doge_reward_pools (10% doge bonus share)
+
+UserRebaseBets (one per user per rebase)
+    ├─ direction_bets: weighted bets on own faction only
+    ├─ gameplay_doge: which doge became eligible
+    └─ doge_bonus_eligible: did this user's doge mutate?
+```
+
+## Lifecycle
+
+```
+  ┌─────────────────────────────┐
+  │  IDLE (no active rebase)    │
+  │  rebase_state.rebase_id = 0 │
+  └──────────┬──────────────────┘
+             │ First bet in new cycle (auto-start)
+             ▼
+  ┌─────────────────────────────┐
+  │  ACTIVE (stage = 0)         │
+  │  Mutations accumulate       │
+  │  Round bets accumulate      │
+  │  Mining pool grows          │
+  └──────────┬──────────────────┘
+             │ LP burn completes (lp_ops_count >= settle_cycle)
+             ▼
+  ┌─────────────────────────────┐
+  │  SETTLED (stage = 1)        │
+  │  Rankings computed           │
+  │  Reward pools locked         │
+  │  Claims open                 │
+  └──────────┬──────────────────┘
+             │ All claims processed, next bet starts new rebase
+             ▼ (loop)
+```

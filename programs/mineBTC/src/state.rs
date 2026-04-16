@@ -561,7 +561,7 @@ pub struct TaxConfig {
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
 
-    /// Epoch ID of the last treasury distribution.
+    /// Rebase ID of the last treasury distribution.
     /// Prevents double-distribution for the same epoch.
     pub last_treasury_rebase_id: u64,
     /// Bitmap of factions that have claimed treasury rewards for the current epoch.
@@ -899,7 +899,7 @@ pub struct PlayerData {
     pub gameplay_doge_dna: [u8; 32],
     /// Cached XP of gameplay doge (updated during gameplay, synced to DogeMetadata on withdraw)
     pub gameplay_doge_xp: u32,
-    /// Epoch ID in which the user requested gameplay unlock.
+    /// Rebase ID in which the user requested gameplay unlock.
     /// The doge can only be withdrawn once the next rebase cycle begins.
     pub gameplay_unlock_request_rebase: u64,
 }
@@ -1258,7 +1258,7 @@ impl AutominerVault {
 // ============================= REBASE MINING ACCOUNTS ==============================
 // ========================================================================================
 
-/// Maximum number of score update entries stored per epoch (for audit trail)
+/// Maximum number of score update entries stored per rebase (for audit trail)
 /// Epoch Configuration PDA (Seed: `[b"rebase-config"]`)
 /// Epochs are tied to the economy cycle: one epoch per LP-burn cycle.
 /// Settlement becomes possible once lp_operations_count reaches rebase_settle_cycle.
@@ -1273,8 +1273,8 @@ pub struct RebaseConfig {
     pub is_active: bool,
 
     /// The LP operations count that triggers settlement of the current epoch.
-    /// Set to `pol_stats.lp_operations_count + 1` when the epoch starts,
-    /// meaning the epoch settles after the next full economy cycle completes.
+    /// Set to `pol_stats.lp_operations_count + 1` when the rebase starts,
+    /// meaning the rebase settles after the next full economy cycle completes.
     pub rebase_settle_cycle: u32,
 
     /// Rankings from the previous epoch's mutation scores.
@@ -1292,30 +1292,30 @@ impl RebaseConfig {
         (NUM_FACTIONS * 1); // prev_rebase_mutation_ranks
 }
 
-/// Epoch State PDA (Seed: `[b"rebase", rebase_id_u64_le]`)
-/// Tracks a single mutation-driven prediction epoch: start/final ranks derived from
+/// Rebase State PDA (Seed: `[b"rebase", rebase_id_u64_le]`)
+/// Tracks a single mutation-driven rebase cycle: start/final ranks derived from
 /// doge mutation scores, directional bet totals, and settlement outputs.
-/// Epoch duration is tied to the economy cycle (one LP-burn cycle).
+/// Rebase duration is tied to the economy cycle (one LP-burn cycle).
 #[account]
 pub struct RebaseState {
     pub bump: u8,
 
-    /// Epoch ID
+    /// Rebase ID
     pub rebase_id: u64,
-    /// Timestamp when this epoch was auto-started
+    /// Timestamp when this rebase was auto-started
     pub start_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
-    /// Snapshot of how many factions were active when this epoch started
+    /// Snapshot of how many factions were active when this rebase started
     pub active_faction_count: u8,
 
-    /// Total dogeBTC mined via raffle rounds during this epoch.
+    /// Total dogeBTC mined via raffle rounds during this rebase.
     pub total_dogebtc_mined_in_rebase: u64,
-    /// Epoch mining pool distributed to epoch predictors.
+    /// Rebase mining pool distributed to epoch predictors.
     pub rebase_mining_pool: u64,
 
-    /// Rank snapshot from previous epoch (baseline for direction resolution).
+    /// Rank snapshot from previous rebase (baseline for direction resolution).
     pub start_ranks: [u8; NUM_FACTIONS],
     /// Final ranks derived from faction_mutation_scores at settlement.
     pub final_ranks: [u8; NUM_FACTIONS],
@@ -1325,19 +1325,19 @@ pub struct RebaseState {
     /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
     pub resolved_directions: [u8; NUM_FACTIONS],
 
-    /// Total weighted bets per faction and direction during this epoch (own-faction only).
+    /// Total weighted bets per faction and direction during this rebase (own-faction only).
     pub faction_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 
     /// Pre-computed reward pool per faction (proportional to winning-direction bet weight).
     pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// 10% reward pool per faction reserved for gameplay doges that mutated during the epoch.
+    /// 10% reward pool per faction reserved for gameplay doges that mutated during the rebase.
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
 
-    /// Accumulated mutation scores per faction during this epoch.
+    /// Accumulated mutation scores per faction during this rebase.
     /// Drives ranking at settlement: factions with higher mutation scores rank higher.
     /// Score = sum of (type_weight × bet_size × doge_multiplier) for every mutation that fired.
     pub faction_mutation_scores: [u64; NUM_FACTIONS],
-    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this epoch.
+    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this rebase.
     pub eligible_doge_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 
@@ -1361,8 +1361,8 @@ impl RebaseState {
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // eligible_doge_direction_totals
 }
 
-/// User Epoch Bets PDA (Seed: `[b"user-rebase", user_pubkey, rebase_id_u64_le]`)
-/// Tracks how much weighted stake a user bet on their own faction's direction during a specific epoch.
+/// User Rebase Bets PDA (Seed: `[b"user-rebase", user_pubkey, rebase_id_u64_le]`)
+/// Tracks how much weighted stake a user bet on their own faction's direction during a specific rebase.
 /// Only own-faction bets are accumulated (cross-faction bets only count for round rewards).
 #[account]
 pub struct UserRebaseBets {
@@ -1372,12 +1372,12 @@ pub struct UserRebaseBets {
     pub owner: Pubkey,
     /// The epoch ID this tracks
     pub rebase_id: u64,
-    /// Gameplay doge that became eligible for the epoch doge-reward pool.
+    /// Gameplay doge that became eligible for the rebase doge-reward pool.
     pub gameplay_doge: Pubkey,
-    /// Whether this user's gameplay doge mutated/evolved during the epoch.
+    /// Whether this user's gameplay doge mutated/evolved during the rebase.
     pub doge_bonus_eligible: bool,
 
-    /// Weighted bet per faction and direction during this epoch.
+    /// Weighted bet per faction and direction during this rebase.
     pub direction_bets: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 

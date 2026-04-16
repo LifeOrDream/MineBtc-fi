@@ -51,7 +51,7 @@ pub fn resolve_direction_from_ranks(start_rank: u8, final_rank: u8) -> (Predicti
     (direction, delta)
 }
 
-/// Compute how the epoch mining pool is split across factions.
+/// Compute how the rebase mining pool is split across factions.
 ///
 /// Each faction's share is proportional to its winning-direction bet weight
 /// relative to the sum of all factions' winning-direction bet weights.
@@ -129,23 +129,24 @@ pub fn compute_faction_reward_pools(rebase_state: &mut RebaseState) -> Result<()
 }
 
 // ========================================================================================
-// ============================= EPOCH CONFIG ==============================================
+// ============================= REBASE CONFIG ==============================================
 // ========================================================================================
 
 pub fn initialize_rebase_config_internal(ctx: Context<InitializeRebaseConfig>) -> Result<()> {
+    msg!("🔄 [initialize_rebase_config] Initializing rebase system");
     let rebase_config = &mut ctx.accounts.rebase_config;
     rebase_config.bump = ctx.bumps.rebase_config;
     rebase_config.current_rebase_id = 1;
     rebase_config.is_active = true;
     rebase_config.rebase_settle_cycle = 0;
 
-    // Sequential starting ranks so the first epoch has a sensible baseline.
     let mut initial_ranks = [0u8; NUM_FACTIONS];
     for i in 0..NUM_FACTIONS {
         initial_ranks[i] = i as u8;
     }
     rebase_config.prev_rebase_mutation_ranks = initial_ranks;
 
+    msg!("   ✅ RebaseConfig initialized. Starting rebase_id: 1");
     Ok(())
 }
 
@@ -205,7 +206,7 @@ pub struct UpdateRebaseConfig<'info> {
 }
 
 // ========================================================================================
-// ============================= EPOCH SETTLEMENT ==========================================
+// ============================= REBASE SETTLEMENT ==========================================
 // ========================================================================================
 
 pub fn finalize_rebase_settlement(
@@ -215,8 +216,13 @@ pub fn finalize_rebase_settlement(
     let active_factions = rebase_state.active_faction_count as usize;
     validate_active_faction_count(active_factions)?;
 
-    // Check if any mutations happened. If mutations were disabled (rpg_progression off),
-    // all scores will be 0 and no rebase rewards should be distributed.
+    msg!(
+        "🔄 [finalize_rebase_settlement] Rebase #{}, {} factions, {} dogeBTC mined",
+        rebase_state.rebase_id,
+        active_factions,
+        rebase_state.total_dogebtc_mined_in_rebase
+    );
+
     let total_mutation_score: u64 = rebase_state
         .faction_mutation_scores
         .iter()
@@ -224,16 +230,18 @@ pub fn finalize_rebase_settlement(
         .sum();
 
     if total_mutation_score == 0 {
-        // No mutations this epoch -- skip reward distribution entirely.
-        // Mining pool stays at 0 so nobody can claim.
+        msg!("   ⚠️ No mutations this rebase — no rewards distributed");
         rebase_state.rebase_mining_pool = 0;
         rebase_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         rebase_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
         rebase_state.stage = 1;
     } else {
         rebase_state.rebase_mining_pool = rebase_state.total_dogebtc_mined_in_rebase;
+        msg!(
+            "   💰 Rebase mining pool: {} dogeBTC",
+            rebase_state.rebase_mining_pool
+        );
 
-        // Rank factions by their accumulated mutation scores.
         let mut mutation_scores_i64 = [0i64; NUM_FACTIONS];
         for i in 0..active_factions {
             mutation_scores_i64[i] = rebase_state.faction_mutation_scores[i] as i64;
@@ -248,12 +256,26 @@ pub fn finalize_rebase_settlement(
             );
             rebase_state.rank_deltas[faction_id] = rank_delta;
             rebase_state.resolved_directions[faction_id] = direction.as_index() as u8;
+
+            let dir_str = match direction {
+                PredictionDirection::Up => "Up",
+                PredictionDirection::Down => "Down",
+                PredictionDirection::Neutral => "Neutral",
+            };
+            msg!(
+                "   🏴 Faction {}: score={}, rank {} → {}, delta={}, dir={}",
+                faction_id,
+                rebase_state.faction_mutation_scores[faction_id],
+                rebase_state.start_ranks[faction_id],
+                final_ranks[faction_id],
+                rank_delta,
+                dir_str
+            );
         }
 
         compute_faction_reward_pools(rebase_state)?;
         rebase_state.stage = 1;
 
-        // Persist mutation-based ranks for next epoch's start_ranks.
         rebase_config.prev_rebase_mutation_ranks = final_ranks;
     }
 
@@ -262,16 +284,28 @@ pub fn finalize_rebase_settlement(
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
+    msg!(
+        "   ✅ Rebase settled. Next rebase_id: {}",
+        rebase_config.current_rebase_id
+    );
     Ok(())
 }
 
 pub fn settle_rebase_internal(ctx: Context<SettleRebase>) -> Result<()> {
+    msg!("🔄 [settle_rebase] Manual settlement crank");
     let rebase_config = &mut ctx.accounts.rebase_config;
     let rebase_state = &mut ctx.accounts.rebase_state;
     let mining = &ctx.accounts.mine_btc_mining;
 
+    msg!(
+        "   Rebase #{}, stage={}, lp_ops={}, settle_cycle={}",
+        rebase_state.rebase_id,
+        rebase_state.stage,
+        mining.pol_stats.lp_operations_count,
+        rebase_config.rebase_settle_cycle
+    );
+
     require!(rebase_state.stage == 0, ErrorCode::RebaseNotActive);
-    // Settlement is gated by the economy cycle: the LP burn must have completed.
     require!(
         mining.pol_stats.lp_operations_count >= rebase_config.rebase_settle_cycle,
         ErrorCode::RebaseNotEnded
@@ -326,13 +360,18 @@ pub struct SettleRebase<'info> {
 }
 
 // ========================================================================================
-// ============================= EPOCH CLAIM ===============================================
+// ============================= REBASE CLAIM ===============================================
 // ========================================================================================
 
 pub fn claim_rebase_rewards_internal(
     ctx: Context<ClaimRebaseRewards>,
     rebase_id: u64,
 ) -> Result<()> {
+    msg!(
+        "🎁 [claim_rebase_rewards] Rebase #{}, user={}",
+        rebase_id,
+        ctx.accounts.user_rebase_bets.owner
+    );
     let rebase_state = &ctx.accounts.rebase_state;
     let user_rebase_bets = &ctx.accounts.user_rebase_bets;
     let player_data_key = ctx.accounts.player_data.key();
@@ -406,6 +445,14 @@ pub fn claim_rebase_rewards_internal(
             }
         }
     }
+
+    msg!(
+        "   Faction {}: reward={}, doge_bonus={}, doge_eligible={}",
+        faction_id,
+        total_reward,
+        doge_bonus_amount,
+        user_rebase_bets.doge_bonus_eligible
+    );
 
     if total_reward > 0 {
         helper::add_to_total_claimable(

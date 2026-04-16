@@ -478,13 +478,13 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
 
 /// Distribute faction treasury rewards for a settled epoch.
 ///
-/// Uses the epoch's mutation-based `final_ranks` to determine reward tiers:
+/// Uses the rebase's mutation-based `final_ranks` to determine reward tiers:
 ///   1st = 25% | 2nd = 15% | 3rd = 10% | random from 4th+ = 50%
 ///
-/// Called once per faction per epoch. Each call transfers that faction's share
+/// Called once per faction per rebase. Each call transfers that faction's share
 /// from the treasury vault to the emission vault and updates staker reward indexes.
 ///
-/// Permissionless: anyone can crank this after an epoch settles.
+/// Permissionless: anyone can crank this after a rebase settles.
 pub fn internal_claim_faction_treasury_for_rebase(
     ctx: Context<ClaimFactionTreasuryForRebase>,
     rebase_id: u64,
@@ -494,11 +494,17 @@ pub fn internal_claim_faction_treasury_for_rebase(
     let fs = &mut ctx.accounts.faction_state;
     let fid = fs.faction_id;
 
-    // Epoch must be settled
+    msg!(
+        "💰 [claim_faction_treasury] Rebase #{}, faction {}, treasury={}",
+        rebase_id,
+        fid,
+        ctx.accounts.faction_treasury_vault.amount
+    );
+
     require!(rebase_state.stage == 1, ErrorCode::RebaseNotSettled);
     require!(rebase_state.rebase_id == rebase_id, ErrorCode::InvalidState);
 
-    // If this is a new epoch, reset the claim bitmap
+    // If this is a new rebase, reset the claim bitmap
     if rebase_id > tc.last_treasury_rebase_id {
         tc.last_treasury_rebase_id = rebase_id;
         tc.treasury_claimed_bitmap = 0;
@@ -572,7 +578,17 @@ pub fn internal_claim_faction_treasury_for_rebase(
     let reward_amount =
         u64::try_from(total_reward_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
+    msg!(
+        "   Rank {}: rank_reward={}, lucky_rank={}, lucky_reward={}, total={}",
+        rank,
+        rank_reward,
+        lucky_rank,
+        lucky_reward,
+        reward_amount
+    );
+
     if reward_amount == 0 {
+        msg!("   ⚠️ No reward for faction {} (rank {})", fid, rank);
         tc.treasury_claimed_bitmap |= faction_bit;
         return Ok(());
     }
@@ -610,6 +626,12 @@ pub fn internal_claim_faction_treasury_for_rebase(
             distributed,
             ctx.accounts.minebtc_mint.decimals,
         )?;
+        msg!(
+            "   ✅ Transferred {} dogeBTC (dbtc_stakers={}, lp_stakers={})",
+            distributed,
+            dbtc_share,
+            lp_share
+        );
     }
 
     if dbtc_share > 0 && fs.total_dogebtc_hashpower > 0 {
