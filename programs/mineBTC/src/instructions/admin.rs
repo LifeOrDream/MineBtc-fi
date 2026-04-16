@@ -37,11 +37,16 @@ use mpl_core::{
     types::{Creator, Plugin, PluginAuthority, Royalties, RuleSet, UpdateDelegate},
 };
 
+const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
+const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
+const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
+const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
+
 /// Helper type for passing creators from client
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct CreatorInput {
     pub address: Pubkey,
-    /// Percentage share (0–100). Sum must be exactly 100.
+    /// Whole-percent share (`100` = 100%). Sum must equal the percentage denominator.
     pub percentage: u8,
 }
 
@@ -83,10 +88,11 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     // Initialize MineBtc distribution config with defaults
     global_config.minebtc_dist_config = MineBtcDistConfig {
-        minebtc_stakers_pct: 50,
-        minebtc_winners_pct: 30,
-        minebtc_same_faction_pct: 10,
-        minebtc_motherlode_pct: 10,
+        // Invariant: stakers + winners + 2 * same_faction + motherlode = 100
+        minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
+        minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
+        minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
+        minebtc_motherlode_pct: DEFAULT_MINEBTC_MOTHERLODE_PCT,
         refining_fee: 5,
     };
 
@@ -375,7 +381,8 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// Update fee configuration (admin only)
 ///
 /// Updates SOL fee distribution percentages and/or MineBtc distribution percentages.
-/// All percentages must sum to 100% for their respective categories.
+/// These config fields use whole-percent precision (`100` = 100%).
+/// All percentage splits must sum to the percentage denominator for their category.
 ///
 /// # Parameters
 /// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
@@ -390,8 +397,10 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
 /// # Validation
-/// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == 100
-/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_motherlode_pct == 100
+/// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == `PERCENTAGE_DENOMINATOR`
+/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct +
+///   (`PredictionDirection::COUNT - 1`) * minebtc_same_faction_pct +
+///   minebtc_motherlode_pct == `PERCENTAGE_DENOMINATOR`
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -413,6 +422,19 @@ pub fn update_fees_internal(
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
+
+        require!(
+            protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            buyback_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
 
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
@@ -436,12 +458,35 @@ pub fn update_fees_internal(
         let minebtc_motherlode_pct = new_minebtc_motherlode_pct
             .unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
 
+        require!(
+            minebtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            minebtc_winners_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            minebtc_same_faction_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            minebtc_motherlode_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+
+        // `minebtc_same_faction_pct` is applied once for each losing direction on the
+        // winning faction. With Up / Down / Neutral that means two losing directions.
+        let losing_direction_count = (PredictionDirection::COUNT - 1) as u16;
         let total = minebtc_stakers_pct as u16
             + minebtc_winners_pct as u16
-            + minebtc_same_faction_pct as u16
+            + (minebtc_same_faction_pct as u16 * losing_direction_count)
             + minebtc_motherlode_pct as u16;
 
-        require!(total == 100, ErrorCode::InvalidParameters);
+        require!(
+            total == PERCENTAGE_DENOMINATOR_U16,
+            ErrorCode::InvalidParameters
+        );
 
         // Get current refining_fee to preserve it
         let current_refining_fee = global_config.minebtc_dist_config.refining_fee;
@@ -457,6 +502,10 @@ pub fn update_fees_internal(
 
     // Update refining fee if provided
     if let Some(refining_fee) = new_refining_fee {
+        require!(
+            refining_fee <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
         global_config.minebtc_dist_config.refining_fee = refining_fee;
     }
 
@@ -492,7 +541,7 @@ pub fn update_emission_params_internal(
     // Update price change threshold if provided
     if let Some(threshold) = price_change_threshold {
         require!(
-            threshold > 0 && threshold <= 100,
+            threshold > 0 && threshold <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
         mine_btc_mining.price_change_threshold = threshold;
@@ -501,7 +550,7 @@ pub fn update_emission_params_internal(
     // Update emission increase percentage if provided
     if let Some(increase_pct) = emission_increase_pct {
         require!(
-            increase_pct > 0 && increase_pct <= 100,
+            increase_pct > 0 && increase_pct <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
         mine_btc_mining.emission_increase_pct = increase_pct;
@@ -510,7 +559,7 @@ pub fn update_emission_params_internal(
     // Update emission decrease percentage if provided
     if let Some(decrease_pct) = emission_decrease_pct {
         require!(
-            decrease_pct > 0 && decrease_pct <= 100,
+            decrease_pct > 0 && decrease_pct <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
         mine_btc_mining.emission_decrease_pct = decrease_pct;
@@ -766,7 +815,10 @@ pub fn init_doge_royalties_internal(
     // Basic creator validation
     require!(!creators.is_empty(), ErrorCode::NoCreators);
     let total_pct: u16 = creators.iter().map(|c| c.percentage as u16).sum();
-    require!(total_pct == 100, ErrorCode::InvalidCreatorShare);
+    require!(
+        total_pct == PERCENTAGE_DENOMINATOR_U16,
+        ErrorCode::InvalidCreatorShare
+    );
 
     // Convert to mpl-core creators
     let creators_mpl: Vec<Creator> = creators
@@ -946,6 +998,39 @@ pub fn add_ticket_tier_config_int(
     Ok(())
 }
 
+/// Set or update a user's free Doge mint allowance (admin only).
+/// The whitelisted user still pays transaction fees and rent, but not the Doge mint fee.
+pub fn set_doge_free_mint_allowance_internal(
+    ctx: Context<SetDogeFreeMintAllowance>,
+    user: Pubkey,
+    remaining_free_mints: u8,
+) -> Result<()> {
+    require!(
+        remaining_free_mints <= MAX_FREE_DOGE_MINTS_PER_USER,
+        ErrorCode::MaxFreeDogeMintsExceeded
+    );
+
+    let allowance = &mut ctx.accounts.doge_free_mint_allowance;
+    allowance.user = user;
+    allowance.remaining_free_mints = remaining_free_mints;
+    allowance.bump = ctx.bumps.doge_free_mint_allowance;
+
+    msg!(
+        "🎟️ [set_doge_free_mint_allowance] authority={} user={} remaining_free_mints={}",
+        ctx.accounts.authority.key(),
+        user,
+        remaining_free_mints
+    );
+
+    emit!(DogeFreeMintAllowanceUpdated {
+        authority: ctx.accounts.authority.key(),
+        user,
+        remaining_free_mints,
+    });
+
+    Ok(())
+}
+
 /// Update DogeConfig account (admin only)
 ///
 /// Updates the DogeConfig account that stores Doge collection configuration.
@@ -999,10 +1084,10 @@ pub fn update_breeding_config_internal(
 }
 
 // --------------------------------------------------------------------------------
-// ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
+// ------------ GAME STATE INITIALIZATION -----------------------------------------
 // --------------------------------------------------------------------------------
 
-/// Initialize the global game state for Faction Surge (admin only)
+/// Initialize the global game state (admin only)
 ///
 /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
 /// This must be called before any rounds can be started.
@@ -1027,70 +1112,8 @@ pub fn initialize_game_state_internal(
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
 
-    // Initialize commit-reveal randomness fields
-    global_game_state.current_round_commit = [0u8; 32]; // Will be set in start_round
-    global_game_state.current_round_seed = None;
-
     // Initialize cumulative stats
     global_game_state.total_sol_bets = 0;
-
-    // Initialize empty cranker bots whitelist
-    global_game_state.cranker_bots = Vec::new();
-
-    Ok(())
-}
-
-/// Add a cranker bot to the whitelist (admin only)
-///
-/// Adds a bot address to the whitelist of authorized cranker bots.
-/// Only whitelisted bots can call `start_round` and `end_round` functions.
-/// Maximum of MAX_CRANKER_BOTS (3) bots can be whitelisted.
-///
-/// # Parameters
-/// - `bot_pubkey`: Public key of the bot to whitelist
-pub fn add_cranker_bot_internal(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-    let global_game_state = &mut ctx.accounts.global_game_state;
-
-    // Check if bot is already whitelisted
-    require!(
-        !global_game_state.cranker_bots.contains(&bot_pubkey),
-        ErrorCode::InvalidParameters // Bot already whitelisted
-    );
-
-    // Check if we've reached the maximum
-    require!(
-        global_game_state.cranker_bots.len() < MAX_CRANKER_BOTS,
-        ErrorCode::InvalidParameters // Max cranker bots reached
-    );
-
-    // Add bot to whitelist
-    global_game_state.cranker_bots.push(bot_pubkey);
-
-    Ok(())
-}
-
-/// Remove a cranker bot from the whitelist (admin only)
-///
-/// Removes a bot address from the whitelist of authorized cranker bots.
-///
-/// # Parameters
-/// - `bot_pubkey`: Public key of the bot to remove from whitelist
-pub fn remove_cranker_bot_internal(
-    ctx: Context<UpdateGameState>,
-    bot_pubkey: Pubkey,
-) -> Result<()> {
-    let global_game_state = &mut ctx.accounts.global_game_state;
-
-    // Find and remove bot
-    let initial_count = global_game_state.cranker_bots.len();
-    global_game_state
-        .cranker_bots
-        .retain(|&bot| bot != bot_pubkey);
-
-    require!(
-        global_game_state.cranker_bots.len() < initial_count,
-        ErrorCode::InvalidParameters // Bot not found in whitelist
-    );
 
     Ok(())
 }
@@ -1098,9 +1121,10 @@ pub fn remove_cranker_bot_internal(
 /// Switch game state (toggle is_active) (admin only)
 ///
 /// Toggles the `is_active` field in the global game state.
-/// When `is_active` is false, rounds cannot be started or ended.
+/// When `is_active` is false, new rounds cannot be started.
+/// Already-ended rounds can still be permissionlessly finalized.
 ///
-/// This allows admins to pause/resume the game without losing state.
+/// This allows admins to pause/resume round creation without losing state.
 pub fn switch_game_state_internal(ctx: Context<UpdateGameState>) -> Result<()> {
     let global_game_state = &mut ctx.accounts.global_game_state;
     global_game_state.is_active = !global_game_state.is_active;
@@ -1564,6 +1588,31 @@ pub struct UpdateDogeConfig<'info> {
         bump = doges_config.bump,
     )]
     pub doges_config: Account<'info, DogeConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(user: Pubkey)]
+pub struct SetDogeFreeMintAllowance<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = DogeFreeMintAllowance::LEN,
+        seeds = [DOGE_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.as_ref()],
+        bump
+    )]
+    pub doge_free_mint_allowance: Account<'info, DogeFreeMintAllowance>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

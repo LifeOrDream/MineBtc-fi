@@ -1,28 +1,31 @@
 // # Game Instructions
 //
-// This module implements the core game loop for the MineBTC Faction Surge betting game.
+// Core game loop: 60-second rounds with slot-hash randomness, winner selection, and reward distribution.
 //
 // ## Game Mechanics
 //
 // The game operates in rounds where:
-// 1. A cranker bot starts a new round by committing a randomness hash (commit-reveal scheme).
+// 1. A caller starts a new round.
 // 2. Players place faction-direction bets that also count toward the active epoch market.
-// 3. After the round ends, the cranker reveals the seed to select a winning faction and direction.
-// 4. Exact faction+direction bettors receive the main round rewards, while other directions on the
+// 3. Once the round duration passes, anyone can finalize the round from its pre-scheduled
+//    slot-hash entropy source.
+// 4. If the scheduled slot-hash aged out before anyone finalized the round, settlement falls back
+//    to the latest available slot-hash.
+// 5. Exact faction+direction bettors receive the main round rewards, while other directions on the
 //    winning faction can still share a consolation MineBTC pool.
 //
 // ## Key Functions
 //
-// - `start_round`: Initializes a new round with committed randomness.
-// - `end_round`: Reveals the seed, selects the winning faction and direction, and calculates initial rewards.
+// - `start_round`: Initializes a new round.
+// - `end_round`: Finalizes the round using slot-hash entropy and calculates initial rewards.
 // - `end_round_faction_rewards`: Distributes MineBTC rewards to stakers and faction pools.
 //
-// The commit-reveal randomness system ensures fairness and prevents manipulation.
+// The slot-hash system avoids reveal-timing manipulation while keeping finalization permissionless.
 //
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
-use anchor_lang::solana_program::sysvar::Sysvar;
+use anchor_lang::solana_program::sysvar::slot_hashes;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -33,11 +36,14 @@ use crate::state::*;
 // =============================== GAME ROUND MANAGEMENT ============================
 // ========================================================================================
 
-/// Start a new round by committing a hash and initializing GameSession.
-pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
+/// Start a new round and initialize its GameSession.
+pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
+    let round_duration_seconds = u64::try_from(global_state.round_duration_seconds)
+        .map_err(|_| ErrorCode::InvalidParameters)?;
+    require!(round_duration_seconds > 0, ErrorCode::InvalidParameters);
 
     require!(global_state.is_active, ErrorCode::InvalidParameters);
     require!(global_state.can_begin_round, ErrorCode::CannotBeginRound);
@@ -45,21 +51,28 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     let expected_round_id = global_state.current_round_id + 1;
     require!(round_id == expected_round_id, ErrorCode::InvalidRound);
 
-    require!(
-        global_state
-            .cranker_bots
-            .contains(&ctx.accounts.authority.key()),
-        ErrorCode::Unauthorized
-    );
-
-    global_state.current_round_commit = commit;
-    global_state.current_round_seed = None;
-
     global_state.current_round_id = round_id;
 
     game_session.bump = ctx.bumps.game_session;
     game_session.round_id = round_id;
+    game_session.round_start_slot = clock.slot;
     game_session.round_start_timestamp = clock.unix_timestamp;
+    game_session.round_end_timestamp = clock
+        .unix_timestamp
+        .checked_add(global_state.round_duration_seconds)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.scheduled_entropy_slot = clock
+        .slot
+        .checked_add(
+            round_duration_seconds
+                .checked_mul(ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE)
+                .ok_or(ErrorCode::ArithmeticOverflow)?,
+        )
+        .and_then(|slot| slot.checked_add(ROUND_PRIMARY_ENTROPY_DELAY_SLOTS))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.entropy_slot_used = 0;
+    game_session.entropy_hash = [0u8; 32];
+    game_session.used_entropy_fallback = false;
     game_session.stage = 0;
     game_session.total_sol_bets = 0;
     game_session.total_points_bets = 0;
@@ -77,39 +90,88 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]
     game_session.winning_direction = PredictionDirection::Neutral.as_index() as u8;
     game_session.minebtc_winner_pool = 0;
     game_session.minebtc_same_faction_pool = 0;
+    game_session.minebtc_same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     game_session.faction_stakers = 0;
     game_session.motherlode_rewards = 0;
     game_session.sol_rewards_index = 0;
     game_session.minebtc_rewards_index = 0;
-    game_session.same_faction_minebtc_rewards_index = 0;
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
     game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
-    game_session.mutation_occurred_per_faction = [false; NUM_FACTIONS];
+    game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
+    game_session.total_mutations_this_round = 0;
     global_state.can_begin_round = false;
 
     emit!(RoundStarted {
         round_id,
         game_session: game_session.key(),
-        commit_hash: commit,
         epoch_id: ctx.accounts.epoch_config.current_epoch_id,
-        active_index_id: ctx.accounts.epoch_config.active_index_id,
-        active_question_hash: ctx.accounts.epoch_config.active_question_hash,
+        round_start_slot: game_session.round_start_slot,
         round_start_timestamp: game_session.round_start_timestamp,
+        round_end_timestamp: game_session.round_end_timestamp,
+        scheduled_entropy_slot: game_session.scheduled_entropy_slot,
         timestamp: clock.unix_timestamp,
     });
 
     Ok(())
 }
 
-/// End the current round by revealing seed, selecting winner, and starting next round.
-/// This function:
-/// 1. Verifies revealed seed matches commit hash
-/// 2. Generates final randomness using seed + current slot + current timestamp
-/// 3. Selects a winning faction from factions that actually received bets
-/// 4. Selects a winning direction inside that faction from active directional bets
-/// 5. Calculates winners and updates payout data
-pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
+fn slot_hash_entry_count(data: &[u8]) -> Result<usize> {
+    let length_bytes: [u8; 8] = data
+        .get(..8)
+        .ok_or(ErrorCode::InvalidAccount)?
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    Ok(u64::from_le_bytes(length_bytes) as usize)
+}
+
+fn read_slot_hash_entry(data: &[u8], index: usize) -> Result<(u64, [u8; 32])> {
+    let offset = 8 + (index * 40);
+    let slot_bytes: [u8; 8] = data
+        .get(offset..offset + 8)
+        .ok_or(ErrorCode::InvalidAccount)?
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    let hash_bytes: [u8; 32] = data
+        .get(offset + 8..offset + 40)
+        .ok_or(ErrorCode::InvalidAccount)?
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    Ok((u64::from_le_bytes(slot_bytes), hash_bytes))
+}
+
+fn resolve_round_entropy(
+    slot_hashes_account: &AccountInfo<'_>,
+    scheduled_entropy_slot: u64,
+) -> Result<(u64, [u8; 32], bool)> {
+    require!(
+        slot_hashes_account.key() == slot_hashes::id(),
+        ErrorCode::InvalidAccount
+    );
+
+    let data = slot_hashes_account.try_borrow_data()?;
+    let entry_count = slot_hash_entry_count(&data)?;
+    require!(entry_count > 0, ErrorCode::InvalidAccount);
+
+    let mut latest: Option<(u64, [u8; 32])> = None;
+    for index in 0..entry_count {
+        let (slot, hash) = read_slot_hash_entry(&data, index)?;
+        if index == 0 {
+            latest = Some((slot, hash));
+        }
+        if slot == scheduled_entropy_slot {
+            return Ok((slot, hash, false));
+        }
+    }
+
+    latest
+        .map(|(slot, hash)| (slot, hash, true))
+        .ok_or(ErrorCode::InvalidAccount.into())
+}
+
+/// Finalize the current round using its pre-scheduled slot-hash entropy.
+/// If the scheduled slot hash aged out of the sysvar, fall back to the latest available slot hash.
+pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     let game_session = &mut ctx.accounts.game_session;
     let global_state = &mut ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
@@ -126,29 +188,36 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     }
 
     require!(
-        clock.unix_timestamp
-            >= game_session.round_start_timestamp + global_state.round_duration_seconds,
+        clock.unix_timestamp >= game_session.round_end_timestamp,
         ErrorCode::RoundNotEnded
     );
     require!(game_session.stage == 0, ErrorCode::InvalidStage);
+
     require!(
-        global_state
-            .cranker_bots
-            .contains(&ctx.accounts.authority.key()),
-        ErrorCode::Unauthorized
+        clock.slot > game_session.scheduled_entropy_slot,
+        ErrorCode::RoundEntropyNotReady
     );
 
-    let seed_hash = keccak::hash(&revealed_seed);
-    require!(
-        seed_hash.to_bytes() == global_state.current_round_commit,
-        ErrorCode::InvalidParameters
+    let (entropy_slot_used, entropy_hash, used_entropy_fallback) = resolve_round_entropy(
+        &ctx.accounts.slot_hashes.to_account_info(),
+        game_session.scheduled_entropy_slot,
+    )?;
+    game_session.entropy_slot_used = entropy_slot_used;
+    game_session.entropy_hash = entropy_hash;
+    game_session.used_entropy_fallback = used_entropy_fallback;
+    msg!(
+        "🎲 [end_round] round_id={} scheduled_entropy_slot={} entropy_slot_used={} fallback={}",
+        game_session.round_id,
+        game_session.scheduled_entropy_slot,
+        game_session.entropy_slot_used,
+        game_session.used_entropy_fallback
     );
-    global_state.current_round_seed = Some(revealed_seed);
 
     let final_hash_bytes = keccak::hashv(&[
-        &revealed_seed,
-        &clock.slot.to_le_bytes(),
-        &clock.unix_timestamp.to_le_bytes(),
+        &game_session.entropy_hash,
+        &game_session.round_id.to_le_bytes(),
+        &game_session.total_sol_bets.to_le_bytes(),
+        &game_session.total_wgtd_points_bets.to_le_bytes(),
     ])
     .to_bytes();
 
@@ -217,7 +286,10 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
     if total_users == 0 {
         global_state.last_round_id = game_session.round_id;
         global_state.winning_faction_id = winning_faction_id;
-        global_state.total_sol_bets += game_session.total_sol_bets as u128;
+        global_state.total_sol_bets = global_state
+            .total_sol_bets
+            .checked_add(game_session.total_sol_bets as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         global_state.can_begin_round = true;
         game_session.stage = 2;
 
@@ -226,6 +298,8 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
             game_session.key(),
             winning_faction_id,
             winning_direction,
+            game_session.entropy_slot_used,
+            game_session.used_entropy_fallback,
             0,
             0,
             false,
@@ -237,8 +311,8 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
 
     let minebtc_rewards = ctx.accounts.mine_btc_mining.mine_btc_per_round;
     let (
-        mut winning_direction_rewards,
-        mut same_faction_direction_rewards,
+        winning_direction_rewards,
+        same_faction_direction_rewards_each,
         faction_stakers,
         motherlode_rewards,
     ) = calculate_minebtc_split(
@@ -253,47 +327,62 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         [winning_direction as usize];
     let winning_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
         [winning_faction_id as usize][winning_direction as usize];
-    let same_faction_wgtd_points = game_session.wgtd_points_bets_by_faction
-        [winning_faction_id as usize]
-        .saturating_sub(winning_wgtd_points);
+    let mut same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
+    let mut same_faction_total = 0u64;
 
-    // If the winning faction only had one active direction, roll the consolation pool into
-    // the exact winner pool so emission is still fully claimable.
-    if same_faction_wgtd_points == 0 && same_faction_direction_rewards > 0 {
-        winning_direction_rewards = winning_direction_rewards
-            .checked_add(same_faction_direction_rewards)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        same_faction_direction_rewards = 0;
+    for direction_idx in 0..PredictionDirection::COUNT {
+        if direction_idx == winning_direction as usize {
+            continue;
+        }
+
+        let losing_direction_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
+            [winning_faction_id as usize][direction_idx];
+        if losing_direction_wgtd_points > 0 && same_faction_direction_rewards_each > 0 {
+            same_faction_direction_pools[direction_idx] = same_faction_direction_rewards_each;
+            same_faction_total = same_faction_total
+                .checked_add(same_faction_direction_rewards_each)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
     }
 
     game_session.minebtc_winner_pool = winning_direction_rewards;
-    game_session.minebtc_same_faction_pool = same_faction_direction_rewards;
+    game_session.minebtc_same_faction_pool = same_faction_total;
+    game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
     game_session.faction_stakers = faction_stakers;
     game_session.motherlode_rewards = motherlode_rewards;
 
-    let total_distributed_this_round = game_session.minebtc_winner_pool
-        + game_session.minebtc_same_faction_pool
-        + faction_stakers
-        + motherlode_rewards;
-    ctx.accounts.mine_btc_mining.total_tokens_mined += total_distributed_this_round;
+    let total_distributed_this_round = game_session
+        .minebtc_winner_pool
+        .checked_add(game_session.minebtc_same_faction_pool)
+        .and_then(|total| total.checked_add(faction_stakers))
+        .and_then(|total| total.checked_add(motherlode_rewards))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    ctx.accounts.mine_btc_mining.total_tokens_mined = ctx
+        .accounts
+        .mine_btc_mining
+        .total_tokens_mined
+        .checked_add(total_distributed_this_round)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     if winning_points > 0 {
-        game_session.sol_rewards_index +=
-            helper::mul_div(game_session.total_sol_bets, INDEX_PRECISION, winning_points)?;
+        game_session.sol_rewards_index = game_session
+            .sol_rewards_index
+            .checked_add(helper::mul_div(
+                game_session.total_sol_bets,
+                INDEX_PRECISION,
+                winning_points,
+            )?)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if winning_wgtd_points > 0 {
-        game_session.minebtc_rewards_index += helper::mul_div(
-            game_session.minebtc_winner_pool,
-            INDEX_PRECISION,
-            winning_wgtd_points,
-        )?;
-    }
-    if same_faction_wgtd_points > 0 && game_session.minebtc_same_faction_pool > 0 {
-        game_session.same_faction_minebtc_rewards_index += helper::mul_div(
-            game_session.minebtc_same_faction_pool,
-            INDEX_PRECISION,
-            same_faction_wgtd_points,
-        )?;
+        game_session.minebtc_rewards_index = game_session
+            .minebtc_rewards_index
+            .checked_add(helper::mul_div(
+                game_session.minebtc_winner_pool,
+                INDEX_PRECISION,
+                winning_wgtd_points,
+            )?)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     let motherlode_random = u64::from_le_bytes([
@@ -314,6 +403,8 @@ pub fn int_end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<
         game_session.key(),
         winning_faction_id,
         winning_direction,
+        game_session.entropy_slot_used,
+        game_session.used_entropy_fallback,
         faction_stakers,
         motherlode_rewards,
         game_session.motherlode_hit,
@@ -329,6 +420,8 @@ fn emit_round_ended(
     game_session_key: Pubkey,
     winning_faction_id: u8,
     winning_direction: u8,
+    entropy_slot_used: u64,
+    used_entropy_fallback: bool,
     minebtc_faction_stakers: u64,
     minebtc_motherlode: u64,
     motherlode_hit: bool,
@@ -339,6 +432,8 @@ fn emit_round_ended(
         game_session: game_session_key,
         winning_faction_id,
         winning_direction,
+        entropy_slot_used,
+        used_entropy_fallback,
         total_sol_bets: game_session.total_sol_bets,
         total_points_bets: game_session.total_points_bets,
         user_bets_count: game_session.user_faction_indexes,
@@ -347,6 +442,7 @@ fn emit_round_ended(
         faction_wgtd_points: game_session.wgtd_points_bets_by_faction,
         minebtc_winner_pool: game_session.minebtc_winner_pool,
         minebtc_same_faction_pool: game_session.minebtc_same_faction_pool,
+        minebtc_same_faction_direction_pools: game_session.minebtc_same_faction_direction_pools,
         minebtc_faction_stakers,
         minebtc_motherlode,
         motherlode_hit,
@@ -404,22 +500,38 @@ fn calculate_minebtc_split(
 ) -> (u64, u64, u64, u64) {
     let winning_direction_rewards =
         (minebtc_rewards as u128 * minebtc_winners_pct as u128 / 100) as u64;
-    let same_faction_direction_rewards =
+    let same_faction_direction_rewards_each =
         (minebtc_rewards as u128 * minebtc_same_faction_pct as u128 / 100) as u64;
     let faction_stakers = (minebtc_rewards as u128 * minebtc_stakers_pct as u128 / 100) as u64;
     let motherlode_rewards =
         (minebtc_rewards as u128 * minebtc_motherlode_pct as u128 / 100) as u64;
     (
         winning_direction_rewards,
-        same_faction_direction_rewards,
+        same_faction_direction_rewards_each,
         faction_stakers,
         motherlode_rewards,
     )
 }
 
+fn split_staker_lane_rewards(
+    total_rewards: u64,
+    dogebtc_active: bool,
+    lp_active: bool,
+) -> (u64, u64) {
+    match (dogebtc_active, lp_active) {
+        (true, true) => {
+            let dogebtc_share = total_rewards / 2;
+            (dogebtc_share, total_rewards - dogebtc_share)
+        }
+        (true, false) => (total_rewards, 0),
+        (false, true) => (0, total_rewards),
+        (false, false) => (0, 0),
+    }
+}
+
 /// Finalize the faction-level reward distribution for the round.
 /// This function:
-/// 1. Verifies revealed seed matches commit hash
+/// 1. Uses the already-finalized winning faction/direction from `end_round`
 /// 2. Distributes the winning faction's staker and motherlode rewards
 /// 3. Advances epoch accounting when the current epoch window has ended
 pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
@@ -435,14 +547,6 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     }
     // Validate round has ended
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
-
-    // Validate caller is a whitelisted cranker bot
-    require!(
-        global_state
-            .cranker_bots
-            .contains(&ctx.accounts.authority.key()),
-        ErrorCode::Unauthorized
-    );
 
     // Get winning faction from the round result
     let winning_faction_id = game_session.winning_faction_id;
@@ -461,13 +565,51 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         (sol_staker_fees as f64 / 1_000_000_000.0)
     );
 
-    // dBTC + SOL distribution to dBTC stakers of the winning faction
-    distribute_rewards_amg_stakers(
-        minebtc_staker_rewards,
-        sol_staker_fees,
-        faction_state,
-        game_session.round_id,
-    )?;
+    let winning_direction = game_session.winning_direction;
+    let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction
+        [winning_faction_id as usize][winning_direction as usize];
+    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let lp_active = faction_state.total_lp_hashpower > 0;
+
+    if dogebtc_active || lp_active {
+        // dBTC + SOL distribution to staking lanes of the winning faction.
+        distribute_rewards_amg_stakers(
+            minebtc_staker_rewards,
+            sol_staker_fees,
+            faction_state,
+            game_session.round_id,
+        )?;
+    } else {
+        msg!(
+            "   Winning faction {} has no active stakers. Redirecting {} MINEBTC and {} SOL staker rewards to exact winners",
+            faction_state.faction_id,
+            minebtc_staker_rewards as f64 / 1_000_000.0,
+            sol_staker_fees as f64 / 1_000_000_000.0
+        );
+
+        let winning_points = game_session.points_bets_by_faction_direction
+            [winning_faction_id as usize][winning_direction as usize];
+        if sol_staker_fees > 0 && winning_points > 0 {
+            let sol_reward_delta =
+                helper::mul_div(sol_staker_fees, INDEX_PRECISION, winning_points)?;
+            game_session.sol_rewards_index = game_session
+                .sol_rewards_index
+                .checked_add(sol_reward_delta)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+
+        if minebtc_staker_rewards > 0 && exact_winning_wgtd_pts > 0 {
+            let minebtc_reward_delta = helper::mul_div(
+                minebtc_staker_rewards,
+                INDEX_PRECISION,
+                exact_winning_wgtd_pts,
+            )?;
+            game_session.minebtc_rewards_index = game_session
+                .minebtc_rewards_index
+                .checked_add(minebtc_reward_delta)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+    }
 
     // Increment motherlode pot size (always, regardless of hit)
     faction_state.motherlode_pot_size = faction_state
@@ -480,22 +622,24 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         faction_state.motherlode_pot_size as f64 / 1_000_000.0,
         game_session.motherlode_rewards as f64 / 1_000_000.0
     );
-
     let motherlode_hit = game_session.motherlode_hit;
-    let winning_direction = game_session.winning_direction;
-    let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction
-        [winning_faction_id as usize][winning_direction as usize];
 
     if motherlode_hit && faction_state.motherlode_pot_size > 0 {
         let motherlode_bonus = faction_state.motherlode_pot_size;
         faction_state.motherlode_pot_size = 0;
-        game_session.minebtc_winner_pool += motherlode_bonus;
+        game_session.minebtc_winner_pool = game_session
+            .minebtc_winner_pool
+            .checked_add(motherlode_bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.motherlode_pot_size_on_hit = motherlode_bonus;
 
         if motherlode_bonus > 0 && exact_winning_wgtd_pts > 0 {
             let minebtc_rewards_delta =
                 helper::mul_div(motherlode_bonus, INDEX_PRECISION, exact_winning_wgtd_pts)?;
-            game_session.minebtc_rewards_index += minebtc_rewards_delta;
+            game_session.minebtc_rewards_index = game_session
+                .minebtc_rewards_index
+                .checked_add(minebtc_rewards_delta)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 
         emit!(MotherlodeHit {
@@ -508,7 +652,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     }
 
     // Update faction wins
-    faction_state.total_wins = faction_state.total_wins + 1;
+    faction_state.total_wins = faction_state
+        .total_wins
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update global state with previous round results
     global_state.last_round_id = game_session.round_id;
@@ -520,8 +667,10 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     );
 
     // Update total SOL bets in global state (cumulative)
-    global_state.total_sol_bets =
-        global_state.total_sol_bets + (game_session.total_sol_bets as u128);
+    global_state.total_sol_bets = global_state
+        .total_sol_bets
+        .checked_add(game_session.total_sol_bets as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated global state. Total SOL bets: {}",
         global_state.total_sol_bets as f64 / 1_000_000_000.0
@@ -544,21 +693,13 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
             .checked_add(mine_btc_per_round)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        let clock = Clock::get()?;
-        if clock.unix_timestamp >= epoch_state.end_timestamp as i64 {
-            require!(
-                ctx.accounts.index_state.index_id == epoch_state.index_id,
-                ErrorCode::InvalidIndexState
-            );
-            crate::instructions::epoch::finalize_epoch_settlement(
-                epoch_config,
-                epoch_state,
-                &clock,
-            )?;
+        // Auto-settle epoch when the economy cycle's LP burn has completed.
+        let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+        if lp_ops >= epoch_config.epoch_settle_cycle && epoch_config.epoch_settle_cycle > 0 {
+            crate::instructions::epoch::finalize_epoch_settlement(epoch_config, epoch_state)?;
 
             emit!(EpochAutoSettled {
                 epoch_id: epoch_state.epoch_id,
-                index_id: epoch_state.index_id,
                 mining_pool: epoch_state.epoch_mining_pool,
             });
         }
@@ -573,23 +714,29 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
 
 /// Internal function, called by int_end_round_faction_rewards to distribute rewards among AMG stakers (50% to dogeBTC stakers, 50% to LP stakers)
 fn distribute_rewards_amg_stakers(
-    mut minebtc_staker_rewards: u64,
-    mut sol_staker_fees: u64,
+    minebtc_staker_rewards: u64,
+    sol_staker_fees: u64,
     faction_state: &mut FactionState,
     round_id: u64,
 ) -> Result<()> {
-    if faction_state.total_dogebtc_hashpower > 0 {
-        // Calculate shares BEFORE modifying the totals
-        let dogebtc_minebtc_share = minebtc_staker_rewards / 2;
-        let dogebtc_sol_share = sol_staker_fees / 2;
+    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let lp_active = faction_state.total_lp_hashpower > 0;
 
+    let (dogebtc_minebtc_share, lp_minebtc_share) =
+        split_staker_lane_rewards(minebtc_staker_rewards, dogebtc_active, lp_active);
+    let (dogebtc_sol_share, lp_sol_share) =
+        split_staker_lane_rewards(sol_staker_fees, dogebtc_active, lp_active);
+
+    if dogebtc_active && (dogebtc_minebtc_share > 0 || dogebtc_sol_share > 0) {
         let minebtc_per_share = helper::mul_div(
             dogebtc_minebtc_share,
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.dogebtc_dogebtc_reward_index =
-            faction_state.dogebtc_dogebtc_reward_index + minebtc_per_share;
+        faction_state.dogebtc_dogebtc_reward_index = faction_state
+            .dogebtc_dogebtc_reward_index
+            .checked_add(minebtc_per_share)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
             faction_state.dogebtc_dogebtc_reward_index - minebtc_per_share,
@@ -602,7 +749,10 @@ fn distribute_rewards_amg_stakers(
             INDEX_PRECISION,
             faction_state.total_dogebtc_hashpower,
         )?;
-        faction_state.dogebtc_sol_reward_index += sol_reward_inc;
+        faction_state.dogebtc_sol_reward_index = faction_state
+            .dogebtc_sol_reward_index
+            .checked_add(sol_reward_inc)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
             faction_state.dogebtc_sol_reward_index - sol_reward_inc,
@@ -618,20 +768,18 @@ fn distribute_rewards_amg_stakers(
             dogebtc_dogebtc_reward_index: faction_state.dogebtc_dogebtc_reward_index,
             dogebtc_sol_reward_index: faction_state.dogebtc_sol_reward_index
         });
-
-        // Deduct shares AFTER event emission
-        minebtc_staker_rewards = minebtc_staker_rewards - dogebtc_minebtc_share;
-        sol_staker_fees = sol_staker_fees - dogebtc_sol_share;
     }
 
-    if faction_state.total_lp_hashpower > 0 {
+    if lp_active && (lp_minebtc_share > 0 || lp_sol_share > 0) {
         let minebtc_per_share = helper::mul_div(
-            minebtc_staker_rewards,
+            lp_minebtc_share,
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        faction_state.lp_dogebtc_reward_index =
-            faction_state.lp_dogebtc_reward_index + minebtc_per_share;
+        faction_state.lp_dogebtc_reward_index = faction_state
+            .lp_dogebtc_reward_index
+            .checked_add(minebtc_per_share)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers MINEBTC reward index: {} -> {} (+{})",
             faction_state.lp_dogebtc_reward_index - minebtc_per_share,
@@ -640,11 +788,14 @@ fn distribute_rewards_amg_stakers(
         );
 
         let sol_reward_inc = helper::mul_div(
-            sol_staker_fees,
+            lp_sol_share,
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        faction_state.lp_sol_reward_index += sol_reward_inc;
+        faction_state.lp_sol_reward_index = faction_state
+            .lp_sol_reward_index
+            .checked_add(sol_reward_inc)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Faction stakers SOL reward index: {} -> {} (+{})",
             faction_state.lp_sol_reward_index - sol_reward_inc,
@@ -655,8 +806,8 @@ fn distribute_rewards_amg_stakers(
         emit!(LpStakingRewardsDistributed {
             round_id: round_id,
             faction_id: faction_state.faction_id,
-            minebtc_staker_rewards: minebtc_staker_rewards,
-            sol_staker_rewards: sol_staker_fees,
+            minebtc_staker_rewards: lp_minebtc_share,
+            sol_staker_rewards: lp_sol_share,
             lp_dogebtc_reward_index: faction_state.lp_dogebtc_reward_index,
             lp_sol_reward_index: faction_state.lp_sol_reward_index
         });
@@ -729,6 +880,10 @@ pub struct EndRound<'info> {
     )]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
+    /// CHECK: Recent slot hashes sysvar used for round entropy
+    #[account(address = slot_hashes::id() @ ErrorCode::InvalidAccount)]
+    pub slot_hashes: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -786,13 +941,6 @@ pub struct EndRoundFactionRewards<'info> {
         bump = epoch_state.bump,
     )]
     pub epoch_state: Box<Account<'info, EpochState>>,
-
-    #[account(
-        seeds = [INDEX_STATE_SEED, &[index_state.index_id]],
-        bump = index_state.bump,
-        constraint = index_state.index_id == epoch_state.index_id @ ErrorCode::InvalidIndexState,
-    )]
-    pub index_state: Box<Account<'info, IndexState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

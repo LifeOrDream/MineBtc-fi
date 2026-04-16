@@ -4,29 +4,35 @@ This file is the source-of-truth orientation note for anyone editing the `mineBT
 
 ## Product Framing
 
-Use this framing everywhere in code comments, docs, setup scripts, and assistant output:
+MineBTC is a **degen country arena game** on Solana where:
 
-- MineBTC is a **live country arena game** with an **index-driven epoch prediction layer**
-- the same bet powers both the round game and the epoch market
-- the game is also a **data pipeline**
-- the category is **Geopolitical Risk Intelligence**
+- players pick a country and a direction, bet SOL, and their doge NFTs evolve through gameplay
+- doge mutations during rounds decide which country climbs the leaderboard each cycle
+- the same bet powers both the **round raffle** (instant SOL + dogeBTC rewards) and the **cycle leaderboard** (longer-term dogeBTC rewards based on which countries moved)
+- a deflationary economy runs on a 1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
+- an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
 
-Do **not** describe the current system as:
+**The game in one sentence:** "Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC."
 
-- a 24-block betting game
-- block-high / block-low betting
-- players choosing block numbers
+Use these canonical terms:
 
-Use these canonical terms instead:
+- `country` or `faction` — one of 12-15 playable nations
+- `direction` — `Down`, `Neutral`, `Up`
+- `round` — fast 60-second betting loop with random winner
+- `surge` / `cycle` / `epoch` — longer competitive period tied to the economy cycle (LP burn cadence), where mutation scores determine country rankings
+- `operator doge` / `gameplay doge` — the live NFT locked for rounds, earns XP, can mutate
+- `staked doges` — passive NFTs that boost staking hashpower
+- `mutation` — a doge upgrade (Evolution / Power / Trait) triggered by betting
+- `mutation score` — contribution to your country's leaderboard rank from a mutation event
 
-- `country` or `faction`
-- `direction`: `Down`, `Neutral`, `Up`
-- `round`: fast 60-second loop
-- `epoch`: slower index settlement loop
-- `active index`: the oracle-scored market that current bets feed into
-- `operator doge`: the live gameplay doge locked for rounds
+Do **not** describe the system as:
 
-When in doubt, lead with what is already live and measurable, then describe what the current contract state enables next.
+- a prediction market
+- a geopolitical risk index
+- an intelligence data pipeline
+- a Bittensor subnet product
+
+When in doubt, lead with what is already live and playable.
 
 ## Core Game Model
 
@@ -36,55 +42,61 @@ Players place one or more `country + direction` bets during an active round.
 
 At round end:
 
-1. the contract randomly chooses a winning country from countries that actually received bets
-2. it randomly chooses a winning direction from active directions on that country
+1. the contract randomly chooses a winning country from countries that received bets
+2. it randomly chooses a winning direction on that country
 3. payouts are split into:
 
-- exact `country + direction` winners: main SOL + dBTC round rewards
-- same-country wrong-direction bettors: consolation dBTC rewards
+- exact `country + direction` winners: main SOL + dogeBTC round rewards
+- same-country wrong-direction bettors: consolation dogeBTC rewards
 - winning-country stakers: staking reward share
-- motherlode jackpot: extra dBTC for exact winners when hit
+- motherlode jackpot: extra dogeBTC for exact winners when hit
 
-The important implication: **round direction matters again for round rewards**, not just for epoch accounting.
+### Cycle Layer (Mutation Leaderboard)
 
-### Epoch Layer
+Each round bet also accumulates into the active cycle. Doge mutations that fire during rounds contribute score to their faction.
 
-Each round bet is also accumulated into the active epoch market.
-
-An epoch is defined by:
+A cycle is defined by:
 
 - `epoch_id`
-- `index_id`
-- `question_hash`
-- `start_scores` / `start_ranks`
-- `final_scores` / `final_ranks`
-- per-country direction totals
+- `start_ranks` (from previous cycle)
+- `faction_mutation_scores` (accumulated during this cycle)
+- per-country direction totals (own-faction bets only)
 
-Typical index families may be `Economics`, `Military`, `AI Race`, or `Space Race`, but the contract models them generically as index states instead of hardcoded product lanes.
+**How cycles work:**
 
-The oracle updates index scores during the epoch. At settlement:
+1. Cycle auto-starts on first bet after the previous cycle settles
+2. Each doge mutation adds score: `type_weight × bet_size × doge_multiplier`
+3. Cycle settles when the economy cycle's LP burn completes
+4. Factions are ranked by total mutation scores → rank changes resolve directions
+5. Players who bet the correct direction on their own country earn dogeBTC rewards
+6. Rewards are proportional: each country's share = its winning-direction bets / total winning bets across all countries
 
-- each country resolves to `Down`, `Neutral`, or `Up` from rank change
-- reward pools are weighted by final ranking
-- users only earn on countries where they chose the correct direction
+**When mutations are disabled** (rpg_progression off), no cycle rewards are distributed.
 
 ### Doge Layer
 
-There are two distinct doge roles:
+Two distinct doge roles:
 
-- `gameplay_doge`: one operator doge locked for live play, carrying multiplier, DNA, and XP cache
-- `staked_doges`: passive staking boosts for hashpower
+- `gameplay_doge`: one operator doge locked for live play, carries multiplier, DNA, XP cache
+- `staked_doges`: up to 5 passive boosts for staking hashpower
 
-Current behavior:
+**Mutation system:**
 
-- gameplay rounds can update cached doge XP / mutation state
-- sync back into `DogeMetadata` still happens during round reward claim or gameplay withdrawal
-- there is not yet an epoch-lock rule preventing immediate operator withdrawal after an epoch bet
+- Mutations trigger during betting (SOL bets only, requires gameplay doge)
+- Max mutations per round = `active_factions / 3` (global budget creates scarcity)
+- Per-faction difficulty scaling: each mutation in a round makes the next one harder for that faction
+- Base chance 20%, reduced by doge multiplier (high-mult doges mutate less often)
+- Types: Evolution (~10%), Power (~30%), Trait (~60%)
+- XP boosts multiplier on mutation: Evolution 5-10% of XP, Power/Trait 2-5% of XP
+- active_multiplier capped at MAX_MULTIPLIER (10x)
+- 2-step gameplay doge unlock prevents mid-cycle withdrawal gaming
 
-If you change operator-doge progression, keep the separation between:
+### Economy Layer
 
-- short-term round fun / XP
-- long-term epoch accuracy / progression
+- 1% transfer tax on all dogeBTC: split between burn, NFT floor sweep vault, faction treasury, mining vault
+- Price snapshots every 30 min (8 per cycle) → emission rate adjustment → LP add + burn
+- Cycle settlement is tied to the LP burn — one competitive cycle per economy cycle
+- Daily faction leaderboard distributes treasury rewards by hashpower ranking
 
 ## Important Accounts
 
@@ -94,7 +106,6 @@ If you change operator-doge progression, keep the separation between:
 - `GlobalGameSate`
 - `MineBtcMining`
 - `EpochConfig`
-- `IndexState`
 - `EpochState`
 - `UnrefinedRewards`
 
@@ -116,12 +127,12 @@ If you change operator-doge progression, keep the separation between:
 | File | Main Responsibility |
 |------|----------------------|
 | `instructions/game.rs` | Round start/end, winner selection, round reward indexes |
-| `instructions/user.rs` | Manual betting, batch betting, autominers, round claims, gameplay doges |
-| `instructions/epoch.rs` | Index initialization, oracle score updates, epoch settlement, epoch claims |
-| `instructions/stake.rs` | MineBTC and LP staking |
-| `instructions/doges.rs` | Doge minting, breeding, staking |
+| `instructions/user.rs` | Betting, autominers, round claims, gameplay doges, mutations |
+| `instructions/epoch.rs` | Cycle config, mutation-based settlement, cycle claims |
+| `instructions/stake.rs` | dogeBTC and LP staking |
+| `instructions/doges.rs` | Doge minting, breeding, staking, gameplay lock/unlock |
 | `instructions/economy.rs` | Price snapshots, emissions, POL |
-| `instructions/tax.rs` | Transfer-tax accounting |
+| `instructions/tax.rs` | Transfer-tax accounting and faction treasury distribution |
 | `state.rs` | Account layouts and canonical constants |
 | `events.rs` | Indexer-facing event contracts |
 | `errors.rs` | Reusable program errors |
@@ -140,8 +151,9 @@ Important rules:
 
 - bets are `BetType::FactionDirection`
 - one transaction can include multiple countries
-- the same country cannot appear with two different directions in one round
 - the same bet updates both `GameSession` totals and `EpochState` / `UserEpochBets`
+- only own-faction bets accumulate into epoch state (cross-faction bets are round-only)
+- mutations fire during bet processing, subject to global budget and per-faction penalty
 
 ### Round Settlement
 
@@ -153,25 +165,22 @@ Important rules:
 
 Important rules:
 
-- randomness is commit-reveal based
-- winner selection is `country -> direction`
-- same-country, wrong-direction bettors can still earn the consolation dBTC pool
-- `end_round_faction_rewards` also advances epoch mining accounting
+- randomness is commit-reveal based (scheduled slot hash)
+- winner selection is `country → direction`
+- `end_round_faction_rewards` also advances epoch mining accounting and auto-settles the cycle when the LP burn completes
 
-### Epoch Settlement
+### Cycle Settlement
 
 `instructions/epoch.rs`
 
-- `schedule_next_epoch_market_internal`
-- `update_epoch_scores_internal`
-- `settle_epoch_internal`
-- `claim_epoch_rewards_internal`
+- `settle_epoch_internal` — permissionless, anyone can crank once LP burn completes
+- `claim_epoch_rewards_internal` — user claims their share
 
 Important rules:
 
-- `EpochConfig.active_index_id` tells you which index current round bets feed into
-- first-market bootstrap matters
-- epoch rewards are paid from per-country correct-direction totals, not from a flat country exposure pool
+- settlement is gated by `mining.pol_stats.lp_operations_count >= epoch_config.epoch_settle_cycle`
+- if no mutations occurred (all scores = 0), no rewards are distributed
+- rankings are computed from `faction_mutation_scores`, compared to previous cycle's ranks
 
 ### Autominers
 
@@ -184,7 +193,6 @@ Autominer supports:
 
 Important rules:
 
-- no block-based autominer config exists anymore
 - SOL mode uses `sol_per_round` as the full round budget
 - ticket mode requires `sol_per_round == 0`
 - ticket mode does not reserve SOL and does not pay keeper compensation
@@ -210,7 +218,6 @@ Common ones:
 [b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
 [b"epoch", &epoch_id.to_le_bytes()]
 [b"user-epoch", user.key().as_ref(), &epoch_id.to_le_bytes()]
-[b"index-state", &[index_id]]
 [b"autominer", user.key().as_ref()]
 [b"autominer-custody"]
 [b"doge-metadata", doge_mint.key().as_ref()]
@@ -223,15 +230,17 @@ Important gotcha:
 
 ## Event Expectations
 
-Indexers and off-chain systems should expect these as the key product events:
+Key product events for indexers and off-chain systems:
 
 - `RoundStarted`
 - `BetsPlaced`
 - `RoundEnded`
 - `MotherlodeHit`
 - `RoundRewardsClaimed`
-- `EpochMarketScheduled`
-- `EpochScoresUpdated`
+- `MutationTriggered`
+- `MutationScoreAccumulated`
+- `EpochAutoStarted`
+- `EpochAutoSettled`
 - `EpochSettled`
 - `EpochRewardsClaimed`
 - `AutominerInitialized`
@@ -239,17 +248,14 @@ Indexers and off-chain systems should expect these as the key product events:
 - `DogeUsedForGameplay`
 - `DogeSynced`
 
-If you change gameplay semantics, update events and docs together.
-
 ## Documentation Rules
 
 When changing this repo:
 
 - keep README language aligned with the current contract model
-- avoid reintroducing old block-betting language
-- prefer describing the product as **round arena + epoch market**
-- avoid making "prediction market" the primary label when "live game + intelligence data pipeline" is more precise
-- if setup scripts still initialize a 24h epoch, say that clearly and point to `setup_scripts/config.json`
+- describe the product as a **degen country arena game** with mutation-driven competitive cycles
+- do NOT use "prediction market", "geopolitical risk", "intelligence", "data pipeline", or "oracle"
+- prefer simple degen-native language: "bet", "evolve", "climb", "earn"
 
 ## Verification Checklist
 

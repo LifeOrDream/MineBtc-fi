@@ -1,13 +1,12 @@
 // # User Instructions
 //
-// This module handles all user-facing interactions in the MineBTC Faction Surge game.
+// User-facing interactions: betting, autominers, round claims, gameplay doges, and mutations.
 //
 // ## Key Functions
 //
 // - `initialize_player`: Creates a new player account and assigns them to a faction.
 // - `change_faction`: Allows players to switch factions (requires no active stakes).
-// - `join_round`: Places a faction-direction bet for the current round.
-// - `join_round_batch`: Places multiple faction-direction bets in a single transaction.
+// - `join_bets`: Places one or more faction-direction bets for the current round.
 // - `claim_round_rewards`: Claims winnings from completed rounds.
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
 // - `execute_autominer_bet`: Executes an autominer bet (keeper function).
@@ -39,20 +38,15 @@ fn load_global_config(account: &AccountInfo<'_>) -> Result<GlobalConfig> {
     load_program_account(account)
 }
 
-fn load_index_state(account: &AccountInfo<'_>, expected_index_id: u8) -> Result<IndexState> {
-    let index_state: IndexState = load_program_account(account)?;
-    require!(
-        index_state.index_id == expected_index_id && index_state.is_active,
-        ErrorCode::InvalidIndexState
-    );
-    Ok(index_state)
+fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
+    player_data.pending_round_claims > 0 || player_data.pending_epoch_claims > 0
 }
 
 // ========================================================================================
-// =============================== FACTION SURGE INSTRUCTIONS ============================
+// =============================== PLAYER INSTRUCTIONS ============================
 // ========================================================================================
 
-/// Initialize a player account for the Faction Surge game
+/// Initialize a player account for the MineBTC country arena
 pub fn internal_initialize_player(
     ctx: Context<InitializePlayer>,
     faction_id: u8,
@@ -66,7 +60,10 @@ pub fn internal_initialize_player(
 
     let player_data = &mut ctx.accounts.player_data;
     let global_config = &mut ctx.accounts.global_config;
-    global_config.total_players = global_config.total_players + 1;
+    global_config.total_players = global_config
+        .total_players
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Validate faction_id
     require!(
@@ -106,7 +103,10 @@ pub fn internal_initialize_player(
             referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
             ErrorCode::MaxReferralsReached
         );
-        referrer_rewards.referrals_count = referrer_rewards.referrals_count + 1;
+        referrer_rewards.referrals_count = referrer_rewards
+            .referrals_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "     Referrer's referral count: {}/{}",
             referrer_rewards.referrals_count,
@@ -149,6 +149,8 @@ pub fn internal_initialize_player(
     // Initialize pending rewards
     player_data.pending_sol_rewards = 0;
     player_data.pending_minebtc_rewards = 0;
+    player_data.pending_round_claims = 0;
+    player_data.pending_epoch_claims = 0;
     msg!("     Pending rewards initialized");
 
     // Initialize position tracking vectors
@@ -165,6 +167,13 @@ pub fn internal_initialize_player(
     player_data.free_tickets = Vec::new();
     player_data.free_tickets_remaining = Vec::new();
     msg!("     Free tickets vectors initialized (empty)");
+
+    // Initialize gameplay doge state
+    player_data.gameplay_doge = Pubkey::default();
+    player_data.gameplay_doge_dna = [0u8; 32];
+    player_data.gameplay_doge_xp = 0;
+    player_data.gameplay_unlock_request_epoch = 0;
+    msg!("     Gameplay doge state initialized");
 
     // Initialize new player's referral rewards account
     msg!("   Initializing new player's referral rewards account...");
@@ -236,8 +245,15 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
     require!(
         player_data.dogebtc_hashpower == 0
             && player_data.lp_hashpower == 0
-            && player_data.staked_doges.is_empty(),
-        ErrorCode::InvalidParameters
+            && player_data.staked_doges.is_empty()
+            && player_data.doge_multiplier == BASE_MULTIPLIER as u16
+            && player_data.gameplay_doge == Pubkey::default()
+            && player_data.active_multiplier == BASE_MULTIPLIER
+            && player_data.gameplay_doge_dna == [0u8; 32]
+            && player_data.gameplay_doge_xp == 0
+            && player_data.gameplay_unlock_request_epoch == 0
+            && !player_has_pending_reward_claims(player_data),
+        ErrorCode::InvalidState
     );
 
     // Charge change_faction_fee
@@ -314,91 +330,40 @@ pub fn internal_set_player_claim_settings(
 /// Each bet selects a faction and an epoch direction.
 ///
 /// Parameters:
-/// - amount: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
-/// - bet_type: The bet type (`FactionDirection { faction_id, direction }`)
+/// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
+/// - amount_per_bet: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-pub fn internal_join_round(
-    ctx: Context<JoinRound>,
-    amount: u64,
-    bet_type: BetType,
-    use_ticket: Option<u8>,
-) -> Result<()> {
-    msg!(
-        "🎲 [join_round] User joining round (single bet). User: {}",
-        ctx.accounts.authority.key()
-    );
-    msg!("   Bet type: {:?}", bet_type);
-    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
-    let index_state = load_index_state(
-        &ctx.accounts.index_state.to_account_info(),
-        ctx.accounts.epoch_config.active_index_id,
-    )?;
-
-    // Call internal_process_bets with user as payer (None for signer_seeds - user signs the tx)
-    // Wrap single bet in vector
-    internal_process_bets(
-        ctx.accounts.game_session.round_id,
-        &global_config,
-        &mut ctx.accounts.player_data,
-        &mut ctx.accounts.game_session,
-        &mut ctx.accounts.user_game_bet,
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
-        &ctx.accounts.sol_rewards_vault.to_account_info(),
-        &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.user_game_bet,
-        ctx.accounts.authority.key(),
-        amount,
-        vec![bet_type.clone()],
-        use_ticket,
-        None, // User wallet signs the transaction
-        None, // No autominer info
-        &index_state,
-        &ctx.accounts.epoch_config,
-        &mut ctx.accounts.epoch_state,
-        ctx.bumps.epoch_state,
-        &mut ctx.accounts.user_epoch_bets,
-        ctx.bumps.user_epoch_bets,
-    )?;
-
-    msg!("✅ [join_round] Bet placed successfully");
-    Ok(())
-}
-
-/// Join a round with multiple faction-direction bets in a single transaction.
-///
-/// Parameters:
-/// - bet_types: Vector of faction-direction bets to place
-/// - amount_per_bet: Bet amount per bet type in lamports (for SOL) or points (for tickets)
-/// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-pub fn internal_join_round_batch(
-    ctx: Context<JoinRoundBatch>,
+pub fn internal_join_bets(
+    ctx: Context<JoinBets>,
+    round_id: u64,
     bet_types: Vec<BetType>,
     amount_per_bet: u64,
     use_ticket: Option<u8>,
 ) -> Result<()> {
     msg!(
-        "🎲 [join_round_batch] User joining round with {} bets",
-        bet_types.len()
+        "🎲 [join_bets] User joining round with {} bet positions. User: {}",
+        bet_types.len(),
+        ctx.accounts.authority.key()
     );
-    msg!("   User: {}", ctx.accounts.authority.key());
     msg!("   Amount per bet: {} lamports", amount_per_bet);
     let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
-    let index_state = load_index_state(
-        &ctx.accounts.index_state.to_account_info(),
-        ctx.accounts.epoch_config.active_index_id,
-    )?;
+
+    require!(
+        ctx.accounts.game_session.round_id == round_id,
+        ErrorCode::InvalidRound
+    );
 
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
     require!(
-        bet_types.len() <= UserGameBet::MAX_FACTIONS_PER_BET,
+        bet_types.len() <= UserGameBet::MAX_POSITIONS_PER_BET,
         ErrorCode::InvalidParameters
     );
 
+    let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+
     // Call internal_process_bets for all bets at once
     internal_process_bets(
-        ctx.accounts.game_session.round_id,
+        round_id,
         &global_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
@@ -415,16 +380,16 @@ pub fn internal_join_round_batch(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &index_state,
-        &ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
+        lp_ops,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
 
     msg!(
-        "✅ [join_round_batch] All {} bets placed successfully",
+        "✅ [join_bets] All {} bet positions placed successfully",
         bet_types.len()
     );
     Ok(())
@@ -496,20 +461,14 @@ pub fn internal_init_autominer(
             FactionsConfig::Specific { picks } => {
                 require!(!picks.is_empty(), ErrorCode::InvalidParameters);
                 require!(
-                    picks.len() <= AutominerVault::MAX_FACTIONS,
+                    picks.len() <= AutominerVault::MAX_PICKS,
                     ErrorCode::InvalidParameters
                 );
-                let mut seen = [false; NUM_FACTIONS];
                 for pick in picks.iter() {
                     require!(
                         (pick.faction_id as usize) < global_config.supported_factions.len(),
                         ErrorCode::InvalidFactionId
                     );
-                    require!(
-                        !seen[pick.faction_id as usize],
-                        ErrorCode::ConflictingFactionDirection
-                    );
-                    seen[pick.faction_id as usize] = true;
                 }
                 bets_per_round = picks.len() as u64;
                 msg!("     ✓ Specific autominer picks: {}", picks.len());
@@ -786,7 +745,10 @@ pub fn internal_update_autominer(
 
     // Update vault state
     autominer_vault.sol_per_round = new_sol_per_round;
-    autominer_vault.rounds_remaining += rounds_added;
+    autominer_vault.rounds_remaining = autominer_vault
+        .rounds_remaining
+        .checked_add(rounds_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     autominer_vault.can_reload = new_can_reload;
     if autominer_vault.use_ticket.is_none() {
         let new_balance = (old_sol_balance as i64).saturating_add(sol_diff);
@@ -837,10 +799,6 @@ pub fn internal_execute_autominer_bet(
     let global_state: GlobalGameSate =
         load_program_account(&ctx.accounts.global_game_state.to_account_info())?;
     let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
-    let index_state = load_index_state(
-        &ctx.accounts.index_state.to_account_info(),
-        ctx.accounts.epoch_config.active_index_id,
-    )?;
     let clock = Clock::get()?;
 
     // Read values before mutable borrow
@@ -1004,6 +962,8 @@ pub fn internal_execute_autominer_bet(
         rounds_remaining: new_rounds_remaining,
     };
 
+    let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
     internal_process_bets(
@@ -1024,10 +984,10 @@ pub fn internal_execute_autominer_bet(
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
-        &index_state,
-        &ctx.accounts.epoch_config,
+        &mut ctx.accounts.epoch_config,
         &mut ctx.accounts.epoch_state,
         ctx.bumps.epoch_state,
+        lp_ops,
         &mut ctx.accounts.user_epoch_bets,
         ctx.bumps.user_epoch_bets,
     )?;
@@ -1123,6 +1083,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     msg!("   Round ID: {}", round_id);
 
+    let player_data_key = ctx.accounts.player_data.key();
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
@@ -1160,10 +1121,13 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // Update player rewards using helper function
     update_player_rewards(
+        owner_key,
+        player_data_key,
         player_data,
         &mut ctx.accounts.unrefined_rewards,
         total_sol_reward,
         total_minebtc_reward,
+        round_id,
     )?;
 
     // Transfer SOL winnings directly to user from prize pot vault
@@ -1188,6 +1152,11 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         ctx.accounts.doge_metadata.as_mut(),
         total_minebtc_reward,
     )?;
+
+    player_data.pending_round_claims = player_data
+        .pending_round_claims
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("✅ [claim_rewards] Rewards claimed successfully");
     msg!("   Round: {}", user_bet.round_id);
@@ -1214,6 +1183,7 @@ pub fn internal_claim_autominer_rewards(
     msg!("   Round ID: {}", round_id);
     msg!("   Autominer owner: {}", ctx.accounts.autominer_vault.owner);
 
+    let player_data_key = ctx.accounts.player_data.key();
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
@@ -1240,10 +1210,13 @@ pub fn internal_claim_autominer_rewards(
 
     // Update player rewards using helper function
     update_player_rewards(
+        owner_key,
+        player_data_key,
         player_data,
         &mut ctx.accounts.unrefined_rewards,
         total_sol_reward,
         total_minebtc_reward,
+        round_id,
     )?;
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
@@ -1253,6 +1226,11 @@ pub fn internal_claim_autominer_rewards(
         ctx.accounts.doge_metadata.as_mut(),
         total_minebtc_reward,
     )?;
+
+    player_data.pending_round_claims = player_data
+        .pending_round_claims
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // === AUTO-RELOAD LOGIC ===
     // Ticket mode + reload: just keep running (add rounds back), send SOL winnings to owner.
@@ -1277,7 +1255,10 @@ pub fn internal_claim_autominer_rewards(
         }
 
         // Add 1 round back (each execution consumed 1 round, reload gives it back)
-        autominer_vault.rounds_remaining += 1;
+        autominer_vault.rounds_remaining = autominer_vault
+            .rounds_remaining
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   ✓ Ticket reload: rounds_remaining restored to {}",
             autominer_vault.rounds_remaining
@@ -1318,8 +1299,14 @@ pub fn internal_claim_autominer_rewards(
             )?;
 
             // Update autominer state
-            autominer_vault.sol_balance += sol_for_rounds;
-            autominer_vault.rounds_remaining += rounds_to_add as u32;
+            autominer_vault.sol_balance = autominer_vault
+                .sol_balance
+                .checked_add(sol_for_rounds)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            autominer_vault.rounds_remaining = autominer_vault
+                .rounds_remaining
+                .checked_add(rounds_to_add as u32)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             emit!(AutominerReloaded {
                 autominer_vault: autominer_vault.key(),
@@ -1407,7 +1394,9 @@ fn calculate_round_rewards(
                     game_session.sol_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
-                total_sol_reward += sol_reward;
+                total_sol_reward = total_sol_reward
+                    .checked_add(sol_reward)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!("         SOL reward: {} SOL", sol_reward as f64 / 1e9);
             }
 
@@ -1418,7 +1407,9 @@ fn calculate_round_rewards(
                     game_session.minebtc_rewards_index as u64,
                     INDEX_PRECISION,
                 )? as u64;
-                total_minebtc_reward += minebtc_reward;
+                total_minebtc_reward = total_minebtc_reward
+                    .checked_add(minebtc_reward)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "         MineBtc reward: {} DogeBTC",
                     minebtc_reward as f64 / 1e6
@@ -1427,14 +1418,23 @@ fn calculate_round_rewards(
         } else if is_winning_faction {
             msg!("       ✓ Same faction, different direction - consolation MineBTC rewards...");
 
-            if game_session.same_faction_minebtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0
+            let same_faction_pool =
+                game_session.minebtc_same_faction_direction_pools[direction as usize];
+            let same_faction_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
+                [faction_id as usize][direction as usize];
+
+            if same_faction_pool > 0
+                && same_faction_wgtd_points > 0
+                && wgtd_points_bet_on_faction > 0
             {
                 let minebtc_reward = helper::mul_div(
                     wgtd_points_bet_on_faction,
-                    game_session.same_faction_minebtc_rewards_index as u64,
-                    INDEX_PRECISION,
+                    same_faction_pool,
+                    same_faction_wgtd_points,
                 )? as u64;
-                total_minebtc_reward += minebtc_reward;
+                total_minebtc_reward = total_minebtc_reward
+                    .checked_add(minebtc_reward)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "         Same-faction MineBtc reward: {} DogeBTC",
                     minebtc_reward as f64 / 1e6
@@ -1450,19 +1450,33 @@ fn calculate_round_rewards(
 
 /// Update player rewards stats and add MineBTC to pending rewards
 fn update_player_rewards(
+    owner: Pubkey,
+    player_data_key: Pubkey,
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
     total_sol_reward: u64,
     total_minebtc_reward: u64,
+    round_id: u64,
 ) -> Result<()> {
-    player_data.total_sol_won += total_sol_reward;
+    player_data.total_sol_won = player_data
+        .total_sol_won
+        .checked_add(total_sol_reward)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "     Total SOL won: {} (+{})",
         player_data.total_sol_won as f64 / 1e9,
         total_sol_reward as f64 / 1e9
     );
 
-    helper::add_to_total_claimable(unrefined_rewards, player_data, total_minebtc_reward)?;
+    helper::add_to_total_claimable(
+        unrefined_rewards,
+        player_data,
+        total_minebtc_reward,
+        owner,
+        player_data_key,
+        CLAIMABLE_MINEBTC_SOURCE_ROUND,
+        round_id,
+    )?;
     player_data.total_dogebtc_won = player_data
         .total_dogebtc_won
         .checked_add(total_minebtc_reward)
@@ -1561,7 +1575,7 @@ fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)>
     }
 }
 
-/// Internal join_round logic for batched processing
+/// Internal join_bets logic for batched processing
 /// Calculates totals, performs single transfers, and updates state for all bets
 #[allow(clippy::too_many_arguments)]
 fn internal_process_bets<'info>(
@@ -1582,16 +1596,21 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
-    index_state: &IndexState,
-    epoch_config: &Account<'info, EpochConfig>,
+    epoch_config: &mut Account<'info, EpochConfig>,
     epoch_state: &mut Account<'info, EpochState>,
     epoch_state_bump: u8,
+    lp_operations_count: u32,
     user_epoch_bets: &mut Account<'info, UserEpochBets>,
     user_epoch_bets_bump: u8,
 ) -> Result<()> {
     let clock = Clock::get()?;
 
     require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
+    require!(game_session.stage == 0, ErrorCode::RoundEnded);
+    require!(
+        clock.unix_timestamp < game_session.round_end_timestamp,
+        ErrorCode::RoundEnded
+    );
     require!(
         amount_per_bet > 0 || use_ticket.is_some(),
         ErrorCode::InvalidAmount
@@ -1601,11 +1620,6 @@ fn internal_process_bets<'info>(
     }
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
     require!(epoch_config.is_active, ErrorCode::EpochNotActive);
-    require!(index_state.is_active, ErrorCode::InvalidIndexState);
-    require!(
-        index_state.index_id == epoch_config.active_index_id,
-        ErrorCode::InvalidIndexState
-    );
 
     msg!(
         "   Processing batch of {} bets for round {}",
@@ -1615,48 +1629,41 @@ fn internal_process_bets<'info>(
 
     if epoch_state.epoch_id == 0 {
         let active_faction_count = global_config.supported_factions.len();
-        let (current_ranks, _) = crate::instructions::epoch::compute_rankings(
-            &index_state.latest_scores,
-            active_faction_count,
-        )?;
+        let start_ranks = epoch_config.prev_epoch_mutation_ranks;
 
         epoch_state.bump = epoch_state_bump;
         epoch_state.epoch_id = epoch_config.current_epoch_id;
-        epoch_state.index_id = index_state.index_id;
-        epoch_state.question_hash = epoch_config.active_question_hash;
         epoch_state.start_timestamp = clock.unix_timestamp.max(0) as u64;
-        epoch_state.end_timestamp = epoch_state
-            .start_timestamp
-            .checked_add(epoch_config.epoch_duration)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
         epoch_state.stage = 0;
         epoch_state.active_faction_count = active_faction_count as u8;
         epoch_state.total_dogebtc_mined_in_epoch = 0;
-        epoch_state.risk_factor_snapshot = 0;
         epoch_state.epoch_mining_pool = 0;
-        epoch_state.start_scores = index_state.latest_scores;
-        epoch_state.start_ranks = current_ranks;
-        epoch_state.final_scores = epoch_state.start_scores;
-        epoch_state.final_ranks = current_ranks;
+        epoch_state.start_ranks = start_ranks;
+        epoch_state.final_ranks = start_ranks;
         epoch_state.rank_deltas = [0i8; NUM_FACTIONS];
         epoch_state.resolved_directions =
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
         epoch_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        epoch_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        epoch_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+        epoch_state.eligible_doge_direction_totals =
+            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+
+        // Epoch settles after the next LP burn completes.
+        epoch_config.epoch_settle_cycle = lp_operations_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         emit!(crate::events::EpochAutoStarted {
             epoch_id: epoch_state.epoch_id,
-            index_id: epoch_state.index_id,
-            question_hash: epoch_state.question_hash,
             start_timestamp: epoch_state.start_timestamp,
-            end_timestamp: epoch_state.end_timestamp,
+            settle_cycle: epoch_config.epoch_settle_cycle,
         });
         msg!(
-            "   🌍 Auto-initialized epoch {} on index {} ({} -> {})",
+            "   🌍 Auto-initialized epoch {} (settle after LP cycle #{})",
             epoch_state.epoch_id,
-            epoch_state.index_id,
-            epoch_state.start_timestamp,
-            epoch_state.end_timestamp
+            epoch_config.epoch_settle_cycle
         );
     } else {
         require!(
@@ -1664,27 +1671,24 @@ fn internal_process_bets<'info>(
             ErrorCode::InvalidState
         );
         require!(epoch_state.stage == 0, ErrorCode::EpochNotActive);
-        require!(
-            epoch_state.index_id == index_state.index_id,
-            ErrorCode::InvalidIndexState
-        );
     }
 
     if user_epoch_bets.owner == Pubkey::default() {
         user_epoch_bets.bump = user_epoch_bets_bump;
         user_epoch_bets.owner = owner_key;
         user_epoch_bets.epoch_id = epoch_state.epoch_id;
-        user_epoch_bets.index_id = epoch_state.index_id;
+        user_epoch_bets.gameplay_doge = Pubkey::default();
+        user_epoch_bets.doge_bonus_eligible = false;
         user_epoch_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        player_data.pending_epoch_claims = player_data
+            .pending_epoch_claims
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     } else {
         require!(user_epoch_bets.owner == owner_key, ErrorCode::Unauthorized);
         require!(
             user_epoch_bets.epoch_id == epoch_state.epoch_id,
             ErrorCode::InvalidState
-        );
-        require!(
-            user_epoch_bets.index_id == epoch_state.index_id,
-            ErrorCode::InvalidIndexState
         );
     }
 
@@ -1758,9 +1762,15 @@ fn internal_process_bets<'info>(
             let protocol_fee = fee - stakers_fee;
 
             // Accumulate totals for transfer
-            total_stakers_fee = stakers_fee.saturating_mul(num_bets);
-            total_protocol_fee = protocol_fee.saturating_mul(num_bets);
-            total_net_to_pot = net.saturating_mul(num_bets);
+            total_stakers_fee = stakers_fee
+                .checked_mul(num_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            total_protocol_fee = protocol_fee
+                .checked_mul(num_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            total_net_to_pot = net
+                .checked_mul(num_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
             let wgtd = net * active_mult / BASE_MULTIPLIER as u64;
@@ -1838,7 +1848,14 @@ fn internal_process_bets<'info>(
         user_game_bet.mutation_type = 0;
         user_game_bet.epoch_accumulated = false;
 
-        player_data.rounds_played += 1;
+        player_data.rounds_played = player_data
+            .rounds_played
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        player_data.pending_round_claims = player_data
+            .pending_round_claims
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!("     New bet account initialized");
     } else {
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
@@ -1855,26 +1872,31 @@ fn internal_process_bets<'info>(
         let direction_index = direction.as_index();
         let direction_u8 = direction_index as u8;
 
-        if let Some(index) = user_game_bet
+        let existing_position_index = user_game_bet
             .faction_ids
             .iter()
-            .position(|&existing_faction| existing_faction == faction_id)
-        {
-            let existing_direction = user_game_bet.directions.get(index).copied().unwrap_or(255);
-            require!(
-                existing_direction == direction_u8,
-                ErrorCode::ConflictingFactionDirection
-            );
+            .zip(user_game_bet.directions.iter())
+            .position(|(&existing_faction, &existing_direction)| {
+                existing_faction == faction_id && existing_direction == direction_u8
+            });
+        let faction_already_present = user_game_bet
+            .faction_ids
+            .iter()
+            .any(|&existing_faction| existing_faction == faction_id);
 
-            user_game_bet.sol_bets[index] =
-                user_game_bet.sol_bets[index].saturating_add(net_per_bet);
-            user_game_bet.points_bets[index] =
-                user_game_bet.points_bets[index].saturating_add(points_per_bet);
-            user_game_bet.wgtd_points_bets[index] =
-                user_game_bet.wgtd_points_bets[index].saturating_add(wgtd_points_per_bet);
+        if let Some(index) = existing_position_index {
+            user_game_bet.sol_bets[index] = user_game_bet.sol_bets[index]
+                .checked_add(net_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            user_game_bet.points_bets[index] = user_game_bet.points_bets[index]
+                .checked_add(points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            user_game_bet.wgtd_points_bets[index] = user_game_bet.wgtd_points_bets[index]
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         } else {
             require!(
-                user_game_bet.faction_ids.len() < UserGameBet::MAX_FACTIONS_PER_BET,
+                user_game_bet.faction_ids.len() < UserGameBet::MAX_POSITIONS_PER_BET,
                 ErrorCode::InvalidParameters
             );
             user_game_bet.faction_ids.push(faction_id);
@@ -1883,31 +1905,54 @@ fn internal_process_bets<'info>(
             user_game_bet.points_bets.push(points_per_bet);
             user_game_bet.wgtd_points_bets.push(wgtd_points_per_bet);
 
-            game_session.user_faction_indexes[faction_index] =
-                game_session.user_faction_indexes[faction_index].saturating_add(1);
+            if !faction_already_present {
+                game_session.user_faction_indexes[faction_index] = game_session
+                    .user_faction_indexes[faction_index]
+                    .checked_add(1)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+            }
         }
 
         // Update GameSession stats
-        game_session.sol_bets_by_faction[faction_index] =
-            game_session.sol_bets_by_faction[faction_index].saturating_add(net_per_bet);
-        game_session.points_bets_by_faction[faction_index] =
-            game_session.points_bets_by_faction[faction_index].saturating_add(points_per_bet);
+        game_session.sol_bets_by_faction[faction_index] = game_session.sol_bets_by_faction
+            [faction_index]
+            .checked_add(net_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        game_session.points_bets_by_faction[faction_index] = game_session.points_bets_by_faction
+            [faction_index]
+            .checked_add(points_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.wgtd_points_bets_by_faction[faction_index] = game_session
             .wgtd_points_bets_by_faction[faction_index]
-            .saturating_add(wgtd_points_per_bet);
+            .checked_add(wgtd_points_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.points_bets_by_faction_direction[faction_index][direction_index] =
             game_session.points_bets_by_faction_direction[faction_index][direction_index]
-                .saturating_add(points_per_bet);
+                .checked_add(points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.wgtd_points_bets_by_faction_direction[faction_index][direction_index] =
             game_session.wgtd_points_bets_by_faction_direction[faction_index][direction_index]
-                .saturating_add(wgtd_points_per_bet);
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        user_epoch_bets.direction_bets[faction_index][direction_index] = user_epoch_bets
-            .direction_bets[faction_index][direction_index]
-            .saturating_add(wgtd_points_per_bet);
-        epoch_state.faction_direction_totals[faction_index][direction_index] = epoch_state
-            .faction_direction_totals[faction_index][direction_index]
-            .saturating_add(wgtd_points_per_bet);
+        // Only own-faction bets count for epoch rewards.
+        // Cross-faction bets still work for round rewards but do not accumulate into epoch state.
+        if faction_id == player_data.faction_id {
+            user_epoch_bets.direction_bets[faction_index][direction_index] = user_epoch_bets
+                .direction_bets[faction_index][direction_index]
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            epoch_state.faction_direction_totals[faction_index][direction_index] = epoch_state
+                .faction_direction_totals[faction_index][direction_index]
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            if user_epoch_bets.doge_bonus_eligible {
+                epoch_state.eligible_doge_direction_totals[faction_index][direction_index] =
+                    epoch_state.eligible_doge_direction_totals[faction_index][direction_index]
+                        .checked_add(wgtd_points_per_bet)
+                        .ok_or(ErrorCode::ArithmeticOverflow)?;
+            }
+        }
 
         // Record for events
         evt_faction_ids.push(faction_id);
@@ -1932,19 +1977,49 @@ fn internal_process_bets<'info>(
         .checked_mul(num_bets)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    user_game_bet.total_sol_bet = user_game_bet.total_sol_bet.saturating_add(total_net_added);
-    user_game_bet.total_points_bet += total_points_added;
-    user_game_bet.total_wgtd_points_bet += total_wgtd_points_added;
-    user_game_bet.total_fee += total_fee_added;
+    user_game_bet.total_sol_bet = user_game_bet
+        .total_sol_bet
+        .checked_add(total_net_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_game_bet.total_points_bet = user_game_bet
+        .total_points_bet
+        .checked_add(total_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_game_bet.total_wgtd_points_bet = user_game_bet
+        .total_wgtd_points_bet
+        .checked_add(total_wgtd_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_game_bet.total_fee = user_game_bet
+        .total_fee
+        .checked_add(total_fee_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     user_game_bet.epoch_accumulated = true;
 
-    game_session.total_sol_bets = game_session.total_sol_bets.saturating_add(total_net_added);
-    game_session.total_points_bets += total_points_added;
-    game_session.total_wgtd_points_bets += total_wgtd_points_added;
-    game_session.stakers_fee += total_stakers_fee;
+    game_session.total_sol_bets = game_session
+        .total_sol_bets
+        .checked_add(total_net_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.total_points_bets = game_session
+        .total_points_bets
+        .checked_add(total_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.total_wgtd_points_bets = game_session
+        .total_wgtd_points_bets
+        .checked_add(total_wgtd_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    game_session.stakers_fee = game_session
+        .stakers_fee
+        .checked_add(total_stakers_fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    player_data.total_sol_bet = player_data.total_sol_bet.saturating_add(total_net_added);
-    player_data.total_points_bet += total_points_added;
+    player_data.total_sol_bet = player_data
+        .total_sol_bet
+        .checked_add(total_net_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    player_data.total_points_bet = player_data
+        .total_points_bet
+        .checked_add(total_points_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!(
         "   Batch processed: {} bets. Total Net: {} SOL",
@@ -1983,7 +2058,6 @@ fn internal_process_bets<'info>(
         gameplay_doge_xp: player_data.gameplay_doge_xp,
         round_id,
         epoch_id: epoch_state.epoch_id,
-        index_id: epoch_state.index_id,
         num_bets: num_bets as u8,
         faction_ids: evt_faction_ids,
         directions: evt_directions,
@@ -2003,20 +2077,24 @@ fn internal_process_bets<'info>(
     });
 
     // === INSTANT MUTATION & XP LOGIC ===
-    // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_doge
+    // Requires: RPG enabled, SOL bet, no prior mutation this round, gameplay doge active,
+    // and global mutation budget not exhausted for this round.
     let faction_id = player_data.faction_id as usize;
+    let mutation_budget = (epoch_state.active_faction_count as u8) / 3;
+    let round_has_budget = game_session.total_mutations_this_round < mutation_budget.max(1);
+
     if global_config.rpg_progression
         && amount_per_bet > 0
         && use_ticket.is_none()
         && user_game_bet.mutation_type == 0
         && player_data.gameplay_doge != Pubkey::default()
+        && round_has_budget
     {
         // Update highest bet for faction
         if user_game_bet.total_sol_bet > game_session.highest_sol_bet_per_faction[faction_id] {
             game_session.highest_sol_bet_per_faction[faction_id] = user_game_bet.total_sol_bet;
         }
 
-        // Calculate mutation result (generation derived from DNA)
         let doge_mint = player_data.gameplay_doge;
         let mutation_result = calculate_mutation_result(
             round_id,
@@ -2025,6 +2103,7 @@ fn internal_process_bets<'info>(
             player_data.active_multiplier,
             player_data.gameplay_doge_dna,
             player_data.gameplay_doge_xp,
+            game_session.mutations_per_faction[faction_id],
             game_session.total_sol_bets,
             game_session.total_points_bets,
             game_session.total_wgtd_points_bets,
@@ -2033,44 +2112,104 @@ fn internal_process_bets<'info>(
             &doge_mint,
         );
 
-        // Always add XP to PlayerData (even without mutation)
-        player_data.gameplay_doge_xp = player_data.gameplay_doge_xp + mutation_result.xp_gained;
+        // Always add XP (even without mutation) -- ties SOL spent to NFT progression.
+        player_data.gameplay_doge_xp = player_data
+            .gameplay_doge_xp
+            .checked_add(mutation_result.xp_gained)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
-            // Evolution: only 1 per faction per round. Power/Trait: unlimited
-            let is_evolution = matches!(mutation_type, MutationType::Evolution);
-            let can_apply =
-                !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
+            // Cap active_multiplier at MAX_MULTIPLIER.
+            let new_mult = player_data
+                .active_multiplier
+                .checked_add(mutation_result.multiplier_increase)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            player_data.active_multiplier = new_mult.min(MAX_MULTIPLIER as u32);
 
-            player_data.active_multiplier =
-                player_data.active_multiplier + mutation_result.multiplier_increase;
+            let mutation_type_u8 = match mutation_type {
+                MutationType::Evolution => 1u8,
+                MutationType::Power => 2u8,
+                MutationType::Trait => 3u8,
+            };
+            user_game_bet.mutation_type = mutation_type_u8;
+            player_data.gameplay_doge_dna = mutation_result.new_dna;
 
-            if can_apply {
-                user_game_bet.mutation_type = match mutation_type {
-                    MutationType::Evolution => 1,
-                    MutationType::Power => 2,
-                    MutationType::Trait => 3,
-                };
-                player_data.gameplay_doge_dna = mutation_result.new_dna;
+            // Track mutation counts for round budget + per-faction difficulty.
+            game_session.mutations_per_faction[faction_id] = game_session.mutations_per_faction
+                [faction_id]
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            game_session.total_mutations_this_round = game_session
+                .total_mutations_this_round
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-                if is_evolution {
-                    game_session.mutation_occurred_per_faction[faction_id] = true;
+            if !user_epoch_bets.doge_bonus_eligible {
+                user_epoch_bets.doge_bonus_eligible = true;
+                user_epoch_bets.gameplay_doge = player_data.gameplay_doge;
+
+                for direction_index in 0..PredictionDirection::COUNT {
+                    let existing_weight =
+                        user_epoch_bets.direction_bets[faction_id][direction_index];
+                    if existing_weight > 0 {
+                        epoch_state.eligible_doge_direction_totals[faction_id][direction_index] =
+                            epoch_state.eligible_doge_direction_totals[faction_id][direction_index]
+                                .checked_add(existing_weight)
+                                .ok_or(ErrorCode::ArithmeticOverflow)?;
+                    }
                 }
-
-                emit!(MutationTriggered {
-                    round_id,
-                    user: owner_key,
-                    doge_mint: player_data.gameplay_doge,
-                    xp_gained: mutation_result.xp_gained,
-                });
-
-                msg!(
-                    "🧬 Mutation! Type: {}, Mult: {}",
-                    user_game_bet.mutation_type,
-                    player_data.active_multiplier
-                );
             }
+
+            // --- Accumulate mutation score into epoch state ---
+            let type_weight: u64 = match mutation_type {
+                MutationType::Evolution => EVOLUTION_SCORE_WEIGHT,
+                MutationType::Power => POWER_SCORE_WEIGHT,
+                MutationType::Trait => TRAIT_SCORE_WEIGHT,
+            };
+            let mutation_score_u128 = (type_weight as u128)
+                .checked_mul(user_game_bet.total_sol_bet as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_mul(player_data.active_multiplier as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(BASE_MULTIPLIER as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(MUTATION_SCORE_PRECISION as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            let mutation_score =
+                u64::try_from(mutation_score_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+            if mutation_score > 0 {
+                epoch_state.faction_mutation_scores[faction_id] = epoch_state
+                    .faction_mutation_scores[faction_id]
+                    .checked_add(mutation_score)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+                emit!(crate::events::MutationScoreAccumulated {
+                    epoch_id: epoch_state.epoch_id,
+                    faction_id: faction_id as u8,
+                    mutation_type: mutation_type_u8,
+                    score_added: mutation_score,
+                    faction_total_score: epoch_state.faction_mutation_scores[faction_id],
+                    user: owner_key,
+                });
+            }
+
+            emit!(MutationTriggered {
+                round_id,
+                user: owner_key,
+                doge_mint: player_data.gameplay_doge,
+                xp_gained: mutation_result.xp_gained,
+            });
+
+            msg!(
+                "🧬 Mutation! Type: {}, Mult: {}, EpochScore: +{}, Round {}/{}",
+                mutation_type_u8,
+                player_data.active_multiplier,
+                mutation_score,
+                game_session.total_mutations_this_round,
+                mutation_budget
+            );
         }
 
         msg!("   XP: {}", player_data.gameplay_doge_xp);
@@ -2080,8 +2219,13 @@ fn internal_process_bets<'info>(
 }
 
 fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
-    let fee = amount.saturating_mul(protocol_fee_pct) / M_HUNDRED;
-    let net_amount = amount.saturating_sub(fee);
+    let fee = amount
+        .checked_mul(protocol_fee_pct)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        / M_HUNDRED;
+    let net_amount = amount
+        .checked_sub(fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "     Net amount (after fee): {} SOL. Protocol fee ({}%): {} SOL",
         (net_amount as f64) / 1_000_000_000.0,
@@ -2096,24 +2240,31 @@ fn validate_points_percentage_limit(
     current_sol_bets: u64,
     amount: u64,
 ) -> Result<()> {
-    // Validate points percentage limit: points bets must stay at or below 25% of SOL bets for this session
-    // Tickets can only be used when: (total_points_bets + ticket_amount) <= (total_sol_bets * 25 / 100)
-    let new_points_bets = current_points_bets + amount;
-    msg!("     Current session stats: SOL bets: {} lamports, Points bets: {} lamports, New points bets if allowed: {} lamports", current_sol_bets, current_points_bets, new_points_bets);
+    // total_points_bets includes SOL-backed points plus ticket-backed points.
+    // Enforce the 25% cap only on the ticket-backed portion.
+    let current_ticket_points = current_points_bets.saturating_sub(current_sol_bets);
+    let new_ticket_points = current_ticket_points
+        .checked_add(amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!(
+        "     Current session stats: SOL bets: {} lamports, Total points: {} lamports, Ticket-backed points: {} lamports, New ticket-backed points if allowed: {} lamports",
+        current_sol_bets,
+        current_points_bets,
+        current_ticket_points,
+        new_ticket_points
+    );
 
-    // Require that SOL bets exist before allowing ticket bets -  This ensures points percentage can be calculated and stays within 25% limit
     require!(current_sol_bets > 0, ErrorCode::InvalidParameters);
     msg!("     ✓ SOL bets exist in session");
 
-    // Calculate max allowed points bets (25% of SOL bets) -  This ensures points percentage can be calculated and stays within 25% limit
     let max_allowed_points = current_sol_bets * 25 / 100;
     msg!(
-        "       Max allowed points (25% of SOL): {} lamports",
+        "       Max allowed ticket-backed points (25% of SOL): {} lamports",
         max_allowed_points
     );
     require!(
-        new_points_bets <= max_allowed_points,
-        ErrorCode::InvalidParameters
+        new_ticket_points <= max_allowed_points,
+        ErrorCode::TicketBetCapExceeded
     );
     msg!("     ✓ Points bets stay within 25% limit");
     Ok(())
@@ -2293,13 +2444,8 @@ pub struct ChangeFaction<'info> {
 }
 
 #[derive(Accounts)]
-pub struct JoinRound<'info> {
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
-
+#[instruction(round_id: u64)]
+pub struct JoinBets<'info> {
     /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
     pub global_config: UncheckedAccount<'info>,
@@ -2314,7 +2460,7 @@ pub struct JoinRound<'info> {
     /// GameSession PDA for the current round (must be initialized by crank function)
     #[account(
         mut,
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump = game_session.bump
     )]
     pub game_session: Box<Account<'info, GameSession>>,
@@ -2324,7 +2470,7 @@ pub struct JoinRound<'info> {
         init_if_needed,
         payer = authority,
         space = UserGameBet::LEN,
-        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &round_id.to_le_bytes()],
         bump
     )]
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
@@ -2353,13 +2499,9 @@ pub struct JoinRound<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (read for current_epoch_id)
-    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
+    /// Epoch config (mut: epoch_settle_cycle written on epoch auto-start)
+    #[account(mut, seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
-
-    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
-    #[account(seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]], bump)]
-    pub index_state: UncheckedAccount<'info>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2371,102 +2513,9 @@ pub struct JoinRound<'info> {
     )]
     pub epoch_state: Box<Account<'info, EpochState>>,
 
-    /// User epoch bets for current epoch (init_if_needed for first bet)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = UserEpochBets::LEN,
-        seeds = [USER_EPOCH_BETS_SEED, authority.key().as_ref(), &epoch_config.current_epoch_id.to_le_bytes()],
-        bump,
-    )]
-    pub user_epoch_bets: Box<Account<'info, UserEpochBets>>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-/// Account struct for batch betting.
-/// Batch bets can include multiple country+direction picks in one transaction.
-#[derive(Accounts)]
-pub struct JoinRoundBatch<'info> {
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
-        bump = global_game_state.bump
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
-
-    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
-    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
-    pub global_config: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
-    )]
-    pub player_data: Box<Account<'info, PlayerData>>,
-
-    /// GameSession PDA for the current round
-    #[account(
-        mut,
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
-        bump = game_session.bump
-    )]
-    pub game_session: Box<Account<'info, GameSession>>,
-
-    /// UserGameBet PDA (shared across all bets in batch)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = UserGameBet::LEN,
-        seeds = [USER_GAME_BET_SEED.as_ref(), authority.key().as_ref(), &global_game_state.current_round_id.to_le_bytes()],
-        bump
-    )]
-    pub user_game_bet: Box<Account<'info, UserGameBet>>,
-
-    /// CHECK: SOL treasury PDA (fees go here)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-
-    /// CHECK: SOL rewards vault (staker fees go here)
-    #[account(
-        mut,
-        seeds = [STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_rewards_vault: UncheckedAccount<'info>,
-
-    /// CHECK: SOL prize pot vault (PDA)
-    #[account(
-        mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
-        bump
-    )]
-    pub sol_prize_pot_vault: UncheckedAccount<'info>,
-
-    /// Epoch config (read for current_epoch_id)
-    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
-    pub epoch_config: Box<Account<'info, EpochConfig>>,
-
-    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
-    #[account(seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]], bump)]
-    pub index_state: UncheckedAccount<'info>,
-
-    /// Epoch state for current epoch (init_if_needed for new epochs)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = EpochState::LEN,
-        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
-        bump,
-    )]
-    pub epoch_state: Box<Account<'info, EpochState>>,
+    /// Economy state (read for lp_operations_count to tie epoch cycle to economy cycle)
+    #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// User epoch bets for current epoch (init_if_needed for first bet)
     #[account(
@@ -2797,16 +2846,9 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (read for current_epoch_id)
-    #[account(seeds = [EPOCH_CONFIG_SEED], bump)]
+    /// Epoch config (mut: epoch_settle_cycle written on epoch auto-start)
+    #[account(mut, seeds = [EPOCH_CONFIG_SEED], bump)]
     pub epoch_config: Box<Account<'info, EpochConfig>>,
-
-    /// CHECK: PDA + owner/type validated in handler to keep account parser stack small
-    #[account(
-        seeds = [INDEX_STATE_SEED, &[epoch_config.active_index_id]],
-        bump
-    )]
-    pub index_state: UncheckedAccount<'info>,
 
     /// Epoch state for current epoch (init_if_needed for new epochs)
     #[account(
@@ -2817,6 +2859,10 @@ pub struct ExecuteAutominerBet<'info> {
         bump,
     )]
     pub epoch_state: Box<Account<'info, EpochState>>,
+
+    /// Economy state (read for lp_operations_count to tie epoch cycle to economy cycle)
+    #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// User epoch bets for vault OWNER (init_if_needed, payer=caller)
     #[account(
@@ -2851,6 +2897,15 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     msg!("🎮 === USING DOGE FOR GAMEPLAY ===");
     msg!("   Doge mint: {}", doge_mint);
 
+    require!(
+        ctx.accounts.global_config.rpg_progression,
+        ErrorCode::GameplayNotEnabled
+    );
+    require!(
+        ctx.accounts.epoch_config.is_active,
+        ErrorCode::EpochNotActive
+    );
+
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
     require!(
@@ -2869,10 +2924,18 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
         player_data.gameplay_doge == Pubkey::default(),
         ErrorCode::InvalidParameters
     );
-
-    // Verify faction matches
     require!(
-        doge_metadata.faction_id == faction_state.faction_id,
+        player_data.gameplay_unlock_request_epoch == 0,
+        ErrorCode::InvalidState
+    );
+
+    // Gameplay doges must match the player's current home faction.
+    require!(
+        player_data.faction_id == faction_state.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        doge_metadata.faction_id == player_data.faction_id,
         ErrorCode::InvalidFactionId
     );
 
@@ -2895,12 +2958,16 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     // Update player data - cache doge fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
     player_data.gameplay_doge = doge_mint;
-    player_data.active_multiplier = doge_metadata.multiplier;
+    player_data.active_multiplier = doge_metadata.multiplier.min(MAX_MULTIPLIER as u32);
     player_data.gameplay_doge_dna = doge_metadata.dna;
     player_data.gameplay_doge_xp = doge_metadata.xp;
+    player_data.gameplay_unlock_request_epoch = 0;
 
     // Update faction state
-    faction_state.doges_playing += 1;
+    faction_state.doges_playing = faction_state
+        .doges_playing
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update doge metadata
     doge_metadata.incubated_player_data = player_data.owner;
@@ -2919,7 +2986,38 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     emit!(DogeUsedForGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
-        faction_id: player_data.faction_id,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+/// Request gameplay doge unlock. Actual withdrawal is only allowed after the next epoch/campaign starts.
+pub fn internal_request_doge_gameplay_unlock(
+    ctx: Context<RequestDogeGameplayUnlock>,
+) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let current_epoch_id = ctx.accounts.epoch_config.current_epoch_id;
+    let current_time = Clock::get()?.unix_timestamp;
+
+    require!(
+        player_data.gameplay_doge != Pubkey::default(),
+        ErrorCode::InvalidState
+    );
+    require!(
+        player_data.gameplay_unlock_request_epoch == 0,
+        ErrorCode::GameplayUnlockAlreadyRequested
+    );
+
+    player_data.gameplay_unlock_request_epoch = current_epoch_id;
+
+    emit!(DogeGameplayUnlockRequested {
+        user: ctx.accounts.user.key(),
+        doge_mint: player_data.gameplay_doge,
+        requested_during_epoch_id: current_epoch_id,
+        unlock_available_after_epoch_id: current_epoch_id
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?,
         timestamp: current_time,
     });
 
@@ -2955,6 +3053,28 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
         doge_metadata.incubated_player_data == player_data.owner,
         ErrorCode::Unauthorized
     );
+    require!(
+        player_data.faction_id == faction_state.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        doge_metadata.faction_id == player_data.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        player_data.gameplay_unlock_request_epoch != 0,
+        ErrorCode::GameplayUnlockNotRequested
+    );
+    require!(
+        !ctx.accounts.epoch_config.is_active
+            || ctx.accounts.epoch_config.current_epoch_id
+                > player_data.gameplay_unlock_request_epoch,
+        ErrorCode::GameplayUnlockNotReady
+    );
+    require!(
+        !player_has_pending_reward_claims(player_data),
+        ErrorCode::GameplayRewardsPending
+    );
 
     // Transfer NFT back to user
     msg!("🔓 Transferring doge back to user");
@@ -2978,10 +3098,6 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     // Sync cached data back to doge metadata before withdrawal
     // Note: generation is stored in DNA bits 4-6
     msg!("   Syncing gameplay progress to doge...");
-    require!(
-        doge_metadata.dna == player_data.gameplay_doge_dna || player_data.gameplay_doge_xp > 0,
-        ErrorCode::ClaimPendingRoundRewards
-    );
     doge_metadata.dna = player_data.gameplay_doge_dna;
     doge_metadata.xp = player_data.gameplay_doge_xp;
     doge_metadata.multiplier = player_data.active_multiplier;
@@ -2994,14 +3110,18 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
         doge_metadata.xp
     );
 
-    // Clear player data gameplay fields
+    // Clear player data gameplay fields.
     player_data.gameplay_doge = Pubkey::default();
-    player_data.active_multiplier = BASE_MULTIPLIER; // Reset to BASE_MULTIPLIER
+    player_data.active_multiplier = BASE_MULTIPLIER;
     player_data.gameplay_doge_dna = [0u8; 32];
     player_data.gameplay_doge_xp = 0;
+    player_data.gameplay_unlock_request_epoch = 0;
 
     // Update faction state
-    faction_state.doges_playing = faction_state.doges_playing.saturating_sub(1);
+    faction_state.doges_playing = faction_state
+        .doges_playing
+        .checked_sub(1)
+        .ok_or(ErrorCode::InvalidState)?;
 
     // Update doge metadata
     doge_metadata.incubated_player_data = Pubkey::default();
@@ -3013,7 +3133,6 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     emit!(DogeWithdrawnFromGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
-        faction_id: player_data.faction_id,
         timestamp: current_time,
     });
 
@@ -3053,6 +3172,12 @@ pub struct UseDogeForGameplay<'info> {
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
     pub doge_custody_pda: UncheckedAccount<'info>,
 
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump = epoch_config.bump)]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
 
@@ -3060,6 +3185,23 @@ pub struct UseDogeForGameplay<'info> {
     pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RequestDogeGameplayUnlock<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump = epoch_config.bump)]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -3094,6 +3236,9 @@ pub struct WithdrawDogeFromGameplay<'info> {
     /// CHECK: PDA for NFT custody
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
     pub doge_custody_pda: UncheckedAccount<'info>,
+
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump = epoch_config.bump)]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,

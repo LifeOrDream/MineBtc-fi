@@ -3,7 +3,7 @@ use anchor_lang::solana_program::keccak;
 
 use crate::errors::ErrorCode;
 use crate::events::{DogeEvolution, DogePowerMutation, DogeVisualMutation};
-use crate::state::{BASE_MULTIPLIER, MAX_BASE_CHANCE};
+use crate::state::{BASE_MULTIPLIER, FACTION_MUTATION_PENALTY_STEP, MAX_BASE_CHANCE};
 
 // ========================================================================================
 // ============================= DNA STRUCTURE & CONSTANTS ================================
@@ -203,6 +203,7 @@ pub fn calculate_mutation_result(
     current_multiplier: u32,
     mut gameplay_doge_dna: [u8; 32],
     gameplay_doge_xp: u32,
+    faction_mutation_count: u8,
     total_sol_bets: u64,
     total_points_bets: u64,
     total_wgtd_points_bets: u64,
@@ -265,17 +266,23 @@ pub fn calculate_mutation_result(
     msg!("   Bet strength: {:.2}%", bet_strength as f64 / 100.0);
 
     // B. Multiplier Penalty (0 - 10,000 bps)
-    // Formula: (BASE_MULTIPLIER / Current) * 10,000
-    // 1.0x -> 1k/1k * 1k = 1000 (100% factor)
-    // 6.9x -> 1k/6900 * 1k = 144.9 (14.5% factor)
-    let mult_factor = (BASE_MULTIPLIER as u32 * 10000) / current_multiplier as u32;
+    // Higher multiplier = lower chance, slowing progression for advanced doges.
+    let mult_factor = (BASE_MULTIPLIER as u64 * 10000) / current_multiplier as u64;
     msg!("   Multiplier factor: {:.2}%", mult_factor as f64 / 100.0);
 
-    // C. Final Chance Calculation
-    // Chance = 30% * BetFactor * MultFactor
-    // scale: 3000 * (0.0-1.0) * (0.14-1.0)
-    // Final Chance = 30% * bet_strength * mult_factor / 100M
-    let final_chance_bps = (MAX_BASE_CHANCE * bet_strength * (mult_factor as u64)) / 100_000_000;
+    // C. Per-Faction Penalty: each prior mutation this round makes the next harder.
+    // 10000 / (10000 + count * 5000):  0 prior → 100%, 1 → 67%, 2 → 50%, 3 → 40%
+    let faction_penalty =
+        10000u64 / (10000u64 + faction_mutation_count as u64 * FACTION_MUTATION_PENALTY_STEP);
+    msg!(
+        "   Faction penalty ({}): {:.2}%",
+        faction_mutation_count,
+        faction_penalty as f64 / 100.0
+    );
+
+    // D. Final Chance = BASE × bet_strength × mult_factor × faction_penalty / 1T
+    let final_chance_bps =
+        (MAX_BASE_CHANCE * bet_strength * mult_factor * faction_penalty) / 1_000_000_000_000;
     msg!("   Final chance: {:.2}%", final_chance_bps as f64 / 100.0);
 
     // --- STEP 2: ROLL THE DICE ---
@@ -334,12 +341,14 @@ pub fn calculate_mutation_result(
     };
     msg!("   Mutation type: {:?}, Base boost: {}", m_type, base_boost);
 
-    // XP Bonus: use % of current XP to boost multiplier
+    // XP Bonus: a small fraction of accumulated XP boosts the multiplier.
+    // Kept low so the grind to 10x takes weeks of active play, not minutes.
+    // Evolution: 5-10% of XP.  Power/Trait: 2-5% of XP.
     let xp_roll = seed[3] as u64;
     let (min_pct, max_pct) = if m_type == MutationType::Evolution {
-        (75, 100)
+        (5u64, 10u64)
     } else {
-        (25, 75)
+        (2u64, 5u64)
     };
     let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
     let xp_mult_boost = (gameplay_doge_xp as u64 * efficiency_pct) / 100;
@@ -748,6 +757,7 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 // ========================================================================================
 
 /// Get breed value from DNA (2 bits at BREED_OFFSET)
+#[allow(dead_code)]
 pub fn get_breed(dna: &[u8; 32]) -> u8 {
     get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0)
 }
@@ -1202,6 +1212,7 @@ mod tests {
             1000,
             dna,
             100,
+            0, // faction_mutation_count
             1_000_00000,
             1_000_00_000,
             1_000_00_000,

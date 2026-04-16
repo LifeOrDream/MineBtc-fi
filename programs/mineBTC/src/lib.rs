@@ -1,24 +1,22 @@
 // # MineBTC Program
 //
-// The main entry point for the MineBTC program.
+// Degen country arena game on Solana.
 //
-// This program implements a faction-based betting and mining game on Solana.
-// Users join factions, place directional country bets, mine MineBTC tokens, and stake assets for rewards.
+// Players pick a country, pick a direction, bet SOL. Their doge NFTs evolve through
+// gameplay — mutations during rounds decide which country climbs the leaderboard each
+// cycle. Deflationary dogeBTC economy with 1% transfer tax, POL burns, and faction
+// staking rewards.
 //
 // ## Modules
 //
-// - `admin`: Administrative functions for configuration and management.
-// - `economy`: Tokenomics, fee distribution, and liquidity management.
-// - `user`: User interactions, betting, and account management.
-// - `stake`: Staking logic for MineBTC and LP tokens.
-// - `game`: Core game loop, round management, and randomness.
-// - `doges`: Doge NFT system for hashpower multipliers.
-// - `tax`: Tax system for deflationary mechanics and reward distribution.
-//
-// ## Architecture
-//
-// The program uses a hub-and-spoke architecture with `GlobalConfig` and `GlobalGameState` as central
-// state accounts. Users interact through `PlayerData` accounts, and factions are tracked via `FactionState`.
+// - `admin`: Configuration, factions, fee parameters.
+// - `economy`: Price snapshots, emission rate adjustment, POL (LP add + burn).
+// - `user`: Betting, autominers, round claims, gameplay doges, mutations.
+// - `stake`: dogeBTC and LP token staking.
+// - `game`: 60-second round loop, slot-hash randomness, winner selection.
+// - `doges`: Doge NFT minting, breeding, staking, evolution.
+// - `epoch`: Mutation-driven competitive cycles, settlement, cycle rewards.
+// - `tax`: Transfer-tax harvest, faction treasury distribution.
 //
 
 use anchor_lang::prelude::*;
@@ -351,6 +349,16 @@ pub mod minebtc {
         admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value)
     }
 
+    /// Set or update a user's free Doge mint allowance (admin only).
+    /// The user still pays transaction fees and account rent, but not the mint price.
+    pub fn set_doge_free_mint_allowance(
+        ctx: Context<SetDogeFreeMintAllowance>,
+        user: Pubkey,
+        remaining_free_mints: u8,
+    ) -> Result<()> {
+        admin::set_doge_free_mint_allowance_internal(ctx, user, remaining_free_mints)
+    }
+
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
@@ -394,7 +402,7 @@ pub mod minebtc {
     // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize the global game state for Faction Surge (admin only)
+    /// Initialize the global game state (admin only)
     ///
     /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
     /// This must be called before any rounds can be started.
@@ -405,20 +413,10 @@ pub mod minebtc {
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
-    /// Add a cranker bot to the whitelist (admin only)
-    /// Maximum MAX_CRANKER_BOTS bots can be whitelisted
-    pub fn add_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-        admin::add_cranker_bot_internal(ctx, bot_pubkey)
-    }
-
-    /// Remove a cranker bot from the whitelist (admin only)
-    pub fn remove_cranker_bot(ctx: Context<UpdateGameState>, bot_pubkey: Pubkey) -> Result<()> {
-        admin::remove_cranker_bot_internal(ctx, bot_pubkey)
-    }
-
     /// Switch game state (toggle is_active) (admin only)
     ///
-    /// Toggles the game's active state. When paused, rounds cannot be started or ended.
+    /// Toggles the game's active state. When paused, new rounds cannot be started.
+    /// Already-ended rounds can still be permissionlessly finalized.
     pub fn switch_game_state(ctx: Context<UpdateGameState>) -> Result<()> {
         admin::switch_game_state_internal(ctx)
     }
@@ -530,86 +528,22 @@ pub mod minebtc {
     // ------------ EPOCH MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize epoch mining configuration (admin only)
-    /// model5_pct + top1_pct + top2_pct + top3_pct must <= 100
-    pub fn initialize_epoch_config(
-        ctx: Context<InitializeEpochConfig>,
-        oracle_authority: Pubkey,
-        epoch_duration: u64,
-        risk_factor: u16,
-        model5_pct: u8,
-        top1_pct: u8,
-        top2_pct: u8,
-        top3_pct: u8,
-    ) -> Result<()> {
-        epoch::initialize_epoch_config_internal(
-            ctx,
-            oracle_authority,
-            epoch_duration,
-            risk_factor,
-            model5_pct,
-            top1_pct,
-            top2_pct,
-            top3_pct,
-        )
+    /// Initialize epoch mining configuration (admin only).
+    /// Epoch duration is tied to the economy cycle -- one epoch per LP burn.
+    pub fn initialize_epoch_config(ctx: Context<InitializeEpochConfig>) -> Result<()> {
+        epoch::initialize_epoch_config_internal(ctx)
     }
 
     /// Update epoch mining configuration (admin only)
     pub fn update_epoch_config(
         ctx: Context<UpdateEpochConfig>,
-        oracle_authority: Option<Pubkey>,
-        epoch_duration: Option<u64>,
         is_active: Option<bool>,
-        model5_pct: Option<u8>,
-        top1_pct: Option<u8>,
-        top2_pct: Option<u8>,
-        top3_pct: Option<u8>,
     ) -> Result<()> {
-        epoch::update_epoch_config_internal(
-            ctx,
-            oracle_authority,
-            epoch_duration,
-            is_active,
-            model5_pct,
-            top1_pct,
-            top2_pct,
-            top3_pct,
-        )
+        epoch::update_epoch_config_internal(ctx, is_active)
     }
 
-    /// Initialize an index state that the oracle can update over time.
-    pub fn initialize_index_state(
-        ctx: Context<InitializeIndexState>,
-        index_id: u8,
-        name: String,
-        initial_scores: [i64; state::NUM_FACTIONS],
-    ) -> Result<()> {
-        epoch::initialize_index_state_internal(ctx, index_id, name, initial_scores)
-    }
-
-    /// Oracle schedules which index/question should become active for the next epoch.
-    pub fn schedule_next_epoch_market(
-        ctx: Context<ScheduleNextEpochMarket>,
-        next_index_id: u8,
-        question_hash: [u8; 32],
-    ) -> Result<()> {
-        epoch::schedule_next_epoch_market_internal(ctx, next_index_id, question_hash)
-    }
-
-    /// AI Oracle posts additive score deltas for an index.
-    pub fn update_epoch_scores(
-        ctx: Context<UpdateEpochScores>,
-        score_deltas: [i64; state::NUM_FACTIONS],
-    ) -> Result<()> {
-        epoch::update_epoch_scores_internal(ctx, score_deltas)
-    }
-
-    /// AI Oracle updates global risk factor based on world volatility
-    pub fn update_risk_factor(ctx: Context<UpdateRiskFactor>, risk_factor: u16) -> Result<()> {
-        epoch::update_risk_factor_internal(ctx, risk_factor)
-    }
-
-    /// Settle epoch: finalize scores and compute reward pool (fallback - anyone can call)
+    /// Settle epoch: finalize mutation-based rankings and compute reward pools.
+    /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
         epoch::settle_epoch_internal(ctx)
     }
@@ -620,18 +554,18 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ GAME ROUND MANAGEMENT (COMMIT-REVEAL RANDOMNESS) ------------------------
+    // ------------ GAME ROUND MANAGEMENT (SLOT-HASH RANDOMNESS) ------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Start a new round by committing a hash and initializing GameSession.
+    /// Start a new round and initialize its GameSession.
     /// round_id should be current_round_id + 1 (validated in the function)
-    pub fn start_round(ctx: Context<StartRound>, round_id: u64, commit: [u8; 32]) -> Result<()> {
-        game::int_start_round(ctx, round_id, commit)
+    pub fn start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
+        game::int_start_round(ctx, round_id)
     }
 
-    /// End the current round by revealing seed and selecting the winning faction.
-    pub fn end_round(ctx: Context<EndRound>, revealed_seed: [u8; 32]) -> Result<()> {
-        game::int_end_round(ctx, revealed_seed)
+    /// Finalize the current round using scheduled slot-hash entropy.
+    pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
+        game::int_end_round(ctx)
     }
 
     /// Finalize the round's faction-level staking/motherlode distribution and track epoch mining.
@@ -640,10 +574,10 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ FACTION SURGE RAFFLE FUNCTIONS -------------------------------------------
+    // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize a player account for the Faction Surge game
+    /// Initialize a player account for the MineBTC country arena
     pub fn initialize_player(
         ctx: Context<InitializePlayer>,
         faction_id: u8,
@@ -667,24 +601,15 @@ pub mod minebtc {
         user::internal_set_player_claim_settings(ctx, allow_bots_to_claim)
     }
 
-    /// Join a round by placing a faction-direction bet.
-    pub fn join_round(
-        ctx: Context<JoinRound>,
-        amount: u64,
-        bet_type: BetType,
-        use_ticket: Option<u8>,
-    ) -> Result<()> {
-        user::internal_join_round(ctx, amount, bet_type, use_ticket)
-    }
-
-    /// Join a round with multiple bets in a single transaction
-    pub fn join_round_batch(
-        ctx: Context<JoinRoundBatch>,
+    /// Join a round by placing one or more faction-direction bets.
+    pub fn join_bets(
+        ctx: Context<JoinBets>,
+        round_id: u64,
         bet_types: Vec<BetType>,
         amount_per_bet: u64,
         use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::internal_join_round_batch(ctx, bet_types, amount_per_bet, use_ticket)
+        user::internal_join_bets(ctx, round_id, bet_types, amount_per_bet, use_ticket)
     }
 
     /// Initialize autominer vault with flexible faction-direction configuration
@@ -751,6 +676,11 @@ pub mod minebtc {
     /// Use an doge for gameplay - deposits to custody and sets as active gameplay doge
     pub fn use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
         user::internal_use_doge_for_gameplay(ctx)
+    }
+
+    /// Request gameplay doge unlock. Actual withdrawal is only available in the next epoch/campaign cycle.
+    pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
+        user::internal_request_doge_gameplay_unlock(ctx)
     }
 
     /// Withdraw doge from gameplay - returns doge to user
@@ -838,6 +768,16 @@ pub mod minebtc {
         ticket_tier_index: u8,
     ) -> Result<()> {
         doges::int_admin_mint_doge(ctx, recipient, faction_id, ticket_tier_index)
+    }
+
+    /// Mint a single Doge for free using a per-user whitelist allowance.
+    /// The caller pays transaction fees and rent, but no Doge mint price.
+    pub fn whitelist_mint_doge(
+        ctx: Context<WhitelistMintDoge>,
+        faction_id: u8,
+        ticket_tier_index: u8,
+    ) -> Result<()> {
+        doges::int_whitelist_mint_doge(ctx, faction_id, ticket_tier_index)
     }
 
     /// Batch mint multiple Doge (anyone can call, max 10 per transaction)

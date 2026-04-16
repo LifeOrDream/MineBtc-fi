@@ -91,7 +91,7 @@ pub enum ErrorCode {
     #[msg("dogeBtc needed for POl cannot be more than 5% of vault balance")]
     MaxLimitError,
 
-    // ========== FACTION SURGE ERRORS ========== //
+    // ========== ROUND GAME ERRORS ========== //
     #[msg("Round has already ended")]
     RoundEnded,
 
@@ -115,9 +115,6 @@ pub enum ErrorCode {
 
     #[msg("Invalid owner")]
     InvalidOwner,
-
-    #[msg("Cannot place multiple directions on the same faction in one round")]
-    ConflictingFactionDirection,
 
     #[msg("Invalid amount")]
     InvalidAmount,
@@ -184,6 +181,21 @@ pub enum ErrorCode {
     #[msg("Minting not allowed")]
     MintingNotAllowed,
 
+    #[msg("Gameplay locking is only available while RPG progression is enabled")]
+    GameplayNotEnabled,
+
+    #[msg("Gameplay unlock has already been requested for this doge")]
+    GameplayUnlockAlreadyRequested,
+
+    #[msg("Gameplay unlock has not been requested")]
+    GameplayUnlockNotRequested,
+
+    #[msg("Gameplay doge can only be unlocked after the next epoch/campaign cycle begins")]
+    GameplayUnlockNotReady,
+
+    #[msg("Claim all pending round, epoch, and token rewards before unlocking this gameplay doge")]
+    GameplayRewardsPending,
+
     // ========== EPOCH MINING ERRORS ========== //
     #[msg("Epoch is not currently active")]
     EpochNotActive,
@@ -200,9 +212,18 @@ pub enum ErrorCode {
     #[msg("Epoch rewards have already been claimed")]
     EpochRewardsAlreadyClaimed,
 
-    #[msg("Invalid oracle authority")]
-    InvalidOracleAuthority,
+    #[msg("Ticket-backed bets exceed the session cap")]
+    TicketBetCapExceeded,
 
-    #[msg("Invalid or unexpected index state")]
-    InvalidIndexState,
+    #[msg("Hashpower-changing staking actions are paused while a tax round is active")]
+    TaxRoundActive,
+
+    #[msg("Round entropy is not ready yet")]
+    RoundEntropyNotReady,
+
+    #[msg("Free Doge mint allowance exceeds the per-user maximum")]
+    MaxFreeDogeMintsExceeded,
+
+    #[msg("No free Doge mints remaining for this user")]
+    NoFreeDogeMintsRemaining,
 }

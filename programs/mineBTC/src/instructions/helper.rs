@@ -486,6 +486,10 @@ pub fn add_to_total_claimable(
     unrefined_minebtc: &mut UnrefinedRewards,
     player_data: &mut PlayerData,
     minebtc_rewards: u64,
+    user: Pubkey,
+    player_data_key: Pubkey,
+    source: u8,
+    reference_id: u64,
 ) -> Result<u64> {
     // Calculate extra dogeBtc rewards due to unrefining. The global unrefining_index
     // is monotonically non-decreasing, so checked_sub should never fail — but we
@@ -499,21 +503,40 @@ pub fn add_to_total_claimable(
         index_dif,
         INDEX_PRECISION as u128,
     )?;
-    let accrued_rewards = u64::try_from(accrued_u128.min(u64::MAX as u128))
-        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    let accrued_rewards = u64::try_from(accrued_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
     msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
-    let total_new = minebtc_rewards.saturating_add(accrued_rewards);
+    let total_new = minebtc_rewards
+        .checked_add(accrued_rewards)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
         .total_minebtc_claimable
-        .saturating_add(total_new);
+        .checked_add(total_new)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     player_data.unrefining_index = unrefined_minebtc.unrefining_index;
     player_data.pending_minebtc_rewards = player_data
         .pending_minebtc_rewards
-        .saturating_add(total_new);
+        .checked_add(total_new)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     player_data.unrefined_minebtc_rewards = player_data
         .unrefined_minebtc_rewards
-        .saturating_add(accrued_rewards);
+        .checked_add(accrued_rewards)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    if total_new > 0 {
+        emit!(crate::events::MinebtcClaimableAccrued {
+            user,
+            player_data: player_data_key,
+            source,
+            reference_id,
+            source_amount: minebtc_rewards,
+            unrefined_bonus_amount: accrued_rewards,
+            total_added: total_new,
+            pending_minebtc_after: player_data.pending_minebtc_rewards,
+            total_claimable_after: unrefined_minebtc.total_minebtc_claimable,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+    }
 
     Ok(accrued_rewards)
 }
