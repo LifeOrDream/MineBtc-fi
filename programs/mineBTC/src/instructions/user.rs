@@ -39,11 +39,7 @@ fn load_global_config(account: &AccountInfo<'_>) -> Result<GlobalConfig> {
 }
 
 fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
-    player_data.pending_round_claims > 0
-        || player_data.pending_epoch_claims > 0
-        || player_data.pending_sol_rewards > 0
-        || player_data.pending_minebtc_rewards > 0
-        || player_data.unrefined_minebtc_rewards > 0
+    player_data.pending_round_claims > 0 || player_data.pending_epoch_claims > 0
 }
 
 // ========================================================================================
@@ -1087,6 +1083,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     msg!("   Round ID: {}", round_id);
 
+    let player_data_key = ctx.accounts.player_data.key();
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
@@ -1124,10 +1121,13 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // Update player rewards using helper function
     update_player_rewards(
+        owner_key,
+        player_data_key,
         player_data,
         &mut ctx.accounts.unrefined_rewards,
         total_sol_reward,
         total_minebtc_reward,
+        round_id,
     )?;
 
     // Transfer SOL winnings directly to user from prize pot vault
@@ -1183,6 +1183,7 @@ pub fn internal_claim_autominer_rewards(
     msg!("   Round ID: {}", round_id);
     msg!("   Autominer owner: {}", ctx.accounts.autominer_vault.owner);
 
+    let player_data_key = ctx.accounts.player_data.key();
     let game_session = &ctx.accounts.game_session;
     let user_bet = &ctx.accounts.user_game_bet;
     let player_data = &mut ctx.accounts.player_data;
@@ -1209,10 +1210,13 @@ pub fn internal_claim_autominer_rewards(
 
     // Update player rewards using helper function
     update_player_rewards(
+        owner_key,
+        player_data_key,
         player_data,
         &mut ctx.accounts.unrefined_rewards,
         total_sol_reward,
         total_minebtc_reward,
+        round_id,
     )?;
 
     // === ACCUMULATED VALUE & MUTATION SYNC ===
@@ -1446,10 +1450,13 @@ fn calculate_round_rewards(
 
 /// Update player rewards stats and add MineBTC to pending rewards
 fn update_player_rewards(
+    owner: Pubkey,
+    player_data_key: Pubkey,
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
     total_sol_reward: u64,
     total_minebtc_reward: u64,
+    round_id: u64,
 ) -> Result<()> {
     player_data.total_sol_won = player_data
         .total_sol_won
@@ -1461,7 +1468,15 @@ fn update_player_rewards(
         total_sol_reward as f64 / 1e9
     );
 
-    helper::add_to_total_claimable(unrefined_rewards, player_data, total_minebtc_reward)?;
+    helper::add_to_total_claimable(
+        unrefined_rewards,
+        player_data,
+        total_minebtc_reward,
+        owner,
+        player_data_key,
+        CLAIMABLE_MINEBTC_SOURCE_ROUND,
+        round_id,
+    )?;
     player_data.total_dogebtc_won = player_data
         .total_dogebtc_won
         .checked_add(total_minebtc_reward)

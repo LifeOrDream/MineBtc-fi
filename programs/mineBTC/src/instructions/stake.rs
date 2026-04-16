@@ -194,6 +194,8 @@ pub fn int_stake_minebtc(
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
         int_update_minebtc_staking_rewards(
+            ctx.accounts.authority.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -398,6 +400,8 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
         int_update_minebtc_staking_rewards(
+            ctx.accounts.authority.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -711,6 +715,8 @@ pub fn int_stake_lp_tokens(
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
         int_update_lp_staking_rewards(
+            ctx.accounts.authority.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -905,6 +911,8 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     // Process pending rewards before updating position
     let (new_sol_rewards, new_minebtc_rewards, accrued_minebtc_rewards) =
         int_update_lp_staking_rewards(
+            ctx.accounts.authority.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -1143,6 +1151,8 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         _st_minebtc_new_minebtc_rewards,
         _st_minebtc_accrued_minebtc_rewards,
     ) = int_update_minebtc_staking_rewards(
+        ctx.accounts.authority.key(),
+        player_data_key,
         player_data,
         &mut ctx.accounts.unrefined_rewards,
         faction_state,
@@ -1150,6 +1160,8 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
     // Process LP staking SOL rewards
     let (_st_lp_new_sol_rewards, _st_lp_new_minebtc_rewards, _st_lp_accrued_minebtc_rewards) =
         int_update_lp_staking_rewards(
+            ctx.accounts.authority.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -1224,6 +1236,20 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     let player_data = &mut ctx.accounts.player_data;
     let unrefined_minebtc = &mut ctx.accounts.unrefined_rewards;
     let global_config = &ctx.accounts.global_config;
+
+    // Realize any deferred refining-index rewards before applying a new refining fee.
+    // Without this sync, users with no fresh staking updates can miss previously accrued
+    // refining distributions when they go straight to withdraw.
+    helper::add_to_total_claimable(
+        unrefined_minebtc,
+        player_data,
+        0,
+        player_owner,
+        player_data_key,
+        CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC,
+        0,
+    )?;
+
     msg!(
         "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} unrefining_index={}",
         player_owner,
@@ -1239,10 +1265,22 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         ErrorCode::InsufficientFunds
     );
 
-    // Apply refining fee (10% by default, or configured in global_config)
+    let base_pending = player_data.pending_minebtc_rewards;
+    let remaining_claimable_after_this_user = unrefined_minebtc
+        .total_minebtc_claimable
+        .checked_sub(base_pending)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    // Apply refining fee only when there are remaining claimants to receive it.
     let refining_fee_pct = global_config.minebtc_dist_config.refining_fee as u64;
-    let refining_fee = (player_data.pending_minebtc_rewards * refining_fee_pct) / M_HUNDRED;
-    let base_claimable_amount = player_data.pending_minebtc_rewards - refining_fee;
+    let refining_fee = if remaining_claimable_after_this_user > 0 {
+        (base_pending * refining_fee_pct) / M_HUNDRED
+    } else {
+        0
+    };
+    let base_claimable_amount = base_pending
+        .checked_sub(refining_fee)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "Refining fee: {} minebtc. Base claimable amount: {} minebtc",
         refining_fee as f64 / 1e6,
@@ -1336,11 +1374,12 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Referral bonus + reward are paid from the emissions vault directly and were never
     // added to total_minebtc_claimable, so subtracting them would cause accounting drift
     // and inflate the refining fee index for remaining stakers.
-    let base_pending = player_data.pending_minebtc_rewards;
     unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
         .total_minebtc_claimable
-        .saturating_sub(base_pending);
+        .checked_sub(base_pending)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     player_data.pending_minebtc_rewards = 0;
+    player_data.unrefined_minebtc_rewards = 0;
     msg!(
         "   Deducted {} minebtc from total claimable (referral bonus: {}, referrer reward: {} paid from emissions vault)",
         base_pending as f64 / 1e6,
@@ -1371,24 +1410,29 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // This is done by increasing the reward index, which benefits all stakers proportionally
     if refining_fee > 0 {
         msg!("   Redistributing refining fee to other stakers...");
-        if unrefined_minebtc.total_minebtc_claimable > 0 {
-            let increment = helper::mul_div(
-                refining_fee,
-                INDEX_PRECISION,
-                unrefined_minebtc.total_minebtc_claimable,
-            )?;
-            unrefined_minebtc.unrefining_index = unrefined_minebtc
-                .unrefining_index
-                .checked_add(increment)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!(
-                "   Updated unrefining index: {} (+{})",
-                unrefined_minebtc.unrefining_index,
-                increment
-            );
-        } else {
-            msg!("   No other stakers to redistribute to. Fee remains in unrefined rewards pool.");
-        }
+        let increment = helper::mul_div(
+            refining_fee,
+            INDEX_PRECISION,
+            unrefined_minebtc.total_minebtc_claimable,
+        )?;
+        unrefined_minebtc.unrefining_index = unrefined_minebtc
+            .unrefining_index
+            .checked_add(increment)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
+            "   Updated unrefining index: {} (+{})",
+            unrefined_minebtc.unrefining_index,
+            increment
+        );
+        emit!(RefiningFeeRedistributed {
+            user: player_owner,
+            player_data: player_data_key,
+            refining_fee,
+            redistributed_amount: refining_fee,
+            redistributed_index_increment: increment as u128,
+            remaining_total_claimable: unrefined_minebtc.total_minebtc_claimable,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
     }
 
     emit!(DbtcRewardsClaimed {
@@ -1531,6 +1575,8 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
 // ----------------------------------------------------------------------------------------
 
 pub fn int_update_minebtc_staking_rewards(
+    player_owner: Pubkey,
+    player_data_key: Pubkey,
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
     faction_state: &FactionState,
@@ -1572,8 +1618,15 @@ pub fn int_update_minebtc_staking_rewards(
             faction_state.dogebtc_dogebtc_reward_index,
             player_data.dogebtc_dogebtc_reward_debt,
         )?;
-        accrued_minebtc_rewards =
-            helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards)?;
+        accrued_minebtc_rewards = helper::add_to_total_claimable(
+            unrefined_rewards,
+            player_data,
+            new_minebtc_rewards,
+            player_owner,
+            player_data_key,
+            CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC,
+            0,
+        )?;
         msg!(
             "   Updated pending MineBtc rewards: {} (+{})",
             player_data.pending_minebtc_rewards as f64 / 1e6,
@@ -1602,6 +1655,8 @@ pub fn int_update_minebtc_staking_rewards(
 }
 
 pub fn int_update_lp_staking_rewards(
+    player_owner: Pubkey,
+    player_data_key: Pubkey,
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
     faction_state: &FactionState,
@@ -1643,8 +1698,15 @@ pub fn int_update_lp_staking_rewards(
             faction_state.lp_dogebtc_reward_index,
             player_data.lp_dogebtc_reward_debt,
         )?;
-        accrued_minebtc_rewards =
-            helper::add_to_total_claimable(unrefined_rewards, player_data, new_minebtc_rewards)?;
+        accrued_minebtc_rewards = helper::add_to_total_claimable(
+            unrefined_rewards,
+            player_data,
+            new_minebtc_rewards,
+            player_owner,
+            player_data_key,
+            CLAIMABLE_MINEBTC_SOURCE_STAKING_LP,
+            0,
+        )?;
         msg!(
             "   Updated pending MineBtc rewards: {} (+{})",
             player_data.pending_minebtc_rewards as f64 / 1e6,
@@ -1699,7 +1761,7 @@ pub struct StakeMineBtc<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     // Staked position
     #[account(
@@ -1714,10 +1776,10 @@ pub struct StakeMineBtc<'info> {
         ],
         bump
     )]
-    pub user_position: Account<'info, StakedPosition>,
+    pub user_position: Box<Account<'info, StakedPosition>>,
 
     /// CHECK: MINE_BTC Mint (validated manually)
-    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
+    pub minebtc_mint: Box<InterfaceAccount<'info, Mint2022>>,
 
     // Token accounts
     #[account(
@@ -1727,7 +1789,7 @@ pub struct StakeMineBtc<'info> {
         constraint = user_minebtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
     )]
     /// User's MineBtc token account
-    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub user_minebtc_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
         mut,
@@ -1736,17 +1798,17 @@ pub struct StakeMineBtc<'info> {
         constraint = minebtc_custodian.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
     /// Token-2022 account that holds staked MINE_BTC for this faction
-    pub minebtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_custodian: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
         mut,
         seeds = [UNREFINED_REWARDS_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
+    pub tax_config: Box<Account<'info, TaxConfig>>,
 
     /// User who is staking tokens
     #[account(mut)]

@@ -740,6 +740,7 @@ pub fn int_whitelist_mint_doge(
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
 pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
+    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
@@ -818,12 +819,16 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     // Process pending rewards before updating position
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
         stake::int_update_minebtc_staking_rewards(
+            ctx.accounts.user.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
         stake::int_update_lp_staking_rewards(
+            ctx.accounts.user.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
@@ -950,6 +955,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
 /// in `remaining_accounts` so the program can derive the exact post-unstake multiplier.
 pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let doge_metadata = &mut ctx.accounts.doge_metadata;
+    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let doge_mint = doge_metadata.mint;
@@ -1016,12 +1022,16 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     // Process pending rewards before updating position
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
         stake::int_update_minebtc_staking_rewards(
+            ctx.accounts.user.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
         stake::int_update_lp_staking_rewards(
+            ctx.accounts.user.key(),
+            player_data_key,
             player_data,
             &mut ctx.accounts.unrefined_rewards,
             faction_state,

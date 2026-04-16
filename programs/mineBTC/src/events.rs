@@ -306,6 +306,35 @@ pub struct DbtcRewardsClaimed {
     pub timestamp: i64,
 }
 
+/// Event emitted whenever pending MineBtc claimable balance is increased.
+/// `source_amount` is the new reward from the triggering action, while
+/// `unrefined_bonus_amount` is previously deferred refining-tax yield realized at the same time.
+#[event]
+pub struct MinebtcClaimableAccrued {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub source: u8,
+    pub reference_id: u64,
+    pub source_amount: u64,
+    pub unrefined_bonus_amount: u64,
+    pub total_added: u64,
+    pub pending_minebtc_after: u64,
+    pub total_claimable_after: u64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when a MineBtc refining fee is redistributed through the unrefining index.
+#[event]
+pub struct RefiningFeeRedistributed {
+    pub user: Pubkey,
+    pub player_data: Pubkey,
+    pub refining_fee: u64,
+    pub redistributed_amount: u64,
+    pub redistributed_index_increment: u128,
+    pub remaining_total_claimable: u64,
+    pub timestamp: i64,
+}
+
 // ========================================================================================
 // =============================== USER PARTICIPATION EVENTS =============================
 // ========================================================================================

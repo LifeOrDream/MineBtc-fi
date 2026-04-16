@@ -332,6 +332,7 @@ pub struct SettleEpoch<'info> {
 pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
     let epoch_state = &ctx.accounts.epoch_state;
     let user_epoch_bets = &ctx.accounts.user_epoch_bets;
+    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
     let clock = Clock::get()?;
@@ -404,7 +405,15 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
     }
 
     if total_reward > 0 {
-        helper::add_to_total_claimable(unrefined_rewards, player_data, total_reward)?;
+        helper::add_to_total_claimable(
+            unrefined_rewards,
+            player_data,
+            total_reward,
+            owner_key,
+            player_data_key,
+            CLAIMABLE_MINEBTC_SOURCE_EPOCH,
+            epoch_id,
+        )?;
         player_data.total_dogebtc_won = player_data
             .total_dogebtc_won
             .checked_add(total_reward)
