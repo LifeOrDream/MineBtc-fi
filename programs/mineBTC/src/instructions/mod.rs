@@ -1,9 +1,9 @@
 pub mod admin;
 pub mod doges;
 pub mod economy;
-pub mod epoch;
 pub mod game;
 pub mod helper;
+pub mod rebase;
 pub mod stake;
 pub mod tax;
 pub mod user;

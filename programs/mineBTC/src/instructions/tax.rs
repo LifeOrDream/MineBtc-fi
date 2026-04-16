@@ -31,7 +31,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
 // - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
-// - `claim_faction_treasury_for_epoch`: Distributes treasury to stakers using epoch mutation leaderboard.
+// - `claim_faction_treasury_for_rebase`: Distributes treasury to stakers using epoch mutation leaderboard.
 //
 
 use crate::errors::ErrorCode;
@@ -67,7 +67,7 @@ pub fn internal_initialize_tax_config(
     tax_config.faction_treasury_pct = faction_treasury_pct;
     tax_config.burn_pct = burn_pct;
     tax_config.total_burnt = 0;
-    tax_config.last_treasury_epoch_id = 0;
+    tax_config.last_treasury_rebase_id = 0;
     tax_config.treasury_claimed_bitmap = 0;
 
     // Store PDA addresses
@@ -485,22 +485,22 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
 /// from the treasury vault to the emission vault and updates staker reward indexes.
 ///
 /// Permissionless: anyone can crank this after an epoch settles.
-pub fn internal_claim_faction_treasury_for_epoch(
-    ctx: Context<ClaimFactionTreasuryForEpoch>,
-    epoch_id: u64,
+pub fn internal_claim_faction_treasury_for_rebase(
+    ctx: Context<ClaimFactionTreasuryForRebase>,
+    rebase_id: u64,
 ) -> Result<()> {
     let tc = &mut ctx.accounts.tax_config;
-    let epoch_state = &ctx.accounts.epoch_state;
+    let rebase_state = &ctx.accounts.rebase_state;
     let fs = &mut ctx.accounts.faction_state;
     let fid = fs.faction_id;
 
     // Epoch must be settled
-    require!(epoch_state.stage == 1, ErrorCode::EpochNotSettled);
-    require!(epoch_state.epoch_id == epoch_id, ErrorCode::InvalidState);
+    require!(rebase_state.stage == 1, ErrorCode::RebaseNotSettled);
+    require!(rebase_state.rebase_id == rebase_id, ErrorCode::InvalidState);
 
     // If this is a new epoch, reset the claim bitmap
-    if epoch_id > tc.last_treasury_epoch_id {
-        tc.last_treasury_epoch_id = epoch_id;
+    if rebase_id > tc.last_treasury_rebase_id {
+        tc.last_treasury_rebase_id = rebase_id;
         tc.treasury_claimed_bitmap = 0;
     }
 
@@ -516,14 +516,14 @@ pub fn internal_claim_faction_treasury_for_epoch(
         return Ok(());
     }
 
-    let active_factions = epoch_state.active_faction_count as usize;
+    let active_factions = rebase_state.active_faction_count as usize;
     require!(
         (fid as usize) < active_factions,
         ErrorCode::InvalidFactionId
     );
 
     // Determine this faction's rank from epoch final_ranks
-    let rank = epoch_state.final_ranks[fid as usize] as usize;
+    let rank = rebase_state.final_ranks[fid as usize] as usize;
 
     // --- 80% rank-weighted: rank_points = active_factions - rank ---
     // #1 gets the most points, #last gets 1 point. Everyone gets something.
@@ -552,7 +552,7 @@ pub fn internal_claim_faction_treasury_for_epoch(
     let eligible_start = 5.min(active_factions.saturating_sub(1));
     let eligible_count = active_factions.saturating_sub(eligible_start);
     let lucky_rank = if eligible_count > 0 {
-        eligible_start + (epoch_id as usize % eligible_count)
+        eligible_start + (rebase_id as usize % eligible_count)
     } else {
         active_factions.saturating_sub(1)
     };
@@ -636,7 +636,7 @@ pub fn internal_claim_faction_treasury_for_epoch(
     tc.treasury_claimed_bitmap |= faction_bit;
 
     emit!(FactionTreasuryRewardsClaimed {
-        epoch_id,
+        rebase_id,
         faction_id: fid,
         rank: rank as u8,
         reward_amount,
@@ -746,12 +746,12 @@ pub struct CrankDistributeTax<'info> {
 /// Claim faction treasury rewards for a settled epoch.
 /// Uses mutation leaderboard (epoch final_ranks) -- no separate leaderboard needed.
 #[derive(Accounts)]
-#[instruction(epoch_id: u64)]
-pub struct ClaimFactionTreasuryForEpoch<'info> {
+#[instruction(rebase_id: u64)]
+pub struct ClaimFactionTreasuryForRebase<'info> {
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
-    #[account(seeds = [EPOCH_STATE_SEED, &epoch_id.to_le_bytes()], bump = epoch_state.bump)]
-    pub epoch_state: Account<'info, EpochState>,
+    #[account(seeds = [REBASE_STATE_SEED, &rebase_id.to_le_bytes()], bump = rebase_state.bump)]
+    pub rebase_state: Account<'info, RebaseState>,
     #[account(mut)]
     pub faction_state: Account<'info, FactionState>,
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]

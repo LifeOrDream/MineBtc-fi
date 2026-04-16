@@ -369,7 +369,7 @@ pub struct BetsPlaced {
     pub gameplay_doge_xp: u32,
 
     pub round_id: u64,
-    pub epoch_id: u64,
+    pub rebase_id: u64,
     pub num_bets: u8,
     pub faction_ids: Vec<u8>,
     pub directions: Vec<u8>,
@@ -476,7 +476,7 @@ pub struct AutominerReloaded {
 pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
-    pub epoch_id: u64,
+    pub rebase_id: u64,
     pub round_start_slot: u64,
     pub round_start_timestamp: i64,
     pub round_end_timestamp: i64,
@@ -568,7 +568,7 @@ pub struct NftFloorSweepFundsWithdrawn {
 /// Event emitted when a faction claims treasury rewards for a settled epoch.
 #[event]
 pub struct FactionTreasuryRewardsClaimed {
-    pub epoch_id: u64,
+    pub rebase_id: u64,
     pub faction_id: u8,
     pub rank: u8,
     pub reward_amount: u64,
@@ -597,13 +597,13 @@ pub struct DogeWithdrawnFromGameplay {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user requests gameplay unlock for the next epoch/campaign cycle.
+/// Event emitted when a user requests gameplay unlock for the next rebase cycle.
 #[event]
 pub struct DogeGameplayUnlockRequested {
     pub user: Pubkey,
     pub doge_mint: Pubkey,
-    pub requested_during_epoch_id: u64,
-    pub unlock_available_after_epoch_id: u64,
+    pub requested_during_rebase_id: u64,
+    pub unlock_available_after_rebase_id: u64,
     pub timestamp: i64,
 }
 
@@ -659,10 +659,10 @@ pub struct DogeVisualMutation {
 /// Event emitted when an epoch is settled.
 /// Rankings driven by on-chain mutation scores accumulated during the epoch.
 #[event]
-pub struct EpochSettled {
-    pub epoch_id: u64,
+pub struct RebaseSettled {
+    pub rebase_id: u64,
     pub total_dogebtc_mined: u64,
-    pub epoch_mining_pool: u64,
+    pub rebase_mining_pool: u64,
     pub start_ranks: [u8; NUM_FACTIONS],
     pub final_ranks: [u8; NUM_FACTIONS],
     pub rank_deltas: [i8; NUM_FACTIONS],
@@ -676,7 +676,7 @@ pub struct EpochSettled {
 /// Event emitted when a mutation contributes score to a faction's epoch total.
 #[event]
 pub struct MutationScoreAccumulated {
-    pub epoch_id: u64,
+    pub rebase_id: u64,
     pub faction_id: u8,
     pub mutation_type: u8,
     pub score_added: u64,
@@ -684,10 +684,10 @@ pub struct MutationScoreAccumulated {
     pub user: Pubkey,
 }
 
-/// Event emitted when a user claims epoch rewards
+/// Event emitted when a user claims rebase rewards
 #[event]
-pub struct EpochRewardsClaimed {
-    pub epoch_id: u64,
+pub struct RebaseRewardsClaimed {
+    pub rebase_id: u64,
     pub user: Pubkey,
     pub reward_amount: u64,
     pub doge_bonus_amount: u64,
@@ -697,8 +697,8 @@ pub struct EpochRewardsClaimed {
 
 /// Event emitted when an epoch is auto-started inline (during join_round)
 #[event]
-pub struct EpochAutoStarted {
-    pub epoch_id: u64,
+pub struct RebaseAutoStarted {
+    pub rebase_id: u64,
     pub start_timestamp: u64,
     /// LP operations count that will trigger settlement of this epoch.
     pub settle_cycle: u32,
@@ -706,7 +706,7 @@ pub struct EpochAutoStarted {
 
 /// Event emitted when an epoch is auto-settled inline (during end_round_faction_rewards)
 #[event]
-pub struct EpochAutoSettled {
-    pub epoch_id: u64,
+pub struct RebaseAutoSettled {
+    pub rebase_id: u64,
     pub mining_pool: u64,
 }

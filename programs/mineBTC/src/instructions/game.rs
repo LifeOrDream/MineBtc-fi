@@ -102,7 +102,7 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     emit!(RoundStarted {
         round_id,
         game_session: game_session.key(),
-        epoch_id: ctx.accounts.epoch_config.current_epoch_id,
+        rebase_id: ctx.accounts.rebase_config.current_rebase_id,
         round_start_slot: game_session.round_start_slot,
         round_start_timestamp: game_session.round_start_timestamp,
         round_end_timestamp: game_session.round_end_timestamp,
@@ -650,25 +650,25 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     global_state.can_begin_round = true;
     msg!("   Can begin new round: {}", global_state.can_begin_round);
 
-    // --- EPOCH MINING TRACKING (inline) ---
-    let epoch_config = &mut ctx.accounts.epoch_config;
-    let epoch_state = &mut ctx.accounts.epoch_state;
+    // --- REBASE MINING TRACKING (inline) ---
+    let rebase_config = &mut ctx.accounts.rebase_config;
+    let rebase_state = &mut ctx.accounts.rebase_state;
     let mine_btc_per_round = ctx.accounts.mine_btc_mining.mine_btc_per_round;
 
-    if epoch_config.is_active && epoch_state.stage == 0 {
-        epoch_state.total_dogebtc_mined_in_epoch = epoch_state
-            .total_dogebtc_mined_in_epoch
+    if rebase_config.is_active && rebase_state.stage == 0 {
+        rebase_state.total_dogebtc_mined_in_rebase = rebase_state
+            .total_dogebtc_mined_in_rebase
             .checked_add(mine_btc_per_round)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Auto-settle epoch when the economy cycle's LP burn has completed.
         let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
-        if lp_ops >= epoch_config.epoch_settle_cycle && epoch_config.epoch_settle_cycle > 0 {
-            crate::instructions::epoch::finalize_epoch_settlement(epoch_config, epoch_state)?;
+        if lp_ops >= rebase_config.rebase_settle_cycle && rebase_config.rebase_settle_cycle > 0 {
+            crate::instructions::rebase::finalize_rebase_settlement(rebase_config, rebase_state)?;
 
-            emit!(EpochAutoSettled {
-                epoch_id: epoch_state.epoch_id,
-                mining_pool: epoch_state.epoch_mining_pool,
+            emit!(RebaseAutoSettled {
+                rebase_id: rebase_state.rebase_id,
+                mining_pool: rebase_state.rebase_mining_pool,
             });
         }
     }
@@ -808,10 +808,10 @@ pub struct StartRound<'info> {
     pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
+        seeds = [REBASE_CONFIG_SEED],
+        bump = rebase_config.bump,
     )]
-    pub epoch_config: Box<Account<'info, EpochConfig>>,
+    pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -897,18 +897,18 @@ pub struct EndRoundFactionRewards<'info> {
     /// Epoch config (mut for auto-settle + auto-start)
     #[account(
         mut,
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
+        seeds = [REBASE_CONFIG_SEED],
+        bump = rebase_config.bump,
     )]
-    pub epoch_config: Box<Account<'info, EpochConfig>>,
+    pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
     /// Epoch state for current epoch (mut for mining tracking + settlement)
     #[account(
         mut,
-        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
-        bump = epoch_state.bump,
+        seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
+        bump = rebase_state.bump,
     )]
-    pub epoch_state: Box<Account<'info, EpochState>>,
+    pub rebase_state: Box<Account<'info, RebaseState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

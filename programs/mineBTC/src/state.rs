@@ -54,9 +54,9 @@ pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
 pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
 pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
-pub const EPOCH_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
+pub const REBASE_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
 pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
-pub const CLAIMABLE_MINEBTC_SOURCE_EPOCH: u8 = 1;
+pub const CLAIMABLE_MINEBTC_SOURCE_REBASE: u8 = 1;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC: u8 = 2;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
 pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
@@ -166,9 +166,9 @@ pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
 
 // PDAs for Epoch Mining system
-pub const EPOCH_CONFIG_SEED: &[u8] = b"epoch-config";
-pub const EPOCH_STATE_SEED: &[u8] = b"epoch"; // Seed: [b"epoch", epoch_id_u64]
-pub const USER_EPOCH_BETS_SEED: &[u8] = b"user-epoch"; // Seed: [b"user-epoch", user_pubkey, epoch_id_u64]
+pub const REBASE_CONFIG_SEED: &[u8] = b"rebase-config";
+pub const REBASE_STATE_SEED: &[u8] = b"rebase"; // Seed: [b"rebase", rebase_id_u64]
+pub const USER_REBASE_BETS_SEED: &[u8] = b"user-rebase"; // Seed: [b"user-rebase", user_pubkey, rebase_id_u64]
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -563,7 +563,7 @@ pub struct TaxConfig {
 
     /// Epoch ID of the last treasury distribution.
     /// Prevents double-distribution for the same epoch.
-    pub last_treasury_epoch_id: u64,
+    pub last_treasury_rebase_id: u64,
     /// Bitmap of factions that have claimed treasury rewards for the current epoch.
     /// Bit N = 1 means faction N has claimed.  Supports up to 16 factions.
     pub treasury_claimed_bitmap: u16,
@@ -585,7 +585,7 @@ impl TaxConfig {
         1 +     // faction_treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
-        8 +     // last_treasury_epoch_id
+        8 +     // last_treasury_rebase_id
         2 +     // treasury_claimed_bitmap
         32 +    // withdraw_withheld_authority
         32 +    // faction_treasury_vault
@@ -871,7 +871,7 @@ pub struct PlayerData {
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
     /// Number of unclaimed per-epoch reward accounts still outstanding.
-    pub pending_epoch_claims: u16,
+    pub pending_rebase_claims: u16,
 
     pub dogebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
@@ -900,8 +900,8 @@ pub struct PlayerData {
     /// Cached XP of gameplay doge (updated during gameplay, synced to DogeMetadata on withdraw)
     pub gameplay_doge_xp: u32,
     /// Epoch ID in which the user requested gameplay unlock.
-    /// The doge can only be withdrawn once the next epoch/campaign cycle begins.
-    pub gameplay_unlock_request_epoch: u64,
+    /// The doge can only be withdrawn once the next rebase cycle begins.
+    pub gameplay_unlock_request_rebase: u64,
 }
 
 impl PlayerData {
@@ -932,7 +932,7 @@ impl PlayerData {
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
         2 +     // pending_round_claims (u16)
-        2 +     // pending_epoch_claims (u16)
+        2 +     // pending_rebase_claims (u16)
         4 + (Self::MAX_POSITIONS * 1) + // dogebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_DOGES * 32) + // staked_doges Vec<Pubkey>
@@ -943,7 +943,7 @@ impl PlayerData {
         4 +     // active_multiplier (u32)
         32 +    // gameplay_doge_dna [u8; 32]
         4 +     // gameplay_doge_xp (u32)
-        8; // gameplay_unlock_request_epoch (u64)
+        8; // gameplay_unlock_request_rebase (u64)
 }
 
 /// Individual MineBtc staking position
@@ -1164,7 +1164,7 @@ pub struct UserGameBet {
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
     /// Whether this bet has been accumulated into epoch bets
-    pub epoch_accumulated: bool,
+    pub rebase_accumulated: bool,
 }
 
 impl UserGameBet {
@@ -1186,7 +1186,7 @@ impl UserGameBet {
         32 +     // gameplay_doge
         1 +     // bump
         1 +     // mutation_type
-        1; // epoch_accumulated
+        1; // rebase_accumulated
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1255,19 +1255,19 @@ impl AutominerVault {
 }
 
 // ========================================================================================
-// ============================= EPOCH MINING ACCOUNTS ==============================
+// ============================= REBASE MINING ACCOUNTS ==============================
 // ========================================================================================
 
 /// Maximum number of score update entries stored per epoch (for audit trail)
-/// Epoch Configuration PDA (Seed: `[b"epoch-config"]`)
+/// Epoch Configuration PDA (Seed: `[b"rebase-config"]`)
 /// Epochs are tied to the economy cycle: one epoch per LP-burn cycle.
-/// Settlement becomes possible once lp_operations_count reaches epoch_settle_cycle.
+/// Settlement becomes possible once lp_operations_count reaches rebase_settle_cycle.
 #[account]
-pub struct EpochConfig {
+pub struct RebaseConfig {
     pub bump: u8,
 
     /// Current epoch ID (incrementing counter, starts at 1)
-    pub current_epoch_id: u64,
+    pub current_rebase_id: u64,
 
     /// Whether epoch mining is active
     pub is_active: bool,
@@ -1275,33 +1275,33 @@ pub struct EpochConfig {
     /// The LP operations count that triggers settlement of the current epoch.
     /// Set to `pol_stats.lp_operations_count + 1` when the epoch starts,
     /// meaning the epoch settles after the next full economy cycle completes.
-    pub epoch_settle_cycle: u32,
+    pub rebase_settle_cycle: u32,
 
     /// Rankings from the previous epoch's mutation scores.
     /// Used as start_ranks when the next epoch auto-starts.
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
-    pub prev_epoch_mutation_ranks: [u8; NUM_FACTIONS],
+    pub prev_rebase_mutation_ranks: [u8; NUM_FACTIONS],
 }
 
-impl EpochConfig {
+impl RebaseConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // current_epoch_id
+        8 +     // current_rebase_id
         1 +     // is_active
-        4 +     // epoch_settle_cycle
-        (NUM_FACTIONS * 1); // prev_epoch_mutation_ranks
+        4 +     // rebase_settle_cycle
+        (NUM_FACTIONS * 1); // prev_rebase_mutation_ranks
 }
 
-/// Epoch State PDA (Seed: `[b"epoch", epoch_id_u64_le]`)
+/// Epoch State PDA (Seed: `[b"rebase", rebase_id_u64_le]`)
 /// Tracks a single mutation-driven prediction epoch: start/final ranks derived from
 /// doge mutation scores, directional bet totals, and settlement outputs.
 /// Epoch duration is tied to the economy cycle (one LP-burn cycle).
 #[account]
-pub struct EpochState {
+pub struct RebaseState {
     pub bump: u8,
 
     /// Epoch ID
-    pub epoch_id: u64,
+    pub rebase_id: u64,
     /// Timestamp when this epoch was auto-started
     pub start_timestamp: u64,
 
@@ -1311,9 +1311,9 @@ pub struct EpochState {
     pub active_faction_count: u8,
 
     /// Total dogeBTC mined via raffle rounds during this epoch.
-    pub total_dogebtc_mined_in_epoch: u64,
+    pub total_dogebtc_mined_in_rebase: u64,
     /// Epoch mining pool distributed to epoch predictors.
-    pub epoch_mining_pool: u64,
+    pub rebase_mining_pool: u64,
 
     /// Rank snapshot from previous epoch (baseline for direction resolution).
     pub start_ranks: [u8; NUM_FACTIONS],
@@ -1341,15 +1341,15 @@ pub struct EpochState {
     pub eligible_doge_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 
-impl EpochState {
+impl RebaseState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // epoch_id
+        8 +     // rebase_id
         8 +     // start_timestamp
         1 +     // stage
         1 +     // active_faction_count
-        8 +     // total_dogebtc_mined_in_epoch
-        8 +     // epoch_mining_pool
+        8 +     // total_dogebtc_mined_in_rebase
+        8 +     // rebase_mining_pool
         (NUM_FACTIONS * 1) + // start_ranks
         (NUM_FACTIONS * 1) + // final_ranks
         (NUM_FACTIONS * 1) + // rank_deltas
@@ -1361,17 +1361,17 @@ impl EpochState {
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // eligible_doge_direction_totals
 }
 
-/// User Epoch Bets PDA (Seed: `[b"user-epoch", user_pubkey, epoch_id_u64_le]`)
+/// User Epoch Bets PDA (Seed: `[b"user-rebase", user_pubkey, rebase_id_u64_le]`)
 /// Tracks how much weighted stake a user bet on their own faction's direction during a specific epoch.
 /// Only own-faction bets are accumulated (cross-faction bets only count for round rewards).
 #[account]
-pub struct UserEpochBets {
+pub struct UserRebaseBets {
     pub bump: u8,
 
     /// The user who placed these bets
     pub owner: Pubkey,
     /// The epoch ID this tracks
-    pub epoch_id: u64,
+    pub rebase_id: u64,
     /// Gameplay doge that became eligible for the epoch doge-reward pool.
     pub gameplay_doge: Pubkey,
     /// Whether this user's gameplay doge mutated/evolved during the epoch.
@@ -1381,11 +1381,11 @@ pub struct UserEpochBets {
     pub direction_bets: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 
-impl UserEpochBets {
+impl UserRebaseBets {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
-        8 +     // epoch_id
+        8 +     // rebase_id
         32 +    // gameplay_doge
         1 +     // doge_bonus_eligible
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // direction_bets

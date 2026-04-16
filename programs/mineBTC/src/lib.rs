@@ -33,8 +33,8 @@ pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::doges::*;
 pub use instructions::economy::*;
-pub use instructions::epoch::*;
 pub use instructions::game::*;
+pub use instructions::rebase::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
@@ -51,8 +51,8 @@ pub mod minebtc {
     use instructions::admin::{self};
     use instructions::doges::{self};
     use instructions::economy::{self};
-    use instructions::epoch::{self};
     use instructions::game::{self};
+    use instructions::rebase::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
     use instructions::user::{self};
@@ -479,40 +479,40 @@ pub mod minebtc {
 
     /// Claim faction treasury rewards for a settled epoch.
     /// Uses the mutation leaderboard (epoch final_ranks) -- permissionless.
-    pub fn claim_faction_treasury_for_epoch(
-        ctx: Context<ClaimFactionTreasuryForEpoch>,
-        epoch_id: u64,
+    pub fn claim_faction_treasury_for_rebase(
+        ctx: Context<ClaimFactionTreasuryForRebase>,
+        rebase_id: u64,
     ) -> Result<()> {
-        tax::internal_claim_faction_treasury_for_epoch(ctx, epoch_id)
+        tax::internal_claim_faction_treasury_for_rebase(ctx, rebase_id)
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ EPOCH MINING SYSTEM -------------------------------------------------------
+    // ------------ REBASE MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
     /// Initialize epoch mining configuration (admin only).
     /// Epoch duration is tied to the economy cycle -- one epoch per LP burn.
-    pub fn initialize_epoch_config(ctx: Context<InitializeEpochConfig>) -> Result<()> {
-        epoch::initialize_epoch_config_internal(ctx)
+    pub fn initialize_rebase_config(ctx: Context<InitializeRebaseConfig>) -> Result<()> {
+        rebase::initialize_rebase_config_internal(ctx)
     }
 
     /// Update epoch mining configuration (admin only)
-    pub fn update_epoch_config(
-        ctx: Context<UpdateEpochConfig>,
+    pub fn update_rebase_config(
+        ctx: Context<UpdateRebaseConfig>,
         is_active: Option<bool>,
     ) -> Result<()> {
-        epoch::update_epoch_config_internal(ctx, is_active)
+        rebase::update_rebase_config_internal(ctx, is_active)
     }
 
     /// Settle epoch: finalize mutation-based rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
-    pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
-        epoch::settle_epoch_internal(ctx)
+    pub fn settle_rebase(ctx: Context<SettleRebase>) -> Result<()> {
+        rebase::settle_rebase_internal(ctx)
     }
 
-    /// User claims their epoch mining rewards (closes user_epoch_bets account)
-    pub fn claim_epoch_rewards(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
-        epoch::claim_epoch_rewards_internal(ctx, epoch_id)
+    /// User claims their epoch mining rewards (closes user_rebase_bets account)
+    pub fn claim_rebase_rewards(ctx: Context<ClaimRebaseRewards>, rebase_id: u64) -> Result<()> {
+        rebase::claim_rebase_rewards_internal(ctx, rebase_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -640,7 +640,7 @@ pub mod minebtc {
         user::internal_use_doge_for_gameplay(ctx)
     }
 
-    /// Request gameplay doge unlock. Actual withdrawal is only available in the next epoch/campaign cycle.
+    /// Request gameplay doge unlock. Actual withdrawal is only available in the next rebase cycle.
     pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
         user::internal_request_doge_gameplay_unlock(ctx)
     }
