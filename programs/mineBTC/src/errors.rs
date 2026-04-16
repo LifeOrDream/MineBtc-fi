@@ -181,6 +181,21 @@ pub enum ErrorCode {
     #[msg("Minting not allowed")]
     MintingNotAllowed,
 
+    #[msg("Gameplay locking is only available while RPG progression is enabled")]
+    GameplayNotEnabled,
+
+    #[msg("Gameplay unlock has already been requested for this doge")]
+    GameplayUnlockAlreadyRequested,
+
+    #[msg("Gameplay unlock has not been requested")]
+    GameplayUnlockNotRequested,
+
+    #[msg("Gameplay doge can only be unlocked after the next epoch/campaign cycle begins")]
+    GameplayUnlockNotReady,
+
+    #[msg("Claim all pending round, epoch, and token rewards before unlocking this gameplay doge")]
+    GameplayRewardsPending,
+
     // ========== EPOCH MINING ERRORS ========== //
     #[msg("Epoch is not currently active")]
     EpochNotActive,

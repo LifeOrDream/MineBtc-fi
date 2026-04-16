@@ -622,6 +622,16 @@ pub struct DogeWithdrawnFromGameplay {
     pub timestamp: i64,
 }
 
+/// Event emitted when a user requests gameplay unlock for the next epoch/campaign cycle.
+#[event]
+pub struct DogeGameplayUnlockRequested {
+    pub user: Pubkey,
+    pub doge_mint: Pubkey,
+    pub requested_during_epoch_id: u64,
+    pub unlock_available_after_epoch_id: u64,
+    pub timestamp: i64,
+}
+
 /// Event emitted when an instant mutation is triggered during betting
 #[event]
 pub struct MutationTriggered {
@@ -683,6 +693,7 @@ pub struct EpochSettled {
     pub rank_deltas: [i8; NUM_FACTIONS],
     pub resolved_directions: [u8; NUM_FACTIONS],
     pub faction_reward_pools: [u64; NUM_FACTIONS],
+    pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
     pub faction_mutation_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
@@ -704,6 +715,8 @@ pub struct EpochRewardsClaimed {
     pub epoch_id: u64,
     pub user: Pubkey,
     pub reward_amount: u64,
+    pub doge_bonus_amount: u64,
+    pub doge_mint: Pubkey,
     pub timestamp: i64,
 }
 

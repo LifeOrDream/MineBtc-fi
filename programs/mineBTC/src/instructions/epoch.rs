@@ -67,6 +67,7 @@ pub fn compute_faction_reward_pools(epoch_state: &mut EpochState) -> Result<()> 
     let pool = epoch_state.epoch_mining_pool;
     if pool == 0 {
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        epoch_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
         return Ok(());
     }
 
@@ -95,7 +96,35 @@ pub fn compute_faction_reward_pools(epoch_state: &mut EpochState) -> Result<()> 
         }
     }
 
-    epoch_state.faction_reward_pools = reward_pools;
+    let mut user_reward_pools = [0u64; NUM_FACTIONS];
+    let mut doge_reward_pools = [0u64; NUM_FACTIONS];
+
+    for faction_id in 0..active_factions {
+        let resolved_direction = epoch_state.resolved_directions[faction_id] as usize;
+        let eligible_total =
+            epoch_state.eligible_doge_direction_totals[faction_id][resolved_direction];
+        let raw_pool = reward_pools[faction_id];
+
+        if raw_pool == 0 || eligible_total == 0 {
+            user_reward_pools[faction_id] = raw_pool;
+            continue;
+        }
+
+        let doge_pool = (raw_pool as u128)
+            .checked_mul(EPOCH_DOGE_REWARD_SHARE_BPS as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(BASIS_POINTS_DENOMINATOR as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let doge_pool = u64::try_from(doge_pool).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+        doge_reward_pools[faction_id] = doge_pool;
+        user_reward_pools[faction_id] = raw_pool
+            .checked_sub(doge_pool)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+
+    epoch_state.faction_reward_pools = user_reward_pools;
+    epoch_state.faction_doge_reward_pools = doge_reward_pools;
     Ok(())
 }
 
@@ -198,6 +227,8 @@ pub fn finalize_epoch_settlement(
         // No mutations this epoch -- skip reward distribution entirely.
         // Mining pool stays at 0 so nobody can claim.
         epoch_state.epoch_mining_pool = 0;
+        epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        epoch_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
         epoch_state.stage = 1;
     } else {
         epoch_state.epoch_mining_pool = epoch_state.total_dogebtc_mined_in_epoch;
@@ -258,6 +289,7 @@ pub fn settle_epoch_internal(ctx: Context<SettleEpoch>) -> Result<()> {
         rank_deltas: epoch_state.rank_deltas,
         resolved_directions: epoch_state.resolved_directions,
         faction_reward_pools: epoch_state.faction_reward_pools,
+        faction_doge_reward_pools: epoch_state.faction_doge_reward_pools,
         faction_mutation_scores: epoch_state.faction_mutation_scores,
         timestamp: clock.unix_timestamp,
     });
@@ -321,12 +353,17 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
     // Only own-faction bets count for epoch rewards.
     let faction_id = player_data.faction_id as usize;
     let mut total_reward = 0u64;
+    let mut doge_bonus_amount = 0u64;
+    let mut doge_mint = Pubkey::default();
 
     if faction_id < active_factions {
         let resolved_direction = epoch_state.resolved_directions[faction_id] as usize;
         let user_bet = user_epoch_bets.direction_bets[faction_id][resolved_direction];
         let total_bet = epoch_state.faction_direction_totals[faction_id][resolved_direction];
         let faction_pool = epoch_state.faction_reward_pools[faction_id];
+        let doge_pool = epoch_state.faction_doge_reward_pools[faction_id];
+        let eligible_total =
+            epoch_state.eligible_doge_direction_totals[faction_id][resolved_direction];
 
         if user_bet > 0 && total_bet > 0 && faction_pool > 0 {
             let reward_u128 = (faction_pool as u128)
@@ -335,6 +372,34 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
                 .checked_div(total_bet as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             total_reward = u64::try_from(reward_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+        }
+
+        if user_epoch_bets.doge_bonus_eligible
+            && user_bet > 0
+            && doge_pool > 0
+            && eligible_total > 0
+        {
+            let bonus_u128 = (doge_pool as u128)
+                .checked_mul(user_bet as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(eligible_total as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            doge_bonus_amount =
+                u64::try_from(bonus_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+            if doge_bonus_amount > 0 {
+                doge_mint = user_epoch_bets.gameplay_doge;
+                let doge_metadata = ctx
+                    .accounts
+                    .doge_metadata
+                    .as_mut()
+                    .ok_or(ErrorCode::DogeMetadataNotFound)?;
+                require_keys_eq!(doge_metadata.mint, doge_mint, ErrorCode::InvalidAccount);
+                doge_metadata.accumulated_val = doge_metadata
+                    .accumulated_val
+                    .checked_add(doge_bonus_amount)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+            }
         }
     }
 
@@ -346,10 +411,17 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
+    player_data.pending_epoch_claims = player_data
+        .pending_epoch_claims
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
     emit!(EpochRewardsClaimed {
         epoch_id,
         user: user_epoch_bets.owner,
         reward_amount: total_reward,
+        doge_bonus_amount,
+        doge_mint,
         timestamp: clock.unix_timestamp,
     });
 
@@ -387,6 +459,9 @@ pub struct ClaimEpochRewards<'info> {
         bump,
     )]
     pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+
+    #[account(mut)]
+    pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
 
     /// CHECK: Validated by constraint that player.key() == user_epoch_bets.owner
     #[account(

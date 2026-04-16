@@ -38,6 +38,14 @@ fn load_global_config(account: &AccountInfo<'_>) -> Result<GlobalConfig> {
     load_program_account(account)
 }
 
+fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
+    player_data.pending_round_claims > 0
+        || player_data.pending_epoch_claims > 0
+        || player_data.pending_sol_rewards > 0
+        || player_data.pending_minebtc_rewards > 0
+        || player_data.unrefined_minebtc_rewards > 0
+}
+
 // ========================================================================================
 // =============================== FACTION SURGE INSTRUCTIONS ============================
 // ========================================================================================
@@ -145,6 +153,8 @@ pub fn internal_initialize_player(
     // Initialize pending rewards
     player_data.pending_sol_rewards = 0;
     player_data.pending_minebtc_rewards = 0;
+    player_data.pending_round_claims = 0;
+    player_data.pending_epoch_claims = 0;
     msg!("     Pending rewards initialized");
 
     // Initialize position tracking vectors
@@ -161,6 +171,13 @@ pub fn internal_initialize_player(
     player_data.free_tickets = Vec::new();
     player_data.free_tickets_remaining = Vec::new();
     msg!("     Free tickets vectors initialized (empty)");
+
+    // Initialize gameplay doge state
+    player_data.gameplay_doge = Pubkey::default();
+    player_data.gameplay_doge_dna = [0u8; 32];
+    player_data.gameplay_doge_xp = 0;
+    player_data.gameplay_unlock_request_epoch = 0;
+    msg!("     Gameplay doge state initialized");
 
     // Initialize new player's referral rewards account
     msg!("   Initializing new player's referral rewards account...");
@@ -237,7 +254,9 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
             && player_data.gameplay_doge == Pubkey::default()
             && player_data.active_multiplier == BASE_MULTIPLIER
             && player_data.gameplay_doge_dna == [0u8; 32]
-            && player_data.gameplay_doge_xp == 0,
+            && player_data.gameplay_doge_xp == 0
+            && player_data.gameplay_unlock_request_epoch == 0
+            && !player_has_pending_reward_claims(player_data),
         ErrorCode::InvalidState
     );
 
@@ -1134,6 +1153,11 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         total_minebtc_reward,
     )?;
 
+    player_data.pending_round_claims = player_data
+        .pending_round_claims
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
     msg!("✅ [claim_rewards] Rewards claimed successfully");
     msg!("   Round: {}", user_bet.round_id);
 
@@ -1198,6 +1222,11 @@ pub fn internal_claim_autominer_rewards(
         ctx.accounts.doge_metadata.as_mut(),
         total_minebtc_reward,
     )?;
+
+    player_data.pending_round_claims = player_data
+        .pending_round_claims
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // === AUTO-RELOAD LOGIC ===
     // Ticket mode + reload: just keep running (add rounds back), send SOL winnings to owner.
@@ -1601,7 +1630,10 @@ fn internal_process_bets<'info>(
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
         epoch_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
         epoch_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        epoch_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
         epoch_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+        epoch_state.eligible_doge_direction_totals =
+            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
 
         // Epoch settles after the next LP burn completes.
         epoch_config.epoch_settle_cycle = lp_operations_count
@@ -1630,7 +1662,13 @@ fn internal_process_bets<'info>(
         user_epoch_bets.bump = user_epoch_bets_bump;
         user_epoch_bets.owner = owner_key;
         user_epoch_bets.epoch_id = epoch_state.epoch_id;
+        user_epoch_bets.gameplay_doge = Pubkey::default();
+        user_epoch_bets.doge_bonus_eligible = false;
         user_epoch_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        player_data.pending_epoch_claims = player_data
+            .pending_epoch_claims
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     } else {
         require!(user_epoch_bets.owner == owner_key, ErrorCode::Unauthorized);
         require!(
@@ -1799,6 +1837,10 @@ fn internal_process_bets<'info>(
             .rounds_played
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        player_data.pending_round_claims = player_data
+            .pending_round_claims
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!("     New bet account initialized");
     } else {
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
@@ -1889,6 +1931,12 @@ fn internal_process_bets<'info>(
                 .faction_direction_totals[faction_index][direction_index]
                 .checked_add(wgtd_points_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
+            if user_epoch_bets.doge_bonus_eligible {
+                epoch_state.eligible_doge_direction_totals[faction_index][direction_index] =
+                    epoch_state.eligible_doge_direction_totals[faction_index][direction_index]
+                        .checked_add(wgtd_points_per_bet)
+                        .ok_or(ErrorCode::ArithmeticOverflow)?;
+            }
         }
 
         // Record for events
@@ -2014,20 +2062,24 @@ fn internal_process_bets<'info>(
     });
 
     // === INSTANT MUTATION & XP LOGIC ===
-    // Only if RPG progression is enabled, SOL bet > 0, and player has gameplay_doge
+    // Requires: RPG enabled, SOL bet, no prior mutation this round, gameplay doge active,
+    // and global mutation budget not exhausted for this round.
     let faction_id = player_data.faction_id as usize;
+    let mutation_budget = (epoch_state.active_faction_count as u8) / 3;
+    let round_has_budget = game_session.total_mutations_this_round < mutation_budget.max(1);
+
     if global_config.rpg_progression
         && amount_per_bet > 0
         && use_ticket.is_none()
         && user_game_bet.mutation_type == 0
         && player_data.gameplay_doge != Pubkey::default()
+        && round_has_budget
     {
         // Update highest bet for faction
         if user_game_bet.total_sol_bet > game_session.highest_sol_bet_per_faction[faction_id] {
             game_session.highest_sol_bet_per_faction[faction_id] = user_game_bet.total_sol_bet;
         }
 
-        // Calculate mutation result (generation derived from DNA)
         let doge_mint = player_data.gameplay_doge;
         let mutation_result = calculate_mutation_result(
             round_id,
@@ -2036,6 +2088,7 @@ fn internal_process_bets<'info>(
             player_data.active_multiplier,
             player_data.gameplay_doge_dna,
             player_data.gameplay_doge_xp,
+            game_session.mutations_per_faction[faction_id],
             game_session.total_sol_bets,
             game_session.total_points_bets,
             game_session.total_wgtd_points_bets,
@@ -2044,7 +2097,7 @@ fn internal_process_bets<'info>(
             &doge_mint,
         );
 
-        // Always add XP to PlayerData (even without mutation)
+        // Always add XP (even without mutation) -- ties SOL spent to NFT progression.
         player_data.gameplay_doge_xp = player_data
             .gameplay_doge_xp
             .checked_add(mutation_result.xp_gained)
@@ -2052,77 +2105,96 @@ fn internal_process_bets<'info>(
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
-            // Evolution: only 1 per faction per round. Power/Trait: unlimited
-            let is_evolution = matches!(mutation_type, MutationType::Evolution);
-            let can_apply =
-                !is_evolution || !game_session.mutation_occurred_per_faction[faction_id];
-
-            player_data.active_multiplier = player_data
+            // Cap active_multiplier at MAX_MULTIPLIER.
+            let new_mult = player_data
                 .active_multiplier
                 .checked_add(mutation_result.multiplier_increase)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
+            player_data.active_multiplier = new_mult.min(MAX_MULTIPLIER as u32);
 
-            if can_apply {
-                let mutation_type_u8 = match mutation_type {
-                    MutationType::Evolution => 1u8,
-                    MutationType::Power => 2u8,
-                    MutationType::Trait => 3u8,
-                };
-                user_game_bet.mutation_type = mutation_type_u8;
-                player_data.gameplay_doge_dna = mutation_result.new_dna;
+            let mutation_type_u8 = match mutation_type {
+                MutationType::Evolution => 1u8,
+                MutationType::Power => 2u8,
+                MutationType::Trait => 3u8,
+            };
+            user_game_bet.mutation_type = mutation_type_u8;
+            player_data.gameplay_doge_dna = mutation_result.new_dna;
 
-                if is_evolution {
-                    game_session.mutation_occurred_per_faction[faction_id] = true;
+            // Track mutation counts for round budget + per-faction difficulty.
+            game_session.mutations_per_faction[faction_id] = game_session.mutations_per_faction
+                [faction_id]
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            game_session.total_mutations_this_round = game_session
+                .total_mutations_this_round
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+            if !user_epoch_bets.doge_bonus_eligible {
+                user_epoch_bets.doge_bonus_eligible = true;
+                user_epoch_bets.gameplay_doge = player_data.gameplay_doge;
+
+                for direction_index in 0..PredictionDirection::COUNT {
+                    let existing_weight =
+                        user_epoch_bets.direction_bets[faction_id][direction_index];
+                    if existing_weight > 0 {
+                        epoch_state.eligible_doge_direction_totals[faction_id][direction_index] =
+                            epoch_state.eligible_doge_direction_totals[faction_id][direction_index]
+                                .checked_add(existing_weight)
+                                .ok_or(ErrorCode::ArithmeticOverflow)?;
+                    }
                 }
-
-                // --- Accumulate mutation score into epoch state ---
-                // score = type_weight × total_sol_bet × active_multiplier / BASE / PRECISION
-                let type_weight: u64 = match mutation_type {
-                    MutationType::Evolution => EVOLUTION_SCORE_WEIGHT,
-                    MutationType::Power => POWER_SCORE_WEIGHT,
-                    MutationType::Trait => TRAIT_SCORE_WEIGHT,
-                };
-                let mutation_score_u128 = (type_weight as u128)
-                    .checked_mul(user_game_bet.total_sol_bet as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_mul(player_data.active_multiplier as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(BASE_MULTIPLIER as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(MUTATION_SCORE_PRECISION as u128)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-                let mutation_score = u64::try_from(mutation_score_u128).unwrap_or(u64::MAX);
-
-                if mutation_score > 0 {
-                    epoch_state.faction_mutation_scores[faction_id] = epoch_state
-                        .faction_mutation_scores[faction_id]
-                        .checked_add(mutation_score)
-                        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-                    emit!(crate::events::MutationScoreAccumulated {
-                        epoch_id: epoch_state.epoch_id,
-                        faction_id: faction_id as u8,
-                        mutation_type: mutation_type_u8,
-                        score_added: mutation_score,
-                        faction_total_score: epoch_state.faction_mutation_scores[faction_id],
-                        user: owner_key,
-                    });
-                }
-
-                emit!(MutationTriggered {
-                    round_id,
-                    user: owner_key,
-                    doge_mint: player_data.gameplay_doge,
-                    xp_gained: mutation_result.xp_gained,
-                });
-
-                msg!(
-                    "🧬 Mutation! Type: {}, Mult: {}, EpochScore: +{}",
-                    user_game_bet.mutation_type,
-                    player_data.active_multiplier,
-                    mutation_score
-                );
             }
+
+            // --- Accumulate mutation score into epoch state ---
+            let type_weight: u64 = match mutation_type {
+                MutationType::Evolution => EVOLUTION_SCORE_WEIGHT,
+                MutationType::Power => POWER_SCORE_WEIGHT,
+                MutationType::Trait => TRAIT_SCORE_WEIGHT,
+            };
+            let mutation_score_u128 = (type_weight as u128)
+                .checked_mul(user_game_bet.total_sol_bet as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_mul(player_data.active_multiplier as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(BASE_MULTIPLIER as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(MUTATION_SCORE_PRECISION as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            let mutation_score =
+                u64::try_from(mutation_score_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+            if mutation_score > 0 {
+                epoch_state.faction_mutation_scores[faction_id] = epoch_state
+                    .faction_mutation_scores[faction_id]
+                    .checked_add(mutation_score)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+                emit!(crate::events::MutationScoreAccumulated {
+                    epoch_id: epoch_state.epoch_id,
+                    faction_id: faction_id as u8,
+                    mutation_type: mutation_type_u8,
+                    score_added: mutation_score,
+                    faction_total_score: epoch_state.faction_mutation_scores[faction_id],
+                    user: owner_key,
+                });
+            }
+
+            emit!(MutationTriggered {
+                round_id,
+                user: owner_key,
+                doge_mint: player_data.gameplay_doge,
+                xp_gained: mutation_result.xp_gained,
+            });
+
+            msg!(
+                "🧬 Mutation! Type: {}, Mult: {}, EpochScore: +{}, Round {}/{}",
+                mutation_type_u8,
+                player_data.active_multiplier,
+                mutation_score,
+                game_session.total_mutations_this_round,
+                mutation_budget
+            );
         }
 
         msg!("   XP: {}", player_data.gameplay_doge_xp);
@@ -2810,6 +2882,15 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     msg!("🎮 === USING DOGE FOR GAMEPLAY ===");
     msg!("   Doge mint: {}", doge_mint);
 
+    require!(
+        ctx.accounts.global_config.rpg_progression,
+        ErrorCode::GameplayNotEnabled
+    );
+    require!(
+        ctx.accounts.epoch_config.is_active,
+        ErrorCode::EpochNotActive
+    );
+
     // Verify ownership
     let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
     require!(
@@ -2827,6 +2908,10 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     require!(
         player_data.gameplay_doge == Pubkey::default(),
         ErrorCode::InvalidParameters
+    );
+    require!(
+        player_data.gameplay_unlock_request_epoch == 0,
+        ErrorCode::InvalidState
     );
 
     // Gameplay doges must match the player's current home faction.
@@ -2858,9 +2943,10 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     // Update player data - cache doge fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
     player_data.gameplay_doge = doge_mint;
-    player_data.active_multiplier = doge_metadata.multiplier;
+    player_data.active_multiplier = doge_metadata.multiplier.min(MAX_MULTIPLIER as u32);
     player_data.gameplay_doge_dna = doge_metadata.dna;
     player_data.gameplay_doge_xp = doge_metadata.xp;
+    player_data.gameplay_unlock_request_epoch = 0;
 
     // Update faction state
     faction_state.doges_playing = faction_state
@@ -2885,6 +2971,38 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     emit!(DogeUsedForGameplay {
         user: ctx.accounts.user.key(),
         doge_mint,
+        timestamp: current_time,
+    });
+
+    Ok(())
+}
+
+/// Request gameplay doge unlock. Actual withdrawal is only allowed after the next epoch/campaign starts.
+pub fn internal_request_doge_gameplay_unlock(
+    ctx: Context<RequestDogeGameplayUnlock>,
+) -> Result<()> {
+    let player_data = &mut ctx.accounts.player_data;
+    let current_epoch_id = ctx.accounts.epoch_config.current_epoch_id;
+    let current_time = Clock::get()?.unix_timestamp;
+
+    require!(
+        player_data.gameplay_doge != Pubkey::default(),
+        ErrorCode::InvalidState
+    );
+    require!(
+        player_data.gameplay_unlock_request_epoch == 0,
+        ErrorCode::GameplayUnlockAlreadyRequested
+    );
+
+    player_data.gameplay_unlock_request_epoch = current_epoch_id;
+
+    emit!(DogeGameplayUnlockRequested {
+        user: ctx.accounts.user.key(),
+        doge_mint: player_data.gameplay_doge,
+        requested_during_epoch_id: current_epoch_id,
+        unlock_available_after_epoch_id: current_epoch_id
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?,
         timestamp: current_time,
     });
 
@@ -2928,6 +3046,20 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
         doge_metadata.faction_id == player_data.faction_id,
         ErrorCode::InvalidFactionId
     );
+    require!(
+        player_data.gameplay_unlock_request_epoch != 0,
+        ErrorCode::GameplayUnlockNotRequested
+    );
+    require!(
+        !ctx.accounts.epoch_config.is_active
+            || ctx.accounts.epoch_config.current_epoch_id
+                > player_data.gameplay_unlock_request_epoch,
+        ErrorCode::GameplayUnlockNotReady
+    );
+    require!(
+        !player_has_pending_reward_claims(player_data),
+        ErrorCode::GameplayRewardsPending
+    );
 
     // Transfer NFT back to user
     msg!("🔓 Transferring doge back to user");
@@ -2951,10 +3083,6 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     // Sync cached data back to doge metadata before withdrawal
     // Note: generation is stored in DNA bits 4-6
     msg!("   Syncing gameplay progress to doge...");
-    require!(
-        doge_metadata.dna == player_data.gameplay_doge_dna || player_data.gameplay_doge_xp > 0,
-        ErrorCode::ClaimPendingRoundRewards
-    );
     doge_metadata.dna = player_data.gameplay_doge_dna;
     doge_metadata.xp = player_data.gameplay_doge_xp;
     doge_metadata.multiplier = player_data.active_multiplier;
@@ -2967,11 +3095,12 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
         doge_metadata.xp
     );
 
-    // Clear player data gameplay fields
+    // Clear player data gameplay fields.
     player_data.gameplay_doge = Pubkey::default();
-    player_data.active_multiplier = BASE_MULTIPLIER; // Reset to BASE_MULTIPLIER
+    player_data.active_multiplier = BASE_MULTIPLIER;
     player_data.gameplay_doge_dna = [0u8; 32];
     player_data.gameplay_doge_xp = 0;
+    player_data.gameplay_unlock_request_epoch = 0;
 
     // Update faction state
     faction_state.doges_playing = faction_state
@@ -3028,6 +3157,12 @@ pub struct UseDogeForGameplay<'info> {
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
     pub doge_custody_pda: UncheckedAccount<'info>,
 
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump = epoch_config.bump)]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
 
@@ -3035,6 +3170,23 @@ pub struct UseDogeForGameplay<'info> {
     pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RequestDogeGameplayUnlock<'info> {
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+    )]
+    pub player_data: Account<'info, PlayerData>,
+
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump = epoch_config.bump)]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -3069,6 +3221,9 @@ pub struct WithdrawDogeFromGameplay<'info> {
     /// CHECK: PDA for NFT custody
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
     pub doge_custody_pda: UncheckedAccount<'info>,
+
+    #[account(seeds = [EPOCH_CONFIG_SEED], bump = epoch_config.bump)]
+    pub epoch_config: Box<Account<'info, EpochConfig>>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,

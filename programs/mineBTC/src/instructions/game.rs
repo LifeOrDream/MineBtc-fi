@@ -98,7 +98,8 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.motherlode_hit = false;
     game_session.motherlode_pot_size_on_hit = 0;
     game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
-    game_session.mutation_occurred_per_faction = [false; NUM_FACTIONS];
+    game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
+    game_session.total_mutations_this_round = 0;
     global_state.can_begin_round = false;
 
     emit!(RoundStarted {

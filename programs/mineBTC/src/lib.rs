@@ -680,6 +680,11 @@ pub mod minebtc {
         user::internal_use_doge_for_gameplay(ctx)
     }
 
+    /// Request gameplay doge unlock. Actual withdrawal is only available in the next epoch/campaign cycle.
+    pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
+        user::internal_request_doge_gameplay_unlock(ctx)
+    }
+
     /// Withdraw doge from gameplay - returns doge to user
     pub fn withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
         user::internal_withdraw_doge_from_gameplay(ctx)
