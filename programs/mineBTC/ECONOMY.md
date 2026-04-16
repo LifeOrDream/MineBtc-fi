@@ -12,7 +12,7 @@ Step 2: update_rate          (once after 8 snapshots, anyone can crank)
 Step 3: add_lp_and_burn      (once after rate update, anyone can crank)
 ```
 
-Each cycle also triggers epoch/surge settlement (mutation leaderboard).
+Each cycle also triggers rebase settlement (mutation leaderboard).
 
 ---
 

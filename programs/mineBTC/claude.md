@@ -19,7 +19,7 @@ Use these canonical terms:
 - `country` or `faction` — one of 12-15 playable nations
 - `direction` — `Down`, `Neutral`, `Up`
 - `round` — fast 60-second betting loop with random winner
-- `surge` / `cycle` / `rebase` — longer competitive period tied to the economy cycle (LP burn cadence), where mutation scores determine country rankings
+- `rebase` — longer competitive period tied to the economy cycle (LP burn cadence), where mutation scores determine country rankings
 - `operator doge` / `gameplay doge` — the live NFT locked for rounds, earns XP, can mutate
 - `staked doges` — passive NFTs that boost staking hashpower
 - `mutation` — a doge upgrade (Evolution / Power / Trait) triggered by betting

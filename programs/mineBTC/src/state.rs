@@ -545,7 +545,7 @@ impl DogeFreeMintAllowance {
 
 /// Tax Configuration PDA (Seed: `[b"tax-config"]`)
 /// Manages tax distribution, NFT floor sweep, and faction treasury rewards.
-/// Treasury rewards are distributed based on the mutation leaderboard (epoch final_ranks)
+/// Treasury rewards are distributed based on the mutation leaderboard (rebase final_ranks)
 /// after each epoch settles -- no separate leaderboard calculation needed.
 #[account]
 pub struct TaxConfig {
@@ -564,7 +564,7 @@ pub struct TaxConfig {
     /// Rebase ID of the last treasury distribution.
     /// Prevents double-distribution for the same epoch.
     pub last_treasury_rebase_id: u64,
-    /// Bitmap of factions that have claimed treasury rewards for the current epoch.
+    /// Bitmap of factions that have claimed treasury rewards for the current rebase.
     /// Bit N = 1 means faction N has claimed.  Supports up to 16 factions.
     pub treasury_claimed_bitmap: u16,
 
@@ -603,7 +603,7 @@ impl TaxConfig {
 // ========================== 1. GLOBAL & ORACLE ACCOUNTS =================================
 // ========================================================================================
 
-/// Global game state PDA (Seed: `[b"global-surge-state"]`)
+/// Global game state PDA (Seed: `[b"global-game-state"]`)
 /// Tracks global game statistics and the currently active round.
 /// Each individual round has its own GameSession PDA.
 #[account]
@@ -1096,7 +1096,7 @@ impl PredictionDirection {
 }
 
 /// Bet type enum for user bets.
-/// Each bet selects a faction and a direction for the active epoch market.
+/// Each bet selects a faction and a direction for the active rebase.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum BetType {
     FactionDirection {
@@ -1163,7 +1163,7 @@ pub struct UserGameBet {
     // --- Instant Mutation (applied during claim_rewards) ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
-    /// Whether this bet has been accumulated into epoch bets
+    /// Whether this bet has been accumulated into rebase bets
     pub rebase_accumulated: bool,
 }
 
@@ -1272,7 +1272,7 @@ pub struct RebaseConfig {
     /// Whether epoch mining is active
     pub is_active: bool,
 
-    /// The LP operations count that triggers settlement of the current epoch.
+    /// The LP operations count that triggers settlement of the current rebase.
     /// Set to `pol_stats.lp_operations_count + 1` when the rebase starts,
     /// meaning the rebase settles after the next full economy cycle completes.
     pub rebase_settle_cycle: u32,

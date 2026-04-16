@@ -6,7 +6,7 @@
 //
 // The game operates in rounds where:
 // 1. A caller starts a new round.
-// 2. Players place faction-direction bets that also count toward the active epoch market.
+// 2. Players place faction-direction bets that also count toward the active rebase.
 // 3. Once the round duration passes, anyone can finalize the round from its pre-scheduled
 //    slot-hash entropy source.
 // 4. If the scheduled slot-hash aged out before anyone finalized the round, settlement falls back
@@ -522,7 +522,7 @@ fn split_staker_lane_rewards(
 /// This function:
 /// 1. Uses the already-finalized winning faction/direction from `end_round`
 /// 2. Distributes the winning faction's staker and motherlode rewards
-/// 3. Advances epoch accounting when the current epoch window has ended
+/// 3. Advances rebase accounting when the current rebase window has ended
 pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
     msg!("🏁 [end_round_faction_rewards] Ending current round");
 
@@ -672,7 +672,7 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
             .checked_add(actually_distributed)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Auto-settle epoch when the economy cycle's LP burn has completed.
+        // Auto-settle rebase when the economy cycle's LP burn has completed.
         let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
         if lp_ops >= rebase_config.rebase_settle_cycle && rebase_config.rebase_settle_cycle > 0 {
             crate::instructions::rebase::finalize_rebase_settlement(rebase_config, rebase_state)?;
@@ -913,7 +913,7 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
-    /// Epoch state for current epoch (mut for mining tracking + settlement)
+    /// Rebase state for current rebase (mut for mining tracking + settlement)
     #[account(
         mut,
         seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],

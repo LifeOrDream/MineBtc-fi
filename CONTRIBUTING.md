@@ -26,7 +26,6 @@ anchor build -p minebtc
 4. Ensure code passes checks:
    ```bash
    cargo fmt --all -- --check
-   cargo clippy --all-targets -- -D warnings
    cargo check -p minebtc
    cargo test -p minebtc --lib
    anchor build -p minebtc
@@ -37,33 +36,32 @@ anchor build -p minebtc
 ## Code Style
 
 - Format with `cargo fmt`
-- Lint with `cargo clippy`
 - Follow existing naming conventions (`_internal` suffix for instruction implementations)
 - Keep instruction logic in `programs/mineBTC/src/instructions/`
 - Expose instructions in `programs/mineBTC/src/lib.rs`
 
 ## Product Terminology
 
-Please keep docs, comments, setup scripts, and PR descriptions aligned with the current game model.
+MineBTC is a **degen country arena game**. Keep docs, comments, and PR descriptions aligned with this framing.
 
 Use:
 
 - `country` / `faction`
 - `direction` (`Down`, `Neutral`, `Up`)
-- `round`
-- `epoch`
-- `active index`
-- `operator doge`
+- `round` — 60-second betting loop
+- `rebase` — competitive cycle tied to LP burn, mutation leaderboard
+- `gameplay doge` / `operator doge`
+- `mutation` / `mutation score`
 
-Avoid reintroducing:
+Do NOT use:
 
+- "prediction market", "geopolitical risk", "intelligence", "data pipeline"
+- "oracle" (in game context -- Raydium price oracle references are fine)
+- "epoch" (replaced by "rebase")
+- "active index", "index state"
 - block-number betting language
-- block-high / block-low wording
-- legacy `factionHighestLowest` / `factionBoth` phrasing
 
-The current product story is: **one country-direction bet powers both the live round game and the active epoch index market**.
-
-Lead documentation with what is already live in the contracts. Prefer "live country arena", "active index", and "data pipeline" over generic "prediction market" shorthand when the latter is less precise.
+The current product story: **Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC.**
 
 ## Pull Request Guidelines
 

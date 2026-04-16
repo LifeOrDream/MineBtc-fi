@@ -11,27 +11,28 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 
 // # Tax and Distribution Instructions
 //
-// This module implements the deflationary tax system for MineBTC using Token-2022 transfer fees.
+// Deflationary tax system using Token-2022 transfer fees.
 //
 // ## Tax Mechanics
 //
-// All MineBTC transfers incur a 1% tax, which is:
-// - **Burned**: Reducing total supply and increasing scarcity.
-// - **NFT Floor Sweep**: Allocated for NFT buyback and floor support.
-// - **Faction Treasury**: Distributed to factions based on performance rankings.
+// All dogeBTC transfers incur a 1% tax, split into:
+// - **Burn**: Reducing total supply (default 25%)
+// - **NFT Floor Sweep**: Funded for market-making (default 10%)
+// - **Faction Treasury**: Distributed to stakers via rebase leaderboard (default 40%)
+// - **Back to Vault**: Recycled into mining emission pool (remainder)
 //
-// ## Distribution Rounds
+// ## Faction Treasury Distribution
 //
-// Every day, a distribution round calculates faction rankings based on total hashpower:
-// 1. Factions are ranked by hashpower (highest to lowest).
-// 2. Rewards are distributed using a tiered model (top factions earn more).
-// 3. Each faction claims rewards, which are distributed to their stakers.
+// After each rebase settles, `claim_faction_treasury_for_rebase` distributes
+// the treasury vault based on mutation leaderboard rankings:
+// - 80% rank-weighted (higher rank = more reward, everyone gets something)
+// - 20% lucky draw (one random underdog faction from rank 5+)
 //
 // ## Key Functions
 //
-// - `crank_harvest_fees`: Harvests transfer fees from user accounts to the mint.
-// - `crank_distribute_tax`: Withdraws and distributes taxes to vaults.
-// - `claim_faction_treasury_for_rebase`: Distributes treasury to stakers using epoch mutation leaderboard.
+// - `crank_harvest_fees`: Harvests withheld fees from token accounts to mint.
+// - `crank_distribute_tax`: Withdraws from mint, splits to vaults.
+// - `claim_faction_treasury_for_rebase`: Distributes treasury to stakers using rebase rankings.
 //
 
 use crate::errors::ErrorCode;
@@ -476,7 +477,7 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
 // ============================= FACTION TREASURY DISTRIBUTION ============================
 // ========================================================================================
 
-/// Distribute faction treasury rewards for a settled epoch.
+/// Distribute faction treasury rewards for a settled rebase.
 ///
 /// Uses the rebase's mutation-based `final_ranks` to determine reward tiers:
 ///   1st = 25% | 2nd = 15% | 3rd = 10% | random from 4th+ = 50%
@@ -528,7 +529,7 @@ pub fn internal_claim_faction_treasury_for_rebase(
         ErrorCode::InvalidFactionId
     );
 
-    // Determine this faction's rank from epoch final_ranks
+    // Determine this faction's rank from rebase final_ranks
     let rank = rebase_state.final_ranks[fid as usize] as usize;
 
     // --- 80% rank-weighted: rank_points = active_factions - rank ---
@@ -765,8 +766,8 @@ pub struct CrankDistributeTax<'info> {
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }
 
-/// Claim faction treasury rewards for a settled epoch.
-/// Uses mutation leaderboard (epoch final_ranks) -- no separate leaderboard needed.
+/// Claim faction treasury rewards for a settled rebase.
+/// Uses mutation leaderboard (rebase final_ranks) -- no separate leaderboard needed.
 #[derive(Accounts)]
 #[instruction(rebase_id: u64)]
 pub struct ClaimFactionTreasuryForRebase<'info> {

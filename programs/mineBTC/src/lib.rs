@@ -477,8 +477,8 @@ pub mod minebtc {
         tax::internal_crank_distribute_tax(ctx)
     }
 
-    /// Claim faction treasury rewards for a settled epoch.
-    /// Uses the mutation leaderboard (epoch final_ranks) -- permissionless.
+    /// Claim faction treasury rewards for a settled rebase.
+    /// Uses the mutation leaderboard (rebase final_ranks) -- permissionless.
     pub fn claim_faction_treasury_for_rebase(
         ctx: Context<ClaimFactionTreasuryForRebase>,
         rebase_id: u64,
@@ -490,13 +490,13 @@ pub mod minebtc {
     // ------------ REBASE MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize epoch mining configuration (admin only).
-    /// Rebase duration is tied to the economy cycle -- one epoch per LP burn.
+    /// Initialize rebase configuration (admin only).
+    /// Rebase duration is tied to the economy cycle -- one rebase per LP burn.
     pub fn initialize_rebase_config(ctx: Context<InitializeRebaseConfig>) -> Result<()> {
         rebase::initialize_rebase_config_internal(ctx)
     }
 
-    /// Update epoch mining configuration (admin only)
+    /// Update rebase configuration (admin only)
     pub fn update_rebase_config(
         ctx: Context<UpdateRebaseConfig>,
         is_active: Option<bool>,
@@ -504,7 +504,7 @@ pub mod minebtc {
         rebase::update_rebase_config_internal(ctx, is_active)
     }
 
-    /// Settle epoch: finalize mutation-based rankings and compute reward pools.
+    /// Settle rebase: finalize mutation-based rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_rebase(ctx: Context<SettleRebase>) -> Result<()> {
         rebase::settle_rebase_internal(ctx)

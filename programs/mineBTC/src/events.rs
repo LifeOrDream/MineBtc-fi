@@ -565,7 +565,7 @@ pub struct NftFloorSweepFundsWithdrawn {
     pub timestamp: i64,
 }
 
-/// Event emitted when a faction claims treasury rewards for a settled epoch.
+/// Event emitted when a faction claims treasury rewards for a settled rebase.
 #[event]
 pub struct FactionTreasuryRewardsClaimed {
     pub rebase_id: u64,
@@ -673,7 +673,7 @@ pub struct RebaseSettled {
     pub timestamp: i64,
 }
 
-/// Event emitted when a mutation contributes score to a faction's epoch total.
+/// Event emitted when a mutation contributes score to a faction's rebase total.
 #[event]
 pub struct MutationScoreAccumulated {
     pub rebase_id: u64,

@@ -11,7 +11,7 @@
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
 // - `execute_autominer_bet`: Executes an autominer bet (keeper function).
 //
-// The same bet now powers both round rewards and directional epoch prediction rewards.
+// The same bet now powers both round rewards and directional rebase prediction rewards.
 //
 
 use anchor_lang::prelude::*;
@@ -770,7 +770,7 @@ pub fn internal_update_autominer(
 /// Execute autominer bets (keeper instruction - callable by anyone).
 /// Generates faction-direction bets dynamically from the configured country set.
 /// In SOL mode, pays the caller 1% of `sol_per_round` (max 0.005 SOL) for tx costs.
-/// Uses the same round/epoch betting path as manual users.
+/// Uses the same round/rebase betting path as manual users.
 pub fn internal_execute_autominer_bet(
     ctx: Context<ExecuteAutominerBet>,
     current_round_id: u64,
@@ -937,7 +937,7 @@ pub fn internal_execute_autominer_bet(
         autominer_vault.sol_balance = autominer_vault.sol_balance.saturating_sub(sol_per_round);
     }
 
-    // Place bets using the shared round/epoch prediction path.
+    // Place bets using the shared round/rebase prediction path.
     msg!(
         "   Placing {} bets for round {}...",
         bet_types.len(),
@@ -1895,7 +1895,7 @@ fn internal_process_bets<'info>(
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Only own-faction bets count for rebase rewards.
-        // Cross-faction bets still work for round rewards but do not accumulate into epoch state.
+        // Cross-faction bets still work for round rewards but do not accumulate into rebase state.
         if faction_id == player_data.faction_id {
             user_rebase_bets.direction_bets[faction_index][direction_index] = user_rebase_bets
                 .direction_bets[faction_index][direction_index]
@@ -2117,7 +2117,7 @@ fn internal_process_bets<'info>(
                 }
             }
 
-            // --- Accumulate mutation score into epoch state ---
+            // --- Accumulate mutation score into rebase state ---
             let type_weight: u64 = match mutation_type {
                 MutationType::Evolution => EVOLUTION_SCORE_WEIGHT,
                 MutationType::Power => POWER_SCORE_WEIGHT,
@@ -2459,7 +2459,7 @@ pub struct JoinBets<'info> {
     #[account(mut, seeds = [REBASE_CONFIG_SEED], bump)]
     pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
-    /// Epoch state for current epoch (init_if_needed for new epochs)
+    /// Rebase state for current rebase (init_if_needed for new rebases)
     #[account(
         init_if_needed,
         payer = authority,
@@ -2469,11 +2469,11 @@ pub struct JoinBets<'info> {
     )]
     pub rebase_state: Box<Account<'info, RebaseState>>,
 
-    /// Economy state (read for lp_operations_count to tie epoch cycle to economy cycle)
+    /// Economy state (read for lp_operations_count to tie rebase cycle to economy cycle)
     #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// User epoch bets for current epoch (init_if_needed for first bet)
+    /// User rebase bets for current rebase (init_if_needed for first bet)
     #[account(
         init_if_needed,
         payer = authority,
@@ -2806,7 +2806,7 @@ pub struct ExecuteAutominerBet<'info> {
     #[account(mut, seeds = [REBASE_CONFIG_SEED], bump)]
     pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
-    /// Epoch state for current epoch (init_if_needed for new epochs)
+    /// Rebase state for current rebase (init_if_needed for new rebases)
     #[account(
         init_if_needed,
         payer = caller,
@@ -2816,11 +2816,11 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub rebase_state: Box<Account<'info, RebaseState>>,
 
-    /// Economy state (read for lp_operations_count to tie epoch cycle to economy cycle)
+    /// Economy state (read for lp_operations_count to tie rebase cycle to economy cycle)
     #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// User epoch bets for vault OWNER (init_if_needed, payer=caller)
+    /// User rebase bets for vault OWNER (init_if_needed, payer=caller)
     #[account(
         init_if_needed,
         payer = caller,
