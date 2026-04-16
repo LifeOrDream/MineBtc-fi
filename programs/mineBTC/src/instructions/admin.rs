@@ -37,11 +37,6 @@ use mpl_core::{
     types::{Creator, Plugin, PluginAuthority, Royalties, RuleSet, UpdateDelegate},
 };
 
-const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
-const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
-const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
-const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
-
 /// Helper type for passing creators from client
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct CreatorInput {
@@ -79,27 +74,25 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     global_config.pda_sol_treasury = ctx.accounts.sol_treasury.key();
     global_config.treasury_bump = ctx.bumps.sol_treasury;
 
-    // Initialize SOL fee config with defaults
+    // Initialize SOL fee config (defaults defined in state.rs)
     global_config.sol_fee_config = SolFeeConfig {
-        protocol_fee_pct: 10,
-        buyback_pct: 80,
-        stakers_pct: 40,
+        protocol_fee_pct: DEFAULT_PROTOCOL_FEE_PCT,
+        buyback_pct: DEFAULT_BUYBACK_PCT,
+        stakers_pct: DEFAULT_STAKERS_PCT,
     };
 
-    // Initialize MineBtc distribution config with defaults
+    // Initialize dogeBTC round distribution config (defaults defined in state.rs)
+    // Invariant: stakers + winners + 2 * same_faction + motherlode = 100
     global_config.minebtc_dist_config = MineBtcDistConfig {
-        // Invariant: stakers + winners + 2 * same_faction + motherlode = 100
         minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
         minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
         minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
         minebtc_motherlode_pct: DEFAULT_MINEBTC_MOTHERLODE_PCT,
-        refining_fee: 5,
+        refining_fee: DEFAULT_REFINING_FEE,
     };
 
-    global_config.change_faction_fee = 4_200_000_000; // 4.2 SOL
-
-    // Initialize snapshot interval (default: 1800 seconds = 30 minutes)
-    global_config.snapshot_interval = 1800;
+    global_config.change_faction_fee = DEFAULT_CHANGE_FACTION_FEE;
+    global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
@@ -116,17 +109,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
             system_program::Transfer {
                 from: ctx.accounts.authority.to_account_info(),
                 to: ctx.accounts.sol_treasury.to_account_info(),
-            },
-        ),
-        1,
-    )?;
-
-    anchor_lang::system_program::transfer(
-        CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            system_program::Transfer {
-                from: ctx.accounts.authority.to_account_info(),
-                to: ctx.accounts.doges_treasury.to_account_info(),
             },
         ),
         1,
@@ -160,10 +142,10 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.track_price = 0;
     mine_btc_mining.sol_for_pol = 0;
 
-    // Initialize emission adjustment parameters with defaults
-    mine_btc_mining.price_change_threshold = 3; // 3% threshold
-    mine_btc_mining.emission_increase_pct = 1; // 1% increase when price goes up
-    mine_btc_mining.emission_decrease_pct = 3; // 3% decrease when price goes down
+    // Initialize emission adjustment parameters (defaults defined in state.rs)
+    mine_btc_mining.price_change_threshold = DEFAULT_PRICE_CHANGE_THRESHOLD;
+    mine_btc_mining.emission_increase_pct = DEFAULT_EMISSION_INCREASE_PCT;
+    mine_btc_mining.emission_decrease_pct = DEFAULT_EMISSION_DECREASE_PCT;
 
     // ---------------------------- Unrefined Rewards ---------------------------------
     let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
@@ -284,8 +266,6 @@ pub fn add_faction_internal(
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
     faction_state.lp_dogebtc_reward_index = 0;
-    faction_state.total_sol_bets = 0;
-    faction_state.total_wins = 0;
     faction_state.sol_reward_index = 0;
     faction_state.motherlode_pot_size = 0;
 
@@ -1034,37 +1014,27 @@ pub fn set_doge_free_mint_allowance_internal(
 /// Update DogeConfig account (admin only)
 ///
 /// Updates the DogeConfig account that stores Doge collection configuration.
-///
-/// # Parameters
-/// - `base_price`: Base price for Doge in SOL (lamports)
-/// - `curve_a`: Bonding curve parameter (controls price growth rate)
+/// All parameters are optional -- only provided values are changed.
 pub fn update_doge_config_internal(
     ctx: Context<UpdateDogeConfig>,
-    base_price: u64,
-    curve_a: u64,
+    base_price: Option<u64>,
+    curve_a: Option<u64>,
+    max_supply: Option<u64>,
 ) -> Result<()> {
     let doges_config = &mut ctx.accounts.doges_config;
-    doges_config.base_price = base_price;
-    doges_config.curve_a = curve_a;
-    Ok(())
-}
-
-/// Update max supply for Doge NFTs (admin only)
-///
-/// Can only increase or decrease supply as long as it doesn't go below doges_minted.
-///
-/// # Parameters
-/// - `new_max_supply`: New maximum supply for Doge NFTs
-pub fn update_doge_max_supply_internal(
-    ctx: Context<UpdateDogeConfig>,
-    new_max_supply: u64,
-) -> Result<()> {
-    let doges_config = &mut ctx.accounts.doges_config;
-    require!(
-        new_max_supply >= doges_config.doges_minted,
-        ErrorCode::InvalidParameters
-    );
-    doges_config.max_supply = new_max_supply;
+    if let Some(price) = base_price {
+        doges_config.base_price = price;
+    }
+    if let Some(curve) = curve_a {
+        doges_config.curve_a = curve;
+    }
+    if let Some(supply) = max_supply {
+        require!(
+            supply >= doges_config.doges_minted,
+            ErrorCode::InvalidParameters
+        );
+        doges_config.max_supply = supply;
+    }
     Ok(())
 }
 
@@ -1112,41 +1082,25 @@ pub fn initialize_game_state_internal(
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
 
-    // Initialize cumulative stats
-    global_game_state.total_sol_bets = 0;
-
     Ok(())
 }
 
-/// Switch game state (toggle is_active) (admin only)
+/// Update game state (admin only)
 ///
-/// Toggles the `is_active` field in the global game state.
-/// When `is_active` is false, new rounds cannot be started.
-/// Already-ended rounds can still be permissionlessly finalized.
-///
-/// This allows admins to pause/resume round creation without losing state.
-pub fn switch_game_state_internal(ctx: Context<UpdateGameState>) -> Result<()> {
-    let global_game_state = &mut ctx.accounts.global_game_state;
-    global_game_state.is_active = !global_game_state.is_active;
-
-    Ok(())
-}
-
-/// Update round duration (admin only)
-///
-/// Updates the `round_duration_seconds` field in the global game state.
-/// This controls how long each game round lasts.
-///
-/// # Parameters
-/// - `new_round_duration_seconds`: New round duration in seconds (must be > 0)
-pub fn update_round_duration_internal(
+/// Optionally toggles is_active and/or updates round duration.
+pub fn update_game_state_internal(
     ctx: Context<UpdateGameState>,
-    new_round_duration_seconds: i64,
+    is_active: Option<bool>,
+    round_duration_seconds: Option<i64>,
 ) -> Result<()> {
     let global_game_state = &mut ctx.accounts.global_game_state;
-    require!(new_round_duration_seconds > 0, ErrorCode::InvalidParameters);
-    global_game_state.round_duration_seconds = new_round_duration_seconds;
-
+    if let Some(active) = is_active {
+        global_game_state.is_active = active;
+    }
+    if let Some(duration) = round_duration_seconds {
+        require!(duration > 0, ErrorCode::InvalidParameters);
+        global_game_state.round_duration_seconds = duration;
+    }
     Ok(())
 }
 
@@ -1228,16 +1182,6 @@ pub struct Initialize<'info> {
     pub sol_treasury: UncheckedAccount<'info>,
 
     /// CHECK: 0-byte PDA that only stores lamports (System Account) for doge minting fees
-    #[account(
-        init,
-        payer = authority,
-        space = 0,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump,
-        owner = system_program.key()  // System-owned account for native SOL
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
-
     /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
     #[account(
         init,
@@ -1303,17 +1247,8 @@ pub struct UpdateConfigAc<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    #[account(
-        mut,
-        seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump,
-    )]
-    pub mine_btc_mining: Option<Account<'info, MineBtcMining>>,
-
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
 }
 
 /// Accept authority transfer — only the pending_authority can call this

@@ -54,12 +54,45 @@ pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
 pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
 pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
-pub const EPOCH_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
+pub const REBASE_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
 pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
-pub const CLAIMABLE_MINEBTC_SOURCE_EPOCH: u8 = 1;
+pub const CLAIMABLE_MINEBTC_SOURCE_REBASE: u8 = 1;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC: u8 = 2;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
 pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
+
+// ========== DEFAULT CONFIG VALUES ========== //
+// All config defaults in one place. Used by initialize() in admin.rs.
+
+/// SOL fee taken from each bet as a whole percent of the bet amount.
+pub const DEFAULT_PROTOCOL_FEE_PCT: u8 = 15;
+/// Percent of accumulated protocol SOL used for buybacks / POL during economy cycle.
+pub const DEFAULT_BUYBACK_PCT: u8 = 80;
+/// Percent of per-bet SOL fee routed to the staker reward vault.
+pub const DEFAULT_STAKERS_PCT: u8 = 20;
+
+/// dogeBTC share of round emission sent to faction stakers.
+pub const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
+/// dogeBTC share of round emission sent to exact country+direction winners.
+pub const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
+/// dogeBTC share of round emission sent to each non-winning direction on the winning faction.
+pub const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
+/// dogeBTC share of round emission added to the motherlode jackpot.
+pub const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
+/// Percent fee taken when claiming staking rewards (redistributed to other stakers).
+pub const DEFAULT_REFINING_FEE: u8 = 5;
+
+/// SOL cost to switch factions (in lamports). 4.2 SOL.
+pub const DEFAULT_CHANGE_FACTION_FEE: u64 = 4_200_000_000;
+/// Minimum seconds between price snapshots in the economy cycle.
+pub const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1800; // 30 minutes
+
+/// Price change threshold for emission rate adjustment (whole percent).
+pub const DEFAULT_PRICE_CHANGE_THRESHOLD: u64 = 3; // 3%
+/// Emission rate increase when price rises above threshold.
+pub const DEFAULT_EMISSION_INCREASE_PCT: u64 = 1; // 1%
+/// Emission rate decrease when price falls below threshold.
+pub const DEFAULT_EMISSION_DECREASE_PCT: u64 = 3; // 3%
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
@@ -92,7 +125,6 @@ pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
-pub const DOGES_TREASURY_SEED: &[u8] = b"doges-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
 pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
@@ -134,9 +166,9 @@ pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
 
 // PDAs for Epoch Mining system
-pub const EPOCH_CONFIG_SEED: &[u8] = b"epoch-config";
-pub const EPOCH_STATE_SEED: &[u8] = b"epoch"; // Seed: [b"epoch", epoch_id_u64]
-pub const USER_EPOCH_BETS_SEED: &[u8] = b"user-epoch"; // Seed: [b"user-epoch", user_pubkey, epoch_id_u64]
+pub const REBASE_CONFIG_SEED: &[u8] = b"rebase-config";
+pub const REBASE_STATE_SEED: &[u8] = b"rebase"; // Seed: [b"rebase", rebase_id_u64]
+pub const USER_REBASE_BETS_SEED: &[u8] = b"user-rebase"; // Seed: [b"user-rebase", user_pubkey, rebase_id_u64]
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -512,7 +544,9 @@ impl DogeFreeMintAllowance {
 // ========================================================================================
 
 /// Tax Configuration PDA (Seed: `[b"tax-config"]`)
-/// Manages tax distribution, faction treasury rewards, and NFT floor sweep operations
+/// Manages tax distribution, NFT floor sweep, and faction treasury rewards.
+/// Treasury rewards are distributed based on the mutation leaderboard (rebase final_ranks)
+/// after each epoch settles -- no separate leaderboard calculation needed.
 #[account]
 pub struct TaxConfig {
     pub bump: u8,
@@ -527,32 +561,12 @@ pub struct TaxConfig {
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
 
-    /// Current distribution round state
-    pub round_active: bool,
-    /// Timestamp when current distribution round started
-    pub start_timestamp: i64,
-    /// Timestamp when last distribution round ended (for 1-day cooldown)
-    pub end_timestamp: i64,
-
-    /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)
-    /// Rank 0 = highest hashpower, Rank 11 = lowest hashpower
-    pub leaderboard_faction_ids: Vec<u8>,
-    /// Leaderboard hashpower values (index = rank, value = hashpower)
-    pub leaderboard_hashpower: Vec<u64>,
-    /// Number of factions added to leaderboard so far (0-active_faction_count)
-    pub leaderboard_factions_count: u8,
-    /// Snapshot of active faction count when the current distribution round started
-    pub distribution_faction_count: u8,
-
-    /// Faction rewards: MineBtc amount each faction gets (index = rank, value = minebtc_amount)
-    pub faction_rewards: Vec<u64>,
-    /// Whether rewards have been calculated for current round
-    pub rewards_calculated: bool,
-
-    /// Faction claim status: whether each faction has claimed rewards (index = faction_id, value = claimed)
-    pub faction_claimed: Vec<bool>,
-    /// Number of factions that have claimed rewards
-    pub factions_claimed_count: u8,
+    /// Rebase ID of the last treasury distribution.
+    /// Prevents double-distribution for the same epoch.
+    pub last_treasury_rebase_id: u64,
+    /// Bitmap of factions that have claimed treasury rewards for the current rebase.
+    /// Bit N = 1 means faction N has claimed.  Supports up to 16 factions.
+    pub treasury_claimed_bitmap: u16,
 
     /// PDA addresses for tax system
     pub withdraw_withheld_authority: Pubkey,
@@ -561,42 +575,35 @@ pub struct TaxConfig {
     pub nft_sale_sol_vault: Pubkey,
 
     /// Whitelisted address that can withdraw MineBtc from NFT floor sweep vault
-    /// This address will swap MineBtc for SOL off-chain, buy NFTs, and re-list them
     pub nft_floor_sweep_whitelisted_address: Pubkey,
 }
 
 impl TaxConfig {
-    pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = DAY_IN_SECONDS as i64; // 1 day
-
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // nft_floor_sweep_pct
         1 +     // faction_treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
-        1 +     // round_active (bool)
-        8 +     // start_timestamp (i64)
-        8 +     // end_timestamp (i64)
-        4 + (MAX_FACTIONS * 1) + // leaderboard_faction_ids Vec<u8>
-        4 + (MAX_FACTIONS * 8) + // leaderboard_hashpower Vec<u64>
-        1 +     // leaderboard_factions_count
-        1 +     // distribution_faction_count
-        4 + (MAX_FACTIONS * 8) + // faction_rewards Vec<u64>
-        1 +     // rewards_calculated (bool)
-        4 + (MAX_FACTIONS * 1) + // faction_claimed Vec<bool>
-        1 +     // factions_claimed_count
+        8 +     // last_treasury_rebase_id
+        2 +     // treasury_claimed_bitmap
         32 +    // withdraw_withheld_authority
         32 +    // faction_treasury_vault
         32 +    // nft_floor_sweep_vault
         32 +    // nft_sale_sol_vault
         32; // nft_floor_sweep_whitelisted_address
+
+    /// 80% of treasury is split by rank weight (higher rank = more reward).
+    pub const RANK_WEIGHTED_BPS: u64 = 8000;
+    /// 20% of treasury goes to one random faction (keeps underdogs engaged).
+    pub const LUCKY_DRAW_BPS: u64 = 2000;
 }
 
 // ========================================================================================
 // ========================== 1. GLOBAL & ORACLE ACCOUNTS =================================
 // ========================================================================================
 
-/// Global game state PDA (Seed: `[b"global-surge-state"]`)
+/// Global game state PDA (Seed: `[b"global-game-state"]`)
 /// Tracks global game statistics and the currently active round.
 /// Each individual round has its own GameSession PDA.
 #[account]
@@ -606,9 +613,6 @@ pub struct GlobalGameSate {
     /// Whether the game is currently active
     pub is_active: bool,
     pub can_begin_round: bool,
-
-    /// Total SOL bets since start of game (cumulative across all rounds)
-    pub total_sol_bets: u128,
 
     /// The currently active round ID (e.g., 48636).
     pub current_round_id: u64,
@@ -627,7 +631,6 @@ impl GlobalGameSate {
         1 +     // bump
         1 +     // is_active
         1 +     // can_begin_round
-        16 +    // total_sol_bets (u128)
         8 +     // current_round_id
         8 +     // round_duration_seconds
         8 +     // last_round_id
@@ -671,11 +674,6 @@ pub struct FactionState {
     /// Total doges currently being used in gameplay
     pub doges_playing: u64,
 
-    /// Total SOL bet on this faction across all rounds (cumulative)
-    pub total_sol_bets: u64,
-    /// Total number of rounds this faction has won (cumulative)
-    pub total_wins: u64,
-
     /// Cumulative SOL-per-share this faction has earned for stakers
     /// Used for calculating staker rewards
     pub sol_reward_index: u128,
@@ -698,8 +696,6 @@ impl FactionState {
         16 +    // lp_dogebtc_reward_index (u128)
         8 +     // doges_staked (u64)
         8 +     // doges_playing (u64)
-        8 +     // total_sol_bets (u64)
-        8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
         8; // motherlode_pot_size (u64)
 }
@@ -755,10 +751,6 @@ pub struct GameSession {
     pub user_faction_indexes: [u64; NUM_FACTIONS],
     /// Net SOL bet placed on each faction.
     pub sol_bets_by_faction: [u64; NUM_FACTIONS],
-    /// Points bet placed on each faction.
-    pub points_bets_by_faction: [u64; NUM_FACTIONS],
-    /// Weighted points per faction (points * active_multiplier / BASE_MULTIPLIER for SOL bets, else points).
-    pub wgtd_points_bets_by_faction: [u64; NUM_FACTIONS],
     /// Points bet placed on each faction-direction pair.
     pub points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
     /// Weighted points bet placed on each faction-direction pair.
@@ -772,8 +764,6 @@ pub struct GameSession {
     // --- MineBtc reward pools for this round ---
     /// MineBtc allocated for exact winning faction+direction bettors in this round.
     pub minebtc_winner_pool: u64,
-    /// Aggregate MineBtc allocated for the non-winning directions on the winning faction.
-    pub minebtc_same_faction_pool: u64,
     /// MineBtc allocated per losing direction on the winning faction.
     /// The winning direction index remains zero in this array.
     pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
@@ -821,14 +811,11 @@ impl GameSession {
         8 +     // stakers_fee
         (NUM_FACTIONS * 8) + // user_faction_indexes
         (NUM_FACTIONS * 8) + // sol_bets_by_faction
-        (NUM_FACTIONS * 8) + // points_bets_by_faction
-        (NUM_FACTIONS * 8) + // wgtd_points_bets_by_faction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // points_bets_by_faction_direction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // wgtd_points_bets_by_faction_direction
         1 +     // winning_faction_id (u8)
         1 +     // winning_direction (u8)
         8 +     // minebtc_winner_pool
-        8 +     // minebtc_same_faction_pool
         (PredictionDirection::COUNT * 8) + // minebtc_same_faction_direction_pools
         8 +     // faction_stakers
         8 +     // motherlode_rewards
@@ -867,15 +854,6 @@ pub struct PlayerData {
     /// The faction this player is assigned to
     pub faction_id: u8,
 
-    /// Cumulative statistics
-    pub rounds_played: u64,
-
-    pub total_sol_bet: u64,
-    pub total_points_bet: u64,
-
-    pub total_sol_won: u64,
-    pub total_dogebtc_won: u64,
-
     pub dogebtc_hashpower: u64,
     pub dogebtc_staked: u64,
     pub dogebtc_dogebtc_reward_debt: u128,
@@ -893,7 +871,7 @@ pub struct PlayerData {
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
     /// Number of unclaimed per-epoch reward accounts still outstanding.
-    pub pending_epoch_claims: u16,
+    pub pending_rebase_claims: u16,
 
     pub dogebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
@@ -921,9 +899,9 @@ pub struct PlayerData {
     pub gameplay_doge_dna: [u8; 32],
     /// Cached XP of gameplay doge (updated during gameplay, synced to DogeMetadata on withdraw)
     pub gameplay_doge_xp: u32,
-    /// Epoch ID in which the user requested gameplay unlock.
-    /// The doge can only be withdrawn once the next epoch/campaign cycle begins.
-    pub gameplay_unlock_request_epoch: u64,
+    /// Rebase ID in which the user requested gameplay unlock.
+    /// The doge can only be withdrawn once the next rebase cycle begins.
+    pub gameplay_unlock_request_rebase: u64,
 }
 
 impl PlayerData {
@@ -941,11 +919,6 @@ impl PlayerData {
         1 +     // allow_bots_to_claim
         32 +    // referral_code
         1 +     // faction_id
-        8 +     // rounds_played
-        8 +     // total_sol_bet
-        8 +     // total_points_bet
-        8 +     // total_sol_won
-        8 +     // total_dogebtc_won
         8 +     // dogebtc_hashpower (u64)
         8 +     // dogebtc_staked (u64)
         16 +    // dogebtc_dogebtc_reward_debt (u128)
@@ -959,7 +932,7 @@ impl PlayerData {
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
         2 +     // pending_round_claims (u16)
-        2 +     // pending_epoch_claims (u16)
+        2 +     // pending_rebase_claims (u16)
         4 + (Self::MAX_POSITIONS * 1) + // dogebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_DOGES * 32) + // staked_doges Vec<Pubkey>
@@ -970,7 +943,7 @@ impl PlayerData {
         4 +     // active_multiplier (u32)
         32 +    // gameplay_doge_dna [u8; 32]
         4 +     // gameplay_doge_xp (u32)
-        8; // gameplay_unlock_request_epoch (u64)
+        8; // gameplay_unlock_request_rebase (u64)
 }
 
 /// Individual MineBtc staking position
@@ -1123,7 +1096,7 @@ impl PredictionDirection {
 }
 
 /// Bet type enum for user bets.
-/// Each bet selects a faction and a direction for the active epoch market.
+/// Each bet selects a faction and a direction for the active rebase.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum BetType {
     FactionDirection {
@@ -1190,8 +1163,8 @@ pub struct UserGameBet {
     // --- Instant Mutation (applied during claim_rewards) ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
-    /// Whether this bet has been accumulated into epoch bets
-    pub epoch_accumulated: bool,
+    /// Whether this bet has been accumulated into rebase bets
+    pub rebase_accumulated: bool,
 }
 
 impl UserGameBet {
@@ -1213,7 +1186,7 @@ impl UserGameBet {
         32 +     // gameplay_doge
         1 +     // bump
         1 +     // mutation_type
-        1; // epoch_accumulated
+        1; // rebase_accumulated
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1282,67 +1255,67 @@ impl AutominerVault {
 }
 
 // ========================================================================================
-// ============================= EPOCH MINING ACCOUNTS ==============================
+// ============================= REBASE MINING ACCOUNTS ==============================
 // ========================================================================================
 
-/// Maximum number of score update entries stored per epoch (for audit trail)
-/// Epoch Configuration PDA (Seed: `[b"epoch-config"]`)
+/// Maximum number of score update entries stored per rebase (for audit trail)
+/// Epoch Configuration PDA (Seed: `[b"rebase-config"]`)
 /// Epochs are tied to the economy cycle: one epoch per LP-burn cycle.
-/// Settlement becomes possible once lp_operations_count reaches epoch_settle_cycle.
+/// Settlement becomes possible once lp_operations_count reaches rebase_settle_cycle.
 #[account]
-pub struct EpochConfig {
+pub struct RebaseConfig {
     pub bump: u8,
 
     /// Current epoch ID (incrementing counter, starts at 1)
-    pub current_epoch_id: u64,
+    pub current_rebase_id: u64,
 
     /// Whether epoch mining is active
     pub is_active: bool,
 
-    /// The LP operations count that triggers settlement of the current epoch.
-    /// Set to `pol_stats.lp_operations_count + 1` when the epoch starts,
-    /// meaning the epoch settles after the next full economy cycle completes.
-    pub epoch_settle_cycle: u32,
+    /// The LP operations count that triggers settlement of the current rebase.
+    /// Set to `pol_stats.lp_operations_count + 1` when the rebase starts,
+    /// meaning the rebase settles after the next full economy cycle completes.
+    pub rebase_settle_cycle: u32,
 
     /// Rankings from the previous epoch's mutation scores.
     /// Used as start_ranks when the next epoch auto-starts.
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
-    pub prev_epoch_mutation_ranks: [u8; NUM_FACTIONS],
+    pub prev_rebase_mutation_ranks: [u8; NUM_FACTIONS],
 }
 
-impl EpochConfig {
+impl RebaseConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // current_epoch_id
+        8 +     // current_rebase_id
         1 +     // is_active
-        4 +     // epoch_settle_cycle
-        (NUM_FACTIONS * 1); // prev_epoch_mutation_ranks
+        4 +     // rebase_settle_cycle
+        (NUM_FACTIONS * 1); // prev_rebase_mutation_ranks
 }
 
-/// Epoch State PDA (Seed: `[b"epoch", epoch_id_u64_le]`)
-/// Tracks a single mutation-driven prediction epoch: start/final ranks derived from
+/// Rebase State PDA (Seed: `[b"rebase", rebase_id_u64_le]`)
+/// Tracks a single mutation-driven rebase cycle: start/final ranks derived from
 /// doge mutation scores, directional bet totals, and settlement outputs.
-/// Epoch duration is tied to the economy cycle (one LP-burn cycle).
+/// Rebase duration is tied to the economy cycle (one LP-burn cycle).
 #[account]
-pub struct EpochState {
+pub struct RebaseState {
     pub bump: u8,
 
-    /// Epoch ID
-    pub epoch_id: u64,
-    /// Timestamp when this epoch was auto-started
+    /// Rebase ID
+    pub rebase_id: u64,
+    /// Timestamp when this rebase was auto-started
     pub start_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
-    /// Snapshot of how many factions were active when this epoch started
+    /// Snapshot of how many factions were active when this rebase started
     pub active_faction_count: u8,
 
-    /// Total dogeBTC mined via raffle rounds during this epoch.
-    pub total_dogebtc_mined_in_epoch: u64,
-    /// Epoch mining pool distributed to epoch predictors.
-    pub epoch_mining_pool: u64,
+    /// Total dogeBTC mined via raffle rounds during this rebase.
+    pub total_dogebtc_mined_in_rebase: u64,
+    /// Rebase mining pool distributed to epoch predictors.
+    pub rebase_mining_pool: u64,
 
-    /// Rank snapshot from previous epoch (baseline for direction resolution).
+    /// Rank snapshot from previous rebase (baseline for direction resolution).
     pub start_ranks: [u8; NUM_FACTIONS],
     /// Final ranks derived from faction_mutation_scores at settlement.
     pub final_ranks: [u8; NUM_FACTIONS],
@@ -1352,31 +1325,31 @@ pub struct EpochState {
     /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
     pub resolved_directions: [u8; NUM_FACTIONS],
 
-    /// Total weighted bets per faction and direction during this epoch (own-faction only).
+    /// Total weighted bets per faction and direction during this rebase (own-faction only).
     pub faction_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 
     /// Pre-computed reward pool per faction (proportional to winning-direction bet weight).
     pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// 10% reward pool per faction reserved for gameplay doges that mutated during the epoch.
+    /// 10% reward pool per faction reserved for gameplay doges that mutated during the rebase.
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
 
-    /// Accumulated mutation scores per faction during this epoch.
+    /// Accumulated mutation scores per faction during this rebase.
     /// Drives ranking at settlement: factions with higher mutation scores rank higher.
     /// Score = sum of (type_weight × bet_size × doge_multiplier) for every mutation that fired.
     pub faction_mutation_scores: [u64; NUM_FACTIONS],
-    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this epoch.
+    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this rebase.
     pub eligible_doge_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 
-impl EpochState {
+impl RebaseState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // epoch_id
+        8 +     // rebase_id
         8 +     // start_timestamp
         1 +     // stage
         1 +     // active_faction_count
-        8 +     // total_dogebtc_mined_in_epoch
-        8 +     // epoch_mining_pool
+        8 +     // total_dogebtc_mined_in_rebase
+        8 +     // rebase_mining_pool
         (NUM_FACTIONS * 1) + // start_ranks
         (NUM_FACTIONS * 1) + // final_ranks
         (NUM_FACTIONS * 1) + // rank_deltas
@@ -1388,31 +1361,31 @@ impl EpochState {
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // eligible_doge_direction_totals
 }
 
-/// User Epoch Bets PDA (Seed: `[b"user-epoch", user_pubkey, epoch_id_u64_le]`)
-/// Tracks how much weighted stake a user bet on their own faction's direction during a specific epoch.
+/// User Rebase Bets PDA (Seed: `[b"user-rebase", user_pubkey, rebase_id_u64_le]`)
+/// Tracks how much weighted stake a user bet on their own faction's direction during a specific rebase.
 /// Only own-faction bets are accumulated (cross-faction bets only count for round rewards).
 #[account]
-pub struct UserEpochBets {
+pub struct UserRebaseBets {
     pub bump: u8,
 
     /// The user who placed these bets
     pub owner: Pubkey,
     /// The epoch ID this tracks
-    pub epoch_id: u64,
-    /// Gameplay doge that became eligible for the epoch doge-reward pool.
+    pub rebase_id: u64,
+    /// Gameplay doge that became eligible for the rebase doge-reward pool.
     pub gameplay_doge: Pubkey,
-    /// Whether this user's gameplay doge mutated/evolved during the epoch.
+    /// Whether this user's gameplay doge mutated/evolved during the rebase.
     pub doge_bonus_eligible: bool,
 
-    /// Weighted bet per faction and direction during this epoch.
+    /// Weighted bet per faction and direction during this rebase.
     pub direction_bets: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 
-impl UserEpochBets {
+impl UserRebaseBets {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
-        8 +     // epoch_id
+        8 +     // rebase_id
         32 +    // gameplay_doge
         1 +     // doge_bonus_eligible
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // direction_bets

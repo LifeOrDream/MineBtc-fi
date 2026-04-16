@@ -19,7 +19,7 @@ Use these canonical terms:
 - `country` or `faction` — one of 12-15 playable nations
 - `direction` — `Down`, `Neutral`, `Up`
 - `round` — fast 60-second betting loop with random winner
-- `surge` / `cycle` / `epoch` — longer competitive period tied to the economy cycle (LP burn cadence), where mutation scores determine country rankings
+- `rebase` — longer competitive period tied to the economy cycle (LP burn cadence), where mutation scores determine country rankings
 - `operator doge` / `gameplay doge` — the live NFT locked for rounds, earns XP, can mutate
 - `staked doges` — passive NFTs that boost staking hashpower
 - `mutation` — a doge upgrade (Evolution / Power / Trait) triggered by betting
@@ -57,7 +57,7 @@ Each round bet also accumulates into the active cycle. Doge mutations that fire 
 
 A cycle is defined by:
 
-- `epoch_id`
+- `rebase_id`
 - `start_ranks` (from previous cycle)
 - `faction_mutation_scores` (accumulated during this cycle)
 - per-country direction totals (own-faction bets only)
@@ -105,8 +105,8 @@ Two distinct doge roles:
 - `GlobalConfig`
 - `GlobalGameSate`
 - `MineBtcMining`
-- `EpochConfig`
-- `EpochState`
+- `RebaseConfig`
+- `RebaseState`
 - `UnrefinedRewards`
 
 ### Per Country
@@ -117,7 +117,7 @@ Two distinct doge roles:
 
 - `PlayerData`
 - `UserGameBet`
-- `UserEpochBets`
+- `UserRebaseBets`
 - `AutominerVault`
 - `StakedPosition`
 - `DogeMetadata`
@@ -128,7 +128,7 @@ Two distinct doge roles:
 |------|----------------------|
 | `instructions/game.rs` | Round start/end, winner selection, round reward indexes |
 | `instructions/user.rs` | Betting, autominers, round claims, gameplay doges, mutations |
-| `instructions/epoch.rs` | Cycle config, mutation-based settlement, cycle claims |
+| `instructions/rebase.rs` | Cycle config, mutation-based settlement, cycle claims |
 | `instructions/stake.rs` | dogeBTC and LP staking |
 | `instructions/doges.rs` | Doge minting, breeding, staking, gameplay lock/unlock |
 | `instructions/economy.rs` | Price snapshots, emissions, POL |
@@ -151,8 +151,8 @@ Important rules:
 
 - bets are `BetType::FactionDirection`
 - one transaction can include multiple countries
-- the same bet updates both `GameSession` totals and `EpochState` / `UserEpochBets`
-- only own-faction bets accumulate into epoch state (cross-faction bets are round-only)
+- the same bet updates both `GameSession` totals and `RebaseState` / `UserRebaseBets`
+- only own-faction bets accumulate into rebase state (cross-faction bets are round-only)
 - mutations fire during bet processing, subject to global budget and per-faction penalty
 
 ### Round Settlement
@@ -167,18 +167,18 @@ Important rules:
 
 - randomness is commit-reveal based (scheduled slot hash)
 - winner selection is `country → direction`
-- `end_round_faction_rewards` also advances epoch mining accounting and auto-settles the cycle when the LP burn completes
+- `end_round_faction_rewards` also advances rebase mining accounting and auto-settles the cycle when the LP burn completes
 
 ### Cycle Settlement
 
-`instructions/epoch.rs`
+`instructions/rebase.rs`
 
-- `settle_epoch_internal` — permissionless, anyone can crank once LP burn completes
-- `claim_epoch_rewards_internal` — user claims their share
+- `settle_rebase_internal` — permissionless, anyone can crank once LP burn completes
+- `claim_rebase_rewards_internal` — user claims their share
 
 Important rules:
 
-- settlement is gated by `mining.pol_stats.lp_operations_count >= epoch_config.epoch_settle_cycle`
+- settlement is gated by `mining.pol_stats.lp_operations_count >= rebase_config.rebase_settle_cycle`
 - if no mutations occurred (all scores = 0), no rewards are distributed
 - rankings are computed from `faction_mutation_scores`, compared to previous cycle's ranks
 
@@ -208,7 +208,7 @@ Common ones:
 [b"global-config"]
 [b"global-game-state"]
 [b"mine-btc-mining"]
-[b"epoch-config"]
+[b"rebase-config"]
 [b"unrefined-rewards"]
 
 // Per entity
@@ -216,8 +216,8 @@ Common ones:
 [b"player", user.key().as_ref()]
 [b"game-session", &round_id.to_le_bytes()]
 [b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
-[b"epoch", &epoch_id.to_le_bytes()]
-[b"user-epoch", user.key().as_ref(), &epoch_id.to_le_bytes()]
+[b"rebase", &rebase_id.to_le_bytes()]
+[b"user-rebase", user.key().as_ref(), &rebase_id.to_le_bytes()]
 [b"autominer", user.key().as_ref()]
 [b"autominer-custody"]
 [b"doge-metadata", doge_mint.key().as_ref()]
@@ -239,10 +239,10 @@ Key product events for indexers and off-chain systems:
 - `RoundRewardsClaimed`
 - `MutationTriggered`
 - `MutationScoreAccumulated`
-- `EpochAutoStarted`
-- `EpochAutoSettled`
-- `EpochSettled`
-- `EpochRewardsClaimed`
+- `RebaseAutoStarted`
+- `RebaseAutoSettled`
+- `RebaseSettled`
+- `RebaseRewardsClaimed`
 - `AutominerInitialized`
 - `AutominerReloaded`
 - `DogeUsedForGameplay`

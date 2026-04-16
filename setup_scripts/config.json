@@ -17,7 +17,7 @@
     "token": {
         "name": "DogeWifBTC",
         "symbol": "DogeBTC",
-        "description": "$DogeBTC is the native token of MineBTC \u2014 a live Solana country-arena game that turns country + direction bets into Geopolitical Risk Intelligence. Players place 60-second round bets, feed oracle-settled epoch indexes, lock operator doges with 256-bit DNA, and compete across rotating markets such as economics, military, AI race, and space race. 2.1B fixed supply, 1% transfer tax (Token-2022), deflationary by design.",
+        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, evolve operator doges through mutations, and climb the mutation leaderboard over rebase cycles tied to the economy's LP burn. 2.1B fixed supply, 1% transfer tax (Token-2022), deflationary by design.",
         "image": "https://assets.minebtc.fun/btc",
         "external_url": "https://assets.minebtc.fun/btc",
         "decimals": 6,
@@ -142,13 +142,5 @@
         "max_lockup_days": 365,
         "base_multiplier": 100,
         "max_multiplier": 420
-    },
-    "epoch": {
-        "epoch_duration_seconds": 86400,
-        "initial_risk_factor": 100,
-        "model5_pct": 50,
-        "top1_pct": 25,
-        "top2_pct": 15,
-        "top3_pct": 10
     }
 }

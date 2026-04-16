@@ -7,16 +7,17 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // # Doge Instructions
 //
-// This module manages the Doge NFT system, which provides hashpower multipliers to players.
+// Doges serve three distinct roles in MineBTC:
+// - primary-market NFTs minted from the bonding-curve-like pricing path,
+// - passive staking boosters that raise a player's home-faction staking hashpower,
+// - gameplay avatars used in round betting / mutation progression (handled partly in `user.rs`).
 //
-// ## Key Functions
+// Important distinction:
+// - `player_data.doge_multiplier` is the passive staking multiplier affected by `stake_doge`.
+// - `player_data.active_multiplier` is the gameplay multiplier used for round participation.
 //
-// - `batch_mint_doges`: Mints new Doge NFTs using a bonding curve pricing model.
-// - `stake_doge`: Stakes an doge to boost a player's hashpower.
-// - `unstake_doge`: Unstakes an doge and removes the boost.
-// - `claim_power`: Distributes accumulated power points to staked doges.
-//
-// Doge are a core mechanic for increasing mining efficiency and earning potential.
+// This file focuses on minting, passive Doge staking, burning-to-claim (`send_to_heaven`),
+// and breeding. Gameplay lock / unlock flows live elsewhere.
 //
 
 use crate::events::*;
@@ -235,16 +236,8 @@ pub fn int_batch_mint_doges<'info>(
         (0, total_price)
     };
 
-    let dev_amt = remaining * 80 / 100;
-    let treasury_amt = remaining - dev_amt; // No referral cut in treasury — it went directly to PDA
-
-    // Transfer to doges treasury
-    helper::transfer_to_doges_treasury(
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.doges_treasury.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        treasury_amt,
-    )?;
+    // All remaining SOL from NFT mint goes to fee_recipient via WSOL
+    let dev_amt = remaining;
 
     helper::transfer_wsol_to_multisig(
         &ctx.accounts.user.to_account_info(),
@@ -746,10 +739,6 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let current_time = Clock::get()?.unix_timestamp;
     let doge_mint = doge_metadata.mint;
     let doge_multiplier = doge_metadata.multiplier;
-    require!(
-        !ctx.accounts.tax_config.round_active,
-        ErrorCode::TaxRoundActive
-    );
     msg!(
         "🧭 [stake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
         ctx.accounts.user.key(),
@@ -962,10 +951,6 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let incubated_by_player = doge_metadata.incubated_player_data;
     let current_time = Clock::get()?.unix_timestamp;
     let doge_multiplier = doge_metadata.multiplier;
-    require!(
-        !ctx.accounts.tax_config.round_active,
-        ErrorCode::TaxRoundActive
-    );
     msg!(
         "🧭 [unstake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
         ctx.accounts.user.key(),
@@ -1387,16 +1372,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         (0, breed_cost)
     };
 
-    // Transfer breeding cost (remaining after referral cut) to treasury — referral cut already sent to PDA
-    let dev_amt = remaining * 50 / 100;
-    let treasury_amt = remaining - dev_amt; // No referral cut in treasury — it went directly to PDA
-
-    helper::transfer_to_doges_treasury(
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.doges_treasury.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        treasury_amt,
-    )?;
+    // All remaining SOL from breed goes to fee_recipient via WSOL
+    let dev_amt = remaining;
 
     helper::transfer_wsol_to_multisig(
         &ctx.accounts.user.to_account_info(),
@@ -1718,14 +1695,6 @@ pub struct MintDoge<'info> {
     )]
     pub doge_config: Account<'info, DogeConfig>,
 
-    /// CHECK: Doge treasury PDA (for doge minting fees)
-    #[account(
-        mut,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
-
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -1815,14 +1784,6 @@ pub struct BatchMintDoge<'info> {
         constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
-
-    /// CHECK: Doge treasury PDA (for doge minting fees)
-    #[account(
-        mut,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
     /// MUST be owned by global_config.fee_recipient (the multisig address)
@@ -2209,10 +2170,6 @@ pub struct BreedDoge<'info> {
         constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
-
-    /// CHECK: Doge treasury PDA
-    #[account(mut, seeds = [DOGES_TREASURY_SEED.as_ref()], bump)]
-    pub doges_treasury: UncheckedAccount<'info>,
 
     #[account(
         mut,

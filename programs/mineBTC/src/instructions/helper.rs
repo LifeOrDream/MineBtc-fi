@@ -116,25 +116,6 @@ pub fn transfer_to_sol_treasury<'info>(
     )
 }
 
-// Helper function to transfer SOL to the program's doges_treasury PDA
-pub fn transfer_to_doges_treasury<'info>(
-    from: &AccountInfo<'info>,
-    doges_treasury: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    amount: u64,
-) -> Result<()> {
-    transfer(
-        CpiContext::new(
-            system_program.to_account_info(),
-            Transfer {
-                from: from.to_account_info(),
-                to: doges_treasury.to_account_info(),
-            },
-        ),
-        amount,
-    )
-}
-
 pub fn transfer_to_autominer_custody<'info>(
     from: &AccountInfo<'info>,
     autominer_custody: &AccountInfo<'info>,
@@ -425,7 +406,7 @@ pub fn calculate_staking_rewards(
 ) -> Result<u64> {
     let reward_diff = accumulated_sol_per_point
         .checked_sub(reward_debt)
-        .unwrap_or(0);
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let new_rewards = mul_div_u128(
         user_weighted_amt as u128,
         reward_diff,
@@ -565,9 +546,8 @@ pub fn calculate_emergency_tax(
     return penalty_amount;
 }
 
-/// Charge emergency tax for MINEBTC tokens: 50% burned, 50% sent to MINEBTC vault
-/// This function handles the penalty for early withdrawal from MINEBTC staking positions
-/// Note: The 50% sent to vault accounts for 1% burn tax (transfers 99% of that 50%)
+/// Charge emergency tax for MINEBTC tokens by burning the full penalty amount.
+/// This function handles the penalty for early withdrawal from MINEBTC staking positions.
 pub fn charge_emergency_tax<'info>(
     minebtc_custodian: &AccountInfo<'info>,
     minebtc_custodian_authority: &AccountInfo<'info>,
@@ -579,7 +559,7 @@ pub fn charge_emergency_tax<'info>(
     msg!("💰 [charge_emergency_tax] Processing MINEBTC emergency tax");
     msg!("   Penalty amount: {} tokens", penalty_amount as f64 / 1e6);
 
-    // Burn 50% from custodian
+    // Burn the full penalty amount from the custodian.
     if penalty_amount > 0 {
         msg!(
             "   Burning {} tokens from custodian...",

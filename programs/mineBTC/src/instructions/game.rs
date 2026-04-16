@@ -6,7 +6,7 @@
 //
 // The game operates in rounds where:
 // 1. A caller starts a new round.
-// 2. Players place faction-direction bets that also count toward the active epoch market.
+// 2. Players place faction-direction bets that also count toward the active rebase.
 // 3. Once the round duration passes, anyone can finalize the round from its pre-scheduled
 //    slot-hash entropy source.
 // 4. If the scheduled slot-hash aged out before anyone finalized the round, settlement falls back
@@ -80,8 +80,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.stakers_fee = 0;
     game_session.user_faction_indexes = [0u64; NUM_FACTIONS];
     game_session.sol_bets_by_faction = [0u64; NUM_FACTIONS];
-    game_session.points_bets_by_faction = [0u64; NUM_FACTIONS];
-    game_session.wgtd_points_bets_by_faction = [0u64; NUM_FACTIONS];
     game_session.points_bets_by_faction_direction =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     game_session.wgtd_points_bets_by_faction_direction =
@@ -89,7 +87,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.winning_faction_id = 0;
     game_session.winning_direction = PredictionDirection::Neutral.as_index() as u8;
     game_session.minebtc_winner_pool = 0;
-    game_session.minebtc_same_faction_pool = 0;
     game_session.minebtc_same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     game_session.faction_stakers = 0;
     game_session.motherlode_rewards = 0;
@@ -105,7 +102,7 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     emit!(RoundStarted {
         round_id,
         game_session: game_session.key(),
-        epoch_id: ctx.accounts.epoch_config.current_epoch_id,
+        rebase_id: ctx.accounts.rebase_config.current_rebase_id,
         round_start_slot: game_session.round_start_slot,
         round_start_timestamp: game_session.round_start_timestamp,
         round_end_timestamp: game_session.round_end_timestamp,
@@ -286,10 +283,6 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     if total_users == 0 {
         global_state.last_round_id = game_session.round_id;
         global_state.winning_faction_id = winning_faction_id;
-        global_state.total_sol_bets = global_state
-            .total_sol_bets
-            .checked_add(game_session.total_sol_bets as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
         global_state.can_begin_round = true;
         game_session.stage = 2;
 
@@ -346,14 +339,13 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     }
 
     game_session.minebtc_winner_pool = winning_direction_rewards;
-    game_session.minebtc_same_faction_pool = same_faction_total;
     game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
     game_session.faction_stakers = faction_stakers;
     game_session.motherlode_rewards = motherlode_rewards;
 
     let total_distributed_this_round = game_session
         .minebtc_winner_pool
-        .checked_add(game_session.minebtc_same_faction_pool)
+        .checked_add(same_faction_total)
         .and_then(|total| total.checked_add(faction_stakers))
         .and_then(|total| total.checked_add(motherlode_rewards))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -438,10 +430,7 @@ fn emit_round_ended(
         total_points_bets: game_session.total_points_bets,
         user_bets_count: game_session.user_faction_indexes,
         faction_sol_bets: game_session.sol_bets_by_faction,
-        faction_points: game_session.points_bets_by_faction,
-        faction_wgtd_points: game_session.wgtd_points_bets_by_faction,
         minebtc_winner_pool: game_session.minebtc_winner_pool,
-        minebtc_same_faction_pool: game_session.minebtc_same_faction_pool,
         minebtc_same_faction_direction_pools: game_session.minebtc_same_faction_direction_pools,
         minebtc_faction_stakers,
         minebtc_motherlode,
@@ -533,7 +522,7 @@ fn split_staker_lane_rewards(
 /// This function:
 /// 1. Uses the already-finalized winning faction/direction from `end_round`
 /// 2. Distributes the winning faction's staker and motherlode rewards
-/// 3. Advances epoch accounting when the current epoch window has ended
+/// 3. Advances rebase accounting when the current rebase window has ended
 pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
     msg!("🏁 [end_round_faction_rewards] Ending current round");
 
@@ -651,30 +640,9 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         });
     }
 
-    // Update faction wins
-    faction_state.total_wins = faction_state
-        .total_wins
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
     // Update global state with previous round results
     global_state.last_round_id = game_session.round_id;
     global_state.winning_faction_id = winning_faction_id;
-    msg!(
-        "   Global state updated: last_round_id: {}, winning_faction_id: {}",
-        global_state.last_round_id,
-        global_state.winning_faction_id
-    );
-
-    // Update total SOL bets in global state (cumulative)
-    global_state.total_sol_bets = global_state
-        .total_sol_bets
-        .checked_add(game_session.total_sol_bets as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "   Updated global state. Total SOL bets: {}",
-        global_state.total_sol_bets as f64 / 1_000_000_000.0
-    );
 
     game_session.stage = 2;
 
@@ -682,25 +650,36 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     global_state.can_begin_round = true;
     msg!("   Can begin new round: {}", global_state.can_begin_round);
 
-    // --- EPOCH MINING TRACKING (inline) ---
-    let epoch_config = &mut ctx.accounts.epoch_config;
-    let epoch_state = &mut ctx.accounts.epoch_state;
-    let mine_btc_per_round = ctx.accounts.mine_btc_mining.mine_btc_per_round;
+    // --- REBASE MINING TRACKING (inline) ---
+    // Only count dogeBTC that was actually distributed this round (not the full emission).
+    // Empty rounds or rounds with no bets on certain directions may distribute less.
+    let rebase_config = &mut ctx.accounts.rebase_config;
+    let rebase_state = &mut ctx.accounts.rebase_state;
+    let actually_distributed = game_session
+        .minebtc_winner_pool
+        .saturating_add(
+            game_session
+                .minebtc_same_faction_direction_pools
+                .iter()
+                .sum::<u64>(),
+        )
+        .saturating_add(game_session.faction_stakers)
+        .saturating_add(game_session.motherlode_rewards);
 
-    if epoch_config.is_active && epoch_state.stage == 0 {
-        epoch_state.total_dogebtc_mined_in_epoch = epoch_state
-            .total_dogebtc_mined_in_epoch
-            .checked_add(mine_btc_per_round)
+    if rebase_config.is_active && rebase_state.stage == 0 {
+        rebase_state.total_dogebtc_mined_in_rebase = rebase_state
+            .total_dogebtc_mined_in_rebase
+            .checked_add(actually_distributed)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Auto-settle epoch when the economy cycle's LP burn has completed.
+        // Auto-settle rebase when the economy cycle's LP burn has completed.
         let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
-        if lp_ops >= epoch_config.epoch_settle_cycle && epoch_config.epoch_settle_cycle > 0 {
-            crate::instructions::epoch::finalize_epoch_settlement(epoch_config, epoch_state)?;
+        if lp_ops >= rebase_config.rebase_settle_cycle && rebase_config.rebase_settle_cycle > 0 {
+            crate::instructions::rebase::finalize_rebase_settlement(rebase_config, rebase_state)?;
 
-            emit!(EpochAutoSettled {
-                epoch_id: epoch_state.epoch_id,
-                mining_pool: epoch_state.epoch_mining_pool,
+            emit!(RebaseAutoSettled {
+                rebase_id: rebase_state.rebase_id,
+                mining_pool: rebase_state.rebase_mining_pool,
             });
         }
     }
@@ -840,10 +819,10 @@ pub struct StartRound<'info> {
     pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
+        seeds = [REBASE_CONFIG_SEED],
+        bump = rebase_config.bump,
     )]
-    pub epoch_config: Box<Account<'info, EpochConfig>>,
+    pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -929,18 +908,18 @@ pub struct EndRoundFactionRewards<'info> {
     /// Epoch config (mut for auto-settle + auto-start)
     #[account(
         mut,
-        seeds = [EPOCH_CONFIG_SEED],
-        bump = epoch_config.bump,
+        seeds = [REBASE_CONFIG_SEED],
+        bump = rebase_config.bump,
     )]
-    pub epoch_config: Box<Account<'info, EpochConfig>>,
+    pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
-    /// Epoch state for current epoch (mut for mining tracking + settlement)
+    /// Rebase state for current rebase (mut for mining tracking + settlement)
     #[account(
         mut,
-        seeds = [EPOCH_STATE_SEED, &epoch_config.current_epoch_id.to_le_bytes()],
-        bump = epoch_state.bump,
+        seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
+        bump = rebase_state.bump,
     )]
-    pub epoch_state: Box<Account<'info, EpochState>>,
+    pub rebase_state: Box<Account<'info, RebaseState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

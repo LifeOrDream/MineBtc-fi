@@ -4,7 +4,6 @@ const { AnchorProvider, BN, Program, setProvider, web3, Wallet } = pkg;
 import { SystemProgram } from "@solana/web3.js";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import * as anchor_spl from "@solana/spl-token";
-import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
@@ -154,63 +153,10 @@ async function getSolanaBalance(pubkey) {
   }
 }
 
-function toByteArray32FromHex(hexString) {
-  const sanitized = hexString.startsWith("0x")
-    ? hexString.slice(2)
-    : hexString;
-  if (!/^[0-9a-fA-F]{64}$/.test(sanitized)) {
-    throw new Error(
-      `initial_question_hash_hex must be 32 bytes / 64 hex chars, got: ${hexString}`
-    );
-  }
-  return Array.from(Buffer.from(sanitized, "hex"));
-}
-
-function deriveQuestionHashFromConfig() {
-  if (config.epoch?.initial_question_hash_hex) {
-    return toByteArray32FromHex(config.epoch.initial_question_hash_hex);
-  }
-
-  const questionSource =
-    config.epoch?.initial_question ||
-    config.epoch?.initial_index_name ||
-    "Will country rankings move up or down this epoch?";
-  return Array.from(
-    crypto.createHash("sha256").update(questionSource).digest()
-  );
-}
-
-function getInitialIndexConfig() {
-  const initialIndexId = config.epoch?.initial_index_id ?? 0;
-  const initialIndexName =
-    config.epoch?.initial_index_name ?? "Geopolitical Risk Index";
-  const initialScores = Array.isArray(config.epoch?.initial_scores)
-    ? config.epoch.initial_scores
-    : Array(config.factions.length).fill(0);
-
-  const NUM_FACTIONS = 15; // Must match program's NUM_FACTIONS constant
-  if (config.factions.length > NUM_FACTIONS) {
-    throw new Error(
-      `Expected at most ${NUM_FACTIONS} factions for epoch index initialization, found ${config.factions.length}`
-    );
-  }
-  // Pad initialScores to NUM_FACTIONS (program expects fixed-size array)
-  while (initialScores.length < NUM_FACTIONS) {
-    initialScores.push(0);
-  }
-  if (initialScores.length !== NUM_FACTIONS) {
-    throw new Error(
-      `epoch.initial_scores must contain exactly ${NUM_FACTIONS} values, found ${initialScores.length}`
-    );
-  }
-
-  return {
-    indexId: initialIndexId,
-    name: initialIndexName,
-    initialScores: initialScores.map((score) => Number(score)),
-    questionHash: deriveQuestionHashFromConfig(),
-  };
-}
+// Epoch / index / oracle scaffolding was removed when the contract moved to
+// mutation-driven rebase cycles. The rebase system has no initial scores,
+// no question hash, and no oracle authority — settlement is driven entirely
+// by on-chain mutation scores and the LP-burn cycle count. No helper needed.
 
 // ==================== [ MAIN SCRIPT ] ====================
 
@@ -489,43 +435,22 @@ async function main() {
 
     // return;
 
-    console.log(
-      COLOR_STEP,
-      "\n================ [ ADDING GAME CRANKER BOT ] ================"
-    );
-    console.log(
-      COLOR_INFO,
-      `🔑 Game Cranker Bot: ${gameKeypair.publicKey.toString()}`
-    );
+    // NOTE: Cranker bot whitelist was removed when keepers became fully
+    // permissionless. start_round / end_round / settle_rebase / claim crank
+    // instructions are callable by any wallet — the protocol only pays the
+    // (capped) keeper compensation to the caller that lands the tx first.
 
-    // 16. Add Game Cranker Bot
-    // Instruction: add_cranker_bot(bot_pubkey: Pubkey)
-    // Whitelists a keeper bot wallet to call start_round / end_round
-    // Accounts: globalGameState, globalConfig, authority, systemProgram
-    await addGameCrankerBot(
-      minebtcProgram,
-      gameKeypair.publicKey.toBase58()
-    );
-
-    // 17. Initialize Epoch Config (for active-index, oracle-settled epoch markets)
-    // Instruction: initialize_epoch_config(oracle_authority: Pubkey, epoch_duration: u64,
-    //              risk_factor: u16, model5_pct: u8, top1_pct: u8, top2_pct: u8, top3_pct: u8)
-    // Creates EpochConfig PDA [seeds: "epoch-config"] with oracle authority, active-index rotation,
-    // and rank-weighted epoch reward splits
-    // Accounts: epochConfig, globalConfig, authority, systemProgram
-    await initializeEpochConfig(minebtcProgram);
-
-    // 18. Initialize bootstrap index state for epoch markets
-    // Without an on-chain IndexState for active_index_id=0, join_round / autominer flows
-    // will fail because they always pass the active index account.
-    await initializeBootstrapIndexState(minebtcProgram);
-
-    // 19. Schedule the initial epoch market using the oracle wallet so the first epoch
-    // has a non-empty active market/question hash before gameplay starts.
-    await scheduleInitialEpochMarket(minebtcProgram);
+    // 17. Initialize Rebase Config (mutation-driven competitive cycles)
+    // Instruction: initialize_rebase_config() — no args
+    // Creates RebaseConfig PDA [seeds: "rebase-config"] with current_rebase_id=1,
+    // is_active=true, rebase_settle_cycle=0 (auto-set on first bet), and identity
+    // start ranks [0..NUM_FACTIONS). Rebase cycles auto-start on first bet and
+    // auto-settle when the economy-cycle LP burn completes.
+    // Accounts: rebaseConfig, globalConfig, authority, systemProgram
+    await initializeRebaseConfig(minebtcProgram);
 
     // Print completion summary
-    // printCompletionSummary();
+    printCompletionSummary();
     } catch (error) {
     console.error(COLOR_ERROR, "❌ Initialization failed:", error);
         if (error.logs) {
@@ -2653,363 +2578,77 @@ async function updateDogeConfig(minebtcProgram, dogeConfig) {
   }
 }
 
-async function addGameCrankerBot(minebtcProgram, botWalletAddress) {
-  // Check if cranker bots are already added
-  if (deploymentFile.cranker_bots_added) {
-    console.log(COLOR_INFO, "ℹ️ Cranker bots already added. Skipping...");
+// Note: `addGameCrankerBot` / `add_cranker_bot` was removed with the switch to
+// permissionless keepers. The `gameKeypair` is still loaded above because it
+// is used to pay keeper rent in the looped cranker scripts, but no on-chain
+// whitelist step is required anymore.
+
+async function initializeRebaseConfig(minebtcProgram) {
+  if (deploymentFile.rebase_config_initialized) {
+    console.log(COLOR_INFO, "ℹ️ Rebase config already initialized. Skipping...");
     return;
   }
 
   console.log(
     COLOR_STEP,
-    "\n================ [ ADDING CRANKER BOTS ] ================"
-  );
-
-  // Check if game state is initialized
-  if (!deploymentFile.game_state_initialized) {
-    console.log(
-      COLOR_WARNING,
-      "⚠️ Game state not initialized. Skipping cranker bot addition..."
-    );
-    return;
-  }
-
-  const botPubkey = new PublicKey(botWalletAddress);
-  console.log(COLOR_INFO, `🤖 Adding cranker bot: ${botPubkey.toString()}`);
-  // return;
-
-  try {
-    // Load PDAs
-    const globalConfigPDA = new PublicKey(
-      deploymentFile.minebtc_program_initialized.globalConfig_address
-    );
-    const globalGameStatePDA = new PublicKey(
-      deploymentFile.game_state_initialized.global_game_state_pda
-    );
-
-    console.log(
-      COLOR_INFO,
-      `   Global Config PDA: ${globalConfigPDA.toString()}`
-    );
-    console.log(
-      COLOR_INFO,
-      `   Global Game State PDA: ${globalGameStatePDA.toString()}`
-    );
-    console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
-
-    // Check if bot is already added
-    try {
-      const gameState = await minebtcProgram.account.globalGameSate.fetch(
-        globalGameStatePDA
-      );
-      if (
-        gameState.crankerBots &&
-        gameState.crankerBots.some((bot) => bot.equals(botPubkey))
-      ) {
-        console.log(
-          COLOR_WARNING,
-          `   ⚠️ Bot ${botPubkey.toString()} is already whitelisted`
-        );
-        deploymentFile.cranker_bots_added = {
-          bots: [botPubkey.toString()],
-          timestamp: new Date().toISOString(),
-          status: "already_exists",
-        };
-        saveDeploymentData();
-        return;
-      }
-    } catch (error) {
-      // Game state might not exist yet, continue
-    }
-
-    // Build and send transaction
-    const tx = await minebtcProgram.methods
-      .addCrankerBot(botPubkey)
-      .accounts({
-        globalGameState: globalGameStatePDA,
-        globalConfig: globalConfigPDA,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
-
-    console.log(COLOR_SUCCESS, `✅ Cranker bot added successfully!`);
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
-    console.log(
-      COLOR_DIM,
-      `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
-    );
-
-    deploymentFile.cranker_bots_added = {
-      bots: [botPubkey.toString()],
-      tx_signature: tx,
-      timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-  } catch (error) {
-    const errorStr = error.toString();
-    if (
-      errorStr.includes("already") ||
-      errorStr.includes("InvalidParameters")
-    ) {
-      console.log(
-        COLOR_WARNING,
-        `   ⚠️ Bot may already be whitelisted or max bots reached`
-      );
-      console.log(COLOR_DIM, `   Error: ${errorStr.substring(0, 200)}`);
-
-      deploymentFile.cranker_bots_added = {
-        bots: [botPubkey.toString()],
-        status: "error_or_exists",
-        error: errorStr.substring(0, 200),
-        timestamp: new Date().toISOString(),
-      };
-      saveDeploymentData();
-    } else {
-      console.error(COLOR_ERROR, "❌ Failed to add cranker bot:", error);
-      throw error;
-    }
-    }
-}
-
-async function initializeEpochConfig(minebtcProgram) {
-  if (deploymentFile.epoch_config_initialized) {
-    console.log(COLOR_INFO, 'ℹ️ Epoch config already initialized. Skipping...');
-    return;
-  }
-
-  console.log(
-    COLOR_STEP,
-    '\n================ [ INITIALIZING EPOCH CONFIG ] ================'
+    "\n================ [ INITIALIZING REBASE CONFIG ] ================"
   );
 
   try {
-    const [epochConfigPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('epoch-config')],
+    const [rebaseConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("rebase-config")],
       minebtcProgram.programId
     );
 
     const [globalConfigPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('global-config')],
+      [Buffer.from("global-config")],
       minebtcProgram.programId
     );
 
-    // Oracle authority = cranker bot wallet (same as game cranker)
-    const oracleAuthority = gameKeypair.publicKey;
-    // Read epoch config values from config.json
-    const epochDuration = config.epoch.epoch_duration_seconds;
-    const initialRiskFactor = config.epoch.initial_risk_factor;
-    const model5Pct = config.epoch.model5_pct;
-    const top1Pct = config.epoch.top1_pct;
-    const top2Pct = config.epoch.top2_pct;
-    const top3Pct = config.epoch.top3_pct;
-
-    console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
+    console.log(COLOR_INFO, `🔑 Rebase Config PDA: ${rebaseConfigPda.toBase58()}`);
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
-    console.log(COLOR_INFO, `🔑 Oracle Authority: ${oracleAuthority.toBase58()}`);
     console.log(
       COLOR_INFO,
-      `⏱️  Epoch Duration: ${epochDuration}s (${(epochDuration / 3600).toFixed(2)}h from config)`
-    );
-    console.log(COLOR_INFO, `📊 Initial Risk Factor: ${initialRiskFactor} (1.00x)`);
-    console.log(
-      COLOR_INFO,
-      `📊 Epoch pool splits -> base rank pool: ${model5Pct}%, top1 bonus: ${top1Pct}%, top2 bonus: ${top2Pct}%, top3 bonus: ${top3Pct}%`
+      `🔄 Rebase cycles auto-start on first bet and auto-settle on LP burn completion`
     );
 
     const tx = await minebtcProgram.methods
-      .initializeEpochConfig(oracleAuthority, new BN(epochDuration), initialRiskFactor, model5Pct, top1Pct, top2Pct, top3Pct)
+      .initializeRebaseConfig()
       .accounts({
-        epochConfig: epochConfigPda,
+        rebaseConfig: rebaseConfigPda,
         globalConfig: globalConfigPda,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
 
-    console.log(COLOR_SUCCESS, `✅ Epoch config initialized successfully!`);
+    console.log(COLOR_SUCCESS, `✅ Rebase config initialized successfully!`);
     console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
     console.log(
       COLOR_DIM,
       `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
     );
 
-    deploymentFile.epoch_config_initialized = {
-      epoch_config_pda: epochConfigPda.toBase58(),
-      oracle_authority: oracleAuthority.toBase58(),
-      epoch_duration: epochDuration,
-      initial_risk_factor: initialRiskFactor,
+    deploymentFile.rebase_config_initialized = {
+      rebase_config_pda: rebaseConfigPda.toBase58(),
+      starting_rebase_id: 1,
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };
     saveDeploymentData();
   } catch (error) {
-    if (error.toString().includes('already in use')) {
-      console.log(COLOR_INFO, 'ℹ️ Epoch config already exists on-chain. Skipping...');
-      deploymentFile.epoch_config_initialized = {
-        status: 'already_exists',
+    if (error.toString().includes("already in use")) {
+      console.log(COLOR_INFO, "ℹ️ Rebase config already exists on-chain. Skipping...");
+      deploymentFile.rebase_config_initialized = {
+        status: "already_exists",
         timestamp: new Date().toISOString(),
       };
       saveDeploymentData();
     } else {
-      console.error(COLOR_ERROR, '❌ Failed to initialize epoch config:', error);
+      console.error(COLOR_ERROR, "❌ Failed to initialize rebase config:", error);
       throw error;
     }
   }
-}
-
-async function initializeBootstrapIndexState(minebtcProgram) {
-  if (deploymentFile.epoch_index_state_initialized) {
-    console.log(
-      COLOR_INFO,
-      "ℹ️ Bootstrap epoch index state already initialized. Skipping..."
-    );
-    return;
-  }
-
-  console.log(
-    COLOR_STEP,
-    "\n================ [ INITIALIZING BOOTSTRAP INDEX STATE ] ================"
-  );
-
-  const { indexId, name, initialScores } = getInitialIndexConfig();
-  const [globalConfigPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("global-config")],
-    minebtcProgram.programId
-  );
-  const [indexStatePda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("index-state"), Buffer.from([indexId])],
-    minebtcProgram.programId
-  );
-
-  try {
-    const existing = await minebtcProgram.account.indexState.fetch(indexStatePda);
-    console.log(
-      COLOR_INFO,
-      `ℹ️ Index state ${existing.indexId} already exists at ${indexStatePda.toBase58()}. Skipping...`
-    );
-    deploymentFile.epoch_index_state_initialized = {
-      index_id: indexId,
-      name,
-      index_state_pda: indexStatePda.toBase58(),
-      status: "already_exists",
-      timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-    return;
-  } catch (_) {
-    // continue and create
-  }
-
-  console.log(COLOR_INFO, `🔑 Index State PDA: ${indexStatePda.toBase58()}`);
-  console.log(COLOR_INFO, `📊 Index ID: ${indexId}`);
-  console.log(COLOR_INFO, `📝 Name: ${name}`);
-  console.log(COLOR_INFO, `📈 Initial Scores: ${initialScores.join(", ")}`);
-
-  const tx = await minebtcProgram.methods
-    .initializeIndexState(indexId, name, initialScores.map((s) => new BN(s)))
-    .accounts({
-      indexState: indexStatePda,
-      globalConfig: globalConfigPda,
-      authority: wallet.publicKey,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc();
-
-  console.log(COLOR_SUCCESS, "✅ Bootstrap index state initialized!");
-  console.log(COLOR_DIM, `   Transaction: ${tx}`);
-
-  deploymentFile.epoch_index_state_initialized = {
-    index_id: indexId,
-    name,
-    index_state_pda: indexStatePda.toBase58(),
-    initial_scores: initialScores,
-    tx_signature: tx,
-    timestamp: new Date().toISOString(),
-  };
-  saveDeploymentData();
-}
-
-async function scheduleInitialEpochMarket(minebtcProgram) {
-  if (deploymentFile.epoch_market_scheduled) {
-    console.log(
-      COLOR_INFO,
-      "ℹ️ Initial epoch market already scheduled. Skipping..."
-    );
-    return;
-  }
-
-  console.log(
-    COLOR_STEP,
-    "\n================ [ SCHEDULING INITIAL EPOCH MARKET ] ================"
-  );
-
-  const { indexId, questionHash } = getInitialIndexConfig();
-  const [epochConfigPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("epoch-config")],
-    minebtcProgram.programId
-  );
-  const [indexStatePda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("index-state"), Buffer.from([indexId])],
-    minebtcProgram.programId
-  );
-
-  const epochConfig = await minebtcProgram.account.epochConfig.fetch(epochConfigPda);
-  const activeQuestionHash = Array.from(epochConfig.activeQuestionHash || []);
-  const nextQuestionHash = Array.from(epochConfig.nextQuestionHash || []);
-  const hasAnyScheduledHash =
-    activeQuestionHash.some((byte) => byte !== 0) ||
-    nextQuestionHash.some((byte) => byte !== 0);
-
-  if (
-    hasAnyScheduledHash &&
-    Number(epochConfig.activeIndexId) === indexId &&
-    activeQuestionHash.length === 32
-  ) {
-    console.log(
-      COLOR_INFO,
-      "ℹ️ Epoch market already scheduled on-chain. Skipping..."
-    );
-    deploymentFile.epoch_market_scheduled = {
-      index_id: indexId,
-      epoch_config_pda: epochConfigPda.toBase58(),
-      index_state_pda: indexStatePda.toBase58(),
-      active_question_hash: activeQuestionHash,
-      status: "already_exists",
-      timestamp: new Date().toISOString(),
-    };
-    saveDeploymentData();
-    return;
-  }
-
-  console.log(COLOR_INFO, `🔑 Epoch Config PDA: ${epochConfigPda.toBase58()}`);
-  console.log(COLOR_INFO, `🔑 Index State PDA: ${indexStatePda.toBase58()}`);
-  console.log(COLOR_INFO, `🔑 Oracle Authority: ${gameKeypair.publicKey.toBase58()}`);
-  console.log(COLOR_INFO, `🧠 Question Hash: ${Buffer.from(questionHash).toString("hex")}`);
-
-  const tx = await minebtcProgram.methods
-    .scheduleNextEpochMarket(indexId, questionHash)
-    .accounts({
-      epochConfig: epochConfigPda,
-      indexState: indexStatePda,
-      authority: gameKeypair.publicKey,
-    })
-    .signers([gameKeypair])
-    .rpc();
-
-  console.log(COLOR_SUCCESS, "✅ Initial epoch market scheduled!");
-  console.log(COLOR_DIM, `   Transaction: ${tx}`);
-
-  deploymentFile.epoch_market_scheduled = {
-    index_id: indexId,
-    epoch_config_pda: epochConfigPda.toBase58(),
-    index_state_pda: indexStatePda.toBase58(),
-    oracle_authority: gameKeypair.publicKey.toBase58(),
-    question_hash: questionHash,
-    tx_signature: tx,
-    timestamp: new Date().toISOString(),
-  };
-  saveDeploymentData();
 }
 
 function printCompletionSummary() {
@@ -3086,6 +2725,10 @@ function printCompletionSummary() {
     `  • LP Token Accounts: ${
       deploymentFile.lp_token_accounts_initialized ? "✅" : "❌"
     }`
+  );
+  console.log(
+    COLOR_INFO,
+    `  • Rebase Config: ${deploymentFile.rebase_config_initialized ? "✅" : "❌"}`
   );
   console.log(
     COLOR_STEP,

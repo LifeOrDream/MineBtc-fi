@@ -33,8 +33,8 @@ pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::doges::*;
 pub use instructions::economy::*;
-pub use instructions::epoch::*;
 pub use instructions::game::*;
+pub use instructions::rebase::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
@@ -51,8 +51,8 @@ pub mod minebtc {
     use instructions::admin::{self};
     use instructions::doges::{self};
     use instructions::economy::{self};
-    use instructions::epoch::{self};
     use instructions::game::{self};
+    use instructions::rebase::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
     use instructions::user::{self};
@@ -273,20 +273,11 @@ pub mod minebtc {
     /// - `curve_a`: Bonding curve parameter (controls price growth rate)
     pub fn update_doge_config(
         ctx: Context<UpdateDogeConfig>,
-        base_price: u64,
-        curve_a: u64,
+        base_price: Option<u64>,
+        curve_a: Option<u64>,
+        max_supply: Option<u64>,
     ) -> Result<()> {
-        admin::update_doge_config_internal(ctx, base_price, curve_a)
-    }
-
-    /// Update max supply for Doge NFTs (admin only)
-    ///
-    /// New supply must be >= doges_minted.
-    pub fn update_doge_max_supply(
-        ctx: Context<UpdateDogeConfig>,
-        new_max_supply: u64,
-    ) -> Result<()> {
-        admin::update_doge_max_supply_internal(ctx, new_max_supply)
+        admin::update_doge_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
     /// Toggle Doge NFT minting on/off (admin only)
@@ -413,25 +404,15 @@ pub mod minebtc {
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
-    /// Switch game state (toggle is_active) (admin only)
+    /// Update game state (admin only)
     ///
-    /// Toggles the game's active state. When paused, new rounds cannot be started.
-    /// Already-ended rounds can still be permissionlessly finalized.
-    pub fn switch_game_state(ctx: Context<UpdateGameState>) -> Result<()> {
-        admin::switch_game_state_internal(ctx)
-    }
-
-    /// Update round duration (admin only)
-    ///
-    /// Updates the duration of each game round in seconds.
-    ///
-    /// # Parameters
-    /// - `new_round_duration_seconds`: New round duration in seconds (must be > 0)
-    pub fn update_round_duration(
+    /// Optionally pause/resume the game and/or change round duration.
+    pub fn update_game_state(
         ctx: Context<UpdateGameState>,
-        new_round_duration_seconds: i64,
+        is_active: Option<bool>,
+        round_duration_seconds: Option<i64>,
     ) -> Result<()> {
-        admin::update_round_duration_internal(ctx, new_round_duration_seconds)
+        admin::update_game_state_internal(ctx, is_active, round_duration_seconds)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -496,61 +477,42 @@ pub mod minebtc {
         tax::internal_crank_distribute_tax(ctx)
     }
 
-    /// Start a new distribution round (callable by anyone after 7-day cooldown)
-    pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
-        tax::internal_start_distribution_round(ctx)
-    }
-
-    /// Calculate leaderboard position for one faction
-    /// Must be called once per active faction to build the complete leaderboard
-    pub fn cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
-        tax::internal_cal_faction_positions(ctx)
-    }
-
-    /// Calculate rewards for all factions based on leaderboard
-    /// Can only be called after all active factions are on leaderboard
-    pub fn cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
-        tax::internal_cal_faction_rewards(ctx)
-    }
-
-    /// Claim treasury rewards for one faction
-    /// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
-    pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
-        tax::internal_claim_faction_treasury_rewards(ctx)
-    }
-
-    /// Finish distribution round (check all factions claimed and reset state)
-    pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
-        tax::internal_finish_distribution_round(ctx)
+    /// Claim faction treasury rewards for a settled rebase.
+    /// Uses the mutation leaderboard (rebase final_ranks) -- permissionless.
+    pub fn claim_faction_treasury_for_rebase(
+        ctx: Context<ClaimFactionTreasuryForRebase>,
+        rebase_id: u64,
+    ) -> Result<()> {
+        tax::internal_claim_faction_treasury_for_rebase(ctx, rebase_id)
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ EPOCH MINING SYSTEM -------------------------------------------------------
+    // ------------ REBASE MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize epoch mining configuration (admin only).
-    /// Epoch duration is tied to the economy cycle -- one epoch per LP burn.
-    pub fn initialize_epoch_config(ctx: Context<InitializeEpochConfig>) -> Result<()> {
-        epoch::initialize_epoch_config_internal(ctx)
+    /// Initialize rebase configuration (admin only).
+    /// Rebase duration is tied to the economy cycle -- one rebase per LP burn.
+    pub fn initialize_rebase_config(ctx: Context<InitializeRebaseConfig>) -> Result<()> {
+        rebase::initialize_rebase_config_internal(ctx)
     }
 
-    /// Update epoch mining configuration (admin only)
-    pub fn update_epoch_config(
-        ctx: Context<UpdateEpochConfig>,
+    /// Update rebase configuration (admin only)
+    pub fn update_rebase_config(
+        ctx: Context<UpdateRebaseConfig>,
         is_active: Option<bool>,
     ) -> Result<()> {
-        epoch::update_epoch_config_internal(ctx, is_active)
+        rebase::update_rebase_config_internal(ctx, is_active)
     }
 
-    /// Settle epoch: finalize mutation-based rankings and compute reward pools.
+    /// Settle rebase: finalize mutation-based rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
-    pub fn settle_epoch(ctx: Context<SettleEpoch>) -> Result<()> {
-        epoch::settle_epoch_internal(ctx)
+    pub fn settle_rebase(ctx: Context<SettleRebase>) -> Result<()> {
+        rebase::settle_rebase_internal(ctx)
     }
 
-    /// User claims their epoch mining rewards (closes user_epoch_bets account)
-    pub fn claim_epoch_rewards(ctx: Context<ClaimEpochRewards>, epoch_id: u64) -> Result<()> {
-        epoch::claim_epoch_rewards_internal(ctx, epoch_id)
+    /// User claims their epoch mining rewards (closes user_rebase_bets account)
+    pub fn claim_rebase_rewards(ctx: Context<ClaimRebaseRewards>, rebase_id: u64) -> Result<()> {
+        rebase::claim_rebase_rewards_internal(ctx, rebase_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -678,7 +640,7 @@ pub mod minebtc {
         user::internal_use_doge_for_gameplay(ctx)
     }
 
-    /// Request gameplay doge unlock. Actual withdrawal is only available in the next epoch/campaign cycle.
+    /// Request gameplay doge unlock. Actual withdrawal is only available in the next rebase cycle.
     pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
         user::internal_request_doge_gameplay_unlock(ctx)
     }

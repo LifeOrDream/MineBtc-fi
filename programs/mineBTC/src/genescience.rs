@@ -178,11 +178,13 @@ pub enum MutationType {
 pub struct MutationResult {
     /// Mutation type (None if no mutation triggered)
     pub mutation_type: Option<MutationType>,
-    /// XP gained from betting (always > 0 for SOL bets)
+    /// XP gained from betting (always > 0 for SOL bets, scaled by multiplier)
     pub xp_gained: u32,
-    /// Multiplier increase (0 if no Power mutation or no mutation)
+    /// Multiplier increase (0 if no mutation)
     pub multiplier_increase: u32,
-    /// New DNA after mutation  
+    /// XP consumed by the mutation (deducted from cached XP after applying boost)
+    pub xp_consumed: u32,
+    /// New DNA after mutation
     pub new_dna: [u8; 32],
 }
 
@@ -243,15 +245,28 @@ pub fn calculate_mutation_result(
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 
-    // XP always gained: 1 XP per 0.001 SOL, capped at 1000
-    let xp_gained = ((user_total_bet as u128 * 1) / 1_000_000) as u32;
-    msg!("   XP gained: {}", xp_gained);
+    // XP gain scales inversely with multiplier: stronger doges gain XP slower.
+    // At 1.0x: full rate (1 XP per 0.001 SOL)
+    // At 5.0x: 1/5 rate (1 XP per 0.005 SOL)
+    // At 10.0x: 1/10 rate (1 XP per 0.01 SOL)
+    // Formula: xp = (bet / 1_000_000) × (BASE_MULTIPLIER / current_multiplier)
+    let raw_xp = (user_total_bet as u128) / 1_000_000;
+    let xp_gained =
+        (raw_xp * BASE_MULTIPLIER as u128 / current_multiplier.max(BASE_MULTIPLIER) as u128) as u32;
+    msg!(
+        "   XP gained: {} (raw={}, mult_penalty={}x→{}x)",
+        xp_gained,
+        raw_xp,
+        current_multiplier as f64 / 1000.0,
+        BASE_MULTIPLIER as f64 / current_multiplier.max(BASE_MULTIPLIER) as f64
+    );
 
     if user_total_bet == 0 {
         return MutationResult {
             mutation_type: None,
             xp_gained,
             multiplier_increase: 0,
+            xp_consumed: 0,
             new_dna: gameplay_doge_dna,
         };
     }
@@ -309,6 +324,7 @@ pub fn calculate_mutation_result(
             mutation_type: None,
             xp_gained,
             multiplier_increase: 0,
+            xp_consumed: 0,
             new_dna: gameplay_doge_dna,
         };
     }
@@ -352,17 +368,29 @@ pub fn calculate_mutation_result(
     };
     let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
     let xp_mult_boost = (gameplay_doge_xp as u64 * efficiency_pct) / 100;
+
+    // XP consumed by the mutation:
+    // Evolution consumes ALL XP (full reset).
+    // Power/Trait consume what they used (the efficiency% portion).
+    let xp_consumed = if m_type == MutationType::Evolution {
+        gameplay_doge_xp // full reset
+    } else {
+        (gameplay_doge_xp as u64 * efficiency_pct / 100) as u32 // consume what was used
+    };
+
     msg!(
-        "   XP roll: {}, Efficiency: {}%, XP mult boost: {}",
+        "   XP roll: {}, Efficiency: {}%, XP mult boost: {}, XP consumed: {}",
         xp_roll,
         efficiency_pct,
-        xp_mult_boost
+        xp_mult_boost,
+        xp_consumed
     );
 
     MutationResult {
         mutation_type: Some(m_type),
         xp_gained,
         multiplier_increase: base_boost + xp_mult_boost as u32,
+        xp_consumed,
         new_dna: gameplay_doge_dna,
     }
 }

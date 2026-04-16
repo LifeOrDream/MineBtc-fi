@@ -3,16 +3,21 @@ use anchor_spl::token;
 
 // # Economy Instructions
 //
-// This module handles the economic mechanisms of the MineBTC program, including fee distribution,
-// price discovery, and liquidity management.
+// The economy loop is deliberately separate from staking claims:
+// - `distribute_sol_fees_internal` moves accumulated SOL from the treasury into buybacks
+//   and the protocol/dev lane.
+// - `snapshot_price_internal` records the on-chain market price and earnmarks some SOL for POL.
+// - `update_rate_internal` converts the snapshot window into a new `mine_btc_per_round` emission rate.
+// - `add_lp_and_burn` (below in this file) consumes the earnmarked SOL together with MineBTC from the
+//   emissions vault to deepen POL and burn LP.
 //
-// ## Key Functions
+// Stakers do **not** get paid directly from this file. Instead:
+// - the emission rate set here is consumed later by round settlement,
+// - round settlement increments faction staking reward indexes,
+// - staking claim paths in `stake.rs` realize those indexes into player balances.
 //
-// - `distribute_sol_fees_internal`: Distributes collected SOL fees to protocol, buybacks, and stakers.
-// - `snapshot_price_internal`: Takes a price snapshot from the Raydium pool for the dynamic distribution rate.
-// - `update_rate_and_add_lp_internal`: Updates the mining emission rate based on price history and adds liquidity.
-//
-// These functions ensure the economic stability and sustainability of the ecosystem.
+// That separation is important when debugging economics: if staking APR looks wrong, first check the
+// round distribution indexes, then the claim paths, and only then the economy loop inputs here.
 //
 
 use crate::events::*;
@@ -173,45 +178,10 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         );
     }
 
-    // Transfer from doges treasury to buybacks (1% of 10x buyback amount, whichever is lower)
-    let doges_treasury_balance = ctx.accounts.doges_treasury.lamports();
-    let doges_treasury_rent = Rent::get()?.minimum_balance(0);
-    let doges_treasury_available = doges_treasury_balance.saturating_sub(doges_treasury_rent);
-    let mut doge_treasury_amt = 0;
-
-    if doges_treasury_available > 0 && sol_for_buybacks > 0 {
-        // Transfer whichever is lower: 1% of available doges treasury balance or 10x of buyback amount
-        doge_treasury_amt = (doges_treasury_available / 100).min(sol_for_buybacks * 10);
-        if doge_treasury_amt > 0 {
-            let doges_treasury_seeds = &[DOGES_TREASURY_SEED.as_ref(), &[ctx.bumps.doges_treasury]];
-            let doges_treasury_signer_seeds = &[&doges_treasury_seeds[..]];
-
-            anchor_lang::system_program::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.system_program.to_account_info(),
-                    anchor_lang::system_program::Transfer {
-                        from: ctx.accounts.doges_treasury.to_account_info(),
-                        to: ctx.accounts.buybacks_sol_vault.to_account_info(),
-                    },
-                    doges_treasury_signer_seeds,
-                ),
-                doge_treasury_amt,
-            )?;
-
-            buybacks_ac.total_sol_accumulated =
-                buybacks_ac.total_sol_accumulated + doge_treasury_amt;
-            msg!(
-                "🥚 Transferred {} SOL from Doge Treasury to Buybacks (1% of 10x buyback)",
-                doge_treasury_amt as f64 / 1e9
-            );
-        }
-    }
-
     // Emit event
     emit!(SolFeesWithdrawn {
         available_solana: available_solana,
         buyback_amount: sol_for_buybacks,
-        doge_treasury_amt,
         dev_earnings_amount: dev_earnings,
     });
 
@@ -1010,7 +980,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 LP balance after: {}", lp_balance_after);
     msg!("   💰 LP balance before: {}", lp_balance_before);
-    let lp_tokens_minted = lp_balance_after - lp_balance_before;
+    let lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
     msg!("   💰 LP tokens minted: {}", lp_tokens_minted);
 
     let sol_balance_after = {
@@ -1019,7 +989,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 SOL balance after: {}", sol_balance_after);
     msg!("   💰 SOL balance before: {}", total_sol_for_lp);
-    let sol_consumed = total_sol_for_lp - sol_balance_after;
+    let sol_consumed = total_sol_for_lp.saturating_sub(sol_balance_after);
     msg!("   💰 SOL consumed: {}", sol_consumed);
 
     // ✅ RIGHT: Reloads fresh data from the account info
@@ -1030,7 +1000,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 MINEBTC balance after: {}", available_minebtc_after);
     msg!("   💰 MINEBTC balance before: {}", available_minebtc);
-    let minebtc_consumed = available_minebtc - available_minebtc_after;
+    let minebtc_consumed = available_minebtc.saturating_sub(available_minebtc_after);
     msg!("   💰 MINEBTC consumed: {}", minebtc_consumed);
 
     msg!(
@@ -1115,7 +1085,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     }
 
     // Update state
-    buybacks_account.sol_for_pol = buybacks_account.sol_for_pol - sol_consumed;
+    buybacks_account.sol_for_pol = buybacks_account.sol_for_pol.saturating_sub(sol_consumed);
     mine_btc_mining.lp_operation_pending = false;
 
     msg!("✅ LP addition and burn complete");
@@ -1515,14 +1485,6 @@ pub struct DistributeSolFees<'info> {
 
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
-
-    /// CHECK: Doge treasury PDA (System Account) - holds doge minting fees
-    #[account(
-        mut,
-        seeds = [DOGES_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub doges_treasury: UncheckedAccount<'info>,
 
     /// CHECK: Buybacks SOL vault PDA (System Account)
     #[account(

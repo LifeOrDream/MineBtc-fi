@@ -190,33 +190,32 @@ pub enum ErrorCode {
     #[msg("Gameplay unlock has not been requested")]
     GameplayUnlockNotRequested,
 
-    #[msg("Gameplay doge can only be unlocked after the next epoch/campaign cycle begins")]
+    #[msg("Gameplay doge can only be unlocked after the next rebase cycle begins")]
     GameplayUnlockNotReady,
 
-    #[msg("Claim all pending round, epoch, and token rewards before unlocking this gameplay doge")]
+    #[msg(
+        "Claim all pending round, rebase, and token rewards before unlocking this gameplay doge"
+    )]
     GameplayRewardsPending,
 
-    // ========== EPOCH MINING ERRORS ========== //
-    #[msg("Epoch is not currently active")]
-    EpochNotActive,
+    // ========== REBASE MINING ERRORS ========== //
+    #[msg("Rebase is not currently active")]
+    RebaseNotActive,
 
-    #[msg("Epoch has not ended yet")]
-    EpochNotEnded,
+    #[msg("Rebase has not ended yet")]
+    RebaseNotEnded,
 
-    #[msg("Epoch has not been settled yet")]
-    EpochNotSettled,
+    #[msg("Rebase has not been settled yet")]
+    RebaseNotSettled,
 
-    #[msg("Epoch has already been settled")]
-    EpochAlreadySettled,
+    #[msg("Rebase has already been settled")]
+    RebaseAlreadySettled,
 
-    #[msg("Epoch rewards have already been claimed")]
-    EpochRewardsAlreadyClaimed,
+    #[msg("Rebase rewards have already been claimed")]
+    RebaseRewardsAlreadyClaimed,
 
     #[msg("Ticket-backed bets exceed the session cap")]
     TicketBetCapExceeded,
-
-    #[msg("Hashpower-changing staking actions are paused while a tax round is active")]
-    TaxRoundActive,
 
     #[msg("Round entropy is not ready yet")]
     RoundEntropyNotReady,
