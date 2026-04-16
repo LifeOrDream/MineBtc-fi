@@ -7,16 +7,17 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // # Doge Instructions
 //
-// This module manages the Doge NFT system, which provides hashpower multipliers to players.
+// Doges serve three distinct roles in MineBTC:
+// - primary-market NFTs minted from the bonding-curve-like pricing path,
+// - passive staking boosters that raise a player's home-faction staking hashpower,
+// - gameplay avatars used in round betting / mutation progression (handled partly in `user.rs`).
 //
-// ## Key Functions
+// Important distinction:
+// - `player_data.doge_multiplier` is the passive staking multiplier affected by `stake_doge`.
+// - `player_data.active_multiplier` is the gameplay multiplier used for round participation.
 //
-// - `batch_mint_doges`: Mints new Doge NFTs using a bonding curve pricing model.
-// - `stake_doge`: Stakes an doge to boost a player's hashpower.
-// - `unstake_doge`: Unstakes an doge and removes the boost.
-// - `claim_power`: Distributes accumulated power points to staked doges.
-//
-// Doge are a core mechanic for increasing mining efficiency and earning potential.
+// This file focuses on minting, passive Doge staking, burning-to-claim (`send_to_heaven`),
+// and breeding. Gameplay lock / unlock flows live elsewhere.
 //
 
 use crate::events::*;

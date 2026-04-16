@@ -4,27 +4,21 @@ use anchor_spl::token::{self, Token};
 
 // # Staking Instructions
 //
-// This module implements the staking system for MineBTC and LP tokens.
+// Passive staking has three layers:
+// - A user opens MineBTC or LP lockup positions in their home faction.
+// - Each position gets lockup-weighted hashpower (`weighted_amount`) from `HashpowerConfig`.
+// - The player's staked Doges apply a second multiplier on top of that weighted amount.
 //
-// ## Staking Mechanics
+// Reward sources:
+// - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
+// - **MineBTC staking rewards** come from round mining distribution indexes and are first
+//   accumulated into `pending_minebtc_rewards`.
+// - **Refining fee redistribution** happens when a player withdraws pending MineBTC rewards:
+//   a configurable fee is taken from the withdrawing user and re-indexed across the remaining
+//   unclaimed MineBTC rewards.
 //
-// Players can stake MineBTC or LP tokens in their home faction to earn passive rewards:
-// - **SOL Rewards**: Distributed from staker fees collected on game bets.
-// - **MineBTC Rewards**: Distributed from the mining emission pool.
-//
-// Longer lockup periods grant higher hashpower multipliers, increasing reward share.
-//
-// ## Key Functions
-//
-// - `stake_minebtc`: Stakes MineBTC tokens with a specified lockup duration.
-// - `unstake_minebtc`: Unstakes MineBTC tokens after the lockup period expires.
-// - `stake_lp_tokens`: Stakes LP tokens for dual rewards (SOL + MineBTC).
-// - `unstake_lp_tokens`: Unstakes LP tokens after lockup.
-// - `claim_sol_rewards`: Claims accumulated SOL rewards from staking.
-// - `claim_minebtc_rewards`: Claims accumulated MineBTC rewards (with refining fee).
-// - `claim_referral_rewards`: Claims referral earnings.
-//
-// The refining fee on MineBTC claims is redistributed to all stakers, creating a deflationary reward loop.
+// This file is intentionally verbose in its logs because the staking flows are one of the
+// highest-value accounting surfaces in the program.
 //
 
 use crate::errors::ErrorCode;
@@ -42,6 +36,24 @@ pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
                                         // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
                                         // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
                                         // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+
+fn calc_weighted_amount(staked_amount: u64, lockup_multiplier: u16) -> Result<u64> {
+    let weighted_u128 = (staked_amount as u128)
+        .checked_mul(lockup_multiplier as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(M_HUNDRED as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(weighted_u128).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
+fn calc_hashpower_contribution(weighted_amount: u64, doge_multiplier: u16) -> Result<u64> {
+    let hashpower_u128 = (weighted_amount as u128)
+        .checked_mul(doge_multiplier as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(BASE_MULTIPLIER as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(hashpower_u128).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
 
 /// Stake MineBtc tokens
 /// Users stake MineBtc tokens to their home faction and earn SOL and minebtc rewards
@@ -124,7 +136,7 @@ pub fn int_stake_minebtc(
     let actual_amount = transfer_fee_info.post_fee_amount;
     require!(actual_amount > 0, ErrorCode::InvalidAmount);
     msg!(
-        "🔥 mDoge transfer fee: {} bps (max {}) - Amount: {}, Fee: {}, Actual amount: {}",
+        "🔥 [stake_minebtc] transfer_fee bps={} max_fee={} requested={} fee={} credited={}",
         transfer_fee_info.transfer_fee_basis_points,
         transfer_fee_info.max_fee as f64 / 1e6,
         amount as f64 / 1e6,
@@ -168,7 +180,7 @@ pub fn int_stake_minebtc(
     );
 
     // Calculate weighted amount for this position
-    let weighted_amount = (actual_amount * multiplier as u64) / M_HUNDRED;
+    let weighted_amount = calc_weighted_amount(actual_amount, multiplier)?;
     msg!(
         "⚖️ Weighted amount: {} (actual amount: {} × multiplier: {}%)",
         weighted_amount as f64 / 1e6,
@@ -214,8 +226,9 @@ pub fn int_stake_minebtc(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
-    let doges_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / BASE_MULTIPLIER as u64;
+    let doges_multiplier = player_data.doge_multiplier;
+    let weighted_amount_with_doges =
+        calc_hashpower_contribution(weighted_amount, doges_multiplier)?;
     let prev_player_dogebtc_hashpower = player_data.dogebtc_hashpower;
     let prev_player_dogebtc_staked = player_data.dogebtc_staked;
     let prev_faction_dogebtc_staked = faction_state.dogebtc_staked;
@@ -322,7 +335,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let current_ts = Clock::get()?.unix_timestamp;
 
     msg!(
-        "🔓 [unstake_lp_tokens] Processing unstake for position {}",
+        "🔓 [unstake_minebtc] Processing unstake for position {}",
         position_index
     );
     msg!(
@@ -368,11 +381,6 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
             .contains(&position_index),
         ErrorCode::InvalidParameters
     );
-    require!(
-        position_index == user_position.position_index,
-        ErrorCode::Unauthorized
-    );
-
     msg!(
         "📊 Position details - Staked: {}, Weighted: {}, Faction: {}, Lockup ends: {}",
         user_position.staked_amount as f64 / 1e6,
@@ -407,8 +415,8 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let hashpower_contribution = ((original_weighted as u128 * player_data.doge_multiplier as u128)
-        / BASE_MULTIPLIER as u128) as u64;
+    let hashpower_contribution =
+        calc_hashpower_contribution(original_weighted, player_data.doge_multiplier)?;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
     let prev_player_dogebtc_hashpower = player_data.dogebtc_hashpower;
@@ -426,8 +434,14 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
-    faction_state.dogebtc_staked -= staked_amount;
-    faction_state.total_dogebtc_hashpower -= hashpower_contribution;
+    faction_state.dogebtc_staked = faction_state
+        .dogebtc_staked
+        .checked_sub(staked_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_state.total_dogebtc_hashpower = faction_state
+        .total_dogebtc_hashpower
+        .checked_sub(hashpower_contribution)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   New faction totals - Staked: {}, Hashpower: {}",
         faction_state.dogebtc_staked as f64 / 1e6,
@@ -436,8 +450,14 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.dogebtc_hashpower -= hashpower_contribution;
-    player_data.dogebtc_staked -= staked_amount;
+    player_data.dogebtc_hashpower = player_data
+        .dogebtc_hashpower
+        .checked_sub(hashpower_contribution)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    player_data.dogebtc_staked = player_data
+        .dogebtc_staked
+        .checked_sub(staked_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   New player totals - Hashpower: {}, Staked: {}",
         player_data.dogebtc_hashpower as f64 / 1e6,
@@ -487,7 +507,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
         // Charge emergency tax if any penalty
         if penalty_amount > 0 {
-            // Charge emergency tax: 50% to burn
+            // Charge the full early-withdrawal penalty by burning it from custody.
             helper::charge_emergency_tax(
                 &ctx.accounts.minebtc_custodian.to_account_info(),
                 &ctx.accounts.minebtc_custodian_authority.to_account_info(),
@@ -661,11 +681,12 @@ pub fn int_stake_lp_tokens(
         ErrorCode::PositionAlreadyExists
     );
 
-    // Calculate actual amount after burn tax
+    // LP positions currently credit the full deposited amount. There is no Token-2022 fee
+    // normalization step here because LP tokens are standard SPL tokens.
     let actual_amount = amount;
     msg!(
-        " Current faction state - Total LP staked: {}, Total LP hashpower: {}",
-        faction_state.total_lp_hashpower,
+        "📊 Current faction state - Total LP staked: {}, Total LP hashpower: {}",
+        faction_state.lp_staked,
         faction_state.total_lp_hashpower
     );
 
@@ -688,7 +709,7 @@ pub fn int_stake_lp_tokens(
     );
 
     // Calculate weighted amount for this position
-    let weighted_amount = actual_amount * multiplier as u64 / M_HUNDRED;
+    let weighted_amount = calc_weighted_amount(actual_amount, multiplier)?;
     msg!(
         "⚖️ Weighted amount: {} (amount: {} × multiplier: {}%)",
         weighted_amount as f64 / 1e6,
@@ -734,8 +755,9 @@ pub fn int_stake_lp_tokens(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
-    let doges_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / BASE_MULTIPLIER as u64;
+    let doges_multiplier = player_data.doge_multiplier;
+    let weighted_amount_with_doges =
+        calc_hashpower_contribution(weighted_amount, doges_multiplier)?;
     let prev_player_lp_hashpower = player_data.lp_hashpower;
     let prev_player_lp_staked = player_data.lp_staked;
     let prev_faction_lp_staked = faction_state.lp_staked;
@@ -838,7 +860,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let current_ts = Clock::get()?.unix_timestamp;
 
     msg!(
-        "🔓 [unstake_minebtc] Processing unstake for position {}",
+        "🔓 [unstake_lp_tokens] Processing unstake for position {}",
         position_index
     );
     msg!(
@@ -917,8 +939,8 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let is_early_withdrawal = current_ts < user_position.lockup_end_timestamp;
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
-    let hashpower_contribution = ((original_weighted as u128 * player_data.doge_multiplier as u128)
-        / BASE_MULTIPLIER as u128) as u64;
+    let hashpower_contribution =
+        calc_hashpower_contribution(original_weighted, player_data.doge_multiplier)?;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
     let prev_player_lp_hashpower = player_data.lp_hashpower;
@@ -936,8 +958,14 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
-    faction_state.lp_staked -= staked_amount;
-    faction_state.total_lp_hashpower -= hashpower_contribution;
+    faction_state.lp_staked = faction_state
+        .lp_staked
+        .checked_sub(staked_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_state.total_lp_hashpower = faction_state
+        .total_lp_hashpower
+        .checked_sub(hashpower_contribution)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   New faction totals - Staked: {}, Hashpower: {}",
         faction_state.lp_staked as f64 / 1e6,
@@ -946,8 +974,14 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.lp_hashpower -= hashpower_contribution;
-    player_data.lp_staked -= staked_amount;
+    player_data.lp_hashpower = player_data
+        .lp_hashpower
+        .checked_sub(hashpower_contribution)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    player_data.lp_staked = player_data
+        .lp_staked
+        .checked_sub(staked_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   New player totals - Hashpower: {}, Staked: {}",
         player_data.lp_hashpower as f64 / 1e6,
@@ -1103,7 +1137,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 /// Claim staking rewards - updates all staking indexes, transfers SOL directly to owner,
 /// and accumulates MineBTC to pending_minebtc_rewards (NOT transferred here)
 pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
-    msg!("💰 [claim_staking_rewards] Claiming SOL rewards + accumulating MineBTC");
+    msg!("💰 [claim_staking_rewards] Claiming SOL rewards and syncing MineBTC accrual");
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
@@ -1225,7 +1259,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Realize any deferred refining-index rewards before applying a new refining fee.
     // Without this sync, users with no fresh staking updates can miss previously accrued
     // refining distributions when they go straight to withdraw.
-    helper::add_to_total_claimable(
+    let synced_unrefined_bonus = helper::add_to_total_claimable(
         unrefined_minebtc,
         player_data,
         0,
@@ -1236,13 +1270,14 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     )?;
 
     msg!(
-        "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} unrefining_index={}",
+        "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} unrefining_index={} synced_unrefined_bonus={}",
         player_owner,
         player_data_key,
         faction_id,
         player_data.pending_minebtc_rewards as f64 / 1e6,
         unrefined_minebtc.total_minebtc_claimable as f64 / 1e6,
-        unrefined_minebtc.unrefining_index
+        unrefined_minebtc.unrefining_index,
+        synced_unrefined_bonus as f64 / 1e6
     );
 
     require!(
@@ -1267,7 +1302,10 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         .checked_sub(refining_fee)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "Refining fee: {} minebtc. Base claimable amount: {} minebtc",
+        "🧮 [withdraw_dbtc_rewards] base_pending={} remaining_after_user={} refining_fee_pct={} refining_fee={} base_claimable={}",
+        base_pending as f64 / 1e6,
+        remaining_claimable_after_this_user as f64 / 1e6,
+        refining_fee_pct,
         refining_fee as f64 / 1e6,
         base_claimable_amount as f64 / 1e6
     );
@@ -1405,9 +1443,10 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
             .checked_add(increment)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   Updated unrefining index: {} (+{})",
+            "📈 [withdraw_dbtc_rewards] unrefining_index_after={} increment={} remaining_total_claimable={}",
             unrefined_minebtc.unrefining_index,
-            increment
+            increment,
+            unrefined_minebtc.total_minebtc_claimable as f64 / 1e6
         );
         emit!(RefiningFeeRedistributed {
             user: player_owner,
@@ -1433,11 +1472,13 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     });
 
     msg!(
-        "✅ [withdraw_dbtc_rewards] Withdrew {} MineBTC to {} (bonus: {}, referrer reward: {})",
+        "✅ [withdraw_dbtc_rewards] withdrew={} owner={} bonus={} referrer_reward={} pending_after={} total_claimable_after={}",
         claimable_by_user as f64 / 1e6,
         player_owner,
         referral_bonus as f64 / 1e6,
-        referral_reward as f64 / 1e6
+        referral_reward as f64 / 1e6,
+        player_data.pending_minebtc_rewards as f64 / 1e6,
+        unrefined_minebtc.total_minebtc_claimable as f64 / 1e6
     );
 
     Ok(())
@@ -1731,9 +1772,6 @@ pub fn int_update_lp_staking_rewards(
 #[derive(Accounts)]
 #[instruction(amount: u64, lockup_duration: u64, position_index: u8)]
 pub struct StakeMineBtc<'info> {
-    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
     #[account(seeds = [HASHPOWER_CONFIG_SEED.as_ref()], bump)]
     pub hashpower_config: Box<Account<'info, HashpowerConfig>>,
 
@@ -1792,9 +1830,6 @@ pub struct StakeMineBtc<'info> {
     )]
     pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
-    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
     /// User who is staking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1813,13 +1848,6 @@ pub struct StakeMineBtc<'info> {
 #[derive(Accounts)]
 #[instruction(position_index: u8)]
 pub struct UnstakeMineBtc<'info> {
-    // Global config
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
     // Faction state
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
@@ -1885,15 +1913,9 @@ pub struct UnstakeMineBtc<'info> {
     )]
     pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
-    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
     /// User who is unstaking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    /// System program for creating accounts
-    pub system_program: Program<'info, System>,
 
     /// Token-2022 program for SPL-22 token operations
     pub token_program: Program<'info, Token2022>,
@@ -1944,9 +1966,6 @@ pub struct StakeLpTokens<'info> {
     )]
     pub unrefined_rewards: Account<'info, UnrefinedRewards>,
 
-    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
-
     /// CHECK: LP Mint (validated manually)
     pub lp_mint: Account<'info, token::Mint>,
 
@@ -1983,13 +2002,6 @@ pub struct StakeLpTokens<'info> {
 #[derive(Accounts)]
 #[instruction(position_index: u8)]
 pub struct UnstakeLpTokens<'info> {
-    // Global config
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
     // Faction state
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
@@ -2026,9 +2038,6 @@ pub struct UnstakeLpTokens<'info> {
     )]
     pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
 
-    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
     /// CHECK: LP Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
     pub lp_mint: Box<Account<'info, token::Mint>>,
@@ -2061,9 +2070,6 @@ pub struct UnstakeLpTokens<'info> {
     /// User who is unstaking tokens
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    /// System program for creating accounts
-    pub system_program: Program<'info, System>,
 
     /// Token program for SPL token operations
     pub token_program: Program<'info, Token>,

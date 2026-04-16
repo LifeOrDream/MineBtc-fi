@@ -3,16 +3,21 @@ use anchor_spl::token;
 
 // # Economy Instructions
 //
-// This module handles the economic mechanisms of the MineBTC program, including fee distribution,
-// price discovery, and liquidity management.
+// The economy loop is deliberately separate from staking claims:
+// - `distribute_sol_fees_internal` moves accumulated SOL from the treasury into buybacks
+//   and the protocol/dev lane.
+// - `snapshot_price_internal` records the on-chain market price and earnmarks some SOL for POL.
+// - `update_rate_internal` converts the snapshot window into a new `mine_btc_per_round` emission rate.
+// - `add_lp_and_burn` (below in this file) consumes the earnmarked SOL together with MineBTC from the
+//   emissions vault to deepen POL and burn LP.
 //
-// ## Key Functions
+// Stakers do **not** get paid directly from this file. Instead:
+// - the emission rate set here is consumed later by round settlement,
+// - round settlement increments faction staking reward indexes,
+// - staking claim paths in `stake.rs` realize those indexes into player balances.
 //
-// - `distribute_sol_fees_internal`: Distributes collected SOL fees to protocol, buybacks, and stakers.
-// - `snapshot_price_internal`: Takes a price snapshot from the Raydium pool for the dynamic distribution rate.
-// - `update_rate_and_add_lp_internal`: Updates the mining emission rate based on price history and adds liquidity.
-//
-// These functions ensure the economic stability and sustainability of the ecosystem.
+// That separation is important when debugging economics: if staking APR looks wrong, first check the
+// round distribution indexes, then the claim paths, and only then the economy loop inputs here.
 //
 
 use crate::events::*;

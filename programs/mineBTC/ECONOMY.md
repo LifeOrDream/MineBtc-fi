@@ -303,12 +303,213 @@ rebase_mining_pool (total dogeBTC mined in all rounds this cycle)
     │
     └─ 10% → faction_doge_reward_pools (same split, doge-eligible users only)
               Goes to doge's accumulated_val (claimable via burn)
+
+---
+
+# Betting & XP/Points System
+
+## How a Bet Works (internal_process_bets)
+
+A single call processes multiple country+direction bets in one transaction.
+
+### SOL Flow Per Bet
+
+```
+Player bets 1 SOL
+    │
+    ├─ protocol_fee_pct (default 15%) = 0.15 SOL taken as fee
+    │   ├─ stakers_pct (default 20%) of fee = 0.03 SOL → staker SOL reward vault
+    │   └─ remaining 80% of fee = 0.12 SOL → SOL treasury (later: buybacks + dev)
+    │
+    └─ net = 0.85 SOL → SOL prize pot vault (for round winner payouts)
+```
+
+### Points vs Weighted Points
+
+Every bet generates two numbers:
+
+- **points** = raw bet size in lamports (1 SOL = 1,000,000,000 points)
+- **weighted points** = points × active_multiplier / BASE_MULTIPLIER
+
+For SOL bets: a 1.0x doge gives wgtd_points = points. A 5.0x doge gives 5× the weighted points.
+For ticket bets: wgtd_points = points (no multiplier). Tickets are capped at 25% of SOL volume per round.
+
+Weighted points determine:
+- Your share of dogeBTC round rewards (winner pool)
+- Your share of dogeBTC rebase rewards (correct direction pool)
+- Mutation score contribution to your country
+
+### XP System
+
+XP accumulates on the gameplay doge during betting:
+
+```
+xp_gained = total_sol_bet / 1_000_000  (1 XP per 0.001 SOL)
+```
+
+XP is **always gained** on SOL bets, even without a mutation.
+
+**XP effects on mutations:**
+- Evolution: XP contributes 5-10% as multiplier boost (then XP resets to 0)
+- Power/Trait: XP contributes 2-5% as multiplier boost (XP preserved)
+
+**XP is cached** on PlayerData during gameplay and synced back to DogeMetadata on:
+- Round reward claim (process_mutation_sync)
+- Gameplay doge withdrawal
+
+### Mutation System
+
+**Trigger conditions** (ALL must be true):
+1. RPG progression enabled
+2. SOL bet (not tickets)
+3. No prior mutation this round for this user
+4. Gameplay doge is active
+5. Global mutation budget not exhausted (max = active_factions / 3 per round)
+
+**Probability:**
+```
+base_chance = 20%  (MAX_BASE_CHANCE = 2000 bps)
+bet_strength = user_bet / highest_bet_on_faction  (0-100%)
+mult_penalty = BASE_MULTIPLIER / active_multiplier  (100% at 1x, 10% at 10x)
+faction_penalty = 10000 / (10000 + prior_mutations × 5000)  (100%, 67%, 50%, 40%...)
+
+final_chance = base × bet_strength × mult_penalty × faction_penalty
+```
+
+**Mutation types** (when triggered):
+- Evolution (~10% / (gen+1)): +50 base multiplier, guaranteed DNA upgrades, XP resets
+- Power (~30%): +25 base multiplier, power trait upgrade
+- Trait (~60%): +5 base multiplier, visual trait upgrade
+
+Each mutation also boosts multiplier by `base + (XP × efficiency_pct / 100)`.
+
+**Mutation score** (added to country's rebase leaderboard):
+```
+score = type_weight × total_sol_bet × active_multiplier / BASE / PRECISION
+weights: Evolution=100, Power=30, Trait=10
+```
+
+### Doge accumulated_val
+
+When claiming round rewards, the gameplay doge earns dogeBTC based on mutation type:
+
+| Mutation | % of round dogeBTC reward |
+|----------|--------------------------|
+| Evolution | 6.9% |
+| Power | 4.2% |
+| Trait | 3.0% |
+| No mutation | 1.0% |
+
+This accumulates on `doge_metadata.accumulated_val` and can only be claimed
+by burning the doge (`send_to_heaven`).
+
+### Gameplay Doge Lifecycle
+
+```
+1. use_doge_for_gameplay
+   └─ Lock NFT in custody, cache stats to PlayerData
+
+2. Play rounds (bets trigger mutations, XP accumulates)
+
+3. request_doge_gameplay_unlock
+   └─ Sets unlock_request_rebase = current_rebase_id
+   └─ Must wait until next rebase to withdraw
+
+4. withdraw_doge_from_gameplay
+   └─ Requires: next rebase started + no pending claims
+   └─ Syncs DNA/XP/multiplier back to DogeMetadata
+   └─ Returns NFT to user
+```
+
+The two-phase unlock prevents mid-rebase doge swapping to game mutations.
+
+### Round Reward Distribution
+
+When a round ends, rewards flow to three groups:
+
+```
+mine_btc_per_round (dogeBTC emission)
+    ├─ winners_pct (50%) → exact country+direction winners (pro-rata by wgtd_points)
+    ├─ same_faction_pct (20% × 2 directions) → consolation for wrong-direction bettors
+    │   on the winning country (pro-rata by wgtd_points per direction)
+    ├─ stakers_pct (5%) → all stakers on the winning faction
+    └─ motherlode_pct (5%) → jackpot (1/625 chance of hitting, accumulates)
+```
+
+SOL rewards: winning-direction bettors split the SOL prize pot proportional to their points bets.
 ```
 
 **User claims:**
 - `user_reward = faction_pool × user_bet / total_bet` (on correct direction)
 - Only own-faction bets count
 - Doge bonus: same formula but using `eligible_doge_direction_totals` as denominator
+
+## Passive Staking in the Economy Loop
+
+Passive staking is a separate accounting layer that sits downstream from rounds.
+
+```text
+economy loop sets mine_btc_per_round
+    ↓
+round settlement decides who gets the current round's MineBTC/SOL splits
+    ↓
+winning faction staking lanes receive index increments
+    ↓
+stake.rs sync/claim functions materialize those indexes into player balances
+```
+
+Two passive staking lanes exist:
+
+- MineBTC staking
+- LP staking
+
+Each lane tracks its own faction-level indexes:
+
+- SOL reward index
+- MineBTC reward index
+
+Player share is not based on raw deposit amount directly. It is based on:
+
+```text
+staked_amount
+    -> lockup multiplier
+    -> weighted_amount
+    -> passive Doge multiplier
+    -> final staking hashpower
+```
+
+### Passive Doge staking
+
+Passive Doge staking is different from gameplay-Doge locking:
+
+- passive Doges can be from any faction
+- they boost only the player's home-faction passive staking positions
+- they modify `player_data.doge_multiplier`
+- they do **not** directly affect gameplay `active_multiplier`
+
+### Reward realization
+
+SOL staking rewards:
+
+- accrue into `pending_sol_rewards`
+- transfer directly to wallet on `claim_staking_rewards`
+
+MineBTC staking rewards:
+
+- accrue into `pending_minebtc_rewards`
+- are globally tracked through `unrefined_rewards.total_minebtc_claimable`
+- are withdrawn later through `withdraw_dbtc_rewards`
+
+### Refining redistribution
+
+When a user withdraws pending MineBTC rewards, a refining fee can be taken and
+redistributed across remaining unclaimed MineBTC balances via the global
+`unrefining_index`.
+
+This means claim timing matters:
+
+- fast withdrawal = immediate liquidity, but pay refining fee
+- slower withdrawal = can earn part of other users' refining fees
 
 ## Tax Treasury Distribution (also tied to rebase)
 

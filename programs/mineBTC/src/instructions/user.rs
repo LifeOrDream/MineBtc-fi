@@ -1510,11 +1510,8 @@ fn process_mutation_sync<'info>(
             doge_metadata.xp = player_data.gameplay_doge_xp;
             doge_metadata.multiplier = player_data.active_multiplier;
 
-            // For Evolution, reset XP (DNA already updated by evolve_stage)
-            if user_bet.mutation_type == 1 {
-                doge_metadata.xp = 0;
-                player_data.gameplay_doge_xp = 0;
-            }
+            // XP consumption now happens at mutation time (genescience.rs xp_consumed).
+            // Evolution consumes all XP, Power/Trait consume the efficiency% portion.
 
             emit!(DogeSynced {
                 doge_mint: doge_metadata.mint,
@@ -2079,6 +2076,11 @@ fn internal_process_bets<'info>(
                 .checked_add(mutation_result.multiplier_increase)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             player_data.active_multiplier = new_mult.min(MAX_MULTIPLIER as u32);
+
+            // Consume XP used by the mutation (Evolution: full reset, others: partial)
+            player_data.gameplay_doge_xp = player_data
+                .gameplay_doge_xp
+                .saturating_sub(mutation_result.xp_consumed);
 
             let mutation_type_u8 = match mutation_type {
                 MutationType::Evolution => 1u8,
@@ -2953,6 +2955,13 @@ pub fn internal_request_doge_gameplay_unlock(
     let player_data = &mut ctx.accounts.player_data;
     let current_rebase_id = ctx.accounts.rebase_config.current_rebase_id;
     let current_time = Clock::get()?.unix_timestamp;
+
+    msg!(
+        "🔓 [request_doge_unlock] user={}, doge={}, rebase_id={}",
+        ctx.accounts.user.key(),
+        player_data.gameplay_doge,
+        current_rebase_id
+    );
 
     require!(
         player_data.gameplay_doge != Pubkey::default(),
