@@ -61,6 +61,39 @@ pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC: u8 = 2;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
 pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
 
+// ========== DEFAULT CONFIG VALUES ========== //
+// All config defaults in one place. Used by initialize() in admin.rs.
+
+/// SOL fee taken from each bet as a whole percent of the bet amount.
+pub const DEFAULT_PROTOCOL_FEE_PCT: u8 = 15;
+/// Percent of accumulated protocol SOL used for buybacks / POL during economy cycle.
+pub const DEFAULT_BUYBACK_PCT: u8 = 80;
+/// Percent of per-bet SOL fee routed to the staker reward vault.
+pub const DEFAULT_STAKERS_PCT: u8 = 20;
+
+/// dogeBTC share of round emission sent to faction stakers.
+pub const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
+/// dogeBTC share of round emission sent to exact country+direction winners.
+pub const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
+/// dogeBTC share of round emission sent to each non-winning direction on the winning faction.
+pub const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
+/// dogeBTC share of round emission added to the motherlode jackpot.
+pub const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
+/// Percent fee taken when claiming staking rewards (redistributed to other stakers).
+pub const DEFAULT_REFINING_FEE: u8 = 5;
+
+/// SOL cost to switch factions (in lamports). 4.2 SOL.
+pub const DEFAULT_CHANGE_FACTION_FEE: u64 = 4_200_000_000;
+/// Minimum seconds between price snapshots in the economy cycle.
+pub const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1800; // 30 minutes
+
+/// Price change threshold for emission rate adjustment (whole percent).
+pub const DEFAULT_PRICE_CHANGE_THRESHOLD: u64 = 3; // 3%
+/// Emission rate increase when price rises above threshold.
+pub const DEFAULT_EMISSION_INCREASE_PCT: u64 = 1; // 1%
+/// Emission rate decrease when price falls below threshold.
+pub const DEFAULT_EMISSION_DECREASE_PCT: u64 = 3; // 3%
+
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
