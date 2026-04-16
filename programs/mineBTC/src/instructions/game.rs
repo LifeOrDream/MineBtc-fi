@@ -1,6 +1,6 @@
 // # Game Instructions
 //
-// This module implements the core game loop for the MineBTC Faction Surge betting game.
+// Core game loop: 60-second rounds with slot-hash randomness, winner selection, and reward distribution.
 //
 // ## Game Mechanics
 //

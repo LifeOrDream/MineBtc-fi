@@ -1084,10 +1084,10 @@ pub fn update_breeding_config_internal(
 }
 
 // --------------------------------------------------------------------------------
-// ------------ FACTION SURGE GAME STATE INITIALIZATION ---------------------------
+// ------------ GAME STATE INITIALIZATION -----------------------------------------
 // --------------------------------------------------------------------------------
 
-/// Initialize the global game state for Faction Surge (admin only)
+/// Initialize the global game state (admin only)
 ///
 /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
 /// This must be called before any rounds can be started.

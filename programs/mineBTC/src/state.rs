@@ -66,7 +66,7 @@ pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
 pub const INDEX_PRECISION: u64 = 1_000_000; // 1 million
 pub const DISCRIMINATOR_SIZE: usize = 8;
 
-// ========== FACTION SURGE RAFFLE CONSTANTS ========== //
+// ========== ROUND RAFFLE CONSTANTS ========== //
 
 pub const MOTHERLODE_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
@@ -425,7 +425,7 @@ impl HashpowerConfig {
         1; // bump
 }
 
-// ModuleInstance and ModuleRuntimeState removed - no longer needed for Faction Surge system
+// ModuleInstance and ModuleRuntimeState removed - no longer needed
 
 /// Ticket tier option for doge minting
 /// When users mint doges, they choose a ticket tier which gives them free tickets
@@ -1101,7 +1101,7 @@ impl DogeMetadata {
 // ============================= BET TYPE ENUM ==============================
 // ========================================================================================
 
-/// Directional stance for faction and index prediction markets.
+/// Directional stance for country bets (rounds + cycle leaderboard).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PredictionDirection {
     Down,
@@ -1138,7 +1138,7 @@ impl BetType {
 }
 
 // ========================================================================================
-// ============================= FACTION SURGE ACCOUNTS ==============================
+// ============================= GAME ROUND ACCOUNTS ==============================
 // ========================================================================================
 
 /// User Game Bet PDA (Seed: `[b"user-bet", user_pubkey, round_id_u64]`)

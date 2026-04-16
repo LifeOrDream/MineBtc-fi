@@ -1,24 +1,22 @@
 // # MineBTC Program
 //
-// The main entry point for the MineBTC program.
+// Degen country arena game on Solana.
 //
-// This program implements a faction-based betting and mining game on Solana.
-// Users join factions, place directional country bets, mine MineBTC tokens, and stake assets for rewards.
+// Players pick a country, pick a direction, bet SOL. Their doge NFTs evolve through
+// gameplay — mutations during rounds decide which country climbs the leaderboard each
+// cycle. Deflationary dogeBTC economy with 1% transfer tax, POL burns, and faction
+// staking rewards.
 //
 // ## Modules
 //
-// - `admin`: Administrative functions for configuration and management.
-// - `economy`: Tokenomics, fee distribution, and liquidity management.
-// - `user`: User interactions, betting, and account management.
-// - `stake`: Staking logic for MineBTC and LP tokens.
-// - `game`: Core game loop, round management, and randomness.
-// - `doges`: Doge NFT system for hashpower multipliers.
-// - `tax`: Tax system for deflationary mechanics and reward distribution.
-//
-// ## Architecture
-//
-// The program uses a hub-and-spoke architecture with `GlobalConfig` and `GlobalGameState` as central
-// state accounts. Users interact through `PlayerData` accounts, and factions are tracked via `FactionState`.
+// - `admin`: Configuration, factions, fee parameters.
+// - `economy`: Price snapshots, emission rate adjustment, POL (LP add + burn).
+// - `user`: Betting, autominers, round claims, gameplay doges, mutations.
+// - `stake`: dogeBTC and LP token staking.
+// - `game`: 60-second round loop, slot-hash randomness, winner selection.
+// - `doges`: Doge NFT minting, breeding, staking, evolution.
+// - `epoch`: Mutation-driven competitive cycles, settlement, cycle rewards.
+// - `tax`: Transfer-tax harvest, faction treasury distribution.
 //
 
 use anchor_lang::prelude::*;
@@ -404,7 +402,7 @@ pub mod minebtc {
     // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize the global game state for Faction Surge (admin only)
+    /// Initialize the global game state (admin only)
     ///
     /// Sets up the GlobalGameState account that tracks game rounds, betting, and rewards.
     /// This must be called before any rounds can be started.
@@ -576,10 +574,10 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ FACTION SURGE RAFFLE FUNCTIONS -------------------------------------------
+    // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize a player account for the Faction Surge game
+    /// Initialize a player account for the MineBTC country arena
     pub fn initialize_player(
         ctx: Context<InitializePlayer>,
         faction_id: u8,

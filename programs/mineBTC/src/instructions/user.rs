@@ -1,6 +1,6 @@
 // # User Instructions
 //
-// This module handles all user-facing interactions in the MineBTC Faction Surge game.
+// User-facing interactions: betting, autominers, round claims, gameplay doges, and mutations.
 //
 // ## Key Functions
 //
@@ -43,10 +43,10 @@ fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
 }
 
 // ========================================================================================
-// =============================== FACTION SURGE INSTRUCTIONS ============================
+// =============================== PLAYER INSTRUCTIONS ============================
 // ========================================================================================
 
-/// Initialize a player account for the Faction Surge game
+/// Initialize a player account for the MineBTC country arena
 pub fn internal_initialize_player(
     ctx: Context<InitializePlayer>,
     faction_id: u8,

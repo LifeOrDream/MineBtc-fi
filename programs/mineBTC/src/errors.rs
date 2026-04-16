@@ -91,7 +91,7 @@ pub enum ErrorCode {
     #[msg("dogeBtc needed for POl cannot be more than 5% of vault balance")]
     MaxLimitError,
 
-    // ========== FACTION SURGE ERRORS ========== //
+    // ========== ROUND GAME ERRORS ========== //
     #[msg("Round has already ended")]
     RoundEnded,
 
