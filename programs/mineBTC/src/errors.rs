@@ -215,9 +215,6 @@ pub enum ErrorCode {
     #[msg("Ticket-backed bets exceed the session cap")]
     TicketBetCapExceeded,
 
-    #[msg("Hashpower-changing staking actions are paused while a tax round is active")]
-    TaxRoundActive,
-
     #[msg("Round entropy is not ready yet")]
     RoundEntropyNotReady,
 

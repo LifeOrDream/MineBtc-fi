@@ -43,18 +43,6 @@ pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
                                         // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
                                         // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-fn require_tax_round_inactive(tax_config: &TaxConfig, action: &str) -> Result<()> {
-    if tax_config.round_active {
-        msg!(
-            "⏸️ [{}] Tax round is active; hashpower-changing staking action is temporarily paused",
-            action
-        );
-        return err!(ErrorCode::TaxRoundActive);
-    }
-
-    Ok(())
-}
-
 /// Stake MineBtc tokens
 /// Users stake MineBtc tokens to their home faction and earn SOL and minebtc rewards
 /// SOL rewards are distributed per round via join_round function
@@ -83,7 +71,6 @@ pub fn int_stake_minebtc(
     let user_position = &mut ctx.accounts.user_position;
 
     let hashpower_config = &ctx.accounts.hashpower_config;
-    require_tax_round_inactive(&ctx.accounts.tax_config, "stake_minebtc")?;
 
     msg!(
         "🧭 [stake_minebtc] owner={} player={} faction_state={} faction_id={} current_position_count={}",
@@ -333,7 +320,6 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
-    require_tax_round_inactive(&ctx.accounts.tax_config, "unstake_minebtc")?;
 
     msg!(
         "🔓 [unstake_lp_tokens] Processing unstake for position {}",
@@ -632,7 +618,7 @@ pub fn int_stake_lp_tokens(
     let user_position = &mut ctx.accounts.user_position;
 
     let hashpower_config = &ctx.accounts.hashpower_config;
-    require_tax_round_inactive(&ctx.accounts.tax_config, "stake_lp_tokens")?;
+
     msg!(
         "🧭 [stake_lp_tokens] owner={} player={} faction_state={} faction_id={} current_position_count={}",
         ctx.accounts.authority.key(),
@@ -850,7 +836,6 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let player_data = &mut ctx.accounts.player_data;
     let user_position = &mut ctx.accounts.user_position;
     let current_ts = Clock::get()?.unix_timestamp;
-    require_tax_round_inactive(&ctx.accounts.tax_config, "unstake_lp_tokens")?;
 
     msg!(
         "🔓 [unstake_minebtc] Processing unstake for position {}",

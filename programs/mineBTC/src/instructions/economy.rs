@@ -975,7 +975,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 LP balance after: {}", lp_balance_after);
     msg!("   💰 LP balance before: {}", lp_balance_before);
-    let lp_tokens_minted = lp_balance_after - lp_balance_before;
+    let lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
     msg!("   💰 LP tokens minted: {}", lp_tokens_minted);
 
     let sol_balance_after = {
@@ -984,7 +984,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 SOL balance after: {}", sol_balance_after);
     msg!("   💰 SOL balance before: {}", total_sol_for_lp);
-    let sol_consumed = total_sol_for_lp - sol_balance_after;
+    let sol_consumed = total_sol_for_lp.saturating_sub(sol_balance_after);
     msg!("   💰 SOL consumed: {}", sol_consumed);
 
     // ✅ RIGHT: Reloads fresh data from the account info
@@ -995,7 +995,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 MINEBTC balance after: {}", available_minebtc_after);
     msg!("   💰 MINEBTC balance before: {}", available_minebtc);
-    let minebtc_consumed = available_minebtc - available_minebtc_after;
+    let minebtc_consumed = available_minebtc.saturating_sub(available_minebtc_after);
     msg!("   💰 MINEBTC consumed: {}", minebtc_consumed);
 
     msg!(
@@ -1080,7 +1080,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     }
 
     // Update state
-    buybacks_account.sol_for_pol = buybacks_account.sol_for_pol - sol_consumed;
+    buybacks_account.sol_for_pol = buybacks_account.sol_for_pol.saturating_sub(sol_consumed);
     mine_btc_mining.lp_operation_pending = false;
 
     msg!("✅ LP addition and burn complete");

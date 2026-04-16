@@ -477,32 +477,13 @@ pub mod minebtc {
         tax::internal_crank_distribute_tax(ctx)
     }
 
-    /// Start a new distribution round (callable by anyone after 7-day cooldown)
-    pub fn start_distribution_round(ctx: Context<StartDistributionRound>) -> Result<()> {
-        tax::internal_start_distribution_round(ctx)
-    }
-
-    /// Calculate leaderboard position for one faction
-    /// Must be called once per active faction to build the complete leaderboard
-    pub fn cal_faction_positions(ctx: Context<CalculateFactionLeaderboard>) -> Result<()> {
-        tax::internal_cal_faction_positions(ctx)
-    }
-
-    /// Calculate rewards for all factions based on leaderboard
-    /// Can only be called after all active factions are on leaderboard
-    pub fn cal_faction_rewards(ctx: Context<CalculateFactionRewards>) -> Result<()> {
-        tax::internal_cal_faction_rewards(ctx)
-    }
-
-    /// Claim treasury rewards for one faction
-    /// Adds rewards to staking reward indexes (50% each to minebtc and lp stakers)
-    pub fn claim_faction_treasury_rewards(ctx: Context<ClaimFactionTreasuryRewards>) -> Result<()> {
-        tax::internal_claim_faction_treasury_rewards(ctx)
-    }
-
-    /// Finish distribution round (check all factions claimed and reset state)
-    pub fn finish_distribution_round(ctx: Context<FinishDistributionRound>) -> Result<()> {
-        tax::internal_finish_distribution_round(ctx)
+    /// Claim faction treasury rewards for a settled epoch.
+    /// Uses the mutation leaderboard (epoch final_ranks) -- permissionless.
+    pub fn claim_faction_treasury_for_epoch(
+        ctx: Context<ClaimFactionTreasuryForEpoch>,
+        epoch_id: u64,
+    ) -> Result<()> {
+        tax::internal_claim_faction_treasury_for_epoch(ctx, epoch_id)
     }
 
     // ----------------------------------------------------------------------------------------

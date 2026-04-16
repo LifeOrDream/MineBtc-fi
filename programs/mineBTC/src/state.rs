@@ -544,7 +544,9 @@ impl DogeFreeMintAllowance {
 // ========================================================================================
 
 /// Tax Configuration PDA (Seed: `[b"tax-config"]`)
-/// Manages tax distribution, faction treasury rewards, and NFT floor sweep operations
+/// Manages tax distribution, NFT floor sweep, and faction treasury rewards.
+/// Treasury rewards are distributed based on the mutation leaderboard (epoch final_ranks)
+/// after each epoch settles -- no separate leaderboard calculation needed.
 #[account]
 pub struct TaxConfig {
     pub bump: u8,
@@ -559,32 +561,12 @@ pub struct TaxConfig {
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
 
-    /// Current distribution round state
-    pub round_active: bool,
-    /// Timestamp when current distribution round started
-    pub start_timestamp: i64,
-    /// Timestamp when last distribution round ended (for 1-day cooldown)
-    pub end_timestamp: i64,
-
-    /// Leaderboard state: faction IDs ranked by hashpower (index = rank, value = faction_id)
-    /// Rank 0 = highest hashpower, Rank 11 = lowest hashpower
-    pub leaderboard_faction_ids: Vec<u8>,
-    /// Leaderboard hashpower values (index = rank, value = hashpower)
-    pub leaderboard_hashpower: Vec<u64>,
-    /// Number of factions added to leaderboard so far (0-active_faction_count)
-    pub leaderboard_factions_count: u8,
-    /// Snapshot of active faction count when the current distribution round started
-    pub distribution_faction_count: u8,
-
-    /// Faction rewards: MineBtc amount each faction gets (index = rank, value = minebtc_amount)
-    pub faction_rewards: Vec<u64>,
-    /// Whether rewards have been calculated for current round
-    pub rewards_calculated: bool,
-
-    /// Faction claim status: whether each faction has claimed rewards (index = faction_id, value = claimed)
-    pub faction_claimed: Vec<bool>,
-    /// Number of factions that have claimed rewards
-    pub factions_claimed_count: u8,
+    /// Epoch ID of the last treasury distribution.
+    /// Prevents double-distribution for the same epoch.
+    pub last_treasury_epoch_id: u64,
+    /// Bitmap of factions that have claimed treasury rewards for the current epoch.
+    /// Bit N = 1 means faction N has claimed.  Supports up to 16 factions.
+    pub treasury_claimed_bitmap: u16,
 
     /// PDA addresses for tax system
     pub withdraw_withheld_authority: Pubkey,
@@ -593,35 +575,28 @@ pub struct TaxConfig {
     pub nft_sale_sol_vault: Pubkey,
 
     /// Whitelisted address that can withdraw MineBtc from NFT floor sweep vault
-    /// This address will swap MineBtc for SOL off-chain, buy NFTs, and re-list them
     pub nft_floor_sweep_whitelisted_address: Pubkey,
 }
 
 impl TaxConfig {
-    pub const DISTRIBUTION_COOLDOWN_SECONDS: i64 = DAY_IN_SECONDS as i64; // 1 day
-
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // nft_floor_sweep_pct
         1 +     // faction_treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
-        1 +     // round_active (bool)
-        8 +     // start_timestamp (i64)
-        8 +     // end_timestamp (i64)
-        4 + (MAX_FACTIONS * 1) + // leaderboard_faction_ids Vec<u8>
-        4 + (MAX_FACTIONS * 8) + // leaderboard_hashpower Vec<u64>
-        1 +     // leaderboard_factions_count
-        1 +     // distribution_faction_count
-        4 + (MAX_FACTIONS * 8) + // faction_rewards Vec<u64>
-        1 +     // rewards_calculated (bool)
-        4 + (MAX_FACTIONS * 1) + // faction_claimed Vec<bool>
-        1 +     // factions_claimed_count
+        8 +     // last_treasury_epoch_id
+        2 +     // treasury_claimed_bitmap
         32 +    // withdraw_withheld_authority
         32 +    // faction_treasury_vault
         32 +    // nft_floor_sweep_vault
         32 +    // nft_sale_sol_vault
         32; // nft_floor_sweep_whitelisted_address
+
+    /// 80% of treasury is split by rank weight (higher rank = more reward).
+    pub const RANK_WEIGHTED_BPS: u64 = 8000;
+    /// 20% of treasury goes to one random faction (keeps underdogs engaged).
+    pub const LUCKY_DRAW_BPS: u64 = 2000;
 }
 
 // ========================================================================================

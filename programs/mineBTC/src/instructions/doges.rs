@@ -738,10 +738,6 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     let current_time = Clock::get()?.unix_timestamp;
     let doge_mint = doge_metadata.mint;
     let doge_multiplier = doge_metadata.multiplier;
-    require!(
-        !ctx.accounts.tax_config.round_active,
-        ErrorCode::TaxRoundActive
-    );
     msg!(
         "🧭 [stake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
         ctx.accounts.user.key(),
@@ -954,10 +950,6 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let incubated_by_player = doge_metadata.incubated_player_data;
     let current_time = Clock::get()?.unix_timestamp;
     let doge_multiplier = doge_metadata.multiplier;
-    require!(
-        !ctx.accounts.tax_config.round_active,
-        ErrorCode::TaxRoundActive
-    );
     msg!(
         "🧭 [unstake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
         ctx.accounts.user.key(),

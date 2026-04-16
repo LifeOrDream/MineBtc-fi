@@ -565,65 +565,15 @@ pub struct NftFloorSweepFundsWithdrawn {
     pub timestamp: i64,
 }
 
-/// Event emitted when a new distribution round starts
-#[event]
-pub struct DistributionRoundStarted {
-    pub tax_config: Pubkey,
-    pub faction_treasury_balance: u64,
-    pub start_timestamp: i64,
-    pub timestamp: i64,
-}
-
-/// Event emitted when faction leaderboard position is calculated
-#[event]
-pub struct FactionLeaderboardPositionCalculated {
-    pub tax_config: Pubkey,
-    pub faction_id: u8,
-    pub faction_state: Pubkey,
-    pub total_hashpower: u64,
-    pub dogebtc_hashpower: u64,
-    pub lp_hashpower: u64,
-    pub rank: u8,
-    pub leaderboard_count: u8,
-    pub timestamp: i64,
-}
-
-/// Event emitted when faction rewards are calculated
-#[event]
-pub struct FactionRewardsCalculated {
-    pub tax_config: Pubkey,
-    pub total_treasury: u64,
-    pub first_place_faction_id: u8,
-    pub first_place_reward: u64,
-    pub second_place_faction_id: u8,
-    pub second_place_reward: u64,
-    pub third_place_faction_id: u8,
-    pub third_place_reward: u64,
-    pub random_winner_faction_id: u8,
-    pub random_winner_reward: u64,
-    pub timestamp: i64,
-}
-
-/// Event emitted when a faction claims their treasury rewards
+/// Event emitted when a faction claims treasury rewards for a settled epoch.
 #[event]
 pub struct FactionTreasuryRewardsClaimed {
-    pub tax_config: Pubkey,
+    pub epoch_id: u64,
     pub faction_id: u8,
-    pub faction_state: Pubkey,
     pub rank: u8,
-    pub total_reward: u64,
-    pub minebtc_staker_reward: u64,
-    pub lp_staker_reward: u64,
-    pub minebtc_emission_vault: Pubkey,
-    pub timestamp: i64,
-}
-
-/// Event emitted when a distribution round finishes
-#[event]
-pub struct DistributionRoundFinished {
-    pub tax_config: Pubkey,
-    pub end_timestamp: i64,
-    pub next_round_start_after: i64,
+    pub reward_amount: u64,
+    pub dbtc_share: u64,
+    pub lp_share: u64,
     pub timestamp: i64,
 }
 
