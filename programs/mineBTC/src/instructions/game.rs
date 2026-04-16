@@ -674,20 +674,35 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     // internal_process_bets init branch). After this, the next join_bets on
     // the new rebase enters the existing populate branch (rebase_id != 0).
     if rebase_state.rebase_id == 0 {
+        // Mirror the init branch of internal_process_bets so a subsequent
+        // join_bets enters the populate/validate branch (rebase_id != 0).
+        let global_config = &ctx.accounts.global_config;
+        let active_faction_count = global_config.supported_factions.len() as u8;
+        let start_ranks = rebase_config.prev_rebase_mutation_ranks;
+
         rebase_state.bump = ctx.bumps.rebase_state;
         rebase_state.rebase_id = rebase_config.current_rebase_id;
+        rebase_state.start_timestamp =
+            Clock::get()?.unix_timestamp.max(0) as u64;
+        rebase_state.stage = 0;
+        rebase_state.active_faction_count = active_faction_count;
+        rebase_state.start_ranks = start_ranks;
+        rebase_state.final_ranks = start_ranks;
+        rebase_state.resolved_directions =
+            [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
 
         let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
         rebase_config.rebase_settle_cycle = lp_ops
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   🧱 Initialized empty rebase_state for rebase {} (settle after LP cycle #{})",
+            "   🧱 Initialized empty rebase_state for rebase {} (active_factions={}, settle after LP cycle #{})",
             rebase_state.rebase_id,
+            active_faction_count,
             rebase_config.rebase_settle_cycle
         );
-        // Nothing else to track here — the next bet will fill start_ranks,
-        // active_faction_count, etc.
+        // Nothing further to track — this is an empty/seed state. The next
+        // bet will fill mutation scores, direction totals, etc.
     } else if rebase_config.is_active && rebase_state.stage == 0 {
         rebase_state.total_dogebtc_mined_in_rebase = rebase_state
             .total_dogebtc_mined_in_rebase
@@ -899,6 +914,16 @@ pub struct EndRoundFactionRewards<'info> {
         bump = global_game_state.bump
     )]
     pub global_game_state: Box<Account<'info, GlobalGameSate>>,
+
+    /// Read-only: used to seed `active_faction_count` on a freshly-
+    /// init'd rebase_state so the next join_bets' faction_id bounds check
+    /// passes (otherwise active_faction_count defaults to 0 and every
+    /// faction_id reverts with InvalidFactionId).
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
