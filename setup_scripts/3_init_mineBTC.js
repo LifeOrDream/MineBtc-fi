@@ -292,7 +292,7 @@ async function main() {
     //   new_stakers_pct: Option<u8>,                 — % of protocol fee redirected to staker rewards vault
     //   new_minebtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
     //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
-    //   new_minebtc_same_faction_pct: Option<u8>,    — % of mined MineBTC going to winning-country non-exact bettors
+    //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
     //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
     //   change_faction_fee: Option<u64>,             — SOL cost to change faction (lamports)
@@ -308,7 +308,7 @@ async function main() {
         // dogeBTC distribution config:
         newMinebtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
         newMinebtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
-        newMinebtcSameFactionPct: 42, // 42% of dogeBTC rewards go to winning-country, non-winning-direction bettors
+        newMinebtcSameFactionPct: 21, // 21% per losing direction = 42% total across the two non-winning directions
         newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
 
         newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
@@ -2363,6 +2363,41 @@ async function updateFees(minebtcProgram, feeConfig) {
         : null,
     };
 
+    // Validate the MineBTC distribution invariant before sending the transaction.
+    // The on-chain program treats same-faction % as PER LOSING DIRECTION.
+    if (
+      feeParams.newMinebtcStakersPct !== null ||
+      feeParams.newMinebtcWinnersPct !== null ||
+      feeParams.newMinebtcSameFactionPct !== null ||
+      feeParams.newMinebtcMotherlodePct !== null
+    ) {
+      const minebtcStakersPct =
+        feeParams.newMinebtcStakersPct ??
+        globalConfig.minebtcDistConfig.minebtcStakersPct;
+      const minebtcWinnersPct =
+        feeParams.newMinebtcWinnersPct ??
+        globalConfig.minebtcDistConfig.minebtcWinnersPct;
+      const minebtcSameFactionPct =
+        feeParams.newMinebtcSameFactionPct ??
+        globalConfig.minebtcDistConfig.minebtcSameFactionPct;
+      const minebtcMotherlodePct =
+        feeParams.newMinebtcMotherlodePct ??
+        globalConfig.minebtcDistConfig.minebtcMotherlodePct;
+
+      const losingDirectionCount = 2; // Up / Neutral / Down => 2 losing directions
+      const minebtcTotal =
+        minebtcStakersPct +
+        minebtcWinnersPct +
+        minebtcSameFactionPct * losingDirectionCount +
+        minebtcMotherlodePct;
+
+      if (minebtcTotal !== 100) {
+        throw new Error(
+          `Invalid MineBTC distribution config: stakers (${minebtcStakersPct}) + winners (${minebtcWinnersPct}) + ${losingDirectionCount}*sameFaction (${minebtcSameFactionPct}) + motherlode (${minebtcMotherlodePct}) must equal 100, got ${minebtcTotal}.`
+        );
+      }
+    }
+
     // Log what will be updated
     console.log(COLOR_INFO, "\n   Updating fees:");
     if (feeParams.newProtocolFeePct !== null)
@@ -2387,7 +2422,7 @@ async function updateFees(minebtcProgram, feeConfig) {
     if (feeParams.newMinebtcSameFactionPct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Same-faction: ${feeParams.newMinebtcSameFactionPct}%`
+        `     DBTC Same-faction: ${feeParams.newMinebtcSameFactionPct}% per losing direction (${feeParams.newMinebtcSameFactionPct * 2}% total)`
       );
     if (feeParams.newMinebtcMotherlodePct !== null)
       console.log(

@@ -1447,7 +1447,7 @@ fn update_player_rewards(
     player_data_key: Pubkey,
     player_data: &mut PlayerData,
     unrefined_rewards: &mut UnrefinedRewards,
-    total_sol_reward: u64,
+    _total_sol_reward: u64,
     total_minebtc_reward: u64,
     round_id: u64,
 ) -> Result<()> {
