@@ -772,19 +772,18 @@ pub struct CrankDistributeTax<'info> {
 #[instruction(rebase_id: u64)]
 pub struct ClaimFactionTreasuryForRebase<'info> {
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
+    pub tax_config: Box<Account<'info, TaxConfig>>,
     #[account(seeds = [REBASE_STATE_SEED, &rebase_id.to_le_bytes()], bump = rebase_state.bump)]
-    pub rebase_state: Account<'info, RebaseState>,
+    pub rebase_state: Box<Account<'info, RebaseState>>,
     #[account(mut)]
-    pub faction_state: Account<'info, FactionState>,
+    pub faction_state: Box<Account<'info, FactionState>>,
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
-    pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut)]
-    pub minebtc_emission_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_emission_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     /// CHECK: PDA signer for treasury vault transfers
     #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
-    pub minebtc_mint: InterfaceAccount<'info, Mint>,
+    pub minebtc_mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
-    pub cranker: Signer<'info>,
 }
