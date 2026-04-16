@@ -499,11 +499,8 @@ pub struct RoundEnded {
 
     pub user_bets_count: [u64; NUM_FACTIONS],
     pub faction_sol_bets: [u64; NUM_FACTIONS],
-    pub faction_points: [u64; NUM_FACTIONS],
-    pub faction_wgtd_points: [u64; NUM_FACTIONS],
 
     pub minebtc_winner_pool: u64,
-    pub minebtc_same_faction_pool: u64,
     pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
     pub minebtc_faction_stakers: u64,
     pub minebtc_motherlode: u64,

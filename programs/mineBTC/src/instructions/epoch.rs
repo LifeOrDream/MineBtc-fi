@@ -414,10 +414,6 @@ pub fn claim_epoch_rewards_internal(ctx: Context<ClaimEpochRewards>, epoch_id: u
             CLAIMABLE_MINEBTC_SOURCE_EPOCH,
             epoch_id,
         )?;
-        player_data.total_dogebtc_won = player_data
-            .total_dogebtc_won
-            .checked_add(total_reward)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     player_data.pending_epoch_claims = player_data

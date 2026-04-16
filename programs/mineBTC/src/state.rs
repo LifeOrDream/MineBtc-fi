@@ -640,9 +640,6 @@ pub struct GlobalGameSate {
     pub is_active: bool,
     pub can_begin_round: bool,
 
-    /// Total SOL bets since start of game (cumulative across all rounds)
-    pub total_sol_bets: u128,
-
     /// The currently active round ID (e.g., 48636).
     pub current_round_id: u64,
     /// Round duration in seconds (configurable)
@@ -660,7 +657,6 @@ impl GlobalGameSate {
         1 +     // bump
         1 +     // is_active
         1 +     // can_begin_round
-        16 +    // total_sol_bets (u128)
         8 +     // current_round_id
         8 +     // round_duration_seconds
         8 +     // last_round_id
@@ -704,11 +700,6 @@ pub struct FactionState {
     /// Total doges currently being used in gameplay
     pub doges_playing: u64,
 
-    /// Total SOL bet on this faction across all rounds (cumulative)
-    pub total_sol_bets: u64,
-    /// Total number of rounds this faction has won (cumulative)
-    pub total_wins: u64,
-
     /// Cumulative SOL-per-share this faction has earned for stakers
     /// Used for calculating staker rewards
     pub sol_reward_index: u128,
@@ -731,8 +722,6 @@ impl FactionState {
         16 +    // lp_dogebtc_reward_index (u128)
         8 +     // doges_staked (u64)
         8 +     // doges_playing (u64)
-        8 +     // total_sol_bets (u64)
-        8 +     // total_wins (u64)
         16 +    // sol_reward_index (u128)
         8; // motherlode_pot_size (u64)
 }
@@ -788,10 +777,6 @@ pub struct GameSession {
     pub user_faction_indexes: [u64; NUM_FACTIONS],
     /// Net SOL bet placed on each faction.
     pub sol_bets_by_faction: [u64; NUM_FACTIONS],
-    /// Points bet placed on each faction.
-    pub points_bets_by_faction: [u64; NUM_FACTIONS],
-    /// Weighted points per faction (points * active_multiplier / BASE_MULTIPLIER for SOL bets, else points).
-    pub wgtd_points_bets_by_faction: [u64; NUM_FACTIONS],
     /// Points bet placed on each faction-direction pair.
     pub points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
     /// Weighted points bet placed on each faction-direction pair.
@@ -805,8 +790,6 @@ pub struct GameSession {
     // --- MineBtc reward pools for this round ---
     /// MineBtc allocated for exact winning faction+direction bettors in this round.
     pub minebtc_winner_pool: u64,
-    /// Aggregate MineBtc allocated for the non-winning directions on the winning faction.
-    pub minebtc_same_faction_pool: u64,
     /// MineBtc allocated per losing direction on the winning faction.
     /// The winning direction index remains zero in this array.
     pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
@@ -854,14 +837,11 @@ impl GameSession {
         8 +     // stakers_fee
         (NUM_FACTIONS * 8) + // user_faction_indexes
         (NUM_FACTIONS * 8) + // sol_bets_by_faction
-        (NUM_FACTIONS * 8) + // points_bets_by_faction
-        (NUM_FACTIONS * 8) + // wgtd_points_bets_by_faction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // points_bets_by_faction_direction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // wgtd_points_bets_by_faction_direction
         1 +     // winning_faction_id (u8)
         1 +     // winning_direction (u8)
         8 +     // minebtc_winner_pool
-        8 +     // minebtc_same_faction_pool
         (PredictionDirection::COUNT * 8) + // minebtc_same_faction_direction_pools
         8 +     // faction_stakers
         8 +     // motherlode_rewards
@@ -899,15 +879,6 @@ pub struct PlayerData {
 
     /// The faction this player is assigned to
     pub faction_id: u8,
-
-    /// Cumulative statistics
-    pub rounds_played: u64,
-
-    pub total_sol_bet: u64,
-    pub total_points_bet: u64,
-
-    pub total_sol_won: u64,
-    pub total_dogebtc_won: u64,
 
     pub dogebtc_hashpower: u64,
     pub dogebtc_staked: u64,
@@ -974,11 +945,6 @@ impl PlayerData {
         1 +     // allow_bots_to_claim
         32 +    // referral_code
         1 +     // faction_id
-        8 +     // rounds_played
-        8 +     // total_sol_bet
-        8 +     // total_points_bet
-        8 +     // total_sol_won
-        8 +     // total_dogebtc_won
         8 +     // dogebtc_hashpower (u64)
         8 +     // dogebtc_staked (u64)
         16 +    // dogebtc_dogebtc_reward_debt (u128)

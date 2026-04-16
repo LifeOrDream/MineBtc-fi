@@ -80,8 +80,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.stakers_fee = 0;
     game_session.user_faction_indexes = [0u64; NUM_FACTIONS];
     game_session.sol_bets_by_faction = [0u64; NUM_FACTIONS];
-    game_session.points_bets_by_faction = [0u64; NUM_FACTIONS];
-    game_session.wgtd_points_bets_by_faction = [0u64; NUM_FACTIONS];
     game_session.points_bets_by_faction_direction =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     game_session.wgtd_points_bets_by_faction_direction =
@@ -89,7 +87,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.winning_faction_id = 0;
     game_session.winning_direction = PredictionDirection::Neutral.as_index() as u8;
     game_session.minebtc_winner_pool = 0;
-    game_session.minebtc_same_faction_pool = 0;
     game_session.minebtc_same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     game_session.faction_stakers = 0;
     game_session.motherlode_rewards = 0;
@@ -286,10 +283,6 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     if total_users == 0 {
         global_state.last_round_id = game_session.round_id;
         global_state.winning_faction_id = winning_faction_id;
-        global_state.total_sol_bets = global_state
-            .total_sol_bets
-            .checked_add(game_session.total_sol_bets as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
         global_state.can_begin_round = true;
         game_session.stage = 2;
 
@@ -346,14 +339,13 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     }
 
     game_session.minebtc_winner_pool = winning_direction_rewards;
-    game_session.minebtc_same_faction_pool = same_faction_total;
     game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
     game_session.faction_stakers = faction_stakers;
     game_session.motherlode_rewards = motherlode_rewards;
 
     let total_distributed_this_round = game_session
         .minebtc_winner_pool
-        .checked_add(game_session.minebtc_same_faction_pool)
+        .checked_add(same_faction_total)
         .and_then(|total| total.checked_add(faction_stakers))
         .and_then(|total| total.checked_add(motherlode_rewards))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -438,10 +430,7 @@ fn emit_round_ended(
         total_points_bets: game_session.total_points_bets,
         user_bets_count: game_session.user_faction_indexes,
         faction_sol_bets: game_session.sol_bets_by_faction,
-        faction_points: game_session.points_bets_by_faction,
-        faction_wgtd_points: game_session.wgtd_points_bets_by_faction,
         minebtc_winner_pool: game_session.minebtc_winner_pool,
-        minebtc_same_faction_pool: game_session.minebtc_same_faction_pool,
         minebtc_same_faction_direction_pools: game_session.minebtc_same_faction_direction_pools,
         minebtc_faction_stakers,
         minebtc_motherlode,
@@ -651,30 +640,9 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         });
     }
 
-    // Update faction wins
-    faction_state.total_wins = faction_state
-        .total_wins
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
     // Update global state with previous round results
     global_state.last_round_id = game_session.round_id;
     global_state.winning_faction_id = winning_faction_id;
-    msg!(
-        "   Global state updated: last_round_id: {}, winning_faction_id: {}",
-        global_state.last_round_id,
-        global_state.winning_faction_id
-    );
-
-    // Update total SOL bets in global state (cumulative)
-    global_state.total_sol_bets = global_state
-        .total_sol_bets
-        .checked_add(game_session.total_sol_bets as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "   Updated global state. Total SOL bets: {}",
-        global_state.total_sol_bets as f64 / 1_000_000_000.0
-    );
 
     game_session.stage = 2;
 

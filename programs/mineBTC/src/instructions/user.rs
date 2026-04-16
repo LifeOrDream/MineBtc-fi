@@ -123,14 +123,7 @@ pub fn internal_initialize_player(
         system_referral_pubkey
     };
 
-    // Initialize statistics
-    player_data.rounds_played = 0;
     player_data.active_multiplier = BASE_MULTIPLIER as u32;
-
-    player_data.total_sol_bet = 0;
-    player_data.total_points_bet = 0;
-    player_data.total_sol_won = 0;
-    player_data.total_dogebtc_won = 0;
 
     // Initialize MineBtc staking fields
     player_data.dogebtc_hashpower = 0;
@@ -1458,16 +1451,6 @@ fn update_player_rewards(
     total_minebtc_reward: u64,
     round_id: u64,
 ) -> Result<()> {
-    player_data.total_sol_won = player_data
-        .total_sol_won
-        .checked_add(total_sol_reward)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "     Total SOL won: {} (+{})",
-        player_data.total_sol_won as f64 / 1e9,
-        total_sol_reward as f64 / 1e9
-    );
-
     helper::add_to_total_claimable(
         unrefined_rewards,
         player_data,
@@ -1477,15 +1460,6 @@ fn update_player_rewards(
         CLAIMABLE_MINEBTC_SOURCE_ROUND,
         round_id,
     )?;
-    player_data.total_dogebtc_won = player_data
-        .total_dogebtc_won
-        .checked_add(total_minebtc_reward)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "     Total MineBtc won: {} (+{})",
-        player_data.total_dogebtc_won as f64 / 1e6,
-        total_minebtc_reward as f64 / 1e6
-    );
     msg!(
         "     Pending MineBtc rewards: {} (+{})",
         player_data.pending_minebtc_rewards as f64 / 1e6,
@@ -1848,10 +1822,6 @@ fn internal_process_bets<'info>(
         user_game_bet.mutation_type = 0;
         user_game_bet.epoch_accumulated = false;
 
-        player_data.rounds_played = player_data
-            .rounds_played
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
         player_data.pending_round_claims = player_data
             .pending_round_claims
             .checked_add(1)
@@ -1917,14 +1887,6 @@ fn internal_process_bets<'info>(
         game_session.sol_bets_by_faction[faction_index] = game_session.sol_bets_by_faction
             [faction_index]
             .checked_add(net_per_bet)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        game_session.points_bets_by_faction[faction_index] = game_session.points_bets_by_faction
-            [faction_index]
-            .checked_add(points_per_bet)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        game_session.wgtd_points_bets_by_faction[faction_index] = game_session
-            .wgtd_points_bets_by_faction[faction_index]
-            .checked_add(wgtd_points_per_bet)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         game_session.points_bets_by_faction_direction[faction_index][direction_index] =
             game_session.points_bets_by_faction_direction[faction_index][direction_index]
@@ -2010,15 +1972,6 @@ fn internal_process_bets<'info>(
     game_session.stakers_fee = game_session
         .stakers_fee
         .checked_add(total_stakers_fee)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-    player_data.total_sol_bet = player_data
-        .total_sol_bet
-        .checked_add(total_net_added)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.total_points_bet = player_data
-        .total_points_bet
-        .checked_add(total_points_added)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!(

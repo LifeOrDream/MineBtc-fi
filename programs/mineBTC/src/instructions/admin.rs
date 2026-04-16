@@ -277,8 +277,6 @@ pub fn add_faction_internal(
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
     faction_state.lp_dogebtc_reward_index = 0;
-    faction_state.total_sol_bets = 0;
-    faction_state.total_wins = 0;
     faction_state.sol_reward_index = 0;
     faction_state.motherlode_pot_size = 0;
 
@@ -1094,9 +1092,6 @@ pub fn initialize_game_state_internal(
     // Initialize previous round data
     global_game_state.last_round_id = 0;
     global_game_state.winning_faction_id = 0;
-
-    // Initialize cumulative stats
-    global_game_state.total_sol_bets = 0;
 
     Ok(())
 }
