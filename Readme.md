@@ -7,7 +7,7 @@
 <h1 align="center">MineBTC</h1>
 
 <p align="center">
-  <strong>Degen country arena game on Solana. Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC.</strong>
+  <strong>Degen country arena game on Solana.<br/>Pick your country. Bet SOL. Your doge evolves. Your country climbs. You earn dogeBTC.</strong>
 </p>
 
 <p align="center">
@@ -17,28 +17,193 @@
 
 ---
 
-## How It Works
+## The Game
 
-MineBTC runs two reward loops on the same bet:
+MineBTC is a country arena game where every bet does three things at once:
 
-- **Round loop:** 60-second arena rounds. Players pick a country and a direction (Up / Down / Neutral). A random winner is selected. Exact matches earn SOL + dogeBTC. Same-country wrong-direction gets consolation dogeBTC. Stakers earn a share. Motherlode jackpot has a 1/625 chance.
+1. **Enters a 60-second round raffle** for instant SOL + dogeBTC rewards
+2. **Scores points for your country** on the competitive leaderboard
+3. **Can trigger your doge NFT to mutate**, permanently upgrading its stats
 
-- **Rebase loop:** The same bets accumulate over an economy cycle (~4 hours). Doge mutations that fire during betting score points for the player's country. At the end of the cycle, countries are ranked by total mutation scores. Players who bet the correct direction on their own country earn dogeBTC from the rebase mining pool.
+Countries compete for the top of the leaderboard. Players compete for rewards. Doges evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
 
-### The Doge NFT System
+---
 
-Doges are functional game pieces, not cosmetics:
+## Two Reward Loops, One Bet
 
-- **Gameplay doge:** One operator doge locked for live rounds. Earns XP from betting, can mutate (Evolution / Power / Trait). Mutations boost the doge's multiplier and score points for its country on the rebase leaderboard.
-- **Staked doges:** Up to 5 passive doges that boost staking hashpower for earning rewards.
-- **DNA:** 256-bit genome with appearance traits, power traits, evolution stage, and breed type. Mutations upgrade traits over time.
-- **Multiplier:** Ranges from 1.0x to 10.0x. Higher multiplier = more weighted points per bet = larger reward share. But mutation chance decreases as multiplier rises, creating a natural progression curve.
+### Round Loop (60 seconds)
 
-### The Economy
+Every minute, a new round runs:
 
-- **1% transfer tax** on all dogeBTC: burned (25%) + NFT floor sweep (10%) + faction treasury (40%) + back to mining vault (25%)
-- **Economy cycle (~4h):** 8 price snapshots → emission rate adjustment → LP add + burn (permanent POL)
-- **Faction treasury:** Distributed to stakers based on the rebase mutation leaderboard. 80% rank-weighted, 20% lucky draw for underdog factions.
+1. Players place `country + direction` bets (Up / Down / Neutral)
+2. A random winning country and direction are selected via slot-hash entropy
+3. Rewards are distributed:
+
+| Pool | Share | Who Gets It |
+|------|-------|-------------|
+| **Winner pool** | 50% of dogeBTC emission | Exact country+direction match (pro-rata) |
+| **Consolation pool** | 40% of dogeBTC emission | Same country, wrong direction (split per direction) |
+| **Staker pool** | 5% of dogeBTC emission | Everyone staking on the winning country |
+| **Motherlode** | 5% of dogeBTC emission | 1/625 chance jackpot for exact winners |
+| **SOL prize pot** | Accumulated from net bets | Exact winners split proportionally |
+
+### Rebase Loop (~4 hours, tied to economy cycle)
+
+The same bets also accumulate into a longer competitive cycle called a **rebase**:
+
+1. Doge mutations that fire during rounds **score points for their country**
+2. At the end of the cycle, countries are ranked by total mutation scores
+3. Rankings are compared to the previous cycle to determine which countries moved Up, Down, or stayed Neutral
+4. Players who correctly bet the direction of their **own country** earn dogeBTC from the rebase mining pool
+5. Only own-country bets count -- you must be loyal to earn
+
+**Mutation score formula:**
+```
+score = type_weight × bet_size × doge_multiplier
+        Evolution=100, Power=30, Trait=10
+```
+
+Higher bets + better doges = bigger score contribution to your country.
+
+---
+
+## Doge NFTs: The Progression Engine
+
+Doges are functional game pieces with on-chain 256-bit DNA:
+
+### Two Doge Roles
+
+- **Gameplay doge (operator):** One doge locked for active play. Earns XP from betting. Can mutate (Evolution / Power / Trait). Mutations upgrade stats and score points for the country leaderboard.
+- **Staked doges (passive):** Up to 5 doges boosting staking hashpower. More staked doges = higher staking APR.
+
+### How Mutations Work
+
+Every SOL bet with a gameplay doge rolls for a mutation:
+
+```
+Base chance: 20%
+× bet_strength (your bet / highest bet on your country)
+× multiplier_penalty (1.0x doge = full chance, 10.0x = 10% chance)
+× faction_penalty (each prior mutation this round makes the next harder)
+
+Global cap: max mutations per round = active_factions / 3
+```
+
+**Mutation types:**
+- **Evolution** (~10%): Stage upgrade, guaranteed visual + power trait gains, XP resets. Rarest and most impactful.
+- **Power** (~30%): Combat trait upgrade, moderate multiplier boost.
+- **Trait** (~60%): Visual trait upgrade, small multiplier boost.
+
+**Multiplier range:** 1.0x → 10.0x. Higher multiplier = more weighted points per bet = bigger reward share. But mutation chance drops as multiplier rises, creating a weeks-long progression curve.
+
+### XP System
+
+XP accumulates from SOL bets and boosts the multiplier increase when a mutation fires:
+
+```
+XP gain rate = base_rate × (1.0 / current_multiplier)
+```
+
+A fresh doge gains XP fast. A maxed doge gains XP slowly. This prevents whales from speed-running progression.
+
+When a mutation fires, it **consumes** the XP it used:
+- Evolution: consumes ALL XP (full reset)
+- Power/Trait: consumes the portion used for the multiplier boost
+
+### Accumulated Value
+
+Each round, the gameplay doge earns dogeBTC based on mutation type (1% - 6.9% of round reward). This accumulates on-chain and can only be claimed by **burning the doge** (`send_to_heaven`). Creates a natural floor price based on accumulated earnings.
+
+---
+
+## The Economy
+
+### dogeBTC Token
+
+dogeBTC is a Token-2022 token with a 1% transfer tax. Every transfer automatically splits:
+
+| Split | Default % | Where It Goes |
+|-------|-----------|---------------|
+| **Burn** | 25% | Permanently removed from supply |
+| **Faction Treasury** | 40% | Distributed to stakers via rebase leaderboard |
+| **NFT Floor Sweep** | 10% | Funds NFT market-making operations |
+| **Back to Vault** | 25% | Recycled into mining emission pool |
+
+### Economy Cycle (~4 hours)
+
+The economy runs in automated loops:
+
+```
+Step 1: snapshot_price (×8, every 30 min)
+        → Swaps 10% of buyback SOL for dogeBTC (price discovery)
+        → Earmarks 10% for Protocol Owned Liquidity
+
+Step 2: update_rate (after 8 snapshots)
+        → Compares weighted avg price to baseline
+        → Price up → increase emission rate (1%)
+        → Price down → decrease emission rate (3%)
+
+Step 3: add_lp_and_burn
+        → Deposits earmarked SOL + dogeBTC into Raydium LP
+        → Burns ALL LP tokens (permanent liquidity lock)
+        → Triggers rebase settlement
+```
+
+The asymmetric rate adjustment (1% up / 3% down) creates structural deflationary pressure during downturns.
+
+### SOL Fee Flow
+
+```
+Player bets 1 SOL
+├─ 15% fee taken
+│   ├─ 20% of fee → staker SOL reward vault
+│   └─ 80% of fee → SOL treasury → buybacks (80%) + dev (20%)
+└─ 85% net → SOL prize pot (for round winners)
+```
+
+### Faction Treasury (Tax Rewards to Stakers)
+
+After each rebase settles, the accumulated faction treasury is distributed to stakers:
+
+- **80% rank-weighted:** Every country gets something. Higher leaderboard rank = bigger share.
+- **20% lucky draw:** One random underdog country (rank 5+) wins the entire pot. Equal probability, keeps small factions engaged.
+
+---
+
+## Staking
+
+Two staking tracks, both earning SOL + dogeBTC:
+
+| Track | What You Stake | What Boosts Rewards |
+|-------|---------------|-------------------|
+| **dogeBTC staking** | Lock dogeBTC for configurable duration | Longer lockup = higher multiplier. Staked doges boost hashpower. |
+| **LP staking** | Lock Raydium LP tokens | Same multiplier mechanics as dogeBTC staking |
+
+Stakers earn from three sources:
+1. **SOL fees** from every bet (staker share)
+2. **dogeBTC emission** from round staker pools (winning faction only)
+3. **Faction treasury** from transfer tax (based on rebase leaderboard rank)
+
+---
+
+## AI Integration (Planned)
+
+The game generates rich, structured on-chain data with every bet, mutation, and rebase:
+
+- Country-level directional conviction weighted by real money
+- NFT evolution histories (256-bit DNA trajectories over time)
+- Player behavior patterns (faction loyalty, bet sizing, mutation strategies)
+
+This data can later power:
+
+- **AI-generated doge art** — unique visuals for each evolution stage, faction-specific styles
+- **NFT market-making agent** — autonomous floor sweeps, pricing, inventory rotation using the NFT floor sweep vault
+- **Content generation** — mutation stories, faction propaganda, social clips
+- **Game expansion** — AI-designed mini-games, new round modes, mobile experiences
+
+The game is self-contained today. AI integration adds value around the game without being a dependency for core gameplay.
+
+---
 
 ## Repo Map
 
@@ -61,21 +226,17 @@ programs/mineBTC/src/
     └── helper.rs       # Shared math and vault transfer helpers
 ```
 
-See [ECONOMY.md](programs/mineBTC/ECONOMY.md) for detailed economy cycle and rebase documentation.
+**Documentation:**
+- [ECONOMY.md](programs/mineBTC/ECONOMY.md) — Detailed economy cycle, rebase mechanics, XP/mutation math
+- [STAKING.md](programs/mineBTC/STAKING.md) — Staking mechanics, hashpower, reward indexes
+- [CLAUDE.md](programs/mineBTC/claude.md) — Developer orientation guide and canonical terminology
 
 ## Build And Verify
 
 ```bash
-# Build the program
 anchor build -p minebtc
-
-# Format all Rust files
 cargo fmt --all
-
-# Check the MineBTC program
 cargo check -p minebtc
-
-# Run the MineBTC unit suite
 cargo test -p minebtc --lib
 ```
 
