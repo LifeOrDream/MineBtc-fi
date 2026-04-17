@@ -154,7 +154,7 @@ async function getSolanaBalance(pubkey) {
 }
 
 // Epoch / index / oracle scaffolding was removed when the contract moved to
-// mutation-driven rebase cycles. The rebase system has no initial scores,
+// mutation-driven faction-war cycles. The faction-war system has no initial scores,
 // no question hash, and no oracle authority — settlement is driven entirely
 // by on-chain mutation scores and the LP-burn cycle count. No helper needed.
 
@@ -436,18 +436,19 @@ async function main() {
     // return;
 
     // NOTE: Cranker bot whitelist was removed when keepers became fully
-    // permissionless. start_round / end_round / settle_rebase / claim crank
+    // permissionless. start_round / end_round / settle_faction_war / claim crank
     // instructions are callable by any wallet — the protocol only pays the
     // (capped) keeper compensation to the caller that lands the tx first.
 
-    // 17. Initialize Rebase Config (mutation-driven competitive cycles)
-    // Instruction: initialize_rebase_config() — no args
-    // Creates RebaseConfig PDA [seeds: "rebase-config"] with current_rebase_id=1,
-    // is_active=true, rebase_settle_cycle=0 (auto-set on first bet), and identity
+    // 17. Initialize Faction War Config (mutation-driven competitive cycles)
+    // Instruction: initialize_faction_war_config() — no args
+    // Creates FactionWarConfig PDA [seeds: "faction-war-config"] with
+    // current_faction_war_id=1, is_active=true, faction_war_settle_cycle=0
+    // (auto-set on first bet), and identity
     // start ranks [0..NUM_FACTIONS). Rebase cycles auto-start on first bet and
     // auto-settle when the economy-cycle LP burn completes.
-    // Accounts: rebaseConfig, globalConfig, authority, systemProgram
-    await initializeRebaseConfig(minebtcProgram);
+    // Accounts: factionWarConfig, globalConfig, authority, systemProgram
+    await initializeFactionWarConfig(minebtcProgram);
 
     // Print completion summary
     printCompletionSummary();
@@ -2618,20 +2619,26 @@ async function updateDogeConfig(minebtcProgram, dogeConfig) {
 // is used to pay keeper rent in the looped cranker scripts, but no on-chain
 // whitelist step is required anymore.
 
-async function initializeRebaseConfig(minebtcProgram) {
-  if (deploymentFile.rebase_config_initialized) {
-    console.log(COLOR_INFO, "ℹ️ Rebase config already initialized. Skipping...");
+async function initializeFactionWarConfig(minebtcProgram) {
+  if (
+    deploymentFile.faction_war_config_initialized ||
+    deploymentFile.rebase_config_initialized
+  ) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Faction war config already initialized. Skipping..."
+    );
     return;
   }
 
   console.log(
     COLOR_STEP,
-    "\n================ [ INITIALIZING REBASE CONFIG ] ================"
+    "\n================ [ INITIALIZING FACTION WAR CONFIG ] ================"
   );
 
   try {
-    const [rebaseConfigPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("rebase-config")],
+    const [factionWarConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("faction-war-config")],
       minebtcProgram.programId
     );
 
@@ -2640,47 +2647,57 @@ async function initializeRebaseConfig(minebtcProgram) {
       minebtcProgram.programId
     );
 
-    console.log(COLOR_INFO, `🔑 Rebase Config PDA: ${rebaseConfigPda.toBase58()}`);
+    console.log(
+      COLOR_INFO,
+      `🔑 Faction War Config PDA: ${factionWarConfigPda.toBase58()}`
+    );
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
     console.log(
       COLOR_INFO,
-      `🔄 Rebase cycles auto-start on first bet and auto-settle on LP burn completion`
+      `🔄 Faction wars auto-start on first bet and auto-settle on LP burn completion`
     );
 
     const tx = await minebtcProgram.methods
-      .initializeRebaseConfig()
+      .initializeFactionWarConfig()
       .accounts({
-        rebaseConfig: rebaseConfigPda,
+        factionWarConfig: factionWarConfigPda,
         globalConfig: globalConfigPda,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
 
-    console.log(COLOR_SUCCESS, `✅ Rebase config initialized successfully!`);
+    console.log(COLOR_SUCCESS, `✅ Faction war config initialized successfully!`);
     console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
     console.log(
       COLOR_DIM,
       `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
     );
 
-    deploymentFile.rebase_config_initialized = {
-      rebase_config_pda: rebaseConfigPda.toBase58(),
-      starting_rebase_id: 1,
+    deploymentFile.faction_war_config_initialized = {
+      faction_war_config_pda: factionWarConfigPda.toBase58(),
+      starting_faction_war_id: 1,
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };
     saveDeploymentData();
   } catch (error) {
     if (error.toString().includes("already in use")) {
-      console.log(COLOR_INFO, "ℹ️ Rebase config already exists on-chain. Skipping...");
-      deploymentFile.rebase_config_initialized = {
+      console.log(
+        COLOR_INFO,
+        "ℹ️ Faction war config already exists on-chain. Skipping..."
+      );
+      deploymentFile.faction_war_config_initialized = {
         status: "already_exists",
         timestamp: new Date().toISOString(),
       };
       saveDeploymentData();
     } else {
-      console.error(COLOR_ERROR, "❌ Failed to initialize rebase config:", error);
+      console.error(
+        COLOR_ERROR,
+        "❌ Failed to initialize faction war config:",
+        error
+      );
       throw error;
     }
   }
@@ -2763,7 +2780,12 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    `  • Rebase Config: ${deploymentFile.rebase_config_initialized ? "✅" : "❌"}`
+    `  • Faction War Config: ${
+      deploymentFile.faction_war_config_initialized ||
+      deploymentFile.rebase_config_initialized
+        ? "✅"
+        : "❌"
+    }`
   );
   console.log(
     COLOR_STEP,

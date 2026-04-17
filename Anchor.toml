@@ -10,7 +10,7 @@ minebtc = "EkLZDQo3vKytwoDj1PHcLPti13SZULZr8KsRkpu28zpd"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]
-minebtc = "4eJY4X2Lnyb5iUP7kJawC92wUpKVx7hVqKyGVMy7YM1S"
+minebtc = "DG8MkC7JcnbMkwWf361WdHa3u5DqQTK5VYnCZmZxaNrc"
 mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
 raydium_cp_swap = "6VhZfCR6DRTfFSbLZZpd8vSCadfYgQteKkQodA4X5mdz"
 

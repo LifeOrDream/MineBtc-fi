@@ -9,10 +9,10 @@
  *   1. Read on-chain state (current round, round end timestamp).
  *   2. If the current round has ended, call `end_round` (reveals via
  *      SlotHashes) and `end_round_faction_rewards` (pays stakers, advances
- *      rebase mining pool).
+ *      faction-war mining pool).
  *   3. Start the next round with `start_round(round_id)`.
  *
- * Cycle settlement (settle_rebase) is driven by the LP-burn count so the
+ * Cycle settlement (settle_faction_war) is driven by the LP-burn count so the
  * economy loop handles it, not this script.
  */
 
@@ -90,8 +90,8 @@ const GLOBAL_CONFIG_SEED = "global-config";
 const GLOBAL_GAME_STATE_SEED = "global-game-state";
 const GAME_SESSION_SEED = "game-session";
 const FACTION_STATE_SEED = "faction";
-const REBASE_CONFIG_SEED = "rebase-config";
-const REBASE_STATE_SEED = "rebase";
+const FACTION_WAR_CONFIG_SEED = "faction-war-config";
+const FACTION_WAR_STATE_SEED = "faction-war";
 const STAKER_SOL_REWARD_VAULT_SEED = "staker-sol-reward-vault";
 const MINE_BTC_MINING_SEED = "mine-btc-mining";
 
@@ -111,8 +111,8 @@ const [solRewardsVaultPDA] = PublicKey.findProgramAddressSync(
   [Buffer.from(STAKER_SOL_REWARD_VAULT_SEED)],
   mineBTCProgramId
 );
-const [rebaseConfigPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from(REBASE_CONFIG_SEED)],
+const [factionWarConfigPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from(FACTION_WAR_CONFIG_SEED)],
   mineBTCProgramId
 );
 
@@ -134,9 +134,9 @@ function deriveGameSessionPDA(roundId) {
   return gameSessionPDA;
 }
 
-function deriveRebaseStatePDA(rebaseId) {
+function deriveFactionWarStatePDA(factionWarId) {
   const [pda] = PublicKey.findProgramAddressSync(
-    [Buffer.from(REBASE_STATE_SEED), u64Buffer(rebaseId)],
+    [Buffer.from(FACTION_WAR_STATE_SEED), u64Buffer(factionWarId)],
     mineBTCProgramId
   );
   return pda;
@@ -216,7 +216,7 @@ async function startRound(roundId) {
     .accounts({
       globalGameState: globalGameStatePDA,
       gameSession: deriveGameSessionPDA(roundId),
-      rebaseConfig: rebaseConfigPDA,
+      factionWarConfig: factionWarConfigPDA,
       authority: walletKeypair.publicKey,
       systemProgram: SystemProgram.programId,
     })
@@ -270,12 +270,12 @@ async function endRound(roundId) {
     `   Winning country: ${winningFactionId}, direction: ${winningDirection}`
   );
 
-  // STAGE 2 — faction rewards + rebase mining accounting.
-  const rebaseConfig = await mineBTCProgram.account.rebaseConfig.fetch(
-    rebaseConfigPDA
+  // STAGE 2 — faction rewards + faction-war mining accounting.
+  const factionWarConfig = await mineBTCProgram.account.factionWarConfig.fetch(
+    factionWarConfigPDA
   );
-  const rebaseStatePDA = deriveRebaseStatePDA(
-    rebaseConfig.currentRebaseId.toNumber()
+  const factionWarStatePDA = deriveFactionWarStatePDA(
+    factionWarConfig.currentFactionWarId.toNumber()
   );
   const factionStatePDA = deriveFactionStatePDA(winningFactionId);
 
@@ -287,8 +287,8 @@ async function endRound(roundId) {
       mineBtcMining: mineBtcMiningPDA,
       factionState: factionStatePDA,
       solRewardsVault: solRewardsVaultPDA,
-      rebaseConfig: rebaseConfigPDA,
-      rebaseState: rebaseStatePDA,
+      factionWarConfig: factionWarConfigPDA,
+      factionWarState: factionWarStatePDA,
       authority: walletKeypair.publicKey,
       systemProgram: SystemProgram.programId,
     })
