@@ -190,29 +190,27 @@ pub enum ErrorCode {
     #[msg("Gameplay unlock has not been requested")]
     GameplayUnlockNotRequested,
 
-    #[msg("Gameplay doge can only be unlocked after the next rebase cycle begins")]
+    #[msg("Gameplay doge can only be unlocked after the next faction_war cycle begins")]
     GameplayUnlockNotReady,
 
-    #[msg(
-        "Claim all pending round, rebase, and token rewards before unlocking this gameplay doge"
-    )]
+    #[msg("Claim all pending round and faction-war reward accounts before unlocking this gameplay doge")]
     GameplayRewardsPending,
 
-    // ========== REBASE MINING ERRORS ========== //
-    #[msg("Rebase is not currently active")]
-    RebaseNotActive,
+    // ========== FACTION_WAR MINING ERRORS ========== //
+    #[msg("FactionWar is not currently active")]
+    FactionWarNotActive,
 
-    #[msg("Rebase has not ended yet")]
-    RebaseNotEnded,
+    #[msg("FactionWar has not ended yet")]
+    FactionWarNotEnded,
 
-    #[msg("Rebase has not been settled yet")]
-    RebaseNotSettled,
+    #[msg("FactionWar has not been settled yet")]
+    FactionWarNotSettled,
 
-    #[msg("Rebase has already been settled")]
-    RebaseAlreadySettled,
+    #[msg("FactionWar has already been settled")]
+    FactionWarAlreadySettled,
 
-    #[msg("Rebase rewards have already been claimed")]
-    RebaseRewardsAlreadyClaimed,
+    #[msg("FactionWar rewards have already been claimed")]
+    FactionWarRewardsAlreadyClaimed,
 
     #[msg("Ticket-backed bets exceed the session cap")]
     TicketBetCapExceeded,

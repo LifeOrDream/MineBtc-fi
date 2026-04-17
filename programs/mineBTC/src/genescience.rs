@@ -24,7 +24,6 @@ use crate::state::{BASE_MULTIPLIER, FACTION_MUTATION_PENALTY_STEP, MAX_BASE_CHAN
 /// IMMUTABLE FIELDS (never change after creation):
 /// - Faction (inherited from parent faction or chosen at genesis)
 /// - Breed (random at genesis, inherited from one parent during breeding)
-
 const FACTION_TYPE_BITS: u8 = 4;
 const EVOLUTION_STAGE_BITS: u8 = 3;
 const APPEARANCE_TRAIT_BITS: u8 = 5; // 0-31 values
@@ -120,7 +119,7 @@ pub fn generate_genesis_dna(
     // Encode Faction (first 4 bits)
     dna[0] = (dna[0] & 0xF0) | (faction_id & 0x0F);
     // Evolution Stage 0 (bits 4-6)
-    dna[0] = dna[0] & 0x8F;
+    dna[0] &= 0x8F;
 
     limit_genesis_trait_ranges(&mut dna);
 
@@ -504,7 +503,7 @@ pub fn mutate_power_trait(
     let (trait_index, current_val, new_val) = mutate_power_trait_internal(dna, seed);
 
     emit!(DogePowerMutation {
-        round_id: round_id,
+        round_id,
         doge_mint: *doge_mint,
         trait_index,
         old_val: current_val,
@@ -559,7 +558,7 @@ pub fn breed_genes(
     mix_power_traits(&mut offspring_dna, parent1_dna, parent2_dna, &hash);
 
     // Inherit breed from one parent (50/50 chance)
-    let parent_breed = if hash[31] % 2 == 0 {
+    let parent_breed = if (hash[31] & 1) == 0 {
         get_trait_value(parent1_dna, BREED_OFFSET, BREED_BITS, 0)
     } else {
         get_trait_value(parent2_dna, BREED_OFFSET, BREED_BITS, 0)
@@ -589,7 +588,7 @@ fn mix_appearance_traits(
 
         let selected = match method {
             0 => {
-                if rand % 2 == 0 {
+                if (rand & 1) == 0 {
                     t1
                 } else {
                     t2
@@ -660,7 +659,7 @@ fn mutate_trait_value(base: u8, rand: u8, max: u8) -> u8 {
 
 fn synergy_boost(t1: u8, t2: u8, rand: u8, max: u8) -> u8 {
     let max_t = t1.max(t2);
-    let diff = if t1 > t2 { t1 - t2 } else { t2 - t1 };
+    let diff = t1.abs_diff(t2);
     if diff <= 2 && rand < 64 && max_t < max {
         max_t + 1
     } else {
@@ -1113,7 +1112,7 @@ mod tests {
         let doge_mint = mock_pubkey();
 
         for expected_stage in 1..=7 {
-            let seed = [expected_stage as u8; 32];
+            let seed = [expected_stage; 32];
             let (new_stage, _, _, _, _, _, _) = evolve_stage(1, &mut dna, &seed, &doge_mint);
             assert_eq!(
                 new_stage, expected_stage,
@@ -1241,9 +1240,9 @@ mod tests {
             dna,
             100,
             0, // faction_mutation_count
-            1_000_00000,
-            1_000_00_000,
-            1_000_00_000,
+            100_000_000,
+            100_000_000,
+            100_000_000,
             12345,
             &mock_pubkey(),
             &doge_mint,
@@ -1634,7 +1633,7 @@ mod tests {
             APPEARANCE_MAX, result1
         );
         assert!(
-            result1 <= APPEARANCE_MAX - 1,
+            result1 < APPEARANCE_MAX,
             "Rand==0 should produce value <= max-1"
         );
 

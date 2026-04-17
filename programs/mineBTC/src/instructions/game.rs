@@ -6,7 +6,7 @@
 //
 // The game operates in rounds where:
 // 1. A caller starts a new round.
-// 2. Players place faction-direction bets that also count toward the active rebase.
+// 2. Players place faction-direction bets that also count toward the active faction_war.
 // 3. Once the round duration passes, anyone can finalize the round from its pre-scheduled
 //    slot-hash entropy source.
 // 4. If the scheduled slot-hash aged out before anyone finalized the round, settlement falls back
@@ -102,7 +102,7 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     emit!(RoundStarted {
         round_id,
         game_session: game_session.key(),
-        rebase_id: ctx.accounts.rebase_config.current_rebase_id,
+        faction_war_id: ctx.accounts.faction_war_config.current_faction_war_id,
         round_start_slot: game_session.round_start_slot,
         round_start_timestamp: game_session.round_start_timestamp,
         round_end_timestamp: game_session.round_end_timestamp,
@@ -323,7 +323,11 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     let mut same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     let mut same_faction_total = 0u64;
 
-    for direction_idx in 0..PredictionDirection::COUNT {
+    for (direction_idx, same_faction_pool) in same_faction_direction_pools
+        .iter_mut()
+        .enumerate()
+        .take(PredictionDirection::COUNT)
+    {
         if direction_idx == winning_direction as usize {
             continue;
         }
@@ -331,7 +335,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         let losing_direction_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
             [winning_faction_id as usize][direction_idx];
         if losing_direction_wgtd_points > 0 && same_faction_direction_rewards_each > 0 {
-            same_faction_direction_pools[direction_idx] = same_faction_direction_rewards_each;
+            *same_faction_pool = same_faction_direction_rewards_each;
             same_faction_total = same_faction_total
                 .checked_add(same_faction_direction_rewards_each)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -449,8 +453,12 @@ fn find_valid_winning_faction(
     let mut active_factions = [0u8; NUM_FACTIONS];
     let mut active_count = 0usize;
 
-    for faction_id in 0..active_faction_count {
-        if user_faction_indexes[faction_id] > 0 {
+    for (faction_id, faction_points) in user_faction_indexes
+        .iter()
+        .enumerate()
+        .take(active_faction_count)
+    {
+        if *faction_points > 0 {
             active_factions[active_count] = faction_id as u8;
             active_count += 1;
         }
@@ -468,8 +476,12 @@ fn find_valid_winning_direction(
     let mut active_directions = [0u8; PredictionDirection::COUNT];
     let mut active_count = 0usize;
 
-    for direction in 0..PredictionDirection::COUNT {
-        if direction_points[direction] > 0 {
+    for (direction, points) in direction_points
+        .iter()
+        .enumerate()
+        .take(PredictionDirection::COUNT)
+    {
+        if *points > 0 {
             active_directions[active_count] = direction as u8;
             active_count += 1;
         }
@@ -522,7 +534,7 @@ fn split_staker_lane_rewards(
 /// This function:
 /// 1. Uses the already-finalized winning faction/direction from `end_round`
 /// 2. Distributes the winning faction's staker and motherlode rewards
-/// 3. Advances rebase accounting when the current rebase window has ended
+/// 3. Advances faction_war accounting when the current faction_war window has ended
 pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
     msg!("🏁 [end_round_faction_rewards] Ending current round");
 
@@ -650,11 +662,11 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
     global_state.can_begin_round = true;
     msg!("   Can begin new round: {}", global_state.can_begin_round);
 
-    // --- REBASE MINING TRACKING (inline) ---
+    // --- FACTION_WAR MINING TRACKING (inline) ---
     // Only count dogeBTC that was actually distributed this round (not the full emission).
     // Empty rounds or rounds with no bets on certain directions may distribute less.
-    let rebase_config = &mut ctx.accounts.rebase_config;
-    let rebase_state = &mut ctx.accounts.rebase_state;
+    let faction_war_config = &mut ctx.accounts.faction_war_config;
+    let faction_war_state = &mut ctx.accounts.faction_war_state;
     let actually_distributed = game_session
         .minebtc_winner_pool
         .saturating_add(
@@ -666,57 +678,85 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         .saturating_add(game_session.faction_stakers)
         .saturating_add(game_session.motherlode_rewards);
 
-    // If settle_rebase fired mid-round (LP burn landed during this round's
-    // play window), rebase_config.current_rebase_id advanced but the new
-    // rebase_state was never initialized by a bet. The Accounts struct uses
-    // init_if_needed so we got an empty account — stamp its bump + rebase_id
-    // and align rebase_settle_cycle the same way the first bet would (see
+    // If settle_faction_war fired mid-round (LP burn landed during this round's
+    // play window), faction_war_config.current_faction_war_id advanced but the new
+    // faction_war_state was never initialized by a bet. The Accounts struct uses
+    // init_if_needed so we got an empty account — stamp its bump + faction_war_id
+    // and align faction_war_settle_cycle the same way the first bet would (see
     // internal_process_bets init branch). After this, the next join_bets on
-    // the new rebase enters the existing populate branch (rebase_id != 0).
-    if rebase_state.rebase_id == 0 {
+    // the new faction_war enters the existing populate branch (faction_war_id != 0).
+    if faction_war_state.faction_war_id == 0 || faction_war_state.active_faction_count == 0 {
         // Mirror the init branch of internal_process_bets so a subsequent
-        // join_bets enters the populate/validate branch (rebase_id != 0).
+        // join_bets enters the populate/validate branch (faction_war_id != 0).
         let global_config = &ctx.accounts.global_config;
         let active_faction_count = global_config.supported_factions.len() as u8;
-        let start_ranks = rebase_config.prev_rebase_mutation_ranks;
+        let start_ranks = faction_war_config.prev_faction_war_mutation_ranks;
+        let seeded_treasury_base = faction_war_state
+            .treasury_reward_base_amount
+            .checked_add(
+                ctx.accounts
+                    .tax_config
+                    .unassigned_faction_war_treasury_amount,
+            )
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        rebase_state.bump = ctx.bumps.rebase_state;
-        rebase_state.rebase_id = rebase_config.current_rebase_id;
-        rebase_state.start_timestamp =
-            Clock::get()?.unix_timestamp.max(0) as u64;
-        rebase_state.stage = 0;
-        rebase_state.active_faction_count = active_faction_count;
-        rebase_state.start_ranks = start_ranks;
-        rebase_state.final_ranks = start_ranks;
-        rebase_state.resolved_directions =
+        faction_war_state.bump = ctx.bumps.faction_war_state;
+        faction_war_state.faction_war_id = faction_war_config.current_faction_war_id;
+        faction_war_state.start_timestamp = Clock::get()?.unix_timestamp.max(0) as u64;
+        faction_war_state.stage = 0;
+        faction_war_state.active_faction_count = active_faction_count;
+        faction_war_state.total_dogebtc_mined_in_faction_war = 0;
+        faction_war_state.faction_war_mining_pool = 0;
+        faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
+        faction_war_state.faction_direction_totals =
+            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+        faction_war_state.eligible_doge_direction_totals =
+            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        faction_war_state.start_ranks = start_ranks;
+        faction_war_state.final_ranks = start_ranks;
+        faction_war_state.resolved_directions =
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
+        faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
+        faction_war_state.treasury_claimed_bitmap = 0;
+        ctx.accounts
+            .tax_config
+            .unassigned_faction_war_treasury_amount = 0;
 
         let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
-        rebase_config.rebase_settle_cycle = lp_ops
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        faction_war_config.faction_war_settle_cycle =
+            lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   🧱 Initialized empty rebase_state for rebase {} (active_factions={}, settle after LP cycle #{})",
-            rebase_state.rebase_id,
+            "   🧱 Initialized empty faction-war seed state for war {} (active_factions={}, settle after LP cycle #{}, treasury_base={})",
+            faction_war_state.faction_war_id,
             active_faction_count,
-            rebase_config.rebase_settle_cycle
+            faction_war_config.faction_war_settle_cycle,
+            faction_war_state.treasury_reward_base_amount,
         );
         // Nothing further to track — this is an empty/seed state. The next
         // bet will fill mutation scores, direction totals, etc.
-    } else if rebase_config.is_active && rebase_state.stage == 0 {
-        rebase_state.total_dogebtc_mined_in_rebase = rebase_state
-            .total_dogebtc_mined_in_rebase
+    } else if faction_war_config.is_active && faction_war_state.stage == 0 {
+        faction_war_state.total_dogebtc_mined_in_faction_war = faction_war_state
+            .total_dogebtc_mined_in_faction_war
             .checked_add(actually_distributed)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Auto-settle rebase when the economy cycle's LP burn has completed.
+        // Auto-settle faction_war when the economy cycle's LP burn has completed.
         let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
-        if lp_ops >= rebase_config.rebase_settle_cycle && rebase_config.rebase_settle_cycle > 0 {
-            crate::instructions::rebase::finalize_rebase_settlement(rebase_config, rebase_state)?;
+        if lp_ops >= faction_war_config.faction_war_settle_cycle
+            && faction_war_config.faction_war_settle_cycle > 0
+        {
+            crate::instructions::faction_war::finalize_faction_war_settlement(
+                faction_war_config,
+                faction_war_state,
+                &mut ctx.accounts.tax_config,
+            )?;
 
-            emit!(RebaseAutoSettled {
-                rebase_id: rebase_state.rebase_id,
-                mining_pool: rebase_state.rebase_mining_pool,
+            emit!(FactionWarAutoSettled {
+                faction_war_id: faction_war_state.faction_war_id,
+                mining_pool: faction_war_state.faction_war_mining_pool,
             });
         }
     }
@@ -777,7 +817,7 @@ fn distribute_rewards_amg_stakers(
         );
 
         emit!(DogeBtcStakingRewardsDistributed {
-            round_id: round_id,
+            round_id,
             faction_id: faction_state.faction_id,
             minebtc_staker_rewards: dogebtc_minebtc_share,
             sol_staker_rewards: dogebtc_sol_share,
@@ -820,7 +860,7 @@ fn distribute_rewards_amg_stakers(
         );
 
         emit!(LpStakingRewardsDistributed {
-            round_id: round_id,
+            round_id,
             faction_id: faction_state.faction_id,
             minebtc_staker_rewards: lp_minebtc_share,
             sol_staker_rewards: lp_sol_share,
@@ -856,10 +896,10 @@ pub struct StartRound<'info> {
     pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
-        seeds = [REBASE_CONFIG_SEED],
-        bump = rebase_config.bump,
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = faction_war_config.bump,
     )]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -916,7 +956,7 @@ pub struct EndRoundFactionRewards<'info> {
     pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     /// Read-only: used to seed `active_faction_count` on a freshly-
-    /// init'd rebase_state so the next join_bets' faction_id bounds check
+    /// init'd faction_war_state so the next join_bets' faction_id bounds check
     /// passes (otherwise active_faction_count defaults to 0 and every
     /// faction_id reverts with InvalidFactionId).
     #[account(
@@ -939,6 +979,13 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Box<Account<'info, TaxConfig>>,
+
     /// Winning faction state (for updating staker rewards and motherlode)
     /// CHECK: Validated manually that faction_id matches winning_faction_id
     #[account(mut)]
@@ -952,31 +999,31 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (mut for auto-settle + auto-start)
+    /// Faction-war config (mut for auto-settle + auto-start)
     #[account(
         mut,
-        seeds = [REBASE_CONFIG_SEED],
-        bump = rebase_config.bump,
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = faction_war_config.bump,
     )]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
-    /// Rebase state for current rebase (mut for mining tracking + settlement).
-    /// `init_if_needed` so a settle_rebase that fires between end_round and
+    /// FactionWar state for current faction_war (mut for mining tracking + settlement).
+    /// `init_if_needed` so a settle_faction_war that fires between end_round and
     /// end_round_faction_rewards (e.g. economy-cycle-loop LP burn landing mid-round)
-    /// doesn't permanently brick can_begin_round: without this, current_rebase_id
-    /// advances but no bet has yet initialized the new rebase_state, and every
+    /// doesn't permanently brick can_begin_round: without this, current_faction_war_id
+    /// advances but no bet has yet initialized the new faction_war_state, and every
     /// subsequent end_round_faction_rewards reverts with AccountNotInitialized,
     /// leaving the game stuck at stage=1 forever. init_if_needed lets this
-    /// instruction create an empty rebase_state if needed; the first bet of the
+    /// instruction create an empty faction_war_state if needed; the first bet of the
     /// new cycle will go through the same PDA and fill in real state.
     #[account(
         init_if_needed,
         payer = authority,
-        space = RebaseState::LEN,
-        seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
+        space = FactionWarState::LEN,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub rebase_state: Box<Account<'info, RebaseState>>,
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

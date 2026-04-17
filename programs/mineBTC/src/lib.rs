@@ -1,3 +1,11 @@
+#![allow(unexpected_cfgs, deprecated)]
+#![allow(
+    clippy::identity_op,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::useless_asref
+)]
+
 // # MineBTC Program
 //
 // Degen country arena game on Solana.
@@ -15,7 +23,7 @@
 // - `stake`: dogeBTC and LP token staking.
 // - `game`: 60-second round loop, slot-hash randomness, winner selection.
 // - `doges`: Doge NFT minting, breeding, staking, evolution.
-// - `epoch`: Mutation-driven competitive cycles, settlement, cycle rewards.
+// - `faction_war`: Mutation-driven competitive cycles, settlement, and cycle rewards.
 // - `tax`: Transfer-tax harvest, faction treasury distribution.
 //
 
@@ -33,8 +41,8 @@ pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
 pub use instructions::doges::*;
 pub use instructions::economy::*;
+pub use instructions::faction_war::*;
 pub use instructions::game::*;
-pub use instructions::rebase::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
@@ -51,8 +59,8 @@ pub mod minebtc {
     use instructions::admin::{self};
     use instructions::doges::{self};
     use instructions::economy::{self};
+    use instructions::faction_war::{self};
     use instructions::game::{self};
-    use instructions::rebase::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
     use instructions::user::{self};
@@ -477,42 +485,45 @@ pub mod minebtc {
         tax::internal_crank_distribute_tax(ctx)
     }
 
-    /// Claim faction treasury rewards for a settled rebase.
-    /// Uses the mutation leaderboard (rebase final_ranks) -- permissionless.
-    pub fn claim_faction_treasury_for_rebase(
-        ctx: Context<ClaimFactionTreasuryForRebase>,
-        rebase_id: u64,
+    /// Claim faction treasury rewards for a settled faction_war.
+    /// Uses the mutation leaderboard (faction_war final_ranks) -- permissionless.
+    pub fn claim_faction_treasury_for_faction_war(
+        ctx: Context<ClaimFactionTreasuryForFactionWar>,
+        faction_war_id: u64,
     ) -> Result<()> {
-        tax::internal_claim_faction_treasury_for_rebase(ctx, rebase_id)
+        tax::internal_claim_faction_treasury_for_faction_war(ctx, faction_war_id)
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ REBASE MINING SYSTEM -------------------------------------------------------
+    // ------------ FACTION_WAR MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize rebase configuration (admin only).
-    /// Rebase duration is tied to the economy cycle -- one rebase per LP burn.
-    pub fn initialize_rebase_config(ctx: Context<InitializeRebaseConfig>) -> Result<()> {
-        rebase::initialize_rebase_config_internal(ctx)
+    /// Initialize faction_war configuration (admin only).
+    /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
+    pub fn initialize_faction_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
+        faction_war::initialize_faction_war_config_internal(ctx)
     }
 
-    /// Update rebase configuration (admin only)
-    pub fn update_rebase_config(
-        ctx: Context<UpdateRebaseConfig>,
+    /// Update faction_war configuration (admin only)
+    pub fn update_faction_war_config(
+        ctx: Context<UpdateFactionWarConfig>,
         is_active: Option<bool>,
     ) -> Result<()> {
-        rebase::update_rebase_config_internal(ctx, is_active)
+        faction_war::update_faction_war_config_internal(ctx, is_active)
     }
 
-    /// Settle rebase: finalize mutation-based rankings and compute reward pools.
+    /// Settle faction_war: finalize mutation-based rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
-    pub fn settle_rebase(ctx: Context<SettleRebase>) -> Result<()> {
-        rebase::settle_rebase_internal(ctx)
+    pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {
+        faction_war::settle_faction_war_internal(ctx)
     }
 
-    /// User claims their epoch mining rewards (closes user_rebase_bets account)
-    pub fn claim_rebase_rewards(ctx: Context<ClaimRebaseRewards>, rebase_id: u64) -> Result<()> {
-        rebase::claim_rebase_rewards_internal(ctx, rebase_id)
+    /// User claims their faction-war rewards (closes user_faction_war_bets account).
+    pub fn claim_faction_war_rewards(
+        ctx: Context<ClaimFactionWarRewards>,
+        faction_war_id: u64,
+    ) -> Result<()> {
+        faction_war::claim_faction_war_rewards_internal(ctx, faction_war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -530,7 +541,7 @@ pub mod minebtc {
         game::int_end_round(ctx)
     }
 
-    /// Finalize the round's faction-level staking/motherlode distribution and track epoch mining.
+    /// Finalize the round's faction-level staking/motherlode distribution and track faction-war mining.
     pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
         game::int_end_round_faction_rewards(ctx)
     }
@@ -640,7 +651,7 @@ pub mod minebtc {
         user::internal_use_doge_for_gameplay(ctx)
     }
 
-    /// Request gameplay doge unlock. Actual withdrawal is only available in the next rebase cycle.
+    /// Request gameplay doge unlock. Actual withdrawal is only available in the next faction_war cycle.
     pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
         user::internal_request_doge_gameplay_unlock(ctx)
     }

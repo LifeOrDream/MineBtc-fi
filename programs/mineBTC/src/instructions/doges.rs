@@ -149,7 +149,7 @@ pub fn int_simulate_mint_cost(
 /// # Remaining Accounts
 /// For each doge to mint, the client must pass 2 accounts in remaining_accounts:
 /// 1. doge_asset (Signer, Writable) - The new Keypair for the doge
-/// 2.doge_metadata (Writable) - The derived PDA for metadata
+/// 2. doge_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
 pub fn int_batch_mint_doges<'info>(
@@ -383,7 +383,7 @@ pub fn int_batch_mint_doges<'info>(
 
         // Write the 8-byte discriminator (required by Anchor for account deserialization)
         // Anchor calculates discriminator as first 8 bytes of sha256("account:DogeMetadata")
-        data[..8].copy_from_slice(&<DogeMetadata as Discriminator>::DISCRIMINATOR);
+        data[..8].copy_from_slice(<DogeMetadata as Discriminator>::DISCRIMINATOR);
 
         // Serialize struct data to a Vec, then copy to buffer after discriminator
         // This is more reliable than using Write trait directly on mutable slice
@@ -405,7 +405,7 @@ pub fn int_batch_mint_doges<'info>(
             accumulated_val: 0,
             multiplier,
             faction_id,
-            price: prices[index as usize],
+            price: prices[index],
             ticket_tier: ticket_tier_index as u64,
             ticket_count,
         });
@@ -537,7 +537,7 @@ pub fn int_admin_mint_doge(
     doge_metadata.bump = ctx.bumps.doge_metadata;
 
     // Handle ticket tier selection and add free tickets (using actual price)
-    let ticket_count = if doge_config.ticket_tiers.len() > 0 {
+    let ticket_count = if !doge_config.ticket_tiers.is_empty() {
         add_tickets_to_player(
             &mut ctx.accounts.player_data,
             doge_config,
@@ -928,7 +928,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     emit!(DogeStaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
-        doge_mint: doge_mint,
+        doge_mint,
         doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.doge_multiplier,
         dogebtc_hashpower: player_data.dogebtc_hashpower,
@@ -1154,7 +1154,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
-        &&ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
         &ctx.accounts.doge_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
@@ -1165,7 +1165,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     emit!(DogeUnstaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
-        doge_mint: doge_mint,
+        doge_mint,
         doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.doge_multiplier,
         dogebtc_hashpower: player_data.dogebtc_hashpower,
@@ -1559,8 +1559,7 @@ fn add_tickets_to_player(
         .iter()
         .position(|&v| v == ticket_value)
     {
-        player_data.free_tickets_remaining[index] =
-            player_data.free_tickets_remaining[index] + ticket_count;
+        player_data.free_tickets_remaining[index] += ticket_count;
     } else {
         require!(
             player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES,

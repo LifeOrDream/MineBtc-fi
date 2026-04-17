@@ -369,7 +369,7 @@ pub struct BetsPlaced {
     pub gameplay_doge_xp: u32,
 
     pub round_id: u64,
-    pub rebase_id: u64,
+    pub faction_war_id: u64,
     pub num_bets: u8,
     pub faction_ids: Vec<u8>,
     pub directions: Vec<u8>,
@@ -476,7 +476,7 @@ pub struct AutominerReloaded {
 pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
-    pub rebase_id: u64,
+    pub faction_war_id: u64,
     pub round_start_slot: u64,
     pub round_start_timestamp: i64,
     pub round_end_timestamp: i64,
@@ -565,15 +565,16 @@ pub struct NftFloorSweepFundsWithdrawn {
     pub timestamp: i64,
 }
 
-/// Event emitted when a faction claims treasury rewards for a settled rebase.
+/// Event emitted when a faction claims treasury rewards for a settled faction_war.
 #[event]
 pub struct FactionTreasuryRewardsClaimed {
-    pub rebase_id: u64,
+    pub faction_war_id: u64,
     pub faction_id: u8,
     pub rank: u8,
     pub reward_amount: u64,
     pub dbtc_share: u64,
     pub lp_share: u64,
+    pub recycled_amount: u64,
     pub timestamp: i64,
 }
 
@@ -597,13 +598,13 @@ pub struct DogeWithdrawnFromGameplay {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user requests gameplay unlock for the next rebase cycle.
+/// Event emitted when a user requests gameplay unlock for the next faction_war cycle.
 #[event]
 pub struct DogeGameplayUnlockRequested {
     pub user: Pubkey,
     pub doge_mint: Pubkey,
-    pub requested_during_rebase_id: u64,
-    pub unlock_available_after_rebase_id: u64,
+    pub requested_during_faction_war_id: u64,
+    pub unlock_available_after_faction_war_id: u64,
     pub timestamp: i64,
 }
 
@@ -653,16 +654,16 @@ pub struct DogeVisualMutation {
 }
 
 // ========================================================================================
-// =============================== EPOCH EVENTS ============================================
+// ============================ FACTION WAR EVENTS ==========================================
 // ========================================================================================
 
-/// Event emitted when a rebase is settled.
-/// Rankings driven by on-chain mutation scores accumulated during the rebase.
+/// Event emitted when a faction_war is settled.
+/// Rankings driven by on-chain mutation scores accumulated during the faction_war.
 #[event]
-pub struct RebaseSettled {
-    pub rebase_id: u64,
+pub struct FactionWarSettled {
+    pub faction_war_id: u64,
     pub total_dogebtc_mined: u64,
-    pub rebase_mining_pool: u64,
+    pub faction_war_mining_pool: u64,
     pub start_ranks: [u8; NUM_FACTIONS],
     pub final_ranks: [u8; NUM_FACTIONS],
     pub rank_deltas: [i8; NUM_FACTIONS],
@@ -673,10 +674,10 @@ pub struct RebaseSettled {
     pub timestamp: i64,
 }
 
-/// Event emitted when a mutation contributes score to a faction's rebase total.
+/// Event emitted when a mutation contributes score to a faction's faction_war total.
 #[event]
 pub struct MutationScoreAccumulated {
-    pub rebase_id: u64,
+    pub faction_war_id: u64,
     pub faction_id: u8,
     pub mutation_type: u8,
     pub score_added: u64,
@@ -684,10 +685,10 @@ pub struct MutationScoreAccumulated {
     pub user: Pubkey,
 }
 
-/// Event emitted when a user claims rebase rewards
+/// Event emitted when a user claims faction_war rewards
 #[event]
-pub struct RebaseRewardsClaimed {
-    pub rebase_id: u64,
+pub struct FactionWarRewardsClaimed {
+    pub faction_war_id: u64,
     pub user: Pubkey,
     pub reward_amount: u64,
     pub doge_bonus_amount: u64,
@@ -695,18 +696,18 @@ pub struct RebaseRewardsClaimed {
     pub timestamp: i64,
 }
 
-/// Event emitted when a rebase is auto-started inline (during join_round)
+/// Event emitted when a faction_war is auto-started inline (during join_round)
 #[event]
-pub struct RebaseAutoStarted {
-    pub rebase_id: u64,
+pub struct FactionWarAutoStarted {
+    pub faction_war_id: u64,
     pub start_timestamp: u64,
-    /// LP operations count that will trigger settlement of this rebase.
+    /// LP operations count that will trigger settlement of this faction_war.
     pub settle_cycle: u32,
 }
 
-/// Event emitted when a rebase is auto-settled inline (during end_round_faction_rewards)
+/// Event emitted when a faction_war is auto-settled inline (during end_round_faction_rewards)
 #[event]
-pub struct RebaseAutoSettled {
-    pub rebase_id: u64,
+pub struct FactionWarAutoSettled {
+    pub faction_war_id: u64,
     pub mining_pool: u64,
 }
