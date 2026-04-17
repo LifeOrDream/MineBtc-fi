@@ -387,10 +387,10 @@ pub fn finalize_faction_war_settlement(
 
 pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()> {
     msg!("🔄 [settle_faction_war] Manual settlement crank");
-    let faction_war_config = &mut ctx.accounts.faction_war_config;
-    let faction_war_state = &mut ctx.accounts.faction_war_state;
-    let tax_config = &mut ctx.accounts.tax_config;
-    let mining = &ctx.accounts.mine_btc_mining;
+    let faction_war_config = &mut *ctx.accounts.faction_war_config;
+    let faction_war_state = &mut *ctx.accounts.faction_war_state;
+    let tax_config = &mut *ctx.accounts.tax_config;
+    let mining = &*ctx.accounts.mine_btc_mining;
     let rpg_progression = ctx.accounts.global_config.rpg_progression;
 
     msg!(
@@ -454,27 +454,27 @@ pub struct SettleFactionWar<'info> {
         seeds = [FACTION_WAR_CONFIG_SEED],
         bump = faction_war_config.bump,
     )]
-    pub faction_war_config: Account<'info, FactionWarConfig>,
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
         bump = faction_war_state.bump,
     )]
-    pub faction_war_state: Account<'info, FactionWarState>,
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
     #[account(
         mut,
         seeds = [TAX_CONFIG_SEED],
         bump = tax_config.bump,
     )]
-    pub tax_config: Account<'info, TaxConfig>,
+    pub tax_config: Box<Account<'info, TaxConfig>>,
 
     #[account(
         seeds = [MINE_BTC_MINING_SEED],
         bump = mine_btc_mining.bump,
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// Needed to read `rpg_progression` for the no-mutation branch of
     /// `finalize_faction_war_settlement`.
@@ -482,7 +482,7 @@ pub struct SettleFactionWar<'info> {
         seeds = [GLOBAL_CONFIG_SEED],
         bump = global_config.bump,
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     /// Needed to derive the current round's game_session PDA so the
     /// stage=1 guard below can see it.
@@ -490,7 +490,7 @@ pub struct SettleFactionWar<'info> {
         seeds = [GLOBAL_GAME_STATE_SEED],
         bump = global_game_state.bump,
     )]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     /// Game session for the current round. Used to block this crank while
     /// stage=1 (the end_round → end_round_faction_rewards window).
@@ -498,7 +498,7 @@ pub struct SettleFactionWar<'info> {
         seeds = [GAME_SESSION_SEED, &global_game_state.current_round_id.to_le_bytes()],
         bump = game_session.bump,
     )]
-    pub game_session: Account<'info, GameSession>,
+    pub game_session: Box<Account<'info, GameSession>>,
 
     /// Anyone can settle -- no authority check needed.
     pub cranker: Signer<'info>,

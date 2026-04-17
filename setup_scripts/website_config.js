@@ -111,6 +111,15 @@ function generateWebsiteConfig(config, deployment) {
       round_duration_seconds:
         deployment.game_state_initialized?.round_duration_seconds,
 
+      // ========== FACTION WAR ==========
+      faction_war_config_pda:
+        deployment.faction_war_config_initialized?.faction_war_config_pda ||
+        deployment.rebase_config_initialized?.rebase_config_pda,
+      starting_faction_war_id:
+        deployment.faction_war_config_initialized?.starting_faction_war_id ||
+        deployment.rebase_config_initialized?.starting_rebase_id ||
+        1,
+
       // ========== RAYDIUM POOL STATE (Game-related vaults) ==========
       sol_rewards_vault: deployment.raydium_pool_state_set?.sol_rewards_vault,
       sol_prize_pot_vault:
@@ -161,9 +170,6 @@ function generateWebsiteConfig(config, deployment) {
       nft_floor_sweep_vault:
         deployment.tax_config_initialized?.nft_floor_sweep_vault,
       nft_sale_sol_vault: deployment.tax_config_initialized?.nft_sale_sol_vault,
-
-      // ========== CRANKER BOTS ==========
-      cranker_bots: deployment.cranker_bots_added?.bots || [],
 
       // ========== GAME CONFIGURATION ==========
       base_creation_cost: config.minebtc?.base_creation_cost || 100000000,
@@ -280,6 +286,11 @@ function main() {
       }`
     );
     console.log(
+      `  ⚔️ Faction War Config: ${
+        websiteConfig[cluster].faction_war_config_pda || "Not initialized"
+      }`
+    );
+    console.log(
       `  🥚 Doge Collection: ${
         websiteConfig[cluster].doge_collection || "Not created"
       }`
@@ -289,12 +300,6 @@ function main() {
         websiteConfig[cluster].buybacks_account_pda || "Not initialized"
       }`
     );
-    console.log(
-      `  🤖 Cranker Bots: ${
-        websiteConfig[cluster].cranker_bots?.length || 0
-      } bot(s)`
-    );
-
     console.log(`\n🔗 Next Steps:`);
     console.log(
       `  1. Update your frontend to use the addresses from deployments/website.json`
@@ -319,7 +324,7 @@ function main() {
 }
 
 // Run the script if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main();
 }
 

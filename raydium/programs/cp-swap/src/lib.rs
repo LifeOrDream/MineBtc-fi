@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs, deprecated)]
+
 pub mod curve;
 pub mod error;
 pub mod instructions;
