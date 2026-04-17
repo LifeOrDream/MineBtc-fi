@@ -286,8 +286,11 @@ pub fn calculate_mutation_result(
 
     // C. Per-Faction Penalty: each prior mutation this round makes the next harder.
     // 10000 / (10000 + count * 5000):  0 prior → 100%, 1 → 67%, 2 → 50%, 3 → 40%
-    let faction_penalty =
-        10000u64 / (10000u64 + faction_mutation_count as u64 * FACTION_MUTATION_PENALTY_STEP);
+    // Scaled by 10000 so this lands on the same bps basis as bet_strength and
+    // mult_factor — otherwise the integer division collapses to 1 and the
+    // final_chance_bps multiplication gets divided out to 0.
+    let faction_penalty = (10000u64 * 10000u64)
+        / (10000u64 + faction_mutation_count as u64 * FACTION_MUTATION_PENALTY_STEP);
     msg!(
         "   Faction penalty ({}): {:.2}%",
         faction_mutation_count,
