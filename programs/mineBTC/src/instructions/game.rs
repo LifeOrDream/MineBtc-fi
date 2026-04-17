@@ -666,7 +666,44 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
         .saturating_add(game_session.faction_stakers)
         .saturating_add(game_session.motherlode_rewards);
 
-    if rebase_config.is_active && rebase_state.stage == 0 {
+    // If settle_rebase fired mid-round (LP burn landed during this round's
+    // play window), rebase_config.current_rebase_id advanced but the new
+    // rebase_state was never initialized by a bet. The Accounts struct uses
+    // init_if_needed so we got an empty account — stamp its bump + rebase_id
+    // and align rebase_settle_cycle the same way the first bet would (see
+    // internal_process_bets init branch). After this, the next join_bets on
+    // the new rebase enters the existing populate branch (rebase_id != 0).
+    if rebase_state.rebase_id == 0 {
+        // Mirror the init branch of internal_process_bets so a subsequent
+        // join_bets enters the populate/validate branch (rebase_id != 0).
+        let global_config = &ctx.accounts.global_config;
+        let active_faction_count = global_config.supported_factions.len() as u8;
+        let start_ranks = rebase_config.prev_rebase_mutation_ranks;
+
+        rebase_state.bump = ctx.bumps.rebase_state;
+        rebase_state.rebase_id = rebase_config.current_rebase_id;
+        rebase_state.start_timestamp =
+            Clock::get()?.unix_timestamp.max(0) as u64;
+        rebase_state.stage = 0;
+        rebase_state.active_faction_count = active_faction_count;
+        rebase_state.start_ranks = start_ranks;
+        rebase_state.final_ranks = start_ranks;
+        rebase_state.resolved_directions =
+            [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
+
+        let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+        rebase_config.rebase_settle_cycle = lp_ops
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
+            "   🧱 Initialized empty rebase_state for rebase {} (active_factions={}, settle after LP cycle #{})",
+            rebase_state.rebase_id,
+            active_faction_count,
+            rebase_config.rebase_settle_cycle
+        );
+        // Nothing further to track — this is an empty/seed state. The next
+        // bet will fill mutation scores, direction totals, etc.
+    } else if rebase_config.is_active && rebase_state.stage == 0 {
         rebase_state.total_dogebtc_mined_in_rebase = rebase_state
             .total_dogebtc_mined_in_rebase
             .checked_add(actually_distributed)
@@ -878,6 +915,16 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
+    /// Read-only: used to seed `active_faction_count` on a freshly-
+    /// init'd rebase_state so the next join_bets' faction_id bounds check
+    /// passes (otherwise active_faction_count defaults to 0 and every
+    /// faction_id reverts with InvalidFactionId).
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
     #[account(
         mut,
         seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
@@ -913,11 +960,21 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub rebase_config: Box<Account<'info, RebaseConfig>>,
 
-    /// Rebase state for current rebase (mut for mining tracking + settlement)
+    /// Rebase state for current rebase (mut for mining tracking + settlement).
+    /// `init_if_needed` so a settle_rebase that fires between end_round and
+    /// end_round_faction_rewards (e.g. economy-cycle-loop LP burn landing mid-round)
+    /// doesn't permanently brick can_begin_round: without this, current_rebase_id
+    /// advances but no bet has yet initialized the new rebase_state, and every
+    /// subsequent end_round_faction_rewards reverts with AccountNotInitialized,
+    /// leaving the game stuck at stage=1 forever. init_if_needed lets this
+    /// instruction create an empty rebase_state if needed; the first bet of the
+    /// new cycle will go through the same PDA and fill in real state.
     #[account(
-        mut,
+        init_if_needed,
+        payer = authority,
+        space = RebaseState::LEN,
         seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
-        bump = rebase_state.bump,
+        bump,
     )]
     pub rebase_state: Box<Account<'info, RebaseState>>,
 

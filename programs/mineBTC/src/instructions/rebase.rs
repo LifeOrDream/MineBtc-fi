@@ -214,6 +214,28 @@ pub fn finalize_rebase_settlement(
     rebase_state: &mut RebaseState,
 ) -> Result<()> {
     let active_factions = rebase_state.active_faction_count as usize;
+
+    // Empty rebase (no bets ever placed, e.g. seeded by init_if_needed in
+    // EndRoundFactionRewards and never populated by a subsequent join_bets):
+    // settle with no rewards and advance current_rebase_id so the cycle can
+    // keep moving. Without this, validate_active_faction_count reverts and
+    // every subsequent LP burn can't advance past this rebase.
+    if active_factions == 0 {
+        msg!(
+            "   ⚠️ Rebase #{} has 0 active factions — settling empty and advancing",
+            rebase_state.rebase_id
+        );
+        rebase_state.stage = 1;
+        rebase_state.rebase_mining_pool = 0;
+        rebase_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        rebase_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        rebase_config.current_rebase_id = rebase_config
+            .current_rebase_id
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        return Ok(());
+    }
+
     validate_active_faction_count(active_factions)?;
 
     msg!(
