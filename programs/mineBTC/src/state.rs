@@ -30,18 +30,17 @@ pub const MAX_BASE_CHANCE: u64 = 2000;
 /// At STEP=5000: after 1 mutation → 67%, after 2 → 50%, after 3 → 40%.
 pub const FACTION_MUTATION_PENALTY_STEP: u64 = 5000;
 
-// ========== MUTATION-DRIVEN EPOCH SCORING CONSTANTS ========== //
-/// Weight for an Evolution mutation when computing faction epoch score.
+// ========== MUTATION-DRIVEN FACTION-WAR SCORING CONSTANTS ========== //
+/// Weight for an Evolution mutation when computing faction-war score.
 pub const EVOLUTION_SCORE_WEIGHT: u64 = 100;
-/// Weight for a Power mutation when computing faction epoch score.
+/// Weight for a Power mutation when computing faction-war score.
 pub const POWER_SCORE_WEIGHT: u64 = 30;
-/// Weight for a Trait/Visual mutation when computing faction epoch score.
+/// Weight for a Trait/Visual mutation when computing faction-war score.
 pub const TRAIT_SCORE_WEIGHT: u64 = 10;
 /// Normalization divisor so scores stay in a sensible range (1 SOL = 1_000_000 lamports at 6 decimals).
 pub const MUTATION_SCORE_PRECISION: u64 = 1_000_000;
-
+///
 /// ------------ CONSTANTS ------------
-
 pub const DAY_IN_SECONDS: u64 = 86400;
 pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
 
@@ -54,9 +53,9 @@ pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
 pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
 pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
-pub const REBASE_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
+pub const FACTION_WAR_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
 pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
-pub const CLAIMABLE_MINEBTC_SOURCE_REBASE: u8 = 1;
+pub const CLAIMABLE_MINEBTC_SOURCE_FACTION_WAR: u8 = 1;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC: u8 = 2;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
 pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
@@ -165,10 +164,10 @@ pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
 
-// PDAs for Epoch Mining system
-pub const REBASE_CONFIG_SEED: &[u8] = b"rebase-config";
-pub const REBASE_STATE_SEED: &[u8] = b"rebase"; // Seed: [b"rebase", rebase_id_u64]
-pub const USER_REBASE_BETS_SEED: &[u8] = b"user-rebase"; // Seed: [b"user-rebase", user_pubkey, rebase_id_u64]
+// PDAs for Faction War system
+pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
+pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", faction_war_id_u64]
+pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, faction_war_id_u64]
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -183,9 +182,8 @@ pub const MAX_FREE_DOGE_MINTS_PER_USER: u8 = 5;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
 pub const MIN_SOL_BET_PER_POSITION: u64 = 100_000; // 0.0001 SOL minimum per country-direction bet
-
+///
 /// ------------ GLOBAL CONFIG ------------
-
 /// Global configuration for the program
 #[account]
 pub struct GlobalConfig {
@@ -285,7 +283,6 @@ impl GlobalConfig {
 }
 
 /// ------------ DOGE-BTC MINING ------------
-
 /// Price entry for tracking historical prices
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct PriceEntry {
@@ -429,7 +426,6 @@ impl BuybacksAccount {
 }
 
 /// ------------ HASHPOWER CONFIG ------------
-
 /// Hashpower configuration for the Minebtc program
 #[account]
 pub struct HashpowerConfig {
@@ -545,8 +541,8 @@ impl DogeFreeMintAllowance {
 
 /// Tax Configuration PDA (Seed: `[b"tax-config"]`)
 /// Manages tax distribution, NFT floor sweep, and faction treasury rewards.
-/// Treasury rewards are distributed based on the mutation leaderboard (rebase final_ranks)
-/// after each epoch settles -- no separate leaderboard calculation needed.
+/// Treasury rewards are distributed based on the mutation leaderboard
+/// (`faction_war.final_ranks`) after each faction war settles.
 #[account]
 pub struct TaxConfig {
     pub bump: u8,
@@ -560,13 +556,9 @@ pub struct TaxConfig {
 
     /// Total amount of MineBtc burnt so far (cumulative)
     pub total_burnt: u64,
-
-    /// Rebase ID of the last treasury distribution.
-    /// Prevents double-distribution for the same epoch.
-    pub last_treasury_rebase_id: u64,
-    /// Bitmap of factions that have claimed treasury rewards for the current rebase.
-    /// Bit N = 1 means faction N has claimed.  Supports up to 16 factions.
-    pub treasury_claimed_bitmap: u16,
+    /// Treasury tax accrued while no active faction war state existed yet.
+    /// This amount gets attached to the next faction war when that state is initialized.
+    pub unassigned_faction_war_treasury_amount: u64,
 
     /// PDA addresses for tax system
     pub withdraw_withheld_authority: Pubkey,
@@ -585,8 +577,7 @@ impl TaxConfig {
         1 +     // faction_treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
-        8 +     // last_treasury_rebase_id
-        2 +     // treasury_claimed_bitmap
+        8 +     // unassigned_faction_war_treasury_amount
         32 +    // withdraw_withheld_authority
         32 +    // faction_treasury_vault
         32 +    // nft_floor_sweep_vault
@@ -870,8 +861,8 @@ pub struct PlayerData {
     pub unrefined_minebtc_rewards: u64,
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
-    /// Number of unclaimed per-epoch reward accounts still outstanding.
-    pub pending_rebase_claims: u16,
+    /// Number of unclaimed per-faction-war reward accounts still outstanding.
+    pub pending_faction_war_claims: u16,
 
     pub dogebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
@@ -899,9 +890,9 @@ pub struct PlayerData {
     pub gameplay_doge_dna: [u8; 32],
     /// Cached XP of gameplay doge (updated during gameplay, synced to DogeMetadata on withdraw)
     pub gameplay_doge_xp: u32,
-    /// Rebase ID in which the user requested gameplay unlock.
-    /// The doge can only be withdrawn once the next rebase cycle begins.
-    pub gameplay_unlock_request_rebase: u64,
+    /// FactionWar ID in which the user requested gameplay unlock.
+    /// The doge can only be withdrawn once the next faction_war cycle begins.
+    pub gameplay_unlock_request_faction_war: u64,
 }
 
 impl PlayerData {
@@ -932,7 +923,7 @@ impl PlayerData {
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
         2 +     // pending_round_claims (u16)
-        2 +     // pending_rebase_claims (u16)
+        2 +     // pending_faction_war_claims (u16)
         4 + (Self::MAX_POSITIONS * 1) + // dogebtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_DOGES * 32) + // staked_doges Vec<Pubkey>
@@ -943,7 +934,7 @@ impl PlayerData {
         4 +     // active_multiplier (u32)
         32 +    // gameplay_doge_dna [u8; 32]
         4 +     // gameplay_doge_xp (u32)
-        8; // gameplay_unlock_request_rebase (u64)
+        8; // gameplay_unlock_request_faction_war (u64)
 }
 
 /// Individual MineBtc staking position
@@ -1096,7 +1087,7 @@ impl PredictionDirection {
 }
 
 /// Bet type enum for user bets.
-/// Each bet selects a faction and a direction for the active rebase.
+/// Each bet selects a faction and a direction for the active faction_war.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum BetType {
     FactionDirection {
@@ -1163,8 +1154,8 @@ pub struct UserGameBet {
     // --- Instant Mutation (applied during claim_rewards) ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
-    /// Whether this bet has been accumulated into rebase bets
-    pub rebase_accumulated: bool,
+    /// Whether this bet has been accumulated into faction_war bets
+    pub faction_war_accumulated: bool,
 }
 
 impl UserGameBet {
@@ -1186,7 +1177,7 @@ impl UserGameBet {
         32 +     // gameplay_doge
         1 +     // bump
         1 +     // mutation_type
-        1; // rebase_accumulated
+        1; // faction_war_accumulated
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1255,67 +1246,66 @@ impl AutominerVault {
 }
 
 // ========================================================================================
-// ============================= REBASE MINING ACCOUNTS ==============================
+// ============================= FACTION_WAR MINING ACCOUNTS ==============================
 // ========================================================================================
 
-/// Maximum number of score update entries stored per rebase (for audit trail)
-/// Epoch Configuration PDA (Seed: `[b"rebase-config"]`)
-/// Epochs are tied to the economy cycle: one epoch per LP-burn cycle.
-/// Settlement becomes possible once lp_operations_count reaches rebase_settle_cycle.
+/// Faction War configuration PDA (Seed: `[b"faction-war-config"]`)
+/// Faction wars are tied to the economy cycle: one faction war per LP-burn cycle.
+/// Settlement becomes possible once lp_operations_count reaches faction_war_settle_cycle.
 #[account]
-pub struct RebaseConfig {
+pub struct FactionWarConfig {
     pub bump: u8,
 
-    /// Current epoch ID (incrementing counter, starts at 1)
-    pub current_rebase_id: u64,
+    /// Current faction-war ID (incrementing counter, starts at 1)
+    pub current_faction_war_id: u64,
 
-    /// Whether epoch mining is active
+    /// Whether faction-war scoring is active
     pub is_active: bool,
 
-    /// The LP operations count that triggers settlement of the current rebase.
-    /// Set to `pol_stats.lp_operations_count + 1` when the rebase starts,
-    /// meaning the rebase settles after the next full economy cycle completes.
-    pub rebase_settle_cycle: u32,
+    /// The LP operations count that triggers settlement of the current faction_war.
+    /// Set to `pol_stats.lp_operations_count + 1` when the faction_war starts,
+    /// meaning the faction_war settles after the next full economy cycle completes.
+    pub faction_war_settle_cycle: u32,
 
-    /// Rankings from the previous epoch's mutation scores.
-    /// Used as start_ranks when the next epoch auto-starts.
+    /// Rankings from the previous faction war's mutation scores.
+    /// Used as start_ranks when the next faction war auto-starts.
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
-    pub prev_rebase_mutation_ranks: [u8; NUM_FACTIONS],
+    pub prev_faction_war_mutation_ranks: [u8; NUM_FACTIONS],
 }
 
-impl RebaseConfig {
+impl FactionWarConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // current_rebase_id
+        8 +     // current_faction_war_id
         1 +     // is_active
-        4 +     // rebase_settle_cycle
-        (NUM_FACTIONS * 1); // prev_rebase_mutation_ranks
+        4 +     // faction_war_settle_cycle
+        (NUM_FACTIONS * 1); // prev_faction_war_mutation_ranks
 }
 
-/// Rebase State PDA (Seed: `[b"rebase", rebase_id_u64_le]`)
-/// Tracks a single mutation-driven rebase cycle: start/final ranks derived from
+/// Faction War state PDA (Seed: `[b"faction-war", faction_war_id_u64_le]`)
+/// Tracks a single mutation-driven faction_war cycle: start/final ranks derived from
 /// doge mutation scores, directional bet totals, and settlement outputs.
-/// Rebase duration is tied to the economy cycle (one LP-burn cycle).
+/// FactionWar duration is tied to the economy cycle (one LP-burn cycle).
 #[account]
-pub struct RebaseState {
+pub struct FactionWarState {
     pub bump: u8,
 
-    /// Rebase ID
-    pub rebase_id: u64,
-    /// Timestamp when this rebase was auto-started
+    /// FactionWar ID
+    pub faction_war_id: u64,
+    /// Timestamp when this faction_war was auto-started
     pub start_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
-    /// Snapshot of how many factions were active when this rebase started
+    /// Snapshot of how many factions were active when this faction_war started
     pub active_faction_count: u8,
 
-    /// Total dogeBTC mined via raffle rounds during this rebase.
-    pub total_dogebtc_mined_in_rebase: u64,
-    /// Rebase mining pool distributed to epoch predictors.
-    pub rebase_mining_pool: u64,
+    /// Total dogeBTC mined via raffle rounds during this faction_war.
+    pub total_dogebtc_mined_in_faction_war: u64,
+    /// Faction-war mining pool distributed to faction-war predictors.
+    pub faction_war_mining_pool: u64,
 
-    /// Rank snapshot from previous rebase (baseline for direction resolution).
+    /// Rank snapshot from previous faction_war (baseline for direction resolution).
     pub start_ranks: [u8; NUM_FACTIONS],
     /// Final ranks derived from faction_mutation_scores at settlement.
     pub final_ranks: [u8; NUM_FACTIONS],
@@ -1325,31 +1315,40 @@ pub struct RebaseState {
     /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
     pub resolved_directions: [u8; NUM_FACTIONS],
 
-    /// Total weighted bets per faction and direction during this rebase (own-faction only).
+    /// Total weighted bets per faction and direction during this faction_war (own-faction only).
     pub faction_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 
     /// Pre-computed reward pool per faction (proportional to winning-direction bet weight).
     pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// 10% reward pool per faction reserved for gameplay doges that mutated during the rebase.
+    /// 10% reward pool per faction reserved for gameplay doges that mutated during the faction_war.
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
 
-    /// Accumulated mutation scores per faction during this rebase.
+    /// Accumulated mutation scores per faction during this faction_war.
     /// Drives ranking at settlement: factions with higher mutation scores rank higher.
     /// Score = sum of (type_weight × bet_size × doge_multiplier) for every mutation that fired.
     pub faction_mutation_scores: [u64; NUM_FACTIONS],
-    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this rebase.
+    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this faction_war.
     pub eligible_doge_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+
+    /// Exact amount of faction treasury tax attributed to this faction war.
+    /// This is accumulated during tax distribution while the war is active, or
+    /// seeded from TaxConfig.unassigned_faction_war_treasury_amount when the
+    /// war state is first initialized.
+    pub treasury_reward_base_amount: u64,
+    /// Bitmap of factions that have already claimed treasury rewards for this
+    /// faction war. Bit N = 1 means faction N has claimed.
+    pub treasury_claimed_bitmap: u16,
 }
 
-impl RebaseState {
+impl FactionWarState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // rebase_id
+        8 +     // faction_war_id
         8 +     // start_timestamp
         1 +     // stage
         1 +     // active_faction_count
-        8 +     // total_dogebtc_mined_in_rebase
-        8 +     // rebase_mining_pool
+        8 +     // total_dogebtc_mined_in_faction_war
+        8 +     // faction_war_mining_pool
         (NUM_FACTIONS * 1) + // start_ranks
         (NUM_FACTIONS * 1) + // final_ranks
         (NUM_FACTIONS * 1) + // rank_deltas
@@ -1358,34 +1357,36 @@ impl RebaseState {
         (NUM_FACTIONS * 8) + // faction_reward_pools
         (NUM_FACTIONS * 8) + // faction_doge_reward_pools
         (NUM_FACTIONS * 8) + // faction_mutation_scores
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8); // eligible_doge_direction_totals
+        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_doge_direction_totals
+        8 +     // treasury_reward_base_amount
+        2; // treasury_claimed_bitmap
 }
 
-/// User Rebase Bets PDA (Seed: `[b"user-rebase", user_pubkey, rebase_id_u64_le]`)
-/// Tracks how much weighted stake a user bet on their own faction's direction during a specific rebase.
+/// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, faction_war_id_u64_le]`)
+/// Tracks how much weighted stake a user bet on their own faction's direction during a specific faction_war.
 /// Only own-faction bets are accumulated (cross-faction bets only count for round rewards).
 #[account]
-pub struct UserRebaseBets {
+pub struct UserFactionWarBets {
     pub bump: u8,
 
     /// The user who placed these bets
     pub owner: Pubkey,
-    /// The epoch ID this tracks
-    pub rebase_id: u64,
-    /// Gameplay doge that became eligible for the rebase doge-reward pool.
+    /// The faction-war ID this tracks
+    pub faction_war_id: u64,
+    /// Gameplay doge that became eligible for the faction_war doge-reward pool.
     pub gameplay_doge: Pubkey,
-    /// Whether this user's gameplay doge mutated/evolved during the rebase.
+    /// Whether this user's gameplay doge mutated/evolved during the faction_war.
     pub doge_bonus_eligible: bool,
 
-    /// Weighted bet per faction and direction during this rebase.
+    /// Weighted bet per faction and direction during this faction_war.
     pub direction_bets: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 }
 
-impl UserRebaseBets {
+impl UserFactionWarBets {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
-        8 +     // rebase_id
+        8 +     // faction_war_id
         32 +    // gameplay_doge
         1 +     // doge_bonus_eligible
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // direction_bets

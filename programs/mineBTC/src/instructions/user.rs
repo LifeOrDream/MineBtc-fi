@@ -11,7 +11,7 @@
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
 // - `execute_autominer_bet`: Executes an autominer bet (keeper function).
 //
-// The same bet now powers both round rewards and directional rebase prediction rewards.
+// The same bet now powers both round rewards and directional faction_war prediction rewards.
 //
 
 use anchor_lang::prelude::*;
@@ -39,7 +39,7 @@ fn load_global_config(account: &AccountInfo<'_>) -> Result<GlobalConfig> {
 }
 
 fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
-    player_data.pending_round_claims > 0 || player_data.pending_rebase_claims > 0
+    player_data.pending_round_claims > 0 || player_data.pending_faction_war_claims > 0
 }
 
 // ========================================================================================
@@ -123,7 +123,7 @@ pub fn internal_initialize_player(
         system_referral_pubkey
     };
 
-    player_data.active_multiplier = BASE_MULTIPLIER as u32;
+    player_data.active_multiplier = BASE_MULTIPLIER;
 
     // Initialize MineBtc staking fields
     player_data.dogebtc_hashpower = 0;
@@ -143,7 +143,7 @@ pub fn internal_initialize_player(
     player_data.pending_sol_rewards = 0;
     player_data.pending_minebtc_rewards = 0;
     player_data.pending_round_claims = 0;
-    player_data.pending_rebase_claims = 0;
+    player_data.pending_faction_war_claims = 0;
     msg!("     Pending rewards initialized");
 
     // Initialize position tracking vectors
@@ -165,7 +165,7 @@ pub fn internal_initialize_player(
     player_data.gameplay_doge = Pubkey::default();
     player_data.gameplay_doge_dna = [0u8; 32];
     player_data.gameplay_doge_xp = 0;
-    player_data.gameplay_unlock_request_rebase = 0;
+    player_data.gameplay_unlock_request_faction_war = 0;
     msg!("     Gameplay doge state initialized");
 
     // Initialize new player's referral rewards account
@@ -208,7 +208,7 @@ pub fn internal_initialize_player(
 /// - No minebtc hashpower (dogebtc_hashpower == 0)
 /// - No lp hashpower (lp_hashpower == 0)
 /// - No doges staked (staked_doges.is_empty())
-/// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
+///   Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
 pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
     msg!(
         "🔄 [change_faction] User changing faction. User: {}",
@@ -244,7 +244,7 @@ pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) 
             && player_data.active_multiplier == BASE_MULTIPLIER
             && player_data.gameplay_doge_dna == [0u8; 32]
             && player_data.gameplay_doge_xp == 0
-            && player_data.gameplay_unlock_request_rebase == 0
+            && player_data.gameplay_unlock_request_faction_war == 0
             && !player_has_pending_reward_claims(player_data),
         ErrorCode::InvalidState
     );
@@ -320,7 +320,7 @@ pub fn internal_set_player_claim_settings(
 }
 
 /// Join a round by betting SOL or using free tickets (single prediction).
-/// Each bet selects a faction and a rebase direction.
+/// Each bet selects a faction and a faction_war direction.
 ///
 /// Parameters:
 /// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
@@ -358,6 +358,7 @@ pub fn internal_join_bets(
     internal_process_bets(
         round_id,
         &global_config,
+        &mut ctx.accounts.tax_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
         &mut ctx.accounts.user_game_bet,
@@ -373,12 +374,12 @@ pub fn internal_join_bets(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &mut ctx.accounts.rebase_config,
-        &mut ctx.accounts.rebase_state,
-        ctx.bumps.rebase_state,
+        &mut ctx.accounts.faction_war_config,
+        &mut ctx.accounts.faction_war_state,
+        ctx.bumps.faction_war_state,
         lp_ops,
-        &mut ctx.accounts.user_rebase_bets,
-        ctx.bumps.user_rebase_bets,
+        &mut ctx.accounts.user_faction_war_bets,
+        ctx.bumps.user_faction_war_bets,
     )?;
 
     msg!(
@@ -593,7 +594,7 @@ pub fn internal_init_autominer(
     emit!(AutominerInitialized {
         owner: ctx.accounts.user_wallet.key(),
         player_data: ctx.accounts.player_data.key(),
-        gameplay_doge: ctx.accounts.player_data.gameplay_doge.clone(),
+        gameplay_doge: ctx.accounts.player_data.gameplay_doge,
         autominer_vault: ctx.accounts.autominer_vault.key(),
         sol_per_round,
         num_rounds,
@@ -770,7 +771,7 @@ pub fn internal_update_autominer(
 /// Execute autominer bets (keeper instruction - callable by anyone).
 /// Generates faction-direction bets dynamically from the configured country set.
 /// In SOL mode, pays the caller 1% of `sol_per_round` (max 0.005 SOL) for tx costs.
-/// Uses the same round/rebase betting path as manual users.
+/// Uses the same round/faction_war betting path as manual users.
 pub fn internal_execute_autominer_bet(
     ctx: Context<ExecuteAutominerBet>,
     current_round_id: u64,
@@ -937,7 +938,7 @@ pub fn internal_execute_autominer_bet(
         autominer_vault.sol_balance = autominer_vault.sol_balance.saturating_sub(sol_per_round);
     }
 
-    // Place bets using the shared round/rebase prediction path.
+    // Place bets using the shared round/faction_war prediction path.
     msg!(
         "   Placing {} bets for round {}...",
         bet_types.len(),
@@ -962,6 +963,7 @@ pub fn internal_execute_autominer_bet(
     internal_process_bets(
         current_round_id,
         &global_config,
+        &mut ctx.accounts.tax_config,
         &mut ctx.accounts.player_data,
         &mut ctx.accounts.game_session,
         &mut ctx.accounts.user_game_bet,
@@ -977,12 +979,12 @@ pub fn internal_execute_autominer_bet(
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
-        &mut ctx.accounts.rebase_config,
-        &mut ctx.accounts.rebase_state,
-        ctx.bumps.rebase_state,
+        &mut ctx.accounts.faction_war_config,
+        &mut ctx.accounts.faction_war_state,
+        ctx.bumps.faction_war_state,
         lp_ops,
-        &mut ctx.accounts.user_rebase_bets,
-        ctx.bumps.user_rebase_bets,
+        &mut ctx.accounts.user_faction_war_bets,
+        ctx.bumps.user_faction_war_bets,
     )?;
 
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
@@ -1304,8 +1306,8 @@ pub fn internal_claim_autominer_rewards(
             emit!(AutominerReloaded {
                 autominer_vault: autominer_vault.key(),
                 rounds_to_add: rounds_to_add as u32,
-                sol_for_rounds: sol_for_rounds,
-                leftover_sol: leftover_sol,
+                sol_for_rounds,
+                leftover_sol,
                 timestamp: Clock::get()?.unix_timestamp,
             });
 
@@ -1518,7 +1520,7 @@ fn process_mutation_sync<'info>(
                 doge_metadata_account: doge_metadata.key(),
                 dna: doge_metadata.dna.to_vec(),
                 xp: doge_metadata.xp,
-                multiplier: doge_metadata.multiplier as u32,
+                multiplier: doge_metadata.multiplier,
                 accumulated_val: doge_metadata.accumulated_val,
                 accum_pct: accum_pct as u32,
             });
@@ -1552,6 +1554,7 @@ fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)>
 fn internal_process_bets<'info>(
     round_id: u64,
     global_config: &GlobalConfig,
+    tax_config: &mut Account<'info, TaxConfig>,
     player_data: &mut Account<'info, PlayerData>,
     game_session: &mut Account<'info, GameSession>,
     user_game_bet: &mut Account<'info, UserGameBet>,
@@ -1567,12 +1570,12 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
-    rebase_config: &mut Account<'info, RebaseConfig>,
-    rebase_state: &mut Account<'info, RebaseState>,
-    rebase_state_bump: u8,
+    faction_war_config: &mut Account<'info, FactionWarConfig>,
+    faction_war_state: &mut Account<'info, FactionWarState>,
+    faction_war_state_bump: u8,
     lp_operations_count: u32,
-    user_rebase_bets: &mut Account<'info, UserRebaseBets>,
-    user_rebase_bets_bump: u8,
+    user_faction_war_bets: &mut Account<'info, UserFactionWarBets>,
+    user_faction_war_bets_bump: u8,
 ) -> Result<()> {
     let clock = Clock::get()?;
 
@@ -1590,7 +1593,7 @@ fn internal_process_bets<'info>(
         validate_min_sol_bet_per_position(amount_per_bet)?;
     }
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
-    require!(rebase_config.is_active, ErrorCode::RebaseNotActive);
+    require!(faction_war_config.is_active, ErrorCode::FactionWarNotActive);
 
     msg!(
         "   Processing batch of {} bets for round {}",
@@ -1598,72 +1601,84 @@ fn internal_process_bets<'info>(
         round_id
     );
 
-    if rebase_state.rebase_id == 0 {
+    if faction_war_state.faction_war_id == 0 || faction_war_state.active_faction_count == 0 {
         let active_faction_count = global_config.supported_factions.len();
-        let start_ranks = rebase_config.prev_rebase_mutation_ranks;
+        let start_ranks = faction_war_config.prev_faction_war_mutation_ranks;
+        let seeded_treasury_base = faction_war_state
+            .treasury_reward_base_amount
+            .checked_add(tax_config.unassigned_faction_war_treasury_amount)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        rebase_state.bump = rebase_state_bump;
-        rebase_state.rebase_id = rebase_config.current_rebase_id;
-        rebase_state.start_timestamp = clock.unix_timestamp.max(0) as u64;
-        rebase_state.stage = 0;
-        rebase_state.active_faction_count = active_faction_count as u8;
-        rebase_state.total_dogebtc_mined_in_rebase = 0;
-        rebase_state.rebase_mining_pool = 0;
-        rebase_state.start_ranks = start_ranks;
-        rebase_state.final_ranks = start_ranks;
-        rebase_state.rank_deltas = [0i8; NUM_FACTIONS];
-        rebase_state.resolved_directions =
+        faction_war_state.bump = faction_war_state_bump;
+        faction_war_state.faction_war_id = faction_war_config.current_faction_war_id;
+        faction_war_state.start_timestamp = clock.unix_timestamp.max(0) as u64;
+        faction_war_state.stage = 0;
+        faction_war_state.active_faction_count = active_faction_count as u8;
+        faction_war_state.total_dogebtc_mined_in_faction_war = 0;
+        faction_war_state.faction_war_mining_pool = 0;
+        faction_war_state.start_ranks = start_ranks;
+        faction_war_state.final_ranks = start_ranks;
+        faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
+        faction_war_state.resolved_directions =
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
-        rebase_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        rebase_state.faction_reward_pools = [0u64; NUM_FACTIONS];
-        rebase_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
-        rebase_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
-        rebase_state.eligible_doge_direction_totals =
+        faction_war_state.faction_direction_totals =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+        faction_war_state.eligible_doge_direction_totals =
+            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
+        faction_war_state.treasury_claimed_bitmap = 0;
+        tax_config.unassigned_faction_war_treasury_amount = 0;
 
-        // Epoch settles after the next LP burn completes.
-        rebase_config.rebase_settle_cycle = lp_operations_count
+        // Faction war settles after the next LP burn completes.
+        faction_war_config.faction_war_settle_cycle = lp_operations_count
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        emit!(crate::events::RebaseAutoStarted {
-            rebase_id: rebase_state.rebase_id,
-            start_timestamp: rebase_state.start_timestamp,
-            settle_cycle: rebase_config.rebase_settle_cycle,
+        emit!(crate::events::FactionWarAutoStarted {
+            faction_war_id: faction_war_state.faction_war_id,
+            start_timestamp: faction_war_state.start_timestamp,
+            settle_cycle: faction_war_config.faction_war_settle_cycle,
         });
         msg!(
-            "   🌍 Auto-initialized rebase {} (settle after LP cycle #{})",
-            rebase_state.rebase_id,
-            rebase_config.rebase_settle_cycle
+            "   🌍 Auto-initialized faction war {} (settle after LP cycle #{}, treasury_base={})",
+            faction_war_state.faction_war_id,
+            faction_war_config.faction_war_settle_cycle,
+            faction_war_state.treasury_reward_base_amount,
         );
     } else {
         require!(
-            rebase_state.rebase_id == rebase_config.current_rebase_id,
+            faction_war_state.faction_war_id == faction_war_config.current_faction_war_id,
             ErrorCode::InvalidState
         );
-        require!(rebase_state.stage == 0, ErrorCode::RebaseNotActive);
+        require!(faction_war_state.stage == 0, ErrorCode::FactionWarNotActive);
     }
 
-    if user_rebase_bets.owner == Pubkey::default() {
-        user_rebase_bets.bump = user_rebase_bets_bump;
-        user_rebase_bets.owner = owner_key;
-        user_rebase_bets.rebase_id = rebase_state.rebase_id;
-        user_rebase_bets.gameplay_doge = Pubkey::default();
-        user_rebase_bets.doge_bonus_eligible = false;
-        user_rebase_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        player_data.pending_rebase_claims = player_data
-            .pending_rebase_claims
+    if user_faction_war_bets.owner == Pubkey::default() {
+        user_faction_war_bets.bump = user_faction_war_bets_bump;
+        user_faction_war_bets.owner = owner_key;
+        user_faction_war_bets.faction_war_id = faction_war_state.faction_war_id;
+        user_faction_war_bets.gameplay_doge = Pubkey::default();
+        user_faction_war_bets.doge_bonus_eligible = false;
+        user_faction_war_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        player_data.pending_faction_war_claims = player_data
+            .pending_faction_war_claims
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     } else {
-        require!(user_rebase_bets.owner == owner_key, ErrorCode::Unauthorized);
         require!(
-            user_rebase_bets.rebase_id == rebase_state.rebase_id,
+            user_faction_war_bets.owner == owner_key,
+            ErrorCode::Unauthorized
+        );
+        require!(
+            user_faction_war_bets.faction_war_id == faction_war_state.faction_war_id,
             ErrorCode::InvalidState
         );
     }
 
-    let active_rebase_faction_count = rebase_state.active_faction_count as usize;
+    let active_faction_war_faction_count = faction_war_state.active_faction_count as usize;
 
     // Arrays to return for events
     let mut evt_faction_ids = Vec::new();
@@ -1817,7 +1832,7 @@ fn internal_process_bets<'info>(
         user_game_bet.total_fee = 0;
         user_game_bet.bump = user_game_bet_bump;
         user_game_bet.mutation_type = 0;
-        user_game_bet.rebase_accumulated = false;
+        user_game_bet.faction_war_accumulated = false;
 
         player_data.pending_round_claims = player_data
             .pending_round_claims
@@ -1832,7 +1847,7 @@ fn internal_process_bets<'info>(
     for bet_type in bet_types {
         let (faction_id, direction) = prediction_bet_parts(&bet_type)?;
         require!(
-            (faction_id as usize) < active_rebase_faction_count,
+            (faction_id as usize) < active_faction_war_faction_count,
             ErrorCode::InvalidFactionId
         );
         let faction_index = faction_id as usize;
@@ -1846,10 +1861,7 @@ fn internal_process_bets<'info>(
             .position(|(&existing_faction, &existing_direction)| {
                 existing_faction == faction_id && existing_direction == direction_u8
             });
-        let faction_already_present = user_game_bet
-            .faction_ids
-            .iter()
-            .any(|&existing_faction| existing_faction == faction_id);
+        let faction_already_present = user_game_bet.faction_ids.contains(&faction_id);
 
         if let Some(index) = existing_position_index {
             user_game_bet.sol_bets[index] = user_game_bet.sol_bets[index]
@@ -1894,20 +1906,21 @@ fn internal_process_bets<'info>(
                 .checked_add(wgtd_points_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Only own-faction bets count for rebase rewards.
-        // Cross-faction bets still work for round rewards but do not accumulate into rebase state.
+        // Only own-faction bets count for faction_war rewards.
+        // Cross-faction bets still work for round rewards but do not accumulate into faction_war state.
         if faction_id == player_data.faction_id {
-            user_rebase_bets.direction_bets[faction_index][direction_index] = user_rebase_bets
-                .direction_bets[faction_index][direction_index]
-                .checked_add(wgtd_points_per_bet)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            rebase_state.faction_direction_totals[faction_index][direction_index] = rebase_state
-                .faction_direction_totals[faction_index][direction_index]
-                .checked_add(wgtd_points_per_bet)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            if user_rebase_bets.doge_bonus_eligible {
-                rebase_state.eligible_doge_direction_totals[faction_index][direction_index] =
-                    rebase_state.eligible_doge_direction_totals[faction_index][direction_index]
+            user_faction_war_bets.direction_bets[faction_index][direction_index] =
+                user_faction_war_bets.direction_bets[faction_index][direction_index]
+                    .checked_add(wgtd_points_per_bet)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+            faction_war_state.faction_direction_totals[faction_index][direction_index] =
+                faction_war_state.faction_direction_totals[faction_index][direction_index]
+                    .checked_add(wgtd_points_per_bet)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+            if user_faction_war_bets.doge_bonus_eligible {
+                faction_war_state.eligible_doge_direction_totals[faction_index][direction_index] =
+                    faction_war_state.eligible_doge_direction_totals[faction_index]
+                        [direction_index]
                         .checked_add(wgtd_points_per_bet)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
             }
@@ -1952,7 +1965,7 @@ fn internal_process_bets<'info>(
         .total_fee
         .checked_add(total_fee_added)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    user_game_bet.rebase_accumulated = true;
+    user_game_bet.faction_war_accumulated = true;
 
     game_session.total_sol_bets = game_session
         .total_sol_bets
@@ -2007,7 +2020,7 @@ fn internal_process_bets<'info>(
         active_multiplier: player_data.active_multiplier,
         gameplay_doge_xp: player_data.gameplay_doge_xp,
         round_id,
-        rebase_id: rebase_state.rebase_id,
+        faction_war_id: faction_war_state.faction_war_id,
         num_bets: num_bets as u8,
         faction_ids: evt_faction_ids,
         directions: evt_directions,
@@ -2030,7 +2043,7 @@ fn internal_process_bets<'info>(
     // Requires: RPG enabled, SOL bet, no prior mutation this round, gameplay doge active,
     // and global mutation budget not exhausted for this round.
     let faction_id = player_data.faction_id as usize;
-    let mutation_budget = (rebase_state.active_faction_count as u8) / 3;
+    let mutation_budget = faction_war_state.active_faction_count / 3;
     let round_has_budget = game_session.total_mutations_this_round < mutation_budget.max(1);
 
     if global_config.rpg_progression
@@ -2100,24 +2113,24 @@ fn internal_process_bets<'info>(
                 .checked_add(1)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-            if !user_rebase_bets.doge_bonus_eligible {
-                user_rebase_bets.doge_bonus_eligible = true;
-                user_rebase_bets.gameplay_doge = player_data.gameplay_doge;
+            if !user_faction_war_bets.doge_bonus_eligible {
+                user_faction_war_bets.doge_bonus_eligible = true;
+                user_faction_war_bets.gameplay_doge = player_data.gameplay_doge;
 
                 for direction_index in 0..PredictionDirection::COUNT {
                     let existing_weight =
-                        user_rebase_bets.direction_bets[faction_id][direction_index];
+                        user_faction_war_bets.direction_bets[faction_id][direction_index];
                     if existing_weight > 0 {
-                        rebase_state.eligible_doge_direction_totals[faction_id][direction_index] =
-                            rebase_state.eligible_doge_direction_totals[faction_id]
-                                [direction_index]
-                                .checked_add(existing_weight)
-                                .ok_or(ErrorCode::ArithmeticOverflow)?;
+                        faction_war_state.eligible_doge_direction_totals[faction_id]
+                            [direction_index] = faction_war_state.eligible_doge_direction_totals
+                            [faction_id][direction_index]
+                            .checked_add(existing_weight)
+                            .ok_or(ErrorCode::ArithmeticOverflow)?;
                     }
                 }
             }
 
-            // --- Accumulate mutation score into rebase state ---
+            // --- Accumulate mutation score into faction_war state ---
             let type_weight: u64 = match mutation_type {
                 MutationType::Evolution => EVOLUTION_SCORE_WEIGHT,
                 MutationType::Power => POWER_SCORE_WEIGHT,
@@ -2136,17 +2149,17 @@ fn internal_process_bets<'info>(
                 u64::try_from(mutation_score_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
             if mutation_score > 0 {
-                rebase_state.faction_mutation_scores[faction_id] = rebase_state
+                faction_war_state.faction_mutation_scores[faction_id] = faction_war_state
                     .faction_mutation_scores[faction_id]
                     .checked_add(mutation_score)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
 
                 emit!(crate::events::MutationScoreAccumulated {
-                    rebase_id: rebase_state.rebase_id,
+                    faction_war_id: faction_war_state.faction_war_id,
                     faction_id: faction_id as u8,
                     mutation_type: mutation_type_u8,
                     score_added: mutation_score,
-                    faction_total_score: rebase_state.faction_mutation_scores[faction_id],
+                    faction_total_score: faction_war_state.faction_mutation_scores[faction_id],
                     user: owner_key,
                 });
             }
@@ -2159,7 +2172,7 @@ fn internal_process_bets<'info>(
             });
 
             msg!(
-                "🧬 Mutation! Type: {}, Mult: {}, EpochScore: +{}, Round {}/{}",
+                "🧬 Mutation! Type: {}, Mult: {}, FactionWarScore: +{}, Round {}/{}",
                 mutation_type_u8,
                 player_data.active_multiplier,
                 mutation_score,
@@ -2188,7 +2201,7 @@ fn handle_fee(amount: u64, protocol_fee_pct: u64) -> Result<(u64, u64)> {
         protocol_fee_pct,
         (fee as f64) / 1_000_000_000.0
     );
-    return Ok((net_amount, fee));
+    Ok((net_amount, fee))
 }
 
 fn validate_points_percentage_limit(
@@ -2455,33 +2468,40 @@ pub struct JoinBets<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (mut: rebase_settle_cycle written on epoch auto-start)
-    #[account(mut, seeds = [REBASE_CONFIG_SEED], bump)]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Box<Account<'info, TaxConfig>>,
 
-    /// Rebase state for current rebase (init_if_needed for new rebases)
+    /// Faction-war config (mut: settle cycle written on auto-start)
+    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump)]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
+
+    /// FactionWar state for current faction_war (init_if_needed for new faction_wars)
     #[account(
         init_if_needed,
         payer = authority,
-        space = RebaseState::LEN,
-        seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
+        space = FactionWarState::LEN,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub rebase_state: Box<Account<'info, RebaseState>>,
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
-    /// Economy state (read for lp_operations_count to tie rebase cycle to economy cycle)
+    /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
     #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// User rebase bets for current rebase (init_if_needed for first bet)
+    /// User faction_war bets for current faction_war (init_if_needed for first bet)
     #[account(
         init_if_needed,
         payer = authority,
-        space = UserRebaseBets::LEN,
-        seeds = [USER_REBASE_BETS_SEED, authority.key().as_ref(), &rebase_config.current_rebase_id.to_le_bytes()],
+        space = UserFactionWarBets::LEN,
+        seeds = [USER_FACTION_WAR_BETS_SEED, authority.key().as_ref(), &faction_war_config.current_faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub user_rebase_bets: Box<Account<'info, UserRebaseBets>>,
+    pub user_faction_war_bets: Box<Account<'info, UserFactionWarBets>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2802,33 +2822,40 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// Epoch config (mut: rebase_settle_cycle written on epoch auto-start)
-    #[account(mut, seeds = [REBASE_CONFIG_SEED], bump)]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Box<Account<'info, TaxConfig>>,
 
-    /// Rebase state for current rebase (init_if_needed for new rebases)
+    /// Faction-war config (mut: settle cycle written on auto-start)
+    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump)]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
+
+    /// FactionWar state for current faction_war (init_if_needed for new faction_wars)
     #[account(
         init_if_needed,
         payer = caller,
-        space = RebaseState::LEN,
-        seeds = [REBASE_STATE_SEED, &rebase_config.current_rebase_id.to_le_bytes()],
+        space = FactionWarState::LEN,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub rebase_state: Box<Account<'info, RebaseState>>,
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
-    /// Economy state (read for lp_operations_count to tie rebase cycle to economy cycle)
+    /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
     #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// User rebase bets for vault OWNER (init_if_needed, payer=caller)
+    /// User faction_war bets for vault OWNER (init_if_needed, payer=caller)
     #[account(
         init_if_needed,
         payer = caller,
-        space = UserRebaseBets::LEN,
-        seeds = [USER_REBASE_BETS_SEED, autominer_vault.owner.as_ref(), &rebase_config.current_rebase_id.to_le_bytes()],
+        space = UserFactionWarBets::LEN,
+        seeds = [USER_FACTION_WAR_BETS_SEED, autominer_vault.owner.as_ref(), &faction_war_config.current_faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub user_rebase_bets: Box<Account<'info, UserRebaseBets>>,
+    pub user_faction_war_bets: Box<Account<'info, UserFactionWarBets>>,
 
     /// Caller (bot or anyone) - doesn't need to be owner
     #[account(mut)]
@@ -2858,8 +2885,8 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
         ErrorCode::GameplayNotEnabled
     );
     require!(
-        ctx.accounts.rebase_config.is_active,
-        ErrorCode::RebaseNotActive
+        ctx.accounts.faction_war_config.is_active,
+        ErrorCode::FactionWarNotActive
     );
 
     // Verify ownership
@@ -2881,7 +2908,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
         ErrorCode::InvalidParameters
     );
     require!(
-        player_data.gameplay_unlock_request_rebase == 0,
+        player_data.gameplay_unlock_request_faction_war == 0,
         ErrorCode::InvalidState
     );
 
@@ -2917,7 +2944,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     player_data.active_multiplier = doge_metadata.multiplier.min(MAX_MULTIPLIER as u32);
     player_data.gameplay_doge_dna = doge_metadata.dna;
     player_data.gameplay_doge_xp = doge_metadata.xp;
-    player_data.gameplay_unlock_request_rebase = 0;
+    player_data.gameplay_unlock_request_faction_war = 0;
 
     // Update faction state
     faction_state.doges_playing = faction_state
@@ -2948,19 +2975,19 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     Ok(())
 }
 
-/// Request gameplay doge unlock. Actual withdrawal is only allowed after the next rebase starts.
+/// Request gameplay doge unlock. Actual withdrawal is only allowed after the next faction_war starts.
 pub fn internal_request_doge_gameplay_unlock(
     ctx: Context<RequestDogeGameplayUnlock>,
 ) -> Result<()> {
     let player_data = &mut ctx.accounts.player_data;
-    let current_rebase_id = ctx.accounts.rebase_config.current_rebase_id;
+    let current_faction_war_id = ctx.accounts.faction_war_config.current_faction_war_id;
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!(
-        "🔓 [request_doge_unlock] user={}, doge={}, rebase_id={}",
+        "🔓 [request_doge_unlock] user={}, doge={}, faction_war_id={}",
         ctx.accounts.user.key(),
         player_data.gameplay_doge,
-        current_rebase_id
+        current_faction_war_id
     );
 
     require!(
@@ -2968,17 +2995,17 @@ pub fn internal_request_doge_gameplay_unlock(
         ErrorCode::InvalidState
     );
     require!(
-        player_data.gameplay_unlock_request_rebase == 0,
+        player_data.gameplay_unlock_request_faction_war == 0,
         ErrorCode::GameplayUnlockAlreadyRequested
     );
 
-    player_data.gameplay_unlock_request_rebase = current_rebase_id;
+    player_data.gameplay_unlock_request_faction_war = current_faction_war_id;
 
     emit!(DogeGameplayUnlockRequested {
         user: ctx.accounts.user.key(),
         doge_mint: player_data.gameplay_doge,
-        requested_during_rebase_id: current_rebase_id,
-        unlock_available_after_rebase_id: current_rebase_id
+        requested_during_faction_war_id: current_faction_war_id,
+        unlock_available_after_faction_war_id: current_faction_war_id
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?,
         timestamp: current_time,
@@ -3025,13 +3052,13 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.gameplay_unlock_request_rebase != 0,
+        player_data.gameplay_unlock_request_faction_war != 0,
         ErrorCode::GameplayUnlockNotRequested
     );
     require!(
-        !ctx.accounts.rebase_config.is_active
-            || ctx.accounts.rebase_config.current_rebase_id
-                > player_data.gameplay_unlock_request_rebase,
+        !ctx.accounts.faction_war_config.is_active
+            || ctx.accounts.faction_war_config.current_faction_war_id
+                > player_data.gameplay_unlock_request_faction_war,
         ErrorCode::GameplayUnlockNotReady
     );
     require!(
@@ -3078,7 +3105,7 @@ pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGamepla
     player_data.active_multiplier = BASE_MULTIPLIER;
     player_data.gameplay_doge_dna = [0u8; 32];
     player_data.gameplay_doge_xp = 0;
-    player_data.gameplay_unlock_request_rebase = 0;
+    player_data.gameplay_unlock_request_faction_war = 0;
 
     // Update faction state
     faction_state.doges_playing = faction_state
@@ -3138,8 +3165,8 @@ pub struct UseDogeForGameplay<'info> {
     #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    #[account(seeds = [REBASE_CONFIG_SEED], bump = rebase_config.bump)]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    #[account(seeds = [FACTION_WAR_CONFIG_SEED], bump = faction_war_config.bump)]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
@@ -3160,8 +3187,8 @@ pub struct RequestDogeGameplayUnlock<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(seeds = [REBASE_CONFIG_SEED], bump = rebase_config.bump)]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    #[account(seeds = [FACTION_WAR_CONFIG_SEED], bump = faction_war_config.bump)]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -3200,8 +3227,8 @@ pub struct WithdrawDogeFromGameplay<'info> {
     #[account(seeds = [DOGE_CUSTODY_SEED], bump)]
     pub doge_custody_pda: UncheckedAccount<'info>,
 
-    #[account(seeds = [REBASE_CONFIG_SEED], bump = rebase_config.bump)]
-    pub rebase_config: Box<Account<'info, RebaseConfig>>,
+    #[account(seeds = [FACTION_WAR_CONFIG_SEED], bump = faction_war_config.bump)]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,

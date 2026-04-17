@@ -18,12 +18,12 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 // All dogeBTC transfers incur a 1% tax, split into:
 // - **Burn**: Reducing total supply (default 25%)
 // - **NFT Floor Sweep**: Funded for market-making (default 10%)
-// - **Faction Treasury**: Distributed to stakers via rebase leaderboard (default 40%)
+// - **Faction Treasury**: Distributed to stakers via faction_war leaderboard (default 40%)
 // - **Back to Vault**: Recycled into mining emission pool (remainder)
 //
 // ## Faction Treasury Distribution
 //
-// After each rebase settles, `claim_faction_treasury_for_rebase` distributes
+// After each faction_war settles, `claim_faction_treasury_for_faction_war` distributes
 // the treasury vault based on mutation leaderboard rankings:
 // - 80% rank-weighted (higher rank = more reward, everyone gets something)
 // - 20% lucky draw (one random underdog faction from rank 5+)
@@ -32,13 +32,75 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // - `crank_harvest_fees`: Harvests withheld fees from token accounts to mint.
 // - `crank_distribute_tax`: Withdraws from mint, splits to vaults.
-// - `claim_faction_treasury_for_rebase`: Distributes treasury to stakers using rebase rankings.
+// - `claim_faction_treasury_for_faction_war`: Distributes treasury to stakers using faction_war rankings.
 //
 
 use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::instructions::helper;
 use crate::state::*;
+
+fn seed_empty_faction_war_treasury_bucket(
+    faction_war_config: &FactionWarConfig,
+    faction_war_state: &mut Account<FactionWarState>,
+    faction_war_state_bump: u8,
+    seeded_treasury_base: u64,
+) {
+    faction_war_state.bump = faction_war_state_bump;
+    faction_war_state.faction_war_id = faction_war_config.current_faction_war_id;
+    faction_war_state.start_timestamp = 0;
+    faction_war_state.stage = 0;
+    faction_war_state.active_faction_count = 0;
+    faction_war_state.total_dogebtc_mined_in_faction_war = 0;
+    faction_war_state.faction_war_mining_pool = 0;
+    faction_war_state.start_ranks = faction_war_config.prev_faction_war_mutation_ranks;
+    faction_war_state.final_ranks = faction_war_config.prev_faction_war_mutation_ranks;
+    faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
+    faction_war_state.resolved_directions =
+        [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
+    faction_war_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.eligible_doge_direction_totals =
+        [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
+    faction_war_state.treasury_claimed_bitmap = 0;
+}
+
+fn ensure_active_faction_war_treasury_bucket<'info>(
+    tax_config: &mut Account<'info, TaxConfig>,
+    faction_war_config: &Account<'info, FactionWarConfig>,
+    faction_war_state: &mut Account<'info, FactionWarState>,
+    faction_war_state_bump: u8,
+) -> Result<()> {
+    if faction_war_state.faction_war_id == 0 {
+        let seeded_treasury_base = tax_config.unassigned_faction_war_treasury_amount;
+        seed_empty_faction_war_treasury_bucket(
+            faction_war_config,
+            faction_war_state,
+            faction_war_state_bump,
+            seeded_treasury_base,
+        );
+        tax_config.unassigned_faction_war_treasury_amount = 0;
+        msg!(
+            "   🧱 Seeded empty faction-war treasury bucket for war {} (carried_unassigned={})",
+            faction_war_state.faction_war_id,
+            faction_war_state.treasury_reward_base_amount
+        );
+    } else {
+        require!(
+            faction_war_state.faction_war_id == faction_war_config.current_faction_war_id,
+            ErrorCode::InvalidState
+        );
+        require!(
+            faction_war_state.stage == 0,
+            ErrorCode::FactionWarAlreadySettled
+        );
+    }
+
+    Ok(())
+}
 
 // ========================================================================================
 // ============================= ADMIN FUNCTIONS ==========================================
@@ -68,8 +130,7 @@ pub fn internal_initialize_tax_config(
     tax_config.faction_treasury_pct = faction_treasury_pct;
     tax_config.burn_pct = burn_pct;
     tax_config.total_burnt = 0;
-    tax_config.last_treasury_rebase_id = 0;
-    tax_config.treasury_claimed_bitmap = 0;
+    tax_config.unassigned_faction_war_treasury_amount = 0;
 
     // Store PDA addresses
     tax_config.withdraw_withheld_authority = ctx.accounts.withdraw_withheld_authority.key();
@@ -116,7 +177,7 @@ pub fn internal_update_tax_config(
 
     require!(
         (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) + (burn_pct as u64)
-            <= M_HUNDRED as u64,
+            <= M_HUNDRED,
         ErrorCode::InvalidAmount
     );
 
@@ -325,7 +386,7 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     ))?;
 
     // 3. Calculate distribution amounts based on TaxConfig percentages
-    let tax_config = &ctx.accounts.tax_config;
+    let tax_config = &mut ctx.accounts.tax_config;
     let nft_floor_sweep_amount =
         helper::mul_div(withheld_amount, tax_config.nft_floor_sweep_pct as u64, 100)? as u64;
     let faction_treasury_amount =
@@ -425,12 +486,14 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
             burn_amount,
         )?;
 
-        let tax_config_mut = &mut ctx.accounts.tax_config;
-        tax_config_mut.total_burnt = tax_config_mut.total_burnt.saturating_add(burn_amount);
+        tax_config.total_burnt = tax_config
+            .total_burnt
+            .checked_add(burn_amount)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   ✅ Burnt {} tokens (Total burnt: {})",
             (burn_amount as f64) / 1e6,
-            (tax_config_mut.total_burnt as f64) / 1e6
+            (tax_config.total_burnt as f64) / 1e6
         );
     }
 
@@ -459,6 +522,39 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
         );
     }
 
+    if faction_treasury_amount > 0 {
+        if ctx.accounts.faction_war_config.is_active {
+            ensure_active_faction_war_treasury_bucket(
+                tax_config,
+                &ctx.accounts.faction_war_config,
+                &mut ctx.accounts.faction_war_state,
+                ctx.bumps.faction_war_state,
+            )?;
+            ctx.accounts.faction_war_state.treasury_reward_base_amount = ctx
+                .accounts
+                .faction_war_state
+                .treasury_reward_base_amount
+                .checked_add(faction_treasury_amount)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!(
+                "   🏴 Attributed {} dogeBTC treasury tax to faction war {} (base now {})",
+                (faction_treasury_amount as f64) / 1e6,
+                ctx.accounts.faction_war_state.faction_war_id,
+                (ctx.accounts.faction_war_state.treasury_reward_base_amount as f64) / 1e6
+            );
+        } else {
+            tax_config.unassigned_faction_war_treasury_amount = tax_config
+                .unassigned_faction_war_treasury_amount
+                .checked_add(faction_treasury_amount)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!(
+                "   💤 Faction wars inactive; queued {} dogeBTC treasury tax for the next war (queued total {})",
+                (faction_treasury_amount as f64) / 1e6,
+                (tax_config.unassigned_faction_war_treasury_amount as f64) / 1e6
+            );
+        }
+    }
+
     let total_burnt = ctx.accounts.tax_config.total_burnt;
     emit!(TaxDistributed {
         total_tax_amount: withheld_amount,
@@ -477,67 +573,64 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
 // ============================= FACTION TREASURY DISTRIBUTION ============================
 // ========================================================================================
 
-/// Distribute faction treasury rewards for a settled rebase.
+/// Distribute faction treasury rewards for a settled faction_war.
 ///
-/// Uses the rebase's mutation-based `final_ranks` to determine reward tiers:
+/// Uses the faction_war's mutation-based `final_ranks` to determine reward tiers:
 ///   1st = 25% | 2nd = 15% | 3rd = 10% | random from 4th+ = 50%
 ///
-/// Called once per faction per rebase. Each call transfers that faction's share
+/// Called once per faction per faction_war. Each call transfers that faction's share
 /// from the treasury vault to the emission vault and updates staker reward indexes.
 ///
-/// Permissionless: anyone can crank this after a rebase settles.
-pub fn internal_claim_faction_treasury_for_rebase(
-    ctx: Context<ClaimFactionTreasuryForRebase>,
-    rebase_id: u64,
+/// Permissionless: anyone can crank this after a faction_war settles.
+pub fn internal_claim_faction_treasury_for_faction_war(
+    ctx: Context<ClaimFactionTreasuryForFactionWar>,
+    faction_war_id: u64,
 ) -> Result<()> {
-    let tc = &mut ctx.accounts.tax_config;
-    let rebase_state = &ctx.accounts.rebase_state;
+    let faction_war_state = &mut ctx.accounts.faction_war_state;
     let fs = &mut ctx.accounts.faction_state;
     let fid = fs.faction_id;
 
     msg!(
-        "💰 [claim_faction_treasury] Rebase #{}, faction {}, treasury={}",
-        rebase_id,
+        "💰 [claim_faction_treasury] FactionWar #{}, faction {}, treasury={}",
+        faction_war_id,
         fid,
         ctx.accounts.faction_treasury_vault.amount
     );
 
-    require!(rebase_state.stage == 1, ErrorCode::RebaseNotSettled);
-    require!(rebase_state.rebase_id == rebase_id, ErrorCode::InvalidState);
-
-    // If this is a new rebase, reset the claim bitmap
-    if rebase_id > tc.last_treasury_rebase_id {
-        tc.last_treasury_rebase_id = rebase_id;
-        tc.treasury_claimed_bitmap = 0;
-    }
+    require!(
+        faction_war_state.stage == 1,
+        ErrorCode::FactionWarNotSettled
+    );
+    require!(
+        faction_war_state.faction_war_id == faction_war_id,
+        ErrorCode::InvalidState
+    );
 
     // Prevent double-claim for this faction
     let faction_bit = 1u16 << fid;
     require!(
-        tc.treasury_claimed_bitmap & faction_bit == 0,
-        ErrorCode::InvalidState
+        faction_war_state.treasury_claimed_bitmap & faction_bit == 0,
+        ErrorCode::FactionWarRewardsAlreadyClaimed
     );
 
     let treasury_balance = ctx.accounts.faction_treasury_vault.amount;
-    if treasury_balance == 0 {
-        return Ok(());
-    }
+    let treasury_base_amount = faction_war_state.treasury_reward_base_amount;
 
-    let active_factions = rebase_state.active_faction_count as usize;
+    let active_factions = faction_war_state.active_faction_count as usize;
     require!(
         (fid as usize) < active_factions,
         ErrorCode::InvalidFactionId
     );
 
-    // Determine this faction's rank from rebase final_ranks
-    let rank = rebase_state.final_ranks[fid as usize] as usize;
+    // Determine this faction's rank from faction_war final_ranks
+    let rank = faction_war_state.final_ranks[fid as usize] as usize;
 
     // --- 80% rank-weighted: rank_points = active_factions - rank ---
     // #1 gets the most points, #last gets 1 point. Everyone gets something.
     let rank_points = active_factions.saturating_sub(rank) as u128;
     let total_rank_points: u128 = (1..=active_factions as u128).sum(); // N*(N+1)/2
 
-    let rank_pool = (treasury_balance as u128)
+    let rank_pool = (treasury_base_amount as u128)
         .checked_mul(TaxConfig::RANK_WEIGHTED_BPS as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(BASIS_POINTS_DENOMINATOR as u128)
@@ -559,12 +652,12 @@ pub fn internal_claim_faction_treasury_for_rebase(
     let eligible_start = 5.min(active_factions.saturating_sub(1));
     let eligible_count = active_factions.saturating_sub(eligible_start);
     let lucky_rank = if eligible_count > 0 {
-        eligible_start + (rebase_id as usize % eligible_count)
+        eligible_start + (faction_war_id as usize % eligible_count)
     } else {
         active_factions.saturating_sub(1)
     };
     let lucky_reward = if rank == lucky_rank {
-        (treasury_balance as u128)
+        (treasury_base_amount as u128)
             .checked_mul(TaxConfig::LUCKY_DRAW_BPS as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(BASIS_POINTS_DENOMINATOR as u128)
@@ -580,8 +673,10 @@ pub fn internal_claim_faction_treasury_for_rebase(
         u64::try_from(total_reward_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     msg!(
-        "   Rank {}: rank_reward={}, lucky_rank={}, lucky_reward={}, total={}",
+        "   Rank {}: base={}, current_vault={}, rank_reward={}, lucky_rank={}, lucky_reward={}, total={}",
         rank,
+        treasury_base_amount,
+        treasury_balance,
         rank_reward,
         lucky_rank,
         lucky_reward,
@@ -590,7 +685,7 @@ pub fn internal_claim_faction_treasury_for_rebase(
 
     if reward_amount == 0 {
         msg!("   ⚠️ No reward for faction {} (rank {})", fid, rank);
-        tc.treasury_claimed_bitmap |= faction_bit;
+        faction_war_state.treasury_claimed_bitmap |= faction_bit;
         return Ok(());
     }
 
@@ -607,8 +702,20 @@ pub fn internal_claim_faction_treasury_for_rebase(
         (false, false) => (0, 0),
     };
     let distributed = dbtc_share + lp_share;
+    let recycled_amount = if dogebtc_active || lp_active {
+        0
+    } else {
+        reward_amount
+    };
+    let total_transfer = distributed
+        .checked_add(recycled_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    if distributed > 0 {
+    if total_transfer > 0 {
+        require!(
+            treasury_balance >= total_transfer,
+            ErrorCode::InsufficientFunds
+        );
         let seeds: &[&[&[u8]]] = &[&[
             WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
             &[ctx.bumps.withdraw_withheld_authority],
@@ -624,14 +731,15 @@ pub fn internal_claim_faction_treasury_for_rebase(
                 },
                 seeds,
             ),
-            distributed,
+            total_transfer,
             ctx.accounts.minebtc_mint.decimals,
         )?;
         msg!(
-            "   ✅ Transferred {} dogeBTC (dbtc_stakers={}, lp_stakers={})",
-            distributed,
+            "   ✅ Transferred {} dogeBTC from treasury (dbtc_stakers={}, lp_stakers={}, recycled={})",
+            total_transfer,
             dbtc_share,
-            lp_share
+            lp_share,
+            recycled_amount
         );
     }
 
@@ -656,15 +764,16 @@ pub fn internal_claim_faction_treasury_for_rebase(
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    tc.treasury_claimed_bitmap |= faction_bit;
+    faction_war_state.treasury_claimed_bitmap |= faction_bit;
 
     emit!(FactionTreasuryRewardsClaimed {
-        rebase_id,
+        faction_war_id,
         faction_id: fid,
         rank: rank as u8,
         reward_amount,
         dbtc_share,
         lp_share,
+        recycled_amount,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -763,18 +872,38 @@ pub struct CrankDistributeTax<'info> {
     pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
+    #[account(
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = faction_war_config.bump
+    )]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = FactionWarState::LEN,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
+        bump,
+    )]
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+    #[account(mut)]
+    pub caller: Signer<'info>,
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
+    pub system_program: Program<'info, System>,
 }
 
-/// Claim faction treasury rewards for a settled rebase.
-/// Uses mutation leaderboard (rebase final_ranks) -- no separate leaderboard needed.
+/// Claim faction treasury rewards for a settled faction_war.
+/// Uses mutation leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
 #[derive(Accounts)]
-#[instruction(rebase_id: u64)]
-pub struct ClaimFactionTreasuryForRebase<'info> {
+#[instruction(faction_war_id: u64)]
+pub struct ClaimFactionTreasuryForFactionWar<'info> {
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Box<Account<'info, TaxConfig>>,
-    #[account(seeds = [REBASE_STATE_SEED, &rebase_id.to_le_bytes()], bump = rebase_state.bump)]
-    pub rebase_state: Box<Account<'info, RebaseState>>,
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
+        bump = faction_war_state.bump
+    )]
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]

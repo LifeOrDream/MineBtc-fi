@@ -541,9 +541,7 @@ pub fn calculate_emergency_tax(
 
     // remaining_seconds_pct is guaranteed positive here, safe to cast
     let calc_penalty_pct = (emergency_tax * (remaining_seconds_pct as u64)) / M_HUNDRED;
-    let penalty_amount = (user_position.staked_amount * calc_penalty_pct) / M_HUNDRED;
-
-    return penalty_amount;
+    (user_position.staked_amount * calc_penalty_pct) / M_HUNDRED
 }
 
 /// Charge emergency tax for MINEBTC tokens by burning the full penalty amount.
@@ -644,5 +642,5 @@ pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
         return 0;
     }
     // 1.0x: users get 100% of their mint price as tickets
-    return total_price / ticket_value;
+    total_price / ticket_value
 }

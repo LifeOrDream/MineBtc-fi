@@ -233,7 +233,7 @@ pub fn add_faction_internal(
 
     // Validate faction name
     require!(
-        faction_name.len() > 0 && faction_name.len() <= MAX_FACTION_NAME_LENGTH,
+        !faction_name.is_empty() && faction_name.len() <= MAX_FACTION_NAME_LENGTH,
         ErrorCode::InvalidFactionName
     );
     require!(
@@ -276,7 +276,7 @@ pub fn add_faction_internal(
     emit!(FactionAdded {
         authority: ctx.accounts.authority.key(),
         faction_name: faction_name.clone(),
-        faction_id: faction_id,
+        faction_id,
         faction_key: faction_state.key(),
     });
 
@@ -820,7 +820,7 @@ pub fn init_doge_royalties_internal(
     // PDA signer for collection authority (same PDA you used as update_authority)
     let bump = ctx.bumps.collection_authority;
     let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
-    let signer_seeds: &[&[&[u8]]] = &[&seeds];
+    let signer_seeds: &[&[&[u8]]] = &[seeds];
 
     let mpl_core_program = &ctx.accounts.mpl_core_program.to_account_info();
     let mut cpi = AddCollectionPluginV1CpiBuilder::new(mpl_core_program);

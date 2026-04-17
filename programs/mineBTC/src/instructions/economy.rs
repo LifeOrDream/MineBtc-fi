@@ -126,7 +126,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         )?;
 
         // Update buybacks tracking
-        buybacks_ac.total_sol_accumulated = buybacks_ac.total_sol_accumulated + sol_for_buybacks;
+        buybacks_ac.total_sol_accumulated += sol_for_buybacks;
 
         msg!(
             "💰 Transferred {} SOL to buybacks vault ({}%)",
@@ -180,7 +180,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
 
     // Emit event
     emit!(SolFeesWithdrawn {
-        available_solana: available_solana,
+        available_solana,
         buyback_amount: sol_for_buybacks,
         dev_earnings_amount: dev_earnings,
     });
@@ -613,8 +613,8 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     let mut total_weights: u128 = 0;
     for (i, entry) in mine_btc_mining.price_history.iter().enumerate() {
         let weight = (i + 1) as u128;
-        weighted_sum = weighted_sum + ((entry.price as u128) * weight);
-        total_weights = total_weights + weight;
+        weighted_sum += (entry.price as u128) * weight;
+        total_weights += weight;
     }
     let new_avg_price = (weighted_sum / total_weights) as u64;
 
@@ -1015,12 +1015,12 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         let lp_token_price = {
             let minebtc_price = mine_btc_mining.recent_price;
             let minebtc_value_in_sol = if minebtc_price > 0 {
-                (minebtc_consumed as u128) * (minebtc_price as u128) / (1_000_000) as u128
+                (minebtc_consumed as u128) * (minebtc_price as u128) / 1_000_000_u128
             } else {
                 0
             } as u64;
             let total_value_sol = sol_consumed + minebtc_value_in_sol;
-            (total_value_sol as u128) * (1_000_000_000) as u128 / (lp_tokens_minted as u128)
+            (total_value_sol as u128) * 1_000_000_000_u128 / (lp_tokens_minted as u128)
         };
         if lp_token_price > 0 {
             mine_btc_mining.lp_token_price_in_sol = lp_token_price as u64;
