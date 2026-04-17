@@ -219,6 +219,7 @@ pub fn finalize_faction_war_settlement(
     faction_war_config: &mut FactionWarConfig,
     faction_war_state: &mut FactionWarState,
     tax_config: &mut TaxConfig,
+    rpg_progression: bool,
 ) -> Result<()> {
     let active_factions = faction_war_state.active_faction_count as usize;
 
@@ -270,11 +271,59 @@ pub fn finalize_faction_war_settlement(
         .sum();
 
     if total_mutation_score == 0 {
-        msg!("   ⚠️ No mutations this faction_war — no rewards distributed");
-        faction_war_state.faction_war_mining_pool = 0;
-        faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.stage = 1;
+        // Distinguish "faction war never got real gameplay" from
+        // "real gameplay happened, ranks just didn't move this cycle".
+        //   - No own-faction bets OR rpg_progression disabled → treat as
+        //     non-operational: roll treasury forward to the next war (like
+        //     the active_factions == 0 branch above) and settle empty.
+        //   - Bets + progression enabled, just zero mutations → ranks stay
+        //     equal to start_ranks (Neutral wins every faction). Distribute
+        //     the mining pool to users who bet Neutral on their faction.
+        let has_bets = faction_war_state
+            .faction_direction_totals
+            .iter()
+            .take(active_factions)
+            .any(|row| row.iter().any(|&v| v > 0));
+
+        if !has_bets || !rpg_progression {
+            msg!(
+                "   ⚠️ FactionWar #{} non-operational (has_bets={}, rpg_progression={}) — rolling treasury forward and settling empty",
+                faction_war_state.faction_war_id,
+                has_bets,
+                rpg_progression
+            );
+            if faction_war_state.treasury_reward_base_amount > 0 {
+                tax_config.unassigned_faction_war_treasury_amount = tax_config
+                    .unassigned_faction_war_treasury_amount
+                    .checked_add(faction_war_state.treasury_reward_base_amount)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+                msg!(
+                    "   ↩️ Rolled forward {} treasury tax (non-operational faction war)",
+                    faction_war_state.treasury_reward_base_amount
+                );
+                faction_war_state.treasury_reward_base_amount = 0;
+            }
+            faction_war_state.faction_war_mining_pool = 0;
+            faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+            faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+            faction_war_state.stage = 1;
+        } else {
+            msg!(
+                "   ⚠️ No mutations this faction_war but gameplay happened — distributing rewards with no rank change (Neutral wins everywhere)"
+            );
+            faction_war_state.faction_war_mining_pool =
+                faction_war_state.total_dogebtc_mined_in_faction_war;
+            // No rank change: final_ranks = start_ranks, deltas all zero, every
+            // faction resolves to Neutral.
+            faction_war_state.final_ranks = faction_war_state.start_ranks;
+            faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
+            for i in 0..active_factions {
+                faction_war_state.resolved_directions[i] =
+                    PredictionDirection::Neutral.as_index() as u8;
+            }
+            compute_faction_reward_pools(faction_war_state)?;
+            faction_war_state.stage = 1;
+        }
     } else {
         faction_war_state.faction_war_mining_pool =
             faction_war_state.total_dogebtc_mined_in_faction_war;
@@ -342,6 +391,7 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
     let faction_war_state = &mut ctx.accounts.faction_war_state;
     let tax_config = &mut ctx.accounts.tax_config;
     let mining = &ctx.accounts.mine_btc_mining;
+    let rpg_progression = ctx.accounts.global_config.rpg_progression;
 
     msg!(
         "   FactionWar #{}, stage={}, lp_ops={}, settle_cycle={}",
@@ -357,7 +407,25 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
         ErrorCode::FactionWarNotEnded
     );
 
-    finalize_faction_war_settlement(faction_war_config, faction_war_state, tax_config)?;
+    // Block external settlement while a round is mid-finalization (stage=1,
+    // between end_round and end_round_faction_rewards). Otherwise this crank
+    // can advance current_faction_war_id under end_round_faction_rewards'
+    // feet, which is the exact brick the #35 init_if_needed patch mitigates
+    // after-the-fact. Blocking the race at the source keeps
+    // end_round_faction_rewards's auto-settle (the clean path, runs after
+    // this round's mining has been tracked) as the only way the id advances
+    // while a round is in play.
+    require!(
+        ctx.accounts.game_session.stage != 1,
+        ErrorCode::RoundFinalizationPending
+    );
+
+    finalize_faction_war_settlement(
+        faction_war_config,
+        faction_war_state,
+        tax_config,
+        rpg_progression,
+    )?;
 
     let clock = Clock::get()?;
     emit!(FactionWarSettled {
@@ -407,6 +475,30 @@ pub struct SettleFactionWar<'info> {
         bump = mine_btc_mining.bump,
     )]
     pub mine_btc_mining: Account<'info, MineBtcMining>,
+
+    /// Needed to read `rpg_progression` for the no-mutation branch of
+    /// `finalize_faction_war_settlement`.
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    /// Needed to derive the current round's game_session PDA so the
+    /// stage=1 guard below can see it.
+    #[account(
+        seeds = [GLOBAL_GAME_STATE_SEED],
+        bump = global_game_state.bump,
+    )]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+
+    /// Game session for the current round. Used to block this crank while
+    /// stage=1 (the end_round → end_round_faction_rewards window).
+    #[account(
+        seeds = [GAME_SESSION_SEED, &global_game_state.current_round_id.to_le_bytes()],
+        bump = game_session.bump,
+    )]
+    pub game_session: Account<'info, GameSession>,
 
     /// Anyone can settle -- no authority check needed.
     pub cranker: Signer<'info>,

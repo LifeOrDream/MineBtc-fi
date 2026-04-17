@@ -752,6 +752,7 @@ pub fn int_end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Re
                 faction_war_config,
                 faction_war_state,
                 &mut ctx.accounts.tax_config,
+                ctx.accounts.global_config.rpg_progression,
             )?;
 
             emit!(FactionWarAutoSettled {
