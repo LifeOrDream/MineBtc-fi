@@ -143,6 +143,12 @@ pub struct CollectionInfoUpdated {
     pub new_uri: Option<String>,
 }
 
+#[event]
+pub struct EvolutionUnlockStageUpdated {
+    pub authority: Pubkey,
+    pub max_evolution_stage_unlocked: u8,
+}
+
 /// Event emitted when a Doge is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]

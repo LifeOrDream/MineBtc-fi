@@ -204,6 +204,7 @@ pub fn calculate_mutation_result(
     current_multiplier: u32,
     mut gameplay_doge_dna: [u8; 32],
     gameplay_doge_xp: u32,
+    max_evolution_stage_unlocked: u8,
     faction_mutation_count: u8,
     total_sol_bets: u64,
     total_points_bets: u64,
@@ -233,13 +234,16 @@ pub fn calculate_mutation_result(
 
     // Derive generation from DNA (bits 4-6 of byte 0)
     let generation = get_evolution_stage(&gameplay_doge_dna);
+    let evolution_allowed = generation < max_evolution_stage_unlocked;
 
     msg!(
-        "🧬 Mutation calc: bet={} SOL, gen={}, xp={}, mult={:.3}",
+        "🧬 Mutation calc: bet={} SOL, gen={}, xp={}, mult={:.3}, max_evolution_stage_unlocked={}, evolution_allowed={}",
         format!("{:.4}", user_total_bet as f64 / 1e9),
         generation,
         gameplay_doge_xp,
-        current_multiplier as f64 / 1000.0
+        current_multiplier as f64 / 1000.0,
+        max_evolution_stage_unlocked,
+        evolution_allowed
     );
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
@@ -335,17 +339,31 @@ pub fn calculate_mutation_result(
     // Mutation triggered - determine type
     let type_roll = seed[2]; // random dice roll for the type of mutation
     let evo_chance = 10 / (generation as u64 + 1); // base percentage chance (10%) for an Evolution to happen.
-    let evo_threshold = (255 * evo_chance) / 100; // This is the "cutoff point" on the 0-255 scale for Evolution.
+    let evo_threshold = if evolution_allowed {
+        (255 * evo_chance) / 100 // This is the "cutoff point" on the 0-255 scale for Evolution.
+    } else {
+        0
+    };
 
-    // Power threshold is the "cutoff point" on the 0-255 scale for Power. (30% on top of the Evolution threshold)
-    let power_threshold = evo_threshold + ((255 * 30) / 100);
+    // When evolution is locked, fold the evolution bucket into power mutations so the
+    // overall mutation cadence stays intact while staged visuals remain under admin control.
+    let power_share_pct = if evolution_allowed { 30 } else { 40 };
+    // Power threshold is the "cutoff point" on the 0-255 scale for Power.
+    let power_threshold = evo_threshold + ((255 * power_share_pct) / 100);
     msg!(
-        "Type roll: {}, Evo Chance: {}, Evo threshold: {}, Power threshold: {}",
+        "Type roll: {}, Evo Chance: {}, Evo threshold: {}, Power threshold: {}, Power share: {}%",
         type_roll,
         evo_chance,
         evo_threshold,
-        power_threshold
+        power_threshold,
+        power_share_pct
     );
+    if !evolution_allowed {
+        msg!(
+            "   Evolution roll bucket is locked for stage {}. Re-routing that weight into power mutations.",
+            generation
+        );
+    }
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
         evolve_stage(round_id, &mut gameplay_doge_dna, &seed, doge_mint);
@@ -1242,6 +1260,7 @@ mod tests {
             1000,
             dna,
             100,
+            1,
             0, // faction_mutation_count
             100_000_000,
             100_000_000,
@@ -1257,6 +1276,126 @@ mod tests {
             "Mutation result: {:?}, XP: {}",
             result.mutation_type, result.xp_gained
         );
+    }
+
+    fn find_evolution_slot(dna: [u8; 32], max_evolution_stage_unlocked: u8) -> u64 {
+        let doge_mint = mock_pubkey();
+        let user = mock_pubkey();
+
+        for slot in 1..100_000 {
+            let result = calculate_mutation_result(
+                1,
+                1_000_000_000,
+                1_000_000_000,
+                1000,
+                dna,
+                0,
+                max_evolution_stage_unlocked,
+                0,
+                1_000_000_000,
+                1_000_000_000,
+                1_000_000_000,
+                slot,
+                &user,
+                &doge_mint,
+            );
+
+            if result.mutation_type == Some(MutationType::Evolution) {
+                return slot;
+            }
+        }
+
+        panic!("expected to find a deterministic evolution slot for test inputs");
+    }
+
+    #[test]
+    fn test_stage_zero_evolution_requires_unlock() {
+        let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
+        let slot = find_evolution_slot(dna, 1);
+        let doge_mint = mock_pubkey();
+        let user = mock_pubkey();
+
+        let unlocked = calculate_mutation_result(
+            1,
+            1_000_000_000,
+            1_000_000_000,
+            1000,
+            dna,
+            0,
+            1,
+            0,
+            1_000_000_000,
+            1_000_000_000,
+            1_000_000_000,
+            slot,
+            &user,
+            &doge_mint,
+        );
+        assert_eq!(unlocked.mutation_type, Some(MutationType::Evolution));
+
+        let locked = calculate_mutation_result(
+            1,
+            1_000_000_000,
+            1_000_000_000,
+            1000,
+            dna,
+            0,
+            0,
+            0,
+            1_000_000_000,
+            1_000_000_000,
+            1_000_000_000,
+            slot,
+            &user,
+            &doge_mint,
+        );
+        assert_eq!(locked.mutation_type, Some(MutationType::Power));
+    }
+
+    #[test]
+    fn test_stage_one_evolution_requires_next_unlock() {
+        let mut dna = generate_genesis_dna(2, &mock_pubkey(), 200, 1).unwrap();
+        dna[0] = (dna[0] & 0x8F) | (1 << 4);
+
+        let slot = find_evolution_slot(dna, 2);
+        let doge_mint = mock_pubkey();
+        let user = mock_pubkey();
+
+        let unlocked = calculate_mutation_result(
+            1,
+            1_000_000_000,
+            1_000_000_000,
+            1000,
+            dna,
+            0,
+            2,
+            0,
+            1_000_000_000,
+            1_000_000_000,
+            1_000_000_000,
+            slot,
+            &user,
+            &doge_mint,
+        );
+        assert_eq!(unlocked.mutation_type, Some(MutationType::Evolution));
+
+        let locked = calculate_mutation_result(
+            1,
+            1_000_000_000,
+            1_000_000_000,
+            1000,
+            dna,
+            0,
+            1,
+            0,
+            1_000_000_000,
+            1_000_000_000,
+            1_000_000_000,
+            slot,
+            &user,
+            &doge_mint,
+        );
+        assert_eq!(locked.mutation_type, Some(MutationType::Power));
     }
 
     // #[test]
