@@ -20,6 +20,7 @@ pub const MINEBTC_DECIMALS: u8 = 6;
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
 pub const MAX_MULTIPLIER: u16 = 10000; // Maximum multiplier a user can have (10.0x)
+pub const MAX_EVOLUTION_STAGE: u8 = 7; // Highest evolution stage encoded in doge DNA
 
 /// Base mutation chance in basis points (2000 = 20%).
 /// Effective chance = BASE_CHANCE × bet_strength × mult_penalty × faction_penalty / scaling.
@@ -222,6 +223,9 @@ pub struct GlobalConfig {
 
     /// Enable RPG progression (mutations, XP, etc) during gameplay
     pub rpg_progression: bool,
+    /// Highest evolution stage currently unlocked by admin.
+    /// `0` disables evolutions entirely, `1` allows stage 0 -> 1, etc.
+    pub max_evolution_stage_unlocked: u8,
 
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
@@ -277,6 +281,7 @@ impl GlobalConfig {
         8 +                     // change_faction_fee
         8 +                     // snapshot_interval
         1 +                     // rpg_progression
+        1 +                     // max_evolution_stage_unlocked
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec

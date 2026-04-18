@@ -93,6 +93,8 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     global_config.change_faction_fee = DEFAULT_CHANGE_FACTION_FEE;
     global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
+    global_config.rpg_progression = false;
+    global_config.max_evolution_stage_unlocked = 0;
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
@@ -505,6 +507,32 @@ pub fn update_fees_internal(
 /// Toggle RPG progression (mutations, XP) during gameplay
 pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
     ctx.accounts.global_config.rpg_progression = enabled;
+    Ok(())
+}
+
+/// Update the highest evolution stage unlocked for gameplay doges.
+///
+/// `0` disables evolution entirely. `1` allows stage 0 -> 1 evolutions, etc.
+pub fn update_evolution_unlock_stage_internal(
+    ctx: Context<UpdateConfigAc>,
+    max_stage: u8,
+) -> Result<()> {
+    require!(
+        max_stage <= MAX_EVOLUTION_STAGE,
+        ErrorCode::InvalidParameters
+    );
+
+    ctx.accounts.global_config.max_evolution_stage_unlocked = max_stage;
+    msg!(
+        "[update_evolution_unlock_stage] authority={} max_stage={}",
+        ctx.accounts.authority.key(),
+        max_stage
+    );
+
+    emit!(EvolutionUnlockStageUpdated {
+        authority: ctx.accounts.authority.key(),
+        max_evolution_stage_unlocked: max_stage,
+    });
     Ok(())
 }
 

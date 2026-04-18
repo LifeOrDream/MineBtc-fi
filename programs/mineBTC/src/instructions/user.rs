@@ -2066,6 +2066,7 @@ fn internal_process_bets<'info>(
             player_data.active_multiplier,
             player_data.gameplay_doge_dna,
             player_data.gameplay_doge_xp,
+            global_config.max_evolution_stage_unlocked,
             game_session.mutations_per_faction[faction_id],
             game_session.total_sol_bets,
             game_session.total_points_bets,

@@ -155,6 +155,15 @@ pub mod minebtc {
         admin::update_rpg_progression_internal(ctx, enabled)
     }
 
+    /// Update the highest evolution stage unlocked by admin.
+    /// `0` disables evolution entirely, `1` allows stage 0 -> 1, etc.
+    pub fn update_evolution_unlock_stage(
+        ctx: Context<UpdateConfigAc>,
+        max_stage: u8,
+    ) -> Result<()> {
+        admin::update_evolution_unlock_stage_internal(ctx, max_stage)
+    }
+
     /// Update breeding configuration (admin only)
     pub fn update_breeding_config(
         ctx: Context<UpdateDogeConfig>,
