@@ -57,12 +57,14 @@ function generateWebsiteConfig(config, deployment) {
         deployment.dbtc_mint_address ||
         deployment.dbtc_mint_created?.mint_address,
       dbtc_mintAuthority: deployment.dbtc_mint_created?.mint_authority,
-      dbtc_burnTaxBps:
-        deployment.dbtc_mint_created?.burn_tax_bps ||
-        config.token?.burn_tax_bps,
-      dbtc_maxBurnAmount:
-        deployment.dbtc_mint_created?.max_burn_amount?.toString() ||
-        config.token?.max_burn_amount?.toString(),
+      dbtc_transferTaxBps:
+        deployment.dbtc_mint_created?.transfer_tax_bps ||
+        config.token?.transfer_tax_bps,
+      dbtc_transferTaxImmutable:
+        deployment.dbtc_mint_created?.transfer_fee_config_authority == null,
+      dbtc_maxTransferFeeAmount:
+        deployment.dbtc_mint_created?.max_transfer_fee_amount?.toString() ||
+        config.token?.max_transfer_fee_amount?.toString(),
       dbtc_decimals: config.token?.decimals || 6,
 
       // ========== RAYDIUM POOL ==========
@@ -206,7 +208,7 @@ function generateWebsiteConfig(config, deployment) {
         deployment.minebtc_program_initialized?.FEE_RECIPIENT_MULTISIG ||
         config.deployment?.FEE_RECIPIENT_MULTISIG,
       transfer_fee_config_authority:
-        config.deployment?.transfer_fee_config_authority,
+        deployment.dbtc_mint_created?.transfer_fee_config_authority ?? null,
     },
   };
 

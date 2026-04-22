@@ -10,8 +10,8 @@
  * 2. Create associated token account for deployer
  * 3. Mint initial supply with verification
  * 4. Remove mint authority (make token non-mintable)
- * 5. Remove withdraw withheld authority
- * 6. Transfer transfer fee config authority to configured address
+ * 5. Set withdraw withheld authority to program PDA
+ * 6. Freeze transfer fee config authority (make transfer tax immutable)
  *
  * SAFETY FEATURES:
  * - All operations are idempotent (can be safely re-run)
@@ -54,7 +54,6 @@ import {
   getSolanaBalance,
   updateDeploymentStatus,
   createMintAccountWithMetadata,
-  createMintAccount_T22_TransferFeeOnly,
 } from "./helper.js";
 
 // ES Module compatibility
@@ -165,8 +164,8 @@ const TOKEN_METADATA = {
       deploymentPath
     );
 
-    // 6. Transfer transfer fee config authority
-    await transferTransferFeeConfigAuthority(
+    // 6. Freeze transfer fee config authority
+    await freezeTransferFeeConfigAuthority(
       connection,
       deployer,
       deploymentData,
@@ -208,26 +207,26 @@ function validateConfiguration() {
     errors.push("Initial supply must be greater than 0");
   }
   if (
-    config.token.burn_tax_bps === undefined ||
-    config.token.burn_tax_bps < 0 ||
-    config.token.burn_tax_bps > 10000
+    config.token.transfer_tax_bps === undefined ||
+    config.token.transfer_tax_bps < 0 ||
+    config.token.transfer_tax_bps > 10000
   ) {
-    errors.push("Burn tax basis points must be between 0 and 10000 (0-100%)");
+    errors.push("Transfer tax basis points must be between 0 and 10000 (0-100%)");
   }
   if (
-    config.token.max_burn_amount === undefined ||
-    config.token.max_burn_amount < 0 ||
-    !Number.isInteger(config.token.max_burn_amount)
+    config.token.max_transfer_fee_amount === undefined ||
+    config.token.max_transfer_fee_amount < 0 ||
+    !Number.isInteger(config.token.max_transfer_fee_amount)
   ) {
     errors.push(
-      "Max burn amount must be a non-negative whole-token value (not base units)"
+      "Max transfer-fee amount must be a non-negative whole-token value (not base units)"
     );
   }
   if (
-    config.token.burn_tax_bps > 0 &&
-    config.token.max_burn_amount === 0
+    config.token.transfer_tax_bps > 0 &&
+    config.token.max_transfer_fee_amount === 0
   ) {
-    errors.push("Max burn amount must be greater than 0 when burn tax is enabled");
+    errors.push("Max transfer-fee amount must be greater than 0 when transfer tax is enabled");
   }
 
   // Network validation
@@ -244,19 +243,6 @@ function validateConfiguration() {
   }
   if (!config.deployment.paths.deployments_dir) {
     errors.push("Deployments directory path is required");
-  }
-
-  // Transfer fee config authority validation
-  if (!config.deployment.transfer_fee_config_authority) {
-    errors.push("Transfer fee config authority is required");
-  } else {
-    try {
-      new PublicKey(config.deployment.transfer_fee_config_authority);
-    } catch (e) {
-      errors.push(
-        "Transfer fee config authority must be a valid Solana public key"
-      );
-    }
   }
 
   // Metadata validation
@@ -490,8 +476,8 @@ async function createMintAccountTx(
 
   // Setup mint parameters from config
   const decimals = config.token.decimals;
-  const burnTaxBps = config.token.burn_tax_bps;
-  const maxBurnAmount = config.token.max_burn_amount;
+  const burnTaxBps = config.token.transfer_tax_bps;
+  const maxBurnAmount = config.token.max_transfer_fee_amount;
   const maxBurnBaseUnits = BigInt(maxBurnAmount) * 10n ** BigInt(decimals);
 
   // Authority configuration
@@ -517,14 +503,14 @@ async function createMintAccountTx(
 
   console.log("\x1b[36m%s\x1b[0m", "⚙️ Mint Configuration:");
   console.log("\x1b[36m%s\x1b[0m", `   • Decimals: ${decimals}`);
-  console.log("\x1b[36m%s\x1b[0m", `   • Burn Tax: ${burnTaxBps / 100}%`);
+  console.log("\x1b[36m%s\x1b[0m", `   • Transfer Tax: ${burnTaxBps / 100}%`);
   console.log(
     "\x1b[36m%s\x1b[0m",
-    `   • Max Burn: ${maxBurnAmount.toLocaleString()} tokens`
+    `   • Max Transfer Fee: ${maxBurnAmount.toLocaleString()} tokens`
   );
   console.log(
     "\x1b[36m%s\x1b[0m",
-    `   • Max Burn (base units): ${maxBurnBaseUnits.toString()}`
+    `   • Max Transfer Fee (base units): ${maxBurnBaseUnits.toString()}`
   );
   console.log(
     "\x1b[36m%s\x1b[0m",
@@ -589,8 +575,8 @@ async function createMintAccountTx(
       transfer_fee_config_authority: transferFeeConfigAuthority.toBase58(),
       withdraw_withheld_authority: withdrawWithheldAuthority.toBase58(),
       decimals: decimals,
-      burn_tax_bps: burnTaxBps,
-      max_burn_amount: maxBurnAmount,
+      transfer_tax_bps: burnTaxBps,
+      max_transfer_fee_amount: maxBurnAmount,
       metadata_included: true,
       metadata_name: metadata.name,
       metadata_symbol: metadata.symbol,
@@ -1100,41 +1086,33 @@ async function setWithdrawWithheldAuthorityToPDA(
   }
 }
 
-async function transferTransferFeeConfigAuthority(
+async function freezeTransferFeeConfigAuthority(
   connection,
   deployer,
   deploymentData,
   deploymentPath
 ) {
-  if (deploymentData.transfer_fee_config_authority_transferred) {
+  if (deploymentData.transfer_fee_config_authority_frozen) {
     console.log(
       "\x1b[34m%s\x1b[0m",
-      "ℹ️ Transfer fee config authority already transferred. Skipping..."
+      "ℹ️ Transfer fee config authority already frozen. Skipping..."
     );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      "🔑 Current Authority:",
-      deploymentData.transfer_fee_config_authority_transferred
-        .new_transfer_fee_config_authority
-    );
+    console.log("\x1b[36m%s\x1b[0m", "🔒 Transfer tax is immutable");
     return;
   }
 
   console.log(
     "\x1b[35m%s\x1b[0m",
-    "\n=================== [ TRANSFERRING TRANSFER FEE CONFIG AUTHORITY ] ==================="
+    "\n=================== [ FREEZING TRANSFER FEE CONFIG AUTHORITY ] ==================="
   );
 
   const mintPubkey = new PublicKey(
     deploymentData.dbtc_mint_created.mint_address
   );
-  const newAuthority = new PublicKey(
-    config.deployment.transfer_fee_config_authority
-  );
 
   console.log(
     "\x1b[36m%s\x1b[0m",
-    "🔄 Transferring transfer fee config authority..."
+    "🔒 Freezing transfer fee config authority..."
   );
   console.log(
     "\x1b[36m%s\x1b[0m",
@@ -1142,11 +1120,7 @@ async function transferTransferFeeConfigAuthority(
   );
   console.log(
     "\x1b[36m%s\x1b[0m",
-    `   • New Transfer Fee Config Authority: ${newAuthority.toBase58()}`
-  );
-  console.log(
-    "\x1b[36m%s\x1b[0m",
-    `   • Action: Transfer authority to configured address`
+    `   • Action: Set transfer fee config authority to null`
   );
 
   try {
@@ -1156,7 +1130,7 @@ async function transferTransferFeeConfigAuthority(
       mintPubkey, // mint
       deployer, // current authority
       AuthorityType.TransferFeeConfig, // authority type
-      newAuthority, // new authority
+      null, // new authority
       [], // multiSigners
       undefined, // confirmOptions
       TOKEN_2022_PROGRAM_ID // programId
@@ -1164,28 +1138,27 @@ async function transferTransferFeeConfigAuthority(
 
     console.log(
       "\x1b[32m%s\x1b[0m",
-      "✅ Transfer fee config authority transferred successfully!"
+      "✅ Transfer fee config authority frozen successfully!"
     );
     console.log(
       "\x1b[32m%s\x1b[0m",
-      `🔑 New authority can now update transfer fee configuration`
+      `🔒 Transfer tax is now immutable on-chain`
     );
     console.log("\x1b[90m%s\x1b[0m", "🔗 Transaction:", signature);
 
     // Update deployment data
-    deploymentData.transfer_fee_config_authority_transferred = {
+    deploymentData.transfer_fee_config_authority_frozen = {
       previous_transfer_fee_config_authority:
         deploymentData.dbtc_mint_created.transfer_fee_config_authority,
-      new_transfer_fee_config_authority: newAuthority.toBase58(),
+      new_transfer_fee_config_authority: null,
       transfer_signature: signature,
       timestamp: new Date().toISOString(),
     };
 
     // Update the mint creation data to reflect new authority
-    deploymentData.dbtc_mint_created.transfer_fee_config_authority =
-      newAuthority.toBase58();
+    deploymentData.dbtc_mint_created.transfer_fee_config_authority = null;
     deploymentData.dbtc_mint_created.transfer_fee_config_authority_status =
-      "transferred";
+      "frozen";
 
     // Save deployment data
     fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
@@ -1193,7 +1166,7 @@ async function transferTransferFeeConfigAuthority(
   } catch (error) {
     console.error(
       "\x1b[31m%s\x1b[0m",
-      "❌ Failed to transfer transfer fee config authority:",
+      "❌ Failed to freeze transfer fee config authority:",
       error
     );
     console.error("\x1b[31m%s\x1b[0m", "Error details:", error.message);
@@ -1225,7 +1198,7 @@ function printCompletionSummary(deploymentData) {
   console.log("\x1b[36m%s\x1b[0m", `  • Decimals: ${config.token.decimals}`);
   console.log(
     "\x1b[36m%s\x1b[0m",
-    `  • Burn Tax: ${config.token.burn_tax_bps / 100}%`
+    `  • Transfer Tax: ${config.token.transfer_tax_bps / 100}%`
   );
 
   console.log("\x1b[90m%s\x1b[0m", "\n🔑 Important Addresses:");
@@ -1289,14 +1262,10 @@ function printCompletionSummary(deploymentData) {
     }
 
     // Transfer Fee Config Authority Status
-    if (deploymentData.transfer_fee_config_authority_transferred) {
+    if (deploymentData.transfer_fee_config_authority_frozen) {
       console.log(
-        "\x1b[33m%s\x1b[0m",
-        `   🔄 Transfer Fee Config Authority: TRANSFERRED`
-      );
-      console.log(
-        "\x1b[33m%s\x1b[0m",
-        `   🔑 New Authority: ${deploymentData.transfer_fee_config_authority_transferred.new_transfer_fee_config_authority}`
+        "\x1b[32m%s\x1b[0m",
+        `   🔒 Transfer Fee Config Authority: REMOVED - Transfer tax is immutable`
       );
     } else {
       console.log(

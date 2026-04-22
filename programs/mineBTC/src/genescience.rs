@@ -54,6 +54,7 @@ const COMBAT_MAX: u8 = 15;
 
 /// Calculate dynamic pricing for Genetic Assets (Bonding Curve)
 pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> Result<u64> {
+    crate::log_fn!("genescience", "compute_gene_price");
     if items_minted == 0 {
         return Ok(base_price);
     }
@@ -108,6 +109,7 @@ pub fn generate_genesis_dna(
     slot: u64,
     faction_id: u8,
 ) -> Result<[u8; 32]> {
+    crate::log_fn!("genescience", "generate_genesis_dna");
     require!(faction_id < 16, ErrorCode::InvalidFactionId);
 
     let mut seed_data = Vec::new();
@@ -220,6 +222,7 @@ pub fn calculate_mutation_result(
     user_key: &Pubkey,
     doge_mint: &Pubkey,
 ) -> MutationResult {
+    crate::log_fn!("genescience", "calculate_mutation_result");
     msg!("🧬 Calculating mutation result...");
     msg!(
         "   User total bet: {} SOL, Highest round bet for faction: {} SOL",
@@ -508,6 +511,7 @@ pub fn evolve_stage(
     seed: &[u8],
     doge_mint: &Pubkey,
 ) -> (u8, u8, u8, u8, u8, u8, u8) {
+    crate::log_fn!("genescience", "evolve_stage");
     let current_stage = (dna[0] >> 4) & 0x07;
     if current_stage >= 7 {
         return (current_stage, 0, 0, 0, 0, 0, 0);
@@ -552,6 +556,7 @@ pub fn mutate_visual_trait(
     seed: &[u8],
     doge_mint: &Pubkey,
 ) -> (u8, u8, u8) {
+    crate::log_fn!("genescience", "mutate_visual_trait");
     let (trait_index, current_val, new_val) = mutate_visual_trait_internal(dna, seed);
 
     emit!(DogeVisualMutation {
@@ -603,6 +608,7 @@ pub fn mutate_power_trait(
     seed: &[u8],
     doge_mint: &Pubkey,
 ) -> (u8, u8, u8) {
+    crate::log_fn!("genescience", "mutate_power_trait");
     let (trait_index, current_val, new_val) = mutate_power_trait_internal(dna, seed);
 
     emit!(DogePowerMutation {
@@ -652,6 +658,7 @@ pub fn breed_genes(
     parent2_dna: &[u8; 32],
     seed: &[u8],
 ) -> Result<[u8; 32]> {
+    crate::log_fn!("genescience", "breed_genes");
     let hash = keccak::hash(seed).to_bytes();
     let mut offspring_dna = [0u8; 32];
 
@@ -889,21 +896,25 @@ fn set_trait_value(dna: &mut [u8; 32], base_offset: u8, trait_bits: u8, index: u
 /// Get breed value from DNA (2 bits at BREED_OFFSET)
 #[allow(dead_code)]
 pub fn get_breed(dna: &[u8; 32]) -> u8 {
+    crate::log_fn!("genescience", "get_breed");
     get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0)
 }
 
 /// Get faction/family type from DNA (first 4 bits)
 pub fn get_family_type(dna: &[u8; 32]) -> u8 {
+    crate::log_fn!("genescience", "get_family_type");
     dna[0] & 0x0F
 }
 
 /// Get evolution stage from DNA (bits 4-6)
 pub fn get_evolution_stage(dna: &[u8; 32]) -> u8 {
+    crate::log_fn!("genescience", "get_evolution_stage");
     (dna[0] >> 4) & 0x07
 }
 
 /// Decode all 21 appearance traits
 pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+    crate::log_fn!("genescience", "decode_appearance_traits");
     (0..APPEARANCE_TOTAL_TRAITS)
         .map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, i as u8))
         .collect()
@@ -911,6 +922,7 @@ pub fn decode_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
 
 /// Decode dominant appearance traits (first from each of 7 groups)
 pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
+    crate::log_fn!("genescience", "decode_dominant_appearance_traits");
     (0..7)
         .map(|i| get_trait_value(dna, APPEARANCE_OFFSET, APPEARANCE_TRAIT_BITS, (i * 3) as u8))
         .collect()
@@ -918,6 +930,7 @@ pub fn decode_dominant_appearance_traits(dna: &[u8; 32]) -> Vec<u8> {
 
 /// Decode all 15 power traits
 pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+    crate::log_fn!("genescience", "decode_power_traits");
     (0..COMBAT_TOTAL_TRAITS)
         .map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, i as u8))
         .collect()
@@ -925,6 +938,7 @@ pub fn decode_power_traits(dna: &[u8; 32]) -> Vec<u8> {
 
 /// Decode dominant power traits (first from each of 5 groups)
 pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
+    crate::log_fn!("genescience", "decode_dominant_power_traits");
     (0..5)
         .map(|i| get_trait_value(dna, COMBAT_OFFSET, POWER_TRAIT_BITS, (i * 3) as u8))
         .collect()

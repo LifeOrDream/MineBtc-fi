@@ -11,19 +11,18 @@
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
-        "FEE_RECIPIENT_MULTISIG": "2FJysLPr83hcJ1nBhzBMjyF6HFhQrf6RptdnyAemUFiL",
-        "transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61"
+        "FEE_RECIPIENT_MULTISIG": "2FJysLPr83hcJ1nBhzBMjyF6HFhQrf6RptdnyAemUFiL"
     },
     "token": {
         "name": "DogeWifBTC",
         "symbol": "DogeBTC",
-        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, evolve operator doges through mutations, and climb the mutation leaderboard over rebase cycles tied to the economy's LP burn. 2.1B fixed supply, 1% transfer tax (Token-2022), deflationary by design.",
+        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, evolve operator doges through mutations, and climb the mutation leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
         "image": "https://assets.minebtc.fun/btc",
         "external_url": "https://assets.minebtc.fun/btc",
         "decimals": 6,
         "initial_supply": 2100000000,
-        "burn_tax_bps": 100,
-        "max_burn_amount": 1000000
+        "transfer_tax_bps": 10,
+        "max_transfer_fee_amount": 1000000
     },
     "raydium": {
         "program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",

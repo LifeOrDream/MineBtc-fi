@@ -65,6 +65,7 @@ pub fn int_stake_minebtc(
     lockup_duration: u64,
     position_index: u8,
 ) -> Result<()> {
+    crate::log_fn!("stake", "int_stake_minebtc");
     msg!(
         "🔒 [stake_minebtc] Starting MineBtc staking - Amount: {}, Lockup: {} days, Position: {}",
         amount,
@@ -325,6 +326,7 @@ pub fn int_stake_minebtc(
 
 /// Unstake MineBtc tokens from a position
 pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
+    crate::log_fn!("stake", "int_unstake_minebtc");
     // Store values before mutable borrow (for event emission)
     let position_key = ctx.accounts.user_position.key();
     let player_data_key = ctx.accounts.player_data.key();
@@ -621,6 +623,7 @@ pub fn int_stake_lp_tokens(
     lockup_duration: u64,
     position_index: u8,
 ) -> Result<()> {
+    crate::log_fn!("stake", "int_stake_lp_tokens");
     msg!(
         "🔒 [stake_lp_tokens] Starting LP token staking - Amount: {}, Lockup: {} days, Position: {}",
         amount,
@@ -850,6 +853,7 @@ pub fn int_stake_lp_tokens(
 
 /// Unstake LP tokens from a position
 pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+    crate::log_fn!("stake", "int_unstake_lp_tokens");
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
     let position_key = ctx.accounts.user_position.key();
@@ -1137,6 +1141,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 /// Claim staking rewards - updates all staking indexes, transfers SOL directly to owner,
 /// and accumulates MineBTC to pending_minebtc_rewards (NOT transferred here)
 pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
+    crate::log_fn!("stake", "int_claim_staking_rewards");
     msg!("💰 [claim_staking_rewards] Claiming SOL rewards and syncing MineBTC accrual");
 
     // Store values before mutable borrow (for event emission)
@@ -1245,6 +1250,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
 /// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
 /// NOTE: Call claim_staking_rewards first to update staking indexes and accumulate rewards
 pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
+    crate::log_fn!("stake", "int_withdraw_dbtc_rewards");
     msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with refining fee");
 
     // Store values before mutable borrow (for event emission)
@@ -1490,6 +1496,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
 
 /// Claim referral rewards (SOL and MineBtc)
 pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+    crate::log_fn!("stake", "int_claim_referral_rewards");
     msg!("💰 [claim_referral_rewards] Claiming referral rewards");
 
     let referral_rewards = &mut ctx.accounts.referral_rewards;
@@ -1607,6 +1614,7 @@ pub fn int_update_minebtc_staking_rewards(
     unrefined_rewards: &mut UnrefinedRewards,
     faction_state: &FactionState,
 ) -> Result<(u64, u64, u64)> {
+    crate::log_fn!("stake", "int_update_minebtc_staking_rewards");
     msg!("💰 Processing pending rewards before position update");
     let mut new_minebtc_rewards = 0;
     let mut new_sol_rewards = 0;
@@ -1687,6 +1695,7 @@ pub fn int_update_lp_staking_rewards(
     unrefined_rewards: &mut UnrefinedRewards,
     faction_state: &FactionState,
 ) -> Result<(u64, u64, u64)> {
+    crate::log_fn!("stake", "int_update_lp_staking_rewards");
     msg!("💰 Processing pending rewards before position update");
     let mut new_minebtc_rewards = 0;
     let mut new_sol_rewards = 0;

@@ -19,6 +19,7 @@ pub fn compute_rankings(
     sol_totals: &[u64; NUM_FACTIONS],
     active_factions: usize,
 ) -> Result<([u8; NUM_FACTIONS], [u8; NUM_FACTIONS])> {
+    crate::log_fn!("faction_war", "compute_rankings");
     validate_active_faction_count(active_factions)?;
 
     let mut ordered = [0u8; NUM_FACTIONS];
@@ -43,6 +44,7 @@ pub fn compute_rankings(
 }
 
 pub fn resolve_direction_from_ranks(start_rank: u8, final_rank: u8) -> (PredictionDirection, i8) {
+    crate::log_fn!("faction_war", "resolve_direction_from_ranks");
     let delta = start_rank as i8 - final_rank as i8;
     let direction = if delta > 0 {
         PredictionDirection::Up
@@ -136,6 +138,7 @@ pub fn compute_faction_reward_pools(
     faction_war_state: &mut FactionWarState,
     tuning: &GameplayTuningConfig,
 ) -> Result<()> {
+    crate::log_fn!("faction_war", "compute_faction_reward_pools");
     let active_factions = faction_war_state.active_faction_count as usize;
     validate_active_faction_count(active_factions)?;
 
@@ -202,6 +205,7 @@ pub fn compute_faction_reward_pools(
 pub fn initialize_faction_war_config_internal(
     ctx: Context<InitializeFactionWarConfig>,
 ) -> Result<()> {
+    crate::log_fn!("faction_war", "initialize_faction_war_config_internal");
     msg!("🔄 [initialize_faction_war_config] Initializing faction_war system");
     let faction_war_config = &mut ctx.accounts.faction_war_config;
     faction_war_config.bump = ctx.bumps.faction_war_config;
@@ -248,6 +252,7 @@ pub fn update_faction_war_config_internal(
     ctx: Context<UpdateFactionWarConfig>,
     is_active: Option<bool>,
 ) -> Result<()> {
+    crate::log_fn!("faction_war", "update_faction_war_config_internal");
     let faction_war_config = &mut ctx.accounts.faction_war_config;
 
     if let Some(active) = is_active {
@@ -286,6 +291,7 @@ pub fn finalize_faction_war_settlement(
     tax_config: &mut TaxConfig,
     tuning: &GameplayTuningConfig,
 ) -> Result<()> {
+    crate::log_fn!("faction_war", "finalize_faction_war_settlement");
     let active_factions = faction_war_state.active_faction_count as usize;
 
     // Empty faction_war (no bets ever placed, e.g. seeded by init_if_needed in
@@ -458,6 +464,7 @@ pub fn finalize_faction_war_settlement(
 }
 
 pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()> {
+    crate::log_fn!("faction_war", "settle_faction_war_internal");
     msg!("🔄 [settle_faction_war] Manual settlement crank");
     let faction_war_config = &mut *ctx.accounts.faction_war_config;
     let faction_war_state = &mut *ctx.accounts.faction_war_state;
@@ -582,6 +589,7 @@ pub fn claim_faction_war_rewards_internal(
     ctx: Context<ClaimFactionWarRewards>,
     faction_war_id: u64,
 ) -> Result<()> {
+    crate::log_fn!("faction_war", "claim_faction_war_rewards_internal");
     msg!(
         "🎁 [claim_faction_war_rewards] FactionWar #{}, user={}",
         faction_war_id,
