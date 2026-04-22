@@ -326,23 +326,86 @@ pub fn internal_set_player_claim_settings(
 /// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
 /// - amount_per_bet: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-pub fn internal_join_bets(
-    ctx: Context<JoinBets>,
+#[inline(never)]
+fn init_or_load_faction_war_state_account<'info>(
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    faction_war_state_info: &AccountInfo<'info>,
+    faction_war_id: u64,
+    faction_war_state_bump: u8,
+) -> Result<Box<FactionWarState>> {
+    let faction_war_id_bytes = faction_war_id.to_le_bytes();
+    let faction_war_state_bump_seed = [faction_war_state_bump];
+    let faction_war_state_seeds: &[&[u8]] = &[
+        FACTION_WAR_STATE_SEED,
+        faction_war_id_bytes.as_ref(),
+        faction_war_state_bump_seed.as_ref(),
+    ];
+    helper::init_pda_account_if_needed(
+        payer,
+        faction_war_state_info,
+        system_program,
+        faction_war_state_seeds,
+        FactionWarState::LEN,
+        &FactionWarState::blank(),
+    )?;
+    Ok(Box::new(helper::load_account_data::<FactionWarState>(
+        faction_war_state_info,
+    )?))
+}
+
+#[inline(never)]
+fn init_or_load_user_faction_war_bets_account<'info>(
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    user_faction_war_bets_info: &AccountInfo<'info>,
+    faction_war_id: u64,
+    owner: Pubkey,
+    user_faction_war_bets_bump: u8,
+) -> Result<Box<UserFactionWarBets>> {
+    let faction_war_id_bytes = faction_war_id.to_le_bytes();
+    let user_faction_war_bets_bump_seed = [user_faction_war_bets_bump];
+    let user_faction_war_bets_seeds: &[&[u8]] = &[
+        USER_FACTION_WAR_BETS_SEED,
+        owner.as_ref(),
+        faction_war_id_bytes.as_ref(),
+        user_faction_war_bets_bump_seed.as_ref(),
+    ];
+    helper::init_pda_account_if_needed(
+        payer,
+        user_faction_war_bets_info,
+        system_program,
+        user_faction_war_bets_seeds,
+        UserFactionWarBets::LEN,
+        &UserFactionWarBets::blank(),
+    )?;
+    Ok(Box::new(helper::load_account_data::<UserFactionWarBets>(
+        user_faction_war_bets_info,
+    )?))
+}
+
+#[inline(never)]
+pub fn internal_join_bets<'info>(
+    accounts: &mut JoinBets<'info>,
     round_id: u64,
+    faction_war_id: u64,
     bet_types: Vec<BetType>,
     amount_per_bet: u64,
     use_ticket: Option<u8>,
+    user_game_bet_bump: u8,
+    faction_war_state_bump: u8,
+    user_faction_war_bets_bump: u8,
 ) -> Result<()> {
     msg!(
         "🎲 [join_bets] User joining round with {} bet positions. User: {}",
         bet_types.len(),
-        ctx.accounts.authority.key()
+        accounts.authority.key()
     );
     msg!("   Amount per bet: {} lamports", amount_per_bet);
-    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
+    let global_config = load_global_config(&accounts.global_config.to_account_info())?;
 
     require!(
-        ctx.accounts.game_session.round_id == round_id,
+        accounts.game_session.round_id == round_id,
         ErrorCode::InvalidRound
     );
 
@@ -352,35 +415,60 @@ pub fn internal_join_bets(
         ErrorCode::InvalidParameters
     );
 
-    let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+    let lp_ops = accounts.mine_btc_mining.pol_stats.lp_operations_count;
+    require!(
+        accounts.faction_war_config.current_faction_war_id == faction_war_id,
+        ErrorCode::InvalidParameters
+    );
+    let authority_info = accounts.authority.as_ref();
+    let system_program_info = accounts.system_program.as_ref();
+    let faction_war_state_info = accounts.faction_war_state.as_ref();
+    let user_faction_war_bets_info = accounts.user_faction_war_bets.as_ref();
+    let mut faction_war_state = init_or_load_faction_war_state_account(
+        authority_info,
+        system_program_info,
+        faction_war_state_info,
+        faction_war_id,
+        faction_war_state_bump,
+    )?;
+    let mut user_faction_war_bets = init_or_load_user_faction_war_bets_account(
+        authority_info,
+        system_program_info,
+        user_faction_war_bets_info,
+        faction_war_id,
+        accounts.authority.key(),
+        user_faction_war_bets_bump,
+    )?;
 
     // Call internal_process_bets for all bets at once
     internal_process_bets(
         round_id,
         &global_config,
-        &mut ctx.accounts.tax_config,
-        &mut ctx.accounts.player_data,
-        &mut ctx.accounts.game_session,
-        &mut ctx.accounts.user_game_bet,
-        &ctx.accounts.authority.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
-        &ctx.accounts.sol_rewards_vault.to_account_info(),
-        &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.user_game_bet,
-        ctx.accounts.authority.key(),
+        &mut accounts.tax_config,
+        &mut accounts.player_data,
+        &mut accounts.game_session,
+        &mut accounts.user_game_bet,
+        &accounts.authority.to_account_info(),
+        &accounts.sol_treasury.to_account_info(),
+        &accounts.sol_rewards_vault.to_account_info(),
+        &accounts.sol_prize_pot_vault.to_account_info(),
+        &accounts.system_program.to_account_info(),
+        user_game_bet_bump,
+        accounts.authority.key(),
         amount_per_bet,
         bet_types.clone(),
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &mut ctx.accounts.faction_war_config,
-        &mut ctx.accounts.faction_war_state,
-        ctx.bumps.faction_war_state,
+        &mut accounts.faction_war_config,
+        faction_war_state.as_mut(),
+        faction_war_state_bump,
         lp_ops,
-        &mut ctx.accounts.user_faction_war_bets,
-        ctx.bumps.user_faction_war_bets,
+        user_faction_war_bets.as_mut(),
+        user_faction_war_bets_bump,
     )?;
+    helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
+    helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
 
     msg!(
         "✅ [join_bets] All {} bet positions placed successfully",
@@ -772,42 +860,70 @@ pub fn internal_update_autominer(
 /// Generates faction-direction bets dynamically from the configured country set.
 /// In SOL mode, pays the caller 1% of `sol_per_round` (max 0.005 SOL) for tx costs.
 /// Uses the same round/faction_war betting path as manual users.
-pub fn internal_execute_autominer_bet(
-    ctx: Context<ExecuteAutominerBet>,
+#[inline(never)]
+pub fn internal_execute_autominer_bet<'info>(
+    accounts: &mut ExecuteAutominerBet<'info>,
     current_round_id: u64,
+    faction_war_id: u64,
+    user_game_bet_bump: u8,
+    faction_war_state_bump: u8,
+    user_faction_war_bets_bump: u8,
+    custody_bump: u8,
 ) -> Result<()> {
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
-    msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
-    msg!("   Caller: {}", ctx.accounts.caller.key());
+    msg!("   Owner: {}", accounts.autominer_vault.owner);
+    msg!("   Caller: {}", accounts.caller.key());
     require!(
-        ctx.accounts.system_program.key() == anchor_lang::system_program::ID,
+        accounts.system_program.key() == anchor_lang::system_program::ID,
         ErrorCode::InvalidProgramId
     );
     let (expected_sol_treasury, _) =
         Pubkey::find_program_address(&[SOL_TREASURY_SEED.as_ref()], &crate::ID);
     require!(
-        ctx.accounts.sol_treasury.key() == expected_sol_treasury,
+        accounts.sol_treasury.key() == expected_sol_treasury,
         ErrorCode::InvalidAccount
     );
 
     let global_state: GlobalGameSate =
-        load_program_account(&ctx.accounts.global_game_state.to_account_info())?;
-    let global_config = load_global_config(&ctx.accounts.global_config.to_account_info())?;
+        load_program_account(&accounts.global_game_state.to_account_info())?;
+    let global_config = load_global_config(&accounts.global_config.to_account_info())?;
     let clock = Clock::get()?;
+    require!(
+        accounts.faction_war_config.current_faction_war_id == faction_war_id,
+        ErrorCode::InvalidParameters
+    );
+    let caller_info = accounts.caller.as_ref();
+    let system_program_info = accounts.system_program.as_ref();
+    let faction_war_state_info = accounts.faction_war_state.as_ref();
+    let user_faction_war_bets_info = accounts.user_faction_war_bets.as_ref();
+    let mut faction_war_state = init_or_load_faction_war_state_account(
+        caller_info,
+        system_program_info,
+        faction_war_state_info,
+        faction_war_id,
+        faction_war_state_bump,
+    )?;
+    let mut user_faction_war_bets = init_or_load_user_faction_war_bets_account(
+        caller_info,
+        system_program_info,
+        user_faction_war_bets_info,
+        faction_war_id,
+        accounts.autominer_vault.owner,
+        user_faction_war_bets_bump,
+    )?;
 
     // Read values before mutable borrow
-    let owner_key = ctx.accounts.autominer_vault.owner;
-    let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
-    let last_bet_round_id = ctx.accounts.autominer_vault.last_bet_round_id;
-    let sol_per_round = ctx.accounts.autominer_vault.sol_per_round;
-    let factions_config = ctx.accounts.autominer_vault.factions_config.clone();
-    let sol_balance = ctx.accounts.autominer_vault.sol_balance;
-    let use_ticket = ctx.accounts.autominer_vault.use_ticket;
-    let custody_bump = ctx.bumps.autominer_custody;
-    let autominer_custody_info = ctx.accounts.autominer_custody.to_account_info();
+    let owner_key = accounts.autominer_vault.owner;
+    let rounds_remaining = accounts.autominer_vault.rounds_remaining;
+    let last_bet_round_id = accounts.autominer_vault.last_bet_round_id;
+    let sol_per_round = accounts.autominer_vault.sol_per_round;
+    let factions_config = accounts.autominer_vault.factions_config.clone();
+    let sol_balance = accounts.autominer_vault.sol_balance;
+    let use_ticket = accounts.autominer_vault.use_ticket;
+    let autominer_custody_info = accounts.autominer_custody.to_account_info();
 
     require!(
-        ctx.accounts.game_session.round_id == current_round_id,
+        accounts.game_session.round_id == current_round_id,
         ErrorCode::InvalidRound
     );
     require!(
@@ -861,7 +977,7 @@ pub fn internal_execute_autominer_bet(
     let (bet_size_per_bet, effective_use_ticket) = if let Some(ticket_tier_index) = use_ticket {
         // Ticket mode: bet amount comes from player's ticket value.
         // No SOL is reserved for tickets and no caller compensation is paid.
-        let player_data = &ctx.accounts.player_data;
+        let player_data = &accounts.player_data;
         require!(
             (ticket_tier_index as usize) < player_data.free_tickets.len(),
             ErrorCode::InvalidParameters
@@ -897,10 +1013,10 @@ pub fn internal_execute_autominer_bet(
         let autominer_seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
         transfer(
             CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
+                accounts.system_program.to_account_info(),
                 Transfer {
                     from: autominer_custody_info.clone(),
-                    to: ctx.accounts.caller.to_account_info(),
+                    to: accounts.caller.to_account_info(),
                 },
                 &[autominer_seeds],
             ),
@@ -913,7 +1029,7 @@ pub fn internal_execute_autominer_bet(
     }
 
     // Now borrow mutably to update state
-    let autominer_vault = &mut ctx.accounts.autominer_vault;
+    let autominer_vault = &mut accounts.autominer_vault;
     // Mark bets as placed for this round
     autominer_vault.last_bet_round_id = current_round_id;
     msg!(
@@ -950,42 +1066,44 @@ pub fn internal_execute_autominer_bet(
 
     // Prepare autominer info
     let autominer_info = AutominerBetInfo {
-        vault: ctx.accounts.autominer_vault.key(),
-        caller: ctx.accounts.caller.key(),
+        vault: accounts.autominer_vault.key(),
+        caller: accounts.caller.key(),
         compensation: total_caller_compensation,
         rounds_remaining: new_rounds_remaining,
     };
 
-    let lp_ops = ctx.accounts.mine_btc_mining.pol_stats.lp_operations_count;
+    let lp_ops = accounts.mine_btc_mining.pol_stats.lp_operations_count;
 
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
     internal_process_bets(
         current_round_id,
         &global_config,
-        &mut ctx.accounts.tax_config,
-        &mut ctx.accounts.player_data,
-        &mut ctx.accounts.game_session,
-        &mut ctx.accounts.user_game_bet,
+        &mut accounts.tax_config,
+        &mut accounts.player_data,
+        &mut accounts.game_session,
+        &mut accounts.user_game_bet,
         &autominer_custody_info,
-        &ctx.accounts.sol_treasury.to_account_info(),
-        &ctx.accounts.sol_rewards_vault.to_account_info(),
-        &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.user_game_bet,
+        &accounts.sol_treasury.to_account_info(),
+        &accounts.sol_rewards_vault.to_account_info(),
+        &accounts.sol_prize_pot_vault.to_account_info(),
+        &accounts.system_program.to_account_info(),
+        user_game_bet_bump,
         owner_key,
         bet_size_per_bet,
         bet_types.clone(),
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
-        &mut ctx.accounts.faction_war_config,
-        &mut ctx.accounts.faction_war_state,
-        ctx.bumps.faction_war_state,
+        &mut accounts.faction_war_config,
+        faction_war_state.as_mut(),
+        faction_war_state_bump,
         lp_ops,
-        &mut ctx.accounts.user_faction_war_bets,
-        ctx.bumps.user_faction_war_bets,
+        user_faction_war_bets.as_mut(),
+        user_faction_war_bets_bump,
     )?;
+    helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
+    helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
 
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
     msg!(
@@ -1551,6 +1669,7 @@ fn prediction_bet_parts(bet_type: &BetType) -> Result<(u8, PredictionDirection)>
 /// Internal join_bets logic for batched processing
 /// Calculates totals, performs single transfers, and updates state for all bets
 #[allow(clippy::too_many_arguments)]
+#[inline(never)]
 fn internal_process_bets<'info>(
     round_id: u64,
     global_config: &GlobalConfig,
@@ -1571,10 +1690,10 @@ fn internal_process_bets<'info>(
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
     faction_war_config: &mut Account<'info, FactionWarConfig>,
-    faction_war_state: &mut Account<'info, FactionWarState>,
+    faction_war_state: &mut FactionWarState,
     faction_war_state_bump: u8,
     lp_operations_count: u32,
-    user_faction_war_bets: &mut Account<'info, UserFactionWarBets>,
+    user_faction_war_bets: &mut UserFactionWarBets,
     user_faction_war_bets_bump: u8,
 ) -> Result<()> {
     let clock = Clock::get()?;
@@ -1623,8 +1742,13 @@ fn internal_process_bets<'info>(
             [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
         faction_war_state.faction_direction_totals =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        faction_war_state.loyalty_direction_totals =
+            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
         faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
+        faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
         faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
         faction_war_state.eligible_doge_direction_totals =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
@@ -1636,6 +1760,7 @@ fn internal_process_bets<'info>(
         faction_war_config.faction_war_settle_cycle = lp_operations_count
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        faction_war_config.reset_cycle_telemetry(faction_war_state.faction_war_id);
 
         emit!(crate::events::FactionWarAutoStarted {
             faction_war_id: faction_war_state.faction_war_id,
@@ -1906,17 +2031,27 @@ fn internal_process_bets<'info>(
                 .checked_add(wgtd_points_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Only own-faction bets count for faction_war rewards.
-        // Cross-faction bets still work for round rewards but do not accumulate into faction_war state.
+        // Base faction-war rewards track correct predictions across every country.
+        user_faction_war_bets.direction_bets[faction_index][direction_index] =
+            user_faction_war_bets.direction_bets[faction_index][direction_index]
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        faction_war_state.faction_direction_totals[faction_index][direction_index] =
+            faction_war_state.faction_direction_totals[faction_index][direction_index]
+                .checked_add(wgtd_points_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        // Loyalty and Doge bonus layers only care about backing your own country.
         if faction_id == player_data.faction_id {
-            user_faction_war_bets.direction_bets[faction_index][direction_index] =
-                user_faction_war_bets.direction_bets[faction_index][direction_index]
+            faction_war_state.loyalty_direction_totals[faction_index][direction_index] =
+                faction_war_state.loyalty_direction_totals[faction_index][direction_index]
                     .checked_add(wgtd_points_per_bet)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
-            faction_war_state.faction_direction_totals[faction_index][direction_index] =
-                faction_war_state.faction_direction_totals[faction_index][direction_index]
-                    .checked_add(wgtd_points_per_bet)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+            faction_war_state.faction_sol_totals[faction_index] = faction_war_state
+                .faction_sol_totals[faction_index]
+                .checked_add(net_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+
             if user_faction_war_bets.doge_bonus_eligible {
                 faction_war_state.eligible_doge_direction_totals[faction_index][direction_index] =
                     faction_war_state.eligible_doge_direction_totals[faction_index]
@@ -2046,7 +2181,7 @@ fn internal_process_bets<'info>(
     let mutation_budget = faction_war_state.active_faction_count / 3;
     let round_has_budget = game_session.total_mutations_this_round < mutation_budget.max(1);
 
-    if global_config.rpg_progression
+    if global_config.gameplay_tuning.rpg_progression
         && amount_per_bet > 0
         && use_ticket.is_none()
         && user_game_bet.mutation_type == 0
@@ -2066,8 +2201,13 @@ fn internal_process_bets<'info>(
             player_data.active_multiplier,
             player_data.gameplay_doge_dna,
             player_data.gameplay_doge_xp,
-            global_config.max_evolution_stage_unlocked,
+            global_config.gameplay_tuning.max_evolution_stage_unlocked,
             game_session.mutations_per_faction[faction_id],
+            game_session.sol_bets_by_faction[faction_id],
+            &global_config.gameplay_tuning,
+            faction_war_config.cycle_rounds_elapsed,
+            faction_war_config.cycle_mutations_triggered,
+            faction_war_config.recent_mutation_pressure_bps,
             game_session.total_sol_bets,
             game_session.total_points_bets,
             game_session.total_wgtd_points_bets,
@@ -2414,7 +2554,7 @@ pub struct ChangeFaction<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(round_id: u64)]
+#[instruction(round_id: u64, faction_war_id: u64)]
 pub struct JoinBets<'info> {
     /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
@@ -2480,29 +2620,25 @@ pub struct JoinBets<'info> {
     #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump)]
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
-    /// FactionWar state for current faction_war (init_if_needed for new faction_wars)
+    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     #[account(
-        init_if_needed,
-        payer = authority,
-        space = FactionWarState::LEN,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+    pub faction_war_state: UncheckedAccount<'info>,
 
     /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
     #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// User faction_war bets for current faction_war (init_if_needed for first bet)
+    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     #[account(
-        init_if_needed,
-        payer = authority,
-        space = UserFactionWarBets::LEN,
-        seeds = [USER_FACTION_WAR_BETS_SEED, authority.key().as_ref(), &faction_war_config.current_faction_war_id.to_le_bytes()],
+        mut,
+        seeds = [USER_FACTION_WAR_BETS_SEED, authority.key().as_ref(), &faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub user_faction_war_bets: Box<Account<'info, UserFactionWarBets>>,
+    pub user_faction_war_bets: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2751,7 +2887,7 @@ pub struct StopAutominer<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(current_round_id: u64)]
+#[instruction(current_round_id: u64, faction_war_id: u64)]
 pub struct ExecuteAutominerBet<'info> {
     #[account(
         mut,
@@ -2834,29 +2970,25 @@ pub struct ExecuteAutominerBet<'info> {
     #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump)]
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
-    /// FactionWar state for current faction_war (init_if_needed for new faction_wars)
+    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     #[account(
-        init_if_needed,
-        payer = caller,
-        space = FactionWarState::LEN,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+    pub faction_war_state: UncheckedAccount<'info>,
 
     /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
     #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// User faction_war bets for vault OWNER (init_if_needed, payer=caller)
+    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     #[account(
-        init_if_needed,
-        payer = caller,
-        space = UserFactionWarBets::LEN,
-        seeds = [USER_FACTION_WAR_BETS_SEED, autominer_vault.owner.as_ref(), &faction_war_config.current_faction_war_id.to_le_bytes()],
+        mut,
+        seeds = [USER_FACTION_WAR_BETS_SEED, autominer_vault.owner.as_ref(), &faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub user_faction_war_bets: Box<Account<'info, UserFactionWarBets>>,
+    pub user_faction_war_bets: UncheckedAccount<'info>,
 
     /// Caller (bot or anyone) - doesn't need to be owner
     #[account(mut)]
@@ -2882,7 +3014,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     msg!("   Doge mint: {}", doge_mint);
 
     require!(
-        ctx.accounts.global_config.rpg_progression,
+        ctx.accounts.global_config.gameplay_tuning.rpg_progression,
         ErrorCode::GameplayNotEnabled
     );
     require!(

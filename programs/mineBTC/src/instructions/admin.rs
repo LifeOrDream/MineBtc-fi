@@ -45,6 +45,27 @@ pub struct CreatorInput {
     pub percentage: u8,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+pub struct GameplayTuningUpdateArgs {
+    pub enable_rpg_progression: Option<bool>,
+    pub max_evolution_stage_unlocked: Option<u8>,
+
+    pub faction_war_base_reward_bps: Option<u16>,
+    pub faction_war_loyalty_reward_bps: Option<u16>,
+    pub faction_war_doge_reward_bps: Option<u16>,
+
+    pub base_mutation_chance_bps: Option<u16>,
+    pub mutation_chance_floor_bps: Option<u16>,
+    pub mutation_chance_cap_bps: Option<u16>,
+    pub faction_volume_threshold_lamports: Option<u64>,
+    pub extra_volume_threshold_per_mutation_lamports: Option<u64>,
+    pub global_mutation_pressure_decay_bps: Option<u16>,
+    pub global_mutation_pressure_per_mutation_bps: Option<u16>,
+    pub target_mutations_per_cycle: Option<u16>,
+    pub target_rounds_per_cycle: Option<u16>,
+    pub pacing_max_adjustment_bps: Option<u16>,
+}
+
 // --------------------------------------------------------------------------------
 // ------------ GLOBAL_CONFIG :: UPDATES, ADDING EXPANSIONS ------------
 // --------------------------------------------------------------------------------
@@ -93,8 +114,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     global_config.change_faction_fee = DEFAULT_CHANGE_FACTION_FEE;
     global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
-    global_config.rpg_progression = false;
-    global_config.max_evolution_stage_unlocked = 0;
+    global_config.gameplay_tuning.apply_defaults();
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
@@ -506,7 +526,7 @@ pub fn update_fees_internal(
 
 /// Toggle RPG progression (mutations, XP) during gameplay
 pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
-    ctx.accounts.global_config.rpg_progression = enabled;
+    ctx.accounts.global_config.gameplay_tuning.rpg_progression = enabled;
     Ok(())
 }
 
@@ -522,7 +542,10 @@ pub fn update_evolution_unlock_stage_internal(
         ErrorCode::InvalidParameters
     );
 
-    ctx.accounts.global_config.max_evolution_stage_unlocked = max_stage;
+    ctx.accounts
+        .global_config
+        .gameplay_tuning
+        .max_evolution_stage_unlocked = max_stage;
     msg!(
         "[update_evolution_unlock_stage] authority={} max_stage={}",
         ctx.accounts.authority.key(),
@@ -572,6 +595,154 @@ pub fn update_emission_params_internal(
         );
         mine_btc_mining.emission_decrease_pct = decrease_pct;
     }
+
+    Ok(())
+}
+
+/// Unified gameplay-tuning update surface.
+/// This lets admin tune the live mutation engine and cycle reward split from one payload.
+pub fn update_gameplay_tuning_internal(
+    ctx: Context<UpdateConfigAc>,
+    args: GameplayTuningUpdateArgs,
+) -> Result<()> {
+    let global_config = &mut ctx.accounts.global_config;
+
+    if global_config.gameplay_tuning.is_uninitialized() {
+        global_config.gameplay_tuning.apply_defaults();
+    }
+
+    if let Some(enabled) = args.enable_rpg_progression {
+        global_config.gameplay_tuning.rpg_progression = enabled;
+    }
+
+    if let Some(max_stage) = args.max_evolution_stage_unlocked {
+        require!(
+            max_stage <= MAX_EVOLUTION_STAGE,
+            ErrorCode::InvalidParameters
+        );
+        global_config.gameplay_tuning.max_evolution_stage_unlocked = max_stage;
+    }
+
+    let tuning = &mut global_config.gameplay_tuning;
+
+    let next_base_reward_bps = args
+        .faction_war_base_reward_bps
+        .unwrap_or(tuning.faction_war_base_reward_bps);
+    let next_loyalty_reward_bps = args
+        .faction_war_loyalty_reward_bps
+        .unwrap_or(tuning.faction_war_loyalty_reward_bps);
+    let next_doge_reward_bps = args
+        .faction_war_doge_reward_bps
+        .unwrap_or(tuning.faction_war_doge_reward_bps);
+    let reward_total =
+        next_base_reward_bps as u32 + next_loyalty_reward_bps as u32 + next_doge_reward_bps as u32;
+    require!(
+        reward_total == BASIS_POINTS_DENOMINATOR as u32,
+        ErrorCode::InvalidParameters
+    );
+
+    let next_base_mutation_chance_bps = args
+        .base_mutation_chance_bps
+        .unwrap_or(tuning.base_mutation_chance_bps);
+    let next_chance_floor_bps = args
+        .mutation_chance_floor_bps
+        .unwrap_or(tuning.mutation_chance_floor_bps);
+    let next_chance_cap_bps = args
+        .mutation_chance_cap_bps
+        .unwrap_or(tuning.mutation_chance_cap_bps);
+    require!(
+        next_base_mutation_chance_bps <= BASIS_POINTS_DENOMINATOR as u16
+            && next_chance_floor_bps <= next_chance_cap_bps
+            && next_chance_cap_bps <= BASIS_POINTS_DENOMINATOR as u16,
+        ErrorCode::InvalidParameters
+    );
+
+    let next_decay_bps = args
+        .global_mutation_pressure_decay_bps
+        .unwrap_or(tuning.global_mutation_pressure_decay_bps);
+    let next_pressure_step_bps = args
+        .global_mutation_pressure_per_mutation_bps
+        .unwrap_or(tuning.global_mutation_pressure_per_mutation_bps);
+    let next_target_mutations = args
+        .target_mutations_per_cycle
+        .unwrap_or(tuning.target_mutations_per_cycle);
+    let next_target_rounds = args
+        .target_rounds_per_cycle
+        .unwrap_or(tuning.target_rounds_per_cycle);
+    let next_pacing_max_adjustment_bps = args
+        .pacing_max_adjustment_bps
+        .unwrap_or(tuning.pacing_max_adjustment_bps);
+    require!(
+        next_decay_bps <= BASIS_POINTS_DENOMINATOR as u16
+            && next_pressure_step_bps <= BASIS_POINTS_DENOMINATOR as u16
+            && next_target_mutations > 0
+            && next_target_rounds > 0
+            && next_pacing_max_adjustment_bps <= BASIS_POINTS_DENOMINATOR as u16
+            && args
+                .faction_volume_threshold_lamports
+                .unwrap_or(tuning.faction_volume_threshold_lamports)
+                > 0
+            && args
+                .extra_volume_threshold_per_mutation_lamports
+                .unwrap_or(tuning.extra_volume_threshold_per_mutation_lamports)
+                > 0,
+        ErrorCode::InvalidParameters
+    );
+
+    tuning.faction_war_base_reward_bps = next_base_reward_bps;
+    tuning.faction_war_loyalty_reward_bps = next_loyalty_reward_bps;
+    tuning.faction_war_doge_reward_bps = next_doge_reward_bps;
+    tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
+    tuning.mutation_chance_floor_bps = next_chance_floor_bps;
+    tuning.mutation_chance_cap_bps = next_chance_cap_bps;
+    tuning.faction_volume_threshold_lamports = args
+        .faction_volume_threshold_lamports
+        .unwrap_or(tuning.faction_volume_threshold_lamports);
+    tuning.extra_volume_threshold_per_mutation_lamports = args
+        .extra_volume_threshold_per_mutation_lamports
+        .unwrap_or(tuning.extra_volume_threshold_per_mutation_lamports);
+    tuning.global_mutation_pressure_decay_bps = next_decay_bps;
+    tuning.global_mutation_pressure_per_mutation_bps = next_pressure_step_bps;
+    tuning.target_mutations_per_cycle = next_target_mutations;
+    tuning.target_rounds_per_cycle = next_target_rounds;
+    tuning.pacing_max_adjustment_bps = next_pacing_max_adjustment_bps;
+
+    let rpg_progression = tuning.rpg_progression;
+    let max_evolution_stage_unlocked = tuning.max_evolution_stage_unlocked;
+    let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
+    let faction_war_loyalty_reward_bps = tuning.faction_war_loyalty_reward_bps;
+    let faction_war_doge_reward_bps = tuning.faction_war_doge_reward_bps;
+    let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
+    let mutation_chance_floor_bps = tuning.mutation_chance_floor_bps;
+    let mutation_chance_cap_bps = tuning.mutation_chance_cap_bps;
+    let faction_volume_threshold_lamports = tuning.faction_volume_threshold_lamports;
+    let extra_volume_threshold_per_mutation_lamports =
+        tuning.extra_volume_threshold_per_mutation_lamports;
+    let global_mutation_pressure_decay_bps = tuning.global_mutation_pressure_decay_bps;
+    let global_mutation_pressure_per_mutation_bps =
+        tuning.global_mutation_pressure_per_mutation_bps;
+    let target_mutations_per_cycle = tuning.target_mutations_per_cycle;
+    let target_rounds_per_cycle = tuning.target_rounds_per_cycle;
+    let pacing_max_adjustment_bps = tuning.pacing_max_adjustment_bps;
+
+    emit!(GameplayTuningUpdated {
+        authority: ctx.accounts.authority.key(),
+        rpg_progression,
+        max_evolution_stage_unlocked,
+        faction_war_base_reward_bps,
+        faction_war_loyalty_reward_bps,
+        faction_war_doge_reward_bps,
+        base_mutation_chance_bps,
+        mutation_chance_floor_bps,
+        mutation_chance_cap_bps,
+        faction_volume_threshold_lamports,
+        extra_volume_threshold_per_mutation_lamports,
+        global_mutation_pressure_decay_bps,
+        global_mutation_pressure_per_mutation_bps,
+        target_mutations_per_cycle,
+        target_rounds_per_cycle,
+        pacing_max_adjustment_bps,
+    });
 
     Ok(())
 }

@@ -3,7 +3,9 @@ use anchor_lang::solana_program::keccak;
 
 use crate::errors::ErrorCode;
 use crate::events::{DogeEvolution, DogePowerMutation, DogeVisualMutation};
-use crate::state::{BASE_MULTIPLIER, FACTION_MUTATION_PENALTY_STEP, MAX_BASE_CHANCE};
+use crate::state::{
+    GameplayTuningConfig, BASE_MULTIPLIER, BASIS_POINTS_DENOMINATOR, FACTION_MUTATION_PENALTY_STEP,
+};
 
 // ========================================================================================
 // ============================= DNA STRUCTURE & CONSTANTS ================================
@@ -206,6 +208,11 @@ pub fn calculate_mutation_result(
     gameplay_doge_xp: u32,
     max_evolution_stage_unlocked: u8,
     faction_mutation_count: u8,
+    faction_round_volume: u64,
+    tuning: &GameplayTuningConfig,
+    cycle_rounds_elapsed: u16,
+    cycle_mutations_triggered: u16,
+    recent_mutation_pressure_bps: u16,
     total_sol_bets: u64,
     total_points_bets: u64,
     total_wgtd_points_bets: u64,
@@ -225,8 +232,9 @@ pub fn calculate_mutation_result(
         gameplay_doge_xp
     );
     msg!(
-        "   Total sol bets: {} SOL, Total points bets: {}, Total wgtd points bets: {}",
+        "   Total sol bets: {} SOL, Faction round volume: {} SOL, Total points bets: {}, Total wgtd points bets: {}",
         format!("{:.4}", total_sol_bets as f64 / 1e9),
+        format!("{:.4}", faction_round_volume as f64 / 1e9),
         format!("{:.4}", total_points_bets as f64 / 1e9),
         format!("{:.4}", total_wgtd_points_bets as f64 / 1e9)
     );
@@ -301,9 +309,83 @@ pub fn calculate_mutation_result(
         faction_penalty as f64 / 100.0
     );
 
-    // D. Final Chance = BASE × bet_strength × mult_factor × faction_penalty / 1T
-    let final_chance_bps =
-        (MAX_BASE_CHANCE * bet_strength * mult_factor * faction_penalty) / 1_000_000_000_000;
+    // D. Country-volume factor: more real SOL support unlocks more mutation throughput.
+    let required_volume = tuning
+        .faction_volume_threshold_lamports
+        .saturating_add(
+            tuning
+                .extra_volume_threshold_per_mutation_lamports
+                .saturating_mul(faction_mutation_count as u64),
+        )
+        .max(1);
+    let volume_factor = ((faction_round_volume as u128)
+        .saturating_mul(10_000)
+        .checked_div(required_volume as u128)
+        .unwrap_or(10_000))
+    .min(10_000) as u64;
+    msg!(
+        "   Volume factor: {:.2}% (volume={} / required={})",
+        volume_factor as f64 / 100.0,
+        faction_round_volume,
+        required_volume
+    );
+
+    // E. Global cooldown factor: recent mutation-heavy rounds suppress the next few rounds.
+    let cooldown_factor =
+        BASIS_POINTS_DENOMINATOR.saturating_sub(recent_mutation_pressure_bps as u64);
+    msg!(
+        "   Cooldown factor: {:.2}% (recent_pressure={} bps)",
+        cooldown_factor as f64 / 100.0,
+        recent_mutation_pressure_bps
+    );
+
+    // F. Cycle pacing factor: compare observed mutations so far against target-by-now.
+    let progress_rounds = u64::from(cycle_rounds_elapsed).max(1);
+    let target_rounds = u64::from(tuning.target_rounds_per_cycle).max(1);
+    let target_mutations = u64::from(tuning.target_mutations_per_cycle).max(1);
+    let expected_mutations_x100 = target_mutations
+        .checked_mul(progress_rounds)
+        .unwrap_or(0)
+        .checked_mul(100)
+        .unwrap_or(0)
+        .checked_div(target_rounds)
+        .unwrap_or(0);
+    let actual_mutations_x100 = u64::from(cycle_mutations_triggered).saturating_mul(100);
+    let mutation_gap_x100 = expected_mutations_x100 as i64 - actual_mutations_x100 as i64;
+    let pacing_adjustment = ((mutation_gap_x100 as i128)
+        .checked_mul(tuning.pacing_max_adjustment_bps as i128)
+        .unwrap_or(0)
+        .checked_div((target_mutations.saturating_mul(100)).max(100) as i128)
+        .unwrap_or(0))
+    .clamp(
+        -(tuning.pacing_max_adjustment_bps as i128),
+        tuning.pacing_max_adjustment_bps as i128,
+    ) as i64;
+    let max_pacing_factor =
+        BASIS_POINTS_DENOMINATOR as i64 + tuning.pacing_max_adjustment_bps as i64;
+    let pacing_factor =
+        (BASIS_POINTS_DENOMINATOR as i64 + pacing_adjustment).clamp(0, max_pacing_factor) as u64;
+    msg!(
+        "   Pacing factor: {:.2}% (expected_x100={}, actual_x100={}, adjustment={} bps)",
+        pacing_factor as f64 / 100.0,
+        expected_mutations_x100,
+        actual_mutations_x100,
+        pacing_adjustment
+    );
+
+    // G. Final Chance = BASE × bet_strength × mult_factor × faction_penalty × volume × cooldown × pacing
+    let final_chance_bps = ((tuning.base_mutation_chance_bps as u128)
+        * (bet_strength as u128)
+        * (mult_factor as u128)
+        * (faction_penalty as u128)
+        * (volume_factor as u128)
+        * (cooldown_factor as u128)
+        * (pacing_factor as u128)
+        / 10_000u128.pow(6))
+    .clamp(
+        tuning.mutation_chance_floor_bps as u128,
+        tuning.mutation_chance_cap_bps as u128,
+    ) as u64;
     msg!("   Final chance: {:.2}%", final_chance_bps as f64 / 100.0);
 
     // --- STEP 2: ROLL THE DICE ---
@@ -861,6 +943,28 @@ mod tests {
         Pubkey::new_from_array([1u8; 32])
     }
 
+    fn test_tuning() -> GameplayTuningConfig {
+        let mut tuning = GameplayTuningConfig {
+            rpg_progression: false,
+            max_evolution_stage_unlocked: 0,
+            faction_war_base_reward_bps: 0,
+            faction_war_loyalty_reward_bps: 0,
+            faction_war_doge_reward_bps: 0,
+            base_mutation_chance_bps: 0,
+            mutation_chance_floor_bps: 0,
+            mutation_chance_cap_bps: 0,
+            faction_volume_threshold_lamports: 0,
+            extra_volume_threshold_per_mutation_lamports: 0,
+            global_mutation_pressure_decay_bps: 0,
+            global_mutation_pressure_per_mutation_bps: 0,
+            target_mutations_per_cycle: 0,
+            target_rounds_per_cycle: 0,
+            pacing_max_adjustment_bps: 0,
+        };
+        tuning.apply_defaults();
+        tuning
+    }
+
     // --- DNA GENERATION TESTS ---
 
     #[test]
@@ -1252,6 +1356,7 @@ mod tests {
             48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57,
         ];
         let doge_mint = mock_pubkey();
+        let tuning = test_tuning();
 
         let result = calculate_mutation_result(
             1,
@@ -1262,6 +1367,11 @@ mod tests {
             100,
             1,
             0, // faction_mutation_count
+            100_000_000,
+            &tuning,
+            0,
+            0,
+            0,
             100_000_000,
             100_000_000,
             100_000_000,
@@ -1281,6 +1391,7 @@ mod tests {
     fn find_evolution_slot(dna: [u8; 32], max_evolution_stage_unlocked: u8) -> u64 {
         let doge_mint = mock_pubkey();
         let user = mock_pubkey();
+        let tuning = test_tuning();
 
         for slot in 1..100_000 {
             let result = calculate_mutation_result(
@@ -1291,6 +1402,11 @@ mod tests {
                 dna,
                 0,
                 max_evolution_stage_unlocked,
+                0,
+                1_000_000_000,
+                &tuning,
+                0,
+                0,
                 0,
                 1_000_000_000,
                 1_000_000_000,
@@ -1308,12 +1424,72 @@ mod tests {
         panic!("expected to find a deterministic evolution slot for test inputs");
     }
 
+    fn count_mutations_for_cycle_progress(
+        tuning: &GameplayTuningConfig,
+        cycle_rounds_elapsed: u16,
+        cycle_mutations_triggered: u16,
+    ) -> usize {
+        let doge_mint = mock_pubkey();
+        let user = mock_pubkey();
+        let dna = generate_genesis_dna(7, &mock_pubkey(), 777, 0).unwrap();
+
+        (1..=5_000u64)
+            .filter(|slot| {
+                calculate_mutation_result(
+                    1,
+                    1_000_000_000,
+                    1_000_000_000,
+                    1000,
+                    dna,
+                    0,
+                    1,
+                    0,
+                    1_000_000_000,
+                    tuning,
+                    cycle_rounds_elapsed,
+                    cycle_mutations_triggered,
+                    0,
+                    1_000_000_000,
+                    1_000_000_000,
+                    1_000_000_000,
+                    *slot,
+                    &user,
+                    &doge_mint,
+                )
+                .mutation_type
+                .is_some()
+            })
+            .count()
+    }
+
+    #[test]
+    fn test_pacing_factor_boosts_mutations_when_cycle_is_behind() {
+        let mut tuning = test_tuning();
+        tuning.base_mutation_chance_bps = 500;
+        tuning.mutation_chance_floor_bps = 0;
+        tuning.mutation_chance_cap_bps = 10_000;
+        tuning.target_mutations_per_cycle = 12;
+        tuning.target_rounds_per_cycle = 240;
+        tuning.pacing_max_adjustment_bps = 4_000;
+
+        let on_pace_count = count_mutations_for_cycle_progress(&tuning, 120, 6);
+        let behind_count = count_mutations_for_cycle_progress(&tuning, 120, 0);
+
+        assert!(
+            behind_count > on_pace_count,
+            "behind pace should boost mutation throughput (behind={}, on_pace={})",
+            behind_count,
+            on_pace_count
+        );
+    }
+
     #[test]
     fn test_stage_zero_evolution_requires_unlock() {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let slot = find_evolution_slot(dna, 1);
         let doge_mint = mock_pubkey();
         let user = mock_pubkey();
+        let tuning = test_tuning();
 
         let unlocked = calculate_mutation_result(
             1,
@@ -1323,6 +1499,11 @@ mod tests {
             dna,
             0,
             1,
+            0,
+            1_000_000_000,
+            &tuning,
+            0,
+            0,
             0,
             1_000_000_000,
             1_000_000_000,
@@ -1339,6 +1520,11 @@ mod tests {
             1_000_000_000,
             1000,
             dna,
+            0,
+            0,
+            0,
+            1_000_000_000,
+            &tuning,
             0,
             0,
             0,
@@ -1360,6 +1546,7 @@ mod tests {
         let slot = find_evolution_slot(dna, 2);
         let doge_mint = mock_pubkey();
         let user = mock_pubkey();
+        let tuning = test_tuning();
 
         let unlocked = calculate_mutation_result(
             1,
@@ -1369,6 +1556,11 @@ mod tests {
             dna,
             0,
             2,
+            0,
+            1_000_000_000,
+            &tuning,
+            0,
+            0,
             0,
             1_000_000_000,
             1_000_000_000,
@@ -1387,6 +1579,11 @@ mod tests {
             dna,
             0,
             1,
+            0,
+            1_000_000_000,
+            &tuning,
+            0,
+            0,
             0,
             1_000_000_000,
             1_000_000_000,

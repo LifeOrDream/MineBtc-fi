@@ -54,12 +54,36 @@ pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
 pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
 pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
-pub const FACTION_WAR_DOGE_REWARD_SHARE_BPS: u64 = 1_000; // 10%
 pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
 pub const CLAIMABLE_MINEBTC_SOURCE_FACTION_WAR: u8 = 1;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC: u8 = 2;
 pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
 pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
+
+// ========== GAMEPLAY TUNING DEFAULTS ========== //
+
+/// Faction-war mining pool split:
+/// - base rewards: anyone who predicted a country's final direction correctly
+/// - loyalty bonus: only users backing their own country correctly
+/// - doge bonus: only mutated/evolved gameplay doges tied to the resolved home-country win
+pub const DEFAULT_FACTION_WAR_BASE_REWARD_BPS: u16 = 7000;
+pub const DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS: u16 = 2000;
+pub const DEFAULT_FACTION_WAR_DOGE_REWARD_BPS: u16 = 1000;
+
+/// Mutation pacing defaults stored in `GameplayTuningConfig`.
+pub const DEFAULT_BASE_MUTATION_CHANCE_BPS: u16 = MAX_BASE_CHANCE as u16; // 20%
+pub const DEFAULT_MUTATION_CHANCE_FLOOR_BPS: u16 = 25; // 0.25%
+pub const DEFAULT_MUTATION_CHANCE_CAP_BPS: u16 = 2500; // 25%
+pub const DEFAULT_FACTION_VOLUME_THRESHOLD_LAMPORTS: u64 = 85_000_000; // ~0.1 SOL gross post-fee
+pub const DEFAULT_EXTRA_VOLUME_THRESHOLD_PER_MUTATION_LAMPORTS: u64 = 85_000_000;
+pub const DEFAULT_GLOBAL_MUTATION_PRESSURE_DECAY_BPS: u16 = 7500;
+pub const DEFAULT_GLOBAL_MUTATION_PRESSURE_PER_MUTATION_BPS: u16 = 2500;
+pub const DEFAULT_TARGET_MUTATIONS_PER_CYCLE: u16 = 12;
+pub const DEFAULT_TARGET_ROUNDS_PER_CYCLE: u16 = 240;
+pub const DEFAULT_PACING_MAX_ADJUSTMENT_BPS: u16 = 4000; // +/-40%
+pub const FACTION_WAR_RANK_WEIGHT_BPS: [u16; NUM_FACTIONS] = [
+    1500, 1200, 1000, 900, 800, 700, 700, 600, 600, 500, 500, 400, 300, 200, 100,
+];
 
 // ========== DEFAULT CONFIG VALUES ========== //
 // All config defaults in one place. Used by initialize() in admin.rs.
@@ -221,11 +245,8 @@ pub struct GlobalConfig {
     /// Default: 1800 seconds (30 minutes)
     pub snapshot_interval: u64,
 
-    /// Enable RPG progression (mutations, XP, etc) during gameplay
-    pub rpg_progression: bool,
-    /// Highest evolution stage currently unlocked by admin.
-    /// `0` disables evolutions entirely, `1` allows stage 0 -> 1, etc.
-    pub max_evolution_stage_unlocked: u8,
+    /// Unified gameplay and cycle-reward tuning surface.
+    pub gameplay_tuning: GameplayTuningConfig,
 
     /// ------------------------------------------------------------           
     /// Bump for GlobalConfig PDA derivation
@@ -280,11 +301,90 @@ impl GlobalConfig {
         32 +                    // raydium_pool_state
         8 +                     // change_faction_fee
         8 +                     // snapshot_interval
-        1 +                     // rpg_progression
-        1 +                     // max_evolution_stage_unlocked
+        GameplayTuningConfig::LEN + // gameplay_tuning
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
+}
+
+/// Unified gameplay tuning stored directly inside `GlobalConfig`.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct GameplayTuningConfig {
+    /// Enable RPG progression (mutations, XP, etc) during gameplay.
+    pub rpg_progression: bool,
+    /// Highest evolution stage currently unlocked by admin.
+    /// `0` disables evolutions entirely, `1` allows stage 0 -> 1, etc.
+    pub max_evolution_stage_unlocked: u8,
+
+    /// Faction-war mining pool split in basis points. Must sum to 10_000.
+    pub faction_war_base_reward_bps: u16,
+    pub faction_war_loyalty_reward_bps: u16,
+    pub faction_war_doge_reward_bps: u16,
+
+    /// Baseline mutation chance before runtime factors.
+    pub base_mutation_chance_bps: u16,
+    /// Final chance floor / cap after all runtime factors are applied.
+    pub mutation_chance_floor_bps: u16,
+    pub mutation_chance_cap_bps: u16,
+
+    /// Per-faction round-volume controller.
+    pub faction_volume_threshold_lamports: u64,
+    pub extra_volume_threshold_per_mutation_lamports: u64,
+
+    /// Cross-round global cooldown controller.
+    pub global_mutation_pressure_decay_bps: u16,
+    pub global_mutation_pressure_per_mutation_bps: u16,
+
+    /// Cycle pacing controller.
+    pub target_mutations_per_cycle: u16,
+    pub target_rounds_per_cycle: u16,
+    pub pacing_max_adjustment_bps: u16,
+}
+
+impl GameplayTuningConfig {
+    pub const LEN: usize = 1 + // rpg_progression
+        1 + // max_evolution_stage_unlocked
+        2 + // faction_war_base_reward_bps
+        2 + // faction_war_loyalty_reward_bps
+        2 + // faction_war_doge_reward_bps
+        2 + // base_mutation_chance_bps
+        2 + // mutation_chance_floor_bps
+        2 + // mutation_chance_cap_bps
+        8 + // faction_volume_threshold_lamports
+        8 + // extra_volume_threshold_per_mutation_lamports
+        2 + // global_mutation_pressure_decay_bps
+        2 + // global_mutation_pressure_per_mutation_bps
+        2 + // target_mutations_per_cycle
+        2 + // target_rounds_per_cycle
+        2; // pacing_max_adjustment_bps
+
+    pub fn is_uninitialized(&self) -> bool {
+        !self.rpg_progression
+            && self.max_evolution_stage_unlocked == 0
+            && self.faction_war_base_reward_bps == 0
+            && self.faction_war_loyalty_reward_bps == 0
+            && self.faction_war_doge_reward_bps == 0
+    }
+
+    pub fn apply_defaults(&mut self) {
+        self.rpg_progression = false;
+        self.max_evolution_stage_unlocked = 0;
+        self.faction_war_base_reward_bps = DEFAULT_FACTION_WAR_BASE_REWARD_BPS;
+        self.faction_war_loyalty_reward_bps = DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS;
+        self.faction_war_doge_reward_bps = DEFAULT_FACTION_WAR_DOGE_REWARD_BPS;
+        self.base_mutation_chance_bps = DEFAULT_BASE_MUTATION_CHANCE_BPS;
+        self.mutation_chance_floor_bps = DEFAULT_MUTATION_CHANCE_FLOOR_BPS;
+        self.mutation_chance_cap_bps = DEFAULT_MUTATION_CHANCE_CAP_BPS;
+        self.faction_volume_threshold_lamports = DEFAULT_FACTION_VOLUME_THRESHOLD_LAMPORTS;
+        self.extra_volume_threshold_per_mutation_lamports =
+            DEFAULT_EXTRA_VOLUME_THRESHOLD_PER_MUTATION_LAMPORTS;
+        self.global_mutation_pressure_decay_bps = DEFAULT_GLOBAL_MUTATION_PRESSURE_DECAY_BPS;
+        self.global_mutation_pressure_per_mutation_bps =
+            DEFAULT_GLOBAL_MUTATION_PRESSURE_PER_MUTATION_BPS;
+        self.target_mutations_per_cycle = DEFAULT_TARGET_MUTATIONS_PER_CYCLE;
+        self.target_rounds_per_cycle = DEFAULT_TARGET_ROUNDS_PER_CYCLE;
+        self.pacing_max_adjustment_bps = DEFAULT_PACING_MAX_ADJUSTMENT_BPS;
+    }
 }
 
 /// ------------ DOGE-BTC MINING ------------
@@ -1276,6 +1376,14 @@ pub struct FactionWarConfig {
     /// Used as start_ranks when the next faction war auto-starts.
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
     pub prev_faction_war_mutation_ranks: [u8; NUM_FACTIONS],
+
+    /// Telemetry for the currently active faction war's mutation controller.
+    pub telemetry_faction_war_id: u64,
+    pub cycle_rounds_elapsed: u16,
+    pub cycle_mutations_triggered: u16,
+    pub last_processed_round_id: u64,
+    pub last_round_mutations: u8,
+    pub recent_mutation_pressure_bps: u16,
 }
 
 impl FactionWarConfig {
@@ -1284,7 +1392,24 @@ impl FactionWarConfig {
         8 +     // current_faction_war_id
         1 +     // is_active
         4 +     // faction_war_settle_cycle
-        (NUM_FACTIONS * 1); // prev_faction_war_mutation_ranks
+        (NUM_FACTIONS * 1) + // prev_faction_war_mutation_ranks
+        8 +     // telemetry_faction_war_id
+        2 +     // cycle_rounds_elapsed
+        2 +     // cycle_mutations_triggered
+        8 +     // last_processed_round_id
+        1 +     // last_round_mutations
+        2; // recent_mutation_pressure_bps
+}
+
+impl FactionWarConfig {
+    pub fn reset_cycle_telemetry(&mut self, faction_war_id: u64) {
+        self.telemetry_faction_war_id = faction_war_id;
+        self.cycle_rounds_elapsed = 0;
+        self.cycle_mutations_triggered = 0;
+        self.last_processed_round_id = 0;
+        self.last_round_mutations = 0;
+        self.recent_mutation_pressure_bps = 0;
+    }
 }
 
 /// Faction War state PDA (Seed: `[b"faction-war", faction_war_id_u64_le]`)
@@ -1320,13 +1445,27 @@ pub struct FactionWarState {
     /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
     pub resolved_directions: [u8; NUM_FACTIONS],
 
-    /// Total weighted bets per faction and direction during this faction_war (own-faction only).
+    /// Total weighted bets per faction and direction during this faction_war
+    /// from all users. This powers the base "be right anywhere" cycle rewards.
     pub faction_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+    /// Total weighted bets per faction and direction from users backing their
+    /// own country. This powers the loyalty bonus layer on top of the global base rewards.
+    pub loyalty_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 
-    /// Pre-computed reward pool per faction (proportional to winning-direction bet weight).
+    /// Pre-computed base reward pool per faction (rank-weighted across factions,
+    /// then shared by anyone who picked that country's resolved direction correctly).
     pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// 10% reward pool per faction reserved for gameplay doges that mutated during the faction_war.
+    /// Pre-computed loyalty reward pool per faction shared only by home-country supporters.
+    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
+    /// Reward pool per faction reserved for gameplay doges that mutated during the faction_war.
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
+
+    /// Number of raffle rounds won by each faction during this faction war.
+    /// Used as a tiebreak after mutation score.
+    pub faction_round_wins: [u16; NUM_FACTIONS],
+    /// Total own-country SOL support committed during this faction war.
+    /// Used as a second tiebreak after round wins.
+    pub faction_sol_totals: [u64; NUM_FACTIONS],
 
     /// Accumulated mutation scores per faction during this faction_war.
     /// Drives ranking at settlement: factions with higher mutation scores rank higher.
@@ -1359,17 +1498,48 @@ impl FactionWarState {
         (NUM_FACTIONS * 1) + // rank_deltas
         (NUM_FACTIONS * 1) + // resolved_directions
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_direction_totals
+        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // loyalty_direction_totals
         (NUM_FACTIONS * 8) + // faction_reward_pools
+        (NUM_FACTIONS * 8) + // loyalty_reward_pools
         (NUM_FACTIONS * 8) + // faction_doge_reward_pools
+        (NUM_FACTIONS * 2) + // faction_round_wins
+        (NUM_FACTIONS * 8) + // faction_sol_totals
         (NUM_FACTIONS * 8) + // faction_mutation_scores
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_doge_direction_totals
         8 +     // treasury_reward_base_amount
         2; // treasury_claimed_bitmap
+
+    pub fn blank() -> Self {
+        Self {
+            bump: 0,
+            faction_war_id: 0,
+            start_timestamp: 0,
+            stage: 0,
+            active_faction_count: 0,
+            total_dogebtc_mined_in_faction_war: 0,
+            faction_war_mining_pool: 0,
+            start_ranks: [0u8; NUM_FACTIONS],
+            final_ranks: [0u8; NUM_FACTIONS],
+            rank_deltas: [0i8; NUM_FACTIONS],
+            resolved_directions: [0u8; NUM_FACTIONS],
+            faction_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+            loyalty_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+            faction_reward_pools: [0u64; NUM_FACTIONS],
+            loyalty_reward_pools: [0u64; NUM_FACTIONS],
+            faction_doge_reward_pools: [0u64; NUM_FACTIONS],
+            faction_round_wins: [0u16; NUM_FACTIONS],
+            faction_sol_totals: [0u64; NUM_FACTIONS],
+            faction_mutation_scores: [0u64; NUM_FACTIONS],
+            eligible_doge_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+            treasury_reward_base_amount: 0,
+            treasury_claimed_bitmap: 0,
+        }
+    }
 }
 
 /// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, faction_war_id_u64_le]`)
-/// Tracks how much weighted stake a user bet on their own faction's direction during a specific faction_war.
-/// Only own-faction bets are accumulated (cross-faction bets only count for round rewards).
+/// Tracks how much weighted stake a user bet on each faction's direction during a
+/// specific faction_war. These weights power the global base cycle rewards.
 #[account]
 pub struct UserFactionWarBets {
     pub bump: u8,
@@ -1395,4 +1565,15 @@ impl UserFactionWarBets {
         32 +    // gameplay_doge
         1 +     // doge_bonus_eligible
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // direction_bets
+
+    pub fn blank() -> Self {
+        Self {
+            bump: 0,
+            owner: Pubkey::default(),
+            faction_war_id: 0,
+            gameplay_doge: Pubkey::default(),
+            doge_bonus_eligible: false,
+            direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+        }
+    }
 }

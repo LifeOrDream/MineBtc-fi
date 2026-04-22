@@ -42,7 +42,7 @@ use crate::state::*;
 
 fn seed_empty_faction_war_treasury_bucket(
     faction_war_config: &FactionWarConfig,
-    faction_war_state: &mut Account<FactionWarState>,
+    faction_war_state: &mut FactionWarState,
     faction_war_state_bump: u8,
     seeded_treasury_base: u64,
 ) {
@@ -59,8 +59,12 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.resolved_directions =
         [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
     faction_war_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    faction_war_state.loyalty_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
+    faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
     faction_war_state.eligible_doge_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
@@ -71,7 +75,7 @@ fn seed_empty_faction_war_treasury_bucket(
 fn ensure_active_faction_war_treasury_bucket<'info>(
     tax_config: &mut Account<'info, TaxConfig>,
     faction_war_config: &Account<'info, FactionWarConfig>,
-    faction_war_state: &mut Account<'info, FactionWarState>,
+    faction_war_state: &mut FactionWarState,
     faction_war_state_bump: u8,
 ) -> Result<()> {
     if faction_war_state.faction_war_id == 0 {
@@ -329,17 +333,59 @@ pub fn internal_crank_harvest_fees<'info>(
 /// mint account and distributes it according to TaxConfig percentages.
 ///
 /// Callable by anyone - program-controlled withdraw authority
-pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
+#[inline(never)]
+fn init_or_load_tax_faction_war_state<'info>(
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    faction_war_state_info: &AccountInfo<'info>,
+    faction_war_id: u64,
+    faction_war_state_bump: u8,
+) -> Result<Box<FactionWarState>> {
+    let faction_war_id_bytes = faction_war_id.to_le_bytes();
+    let faction_war_state_bump_seed = [faction_war_state_bump];
+    let faction_war_state_seeds: &[&[u8]] = &[
+        FACTION_WAR_STATE_SEED,
+        faction_war_id_bytes.as_ref(),
+        faction_war_state_bump_seed.as_ref(),
+    ];
+    helper::init_pda_account_if_needed(
+        payer,
+        faction_war_state_info,
+        system_program,
+        faction_war_state_seeds,
+        FactionWarState::LEN,
+        &FactionWarState::blank(),
+    )?;
+    Ok(Box::new(helper::load_account_data::<FactionWarState>(
+        faction_war_state_info,
+    )?))
+}
+
+#[inline(never)]
+pub fn internal_crank_distribute_tax<'info>(
+    accounts: &mut CrankDistributeTax<'info>,
+    faction_war_id: u64,
+    faction_war_state_bump: u8,
+    withdraw_authority_bump: u8,
+) -> Result<()> {
     msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
+    let faction_war_state_info = accounts.faction_war_state.as_ref();
+    let mut faction_war_state = init_or_load_tax_faction_war_state(
+        accounts.caller.as_ref(),
+        accounts.system_program.as_ref(),
+        faction_war_state_info,
+        faction_war_id,
+        faction_war_state_bump,
+    )?;
 
     // 1. Get the total amount of tax sitting on the mint account
     // We must reload to get the most up-to-date data after harvesting
-    ctx.accounts.minebtc_mint.reload()?;
+    accounts.minebtc_mint.reload()?;
 
     // Read withheld_amount from TransferFeeConfig extension.
     // Scoped block so the borrow is dropped before CPI calls below.
     let withheld_amount = {
-        let mint_account_info = ctx.accounts.minebtc_mint.to_account_info();
+        let mint_account_info = accounts.minebtc_mint.to_account_info();
         let mint_data = mint_account_info.try_borrow_data()?;
         let mint =
             StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(
@@ -364,7 +410,6 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     );
 
     // 2. Withdraw ALL tokens from Mint -> Authority's Temp Vault
-    let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
     let withdraw_authority_seeds = &[
         WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
         &[withdraw_authority_bump],
@@ -372,21 +417,22 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
 
     withdraw_withheld_tokens_from_mint(CpiContext::new_with_signer(
-        ctx.accounts.token_program_2022.to_account_info(),
+        accounts.token_program_2022.to_account_info(),
         WithdrawWithheldTokensFromMint {
-            destination: ctx
-                .accounts
-                .withdraw_authority_token_account
-                .to_account_info(),
-            authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
-            mint: ctx.accounts.minebtc_mint.to_account_info(),
-            token_program_id: ctx.accounts.token_program_2022.to_account_info(),
+            destination: accounts.withdraw_authority_token_account.to_account_info(),
+            authority: accounts.withdraw_withheld_authority.to_account_info(),
+            mint: accounts.minebtc_mint.to_account_info(),
+            token_program_id: accounts.token_program_2022.to_account_info(),
         },
         withdraw_authority_signer,
     ))?;
 
     // 3. Calculate distribution amounts based on TaxConfig percentages
-    let tax_config = &mut ctx.accounts.tax_config;
+    let tax_config = &mut accounts.tax_config;
+    require!(
+        accounts.faction_war_config.current_faction_war_id == faction_war_id,
+        ErrorCode::InvalidParameters
+    );
     let nft_floor_sweep_amount =
         helper::mul_div(withheld_amount, tax_config.nft_floor_sweep_pct as u64, 100)? as u64;
     let faction_treasury_amount =
@@ -422,20 +468,17 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     if nft_floor_sweep_amount > 0 {
         token_2022::transfer_checked(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program_2022.to_account_info(),
+                accounts.token_program_2022.to_account_info(),
                 TransferChecked {
-                    from: ctx
-                        .accounts
-                        .withdraw_authority_token_account
-                        .to_account_info(),
-                    mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    to: ctx.accounts.nft_floor_sweep_vault.to_account_info(),
-                    authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                    from: accounts.withdraw_authority_token_account.to_account_info(),
+                    mint: accounts.minebtc_mint.to_account_info(),
+                    to: accounts.nft_floor_sweep_vault.to_account_info(),
+                    authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
             ),
             nft_floor_sweep_amount,
-            ctx.accounts.minebtc_mint.decimals,
+            accounts.minebtc_mint.decimals,
         )?;
         msg!(
             "   ✅ Transferred {} tokens to NFT floor sweep vault",
@@ -447,20 +490,17 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     if faction_treasury_amount > 0 {
         token_2022::transfer_checked(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program_2022.to_account_info(),
+                accounts.token_program_2022.to_account_info(),
                 TransferChecked {
-                    from: ctx
-                        .accounts
-                        .withdraw_authority_token_account
-                        .to_account_info(),
-                    mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    to: ctx.accounts.faction_treasury_vault.to_account_info(),
-                    authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                    from: accounts.withdraw_authority_token_account.to_account_info(),
+                    mint: accounts.minebtc_mint.to_account_info(),
+                    to: accounts.faction_treasury_vault.to_account_info(),
+                    authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
             ),
             faction_treasury_amount,
-            ctx.accounts.minebtc_mint.decimals,
+            accounts.minebtc_mint.decimals,
         )?;
         msg!(
             "   ✅ Transferred {} tokens to Faction treasury vault",
@@ -472,14 +512,11 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     if burn_amount > 0 {
         token_2022::burn(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program_2022.to_account_info(),
+                accounts.token_program_2022.to_account_info(),
                 Burn {
-                    mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    from: ctx
-                        .accounts
-                        .withdraw_authority_token_account
-                        .to_account_info(),
-                    authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                    mint: accounts.minebtc_mint.to_account_info(),
+                    from: accounts.withdraw_authority_token_account.to_account_info(),
+                    authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
             ),
@@ -501,20 +538,17 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     if vault_return > 0 {
         token_2022::transfer_checked(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program_2022.to_account_info(),
+                accounts.token_program_2022.to_account_info(),
                 TransferChecked {
-                    from: ctx
-                        .accounts
-                        .withdraw_authority_token_account
-                        .to_account_info(),
-                    mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    to: ctx.accounts.minebtc_token_vault.to_account_info(),
-                    authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
+                    from: accounts.withdraw_authority_token_account.to_account_info(),
+                    mint: accounts.minebtc_mint.to_account_info(),
+                    to: accounts.minebtc_token_vault.to_account_info(),
+                    authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
             ),
             vault_return,
-            ctx.accounts.minebtc_mint.decimals,
+            accounts.minebtc_mint.decimals,
         )?;
         msg!(
             "   ✅ Returned {} tokens to minebtc vault",
@@ -523,24 +557,22 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
     }
 
     if faction_treasury_amount > 0 {
-        if ctx.accounts.faction_war_config.is_active {
+        if accounts.faction_war_config.is_active {
             ensure_active_faction_war_treasury_bucket(
                 tax_config,
-                &ctx.accounts.faction_war_config,
-                &mut ctx.accounts.faction_war_state,
-                ctx.bumps.faction_war_state,
+                &accounts.faction_war_config,
+                faction_war_state.as_mut(),
+                faction_war_state_bump,
             )?;
-            ctx.accounts.faction_war_state.treasury_reward_base_amount = ctx
-                .accounts
-                .faction_war_state
+            faction_war_state.treasury_reward_base_amount = faction_war_state
                 .treasury_reward_base_amount
                 .checked_add(faction_treasury_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
                 "   🏴 Attributed {} dogeBTC treasury tax to faction war {} (base now {})",
                 (faction_treasury_amount as f64) / 1e6,
-                ctx.accounts.faction_war_state.faction_war_id,
-                (ctx.accounts.faction_war_state.treasury_reward_base_amount as f64) / 1e6
+                faction_war_state.faction_war_id,
+                (faction_war_state.treasury_reward_base_amount as f64) / 1e6
             );
         } else {
             tax_config.unassigned_faction_war_treasury_amount = tax_config
@@ -555,7 +587,8 @@ pub fn internal_crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result
         }
     }
 
-    let total_burnt = ctx.accounts.tax_config.total_burnt;
+    let total_burnt = accounts.tax_config.total_burnt;
+    helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
     emit!(TaxDistributed {
         total_tax_amount: withheld_amount,
         nft_floor_sweep_amount,
@@ -856,35 +889,35 @@ pub struct CrankHarvestFees<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(faction_war_id: u64)]
 pub struct CrankDistributeTax<'info> {
     #[account(mut)]
-    pub minebtc_mint: InterfaceAccount<'info, Mint>,
+    pub minebtc_mint: Box<InterfaceAccount<'info, Mint>>,
     /// CHECK: Withdraw withheld authority PDA
     #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
     #[account(mut, constraint = withdraw_authority_token_account.owner == withdraw_withheld_authority.key() @ ErrorCode::Unauthorized)]
-    pub withdraw_authority_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub withdraw_authority_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut, constraint = nft_floor_sweep_vault.key() == tax_config.nft_floor_sweep_vault @ ErrorCode::InvalidAccount)]
-    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub nft_floor_sweep_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
-    pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut)]
-    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub minebtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
+    pub tax_config: Box<Account<'info, TaxConfig>>,
     #[account(
         seeds = [FACTION_WAR_CONFIG_SEED],
         bump = faction_war_config.bump
     )]
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
     #[account(
-        init_if_needed,
-        payer = caller,
-        space = FactionWarState::LEN,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_config.current_faction_war_id.to_le_bytes()],
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
         bump,
     )]
-    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    pub faction_war_state: UncheckedAccount<'info>,
     #[account(mut)]
     pub caller: Signer<'info>,
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
