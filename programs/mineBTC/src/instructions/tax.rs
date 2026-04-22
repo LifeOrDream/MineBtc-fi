@@ -15,7 +15,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // ## Tax Mechanics
 //
-// All dogeBTC transfers incur a 1% tax, split into:
+// All dogeBTC transfers incur a 0.1% tax, split into:
 // - **Burn**: Reducing total supply (default 25%)
 // - **NFT Floor Sweep**: Funded for market-making (default 10%)
 // - **Faction Treasury**: Distributed to stakers via faction_war leaderboard (default 40%)
@@ -119,6 +119,7 @@ pub fn internal_initialize_tax_config(
     burn_pct: u8,
     nft_floor_sweep_whitelisted_address: Pubkey,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_initialize_tax_config");
     msg!("🔧 [initialize_tax_config] Initializing tax system");
 
     require!(
@@ -177,6 +178,7 @@ pub fn internal_update_tax_config(
     faction_treasury_pct: u8,
     burn_pct: u8,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_update_tax_config");
     msg!("🔧 [update_tax_config] Updating tax distribution percentages");
 
     require!(
@@ -209,6 +211,7 @@ pub fn internal_update_nft_floor_sweep_whitelist(
     ctx: Context<UpdateNftFloorSweepWhitelist>,
     new_whitelisted_address: Pubkey,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_update_nft_floor_sweep_whitelist");
     msg!("🔧 [update_nft_floor_sweep_whitelist] Updating whitelisted address");
 
     let tax_config = &mut ctx.accounts.tax_config;
@@ -230,6 +233,7 @@ pub fn internal_withdraw_nft_floor_sweep_funds(
     ctx: Context<WithdrawNftFloorSweepFunds>,
     amount: u64,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_withdraw_nft_floor_sweep_funds");
     msg!(
         "💰 [withdraw_nft_floor_sweep_funds] Withdrawing {} MineBtc",
         amount
@@ -301,14 +305,16 @@ pub fn internal_withdraw_nft_floor_sweep_funds(
 pub fn internal_crank_harvest_fees<'info>(
     ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_crank_harvest_fees");
     let sources = ctx.remaining_accounts;
     if sources.is_empty() {
         msg!("🌱 Harvest: no source accounts, skipping");
         return Ok(());
     }
     msg!(
-        "🌱 Harvesting withheld fees from {} accounts → mint",
-        sources.len()
+        "🌱 Harvesting withheld fees from {} accounts → mint {}",
+        sources.len(),
+        ctx.accounts.minebtc_mint.key()
     );
 
     harvest_withheld_tokens_to_mint(
@@ -348,7 +354,7 @@ fn init_or_load_tax_faction_war_state<'info>(
         faction_war_id_bytes.as_ref(),
         faction_war_state_bump_seed.as_ref(),
     ];
-    helper::init_pda_account_if_needed(
+    let created = helper::init_pda_account_if_needed(
         payer,
         faction_war_state_info,
         system_program,
@@ -356,6 +362,12 @@ fn init_or_load_tax_faction_war_state<'info>(
         FactionWarState::LEN,
         &FactionWarState::blank(),
     )?;
+    msg!(
+        "🏛️ [init_or_load_tax_faction_war_state] faction_war_id={} account={} created={}",
+        faction_war_id,
+        faction_war_state_info.key(),
+        created
+    );
     Ok(Box::new(helper::load_account_data::<FactionWarState>(
         faction_war_state_info,
     )?))
@@ -368,6 +380,7 @@ pub fn internal_crank_distribute_tax<'info>(
     faction_war_state_bump: u8,
     withdraw_authority_bump: u8,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_crank_distribute_tax");
     msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
     let faction_war_state_info = accounts.faction_war_state.as_ref();
     let mut faction_war_state = init_or_load_tax_faction_war_state(
@@ -619,6 +632,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     ctx: Context<ClaimFactionTreasuryForFactionWar>,
     faction_war_id: u64,
 ) -> Result<()> {
+    crate::log_fn!("tax", "internal_claim_faction_treasury_for_faction_war");
     let faction_war_state = &mut ctx.accounts.faction_war_state;
     let fs = &mut ctx.accounts.faction_state;
     let fid = fs.faction_id;
@@ -917,6 +931,7 @@ pub struct CrankDistributeTax<'info> {
         bump,
     )]
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    /// Must remain `mut` because helper::store_account_data persists treasury attribution state.
     pub faction_war_state: UncheckedAccount<'info>,
     #[account(mut)]
     pub caller: Signer<'info>,

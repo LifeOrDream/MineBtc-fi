@@ -71,6 +71,7 @@ fn gross_up_for_token2022_fee<'info>(
 }
 
 pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<()> {
+    crate::log_fn!("economy", "distribute_sol_fees_internal");
     let sol_treasury = &ctx.accounts.sol_treasury;
     let global_config = &ctx.accounts.global_config;
     let buybacks_ac = &mut ctx.accounts.buybacks_account;
@@ -195,6 +196,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
 /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
 /// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
 pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
+    crate::log_fn!("economy", "snapshot_price_internal");
     msg!("🌟 === STARTING PRICE SNAPSHOT ===");
 
     let mine_btc_mining: &mut Account<'_, MineBtcMining> = &mut ctx.accounts.mine_btc_mining;
@@ -576,6 +578,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
 /// INSTRUCTION 2a: Update distribution rate (can be called by anyone after 4 hours)
 /// Checks if conditions are met, updates distribution rate, sets flag for LP operation
 pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
+    crate::log_fn!("economy", "update_rate_internal");
     msg!("🌟 === STARTING RATE UPDATE ===");
 
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
@@ -708,6 +711,7 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
 /// INSTRUCTION 2b: Add liquidity and burn LP tokens (called after update_rate_internal)
 /// Handles the heavy LP operations separately to avoid stack overflow
 pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64) -> Result<()> {
+    crate::log_fn!("economy", "add_lp_and_burn_internal");
     msg!("🌟 === STARTING LP ADDITION AND BURN ===");
     let clock = Clock::get()?;
 

@@ -5,7 +5,7 @@
  *
  * Flow:
  * 1. Buy DogeBTC from Raydium pool (SOL → DogeBTC swap)
- * 2. Transfer DogeBTC between wallets to generate withheld fees (1% tax)
+ * 2. Transfer DogeBTC between wallets to generate withheld fees (0.1% tax)
  * 3. Query Helius to discover accounts with withheld fees
  * 4. Harvest withheld fees to mint
  * 5. Verify mint withheld_amount increased
@@ -171,7 +171,7 @@ async function buyDogeBtc(solAmount = 0.01) {
 // ── Step 2: Transfer DogeBTC to generate withheld fees ───────────────────────
 
 async function generateWithheldFees(amount) {
-  separator("STEP 2: Transfer DogeBTC to generate withheld fees (1% tax)");
+  separator("STEP 2: Transfer DogeBTC to generate withheld fees (0.1% tax)");
 
   // Create a secondary keypair to transfer to
   const recipient = Keypair.generate();
@@ -190,12 +190,12 @@ async function generateWithheldFees(amount) {
   );
   await sendAndConfirmTransaction(connection, createAtaTx, [walletKeypair], { commitment: "confirmed" });
 
-  // Transfer DogeBTC (triggers 1% tax withheld on sender side)
+  // Transfer DogeBTC (triggers 0.1% tax withheld on sender side)
   const deployerAta = getAssociatedTokenAddressSync(dbtcMint, walletKeypair.publicKey, false, TOKEN_2022_PROGRAM_ID);
   const transferAmount = amount || BigInt(100_000_000); // 100 DBTC default
 
   console.log(`  Transferring ${fmtDbtc(transferAmount)} DBTC...`);
-  console.log(`  Expected tax withheld (1%): ~${fmtDbtc(transferAmount / BigInt(100))} DBTC`);
+  console.log(`  Expected tax withheld (0.1%): ~${fmtDbtc(transferAmount / BigInt(1000))} DBTC`);
 
   const transferIx = createTransferCheckedInstruction(
     deployerAta, dbtcMint, recipientAta,

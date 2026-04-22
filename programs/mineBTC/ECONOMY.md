@@ -513,8 +513,8 @@ This means claim timing matters:
 
 ## Tax Treasury Distribution (also tied to rebase)
 
-After settlement, `claim_faction_treasury_for_rebase` distributes the faction
-treasury vault (accumulated from 1% transfer tax):
+After settlement, `claim_faction_treasury_for_faction_war` distributes the faction
+treasury vault (accumulated from 0.1% transfer tax):
 
 ```
 treasury_balance

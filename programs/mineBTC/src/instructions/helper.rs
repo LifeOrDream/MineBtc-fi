@@ -201,12 +201,30 @@ pub fn init_pda_account_if_needed<'info, T>(
     signer_seeds: &[&[u8]],
     space: usize,
     initial_data: &T,
-) -> Result<()>
+) -> Result<bool>
 where
     T: AccountSerialize + AccountDeserialize + Discriminator + Owner + Clone,
 {
+    require!(account.is_writable, ErrorCode::InvalidAccount);
+
+    msg!(
+        "🧱 [init_pda_account_if_needed] account={} writable={} owner={} lamports={} data_len={} target_space={}",
+        account.key(),
+        account.is_writable,
+        account.owner,
+        account.lamports(),
+        account.data_len(),
+        space
+    );
+
     if account.owner == &system_program::ID && account.lamports() == 0 {
         let rent = Rent::get()?.minimum_balance(space);
+        msg!(
+            "   creating PDA account {} with rent={} bytes={}",
+            account.key(),
+            rent,
+            space
+        );
         create_account(
             CpiContext::new_with_signer(
                 system_program.to_account_info(),
@@ -226,9 +244,19 @@ where
         data[..8].copy_from_slice(T::DISCRIMINATOR);
         let mut cursor = &mut data[8..];
         initial_data.try_serialize(&mut cursor)?;
+        msg!("   ✅ PDA account {} initialized", account.key());
+        return Ok(true);
     }
 
-    Ok(())
+    msg!(
+        "   ↪️ PDA account {} already initialized; owner={} lamports={} data_len={}",
+        account.key(),
+        account.owner,
+        account.lamports(),
+        account.data_len()
+    );
+
+    Ok(false)
 }
 
 pub fn load_account_data<'info, T>(account: &AccountInfo<'info>) -> Result<T>
@@ -236,6 +264,12 @@ where
     T: AccountDeserialize + Owner,
 {
     require!(account.owner == &T::owner(), ErrorCode::InvalidAccount);
+    msg!(
+        "📥 [load_account_data] account={} owner={} data_len={}",
+        account.key(),
+        account.owner,
+        account.data_len()
+    );
     let data = account.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     T::try_deserialize(&mut data_slice)
@@ -245,11 +279,19 @@ pub fn store_account_data<'info, T>(account: &AccountInfo<'info>, value: &T) -> 
 where
     T: AccountSerialize + Discriminator,
 {
+    require!(account.is_writable, ErrorCode::InvalidAccount);
     let mut data = account.try_borrow_mut_data()?;
     require!(data.len() >= DISCRIMINATOR_SIZE, ErrorCode::InvalidAccount);
+    msg!(
+        "📦 [store_account_data] account={} writable={} data_len={}",
+        account.key(),
+        account.is_writable,
+        data.len()
+    );
     data[..DISCRIMINATOR_SIZE].copy_from_slice(T::DISCRIMINATOR);
     let mut cursor = &mut data[DISCRIMINATOR_SIZE..];
     value.try_serialize(&mut cursor)?;
+    msg!("   ✅ account {} state persisted", account.key());
     Ok(())
 }
 

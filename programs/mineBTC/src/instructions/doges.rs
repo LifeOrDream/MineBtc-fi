@@ -100,6 +100,7 @@ pub fn int_simulate_mint_cost(
     doge_config: &DogeConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
+    crate::log_fn!("doges", "int_simulate_mint_cost");
     require!(
         mint_count > 0 && mint_count <= 10,
         ErrorCode::InvalidParameters
@@ -158,6 +159,7 @@ pub fn int_batch_mint_doges<'info>(
     mint_count: u8,
     ticket_tier_index: u8,
 ) -> Result<()> {
+    crate::log_fn!("doges", "int_batch_mint_doges");
     require!(
         mint_count > 0 && mint_count <= 10,
         ErrorCode::InvalidParameters
@@ -440,6 +442,7 @@ pub fn int_admin_mint_doge(
     faction_id: u8,
     ticket_tier_index: u8,
 ) -> Result<()> {
+    crate::log_fn!("doges", "int_admin_mint_doge");
     let global_config = &ctx.accounts.global_config;
     let doge_config = &mut ctx.accounts.doge_config;
 
@@ -592,6 +595,7 @@ pub fn int_whitelist_mint_doge(
     faction_id: u8,
     ticket_tier_index: u8,
 ) -> Result<()> {
+    crate::log_fn!("doges", "int_whitelist_mint_doge");
     let global_config = &ctx.accounts.global_config;
     let doge_config = &mut ctx.accounts.doge_config;
     let player_data = &mut ctx.accounts.player_data;
@@ -732,6 +736,7 @@ pub fn int_whitelist_mint_doge(
 /// Clients must pass metadata accounts for all already-staked doges in `remaining_accounts`
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
 pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
+    crate::log_fn!("doges", "int_stake_doge");
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
@@ -943,6 +948,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
 /// Clients must pass metadata accounts for all doges that remain staked after this unstake
 /// in `remaining_accounts` so the program can derive the exact post-unstake multiplier.
 pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
+    crate::log_fn!("doges", "int_unstake_doge");
     let doge_metadata = &mut ctx.accounts.doge_metadata;
     let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
@@ -1178,6 +1184,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
 
 /// Send an doge to heaven (burn it) to claim accumulated rewards
 pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
+    crate::log_fn!("doges", "int_send_to_heaven");
     let doge_config = &mut ctx.accounts.doge_config;
     let doge_metadata = &ctx.accounts.doge_metadata;
     let accumulated_val = doge_metadata.accumulated_val;
@@ -1256,6 +1263,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 
 /// Breed two doges to create offspring (both parents must not be incubated, same faction)
 pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
+    crate::log_fn!("doges", "int_breed_doges");
     let doge_config = &mut ctx.accounts.doge_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
@@ -1513,6 +1521,7 @@ pub fn generate_doge_data(
     faction_id: u8,
     asset_key: &Pubkey,
 ) -> Result<(String, String, [u8; 32], u32)> {
+    crate::log_fn!("doges", "generate_doge_data");
     let dna = crate::genescience::generate_genesis_dna(
         mint_number,
         user_key,

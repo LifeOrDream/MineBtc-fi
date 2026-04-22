@@ -52,6 +52,7 @@ pub fn internal_initialize_player(
     faction_id: u8,
     referral_code: Option<Pubkey>,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_initialize_player");
     msg!(
         "👤 [initialize_player] Initializing player account. Authority: {}. Faction ID: {}",
         ctx.accounts.authority.key(),
@@ -210,6 +211,7 @@ pub fn internal_initialize_player(
 /// - No doges staked (staked_doges.is_empty())
 ///   Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
 pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+    crate::log_fn!("user", "internal_change_faction");
     msg!(
         "🔄 [change_faction] User changing faction. User: {}",
         ctx.accounts.authority.key()
@@ -308,6 +310,7 @@ pub fn internal_set_player_claim_settings(
     ctx: Context<SetPlayerClaimSettings>,
     allow_bots_to_claim: bool,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_set_player_claim_settings");
     ctx.accounts.player_data.allow_bots_to_claim = allow_bots_to_claim;
 
     msg!(
@@ -341,7 +344,7 @@ fn init_or_load_faction_war_state_account<'info>(
         faction_war_id_bytes.as_ref(),
         faction_war_state_bump_seed.as_ref(),
     ];
-    helper::init_pda_account_if_needed(
+    let created = helper::init_pda_account_if_needed(
         payer,
         faction_war_state_info,
         system_program,
@@ -349,6 +352,12 @@ fn init_or_load_faction_war_state_account<'info>(
         FactionWarState::LEN,
         &FactionWarState::blank(),
     )?;
+    msg!(
+        "🪖 [init_or_load_faction_war_state_account] faction_war_id={} account={} created={}",
+        faction_war_id,
+        faction_war_state_info.key(),
+        created
+    );
     Ok(Box::new(helper::load_account_data::<FactionWarState>(
         faction_war_state_info,
     )?))
@@ -371,7 +380,7 @@ fn init_or_load_user_faction_war_bets_account<'info>(
         faction_war_id_bytes.as_ref(),
         user_faction_war_bets_bump_seed.as_ref(),
     ];
-    helper::init_pda_account_if_needed(
+    let created = helper::init_pda_account_if_needed(
         payer,
         user_faction_war_bets_info,
         system_program,
@@ -379,6 +388,13 @@ fn init_or_load_user_faction_war_bets_account<'info>(
         UserFactionWarBets::LEN,
         &UserFactionWarBets::blank(),
     )?;
+    msg!(
+        "🧾 [init_or_load_user_faction_war_bets_account] faction_war_id={} owner={} account={} created={}",
+        faction_war_id,
+        owner,
+        user_faction_war_bets_info.key(),
+        created
+    );
     Ok(Box::new(helper::load_account_data::<UserFactionWarBets>(
         user_faction_war_bets_info,
     )?))
@@ -396,6 +412,7 @@ pub fn internal_join_bets<'info>(
     faction_war_state_bump: u8,
     user_faction_war_bets_bump: u8,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_join_bets");
     msg!(
         "🎲 [join_bets] User joining round with {} bet positions. User: {}",
         bet_types.len(),
@@ -439,6 +456,13 @@ pub fn internal_join_bets<'info>(
         accounts.authority.key(),
         user_faction_war_bets_bump,
     )?;
+    msg!(
+        "🪖 [join_bets] loaded faction_war_state_id={} stage={} user_fw_owner={} pending_claims={}",
+        faction_war_state.faction_war_id,
+        faction_war_state.stage,
+        user_faction_war_bets.owner,
+        accounts.player_data.pending_faction_war_claims
+    );
 
     // Call internal_process_bets for all bets at once
     internal_process_bets(
@@ -469,6 +493,12 @@ pub fn internal_join_bets<'info>(
     )?;
     helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
     helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
+    msg!(
+        "🧾 [join_bets] persisted faction_war_state_id={} mining_pool={} player_pending_claims={}",
+        faction_war_state.faction_war_id,
+        faction_war_state.faction_war_mining_pool,
+        accounts.player_data.pending_faction_war_claims
+    );
 
     msg!(
         "✅ [join_bets] All {} bet positions placed successfully",
@@ -512,6 +542,7 @@ pub fn internal_init_autominer(
     can_reload: bool,
     use_ticket: Option<u8>,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_init_autominer");
     msg!("🤖 [init_autominer] Initializing autominer vault");
     msg!("   Owner: {}", ctx.accounts.user_wallet.key());
     msg!("   SOL per round: {} lamports", sol_per_round);
@@ -706,6 +737,7 @@ pub fn internal_update_autominer(
     rounds_added_: Option<u32>,
     can_reload: Option<bool>,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_update_autominer");
     msg!("🔄 [update_autominer] Updating autominer configuration");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
 
@@ -870,6 +902,7 @@ pub fn internal_execute_autominer_bet<'info>(
     user_faction_war_bets_bump: u8,
     custody_bump: u8,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_execute_autominer_bet");
     msg!("🤖 [execute_autominer_bet] Executing autominer bets");
     msg!("   Owner: {}", accounts.autominer_vault.owner);
     msg!("   Caller: {}", accounts.caller.key());
@@ -911,6 +944,13 @@ pub fn internal_execute_autominer_bet<'info>(
         accounts.autominer_vault.owner,
         user_faction_war_bets_bump,
     )?;
+    msg!(
+        "🤖 [execute_autominer_bet] loaded faction_war_state_id={} stage={} user_fw_owner={} rounds_remaining={}",
+        faction_war_state.faction_war_id,
+        faction_war_state.stage,
+        user_faction_war_bets.owner,
+        accounts.autominer_vault.rounds_remaining
+    );
 
     // Read values before mutable borrow
     let owner_key = accounts.autominer_vault.owner;
@@ -1104,6 +1144,12 @@ pub fn internal_execute_autominer_bet<'info>(
     )?;
     helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
     helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
+    msg!(
+        "🤖 [execute_autominer_bet] persisted faction_war_state_id={} mining_pool={} vault_rounds_left={}",
+        faction_war_state.faction_war_id,
+        faction_war_state.faction_war_mining_pool,
+        accounts.autominer_vault.rounds_remaining
+    );
 
     msg!("✅ [execute_autominer_bet] Autominer bets executed successfully");
     msg!(
@@ -1125,6 +1171,7 @@ pub fn internal_execute_autominer_bet<'info>(
 /// Can only be called by vault owner
 /// Refunds all remaining SOL (after rent) and resets rounds_remaining to 0
 pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+    crate::log_fn!("user", "internal_stop_autominer");
     msg!("🛑 [stop_autominer] Stopping autominer");
 
     // Read values before mutable borrow
@@ -1190,6 +1237,7 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
 /// Claim rewards for a user after round ends.
 /// Round payouts depend on the winning faction plus the randomly resolved round direction.
 pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
+    crate::log_fn!("user", "internal_claim_round_rewards");
     msg!(
         "💰 [claim_rewards] User claiming rewards. User: {}",
         ctx.accounts.user_wallet.key()
@@ -1292,6 +1340,7 @@ pub fn internal_claim_autominer_rewards(
     round_id: u64,
     ctx: Context<ClaimAutominerRewards>,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_claim_autominer_rewards");
     msg!("🤖 [claim_autominer_rewards] Claiming rewards with auto-reload");
     msg!("   Round ID: {}", round_id);
     msg!("   Autominer owner: {}", ctx.accounts.autominer_vault.owner);
@@ -2621,6 +2670,7 @@ pub struct JoinBets<'info> {
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    /// Must remain `mut` because helper::store_account_data persists raw PDA state after betting.
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
@@ -2633,6 +2683,7 @@ pub struct JoinBets<'info> {
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    /// Must remain `mut` because helper::store_account_data persists raw PDA state after betting.
     #[account(
         mut,
         seeds = [USER_FACTION_WAR_BETS_SEED, authority.key().as_ref(), &faction_war_id.to_le_bytes()],
@@ -2971,6 +3022,7 @@ pub struct ExecuteAutominerBet<'info> {
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    /// Must remain `mut` because helper::store_account_data persists raw PDA state after autominer execution.
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
@@ -2983,6 +3035,7 @@ pub struct ExecuteAutominerBet<'info> {
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    /// Must remain `mut` because helper::store_account_data persists raw PDA state after autominer execution.
     #[account(
         mut,
         seeds = [USER_FACTION_WAR_BETS_SEED, autominer_vault.owner.as_ref(), &faction_war_id.to_le_bytes()],
@@ -3004,6 +3057,7 @@ pub struct ExecuteAutominerBet<'info> {
 
 /// Use an doge for gameplay - deposits doge to program custody and sets it as active gameplay doge
 pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
+    crate::log_fn!("user", "internal_use_doge_for_gameplay");
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let doge_metadata = &mut ctx.accounts.doge_metadata;
@@ -3112,6 +3166,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
 pub fn internal_request_doge_gameplay_unlock(
     ctx: Context<RequestDogeGameplayUnlock>,
 ) -> Result<()> {
+    crate::log_fn!("user", "internal_request_doge_gameplay_unlock");
     let player_data = &mut ctx.accounts.player_data;
     let current_faction_war_id = ctx.accounts.faction_war_config.current_faction_war_id;
     let current_time = Clock::get()?.unix_timestamp;
@@ -3149,6 +3204,7 @@ pub fn internal_request_doge_gameplay_unlock(
 
 /// Withdraw doge from gameplay - returns doge to user and clears gameplay doge
 pub fn internal_withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
+    crate::log_fn!("user", "internal_withdraw_doge_from_gameplay");
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let doge_metadata = &mut ctx.accounts.doge_metadata;

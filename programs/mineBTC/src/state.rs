@@ -43,7 +43,7 @@ pub const MUTATION_SCORE_PRECISION: u64 = 1_000_000;
 ///
 /// ------------ CONSTANTS ------------
 pub const DAY_IN_SECONDS: u64 = 86400;
-pub const BURN_TAX_PERCENTAGE: u64 = 1; // 1% burn tax on transfers
+pub const DEFAULT_TRANSFER_TAX_BPS: u16 = 10; // 0.1% token transfer tax
 
 pub const MAX_ALLOWED_POSITIONS: u8 = 7;
 pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;

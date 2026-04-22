@@ -12,7 +12,7 @@
 //
 // Players pick a country, pick a direction, bet SOL. Their doge NFTs evolve through
 // gameplay — mutations during rounds decide which country climbs the leaderboard each
-// cycle. Deflationary dogeBTC economy with 1% transfer tax, POL burns, and faction
+// cycle. Deflationary dogeBTC economy with 0.1% transfer tax, POL burns, and faction
 // staking rewards.
 //
 // ## Modules
@@ -53,6 +53,13 @@ pub use state::{
 
 declare_id!("DG8MkC7JcnbMkwWf361WdHa3u5DqQTK5VYnCZmZxaNrc");
 
+#[macro_export]
+macro_rules! log_fn {
+    ($file:literal, $func:literal) => {
+        msg!(concat!(":::", $file, ".", $func, ":::"));
+    };
+}
+
 #[program]
 pub mod minebtc {
     use super::*;
@@ -73,6 +80,7 @@ pub mod minebtc {
     /// This function can only be called once as it creates the program's configuration accounts
     /// It will fail if the accounts already exist
     pub fn initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
+        crate::log_fn!("lib", "initialize");
         admin::internal_initialize(ctx, fee_recipient)
     }
 
@@ -83,6 +91,7 @@ pub mod minebtc {
         ctx: Context<SetRaydiumPoolState>,
         raydium_pool_state: Pubkey,
     ) -> Result<()> {
+        crate::log_fn!("lib", "set_raydium_pool_state");
         admin::set_raydium_pool_state_internal(ctx, raydium_pool_state)
     }
 
@@ -92,11 +101,13 @@ pub mod minebtc {
         faction_name: String,
         faction_id: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "add_faction");
         admin::add_faction_internal(ctx, faction_name, faction_id)
     }
 
     /// Initialize system referral account and buybacks system (admin only)
     pub fn initialize_system_accounts(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_system_accounts");
         admin::initialize_system_accounts_internal(ctx)
     }
 
@@ -107,16 +118,19 @@ pub mod minebtc {
         new_authority: Option<Pubkey>,
         new_fee_recipient: Option<Pubkey>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_config");
         admin::update_config_internal(ctx, new_authority, new_fee_recipient)
     }
 
     /// Cancel a pending authority transfer. Only current authority can call.
     pub fn cancel_authority_transfer(ctx: Context<UpdateConfigAc>) -> Result<()> {
+        crate::log_fn!("lib", "cancel_authority_transfer");
         admin::cancel_authority_transfer_internal(ctx)
     }
 
     /// Accept a proposed authority transfer (step 2). Only the pending authority can call.
     pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
+        crate::log_fn!("lib", "accept_authority");
         admin::accept_authority_internal(ctx)
     }
 
@@ -135,6 +149,7 @@ pub mod minebtc {
         change_faction_fee: Option<u64>,
         snapshot_interval: Option<u64>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_fees");
         admin::update_fees_internal(
             ctx,
             new_protocol_fee_pct,
@@ -152,6 +167,7 @@ pub mod minebtc {
 
     /// Toggle RPG progression (mutations, XP) during gameplay
     pub fn update_rpg_progression(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
+        crate::log_fn!("lib", "update_rpg_progression");
         admin::update_rpg_progression_internal(ctx, enabled)
     }
 
@@ -161,6 +177,7 @@ pub mod minebtc {
         ctx: Context<UpdateConfigAc>,
         max_stage: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_evolution_unlock_stage");
         admin::update_evolution_unlock_stage_internal(ctx, max_stage)
     }
 
@@ -169,6 +186,7 @@ pub mod minebtc {
         ctx: Context<UpdateConfigAc>,
         args: GameplayTuningUpdateArgs,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_gameplay_tuning");
         admin::update_gameplay_tuning_internal(ctx, args)
     }
 
@@ -179,6 +197,7 @@ pub mod minebtc {
         breed_base_price: u64,
         breed_curve_a: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_breeding_config");
         admin::update_breeding_config_internal(
             ctx,
             breeding_allowed,
@@ -195,6 +214,7 @@ pub mod minebtc {
         emission_increase_pct: Option<u64>,
         emission_decrease_pct: Option<u64>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_emission_params");
         admin::update_emission_params_internal(
             ctx,
             price_change_threshold,
@@ -215,6 +235,7 @@ pub mod minebtc {
         mine_btc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_mining");
         admin::initialize_mining_internal(ctx, start_timestamp, mine_btc_per_round, pool_state)
     }
 
@@ -223,6 +244,7 @@ pub mod minebtc {
     /// Allows anyone to deposit MineBtc tokens into the mining vault.
     /// These tokens will be distributed as rewards to stakers over time.
     pub fn deposit_mine_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        crate::log_fn!("lib", "deposit_mine_btc_tokens");
         admin::deposit_mine_btc_tokens_internal(ctx, amount)
     }
 
@@ -238,6 +260,7 @@ pub mod minebtc {
         base_multiplier: u16,
         max_multiplier: u16,
     ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_hashpower_config");
         admin::initialize_hashpower_config_internal(
             ctx,
             min_lockup_days,
@@ -252,6 +275,7 @@ pub mod minebtc {
     /// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
     /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
     pub fn initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_custodian_accounts");
         admin::int_initialize_custodian_accounts(ctx)
     }
 
@@ -263,6 +287,7 @@ pub mod minebtc {
         base_multiplier: u16,
         max_multiplier: u16,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_hashpower_config");
         admin::update_hashpower_config_internal(
             ctx,
             min_lockup_days,
@@ -286,6 +311,7 @@ pub mod minebtc {
         curve_a: u64,
         max_supply: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_doge_config");
         admin::initialize_doge_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
@@ -302,6 +328,7 @@ pub mod minebtc {
         curve_a: Option<u64>,
         max_supply: Option<u64>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_doge_config");
         admin::update_doge_config_internal(ctx, base_price, curve_a, max_supply)
     }
 
@@ -309,6 +336,7 @@ pub mod minebtc {
     ///
     /// Flips is_active between true and false.
     pub fn switch_doge_mining(ctx: Context<SwitchDogeMiningState>) -> Result<()> {
+        crate::log_fn!("lib", "switch_doge_mining");
         admin::switch_doge_mining_internal(ctx)
     }
 
@@ -323,6 +351,7 @@ pub mod minebtc {
         name: String,
         uri: String,
     ) -> Result<()> {
+        crate::log_fn!("lib", "create_doge_collection");
         admin::create_doge_collection_internal(ctx, name, uri)
     }
 
@@ -332,6 +361,7 @@ pub mod minebtc {
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "init_doge_royalties");
         admin::init_doge_royalties_internal(ctx, basis_points, creators)
     }
 
@@ -342,6 +372,7 @@ pub mod minebtc {
         ctx: Context<AddCollectionDelegate>,
         delegate: Pubkey,
     ) -> Result<()> {
+        crate::log_fn!("lib", "add_collection_delegate");
         admin::add_collection_delegate_internal(ctx, delegate)
     }
 
@@ -352,6 +383,7 @@ pub mod minebtc {
         new_name: Option<String>,
         new_uri: Option<String>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_collection_info");
         admin::update_collection_info_internal(ctx, new_name, new_uri)
     }
 
@@ -362,6 +394,7 @@ pub mod minebtc {
         ticket_tier_index: u8,
         ticket_value: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "add_ticket_tier_config");
         admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value)
     }
 
@@ -372,6 +405,7 @@ pub mod minebtc {
         user: Pubkey,
         remaining_free_mints: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "set_doge_free_mint_allowance");
         admin::set_doge_free_mint_allowance_internal(ctx, user, remaining_free_mints)
     }
 
@@ -387,6 +421,7 @@ pub mod minebtc {
         burn_pct: u8,
         nft_floor_sweep_whitelisted_address: Pubkey,
     ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_tax_config");
         tax::internal_initialize_tax_config(
             ctx,
             nft_floor_sweep_pct,
@@ -403,6 +438,7 @@ pub mod minebtc {
         faction_treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_tax_config");
         tax::internal_update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct)
     }
 
@@ -411,6 +447,7 @@ pub mod minebtc {
         ctx: Context<UpdateNftFloorSweepWhitelist>,
         new_whitelisted_address: Pubkey,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_nft_floor_sweep_whitelist");
         tax::internal_update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
     }
 
@@ -426,6 +463,7 @@ pub mod minebtc {
         ctx: Context<InitializeGameState>,
         round_duration_seconds: i64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_game_state");
         admin::initialize_game_state_internal(ctx, round_duration_seconds)
     }
 
@@ -437,6 +475,7 @@ pub mod minebtc {
         is_active: Option<bool>,
         round_duration_seconds: Option<i64>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_game_state");
         admin::update_game_state_internal(ctx, is_active, round_duration_seconds)
     }
 
@@ -453,6 +492,7 @@ pub mod minebtc {
     ///
     /// The remaining amount goes to the fee recipient (dev earnings).
     pub fn distribute_sol_fees(ctx: Context<DistributeSolFees>) -> Result<()> {
+        crate::log_fn!("lib", "distribute_sol_fees");
         economy::distribute_sol_fees_internal(ctx)
     }
 
@@ -460,12 +500,14 @@ pub mod minebtc {
     /// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
     /// After 8 snapshots over 4 hours, call update_rate then add_lp_and_burn to finalize
     pub fn snapshot_price(ctx: Context<SnapshotPrice>) -> Result<()> {
+        crate::log_fn!("lib", "snapshot_price");
         economy::snapshot_price_internal(ctx)
     }
 
     /// INSTRUCTION 2a: Update distribution rate (can be called after 4 hours)
     /// Checks if 8 snapshots collected, updates distribution rate, sets flag for LP operation
     pub fn update_rate(ctx: Context<UpdateRate>) -> Result<()> {
+        crate::log_fn!("lib", "update_rate");
         economy::update_rate_internal(ctx)
     }
 
@@ -473,6 +515,7 @@ pub mod minebtc {
     /// When lp_token_amount > 0: Admin override mode (requires authority signature)
     /// When lp_token_amount = 0: Automatic calculation mode (anyone can call)
     pub fn add_lp_and_burn(ctx: Context<AddLpAndBurn>, lp_token_amount: u64) -> Result<()> {
+        crate::log_fn!("lib", "add_lp_and_burn");
         economy::add_lp_and_burn_internal(ctx, lp_token_amount)
     }
 
@@ -485,6 +528,7 @@ pub mod minebtc {
         ctx: Context<WithdrawNftFloorSweepFunds>,
         amount: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "withdraw_nft_floor_sweep_funds");
         tax::internal_withdraw_nft_floor_sweep_funds(ctx, amount)
     }
 
@@ -493,6 +537,7 @@ pub mod minebtc {
     pub fn crank_harvest_fees<'info>(
         ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "crank_harvest_fees");
         tax::internal_crank_harvest_fees(ctx)
     }
 
@@ -502,6 +547,7 @@ pub mod minebtc {
         ctx: Context<CrankDistributeTax>,
         faction_war_id: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "crank_distribute_tax");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
         tax::internal_crank_distribute_tax(
@@ -518,6 +564,7 @@ pub mod minebtc {
         ctx: Context<ClaimFactionTreasuryForFactionWar>,
         faction_war_id: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "claim_faction_treasury_for_faction_war");
         tax::internal_claim_faction_treasury_for_faction_war(ctx, faction_war_id)
     }
 
@@ -528,6 +575,7 @@ pub mod minebtc {
     /// Initialize faction_war configuration (admin only).
     /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
     pub fn initialize_faction_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_faction_war_config");
         faction_war::initialize_faction_war_config_internal(ctx)
     }
 
@@ -536,12 +584,14 @@ pub mod minebtc {
         ctx: Context<UpdateFactionWarConfig>,
         is_active: Option<bool>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_faction_war_config");
         faction_war::update_faction_war_config_internal(ctx, is_active)
     }
 
     /// Settle faction_war: finalize mutation-based rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {
+        crate::log_fn!("lib", "settle_faction_war");
         faction_war::settle_faction_war_internal(ctx)
     }
 
@@ -550,6 +600,7 @@ pub mod minebtc {
         ctx: Context<ClaimFactionWarRewards>,
         faction_war_id: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "claim_faction_war_rewards");
         faction_war::claim_faction_war_rewards_internal(ctx, faction_war_id)
     }
 
@@ -560,11 +611,13 @@ pub mod minebtc {
     /// Start a new round and initialize its GameSession.
     /// round_id should be current_round_id + 1 (validated in the function)
     pub fn start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "start_round");
         game::int_start_round(ctx, round_id)
     }
 
     /// Finalize the current round using scheduled slot-hash entropy.
     pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
+        crate::log_fn!("lib", "end_round");
         game::int_end_round(ctx)
     }
 
@@ -573,6 +626,7 @@ pub mod minebtc {
         ctx: Context<EndRoundFactionRewards>,
         faction_war_id: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "end_round_faction_rewards");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
         game::int_end_round_faction_rewards(accounts, faction_war_id, bumps.faction_war_state)
@@ -588,6 +642,7 @@ pub mod minebtc {
         faction_id: u8,
         referral_code: Option<Pubkey>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_player");
         user::internal_initialize_player(ctx, faction_id, referral_code)
     }
 
@@ -595,6 +650,7 @@ pub mod minebtc {
     /// Requires no staked positions (minebtc/lp hashpower = 0, no doges staked)
     /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
     pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+        crate::log_fn!("lib", "change_faction");
         user::internal_change_faction(ctx, new_faction_id)
     }
 
@@ -603,6 +659,7 @@ pub mod minebtc {
         ctx: Context<SetPlayerClaimSettings>,
         allow_bots_to_claim: bool,
     ) -> Result<()> {
+        crate::log_fn!("lib", "set_player_claim_settings");
         user::internal_set_player_claim_settings(ctx, allow_bots_to_claim)
     }
 
@@ -615,6 +672,7 @@ pub mod minebtc {
         amount_per_bet: u64,
         use_ticket: Option<u8>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "join_bets");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
         user::internal_join_bets(
@@ -640,6 +698,7 @@ pub mod minebtc {
         can_reload: bool,
         use_ticket: Option<u8>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "init_autominer");
         user::internal_init_autominer(
             ctx,
             factions_config,
@@ -656,6 +715,7 @@ pub mod minebtc {
         current_round_id: u64,
         faction_war_id: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "execute_autominer_bet");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
         user::internal_execute_autominer_bet(
@@ -676,16 +736,19 @@ pub mod minebtc {
         num_rounds: Option<u32>,
         can_reload: Option<bool>,
     ) -> Result<()> {
+        crate::log_fn!("lib", "update_autominer");
         user::internal_update_autominer(ctx, sol_per_round, num_rounds, can_reload)
     }
 
     /// Stop autominer and refund remaining SOL
     pub fn stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
+        crate::log_fn!("lib", "stop_autominer");
         user::internal_stop_autominer(ctx)
     }
 
     /// Claim rewards for a user after round ends
     pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>, round_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "claim_round_rewards");
         user::internal_claim_round_rewards(round_id, ctx)
     }
 
@@ -695,6 +758,7 @@ pub mod minebtc {
         ctx: Context<ClaimAutominerRewards>,
         round_id: u64,
     ) -> Result<()> {
+        crate::log_fn!("lib", "claim_autominer_rewards");
         user::internal_claim_autominer_rewards(round_id, ctx)
     }
 
@@ -704,16 +768,19 @@ pub mod minebtc {
 
     /// Use an doge for gameplay - deposits to custody and sets as active gameplay doge
     pub fn use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
+        crate::log_fn!("lib", "use_doge_for_gameplay");
         user::internal_use_doge_for_gameplay(ctx)
     }
 
     /// Request gameplay doge unlock. Actual withdrawal is only available in the next faction_war cycle.
     pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
+        crate::log_fn!("lib", "request_doge_gameplay_unlock");
         user::internal_request_doge_gameplay_unlock(ctx)
     }
 
     /// Withdraw doge from gameplay - returns doge to user
     pub fn withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
+        crate::log_fn!("lib", "withdraw_doge_from_gameplay");
         user::internal_withdraw_doge_from_gameplay(ctx)
     }
 
@@ -728,11 +795,13 @@ pub mod minebtc {
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "stake_minebtc");
         stake::int_stake_minebtc(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake MineBtc tokens from a position
     pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
+        crate::log_fn!("lib", "unstake_minebtc");
         stake::int_unstake_minebtc(ctx, position_index)
     }
 
@@ -743,26 +812,31 @@ pub mod minebtc {
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "stake_lp_tokens");
         stake::int_stake_lp_tokens(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake LP tokens from a position
     pub fn unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) -> Result<()> {
+        crate::log_fn!("lib", "unstake_lp_tokens");
         stake::int_unstake_lp_tokens(ctx, position_index)
     }
 
     /// Claim staking rewards: transfers SOL directly, accumulates MineBTC to pending
     pub fn claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
+        crate::log_fn!("lib", "claim_staking_rewards");
         stake::int_claim_staking_rewards(ctx)
     }
 
     /// Withdraw accumulated MineBTC rewards (with refining fee redistribution)
     pub fn withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
+        crate::log_fn!("lib", "withdraw_dbtc_rewards");
         stake::int_withdraw_dbtc_rewards(ctx)
     }
 
     /// Claim referral rewards (SOL and MineBtc earned from referrals)
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
+        crate::log_fn!("lib", "claim_referral_rewards");
         stake::int_claim_referral_rewards(ctx)
     }
 
@@ -779,6 +853,7 @@ pub mod minebtc {
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
     ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
+        crate::log_fn!("lib", "simulate_purchase_cost");
         doges::int_simulate_mint_cost(&ctx.accounts.doge_config, mint_count)
     }
 
@@ -796,6 +871,7 @@ pub mod minebtc {
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "admin_mint_doge");
         doges::int_admin_mint_doge(ctx, recipient, faction_id, ticket_tier_index)
     }
 
@@ -806,6 +882,7 @@ pub mod minebtc {
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "whitelist_mint_doge");
         doges::int_whitelist_mint_doge(ctx, faction_id, ticket_tier_index)
     }
 
@@ -824,26 +901,31 @@ pub mod minebtc {
         mint_count: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
+        crate::log_fn!("lib", "batch_mint_doges");
         doges::int_batch_mint_doges(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
     /// Stake a Doge to boost hashpower (if faction matches player's faction)
     pub fn stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
+        crate::log_fn!("lib", "stake_doge");
         doges::int_stake_doge(ctx)
     }
 
     /// Unstake a Doge (remove hashpower boost)
     pub fn unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
+        crate::log_fn!("lib", "unstake_doge");
         doges::int_unstake_doge(ctx)
     }
 
     /// Breed two doges to create offspring
     pub fn breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
+        crate::log_fn!("lib", "breed_doges");
         doges::int_breed_doges(ctx)
     }
 
     /// Send an doge to heaven (burn for rewards)
     pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
+        crate::log_fn!("lib", "send_to_heaven");
         doges::int_send_to_heaven(ctx)
     }
 
@@ -871,6 +953,7 @@ pub mod minebtc {
     /// Query function to decode DNA and return gene breakdown
     /// This is a read-only function that can be called via simulateTransaction
     pub fn get_gene_breakdown(_ctx: Context<GetGeneBreakdown>, dna: [u8; 32]) -> Result<()> {
+        crate::log_fn!("lib", "get_gene_breakdown");
         let family_type = genescience::get_family_type(&dna);
         let evolution_stage = genescience::get_evolution_stage(&dna);
         let appearance_traits = genescience::decode_appearance_traits(&dna);

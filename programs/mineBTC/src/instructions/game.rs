@@ -38,6 +38,7 @@ use crate::state::*;
 
 /// Start a new round and initialize its GameSession.
 pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
+    crate::log_fn!("game", "int_start_round");
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
@@ -98,6 +99,17 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
     game_session.total_mutations_this_round = 0;
     global_state.can_begin_round = false;
+
+    msg!(
+        "🚀 [start_round] round_id={} start_slot={} start_ts={} end_ts={} entropy_slot={} faction_war_id={} can_begin_next={}",
+        round_id,
+        game_session.round_start_slot,
+        game_session.round_start_timestamp,
+        game_session.round_end_timestamp,
+        game_session.scheduled_entropy_slot,
+        ctx.accounts.faction_war_config.current_faction_war_id,
+        global_state.can_begin_round
+    );
 
     emit!(RoundStarted {
         round_id,
@@ -169,6 +181,7 @@ fn resolve_round_entropy(
 /// Finalize the current round using its pre-scheduled slot-hash entropy.
 /// If the scheduled slot hash aged out of the sysvar, fall back to the latest available slot hash.
 pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
+    crate::log_fn!("game", "int_end_round");
     let game_session = &mut ctx.accounts.game_session;
     let global_state = &mut ctx.accounts.global_game_state;
     let global_config = &ctx.accounts.global_config;
@@ -221,6 +234,14 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     let total_users: u64 = game_session.user_faction_indexes[..active_faction_count]
         .iter()
         .sum();
+    msg!(
+        "📊 [end_round] total_users={} total_sol_bets={} total_points_bets={} total_weighted_points={} active_factions={}",
+        total_users,
+        game_session.total_sol_bets,
+        game_session.total_points_bets,
+        game_session.total_wgtd_points_bets,
+        active_faction_count
+    );
     let winning_faction_id = if total_users == 0 {
         (u64::from_le_bytes([
             final_hash_bytes[0],
@@ -279,6 +300,12 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         )?
     };
     game_session.winning_direction = winning_direction;
+    msg!(
+        "🏆 [end_round] winning_faction_id={} winning_direction={} total_users={}",
+        winning_faction_id,
+        winning_direction,
+        total_users
+    );
 
     if total_users == 0 {
         global_state.last_round_id = game_session.round_id;
@@ -550,7 +577,7 @@ fn init_or_load_round_faction_war_state<'info>(
         faction_war_id_bytes.as_ref(),
         faction_war_state_bump_seed.as_ref(),
     ];
-    helper::init_pda_account_if_needed(
+    let created = helper::init_pda_account_if_needed(
         payer,
         faction_war_state_info,
         system_program,
@@ -558,6 +585,12 @@ fn init_or_load_round_faction_war_state<'info>(
         FactionWarState::LEN,
         &FactionWarState::blank(),
     )?;
+    msg!(
+        "🪖 [init_or_load_round_faction_war_state] faction_war_id={} account={} created={}",
+        faction_war_id,
+        faction_war_state_info.key(),
+        created
+    );
     Ok(Box::new(helper::load_account_data::<FactionWarState>(
         faction_war_state_info,
     )?))
@@ -701,6 +734,7 @@ pub fn int_end_round_faction_rewards<'info>(
     faction_war_id: u64,
     faction_war_state_bump: u8,
 ) -> Result<()> {
+    crate::log_fn!("game", "int_end_round_faction_rewards");
     msg!("🏁 [end_round_faction_rewards] Ending current round");
 
     let game_session = &mut accounts.game_session;
@@ -714,6 +748,14 @@ pub fn int_end_round_faction_rewards<'info>(
         faction_war_id,
         faction_war_state_bump,
     )?;
+    msg!(
+        "📦 [end_round_faction_rewards] round_id={} faction_war_id={} game_stage={} faction_war_state_id={} faction_war_stage={}",
+        game_session.round_id,
+        faction_war_id,
+        game_session.stage,
+        faction_war_state.faction_war_id,
+        faction_war_state.stage
+    );
 
     if game_session.stage == 0 || game_session.stage == 2 {
         msg!("   Round has not ended yet or already distributed faction rewards, skipping");
@@ -1131,6 +1173,7 @@ pub struct EndRoundFactionRewards<'info> {
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
+    /// Must remain `mut` because helper::store_account_data persists the seeded/updated faction-war state.
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],

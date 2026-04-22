@@ -83,6 +83,7 @@ pub struct GameplayTuningUpdateArgs {
 /// - MineBtcMining account
 /// - SOL treasury PDA
 pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
+    crate::log_fn!("admin", "internal_initialize");
     let global_config = &mut ctx.accounts.global_config;
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
@@ -189,6 +190,7 @@ pub fn set_raydium_pool_state_internal(
     ctx: Context<SetRaydiumPoolState>,
     raydium_pool_state: Pubkey,
 ) -> Result<()> {
+    crate::log_fn!("admin", "set_raydium_pool_state_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     require!(
@@ -250,6 +252,7 @@ pub fn add_faction_internal(
     faction_name: String,
     faction_id: u8,
 ) -> Result<()> {
+    crate::log_fn!("admin", "add_faction_internal");
     let global_config = &mut ctx.accounts.global_config;
     let faction_state = &mut ctx.accounts.faction_state;
 
@@ -319,6 +322,7 @@ pub fn update_config_internal(
     new_authority: Option<Pubkey>,
     new_fee_recipient: Option<Pubkey>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_config_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     // 2-step authority transfer: set pending_authority instead of immediate transfer
@@ -342,6 +346,7 @@ pub fn update_config_internal(
 /// Cancel a pending authority transfer.
 /// Only the current `ext_authority` can call this function.
 pub fn cancel_authority_transfer_internal(ctx: Context<UpdateConfigAc>) -> Result<()> {
+    crate::log_fn!("admin", "cancel_authority_transfer_internal");
     let global_config = &mut ctx.accounts.global_config;
     msg!(
         "🔐 Authority transfer cancelled (was pending: {})",
@@ -355,6 +360,7 @@ pub fn cancel_authority_transfer_internal(ctx: Context<UpdateConfigAc>) -> Resul
 /// Only the `pending_authority` can call this function.
 /// Completes the transfer: ext_authority = pending_authority, pending_authority = default.
 pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
+    crate::log_fn!("admin", "accept_authority_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     // Verify there is a pending transfer
@@ -416,6 +422,7 @@ pub fn update_fees_internal(
     change_faction_fee: Option<u64>,
     snapshot_interval: Option<u64>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_fees_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     // Update SOL fee config if any values provided
@@ -526,6 +533,7 @@ pub fn update_fees_internal(
 
 /// Toggle RPG progression (mutations, XP) during gameplay
 pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
+    crate::log_fn!("admin", "update_rpg_progression_internal");
     ctx.accounts.global_config.gameplay_tuning.rpg_progression = enabled;
     Ok(())
 }
@@ -537,6 +545,7 @@ pub fn update_evolution_unlock_stage_internal(
     ctx: Context<UpdateConfigAc>,
     max_stage: u8,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_evolution_unlock_stage_internal");
     require!(
         max_stage <= MAX_EVOLUTION_STAGE,
         ErrorCode::InvalidParameters
@@ -567,6 +576,7 @@ pub fn update_emission_params_internal(
     emission_increase_pct: Option<u64>,
     emission_decrease_pct: Option<u64>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_emission_params_internal");
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
     // Update price change threshold if provided
@@ -605,6 +615,7 @@ pub fn update_gameplay_tuning_internal(
     ctx: Context<UpdateConfigAc>,
     args: GameplayTuningUpdateArgs,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_gameplay_tuning_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     if global_config.gameplay_tuning.is_uninitialized() {
@@ -768,6 +779,7 @@ pub fn initialize_mining_internal(
     mine_btc_per_round: u64,
     pool_state: Pubkey,
 ) -> Result<()> {
+    crate::log_fn!("admin", "initialize_mining_internal");
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
     // Check mining hasn't been initialized yet
@@ -815,6 +827,7 @@ pub fn initialize_mining_internal(
 /// # Parameters
 /// - `amount`: Amount of MineBtc tokens to deposit (in token's native decimals)
 pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+    crate::log_fn!("admin", "deposit_mine_btc_tokens_internal");
     token_if::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(), // TOKEN_2022_PROGRAM_ID
@@ -843,6 +856,7 @@ pub fn initialize_hashpower_config_internal(
     base_multiplier: u16,
     max_multiplier: u16,
 ) -> Result<()> {
+    crate::log_fn!("admin", "initialize_hashpower_config_internal");
     let hashpower_config = &mut ctx.accounts.hashpower_config;
 
     hashpower_config.min_lockup_days = min_lockup_days;
@@ -861,6 +875,7 @@ pub fn update_hashpower_config_internal(
     base_multiplier: u16,
     max_multiplier: u16,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_hashpower_config_internal");
     let hashpower_config = &mut ctx.accounts.hashpower_config;
 
     hashpower_config.min_lockup_days = min_lockup_days;
@@ -890,6 +905,7 @@ pub fn initialize_doge_config_internal(
     curve_a: u64,
     max_supply: u64,
 ) -> Result<()> {
+    crate::log_fn!("admin", "initialize_doge_config_internal");
     let doges_config = &mut ctx.accounts.doges_config;
 
     doges_config.bump = ctx.bumps.doges_config;
@@ -914,6 +930,7 @@ pub fn initialize_doge_config_internal(
 ///
 /// This allows admins to pause/resume the doge mining without losing state.
 pub fn switch_doge_mining_internal(ctx: Context<SwitchDogeMiningState>) -> Result<()> {
+    crate::log_fn!("admin", "switch_doge_mining_internal");
     let doges_config = &mut ctx.accounts.doges_config;
     doges_config.is_active = !doges_config.is_active;
     Ok(())
@@ -933,6 +950,7 @@ pub fn create_doge_collection_internal(
     name: String,
     uri: String,
 ) -> Result<()> {
+    crate::log_fn!("admin", "create_doge_collection_internal");
     let doges_config = &mut ctx.accounts.doges_config;
 
     // Get the collection authority bump for signing
@@ -982,6 +1000,7 @@ pub fn init_doge_royalties_internal(
     basis_points: u16,
     creators: Vec<CreatorInput>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "init_doge_royalties_internal");
     let global_config = &ctx.accounts.global_config;
     let authority = &ctx.accounts.authority;
 
@@ -1051,6 +1070,7 @@ pub fn add_collection_delegate_internal(
     ctx: Context<AddCollectionDelegate>,
     delegate: Pubkey,
 ) -> Result<()> {
+    crate::log_fn!("admin", "add_collection_delegate_internal");
     let bump = ctx.bumps.collection_authority;
     let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
@@ -1094,6 +1114,7 @@ pub fn update_collection_info_internal(
     new_name: Option<String>,
     new_uri: Option<String>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_collection_info_internal");
     let bump = ctx.bumps.collection_authority;
     let seeds: &[&[u8]] = &[COLLECTION_AUTHORITY_SEED, &[bump]];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
@@ -1147,6 +1168,7 @@ pub fn add_ticket_tier_config_int(
     ticket_tier_index: u8,
     ticket_value: u64,
 ) -> Result<()> {
+    crate::log_fn!("admin", "add_ticket_tier_config_int");
     let global_config = &ctx.accounts.global_config;
     let doges_config = &mut ctx.accounts.doges_config;
     let authority = &ctx.accounts.authority;
@@ -1184,6 +1206,7 @@ pub fn set_doge_free_mint_allowance_internal(
     user: Pubkey,
     remaining_free_mints: u8,
 ) -> Result<()> {
+    crate::log_fn!("admin", "set_doge_free_mint_allowance_internal");
     require!(
         remaining_free_mints <= MAX_FREE_DOGE_MINTS_PER_USER,
         ErrorCode::MaxFreeDogeMintsExceeded
@@ -1220,6 +1243,7 @@ pub fn update_doge_config_internal(
     curve_a: Option<u64>,
     max_supply: Option<u64>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_doge_config_internal");
     let doges_config = &mut ctx.accounts.doges_config;
     if let Some(price) = base_price {
         doges_config.base_price = price;
@@ -1244,6 +1268,7 @@ pub fn update_breeding_config_internal(
     breed_base_price: u64,
     breed_curve_a: u64,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_breeding_config_internal");
     let doges_config = &mut ctx.accounts.doges_config;
     doges_config.breeding_allowed = breeding_allowed;
     doges_config.breed_base_price = breed_base_price;
@@ -1267,6 +1292,7 @@ pub fn initialize_game_state_internal(
     ctx: Context<InitializeGameState>,
     round_duration_seconds: i64,
 ) -> Result<()> {
+    crate::log_fn!("admin", "initialize_game_state_internal");
     let global_game_state = &mut ctx.accounts.global_game_state;
 
     // Initialize game state
@@ -1292,6 +1318,7 @@ pub fn update_game_state_internal(
     is_active: Option<bool>,
     round_duration_seconds: Option<i64>,
 ) -> Result<()> {
+    crate::log_fn!("admin", "update_game_state_internal");
     let global_game_state = &mut ctx.accounts.global_game_state;
     if let Some(active) = is_active {
         global_game_state.is_active = active;
@@ -1319,6 +1346,7 @@ pub fn update_game_state_internal(
 /// - Buybacks account PDA
 /// - Buybacks SOL vault PDA
 pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts>) -> Result<()> {
+    crate::log_fn!("admin", "initialize_system_accounts_internal");
     // Initialize system referral rewards account
     let system_referral = &mut ctx.accounts.system_referral_rewards;
     system_referral.owner = ctx.accounts.system_program.key();
@@ -1936,6 +1964,7 @@ pub struct InitializeSystemAccounts<'info> {
 /// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
 /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
 pub fn int_initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
+    crate::log_fn!("admin", "int_initialize_custodian_accounts");
     // Verify MINEBTC custodian
     require!(
         ctx.accounts.minebtc_custodian.mint == ctx.accounts.minebtc_mint.key(),

@@ -120,14 +120,14 @@ Each round, the gameplay doge earns dogeBTC based on mutation type (1% - 6.9% of
 
 ### dogeBTC Token
 
-dogeBTC is a Token-2022 token with a 1% transfer tax. Every transfer automatically splits:
+dogeBTC is a Token-2022 token with a 0.1% transfer tax. Every transfer automatically splits:
 
 | Split | Default % | Where It Goes |
 |-------|-----------|---------------|
-| **Burn** | 25% | Permanently removed from supply |
-| **Faction Treasury** | 40% | Distributed to stakers via rebase leaderboard |
-| **NFT Floor Sweep** | 10% | Funds NFT market-making operations |
-| **Back to Vault** | 25% | Recycled into mining emission pool |
+| **Burn** | 50% | Permanently removed from supply |
+| **Faction Treasury** | 25% | Distributed to stakers via faction-war settlement |
+| **NFT Floor Sweep** | 25% | Funds NFT market-making operations |
+| **Back to Vault** | 0% | Recycled into mining emission pool when config leaves remainder |
 
 ### Economy Cycle (~4 hours)
 

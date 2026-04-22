@@ -127,7 +127,7 @@ export function updateDeploymentStatus(
   console.log(`Deployment status updated: ${status}`);
 }
 
-// Create mint account for a Solana Token 2022 with transfer fee (burn) extension
+// Create mint account for a Solana Token 2022 with transfer-tax extension
 export async function createMintAccount(
   connection,
   deployer,
@@ -149,7 +149,7 @@ export async function createMintAccount(
     const MAX_BURN_TAX = BigInt(burn_tax) * BigInt(10) ** BigInt(decimals);
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`
+      `   • Max Transfer Fee: ${MAX_BURN_TAX.toString()}`
     );
 
     // Create mint account with transfer fee extension
@@ -255,7 +255,7 @@ export async function createMintAccountWithMetadata(
     console.log("\x1b[36m%s\x1b[0m", "📝 Creating mint with MetadataPointer + TransferFeeConfig extensions...");
 
     const MAX_BURN_TAX = BigInt(burn_tax) * BigInt(10) ** BigInt(decimals);
-    console.log("\x1b[36m%s\x1b[0m", `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`);
+    console.log("\x1b[36m%s\x1b[0m", `   • Max Transfer Fee: ${MAX_BURN_TAX.toString()}`);
 
     // Extensions: MetadataPointer + TransferFeeConfig
     const extensions = [ExtensionType.MetadataPointer, ExtensionType.TransferFeeConfig];
@@ -374,7 +374,7 @@ export async function createMintAccount_T22_TransferFeeOnly(
   const MAX_BURN_TAX = BigInt(maxBurnTokens) * BigInt(10) ** BigInt(decimals);
   console.log(
     "\x1b[36m%s\x1b[0m",
-    `   • Max Burn Tax: ${MAX_BURN_TAX.toString()}`
+    `   • Max Transfer Fee: ${MAX_BURN_TAX.toString()}`
   );
 
   // We are ONLY using TransferFeeConfig at creation time

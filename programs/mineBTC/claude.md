@@ -9,7 +9,7 @@ MineBTC is a **degen country arena game** on Solana where:
 - players pick a country and a direction, bet SOL, and their doge NFTs evolve through gameplay
 - doge mutations during rounds decide which country climbs the leaderboard each cycle
 - the same bet powers both the **round raffle** (instant SOL + dogeBTC rewards) and the **cycle leaderboard** (longer-term dogeBTC rewards based on which countries moved)
-- a deflationary economy runs on a 1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
+- a deflationary economy runs on a 0.1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
 - an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
 
 **The game in one sentence:** "Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC."
@@ -93,7 +93,7 @@ Two distinct doge roles:
 
 ### Economy Layer
 
-- 1% transfer tax on all dogeBTC: split between burn, NFT floor sweep vault, faction treasury, mining vault
+- 0.1% transfer tax on all dogeBTC: split between burn, NFT floor sweep vault, faction treasury, mining vault
 - Price snapshots every 30 min (8 per cycle) → emission rate adjustment → LP add + burn
 - Cycle settlement is tied to the LP burn — one competitive cycle per economy cycle
 - Daily faction leaderboard distributes treasury rewards by hashpower ranking
