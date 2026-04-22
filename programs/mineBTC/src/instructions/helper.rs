@@ -1,7 +1,8 @@
 use crate::errors::ErrorCode;
 use crate::state::*;
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{transfer, Transfer};
+use anchor_lang::system_program;
+use anchor_lang::system_program::{create_account, transfer, CreateAccount, Transfer};
 use anchor_spl::token::{self as token_standard, Burn as StandardBurn};
 use anchor_spl::token_2022::{
     self,
@@ -191,6 +192,65 @@ pub fn transfer_to_sol_prize_pot_vault<'info>(
         ),
         amount,
     )
+}
+
+pub fn init_pda_account_if_needed<'info, T>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    signer_seeds: &[&[u8]],
+    space: usize,
+    initial_data: &T,
+) -> Result<()>
+where
+    T: AccountSerialize + AccountDeserialize + Discriminator + Owner + Clone,
+{
+    if account.owner == &system_program::ID && account.lamports() == 0 {
+        let rent = Rent::get()?.minimum_balance(space);
+        create_account(
+            CpiContext::new_with_signer(
+                system_program.to_account_info(),
+                CreateAccount {
+                    from: payer.to_account_info(),
+                    to: account.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            rent,
+            space as u64,
+            &crate::ID,
+        )?;
+
+        let mut data = account.try_borrow_mut_data()?;
+        require!(data.len() >= space, ErrorCode::InvalidAccount);
+        data[..8].copy_from_slice(T::DISCRIMINATOR);
+        let mut cursor = &mut data[8..];
+        initial_data.try_serialize(&mut cursor)?;
+    }
+
+    Ok(())
+}
+
+pub fn load_account_data<'info, T>(account: &AccountInfo<'info>) -> Result<T>
+where
+    T: AccountDeserialize + Owner,
+{
+    require!(account.owner == &T::owner(), ErrorCode::InvalidAccount);
+    let data = account.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    T::try_deserialize(&mut data_slice)
+}
+
+pub fn store_account_data<'info, T>(account: &AccountInfo<'info>, value: &T) -> Result<()>
+where
+    T: AccountSerialize + Discriminator,
+{
+    let mut data = account.try_borrow_mut_data()?;
+    require!(data.len() >= DISCRIMINATOR_SIZE, ErrorCode::InvalidAccount);
+    data[..DISCRIMINATOR_SIZE].copy_from_slice(T::DISCRIMINATOR);
+    let mut cursor = &mut data[DISCRIMINATOR_SIZE..];
+    value.try_serialize(&mut cursor)?;
+    Ok(())
 }
 
 // Helper function to transfer SOL FROM sol_rewards_vault to a user

@@ -164,6 +164,14 @@ pub mod minebtc {
         admin::update_evolution_unlock_stage_internal(ctx, max_stage)
     }
 
+    /// Unified admin surface for gameplay tuning and cycle-reward pacing.
+    pub fn update_gameplay_tuning(
+        ctx: Context<UpdateConfigAc>,
+        args: GameplayTuningUpdateArgs,
+    ) -> Result<()> {
+        admin::update_gameplay_tuning_internal(ctx, args)
+    }
+
     /// Update breeding configuration (admin only)
     pub fn update_breeding_config(
         ctx: Context<UpdateDogeConfig>,
@@ -490,8 +498,18 @@ pub mod minebtc {
 
     /// STEP 2: Withdraw total tax from mint and distribute it
     /// Callable by anyone - program-controlled withdraw authority
-    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>) -> Result<()> {
-        tax::internal_crank_distribute_tax(ctx)
+    pub fn crank_distribute_tax(
+        ctx: Context<CrankDistributeTax>,
+        faction_war_id: u64,
+    ) -> Result<()> {
+        let bumps = ctx.bumps;
+        let accounts = ctx.accounts;
+        tax::internal_crank_distribute_tax(
+            accounts,
+            faction_war_id,
+            bumps.faction_war_state,
+            bumps.withdraw_withheld_authority,
+        )
     }
 
     /// Claim faction treasury rewards for a settled faction_war.
@@ -551,8 +569,13 @@ pub mod minebtc {
     }
 
     /// Finalize the round's faction-level staking/motherlode distribution and track faction-war mining.
-    pub fn end_round_faction_rewards(ctx: Context<EndRoundFactionRewards>) -> Result<()> {
-        game::int_end_round_faction_rewards(ctx)
+    pub fn end_round_faction_rewards(
+        ctx: Context<EndRoundFactionRewards>,
+        faction_war_id: u64,
+    ) -> Result<()> {
+        let bumps = ctx.bumps;
+        let accounts = ctx.accounts;
+        game::int_end_round_faction_rewards(accounts, faction_war_id, bumps.faction_war_state)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -587,11 +610,24 @@ pub mod minebtc {
     pub fn join_bets(
         ctx: Context<JoinBets>,
         round_id: u64,
+        faction_war_id: u64,
         bet_types: Vec<BetType>,
         amount_per_bet: u64,
         use_ticket: Option<u8>,
     ) -> Result<()> {
-        user::internal_join_bets(ctx, round_id, bet_types, amount_per_bet, use_ticket)
+        let bumps = ctx.bumps;
+        let accounts = ctx.accounts;
+        user::internal_join_bets(
+            accounts,
+            round_id,
+            faction_war_id,
+            bet_types,
+            amount_per_bet,
+            use_ticket,
+            bumps.user_game_bet,
+            bumps.faction_war_state,
+            bumps.user_faction_war_bets,
+        )
     }
 
     /// Initialize autominer vault with flexible faction-direction configuration
@@ -618,8 +654,19 @@ pub mod minebtc {
     pub fn execute_autominer_bet(
         ctx: Context<ExecuteAutominerBet>,
         current_round_id: u64,
+        faction_war_id: u64,
     ) -> Result<()> {
-        user::internal_execute_autominer_bet(ctx, current_round_id)
+        let bumps = ctx.bumps;
+        let accounts = ctx.accounts;
+        user::internal_execute_autominer_bet(
+            accounts,
+            current_round_id,
+            faction_war_id,
+            bumps.user_game_bet,
+            bumps.faction_war_state,
+            bumps.user_faction_war_bets,
+            bumps.autominer_custody,
+        )
     }
 
     /// Update autominer configuration (sol_per_round, num_rounds, can_reload)

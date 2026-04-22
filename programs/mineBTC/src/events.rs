@@ -149,6 +149,26 @@ pub struct EvolutionUnlockStageUpdated {
     pub max_evolution_stage_unlocked: u8,
 }
 
+#[event]
+pub struct GameplayTuningUpdated {
+    pub authority: Pubkey,
+    pub rpg_progression: bool,
+    pub max_evolution_stage_unlocked: u8,
+    pub faction_war_base_reward_bps: u16,
+    pub faction_war_loyalty_reward_bps: u16,
+    pub faction_war_doge_reward_bps: u16,
+    pub base_mutation_chance_bps: u16,
+    pub mutation_chance_floor_bps: u16,
+    pub mutation_chance_cap_bps: u16,
+    pub faction_volume_threshold_lamports: u64,
+    pub extra_volume_threshold_per_mutation_lamports: u64,
+    pub global_mutation_pressure_decay_bps: u16,
+    pub global_mutation_pressure_per_mutation_bps: u16,
+    pub target_mutations_per_cycle: u16,
+    pub target_rounds_per_cycle: u16,
+    pub pacing_max_adjustment_bps: u16,
+}
+
 /// Event emitted when a Doge is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
@@ -675,7 +695,10 @@ pub struct FactionWarSettled {
     pub rank_deltas: [i8; NUM_FACTIONS],
     pub resolved_directions: [u8; NUM_FACTIONS],
     pub faction_reward_pools: [u64; NUM_FACTIONS],
+    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
+    pub faction_round_wins: [u16; NUM_FACTIONS],
+    pub faction_sol_totals: [u64; NUM_FACTIONS],
     pub faction_mutation_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
@@ -697,6 +720,8 @@ pub struct FactionWarRewardsClaimed {
     pub faction_war_id: u64,
     pub user: Pubkey,
     pub reward_amount: u64,
+    pub base_reward_amount: u64,
+    pub loyalty_reward_amount: u64,
     pub doge_bonus_amount: u64,
     pub doge_mint: Pubkey,
     pub timestamp: i64,
