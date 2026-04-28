@@ -375,7 +375,7 @@ async function main() {
     // 7. Initialize Hashpower Config
     // Instruction: initialize_hashpower_config(min_lockup_days: u64, max_lockup_days: u64, base_multiplier: u16, max_multiplier: u16)
     // Creates HashpowerConfig PDA [seeds: "hashpower-config"] with lockup duration.
-    // Multipliers are fixed at 100/100 so passive staking cannot exceed the Doge 4.2x cap.
+    // Lockup can add up to 3x; passive Doge staking can add up to 3x, so max staking boost is 9x.
     // Accounts: globalConfig, hashpowerConfig, authority, systemProgram
     await initializeHashpowerConfig(minebtcProgram);
 
@@ -392,10 +392,16 @@ async function main() {
     await initializeCustodianAccounts(minebtcProgram);
 
     // 9. Initialize DogeConfig
-    // Instruction: initialize_doge_config(base_price: u64, curve_a: u64, max_supply: u64)
-    // Creates DogeConfig PDA [seeds: "doge-config"] with bonding curve pricing params
+    // Instruction: initialize_doge_config(max_supply: u64)
+    // Creates DogeConfig PDA [seeds: "doge-config"] with collection, lifetime supply, and breeding state.
     // Accounts: dogesConfig, globalConfig, authority, systemProgram
     await initializeDogeConfig(minebtcProgram);
+
+    // 9b. Initialize DogeMintConfig
+    // Instruction: initialize_doge_mint_config(base_price, curve_a, genesis_mint_limit, max_genesis_mints_per_faction)
+    // Creates mint-only PDA [seeds: "doge-mint-config"] for genesis sale curve, ticket tiers, and per-country caps.
+    // Accounts: dogeMintConfig, globalConfig, authority, systemProgram
+    await initializeDogeMintConfig(minebtcProgram);
 
     // 10. Create Doge Collection (Metaplex Core)
     // Instruction: create_doge_collection(name: String, uri: String)
@@ -413,8 +419,8 @@ async function main() {
 
     // 12. Configure Ticket Tiers (for Doge minting)
     // Instruction: add_ticket_tier_config(ticket_tier_index: u8, ticket_value: u64)
-    // Adds/updates a ticket tier in DogeConfig (max 4 tiers)
-    // Accounts: globalConfig, dogesConfig, authority, systemProgram
+    // Adds/updates a ticket tier in DogeMintConfig (max 3 tiers)
+    // Accounts: globalConfig, dogeMintConfig, authority, systemProgram
     await configureTicketTiers(minebtcProgram);
 
     // 13. Initialize Tax Config (for tax distribution)
@@ -461,8 +467,7 @@ async function main() {
     // // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
     // // Example usage:
     // await updateDogeConfig(minebtcProgram, {
-    //     basePrice: 100000000, // 1 SOL in lamports
-    //     curveA: 1111111, // Curve parameter
+    //     maxSupply: 100000,
     // });
     // return;
  
@@ -484,7 +489,7 @@ async function main() {
     // Creates FactionWarConfig PDA [seeds: "faction-war-config"] with
     // current_faction_war_id=1, is_active=true, faction_war_settle_cycle=0
     // (auto-set on first bet), and identity
-    // start ranks [0..NUM_FACTIONS). Rebase cycles auto-start on first bet and
+    // start ranks [0..NUM_FACTIONS). Faction-war cycles auto-start on first bet and
     // auto-settle when the economy-cycle LP burn completes.
     // Accounts: factionWarConfig, globalConfig, authority, systemProgram
     await initializeFactionWarConfig(minebtcProgram);
@@ -1492,24 +1497,19 @@ async function initializeDogeConfig(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    // Get doge config values
-    const basePrice = config.doges_config.base_price; 
-    const curveA = config.doges_config.curve_a; // Curve steepness
-    const maxSupply = config.doges_config.max_supply; // Genesis supply (15K), total 100K via breeding
+    const maxSupply = config.doges_config.max_supply;
 
-    if (!basePrice || !curveA || !maxSupply) {
+    if (!maxSupply) {
     console.error(COLOR_ERROR, "❌ Doge config values not found in config.json");
     throw new Error("Doge config values not found");
     }
 
     console.log(COLOR_INFO, `🔑 DogeConfig PDA: ${dogesConfigPDA.toString()}`);
-    console.log(COLOR_INFO, `💰 Base Price: ${basePrice / 1e9} SOL`);
-    console.log(COLOR_INFO, `📈 Curve A: ${curveA}`);
-    console.log(COLOR_INFO, `🥚 Max Supply: ${maxSupply}`);
+    console.log(COLOR_INFO, `🥚 Lifetime Max Supply: ${maxSupply}`);
 
     try {
     const tx = await minebtcProgram.methods
-      .initializeDogeConfig(new BN(basePrice), new BN(curveA), new BN(maxSupply))
+      .initializeDogeConfig(new BN(maxSupply))
             .accounts({
                 dogesConfig: dogesConfigPDA,
                 globalConfig: globalConfigPDA,
@@ -1523,8 +1523,6 @@ async function initializeDogeConfig(minebtcProgram) {
 
         deploymentFile.doge_config_initialized = {
             doges_config_pda: dogesConfigPDA.toString(),
-            base_price: basePrice.toString(),
-            curve_a: curveA.toString(),
             max_supply: maxSupply.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1542,6 +1540,86 @@ async function initializeDogeConfig(minebtcProgram) {
             throw error;
         }
     }
+}
+
+async function initializeDogeMintConfig(minebtcProgram) {
+  if (deploymentFile.doge_mint_config_initialized) {
+    console.log(COLOR_INFO, "ℹ️ DogeMintConfig already initialized. Skipping...");
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n================ [ INITIALIZING DOGE MINT CONFIG ] ================"
+  );
+
+  const globalConfigPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.globalConfig_address
+  );
+
+  const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-mint-config")],
+    minebtcProgram.programId
+  );
+
+  const basePrice = config.doges_config.base_price;
+  const curveA = config.doges_config.curve_a;
+  const genesisMintLimit = config.doges_config.genesis_mint_limit;
+  const maxGenesisMintsPerFaction =
+    config.doges_config.max_genesis_mints_per_faction ?? 1000;
+
+  if (!basePrice || !curveA || !genesisMintLimit || !maxGenesisMintsPerFaction) {
+    console.error(COLOR_ERROR, "❌ Doge mint config values not found in config.json");
+    throw new Error("Doge mint config values not found");
+  }
+
+  console.log(COLOR_INFO, `🔑 DogeMintConfig PDA: ${dogeMintConfigPDA.toString()}`);
+  console.log(COLOR_INFO, `💰 Genesis Base Price: ${basePrice / 1e9} SOL`);
+  console.log(COLOR_INFO, `📈 Genesis Curve A: ${curveA}`);
+  console.log(COLOR_INFO, `🥚 Genesis Mint Limit: ${genesisMintLimit}`);
+  console.log(COLOR_INFO, `🏁 Per-country Genesis Cap: ${maxGenesisMintsPerFaction}`);
+
+  try {
+    const tx = await minebtcProgram.methods
+      .initializeDogeMintConfig(
+        new BN(basePrice),
+        new BN(curveA),
+        new BN(genesisMintLimit),
+        maxGenesisMintsPerFaction
+      )
+      .accounts({
+        dogeMintConfig: dogeMintConfigPDA,
+        globalConfig: globalConfigPDA,
+        authority: wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ DogeMintConfig initialized successfully!");
+    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+    deploymentFile.doge_mint_config_initialized = {
+      doge_mint_config_pda: dogeMintConfigPDA.toString(),
+      base_price: basePrice.toString(),
+      curve_a: curveA.toString(),
+      genesis_mint_limit: genesisMintLimit.toString(),
+      max_genesis_mints_per_faction: maxGenesisMintsPerFaction.toString(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    if (error.toString().includes("already in use")) {
+      console.log(COLOR_INFO, "ℹ️ DogeMintConfig already initialized. Skipping...");
+      deploymentFile.doge_mint_config_initialized = {
+        doge_mint_config_pda: dogeMintConfigPDA.toString(),
+      };
+      saveDeploymentData();
+    } else {
+      console.error(COLOR_ERROR, "❌ Failed to initialize DogeMintConfig:", error);
+      throw error;
+    }
+  }
 }
 
 async function createDogeCollection(minebtcProgram) {
@@ -1566,8 +1644,8 @@ async function createDogeCollection(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
+    const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-mint-config")],
     minebtcProgram.programId
     );
 
@@ -1758,8 +1836,8 @@ async function configureTicketTiers(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
+    const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-mint-config")],
     minebtcProgram.programId
     );
 
@@ -1785,7 +1863,7 @@ async function configureTicketTiers(minebtcProgram) {
                 )
                 .accounts({
                     globalConfig: globalConfigPDA,
-                    dogesConfig: dogesConfigPDA,
+                    dogeMintConfig: dogeMintConfigPDA,
                     authority: wallet.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -2900,31 +2978,19 @@ async function updateDogeConfig(minebtcProgram, dogeConfig) {
     console.log(COLOR_INFO, "   Current Doge Config:");
     console.log(
       COLOR_INFO,
-      `     Base Price: ${dogesConfig.basePrice.toString()} lamports (${dogesConfig.basePrice.toNumber() / 1e9} SOL)`
-    );
-    console.log(
-      COLOR_INFO,
-      `     Curve A: ${dogesConfig.curveA.toString()}`
-    );
-    console.log(
-      COLOR_INFO,
       `     Max Supply: ${dogesConfig.maxSupply.toString()}`
     );
 
     // Get values from config or use provided values
-    const basePrice = dogeConfig?.basePrice 
-      ? new BN(dogeConfig.basePrice)
-      : new BN(config.doges_config.base_price);
-    const curveA = dogeConfig?.curveA 
-      ? new BN(dogeConfig.curveA)
-      : new BN(config.doges_config.curve_a);
+    const maxSupply = dogeConfig?.maxSupply 
+      ? new BN(dogeConfig.maxSupply)
+      : new BN(config.doges_config.max_supply);
 
     console.log(COLOR_INFO, "\n   Updating Doge Config:");
     console.log(
       COLOR_INFO,
-      `     Base Price: ${basePrice.toString()} lamports (${basePrice.toNumber() / 1e9} SOL)`
+      `     Max Supply: ${maxSupply.toString()}`
     );
-    console.log(COLOR_INFO, `     Curve A: ${curveA.toString()}`);
 
     console.log(
       COLOR_INFO,
@@ -2935,7 +3001,7 @@ async function updateDogeConfig(minebtcProgram, dogeConfig) {
 
     // Build and send transaction
     const tx = await minebtcProgram.methods
-      .updateDogeConfig(basePrice, curveA)
+      .updateDogeConfig(maxSupply)
       .accounts({
         globalConfig: globalConfigPDA,
         dogesConfig: dogesConfigPDA,
@@ -2956,8 +3022,7 @@ async function updateDogeConfig(minebtcProgram, dogeConfig) {
       deploymentFile.doge_config_updated = {};
     }
     deploymentFile.doge_config_updated = {
-      base_price: basePrice.toString(),
-      curve_a: curveA.toString(),
+      max_supply: maxSupply.toString(),
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };

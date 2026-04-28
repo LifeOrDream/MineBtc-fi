@@ -2273,12 +2273,12 @@ fn internal_process_bets<'info>(
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
-            // Cap active_multiplier at MAX_MULTIPLIER.
+            // Cap gameplay multiplier independently from passive staking boosts.
             let new_mult = player_data
                 .active_multiplier
                 .checked_add(mutation_result.multiplier_increase)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            player_data.active_multiplier = new_mult.min(MAX_MULTIPLIER as u32);
+            player_data.active_multiplier = new_mult.min(GAMEPLAY_MAX_MULTIPLIER as u32);
 
             // Consume XP used by the mutation (Evolution: full reset, others: partial)
             player_data.gameplay_doge_xp = player_data
@@ -3130,7 +3130,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     // Update player data - cache doge fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
     player_data.gameplay_doge = doge_mint;
-    player_data.active_multiplier = doge_metadata.multiplier.min(MAX_MULTIPLIER as u32);
+    player_data.active_multiplier = doge_metadata.multiplier.min(GAMEPLAY_MAX_MULTIPLIER as u32);
     player_data.gameplay_doge_dna = doge_metadata.dna;
     player_data.gameplay_doge_xp = doge_metadata.xp;
     player_data.gameplay_unlock_request_faction_war = 0;

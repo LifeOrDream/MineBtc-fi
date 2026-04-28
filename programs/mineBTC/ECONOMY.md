@@ -341,7 +341,7 @@ Every bet generates two numbers:
 - **points** = raw bet size in lamports (1 SOL = 1,000,000,000 points)
 - **weighted points** = points × active_multiplier / BASE_MULTIPLIER
 
-For SOL bets: a 1.0x doge gives wgtd_points = points. A 5.0x doge gives 5× the weighted points.
+For SOL bets: a 1.0x doge gives wgtd_points = points. Gameplay Doge power is capped at 4.2x.
 For ticket bets: wgtd_points = points (no multiplier). Tickets are capped at 25% of SOL volume per round.
 
 Weighted points determine:
@@ -482,10 +482,10 @@ Player share is not based on raw deposit amount directly. It is based on:
 
 ```text
 staked_amount
-    -> lockup commitment
-    -> weighted_amount (1.0x; no extra yield multiplier)
+    -> lockup multiplier (max 3x)
+    -> weighted_amount
     -> passive Doge multiplier
-    -> final staking hashpower (max 4.2x total)
+    -> final staking hashpower (max 9x total)
 ```
 
 ### Passive Doge staking

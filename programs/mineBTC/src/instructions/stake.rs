@@ -6,8 +6,9 @@ use anchor_spl::token::{self, Token};
 //
 // Passive staking has three layers:
 // - A user opens MineBTC or LP lockup positions in their home faction.
-// - Lockup duration controls commitment / early-exit economics.
-// - The player's staked Doges apply the only passive hashpower multiplier, capped at 4.2x.
+// - Lockup duration can add up to 3x weighted hashpower.
+// - The player's staked Doges can add another 3x passive hashpower multiplier.
+// - The maxed-out staking setup is therefore capped at 9x total.
 //
 // Reward sources:
 // - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
@@ -53,6 +54,22 @@ fn calc_hashpower_contribution(weighted_amount: u64, doge_multiplier: u16) -> Re
         .checked_div(BASE_MULTIPLIER as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     u64::try_from(hashpower_u128).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_lockup_and_passive_doges_cap_staking_at_9x() {
+        let deposit = 1_000_000u64;
+        let weighted = calc_weighted_amount(deposit, 300).unwrap();
+        let hashpower =
+            calc_hashpower_contribution(weighted, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER).unwrap();
+
+        assert_eq!(weighted, deposit * 3);
+        assert_eq!(hashpower, deposit * 9);
+    }
 }
 
 /// Stake MineBtc tokens

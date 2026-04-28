@@ -88,8 +88,15 @@ Two distinct doge roles:
 - Base chance is configurable, reduced by Doge multiplier (high-mult Doges trigger less often)
 - Types: Evolution (~10%), Power (~30%), Trait (~60%)
 - XP boosts multiplier on story events: Evolution 5-10% of XP, Power/Trait 2-5% of XP
-- active_multiplier capped at MAX_MULTIPLIER (4.2x)
+- active_multiplier capped at `GAMEPLAY_MAX_MULTIPLIER` (4.2x)
 - 2-step gameplay doge unlock prevents mid-cycle withdrawal gaming
+
+**Doge mint supply:**
+
+- `DogeConfig` owns non-sale state: collection, lifetime max supply, total minted, and breeding config
+- `DogeMintConfig` owns genesis-sale-only state: bonding curve price, ticket tiers, genesis mint count, and per-country caps
+- Genesis mints are capped separately from lifetime supply; current deployment config targets 12,000 genesis mints with 1,000 max per country
+- Burns via `send_to_heaven` do not reduce lifetime minted supply; breeding can only mint while `total_doges_minted < max_supply`
 
 ### Economy Layer
 

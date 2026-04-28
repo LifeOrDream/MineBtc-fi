@@ -159,9 +159,15 @@ function generateWebsiteConfig(config, deployment) {
 
       // ========== DOGE CONFIG ==========
       doge_config_pda: deployment.doge_config_initialized?.doges_config_pda,
-      doge_base_price: deployment.doge_config_initialized?.base_price,
-      doge_curve_a: deployment.doge_config_initialized?.curve_a,
       doge_max_supply: deployment.doge_config_initialized?.max_supply,
+      doge_mint_config_pda:
+        deployment.doge_mint_config_initialized?.doge_mint_config_pda,
+      doge_base_price: deployment.doge_mint_config_initialized?.base_price,
+      doge_curve_a: deployment.doge_mint_config_initialized?.curve_a,
+      doge_genesis_mint_limit:
+        deployment.doge_mint_config_initialized?.genesis_mint_limit,
+      doge_max_genesis_mints_per_faction:
+        deployment.doge_mint_config_initialized?.max_genesis_mints_per_faction,
 
       // ========== TAX CONFIG ==========
       tax_config_pda: deployment.tax_config_initialized?.tax_config_pda,

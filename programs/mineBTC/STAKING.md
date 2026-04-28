@@ -41,20 +41,21 @@ MineBTC/LP hashpower.
 
 Passive staking is applied in two layers:
 
-1. Lockup commitment
+1. Lockup multiplier
 2. Doge multiplier
 
-### Layer 1: lockup commitment
+### Layer 1: lockup weighting
 
 For both MineBTC and LP positions:
 
 ```text
-weighted_amount = staked_amount
+weighted_amount = staked_amount x lockup_multiplier / 100
 ```
 
-- `HashpowerConfig.base_multiplier` and `HashpowerConfig.max_multiplier` are locked to `100`
-- longer lockups do **not** stack another yield multiplier on top of Doges
-- lock duration still matters for commitment, unlock timing, and emergency-withdrawal penalties
+- `HashpowerConfig.base_multiplier = 100` means `1.0x`
+- `HashpowerConfig.max_multiplier = 300` means `3.0x`
+- longer lockups produce more `weighted_amount`
+- lock duration also controls unlock timing and emergency-withdrawal penalties
 
 ### Layer 2: Doge multiplier
 
@@ -70,8 +71,8 @@ Where:
 - `doge_multiplier = 1500` means `1.5x`
 - passive Doge staking smooths raw Doge power across all three Doge slots
 - three 1.0x Doges produce a 2.0x passive boost
-- three 4.2x Doges reach the 4.2x passive cap
-- final passive staking hashpower is capped at 4.2x total, not `lockup x Doges`
+- three strong Doges reach the 3.0x passive cap
+- final passive staking hashpower is capped at `3x lockup x 3x Doges = 9x`
 
 This final `hashpower_contribution` is what changes:
 
@@ -89,7 +90,7 @@ This final `hashpower_contribution` is what changes:
 1. Validates the player is staking into their home faction
 2. Reads the live Token-2022 transfer fee from the MineBTC mint
 3. Uses the **post-fee credited amount** as the real staked amount
-4. Computes base weighted amount
+4. Computes lockup-weighted amount
 5. Syncs pending staking rewards before changing balances
 6. Creates/initializes the `StakedPosition`
 7. Adds the new hashpower into player + faction totals
@@ -145,7 +146,7 @@ LP staking uses the same structure as MineBTC staking with two differences:
 
 1. Validates home-faction staking
 2. Uses the full deposited LP amount as `actual_amount`
-3. Computes base weighted amount
+3. Computes lockup-weighted amount
 4. Syncs pending staking rewards before changing balances
 5. Creates the LP `StakedPosition`
 6. Applies the player's Doge multiplier
@@ -254,7 +255,7 @@ Important properties:
 - a user can stake **any owned Doge**, regardless of Doge faction
 - the multiplier only boosts the player's **home-faction passive staking**
 - the contract reconstructs the raw multiplier from remaining staked Doge metadata
-- the **effective** multiplier is capped by `MAX_MULTIPLIER`
+- the **effective** passive Doge multiplier is capped by `PASSIVE_DOGE_STAKING_MAX_MULTIPLIER` (`3.0x`)
 - the reconstructed raw multiplier is divided across `MAX_STAKED_DOGES`, so one strong Doge helps but does not make the other two passive slots irrelevant
 
 ### Gameplay Doge
@@ -383,7 +384,7 @@ Useful log prefixes when debugging staking:
 
 4. Make lockup choice legible
    Users should understand that the order is:
-   `deposit -> lock commitment -> passive Doge multiplier -> final hashpower`
+   `deposit -> lockup multiplier -> passive Doge multiplier -> final hashpower`
 
 ### Business / balance thoughts
 

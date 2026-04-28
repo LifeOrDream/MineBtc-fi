@@ -859,11 +859,12 @@ fn validate_hashpower_config(
         min_lockup_days <= max_lockup_days,
         ErrorCode::InvalidParameters
     );
-    // Final passive staking boost must never exceed the global 4.2x Doge cap.
-    // Lock duration still controls commitment / early-exit economics, but it no
-    // longer stacks another yield multiplier on top of Doges.
+    // Lockup may add up to 3x. Passive staked Doges may add another 3x,
+    // giving a hard 9x max staking hashpower setup.
     require!(
-        base_multiplier == M_HUNDRED as u16 && max_multiplier == M_HUNDRED as u16,
+        base_multiplier >= M_HUNDRED as u16
+            && max_multiplier >= base_multiplier
+            && max_multiplier <= 300,
         ErrorCode::InvalidParameters
     );
     Ok(())
@@ -922,35 +923,78 @@ pub fn update_hashpower_config_internal(
 // --------------  DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Initialize DogeConfig account (admin only)
+/// Initialize DogeConfig account (admin only).
 ///
-/// Creates the DogeConfig account that stores Doge collection configuration.
-/// This must be called before creating the Doge collection.
-///
-/// # Parameters
-/// - `base_price`: Base price for Doge in SOL (lamports)
-/// - `curve_a`: Bonding curve parameter (controls price growth rate)
-/// - `max_supply`: Maximum number of Doge that can be minted
+/// Stores non-sale Doge state: collection, lifetime supply cap, and breeding config.
 pub fn initialize_doge_config_internal(
     ctx: Context<InitializeDogeConfig>,
-    base_price: u64,
-    curve_a: u64,
     max_supply: u64,
 ) -> Result<()> {
     crate::log_fn!("admin", "initialize_doge_config_internal");
     let doges_config = &mut ctx.accounts.doges_config;
 
+    require!(max_supply > 0, ErrorCode::InvalidParameters);
+
     doges_config.bump = ctx.bumps.doges_config;
-    doges_config.is_active = false;
     doges_config.doge_collection = Pubkey::default();
-    doges_config.doges_minted = 0;
-    doges_config.base_price = base_price;
-    doges_config.curve_a = curve_a;
     doges_config.max_supply = max_supply;
-    doges_config.ticket_tiers = Vec::new();
+    doges_config.total_doges_minted = 0;
     doges_config.breeding_allowed = false;
     doges_config.breed_base_price = 0;
     doges_config.breed_curve_a = 100;
+
+    msg!(
+        "✅ [initialize_doge_config] max_supply={} total_doges_minted={} breeding_allowed={}",
+        doges_config.max_supply,
+        doges_config.total_doges_minted,
+        doges_config.breeding_allowed
+    );
+
+    Ok(())
+}
+
+/// Initialize DogeMintConfig account (admin only).
+///
+/// Stores genesis-sale-only state: bonding curve, sale switch, ticket tiers, and per-faction caps.
+pub fn initialize_doge_mint_config_internal(
+    ctx: Context<InitializeDogeMintConfig>,
+    base_price: u64,
+    curve_a: u64,
+    genesis_mint_limit: u64,
+    max_genesis_mints_per_faction: u16,
+) -> Result<()> {
+    crate::log_fn!("admin", "initialize_doge_mint_config_internal");
+    require!(base_price > 0, ErrorCode::InvalidParameters);
+    require!(curve_a > 0, ErrorCode::InvalidParameters);
+    require!(genesis_mint_limit > 0, ErrorCode::InvalidParameters);
+    require!(
+        max_genesis_mints_per_faction > 0,
+        ErrorCode::InvalidParameters
+    );
+    require!(
+        genesis_mint_limit <= max_genesis_mints_per_faction as u64 * NUM_FACTIONS as u64,
+        ErrorCode::InvalidParameters
+    );
+
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    doge_mint_config.bump = ctx.bumps.doge_mint_config;
+    doge_mint_config.is_active = false;
+    doge_mint_config.base_price = base_price;
+    doge_mint_config.curve_a = curve_a;
+    doge_mint_config.genesis_mint_limit = genesis_mint_limit;
+    doge_mint_config.genesis_mints = 0;
+    doge_mint_config.max_genesis_mints_per_faction = max_genesis_mints_per_faction;
+    doge_mint_config.genesis_mints_by_faction = [0u16; NUM_FACTIONS];
+    doge_mint_config.ticket_tiers = Vec::new();
+
+    msg!(
+        "✅ [initialize_doge_mint_config] base_price={} curve_a={} genesis_mint_limit={} per_faction_limit={} countries_supported={}",
+        base_price,
+        curve_a,
+        genesis_mint_limit,
+        max_genesis_mints_per_faction,
+        NUM_FACTIONS
+    );
 
     Ok(())
 }
@@ -963,8 +1007,12 @@ pub fn initialize_doge_config_internal(
 /// This allows admins to pause/resume the doge mining without losing state.
 pub fn switch_doge_mining_internal(ctx: Context<SwitchDogeMiningState>) -> Result<()> {
     crate::log_fn!("admin", "switch_doge_mining_internal");
-    let doges_config = &mut ctx.accounts.doges_config;
-    doges_config.is_active = !doges_config.is_active;
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    doge_mint_config.is_active = !doge_mint_config.is_active;
+    msg!(
+        "🔁 [switch_doge_mining] is_active={}",
+        doge_mint_config.is_active
+    );
     Ok(())
 }
 
@@ -1188,21 +1236,20 @@ pub fn update_collection_info_internal(
 /// Users receive free tickets based on the selected tier when they mint.
 ///
 /// # Parameters
-/// - `ticket_tier_index`: Index of the ticket tier (0-3, max 4 tiers)
+/// - `ticket_tier_index`: Index of the ticket tier (0-2, max 3 tiers)
 /// - `ticket_value`: Value of each ticket in lamports (e.g., 10_000_000 = 0.01 SOL)
-/// - `ticket_count`: Number of tickets given with this tier
 ///
 /// # Example
 /// - Tier 0: 0.01 SOL × 1000 tickets
 /// - Tier 1: 0.1 SOL × 10 tickets
 pub fn add_ticket_tier_config_int(
-    ctx: Context<UpdateDogeConfig>,
+    ctx: Context<UpdateDogeMintConfig>,
     ticket_tier_index: u8,
     ticket_value: u64,
 ) -> Result<()> {
     crate::log_fn!("admin", "add_ticket_tier_config_int");
     let global_config = &ctx.accounts.global_config;
-    let doges_config = &mut ctx.accounts.doges_config;
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
     let authority = &ctx.accounts.authority;
 
     // Authority check
@@ -1212,21 +1259,28 @@ pub fn add_ticket_tier_config_int(
     );
 
     require!(
-        ticket_tier_index < DogeConfig::MAX_TICKET_TIERS as u8,
+        ticket_tier_index < DogeMintConfig::MAX_TICKET_TIERS as u8,
         ErrorCode::InvalidParameters
     );
+    require!(ticket_value > 0, ErrorCode::InvalidParameters);
 
     let tier_index = ticket_tier_index as usize;
 
     // Ensure vector is large enough
-    while doges_config.ticket_tiers.len() <= tier_index {
-        doges_config
+    while doge_mint_config.ticket_tiers.len() <= tier_index {
+        doge_mint_config
             .ticket_tiers
             .push(TicketTier { ticket_value: 0 });
     }
 
     // Update or add ticket tier
-    doges_config.ticket_tiers[tier_index] = TicketTier { ticket_value };
+    doge_mint_config.ticket_tiers[tier_index] = TicketTier { ticket_value };
+    msg!(
+        "🎟️ [add_ticket_tier_config] tier_index={} ticket_value={} configured_tiers={}",
+        ticket_tier_index,
+        ticket_value,
+        doge_mint_config.ticket_tiers.len()
+    );
 
     Ok(())
 }
@@ -1267,29 +1321,83 @@ pub fn set_doge_free_mint_allowance_internal(
 
 /// Update DogeConfig account (admin only)
 ///
-/// Updates the DogeConfig account that stores Doge collection configuration.
+/// Updates the DogeConfig account that stores collection, supply, and breeding state.
 /// All parameters are optional -- only provided values are changed.
 pub fn update_doge_config_internal(
     ctx: Context<UpdateDogeConfig>,
-    base_price: Option<u64>,
-    curve_a: Option<u64>,
     max_supply: Option<u64>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_doge_config_internal");
     let doges_config = &mut ctx.accounts.doges_config;
-    if let Some(price) = base_price {
-        doges_config.base_price = price;
-    }
-    if let Some(curve) = curve_a {
-        doges_config.curve_a = curve;
-    }
     if let Some(supply) = max_supply {
         require!(
-            supply >= doges_config.doges_minted,
+            supply >= doges_config.total_doges_minted,
             ErrorCode::InvalidParameters
         );
         doges_config.max_supply = supply;
     }
+    msg!(
+        "✅ [update_doge_config] max_supply={} total_doges_minted={} breeding_allowed={} breed_base_price={} breed_curve_a={}",
+        doges_config.max_supply,
+        doges_config.total_doges_minted,
+        doges_config.breeding_allowed,
+        doges_config.breed_base_price,
+        doges_config.breed_curve_a
+    );
+    Ok(())
+}
+
+/// Update DogeMintConfig account (admin only).
+pub fn update_doge_mint_config_internal(
+    ctx: Context<UpdateDogeMintConfig>,
+    base_price: Option<u64>,
+    curve_a: Option<u64>,
+    genesis_mint_limit: Option<u64>,
+    max_genesis_mints_per_faction: Option<u16>,
+) -> Result<()> {
+    crate::log_fn!("admin", "update_doge_mint_config_internal");
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+
+    if let Some(price) = base_price {
+        require!(price > 0, ErrorCode::InvalidParameters);
+        doge_mint_config.base_price = price;
+    }
+    if let Some(curve) = curve_a {
+        require!(curve > 0, ErrorCode::InvalidParameters);
+        doge_mint_config.curve_a = curve;
+    }
+    if let Some(per_faction) = max_genesis_mints_per_faction {
+        let current_max = doge_mint_config
+            .genesis_mints_by_faction
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0);
+        require!(per_faction >= current_max, ErrorCode::InvalidParameters);
+        doge_mint_config.max_genesis_mints_per_faction = per_faction;
+    }
+    if let Some(limit) = genesis_mint_limit {
+        require!(
+            limit >= doge_mint_config.genesis_mints,
+            ErrorCode::InvalidParameters
+        );
+        doge_mint_config.genesis_mint_limit = limit;
+    }
+    require!(
+        doge_mint_config.genesis_mint_limit
+            <= doge_mint_config.max_genesis_mints_per_faction as u64 * NUM_FACTIONS as u64,
+        ErrorCode::InvalidParameters
+    );
+
+    msg!(
+        "✅ [update_doge_mint_config] base_price={} curve_a={} genesis_mints={} / {} per_faction_limit={} ticket_tiers={}",
+        doge_mint_config.base_price,
+        doge_mint_config.curve_a,
+        doge_mint_config.genesis_mints,
+        doge_mint_config.genesis_mint_limit,
+        doge_mint_config.max_genesis_mints_per_faction,
+        doge_mint_config.ticket_tiers.len()
+    );
     Ok(())
 }
 
@@ -1305,6 +1413,14 @@ pub fn update_breeding_config_internal(
     doges_config.breeding_allowed = breeding_allowed;
     doges_config.breed_base_price = breed_base_price;
     doges_config.breed_curve_a = breed_curve_a;
+    msg!(
+        "🧬 [update_breeding_config] breeding_allowed={} breed_base_price={} breed_curve_a={} total_doges_minted={} / {}",
+        breeding_allowed,
+        breed_base_price,
+        breed_curve_a,
+        doges_config.total_doges_minted,
+        doges_config.max_supply
+    );
 
     Ok(())
 }
@@ -1730,6 +1846,30 @@ pub struct InitializeDogeConfig<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeDogeMintConfig<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = DogeMintConfig::LEN,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct CreateDogeCollection<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1782,6 +1922,28 @@ pub struct UpdateDogeConfig<'info> {
         bump = doges_config.bump,
     )]
     pub doges_config: Account<'info, DogeConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateDogeMintConfig<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump,
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2085,10 +2247,10 @@ pub struct InitializeCustodianAccounts<'info> {
 pub struct SwitchDogeMiningState<'info> {
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doges_config.bump,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump,
     )]
-    pub doges_config: Account<'info, DogeConfig>,
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
