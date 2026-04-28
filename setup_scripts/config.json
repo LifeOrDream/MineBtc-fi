@@ -1,7 +1,7 @@
 {
     "network": {
         "cluster": "devnet",
-        "rpc_url": "https://api.devnet.solana.com",
+        "rpc_url": "https://devnet.helius-rpc.com/?api-key=1c296f19-6fe3-4af9-a80f-e29264df7ee3",
         "commitment": "confirmed"
     },
     "deployment": {
@@ -16,7 +16,7 @@
     "token": {
         "name": "DogeWifBTC",
         "symbol": "DogeBTC",
-        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, evolve operator doges through mutations, and climb the mutation leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
+        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, trigger operator Doge story events, and climb the story-event leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
         "image": "https://assets.minebtc.fun/btc",
         "external_url": "https://assets.minebtc.fun/btc",
         "decimals": 6,
@@ -136,10 +136,35 @@
     "game": {
         "round_duration_seconds": 60
     },
+    "emissions": {
+        "price_change_threshold_pct": 3,
+        "emission_increase_pct": 1,
+        "emission_decrease_pct": 3
+    },
+    "faction_war": {
+        "is_active": true
+    },
+    "gameplay_tuning": {
+        "enable_rpg_progression": true,
+        "max_evolution_stage_unlocked": 0,
+        "faction_war_base_reward_bps": 7000,
+        "faction_war_loyalty_reward_bps": 2000,
+        "faction_war_doge_reward_bps": 1000,
+        "base_mutation_chance_bps": 2000,
+        "mutation_chance_floor_bps": 25,
+        "mutation_chance_cap_bps": 2500,
+        "faction_volume_threshold_lamports": 85000000,
+        "extra_volume_threshold_per_mutation_lamports": 85000000,
+        "global_mutation_pressure_decay_bps": 7500,
+        "global_mutation_pressure_per_mutation_bps": 2500,
+        "target_mutations_per_cycle": 12,
+        "target_rounds_per_cycle": 240,
+        "pacing_max_adjustment_bps": 4000
+    },
     "hashpower": {
         "min_lockup_days": 7,
         "max_lockup_days": 365,
         "base_multiplier": 100,
-        "max_multiplier": 420
+        "max_multiplier": 100
     }
 }

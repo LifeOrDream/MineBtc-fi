@@ -1,6 +1,6 @@
 // # User Instructions
 //
-// User-facing interactions: betting, autominers, round claims, gameplay doges, and mutations.
+// User-facing interactions: betting, autominers, round claims, gameplay doges, and story events.
 //
 // ## Key Functions
 //
@@ -2223,9 +2223,9 @@ fn internal_process_bets<'info>(
         timestamp: clock.unix_timestamp,
     });
 
-    // === INSTANT MUTATION & XP LOGIC ===
-    // Requires: RPG enabled, SOL bet, no prior mutation this round, gameplay doge active,
-    // and global mutation budget not exhausted for this round.
+    // === STORY EVENT & XP LOGIC ===
+    // Requires: RPG enabled, SOL bet, no prior story event this round, gameplay doge active,
+    // and global story-event budget not exhausted for this round.
     let faction_id = player_data.faction_id as usize;
     let mutation_budget = faction_war_state.active_faction_count / 3;
     let round_has_budget = game_session.total_mutations_this_round < mutation_budget.max(1);
@@ -2293,7 +2293,7 @@ fn internal_process_bets<'info>(
             user_game_bet.mutation_type = mutation_type_u8;
             player_data.gameplay_doge_dna = mutation_result.new_dna;
 
-            // Track mutation counts for round budget + per-faction difficulty.
+            // Track story-event counts for round budget + per-faction difficulty.
             game_session.mutations_per_faction[faction_id] = game_session.mutations_per_faction
                 [faction_id]
                 .checked_add(1)
@@ -2320,7 +2320,7 @@ fn internal_process_bets<'info>(
                 }
             }
 
-            // --- Accumulate mutation score into faction_war state ---
+            // --- Accumulate story-event score into faction_war state ---
             let type_weight: u64 = match mutation_type {
                 MutationType::Evolution => EVOLUTION_SCORE_WEIGHT,
                 MutationType::Power => POWER_SCORE_WEIGHT,
@@ -2344,25 +2344,27 @@ fn internal_process_bets<'info>(
                     .checked_add(mutation_score)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-                emit!(crate::events::MutationScoreAccumulated {
+                emit!(crate::events::StoryEventScoreAccumulated {
                     faction_war_id: faction_war_state.faction_war_id,
                     faction_id: faction_id as u8,
-                    mutation_type: mutation_type_u8,
+                    story_event_type: mutation_type_u8,
                     score_added: mutation_score,
                     faction_total_score: faction_war_state.faction_mutation_scores[faction_id],
                     user: owner_key,
                 });
             }
 
-            emit!(MutationTriggered {
+            emit!(StoryEventTriggered {
                 round_id,
                 user: owner_key,
                 doge_mint: player_data.gameplay_doge,
+                story_event_type: mutation_type_u8,
                 xp_gained: mutation_result.xp_gained,
+                multiplier_after: player_data.active_multiplier,
             });
 
             msg!(
-                "🧬 Mutation! Type: {}, Mult: {}, FactionWarScore: +{}, Round {}/{}",
+                "🧬 Story event! Type: {}, Mult: {}, FactionWarScore: +{}, Round {}/{}",
                 mutation_type_u8,
                 player_data.active_multiplier,
                 mutation_score,

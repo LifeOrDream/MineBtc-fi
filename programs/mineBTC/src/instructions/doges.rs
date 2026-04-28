@@ -732,6 +732,14 @@ pub fn int_whitelist_mint_doge(
 
 /// Stake a Doge to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
 /// The Doge's own faction does not matter for staking boosts.
+///
+/// Passive staking uses three-slot smoothing:
+/// - no Doges: 1.0x
+/// - three 1.0x Doges: 2.0x
+/// - three 4.2x Doges: capped at 4.2x
+///
+/// This keeps Genesis Doges useful while avoiding the old shape where one maxed
+/// Doge could immediately consume the full passive cap.
 /// The effective multiplier is capped at MAX_MULTIPLIER for reward-share math.
 /// Clients must pass metadata accounts for all already-staked doges in `remaining_accounts`
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
@@ -1618,7 +1626,12 @@ fn update_faction_hashpower(
 }
 
 fn capped_player_multiplier(raw_multiplier: u64) -> u16 {
-    raw_multiplier.min(MAX_MULTIPLIER as u64) as u16
+    let raw_doge_sum = raw_multiplier.saturating_sub(BASE_MULTIPLIER as u64);
+    let smoothed_multiplier = BASE_MULTIPLIER as u64
+        + raw_doge_sum
+            .checked_div(MAX_STAKED_DOGES as u64)
+            .unwrap_or(0);
+    smoothed_multiplier.min(MAX_MULTIPLIER as u64) as u16
 }
 
 fn add_doge_multiplier(existing_raw_multiplier: u64, doge_multiplier: u32) -> Result<(u64, u16)> {
@@ -1651,16 +1664,19 @@ mod tests {
 
     #[test]
     fn multiplier_cap_is_reversible_with_raw_sum() {
-        let starting_raw = 9_500u64;
+        let starting_raw = BASE_MULTIPLIER as u64 + (3_000u64 * MAX_STAKED_DOGES as u64);
         let (raw_after_stake, effective_after_stake) =
             add_doge_multiplier(starting_raw, 1_000).unwrap();
-        assert_eq!(raw_after_stake, 10_500);
+        assert_eq!(
+            raw_after_stake,
+            BASE_MULTIPLIER as u64 + (3_000u64 * MAX_STAKED_DOGES as u64) + 1_000
+        );
         assert_eq!(effective_after_stake, MAX_MULTIPLIER);
 
         let (raw_after_unstake, effective_after_unstake) =
             remove_doge_multiplier(raw_after_stake, 1_000).unwrap();
         assert_eq!(raw_after_unstake, starting_raw);
-        assert_eq!(effective_after_unstake, 9_500);
+        assert_eq!(effective_after_unstake, 4_000);
     }
 
     #[test]
@@ -1669,6 +1685,28 @@ mod tests {
             add_doge_multiplier(BASE_MULTIPLIER as u64, 70_000).unwrap();
         assert_eq!(raw_after_stake, 71_000);
         assert_eq!(effective_after_stake, MAX_MULTIPLIER);
+    }
+
+    #[test]
+    fn passive_doge_slots_are_smoothed_across_all_slots() {
+        let mut raw = BASE_MULTIPLIER as u64;
+        let mut effective = capped_player_multiplier(raw);
+        assert_eq!(effective, BASE_MULTIPLIER as u16);
+
+        for _ in 0..MAX_STAKED_DOGES {
+            (raw, effective) = add_doge_multiplier(raw, BASE_MULTIPLIER).unwrap();
+        }
+
+        assert_eq!(raw, BASE_MULTIPLIER as u64 * (MAX_STAKED_DOGES as u64 + 1));
+        assert_eq!(effective, 2_000);
+
+        let mut raw = BASE_MULTIPLIER as u64;
+        let mut effective = capped_player_multiplier(raw);
+        for _ in 0..MAX_STAKED_DOGES {
+            (raw, effective) = add_doge_multiplier(raw, MAX_MULTIPLIER as u32).unwrap();
+        }
+
+        assert_eq!(effective, MAX_MULTIPLIER);
     }
 }
 

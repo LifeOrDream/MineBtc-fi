@@ -6,8 +6,8 @@ use anchor_spl::token::{self, Token};
 //
 // Passive staking has three layers:
 // - A user opens MineBTC or LP lockup positions in their home faction.
-// - Each position gets lockup-weighted hashpower (`weighted_amount`) from `HashpowerConfig`.
-// - The player's staked Doges apply a second multiplier on top of that weighted amount.
+// - Lockup duration controls commitment / early-exit economics.
+// - The player's staked Doges apply the only passive hashpower multiplier, capped at 4.2x.
 //
 // Reward sources:
 // - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.

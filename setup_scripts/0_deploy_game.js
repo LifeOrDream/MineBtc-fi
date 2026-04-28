@@ -42,7 +42,7 @@ const PROGRAMS = {
       ROOT_DIR,
       "target",
       "deploy",
-      "minebtc-keypair.json"
+      "minebtc-keypair.json",
     ),
     soPath: path.join(ROOT_DIR, "target", "deploy", "minebtc.so"),
     libPath: path.join(ROOT_DIR, "programs", "mineBTC", "src", "lib.rs"),
@@ -121,7 +121,7 @@ function isProgramDeployed(programName, deploymentData) {
 
 function extractIdlFromBinary(programConfig) {
   console.log(
-    `\x1b[36m📝 Extracting IDL for ${programConfig.displayName}...\x1b[0m`
+    `\x1b[36m📝 Extracting IDL for ${programConfig.displayName}...\x1b[0m`,
   );
 
   const idlDir = path.join(ROOT_DIR, "target", "idl");
@@ -131,7 +131,7 @@ function extractIdlFromBinary(programConfig) {
     // Use runCommandWithOutput to capture the IDL JSON output
     const idlOutput = runCommandWithOutput(
       `anchor idl build -p ${programConfig.name}`,
-      ROOT_DIR
+      ROOT_DIR,
     );
 
     // Extract JSON from output - try multiple patterns
@@ -179,10 +179,10 @@ function extractIdlFromBinary(programConfig) {
         return true;
       } catch (parseError) {
         console.log(
-          `\x1b[33m⚠️  Extracted text is not valid JSON: ${parseError.message}\x1b[0m`
+          `\x1b[33m⚠️  Extracted text is not valid JSON: ${parseError.message}\x1b[0m`,
         );
         console.log(
-          `\x1b[33m   First 200 chars: ${jsonMatch[0].substring(0, 200)}\x1b[0m`
+          `\x1b[33m   First 200 chars: ${jsonMatch[0].substring(0, 200)}\x1b[0m`,
         );
       }
     } else {
@@ -190,7 +190,7 @@ function extractIdlFromBinary(programConfig) {
       console.log(`\x1b[33m   Output length: ${idlOutput.length} chars\x1b[0m`);
       if (idlOutput.length > 0) {
         console.log(
-          `\x1b[33m   First 500 chars: ${idlOutput.substring(0, 500)}\x1b[0m`
+          `\x1b[33m   First 500 chars: ${idlOutput.substring(0, 500)}\x1b[0m`,
         );
       }
     }
@@ -198,12 +198,12 @@ function extractIdlFromBinary(programConfig) {
     console.log(`\x1b[33m⚠️  IDL extraction failed: ${error.message}\x1b[0m`);
     if (error.stdout) {
       console.log(
-        `\x1b[33m   stdout: ${error.stdout.substring(0, 500)}\x1b[0m`
+        `\x1b[33m   stdout: ${error.stdout.substring(0, 500)}\x1b[0m`,
       );
     }
     if (error.stderr) {
       console.log(
-        `\x1b[33m   stderr: ${error.stderr.substring(0, 500)}\x1b[0m`
+        `\x1b[33m   stderr: ${error.stderr.substring(0, 500)}\x1b[0m`,
       );
     }
   }
@@ -240,8 +240,8 @@ function generateOrReadKeypair(outputPath) {
   console.log(`\x1b[33m🔑 Generating new keypair: ${outputPath}\x1b[0m`);
   runCommand(
     `solana-keygen new -o ${shellEscape(
-      outputPath
-    )} --force --no-bip39-passphrase`
+      outputPath,
+    )} --force --no-bip39-passphrase`,
   );
 
   const keypairData = JSON.parse(fs.readFileSync(outputPath, "utf8"));
@@ -254,7 +254,7 @@ function generateOrReadKeypair(outputPath) {
 
 function updateAnchorToml(programAddresses) {
   console.log(
-    `\x1b[33m📝 Updating Anchor.toml with new program addresses...\x1b[0m`
+    `\x1b[33m📝 Updating Anchor.toml with new program addresses...\x1b[0m`,
   );
 
   const configPath = path.join(__dirname, "config.json");
@@ -270,11 +270,11 @@ function updateAnchorToml(programAddresses) {
   for (const [programName, address] of Object.entries(programAddresses)) {
     const sectionRegex = new RegExp(
       `\\[programs\\.${cluster}\\]([\\s\\S]*?)(?=\\[|$)`,
-      "i"
+      "i",
     );
     const programRegex = new RegExp(
       `^(\\s*)${programName}\\s*=\\s*"[^"]*"`,
-      "m"
+      "m",
     );
 
     const sectionMatch = anchorContent.match(sectionRegex);
@@ -285,11 +285,11 @@ function updateAnchorToml(programAddresses) {
       if (sectionContent.match(programRegex)) {
         const newSectionContent = sectionContent.replace(
           programRegex,
-          replacement
+          replacement,
         );
         anchorContent = anchorContent.replace(
           sectionMatch[1],
-          newSectionContent
+          newSectionContent,
         );
         console.log(`\x1b[32m  ✅ Updated ${programName}: ${address}\x1b[0m`);
       } else {
@@ -297,7 +297,7 @@ function updateAnchorToml(programAddresses) {
         const newSectionContent = sectionContent + newEntry;
         anchorContent = anchorContent.replace(
           sectionMatch[1],
-          newSectionContent
+          newSectionContent,
         );
         console.log(`\x1b[32m  ✅ Added ${programName}: ${address}\x1b[0m`);
       }
@@ -305,7 +305,7 @@ function updateAnchorToml(programAddresses) {
       const newSection = `\n[programs.${cluster}]\n${programName} = "${address}"\n`;
       anchorContent += newSection;
       console.log(
-        `\x1b[32m  ✅ Created section and added ${programName}: ${address}\x1b[0m`
+        `\x1b[32m  ✅ Created section and added ${programName}: ${address}\x1b[0m`,
       );
     }
   }
@@ -331,11 +331,11 @@ function updateDeclareId(libPath, programAddress) {
   if (updated) {
     fs.writeFileSync(libPath, libContent);
     console.log(
-      `\x1b[32m  ✅ Updated declare_id! to: ${programAddress}\x1b[0m`
+      `\x1b[32m  ✅ Updated declare_id! to: ${programAddress}\x1b[0m`,
     );
   } else {
     console.log(
-      `\x1b[33m  ⚠️  Could not find declare_id! in ${libPath}\x1b[0m`
+      `\x1b[33m  ⚠️  Could not find declare_id! in ${libPath}\x1b[0m`,
     );
   }
 }
@@ -369,7 +369,7 @@ function cleanBuild(programConfig) {
     runCommand("anchor clean", programConfig.buildDir);
   } catch (error) {
     console.log(
-      `\x1b[33m⚠️  Clean failed (may not exist yet), continuing...\x1b[0m`
+      `\x1b[33m⚠️  Clean failed (may not exist yet), continuing...\x1b[0m`,
     );
   }
 }
@@ -380,7 +380,7 @@ function buildProgram(programConfig) {
   const programDir = path.join(
     programConfig.buildDir,
     "programs",
-    programConfig.dirName || programConfig.name
+    programConfig.dirName || programConfig.name,
   );
 
   // cargo-build-sbf's post-processing looks for every cdylib crate in the dep
@@ -395,31 +395,31 @@ function buildProgram(programConfig) {
     ROOT_DIR,
     "target",
     "sbf-solana-solana",
-    "release"
+    "release",
   );
   const raydiumSoSrc = path.join(
     RAYDIUM_DIR,
     "target",
     "sbf-solana-solana",
     "release",
-    "raydium_cp_swap.so"
+    "raydium_cp_swap.so",
   );
   const raydiumSoDst = path.join(workspaceSbfReleaseDir, "raydium_cp_swap.so");
   if (fs.existsSync(raydiumSoSrc)) {
     ensureDirectoryExists(workspaceSbfReleaseDir);
     fs.copyFileSync(raydiumSoSrc, raydiumSoDst);
     console.log(
-      `\x1b[36m  🔗 Staged raydium_cp_swap.so for workspace build post-processing\x1b[0m`
+      `\x1b[36m  🔗 Staged raydium_cp_swap.so for workspace build post-processing\x1b[0m`,
     );
   } else {
     console.log(
-      `\x1b[33m  ⚠️  ${raydiumSoSrc} not found — run 0_deploy_raydium.js first\x1b[0m`
+      `\x1b[33m  ⚠️  ${raydiumSoSrc} not found — run 0_deploy_raydium.js first\x1b[0m`,
     );
   }
 
   // Actually build the program using cargo build-sbf from the program's directory
   console.log(
-    `\x1b[36m🔨 Compiling ${programConfig.displayName} with cargo build-sbf...\x1b[0m`
+    `\x1b[36m🔨 Compiling ${programConfig.displayName} with cargo build-sbf...\x1b[0m`,
   );
   try {
     // Run cargo build-sbf from the program directory to avoid workspace post-processing issues
@@ -427,7 +427,7 @@ function buildProgram(programConfig) {
     console.log(`\x1b[32m  ✅ Compiled successfully\x1b[0m`);
   } catch (error) {
     throw new Error(
-      `Failed to build ${programConfig.displayName}: ${error.message}`
+      `Failed to build ${programConfig.displayName}: ${error.message}`,
     );
   }
 
@@ -436,7 +436,7 @@ function buildProgram(programConfig) {
     ROOT_DIR,
     "target",
     "deploy",
-    `${programConfig.name}.so`
+    `${programConfig.name}.so`,
   );
   const targetSoPath = programConfig.soPath;
 
@@ -455,7 +455,7 @@ function buildProgram(programConfig) {
 
     const idlOutput = runCommandWithOutput(
       `anchor idl build -p ${programConfig.name}`,
-      ROOT_DIR
+      ROOT_DIR,
     );
     const jsonMatch = idlOutput.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -488,31 +488,45 @@ function deployProgram(programConfig, walletPath) {
     console.log(`\x1b[33m⚠️  WARNING: Deploying to MAINNET!\x1b[0m`);
     console.log(`\x1b[33m   RPC URL: ${clusterUrl}\x1b[0m`);
     console.log(`\x1b[33m   Program: ${programConfig.displayName}\x1b[0m`);
-    console.log(`\x1b[33m   Make sure you have sufficient SOL and correct keypair!\x1b[0m`);
+    console.log(
+      `\x1b[33m   Make sure you have sufficient SOL and correct keypair!\x1b[0m`,
+    );
   }
 
-  // Quote the URL to handle query parameters properly
-  // Add priority fees for mainnet to ensure transactions land
-  const priorityFee = cluster === "mainnet" ? "--with-compute-unit-price 100000 --max-sign-attempts 50" : "";
+  // Quote the URL to handle query parameters properly.
+  //
+  // Both devnet and mainnet need retry guards — devnet in particular
+  // throttles aggressively during multi-thousand chunk uploads, and a
+  // stock `solana program deploy` with no `--max-sign-attempts` will
+  // abandon the buffer on the first blockhash expiry (see recovery
+  // docs: we end up resuming with `--buffer <recovered-keypair>`).
+  // `--use-rpc` forces TPU-over-RPC which is less flaky than direct
+  // TPU on public devnet.
+  const deployFlags = [
+    "--with-compute-unit-price 100000",
+    "--max-sign-attempts 100",
+    "--use-rpc",
+  ].join(" ");
+  const priorityFee = deployFlags;
   const stagedSoPath = stageForSolanaCli(
     programConfig.soPath,
-    `${programConfig.name}.so`
+    `${programConfig.name}.so`,
   );
   const stagedProgramKeypairPath = stageForSolanaCli(
     programConfig.keypairPath,
-    `${programConfig.name}-keypair.json`
+    `${programConfig.name}-keypair.json`,
   );
   const stagedWalletPath = stageForSolanaCli(
     walletPath,
-    path.basename(walletPath)
+    path.basename(walletPath),
   );
 
   const deployCommand = `solana program deploy ${shellEscape(
-    stagedSoPath
+    stagedSoPath,
   )} --program-id ${shellEscape(
-    stagedProgramKeypairPath
+    stagedProgramKeypairPath,
   )} --keypair ${shellEscape(stagedWalletPath)} --url ${shellEscape(
-    clusterUrl
+    clusterUrl,
   )} ${priorityFee}`;
 
   try {
@@ -521,7 +535,7 @@ function deployProgram(programConfig, walletPath) {
 
     // Update IDL with deployed address
     const keypairData = JSON.parse(
-      fs.readFileSync(programConfig.keypairPath, "utf8")
+      fs.readFileSync(programConfig.keypairPath, "utf8"),
     );
     const deployedKeypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
     const deployedProgramId = deployedKeypair.publicKey.toString();
@@ -530,7 +544,7 @@ function deployProgram(programConfig, walletPath) {
       ROOT_DIR,
       "target",
       "idl",
-      `${programConfig.name}.json`
+      `${programConfig.name}.json`,
     );
     if (fs.existsSync(idlPath)) {
       const idlContent = JSON.parse(fs.readFileSync(idlPath, "utf8"));
@@ -588,7 +602,7 @@ async function printWalletInfo() {
 
     const connection = new Connection(clusterUrl, "confirmed");
     const keypairData = JSON.parse(
-      fs.readFileSync(WALLET_KEYPAIR_PATH, "utf8")
+      fs.readFileSync(WALLET_KEYPAIR_PATH, "utf8"),
     );
     const keypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
     const publicKey = keypair.publicKey;
@@ -600,29 +614,29 @@ async function printWalletInfo() {
     console.log(`\x1b[36m👤 Wallet Address: ${publicKey.toString()}\x1b[0m`);
     console.log(
       `\x1b[36m💰 Balance: ${balanceSOL.toFixed(
-        4
-      )} SOL (${balance} lamports)\x1b[0m`
+        4,
+      )} SOL (${balance} lamports)\x1b[0m`,
     );
 
     if (cluster === "mainnet") {
       if (balanceSOL < 5) {
         console.log(
-          `\x1b[31m❌ ERROR: Insufficient balance for mainnet deployment! Need at least 5 SOL.\x1b[0m`
+          `\x1b[31m❌ ERROR: Insufficient balance for mainnet deployment! Need at least 5 SOL.\x1b[0m`,
         );
         throw new Error("Insufficient SOL balance for mainnet deployment");
       } else if (balanceSOL < 10) {
         console.log(
-          `\x1b[33m⚠️  Warning: Low balance for mainnet! Recommended at least 10 SOL for deployment.\x1b[0m`
+          `\x1b[33m⚠️  Warning: Low balance for mainnet! Recommended at least 10 SOL for deployment.\x1b[0m`,
         );
       }
     } else if (balanceSOL < 1) {
       console.log(
-        `\x1b[33m⚠️  Warning: Low balance! You may need more SOL for deployment.\x1b[0m`
+        `\x1b[33m⚠️  Warning: Low balance! You may need more SOL for deployment.\x1b[0m`,
       );
     }
   } catch (error) {
     console.log(
-      `\x1b[33m⚠️  Could not fetch wallet info: ${error.message}\x1b[0m`
+      `\x1b[33m⚠️  Could not fetch wallet info: ${error.message}\x1b[0m`,
     );
     throw error;
   }
@@ -639,18 +653,30 @@ async function main() {
     } catch (error) {}
 
     if (cluster === "mainnet") {
-      console.log(`\x1b[31m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
-      console.log(`\x1b[31m║  ⚠️   MAINNET DEPLOYMENT - REAL MONEY AT RISK  ⚠️          ║\x1b[0m`);
-      console.log(`\x1b[31m╚═══════════════════════════════════════════════════════════╝\x1b[0m`);
-      console.log(`\x1b[33m   • Ensure you have the correct wallet keypair\x1b[0m`);
-      console.log(`\x1b[33m   • Ensure you have sufficient SOL balance (10+ SOL recommended)\x1b[0m`);
-      console.log(`\x1b[33m   • Double-check program addresses before deployment\x1b[0m`);
+      console.log(
+        `\x1b[31m╔═══════════════════════════════════════════════════════════╗\x1b[0m`,
+      );
+      console.log(
+        `\x1b[31m║  ⚠️   MAINNET DEPLOYMENT - REAL MONEY AT RISK  ⚠️          ║\x1b[0m`,
+      );
+      console.log(
+        `\x1b[31m╚═══════════════════════════════════════════════════════════╝\x1b[0m`,
+      );
+      console.log(
+        `\x1b[33m   • Ensure you have the correct wallet keypair\x1b[0m`,
+      );
+      console.log(
+        `\x1b[33m   • Ensure you have sufficient SOL balance (10+ SOL recommended)\x1b[0m`,
+      );
+      console.log(
+        `\x1b[33m   • Double-check program addresses before deployment\x1b[0m`,
+      );
       console.log("");
     }
 
     console.log(`\x1b[35m🚀 Starting automated program deployment...\x1b[0m`);
     console.log(
-      `\x1b[35m==============================================\x1b[0m`
+      `\x1b[35m==============================================\x1b[0m`,
     );
 
     // Print wallet info at the start
@@ -667,7 +693,7 @@ async function main() {
     if (allDeployed) {
       console.log(`\x1b[32m✅ Game programs already deployed!\x1b[0m`);
       console.log(
-        `\x1b[36m   🔗 MINE_BTC: ${existingDeployment.MINE_BTC_PROGRAM_ID}\x1b[0m`
+        `\x1b[36m   🔗 MINE_BTC: ${existingDeployment.MINE_BTC_PROGRAM_ID}\x1b[0m`,
       );
       console.log(`\x1b[36m\n📋 Regenerating IDL files...\x1b[0m`);
 
@@ -705,7 +731,7 @@ async function main() {
     console.log(`\x1b[32m==============================\x1b[0m`);
     for (const [programName, address] of Object.entries(programAddresses)) {
       console.log(
-        `\x1b[32m  ✅ ${PROGRAMS[programName].displayName}: ${address}\x1b[0m`
+        `\x1b[32m  ✅ ${PROGRAMS[programName].displayName}: ${address}\x1b[0m`,
       );
     }
 
