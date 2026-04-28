@@ -370,16 +370,23 @@ pub struct PlayerInitialized {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub faction_id: u8,
+    pub origin_faction_id: u8,
     pub referral_code: Option<Pubkey>,
+    pub referrer_faction_id: Option<u8>,
+    pub same_faction_referral: bool,
     pub timestamp: i64,
 }
 
-/// Event emitted when a user changes their faction
+/// Event emitted when a player joins through the country referral loop.
 #[event]
-pub struct FactionChanged {
-    pub user: Pubkey,
-    pub player_data: Pubkey,
-    pub new_faction_id: u8,
+pub struct PlayerRecruited {
+    pub player: Pubkey,
+    pub referrer: Pubkey,
+    pub player_origin_faction_id: u8,
+    pub referrer_origin_faction_id: u8,
+    pub same_faction: bool,
+    pub referrer_total_recruits: u16,
+    pub referrer_same_faction_recruits: u16,
     pub timestamp: i64,
 }
 

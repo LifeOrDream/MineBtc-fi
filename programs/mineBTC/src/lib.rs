@@ -678,9 +678,9 @@ pub mod minebtc {
         user::internal_initialize_player(ctx, faction_id, referral_code)
     }
 
-    /// Change user's faction
-    /// Requires no staked positions (minebtc/lp hashpower = 0, no doges staked)
-    /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
+    /// Disabled: country identity is permanent after player initialization.
+    ///
+    /// This remains in the IDL as a hard-fail guard for stale clients.
     pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
         crate::log_fn!("lib", "change_faction");
         user::internal_change_faction(ctx, new_faction_id)

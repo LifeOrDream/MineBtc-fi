@@ -454,6 +454,11 @@ SOL rewards: winning-direction bettors split the SOL prize pot proportional to t
 - Only own-faction bets count
 - Doge bonus: same formula but using `eligible_doge_direction_totals` as denominator
 
+**Referral overlay:** if a player joined through a real referral code, their
+dogeBTC claim gets a 1% bonus from the emissions vault. The referrer accrues 3%
+of the base claim, or 5% when both users share the same permanent country. These
+overlay rewards do not reduce the round/cycle reward pools.
+
 ## Passive Staking in the Economy Loop
 
 Passive staking is a separate accounting layer that sits downstream from rounds.

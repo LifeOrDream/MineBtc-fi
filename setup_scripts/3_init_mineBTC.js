@@ -326,7 +326,7 @@ async function main() {
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
     //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
-    //   change_faction_fee: Option<u64>,             — SOL cost to change faction (lamports)
+    //   change_faction_fee: Option<u64>,             — dormant legacy field; change_faction now hard-fails on-chain
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram

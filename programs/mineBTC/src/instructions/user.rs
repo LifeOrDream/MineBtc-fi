@@ -5,7 +5,7 @@
 // ## Key Functions
 //
 // - `initialize_player`: Creates a new player account and assigns them to a faction.
-// - `change_faction`: Allows players to switch factions (requires no active stakes).
+// - `change_faction`: Disabled; country identity is permanent after signup.
 // - `join_bets`: Places one or more faction-direction bets for the current round.
 // - `claim_round_rewards`: Claims winnings from completed rounds.
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
@@ -59,6 +59,7 @@ pub fn internal_initialize_player(
         faction_id
     );
 
+    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let global_config = &mut ctx.accounts.global_config;
     global_config.total_players = global_config
@@ -77,12 +78,16 @@ pub fn internal_initialize_player(
     player_data.bump = ctx.bumps.player_data;
     player_data.allow_bots_to_claim = true;
     player_data.faction_id = faction_id;
+    player_data.origin_faction_id = faction_id;
+    player_data.referrer_faction_id = u8::MAX;
+    player_data.same_faction_referral = false;
 
     // Treat the system-program sentinel as "no referral" so users can register without
     // providing a real referral code, even if the client forwards the sentinel explicitly.
     let referral_code = referral_code.filter(|code| *code != ctx.accounts.system_program.key());
 
     // Handle referral code logic
+    let mut recruited_event: Option<PlayerRecruited> = None;
     let referrer_pubkey = if let Some(ref_code) = referral_code {
         msg!("     Referral code provided: {}", ref_code);
         require!(
@@ -108,14 +113,45 @@ pub fn internal_initialize_player(
             .referrals_count
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let referrer_faction_id = referrer_rewards.owner_faction_id;
+        require!(
+            (referrer_faction_id as usize) < global_config.supported_factions.len(),
+            ErrorCode::InvalidFactionId
+        );
+        let same_faction = referrer_faction_id == faction_id;
+        if same_faction {
+            referrer_rewards.same_faction_referrals_count = referrer_rewards
+                .same_faction_referrals_count
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+        referrer_rewards.referred_faction_counts[faction_id as usize] = referrer_rewards
+            .referred_faction_counts[faction_id as usize]
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "     Referrer's referral count: {}/{}",
+            "     Referrer's referral count: {}/{} same_faction={} referrer_faction={} referred_faction_count={}",
             referrer_rewards.referrals_count,
-            stake::MAX_REFERRALS_PER_CODE
+            stake::MAX_REFERRALS_PER_CODE,
+            same_faction,
+            referrer_faction_id,
+            referrer_rewards.referred_faction_counts[faction_id as usize]
         );
 
         // Set player's referral code
         player_data.referral_code = ref_code;
+        player_data.referrer_faction_id = referrer_faction_id;
+        player_data.same_faction_referral = same_faction;
+        recruited_event = Some(PlayerRecruited {
+            player: ctx.accounts.authority.key(),
+            referrer: ref_code,
+            player_origin_faction_id: faction_id,
+            referrer_origin_faction_id: referrer_faction_id,
+            same_faction,
+            referrer_total_recruits: referrer_rewards.referrals_count,
+            referrer_same_faction_recruits: referrer_rewards.same_faction_referrals_count,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
         ref_code
     } else {
         msg!("     No referral code provided, using system referral account");
@@ -174,7 +210,10 @@ pub fn internal_initialize_player(
     let new_player_rewards = &mut ctx.accounts.new_player_rewards;
     new_player_rewards.owner = ctx.accounts.authority.key();
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
+    new_player_rewards.owner_faction_id = faction_id;
     new_player_rewards.referrals_count = 0;
+    new_player_rewards.same_faction_referrals_count = 0;
+    new_player_rewards.referred_faction_counts = [0u16; NUM_FACTIONS];
     new_player_rewards.pending_minebtc_rewards = 0;
     new_player_rewards.total_minebtc_earned = 0;
     new_player_rewards.pending_sol_rewards = 0;
@@ -195,115 +234,39 @@ pub fn internal_initialize_player(
 
     emit!(PlayerInitialized {
         user: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
+        player_data: player_data_key,
         faction_id,
+        origin_faction_id: faction_id,
         referral_code,
+        referrer_faction_id: if player_data.referrer_faction_id == u8::MAX {
+            None
+        } else {
+            Some(player_data.referrer_faction_id)
+        },
+        same_faction_referral: player_data.same_faction_referral,
         timestamp: Clock::get()?.unix_timestamp,
     });
+    if let Some(event) = recruited_event {
+        emit!(event);
+    }
 
     Ok(())
 }
 
-/// Change user's faction
-/// Requires:
-/// - No minebtc hashpower (dogebtc_hashpower == 0)
-/// - No lp hashpower (lp_hashpower == 0)
-/// - No doges staked (staked_doges.is_empty())
-///   Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
+/// Disabled by design: country identity is permanent after signup.
+///
+/// Keeping this instruction as a hard-fail path avoids stale clients accidentally
+/// thinking faction changes are still supported, while preserving a clear log in
+/// devnet testing if someone calls the old endpoint.
+pub fn internal_change_faction(ctx: Context<ChangeFaction>, _new_faction_id: u8) -> Result<()> {
     crate::log_fn!("user", "internal_change_faction");
     msg!(
-        "🔄 [change_faction] User changing faction. User: {}",
-        ctx.accounts.authority.key()
-    );
-    msg!(
-        "   Current faction ID: {}. New faction ID: {}",
+        "⛔ [change_faction] Disabled. Country identity is permanent. User: {} faction_id={} origin_faction_id={}",
+        ctx.accounts.authority.key(),
         ctx.accounts.player_data.faction_id,
-        new_faction_id
+        ctx.accounts.player_data.origin_faction_id
     );
-
-    let player_data = &mut ctx.accounts.player_data;
-    let global_config = &ctx.accounts.global_config;
-
-    // Validate new faction_id
-    require!(
-        (new_faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-    require!(
-        player_data.faction_id != new_faction_id,
-        ErrorCode::InvalidParameters
-    );
-
-    // Validate user has no staked positions
-    msg!("   Validating user has no staked positions...");
-    require!(
-        player_data.dogebtc_hashpower == 0
-            && player_data.lp_hashpower == 0
-            && player_data.staked_doges.is_empty()
-            && player_data.doge_multiplier == BASE_MULTIPLIER as u16
-            && player_data.gameplay_doge == Pubkey::default()
-            && player_data.active_multiplier == BASE_MULTIPLIER
-            && player_data.gameplay_doge_dna == [0u8; 32]
-            && player_data.gameplay_doge_xp == 0
-            && player_data.gameplay_unlock_request_faction_war == 0
-            && !player_has_pending_reward_claims(player_data),
-        ErrorCode::InvalidState
-    );
-
-    // Charge change_faction_fee
-    let change_fee = global_config.change_faction_fee;
-    require!(change_fee > 0, ErrorCode::InvalidAmount);
-    msg!("   Change faction fee: {} SOL", (change_fee as f64 / 1e9));
-
-    // Split fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-    let treasury_amt = change_fee / 2;
-    let dev_amt = change_fee - treasury_amt;
-
-    msg!(
-        "   Transferring {} SOL to sol_treasury",
-        (treasury_amt as f64 / 1e9)
-    );
-    helper::transfer_to_sol_treasury(
-        &ctx.accounts.user_wallet.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        treasury_amt,
-    )?;
-
-    msg!(
-        "   Transferring {} SOL to fee_recipient (as WSOL)",
-        (dev_amt as f64 / 1e9)
-    );
-    helper::transfer_wsol_to_multisig(
-        &ctx.accounts.user_wallet.to_account_info(),
-        &ctx.accounts.multisig_wsol_account.to_account_info(),
-        &ctx.accounts.user_wsol_account.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        &ctx.accounts.token_program.to_account_info(),
-        dev_amt,
-    )?;
-
-    // Update faction_id
-    let old_faction_id = player_data.faction_id;
-    player_data.faction_id = new_faction_id;
-
-    msg!("✅ [change_faction] Faction changed successfully");
-    msg!("   User: {}", ctx.accounts.authority.key());
-    msg!(
-        "   Old faction ID: {} -> New faction ID: {}",
-        old_faction_id,
-        new_faction_id
-    );
-
-    emit!(FactionChanged {
-        user: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
-        new_faction_id,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
-
-    Ok(())
+    err!(ErrorCode::InvalidParameters)
 }
 
 pub fn internal_set_player_claim_settings(

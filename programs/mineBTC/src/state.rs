@@ -982,6 +982,12 @@ pub struct PlayerData {
 
     /// The faction this player is assigned to
     pub faction_id: u8,
+    /// Permanent faction chosen at signup. Country identity does not change after registration.
+    pub origin_faction_id: u8,
+    /// Referrer's origin faction at signup, or u8::MAX when there is no referrer.
+    pub referrer_faction_id: u8,
+    /// Whether the player joined through a same-country referral.
+    pub same_faction_referral: bool,
 
     pub dogebtc_hashpower: u64,
     pub dogebtc_staked: u64,
@@ -1048,6 +1054,9 @@ impl PlayerData {
         1 +     // allow_bots_to_claim
         32 +    // referral_code
         1 +     // faction_id
+        1 +     // origin_faction_id
+        1 +     // referrer_faction_id
+        1 +     // same_faction_referral
         8 +     // dogebtc_hashpower (u64)
         8 +     // dogebtc_staked (u64)
         16 +    // dogebtc_dogebtc_reward_debt (u128)
@@ -1112,8 +1121,14 @@ impl StakedPosition {
 pub struct ReferralRewards {
     pub owner: Pubkey,
     pub bump: u8,
+    /// Permanent faction of the referral-code owner.
+    pub owner_faction_id: u8,
     /// Number of users who have used this user's referral code
     pub referrals_count: u16,
+    /// Number of same-faction users recruited.
+    pub same_faction_referrals_count: u16,
+    /// Number of users recruited by referred faction.
+    pub referred_faction_counts: [u16; NUM_FACTIONS],
 
     /// Pending MineBtc rewards from referrals (claimable)
     pub pending_minebtc_rewards: u64,
@@ -1132,7 +1147,10 @@ impl ReferralRewards {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         1 +     // bump
+        1 +     // owner_faction_id
         2 +     // referrals_count
+        2 +     // same_faction_referrals_count
+        (NUM_FACTIONS * 2) + // referred_faction_counts
         8 +     // pending_minebtc_rewards
         8 +     // total_minebtc_earned
         8 +     // pending_sol_rewards

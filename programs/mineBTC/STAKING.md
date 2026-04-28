@@ -230,6 +230,9 @@ Only the user's own pending MineBTC is deducted from
 
 Referral bonus and referral reward are paid from the emissions vault directly and
 must **not** be subtracted from total claimable, otherwise the unrefining index drifts.
+The referred user always gets a 1% bonus. The referrer gets 3% normally, or 5%
+when the referred user picked the same permanent country at signup. This makes
+referrals a country-building loop without changing the referred user's payout.
 
 ---
 

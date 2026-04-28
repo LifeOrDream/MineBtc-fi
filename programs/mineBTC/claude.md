@@ -14,6 +14,11 @@ MineBTC is a **degen country arena game** on Solana where:
 
 **The game in one sentence:** "Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC."
 
+Player country is permanent after signup. Referral rewards are also
+country-aware: referred users always get the same 1% dogeBTC claim bonus, while
+referrers earn a higher dogeBTC reward when they recruit someone into their own
+country. This keeps the growth loop simple: "bring people to your flag."
+
 Use these canonical terms:
 
 - `country` or `faction` — one of 12-15 playable nations
