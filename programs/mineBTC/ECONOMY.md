@@ -341,7 +341,7 @@ Every bet generates two numbers:
 - **points** = raw bet size in lamports (1 SOL = 1,000,000,000 points)
 - **weighted points** = points × active_multiplier / BASE_MULTIPLIER
 
-For SOL bets: a 1.0x doge gives wgtd_points = points. A 5.0x doge gives 5× the weighted points.
+For SOL bets: a 1.0x doge gives wgtd_points = points. Gameplay Doge power is capped at 4.2x.
 For ticket bets: wgtd_points = points (no multiplier). Tickets are capped at 25% of SOL volume per round.
 
 Weighted points determine:
@@ -454,6 +454,11 @@ SOL rewards: winning-direction bettors split the SOL prize pot proportional to t
 - Only own-faction bets count
 - Doge bonus: same formula but using `eligible_doge_direction_totals` as denominator
 
+**Referral overlay:** if a player joined through a real referral code, their
+dogeBTC claim gets a 1% bonus from the emissions vault. The referrer accrues 3%
+of the base claim, or 5% when both users share the same permanent country. These
+overlay rewards do not reduce the round/cycle reward pools.
+
 ## Passive Staking in the Economy Loop
 
 Passive staking is a separate accounting layer that sits downstream from rounds.
@@ -482,10 +487,10 @@ Player share is not based on raw deposit amount directly. It is based on:
 
 ```text
 staked_amount
-    -> lockup commitment
-    -> weighted_amount (1.0x; no extra yield multiplier)
+    -> lockup multiplier (max 3x)
+    -> weighted_amount
     -> passive Doge multiplier
-    -> final staking hashpower (max 4.2x total)
+    -> final staking hashpower (max 9x total)
 ```
 
 ### Passive Doge staking

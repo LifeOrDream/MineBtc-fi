@@ -297,12 +297,18 @@ pub fn calculate_mutation_result(
     } else {
         highest_round_bet_for_faction
     };
-    let bet_strength = ((user_total_bet * 10000) / effective_highest).min(10000);
+    let bet_strength = ((user_total_bet as u128)
+        .saturating_mul(BASIS_POINTS_DENOMINATOR as u128)
+        .checked_div(effective_highest as u128)
+        .unwrap_or(BASIS_POINTS_DENOMINATOR as u128))
+    .min(BASIS_POINTS_DENOMINATOR as u128) as u64;
     msg!("   Bet strength: {:.2}%", bet_strength as f64 / 100.0);
 
     // B. Multiplier Penalty (0 - 10,000 bps)
     // Higher multiplier = lower chance, slowing progression for advanced doges.
-    let mult_factor = (BASE_MULTIPLIER as u64 * 10000) / current_multiplier as u64;
+    let effective_multiplier = current_multiplier.max(BASE_MULTIPLIER);
+    let mult_factor =
+        (BASE_MULTIPLIER as u64 * BASIS_POINTS_DENOMINATOR) / effective_multiplier as u64;
     msg!("   Multiplier factor: {:.2}%", mult_factor as f64 / 100.0);
 
     // C. Per-Faction Penalty: each prior mutation this round makes the next harder.
@@ -400,7 +406,9 @@ pub fn calculate_mutation_result(
     // --- STEP 2: ROLL THE DICE ---
 
     // Roll the dice
-    let total_combined = total_sol_bets + total_points_bets + total_wgtd_points_bets;
+    let total_combined = total_sol_bets
+        .saturating_add(total_points_bets)
+        .saturating_add(total_wgtd_points_bets);
     let seed = keccak::hashv(&[
         &slot.to_le_bytes(),
         &total_sol_bets.to_le_bytes(),

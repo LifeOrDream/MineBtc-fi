@@ -344,7 +344,6 @@
       "newProtocolFeePct": 10,
       "newStakersPct": 10,
       "newBuybackPct": 80,
-      "changeFactionFee": 100000000,
       "newMinebtcStakersPct": 15,
       "newMinebtcWinnersPct": 50,
       "newMinebtcSameFactionPct": 25,

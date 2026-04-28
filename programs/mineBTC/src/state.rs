@@ -10,7 +10,8 @@
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
 // - `MineBtcMining`: Manages the mining emission and distribution logic.
-// - `DogeConfig`: Configuration for the Doge NFT system.
+// - `DogeConfig`: Collection, lifetime supply, and breeding state for Doges.
+// - `DogeMintConfig`: Mint-only genesis sale curve, ticket tiers, and per-faction caps.
 // - `TaxConfig`: Configuration for the tax and burn system.
 //
 
@@ -19,7 +20,8 @@ use anchor_lang::prelude::*;
 pub const MINEBTC_DECIMALS: u8 = 6;
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
-pub const MAX_MULTIPLIER: u16 = 4200; // Maximum Doge multiplier (4.2x)
+pub const GAMEPLAY_MAX_MULTIPLIER: u16 = 4200; // Maximum gameplay Doge multiplier (4.2x)
+pub const PASSIVE_DOGE_STAKING_MAX_MULTIPLIER: u16 = 3000; // Maximum passive Doge staking multiplier (3.0x)
 pub const MAX_EVOLUTION_STAGE: u8 = 7; // Highest evolution stage encoded in doge DNA
 
 /// Base story-event chance in basis points (2000 = 20%).
@@ -106,8 +108,6 @@ pub const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
 /// Percent fee taken when claiming staking rewards (redistributed to other stakers).
 pub const DEFAULT_REFINING_FEE: u8 = 5;
 
-/// SOL cost to switch factions (in lamports). 4.2 SOL.
-pub const DEFAULT_CHANGE_FACTION_FEE: u64 = 4_200_000_000;
 /// Minimum seconds between price snapshots in the economy cycle.
 pub const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1800; // 30 minutes
 
@@ -188,6 +188,7 @@ pub const MOTHERLODE_POT_VAULT_SEED: &[u8] = b"motherlode-pot";
 
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
 pub const DOGE_CONFIG_SEED: &[u8] = b"doge-config";
+pub const DOGE_MINT_CONFIG_SEED: &[u8] = b"doge-mint-config";
 
 // PDAs for Faction War system
 pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
@@ -237,9 +238,6 @@ pub struct GlobalConfig {
 
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
-
-    /// Fee for changing faction (in lamports)
-    pub change_faction_fee: u64,
 
     /// Minimum time interval between price snapshots (in seconds)
     /// Default: 1800 seconds (30 minutes)
@@ -299,7 +297,6 @@ impl GlobalConfig {
         SolFeeConfig::LEN +     // sol_fee_config
         MineBtcDistConfig::LEN + // minebtc_dist_config
         32 +                    // raydium_pool_state
-        8 +                     // change_faction_fee
         8 +                     // snapshot_interval
         GameplayTuningConfig::LEN + // gameplay_tuning
         1 +                     // bump
@@ -540,9 +537,8 @@ pub struct HashpowerConfig {
     pub max_lockup_days: u64,
 
     /// Base multiplier for lockup duration (100 = 1x, separate from BASE_MULTIPLIER=1000 used for doges).
-    /// Kept at 100 so total passive staking boost is controlled by Doges and capped at 4.2x.
     pub base_multiplier: u16,
-    /// Maximum lockup multiplier. Kept at 100; lock duration affects commitment / early exit, not yield stacking.
+    /// Maximum lockup multiplier. Capped at 300 = 3x so total staking boost maxes at 9x with Doges.
     pub max_multiplier: u16,
 
     /// Bump for PDA derivation
@@ -573,56 +569,86 @@ impl TicketTier {
     pub const LEN: usize = 8 + 2; // ticket_value
 }
 
-/// Global doge configuration
+/// Global Doge configuration used outside the primary mint sale.
 #[account]
 pub struct DogeConfig {
     pub bump: u8,
 
-    /// Whether the mining of doges is currently active
-    pub is_active: bool,
-
     /// Doge collection address (Metaplex Core)
     pub doge_collection: Pubkey,
 
-    /// Maximum supply of doges that can be minted
+    /// Lifetime cap across genesis mints, admin/whitelist mints, and breeding.
     pub max_supply: u64,
 
-    /// Number of doges minted so far
-    pub doges_minted: u64,
-
-    /// Base price for bonding curve (in lamports)
-    pub base_price: u64,
-
-    /// Curve steepness parameter (controls price growth rate, typically >= 100)
-    pub curve_a: u64,
-
-    /// Available ticket tier configs users can choose when minting (max 4 options)
-    /// Example: 0.01 SOL × 1000 tickets, 0.1 SOL × 10 tickets
-    pub ticket_tiers: Vec<TicketTier>,
+    /// Lifetime count of Doges ever minted. Burns do not reduce this counter.
+    pub total_doges_minted: u64,
 
     /// Whether breeding is currently allowed
     pub breeding_allowed: bool,
+
     /// Base price for breeding cost bonding curve (in lamports)
     pub breed_base_price: u64,
+
     /// Curve steepness for breeding cost
     pub breed_curve_a: u64,
 }
 
 impl DogeConfig {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        32 +    // doge_collection
+        8 +     // max_supply
+        8 +     // total_doges_minted
+        1 +     // breeding_allowed
+        8 +     // breed_base_price
+        8; // breed_curve_a
+}
+
+/// Mint-only Doge configuration for the genesis sale and free/admin genesis mints.
+/// Non-mint gameplay/staking/breeding instructions should not require this account.
+#[account]
+pub struct DogeMintConfig {
+    pub bump: u8,
+
+    /// Whether primary genesis minting is currently active.
+    pub is_active: bool,
+
+    /// Base price for the genesis bonding curve (in lamports).
+    pub base_price: u64,
+
+    /// Curve steepness parameter for genesis mint pricing.
+    pub curve_a: u64,
+
+    /// Total number of genesis mints allowed across all factions.
+    pub genesis_mint_limit: u64,
+
+    /// Number of genesis mints completed so far.
+    pub genesis_mints: u64,
+
+    /// Max genesis mints allowed per faction/country.
+    pub max_genesis_mints_per_faction: u16,
+
+    /// Genesis mints completed per faction/country.
+    pub genesis_mints_by_faction: [u16; NUM_FACTIONS],
+
+    /// Available ticket tier configs users can choose when minting.
+    pub ticket_tiers: Vec<TicketTier>,
+}
+
+impl DogeMintConfig {
     pub const MAX_TICKET_TIERS: usize = 3;
+    pub const DEFAULT_MAX_GENESIS_MINTS_PER_FACTION: u16 = 1_000;
 
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         1 +     // is_active
-        32 +    // doge_collection
-        8 +     // max_supply
-        8 +     // doges_minted
         8 +     // base_price
         8 +     // curve_a
-        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN) + // ticket_tiers
-        1 +     // breeding_allowed
-        8 +     // breed_base_price
-        8; // breed_curve_a
+        8 +     // genesis_mint_limit
+        8 +     // genesis_mints
+        2 +     // max_genesis_mints_per_faction
+        (NUM_FACTIONS * 2) + // genesis_mints_by_faction
+        4 + (Self::MAX_TICKET_TIERS * TicketTier::LEN); // ticket_tiers
 }
 
 /// Per-user whitelist allowance for free Doge mints.
@@ -950,6 +976,12 @@ pub struct PlayerData {
 
     /// The faction this player is assigned to
     pub faction_id: u8,
+    /// Permanent faction chosen at signup. Country identity does not change after registration.
+    pub origin_faction_id: u8,
+    /// Referrer's origin faction at signup, or u8::MAX when there is no referrer.
+    pub referrer_faction_id: u8,
+    /// Whether the player joined through a same-country referral.
+    pub same_faction_referral: bool,
 
     pub dogebtc_hashpower: u64,
     pub dogebtc_staked: u64,
@@ -977,7 +1009,7 @@ pub struct PlayerData {
     /// Stores the mint addresses of staked doges
     pub staked_doges: Vec<Pubkey>,
     /// Current doge multiplier (1000 = 1x, 1500 = 1.5x, etc.)
-    /// Effective player multiplier after applying the MAX_MULTIPLIER cap.
+    /// Effective passive staking Doge multiplier after applying the 3x passive cap.
     pub doge_multiplier: u16,
 
     /// Free tickets: points size of each ticket type (max 5 ticket types)
@@ -990,7 +1022,7 @@ pub struct PlayerData {
 
     /// Doge currently being used in gameplay (Pubkey::default() if none)
     pub gameplay_doge: Pubkey,
-    /// Active gameplay multiplier (1000 = 1x, set from gameplay doge's multiplier, reset to BASE_MULTIPLIER on withdraw)
+    /// Active gameplay multiplier (1000 = 1x, set from gameplay doge's multiplier, capped at 4.2x, reset to BASE_MULTIPLIER on withdraw)
     pub active_multiplier: u32,
     /// Cached DNA of gameplay doge (for mutation calculations without loading DogeMetadata)
     pub gameplay_doge_dna: [u8; 32],
@@ -1016,6 +1048,9 @@ impl PlayerData {
         1 +     // allow_bots_to_claim
         32 +    // referral_code
         1 +     // faction_id
+        1 +     // origin_faction_id
+        1 +     // referrer_faction_id
+        1 +     // same_faction_referral
         8 +     // dogebtc_hashpower (u64)
         8 +     // dogebtc_staked (u64)
         16 +    // dogebtc_dogebtc_reward_debt (u128)
@@ -1080,8 +1115,14 @@ impl StakedPosition {
 pub struct ReferralRewards {
     pub owner: Pubkey,
     pub bump: u8,
+    /// Permanent faction of the referral-code owner.
+    pub owner_faction_id: u8,
     /// Number of users who have used this user's referral code
     pub referrals_count: u16,
+    /// Number of same-faction users recruited.
+    pub same_faction_referrals_count: u16,
+    /// Number of users recruited by referred faction.
+    pub referred_faction_counts: [u16; NUM_FACTIONS],
 
     /// Pending MineBtc rewards from referrals (claimable)
     pub pending_minebtc_rewards: u64,
@@ -1100,7 +1141,10 @@ impl ReferralRewards {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         1 +     // bump
+        1 +     // owner_faction_id
         2 +     // referrals_count
+        2 +     // same_faction_referrals_count
+        (NUM_FACTIONS * 2) + // referred_faction_counts
         8 +     // pending_minebtc_rewards
         8 +     // total_minebtc_earned
         8 +     // pending_sol_rewards

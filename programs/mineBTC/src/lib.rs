@@ -48,7 +48,7 @@ pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    AutominerFactionPick, BetType, DogeConfig, FactionsConfig, MineBtcDistConfig,
+    AutominerFactionPick, BetType, DogeConfig, DogeMintConfig, FactionsConfig, MineBtcDistConfig,
     PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
@@ -147,7 +147,6 @@ pub mod minebtc {
         new_minebtc_same_faction_pct: Option<u8>,
         new_minebtc_motherlode_pct: Option<u8>,
         new_refining_fee: Option<u8>,
-        change_faction_fee: Option<u64>,
         snapshot_interval: Option<u64>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_fees");
@@ -161,7 +160,6 @@ pub mod minebtc {
             new_minebtc_same_faction_pct,
             new_minebtc_motherlode_pct,
             new_refining_fee,
-            change_faction_fee,
             snapshot_interval,
         )
     }
@@ -304,33 +302,64 @@ pub mod minebtc {
 
     /// Initialize DogeConfig account (admin only)
     ///
-    /// Creates the DogeConfig account that stores Doge configuration.
+    /// Creates the DogeConfig account that stores collection, supply, and breeding state.
     /// This must be called before creating the Doge collection.
     pub fn initialize_doge_config(
         ctx: Context<InitializeDogeConfig>,
-        base_price: u64,
-        curve_a: u64,
         max_supply: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_doge_config");
-        admin::initialize_doge_config_internal(ctx, base_price, curve_a, max_supply)
+        admin::initialize_doge_config_internal(ctx, max_supply)
+    }
+
+    /// Initialize mint-only Doge config for the genesis sale.
+    pub fn initialize_doge_mint_config(
+        ctx: Context<InitializeDogeMintConfig>,
+        base_price: u64,
+        curve_a: u64,
+        genesis_mint_limit: u64,
+        max_genesis_mints_per_faction: u16,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_doge_mint_config");
+        admin::initialize_doge_mint_config_internal(
+            ctx,
+            base_price,
+            curve_a,
+            genesis_mint_limit,
+            max_genesis_mints_per_faction,
+        )
     }
 
     /// Update DogeConfig account (admin only)
     ///
-    /// Updates the DogeConfig account that stores Doge collection configuration.
+    /// Updates the DogeConfig account that stores collection, supply, and breeding state.
     ///
     /// # Parameters
-    /// - `base_price`: Base price for Doge in SOL (lamports)
-    /// - `curve_a`: Bonding curve parameter (controls price growth rate)
+    /// - `max_supply`: Optional lifetime Doge supply cap.
     pub fn update_doge_config(
         ctx: Context<UpdateDogeConfig>,
-        base_price: Option<u64>,
-        curve_a: Option<u64>,
         max_supply: Option<u64>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_doge_config");
-        admin::update_doge_config_internal(ctx, base_price, curve_a, max_supply)
+        admin::update_doge_config_internal(ctx, max_supply)
+    }
+
+    /// Update mint-only Doge config for genesis sale pricing and caps.
+    pub fn update_doge_mint_config(
+        ctx: Context<UpdateDogeMintConfig>,
+        base_price: Option<u64>,
+        curve_a: Option<u64>,
+        genesis_mint_limit: Option<u64>,
+        max_genesis_mints_per_faction: Option<u16>,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "update_doge_mint_config");
+        admin::update_doge_mint_config_internal(
+            ctx,
+            base_price,
+            curve_a,
+            genesis_mint_limit,
+            max_genesis_mints_per_faction,
+        )
     }
 
     /// Toggle Doge NFT minting on/off (admin only)
@@ -389,9 +418,9 @@ pub mod minebtc {
     }
 
     /// Add or update ticket tier configs (admin only)
-    /// Max 4 ticket tier configs can be set
+    /// Max 3 ticket tier configs can be set
     pub fn add_ticket_tier_config(
-        ctx: Context<UpdateDogeConfig>,
+        ctx: Context<UpdateDogeMintConfig>,
         ticket_tier_index: u8,
         ticket_value: u64,
     ) -> Result<()> {
@@ -647,14 +676,6 @@ pub mod minebtc {
         user::internal_initialize_player(ctx, faction_id, referral_code)
     }
 
-    /// Change user's faction
-    /// Requires no staked positions (minebtc/lp hashpower = 0, no doges staked)
-    /// Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-    pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
-        crate::log_fn!("lib", "change_faction");
-        user::internal_change_faction(ctx, new_faction_id)
-    }
-
     /// Opt in or out of letting third-party bots claim rewards on the user's behalf.
     pub fn set_player_claim_settings(
         ctx: Context<SetPlayerClaimSettings>,
@@ -849,13 +870,18 @@ pub mod minebtc {
     ///
     /// # Parameters
     /// - `doge_config`: DogeConfig account
+    /// - `doge_mint_config`: DogeMintConfig account
     /// - `mint_count`: Number of doges to mint
     pub fn simulate_purchase_cost(
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
     ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
         crate::log_fn!("lib", "simulate_purchase_cost");
-        doges::int_simulate_mint_cost(&ctx.accounts.doge_config, mint_count)
+        doges::int_simulate_mint_cost(
+            &ctx.accounts.doge_config,
+            &ctx.accounts.doge_mint_config,
+            mint_count,
+        )
     }
 
     /// Admin function to mint a Doge NFT for free to a specified recipient (admin only)

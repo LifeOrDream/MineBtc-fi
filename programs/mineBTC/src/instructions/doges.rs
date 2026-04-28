@@ -98,6 +98,7 @@ fn load_staked_doge_raw_multiplier(
 /// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
 pub fn int_simulate_mint_cost(
     doge_config: &DogeConfig,
+    doge_mint_config: &DogeMintConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
     crate::log_fn!("doges", "int_simulate_mint_cost");
@@ -106,22 +107,34 @@ pub fn int_simulate_mint_cost(
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_config.doges_minted + mint_count <= doge_config.max_supply,
+        doge_config.total_doges_minted + mint_count <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_config.ticket_tiers.len() == 3,
+        doge_mint_config.genesis_mints + mint_count <= doge_mint_config.genesis_mint_limit,
+        ErrorCode::InvalidParameters
+    );
+    require!(
+        doge_mint_config.ticket_tiers.len() == 3,
         ErrorCode::InvalidParameters
     ); // Must have exactly 3 ticket tiers
+    msg!(
+        "🧮 [simulate_mint_cost] mint_count={} total_supply_after={} / {} genesis_after={} / {}",
+        mint_count,
+        doge_config.total_doges_minted + mint_count,
+        doge_config.max_supply,
+        doge_mint_config.genesis_mints + mint_count,
+        doge_mint_config.genesis_mint_limit
+    );
 
     let mut prices = Vec::new();
     let mut total_price = 0u64;
-    let mut current_minted = doge_config.doges_minted;
+    let mut current_minted = doge_mint_config.genesis_mints;
 
     for _ in 0..mint_count {
         let actual_price = crate::genescience::compute_gene_price(
-            doge_config.base_price,
-            doge_config.curve_a,
+            doge_mint_config.base_price,
+            doge_mint_config.curve_a,
             current_minted,
         )?;
 
@@ -135,13 +148,38 @@ pub fn int_simulate_mint_cost(
     // Calculate ticket amounts for each tier: sol_price / ticket_value
     // Users get 100% of their mint price as game tickets
     let mut ticket_amounts = Vec::new();
-    for tier in &doge_config.ticket_tiers {
+    for tier in &doge_mint_config.ticket_tiers {
         // Calculate: total_price / ticket_value (1.0x)
         let ticket_count = helper::calc_tickets_count(total_price, tier.ticket_value);
         ticket_amounts.push((tier.ticket_value, ticket_count));
     }
 
     Ok((total_price, prices, ticket_amounts))
+}
+
+fn validate_genesis_faction_cap(
+    doge_mint_config: &DogeMintConfig,
+    faction_id: u8,
+    mint_count: u8,
+) -> Result<()> {
+    let faction_index = faction_id as usize;
+    require!(faction_index < NUM_FACTIONS, ErrorCode::InvalidFactionId);
+    let current_faction_mints = doge_mint_config.genesis_mints_by_faction[faction_index];
+    let next_faction_mints = current_faction_mints
+        .checked_add(mint_count as u16)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    require!(
+        next_faction_mints <= doge_mint_config.max_genesis_mints_per_faction,
+        ErrorCode::InvalidParameters
+    );
+    msg!(
+        "🏁 [validate_genesis_faction_cap] faction_id={} mint_count={} faction_mints_after={} / {}",
+        faction_id,
+        mint_count,
+        next_faction_mints,
+        doge_mint_config.max_genesis_mints_per_faction
+    );
+    Ok(())
 }
 
 /// Batch mint multiple Doge (max 10 per transaction)
@@ -174,23 +212,29 @@ pub fn int_batch_mint_doges<'info>(
 
     let global_config = &ctx.accounts.global_config;
     let doge_config = &mut ctx.accounts.doge_config;
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
     let player_data = &mut ctx.accounts.player_data;
 
-    require!(doge_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
 
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.doges_minted + mint_count as u64 <= doge_config.max_supply,
+        doge_config.total_doges_minted + mint_count as u64 <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
+    require!(
+        doge_mint_config.genesis_mints + mint_count as u64 <= doge_mint_config.genesis_mint_limit,
+        ErrorCode::InvalidParameters
+    );
+    validate_genesis_faction_cap(doge_mint_config, faction_id, mint_count)?;
 
     let (total_price, prices, _ticket_amounts) =
-        int_simulate_mint_cost(doge_config, mint_count as u64)?;
+        int_simulate_mint_cost(doge_config, doge_mint_config, mint_count as u64)?;
     msg!(
-        "   Batch minting {} doges, total cost: {} lamports",
+        "   Batch minting {} genesis doges, total cost: {} lamports",
         mint_count,
         total_price
     );
@@ -251,8 +295,12 @@ pub fn int_batch_mint_doges<'info>(
     )?;
 
     // Handle ticket tier selection and add free tickets (using pre-calculated ticket_amounts)
-    let ticket_count =
-        add_tickets_to_player(player_data, doge_config, ticket_tier_index, total_price)?;
+    let ticket_count = add_tickets_to_player(
+        player_data,
+        doge_mint_config,
+        ticket_tier_index,
+        total_price,
+    )?;
 
     // Mint each doge using remaining_accounts
     for i in 0..mint_count {
@@ -280,7 +328,7 @@ pub fn int_batch_mint_doges<'info>(
             ErrorCode::InvalidAccount
         );
 
-        let current_mint_number = doge_config.doges_minted + 1;
+        let current_mint_number = doge_config.total_doges_minted + 1;
 
         // Generate doge data (DNA, name, URI, multiplier)
         let slot = Clock::get()?.slot + i as u64;
@@ -412,8 +460,17 @@ pub fn int_batch_mint_doges<'info>(
             ticket_count,
         });
 
-        doge_config.doges_minted = doge_config
-            .doges_minted
+        doge_config.total_doges_minted = doge_config
+            .total_doges_minted
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        doge_mint_config.genesis_mints = doge_mint_config
+            .genesis_mints
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let faction_index = faction_id as usize;
+        doge_mint_config.genesis_mints_by_faction[faction_index] = doge_mint_config
+            .genesis_mints_by_faction[faction_index]
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
@@ -425,8 +482,16 @@ pub fn int_batch_mint_doges<'info>(
     );
     msg!(
         "   Total doges minted: {} / {}",
-        doge_config.doges_minted,
+        doge_config.total_doges_minted,
         doge_config.max_supply
+    );
+    msg!(
+        "   Genesis mints: {} / {}, faction {}: {} / {}",
+        doge_mint_config.genesis_mints,
+        doge_mint_config.genesis_mint_limit,
+        faction_id,
+        doge_mint_config.genesis_mints_by_faction[faction_id as usize],
+        doge_mint_config.max_genesis_mints_per_faction
     );
     Ok(())
 }
@@ -445,6 +510,7 @@ pub fn int_admin_mint_doge(
     crate::log_fn!("doges", "int_admin_mint_doge");
     let global_config = &ctx.accounts.global_config;
     let doge_config = &mut ctx.accounts.doge_config;
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
 
     // Verify recipient matches instruction parameter
     require!(
@@ -456,18 +522,23 @@ pub fn int_admin_mint_doge(
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.doges_minted < doge_config.max_supply,
+        doge_config.total_doges_minted < doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
+    require!(
+        doge_mint_config.genesis_mints < doge_mint_config.genesis_mint_limit,
+        ErrorCode::InvalidParameters
+    );
+    validate_genesis_faction_cap(doge_mint_config, faction_id, 1)?;
 
     msg!(
         "🎁 [admin_mint_doge] Admin minting free doge to recipient: {}",
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
-    msg!("   Doge number: {}", doge_config.doges_minted + 1);
+    msg!("   Doge number: {}", doge_config.total_doges_minted + 1);
 
-    let current_mint_number = doge_config.doges_minted + 1;
+    let current_mint_number = doge_config.total_doges_minted + 1;
 
     // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
@@ -512,9 +583,9 @@ pub fn int_admin_mint_doge(
     // Calculate actual price using bonding curve (same as regular mint)
     // This is used for ticket calculations - admin mint doesn't charge SOL but tickets are calculated based on actual price
     let cost_per_doge = crate::genescience::compute_gene_price(
-        doge_config.base_price,
-        doge_config.curve_a,
-        doge_config.doges_minted,
+        doge_mint_config.base_price,
+        doge_mint_config.curve_a,
+        doge_mint_config.genesis_mints,
     )?;
 
     msg!(
@@ -540,10 +611,10 @@ pub fn int_admin_mint_doge(
     doge_metadata.bump = ctx.bumps.doge_metadata;
 
     // Handle ticket tier selection and add free tickets (using actual price)
-    let ticket_count = if !doge_config.ticket_tiers.is_empty() {
+    let ticket_count = if !doge_mint_config.ticket_tiers.is_empty() {
         add_tickets_to_player(
             &mut ctx.accounts.player_data,
-            doge_config,
+            doge_mint_config,
             ticket_tier_index,
             cost_per_doge,
         )?
@@ -552,13 +623,21 @@ pub fn int_admin_mint_doge(
     };
 
     // Update doge config stats
-    doge_config.doges_minted = doge_config
-        .doges_minted
+    doge_config.total_doges_minted = doge_config
+        .total_doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    doge_mint_config.genesis_mints = doge_mint_config
+        .genesis_mints
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    doge_mint_config.genesis_mints_by_faction[faction_id as usize] = doge_mint_config
+        .genesis_mints_by_faction[faction_id as usize]
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Total doges minted: {} / {}",
-        doge_config.doges_minted,
+        doge_config.total_doges_minted,
         doge_config.max_supply
     );
 
@@ -581,7 +660,7 @@ pub fn int_admin_mint_doge(
 
     msg!(
         "✅ Admin minted Doge #{} for faction {} to recipient {}",
-        doge_config.doges_minted,
+        doge_config.total_doges_minted,
         faction_id,
         recipient
     );
@@ -598,19 +677,25 @@ pub fn int_whitelist_mint_doge(
     crate::log_fn!("doges", "int_whitelist_mint_doge");
     let global_config = &ctx.accounts.global_config;
     let doge_config = &mut ctx.accounts.doge_config;
+    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
     let player_data = &mut ctx.accounts.player_data;
     let allowance = &mut ctx.accounts.doge_free_mint_allowance;
     let user = ctx.accounts.user.key();
 
-    require!(doge_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.doges_minted < doge_config.max_supply,
+        doge_config.total_doges_minted < doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
+    require!(
+        doge_mint_config.genesis_mints < doge_mint_config.genesis_mint_limit,
+        ErrorCode::InvalidParameters
+    );
+    validate_genesis_faction_cap(doge_mint_config, faction_id, 1)?;
     require!(allowance.user == user, ErrorCode::Unauthorized);
     require!(
         allowance.remaining_free_mints > 0,
@@ -623,10 +708,10 @@ pub fn int_whitelist_mint_doge(
         user,
         faction_id,
         allowance.remaining_free_mints,
-        doge_config.doges_minted + 1
+        doge_config.total_doges_minted + 1
     );
 
-    let current_mint_number = doge_config.doges_minted + 1;
+    let current_mint_number = doge_config.total_doges_minted + 1;
     let slot = Clock::get()?.slot;
     let (name, uri, dna, multiplier) = generate_doge_data(
         current_mint_number,
@@ -660,9 +745,9 @@ pub fn int_whitelist_mint_doge(
     )?;
 
     let notional_price = crate::genescience::compute_gene_price(
-        doge_config.base_price,
-        doge_config.curve_a,
-        doge_config.doges_minted,
+        doge_mint_config.base_price,
+        doge_mint_config.curve_a,
+        doge_mint_config.genesis_mints,
     )?;
     msg!(
         "   [whitelist_mint_doge] notional_price={} SOL ticket_tier_index={}",
@@ -686,14 +771,27 @@ pub fn int_whitelist_mint_doge(
     doge_metadata.xp = 0;
     doge_metadata.bump = ctx.bumps.doge_metadata;
 
-    let ticket_count = if doge_config.ticket_tiers.is_empty() {
+    let ticket_count = if doge_mint_config.ticket_tiers.is_empty() {
         0
     } else {
-        add_tickets_to_player(player_data, doge_config, ticket_tier_index, notional_price)?
+        add_tickets_to_player(
+            player_data,
+            doge_mint_config,
+            ticket_tier_index,
+            notional_price,
+        )?
     };
 
-    doge_config.doges_minted = doge_config
-        .doges_minted
+    doge_config.total_doges_minted = doge_config
+        .total_doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    doge_mint_config.genesis_mints = doge_mint_config
+        .genesis_mints
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    doge_mint_config.genesis_mints_by_faction[faction_id as usize] = doge_mint_config
+        .genesis_mints_by_faction[faction_id as usize]
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     allowance.remaining_free_mints = allowance
@@ -706,7 +804,7 @@ pub fn int_whitelist_mint_doge(
         user,
         ctx.accounts.doge_asset.key(),
         allowance.remaining_free_mints,
-        doge_config.doges_minted,
+        doge_config.total_doges_minted,
         doge_config.max_supply
     );
 
@@ -736,11 +834,11 @@ pub fn int_whitelist_mint_doge(
 /// Passive staking uses three-slot smoothing:
 /// - no Doges: 1.0x
 /// - three 1.0x Doges: 2.0x
-/// - three 4.2x Doges: capped at 4.2x
+/// - three strong Doges: capped at 3.0x
 ///
 /// This keeps Genesis Doges useful while avoiding the old shape where one maxed
 /// Doge could immediately consume the full passive cap.
-/// The effective multiplier is capped at MAX_MULTIPLIER for reward-share math.
+/// The effective multiplier is capped at PASSIVE_DOGE_STAKING_MAX_MULTIPLIER for reward-share math.
 /// Clients must pass metadata accounts for all already-staked doges in `remaining_accounts`
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
 pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
@@ -1193,7 +1291,6 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
 /// Send an doge to heaven (burn it) to claim accumulated rewards
 pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
     crate::log_fn!("doges", "int_send_to_heaven");
-    let doge_config = &mut ctx.accounts.doge_config;
     let doge_metadata = &ctx.accounts.doge_metadata;
     let accumulated_val = doge_metadata.accumulated_val;
     let current_time = Clock::get()?.unix_timestamp;
@@ -1204,10 +1301,10 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
         ErrorCode::DogeAlreadyAtGuard
     );
 
-    doge_config.doges_minted -= 1;
-
     msg!("🔥 Burning Doge NFT to send to heaven...");
+    msg!("   Doge mint: {}", doge_metadata.mint);
     msg!("   Accumulated Value: {}", accumulated_val);
+    msg!("   Supply accounting: burn does not reduce lifetime minted counter");
 
     // Burn the NFT
     crate::mpl_core_helpers::burn_mpl_core_asset(
@@ -1285,7 +1382,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     // Validate breeding is allowed
     require!(doge_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
     require!(
-        doge_config.doges_minted < doge_config.max_supply,
+        doge_config.total_doges_minted < doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
 
@@ -1341,9 +1438,14 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     let breed_cost = crate::genescience::compute_gene_price(
         doge_config.breed_base_price,
         doge_config.breed_curve_a,
-        doge_config.doges_minted,
+        doge_config.total_doges_minted,
     )?;
-    msg!("   Breed cost: {} SOL", breed_cost as f64 / 1e9);
+    msg!(
+        "   Breed cost: {} SOL total_supply_before={} / {}",
+        breed_cost as f64 / 1e9,
+        doge_config.total_doges_minted,
+        doge_config.max_supply
+    );
 
     // --- Referral commission: 10% of breed_cost sent directly to the canonical referrer's ReferralRewards PDA ---
     let has_referrer = ctx.accounts.player_data.referral_code != ctx.accounts.system_program.key();
@@ -1411,7 +1513,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
 
     // Create offspring NFT
-    let current_mint_number = doge_config.doges_minted + 1;
+    let current_mint_number = doge_config.total_doges_minted + 1;
     let name = format!("Bitcoin doges #{}", current_mint_number);
     let uri = format!(
         "https://assets.minebtc.fun/doges/{}.json",
@@ -1480,8 +1582,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         .checked_add(dad_cooldown)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    doge_config.doges_minted = doge_config
-        .doges_minted
+    doge_config.total_doges_minted = doge_config
+        .total_doges_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -1490,6 +1592,11 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         current_mint_number,
         mom.mint,
         dad.mint
+    );
+    msg!(
+        "   Total doges minted after breed: {} / {}",
+        doge_config.total_doges_minted,
+        doge_config.max_supply
     );
     msg!(
         "   Mom next cooldown: {}s, Dad next cooldown: {}s",
@@ -1546,20 +1653,20 @@ pub fn generate_doge_data(
 /// Add tickets to player based on price and ticket tier
 fn add_tickets_to_player(
     player_data: &mut PlayerData,
-    doge_config: &DogeConfig,
+    doge_mint_config: &DogeMintConfig,
     ticket_tier_index: u8,
     price: u64,
 ) -> Result<u64> {
     require!(
-        (ticket_tier_index as usize) < doge_config.ticket_tiers.len(),
+        (ticket_tier_index as usize) < doge_mint_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_config.ticket_tiers.len() == 3,
+        doge_mint_config.ticket_tiers.len() == 3,
         ErrorCode::InvalidParameters
     );
 
-    let selected_tier = &doge_config.ticket_tiers[ticket_tier_index as usize];
+    let selected_tier = &doge_mint_config.ticket_tiers[ticket_tier_index as usize];
     let ticket_value = selected_tier.ticket_value;
     let ticket_count = helper::calc_tickets_count(price, ticket_value);
 
@@ -1631,7 +1738,7 @@ fn capped_player_multiplier(raw_multiplier: u64) -> u16 {
         + raw_doge_sum
             .checked_div(MAX_STAKED_DOGES as u64)
             .unwrap_or(0);
-    smoothed_multiplier.min(MAX_MULTIPLIER as u64) as u16
+    smoothed_multiplier.min(PASSIVE_DOGE_STAKING_MAX_MULTIPLIER as u64) as u16
 }
 
 fn add_doge_multiplier(existing_raw_multiplier: u64, doge_multiplier: u32) -> Result<(u64, u16)> {
@@ -1664,19 +1771,19 @@ mod tests {
 
     #[test]
     fn multiplier_cap_is_reversible_with_raw_sum() {
-        let starting_raw = BASE_MULTIPLIER as u64 + (3_000u64 * MAX_STAKED_DOGES as u64);
+        let starting_raw = BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_DOGES as u64);
         let (raw_after_stake, effective_after_stake) =
             add_doge_multiplier(starting_raw, 1_000).unwrap();
         assert_eq!(
             raw_after_stake,
-            BASE_MULTIPLIER as u64 + (3_000u64 * MAX_STAKED_DOGES as u64) + 1_000
+            BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_DOGES as u64) + 1_000
         );
-        assert_eq!(effective_after_stake, MAX_MULTIPLIER);
+        assert_eq!(effective_after_stake, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER);
 
         let (raw_after_unstake, effective_after_unstake) =
             remove_doge_multiplier(raw_after_stake, 1_000).unwrap();
         assert_eq!(raw_after_unstake, starting_raw);
-        assert_eq!(effective_after_unstake, 4_000);
+        assert_eq!(effective_after_unstake, 2_900);
     }
 
     #[test]
@@ -1684,7 +1791,7 @@ mod tests {
         let (raw_after_stake, effective_after_stake) =
             add_doge_multiplier(BASE_MULTIPLIER as u64, 70_000).unwrap();
         assert_eq!(raw_after_stake, 71_000);
-        assert_eq!(effective_after_stake, MAX_MULTIPLIER);
+        assert_eq!(effective_after_stake, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER);
     }
 
     #[test]
@@ -1703,10 +1810,39 @@ mod tests {
         let mut raw = BASE_MULTIPLIER as u64;
         let mut effective = capped_player_multiplier(raw);
         for _ in 0..MAX_STAKED_DOGES {
-            (raw, effective) = add_doge_multiplier(raw, MAX_MULTIPLIER as u32).unwrap();
+            (raw, effective) = add_doge_multiplier(raw, GAMEPLAY_MAX_MULTIPLIER as u32).unwrap();
         }
 
-        assert_eq!(effective, MAX_MULTIPLIER);
+        assert_eq!(effective, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER);
+    }
+
+    #[test]
+    fn genesis_mint_cap_is_enforced_per_faction() {
+        let mut mint_config = DogeMintConfig {
+            bump: 0,
+            is_active: true,
+            base_price: 1_000_000_000,
+            curve_a: 5_263_158,
+            genesis_mint_limit: 12_000,
+            genesis_mints: 999,
+            max_genesis_mints_per_faction: 1_000,
+            genesis_mints_by_faction: [0u16; NUM_FACTIONS],
+            ticket_tiers: vec![
+                TicketTier {
+                    ticket_value: 1_000_000,
+                },
+                TicketTier {
+                    ticket_value: 10_000_000,
+                },
+                TicketTier {
+                    ticket_value: 100_000_000,
+                },
+            ],
+        };
+        mint_config.genesis_mints_by_faction[3] = 999;
+
+        assert!(validate_genesis_faction_cap(&mint_config, 3, 1).is_ok());
+        assert!(validate_genesis_faction_cap(&mint_config, 3, 2).is_err());
     }
 }
 
@@ -1722,6 +1858,12 @@ pub struct SimulateMintCost<'info> {
         bump = doge_config.bump
     )]
     pub doge_config: Account<'info, DogeConfig>,
+
+    #[account(
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
 }
 
 #[derive(Accounts)]
@@ -1740,6 +1882,13 @@ pub struct MintDoge<'info> {
         bump = doge_config.bump
     )]
     pub doge_config: Account<'info, DogeConfig>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
 
     #[account(
         mut,
@@ -1825,6 +1974,13 @@ pub struct BatchMintDoge<'info> {
 
     #[account(
         mut,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump,
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
+
+    #[account(
+        mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
         bump = player_data.bump,
         constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
@@ -1905,6 +2061,13 @@ pub struct AdminMintDoge<'info> {
     )]
     pub doge_config: Account<'info, DogeConfig>,
 
+    #[account(
+        mut,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump,
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
+
     /// CHECK: Recipient account (will receive the NFT)
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
@@ -1964,6 +2127,13 @@ pub struct WhitelistMintDoge<'info> {
         bump = doge_config.bump,
     )]
     pub doge_config: Account<'info, DogeConfig>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        bump = doge_mint_config.bump,
+    )]
+    pub doge_mint_config: Account<'info, DogeMintConfig>,
 
     #[account(
         mut,
@@ -2134,9 +2304,6 @@ pub struct UnstakeDoge<'info> {
 pub struct SendToHeaven<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-
-    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = doge_config.bump)]
-    pub doge_config: Account<'info, DogeConfig>,
 
     #[account(
         mut,

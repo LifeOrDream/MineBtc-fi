@@ -5,7 +5,6 @@
 // ## Key Functions
 //
 // - `initialize_player`: Creates a new player account and assigns them to a faction.
-// - `change_faction`: Allows players to switch factions (requires no active stakes).
 // - `join_bets`: Places one or more faction-direction bets for the current round.
 // - `claim_round_rewards`: Claims winnings from completed rounds.
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
@@ -17,8 +16,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use anchor_lang::system_program::{transfer, Transfer};
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::Token;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -59,6 +56,7 @@ pub fn internal_initialize_player(
         faction_id
     );
 
+    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let global_config = &mut ctx.accounts.global_config;
     global_config.total_players = global_config
@@ -77,12 +75,16 @@ pub fn internal_initialize_player(
     player_data.bump = ctx.bumps.player_data;
     player_data.allow_bots_to_claim = true;
     player_data.faction_id = faction_id;
+    player_data.origin_faction_id = faction_id;
+    player_data.referrer_faction_id = u8::MAX;
+    player_data.same_faction_referral = false;
 
     // Treat the system-program sentinel as "no referral" so users can register without
     // providing a real referral code, even if the client forwards the sentinel explicitly.
     let referral_code = referral_code.filter(|code| *code != ctx.accounts.system_program.key());
 
     // Handle referral code logic
+    let mut recruited_event: Option<PlayerRecruited> = None;
     let referrer_pubkey = if let Some(ref_code) = referral_code {
         msg!("     Referral code provided: {}", ref_code);
         require!(
@@ -108,14 +110,45 @@ pub fn internal_initialize_player(
             .referrals_count
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let referrer_faction_id = referrer_rewards.owner_faction_id;
+        require!(
+            (referrer_faction_id as usize) < global_config.supported_factions.len(),
+            ErrorCode::InvalidFactionId
+        );
+        let same_faction = referrer_faction_id == faction_id;
+        if same_faction {
+            referrer_rewards.same_faction_referrals_count = referrer_rewards
+                .same_faction_referrals_count
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+        referrer_rewards.referred_faction_counts[faction_id as usize] = referrer_rewards
+            .referred_faction_counts[faction_id as usize]
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "     Referrer's referral count: {}/{}",
+            "     Referrer's referral count: {}/{} same_faction={} referrer_faction={} referred_faction_count={}",
             referrer_rewards.referrals_count,
-            stake::MAX_REFERRALS_PER_CODE
+            stake::MAX_REFERRALS_PER_CODE,
+            same_faction,
+            referrer_faction_id,
+            referrer_rewards.referred_faction_counts[faction_id as usize]
         );
 
         // Set player's referral code
         player_data.referral_code = ref_code;
+        player_data.referrer_faction_id = referrer_faction_id;
+        player_data.same_faction_referral = same_faction;
+        recruited_event = Some(PlayerRecruited {
+            player: ctx.accounts.authority.key(),
+            referrer: ref_code,
+            player_origin_faction_id: faction_id,
+            referrer_origin_faction_id: referrer_faction_id,
+            same_faction,
+            referrer_total_recruits: referrer_rewards.referrals_count,
+            referrer_same_faction_recruits: referrer_rewards.same_faction_referrals_count,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
         ref_code
     } else {
         msg!("     No referral code provided, using system referral account");
@@ -174,7 +207,10 @@ pub fn internal_initialize_player(
     let new_player_rewards = &mut ctx.accounts.new_player_rewards;
     new_player_rewards.owner = ctx.accounts.authority.key();
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
+    new_player_rewards.owner_faction_id = faction_id;
     new_player_rewards.referrals_count = 0;
+    new_player_rewards.same_faction_referrals_count = 0;
+    new_player_rewards.referred_faction_counts = [0u16; NUM_FACTIONS];
     new_player_rewards.pending_minebtc_rewards = 0;
     new_player_rewards.total_minebtc_earned = 0;
     new_player_rewards.pending_sol_rewards = 0;
@@ -195,113 +231,21 @@ pub fn internal_initialize_player(
 
     emit!(PlayerInitialized {
         user: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
+        player_data: player_data_key,
         faction_id,
+        origin_faction_id: faction_id,
         referral_code,
+        referrer_faction_id: if player_data.referrer_faction_id == u8::MAX {
+            None
+        } else {
+            Some(player_data.referrer_faction_id)
+        },
+        same_faction_referral: player_data.same_faction_referral,
         timestamp: Clock::get()?.unix_timestamp,
     });
-
-    Ok(())
-}
-
-/// Change user's faction
-/// Requires:
-/// - No minebtc hashpower (dogebtc_hashpower == 0)
-/// - No lp hashpower (lp_hashpower == 0)
-/// - No doges staked (staked_doges.is_empty())
-///   Charges change_faction_fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-pub fn internal_change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
-    crate::log_fn!("user", "internal_change_faction");
-    msg!(
-        "🔄 [change_faction] User changing faction. User: {}",
-        ctx.accounts.authority.key()
-    );
-    msg!(
-        "   Current faction ID: {}. New faction ID: {}",
-        ctx.accounts.player_data.faction_id,
-        new_faction_id
-    );
-
-    let player_data = &mut ctx.accounts.player_data;
-    let global_config = &ctx.accounts.global_config;
-
-    // Validate new faction_id
-    require!(
-        (new_faction_id as usize) < global_config.supported_factions.len(),
-        ErrorCode::InvalidFactionId
-    );
-    require!(
-        player_data.faction_id != new_faction_id,
-        ErrorCode::InvalidParameters
-    );
-
-    // Validate user has no staked positions
-    msg!("   Validating user has no staked positions...");
-    require!(
-        player_data.dogebtc_hashpower == 0
-            && player_data.lp_hashpower == 0
-            && player_data.staked_doges.is_empty()
-            && player_data.doge_multiplier == BASE_MULTIPLIER as u16
-            && player_data.gameplay_doge == Pubkey::default()
-            && player_data.active_multiplier == BASE_MULTIPLIER
-            && player_data.gameplay_doge_dna == [0u8; 32]
-            && player_data.gameplay_doge_xp == 0
-            && player_data.gameplay_unlock_request_faction_war == 0
-            && !player_has_pending_reward_claims(player_data),
-        ErrorCode::InvalidState
-    );
-
-    // Charge change_faction_fee
-    let change_fee = global_config.change_faction_fee;
-    require!(change_fee > 0, ErrorCode::InvalidAmount);
-    msg!("   Change faction fee: {} SOL", (change_fee as f64 / 1e9));
-
-    // Split fee: 50% to sol_treasury, 50% to fee_recipient (as WSOL)
-    let treasury_amt = change_fee / 2;
-    let dev_amt = change_fee - treasury_amt;
-
-    msg!(
-        "   Transferring {} SOL to sol_treasury",
-        (treasury_amt as f64 / 1e9)
-    );
-    helper::transfer_to_sol_treasury(
-        &ctx.accounts.user_wallet.to_account_info(),
-        &ctx.accounts.sol_treasury.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        treasury_amt,
-    )?;
-
-    msg!(
-        "   Transferring {} SOL to fee_recipient (as WSOL)",
-        (dev_amt as f64 / 1e9)
-    );
-    helper::transfer_wsol_to_multisig(
-        &ctx.accounts.user_wallet.to_account_info(),
-        &ctx.accounts.multisig_wsol_account.to_account_info(),
-        &ctx.accounts.user_wsol_account.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        &ctx.accounts.token_program.to_account_info(),
-        dev_amt,
-    )?;
-
-    // Update faction_id
-    let old_faction_id = player_data.faction_id;
-    player_data.faction_id = new_faction_id;
-
-    msg!("✅ [change_faction] Faction changed successfully");
-    msg!("   User: {}", ctx.accounts.authority.key());
-    msg!(
-        "   Old faction ID: {} -> New faction ID: {}",
-        old_faction_id,
-        new_faction_id
-    );
-
-    emit!(FactionChanged {
-        user: ctx.accounts.authority.key(),
-        player_data: ctx.accounts.player_data.key(),
-        new_faction_id,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
+    if let Some(event) = recruited_event {
+        emit!(event);
+    }
 
     Ok(())
 }
@@ -2273,12 +2217,12 @@ fn internal_process_bets<'info>(
 
         // Process mutation if triggered
         if let Some(mutation_type) = mutation_result.mutation_type {
-            // Cap active_multiplier at MAX_MULTIPLIER.
+            // Cap gameplay multiplier independently from passive staking boosts.
             let new_mult = player_data
                 .active_multiplier
                 .checked_add(mutation_result.multiplier_increase)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            player_data.active_multiplier = new_mult.min(MAX_MULTIPLIER as u32);
+            player_data.active_multiplier = new_mult.min(GAMEPLAY_MAX_MULTIPLIER as u32);
 
             // Consume XP used by the mutation (Evolution: full reset, others: partial)
             player_data.gameplay_doge_xp = player_data
@@ -2543,65 +2487,6 @@ pub struct InitializePlayer<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct ChangeFaction<'info> {
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump,
-        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub player_data: Account<'info, PlayerData>,
-
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    /// CHECK: SOL treasury PDA (50% of fee goes here)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-
-    /// Multisig WSOL token account (destination for WSOL transfers)
-    /// MUST be owned by global_config.fee_recipient (the multisig address)
-    #[account(
-        mut,
-        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
-        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
-    )]
-    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
-
-    /// User's WSOL token account (for wrapping SOL to WSOL)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        associated_token::mint = wsol_mint,
-        associated_token::authority = authority,
-    )]
-    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
-
-    /// CHECK: WSOL mint
-    #[account(
-        constraint = wsol_mint.key() == anchor_spl::token::spl_token::native_mint::id() @ ErrorCode::InvalidMint
-    )]
-    pub wsol_mint: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub user_wallet: Signer<'info>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]
@@ -3130,7 +3015,7 @@ pub fn internal_use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Resul
     // Update player data - cache doge fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
     player_data.gameplay_doge = doge_mint;
-    player_data.active_multiplier = doge_metadata.multiplier.min(MAX_MULTIPLIER as u32);
+    player_data.active_multiplier = doge_metadata.multiplier.min(GAMEPLAY_MAX_MULTIPLIER as u32);
     player_data.gameplay_doge_dna = doge_metadata.dna;
     player_data.gameplay_doge_xp = doge_metadata.xp;
     player_data.gameplay_unlock_request_faction_war = 0;

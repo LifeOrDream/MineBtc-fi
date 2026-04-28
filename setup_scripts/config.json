@@ -52,10 +52,12 @@
         "initial_deposit": "2076697169067604"
     },
     "doges_config": {
-        "_supply_plan": "15K genesis mint via bonding curve, 100K total cap via breeding (admin enables later)",
+        "_supply_plan": "12K genesis mint cap via bonding curve (1000 per configured country), 100K lifetime Doge cap via breeding/admin/whitelist mints",
         "base_price": 1000000000,
         "curve_a": 5263158,
-        "max_supply": 15000,
+        "genesis_mint_limit": 12000,
+        "max_genesis_mints_per_faction": 1000,
+        "max_supply": 100000,
         "breeding_allowed": false,
         "breed_base_price": 2000000000,
         "breed_curve_a": 5263158,
@@ -165,6 +167,6 @@
         "min_lockup_days": 7,
         "max_lockup_days": 365,
         "base_multiplier": 100,
-        "max_multiplier": 100
+        "max_multiplier": 300
     }
 }

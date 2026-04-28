@@ -6,8 +6,9 @@ use anchor_spl::token::{self, Token};
 //
 // Passive staking has three layers:
 // - A user opens MineBTC or LP lockup positions in their home faction.
-// - Lockup duration controls commitment / early-exit economics.
-// - The player's staked Doges apply the only passive hashpower multiplier, capped at 4.2x.
+// - Lockup duration can add up to 3x weighted hashpower.
+// - The player's staked Doges can add another 3x passive hashpower multiplier.
+// - The maxed-out staking setup is therefore capped at 9x total.
 //
 // Reward sources:
 // - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
@@ -30,12 +31,13 @@ use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
-pub const MAX_REFERRALS_PER_CODE: u16 = 50; // Maximum users per referral code
-pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to user with referral code
-pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer
-                                        // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-                                        // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
-                                        // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+pub const MAX_REFERRALS_PER_CODE: u16 = 10_000; // High cap so viral country recruitment is not artificially throttled.
+pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user with any referral code.
+pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer.
+pub const SAME_FACTION_REFERRAL_REWARD_PCT: u64 = 5; // Same-country recruits are more valuable.
+                                                     // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+                                                     // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
+                                                     // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 fn calc_weighted_amount(staked_amount: u64, lockup_multiplier: u16) -> Result<u64> {
     let weighted_u128 = (staked_amount as u128)
@@ -53,6 +55,22 @@ fn calc_hashpower_contribution(weighted_amount: u64, doge_multiplier: u16) -> Re
         .checked_div(BASE_MULTIPLIER as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     u64::try_from(hashpower_u128).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_lockup_and_passive_doges_cap_staking_at_9x() {
+        let deposit = 1_000_000u64;
+        let weighted = calc_weighted_amount(deposit, 300).unwrap();
+        let hashpower =
+            calc_hashpower_contribution(weighted, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER).unwrap();
+
+        assert_eq!(weighted, deposit * 3);
+        assert_eq!(hashpower, deposit * 9);
+    }
 }
 
 /// Stake MineBtc tokens
@@ -1316,7 +1334,9 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         base_claimable_amount as f64 / 1e6
     );
 
-    // Apply referral logic: user gets +1% bonus, referrer gets 3%.
+    // Apply referral logic: user gets +1% bonus, referrer gets 3% or 5% for
+    // same-faction recruits. The higher same-faction reward turns referrals into
+    // country-building without changing the user's own payout math.
     // A real referral must resolve to the referrer's canonical ReferralRewards PDA.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (referral_bonus, referral_reward) = if has_referrer {
@@ -1327,12 +1347,18 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
 
         // User gets +1% bonus on their rewards
         let bonus = (base_claimable_amount * REFERRAL_BONUS_PCT) / 100;
-        // Referrer gets 3% of user's base claimable amount
-        let reward = (base_claimable_amount * REFERRAL_REWARD_PCT) / 100;
+        let reward_pct = if player_data.same_faction_referral {
+            SAME_FACTION_REFERRAL_REWARD_PCT
+        } else {
+            REFERRAL_REWARD_PCT
+        };
+        let reward = (base_claimable_amount * reward_pct) / 100;
         msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
         msg!(
-            "   Referral reward to referrer (3%): {} minebtc",
-            reward as f64 / 1e6
+            "   Referral reward to referrer: {} minebtc (pct={} same_faction={})",
+            reward as f64 / 1e6,
+            reward_pct,
+            player_data.same_faction_referral
         );
 
         // Add reward to referrer's pending minebtc rewards

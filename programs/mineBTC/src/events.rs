@@ -239,7 +239,7 @@ pub struct MineBtcStaked {
     pub position_key: Pubkey,
     pub staked_amount: u64,   // actual amount staked (after burn tax)
     pub weighted_amount: u64, // weighted amount (before doge multiplier)
-    pub multiplier: u16,      // lockup commitment multiplier (fixed at 100 = 1x)
+    pub multiplier: u16,      // lockup multiplier (100 = 1x, max 300 = 3x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -271,7 +271,7 @@ pub struct LiquidityStaked {
     pub position_key: Pubkey,
     pub staked_amount: u64,   // actual amount staked
     pub weighted_amount: u64, // weighted amount (before doge multiplier)
-    pub multiplier: u16,      // lockup commitment multiplier (fixed at 100 = 1x)
+    pub multiplier: u16,      // lockup multiplier (100 = 1x, max 300 = 3x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -370,16 +370,23 @@ pub struct PlayerInitialized {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub faction_id: u8,
+    pub origin_faction_id: u8,
     pub referral_code: Option<Pubkey>,
+    pub referrer_faction_id: Option<u8>,
+    pub same_faction_referral: bool,
     pub timestamp: i64,
 }
 
-/// Event emitted when a user changes their faction
+/// Event emitted when a player joins through the country referral loop.
 #[event]
-pub struct FactionChanged {
-    pub user: Pubkey,
-    pub player_data: Pubkey,
-    pub new_faction_id: u8,
+pub struct PlayerRecruited {
+    pub player: Pubkey,
+    pub referrer: Pubkey,
+    pub player_origin_faction_id: u8,
+    pub referrer_origin_faction_id: u8,
+    pub same_faction: bool,
+    pub referrer_total_recruits: u16,
+    pub referrer_same_faction_recruits: u16,
     pub timestamp: i64,
 }
 
