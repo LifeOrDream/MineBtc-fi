@@ -947,48 +947,96 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             deployer.publicKey
         );
         
-        // Define liquidity amounts
-        const liquidityAmount0 = new BN("5000000000"); // 5 WSOL
-        const liquidityAmount1 = new BN("5000000000000"); // 5000 DOGE_BTC
-        const maxSlippage = new BN("100000000"); // 0.1 SOL max slippage
-        const maxSlippageMdoge = new BN("100000000000"); // 100 DOGE_BTC max slippage
-        
-        console.log(COLOR_DIM, `🔍 Liquidity parameters:`);
-        console.log(COLOR_DIM, `   Amount0 (WSOL): ${liquidityAmount0.toString()} (${liquidityAmount0.toNumber() / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   Amount1 (DOGE_BTC): ${liquidityAmount1.toString()} (${liquidityAmount1.toNumber() / 1e9} DOGE_BTC)`);
-        console.log(COLOR_DIM, `   Max slippage0: ${maxSlippage.toString()}`);
-        console.log(COLOR_DIM, `   Max slippage1: ${maxSlippageMdoge.toString()}`);
-        
+        // Read the pool's CURRENT reserves + LP supply on-chain so the
+        // deposit ratio matches the pool exactly. Hardcoding amounts
+        // here used to fail with ExceededSlippage (Raydium 0x1775)
+        // whenever the create-pool seed ratio drifted from the chosen
+        // deepening size. The deposit ix takes `lp_amount` and derives
+        // needed_tokenN = lp_amount * reserveN / lp_supply, so we just
+        // size `lp_amount` to whatever fraction of the pool we want and
+        // pass the matching maxes (with a small fee + slippage cushion).
+        const targetSolBaseUnits = new BN("5000000000"); // deepen by 5 WSOL
+
+        const wsolMintInfo = wsolMintKey;
+        const token0VaultAcc = await anchor_spl.getAccount(
+            connection,
+            token0VaultPDA,
+            undefined,
+            isMdogeToken0 ? anchor_spl.TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID
+        );
+        const token1VaultAcc = await anchor_spl.getAccount(
+            connection,
+            token1VaultPDA,
+            undefined,
+            isMdogeToken0 ? TOKEN_PROGRAM_ID : anchor_spl.TOKEN_2022_PROGRAM_ID
+        );
+        const lpMintInfo = await anchor_spl.getMint(connection, lpMintPDA);
+        const lpSupply = new BN(lpMintInfo.supply.toString());
+        const token0Reserve = new BN(token0VaultAcc.amount.toString());
+        const token1Reserve = new BN(token1VaultAcc.amount.toString());
+        const wsolReserve = isMdogeToken0 ? token1Reserve : token0Reserve;
+        const dbtcReserve = isMdogeToken0 ? token0Reserve : token1Reserve;
+
+        if (wsolReserve.isZero() || dbtcReserve.isZero() || lpSupply.isZero()) {
+            throw new Error("Pool reserves / LP supply look empty — pool create probably failed.");
+        }
+
+        // lp_amount = targetSolBaseUnits / wsolReserve * lpSupply (proportional share)
+        const lpAmount = targetSolBaseUnits.mul(lpSupply).div(wsolReserve);
+        const requiredWsol = lpAmount.mul(wsolReserve).div(lpSupply);
+        const requiredDbtc = lpAmount.mul(dbtcReserve).div(lpSupply);
+
+        // Cushion: dBTC has a 0.1% Token-2022 transfer fee + we add 0.4%
+        // pure slippage. WSOL has no fee, so 0.5% slippage is plenty.
+        const maxWsol = requiredWsol.mul(new BN(1005)).div(new BN(1000));
+        const maxDbtc = requiredDbtc.mul(new BN(1015)).div(new BN(1000));
+
+        const liquidityAmount0 = isMdogeToken0 ? maxDbtc : maxWsol;
+        const liquidityAmount1 = isMdogeToken0 ? maxWsol : maxDbtc;
+
+        console.log(COLOR_DIM, `🔍 Pool ratio (live):`);
+        console.log(COLOR_DIM, `   WSOL reserve: ${wsolReserve.toString()} (${wsolReserve.toNumber() / 1e9} WSOL)`);
+        console.log(COLOR_DIM, `   DOGE_BTC reserve: ${dbtcReserve.toString()} (${dbtcReserve.toNumber() / 1e6} dBTC)`);
+        console.log(COLOR_DIM, `   LP supply: ${lpSupply.toString()}`);
+        console.log(COLOR_DIM, `🔍 Computed deposit (target = 5 WSOL share):`);
+        console.log(COLOR_DIM, `   lp_amount: ${lpAmount.toString()}`);
+        console.log(COLOR_DIM, `   needed WSOL: ${requiredWsol.toString()} (${requiredWsol.toNumber() / 1e9} WSOL)`);
+        console.log(COLOR_DIM, `   needed dBTC: ${requiredDbtc.toString()} (${requiredDbtc.toNumber() / 1e6} dBTC)`);
+        console.log(COLOR_DIM, `   maxToken0 (with cushion): ${liquidityAmount0.toString()}`);
+        console.log(COLOR_DIM, `   maxToken1 (with cushion): ${liquidityAmount1.toString()}`);
+
         // Check current balances
         const wsolBalance = await anchor_spl.getAccount(connection, creatorWsolAccount.address, undefined, TOKEN_PROGRAM_ID);
         const mdogeBalance = await anchor_spl.getAccount(connection, creatorMdogeAccount, undefined, anchor_spl.TOKEN_2022_PROGRAM_ID);
-        
+
         console.log(COLOR_DIM, `🔍 Current balances:`);
         console.log(COLOR_DIM, `   WSOL: ${wsolBalance.amount.toString()} (${Number(wsolBalance.amount) / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   DOGE_BTC: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e9} DOGE_BTC)`);
-        
-        // Verify we have enough tokens
-        if (wsolBalance.amount < liquidityAmount0.toNumber()) {
-            console.log(COLOR_WARNING, `⚠️ Insufficient WSOL balance. Need ${liquidityAmount0.toNumber() / 1e9} WSOL, have ${Number(wsolBalance.amount) / 1e9} WSOL`);
-            console.log(COLOR_INFO, '💰 Wrapping more SOL to WSOL...');
-            
-            const additionalSol = liquidityAmount0.toNumber() - Number(wsolBalance.amount) + 1e9; // Add 1 extra SOL buffer
+        console.log(COLOR_DIM, `   DOGE_BTC: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e6} dBTC)`);
+
+        // Top up WSOL if we don't have enough.
+        const wsolHave = new BN(wsolBalance.amount.toString());
+        if (wsolHave.lt(maxWsol)) {
+            const deficit = maxWsol.sub(wsolHave);
+            const additionalSol = deficit.add(new BN(1_000_000_000)); // +1 SOL buffer
+            console.log(COLOR_WARNING, `⚠️ Insufficient WSOL. Wrapping ${additionalSol.toString()} extra lamports...`);
             const wrapTx = new Transaction().add(
                 SystemProgram.transfer({
                     fromPubkey: deployer.publicKey,
                     toPubkey: creatorWsolAccount.address,
-                    lamports: additionalSol,
+                    lamports: additionalSol.toNumber(),
                 }),
                 anchor_spl.createSyncNativeInstruction(creatorWsolAccount.address, TOKEN_PROGRAM_ID)
             );
-            
             const wrapSig = await web3.sendAndConfirmTransaction(connection, wrapTx, [deployer]);
-            console.log(COLOR_SUCCESS, `✅ Wrapped additional ${additionalSol / 1e9} SOL to WSOL`);
+            console.log(COLOR_SUCCESS, `✅ Wrapped ${additionalSol.toNumber() / 1e9} SOL → WSOL`);
             console.log(COLOR_DIM, `🔗 Wrap Transaction: ${wrapSig}`);
         }
-        
-        if (mdogeBalance.amount < liquidityAmount1.toNumber()) {
-            throw new Error(`Insufficient DOGE_BTC balance. Need ${liquidityAmount1.toNumber() / 1e9} DOGE_BTC, have ${Number(mdogeBalance.amount) / 1e9} DOGE_BTC`);
+
+        const dbtcHave = new BN(mdogeBalance.amount.toString());
+        if (dbtcHave.lt(maxDbtc)) {
+            throw new Error(
+                `Insufficient DOGE_BTC. Need ${maxDbtc.toString()} base units, have ${dbtcHave.toString()}.`
+            );
         }
         
         // Determine token accounts based on token order
@@ -1028,17 +1076,20 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             // Import helper function from helper.js
             const { cpDepositLiquidity } = await import('./helper.js');
             
-            // Use the deposit function from helper
+            // Use the deposit function from helper. lpAmount drives the
+            // pool-side math; maxToken0 / maxToken1 are the cushioned
+            // amounts we computed above (already include the dBTC
+            // transfer fee + slippage buffers).
             const liquidityResult = await cpDepositLiquidity(
                 connection,
                 cpProgram,
                 deployer,
-               {
-                   lpAmount: liquidityAmount0, // Use amount0 as LP amount reference
-                   maxToken0: liquidityAmount0.add(maxSlippage),
-                   maxToken1: liquidityAmount1.add(maxSlippageMdoge),
-                   accounts: liquidityAccounts
-               }
+                {
+                    lpAmount,
+                    maxToken0: liquidityAmount0,
+                    maxToken1: liquidityAmount1,
+                    accounts: liquidityAccounts,
+                }
             );
             
             console.log(COLOR_SUCCESS, '✅ Liquidity added successfully!');
@@ -1049,14 +1100,18 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             const lpBalance = await anchor_spl.getAccount(connection, creatorLpAccount, undefined, TOKEN_PROGRAM_ID);
             console.log(COLOR_SUCCESS, `💧 LP tokens received: ${lpBalance.amount.toString()} (${Number(lpBalance.amount) / 1e9} LP)`);
             
-            // Update deployment status
+            // Update deployment status (record both the math-derived
+            // amounts and the cushioned maxes for audit).
             deploymentData.dbtc_sol_liquidity_added = {
                 timestamp: new Date().toISOString(),
-                amount0: liquidityAmount0.toString(),
-                amount1: liquidityAmount1.toString(),
+                lp_amount_minted: lpAmount.toString(),
+                required_wsol: requiredWsol.toString(),
+                required_dbtc: requiredDbtc.toString(),
+                max_token0: liquidityAmount0.toString(),
+                max_token1: liquidityAmount1.toString(),
                 lpTokensReceived: lpBalance.amount.toString(),
-                txid: liquidityResult.txid
-                };
+                txid: liquidityResult.txid,
+            };
                 
                 fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
             console.log(COLOR_SUCCESS, '✅ Liquidity deployment status updated');
