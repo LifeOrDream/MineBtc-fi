@@ -73,6 +73,7 @@ const TOKEN_METADATA = {
   name: config.token.name,
   symbol: config.token.symbol,
   description: config.token.description,
+  metadata_uri: config.token.metadata_uri || config.token.uri || config.token.image,
   image: config.token.image,
   external_url: config.token.external_url,
 };
@@ -251,6 +252,24 @@ function validateConfiguration() {
   }
   if (!TOKEN_METADATA.symbol || TOKEN_METADATA.symbol.trim().length === 0) {
     errors.push("Token metadata symbol is required");
+  }
+  if (!TOKEN_METADATA.metadata_uri) {
+    errors.push("Token metadata_uri is required and must point to JSON metadata");
+  } else {
+    try {
+      new URL(TOKEN_METADATA.metadata_uri);
+    } catch {
+      errors.push("Token metadata_uri must be a valid URL");
+    }
+  }
+  if (!TOKEN_METADATA.image) {
+    errors.push("Token image URL is required in config.token.image");
+  } else {
+    try {
+      new URL(TOKEN_METADATA.image);
+    } catch {
+      errors.push("Token image must be a valid URL");
+    }
   }
 
   if (errors.length > 0) {
@@ -486,18 +505,19 @@ async function createMintAccountTx(
   const transferFeeConfigAuthority = deployer.publicKey;
   const withdrawWithheldAuthority = deployer.publicKey;
 
-  // Prepare metadata (Token-2022 metadata format)
-  // Note: uri should point to off-chain JSON metadata, but we'll use image URL directly
-  // and add description in additionalMetadata for on-chain display
+  // Prepare metadata (Token-2022 metadata format).
+  // `uri` must point to an off-chain JSON document. Wallets/explorers then fetch
+  // image/description/external_url from that JSON; the additional fields below
+  // are a convenience for clients that read Token-2022 metadata directly.
   const metadata = {
     mint: mintPubkey,
     name: TOKEN_METADATA.name,
     symbol: TOKEN_METADATA.symbol,
-    uri: TOKEN_METADATA.image, // Image URL (ideally should be JSON metadata URI)
+    uri: TOKEN_METADATA.metadata_uri,
     additionalMetadata: [
-      //     ...(TOKEN_METADATA.description ? [['description', TOKEN_METADATA.description]] : []),
-      // ...(TOKEN_METADATA.image ? [['image', TOKEN_METADATA.image]] : []),
-      // ...(TOKEN_METADATA.external_url ? [['external_url', TOKEN_METADATA.external_url]] : [])
+      ...(TOKEN_METADATA.description ? [["description", TOKEN_METADATA.description]] : []),
+      ...(TOKEN_METADATA.image ? [["image", TOKEN_METADATA.image]] : []),
+      ...(TOKEN_METADATA.external_url ? [["external_url", TOKEN_METADATA.external_url]] : []),
     ],
   };
 
@@ -581,6 +601,8 @@ async function createMintAccountTx(
       metadata_name: metadata.name,
       metadata_symbol: metadata.symbol,
       metadata_uri: metadata.uri,
+      metadata_image: TOKEN_METADATA.image,
+      metadata_external_url: TOKEN_METADATA.external_url,
       creation_signature: signature,
       timestamp: new Date().toISOString(),
     };

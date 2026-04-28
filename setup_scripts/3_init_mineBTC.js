@@ -105,6 +105,18 @@ const GAMEPLAY_TUNING_CONFIG = {
     config.gameplay_tuning?.pacing_max_adjustment_bps ?? 4000,
 };
 
+const LIVE_FEE_CONFIG = {
+  newProtocolFeePct: 15,
+  newBuybackPct: 80,
+  newStakersPct: 10,
+  newMinebtcStakersPct: 3,
+  newMinebtcWinnersPct: 50,
+  newMinebtcSameFactionPct: 21,
+  newMinebtcMotherlodePct: 5,
+  newRefiningFee: 10,
+  snapshotInterval: 5 * 60,
+};
+
 // Load MineBTC Program IDL
 const IDL_MineBTC = JSON.parse(
   fs.readFileSync(
@@ -172,6 +184,124 @@ function valueEquals(left, right) {
   return left.toString() === right.toString();
 }
 
+async function fetchJsonMetadata(uri, label, requiredFields = []) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(uri, {
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new Error(`expected application/json, got ${contentType || "missing content-type"}`);
+    }
+    const json = await response.json();
+    for (const field of requiredFields) {
+      if (!json[field]) {
+        throw new Error(`missing required field "${field}"`);
+      }
+    }
+    console.log(COLOR_SUCCESS, `✅ ${label} metadata OK: ${uri}`);
+    return json;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function validateInitializationConfig() {
+  console.log(COLOR_STEP, "\n================ [ VALIDATING INIT CONFIG ] ================");
+
+  const tokenMetadataUri =
+    config.token.metadata_uri || config.token.uri || config.token.image;
+  new URL(tokenMetadataUri);
+  new URL(config.doges.collection_uri);
+  await fetchJsonMetadata(tokenMetadataUri, "Token", ["name", "symbol", "image"]);
+  await fetchJsonMetadata(config.doges.collection_uri, "Doge collection", [
+    "name",
+    "image",
+  ]);
+
+  const dogesCfg = config.doges_config;
+  if (dogesCfg.genesis_mint_limit > dogesCfg.max_supply) {
+    throw new Error(
+      `genesis_mint_limit (${dogesCfg.genesis_mint_limit}) cannot exceed max_supply (${dogesCfg.max_supply})`
+    );
+  }
+  const expectedPerFactionCap = Math.floor(
+    dogesCfg.genesis_mint_limit / config.factions.length
+  );
+  if (dogesCfg.max_genesis_mints_per_faction !== expectedPerFactionCap) {
+    throw new Error(
+      `max_genesis_mints_per_faction should be ${expectedPerFactionCap} for ${config.factions.length} factions and ${dogesCfg.genesis_mint_limit} genesis mints`
+    );
+  }
+
+  const minebtcDistTotal =
+    LIVE_FEE_CONFIG.newMinebtcStakersPct +
+    LIVE_FEE_CONFIG.newMinebtcWinnersPct +
+    LIVE_FEE_CONFIG.newMinebtcSameFactionPct * 2 +
+    LIVE_FEE_CONFIG.newMinebtcMotherlodePct;
+  if (minebtcDistTotal !== 100) {
+    throw new Error(`MineBTC round dist must equal 100%, got ${minebtcDistTotal}%`);
+  }
+
+  const gameplayRewardTotal =
+    GAMEPLAY_TUNING_CONFIG.factionWarBaseRewardBps +
+    GAMEPLAY_TUNING_CONFIG.factionWarLoyaltyRewardBps +
+    GAMEPLAY_TUNING_CONFIG.factionWarDogeRewardBps;
+  if (gameplayRewardTotal !== 10_000) {
+    throw new Error(`Faction-war reward bps must equal 10000, got ${gameplayRewardTotal}`);
+  }
+
+  if (config.hashpower.base_multiplier !== 100 || config.hashpower.max_multiplier !== 300) {
+    throw new Error("Hashpower config should be base=100 and max=300 for 1x..3x lockup multiplier");
+  }
+
+  console.log(COLOR_SUCCESS, "✅ Init config validated");
+}
+
+function printFeeEconomicsSummary() {
+  console.log(COLOR_STEP, "\n================ [ USER / BOT FEE ECONOMICS ] ================");
+  const protocolFeePct = LIVE_FEE_CONFIG.newProtocolFeePct;
+  const stakerFeePctOfBet =
+    (LIVE_FEE_CONFIG.newProtocolFeePct * LIVE_FEE_CONFIG.newStakersPct) / 100;
+  const treasuryFeePctOfBet = protocolFeePct - stakerFeePctOfBet;
+  const prizePotPctOfBet = 100 - protocolFeePct;
+  console.log(
+    COLOR_INFO,
+    `Manual SOL bets: ${prizePotPctOfBet}% to prize pot, ${stakerFeePctOfBet}% to SOL stakers, ${treasuryFeePctOfBet}% to protocol treasury`
+  );
+  console.log(
+    COLOR_INFO,
+    "Autominer keeper compensation: 0.1% of sol_per_round, capped at 0.00005 SOL, deducted before splitting bets"
+  );
+  console.log(
+    COLOR_INFO,
+    "Ticket autominers: frontend sends sol_per_round=0; contract reserves 0.00005 SOL per ticket round for keeper gas"
+  );
+  for (const solPerRound of [0.1, 0.5, 1, 5, 10]) {
+    const lamports = Math.round(solPerRound * 1e9);
+    const keeper = Math.min(Math.floor(lamports / 1000), 50_000);
+    const betBudget = lamports - keeper;
+    console.log(
+      COLOR_DIM,
+      `   ${solPerRound} SOL/round -> keeper ${(keeper / 1e9).toFixed(6)} SOL, bet budget ${(betBudget / 1e9).toFixed(6)} SOL`
+    );
+  }
+  console.log(
+    COLOR_INFO,
+    "Reward claims: no protocol SOL fee; claimant pays tx fee, and closed bet-account rent is returned to the caller."
+  );
+  console.log(
+    COLOR_INFO,
+    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newRefiningFee}% refining fee only when there are remaining unrefined claimants; otherwise 0%.`
+  );
+}
+
 async function getSolanaBalance(pubkey) {
   try {
     return await connection.getBalance(pubkey);
@@ -206,6 +336,8 @@ async function main() {
     
     const balance = await getSolanaBalance(walletKeypair.publicKey);
   console.log(COLOR_INFO, "💰 Balance:", balance / 1e9, "SOL");
+  await validateInitializationConfig();
+  printFeeEconomicsSummary();
 
     // Verify prerequisites
   if (!DOGEBTC_TOKEN_MINT) {
@@ -329,22 +461,7 @@ async function main() {
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
-    await updateFees(minebtcProgram, {
-      // deducted in internal_bet, stakers_pct deducted from protocol fee and custodied with SOL rewards vault, remaining with SOL treasury
-        newProtocolFeePct: 15, // 15,
-        newBuybackPct: 80, // 80% (remaining 20% goes to devs)
-        newStakersPct: 10, // 10 of 15% = 1.5%,
-
-        // dogeBTC distribution config:
-        newMinebtcStakersPct: 3, // 3% of dogeBTC rewards go to stakers
-        newMinebtcWinnersPct: 50, // 50% of dogeBTC rewards go to winners
-        newMinebtcSameFactionPct: 21, // 21% per losing direction = 42% total across the two non-winning directions
-        newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
-
-        newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
-
-        snapshotInterval: 5 * 60, // 5 minutes between price snapshots
-    });
+    await updateFees(minebtcProgram, LIVE_FEE_CONFIG);
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
     // Instruction: initialize_mining(start_timestamp: u64, mine_btc_per_round: u64, pool_state: Pubkey)
