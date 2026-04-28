@@ -10,20 +10,21 @@
 //
 // Degen country arena game on Solana.
 //
-// Players pick a country, pick a direction, bet SOL. Their doge NFTs evolve through
-// gameplay — mutations during rounds decide which country climbs the leaderboard each
-// cycle. Deflationary dogeBTC economy with 0.1% transfer tax, POL burns, and faction
-// staking rewards.
+// Players pick a country, pick a direction, bet SOL. Their Doge Operators build XP
+// through gameplay and can trigger story events during rounds. Those events may
+// mutate DNA on-chain, but the product-level primitive is broader: the backend can
+// turn each story event into character history, artwork, reels, or social content.
+// Deflationary dogeBTC economy with 0.1% transfer tax, POL burns, and faction staking rewards.
 //
 // ## Modules
 //
 // - `admin`: Configuration, factions, fee parameters.
 // - `economy`: Price snapshots, emission rate adjustment, POL (LP add + burn).
-// - `user`: Betting, autominers, round claims, gameplay doges, mutations.
+// - `user`: Betting, autominers, round claims, gameplay doges, story events.
 // - `stake`: dogeBTC and LP token staking.
 // - `game`: 60-second round loop, slot-hash randomness, winner selection.
 // - `doges`: Doge NFT minting, breeding, staking, evolution.
-// - `faction_war`: Mutation-driven competitive cycles, settlement, and cycle rewards.
+// - `faction_war`: Story-event-driven competitive cycles, settlement, and cycle rewards.
 // - `tax`: Transfer-tax harvest, faction treasury distribution.
 //
 
@@ -51,7 +52,7 @@ pub use state::{
     PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("DG8MkC7JcnbMkwWf361WdHa3u5DqQTK5VYnCZmZxaNrc");
+declare_id!("8XkQmA3mVPJb8ym9rXSYv8xJZPnn6NNMDQExUz86LBYw");
 
 #[macro_export]
 macro_rules! log_fn {
@@ -165,7 +166,7 @@ pub mod minebtc {
         )
     }
 
-    /// Toggle RPG progression (mutations, XP) during gameplay
+    /// Toggle RPG progression (story events, XP) during gameplay
     pub fn update_rpg_progression(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
         crate::log_fn!("lib", "update_rpg_progression");
         admin::update_rpg_progression_internal(ctx, enabled)
@@ -559,7 +560,7 @@ pub mod minebtc {
     }
 
     /// Claim faction treasury rewards for a settled faction_war.
-    /// Uses the mutation leaderboard (faction_war final_ranks) -- permissionless.
+    /// Uses the story-event leaderboard (faction_war final_ranks) -- permissionless.
     pub fn claim_faction_treasury_for_faction_war(
         ctx: Context<ClaimFactionTreasuryForFactionWar>,
         faction_war_id: u64,
@@ -588,7 +589,7 @@ pub mod minebtc {
         faction_war::update_faction_war_config_internal(ctx, is_active)
     }
 
-    /// Settle faction_war: finalize mutation-based rankings and compute reward pools.
+    /// Settle faction_war: finalize story-event-based rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {
         crate::log_fn!("lib", "settle_faction_war");

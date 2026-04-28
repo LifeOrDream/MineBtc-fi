@@ -239,7 +239,7 @@ pub struct MineBtcStaked {
     pub position_key: Pubkey,
     pub staked_amount: u64,   // actual amount staked (after burn tax)
     pub weighted_amount: u64, // weighted amount (before doge multiplier)
-    pub multiplier: u16,      // lockup multiplier (100 = 1x)
+    pub multiplier: u16,      // lockup commitment multiplier (fixed at 100 = 1x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -271,7 +271,7 @@ pub struct LiquidityStaked {
     pub position_key: Pubkey,
     pub staked_amount: u64,   // actual amount staked
     pub weighted_amount: u64, // weighted amount (before doge multiplier)
-    pub multiplier: u16,      // lockup multiplier (100 = 1x)
+    pub multiplier: u16,      // lockup commitment multiplier (fixed at 100 = 1x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
     pub new_sol_rewards: u64,
@@ -634,13 +634,19 @@ pub struct DogeGameplayUnlockRequested {
     pub timestamp: i64,
 }
 
-/// Event emitted when an instant mutation is triggered during betting
+/// Event emitted when gameplay creates a story-worthy Doge event.
+///
+/// The contract may still mutate DNA / XP / multiplier as part of the event,
+/// but off-chain systems should treat this as a flexible story hook. A backend
+/// can turn it into artwork, reels, character history, or a simple indexed beat.
 #[event]
-pub struct MutationTriggered {
+pub struct StoryEventTriggered {
     pub round_id: u64,
     pub user: Pubkey,
     pub doge_mint: Pubkey,
+    pub story_event_type: u8,
     pub xp_gained: u32,
+    pub multiplier_after: u32,
 }
 
 /// Event emitted when a doge evolves to a new stage
@@ -703,12 +709,12 @@ pub struct FactionWarSettled {
     pub timestamp: i64,
 }
 
-/// Event emitted when a mutation contributes score to a faction's faction_war total.
+/// Event emitted when a story event contributes score to a faction's faction_war total.
 #[event]
-pub struct MutationScoreAccumulated {
+pub struct StoryEventScoreAccumulated {
     pub faction_war_id: u64,
     pub faction_id: u8,
-    pub mutation_type: u8,
+    pub story_event_type: u8,
     pub score_added: u64,
     pub faction_total_score: u64,
     pub user: Pubkey,

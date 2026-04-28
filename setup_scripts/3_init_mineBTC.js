@@ -1,6 +1,6 @@
 // Import Anchor as CommonJS package
 import pkg from "@coral-xyz/anchor";
-const { AnchorProvider, BN, Program, setProvider, web3, Wallet } = pkg;
+const { AnchorProvider, BN, Program, setProvider, web3 } = pkg;
 import { SystemProgram } from "@solana/web3.js";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import * as anchor_spl from "@solana/spl-token";
@@ -58,6 +58,53 @@ const MINING_START_TIMESTAMP =
 const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
 const DBTC_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 
+// Keep these explicit in setup so fresh deployments don't silently depend on
+// whatever the contract default happened to be at compile time.
+const EMISSION_CONFIG = {
+  priceChangeThresholdPct:
+    config.emissions?.price_change_threshold_pct ?? 3,
+  emissionIncreasePct: config.emissions?.emission_increase_pct ?? 1,
+  emissionDecreasePct: config.emissions?.emission_decrease_pct ?? 3,
+};
+
+const FACTION_WAR_CONFIG = {
+  isActive: config.faction_war?.is_active ?? true,
+};
+
+const GAMEPLAY_TUNING_CONFIG = {
+  enableRpgProgression:
+    config.gameplay_tuning?.enable_rpg_progression ?? true,
+  maxEvolutionStageUnlocked:
+    config.gameplay_tuning?.max_evolution_stage_unlocked ?? 0,
+  factionWarBaseRewardBps:
+    config.gameplay_tuning?.faction_war_base_reward_bps ?? 7000,
+  factionWarLoyaltyRewardBps:
+    config.gameplay_tuning?.faction_war_loyalty_reward_bps ?? 2000,
+  factionWarDogeRewardBps:
+    config.gameplay_tuning?.faction_war_doge_reward_bps ?? 1000,
+  baseMutationChanceBps:
+    config.gameplay_tuning?.base_mutation_chance_bps ?? 2000,
+  mutationChanceFloorBps:
+    config.gameplay_tuning?.mutation_chance_floor_bps ?? 25,
+  mutationChanceCapBps:
+    config.gameplay_tuning?.mutation_chance_cap_bps ?? 2500,
+  factionVolumeThresholdLamports:
+    config.gameplay_tuning?.faction_volume_threshold_lamports ?? 85000000,
+  extraVolumeThresholdPerMutationLamports:
+    config.gameplay_tuning?.extra_volume_threshold_per_mutation_lamports ??
+    85000000,
+  globalMutationPressureDecayBps:
+    config.gameplay_tuning?.global_mutation_pressure_decay_bps ?? 7500,
+  globalMutationPressurePerMutationBps:
+    config.gameplay_tuning?.global_mutation_pressure_per_mutation_bps ?? 2500,
+  targetMutationsPerCycle:
+    config.gameplay_tuning?.target_mutations_per_cycle ?? 12,
+  targetRoundsPerCycle:
+    config.gameplay_tuning?.target_rounds_per_cycle ?? 240,
+  pacingMaxAdjustmentBps:
+    config.gameplay_tuning?.pacing_max_adjustment_bps ?? 4000,
+};
+
 // Load MineBTC Program IDL
 const IDL_MineBTC = JSON.parse(
   fs.readFileSync(
@@ -92,28 +139,6 @@ const walletKeypair = (() => {
   }
 })();
 
-const gameKeypair = (() => {
-  try {
-    const gameKeypairPath = path.resolve(
-      __dirname,
-      config.deployment.paths.game_keypair || "../game_keypair.json"
-    );
-    return Keypair.fromSecretKey(
-      new Uint8Array(JSON.parse(fs.readFileSync(gameKeypairPath, "utf-8")))
-    );
-  } catch (e) {
-    console.error(COLOR_ERROR, "❌ Failed to load game wallet keypair:", e);
-    console.error(
-      COLOR_ERROR,
-      `   Expected path: ${path.resolve(
-        __dirname,
-        config.deployment.paths.game_keypair || "undefined"
-      )}`
-    );
-        throw e;
-    }
-})();
-
 // Create wallet interface
 const wallet = {
   publicKey: walletKeypair.publicKey,
@@ -139,6 +164,12 @@ setProvider(provider);
 function saveDeploymentData() {
   fs.writeFileSync(deploymentPath, JSON.stringify(deploymentFile, null, 2));
   console.log(COLOR_SUCCESS, "✅ Deployment file updated");
+}
+
+function valueEquals(left, right) {
+  if (left === right) return true;
+  if (left == null || right == null) return left == null && right == null;
+  return left.toString() === right.toString();
 }
 
 async function getSolanaBalance(pubkey) {
@@ -328,6 +359,13 @@ async function main() {
     // Accounts: globalConfig, mineBtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
     await initializeMiningSystem(minebtcProgram);
 
+    // 5.1. Update emission controller params
+    // Instruction: update_emission_params(price_change_threshold, emission_increase_pct, emission_decrease_pct)
+    // Stores explicit live-cycle rate adjustment settings on MineBtcMining so
+    // fresh deployments don't silently rely on compile-time defaults.
+    // Accounts: mineBtcMining, globalConfig, authority, systemProgram
+    await updateEmissionParams(minebtcProgram, EMISSION_CONFIG);
+
     // 6. Deposit Mining Tokens
     // Instruction: deposit_mine_btc_tokens(amount: u64)
     // Transfers MineBTC from depositor's Token-2022 ATA to the mining vault
@@ -336,7 +374,8 @@ async function main() {
 
     // 7. Initialize Hashpower Config
     // Instruction: initialize_hashpower_config(min_lockup_days: u64, max_lockup_days: u64, base_multiplier: u16, max_multiplier: u16)
-    // Creates HashpowerConfig PDA [seeds: "hashpower-config"] with lockup duration and multiplier ranges
+    // Creates HashpowerConfig PDA [seeds: "hashpower-config"] with lockup duration.
+    // Multipliers are fixed at 100/100 so passive staking cannot exceed the Doge 4.2x cap.
     // Accounts: globalConfig, hashpowerConfig, authority, systemProgram
     await initializeHashpowerConfig(minebtcProgram);
 
@@ -449,6 +488,24 @@ async function main() {
     // auto-settle when the economy-cycle LP burn completes.
     // Accounts: factionWarConfig, globalConfig, authority, systemProgram
     await initializeFactionWarConfig(minebtcProgram);
+
+    // 18. Update Faction War Config
+    // Instruction: update_faction_war_config(is_active)
+    // Keeps the faction-war engine explicitly enabled / disabled per deployment config.
+    // Accounts: factionWarConfig, globalConfig, authority
+    await updateFactionWarConfig(minebtcProgram, FACTION_WAR_CONFIG);
+
+    // 19. Update unified gameplay tuning
+    // Instruction: update_gameplay_tuning(args)
+    // Sets the live mutation engine + cycle reward split in one payload:
+    //   - enable RPG progression
+    //   - evolution unlock stage
+    //   - cycle reward split (base / loyalty / doge)
+    //   - mutation chance bounds
+    //   - volume gates
+    //   - global cooldown / pacing controls
+    // Accounts: globalConfig, authority
+    await updateGameplayTuning(minebtcProgram, GAMEPLAY_TUNING_CONFIG);
 
     // Print completion summary
     printCompletionSummary();
@@ -2502,6 +2559,304 @@ async function updateFees(minebtcProgram, feeConfig) {
   }
 }
 
+async function updateEmissionParams(minebtcProgram, emissionConfig) {
+  console.log(
+    COLOR_STEP,
+    "\n================ [ UPDATING EMISSION PARAMS ] ================"
+  );
+
+  if (!deploymentFile.minebtc_program_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ MineBTC program not initialized. Skipping emission params update..."
+    );
+    return;
+  }
+
+  const globalConfigPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.globalConfig_address
+  );
+  const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("mine-btc-mining")],
+    minebtcProgram.programId
+  );
+
+  const mineBtcMining = await minebtcProgram.account.mineBtcMining.fetch(
+    mineBtcMiningPDA
+  );
+
+  const target = {
+    priceChangeThreshold: new BN(emissionConfig.priceChangeThresholdPct),
+    emissionIncreasePct: new BN(emissionConfig.emissionIncreasePct),
+    emissionDecreasePct: new BN(emissionConfig.emissionDecreasePct),
+  };
+
+  console.log(COLOR_INFO, "   Current emission params:");
+  console.log(
+    COLOR_INFO,
+    `     Price threshold: ${mineBtcMining.priceChangeThreshold.toString()}%`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Increase: ${mineBtcMining.emissionIncreasePct.toString()}%`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Decrease: ${mineBtcMining.emissionDecreasePct.toString()}%`
+  );
+  console.log(COLOR_INFO, "   Target emission params:");
+  console.log(
+    COLOR_INFO,
+    `     Price threshold: ${target.priceChangeThreshold.toString()}%`
+  );
+  console.log(COLOR_INFO, `     Increase: ${target.emissionIncreasePct}%`);
+  console.log(COLOR_INFO, `     Decrease: ${target.emissionDecreasePct}%`);
+
+  const alreadyMatches =
+    valueEquals(mineBtcMining.priceChangeThreshold, target.priceChangeThreshold) &&
+    valueEquals(mineBtcMining.emissionIncreasePct, target.emissionIncreasePct) &&
+    valueEquals(mineBtcMining.emissionDecreasePct, target.emissionDecreasePct);
+
+  if (alreadyMatches) {
+    console.log(COLOR_INFO, "ℹ️ Emission params already match config. Skipping...");
+    return;
+  }
+
+  const tx = await minebtcProgram.methods
+    .updateEmissionParams(
+      target.priceChangeThreshold,
+      target.emissionIncreasePct,
+      target.emissionDecreasePct
+    )
+    .accounts({
+      mineBtcMining: mineBtcMiningPDA,
+      globalConfig: globalConfigPDA,
+      authority: wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+
+  console.log(COLOR_SUCCESS, "✅ Emission params updated successfully!");
+  console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+  deploymentFile.emission_params_updated = {
+    price_change_threshold_pct: target.priceChangeThreshold.toString(),
+    emission_increase_pct: target.emissionIncreasePct.toString(),
+    emission_decrease_pct: target.emissionDecreasePct.toString(),
+    tx_signature: tx,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
+}
+
+async function updateFactionWarConfig(minebtcProgram, factionWarConfig) {
+  console.log(
+    COLOR_STEP,
+    "\n================ [ UPDATING FACTION WAR CONFIG ] ================"
+  );
+
+  if (!deploymentFile.minebtc_program_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ MineBTC program not initialized. Skipping faction war config update..."
+    );
+    return;
+  }
+
+  const [factionWarConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("faction-war-config")],
+    minebtcProgram.programId
+  );
+  const globalConfigPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.globalConfig_address
+  );
+
+  const current = await minebtcProgram.account.factionWarConfig.fetch(
+    factionWarConfigPDA
+  );
+  const targetIsActive = factionWarConfig.isActive;
+
+  console.log(COLOR_INFO, "   Current faction war config:");
+  console.log(COLOR_INFO, `     Active: ${current.isActive}`);
+  console.log(COLOR_INFO, `     Current ID: ${current.currentFactionWarId.toString()}`);
+  console.log(COLOR_INFO, `   Target active: ${targetIsActive}`);
+
+  if (current.isActive === targetIsActive) {
+    console.log(COLOR_INFO, "ℹ️ Faction war config already matches config. Skipping...");
+    return;
+  }
+
+  const tx = await minebtcProgram.methods
+    .updateFactionWarConfig(targetIsActive)
+    .accounts({
+      factionWarConfig: factionWarConfigPDA,
+      globalConfig: globalConfigPDA,
+      authority: wallet.publicKey,
+    })
+    .rpc();
+
+  console.log(COLOR_SUCCESS, "✅ Faction war config updated successfully!");
+  console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+  deploymentFile.faction_war_config_updated = {
+    is_active: targetIsActive,
+    tx_signature: tx,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
+}
+
+async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
+  console.log(
+    COLOR_STEP,
+    "\n================ [ UPDATING GAMEPLAY TUNING ] ================"
+  );
+
+  if (!deploymentFile.minebtc_program_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ MineBTC program not initialized. Skipping gameplay tuning update..."
+    );
+    return;
+  }
+
+  const globalConfigPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.globalConfig_address
+  );
+  const globalConfig = await minebtcProgram.account.globalConfig.fetch(
+    globalConfigPDA
+  );
+  const current = globalConfig.gameplayTuning;
+
+  const target = {
+    enable_rpg_progression: gameplayTuningConfig.enableRpgProgression,
+    max_evolution_stage_unlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
+    faction_war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
+    faction_war_loyalty_reward_bps: gameplayTuningConfig.factionWarLoyaltyRewardBps,
+    faction_war_doge_reward_bps: gameplayTuningConfig.factionWarDogeRewardBps,
+    base_mutation_chance_bps: gameplayTuningConfig.baseMutationChanceBps,
+    mutation_chance_floor_bps: gameplayTuningConfig.mutationChanceFloorBps,
+    mutation_chance_cap_bps: gameplayTuningConfig.mutationChanceCapBps,
+    faction_volume_threshold_lamports: new BN(
+      gameplayTuningConfig.factionVolumeThresholdLamports
+    ),
+    extra_volume_threshold_per_mutation_lamports: new BN(
+      gameplayTuningConfig.extraVolumeThresholdPerMutationLamports
+    ),
+    global_mutation_pressure_decay_bps:
+      gameplayTuningConfig.globalMutationPressureDecayBps,
+    global_mutation_pressure_per_mutation_bps:
+      gameplayTuningConfig.globalMutationPressurePerMutationBps,
+    target_mutations_per_cycle: gameplayTuningConfig.targetMutationsPerCycle,
+    target_rounds_per_cycle: gameplayTuningConfig.targetRoundsPerCycle,
+    pacing_max_adjustment_bps: gameplayTuningConfig.pacingMaxAdjustmentBps,
+  };
+
+  const rewardSplit =
+    target.faction_war_base_reward_bps +
+    target.faction_war_loyalty_reward_bps +
+    target.faction_war_doge_reward_bps;
+  if (rewardSplit !== 10000) {
+    throw new Error(
+      `Invalid gameplay reward split: base + loyalty + doge must equal 10000 bps, got ${rewardSplit}.`
+    );
+  }
+
+  console.log(COLOR_INFO, "   Current gameplay tuning:");
+  console.log(COLOR_INFO, `     RPG progression: ${current.rpgProgression}`);
+  console.log(
+    COLOR_INFO,
+    `     Evolution stage unlocked: ${current.maxEvolutionStageUnlocked}`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Rewards bps base/loyalty/doge: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarDogeRewardBps}`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Mutation chance bps base/floor/cap: ${current.baseMutationChanceBps}/${current.mutationChanceFloorBps}/${current.mutationChanceCapBps}`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Target mutations/rounds: ${current.targetMutationsPerCycle}/${current.targetRoundsPerCycle}`
+  );
+
+  console.log(COLOR_INFO, "   Target gameplay tuning:");
+  console.log(COLOR_INFO, `     RPG progression: ${target.enable_rpg_progression}`);
+  console.log(
+    COLOR_INFO,
+    `     Evolution stage unlocked: ${target.max_evolution_stage_unlocked}`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Rewards bps base/loyalty/doge: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_doge_reward_bps}`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Mutation chance bps base/floor/cap: ${target.base_mutation_chance_bps}/${target.mutation_chance_floor_bps}/${target.mutation_chance_cap_bps}`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Volume thresholds: first=${target.faction_volume_threshold_lamports.toString()} lamports, extra=${target.extra_volume_threshold_per_mutation_lamports.toString()} lamports`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Pressure decay/step: ${target.global_mutation_pressure_decay_bps}/${target.global_mutation_pressure_per_mutation_bps} bps`
+  );
+  console.log(
+    COLOR_INFO,
+    `     Target mutations/rounds: ${target.target_mutations_per_cycle}/${target.target_rounds_per_cycle}`
+  );
+
+  const alreadyMatches =
+    current.rpgProgression === target.enable_rpg_progression &&
+    current.maxEvolutionStageUnlocked === target.max_evolution_stage_unlocked &&
+    current.factionWarBaseRewardBps === target.faction_war_base_reward_bps &&
+    current.factionWarLoyaltyRewardBps === target.faction_war_loyalty_reward_bps &&
+    current.factionWarDogeRewardBps === target.faction_war_doge_reward_bps &&
+    current.baseMutationChanceBps === target.base_mutation_chance_bps &&
+    current.mutationChanceFloorBps === target.mutation_chance_floor_bps &&
+    current.mutationChanceCapBps === target.mutation_chance_cap_bps &&
+    valueEquals(
+      current.factionVolumeThresholdLamports,
+      target.faction_volume_threshold_lamports
+    ) &&
+    valueEquals(
+      current.extraVolumeThresholdPerMutationLamports,
+      target.extra_volume_threshold_per_mutation_lamports
+    ) &&
+    current.globalMutationPressureDecayBps ===
+      target.global_mutation_pressure_decay_bps &&
+    current.globalMutationPressurePerMutationBps ===
+      target.global_mutation_pressure_per_mutation_bps &&
+    current.targetMutationsPerCycle === target.target_mutations_per_cycle &&
+    current.targetRoundsPerCycle === target.target_rounds_per_cycle &&
+    current.pacingMaxAdjustmentBps === target.pacing_max_adjustment_bps;
+
+  if (alreadyMatches) {
+    console.log(COLOR_INFO, "ℹ️ Gameplay tuning already matches config. Skipping...");
+    return;
+  }
+
+  const tx = await minebtcProgram.methods
+    .updateGameplayTuning(target)
+    .accounts({
+      globalConfig: globalConfigPDA,
+      authority: wallet.publicKey,
+    })
+    .rpc();
+
+  console.log(COLOR_SUCCESS, "✅ Gameplay tuning updated successfully!");
+  console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+  deploymentFile.gameplay_tuning_updated = {
+    gameplay_tuning: config.gameplay_tuning,
+    tx_signature: tx,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
+}
+
 async function updateDogeConfig(minebtcProgram, dogeConfig) {
   console.log(
     COLOR_STEP,
@@ -2615,15 +2970,10 @@ async function updateDogeConfig(minebtcProgram, dogeConfig) {
 }
 
 // Note: `addGameCrankerBot` / `add_cranker_bot` was removed with the switch to
-// permissionless keepers. The `gameKeypair` is still loaded above because it
-// is used to pay keeper rent in the looped cranker scripts, but no on-chain
-// whitelist step is required anymore.
+// permissionless keepers. No on-chain whitelist step is required anymore.
 
 async function initializeFactionWarConfig(minebtcProgram) {
-  if (
-    deploymentFile.faction_war_config_initialized ||
-    deploymentFile.rebase_config_initialized
-  ) {
+  if (deploymentFile.faction_war_config_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Faction war config already initialized. Skipping..."
@@ -2781,10 +3131,19 @@ function printCompletionSummary() {
   console.log(
     COLOR_INFO,
     `  • Faction War Config: ${
-      deploymentFile.faction_war_config_initialized ||
-      deploymentFile.rebase_config_initialized
-        ? "✅"
-        : "❌"
+      deploymentFile.faction_war_config_initialized ? "✅" : "❌"
+    }`
+  );
+  console.log(
+    COLOR_INFO,
+    `  • Emission Params: ${
+      deploymentFile.emission_params_updated ? "✅" : "config/default"
+    }`
+  );
+  console.log(
+    COLOR_INFO,
+    `  • Gameplay Tuning: ${
+      deploymentFile.gameplay_tuning_updated ? "✅" : "config/default"
     }`
   );
   console.log(

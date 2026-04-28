@@ -849,6 +849,26 @@ pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64
 // -------------- HASHPOWER CONFIG (ADMIN) -------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
+fn validate_hashpower_config(
+    min_lockup_days: u64,
+    max_lockup_days: u64,
+    base_multiplier: u16,
+    max_multiplier: u16,
+) -> Result<()> {
+    require!(
+        min_lockup_days <= max_lockup_days,
+        ErrorCode::InvalidParameters
+    );
+    // Final passive staking boost must never exceed the global 4.2x Doge cap.
+    // Lock duration still controls commitment / early-exit economics, but it no
+    // longer stacks another yield multiplier on top of Doges.
+    require!(
+        base_multiplier == M_HUNDRED as u16 && max_multiplier == M_HUNDRED as u16,
+        ErrorCode::InvalidParameters
+    );
+    Ok(())
+}
+
 pub fn initialize_hashpower_config_internal(
     ctx: Context<InitializeHashpowerConfig>,
     min_lockup_days: u64,
@@ -857,6 +877,12 @@ pub fn initialize_hashpower_config_internal(
     max_multiplier: u16,
 ) -> Result<()> {
     crate::log_fn!("admin", "initialize_hashpower_config_internal");
+    validate_hashpower_config(
+        min_lockup_days,
+        max_lockup_days,
+        base_multiplier,
+        max_multiplier,
+    )?;
     let hashpower_config = &mut ctx.accounts.hashpower_config;
 
     hashpower_config.min_lockup_days = min_lockup_days;
@@ -876,6 +902,12 @@ pub fn update_hashpower_config_internal(
     max_multiplier: u16,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_hashpower_config_internal");
+    validate_hashpower_config(
+        min_lockup_days,
+        max_lockup_days,
+        base_multiplier,
+        max_multiplier,
+    )?;
     let hashpower_config = &mut ctx.accounts.hashpower_config;
 
     hashpower_config.min_lockup_days = min_lockup_days;

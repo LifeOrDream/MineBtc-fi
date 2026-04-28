@@ -24,7 +24,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 // ## Faction Treasury Distribution
 //
 // After each faction_war settles, `claim_faction_treasury_for_faction_war` distributes
-// the treasury vault based on mutation leaderboard rankings:
+// the treasury vault based on story-event leaderboard rankings:
 // - 80% rank-weighted (higher rank = more reward, everyone gets something)
 // - 20% lucky draw (one random underdog faction from rank 5+)
 //
@@ -940,7 +940,7 @@ pub struct CrankDistributeTax<'info> {
 }
 
 /// Claim faction treasury rewards for a settled faction_war.
-/// Uses mutation leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
+/// Uses story-event leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
 #[derive(Accounts)]
 #[instruction(faction_war_id: u64)]
 pub struct ClaimFactionTreasuryForFactionWar<'info> {

@@ -164,8 +164,14 @@ fn limit_genesis_trait_ranges(dna: &mut [u8; 32]) {
 }
 
 // ========================================================================================
-// ============================= MUTATION SYSTEM ==========================================
+// ============================= STORY EVENT / DNA MUTATION SYSTEM =========================
 // ========================================================================================
+//
+// Product terminology: callers and indexers should treat these outcomes as
+// story events. The contract still mutates DNA / multiplier / XP for specific
+// event types because that is the compact on-chain state transition that powers
+// progression. The backend is free to turn a story event into artwork, a reel,
+// a character-history update, or no visual metadata change at all.
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq)]
 pub enum MutationType {
@@ -262,7 +268,7 @@ pub fn calculate_mutation_result(
     // XP gain scales inversely with multiplier: stronger doges gain XP slower.
     // At 1.0x: full rate (1 XP per 0.001 SOL)
     // At 5.0x: 1/5 rate (1 XP per 0.005 SOL)
-    // At 10.0x: 1/10 rate (1 XP per 0.01 SOL)
+    // At 4.2x: ~1/4.2 rate (about 1 XP per 0.0042 SOL)
     // Formula: xp = (bet / 1_000_000) × (BASE_MULTIPLIER / current_multiplier)
     let raw_xp = (user_total_bet as u128) / 1_000_000;
     let xp_gained =
@@ -463,7 +469,7 @@ pub fn calculate_mutation_result(
     msg!("   Mutation type: {:?}, Base boost: {}", m_type, base_boost);
 
     // XP Bonus: a small fraction of accumulated XP boosts the multiplier.
-    // Kept low so the grind to 10x takes weeks of active play, not minutes.
+    // Kept low so the grind to the 4.2x cap takes sustained active play, not minutes.
     // Evolution: 5-10% of XP.  Power/Trait: 2-5% of XP.
     let xp_roll = seed[3] as u64;
     let (min_pct, max_pct) = if m_type == MutationType::Evolution {

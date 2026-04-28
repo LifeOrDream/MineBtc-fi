@@ -7,7 +7,7 @@ This file is the source-of-truth orientation note for anyone editing the `mineBT
 MineBTC is a **degen country arena game** on Solana where:
 
 - players pick a country and a direction, bet SOL, and their doge NFTs evolve through gameplay
-- doge mutations during rounds decide which country climbs the leaderboard each cycle
+- Doge story events during rounds decide which country climbs the leaderboard each cycle
 - the same bet powers both the **round raffle** (instant SOL + dogeBTC rewards) and the **cycle leaderboard** (longer-term dogeBTC rewards based on which countries moved)
 - a deflationary economy runs on a 0.1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
 - an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
@@ -19,11 +19,11 @@ Use these canonical terms:
 - `country` or `faction` — one of 12-15 playable nations
 - `direction` — `Down`, `Neutral`, `Up`
 - `round` — fast 60-second betting loop with random winner
-- `rebase` — longer competitive period tied to the economy cycle (LP burn cadence), where mutation scores determine country rankings
+- `faction war` — longer competitive period tied to the economy cycle (LP burn cadence), where story-event scores determine country rankings
 - `operator doge` / `gameplay doge` — the live NFT locked for rounds, earns XP, can mutate
 - `staked doges` — passive NFTs that boost staking hashpower
-- `mutation` — a doge upgrade (Evolution / Power / Trait) triggered by betting
-- `mutation score` — contribution to your country's leaderboard rank from a mutation event
+- `story event` — a Doge event (Evolution / Power / Trait) triggered by betting; the contract may mutate DNA internally, but the backend decides how to render it
+- `story score` — contribution to your country's leaderboard rank from a story event
 
 Do **not** describe the system as:
 
@@ -51,44 +51,44 @@ At round end:
 - winning-country stakers: staking reward share
 - motherlode jackpot: extra dogeBTC for exact winners when hit
 
-### Cycle Layer (Mutation Leaderboard)
+### Cycle Layer (Story Event Leaderboard)
 
-Each round bet also accumulates into the active cycle. Doge mutations that fire during rounds contribute score to their faction.
+Each round bet also accumulates into the active cycle. Doge story events that fire during rounds contribute score to their faction.
 
 A cycle is defined by:
 
-- `rebase_id`
+- `faction_war_id`
 - `start_ranks` (from previous cycle)
-- `faction_mutation_scores` (accumulated during this cycle)
+- `faction_mutation_scores` (internal field; accumulated story-event scores during this cycle)
 - per-country direction totals (own-faction bets only)
 
 **How cycles work:**
 
 1. Cycle auto-starts on first bet after the previous cycle settles
-2. Each doge mutation adds score: `type_weight × bet_size × doge_multiplier`
+2. Each Doge story event adds score: `type_weight × bet_size × doge_multiplier`
 3. Cycle settles when the economy cycle's LP burn completes
-4. Factions are ranked by total mutation scores → rank changes resolve directions
-5. Players who bet the correct direction on their own country earn dogeBTC rewards
-6. Rewards are proportional: each country's share = its winning-direction bets / total winning bets across all countries
+4. Factions are ranked by total story scores, with round wins and SOL support as tiebreakers
+5. Rank changes resolve each country's winning direction
+6. Players who bet correct directions earn dogeBTC via the base pool; own-country correct bettors also share the loyalty pool
 
-**When mutations are disabled** (rpg_progression off), no cycle rewards are distributed.
+**When story events are disabled** (`rpg_progression` off), cycle story scoring pauses.
 
 ### Doge Layer
 
 Two distinct doge roles:
 
 - `gameplay_doge`: one operator doge locked for live play, carries multiplier, DNA, XP cache
-- `staked_doges`: up to 5 passive boosts for staking hashpower
+- `staked_doges`: up to 3 passive boosts for staking hashpower
 
-**Mutation system:**
+**Story event system:**
 
-- Mutations trigger during betting (SOL bets only, requires gameplay doge)
-- Max mutations per round = `active_factions / 3` (global budget creates scarcity)
-- Per-faction difficulty scaling: each mutation in a round makes the next one harder for that faction
-- Base chance 20%, reduced by doge multiplier (high-mult doges mutate less often)
+- Story events trigger during betting (SOL bets only, requires gameplay doge)
+- Max events per round = `active_factions / 3` (global budget creates scarcity)
+- Per-faction difficulty scaling: each event in a round makes the next one harder for that faction
+- Base chance is configurable, reduced by Doge multiplier (high-mult Doges trigger less often)
 - Types: Evolution (~10%), Power (~30%), Trait (~60%)
-- XP boosts multiplier on mutation: Evolution 5-10% of XP, Power/Trait 2-5% of XP
-- active_multiplier capped at MAX_MULTIPLIER (10x)
+- XP boosts multiplier on story events: Evolution 5-10% of XP, Power/Trait 2-5% of XP
+- active_multiplier capped at MAX_MULTIPLIER (4.2x)
 - 2-step gameplay doge unlock prevents mid-cycle withdrawal gaming
 
 ### Economy Layer
@@ -105,8 +105,8 @@ Two distinct doge roles:
 - `GlobalConfig`
 - `GlobalGameSate`
 - `MineBtcMining`
-- `RebaseConfig`
-- `RebaseState`
+- `FactionWarConfig`
+- `FactionWarState`
 - `UnrefinedRewards`
 
 ### Per Country
@@ -117,7 +117,7 @@ Two distinct doge roles:
 
 - `PlayerData`
 - `UserGameBet`
-- `UserRebaseBets`
+- `UserFactionWarBets`
 - `AutominerVault`
 - `StakedPosition`
 - `DogeMetadata`
@@ -127,8 +127,8 @@ Two distinct doge roles:
 | File | Main Responsibility |
 |------|----------------------|
 | `instructions/game.rs` | Round start/end, winner selection, round reward indexes |
-| `instructions/user.rs` | Betting, autominers, round claims, gameplay doges, mutations |
-| `instructions/rebase.rs` | Cycle config, mutation-based settlement, cycle claims |
+| `instructions/user.rs` | Betting, autominers, round claims, gameplay doges, story events |
+| `instructions/faction_war.rs` | Cycle config, story-event-based settlement, cycle claims |
 | `instructions/stake.rs` | dogeBTC and LP staking |
 | `instructions/doges.rs` | Doge minting, breeding, staking, gameplay lock/unlock |
 | `instructions/economy.rs` | Price snapshots, emissions, POL |
@@ -151,9 +151,9 @@ Important rules:
 
 - bets are `BetType::FactionDirection`
 - one transaction can include multiple countries
-- the same bet updates both `GameSession` totals and `RebaseState` / `UserRebaseBets`
-- only own-faction bets accumulate into rebase state (cross-faction bets are round-only)
-- mutations fire during bet processing, subject to global budget and per-faction penalty
+- the same bet updates both `GameSession` totals and `FactionWarState` / `UserFactionWarBets`
+- all country-direction bets feed the base faction-war pool; own-faction bets also feed loyalty rewards
+- story events fire during bet processing, subject to global budget and per-faction penalty
 
 ### Round Settlement
 
@@ -167,20 +167,20 @@ Important rules:
 
 - randomness is commit-reveal based (scheduled slot hash)
 - winner selection is `country → direction`
-- `end_round_faction_rewards` also advances rebase mining accounting and auto-settles the cycle when the LP burn completes
+- `end_round_faction_rewards` also advances faction-war mining accounting and auto-settles the cycle when the LP burn completes
 
 ### Cycle Settlement
 
-`instructions/rebase.rs`
+`instructions/faction_war.rs`
 
-- `settle_rebase_internal` — permissionless, anyone can crank once LP burn completes
-- `claim_rebase_rewards_internal` — user claims their share
+- `settle_faction_war_internal` — permissionless, anyone can crank once LP burn completes
+- `claim_faction_war_rewards_internal` — user claims their share
 
 Important rules:
 
-- settlement is gated by `mining.pol_stats.lp_operations_count >= rebase_config.rebase_settle_cycle`
-- if no mutations occurred (all scores = 0), no rewards are distributed
-- rankings are computed from `faction_mutation_scores`, compared to previous cycle's ranks
+- settlement is gated by `mining.pol_stats.lp_operations_count >= faction_war_config.faction_war_settle_cycle`
+- if no story events occurred (all scores = 0), no story-score rewards are distributed
+- rankings are computed from the internal `faction_mutation_scores` story-score array, then compared to previous cycle ranks
 
 ### Autominers
 
@@ -208,7 +208,7 @@ Common ones:
 [b"global-config"]
 [b"global-game-state"]
 [b"mine-btc-mining"]
-[b"rebase-config"]
+[b"faction-war-config"]
 [b"unrefined-rewards"]
 
 // Per entity
@@ -216,8 +216,8 @@ Common ones:
 [b"player", user.key().as_ref()]
 [b"game-session", &round_id.to_le_bytes()]
 [b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
-[b"rebase", &rebase_id.to_le_bytes()]
-[b"user-rebase", user.key().as_ref(), &rebase_id.to_le_bytes()]
+[b"faction-war", &faction_war_id.to_le_bytes()]
+[b"user-faction-war", user.key().as_ref(), &faction_war_id.to_le_bytes()]
 [b"autominer", user.key().as_ref()]
 [b"autominer-custody"]
 [b"doge-metadata", doge_mint.key().as_ref()]
@@ -237,12 +237,12 @@ Key product events for indexers and off-chain systems:
 - `RoundEnded`
 - `MotherlodeHit`
 - `RoundRewardsClaimed`
-- `MutationTriggered`
-- `MutationScoreAccumulated`
-- `RebaseAutoStarted`
-- `RebaseAutoSettled`
-- `RebaseSettled`
-- `RebaseRewardsClaimed`
+- `StoryEventTriggered`
+- `StoryEventScoreAccumulated`
+- `FactionWarAutoStarted`
+- `FactionWarAutoSettled`
+- `FactionWarSettled`
+- `FactionWarRewardsClaimed`
 - `AutominerInitialized`
 - `AutominerReloaded`
 - `DogeUsedForGameplay`
@@ -253,7 +253,7 @@ Key product events for indexers and off-chain systems:
 When changing this repo:
 
 - keep README language aligned with the current contract model
-- describe the product as a **degen country arena game** with mutation-driven competitive cycles
+- describe the product as a **degen country arena game** with story-event-driven competitive cycles
 - do NOT use "prediction market", "geopolitical risk", "intelligence", "data pipeline", or "oracle"
 - prefer simple degen-native language: "bet", "evolve", "climb", "earn"
 

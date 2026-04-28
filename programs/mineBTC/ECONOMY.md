@@ -12,7 +12,7 @@ Step 2: update_rate          (once after 8 snapshots, anyone can crank)
 Step 3: add_lp_and_burn      (once after rate update, anyone can crank)
 ```
 
-Each cycle also triggers rebase settlement (mutation leaderboard).
+Each cycle can settle the faction-war leaderboard (story-event scores).
 
 ---
 
@@ -261,48 +261,58 @@ SOL from bets
 
 ---
 
-# Rebase Cycle: Mutation Leaderboard
+# Faction War Cycle: Story Event Leaderboard
 
-Each economy cycle (LP burn) triggers a **rebase** — the competitive cycle where
-doge mutations determine country rankings and distribute dogeBTC rewards.
+Each economy cycle (LP burn) can settle the active **Faction War** — the
+competitive cycle where Doge story events determine country rankings and
+distribute dogeBTC rewards.
+
+Product note: the contract may still mutate Doge DNA for Evolution / Power /
+Trait events, but the user-facing primitive is broader than image mutation.
+Backends should treat these as **story events** that can become art, reels,
+character-history entries, or simple indexed gameplay beats.
 
 ## How It Works
 
 ```
 Players bet SOL in 60-second rounds
     │
-    ├─ Mutations fire (limited by global budget + per-faction penalty)
-    │   └─ Each mutation adds score: type_weight × bet_size × multiplier
+    ├─ Story events fire (limited by global budget + per-faction penalty)
+    │   └─ Each event adds score: type_weight × bet_size × multiplier
     │
-    ├─ mutation_scores accumulate on RebaseState per faction
+    ├─ story scores accumulate on FactionWarState per faction
     │
-    └─ total_dogebtc_mined_in_rebase grows with each round
+    └─ total_dogebtc_mined_in_faction_war grows with each round
 ```
 
 When the economy cycle completes (LP burn → `lp_operations_count` increments):
 
 ```
-finalize_rebase_settlement():
-    1. Rank factions by faction_mutation_scores (highest = rank 0)
+finalize_faction_war_settlement():
+    1. Rank factions by story score, then round wins, then own-faction SOL support
     2. Compare with start_ranks → compute rank deltas → resolve directions
-    3. Split rebase_mining_pool:
-       - 90% user pool: proportional to winning-direction bets per faction
-       - 10% doge bonus pool: same split but only for users whose doge mutated
+    3. Split faction_war_mining_pool:
+       - base pool: anyone who picked a country's final direction correctly
+       - loyalty pool: own-country correct-direction supporters
+       - Doge pool: users whose gameplay Doge triggered a story event
     4. Stage = 1 (claims open)
-    5. Persist final_ranks as next rebase's start_ranks
-    6. Advance current_rebase_id
+    5. Persist final_ranks as next faction war's start_ranks
+    6. Advance current_faction_war_id
 ```
 
 ## Reward Pools
 
 ```
-rebase_mining_pool (total dogeBTC mined in all rounds this cycle)
+faction_war_mining_pool (total dogeBTC mined in all rounds this cycle)
     │
-    ├─ 90% → faction_reward_pools (split by winning-direction bet weight)
-    │         Users who bet correct direction on own faction get pro-rata share
+    ├─ base_reward_bps → faction_reward_pools
+    │         Users who bet any country's final direction correctly get pro-rata share
     │
-    └─ 10% → faction_doge_reward_pools (same split, doge-eligible users only)
-              Goes to doge's accumulated_val (claimable via burn)
+    ├─ loyalty_reward_bps → loyalty_reward_pools
+    │         Own-country correct-direction supporters get pro-rata share
+    │
+    └─ doge_reward_bps → faction_doge_reward_pools
+              Story-event eligible Doges get accumulated_val (claimable via burn)
 
 ---
 
@@ -336,8 +346,8 @@ For ticket bets: wgtd_points = points (no multiplier). Tickets are capped at 25%
 
 Weighted points determine:
 - Your share of dogeBTC round rewards (winner pool)
-- Your share of dogeBTC rebase rewards (correct direction pool)
-- Mutation score contribution to your country
+- Your share of dogeBTC faction-war rewards (correct direction pool)
+- Story score contribution to your country
 
 ### XP System
 
@@ -347,9 +357,9 @@ XP accumulates on the gameplay doge during betting:
 xp_gained = total_sol_bet / 1_000_000  (1 XP per 0.001 SOL)
 ```
 
-XP is **always gained** on SOL bets, even without a mutation.
+XP is **always gained** on SOL bets, even without a story event.
 
-**XP effects on mutations:**
+**XP effects on story events:**
 - Evolution: XP contributes 5-10% as multiplier boost (then XP resets to 0)
 - Power/Trait: XP contributes 2-5% as multiplier boost (XP preserved)
 
@@ -357,33 +367,33 @@ XP is **always gained** on SOL bets, even without a mutation.
 - Round reward claim (process_mutation_sync)
 - Gameplay doge withdrawal
 
-### Mutation System
+### Story Event System
 
 **Trigger conditions** (ALL must be true):
 1. RPG progression enabled
 2. SOL bet (not tickets)
-3. No prior mutation this round for this user
+3. No prior story event this round for this user
 4. Gameplay doge is active
-5. Global mutation budget not exhausted (max = active_factions / 3 per round)
+5. Global story-event budget not exhausted (max = active_factions / 3 per round)
 
 **Probability:**
 ```
 base_chance = 20%  (MAX_BASE_CHANCE = 2000 bps)
 bet_strength = user_bet / highest_bet_on_faction  (0-100%)
-mult_penalty = BASE_MULTIPLIER / active_multiplier  (100% at 1x, 10% at 10x)
-faction_penalty = 10000 / (10000 + prior_mutations × 5000)  (100%, 67%, 50%, 40%...)
+mult_penalty = BASE_MULTIPLIER / active_multiplier  (100% at 1x, ~24% at 4.2x)
+faction_penalty = 10000 / (10000 + prior_events × 5000)  (100%, 67%, 50%, 40%...)
 
-final_chance = base × bet_strength × mult_penalty × faction_penalty
+final_chance = base × bet_strength × mult_penalty × faction_penalty × volume × cooldown × pacing
 ```
 
-**Mutation types** (when triggered):
+**Story event types** (when triggered):
 - Evolution (~10% / (gen+1)): +50 base multiplier, guaranteed DNA upgrades, XP resets
 - Power (~30%): +25 base multiplier, power trait upgrade
 - Trait (~60%): +5 base multiplier, visual trait upgrade
 
-Each mutation also boosts multiplier by `base + (XP × efficiency_pct / 100)`.
+Each story event also boosts multiplier by `base + (XP × efficiency_pct / 100)`.
 
-**Mutation score** (added to country's rebase leaderboard):
+**Story score** (added to country's faction-war leaderboard):
 ```
 score = type_weight × total_sol_bet × active_multiplier / BASE / PRECISION
 weights: Evolution=100, Power=30, Trait=10
@@ -391,14 +401,14 @@ weights: Evolution=100, Power=30, Trait=10
 
 ### Doge accumulated_val
 
-When claiming round rewards, the gameplay doge earns dogeBTC based on mutation type:
+When claiming round rewards, the gameplay doge earns dogeBTC based on story event type:
 
-| Mutation | % of round dogeBTC reward |
+| Story event | % of round dogeBTC reward |
 |----------|--------------------------|
 | Evolution | 6.9% |
 | Power | 4.2% |
 | Trait | 3.0% |
-| No mutation | 1.0% |
+| No event | 1.0% |
 
 This accumulates on `doge_metadata.accumulated_val` and can only be claimed
 by burning the doge (`send_to_heaven`).
@@ -409,19 +419,19 @@ by burning the doge (`send_to_heaven`).
 1. use_doge_for_gameplay
    └─ Lock NFT in custody, cache stats to PlayerData
 
-2. Play rounds (bets trigger mutations, XP accumulates)
+2. Play rounds (bets trigger story events, XP accumulates)
 
 3. request_doge_gameplay_unlock
-   └─ Sets unlock_request_rebase = current_rebase_id
-   └─ Must wait until next rebase to withdraw
+   └─ Sets unlock_request_faction_war = current_faction_war_id
+   └─ Must wait until next faction war to withdraw
 
 4. withdraw_doge_from_gameplay
-   └─ Requires: next rebase started + no pending claims
+   └─ Requires: next faction war started + no pending claims
    └─ Syncs DNA/XP/multiplier back to DogeMetadata
    └─ Returns NFT to user
 ```
 
-The two-phase unlock prevents mid-rebase doge swapping to game mutations.
+The two-phase unlock prevents mid-cycle Doge swapping to farm story events.
 
 ### Round Reward Distribution
 
@@ -472,10 +482,10 @@ Player share is not based on raw deposit amount directly. It is based on:
 
 ```text
 staked_amount
-    -> lockup multiplier
-    -> weighted_amount
+    -> lockup commitment
+    -> weighted_amount (1.0x; no extra yield multiplier)
     -> passive Doge multiplier
-    -> final staking hashpower
+    -> final staking hashpower (max 4.2x total)
 ```
 
 ### Passive Doge staking
@@ -511,7 +521,7 @@ This means claim timing matters:
 - fast withdrawal = immediate liquidity, but pay refining fee
 - slower withdrawal = can earn part of other users' refining fees
 
-## Tax Treasury Distribution (also tied to rebase)
+## Tax Treasury Distribution (also tied to faction wars)
 
 After settlement, `claim_faction_treasury_for_faction_war` distributes the faction
 treasury vault (accumulated from 0.1% transfer tax):
@@ -522,7 +532,7 @@ treasury_balance
     │   Higher rank = more reward, but every faction gets something
     │
     └─ 20% lucky draw: one random faction from rank 5+ wins the whole pot
-        Equal probability per eligible faction, deterministic from rebase_id
+        Equal probability per eligible faction, deterministic from faction_war_id
 ```
 
 Rewards go to faction stakers (split 50/50 between dogeBTC and LP stakers).
@@ -530,40 +540,43 @@ Rewards go to faction stakers (split 50/50 between dogeBTC and LP stakers).
 ## State Accounts
 
 ```
-RebaseConfig (singleton)
-    ├─ current_rebase_id: incrementing counter
+FactionWarConfig (singleton)
+    ├─ current_faction_war_id: incrementing counter
     ├─ is_active: admin toggle
-    ├─ rebase_settle_cycle: LP ops count that triggers settlement
-    └─ prev_rebase_mutation_ranks: carried forward to next rebase
+    ├─ faction_war_settle_cycle: LP ops count that triggers settlement
+    └─ prev_faction_war_mutation_ranks: carried forward to next faction war
 
-RebaseState (one per rebase)
-    ├─ rebase_id, start_timestamp, stage
-    ├─ total_dogebtc_mined_in_rebase → rebase_mining_pool
+FactionWarState (one per faction war)
+    ├─ faction_war_id, start_timestamp, stage
+    ├─ total_dogebtc_mined_in_faction_war → faction_war_mining_pool
     ├─ start_ranks ↔ final_ranks → rank_deltas → resolved_directions
-    ├─ faction_mutation_scores (drives rankings)
-    ├─ faction_direction_totals (denominator for user claims)
+    ├─ faction_mutation_scores (internal story-score array that drives rankings)
+    ├─ faction_direction_totals (base-pool denominator for user claims)
+    ├─ loyalty_direction_totals (own-country loyalty-pool denominator)
     ├─ eligible_doge_direction_totals (denominator for doge bonus)
-    ├─ faction_reward_pools (90% user share)
-    └─ faction_doge_reward_pools (10% doge bonus share)
+    ├─ faction_reward_pools (base user share)
+    ├─ loyalty_reward_pools (own-country loyalty share)
+    └─ faction_doge_reward_pools (Doge story-event bonus share)
 
-UserRebaseBets (one per user per rebase)
-    ├─ direction_bets: weighted bets on own faction only
+UserFactionWarBets (one per user per faction war)
+    ├─ direction_bets: weighted bets across countries
+    ├─ loyalty_direction_bets: weighted own-country bets
     ├─ gameplay_doge: which doge became eligible
-    └─ doge_bonus_eligible: did this user's doge mutate?
+    └─ doge_bonus_eligible: did this user's doge trigger a story event?
 ```
 
 ## Lifecycle
 
 ```
   ┌─────────────────────────────┐
-  │  IDLE (no active rebase)    │
-  │  rebase_state.rebase_id = 0 │
+  │  IDLE (no active faction war) │
+  │  faction_war_state id = 0     │
   └──────────┬──────────────────┘
              │ First bet in new cycle (auto-start)
              ▼
   ┌─────────────────────────────┐
   │  ACTIVE (stage = 0)         │
-  │  Mutations accumulate       │
+  │  Story events accumulate    │
   │  Round bets accumulate      │
   │  Mining pool grows          │
   └──────────┬──────────────────┘
@@ -575,6 +588,6 @@ UserRebaseBets (one per user per rebase)
   │  Reward pools locked         │
   │  Claims open                 │
   └──────────┬──────────────────┘
-             │ All claims processed, next bet starts new rebase
+             │ All claims processed, next bet starts new faction war
              ▼ (loop)
 ```

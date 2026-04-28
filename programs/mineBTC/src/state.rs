@@ -19,24 +19,24 @@ use anchor_lang::prelude::*;
 pub const MINEBTC_DECIMALS: u8 = 6;
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
-pub const MAX_MULTIPLIER: u16 = 10000; // Maximum multiplier a user can have (10.0x)
+pub const MAX_MULTIPLIER: u16 = 4200; // Maximum Doge multiplier (4.2x)
 pub const MAX_EVOLUTION_STAGE: u8 = 7; // Highest evolution stage encoded in doge DNA
 
-/// Base mutation chance in basis points (2000 = 20%).
+/// Base story-event chance in basis points (2000 = 20%).
 /// Effective chance = BASE_CHANCE × bet_strength × mult_penalty × faction_penalty / scaling.
 pub const MAX_BASE_CHANCE: u64 = 2000;
 
-/// Per-faction penalty step: each prior mutation in the round for the same faction
+/// Per-faction penalty step: each prior story event in the round for the same faction
 /// reduces the next attempt's chance.  Formula: 10000 / (10000 + count * STEP).
-/// At STEP=5000: after 1 mutation → 67%, after 2 → 50%, after 3 → 40%.
+/// At STEP=5000: after 1 story event -> 67%, after 2 -> 50%, after 3 -> 40%.
 pub const FACTION_MUTATION_PENALTY_STEP: u64 = 5000;
 
-// ========== MUTATION-DRIVEN FACTION-WAR SCORING CONSTANTS ========== //
-/// Weight for an Evolution mutation when computing faction-war score.
+// ========== STORY-EVENT-DRIVEN FACTION-WAR SCORING CONSTANTS ========== //
+/// Weight for an Evolution story event when computing faction-war score.
 pub const EVOLUTION_SCORE_WEIGHT: u64 = 100;
-/// Weight for a Power mutation when computing faction-war score.
+/// Weight for a Power story event when computing faction-war score.
 pub const POWER_SCORE_WEIGHT: u64 = 30;
-/// Weight for a Trait/Visual mutation when computing faction-war score.
+/// Weight for a Trait/Visual story event when computing faction-war score.
 pub const TRAIT_SCORE_WEIGHT: u64 = 10;
 /// Normalization divisor so scores stay in a sensible range (1 SOL = 1_000_000 lamports at 6 decimals).
 pub const MUTATION_SCORE_PRECISION: u64 = 1_000_000;
@@ -70,7 +70,7 @@ pub const DEFAULT_FACTION_WAR_BASE_REWARD_BPS: u16 = 7000;
 pub const DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS: u16 = 2000;
 pub const DEFAULT_FACTION_WAR_DOGE_REWARD_BPS: u16 = 1000;
 
-/// Mutation pacing defaults stored in `GameplayTuningConfig`.
+/// Story-event pacing defaults stored in `GameplayTuningConfig`.
 pub const DEFAULT_BASE_MUTATION_CHANCE_BPS: u16 = MAX_BASE_CHANCE as u16; // 20%
 pub const DEFAULT_MUTATION_CHANCE_FLOOR_BPS: u16 = 25; // 0.25%
 pub const DEFAULT_MUTATION_CHANCE_CAP_BPS: u16 = 2500; // 25%
@@ -202,7 +202,7 @@ pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
 // ==========  DOGE NFT CONSTANTS ========== //
-pub const MAX_STAKED_DOGES: usize = 5; // Maximum number of doges a user can stake
+pub const MAX_STAKED_DOGES: usize = 3; // Maximum number of doges a user can stake
 pub const MAX_FREE_DOGE_MINTS_PER_USER: u8 = 5;
 
 pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
@@ -310,7 +310,7 @@ impl GlobalConfig {
 /// Unified gameplay tuning stored directly inside `GlobalConfig`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct GameplayTuningConfig {
-    /// Enable RPG progression (mutations, XP, etc) during gameplay.
+    /// Enable RPG progression (story events, XP, etc) during gameplay.
     pub rpg_progression: bool,
     /// Highest evolution stage currently unlocked by admin.
     /// `0` disables evolutions entirely, `1` allows stage 0 -> 1, etc.
@@ -539,9 +539,10 @@ pub struct HashpowerConfig {
     /// Maximum lockup period in days
     pub max_lockup_days: u64,
 
-    /// Base multiplier for lockup duration (100 = 1x, separate from BASE_MULTIPLIER=1000 used for doges)
+    /// Base multiplier for lockup duration (100 = 1x, separate from BASE_MULTIPLIER=1000 used for doges).
+    /// Kept at 100 so total passive staking boost is controlled by Doges and capped at 4.2x.
     pub base_multiplier: u16,
-    /// Maximum multiplier for longest lockup (e.g., 900 = 9x for 3 years)
+    /// Maximum lockup multiplier. Kept at 100; lock duration affects commitment / early exit, not yield stacking.
     pub max_multiplier: u16,
 
     /// Bump for PDA derivation
@@ -646,7 +647,7 @@ impl DogeFreeMintAllowance {
 
 /// Tax Configuration PDA (Seed: `[b"tax-config"]`)
 /// Manages tax distribution, NFT floor sweep, and faction treasury rewards.
-/// Treasury rewards are distributed based on the mutation leaderboard
+/// Treasury rewards are distributed based on the story-event leaderboard
 /// (`faction_war.final_ranks`) after each faction war settles.
 #[account]
 pub struct TaxConfig {
@@ -972,7 +973,7 @@ pub struct PlayerData {
     pub dogebtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
 
-    /// Staked dragon doges (max 5 doges)
+    /// Staked dragon doges (max 3 doges)
     /// Stores the mint addresses of staked doges
     pub staked_doges: Vec<Pubkey>,
     /// Current doge multiplier (1000 = 1x, 1500 = 1.5x, etc.)
@@ -1413,8 +1414,8 @@ impl FactionWarConfig {
 }
 
 /// Faction War state PDA (Seed: `[b"faction-war", faction_war_id_u64_le]`)
-/// Tracks a single mutation-driven faction_war cycle: start/final ranks derived from
-/// doge mutation scores, directional bet totals, and settlement outputs.
+/// Tracks a single story-event-driven faction_war cycle: start/final ranks derived from
+/// Doge story scores, directional bet totals, and settlement outputs.
 /// FactionWar duration is tied to the economy cycle (one LP-burn cycle).
 #[account]
 pub struct FactionWarState {
@@ -1437,7 +1438,7 @@ pub struct FactionWarState {
 
     /// Rank snapshot from previous faction_war (baseline for direction resolution).
     pub start_ranks: [u8; NUM_FACTIONS],
-    /// Final ranks derived from faction_mutation_scores at settlement.
+    /// Final ranks derived from the story-score array at settlement.
     pub final_ranks: [u8; NUM_FACTIONS],
 
     /// Rank deltas at settlement (positive = rank improved, negative = rank worsened).
@@ -1457,21 +1458,21 @@ pub struct FactionWarState {
     pub faction_reward_pools: [u64; NUM_FACTIONS],
     /// Pre-computed loyalty reward pool per faction shared only by home-country supporters.
     pub loyalty_reward_pools: [u64; NUM_FACTIONS],
-    /// Reward pool per faction reserved for gameplay doges that mutated during the faction_war.
+    /// Reward pool per faction reserved for gameplay Doges that triggered story events during the faction_war.
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
 
     /// Number of raffle rounds won by each faction during this faction war.
-    /// Used as a tiebreak after mutation score.
+    /// Used as a tiebreak after story score.
     pub faction_round_wins: [u16; NUM_FACTIONS],
     /// Total own-country SOL support committed during this faction war.
     /// Used as a second tiebreak after round wins.
     pub faction_sol_totals: [u64; NUM_FACTIONS],
 
-    /// Accumulated mutation scores per faction during this faction_war.
-    /// Drives ranking at settlement: factions with higher mutation scores rank higher.
-    /// Score = sum of (type_weight × bet_size × doge_multiplier) for every mutation that fired.
+    /// Accumulated story-event scores per faction during this faction_war.
+    /// Drives ranking at settlement: factions with higher story scores rank higher.
+    /// Score = sum of (type_weight × bet_size × doge_multiplier) for every story event that fired.
     pub faction_mutation_scores: [u64; NUM_FACTIONS],
-    /// Total weighted bets per faction/direction from users whose gameplay doge mutated this faction_war.
+    /// Total weighted bets per faction/direction from users whose gameplay doge triggered a story event this faction_war.
     pub eligible_doge_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 
     /// Exact amount of faction treasury tax attributed to this faction war.
