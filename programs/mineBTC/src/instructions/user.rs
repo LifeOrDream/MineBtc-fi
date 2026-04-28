@@ -5,7 +5,6 @@
 // ## Key Functions
 //
 // - `initialize_player`: Creates a new player account and assigns them to a faction.
-// - `change_faction`: Disabled; country identity is permanent after signup.
 // - `join_bets`: Places one or more faction-direction bets for the current round.
 // - `claim_round_rewards`: Claims winnings from completed rounds.
 // - `init_autominer`: Sets up an automated recurring faction-direction betting system.
@@ -17,8 +16,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use anchor_lang::system_program::{transfer, Transfer};
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::Token;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -251,22 +248,6 @@ pub fn internal_initialize_player(
     }
 
     Ok(())
-}
-
-/// Disabled by design: country identity is permanent after signup.
-///
-/// Keeping this instruction as a hard-fail path avoids stale clients accidentally
-/// thinking faction changes are still supported, while preserving a clear log in
-/// devnet testing if someone calls the old endpoint.
-pub fn internal_change_faction(ctx: Context<ChangeFaction>, _new_faction_id: u8) -> Result<()> {
-    crate::log_fn!("user", "internal_change_faction");
-    msg!(
-        "⛔ [change_faction] Disabled. Country identity is permanent. User: {} faction_id={} origin_faction_id={}",
-        ctx.accounts.authority.key(),
-        ctx.accounts.player_data.faction_id,
-        ctx.accounts.player_data.origin_faction_id
-    );
-    err!(ErrorCode::InvalidParameters)
 }
 
 pub fn internal_set_player_claim_settings(
@@ -2506,65 +2487,6 @@ pub struct InitializePlayer<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct ChangeFaction<'info> {
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump,
-        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
-    )]
-    pub player_data: Account<'info, PlayerData>,
-
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    /// CHECK: SOL treasury PDA (50% of fee goes here)
-    #[account(
-        mut,
-        seeds = [SOL_TREASURY_SEED.as_ref()],
-        bump
-    )]
-    pub sol_treasury: UncheckedAccount<'info>,
-
-    /// Multisig WSOL token account (destination for WSOL transfers)
-    /// MUST be owned by global_config.fee_recipient (the multisig address)
-    #[account(
-        mut,
-        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
-        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
-    )]
-    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
-
-    /// User's WSOL token account (for wrapping SOL to WSOL)
-    #[account(
-        init_if_needed,
-        payer = authority,
-        associated_token::mint = wsol_mint,
-        associated_token::authority = authority,
-    )]
-    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
-
-    /// CHECK: WSOL mint
-    #[account(
-        constraint = wsol_mint.key() == anchor_spl::token::spl_token::native_mint::id() @ ErrorCode::InvalidMint
-    )]
-    pub wsol_mint: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub user_wallet: Signer<'info>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]

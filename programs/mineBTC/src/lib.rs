@@ -147,7 +147,6 @@ pub mod minebtc {
         new_minebtc_same_faction_pct: Option<u8>,
         new_minebtc_motherlode_pct: Option<u8>,
         new_refining_fee: Option<u8>,
-        change_faction_fee: Option<u64>,
         snapshot_interval: Option<u64>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_fees");
@@ -161,7 +160,6 @@ pub mod minebtc {
             new_minebtc_same_faction_pct,
             new_minebtc_motherlode_pct,
             new_refining_fee,
-            change_faction_fee,
             snapshot_interval,
         )
     }
@@ -676,14 +674,6 @@ pub mod minebtc {
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_player");
         user::internal_initialize_player(ctx, faction_id, referral_code)
-    }
-
-    /// Disabled: country identity is permanent after player initialization.
-    ///
-    /// This remains in the IDL as a hard-fail guard for stale clients.
-    pub fn change_faction(ctx: Context<ChangeFaction>, new_faction_id: u8) -> Result<()> {
-        crate::log_fn!("lib", "change_faction");
-        user::internal_change_faction(ctx, new_faction_id)
     }
 
     /// Opt in or out of letting third-party bots claim rewards on the user's behalf.

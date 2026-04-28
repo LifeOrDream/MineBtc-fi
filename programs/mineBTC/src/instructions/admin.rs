@@ -113,7 +113,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         refining_fee: DEFAULT_REFINING_FEE,
     };
 
-    global_config.change_faction_fee = DEFAULT_CHANGE_FACTION_FEE;
     global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
     global_config.gameplay_tuning.apply_defaults();
 
@@ -401,7 +400,6 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `new_minebtc_same_faction_pct`: Optional new MineBtc same-faction percentage
 /// - `new_minebtc_motherlode_pct`: Optional new MineBtc motherlode percentage
 /// - `new_refining_fee`: Optional new refining fee percentage
-/// - `change_faction_fee`: Optional new change faction fee (in lamports)
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
 /// # Validation
@@ -419,7 +417,6 @@ pub fn update_fees_internal(
     new_minebtc_same_faction_pct: Option<u8>,
     new_minebtc_motherlode_pct: Option<u8>,
     new_refining_fee: Option<u8>,
-    change_faction_fee: Option<u64>,
     snapshot_interval: Option<u64>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_fees_internal");
@@ -516,11 +513,6 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
         global_config.minebtc_dist_config.refining_fee = refining_fee;
-    }
-
-    // Update change faction fee if provided
-    if let Some(change_faction_fee) = change_faction_fee {
-        global_config.change_faction_fee = change_faction_fee;
     }
 
     // Update snapshot interval if provided

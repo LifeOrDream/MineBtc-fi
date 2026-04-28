@@ -326,7 +326,6 @@ async function main() {
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
     //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
-    //   change_faction_fee: Option<u64>,             — dormant legacy field; change_faction now hard-fails on-chain
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
@@ -343,9 +342,6 @@ async function main() {
         newMinebtcMotherlodePct: 5, // 5% of dogeBTC rewards go to motherlode
 
         newRefiningFee: 10, // 10% of dogeBTC rewards go to refining
-
-        // split 50:50 between sol_treasury and fee_recipient (as WSOL)
-        changeFactionFee: 100000000, // 0.1 SOL
 
         snapshotInterval: 5 * 60, // 5 minutes between price snapshots
     });
@@ -2471,10 +2467,6 @@ async function updateFees(minebtcProgram, feeConfig) {
     );
     console.log(
       COLOR_INFO,
-      `     Change faction fee: ${globalConfig.changeFactionFee.toString()} lamports`
-    );
-    console.log(
-      COLOR_INFO,
       `     Snapshot interval: ${globalConfig.snapshotInterval.toString()} seconds`
     );
 
@@ -2488,9 +2480,6 @@ async function updateFees(minebtcProgram, feeConfig) {
       newMinebtcSameFactionPct: feeConfig?.newMinebtcSameFactionPct ?? null,
       newMinebtcMotherlodePct: feeConfig?.newMinebtcMotherlodePct ?? null,
       newRefiningFee: feeConfig?.newRefiningFee ?? null,
-      changeFactionFee: feeConfig?.changeFactionFee
-        ? new BN(feeConfig.changeFactionFee)
-        : null,
       snapshotInterval:
         (feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval) != null
           ? new BN(
@@ -2570,11 +2559,6 @@ async function updateFees(minebtcProgram, feeConfig) {
         COLOR_INFO,
         `     Refining fee: ${feeParams.newRefiningFee}%`
       );
-    if (feeParams.changeFactionFee !== null)
-      console.log(
-        COLOR_INFO,
-        `     Change faction fee: ${feeParams.changeFactionFee.toString()} lamports`
-      );
     if (feeParams.snapshotInterval !== null)
       console.log(
         COLOR_INFO,
@@ -2602,7 +2586,6 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcSameFactionPct,
         feeParams.newMinebtcMotherlodePct,
         feeParams.newRefiningFee,
-        feeParams.changeFactionFee,
         feeParams.snapshotInterval
       )
       .accounts({

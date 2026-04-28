@@ -108,8 +108,6 @@ pub const DEFAULT_MINEBTC_MOTHERLODE_PCT: u8 = 5;
 /// Percent fee taken when claiming staking rewards (redistributed to other stakers).
 pub const DEFAULT_REFINING_FEE: u8 = 5;
 
-/// SOL cost to switch factions (in lamports). 4.2 SOL.
-pub const DEFAULT_CHANGE_FACTION_FEE: u64 = 4_200_000_000;
 /// Minimum seconds between price snapshots in the economy cycle.
 pub const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1800; // 30 minutes
 
@@ -241,9 +239,6 @@ pub struct GlobalConfig {
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
 
-    /// Fee for changing faction (in lamports)
-    pub change_faction_fee: u64,
-
     /// Minimum time interval between price snapshots (in seconds)
     /// Default: 1800 seconds (30 minutes)
     pub snapshot_interval: u64,
@@ -302,7 +297,6 @@ impl GlobalConfig {
         SolFeeConfig::LEN +     // sol_fee_config
         MineBtcDistConfig::LEN + // minebtc_dist_config
         32 +                    // raydium_pool_state
-        8 +                     // change_faction_fee
         8 +                     // snapshot_interval
         GameplayTuningConfig::LEN + // gameplay_tuning
         1 +                     // bump
