@@ -20,7 +20,11 @@ import {
   TYPE_SIZE,
   LENGTH_SIZE,
 } from "@solana/spl-token";
-import { createInitializeInstruction, pack } from "@solana/spl-token-metadata";
+import {
+  createInitializeInstruction,
+  createUpdateFieldInstruction,
+  pack,
+} from "@solana/spl-token-metadata";
 import * as web3 from "@solana/web3.js";
 import anchorPkg from "@coral-xyz/anchor";
 const { BN, Program } = anchorPkg;
@@ -323,6 +327,17 @@ export async function createMintAccountWithMetadata(
     console.log("\x1b[36m%s\x1b[0m", `   • Additional rent needed: ${additionalLamports} lamports`);
 
     // TX2: Transfer additional rent + Initialize metadata
+    const metadataFieldInstructions = (metadata.additionalMetadata ?? []).map(
+      ([field, value]) =>
+        createUpdateFieldInstruction({
+          programId: TOKEN_2022_PROGRAM_ID,
+          metadata: dogeBtcMint.publicKey,
+          updateAuthority: deployer.publicKey,
+          field,
+          value,
+        })
+    );
+
     const tx2 = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: deployer.publicKey,
@@ -338,7 +353,8 @@ export async function createMintAccountWithMetadata(
         uri: metadata.uri,
         mintAuthority: mintAuthority,
         updateAuthority: deployer.publicKey,
-      })
+      }),
+      ...metadataFieldInstructions
     );
 
     console.log("\x1b[36m%s\x1b[0m", "📤 Sending TX2: Fund rent + Initialize Metadata...");

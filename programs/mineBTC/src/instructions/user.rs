@@ -476,8 +476,10 @@ fn count_autominer_bets_per_round(factions_config: &Option<FactionsConfig>) -> R
 /// Initialize autominer vault for recurring faction-direction bets.
 /// Block-based autominers are no longer supported.
 /// Can be called multiple times, but only when rounds_remaining == 0
-/// SOL mode reserves `sol_per_round × num_rounds`.
-/// Ticket mode requires `sol_per_round == 0` and uses ticket value per generated bet.
+/// SOL mode reserves `sol_per_round × num_rounds`; each round pays a small
+/// keeper compensation and uses the remainder for generated bets.
+/// Ticket mode accepts `sol_per_round == 0`; it internally reserves a fixed
+/// keeper compensation per round while ticket value supplies generated bet points.
 pub fn internal_init_autominer(
     ctx: Context<InitAutominer>,
     factions_config: Option<FactionsConfig>,
@@ -569,7 +571,7 @@ pub fn internal_init_autominer(
     }
 
     let total_caller_compensation = if use_ticket.is_some() {
-        0
+        get_ticket_caller_compensation()
     } else {
         get_caller_compensation(sol_per_round)?
     };
@@ -603,20 +605,20 @@ pub fn internal_init_autominer(
     let has_factions_config = factions_config.is_some();
 
     // Calculate total SOL needed.
-    // Ticket mode: no SOL needed.
-    // SOL mode: sol_per_round × num_rounds.
-    let total_sol = if use_ticket.is_some() {
-        0
+    // Both modes reserve SOL upfront. In ticket mode this is fixed keeper gas only.
+    let reserve_per_round = if use_ticket.is_some() {
+        total_caller_compensation
     } else {
         sol_per_round
-            .checked_mul(num_rounds as u64)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
     };
+    let total_sol = reserve_per_round
+        .checked_mul(num_rounds as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "     Total SOL for all rounds: {} SOL ({} rounds × {} SOL)",
         (total_sol as f64 / 1e9),
         num_rounds,
-        (sol_per_round as f64 / 1e9)
+        (reserve_per_round as f64 / 1e9)
     );
 
     autominer_vault.owner = ctx.accounts.user_wallet.key();
@@ -633,7 +635,7 @@ pub fn internal_init_autominer(
         autominer_vault.owner
     );
 
-    // Transfer SOL to global autominer custody (SOL mode only)
+    // Transfer SOL to global autominer custody.
     if total_sol > 0 {
         msg!("   Transferring SOL to autominer custody...");
         helper::transfer_to_autominer_custody(
@@ -642,8 +644,6 @@ pub fn internal_init_autominer(
             &ctx.accounts.system_program.to_account_info(),
             total_sol,
         )?;
-    } else {
-        msg!("   Ticket mode: no SOL deposit needed");
     }
 
     msg!("✅ [init_autominer] Autominer initialized successfully");
@@ -740,14 +740,20 @@ pub fn internal_update_autominer(
         msg!("     ✓ Rounds unchanged ({} rounds)", rounds_remaining);
     }
 
-    // SOL accounting: only for SOL mode. Ticket mode has no SOL balance.
-    let sol_diff = if autominer_vault.use_ticket.is_some() {
-        // Ticket mode: no SOL transfers, just update rounds and can_reload
-        msg!("   Ticket mode: no SOL accounting needed");
-        0i64
-    } else {
+    // SOL accounting covers both modes. In ticket mode, the per-round reserve is fixed.
+    let sol_diff = {
+        let old_reserve_per_round = if autominer_vault.use_ticket.is_some() {
+            get_ticket_caller_compensation()
+        } else {
+            old_sol_per_round
+        };
+        let new_reserve_per_round = if autominer_vault.use_ticket.is_some() {
+            get_ticket_caller_compensation()
+        } else {
+            new_sol_per_round
+        };
         // Calculate SOL needed for remaining rounds with old config
-        let current_sol_needed = rounds_remaining as u64 * old_sol_per_round;
+        let current_sol_needed = rounds_remaining as u64 * old_reserve_per_round;
         msg!(
             "     Current SOL needed for {} remaining rounds: {} lamports",
             rounds_remaining,
@@ -755,7 +761,7 @@ pub fn internal_update_autominer(
         );
 
         // Calculate new SOL needed for new rounds with new config
-        let new_sol_needed = (rounds_remaining + rounds_added) as u64 * new_sol_per_round;
+        let new_sol_needed = (rounds_remaining + rounds_added) as u64 * new_reserve_per_round;
         msg!(
             "     New SOL needed for {} rounds: {} lamports",
             rounds_remaining + rounds_added,
@@ -797,7 +803,6 @@ pub fn internal_update_autominer(
         } else {
             msg!("   No SOL transfer needed");
         }
-
         diff
     };
 
@@ -808,14 +813,12 @@ pub fn internal_update_autominer(
         .checked_add(rounds_added)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     autominer_vault.can_reload = new_can_reload;
-    if autominer_vault.use_ticket.is_none() {
-        let new_balance = (old_sol_balance as i64).saturating_add(sol_diff);
-        autominer_vault.sol_balance = if new_balance > 0 {
-            new_balance as u64
-        } else {
-            0
-        };
-    }
+    let new_balance = (old_sol_balance as i64).saturating_add(sol_diff);
+    autominer_vault.sol_balance = if new_balance > 0 {
+        new_balance as u64
+    } else {
+        0
+    };
 
     msg!("✅ [update_autominer] Autominer updated successfully");
 
@@ -834,7 +837,9 @@ pub fn internal_update_autominer(
 
 /// Execute autominer bets (keeper instruction - callable by anyone).
 /// Generates faction-direction bets dynamically from the configured country set.
-/// In SOL mode, pays the caller 1% of `sol_per_round` (max 0.005 SOL) for tx costs.
+/// Pays the caller a small keeper compensation for tx costs.
+/// SOL mode: 0.1% of `sol_per_round`, capped at 0.00005 SOL.
+/// Ticket mode: pays a fixed 0.00005 SOL keeper reserve per round.
 /// Uses the same round/faction_war betting path as manual users.
 #[inline(never)]
 pub fn internal_execute_autominer_bet<'info>(
@@ -928,10 +933,6 @@ pub fn internal_execute_autominer_bet<'info>(
     );
 
     require!(rounds_remaining > 0, ErrorCode::NoRoundsRemaining);
-    // SOL balance check only for SOL mode (ticket mode doesn't need SOL for bets)
-    if use_ticket.is_none() {
-        require!(sol_balance >= sol_per_round, ErrorCode::InsufficientFunds);
-    }
 
     // Generate bet types dynamically from configuration
     msg!("   Generating bet types from configuration...");
@@ -943,15 +944,31 @@ pub fn internal_execute_autominer_bet<'info>(
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
 
     let total_caller_compensation = if use_ticket.is_some() {
-        0
+        get_ticket_caller_compensation()
     } else {
         get_caller_compensation(sol_per_round)?
     };
+    let reserve_per_round = if use_ticket.is_some() {
+        total_caller_compensation
+    } else {
+        sol_per_round
+    };
+    require!(
+        sol_balance >= reserve_per_round,
+        ErrorCode::InsufficientFunds
+    );
+    msg!(
+        "     SOL reserve consumed this execution: {} SOL",
+        (reserve_per_round as f64 / 1e9)
+    );
     if use_ticket.is_some() {
-        msg!("     Ticket mode: caller compensation disabled");
+        msg!(
+            "     Ticket mode caller compensation: {} SOL",
+            (total_caller_compensation as f64 / 1e9)
+        );
     } else {
         msg!(
-            "     Caller compensation: {} SOL (1% of {} SOL, max 0.005 SOL)",
+            "     Caller compensation: {} SOL (0.1% of {} SOL, max 0.00005 SOL)",
             (total_caller_compensation as f64 / 1e9),
             (sol_per_round as f64 / 1e9)
         );
@@ -960,7 +977,7 @@ pub fn internal_execute_autominer_bet<'info>(
     // Determine bet parameters based on mode (SOL vs tickets)
     let (bet_size_per_bet, effective_use_ticket) = if let Some(ticket_tier_index) = use_ticket {
         // Ticket mode: bet amount comes from player's ticket value.
-        // No SOL is reserved for tickets and no caller compensation is paid.
+        // SOL is reserved only for keeper compensation; tickets provide bet points.
         let player_data = &accounts.player_data;
         require!(
             (ticket_tier_index as usize) < player_data.free_tickets.len(),
@@ -991,8 +1008,8 @@ pub fn internal_execute_autominer_bet<'info>(
         (bet_per, None)
     };
 
-    // Pay caller compensation (SOL mode only).
-    if total_caller_compensation > 0 && use_ticket.is_none() {
+    // Pay caller compensation.
+    if total_caller_compensation > 0 {
         msg!("   Paying caller compensation...");
         let autominer_seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
         transfer(
@@ -1033,10 +1050,10 @@ pub fn internal_execute_autominer_bet<'info>(
         new_rounds_remaining
     );
 
-    // Update remaining SOL balance tracked for this autominer (SOL mode only)
-    if use_ticket.is_none() {
-        autominer_vault.sol_balance = autominer_vault.sol_balance.saturating_sub(sol_per_round);
-    }
+    // Update remaining SOL balance tracked for this autominer.
+    autominer_vault.sol_balance = autominer_vault
+        .sol_balance
+        .saturating_sub(reserve_per_round);
 
     // Place bets using the shared round/faction_war prediction path.
     msg!(
@@ -1339,42 +1356,55 @@ pub fn internal_claim_autominer_rewards(
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // === AUTO-RELOAD LOGIC ===
-    // Ticket mode + reload: just keep running (add rounds back), send SOL winnings to owner.
-    // SOL mode + reload: use SOL winnings to fund more rounds.
+    // Auto-reload uses SOL winnings to fund more rounds in both modes.
+    // In ticket mode, funded SOL is keeper compensation reserve; ticket balance still gates execution.
     if autominer_vault.can_reload && autominer_vault.use_ticket.is_some() {
-        // TICKET MODE RELOAD: Add rounds back, send all SOL rewards to owner
-        // Tickets are consumed from player's balance — no SOL needed to reload.
-        // The autominer just keeps going until all tickets are exhausted.
-        if total_sol_reward > 0 {
-            msg!("🔄 Ticket mode reload: sending SOL winnings to owner...");
+        let reserve_per_round = get_ticket_caller_compensation();
+        let rounds_to_add = total_sol_reward / reserve_per_round;
+        let leftover_sol = total_sol_reward % reserve_per_round;
+
+        msg!("🔄 Ticket mode reload, processing SOL rewards...");
+        msg!(
+            "   Keeper reserve per round: {} lamports",
+            reserve_per_round
+        );
+        msg!("   Rounds to add: {}", rounds_to_add);
+        msg!("   Leftover SOL: {} lamports", leftover_sol);
+
+        if rounds_to_add > 0 {
+            let sol_for_rounds = rounds_to_add * reserve_per_round;
+            helper::transfer_from_sol_prize_pot_vault(
+                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                &ctx.accounts.autominer_custody.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                sol_for_rounds,
+                ctx.bumps.sol_prize_pot_vault,
+            )?;
+            autominer_vault.sol_balance = autominer_vault
+                .sol_balance
+                .checked_add(sol_for_rounds)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            autominer_vault.rounds_remaining = autominer_vault
+                .rounds_remaining
+                .checked_add(rounds_to_add as u32)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+
+        if leftover_sol > 0 {
             helper::transfer_from_sol_prize_pot_vault(
                 &ctx.accounts.sol_prize_pot_vault.to_account_info(),
                 &ctx.accounts.owner_wallet.to_account_info(),
                 &ctx.accounts.system_program.to_account_info(),
-                total_sol_reward,
+                leftover_sol,
                 ctx.bumps.sol_prize_pot_vault,
             )?;
-            msg!(
-                "   ✓ Transferred {} SOL to owner",
-                total_sol_reward as f64 / 1e9
-            );
         }
-
-        // Add 1 round back (each execution consumed 1 round, reload gives it back)
-        autominer_vault.rounds_remaining = autominer_vault
-            .rounds_remaining
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!(
-            "   ✓ Ticket reload: rounds_remaining restored to {}",
-            autominer_vault.rounds_remaining
-        );
 
         emit!(AutominerReloaded {
             autominer_vault: autominer_vault.key(),
-            rounds_to_add: 1,
-            sol_for_rounds: 0,
-            leftover_sol: total_sol_reward,
+            rounds_to_add: rounds_to_add as u32,
+            sol_for_rounds: total_sol_reward.saturating_sub(leftover_sol),
+            leftover_sol,
             timestamp: Clock::get()?.unix_timestamp,
         });
     } else if total_sol_reward > 0
@@ -2439,10 +2469,15 @@ fn make_bets_vec(
     Ok(bet_types)
 }
 
-/// Calculate caller compensation: 1% of sol_per_round, max 0.005 SOL
+/// Calculate caller compensation: 0.1% of sol_per_round, max 0.00005 SOL.
 fn get_caller_compensation(sol_per_round: u64) -> Result<u64> {
-    let caller_compensation = (sol_per_round / 100).min(crate::state::MAX_CALLER_COMPENSATION);
+    let caller_compensation = (sol_per_round / 1_000).min(crate::state::MAX_CALLER_COMPENSATION);
     Ok(caller_compensation)
+}
+
+/// Ticket autominers use a fixed keeper gas reserve per round.
+fn get_ticket_caller_compensation() -> u64 {
+    crate::state::TICKET_AUTOMINER_CALLER_COMPENSATION
 }
 
 // ========================================================================================

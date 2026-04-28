@@ -206,7 +206,8 @@ pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 pub const MAX_STAKED_DOGES: usize = 3; // Maximum number of doges a user can stake
 pub const MAX_FREE_DOGE_MINTS_PER_USER: u8 = 5;
 
-pub const MAX_CALLER_COMPENSATION: u64 = 5_000_000; // 0.005 SOL (0.005 SOL max per round)
+pub const MAX_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL max keeper compensation per autominer round
+pub const TICKET_AUTOMINER_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL keeper reserve for each ticket autominer round
 pub const MIN_SOL_BET_PER_POSITION: u64 = 100_000; // 0.0001 SOL minimum per country-direction bet
 ///
 /// ------------ GLOBAL CONFIG ------------
@@ -1356,9 +1357,9 @@ pub struct AutominerVault {
     pub owner: Pubkey,
     /// Factions configuration (specific list or random count with direction) - optional
     pub factions_config: Option<FactionsConfig>,
-    /// Total SOL budget per round in SOL mode.
-    /// This includes keeper compensation plus the budget distributed across generated bets.
-    /// Must be 0 in ticket mode.
+    /// SOL reserved per round.
+    /// - SOL mode: total round budget, including keeper compensation plus generated bets.
+    /// - Ticket mode: must be 0; a fixed keeper reserve is deposited per round.
     pub sol_per_round: u64,
     /// Number of rounds remaining (decremented after each round)
     pub rounds_remaining: u32,
@@ -1371,8 +1372,8 @@ pub struct AutominerVault {
     /// If set to true, SOL rewards can be used to reload Autominer and continue mining dogeBTC
     pub can_reload: bool,
 
-    /// Optional ticket tier index. If Some, autominer uses tickets instead of SOL for bets.
-    /// Ticket mode does not reserve SOL and does not pay keeper compensation.
+    /// Optional ticket tier index. If Some, autominer uses tickets for bet points.
+    /// Ticket mode still reserves SOL upfront to compensate the keeper for each execution.
     /// Bet amount is determined by the ticket value in player_data.free_tickets[tier].
     pub use_ticket: Option<u8>,
 }
