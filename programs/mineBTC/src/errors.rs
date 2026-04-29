@@ -36,6 +36,9 @@ pub enum ErrorCode {
     #[msg("Invalid parameters provided for operation")]
     InvalidParameters,
 
+    #[msg("Game is paused — new bets, autominer execution, round starts, and doge mints are disabled. Claims and round settlement still work.")]
+    GamePaused,
+
     #[msg("Amount overflow")]
     AmountOverflow,
 

@@ -795,3 +795,13 @@ pub struct FactionWarAutoSettled {
     pub faction_war_id: u64,
     pub mining_pool: u64,
 }
+
+/// Emitted when the authority toggles the global pause flag.
+/// Indexers should propagate `is_paused` to the frontend so the UI can
+/// disable bet/mint actions and show a clear "paused" banner to users.
+#[event]
+pub struct GamePauseToggled {
+    pub is_paused: bool,
+    pub authority: Pubkey,
+    pub timestamp: i64,
+}

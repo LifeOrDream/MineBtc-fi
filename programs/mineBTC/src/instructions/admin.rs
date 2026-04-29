@@ -117,6 +117,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
     global_config.gameplay_tuning.apply_defaults();
+    global_config.is_paused = false;
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
@@ -548,6 +549,38 @@ pub fn update_fees_internal(
 pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
     crate::log_fn!("admin", "update_rpg_progression_internal");
     ctx.accounts.global_config.gameplay_tuning.rpg_progression = enabled;
+    Ok(())
+}
+
+/// Toggle the global pause flag (authority-only kill switch).
+///
+/// When `paused = true`:
+///   - Blocks: new bets (manual + autominer), new round starts,
+///     genesis doge mints, doge breeding.
+///   - Does NOT block: round settlement, all reward claims (game/staking/
+///     referral/faction-war), staking + unstaking, economy crank functions
+///     (snapshot_price / update_rate / add_lp_and_burn). Users can always
+///     exit; pending rounds always finish.
+///
+/// Intended as a kill switch for live exploits, not a long-term tool.
+pub fn set_pause_internal(ctx: Context<UpdateConfigAc>, paused: bool) -> Result<()> {
+    crate::log_fn!("admin", "set_pause_internal");
+    let global_config = &mut ctx.accounts.global_config;
+    if global_config.is_paused == paused {
+        msg!("[set_pause] no-op (already {})", paused);
+        return Ok(());
+    }
+    global_config.is_paused = paused;
+    msg!(
+        "[set_pause] authority={} is_paused={}",
+        ctx.accounts.authority.key(),
+        paused
+    );
+    emit!(crate::events::GamePauseToggled {
+        is_paused: paused,
+        authority: ctx.accounts.authority.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     Ok(())
 }
 

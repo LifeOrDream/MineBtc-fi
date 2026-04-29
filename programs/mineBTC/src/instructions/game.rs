@@ -41,6 +41,7 @@ use crate::state::*;
 /// Start a new round and initialize its GameSession.
 pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     crate::log_fn!("game", "int_start_round");
+    require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
@@ -1133,6 +1134,12 @@ fn distribute_rewards_amg_stakers(
 #[derive(Accounts)]
 #[instruction(round_id: u64)]
 pub struct StartRound<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
     #[account(
         mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],

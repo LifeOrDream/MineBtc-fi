@@ -215,6 +215,7 @@ pub fn int_batch_mint_doges<'info>(
     let doge_mint_config = &mut ctx.accounts.doge_mint_config;
     let player_data = &mut ctx.accounts.player_data;
 
+    require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
 
     require!(
@@ -682,6 +683,7 @@ pub fn int_whitelist_mint_doge(
     let allowance = &mut ctx.accounts.doge_free_mint_allowance;
     let user = ctx.accounts.user.key();
 
+    require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
@@ -1369,6 +1371,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 /// Breed two doges to create offspring (both parents must not be incubated, same faction)
 pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     crate::log_fn!("doges", "int_breed_doges");
+    require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
     let doge_config = &mut ctx.accounts.doge_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;

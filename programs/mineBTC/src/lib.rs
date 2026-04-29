@@ -174,6 +174,15 @@ pub mod minebtc {
         admin::update_rpg_progression_internal(ctx, enabled)
     }
 
+    /// Authority-only kill switch. When paused, the contract blocks new bets
+    /// (manual + autominer), new round starts, and doge mints/breeds. Round
+    /// settlement, claims, staking, and economy cranks remain available so
+    /// players can always exit and pending rounds always finish.
+    pub fn set_pause(ctx: Context<UpdateConfigAc>, paused: bool) -> Result<()> {
+        crate::log_fn!("lib", "set_pause");
+        admin::set_pause_internal(ctx, paused)
+    }
+
     /// Update the highest evolution stage unlocked by admin.
     /// `0` disables evolution entirely, `1` allows stage 0 -> 1, etc.
     pub fn update_evolution_unlock_stage(

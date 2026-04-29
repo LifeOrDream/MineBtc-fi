@@ -1724,6 +1724,7 @@ fn internal_process_bets<'info>(
 ) -> Result<()> {
     let clock = Clock::get()?;
 
+    require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
     require!(game_session.stage == 0, ErrorCode::RoundEnded);
     require!(

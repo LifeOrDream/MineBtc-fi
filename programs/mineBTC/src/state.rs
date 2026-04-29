@@ -253,7 +253,13 @@ pub struct GlobalConfig {
     /// Unified gameplay and cycle-reward tuning surface.
     pub gameplay_tuning: GameplayTuningConfig,
 
-    /// ------------------------------------------------------------           
+    /// Authority-toggleable global pause. When true, blocks: new bets (manual
+    /// + autominer), new round starts, doge mints, and doge breeds. Does NOT
+    /// block: round settlement, all claims, staking/unstaking, economy cranks.
+    /// Users can always exit; pending rounds always finish.
+    pub is_paused: bool,
+
+    /// ------------------------------------------------------------
     /// Bump for GlobalConfig PDA derivation
     pub bump: u8,
     /// Bump for SOL treasury PDA derivation
@@ -318,6 +324,7 @@ impl GlobalConfig {
         32 +                    // raydium_pool_state
         8 +                     // snapshot_interval
         GameplayTuningConfig::LEN + // gameplay_tuning
+        1 +                     // is_paused
         1 +                     // bump
         1 +                     // treasury_bump
         4 + (MAX_FACTIONS * (4 + MAX_FACTION_NAME_LENGTH)); // supported_factions vec
