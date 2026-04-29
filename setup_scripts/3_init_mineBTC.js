@@ -1767,6 +1767,11 @@ async function createDogeCollection(minebtcProgram) {
     minebtcProgram.programId
     );
 
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-config")],
+    minebtcProgram.programId
+    );
+
     const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("doge-mint-config")],
     minebtcProgram.programId
