@@ -978,6 +978,7 @@ mod tests {
             faction_war_base_reward_bps: 0,
             faction_war_loyalty_reward_bps: 0,
             faction_war_doge_reward_bps: 0,
+            faction_war_mvp_reward_bps: 0,
             base_mutation_chance_bps: 0,
             mutation_chance_floor_bps: 0,
             mutation_chance_cap_bps: 0,

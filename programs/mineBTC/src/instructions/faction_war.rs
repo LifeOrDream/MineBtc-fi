@@ -475,7 +475,8 @@ pub fn finalize_faction_war_settlement(
                         1 => 2500u64, // #2
                         2 => 1500u64, // #3
                         _ => {
-                            let lower_ranked_count = active_factions.saturating_sub(3).max(1) as u64;
+                            let lower_ranked_count =
+                                active_factions.saturating_sub(3).max(1) as u64;
                             2000u64 / lower_ranked_count
                         }
                     };
@@ -498,7 +499,8 @@ pub fn finalize_faction_war_settlement(
                         1 => 2500u64,
                         2 => 1500u64,
                         _ => {
-                            let lower_ranked_count = active_factions.saturating_sub(3).max(1) as u64;
+                            let lower_ranked_count =
+                                active_factions.saturating_sub(3).max(1) as u64;
                             2000u64 / lower_ranked_count
                         }
                     };

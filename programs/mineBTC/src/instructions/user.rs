@@ -200,6 +200,8 @@ pub fn internal_initialize_player(
     player_data.gameplay_doge_dna = [0u8; 32];
     player_data.gameplay_doge_xp = 0;
     player_data.gameplay_unlock_request_faction_war = 0;
+    player_data.current_faction_war_score = 0;
+    player_data.current_faction_war_score_cycle_id = 0;
     msg!("     Gameplay doge state initialized");
 
     // Initialize new player's referral rewards account
@@ -1970,10 +1972,12 @@ fn internal_process_bets<'info>(
             } else {
                 global_config.sol_fee_config.referral_fee_pct as u64
             };
-            let raw_cut = total_protocol_fee
-                .checked_mul(pct)
+            let raw_cut = (total_protocol_fee as u128)
+                .checked_mul(pct as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
-                / 100;
+                .checked_div(100)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            let raw_cut = u64::try_from(raw_cut).map_err(|_| ErrorCode::ArithmeticOverflow)?;
             referrer_cut = raw_cut.min(remaining_cap);
             if referrer_cut > 0 {
                 do_transfer(&rr.to_account_info(), referrer_cut)?;
@@ -2366,6 +2370,17 @@ fn internal_process_bets<'info>(
                     .faction_mutation_scores[faction_id]
                     .checked_add(mutation_score)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+                // Lazy reset the running score when entering a new cycle.
+                // Without this, an MVP candidate from cycle N would carry their
+                // score into cycle N+1 and unfairly dominate MVP selection.
+                if player_data.current_faction_war_score_cycle_id
+                    != faction_war_state.faction_war_id
+                {
+                    player_data.current_faction_war_score = 0;
+                    player_data.current_faction_war_score_cycle_id =
+                        faction_war_state.faction_war_id;
+                }
 
                 // Track running MVP for this faction
                 player_data.current_faction_war_score = player_data

@@ -33,15 +33,15 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 
 pub const MAX_REFERRALS_PER_CODE: u16 = 10_000; // High cap so viral country recruitment is not artificially throttled.
 pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in dogeBTC at first claim).
-// Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
-// not from dogeBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
-// (admin-tunable, capped at `MAX_REFERRAL_FEE_PCT = 10`); lifetime accrual is
-// capped at `MAX_REFERRER_SOL_LIFETIME`. Sybil farming is structurally
-// unprofitable: the sybil pays 100% of the bet but extracts only a fraction
-// of the protocol fee back.
-                                                     // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-                                                     // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
-                                                     // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+                                       // Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
+                                       // not from dogeBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
+                                       // (admin-tunable, capped at `MAX_REFERRAL_FEE_PCT = 10`); lifetime accrual is
+                                       // capped at `MAX_REFERRER_SOL_LIFETIME`. Sybil farming is structurally
+                                       // unprofitable: the sybil pays 100% of the bet but extracts only a fraction
+                                       // of the protocol fee back.
+                                       // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+                                       // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
+                                       // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 fn calc_weighted_amount(staked_amount: u64, lockup_multiplier: u16) -> Result<u64> {
     let weighted_u128 = (staked_amount as u128)
@@ -616,7 +616,8 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         let days_remaining = if current_ts < user_position.lockup_end_timestamp {
             ((user_position.lockup_end_timestamp - current_ts) as u64)
                 .checked_add(86400 - 1)
-                .unwrap_or(0) / 86400
+                .unwrap_or(0)
+                / 86400
         } else {
             0
         };
@@ -1151,7 +1152,8 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         let days_remaining = if current_ts < user_position.lockup_end_timestamp {
             ((user_position.lockup_end_timestamp - current_ts) as u64)
                 .checked_add(86400 - 1)
-                .unwrap_or(0) / 86400
+                .unwrap_or(0)
+                / 86400
         } else {
             0
         };

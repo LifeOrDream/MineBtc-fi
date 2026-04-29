@@ -1061,8 +1061,14 @@ pub struct PlayerData {
     /// The doge can only be withdrawn once the next faction_war cycle begins.
     pub gameplay_unlock_request_faction_war: u64,
     /// Cumulative mutation score for the current faction war cycle.
-    /// Reset to 0 when a new faction war starts. Used for MVP tracking.
+    /// Lazy-reset to 0 the first time it's touched in a new cycle (see
+    /// `current_faction_war_score_cycle_id` below). Used for MVP tracking.
     pub current_faction_war_score: u64,
+    /// `faction_war_id` that `current_faction_war_score` belongs to.
+    /// On the first bet of a new cycle (when `faction_war_state.faction_war_id`
+    /// differs from this), the running score is reset to 0 and this is updated.
+    /// This avoids needing a separate per-user reset instruction at cycle rollover.
+    pub current_faction_war_score_cycle_id: u64,
 }
 
 impl PlayerData {
@@ -1108,7 +1114,8 @@ impl PlayerData {
         32 +    // gameplay_doge_dna [u8; 32]
         4 +     // gameplay_doge_xp (u32)
         8 +     // gameplay_unlock_request_faction_war (u64)
-        8; // current_faction_war_score (u64)
+        8 +     // current_faction_war_score (u64)
+        8; // current_faction_war_score_cycle_id (u64)
 }
 
 /// Individual MineBtc staking position

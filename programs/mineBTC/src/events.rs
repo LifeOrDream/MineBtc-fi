@@ -355,9 +355,9 @@ pub struct MinebtcClaimableAccrued {
 /// redistributed to all other unclaimed stakers (the "diamond hands").
 #[event]
 pub struct HodlTaxRedistributed {
-    pub paper_hand: Pubkey,      // user who paid the tax (unstaked early / claimed rewards)
+    pub paper_hand: Pubkey, // user who paid the tax (unstaked early / claimed rewards)
     pub player_data: Pubkey,
-    pub tax_amount: u64,         // total HODL tax paid
+    pub tax_amount: u64, // total HODL tax paid
     pub redistributed_amount: u64,
     pub redistributed_index_increment: u128,
     pub remaining_total_claimable: u64, // proxy for how many diamond hands benefit

@@ -438,9 +438,11 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         let mut weights = [0u64; NUM_FACTIONS];
         let mut total_weight: u128 = 0;
 
+        #[allow(clippy::needless_range_loop)]
         for i in 0..active_faction_count {
             let faction_bets = game_session.sol_bets_by_faction[i];
-            let bet_share_bps = (faction_bets as u128 * BASIS_POINTS_DENOMINATOR as u128 / total_sol as u128) as u64;
+            let bet_share_bps = (faction_bets as u128 * BASIS_POINTS_DENOMINATOR as u128
+                / total_sol as u128) as u64;
             let inverse_share_bps = BASIS_POINTS_DENOMINATOR.saturating_sub(bet_share_bps);
             // Weight = 0.5 + inverse_share, giving 0-bet factions 1.5x weight and max-bet factions 0.5x weight.
             let weight_bps = 5000u64 + inverse_share_bps;
@@ -453,10 +455,14 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             final_hash_bytes[13],
             final_hash_bytes[14],
             final_hash_bytes[15],
-            0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
         ]) % total_weight as u64;
 
         let mut cumulative: u128 = 0;
+        #[allow(clippy::needless_range_loop)]
         for i in 0..active_faction_count {
             cumulative += weights[i] as u128;
             if jackpot_faction_roll < cumulative as u64 {
@@ -593,8 +599,7 @@ fn calculate_minebtc_split(
     let same_faction_direction_rewards_each =
         (minebtc_rewards as u128 * minebtc_same_faction_pct as u128 / 100) as u64;
     let faction_stakers = (minebtc_rewards as u128 * minebtc_stakers_pct as u128 / 100) as u64;
-    let jackpot_rewards =
-        (minebtc_rewards as u128 * minebtc_jackpot_pct as u128 / 100) as u64;
+    let jackpot_rewards = (minebtc_rewards as u128 * minebtc_jackpot_pct as u128 / 100) as u64;
     (
         winning_direction_rewards,
         same_faction_direction_rewards_each,
@@ -901,12 +906,16 @@ pub fn int_end_round_faction_rewards<'info>(
 
     msg!(
         "global_jackpot: {} -> {} (+{})",
-        (global_state.jackpot_pot.saturating_sub(game_session.jackpot_rewards)) as f64 / 1_000_000.0,
+        (global_state
+            .jackpot_pot
+            .saturating_sub(game_session.jackpot_rewards)) as f64
+            / 1_000_000.0,
         global_state.jackpot_pot as f64 / 1_000_000.0,
         game_session.jackpot_rewards as f64 / 1_000_000.0
     );
 
-    if jackpot_hit && global_state.jackpot_pot > 0 && jackpot_faction_id == faction_state.faction_id {
+    if jackpot_hit && global_state.jackpot_pot > 0 && jackpot_faction_id == faction_state.faction_id
+    {
         if exact_winning_wgtd_pts > 0 {
             // Eligible winners exist — pay out the entire global jackpot pot
             let jackpot_bonus = global_state.jackpot_pot;
