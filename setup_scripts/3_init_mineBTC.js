@@ -429,7 +429,7 @@ async function main() {
     // Stores the authorized Raydium CPMM pool address in GlobalConfig for price discovery.
     // Also init_if_needed two SOL vault PDAs:
     //   - SOL Rewards Vault  [seeds: "staker-sol-reward-vault"] — holds SOL for staker distribution
-    //   - SOL Prize Pot Vault[seeds: "sol-prize-pot"]           — holds SOL for round prize pots
+    //   - SOL Prize Pot Vault[seeds: "jackpot-pot"]           — holds SOL for round prize pots
     // Accounts: globalConfig, solRewardsVault, solPrizePotVault, authority, systemProgram
     await setRaydiumPoolState(minebtcProgram);
 
@@ -1552,7 +1552,7 @@ async function setRaydiumPoolState(minebtcProgram) {
   );
 
   const [solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("sol-prize-pot")],
+    [Buffer.from("jackpot-pot")],
     minebtcProgram.programId
   );
 
