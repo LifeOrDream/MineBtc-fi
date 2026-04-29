@@ -79,8 +79,10 @@ const GAMEPLAY_TUNING_CONFIG = {
     config.gameplay_tuning?.faction_war_base_reward_bps ?? 7000,
   factionWarLoyaltyRewardBps:
     config.gameplay_tuning?.faction_war_loyalty_reward_bps ?? 2000,
+  factionWarMvpRewardBps:
+    config.gameplay_tuning?.faction_war_mvp_reward_bps ?? 500,
   factionWarDogeRewardBps:
-    config.gameplay_tuning?.faction_war_doge_reward_bps ?? 1000,
+    config.gameplay_tuning?.faction_war_doge_reward_bps ?? 500,
   baseMutationChanceBps:
     config.gameplay_tuning?.base_mutation_chance_bps ?? 2000,
   mutationChanceFloorBps:
@@ -254,9 +256,10 @@ async function validateInitializationConfig() {
   const gameplayRewardTotal =
     GAMEPLAY_TUNING_CONFIG.factionWarBaseRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarLoyaltyRewardBps +
+    GAMEPLAY_TUNING_CONFIG.factionWarMvpRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarDogeRewardBps;
   if (gameplayRewardTotal !== 10_000) {
-    throw new Error(`Faction-war reward bps must equal 10000, got ${gameplayRewardTotal}`);
+    throw new Error(`Faction-war reward bps (base+loyalty+mvp+doge) must equal 10000, got ${gameplayRewardTotal}`);
   }
 
   if (config.hashpower.base_multiplier !== 100 || config.hashpower.max_multiplier !== 300) {
@@ -559,7 +562,7 @@ async function main() {
     // Off-chain helper: creates an ATA for LP tokens owned by vaultAuthority PDA
     // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
     await initializeLpTokenAccounts(minebtcProgram);
-    return;
+    // return;
 
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
@@ -2931,6 +2934,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     max_evolution_stage_unlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
     faction_war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
     faction_war_loyalty_reward_bps: gameplayTuningConfig.factionWarLoyaltyRewardBps,
+    faction_war_mvp_reward_bps: gameplayTuningConfig.factionWarMvpRewardBps,
     faction_war_doge_reward_bps: gameplayTuningConfig.factionWarDogeRewardBps,
     base_mutation_chance_bps: gameplayTuningConfig.baseMutationChanceBps,
     mutation_chance_floor_bps: gameplayTuningConfig.mutationChanceFloorBps,
@@ -2953,10 +2957,11 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   const rewardSplit =
     target.faction_war_base_reward_bps +
     target.faction_war_loyalty_reward_bps +
+    target.faction_war_mvp_reward_bps +
     target.faction_war_doge_reward_bps;
   if (rewardSplit !== 10000) {
     throw new Error(
-      `Invalid gameplay reward split: base + loyalty + doge must equal 10000 bps, got ${rewardSplit}.`
+      `Invalid gameplay reward split: base + loyalty + mvp + doge must equal 10000 bps, got ${rewardSplit}.`
     );
   }
 
@@ -2968,7 +2973,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/doge: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarDogeRewardBps}`
+    `     Rewards bps base/loyalty/mvp/doge: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarMvpRewardBps}/${current.factionWarDogeRewardBps}`
   );
   console.log(
     COLOR_INFO,
@@ -2987,7 +2992,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/doge: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_doge_reward_bps}`
+    `     Rewards bps base/loyalty/mvp/doge: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_mvp_reward_bps}/${target.faction_war_doge_reward_bps}`
   );
   console.log(
     COLOR_INFO,
@@ -3011,6 +3016,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     current.maxEvolutionStageUnlocked === target.max_evolution_stage_unlocked &&
     current.factionWarBaseRewardBps === target.faction_war_base_reward_bps &&
     current.factionWarLoyaltyRewardBps === target.faction_war_loyalty_reward_bps &&
+    current.factionWarMvpRewardBps === target.faction_war_mvp_reward_bps &&
     current.factionWarDogeRewardBps === target.faction_war_doge_reward_bps &&
     current.baseMutationChanceBps === target.base_mutation_chance_bps &&
     current.mutationChanceFloorBps === target.mutation_chance_floor_bps &&

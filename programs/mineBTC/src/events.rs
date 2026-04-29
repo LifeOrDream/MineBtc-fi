@@ -156,6 +156,7 @@ pub struct GameplayTuningUpdated {
     pub max_evolution_stage_unlocked: u8,
     pub faction_war_base_reward_bps: u16,
     pub faction_war_loyalty_reward_bps: u16,
+    pub faction_war_mvp_reward_bps: u16,
     pub faction_war_doge_reward_bps: u16,
     pub base_mutation_chance_bps: u16,
     pub mutation_chance_floor_bps: u16,

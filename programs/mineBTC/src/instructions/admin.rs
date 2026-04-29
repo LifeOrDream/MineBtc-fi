@@ -52,6 +52,7 @@ pub struct GameplayTuningUpdateArgs {
 
     pub faction_war_base_reward_bps: Option<u16>,
     pub faction_war_loyalty_reward_bps: Option<u16>,
+    pub faction_war_mvp_reward_bps: Option<u16>,
     pub faction_war_doge_reward_bps: Option<u16>,
 
     pub base_mutation_chance_bps: Option<u16>,
@@ -688,11 +689,18 @@ pub fn update_gameplay_tuning_internal(
     let next_loyalty_reward_bps = args
         .faction_war_loyalty_reward_bps
         .unwrap_or(tuning.faction_war_loyalty_reward_bps);
+    let next_mvp_reward_bps = args
+        .faction_war_mvp_reward_bps
+        .unwrap_or(tuning.faction_war_mvp_reward_bps);
     let next_doge_reward_bps = args
         .faction_war_doge_reward_bps
         .unwrap_or(tuning.faction_war_doge_reward_bps);
-    let reward_total =
-        next_base_reward_bps as u32 + next_loyalty_reward_bps as u32 + next_doge_reward_bps as u32;
+    // base + loyalty + MVP + doge must close to 100% — these are the four
+    // lanes that `compute_faction_reward_pools` splits the cycle pool into.
+    let reward_total = next_base_reward_bps as u32
+        + next_loyalty_reward_bps as u32
+        + next_mvp_reward_bps as u32
+        + next_doge_reward_bps as u32;
     require!(
         reward_total == BASIS_POINTS_DENOMINATOR as u32,
         ErrorCode::InvalidParameters
@@ -748,6 +756,7 @@ pub fn update_gameplay_tuning_internal(
 
     tuning.faction_war_base_reward_bps = next_base_reward_bps;
     tuning.faction_war_loyalty_reward_bps = next_loyalty_reward_bps;
+    tuning.faction_war_mvp_reward_bps = next_mvp_reward_bps;
     tuning.faction_war_doge_reward_bps = next_doge_reward_bps;
     tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
     tuning.mutation_chance_floor_bps = next_chance_floor_bps;
@@ -768,6 +777,7 @@ pub fn update_gameplay_tuning_internal(
     let max_evolution_stage_unlocked = tuning.max_evolution_stage_unlocked;
     let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
     let faction_war_loyalty_reward_bps = tuning.faction_war_loyalty_reward_bps;
+    let faction_war_mvp_reward_bps = tuning.faction_war_mvp_reward_bps;
     let faction_war_doge_reward_bps = tuning.faction_war_doge_reward_bps;
     let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
     let mutation_chance_floor_bps = tuning.mutation_chance_floor_bps;
@@ -788,6 +798,7 @@ pub fn update_gameplay_tuning_internal(
         max_evolution_stage_unlocked,
         faction_war_base_reward_bps,
         faction_war_loyalty_reward_bps,
+        faction_war_mvp_reward_bps,
         faction_war_doge_reward_bps,
         base_mutation_chance_bps,
         mutation_chance_floor_bps,
