@@ -1248,7 +1248,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         owner_key,
         player_data_key,
         player_data,
-        &mut ctx.accounts.unrefined_rewards,
+        &mut ctx.accounts.hodl_pool,
         total_sol_reward,
         total_minebtc_reward,
         round_id,
@@ -1338,7 +1338,7 @@ pub fn internal_claim_autominer_rewards(
         owner_key,
         player_data_key,
         player_data,
-        &mut ctx.accounts.unrefined_rewards,
+        &mut ctx.accounts.hodl_pool,
         total_sol_reward,
         total_minebtc_reward,
         round_id,
@@ -1591,13 +1591,13 @@ fn update_player_rewards(
     owner: Pubkey,
     player_data_key: Pubkey,
     player_data: &mut PlayerData,
-    unrefined_rewards: &mut UnrefinedRewards,
+    hodl_pool: &mut HodlPool,
     _total_sol_reward: u64,
     total_minebtc_reward: u64,
     round_id: u64,
 ) -> Result<()> {
     helper::add_to_total_claimable(
-        unrefined_rewards,
+        hodl_pool,
         player_data,
         total_minebtc_reward,
         owner,
@@ -2731,8 +2731,8 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
-    #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    #[account(mut, seeds = [HODL_POOL_SEED.as_ref()], bump)]
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
     pub game_session: Box<Account<'info, GameSession>>,
@@ -2803,8 +2803,8 @@ pub struct ClaimAutominerRewards<'info> {
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
-    #[account(mut, seeds = [UNREFINED_REWARDS_SEED.as_ref()], bump)]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    #[account(mut, seeds = [HODL_POOL_SEED.as_ref()], bump)]
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     #[account(seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
     pub game_session: Box<Account<'info, GameSession>>,

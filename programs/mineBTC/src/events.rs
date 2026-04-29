@@ -326,7 +326,7 @@ pub struct DbtcRewardsClaimed {
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub minebtc_amount: u64,
-    pub refining_fee: u64,
+    pub hodl_tax: u64,
     pub referral_bonus: u64,  // 1% bonus to user if they have referral code
     pub referral_reward: u64, // 3% reward to referrer
     pub referrer: Option<Pubkey>,
@@ -335,7 +335,7 @@ pub struct DbtcRewardsClaimed {
 
 /// Event emitted whenever pending MineBtc claimable balance is increased.
 /// `source_amount` is the new reward from the triggering action, while
-/// `unrefined_bonus_amount` is previously deferred refining-tax yield realized at the same time.
+/// `unrefined_bonus_amount` is previously deferred hodl-tax yield realized at the same time.
 #[event]
 pub struct MinebtcClaimableAccrued {
     pub user: Pubkey,
@@ -350,8 +350,8 @@ pub struct MinebtcClaimableAccrued {
     pub timestamp: i64,
 }
 
-/// Event emitted when a MineBtc refining fee is redistributed through the unrefining index.
-/// Event emitted when a user pays the refining fee ("HODL Tax") and it gets
+/// Event emitted when a MineBtc HODL tax is redistributed through the HODL tax index.
+/// Event emitted when a user pays the HODL tax ("HODL Tax") and it gets
 /// redistributed to all other unclaimed stakers (the "diamond hands").
 #[event]
 pub struct HodlTaxRedistributed {

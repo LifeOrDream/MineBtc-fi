@@ -922,7 +922,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
@@ -930,7 +930,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1122,7 +1122,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
@@ -1130,7 +1130,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -2201,10 +2201,10 @@ pub struct StakeDoge<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
@@ -2258,10 +2258,10 @@ pub struct UnstakeDoge<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,

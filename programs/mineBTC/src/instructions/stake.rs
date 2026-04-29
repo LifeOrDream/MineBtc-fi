@@ -14,7 +14,7 @@ use anchor_spl::token::{self, Token};
 // - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
 // - **MineBTC staking rewards** come from round mining distribution indexes and are first
 //   accumulated into `pending_minebtc_rewards`.
-// - **Refining fee redistribution** happens when a player withdraws pending MineBTC rewards:
+// - **HODL tax redistribution** happens when a player withdraws pending MineBTC rewards:
 //   a configurable fee is taken from the withdrawing user and re-indexed across the remaining
 //   unclaimed MineBTC rewards.
 //
@@ -219,7 +219,7 @@ pub fn int_stake_minebtc(
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -421,7 +421,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -761,7 +761,7 @@ pub fn int_stake_lp_tokens(
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -958,7 +958,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1222,7 +1222,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         ctx.accounts.authority.key(),
         player_data_key,
         player_data,
-        &mut ctx.accounts.unrefined_rewards,
+        &mut ctx.accounts.hodl_pool,
         faction_state,
     )?;
     // Process LP staking SOL rewards
@@ -1231,7 +1231,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1291,11 +1291,11 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Withdraw accumulated MineBtc token rewards
-/// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
+/// Implements HODL tax: 10% of claimed rewards are redistributed to other unclaimed stakers
 /// NOTE: Call claim_staking_rewards first to update staking indexes and accumulate rewards
 pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
     crate::log_fn!("stake", "int_withdraw_dbtc_rewards");
-    msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with refining fee");
+    msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with HODL tax");
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
@@ -1303,12 +1303,12 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     let player_owner = ctx.accounts.player_data.owner;
 
     let player_data = &mut ctx.accounts.player_data;
-    let unrefined_minebtc = &mut ctx.accounts.unrefined_rewards;
+    let unrefined_minebtc = &mut ctx.accounts.hodl_pool;
     let global_config = &ctx.accounts.global_config;
 
-    // Realize any deferred refining-index rewards before applying a new refining fee.
+    // Realize any deferred hodl-tax-index rewards before applying a new HODL tax.
     // Without this sync, users with no fresh staking updates can miss previously accrued
-    // refining distributions when they go straight to withdraw.
+    // HODL-tax distributions when they go straight to withdraw.
     let synced_unrefined_bonus = helper::add_to_total_claimable(
         unrefined_minebtc,
         player_data,
@@ -1320,13 +1320,13 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     )?;
 
     msg!(
-        "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} unrefining_index={} synced_unrefined_bonus={}",
+        "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} hodl_tax_index={} synced_unrefined_bonus={}",
         player_owner,
         player_data_key,
         faction_id,
         player_data.pending_minebtc_rewards as f64 / 1e6,
         unrefined_minebtc.total_minebtc_claimable as f64 / 1e6,
-        unrefined_minebtc.unrefining_index,
+        unrefined_minebtc.hodl_tax_index,
         synced_unrefined_bonus as f64 / 1e6
     );
 
@@ -1341,22 +1341,22 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         .checked_sub(base_pending)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    // Apply refining fee only when there are remaining claimants to receive it.
-    let refining_fee_pct = global_config.minebtc_dist_config.refining_fee as u64;
-    let refining_fee = if remaining_claimable_after_this_user > 0 {
-        (base_pending * refining_fee_pct) / M_HUNDRED
+    // Apply HODL tax only when there are remaining claimants to receive it.
+    let hodl_tax_pct = global_config.minebtc_dist_config.hodl_tax_pct as u64;
+    let hodl_tax = if remaining_claimable_after_this_user > 0 {
+        (base_pending * hodl_tax_pct) / M_HUNDRED
     } else {
         0
     };
     let base_claimable_amount = base_pending
-        .checked_sub(refining_fee)
+        .checked_sub(hodl_tax)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "🧮 [withdraw_dbtc_rewards] base_pending={} remaining_after_user={} refining_fee_pct={} refining_fee={} base_claimable={}",
+        "🧮 [withdraw_dbtc_rewards] base_pending={} remaining_after_user={} hodl_tax_pct={} hodl_tax={} base_claimable={}",
         base_pending as f64 / 1e6,
         remaining_claimable_after_this_user as f64 / 1e6,
-        refining_fee_pct,
-        refining_fee as f64 / 1e6,
+        hodl_tax_pct,
+        hodl_tax as f64 / 1e6,
         base_claimable_amount as f64 / 1e6
     );
 
@@ -1422,7 +1422,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Only deduct the user's base pending rewards (what was actually tracked in total_minebtc_claimable).
     // Referral bonus + reward are paid from the emissions vault directly and were never
     // added to total_minebtc_claimable, so subtracting them would cause accounting drift
-    // and inflate the refining fee index for remaining stakers.
+    // and inflate the HODL tax index for remaining stakers.
     unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
         .total_minebtc_claimable
         .checked_sub(base_pending)
@@ -1455,30 +1455,30 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         None
     };
 
-    // Redistribute refining fee to all other stakers who haven't claimed
+    // Redistribute HODL tax to all other stakers who haven't claimed
     // This is done by increasing the reward index, which benefits all stakers proportionally
-    if refining_fee > 0 {
-        msg!("   Redistributing refining fee to other stakers...");
+    if hodl_tax > 0 {
+        msg!("   Redistributing HODL tax to other stakers...");
         let increment = helper::mul_div(
-            refining_fee,
+            hodl_tax,
             INDEX_PRECISION,
             unrefined_minebtc.total_minebtc_claimable,
         )?;
-        unrefined_minebtc.unrefining_index = unrefined_minebtc
-            .unrefining_index
+        unrefined_minebtc.hodl_tax_index = unrefined_minebtc
+            .hodl_tax_index
             .checked_add(increment)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "📈 [withdraw_dbtc_rewards] unrefining_index_after={} increment={} remaining_total_claimable={}",
-            unrefined_minebtc.unrefining_index,
+            "📈 [withdraw_dbtc_rewards] hodl_tax_index_after={} increment={} remaining_total_claimable={}",
+            unrefined_minebtc.hodl_tax_index,
             increment,
             unrefined_minebtc.total_minebtc_claimable as f64 / 1e6
         );
         emit!(HodlTaxRedistributed {
             paper_hand: player_owner,
             player_data: player_data_key,
-            tax_amount: refining_fee,
-            redistributed_amount: refining_fee,
+            tax_amount: hodl_tax,
+            redistributed_amount: hodl_tax,
             redistributed_index_increment: increment as u128,
             remaining_total_claimable: unrefined_minebtc.total_minebtc_claimable,
             timestamp: Clock::get()?.unix_timestamp,
@@ -1490,7 +1490,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         player_data: player_data_key,
         faction_id,
         minebtc_amount: claimable_by_user,
-        refining_fee,
+        hodl_tax,
         referral_bonus,
         referral_reward,
         referrer: referrer_pubkey,
@@ -1580,7 +1580,7 @@ pub fn int_update_minebtc_staking_rewards(
     player_owner: Pubkey,
     player_data_key: Pubkey,
     player_data: &mut PlayerData,
-    unrefined_rewards: &mut UnrefinedRewards,
+    hodl_pool: &mut HodlPool,
     faction_state: &FactionState,
 ) -> Result<(u64, u64, u64)> {
     crate::log_fn!("stake", "int_update_minebtc_staking_rewards");
@@ -1622,7 +1622,7 @@ pub fn int_update_minebtc_staking_rewards(
             player_data.dogebtc_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards = helper::add_to_total_claimable(
-            unrefined_rewards,
+            hodl_pool,
             player_data,
             new_minebtc_rewards,
             player_owner,
@@ -1647,7 +1647,7 @@ pub fn int_update_minebtc_staking_rewards(
         player_data.dogebtc_sol_reward_debt,
         player_data.dogebtc_dogebtc_reward_debt,
         accrued_minebtc_rewards as f64 / 1e6,
-        unrefined_rewards.total_minebtc_claimable as f64 / 1e6
+        hodl_pool.total_minebtc_claimable as f64 / 1e6
     );
 
     Ok((
@@ -1661,7 +1661,7 @@ pub fn int_update_lp_staking_rewards(
     player_owner: Pubkey,
     player_data_key: Pubkey,
     player_data: &mut PlayerData,
-    unrefined_rewards: &mut UnrefinedRewards,
+    hodl_pool: &mut HodlPool,
     faction_state: &FactionState,
 ) -> Result<(u64, u64, u64)> {
     crate::log_fn!("stake", "int_update_lp_staking_rewards");
@@ -1703,7 +1703,7 @@ pub fn int_update_lp_staking_rewards(
             player_data.lp_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards = helper::add_to_total_claimable(
-            unrefined_rewards,
+            hodl_pool,
             player_data,
             new_minebtc_rewards,
             player_owner,
@@ -1729,7 +1729,7 @@ pub fn int_update_lp_staking_rewards(
         player_data.lp_sol_reward_debt,
         player_data.lp_dogebtc_reward_debt,
         accrued_minebtc_rewards as f64 / 1e6,
-        unrefined_rewards.total_minebtc_claimable as f64 / 1e6
+        hodl_pool.total_minebtc_claimable as f64 / 1e6
     );
 
     Ok((
@@ -1803,10 +1803,10 @@ pub struct StakeMineBtc<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     /// User who is staking tokens
     #[account(mut)]
@@ -1886,10 +1886,10 @@ pub struct UnstakeMineBtc<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     /// User who is unstaking tokens
     #[account(mut)]
@@ -1939,10 +1939,10 @@ pub struct StakeLpTokens<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: LP Mint (validated manually)
     pub lp_mint: Account<'info, token::Mint>,
@@ -2011,10 +2011,10 @@ pub struct UnstakeLpTokens<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     /// CHECK: LP Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
@@ -2074,10 +2074,10 @@ pub struct ClaimStakingRewards<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: SOL rewards vault (System Account)
     #[account(
@@ -2123,10 +2123,10 @@ pub struct WithdrawDbtcRewards<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: MINE_BTC Mint (validated manually)
     pub minebtc_mint: InterfaceAccount<'info, Mint2022>,

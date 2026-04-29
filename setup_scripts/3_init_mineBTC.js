@@ -112,7 +112,7 @@ const LIVE_FEE_CONFIG = {
   newMinebtcWinnersPct: 50,
   newMinebtcSameFactionPct: 21,
   newMinebtcJackpotPct: 5,
-  newRefiningFee: 10,
+  newHodlTaxPct: 10,
   snapshotInterval: 5 * 60,
   // Referrer's cut of the SOL protocol fee. Hard-capped at 10% by the program.
   newReferralFeePct: 5,             // cross-country recruits
@@ -300,7 +300,7 @@ function printFeeEconomicsSummary() {
   );
   console.log(
     COLOR_INFO,
-    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newRefiningFee}% refining fee only when there are remaining unrefined claimants; otherwise 0%.`
+    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newHodlTaxPct}% HODL tax only when there are remaining unrefined claimants; otherwise 0%.`
   );
 }
 
@@ -418,7 +418,7 @@ async function main() {
     // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
     //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
-    //   - UnrefinedRewards [seeds: "unrefined-rewards"]       — unrefined MineBTC reward pool
+    //   - HodlPool [seeds: "hodl-pool"]       — unrefined MineBTC reward pool
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
@@ -458,7 +458,7 @@ async function main() {
     //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
-    //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
+    //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on dogeBTC withdrawal (paper hands → diamond hands)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
@@ -670,8 +670,8 @@ async function initializeMinebtcProgram(minebtcProgram) {
     minebtcProgram.programId
   );
 
-  const [unrefinedRewardsPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("unrefined-rewards")],
+  const [hodlPoolPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hodl-pool")],
     minebtcProgram.programId
   );
 
@@ -704,7 +704,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
             .accounts({
                 globalConfig: globalConfigPDA,
         mineBtcMining: mineBtcMiningPDA,
-        unrefinedRewards: unrefinedRewardsPDA,
+        hodlPool: hodlPoolPDA,
                 solTreasury: solTreasuryPDA,
         autominerCustody: autominerCustodyPDA,
                 authority: wallet.publicKey,
@@ -724,7 +724,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
       mineBtcMining_address: mineBtcMiningPDA.toString(),
             solTreasury_address: solTreasuryPDA.toString(),
       autominerCustody_address: autominerCustodyPDA.toString(),
-      unrefinedRewards_address: unrefinedRewardsPDA.toString(),
+      hodlPool_address: hodlPoolPDA.toString(),
             FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -736,7 +736,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
       deploymentFile.minebtc_program_initialized = {
                 globalConfig_address: globalConfigPDA.toString(),
         mineBtcMining_address: mineBtcMiningPDA.toString(),
-        unrefinedRewards: unrefinedRewardsPDA.toString(),
+        hodlPool: hodlPoolPDA.toString(),
                 solTreasury_address: solTreasuryPDA.toString(),
             };
             saveDeploymentData();
@@ -2590,7 +2590,7 @@ async function updateFees(minebtcProgram, feeConfig) {
     );
     console.log(
       COLOR_INFO,
-      `     Refining fee: ${globalConfig.minebtcDistConfig.refiningFee}%`
+      `     HODL tax: ${globalConfig.minebtcDistConfig.hodlTaxPct}%`
     );
     console.log(
       COLOR_INFO,
@@ -2606,7 +2606,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       newMinebtcWinnersPct: feeConfig?.newMinebtcWinnersPct ?? null,
       newMinebtcSameFactionPct: feeConfig?.newMinebtcSameFactionPct ?? null,
       newMinebtcJackpotPct: feeConfig?.newMinebtcJackpotPct ?? null,
-      newRefiningFee: feeConfig?.newRefiningFee ?? null,
+      newHodlTaxPct: feeConfig?.newHodlTaxPct ?? null,
       snapshotInterval:
         (feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval) != null
           ? new BN(
@@ -2684,10 +2684,10 @@ async function updateFees(minebtcProgram, feeConfig) {
         COLOR_INFO,
         `     DBTC Jackpot: ${feeParams.newMinebtcJackpotPct}%`
       );
-    if (feeParams.newRefiningFee !== null)
+    if (feeParams.newHodlTaxPct !== null)
       console.log(
         COLOR_INFO,
-        `     Refining fee: ${feeParams.newRefiningFee}%`
+        `     HODL tax: ${feeParams.newHodlTaxPct}%`
       );
     if (feeParams.snapshotInterval !== null)
       console.log(
@@ -2715,7 +2715,7 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcWinnersPct,
         feeParams.newMinebtcSameFactionPct,
         feeParams.newMinebtcJackpotPct,
-        feeParams.newRefiningFee,
+        feeParams.newHodlTaxPct,
         feeParams.snapshotInterval,
         feeParams.newReferralFeePct,
         feeParams.newSameFactionReferralFeePct

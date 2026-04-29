@@ -112,7 +112,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
         minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
         minebtc_jackpot_pct: DEFAULT_MINEBTC_JACKPOT_PCT,
-        refining_fee: DEFAULT_REFINING_FEE,
+        hodl_tax_pct: DEFAULT_HODL_TAX_PCT,
     };
 
     global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
@@ -172,9 +172,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.emission_decrease_pct = DEFAULT_EMISSION_DECREASE_PCT;
 
     // ---------------------------- Unrefined Rewards ---------------------------------
-    let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
-    unrefined_rewards.unrefining_index = INDEX_PRECISION as u128;
-    unrefined_rewards.total_minebtc_claimable = 0;
+    let hodl_pool = &mut ctx.accounts.hodl_pool;
+    hodl_pool.hodl_tax_index = INDEX_PRECISION as u128;
+    hodl_pool.total_minebtc_claimable = 0;
 
     Ok(())
 }
@@ -399,7 +399,7 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `new_minebtc_winners_pct`: Optional new MineBtc winners percentage
 /// - `new_minebtc_same_faction_pct`: Optional new MineBtc same-faction percentage
 /// - `new_minebtc_jackpot_pct`: Optional new MineBtc jackpot percentage
-/// - `new_refining_fee`: Optional new refining fee percentage
+/// - `new_hodl_tax_pct`: Optional new HODL tax percentage
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
 /// # Validation
@@ -416,7 +416,7 @@ pub fn update_fees_internal(
     new_minebtc_winners_pct: Option<u8>,
     new_minebtc_same_faction_pct: Option<u8>,
     new_minebtc_jackpot_pct: Option<u8>,
-    new_refining_fee: Option<u8>,
+    new_hodl_tax_pct: Option<u8>,
     snapshot_interval: Option<u64>,
     new_referral_fee_pct: Option<u8>,
     new_same_faction_referral_fee_pct: Option<u8>,
@@ -515,25 +515,25 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
 
-        // Get current refining_fee to preserve it
-        let current_refining_fee = global_config.minebtc_dist_config.refining_fee;
+        // Get current hodl_tax_pct to preserve it
+        let current_hodl_tax_pct = global_config.minebtc_dist_config.hodl_tax_pct;
 
         global_config.minebtc_dist_config = MineBtcDistConfig {
             minebtc_stakers_pct,
             minebtc_winners_pct,
             minebtc_same_faction_pct,
             minebtc_jackpot_pct,
-            refining_fee: current_refining_fee,
+            hodl_tax_pct: current_hodl_tax_pct,
         };
     }
 
-    // Update refining fee if provided
-    if let Some(refining_fee) = new_refining_fee {
+    // Update HODL tax if provided
+    if let Some(hodl_tax_pct) = new_hodl_tax_pct {
         require!(
-            refining_fee <= PERCENTAGE_DENOMINATOR_U8,
+            hodl_tax_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
-        global_config.minebtc_dist_config.refining_fee = refining_fee;
+        global_config.minebtc_dist_config.hodl_tax_pct = hodl_tax_pct;
     }
 
     // Update snapshot interval if provided
@@ -1553,11 +1553,11 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = UnrefinedRewards::LEN,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        space = HodlPool::LEN,
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: 0-byte PDA that only stores lamports (System Account)
     #[account(

@@ -111,7 +111,7 @@ pub const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
 /// dogeBTC share of round emission added to the global jackpot.
 pub const DEFAULT_MINEBTC_JACKPOT_PCT: u8 = 5;
 /// Percent fee taken when claiming staking rewards (redistributed to other stakers).
-pub const DEFAULT_REFINING_FEE: u8 = 5;
+pub const DEFAULT_HODL_TAX_PCT: u8 = 5;
 
 /// Minimum seconds between price snapshots in the economy cycle.
 pub const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1800; // 30 minutes
@@ -150,7 +150,7 @@ pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 8;
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 pub const HASHPOWER_CONFIG_SEED: &[u8] = b"hashpower-config";
 pub const MINE_BTC_MINING_SEED: &[u8] = b"mine-btc-mining";
-pub const UNREFINED_REWARDS_SEED: &[u8] = b"unrefined-rewards";
+pub const HODL_POOL_SEED: &[u8] = b"hodl-pool";
 
 // PDAs which hold SOL collected by the program
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
@@ -296,12 +296,14 @@ pub struct MineBtcDistConfig {
     pub minebtc_same_faction_pct: u8,
     /// Whole-percent share of MineBtc emission that goes to the global jackpot. `100` = 100%.
     pub minebtc_jackpot_pct: u8,
-    /// Whole-percent refining fee applied to pending MineBtc rewards. `100` = 100%.
-    pub refining_fee: u8,
+    /// Whole-percent HODL tax charged on dogeBTC reward withdrawal.
+    /// `100` = 100%. Paid by paper hands; redistributed to remaining diamond
+    /// hands via `HodlPool::hodl_tax_index` (closed loop — no vault drain).
+    pub hodl_tax_pct: u8,
 }
 
 impl MineBtcDistConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_jackpot_pct + refining_fee
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_jackpot_pct + hodl_tax_pct
 }
 
 impl GlobalConfig {
@@ -787,14 +789,14 @@ impl GlobalGameSate {
 }
 
 #[account]
-pub struct UnrefinedRewards {
-    pub unrefining_index: u128,
+pub struct HodlPool {
+    pub hodl_tax_index: u128,
     pub total_minebtc_claimable: u64,
 }
 
-impl UnrefinedRewards {
+impl HodlPool {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
-        16 +    // unrefining_index (u128)
+        16 +    // hodl_tax_index (u128)
         8; // total_minebtc_claimable (u64)
 }
 
@@ -1023,7 +1025,7 @@ pub struct PlayerData {
     pub lp_dogebtc_reward_debt: u128,
 
     pub pending_sol_rewards: u64,
-    pub unrefining_index: u128,
+    pub hodl_tax_index: u128,
     pub pending_minebtc_rewards: u64,
     pub unrefined_minebtc_rewards: u64,
     /// Number of unclaimed per-round reward accounts still outstanding.
@@ -1098,7 +1100,7 @@ impl PlayerData {
         16 +    // lp_sol_reward_debt (u128)
         16 +    // lp_dogebtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
-        16 +    // unrefining_index (u128)
+        16 +    // hodl_tax_index (u128)
         8 +     // pending_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
         2 +     // pending_round_claims (u16)

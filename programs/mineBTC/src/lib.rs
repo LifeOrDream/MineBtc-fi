@@ -146,7 +146,7 @@ pub mod minebtc {
         new_minebtc_winners_pct: Option<u8>,
         new_minebtc_same_faction_pct: Option<u8>,
         new_minebtc_jackpot_pct: Option<u8>,
-        new_refining_fee: Option<u8>,
+        new_hodl_tax_pct: Option<u8>,
         snapshot_interval: Option<u64>,
         new_referral_fee_pct: Option<u8>,
         new_same_faction_referral_fee_pct: Option<u8>,
@@ -161,7 +161,7 @@ pub mod minebtc {
             new_minebtc_winners_pct,
             new_minebtc_same_faction_pct,
             new_minebtc_jackpot_pct,
-            new_refining_fee,
+            new_hodl_tax_pct,
             snapshot_interval,
             new_referral_fee_pct,
             new_same_faction_referral_fee_pct,
@@ -854,7 +854,7 @@ pub mod minebtc {
         stake::int_claim_staking_rewards(ctx)
     }
 
-    /// Withdraw accumulated MineBTC rewards (with refining fee redistribution)
+    /// Withdraw accumulated MineBTC rewards (with HODL tax redistribution)
     pub fn withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
         crate::log_fn!("lib", "withdraw_dbtc_rewards");
         stake::int_withdraw_dbtc_rewards(ctx)

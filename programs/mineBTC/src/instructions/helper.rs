@@ -566,7 +566,7 @@ pub fn init_position(
 
 /// Add to total claimable and pending rewards
 pub fn add_to_total_claimable(
-    unrefined_minebtc: &mut UnrefinedRewards,
+    unrefined_minebtc: &mut HodlPool,
     player_data: &mut PlayerData,
     minebtc_rewards: u64,
     user: Pubkey,
@@ -574,12 +574,12 @@ pub fn add_to_total_claimable(
     source: u8,
     reference_id: u64,
 ) -> Result<u64> {
-    // Calculate extra dogeBtc rewards due to unrefining. The global unrefining_index
+    // Calculate extra dogeBtc rewards from the HODL tax. The global hodl_tax_index
     // is monotonically non-decreasing, so checked_sub should never fail — but we
     // validate it to surface any state corruption rather than panicking.
     let index_dif = unrefined_minebtc
-        .unrefining_index
-        .checked_sub(player_data.unrefining_index)
+        .hodl_tax_index
+        .checked_sub(player_data.hodl_tax_index)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let accrued_u128 = mul_div_u128(
         player_data.pending_minebtc_rewards as u128,
@@ -596,7 +596,7 @@ pub fn add_to_total_claimable(
         .total_minebtc_claimable
         .checked_add(total_new)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.unrefining_index = unrefined_minebtc.unrefining_index;
+    player_data.hodl_tax_index = unrefined_minebtc.hodl_tax_index;
     player_data.pending_minebtc_rewards = player_data
         .pending_minebtc_rewards
         .checked_add(total_new)

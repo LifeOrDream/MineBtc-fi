@@ -694,7 +694,7 @@ pub fn claim_faction_war_rewards_internal(
     let user_faction_war_bets = &ctx.accounts.user_faction_war_bets;
     let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
-    let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
+    let hodl_pool = &mut ctx.accounts.hodl_pool;
     let clock = Clock::get()?;
     let owner_key = user_faction_war_bets.owner;
 
@@ -839,7 +839,7 @@ pub fn claim_faction_war_rewards_internal(
 
     if total_reward > 0 {
         helper::add_to_total_claimable(
-            unrefined_rewards,
+            hodl_pool,
             player_data,
             total_reward,
             owner_key,
@@ -896,10 +896,10 @@ pub struct ClaimFactionWarRewards<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED],
+        seeds = [HODL_POOL_SEED],
         bump,
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     #[account(mut)]
     pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
