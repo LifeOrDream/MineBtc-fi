@@ -186,24 +186,67 @@ pub fn compute_faction_reward_pools(
         eligible_doge[f] = faction_war_state.eligible_doge_direction_totals[f][winning_dir] > 0;
     }
 
+    let any_base_eligible = eligible_base.iter().take(active_factions).any(|&e| e);
+    let any_loyalty_eligible = eligible_loyalty.iter().take(active_factions).any(|&e| e);
+    let any_doge_eligible = eligible_doge.iter().take(active_factions).any(|&e| e);
+
+    // Orphan-cascade: if a sub-pool has zero globally-eligible factions, fold
+    // it into the base pool instead of stranding the dogeBTC in the mining
+    // vault. With no base eligibles either, those tokens stay in the vault
+    // (extremely rare — would require zero correct bets on every faction's
+    // resolved direction across the whole cycle).
+    let mut effective_base_pool = base_pool_total;
+    if !any_loyalty_eligible && loyalty_pool_total > 0 {
+        msg!(
+            "↩️  No loyalty-eligible factions; redirecting {} loyalty pool to base",
+            loyalty_pool_total
+        );
+        effective_base_pool = effective_base_pool
+            .checked_add(loyalty_pool_total)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    if !any_doge_eligible && doge_pool_total > 0 {
+        msg!(
+            "↩️  No doge-eligible factions; redirecting {} doge pool to base",
+            doge_pool_total
+        );
+        effective_base_pool = effective_base_pool
+            .checked_add(doge_pool_total)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    if !any_base_eligible && effective_base_pool > 0 {
+        msg!(
+            "⚠️  No base-eligible factions either; {} dogeBTC will remain in the mining vault for future cycles",
+            effective_base_pool
+        );
+    }
+
     faction_war_state.faction_reward_pools = compute_rank_weighted_pools(
-        base_pool_total,
+        effective_base_pool,
         &faction_war_state.final_ranks,
         &eligible_base,
         active_factions,
     )?;
-    faction_war_state.loyalty_reward_pools = compute_rank_weighted_pools(
-        loyalty_pool_total,
-        &faction_war_state.final_ranks,
-        &eligible_loyalty,
-        active_factions,
-    )?;
-    faction_war_state.faction_doge_reward_pools = compute_rank_weighted_pools(
-        doge_pool_total,
-        &faction_war_state.final_ranks,
-        &eligible_doge,
-        active_factions,
-    )?;
+    faction_war_state.loyalty_reward_pools = if any_loyalty_eligible {
+        compute_rank_weighted_pools(
+            loyalty_pool_total,
+            &faction_war_state.final_ranks,
+            &eligible_loyalty,
+            active_factions,
+        )?
+    } else {
+        [0u64; NUM_FACTIONS]
+    };
+    faction_war_state.faction_doge_reward_pools = if any_doge_eligible {
+        compute_rank_weighted_pools(
+            doge_pool_total,
+            &faction_war_state.final_ranks,
+            &eligible_doge,
+            active_factions,
+        )?
+    } else {
+        [0u64; NUM_FACTIONS]
+    };
     Ok(())
 }
 

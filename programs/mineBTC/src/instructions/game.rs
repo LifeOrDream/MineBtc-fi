@@ -374,6 +374,29 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         }
     }
 
+    // Redirect orphaned same-faction allocations (losing directions with no
+    // bettors) to the exact-winners pool. Otherwise that share of the round
+    // emission would be permanently stranded in the mining vault. Winners
+    // are guaranteed to exist here because `find_valid_winning_direction`
+    // selects a direction with bets.
+    let max_same_faction_capacity = same_faction_direction_rewards_each
+        .checked_mul((PredictionDirection::COUNT - 1) as u64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let unallocated_same_faction = max_same_faction_capacity
+        .checked_sub(same_faction_total)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let winning_direction_rewards = if unallocated_same_faction > 0 {
+        msg!(
+            "↩️  Redirecting {} unallocated same-faction tokens to exact-winners pool",
+            unallocated_same_faction
+        );
+        winning_direction_rewards
+            .checked_add(unallocated_same_faction)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+    } else {
+        winning_direction_rewards
+    };
+
     game_session.minebtc_winner_pool = winning_direction_rewards;
     game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
     game_session.faction_stakers = faction_stakers;

@@ -514,8 +514,11 @@ pub fn calculate_staking_rewards(
         reward_diff,
         INDEX_PRECISION as u128,
     )?;
-    // Cap to u64::MAX to prevent silent truncation of large rewards
-    Ok(new_rewards.min(u64::MAX as u128) as u64)
+    // Error explicitly on u64 overflow rather than silently capping —
+    // a value > u64::MAX here means the caller's accounting is broken
+    // (or the index has somehow exceeded its denominator); silently
+    // truncating would short-pay the user.
+    u64::try_from(new_rewards).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
 pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
