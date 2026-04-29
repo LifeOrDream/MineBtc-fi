@@ -125,7 +125,7 @@
     "mineBtcMining_address": "7U4JPAdWZZ5n52XgNQTcgJFJfmf15Z3xLgmF2wJ8DH6Q",
     "solTreasury_address": "3Ki9yHJefcFkTCrYLwfmWUZjyLDEU45t4XPNYRKJ4AUU",
     "autominerCustody_address": "BmQFgyoStDsC1FmouYTSE6Sgca3dhCG9MuFDNcyFkZbA",
-    "unrefinedRewards_address": "8cPAQEwAH5sxZf9AHREyohpYa1vusv6nSVMWfg2fcBYU",
+    "hodlPool_address": "8cPAQEwAH5sxZf9AHREyohpYa1vusv6nSVMWfg2fcBYU",
     "FEE_RECIPIENT_MULTISIG": "5bWTkFiM5SnvofjFbxUAAFYfxVbW18MwEC4Zcc6H3xAb",
     "tx_signature": "4SfGuL39TRUbYun771ifWsmJuG8REpDR8iv6hMuVR4uzFWfG433ZEMtPVJsrAopzEHuQTa48grKcRbo7nSAFdiLR",
     "timestamp": "2025-11-29T14:02:01.812Z"

@@ -300,7 +300,7 @@ function printFeeEconomicsSummary() {
   );
   console.log(
     COLOR_INFO,
-    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newHodlTaxPct}% HODL tax only when there are remaining unrefined claimants; otherwise 0%.`
+    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newHodlTaxPct}% HODL tax only when there are remaining HODL pool participants; otherwise 0%.`
   );
 }
 
@@ -418,7 +418,7 @@ async function main() {
     // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
     //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
-    //   - HodlPool [seeds: "hodl-pool"]       — unrefined MineBTC reward pool
+    //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending dogeBTC claims pool with HODL tax redistribution
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address

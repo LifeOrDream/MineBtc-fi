@@ -469,7 +469,7 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 
 ### Current Mechanics
 - 5% fee on MineBTC reward withdrawal (`withdraw_dbtc_rewards` in `stake.rs`)
-- Fee is redistributed to all other pending stakers via the global `unrefining_index`
+- Fee is redistributed to all other pending stakers via the global `hodl_tax_index`
 - This is brilliant game design but was previously invisible
 
 ### Implemented Changes
@@ -483,12 +483,12 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 **Specifics:**
 
 1. **HODL Tax Events (Implemented)**
-   - Event `HodlTaxRedistributed` is emitted every time a user pays the refining fee
+   - Event `HodlTaxRedistributed` is emitted every time a user pays the HODL tax
    - Fields: `paper_hand` (who paid), `tax_amount`, `redistributed_amount`, `remaining_total_claimable` (proxy for how many diamond hands benefit)
    - Frontend shows a live feed: "🔥 {User} paid 5,000 HODL Tax. You earned 42 dogeBTC for diamond handing."
 
 2. **Reframe the Narrative (Frontend/Marketing)**
-   - Don't call it "refining fee." Call it **"Paper Hand Tax."**
+   - Don't call it "HODL tax." Call it **"Paper Hand Tax."**
    - When someone unstakes early and burns tokens, call it **"Paper Hand Burn."**
    - When someone holds through volatility, call them **"Diamond Hands."**
    - This language is native to crypto Twitter and instantly shareable.
@@ -648,7 +648,7 @@ The difference between a game that 1,000 people play and a game that 1,000 peopl
 
 1. **Visible progression** — Users must SEE their Doge evolve. Right now, it's invisible.
 2. **Shared moments** — Mutations, jackpots, and streaks must be public events, not private accounting. Right now, they're hidden.
-3. **Simple stories** — "I won 3x in 60 seconds" or "My Doge evolved to Stage 4" are shareable. "I claimed 3.7 dogeBTC from the unrefining index after a 5% refining fee redistribution" is not.
+3. **Simple stories** — "I won 3x in 60 seconds" or "My Doge evolved to Stage 4" are shareable. "I claimed 3.7 dogeBTC from the HODL tax index after a 5% HODL tax redistribution" is not.
 
 Fix the P0s and P1s above before launch. The rest can ship in Season 2.
 

@@ -512,19 +512,19 @@ SOL staking rewards:
 MineBTC staking rewards:
 
 - accrue into `pending_minebtc_rewards`
-- are globally tracked through `unrefined_rewards.total_minebtc_claimable`
+- are globally tracked through `hodl_pool.total_minebtc_claimable`
 - are withdrawn later through `withdraw_dbtc_rewards`
 
-### Refining redistribution
+### HODL tax redistribution
 
-When a user withdraws pending MineBTC rewards, a refining fee can be taken and
+When a user withdraws pending MineBTC rewards, a HODL tax can be taken and
 redistributed across remaining unclaimed MineBTC balances via the global
-`unrefining_index`.
+`hodl_tax_index`.
 
 This means claim timing matters:
 
-- fast withdrawal = immediate liquidity, but pay refining fee
-- slower withdrawal = can earn part of other users' refining fees
+- fast withdrawal = immediate liquidity, but pay HODL tax
+- slower withdrawal = can earn part of other users' HODL taxs
 
 ## Tax Treasury Distribution (also tied to faction wars)
 

@@ -119,7 +119,7 @@ Two distinct doge roles:
 - `MineBtcMining`
 - `FactionWarConfig`
 - `FactionWarState`
-- `UnrefinedRewards`
+- `HodlPool`
 
 ### Per Country
 
@@ -221,7 +221,7 @@ Common ones:
 [b"global-game-state"]
 [b"mine-btc-mining"]
 [b"faction-war-config"]
-[b"unrefined-rewards"]
+[b"hodl-pool"]
 
 // Per entity
 [b"faction", faction_name.as_bytes()]

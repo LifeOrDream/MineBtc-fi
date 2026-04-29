@@ -130,7 +130,7 @@
     "mineBtcMining_address": "88zKrNRVuTjcQHQhnd8Q2aAWByczFwN4NFfMsXd4SKo5",
     "solTreasury_address": "272HyWuxKox2qanj7STAVnTarDmBfcapifZyAfctWsxF",
     "autominerCustody_address": "BNYKrfFDSYhm9DjBMeXDSRJqgafgU1UxvoustV1oY9Y9",
-    "unrefinedRewards_address": "C5LFpLTL3mmuy2EbpyE79xSXNCj7igzhHPU7569y1JYp",
+    "hodlPool_address": "C5LFpLTL3mmuy2EbpyE79xSXNCj7igzhHPU7569y1JYp",
     "FEE_RECIPIENT_MULTISIG": "2FJysLPr83hcJ1nBhzBMjyF6HFhQrf6RptdnyAemUFiL",
     "tx_signature": "C7jxgWAsAUcCvWyDyU4qcXHMKVfo9pPiV9KsGJmJZioRdAM31AzUKNpnwa9FtQMfsGrFrEXB4ULqgN7XMjAtELS",
     "timestamp": "2026-04-29T08:46:18.526Z"
@@ -235,7 +235,7 @@
       "newMinebtcWinnersPct": 50,
       "newMinebtcSameFactionPct": 21,
       "newMinebtcJackpotPct": 5,
-      "newRefiningFee": 10,
+      "newHodlTaxPct": 10,
       "snapshotInterval": 300
     },
     "tx_signature": "tT9zNKSvdmSsgUxCrYz6djEhEeWY1z5Ftqj1ECQztyk7mX2St95tB2Ht67k1xNhDsmMHCU2wu4dYJqGyomfDRie",
