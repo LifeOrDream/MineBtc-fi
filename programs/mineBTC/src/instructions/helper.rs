@@ -329,7 +329,7 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
-    let seeds = &[SOL_PRIZE_POT_VAULT_SEED.as_ref(), &[vault_bump]];
+    let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
     transfer(

@@ -87,8 +87,6 @@ function generateWebsiteConfig(config, deployment) {
         deployment.minebtc_program_initialized?.mineBtcMining_address,
       sol_treasury_pda:
         deployment.minebtc_program_initialized?.solTreasury_address,
-      doges_treasury_pda:
-        deployment.minebtc_program_initialized?.dogesTreasury_address,
       unrefinedRewards_pda:
         deployment.minebtc_program_initialized?.unrefinedRewards_address,
       autominerCustody_pda:

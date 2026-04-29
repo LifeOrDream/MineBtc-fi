@@ -32,9 +32,13 @@ use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
 pub const MAX_REFERRALS_PER_CODE: u16 = 10_000; // High cap so viral country recruitment is not artificially throttled.
-pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user with any referral code.
-pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer.
-pub const SAME_FACTION_REFERRAL_REWARD_PCT: u64 = 5; // Same-country recruits are more valuable.
+pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in dogeBTC at first claim).
+// Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
+// not from dogeBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
+// (admin-tunable, capped at `MAX_REFERRAL_FEE_PCT = 10`); lifetime accrual is
+// capped at `MAX_REFERRER_SOL_LIFETIME`. Sybil farming is structurally
+// unprofitable: the sybil pays 100% of the bet but extracts only a fraction
+// of the protocol fee back.
                                                      // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
                                                      // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
                                                      // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
@@ -609,15 +613,25 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Emit emergency withdrawal event if early withdrawal
     if is_early_withdrawal && penalty_amount > 0 {
-        emit!(EmergencyWithdrawal {
+        let days_remaining = if current_ts < user_position.lockup_end_timestamp {
+            ((user_position.lockup_end_timestamp - current_ts) as u64)
+                .checked_add(86400 - 1)
+                .unwrap_or(0) / 86400
+        } else {
+            0
+        };
+
+        emit!(PaperHandBurned {
             owner: ctx.accounts.authority.key(),
             player_data: player_data_key,
             position_key,
             position_index,
+            staked_token_type: 0, // MineBTC
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,
             penalty_tax_pct: calc_penalty_pct,
+            days_remaining,
             timestamp: current_ts,
         });
     }
@@ -1134,15 +1148,25 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 
     // Emit emergency withdrawal event if early withdrawal
     if is_early_withdrawal && penalty_amount > 0 {
-        emit!(EmergencyWithdrawal {
+        let days_remaining = if current_ts < user_position.lockup_end_timestamp {
+            ((user_position.lockup_end_timestamp - current_ts) as u64)
+                .checked_add(86400 - 1)
+                .unwrap_or(0) / 86400
+        } else {
+            0
+        };
+
+        emit!(PaperHandBurned {
             owner: ctx.accounts.authority.key(),
             player_data: player_data_key,
             position_index,
             position_key,
+            staked_token_type: 1, // LP
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,
             penalty_tax_pct: calc_penalty_pct,
+            days_remaining,
             timestamp: current_ts,
         });
     }
@@ -1334,55 +1358,23 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         base_claimable_amount as f64 / 1e6
     );
 
-    // Apply referral logic: user gets +1% bonus, referrer gets 3% or 5% for
-    // same-faction recruits. The higher same-faction reward turns referrals into
-    // country-building without changing the user's own payout math.
-    // A real referral must resolve to the referrer's canonical ReferralRewards PDA.
+    // Apply referral bonus to the referee only. Referrer commissions accrue in SOL
+    // from referees' protocol fees (see internal_process_bets / NFT mint flows),
+    // not from dogeBTC emission. This keeps the 21M cap unaffected by referrals
+    // and makes sybil farming structurally unprofitable.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
-    let (referral_bonus, referral_reward) = if has_referrer {
+    let referral_bonus = if has_referrer {
         helper::validate_referrer_rewards_account(
             &player_data.referral_code,
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
-
-        // User gets +1% bonus on their rewards
         let bonus = (base_claimable_amount * REFERRAL_BONUS_PCT) / 100;
-        let reward_pct = if player_data.same_faction_referral {
-            SAME_FACTION_REFERRAL_REWARD_PCT
-        } else {
-            REFERRAL_REWARD_PCT
-        };
-        let reward = (base_claimable_amount * reward_pct) / 100;
         msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
-        msg!(
-            "   Referral reward to referrer: {} minebtc (pct={} same_faction={})",
-            reward as f64 / 1e6,
-            reward_pct,
-            player_data.same_faction_referral
-        );
-
-        // Add reward to referrer's pending minebtc rewards
-        let referrer_rewards = ctx
-            .accounts
-            .referrer_rewards
-            .as_mut()
-            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
-        referrer_rewards.pending_minebtc_rewards = referrer_rewards
-            .pending_minebtc_rewards
-            .checked_add(reward)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        referrer_rewards.total_minebtc_earned = referrer_rewards
-            .total_minebtc_earned
-            .checked_add(reward)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!(
-            "     Added {} minebtc to referrer's rewards",
-            reward as f64 / 1e6
-        );
-        (bonus, reward)
+        bonus
     } else {
-        (0, 0)
+        0
     };
+    let referral_reward = 0u64; // Referrer SOL commissions are paid out-of-band on bets/mints, not here.
 
     // User gets base amount + referral bonus
     let claimable_by_user = base_claimable_amount
@@ -1480,10 +1472,10 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
             increment,
             unrefined_minebtc.total_minebtc_claimable as f64 / 1e6
         );
-        emit!(RefiningFeeRedistributed {
-            user: player_owner,
+        emit!(HodlTaxRedistributed {
+            paper_hand: player_owner,
             player_data: player_data_key,
-            refining_fee,
+            tax_amount: refining_fee,
             redistributed_amount: refining_fee,
             redistributed_index_increment: increment as u128,
             remaining_total_claimable: unrefined_minebtc.total_minebtc_claimable,
@@ -1526,62 +1518,11 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     msg!("💰 [claim_referral_rewards] Claiming referral rewards");
 
     let referral_rewards = &mut ctx.accounts.referral_rewards;
-
-    let pending_minebtc = referral_rewards.pending_minebtc_rewards;
     let pending_sol = referral_rewards.pending_sol_rewards;
 
-    require!(
-        pending_minebtc > 0 || pending_sol > 0,
-        ErrorCode::InsufficientFunds
-    );
+    require!(pending_sol > 0, ErrorCode::InsufficientFunds);
 
-    msg!(
-        "     Pending MineBtc: {} minebtc",
-        pending_minebtc as f64 / 1e6
-    );
     let mut claimed_sol = 0u64;
-
-    // Transfer MineBtc if any
-    if pending_minebtc > 0 {
-        let vault_authority_seeds = &[
-            MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.minebtc_vault_authority],
-        ];
-        let signer = &[&vault_authority_seeds[..]];
-
-        let transfer_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            token_interface::TransferChecked {
-                from: ctx.accounts.minebtc_token_vault.to_account_info(),
-                to: ctx.accounts.user_minebtc_account.to_account_info(),
-                authority: ctx.accounts.minebtc_vault_authority.to_account_info(),
-                mint: ctx.accounts.minebtc_mint.to_account_info(),
-            },
-            signer,
-        );
-
-        token_interface::transfer_checked(
-            transfer_ctx,
-            pending_minebtc,
-            ctx.accounts.minebtc_mint.decimals,
-        )?;
-        msg!("   ✓ Transferred {} minebtc", pending_minebtc);
-    }
-
-    // Update total tokens distributed
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
-    mine_btc_mining.total_tokens_distributed = mine_btc_mining
-        .total_tokens_distributed
-        .checked_add(pending_minebtc)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "   Updated total tokens distributed: {} (+{})",
-        mine_btc_mining.total_tokens_distributed as f64 / 1e6,
-        pending_minebtc as f64 / 1e6
-    );
-
-    // Reset pending minebtc rewards
-    referral_rewards.pending_minebtc_rewards = 0;
 
     // Transfer pending SOL from ReferralRewards PDA to user
     // SOL is stored as extra lamports on the PDA account
@@ -1620,7 +1561,7 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     emit!(ReferralRewardsClaimed {
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
-        minebtc_amount: pending_minebtc,
+        minebtc_amount: 0,
         sol_amount: claimed_sol,
         timestamp: Clock::get()?.unix_timestamp,
     });
@@ -2243,47 +2184,9 @@ pub struct ClaimReferralRewards<'info> {
     )]
     pub referral_rewards: Account<'info, ReferralRewards>,
 
-    /// CHECK: MINE_BTC Mint (validated manually)
-    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
-
-    // Token accounts
-    #[account(
-        mut,
-        constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
-        constraint = user_minebtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
-    )]
-    /// Referrer's MineBtc token account to receive rewards
-    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
-
-    /// CHECK: MineBtc mining state (needed for vault PDA derivation)
-    #[account(
-        seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump
-    )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
-
-    /// CHECK: MineBtc token vault (main vault where tokens are deposited)
-    #[account(
-        mut,
-        seeds = [MINE_BTC_VAULT_SEED.as_ref(), mine_btc_mining.key().as_ref()],
-        bump,
-        constraint = minebtc_token_vault.mint == minebtc_mint.key() @ ErrorCode::InvalidMint,
-    )]
-    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
-
-    #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
-    )]
-    /// CHECK: Authority of the token vault (PDA that signs for token transfers)
-    pub minebtc_vault_authority: UncheckedAccount<'info>,
-
     /// Referrer claiming rewards
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-
-    /// Token-2022 program for SPL-22 token operations
-    pub token_program: Program<'info, Token2022>,
 }

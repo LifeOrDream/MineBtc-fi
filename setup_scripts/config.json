@@ -49,8 +49,7 @@
     },
     "mining": {
         "start_timestamp": 0,
-        "doge_btc_per_round": 1000000000,
-        "initial_deposit": "2076697169067604"
+        "doge_btc_per_round": 1000000000
     },
     "doges_config": {
         "_supply_plan": "12K genesis mint cap via bonding curve (1000 per configured country), 100K lifetime Doge cap via breeding/admin/whitelist mints",
@@ -120,7 +119,7 @@
             "name": "France"
         },
         {
-            "name": "Ukraine"
+            "name": "Brazil"
         },
         {
             "name": "Israel"

@@ -4,7 +4,7 @@
  * Economy Cycle Step Runner
  *
  * Each invocation performs ONE step of the economy cycle:
- *   - If price history < 8: fund treasury + distribute + snapshot
+ *   - If price history < 8: fund SOL treasury + distribute + snapshot
  *   - If price history == 8: update_rate
  *   - If lp_operation_pending: add_lp_and_burn
  *
@@ -54,7 +54,6 @@ const pid = mineBTCProgram.programId;
 const [globalConfigPDA] = PublicKey.findProgramAddressSync([Buffer.from("global-config")], pid);
 const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync([Buffer.from("mine-btc-mining")], pid);
 const [solTreasuryPDA] = PublicKey.findProgramAddressSync([Buffer.from("sol-treasury")], pid);
-const [dogesTreasuryPDA] = PublicKey.findProgramAddressSync([Buffer.from("doges-treasury")], pid);
 const [buybacksAccountPDA] = PublicKey.findProgramAddressSync([Buffer.from("buybacks")], pid);
 const [buybacksSolVaultPDA] = PublicKey.findProgramAddressSync([Buffer.from("buybacks-sol-vault")], pid);
 const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync([Buffer.from("minebtc-vault-authority")], pid);
@@ -106,7 +105,6 @@ async function fetchState() {
   const globalConfig = await mineBTCProgram.account.globalConfig.fetch(globalConfigPDA);
   const buybacksVaultBal = await connection.getBalance(buybacksSolVaultPDA);
   const solTreasuryBal = await connection.getBalance(solTreasuryPDA);
-  const dogesTreasuryBal = await connection.getBalance(dogesTreasuryPDA);
   const walletBal = await connection.getBalance(walletKeypair.publicKey);
 
   return {
@@ -120,7 +118,6 @@ async function fetchState() {
     totalSolAccumulated: buybacks.totalSolAccumulated.toString(),
     buybacksVaultBal,
     solTreasuryBal,
-    dogesTreasuryBal,
     walletBal,
     buybackPct: globalConfig.solFeeConfig.buybackPct,
     priceHistory: (mining.priceHistory || []).map(e => ({
@@ -139,7 +136,6 @@ function printState(label, state) {
   console.log(`    Track price: ${state.trackPrice}`);
   console.log(`    Mine BTC/round: ${state.mineBtcPerRound}`);
   console.log(`    SOL treasury: ${(state.solTreasuryBal / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
-  console.log(`    Doges treasury: ${(state.dogesTreasuryBal / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
   console.log(`    Buybacks vault: ${(state.buybacksVaultBal / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
   console.log(`    SOL for POL: ${state.solForPol} lamports`);
   console.log(`    Total accumulated: ${state.totalSolAccumulated} lamports`);
@@ -205,11 +201,10 @@ function parseAndLogEvents(txInfo) {
 // ============================================================
 
 async function fundAndDistribute() {
-  console.log("\n  --- Funding treasuries (0.01 SOL each) ---");
+  console.log("\n  --- Funding SOL treasury (0.01 SOL) ---");
 
   const fundTx = new Transaction().add(
     SystemProgram.transfer({ fromPubkey: walletKeypair.publicKey, toPubkey: solTreasuryPDA, lamports: 0.01 * LAMPORTS_PER_SOL }),
-    SystemProgram.transfer({ fromPubkey: walletKeypair.publicKey, toPubkey: dogesTreasuryPDA, lamports: 0.01 * LAMPORTS_PER_SOL }),
   );
   const fundSig = await sendAndConfirmTransaction(connection, fundTx, [walletKeypair], { commitment: "confirmed" });
   console.log(`  Fund TX: ${fundSig}`);
@@ -236,7 +231,6 @@ async function fundAndDistribute() {
     treasuryWsolAccount: await getAssociatedTokenAddress(WSOL_MINT, solTreasuryPDA, true, TOKEN_PROGRAM_ID),
     multisigWsolAccount: multisigWsolAta,
     wsolMint: WSOL_MINT,
-    dogesTreasury: dogesTreasuryPDA,
     buybacksSolVault: buybacksSolVaultPDA,
     buybacksAccount: buybacksAccountPDA,
     payer: walletKeypair.publicKey,

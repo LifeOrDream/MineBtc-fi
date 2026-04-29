@@ -211,8 +211,6 @@ pub fn internal_initialize_player(
     new_player_rewards.referrals_count = 0;
     new_player_rewards.same_faction_referrals_count = 0;
     new_player_rewards.referred_faction_counts = [0u16; NUM_FACTIONS];
-    new_player_rewards.pending_minebtc_rewards = 0;
-    new_player_rewards.total_minebtc_earned = 0;
     new_player_rewards.pending_sol_rewards = 0;
     new_player_rewards.total_sol_earned = 0;
     msg!("     Referral rewards account initialized");
@@ -434,6 +432,7 @@ pub fn internal_join_bets<'info>(
         lp_ops,
         user_faction_war_bets.as_mut(),
         user_faction_war_bets_bump,
+        accounts.referrer_rewards.as_mut(),
     )?;
     helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
     helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
@@ -1102,6 +1101,7 @@ pub fn internal_execute_autominer_bet<'info>(
         lp_ops,
         user_faction_war_bets.as_mut(),
         user_faction_war_bets_bump,
+        accounts.referrer_rewards.as_mut(),
     )?;
     helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
     helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
@@ -1718,6 +1718,7 @@ fn internal_process_bets<'info>(
     lp_operations_count: u32,
     user_faction_war_bets: &mut UserFactionWarBets,
     user_faction_war_bets_bump: u8,
+    referrer_rewards: Option<&mut Account<'info, ReferralRewards>>,
 ) -> Result<()> {
     let clock = Clock::get()?;
 
@@ -1773,6 +1774,9 @@ fn internal_process_bets<'info>(
         faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
         faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
         faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
+        faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
         faction_war_state.eligible_doge_direction_totals =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
         faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
@@ -1949,12 +1953,57 @@ fn internal_process_bets<'info>(
         );
         do_transfer(sol_rewards_vault, total_stakers_fee)?;
     }
-    if total_protocol_fee > 0 {
+    // Split a slice of the protocol fee into the referrer's commission, capped
+    // by MAX_REFERRER_SOL_LIFETIME. The remainder flows to sol_treasury as before.
+    let mut referrer_cut: u64 = 0;
+    let has_referrer = player_data.referral_code != system_program.key();
+    if total_protocol_fee > 0 && has_referrer {
+        helper::validate_referrer_rewards_account(
+            &player_data.referral_code,
+            referrer_rewards.as_deref(),
+        )?;
+        let rr = referrer_rewards.expect("validated above");
+        let remaining_cap = MAX_REFERRER_SOL_LIFETIME.saturating_sub(rr.total_sol_earned);
+        if remaining_cap > 0 {
+            let pct = if player_data.same_faction_referral {
+                global_config.sol_fee_config.same_faction_referral_fee_pct as u64
+            } else {
+                global_config.sol_fee_config.referral_fee_pct as u64
+            };
+            let raw_cut = total_protocol_fee
+                .checked_mul(pct)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                / 100;
+            referrer_cut = raw_cut.min(remaining_cap);
+            if referrer_cut > 0 {
+                do_transfer(&rr.to_account_info(), referrer_cut)?;
+                rr.pending_sol_rewards = rr
+                    .pending_sol_rewards
+                    .checked_add(referrer_cut)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+                rr.total_sol_earned = rr
+                    .total_sol_earned
+                    .checked_add(referrer_cut)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+                msg!(
+                    "   Referrer SOL cut: {} SOL (pct={} same_faction={} cap_remaining_after={})",
+                    referrer_cut as f64 / 1e9,
+                    pct,
+                    player_data.same_faction_referral,
+                    MAX_REFERRER_SOL_LIFETIME.saturating_sub(rr.total_sol_earned) as f64 / 1e9,
+                );
+            }
+        }
+    }
+    let treasury_amount = total_protocol_fee
+        .checked_sub(referrer_cut)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    if treasury_amount > 0 {
         msg!(
-            "   Transferring total protocol fees ({} SOL)",
-            total_protocol_fee as f64 / 1e9
+            "   Transferring total protocol fees ({} SOL) to sol_treasury",
+            treasury_amount as f64 / 1e9
         );
-        do_transfer(sol_treasury, total_protocol_fee)?;
+        do_transfer(sol_treasury, treasury_amount)?;
     }
     if total_net_to_pot > 0 {
         msg!(
@@ -2318,6 +2367,19 @@ fn internal_process_bets<'info>(
                     .checked_add(mutation_score)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
 
+                // Track running MVP for this faction
+                player_data.current_faction_war_score = player_data
+                    .current_faction_war_score
+                    .checked_add(mutation_score)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+                if player_data.current_faction_war_score
+                    > faction_war_state.faction_mvp_score[faction_id]
+                {
+                    faction_war_state.faction_mvp_user[faction_id] = owner_key;
+                    faction_war_state.faction_mvp_score[faction_id] =
+                        player_data.current_faction_war_score;
+                }
+
                 emit!(crate::events::StoryEventScoreAccumulated {
                     faction_war_id: faction_war_state.faction_war_id,
                     faction_id: faction_id as u8,
@@ -2575,7 +2637,7 @@ pub struct JoinBets<'info> {
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
@@ -2612,6 +2674,17 @@ pub struct JoinBets<'info> {
         bump,
     )]
     pub user_faction_war_bets: UncheckedAccount<'info>,
+
+    /// Referrer's commission account. Required when the betting player has a referrer
+    /// (`player_data.referral_code != system_program`); the SDK derives the PDA via
+    /// `[REFERRAL_REWARDS_SEED, player_data.referral_code]` and passes it here.
+    /// Optional only for unreferred players.
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), player_data.referral_code.as_ref()],
+        bump,
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2659,7 +2732,7 @@ pub struct ClaimRoundRewards<'info> {
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
@@ -2724,7 +2797,7 @@ pub struct ClaimAutominerRewards<'info> {
     /// CHECK: SOL prize pot vault (PDA)
     #[account(
         mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
@@ -2927,7 +3000,7 @@ pub struct ExecuteAutominerBet<'info> {
     /// CHECK: SOL prize pot vault
     #[account(
         mut,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
@@ -2964,6 +3037,15 @@ pub struct ExecuteAutominerBet<'info> {
         bump,
     )]
     pub user_faction_war_bets: UncheckedAccount<'info>,
+
+    /// Referrer's commission account. Required when the autominer's owner has a referrer.
+    /// SDK derives `[REFERRAL_REWARDS_SEED, player_data.referral_code]`.
+    #[account(
+        mut,
+        seeds = [REFERRAL_REWARDS_SEED.as_ref(), player_data.referral_code.as_ref()],
+        bump,
+    )]
+    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
 
     /// Caller (bot or anyone) - doesn't need to be owner
     #[account(mut)]

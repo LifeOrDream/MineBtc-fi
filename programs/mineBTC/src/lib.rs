@@ -52,7 +52,7 @@ pub use state::{
     PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("8XkQmA3mVPJb8ym9rXSYv8xJZPnn6NNMDQExUz86LBYw");
+declare_id!("335jxvDuERHsC58vej77jJ5VVEuqPoSqDPqRbqjbzrJD");
 
 #[macro_export]
 macro_rules! log_fn {
@@ -145,9 +145,11 @@ pub mod minebtc {
         new_minebtc_stakers_pct: Option<u8>,
         new_minebtc_winners_pct: Option<u8>,
         new_minebtc_same_faction_pct: Option<u8>,
-        new_minebtc_motherlode_pct: Option<u8>,
+        new_minebtc_jackpot_pct: Option<u8>,
         new_refining_fee: Option<u8>,
         snapshot_interval: Option<u64>,
+        new_referral_fee_pct: Option<u8>,
+        new_same_faction_referral_fee_pct: Option<u8>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_fees");
         admin::update_fees_internal(
@@ -158,9 +160,11 @@ pub mod minebtc {
             new_minebtc_stakers_pct,
             new_minebtc_winners_pct,
             new_minebtc_same_faction_pct,
-            new_minebtc_motherlode_pct,
+            new_minebtc_jackpot_pct,
             new_refining_fee,
             snapshot_interval,
+            new_referral_fee_pct,
+            new_same_faction_referral_fee_pct,
         )
     }
 
@@ -651,7 +655,7 @@ pub mod minebtc {
         game::int_end_round(ctx)
     }
 
-    /// Finalize the round's faction-level staking/motherlode distribution and track faction-war mining.
+    /// Finalize the round's faction-level staking/jackpot distribution and track faction-war mining.
     pub fn end_round_faction_rewards(
         ctx: Context<EndRoundFactionRewards>,
         faction_war_id: u64,

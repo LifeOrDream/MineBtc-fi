@@ -1,23 +1,25 @@
-// # Game Instructions
+// # Arena Cycle Instructions
 //
-// Core game loop: 60-second rounds with slot-hash randomness, winner selection, and reward distribution.
+// Core arena loop: 60-second cycles with slot-hash randomness, winner selection, and reward distribution.
+// SOL contributions from faction-direction predictions fuel the compute budget for on-chain content
+// generation and the self-improving game economy.
 //
-// ## Game Mechanics
+// ## Arena Mechanics
 //
-// The game operates in rounds where:
-// 1. A caller starts a new round.
-// 2. Players place faction-direction bets that also count toward the active faction_war.
-// 3. Once the round duration passes, anyone can finalize the round from its pre-scheduled
+// The arena operates in cycles where:
+// 1. A cranker starts a new arena cycle.
+// 2. Players submit faction-direction predictions that also count toward the active faction_war.
+// 3. Once the cycle duration passes, anyone can finalize the cycle from its pre-scheduled
 //    slot-hash entropy source.
-// 4. If the scheduled slot-hash aged out before anyone finalized the round, settlement falls back
+// 4. If the scheduled slot-hash aged out before anyone finalized the cycle, settlement falls back
 //    to the latest available slot-hash.
-// 5. Exact faction+direction bettors receive the main round rewards, while other directions on the
+// 5. Exact faction+direction predictors receive the main cycle rewards, while other directions on the
 //    winning faction can still share a consolation MineBTC pool.
 //
 // ## Key Functions
 //
-// - `start_round`: Initializes a new round.
-// - `end_round`: Finalizes the round using slot-hash entropy and calculates initial rewards.
+// - `start_round`: Initializes a new arena cycle.
+// - `end_round`: Finalizes the cycle using slot-hash entropy and calculates initial rewards.
 // - `end_round_faction_rewards`: Distributes MineBTC rewards to stakers and faction pools.
 //
 // The slot-hash system avoids reveal-timing manipulation while keeping finalization permissionless.
@@ -90,11 +92,12 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.minebtc_winner_pool = 0;
     game_session.minebtc_same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     game_session.faction_stakers = 0;
-    game_session.motherlode_rewards = 0;
+    game_session.jackpot_rewards = 0;
     game_session.sol_rewards_index = 0;
     game_session.minebtc_rewards_index = 0;
-    game_session.motherlode_hit = false;
-    game_session.motherlode_pot_size_on_hit = 0;
+    game_session.jackpot_hit = false;
+    game_session.jackpot_faction_id = 0;
+    game_session.jackpot_pot_size_on_hit = 0;
     game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
     game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
     game_session.total_mutations_this_round = 0;
@@ -323,6 +326,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             0,
             0,
             false,
+            0,
             clock.unix_timestamp,
         );
 
@@ -334,13 +338,13 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         winning_direction_rewards,
         same_faction_direction_rewards_each,
         faction_stakers,
-        motherlode_rewards,
+        jackpot_rewards,
     ) = calculate_minebtc_split(
         minebtc_rewards,
         global_config.minebtc_dist_config.minebtc_stakers_pct,
         global_config.minebtc_dist_config.minebtc_winners_pct,
         global_config.minebtc_dist_config.minebtc_same_faction_pct,
-        global_config.minebtc_dist_config.minebtc_motherlode_pct,
+        global_config.minebtc_dist_config.minebtc_jackpot_pct,
     );
 
     let winning_points = game_session.points_bets_by_faction_direction[winning_faction_id as usize]
@@ -372,13 +376,19 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     game_session.minebtc_winner_pool = winning_direction_rewards;
     game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
     game_session.faction_stakers = faction_stakers;
-    game_session.motherlode_rewards = motherlode_rewards;
+    game_session.jackpot_rewards = jackpot_rewards;
+
+    // Accumulate this round's jackpot allocation into the global jackpot pot.
+    global_state.jackpot_pot = global_state
+        .jackpot_pot
+        .checked_add(jackpot_rewards)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     let total_distributed_this_round = game_session
         .minebtc_winner_pool
         .checked_add(same_faction_total)
         .and_then(|total| total.checked_add(faction_stakers))
-        .and_then(|total| total.checked_add(motherlode_rewards))
+        .and_then(|total| total.checked_add(jackpot_rewards))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     ctx.accounts.mine_btc_mining.total_tokens_mined = ctx
         .accounts
@@ -408,7 +418,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    let motherlode_random = u64::from_le_bytes([
+    let jackpot_random = u64::from_le_bytes([
         final_hash_bytes[8],
         final_hash_bytes[9],
         final_hash_bytes[10],
@@ -417,8 +427,57 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         0,
         0,
         0,
-    ]) % MOTHERLODE_CHANCE;
-    game_session.motherlode_hit = motherlode_random == 0;
+    ]) % JACKPOT_CHANCE;
+    game_session.jackpot_hit = jackpot_random == 0;
+
+    // If jackpot hits, select the winning faction using inverse bet-volume weighting.
+    // Factions with lower SOL prediction volume receive higher weight,
+    // creating underdog moments and encouraging diversification.
+    if game_session.jackpot_hit {
+        let total_sol = game_session.total_sol_bets.max(1);
+        let mut weights = [0u64; NUM_FACTIONS];
+        let mut total_weight: u128 = 0;
+
+        for i in 0..active_faction_count {
+            let faction_bets = game_session.sol_bets_by_faction[i];
+            let bet_share_bps = (faction_bets as u128 * BASIS_POINTS_DENOMINATOR as u128 / total_sol as u128) as u64;
+            let inverse_share_bps = BASIS_POINTS_DENOMINATOR.saturating_sub(bet_share_bps);
+            // Weight = 0.5 + inverse_share, giving 0-bet factions 1.5x weight and max-bet factions 0.5x weight.
+            let weight_bps = 5000u64 + inverse_share_bps;
+            weights[i] = weight_bps.max(100);
+            total_weight += weights[i] as u128;
+        }
+
+        let jackpot_faction_roll = u64::from_le_bytes([
+            final_hash_bytes[12],
+            final_hash_bytes[13],
+            final_hash_bytes[14],
+            final_hash_bytes[15],
+            0, 0, 0, 0,
+        ]) % total_weight as u64;
+
+        let mut cumulative: u128 = 0;
+        for i in 0..active_faction_count {
+            cumulative += weights[i] as u128;
+            if jackpot_faction_roll < cumulative as u64 {
+                game_session.jackpot_faction_id = i as u8;
+                break;
+            }
+        }
+    }
+
+    // Near miss: within 10 closest rolls of the jackpot threshold.
+    // Frontend uses this to hook users with "so close!" notifications.
+    if !game_session.jackpot_hit && jackpot_random <= 10 {
+        emit!(crate::events::JackpotNearMiss {
+            round_id: game_session.round_id,
+            roll: jackpot_random,
+            threshold: 0,
+            pot_size: global_state.jackpot_pot,
+            timestamp: clock.unix_timestamp,
+        });
+    }
+
     game_session.stage = 1;
 
     emit_round_ended(
@@ -429,8 +488,9 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         game_session.entropy_slot_used,
         game_session.used_entropy_fallback,
         faction_stakers,
-        motherlode_rewards,
-        game_session.motherlode_hit,
+        jackpot_rewards,
+        game_session.jackpot_hit,
+        game_session.jackpot_faction_id,
         clock.unix_timestamp,
     );
 
@@ -446,8 +506,9 @@ fn emit_round_ended(
     entropy_slot_used: u64,
     used_entropy_fallback: bool,
     minebtc_faction_stakers: u64,
-    minebtc_motherlode: u64,
-    motherlode_hit: bool,
+    minebtc_jackpot: u64,
+    jackpot_hit: bool,
+    jackpot_faction_id: u8,
     timestamp: i64,
 ) {
     emit!(RoundEnded {
@@ -464,8 +525,9 @@ fn emit_round_ended(
         minebtc_winner_pool: game_session.minebtc_winner_pool,
         minebtc_same_faction_direction_pools: game_session.minebtc_same_faction_direction_pools,
         minebtc_faction_stakers,
-        minebtc_motherlode,
-        motherlode_hit,
+        minebtc_jackpot,
+        jackpot_hit,
+        jackpot_faction_id,
         timestamp,
     });
 }
@@ -524,20 +586,20 @@ fn calculate_minebtc_split(
     minebtc_stakers_pct: u8,
     minebtc_winners_pct: u8,
     minebtc_same_faction_pct: u8,
-    minebtc_motherlode_pct: u8,
+    minebtc_jackpot_pct: u8,
 ) -> (u64, u64, u64, u64) {
     let winning_direction_rewards =
         (minebtc_rewards as u128 * minebtc_winners_pct as u128 / 100) as u64;
     let same_faction_direction_rewards_each =
         (minebtc_rewards as u128 * minebtc_same_faction_pct as u128 / 100) as u64;
     let faction_stakers = (minebtc_rewards as u128 * minebtc_stakers_pct as u128 / 100) as u64;
-    let motherlode_rewards =
-        (minebtc_rewards as u128 * minebtc_motherlode_pct as u128 / 100) as u64;
+    let jackpot_rewards =
+        (minebtc_rewards as u128 * minebtc_jackpot_pct as u128 / 100) as u64;
     (
         winning_direction_rewards,
         same_faction_direction_rewards_each,
         faction_stakers,
-        motherlode_rewards,
+        jackpot_rewards,
     )
 }
 
@@ -560,7 +622,7 @@ fn split_staker_lane_rewards(
 /// Finalize the faction-level reward distribution for the round.
 /// This function:
 /// 1. Uses the already-finalized winning faction/direction from `end_round`
-/// 2. Distributes the winning faction's staker and motherlode rewards
+/// 2. Distributes the winning faction's staker and global jackpot rewards
 /// 3. Advances faction_war accounting when the current faction_war window has ended
 #[inline(never)]
 fn init_or_load_round_faction_war_state<'info>(
@@ -626,6 +688,9 @@ fn seed_empty_faction_war_from_round<'info>(
     faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
+    faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
     faction_war_state.eligible_doge_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.start_ranks = start_ranks;
@@ -827,44 +892,60 @@ pub fn int_end_round_faction_rewards<'info>(
         }
     }
 
-    // Increment motherlode pot size (always, regardless of hit)
-    faction_state.motherlode_pot_size = faction_state
-        .motherlode_pot_size
-        .checked_add(game_session.motherlode_rewards)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    // If jackpot was hit this round and the designated jackpot faction matches
+    // the faction being processed, pay out the entire global jackpot pot to
+    // this faction's winners.
+    let jackpot_hit = game_session.jackpot_hit;
+    let winning_faction_id = game_session.winning_faction_id;
+    let jackpot_faction_id = game_session.jackpot_faction_id;
+
     msg!(
-        "   Motherlode pot: {} -> {} (+{})",
-        (faction_state.motherlode_pot_size - game_session.motherlode_rewards) as f64 / 1_000_000.0,
-        faction_state.motherlode_pot_size as f64 / 1_000_000.0,
-        game_session.motherlode_rewards as f64 / 1_000_000.0
+        "global_jackpot: {} -> {} (+{})",
+        (global_state.jackpot_pot.saturating_sub(game_session.jackpot_rewards)) as f64 / 1_000_000.0,
+        global_state.jackpot_pot as f64 / 1_000_000.0,
+        game_session.jackpot_rewards as f64 / 1_000_000.0
     );
-    let motherlode_hit = game_session.motherlode_hit;
 
-    if motherlode_hit && faction_state.motherlode_pot_size > 0 {
-        let motherlode_bonus = faction_state.motherlode_pot_size;
-        faction_state.motherlode_pot_size = 0;
-        game_session.minebtc_winner_pool = game_session
-            .minebtc_winner_pool
-            .checked_add(motherlode_bonus)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        game_session.motherlode_pot_size_on_hit = motherlode_bonus;
+    if jackpot_hit && global_state.jackpot_pot > 0 && jackpot_faction_id == faction_state.faction_id {
+        if exact_winning_wgtd_pts > 0 {
+            // Eligible winners exist — pay out the entire global jackpot pot
+            let jackpot_bonus = global_state.jackpot_pot;
+            global_state.jackpot_pot = 0;
+            game_session.minebtc_winner_pool = game_session
+                .minebtc_winner_pool
+                .checked_add(jackpot_bonus)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            game_session.jackpot_pot_size_on_hit = jackpot_bonus;
 
-        if motherlode_bonus > 0 && exact_winning_wgtd_pts > 0 {
-            let minebtc_rewards_delta =
-                helper::mul_div(motherlode_bonus, INDEX_PRECISION, exact_winning_wgtd_pts)?;
+            let jackpot_index =
+                helper::mul_div(jackpot_bonus, INDEX_PRECISION, exact_winning_wgtd_pts)?;
             game_session.minebtc_rewards_index = game_session
                 .minebtc_rewards_index
-                .checked_add(minebtc_rewards_delta)
+                .checked_add(jackpot_index)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-        }
 
-        emit!(MotherlodeHit {
-            round_id: game_session.round_id,
-            faction_id: faction_state.faction_id,
-            winning_direction,
-            winning_faction_rewards: motherlode_bonus,
-            minebtc_rewards_index: game_session.minebtc_rewards_index,
-        });
+            emit!(crate::events::JackpotHit {
+                round_id: game_session.round_id,
+                faction_id: jackpot_faction_id,
+                winning_direction,
+                jackpot_amount: jackpot_bonus,
+                minebtc_rewards_index: game_session.minebtc_rewards_index,
+            });
+        } else {
+            // No eligible exact winners — pot rolls over to next hit
+            msg!(
+                "🎰 Jackpot hit for faction {} but no exact winners — pot rolls over: {}",
+                jackpot_faction_id,
+                global_state.jackpot_pot
+            );
+            emit!(crate::events::JackpotRolledOver {
+                round_id: game_session.round_id,
+                faction_id: jackpot_faction_id,
+                pot_size: global_state.jackpot_pot,
+                reason: 0, // 0 = no exact winners
+                timestamp: Clock::get()?.unix_timestamp,
+            });
+        }
     }
 
     // Update global state with previous round results
@@ -893,7 +974,7 @@ pub fn int_end_round_faction_rewards<'info>(
                 .sum::<u64>(),
         )
         .saturating_add(game_session.faction_stakers)
-        .saturating_add(game_session.motherlode_rewards);
+        .saturating_add(game_session.jackpot_rewards);
     let round_id_for_event = game_session.round_id;
 
     // If settle_faction_war fired mid-round (LP burn landed during this round's
@@ -1151,7 +1232,7 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub tax_config: Box<Account<'info, TaxConfig>>,
 
-    /// Winning faction state (for updating staker rewards and motherlode)
+    /// Winning faction state (for updating staker rewards and jackpot payout)
     /// CHECK: Validated manually that faction_id matches winning_faction_id
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,

@@ -443,7 +443,7 @@ mine_btc_per_round (dogeBTC emission)
     ├─ same_faction_pct (20% × 2 directions) → consolation for wrong-direction bettors
     │   on the winning country (pro-rata by wgtd_points per direction)
     ├─ stakers_pct (5%) → all stakers on the winning faction
-    └─ motherlode_pct (5%) → jackpot (1/625 chance of hitting, accumulates)
+    └─ jackpot_pct (5%) → global jackpot (1/625 chance of hitting, accumulates)
 ```
 
 SOL rewards: winning-direction bettors split the SOL prize pot proportional to their points bets.

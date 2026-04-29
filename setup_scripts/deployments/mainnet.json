@@ -123,7 +123,6 @@
     "globalConfig_address": "Begnyjjobm7AM3CxTpQpDgLic5jAuNtMTnUpCtuhEJ1R",
     "mineBtcMining_address": "8yQLZAJKsLqz7Pmd9vbEKrkKPsS47ZebYi56C9A8GFvJ",
     "solTreasury_address": "6rBKBaVK2m8rGjHXa65ohjWjD3B3VGDSKUpJrxraPmX1",
-    "dogesTreasury_address": "3burVzSiwhZgix68DyWqa8rhd5USUhBq9sAHZDBtxRSq",
     "autominerCustody_address": "9DeiVvqN1K3sfsXMkd4YFWKG3oUuY3UC9xqfkssgYh9z",
     "unrefinedRewards_address": "3TWC812X9Z9bWk3aNHVtx2gSxKULHEYaf5CzTvKELYZz",
     "FEE_RECIPIENT_MULTISIG": "BH54VNvpq4b3V2PDzDhNAVmNTH4xbSx8dqo1uKz3qmVz",
@@ -202,9 +201,9 @@
       },
       {
         "faction_id": 10,
-        "name": "Ukraine",
-        "faction_state_pda": "C33HoH6G9mTy1UN5f1UBmAEQN7njue4EVCaZjpcRoXRG",
-        "tx_signature": "57cMewhFmk1FjuZeddQF2czqKcoykH319HTx3EKvjqfVoGoELv4ZJtzT6Xh2hhFc4ogkoCri5ynSGtgeCZKR1BsK"
+        "name": "Brazil",
+        "faction_state_pda": "",
+        "tx_signature": ""
       },
       {
         "faction_id": 11,
@@ -347,7 +346,7 @@
       "newMinebtcStakersPct": 15,
       "newMinebtcWinnersPct": 50,
       "newMinebtcSameFactionPct": 25,
-      "newMinebtcMotherlodePct": 10,
+      "newMinebtcJackpotPct": 10,
       "newRefiningFee": 10
     },
     "tx_signature": "37mf9wSaLhRySuNuvqJ8ZDnS9otevbPVa6KgT8NHkvSasR81JdJTSdMJ1qmZU5HjWQ5k4TJvfdezjrCuLDCb1ytZ",

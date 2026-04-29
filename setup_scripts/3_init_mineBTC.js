@@ -56,7 +56,6 @@ const ID_MineBTC_PROGRAM = deploymentFile.MINE_BTC_PROGRAM_ID
 const MINING_START_TIMESTAMP =
   config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
-const DBTC_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 
 // Keep these explicit in setup so fresh deployments don't silently depend on
 // whatever the contract default happened to be at compile time.
@@ -112,9 +111,12 @@ const LIVE_FEE_CONFIG = {
   newMinebtcStakersPct: 3,
   newMinebtcWinnersPct: 50,
   newMinebtcSameFactionPct: 21,
-  newMinebtcMotherlodePct: 5,
+  newMinebtcJackpotPct: 5,
   newRefiningFee: 10,
   snapshotInterval: 5 * 60,
+  // Referrer's cut of the SOL protocol fee. Hard-capped at 10% by the program.
+  newReferralFeePct: 5,             // cross-country recruits
+  newSameFactionReferralFeePct: 10, // same-country recruits (loyalty bonus)
 };
 
 // Load MineBTC Program IDL
@@ -244,7 +246,7 @@ async function validateInitializationConfig() {
     LIVE_FEE_CONFIG.newMinebtcStakersPct +
     LIVE_FEE_CONFIG.newMinebtcWinnersPct +
     LIVE_FEE_CONFIG.newMinebtcSameFactionPct * 2 +
-    LIVE_FEE_CONFIG.newMinebtcMotherlodePct;
+    LIVE_FEE_CONFIG.newMinebtcJackpotPct;
   if (minebtcDistTotal !== 100) {
     throw new Error(`MineBTC round dist must equal 100%, got ${minebtcDistTotal}%`);
   }
@@ -413,12 +415,11 @@ async function main() {
   try {
     // 1. Initialize MineBTC Program
     // Instruction: initialize(fee_recipient: Pubkey)
-    // Creates 6 PDAs in one tx:
+    // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
     //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
     //   - UnrefinedRewards [seeds: "unrefined-rewards"]       — unrefined MineBTC reward pool
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
-    //   - Doges Treasury   [seeds: "doges-treasury"]          — 0-byte system PDA for doge mint fees
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
     await initializeMinebtcProgram(minebtcProgram);
@@ -435,7 +436,7 @@ async function main() {
     // 3. Add Factions (12 factions)
     // Instruction: add_faction(faction_name: String, faction_id: u8)
     // Creates a FactionState PDA per faction [seeds: "faction", faction_name.as_bytes()]
-    // Each stores: bump, faction_id, staking indexes, bet/win totals, motherlode pot
+    // Each stores: bump, faction_id, staking indexes, bet/win totals, jackpot pot (global)
     // Accounts: globalConfig, factionState, authority, systemProgram
     await addFactions(minebtcProgram);
 
@@ -456,7 +457,7 @@ async function main() {
     //   new_minebtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
     //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
-    //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
+    //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
     //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
@@ -558,7 +559,7 @@ async function main() {
     // Off-chain helper: creates an ATA for LP tokens owned by vaultAuthority PDA
     // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
     await initializeLpTokenAccounts(minebtcProgram);
-
+    return;
 
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
@@ -669,11 +670,6 @@ async function initializeMinebtcProgram(minebtcProgram) {
     minebtcProgram.programId
   );
 
-  const [dogesTreasuryPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doges-treasury")],
-    minebtcProgram.programId
-  );
-
   const [unrefinedRewardsPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("unrefined-rewards")],
     minebtcProgram.programId
@@ -710,8 +706,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
         mineBtcMining: mineBtcMiningPDA,
         unrefinedRewards: unrefinedRewardsPDA,
                 solTreasury: solTreasuryPDA,
-        dogesTreasury: dogesTreasuryPDA,
-        autominerCustody: autominerCustodyPDA,        
+        autominerCustody: autominerCustodyPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
@@ -728,7 +723,6 @@ async function initializeMinebtcProgram(minebtcProgram) {
             globalConfig_address: globalConfigPDA.toString(),
       mineBtcMining_address: mineBtcMiningPDA.toString(),
             solTreasury_address: solTreasuryPDA.toString(),
-      dogesTreasury_address: dogesTreasuryPDA.toString(),
       autominerCustody_address: autominerCustodyPDA.toString(),
       unrefinedRewards_address: unrefinedRewardsPDA.toString(),
             FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
@@ -744,7 +738,6 @@ async function initializeMinebtcProgram(minebtcProgram) {
         mineBtcMining_address: mineBtcMiningPDA.toString(),
         unrefinedRewards: unrefinedRewardsPDA.toString(),
                 solTreasury_address: solTreasuryPDA.toString(),
-        dogesTreasury_address: dogesTreasuryPDA.toString(),
             };
             saveDeploymentData();
         } else {
@@ -1224,16 +1217,33 @@ async function depositMiningTokens(minebtcProgram) {
         anchor_spl.TOKEN_2022_PROGRAM_ID
     );
 
+  // Deposit whatever dogeBTC is left in the deployer wallet after the
+  // pool seed + addInitialLiquidity steps. Hardcoding this amount used
+  // to break whenever the LP-add proportional sizing changed.
+  const depositorAcc = await anchor_spl.getAccount(
+    connection,
+    userTokenAccount,
+    undefined,
+    anchor_spl.TOKEN_2022_PROGRAM_ID
+  );
+  const depositAmount = new BN(depositorAcc.amount.toString());
+
+  if (depositAmount.isZero()) {
+    throw new Error(
+      `Depositor token account ${userTokenAccount.toString()} has 0 dogeBTC — pool/LP setup likely consumed the full mint.`
+    );
+  }
+
   console.log(
     COLOR_INFO,
-    `💰 Depositing ${DBTC_DEPOSIT_AMOUNT.toString()} tokens...`
+    `💰 Depositing ${depositAmount.toString()} tokens (full deployer balance)...`
   );
     console.log(COLOR_INFO, `   From: ${userTokenAccount.toString()}`);
     console.log(COLOR_INFO, `   To: ${vaultPDA.toString()}`);
 
     try {
     const tx = await minebtcProgram.methods
-      .depositMineBtcTokens(DBTC_DEPOSIT_AMOUNT)
+      .depositMineBtcTokens(depositAmount)
             .accounts({
                 depositor: wallet.publicKey,
                 depositorTokenAccount: userTokenAccount,
@@ -1248,7 +1258,7 @@ async function depositMiningTokens(minebtcProgram) {
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.mining_tokens_deposited = {
-            amount: DBTC_DEPOSIT_AMOUNT.toString(),
+            amount: depositAmount.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -2576,7 +2586,7 @@ async function updateFees(minebtcProgram, feeConfig) {
     );
     console.log(
       COLOR_INFO,
-      `     Motherlode: ${globalConfig.minebtcDistConfig.minebtcMotherlodePct}%`
+      `     Jackpot: ${globalConfig.minebtcDistConfig.minebtcJackpotPct}%`
     );
     console.log(
       COLOR_INFO,
@@ -2595,7 +2605,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       newMinebtcStakersPct: feeConfig?.newMinebtcStakersPct ?? null,
       newMinebtcWinnersPct: feeConfig?.newMinebtcWinnersPct ?? null,
       newMinebtcSameFactionPct: feeConfig?.newMinebtcSameFactionPct ?? null,
-      newMinebtcMotherlodePct: feeConfig?.newMinebtcMotherlodePct ?? null,
+      newMinebtcJackpotPct: feeConfig?.newMinebtcJackpotPct ?? null,
       newRefiningFee: feeConfig?.newRefiningFee ?? null,
       snapshotInterval:
         (feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval) != null
@@ -2603,6 +2613,9 @@ async function updateFees(minebtcProgram, feeConfig) {
               feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval
             )
         : null,
+      newReferralFeePct: feeConfig?.newReferralFeePct ?? null,
+      newSameFactionReferralFeePct:
+        feeConfig?.newSameFactionReferralFeePct ?? null,
     };
 
     // Validate the MineBTC distribution invariant before sending the transaction.
@@ -2611,7 +2624,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       feeParams.newMinebtcStakersPct !== null ||
       feeParams.newMinebtcWinnersPct !== null ||
       feeParams.newMinebtcSameFactionPct !== null ||
-      feeParams.newMinebtcMotherlodePct !== null
+      feeParams.newMinebtcJackpotPct !== null
     ) {
       const minebtcStakersPct =
         feeParams.newMinebtcStakersPct ??
@@ -2622,20 +2635,20 @@ async function updateFees(minebtcProgram, feeConfig) {
       const minebtcSameFactionPct =
         feeParams.newMinebtcSameFactionPct ??
         globalConfig.minebtcDistConfig.minebtcSameFactionPct;
-      const minebtcMotherlodePct =
-        feeParams.newMinebtcMotherlodePct ??
-        globalConfig.minebtcDistConfig.minebtcMotherlodePct;
+      const minebtcJackpotPct =
+        feeParams.newMinebtcJackpotPct ??
+        globalConfig.minebtcDistConfig.minebtcJackpotPct;
 
       const losingDirectionCount = 2; // Up / Neutral / Down => 2 losing directions
       const minebtcTotal =
         minebtcStakersPct +
         minebtcWinnersPct +
         minebtcSameFactionPct * losingDirectionCount +
-        minebtcMotherlodePct;
+        minebtcJackpotPct;
 
       if (minebtcTotal !== 100) {
         throw new Error(
-          `Invalid MineBTC distribution config: stakers (${minebtcStakersPct}) + winners (${minebtcWinnersPct}) + ${losingDirectionCount}*sameFaction (${minebtcSameFactionPct}) + motherlode (${minebtcMotherlodePct}) must equal 100, got ${minebtcTotal}.`
+          `Invalid MineBTC distribution config: stakers (${minebtcStakersPct}) + winners (${minebtcWinnersPct}) + ${losingDirectionCount}*sameFaction (${minebtcSameFactionPct}) + jackpot (${minebtcJackpotPct}) must equal 100, got ${minebtcTotal}.`
         );
       }
     }
@@ -2666,10 +2679,10 @@ async function updateFees(minebtcProgram, feeConfig) {
         COLOR_INFO,
         `     DBTC Same-faction: ${feeParams.newMinebtcSameFactionPct}% per losing direction (${feeParams.newMinebtcSameFactionPct * 2}% total)`
       );
-    if (feeParams.newMinebtcMotherlodePct !== null)
+    if (feeParams.newMinebtcJackpotPct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Motherlode: ${feeParams.newMinebtcMotherlodePct}%`
+        `     DBTC Jackpot: ${feeParams.newMinebtcJackpotPct}%`
       );
     if (feeParams.newRefiningFee !== null)
       console.log(
@@ -2701,9 +2714,11 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcStakersPct,
         feeParams.newMinebtcWinnersPct,
         feeParams.newMinebtcSameFactionPct,
-        feeParams.newMinebtcMotherlodePct,
+        feeParams.newMinebtcJackpotPct,
         feeParams.newRefiningFee,
-        feeParams.snapshotInterval
+        feeParams.snapshotInterval,
+        feeParams.newReferralFeePct,
+        feeParams.newSameFactionReferralFeePct
       )
       .accounts({
         globalConfig: globalConfigPDA,

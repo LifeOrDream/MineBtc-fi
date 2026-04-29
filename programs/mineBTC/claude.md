@@ -54,7 +54,7 @@ At round end:
 - exact `country + direction` winners: main SOL + dogeBTC round rewards
 - same-country wrong-direction bettors: consolation dogeBTC rewards
 - winning-country stakers: staking reward share
-- motherlode jackpot: extra dogeBTC for exact winners when hit
+- global jackpot: extra dogeBTC for exact winners of the selected faction when hit
 
 ### Cycle Layer (Story Event Leaderboard)
 
@@ -247,7 +247,7 @@ Key product events for indexers and off-chain systems:
 - `RoundStarted`
 - `BetsPlaced`
 - `RoundEnded`
-- `MotherlodeHit`
+- `JackpotHit`
 - `RoundRewardsClaimed`
 - `StoryEventTriggered`
 - `StoryEventScoreAccumulated`

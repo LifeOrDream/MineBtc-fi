@@ -127,9 +127,10 @@ fn compute_rank_weighted_pools(
 
 /// Compute how the faction_war mining pool is split across factions.
 ///
-/// The total pool is first split into three lanes:
+/// The total pool is first split into four lanes:
 /// - base rewards: anyone correct on a country's resolved direction
 /// - loyalty rewards: only users backing their own country correctly
+/// - mvp rewards: top contributor per faction (distributed at settlement by rank)
 /// - Doge rewards: only mutated/evolved gameplay doges on the resolved home-country outcome
 ///
 /// Each lane is then distributed across factions by final rank, normalized only
@@ -147,6 +148,7 @@ pub fn compute_faction_reward_pools(
         faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
         return Ok(());
     }
 
@@ -160,10 +162,17 @@ pub fn compute_faction_reward_pools(
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(BASIS_POINTS_DENOMINATOR as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
+    let mvp_pool_total = ((pool as u128)
+        .checked_mul(tuning.faction_war_mvp_reward_bps as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
     let doge_pool_total = pool
         .checked_sub(base_pool_total)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_sub(loyalty_pool_total)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_sub(mvp_pool_total)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     let mut eligible_base = [false; NUM_FACTIONS];
@@ -446,6 +455,90 @@ pub fn finalize_faction_war_settlement(
         }
 
         compute_faction_reward_pools(faction_war_state, tuning)?;
+
+        // --- MVP Bonus: distribute 5% of mining pool rank-weighted to all faction MVPs ---
+        // #1 faction MVP: 40% of MVP pool | #2: 25% | #3: 15% | #4+: equal share of 20%
+        let mvp_pool_total = ((faction_war_state.faction_war_mining_pool as u128)
+            .checked_mul(tuning.faction_war_mvp_reward_bps as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(BASIS_POINTS_DENOMINATOR as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
+
+        if mvp_pool_total > 0 {
+            let mut total_weight: u128 = 0;
+            let mut eligible_count = 0usize;
+            for fid in 0..active_factions {
+                if faction_war_state.faction_mvp_user[fid] != Pubkey::default() {
+                    let rank = faction_war_state.final_ranks[fid] as usize;
+                    let weight_bps = match rank {
+                        0 => 4000u64, // #1
+                        1 => 2500u64, // #2
+                        2 => 1500u64, // #3
+                        _ => {
+                            let lower_ranked_count = active_factions.saturating_sub(3).max(1) as u64;
+                            2000u64 / lower_ranked_count
+                        }
+                    };
+                    total_weight += weight_bps as u128;
+                    eligible_count += 1;
+                }
+            }
+
+            if eligible_count > 0 && total_weight > 0 {
+                let mut distributed = 0u64;
+                let mut remaining = eligible_count;
+                for fid in 0..active_factions {
+                    if faction_war_state.faction_mvp_user[fid] == Pubkey::default() {
+                        continue;
+                    }
+                    remaining -= 1;
+                    let rank = faction_war_state.final_ranks[fid] as usize;
+                    let weight_bps = match rank {
+                        0 => 4000u64,
+                        1 => 2500u64,
+                        2 => 1500u64,
+                        _ => {
+                            let lower_ranked_count = active_factions.saturating_sub(3).max(1) as u64;
+                            2000u64 / lower_ranked_count
+                        }
+                    };
+
+                    let bonus = if remaining == 0 {
+                        mvp_pool_total
+                            .checked_sub(distributed)
+                            .ok_or(ErrorCode::ArithmeticOverflow)?
+                    } else {
+                        ((mvp_pool_total as u128)
+                            .checked_mul(weight_bps as u128)
+                            .ok_or(ErrorCode::ArithmeticOverflow)?
+                            .checked_div(total_weight)
+                            .ok_or(ErrorCode::ArithmeticOverflow)?) as u64
+                    };
+
+                    faction_war_state.faction_mvp_bonus[fid] = bonus;
+                    distributed = distributed
+                        .checked_add(bonus)
+                        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+                    msg!(
+                        "🏆 MVP Bonus: faction={} rank={} user={} score={} bonus={}",
+                        fid,
+                        rank + 1,
+                        faction_war_state.faction_mvp_user[fid],
+                        faction_war_state.faction_mvp_score[fid],
+                        bonus
+                    );
+                    emit!(crate::events::FactionWarMvp {
+                        faction_war_id: faction_war_state.faction_war_id,
+                        faction_id: fid as u8,
+                        user: faction_war_state.faction_mvp_user[fid],
+                        mvp_score: faction_war_state.faction_mvp_score[fid],
+                        bonus_amount: bonus,
+                        timestamp: Clock::get()?.unix_timestamp,
+                    });
+                }
+            }
+        }
         faction_war_state.stage = 1;
 
         faction_war_config.prev_faction_war_mutation_ranks = final_ranks;
@@ -707,15 +800,36 @@ pub fn claim_faction_war_rewards_internal(
         }
     }
 
-    let total_reward = base_reward_amount
+    let mut total_reward = base_reward_amount
         .checked_add(loyalty_reward_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
+    // --- MVP Bonus: if this user is any faction's MVP, add their pre-computed bonus ---
+    let mut mvp_bonus_amount = 0u64;
+    for fid in 0..active_factions {
+        if faction_war_state.faction_mvp_user[fid] == owner_key {
+            mvp_bonus_amount = faction_war_state.faction_mvp_bonus[fid];
+            if mvp_bonus_amount > 0 {
+                total_reward = total_reward
+                    .checked_add(mvp_bonus_amount)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+                msg!(
+                    "🏆 MVP Bonus claimed: faction={} rank={} bonus={}",
+                    fid,
+                    faction_war_state.final_ranks[fid] + 1,
+                    mvp_bonus_amount
+                );
+            }
+            break;
+        }
+    }
+
     msg!(
-        "   Player faction {}: base_reward={}, loyalty_reward={}, total_reward={}, doge_bonus={}, doge_eligible={}",
+        "   Player faction {}: base_reward={}, loyalty_reward={}, mvp_bonus={}, total_reward={}, doge_bonus={}, doge_eligible={}",
         player_faction_id,
         base_reward_amount,
         loyalty_reward_amount,
+        mvp_bonus_amount,
         total_reward,
         doge_bonus_amount,
         user_faction_war_bets.doge_bonus_eligible
@@ -744,6 +858,7 @@ pub fn claim_faction_war_rewards_internal(
         reward_amount: total_reward,
         base_reward_amount,
         loyalty_reward_amount,
+        mvp_bonus_amount,
         doge_bonus_amount,
         doge_mint,
         timestamp: clock.unix_timestamp,

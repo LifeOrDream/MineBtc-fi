@@ -101,15 +101,17 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         protocol_fee_pct: DEFAULT_PROTOCOL_FEE_PCT,
         buyback_pct: DEFAULT_BUYBACK_PCT,
         stakers_pct: DEFAULT_STAKERS_PCT,
+        referral_fee_pct: DEFAULT_REFERRAL_FEE_PCT,
+        same_faction_referral_fee_pct: DEFAULT_SAME_FACTION_REFERRAL_FEE_PCT,
     };
 
     // Initialize dogeBTC round distribution config (defaults defined in state.rs)
-    // Invariant: stakers + winners + 2 * same_faction + motherlode = 100
+    // Invariant: stakers + winners + 2 * same_faction + jackpot = 100
     global_config.minebtc_dist_config = MineBtcDistConfig {
         minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
         minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
         minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
-        minebtc_motherlode_pct: DEFAULT_MINEBTC_MOTHERLODE_PCT,
+        minebtc_jackpot_pct: DEFAULT_MINEBTC_JACKPOT_PCT,
         refining_fee: DEFAULT_REFINING_FEE,
     };
 
@@ -291,8 +293,6 @@ pub fn add_faction_internal(
     faction_state.lp_sol_reward_index = 0;
     faction_state.lp_dogebtc_reward_index = 0;
     faction_state.sol_reward_index = 0;
-    faction_state.motherlode_pot_size = 0;
-
     // Add faction to config
     global_config.supported_factions.push(faction_name.clone());
 
@@ -398,7 +398,7 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `new_minebtc_stakers_pct`: Optional new MineBtc stakers percentage
 /// - `new_minebtc_winners_pct`: Optional new MineBtc winners percentage
 /// - `new_minebtc_same_faction_pct`: Optional new MineBtc same-faction percentage
-/// - `new_minebtc_motherlode_pct`: Optional new MineBtc motherlode percentage
+/// - `new_minebtc_jackpot_pct`: Optional new MineBtc jackpot percentage
 /// - `new_refining_fee`: Optional new refining fee percentage
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
@@ -406,7 +406,7 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == `PERCENTAGE_DENOMINATOR`
 /// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct +
 ///   (`PredictionDirection::COUNT - 1`) * minebtc_same_faction_pct +
-///   minebtc_motherlode_pct == `PERCENTAGE_DENOMINATOR`
+///   minebtc_jackpot_pct == `PERCENTAGE_DENOMINATOR`
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -415,19 +415,30 @@ pub fn update_fees_internal(
     new_minebtc_stakers_pct: Option<u8>,
     new_minebtc_winners_pct: Option<u8>,
     new_minebtc_same_faction_pct: Option<u8>,
-    new_minebtc_motherlode_pct: Option<u8>,
+    new_minebtc_jackpot_pct: Option<u8>,
     new_refining_fee: Option<u8>,
     snapshot_interval: Option<u64>,
+    new_referral_fee_pct: Option<u8>,
+    new_same_faction_referral_fee_pct: Option<u8>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_fees_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     // Update SOL fee config if any values provided
-    if new_protocol_fee_pct.is_some() || new_buyback_pct.is_some() || new_stakers_pct.is_some() {
+    if new_protocol_fee_pct.is_some()
+        || new_buyback_pct.is_some()
+        || new_stakers_pct.is_some()
+        || new_referral_fee_pct.is_some()
+        || new_same_faction_referral_fee_pct.is_some()
+    {
         let protocol_fee_pct =
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
+        let referral_fee_pct =
+            new_referral_fee_pct.unwrap_or(global_config.sol_fee_config.referral_fee_pct);
+        let same_faction_referral_fee_pct = new_same_faction_referral_fee_pct
+            .unwrap_or(global_config.sol_fee_config.same_faction_referral_fee_pct);
 
         require!(
             protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -441,11 +452,21 @@ pub fn update_fees_internal(
             stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
+        require!(
+            referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            same_faction_referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
+            ErrorCode::InvalidParameters
+        );
 
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
+            referral_fee_pct,
+            same_faction_referral_fee_pct,
         };
     }
 
@@ -453,7 +474,7 @@ pub fn update_fees_internal(
     if new_minebtc_stakers_pct.is_some()
         || new_minebtc_winners_pct.is_some()
         || new_minebtc_same_faction_pct.is_some()
-        || new_minebtc_motherlode_pct.is_some()
+        || new_minebtc_jackpot_pct.is_some()
     {
         let minebtc_stakers_pct = new_minebtc_stakers_pct
             .unwrap_or(global_config.minebtc_dist_config.minebtc_stakers_pct);
@@ -461,8 +482,8 @@ pub fn update_fees_internal(
             .unwrap_or(global_config.minebtc_dist_config.minebtc_winners_pct);
         let minebtc_same_faction_pct = new_minebtc_same_faction_pct
             .unwrap_or(global_config.minebtc_dist_config.minebtc_same_faction_pct);
-        let minebtc_motherlode_pct = new_minebtc_motherlode_pct
-            .unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
+        let minebtc_jackpot_pct = new_minebtc_jackpot_pct
+            .unwrap_or(global_config.minebtc_dist_config.minebtc_jackpot_pct);
 
         require!(
             minebtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -477,7 +498,7 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
         require!(
-            minebtc_motherlode_pct <= PERCENTAGE_DENOMINATOR_U8,
+            minebtc_jackpot_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
 
@@ -487,7 +508,7 @@ pub fn update_fees_internal(
         let total = minebtc_stakers_pct as u16
             + minebtc_winners_pct as u16
             + (minebtc_same_faction_pct as u16 * losing_direction_count)
-            + minebtc_motherlode_pct as u16;
+            + minebtc_jackpot_pct as u16;
 
         require!(
             total == PERCENTAGE_DENOMINATOR_U16,
@@ -501,7 +522,7 @@ pub fn update_fees_internal(
             minebtc_stakers_pct,
             minebtc_winners_pct,
             minebtc_same_faction_pct,
-            minebtc_motherlode_pct,
+            minebtc_jackpot_pct,
             refining_fee: current_refining_fee,
         };
     }
@@ -1495,8 +1516,6 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.referrals_count = 0;
     system_referral.same_faction_referrals_count = 0;
     system_referral.referred_faction_counts = [0u16; NUM_FACTIONS];
-    system_referral.pending_minebtc_rewards = 0;
-    system_referral.total_minebtc_earned = 0;
     system_referral.pending_sol_rewards = 0;
     system_referral.total_sol_earned = 0;
 
@@ -1551,7 +1570,6 @@ pub struct Initialize<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
-    /// CHECK: 0-byte PDA that only stores lamports (System Account) for doge minting fees
     /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
     #[account(
         init,
@@ -1595,7 +1613,7 @@ pub struct SetRaydiumPoolState<'info> {
         init_if_needed,
         payer = authority,
         space = 0,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
         bump,
         owner = system_program.key()
     )]
