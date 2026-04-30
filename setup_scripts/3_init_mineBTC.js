@@ -516,6 +516,13 @@ async function main() {
     // Accounts: dogesConfig, globalConfig, authority, systemProgram
     await initializeDogeConfig(minebtcProgram);
 
+    // 9a. Seed breeding config (breeding stays disabled at launch but params
+    //     come from config.json so flipping breeding on later via governance
+    //     uses the correct curve, not the contract's hardcoded zero defaults).
+    // Instruction: update_breeding_config(breeding_allowed, breed_base_price, breed_curve_a)
+    // Accounts: globalConfig, dogesConfig, authority, systemProgram
+    await seedBreedingConfig(minebtcProgram);
+
     // 9b. Initialize DogeMintConfig
     // Instruction: initialize_doge_mint_config(base_price, curve_a, genesis_mint_limit, max_genesis_mints_per_faction)
     // Creates mint-only PDA [seeds: "doge-mint-config"] for genesis sale curve, ticket tiers, and per-country caps.
@@ -1668,6 +1675,76 @@ async function initializeDogeConfig(minebtcProgram) {
             throw error;
         }
     }
+}
+
+async function seedBreedingConfig(minebtcProgram) {
+  if (deploymentFile.breeding_config_seeded) {
+    console.log(COLOR_INFO, "ℹ️ Breeding config already seeded. Skipping...");
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ SEEDING BREEDING CONFIG ] ==================="
+  );
+
+  const globalConfigPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.globalConfig_address
+  );
+  const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-config")],
+    minebtcProgram.programId
+  );
+
+  const breedingAllowed = !!config.doges_config.breeding_allowed;
+  const breedBasePrice = config.doges_config.breed_base_price;
+  const breedCurveA = config.doges_config.breed_curve_a;
+
+  if (breedBasePrice == null || breedCurveA == null) {
+    throw new Error(
+      "config.doges_config.breed_base_price and breed_curve_a must be set"
+    );
+  }
+
+  console.log(COLOR_INFO, `🐣 Breeding allowed: ${breedingAllowed}`);
+  console.log(
+    COLOR_INFO,
+    `   breed_base_price: ${breedBasePrice} lamports (${
+      breedBasePrice / 1e9
+    } SOL)`
+  );
+  console.log(COLOR_INFO, `   breed_curve_a:    ${breedCurveA}`);
+
+  try {
+    const tx = await minebtcProgram.methods
+      .updateBreedingConfig(
+        breedingAllowed,
+        new BN(breedBasePrice),
+        new BN(breedCurveA)
+      )
+      .accounts({
+        globalConfig: globalConfigPDA,
+        dogesConfig: dogesConfigPDA,
+        authority: wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ Breeding config seeded successfully!");
+    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+    deploymentFile.breeding_config_seeded = {
+      breeding_allowed: breedingAllowed,
+      breed_base_price: breedBasePrice.toString(),
+      breed_curve_a: breedCurveA.toString(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    console.error(COLOR_ERROR, "❌ Failed to seed breeding config:", error);
+    throw error;
+  }
 }
 
 async function initializeDogeMintConfig(minebtcProgram) {

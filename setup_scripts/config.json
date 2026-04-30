@@ -52,15 +52,16 @@
         "doge_btc_per_round": 1000000000
     },
     "doges_config": {
-        "_supply_plan": "12K genesis mint cap via bonding curve (1000 per configured country), 100K lifetime Doge cap via breeding/admin/whitelist mints",
+        "_supply_plan": "36K genesis mint cap via bonding curve (3000 per configured country, 12 countries), 100K lifetime Doge cap via breeding/admin/whitelist mints",
+        "_pricing_notes": "Genesis curve_a = 2_100_000 targets ~$7M raise at SOL=$82 (range 1.00→3.29 SOL across 36K mints, avg ~2.37 SOL). Breed curve_a = 200_000 keeps breed cost in 2.22→2.43 SOL range across the 64K breeding window (affordable steady state).",
         "base_price": 1000000000,
-        "curve_a": 5263158,
-        "genesis_mint_limit": 12000,
-        "max_genesis_mints_per_faction": 1000,
+        "curve_a": 2100000,
+        "genesis_mint_limit": 36000,
+        "max_genesis_mints_per_faction": 3000,
         "max_supply": 100000,
         "breeding_allowed": false,
         "breed_base_price": 2000000000,
-        "breed_curve_a": 5263158,
+        "breed_curve_a": 200000,
         "royalties": 420,
         "creators": [
             {

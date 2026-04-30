@@ -52,7 +52,7 @@ pub use state::{
     PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("gQzg87AZG4vNNA6mDu26M8zbm7KVg81vQ12tTs8hqsY");
+declare_id!("HcHgzzMzJ3pDB4o28EGoqedJVS73skPsvjH4jM1NKPDu");
 
 #[macro_export]
 macro_rules! log_fn {
