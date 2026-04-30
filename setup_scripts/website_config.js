@@ -53,16 +53,19 @@ function generateWebsiteConfig(config, deployment) {
       commitment: config.network?.commitment || "confirmed",
 
       // ========== DOGE_BTC TOKEN ==========
+      // Naming aligns with the consumer (FE hooks/config.ts + BE
+      // deployment.json) which both call it `burn tax` even though
+      // it's a Token-2022 transfer fee on-chain. The "burn" framing
+      // is product-level (25% of the fee actually burns; rest funds
+      // floor sweep / faction treasury / mining vault).
       dbtc_mintAddress:
         deployment.dbtc_mint_address ||
         deployment.dbtc_mint_created?.mint_address,
       dbtc_mintAuthority: deployment.dbtc_mint_created?.mint_authority,
-      dbtc_transferTaxBps:
+      dbtc_burnTaxBps:
         deployment.dbtc_mint_created?.transfer_tax_bps ||
         config.token?.transfer_tax_bps,
-      dbtc_transferTaxImmutable:
-        deployment.dbtc_mint_created?.transfer_fee_config_authority == null,
-      dbtc_maxTransferFeeAmount:
+      dbtc_maxBurnAmount:
         deployment.dbtc_mint_created?.max_transfer_fee_amount?.toString() ||
         config.token?.max_transfer_fee_amount?.toString(),
       dbtc_decimals: config.token?.decimals || 6,
@@ -113,12 +116,13 @@ function generateWebsiteConfig(config, deployment) {
 
       // ========== FACTION WAR ==========
       faction_war_config_pda:
-        deployment.faction_war_config_initialized?.faction_war_config_pda ||
-        deployment.rebase_config_initialized?.rebase_config_pda,
+        deployment.faction_war_config_initialized?.faction_war_config_pda,
       starting_faction_war_id:
-        deployment.faction_war_config_initialized?.starting_faction_war_id ||
-        deployment.rebase_config_initialized?.starting_rebase_id ||
-        1,
+        deployment.faction_war_config_initialized?.starting_faction_war_id || 1,
+      // Global SOL vault for the per-cycle SOL split (cycle jackpot).
+      // Lazy-created by the first SOL bet; PDA is deterministic from
+      // [b"faction-war-sol-vault"]. Stored on devnet.json after init.
+      faction_war_sol_vault: deployment.faction_war_sol_vault_pda,
 
       // ========== RAYDIUM POOL STATE (Game-related vaults) ==========
       sol_rewards_vault: deployment.raydium_pool_state_set?.sol_rewards_vault,
