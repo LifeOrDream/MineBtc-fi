@@ -1882,6 +1882,12 @@ fn internal_process_bets<'info>(
     // --- CYCLE SOL SPLIT: computed upfront so it is available in outer scope ---
     let cycle_sol_split_pct = global_config.sol_fee_config.cycle_sol_split_pct as u64;
     let mut cycle_sol_split_per_bet: u64 = 0;
+    msg!(
+        "🎮 [user.internal_process_bets] cycle_sol_split_pct={} faction_war_active={} faction_war_id={}",
+        cycle_sol_split_pct,
+        faction_war_config.is_active,
+        faction_war_state.faction_war_id
+    );
 
     // Calculate amounts per bet (uniform across batch)
     // wgtd_points: points * multiplier / BASE_MULTIPLIER for SOL bets, else points (tickets)
@@ -1922,16 +1928,28 @@ fn internal_process_bets<'info>(
             require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
 
             cycle_sol_split_per_bet = if faction_war_config.is_active && cycle_sol_split_pct > 0 {
-                amount_per_bet
+                let split = amount_per_bet
                     .checked_mul(cycle_sol_split_pct)
                     .ok_or(ErrorCode::ArithmeticOverflow)?
-                    / M_HUNDRED
+                    / M_HUNDRED;
+                msg!(
+                    "🎮 [user.internal_process_bets] cycle_split_per_bet={} SOL ({} pct of {} SOL)",
+                    split as f64 / 1e9,
+                    cycle_sol_split_pct,
+                    amount_per_bet as f64 / 1e9
+                );
+                split
             } else {
+                msg!("🎮 [user.internal_process_bets] cycle_split=0 (inactive or pct=0)");
                 0
             };
             let amount_after_cycle_split = amount_per_bet
                 .checked_sub(cycle_sol_split_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!(
+                "🎮 [user.internal_process_bets] amount_after_cycle_split={} SOL",
+                amount_after_cycle_split as f64 / 1e9
+            );
 
             let (net, fee) = handle_fee(
                 amount_after_cycle_split,
@@ -2002,8 +2020,15 @@ fn internal_process_bets<'info>(
         // omit the seeds constraint on this account to keep the parser stack under
         // 4KB. We validate the address manually here so an attacker can't redirect
         // the cycle SOL split to a wallet they control.
-        let (expected_vault, _bump) =
+        let (expected_vault, vault_bump) =
             Pubkey::find_program_address(&[FACTION_WAR_SOL_VAULT_SEED], &crate::id());
+        msg!(
+            "💰 [user.internal_process_bets] cycle_split_transfer: expected_vault={} actual_vault={} bump={} amount={} SOL",
+            expected_vault,
+            faction_war_sol_vault.key(),
+            vault_bump,
+            total_cycle_sol_split as f64 / 1e9
+        );
         require_keys_eq!(
             faction_war_sol_vault.key(),
             expected_vault,
@@ -2014,10 +2039,18 @@ fn internal_process_bets<'info>(
             total_cycle_sol_split as f64 / 1e9
         );
         do_transfer(faction_war_sol_vault, total_cycle_sol_split)?;
+        let old_pool = faction_war_state.sol_reward_pool;
         faction_war_state.sol_reward_pool = faction_war_state
             .sol_reward_pool
             .checked_add(total_cycle_sol_split)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
+            "🎮 [user.internal_process_bets] sol_reward_pool updated: {} -> {} SOL",
+            old_pool as f64 / 1e9,
+            faction_war_state.sol_reward_pool as f64 / 1e9
+        );
+    } else {
+        msg!("🎮 [user.internal_process_bets] no cycle SOL split to transfer");
     }
 
     if total_stakers_fee > 0 {
@@ -2319,6 +2352,7 @@ fn internal_process_bets<'info>(
         caller_compensation,
         rounds_remaining,
         vault_closed,
+        total_cycle_sol_split: total_cycle_sol_split,
         timestamp: clock.unix_timestamp,
     });
 

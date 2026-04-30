@@ -739,6 +739,7 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
         track_price: mine_btc_mining.track_price,
         recent_price: mine_btc_mining.recent_price,
         rate_changed,
+        new_mining_multiplier: faction_war_config.mining_multiplier_bps,
         timestamp: current_time,
     });
 

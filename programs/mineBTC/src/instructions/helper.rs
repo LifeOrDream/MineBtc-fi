@@ -105,6 +105,12 @@ pub fn transfer_to_sol_treasury<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_sol_treasury] from={} to={} amount={} SOL",
+        from.key(),
+        sol_treasury.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -114,7 +120,9 @@ pub fn transfer_to_sol_treasury<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_sol_treasury complete");
+    Ok(())
 }
 
 pub fn transfer_to_autominer_custody<'info>(
@@ -123,6 +131,12 @@ pub fn transfer_to_autominer_custody<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_autominer_custody] from={} to={} amount={} SOL",
+        from.key(),
+        autominer_custody.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -132,7 +146,9 @@ pub fn transfer_to_autominer_custody<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_autominer_custody complete");
+    Ok(())
 }
 
 pub fn transfer_from_autominer_custody<'info>(
@@ -142,6 +158,13 @@ pub fn transfer_from_autominer_custody<'info>(
     amount: u64,
     custody_bump: u8,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_from_autominer_custody] from={} to={} amount={} SOL bump={}",
+        autominer_custody.key(),
+        to.key(),
+        amount as f64 / 1e9,
+        custody_bump
+    );
     let seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
     transfer(
         CpiContext::new_with_signer(
@@ -153,7 +176,9 @@ pub fn transfer_from_autominer_custody<'info>(
             &[seeds],
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_from_autominer_custody complete");
+    Ok(())
 }
 
 // Helper function to transfer SOL to the sol_rewards_vault PDA
@@ -163,6 +188,12 @@ pub fn transfer_to_sol_rewards_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_sol_rewards_vault] from={} to={} amount={} SOL",
+        from.key(),
+        sol_rewards_vault.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -172,7 +203,9 @@ pub fn transfer_to_sol_rewards_vault<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_sol_rewards_vault complete");
+    Ok(())
 }
 
 // Helper function to transfer SOL to the sol_prize_pot_vault PDA
@@ -182,6 +215,12 @@ pub fn transfer_to_sol_prize_pot_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_sol_prize_pot_vault] from={} to={} amount={} SOL",
+        from.key(),
+        sol_prize_pot_vault.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -191,7 +230,9 @@ pub fn transfer_to_sol_prize_pot_vault<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_sol_prize_pot_vault complete");
+    Ok(())
 }
 
 /// Like `init_pda_account_if_needed` but writes only the discriminator and
@@ -387,6 +428,13 @@ pub fn transfer_from_sol_rewards_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_from_sol_rewards_vault] from={} to={} amount={} SOL bump={}",
+        sol_rewards_vault.key(),
+        to.key(),
+        amount as f64 / 1e9,
+        vault_bump
+    );
     let seeds = &[STAKER_SOL_REWARD_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -400,7 +448,9 @@ pub fn transfer_from_sol_rewards_vault<'info>(
             signer_seeds,
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_from_sol_rewards_vault complete");
+    Ok(())
 }
 
 // Helper function to transfer SOL FROM sol_prize_pot_vault to a user
@@ -412,6 +462,13 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_from_sol_prize_pot_vault] from={} to={} amount={} SOL bump={}",
+        sol_prize_pot_vault.key(),
+        to.key(),
+        amount as f64 / 1e9,
+        vault_bump
+    );
     let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -425,7 +482,9 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
             signer_seeds,
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_from_sol_prize_pot_vault complete");
+    Ok(())
 }
 
 // Helper function to transfer WSOL to multisig token account
@@ -438,6 +497,10 @@ pub fn transfer_wsol_to_multisig<'info>(
     token_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_wsol_to_multisig] amount={} SOL",
+        amount as f64 / 1e9
+    );
     // Step 1: Transfer SOL to the from_wsol_account (this wraps it)
     transfer(
         CpiContext::new(
@@ -449,6 +512,7 @@ pub fn transfer_wsol_to_multisig<'info>(
         ),
         amount,
     )?;
+    msg!("   Step 1: SOL wrapped to WSOL");
 
     // Step 2: Sync native account to update WSOL balance
     anchor_spl::token::sync_native(CpiContext::new(
@@ -457,6 +521,7 @@ pub fn transfer_wsol_to_multisig<'info>(
             account: from_wsol_account.to_account_info(),
         },
     ))?;
+    msg!("   Step 2: WSOL balance synced");
 
     // Step 3: Transfer WSOL from from_wsol_account to multisig_wsol_account
     anchor_spl::token::transfer(
@@ -470,7 +535,8 @@ pub fn transfer_wsol_to_multisig<'info>(
         ),
         amount,
     )?;
-
+    msg!("   Step 3: WSOL transferred to multisig");
+    msg!("   ✅ transfer_wsol_to_multisig complete");
     Ok(())
 }
 
@@ -538,6 +604,12 @@ pub fn add_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> R
 
 /// Remove position index from user's minebtc positions
 pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "remove_dogebtc_position");
+    msg!(
+        "🔧 [helper.remove_dogebtc_position] position_index={} current_indices={:?}",
+        position_index,
+        player_ac.dogebtc_position_indices
+    );
     // Find the position index in the vector
     if let Some(pos) = player_ac
         .dogebtc_position_indices
@@ -545,7 +617,13 @@ pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -
         .position(|&x| x == position_index)
     {
         player_ac.dogebtc_position_indices.remove(pos);
+        msg!(
+            "   ✅ removed position_index={} new_indices={:?}",
+            position_index,
+            player_ac.dogebtc_position_indices
+        );
     } else {
+        msg!("   ⚠️ position_index={} not found", position_index);
         return Err(ErrorCode::InvalidParameters.into());
     }
 
@@ -554,16 +632,31 @@ pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -
 
 /// Add position index to user's LP positions
 pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "add_lp_position");
+    msg!(
+        "🔧 [helper.add_lp_position] position_index={} current_indices={:?}",
+        position_index,
+        player_ac.lp_position_indices
+    );
     if position_index >= MAX_ALLOWED_POSITIONS {
+        msg!("   ⚠️ position_index >= MAX_ALLOWED_POSITIONS");
         return Err(ErrorCode::InvalidParameters.into());
     }
 
     // If this position index is not already active
     if !player_ac.lp_position_indices.contains(&position_index) {
         if player_ac.lp_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            msg!("   ⚠️ max positions reached");
             return Err(ErrorCode::InvalidParameters.into());
         }
         player_ac.lp_position_indices.push(position_index);
+        msg!(
+            "   ✅ added position_index={} new_indices={:?}",
+            position_index,
+            player_ac.lp_position_indices
+        );
+    } else {
+        msg!("   position_index={} already active", position_index);
     }
 
     Ok(())
@@ -571,13 +664,25 @@ pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result
 
 /// Remove position index from user's LP positions
 pub fn remove_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "remove_lp_position");
+    msg!(
+        "🔧 [helper.remove_lp_position] position_index={} current_indices={:?}",
+        position_index,
+        player_ac.lp_position_indices
+    );
     if let Some(pos) = player_ac
         .lp_position_indices
         .iter()
         .position(|&x| x == position_index)
     {
         player_ac.lp_position_indices.remove(pos);
+        msg!(
+            "   ✅ removed position_index={} new_indices={:?}",
+            position_index,
+            player_ac.lp_position_indices
+        );
     } else {
+        msg!("   ⚠️ position_index={} not found", position_index);
         return Err(ErrorCode::InvalidParameters.into());
     }
 
@@ -589,6 +694,13 @@ pub fn calculate_staking_rewards(
     accumulated_sol_per_point: u128,
     reward_debt: u128,
 ) -> Result<u64> {
+    crate::log_fn!("helper", "calculate_staking_rewards");
+    msg!(
+        "📊 [helper.calculate_staking_rewards] user_weighted_amt={} accumulated={} reward_debt={}",
+        user_weighted_amt,
+        accumulated_sol_per_point,
+        reward_debt
+    );
     let reward_diff = accumulated_sol_per_point
         .checked_sub(reward_debt)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -597,28 +709,37 @@ pub fn calculate_staking_rewards(
         reward_diff,
         INDEX_PRECISION as u128,
     )?;
-    // Error explicitly on u64 overflow rather than silently capping —
-    // a value > u64::MAX here means the caller's accounting is broken
-    // (or the index has somehow exceeded its denominator); silently
-    // truncating would short-pay the user.
-    u64::try_from(new_rewards).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+    let result = u64::try_from(new_rewards).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    msg!(
+        "   reward_diff={} new_rewards={} result={}",
+        reward_diff,
+        new_rewards,
+        result
+    );
+    Ok(result)
 }
 
 pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
+    crate::log_fn!("helper", "mul_div");
+    msg!("📊 [helper.mul_div] a={} b={} c={}", a, b, c);
     let result = (a as u128)
         .checked_mul(b as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(c as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   result={}", result);
     Ok(result)
 }
 
 pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
+    crate::log_fn!("helper", "mul_div_u128");
+    msg!("📊 [helper.mul_div_u128] a={} b={} c={}", a, b, c);
     let result = a
         .checked_mul(b)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(c)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   result={}", result);
     Ok(result)
 }
 
@@ -633,6 +754,17 @@ pub fn init_position(
     current_ts: i64,
     multiplier: u16,
 ) -> Result<()> {
+    crate::log_fn!("helper", "init_position");
+    msg!(
+        "🔧 [helper.init_position] type={} faction={} index={} staked={} weighted={} lockup={}d mult={}",
+        position_type,
+        faction_id,
+        position_index,
+        staked_amount,
+        weighted_amount,
+        lockup_duration,
+        multiplier
+    );
     position.position_index = position_index;
     position.position_type = position_type;
 
@@ -646,6 +778,12 @@ pub fn init_position(
 
     let seconds_to_add = lockup_duration.saturating_mul(DAY_IN_SECONDS);
     position.lockup_end_timestamp = current_ts.saturating_add(seconds_to_add as i64);
+    msg!(
+        "   lockup_end_ts={} (current={} + {}s)",
+        position.lockup_end_timestamp,
+        current_ts,
+        seconds_to_add
+    );
 
     Ok(())
 }

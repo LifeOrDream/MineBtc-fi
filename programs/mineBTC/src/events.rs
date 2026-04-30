@@ -80,6 +80,7 @@ pub struct DistributionRateUpdated {
     pub track_price: u64,
     pub recent_price: u64,
     pub rate_changed: bool,
+    pub new_mining_multiplier: u16,
     pub timestamp: i64,
 }
 
@@ -435,6 +436,9 @@ pub struct BetsPlaced {
     pub rounds_remaining: Option<u32>,
     pub vault_closed: Option<bool>,
 
+    /// Total SOL deducted from this batch for the cycle SOL split (faction war vault).
+    pub total_cycle_sol_split: u64,
+
     pub timestamp: i64,
 }
 
@@ -785,6 +789,7 @@ pub struct FactionWarRewardsClaimed {
     pub loyalty_reward_amount: u64,
     pub mvp_bonus_amount: u64,
     pub doge_bonus_amount: u64,
+    pub sol_reward_amount: u64,
     pub doge_mint: Pubkey,
     pub timestamp: i64,
 }
