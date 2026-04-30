@@ -341,14 +341,15 @@ where
 }
 
 /// Allocate a zero-filled `Box<T>` directly on the heap without ever
-/// materializing the `T` on the stack. Safe for any `T` that is valid
-/// when zero-initialized (all numeric primitives, fixed-size arrays
-/// thereof, and `Pubkey = [u8; 32]`). Used by the FactionWarState boxed
+/// materializing the `T` on the stack. Used by the FactionWarState boxed
 /// loader to avoid blowing BPF's stack budget on a 2.6KB struct.
 ///
-/// SAFETY: caller must guarantee `T` has no invariants violated by an
-/// all-zeros bit pattern (no enums with non-zero discriminants, no
-/// references, no `NonZero*` types, no custom `Drop`).
+/// # Safety
+///
+/// Caller must guarantee `T` has no invariants violated by an all-zeros
+/// bit pattern: no enums with non-zero discriminants, no references, no
+/// `NonZero*` types, no custom `Drop`. Suitable for plain numeric
+/// primitives, fixed-size arrays of those, and `Pubkey = [u8; 32]`.
 #[inline(never)]
 pub unsafe fn alloc_zeroed_boxed<T>() -> Box<T> {
     let b: Box<core::mem::MaybeUninit<T>> = Box::new(core::mem::MaybeUninit::uninit());

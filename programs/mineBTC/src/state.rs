@@ -101,6 +101,8 @@ pub const DEFAULT_STAKERS_PCT: u8 = 20;
 pub const DEFAULT_REFERRAL_FEE_PCT: u8 = 5;
 /// Default referral cut: 10% of the SOL protocol fee for same-country recruits (loyalty bonus).
 pub const DEFAULT_SAME_FACTION_REFERRAL_FEE_PCT: u8 = 10;
+/// Default cycle SOL split: 5% of user bet reserved for faction-war jackpot.
+pub const DEFAULT_CYCLE_SOL_SPLIT_PCT: u8 = 5;
 
 /// dogeBTC share of round emission sent to faction stakers.
 pub const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
@@ -122,6 +124,17 @@ pub const DEFAULT_PRICE_CHANGE_THRESHOLD: u64 = 3; // 3%
 pub const DEFAULT_EMISSION_INCREASE_PCT: u64 = 1; // 1%
 /// Emission rate decrease when price falls below threshold.
 pub const DEFAULT_EMISSION_DECREASE_PCT: u64 = 3; // 3%
+
+/// Default faction-war mining multiplier (1.0x = 10_000 bps).
+pub const DEFAULT_MINING_MULTIPLIER_BPS: u16 = 10_000;
+/// Default multiplier increase when price goes up (+3%).
+pub const DEFAULT_MULTIPLIER_INCREASE_BPS: u16 = 300;
+/// Default multiplier decrease when price goes down (-10%).
+pub const DEFAULT_MULTIPLIER_DECREASE_BPS: u16 = 1000;
+/// Default multiplier hard floor (0.3x).
+pub const DEFAULT_MULTIPLIER_MIN_BPS: u16 = 3000;
+/// Default multiplier hard ceiling (1.5x).
+pub const DEFAULT_MULTIPLIER_MAX_BPS: u16 = 15000;
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
@@ -200,6 +213,7 @@ pub const DOGE_MINT_CONFIG_SEED: &[u8] = b"doge-mint-config";
 pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
 pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", faction_war_id_u64]
 pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, faction_war_id_u64]
+pub const FACTION_WAR_SOL_VAULT_SEED: &[u8] = b"faction-war-sol-vault";
 
 // PDAs for Tax system
 pub const TAX_CONFIG_SEED: &[u8] = b"tax-config";
@@ -280,10 +294,14 @@ pub struct SolFeeConfig {
     /// Whole-percent share of the SOL **protocol fee** routed to a referrer
     /// for same-country recruits (loyalty bonus). Hard-capped at `MAX_REFERRAL_FEE_PCT` (10).
     pub same_faction_referral_fee_pct: u8,
+    /// Whole-percent share of the user's SOL bet reserved for the faction-war
+    /// cycle SOL jackpot. Taken directly from the gross bet, in addition to the
+    /// protocol fee. `100` = 100%.
+    pub cycle_sol_split_pct: u8,
 }
 
 impl SolFeeConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // protocol_fee_pct + buyback_pct + stakers_pct + referral_fee_pct + same_faction_referral_fee_pct
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1 + 1; // protocol_fee_pct + buyback_pct + stakers_pct + referral_fee_pct + same_faction_referral_fee_pct + cycle_sol_split_pct
 }
 
 /// Maximum allowed referral cut as a percentage of the SOL protocol fee.
@@ -1481,6 +1499,19 @@ pub struct FactionWarConfig {
     pub last_processed_round_id: u64,
     pub last_round_mutations: u8,
     pub recent_mutation_pressure_bps: u16,
+
+    // ----- DYNAMIC MINING MULTIPLIER (dogeBTC cycle rewards) -----
+    /// Current multiplier for faction-war dogeBTC rewards, in basis points.
+    /// 10_000 = 1.0x. Applied to `total_dogebtc_mined_in_faction_war` at settlement.
+    pub mining_multiplier_bps: u16,
+    /// Basis-point increase applied when price goes up (e.g. 300 = +3%).
+    pub multiplier_increase_bps: u16,
+    /// Basis-point decrease applied when price goes down (e.g. 1000 = -10%).
+    pub multiplier_decrease_bps: u16,
+    /// Hard floor for the multiplier (e.g. 3000 = 0.3x).
+    pub multiplier_min_bps: u16,
+    /// Hard ceiling for the multiplier (e.g. 15000 = 1.5x).
+    pub multiplier_max_bps: u16,
 }
 
 impl FactionWarConfig {
@@ -1495,7 +1526,12 @@ impl FactionWarConfig {
         2 +     // cycle_mutations_triggered
         8 +     // last_processed_round_id
         1 +     // last_round_mutations
-        2; // recent_mutation_pressure_bps
+        2 +     // recent_mutation_pressure_bps
+        2 +     // mining_multiplier_bps
+        2 +     // multiplier_increase_bps
+        2 +     // multiplier_decrease_bps
+        2 +     // multiplier_min_bps
+        2; // multiplier_max_bps
 }
 
 impl FactionWarConfig {
@@ -1586,6 +1622,10 @@ pub struct FactionWarState {
     /// Bitmap of factions that have already claimed treasury rewards for this
     /// faction war. Bit N = 1 means faction N has claimed.
     pub treasury_claimed_bitmap: u16,
+
+    /// Accumulated SOL (from `cycle_sol_split`) reserved for this faction-war
+    /// cycle's SOL jackpot. Distributed to claimants at settlement.
+    pub sol_reward_pool: u64,
 }
 
 impl FactionWarState {
@@ -1614,7 +1654,8 @@ impl FactionWarState {
         (NUM_FACTIONS * 8) + // faction_mvp_bonus
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_doge_direction_totals
         8 +     // treasury_reward_base_amount
-        2; // treasury_claimed_bitmap
+        2 +     // treasury_claimed_bitmap
+        8; // sol_reward_pool
 
     pub fn blank() -> Self {
         Self {
@@ -1643,6 +1684,7 @@ impl FactionWarState {
             eligible_doge_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
             treasury_reward_base_amount: 0,
             treasury_claimed_bitmap: 0,
+            sol_reward_pool: 0,
         }
     }
 
@@ -1681,6 +1723,7 @@ impl FactionWarState {
         target.eligible_doge_direction_totals = AnchorDeserialize::deserialize(buf)?;
         target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
         target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
+        target.sol_reward_pool = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }
 }

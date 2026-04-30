@@ -84,6 +84,14 @@ pub struct DistributionRateUpdated {
 }
 
 #[event]
+pub struct FactionWarMultiplierUpdated {
+    pub old_multiplier_bps: u16,
+    pub new_multiplier_bps: u16,
+    pub direction: i8,
+    pub timestamp: i64,
+}
+
+#[event]
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
     pub total_lp_burnt: u64,

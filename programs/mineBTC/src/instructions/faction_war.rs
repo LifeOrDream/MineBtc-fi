@@ -57,6 +57,20 @@ pub fn resolve_direction_from_ranks(start_rank: u8, final_rank: u8) -> (Predicti
     (direction, delta)
 }
 
+/// Apply the dynamic mining multiplier to the raw dogeBTC mined in a cycle.
+/// `multiplier_bps` is in basis points (10_000 = 1.0x).
+#[inline(always)]
+fn apply_mining_multiplier(raw_mined: u64, multiplier_bps: u16) -> u64 {
+    if raw_mined == 0 || multiplier_bps == 10_000 {
+        return raw_mined;
+    }
+    let result = (raw_mined as u128)
+        .checked_mul(multiplier_bps as u128)
+        .unwrap_or(raw_mined as u128)
+        / 10_000;
+    result as u64
+}
+
 fn compute_rank_weighted_pools(
     pool_total: u64,
     final_ranks: &[u8; NUM_FACTIONS],
@@ -273,6 +287,13 @@ pub fn initialize_faction_war_config_internal(
     let current_faction_war_id = faction_war_config.current_faction_war_id;
     faction_war_config.reset_cycle_telemetry(current_faction_war_id);
 
+    // Initialize dynamic mining multiplier defaults
+    faction_war_config.mining_multiplier_bps = DEFAULT_MINING_MULTIPLIER_BPS;
+    faction_war_config.multiplier_increase_bps = DEFAULT_MULTIPLIER_INCREASE_BPS;
+    faction_war_config.multiplier_decrease_bps = DEFAULT_MULTIPLIER_DECREASE_BPS;
+    faction_war_config.multiplier_min_bps = DEFAULT_MULTIPLIER_MIN_BPS;
+    faction_war_config.multiplier_max_bps = DEFAULT_MULTIPLIER_MAX_BPS;
+
     msg!("   ✅ FactionWarConfig initialized. Starting faction_war_id: 1");
     Ok(())
 }
@@ -436,8 +457,10 @@ pub fn finalize_faction_war_settlement(
             msg!(
                 "   ⚠️ No mutations this faction_war but gameplay happened — distributing rewards with no rank change (Neutral wins everywhere)"
             );
-            faction_war_state.faction_war_mining_pool =
-                faction_war_state.total_dogebtc_mined_in_faction_war;
+            faction_war_state.faction_war_mining_pool = apply_mining_multiplier(
+                faction_war_state.total_dogebtc_mined_in_faction_war,
+                faction_war_config.mining_multiplier_bps,
+            );
             // No rank change: final_ranks = start_ranks, deltas all zero, every
             // faction resolves to Neutral.
             faction_war_state.final_ranks = faction_war_state.start_ranks;
@@ -450,11 +473,14 @@ pub fn finalize_faction_war_settlement(
             faction_war_state.stage = 1;
         }
     } else {
-        faction_war_state.faction_war_mining_pool =
-            faction_war_state.total_dogebtc_mined_in_faction_war;
+        faction_war_state.faction_war_mining_pool = apply_mining_multiplier(
+            faction_war_state.total_dogebtc_mined_in_faction_war,
+            faction_war_config.mining_multiplier_bps,
+        );
         msg!(
-            "   💰 FactionWar mining pool: {} dogeBTC",
-            faction_war_state.faction_war_mining_pool
+            "   💰 FactionWar mining pool: {} dogeBTC (multiplier: {} bps)",
+            faction_war_state.faction_war_mining_pool,
+            faction_war_config.mining_multiplier_bps
         );
 
         let mut mutation_scores_i64 = [0i64; NUM_FACTIONS];
@@ -869,15 +895,58 @@ pub fn claim_faction_war_rewards_internal(
         }
     }
 
+    // --- SOL Cycle Jackpot: proportional to base dogeBTC reward share ---
+    let mut sol_reward: u64 = 0;
+    let sol_pool = faction_war_state.sol_reward_pool;
+    if sol_pool > 0 && base_reward_amount > 0 {
+        let total_base_pool = faction_war_state
+            .faction_reward_pools
+            .iter()
+            .take(active_factions)
+            .sum::<u64>();
+        if total_base_pool > 0 {
+            let sol_u128 = (sol_pool as u128)
+                .checked_mul(base_reward_amount as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(total_base_pool as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            sol_reward =
+                u64::try_from(sol_u128).map_err(|_| error!(ErrorCode::ArithmeticOverflow))?;
+        }
+    }
+    if sol_reward > 0 {
+        msg!(
+            "   Transferring SOL cycle reward: {} SOL",
+            sol_reward as f64 / 1e9
+        );
+        let vault_seeds = &[
+            FACTION_WAR_SOL_VAULT_SEED.as_ref(),
+            &[ctx.bumps.faction_war_sol_vault],
+        ];
+        let signer = &[&vault_seeds[..]];
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.faction_war_sol_vault.to_account_info(),
+                    to: ctx.accounts.player.to_account_info(),
+                },
+                signer,
+            ),
+            sol_reward,
+        )?;
+    }
+
     msg!(
-        "   Player faction {}: base_reward={}, loyalty_reward={}, mvp_bonus={}, total_reward={}, doge_bonus={}, doge_eligible={}",
+        "   Player faction {}: base_reward={}, loyalty_reward={}, mvp_bonus={}, total_reward={}, doge_bonus={}, doge_eligible={}, sol_reward={}",
         player_faction_id,
         base_reward_amount,
         loyalty_reward_amount,
         mvp_bonus_amount,
         total_reward,
         doge_bonus_amount,
-        user_faction_war_bets.doge_bonus_eligible
+        user_faction_war_bets.doge_bonus_eligible,
+        sol_reward
     );
 
     if total_reward > 0 {
@@ -946,6 +1015,14 @@ pub struct ClaimFactionWarRewards<'info> {
 
     #[account(mut)]
     pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
+
+    /// CHECK: Faction-war SOL vault (cycle jackpot reserve)
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_SOL_VAULT_SEED.as_ref()],
+        bump,
+    )]
+    pub faction_war_sol_vault: UncheckedAccount<'info>,
 
     /// CHECK: Validated by constraint that player.key() == user_faction_war_bets.owner
     #[account(

@@ -104,6 +104,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         stakers_pct: DEFAULT_STAKERS_PCT,
         referral_fee_pct: DEFAULT_REFERRAL_FEE_PCT,
         same_faction_referral_fee_pct: DEFAULT_SAME_FACTION_REFERRAL_FEE_PCT,
+        cycle_sol_split_pct: DEFAULT_CYCLE_SOL_SPLIT_PCT,
     };
 
     // Initialize dogeBTC round distribution config (defaults defined in state.rs)
@@ -422,6 +423,7 @@ pub fn update_fees_internal(
     snapshot_interval: Option<u64>,
     new_referral_fee_pct: Option<u8>,
     new_same_faction_referral_fee_pct: Option<u8>,
+    new_cycle_sol_split_pct: Option<u8>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_fees_internal");
     let global_config = &mut ctx.accounts.global_config;
@@ -432,6 +434,7 @@ pub fn update_fees_internal(
         || new_stakers_pct.is_some()
         || new_referral_fee_pct.is_some()
         || new_same_faction_referral_fee_pct.is_some()
+        || new_cycle_sol_split_pct.is_some()
     {
         let protocol_fee_pct =
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
@@ -441,6 +444,8 @@ pub fn update_fees_internal(
             new_referral_fee_pct.unwrap_or(global_config.sol_fee_config.referral_fee_pct);
         let same_faction_referral_fee_pct = new_same_faction_referral_fee_pct
             .unwrap_or(global_config.sol_fee_config.same_faction_referral_fee_pct);
+        let cycle_sol_split_pct =
+            new_cycle_sol_split_pct.unwrap_or(global_config.sol_fee_config.cycle_sol_split_pct);
 
         require!(
             protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -462,6 +467,10 @@ pub fn update_fees_internal(
             same_faction_referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
             ErrorCode::InvalidParameters
         );
+        require!(
+            cycle_sol_split_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
 
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
@@ -469,6 +478,7 @@ pub fn update_fees_internal(
             stakers_pct,
             referral_fee_pct,
             same_faction_referral_fee_pct,
+            cycle_sol_split_pct,
         };
     }
 

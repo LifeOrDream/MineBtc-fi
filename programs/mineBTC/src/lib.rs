@@ -150,6 +150,7 @@ pub mod minebtc {
         snapshot_interval: Option<u64>,
         new_referral_fee_pct: Option<u8>,
         new_same_faction_referral_fee_pct: Option<u8>,
+        new_cycle_sol_split_pct: Option<u8>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_fees");
         admin::update_fees_internal(
@@ -165,6 +166,7 @@ pub mod minebtc {
             snapshot_interval,
             new_referral_fee_pct,
             new_same_faction_referral_fee_pct,
+            new_cycle_sol_split_pct,
         )
     }
 

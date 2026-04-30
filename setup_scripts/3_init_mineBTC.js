@@ -119,6 +119,8 @@ const LIVE_FEE_CONFIG = {
   // Referrer's cut of the SOL protocol fee. Hard-capped at 10% by the program.
   newReferralFeePct: 5,             // cross-country recruits
   newSameFactionReferralFeePct: 10, // same-country recruits (loyalty bonus)
+  // Cycle SOL split: % of user bet reserved for faction-war jackpot (taken from gross bet, in addition to protocol fee)
+  newCycleSolSplitPct: 5,
 };
 
 // Load MineBTC Program IDL
@@ -2624,6 +2626,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       newReferralFeePct: feeConfig?.newReferralFeePct ?? null,
       newSameFactionReferralFeePct:
         feeConfig?.newSameFactionReferralFeePct ?? null,
+      newCycleSolSplitPct: feeConfig?.newCycleSolSplitPct ?? null,
     };
 
     // Validate the MineBTC distribution invariant before sending the transaction.

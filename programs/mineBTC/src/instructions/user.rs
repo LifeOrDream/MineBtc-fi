@@ -440,6 +440,7 @@ pub fn internal_join_bets<'info>(
         &accounts.sol_treasury.to_account_info(),
         &accounts.sol_rewards_vault.to_account_info(),
         &accounts.sol_prize_pot_vault.to_account_info(),
+        &accounts.faction_war_sol_vault.to_account_info(),
         &accounts.system_program.to_account_info(),
         user_game_bet_bump,
         accounts.authority.key(),
@@ -1109,6 +1110,7 @@ pub fn internal_execute_autominer_bet<'info>(
         &accounts.sol_treasury.to_account_info(),
         &accounts.sol_rewards_vault.to_account_info(),
         &accounts.sol_prize_pot_vault.to_account_info(),
+        &accounts.faction_war_sol_vault.to_account_info(),
         &accounts.system_program.to_account_info(),
         user_game_bet_bump,
         owner_key,
@@ -1726,6 +1728,7 @@ fn internal_process_bets<'info>(
     sol_treasury: &AccountInfo<'info>,
     sol_rewards_vault: &AccountInfo<'info>,
     sol_prize_pot_vault: &AccountInfo<'info>,
+    faction_war_sol_vault: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     user_game_bet_bump: u8,
     owner_key: Pubkey,
@@ -1876,6 +1879,10 @@ fn internal_process_bets<'info>(
         player_data.active_multiplier as u64
     };
 
+    // --- CYCLE SOL SPLIT: computed upfront so it is available in outer scope ---
+    let cycle_sol_split_pct = global_config.sol_fee_config.cycle_sol_split_pct as u64;
+    let mut cycle_sol_split_per_bet: u64 = 0;
+
     // Calculate amounts per bet (uniform across batch)
     // wgtd_points: points * multiplier / BASE_MULTIPLIER for SOL bets, else points (tickets)
     let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) =
@@ -1913,8 +1920,21 @@ fn internal_process_bets<'info>(
         } else {
             // SOL Logic - apply multiplier for wgtd_points
             require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
+
+            cycle_sol_split_per_bet = if faction_war_config.is_active && cycle_sol_split_pct > 0 {
+                amount_per_bet
+                    .checked_mul(cycle_sol_split_pct)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?
+                    / M_HUNDRED
+            } else {
+                0
+            };
+            let amount_after_cycle_split = amount_per_bet
+                .checked_sub(cycle_sol_split_per_bet)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+
             let (net, fee) = handle_fee(
-                amount_per_bet,
+                amount_after_cycle_split,
                 global_config.sol_fee_config.protocol_fee_pct as u64,
             )?;
 
@@ -1968,6 +1988,37 @@ fn internal_process_bets<'info>(
             )
         }
     };
+
+    // Transfer cycle SOL split to faction-war vault (only when cycles are active)
+    let total_cycle_sol_split = if faction_war_config.is_active && cycle_sol_split_per_bet > 0 {
+        cycle_sol_split_per_bet
+            .checked_mul(num_bets)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+    } else {
+        0
+    };
+    if total_cycle_sol_split > 0 {
+        // SECURITY: the JoinBets / ExecuteAutominerBet Accounts structs intentionally
+        // omit the seeds constraint on this account to keep the parser stack under
+        // 4KB. We validate the address manually here so an attacker can't redirect
+        // the cycle SOL split to a wallet they control.
+        let (expected_vault, _bump) =
+            Pubkey::find_program_address(&[FACTION_WAR_SOL_VAULT_SEED], &crate::id());
+        require_keys_eq!(
+            faction_war_sol_vault.key(),
+            expected_vault,
+            ErrorCode::InvalidAccount
+        );
+        msg!(
+            "   Transferring cycle SOL split ({} SOL) to faction-war vault",
+            total_cycle_sol_split as f64 / 1e9
+        );
+        do_transfer(faction_war_sol_vault, total_cycle_sol_split)?;
+        faction_war_state.sol_reward_pool = faction_war_state
+            .sol_reward_pool
+            .checked_add(total_cycle_sol_split)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
 
     if total_stakers_fee > 0 {
         msg!(
@@ -2625,8 +2676,9 @@ pub struct InitializePlayer<'info> {
 #[derive(Accounts)]
 #[instruction(round_id: u64, faction_war_id: u64)]
 pub struct JoinBets<'info> {
-    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small
-    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
+    /// CHECK: Program-owned PDA deserialized and validated in handler to keep parser stack small.
+    /// No seeds/bump in derive macro to keep `JoinBets` stack under 4KB.
+    #[account(mut)]
     pub global_config: UncheckedAccount<'info>,
 
     #[account(
@@ -2677,6 +2729,11 @@ pub struct JoinBets<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// CHECK: Faction-war SOL vault (cycle jackpot reserve). No seeds/bump here
+    /// to keep `JoinBets` stack small; validated manually in handler.
+    #[account(mut)]
+    pub faction_war_sol_vault: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -3040,6 +3097,11 @@ pub struct ExecuteAutominerBet<'info> {
         bump
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// CHECK: Faction-war SOL vault (cycle jackpot reserve). No seeds/bump here
+    /// to keep `ExecuteAutominerBet` stack small; validated manually in handler.
+    #[account(mut)]
+    pub faction_war_sol_vault: UncheckedAccount<'info>,
 
     #[account(
         mut,
