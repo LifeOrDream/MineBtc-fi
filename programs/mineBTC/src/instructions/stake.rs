@@ -14,7 +14,7 @@ use anchor_spl::token::{self, Token};
 // - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
 // - **MineBTC staking rewards** come from round mining distribution indexes and are first
 //   accumulated into `pending_minebtc_rewards`.
-// - **Refining fee redistribution** happens when a player withdraws pending MineBTC rewards:
+// - **HODL tax redistribution** happens when a player withdraws pending MineBTC rewards:
 //   a configurable fee is taken from the withdrawing user and re-indexed across the remaining
 //   unclaimed MineBTC rewards.
 //
@@ -32,12 +32,16 @@ use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
 pub const MAX_REFERRALS_PER_CODE: u16 = 10_000; // High cap so viral country recruitment is not artificially throttled.
-pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user with any referral code.
-pub const REFERRAL_REWARD_PCT: u64 = 3; // 3% reward to referrer.
-pub const SAME_FACTION_REFERRAL_REWARD_PCT: u64 = 5; // Same-country recruits are more valuable.
-                                                     // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-                                                     // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
-                                                     // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in dogeBTC at first claim).
+                                       // Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
+                                       // not from dogeBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
+                                       // (admin-tunable, capped at `MAX_REFERRAL_FEE_PCT = 10`); lifetime accrual is
+                                       // capped at `MAX_REFERRER_SOL_LIFETIME`. Sybil farming is structurally
+                                       // unprofitable: the sybil pays 100% of the bet but extracts only a fraction
+                                       // of the protocol fee back.
+                                       // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
+                                       // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
+                                       // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 fn calc_weighted_amount(staked_amount: u64, lockup_multiplier: u16) -> Result<u64> {
     let weighted_u128 = (staked_amount as u128)
@@ -215,7 +219,7 @@ pub fn int_stake_minebtc(
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -417,7 +421,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -609,15 +613,26 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Emit emergency withdrawal event if early withdrawal
     if is_early_withdrawal && penalty_amount > 0 {
-        emit!(EmergencyWithdrawal {
+        let days_remaining = if current_ts < user_position.lockup_end_timestamp {
+            ((user_position.lockup_end_timestamp - current_ts) as u64)
+                .checked_add(86400 - 1)
+                .unwrap_or(0)
+                / 86400
+        } else {
+            0
+        };
+
+        emit!(PaperHandBurned {
             owner: ctx.accounts.authority.key(),
             player_data: player_data_key,
             position_key,
             position_index,
+            staked_token_type: 0, // MineBTC
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,
             penalty_tax_pct: calc_penalty_pct,
+            days_remaining,
             timestamp: current_ts,
         });
     }
@@ -746,7 +761,7 @@ pub fn int_stake_lp_tokens(
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -943,7 +958,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1134,15 +1149,26 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 
     // Emit emergency withdrawal event if early withdrawal
     if is_early_withdrawal && penalty_amount > 0 {
-        emit!(EmergencyWithdrawal {
+        let days_remaining = if current_ts < user_position.lockup_end_timestamp {
+            ((user_position.lockup_end_timestamp - current_ts) as u64)
+                .checked_add(86400 - 1)
+                .unwrap_or(0)
+                / 86400
+        } else {
+            0
+        };
+
+        emit!(PaperHandBurned {
             owner: ctx.accounts.authority.key(),
             player_data: player_data_key,
             position_index,
             position_key,
+            staked_token_type: 1, // LP
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,
             penalty_tax_pct: calc_penalty_pct,
+            days_remaining,
             timestamp: current_ts,
         });
     }
@@ -1196,7 +1222,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         ctx.accounts.authority.key(),
         player_data_key,
         player_data,
-        &mut ctx.accounts.unrefined_rewards,
+        &mut ctx.accounts.hodl_pool,
         faction_state,
     )?;
     // Process LP staking SOL rewards
@@ -1205,7 +1231,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
             ctx.accounts.authority.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1265,11 +1291,11 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Withdraw accumulated MineBtc token rewards
-/// Implements refining fee: 10% of claimed rewards are redistributed to other unclaimed stakers
+/// Implements HODL tax: 10% of claimed rewards are redistributed to other unclaimed stakers
 /// NOTE: Call claim_staking_rewards first to update staking indexes and accumulate rewards
 pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
     crate::log_fn!("stake", "int_withdraw_dbtc_rewards");
-    msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with refining fee");
+    msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with HODL tax");
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
@@ -1277,12 +1303,12 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     let player_owner = ctx.accounts.player_data.owner;
 
     let player_data = &mut ctx.accounts.player_data;
-    let unrefined_minebtc = &mut ctx.accounts.unrefined_rewards;
+    let unrefined_minebtc = &mut ctx.accounts.hodl_pool;
     let global_config = &ctx.accounts.global_config;
 
-    // Realize any deferred refining-index rewards before applying a new refining fee.
+    // Realize any deferred hodl-tax-index rewards before applying a new HODL tax.
     // Without this sync, users with no fresh staking updates can miss previously accrued
-    // refining distributions when they go straight to withdraw.
+    // HODL-tax distributions when they go straight to withdraw.
     let synced_unrefined_bonus = helper::add_to_total_claimable(
         unrefined_minebtc,
         player_data,
@@ -1294,13 +1320,13 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     )?;
 
     msg!(
-        "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} unrefining_index={} synced_unrefined_bonus={}",
+        "🧭 [withdraw_dbtc_rewards] owner={} player={} faction_id={} pending_minebtc={} total_claimable={} hodl_tax_index={} synced_unrefined_bonus={}",
         player_owner,
         player_data_key,
         faction_id,
         player_data.pending_minebtc_rewards as f64 / 1e6,
         unrefined_minebtc.total_minebtc_claimable as f64 / 1e6,
-        unrefined_minebtc.unrefining_index,
+        unrefined_minebtc.hodl_tax_index,
         synced_unrefined_bonus as f64 / 1e6
     );
 
@@ -1315,74 +1341,42 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         .checked_sub(base_pending)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    // Apply refining fee only when there are remaining claimants to receive it.
-    let refining_fee_pct = global_config.minebtc_dist_config.refining_fee as u64;
-    let refining_fee = if remaining_claimable_after_this_user > 0 {
-        (base_pending * refining_fee_pct) / M_HUNDRED
+    // Apply HODL tax only when there are remaining claimants to receive it.
+    let hodl_tax_pct = global_config.minebtc_dist_config.hodl_tax_pct as u64;
+    let hodl_tax = if remaining_claimable_after_this_user > 0 {
+        (base_pending * hodl_tax_pct) / M_HUNDRED
     } else {
         0
     };
     let base_claimable_amount = base_pending
-        .checked_sub(refining_fee)
+        .checked_sub(hodl_tax)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "🧮 [withdraw_dbtc_rewards] base_pending={} remaining_after_user={} refining_fee_pct={} refining_fee={} base_claimable={}",
+        "🧮 [withdraw_dbtc_rewards] base_pending={} remaining_after_user={} hodl_tax_pct={} hodl_tax={} base_claimable={}",
         base_pending as f64 / 1e6,
         remaining_claimable_after_this_user as f64 / 1e6,
-        refining_fee_pct,
-        refining_fee as f64 / 1e6,
+        hodl_tax_pct,
+        hodl_tax as f64 / 1e6,
         base_claimable_amount as f64 / 1e6
     );
 
-    // Apply referral logic: user gets +1% bonus, referrer gets 3% or 5% for
-    // same-faction recruits. The higher same-faction reward turns referrals into
-    // country-building without changing the user's own payout math.
-    // A real referral must resolve to the referrer's canonical ReferralRewards PDA.
+    // Apply referral bonus to the referee only. Referrer commissions accrue in SOL
+    // from referees' protocol fees (see internal_process_bets / NFT mint flows),
+    // not from dogeBTC emission. This keeps the 21M cap unaffected by referrals
+    // and makes sybil farming structurally unprofitable.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
-    let (referral_bonus, referral_reward) = if has_referrer {
+    let referral_bonus = if has_referrer {
         helper::validate_referrer_rewards_account(
             &player_data.referral_code,
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
-
-        // User gets +1% bonus on their rewards
         let bonus = (base_claimable_amount * REFERRAL_BONUS_PCT) / 100;
-        let reward_pct = if player_data.same_faction_referral {
-            SAME_FACTION_REFERRAL_REWARD_PCT
-        } else {
-            REFERRAL_REWARD_PCT
-        };
-        let reward = (base_claimable_amount * reward_pct) / 100;
         msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
-        msg!(
-            "   Referral reward to referrer: {} minebtc (pct={} same_faction={})",
-            reward as f64 / 1e6,
-            reward_pct,
-            player_data.same_faction_referral
-        );
-
-        // Add reward to referrer's pending minebtc rewards
-        let referrer_rewards = ctx
-            .accounts
-            .referrer_rewards
-            .as_mut()
-            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
-        referrer_rewards.pending_minebtc_rewards = referrer_rewards
-            .pending_minebtc_rewards
-            .checked_add(reward)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        referrer_rewards.total_minebtc_earned = referrer_rewards
-            .total_minebtc_earned
-            .checked_add(reward)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!(
-            "     Added {} minebtc to referrer's rewards",
-            reward as f64 / 1e6
-        );
-        (bonus, reward)
+        bonus
     } else {
-        (0, 0)
+        0
     };
+    let referral_reward = 0u64; // Referrer SOL commissions are paid out-of-band on bets/mints, not here.
 
     // User gets base amount + referral bonus
     let claimable_by_user = base_claimable_amount
@@ -1428,7 +1422,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Only deduct the user's base pending rewards (what was actually tracked in total_minebtc_claimable).
     // Referral bonus + reward are paid from the emissions vault directly and were never
     // added to total_minebtc_claimable, so subtracting them would cause accounting drift
-    // and inflate the refining fee index for remaining stakers.
+    // and inflate the HODL tax index for remaining stakers.
     unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
         .total_minebtc_claimable
         .checked_sub(base_pending)
@@ -1461,30 +1455,30 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         None
     };
 
-    // Redistribute refining fee to all other stakers who haven't claimed
+    // Redistribute HODL tax to all other stakers who haven't claimed
     // This is done by increasing the reward index, which benefits all stakers proportionally
-    if refining_fee > 0 {
-        msg!("   Redistributing refining fee to other stakers...");
+    if hodl_tax > 0 {
+        msg!("   Redistributing HODL tax to other stakers...");
         let increment = helper::mul_div(
-            refining_fee,
+            hodl_tax,
             INDEX_PRECISION,
             unrefined_minebtc.total_minebtc_claimable,
         )?;
-        unrefined_minebtc.unrefining_index = unrefined_minebtc
-            .unrefining_index
+        unrefined_minebtc.hodl_tax_index = unrefined_minebtc
+            .hodl_tax_index
             .checked_add(increment)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "📈 [withdraw_dbtc_rewards] unrefining_index_after={} increment={} remaining_total_claimable={}",
-            unrefined_minebtc.unrefining_index,
+            "📈 [withdraw_dbtc_rewards] hodl_tax_index_after={} increment={} remaining_total_claimable={}",
+            unrefined_minebtc.hodl_tax_index,
             increment,
             unrefined_minebtc.total_minebtc_claimable as f64 / 1e6
         );
-        emit!(RefiningFeeRedistributed {
-            user: player_owner,
+        emit!(HodlTaxRedistributed {
+            paper_hand: player_owner,
             player_data: player_data_key,
-            refining_fee,
-            redistributed_amount: refining_fee,
+            tax_amount: hodl_tax,
+            redistributed_amount: hodl_tax,
             redistributed_index_increment: increment as u128,
             remaining_total_claimable: unrefined_minebtc.total_minebtc_claimable,
             timestamp: Clock::get()?.unix_timestamp,
@@ -1496,7 +1490,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         player_data: player_data_key,
         faction_id,
         minebtc_amount: claimable_by_user,
-        refining_fee,
+        hodl_tax,
         referral_bonus,
         referral_reward,
         referrer: referrer_pubkey,
@@ -1526,62 +1520,11 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     msg!("💰 [claim_referral_rewards] Claiming referral rewards");
 
     let referral_rewards = &mut ctx.accounts.referral_rewards;
-
-    let pending_minebtc = referral_rewards.pending_minebtc_rewards;
     let pending_sol = referral_rewards.pending_sol_rewards;
 
-    require!(
-        pending_minebtc > 0 || pending_sol > 0,
-        ErrorCode::InsufficientFunds
-    );
+    require!(pending_sol > 0, ErrorCode::InsufficientFunds);
 
-    msg!(
-        "     Pending MineBtc: {} minebtc",
-        pending_minebtc as f64 / 1e6
-    );
     let mut claimed_sol = 0u64;
-
-    // Transfer MineBtc if any
-    if pending_minebtc > 0 {
-        let vault_authority_seeds = &[
-            MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.minebtc_vault_authority],
-        ];
-        let signer = &[&vault_authority_seeds[..]];
-
-        let transfer_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            token_interface::TransferChecked {
-                from: ctx.accounts.minebtc_token_vault.to_account_info(),
-                to: ctx.accounts.user_minebtc_account.to_account_info(),
-                authority: ctx.accounts.minebtc_vault_authority.to_account_info(),
-                mint: ctx.accounts.minebtc_mint.to_account_info(),
-            },
-            signer,
-        );
-
-        token_interface::transfer_checked(
-            transfer_ctx,
-            pending_minebtc,
-            ctx.accounts.minebtc_mint.decimals,
-        )?;
-        msg!("   ✓ Transferred {} minebtc", pending_minebtc);
-    }
-
-    // Update total tokens distributed
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
-    mine_btc_mining.total_tokens_distributed = mine_btc_mining
-        .total_tokens_distributed
-        .checked_add(pending_minebtc)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "   Updated total tokens distributed: {} (+{})",
-        mine_btc_mining.total_tokens_distributed as f64 / 1e6,
-        pending_minebtc as f64 / 1e6
-    );
-
-    // Reset pending minebtc rewards
-    referral_rewards.pending_minebtc_rewards = 0;
 
     // Transfer pending SOL from ReferralRewards PDA to user
     // SOL is stored as extra lamports on the PDA account
@@ -1620,7 +1563,7 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
     emit!(ReferralRewardsClaimed {
         referrer: ctx.accounts.authority.key(),
         referral_rewards_account: ctx.accounts.referral_rewards.key(),
-        minebtc_amount: pending_minebtc,
+        minebtc_amount: 0,
         sol_amount: claimed_sol,
         timestamp: Clock::get()?.unix_timestamp,
     });
@@ -1637,7 +1580,7 @@ pub fn int_update_minebtc_staking_rewards(
     player_owner: Pubkey,
     player_data_key: Pubkey,
     player_data: &mut PlayerData,
-    unrefined_rewards: &mut UnrefinedRewards,
+    hodl_pool: &mut HodlPool,
     faction_state: &FactionState,
 ) -> Result<(u64, u64, u64)> {
     crate::log_fn!("stake", "int_update_minebtc_staking_rewards");
@@ -1679,7 +1622,7 @@ pub fn int_update_minebtc_staking_rewards(
             player_data.dogebtc_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards = helper::add_to_total_claimable(
-            unrefined_rewards,
+            hodl_pool,
             player_data,
             new_minebtc_rewards,
             player_owner,
@@ -1704,7 +1647,7 @@ pub fn int_update_minebtc_staking_rewards(
         player_data.dogebtc_sol_reward_debt,
         player_data.dogebtc_dogebtc_reward_debt,
         accrued_minebtc_rewards as f64 / 1e6,
-        unrefined_rewards.total_minebtc_claimable as f64 / 1e6
+        hodl_pool.total_minebtc_claimable as f64 / 1e6
     );
 
     Ok((
@@ -1718,7 +1661,7 @@ pub fn int_update_lp_staking_rewards(
     player_owner: Pubkey,
     player_data_key: Pubkey,
     player_data: &mut PlayerData,
-    unrefined_rewards: &mut UnrefinedRewards,
+    hodl_pool: &mut HodlPool,
     faction_state: &FactionState,
 ) -> Result<(u64, u64, u64)> {
     crate::log_fn!("stake", "int_update_lp_staking_rewards");
@@ -1760,7 +1703,7 @@ pub fn int_update_lp_staking_rewards(
             player_data.lp_dogebtc_reward_debt,
         )?;
         accrued_minebtc_rewards = helper::add_to_total_claimable(
-            unrefined_rewards,
+            hodl_pool,
             player_data,
             new_minebtc_rewards,
             player_owner,
@@ -1786,7 +1729,7 @@ pub fn int_update_lp_staking_rewards(
         player_data.lp_sol_reward_debt,
         player_data.lp_dogebtc_reward_debt,
         accrued_minebtc_rewards as f64 / 1e6,
-        unrefined_rewards.total_minebtc_claimable as f64 / 1e6
+        hodl_pool.total_minebtc_claimable as f64 / 1e6
     );
 
     Ok((
@@ -1860,10 +1803,10 @@ pub struct StakeMineBtc<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     /// User who is staking tokens
     #[account(mut)]
@@ -1943,10 +1886,10 @@ pub struct UnstakeMineBtc<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     /// User who is unstaking tokens
     #[account(mut)]
@@ -1996,10 +1939,10 @@ pub struct StakeLpTokens<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: LP Mint (validated manually)
     pub lp_mint: Account<'info, token::Mint>,
@@ -2068,10 +2011,10 @@ pub struct UnstakeLpTokens<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Box<Account<'info, UnrefinedRewards>>,
+    pub hodl_pool: Box<Account<'info, HodlPool>>,
 
     /// CHECK: LP Mint - must be mut for burn instruction during emergency withdrawal
     #[account(mut)]
@@ -2131,10 +2074,10 @@ pub struct ClaimStakingRewards<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: SOL rewards vault (System Account)
     #[account(
@@ -2180,10 +2123,10 @@ pub struct WithdrawDbtcRewards<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: MINE_BTC Mint (validated manually)
     pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
@@ -2243,47 +2186,9 @@ pub struct ClaimReferralRewards<'info> {
     )]
     pub referral_rewards: Account<'info, ReferralRewards>,
 
-    /// CHECK: MINE_BTC Mint (validated manually)
-    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
-
-    // Token accounts
-    #[account(
-        mut,
-        constraint = user_minebtc_account.mint == minebtc_mint.key() @ ErrorCode::InvalidParameters,
-        constraint = user_minebtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
-    )]
-    /// Referrer's MineBtc token account to receive rewards
-    pub user_minebtc_account: InterfaceAccount<'info, TokenAccount2022>,
-
-    /// CHECK: MineBtc mining state (needed for vault PDA derivation)
-    #[account(
-        seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump
-    )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
-
-    /// CHECK: MineBtc token vault (main vault where tokens are deposited)
-    #[account(
-        mut,
-        seeds = [MINE_BTC_VAULT_SEED.as_ref(), mine_btc_mining.key().as_ref()],
-        bump,
-        constraint = minebtc_token_vault.mint == minebtc_mint.key() @ ErrorCode::InvalidMint,
-    )]
-    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
-
-    #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
-    )]
-    /// CHECK: Authority of the token vault (PDA that signs for token transfers)
-    pub minebtc_vault_authority: UncheckedAccount<'info>,
-
     /// Referrer claiming rewards
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-
-    /// Token-2022 program for SPL-22 token operations
-    pub token_program: Program<'info, Token2022>,
 }

@@ -215,6 +215,7 @@ pub fn int_batch_mint_doges<'info>(
     let doge_mint_config = &mut ctx.accounts.doge_mint_config;
     let player_data = &mut ctx.accounts.player_data;
 
+    require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
 
     require!(
@@ -682,6 +683,7 @@ pub fn int_whitelist_mint_doge(
     let allowance = &mut ctx.accounts.doge_free_mint_allowance;
     let user = ctx.accounts.user.key();
 
+    require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
@@ -922,7 +924,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
@@ -930,7 +932,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1122,7 +1124,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
@@ -1130,7 +1132,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             ctx.accounts.user.key(),
             player_data_key,
             player_data,
-            &mut ctx.accounts.unrefined_rewards,
+            &mut ctx.accounts.hodl_pool,
             faction_state,
         )?;
     msg!(
@@ -1369,6 +1371,7 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
 /// Breed two doges to create offspring (both parents must not be incubated, same faction)
 pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     crate::log_fn!("doges", "int_breed_doges");
+    require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
     let doge_config = &mut ctx.accounts.doge_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
@@ -1874,21 +1877,21 @@ pub struct MintDoge<'info> {
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doge_config.bump
     )]
-    pub doge_config: Account<'info, DogeConfig>,
+    pub doge_config: Box<Account<'info, DogeConfig>>,
 
     #[account(
         mut,
         seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
         bump = doge_mint_config.bump
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub doge_mint_config: Box<Account<'info, DogeMintConfig>>,
 
     #[account(
         mut,
@@ -1896,7 +1899,7 @@ pub struct MintDoge<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
     /// MUST be owned by global_config.fee_recipient (the multisig address)
@@ -2201,10 +2204,10 @@ pub struct StakeDoge<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
@@ -2258,10 +2261,10 @@ pub struct UnstakeDoge<'info> {
 
     #[account(
         mut,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,

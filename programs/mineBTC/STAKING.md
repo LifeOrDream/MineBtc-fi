@@ -197,7 +197,7 @@ MineBTC rewards come from faction reward indexes too:
 When rewards are synced:
 
 1. newly accrued MineBTC is added to `pending_minebtc_rewards`
-2. global claimable MineBTC is added to `unrefined_rewards.total_minebtc_claimable`
+2. global claimable MineBTC is added to `hodl_pool.total_minebtc_claimable`
 3. an attribution event is emitted
 
 MineBTC is **not transferred** during staking reward sync.
@@ -205,15 +205,15 @@ It remains pending until the user explicitly calls `withdraw_dbtc_rewards`.
 
 ---
 
-## 6. Refining Fee / Unrefining Index
+## 6. HODL Tax / HODL tax index
 
-MineBTC withdrawal uses a refining redistribution mechanic.
+MineBTC withdrawal uses a HODL tax redistribution mechanic.
 
 When a user withdraws pending MineBTC:
 
-1. any deferred refining yield is synced first
-2. a refining fee may be taken from the withdrawing balance
-3. that fee is redistributed through `unrefined_rewards.unrefining_index`
+1. any deferred HODL tax yield is synced first
+2. a HODL tax may be taken from the withdrawing balance
+3. that fee is redistributed through `hodl_pool.hodl_tax_index`
 4. remaining unclaimed users receive that yield later when they sync/withdraw
 
 ### Why this exists
@@ -226,10 +226,10 @@ This creates a recycling loop:
 ### Important accounting rule
 
 Only the user's own pending MineBTC is deducted from
-`unrefined_rewards.total_minebtc_claimable`.
+`hodl_pool.total_minebtc_claimable`.
 
 Referral bonus and referral reward are paid from the emissions vault directly and
-must **not** be subtracted from total claimable, otherwise the unrefining index drifts.
+must **not** be subtracted from total claimable, otherwise the HODL tax index drifts.
 The referred user always gets a 1% bonus. The referrer gets 3% normally, or 5%
 when the referred user picked the same permanent country at signup. This makes
 referrals a country-building loop without changing the referred user's payout.
@@ -324,7 +324,7 @@ This keeps MineBTC and LP passive hashpower aligned with the updated Doge boost.
 - `SolRewardsClaimed`
 - `DbtcRewardsClaimed`
 - `MinebtcClaimableAccrued`
-- `RefiningFeeRedistributed`
+- `HodlTaxRedistributed`
 
 ### Doge passive multiplier lifecycle
 
@@ -363,17 +363,17 @@ Useful log prefixes when debugging staking:
 - Home-faction-only passive staking
 - Any-faction passive Doge staking
 - Separate passive and gameplay multipliers
-- Refining redistribution as a sticky reward loop
+- HODL tax redistribution as a sticky reward loop
 
 ### Improve in UX
 
 1. Show the two multiplier systems separately
    Passive multiplier and gameplay multiplier should never be shown as if they are the same stat.
 
-2. Make refining fee explicit before withdrawal
+2. Make HODL tax explicit before withdrawal
    The user should see:
    - current pending MineBTC
-   - refining fee
+   - HODL tax
    - referral bonus
    - net amount received
 
@@ -383,7 +383,7 @@ Useful log prefixes when debugging staking:
    - faction-war campaign
    - MineBTC staking
    - LP staking
-   - refining yield
+   - HODL tax yield
 
 4. Make lockup choice legible
    Users should understand that the order is:
@@ -394,7 +394,7 @@ Useful log prefixes when debugging staking:
 1. Passive Doge staking is strong because it boosts both MineBTC and LP rails.
    That is good for collectible demand, but frontend should clearly explain the cap.
 
-2. Refining yield is interesting but abstract.
+2. HODL tax yield is interesting but abstract.
    It likely needs very strong UI copy, otherwise it will feel like hidden tax instead of
    a strategic claim-timing mechanic.
 
@@ -407,4 +407,4 @@ Useful log prefixes when debugging staking:
    - gameplay Doge
    - pending MineBTC
    - withdrawing MineBTC
-   - refining redistribution
+   - HODL tax redistribution

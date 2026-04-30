@@ -52,6 +52,7 @@ pub struct GameplayTuningUpdateArgs {
 
     pub faction_war_base_reward_bps: Option<u16>,
     pub faction_war_loyalty_reward_bps: Option<u16>,
+    pub faction_war_mvp_reward_bps: Option<u16>,
     pub faction_war_doge_reward_bps: Option<u16>,
 
     pub base_mutation_chance_bps: Option<u16>,
@@ -101,20 +102,24 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         protocol_fee_pct: DEFAULT_PROTOCOL_FEE_PCT,
         buyback_pct: DEFAULT_BUYBACK_PCT,
         stakers_pct: DEFAULT_STAKERS_PCT,
+        referral_fee_pct: DEFAULT_REFERRAL_FEE_PCT,
+        same_faction_referral_fee_pct: DEFAULT_SAME_FACTION_REFERRAL_FEE_PCT,
+        cycle_sol_split_pct: DEFAULT_CYCLE_SOL_SPLIT_PCT,
     };
 
     // Initialize dogeBTC round distribution config (defaults defined in state.rs)
-    // Invariant: stakers + winners + 2 * same_faction + motherlode = 100
+    // Invariant: stakers + winners + 2 * same_faction + jackpot = 100
     global_config.minebtc_dist_config = MineBtcDistConfig {
         minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
         minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
         minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
-        minebtc_motherlode_pct: DEFAULT_MINEBTC_MOTHERLODE_PCT,
-        refining_fee: DEFAULT_REFINING_FEE,
+        minebtc_jackpot_pct: DEFAULT_MINEBTC_JACKPOT_PCT,
+        hodl_tax_pct: DEFAULT_HODL_TAX_PCT,
     };
 
     global_config.snapshot_interval = DEFAULT_SNAPSHOT_INTERVAL;
     global_config.gameplay_tuning.apply_defaults();
+    global_config.is_paused = false;
 
     // Initialize Raydium pool state to default (must be set via admin function)
     global_config.raydium_pool_state = Pubkey::default();
@@ -170,9 +175,9 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.emission_decrease_pct = DEFAULT_EMISSION_DECREASE_PCT;
 
     // ---------------------------- Unrefined Rewards ---------------------------------
-    let unrefined_rewards = &mut ctx.accounts.unrefined_rewards;
-    unrefined_rewards.unrefining_index = INDEX_PRECISION as u128;
-    unrefined_rewards.total_minebtc_claimable = 0;
+    let hodl_pool = &mut ctx.accounts.hodl_pool;
+    hodl_pool.hodl_tax_index = INDEX_PRECISION as u128;
+    hodl_pool.total_minebtc_claimable = 0;
 
     Ok(())
 }
@@ -291,8 +296,6 @@ pub fn add_faction_internal(
     faction_state.lp_sol_reward_index = 0;
     faction_state.lp_dogebtc_reward_index = 0;
     faction_state.sol_reward_index = 0;
-    faction_state.motherlode_pot_size = 0;
-
     // Add faction to config
     global_config.supported_factions.push(faction_name.clone());
 
@@ -398,15 +401,15 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `new_minebtc_stakers_pct`: Optional new MineBtc stakers percentage
 /// - `new_minebtc_winners_pct`: Optional new MineBtc winners percentage
 /// - `new_minebtc_same_faction_pct`: Optional new MineBtc same-faction percentage
-/// - `new_minebtc_motherlode_pct`: Optional new MineBtc motherlode percentage
-/// - `new_refining_fee`: Optional new refining fee percentage
+/// - `new_minebtc_jackpot_pct`: Optional new MineBtc jackpot percentage
+/// - `new_hodl_tax_pct`: Optional new HODL tax percentage
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
 /// # Validation
 /// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == `PERCENTAGE_DENOMINATOR`
 /// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct +
 ///   (`PredictionDirection::COUNT - 1`) * minebtc_same_faction_pct +
-///   minebtc_motherlode_pct == `PERCENTAGE_DENOMINATOR`
+///   minebtc_jackpot_pct == `PERCENTAGE_DENOMINATOR`
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
@@ -415,19 +418,34 @@ pub fn update_fees_internal(
     new_minebtc_stakers_pct: Option<u8>,
     new_minebtc_winners_pct: Option<u8>,
     new_minebtc_same_faction_pct: Option<u8>,
-    new_minebtc_motherlode_pct: Option<u8>,
-    new_refining_fee: Option<u8>,
+    new_minebtc_jackpot_pct: Option<u8>,
+    new_hodl_tax_pct: Option<u8>,
     snapshot_interval: Option<u64>,
+    new_referral_fee_pct: Option<u8>,
+    new_same_faction_referral_fee_pct: Option<u8>,
+    new_cycle_sol_split_pct: Option<u8>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_fees_internal");
     let global_config = &mut ctx.accounts.global_config;
 
     // Update SOL fee config if any values provided
-    if new_protocol_fee_pct.is_some() || new_buyback_pct.is_some() || new_stakers_pct.is_some() {
+    if new_protocol_fee_pct.is_some()
+        || new_buyback_pct.is_some()
+        || new_stakers_pct.is_some()
+        || new_referral_fee_pct.is_some()
+        || new_same_faction_referral_fee_pct.is_some()
+        || new_cycle_sol_split_pct.is_some()
+    {
         let protocol_fee_pct =
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
+        let referral_fee_pct =
+            new_referral_fee_pct.unwrap_or(global_config.sol_fee_config.referral_fee_pct);
+        let same_faction_referral_fee_pct = new_same_faction_referral_fee_pct
+            .unwrap_or(global_config.sol_fee_config.same_faction_referral_fee_pct);
+        let cycle_sol_split_pct =
+            new_cycle_sol_split_pct.unwrap_or(global_config.sol_fee_config.cycle_sol_split_pct);
 
         require!(
             protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -441,11 +459,26 @@ pub fn update_fees_internal(
             stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
+        require!(
+            referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            same_faction_referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            cycle_sol_split_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
 
         global_config.sol_fee_config = SolFeeConfig {
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
+            referral_fee_pct,
+            same_faction_referral_fee_pct,
+            cycle_sol_split_pct,
         };
     }
 
@@ -453,7 +486,7 @@ pub fn update_fees_internal(
     if new_minebtc_stakers_pct.is_some()
         || new_minebtc_winners_pct.is_some()
         || new_minebtc_same_faction_pct.is_some()
-        || new_minebtc_motherlode_pct.is_some()
+        || new_minebtc_jackpot_pct.is_some()
     {
         let minebtc_stakers_pct = new_minebtc_stakers_pct
             .unwrap_or(global_config.minebtc_dist_config.minebtc_stakers_pct);
@@ -461,8 +494,8 @@ pub fn update_fees_internal(
             .unwrap_or(global_config.minebtc_dist_config.minebtc_winners_pct);
         let minebtc_same_faction_pct = new_minebtc_same_faction_pct
             .unwrap_or(global_config.minebtc_dist_config.minebtc_same_faction_pct);
-        let minebtc_motherlode_pct = new_minebtc_motherlode_pct
-            .unwrap_or(global_config.minebtc_dist_config.minebtc_motherlode_pct);
+        let minebtc_jackpot_pct = new_minebtc_jackpot_pct
+            .unwrap_or(global_config.minebtc_dist_config.minebtc_jackpot_pct);
 
         require!(
             minebtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -477,7 +510,7 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
         require!(
-            minebtc_motherlode_pct <= PERCENTAGE_DENOMINATOR_U8,
+            minebtc_jackpot_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
 
@@ -487,32 +520,32 @@ pub fn update_fees_internal(
         let total = minebtc_stakers_pct as u16
             + minebtc_winners_pct as u16
             + (minebtc_same_faction_pct as u16 * losing_direction_count)
-            + minebtc_motherlode_pct as u16;
+            + minebtc_jackpot_pct as u16;
 
         require!(
             total == PERCENTAGE_DENOMINATOR_U16,
             ErrorCode::InvalidParameters
         );
 
-        // Get current refining_fee to preserve it
-        let current_refining_fee = global_config.minebtc_dist_config.refining_fee;
+        // Get current hodl_tax_pct to preserve it
+        let current_hodl_tax_pct = global_config.minebtc_dist_config.hodl_tax_pct;
 
         global_config.minebtc_dist_config = MineBtcDistConfig {
             minebtc_stakers_pct,
             minebtc_winners_pct,
             minebtc_same_faction_pct,
-            minebtc_motherlode_pct,
-            refining_fee: current_refining_fee,
+            minebtc_jackpot_pct,
+            hodl_tax_pct: current_hodl_tax_pct,
         };
     }
 
-    // Update refining fee if provided
-    if let Some(refining_fee) = new_refining_fee {
+    // Update HODL tax if provided
+    if let Some(hodl_tax_pct) = new_hodl_tax_pct {
         require!(
-            refining_fee <= PERCENTAGE_DENOMINATOR_U8,
+            hodl_tax_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
-        global_config.minebtc_dist_config.refining_fee = refining_fee;
+        global_config.minebtc_dist_config.hodl_tax_pct = hodl_tax_pct;
     }
 
     // Update snapshot interval if provided
@@ -527,6 +560,38 @@ pub fn update_fees_internal(
 pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bool) -> Result<()> {
     crate::log_fn!("admin", "update_rpg_progression_internal");
     ctx.accounts.global_config.gameplay_tuning.rpg_progression = enabled;
+    Ok(())
+}
+
+/// Toggle the global pause flag (authority-only kill switch).
+///
+/// When `paused = true`:
+///   - Blocks: new bets (manual + autominer), new round starts,
+///     genesis doge mints, doge breeding.
+///   - Does NOT block: round settlement, all reward claims (game/staking/
+///     referral/faction-war), staking + unstaking, economy crank functions
+///     (snapshot_price / update_rate / add_lp_and_burn). Users can always
+///     exit; pending rounds always finish.
+///
+/// Intended as a kill switch for live exploits, not a long-term tool.
+pub fn set_pause_internal(ctx: Context<UpdateConfigAc>, paused: bool) -> Result<()> {
+    crate::log_fn!("admin", "set_pause_internal");
+    let global_config = &mut ctx.accounts.global_config;
+    if global_config.is_paused == paused {
+        msg!("[set_pause] no-op (already {})", paused);
+        return Ok(());
+    }
+    global_config.is_paused = paused;
+    msg!(
+        "[set_pause] authority={} is_paused={}",
+        ctx.accounts.authority.key(),
+        paused
+    );
+    emit!(crate::events::GamePauseToggled {
+        is_paused: paused,
+        authority: ctx.accounts.authority.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     Ok(())
 }
 
@@ -634,11 +699,18 @@ pub fn update_gameplay_tuning_internal(
     let next_loyalty_reward_bps = args
         .faction_war_loyalty_reward_bps
         .unwrap_or(tuning.faction_war_loyalty_reward_bps);
+    let next_mvp_reward_bps = args
+        .faction_war_mvp_reward_bps
+        .unwrap_or(tuning.faction_war_mvp_reward_bps);
     let next_doge_reward_bps = args
         .faction_war_doge_reward_bps
         .unwrap_or(tuning.faction_war_doge_reward_bps);
-    let reward_total =
-        next_base_reward_bps as u32 + next_loyalty_reward_bps as u32 + next_doge_reward_bps as u32;
+    // base + loyalty + MVP + doge must close to 100% — these are the four
+    // lanes that `compute_faction_reward_pools` splits the cycle pool into.
+    let reward_total = next_base_reward_bps as u32
+        + next_loyalty_reward_bps as u32
+        + next_mvp_reward_bps as u32
+        + next_doge_reward_bps as u32;
     require!(
         reward_total == BASIS_POINTS_DENOMINATOR as u32,
         ErrorCode::InvalidParameters
@@ -694,6 +766,7 @@ pub fn update_gameplay_tuning_internal(
 
     tuning.faction_war_base_reward_bps = next_base_reward_bps;
     tuning.faction_war_loyalty_reward_bps = next_loyalty_reward_bps;
+    tuning.faction_war_mvp_reward_bps = next_mvp_reward_bps;
     tuning.faction_war_doge_reward_bps = next_doge_reward_bps;
     tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
     tuning.mutation_chance_floor_bps = next_chance_floor_bps;
@@ -714,6 +787,7 @@ pub fn update_gameplay_tuning_internal(
     let max_evolution_stage_unlocked = tuning.max_evolution_stage_unlocked;
     let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
     let faction_war_loyalty_reward_bps = tuning.faction_war_loyalty_reward_bps;
+    let faction_war_mvp_reward_bps = tuning.faction_war_mvp_reward_bps;
     let faction_war_doge_reward_bps = tuning.faction_war_doge_reward_bps;
     let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
     let mutation_chance_floor_bps = tuning.mutation_chance_floor_bps;
@@ -734,6 +808,7 @@ pub fn update_gameplay_tuning_internal(
         max_evolution_stage_unlocked,
         faction_war_base_reward_bps,
         faction_war_loyalty_reward_bps,
+        faction_war_mvp_reward_bps,
         faction_war_doge_reward_bps,
         base_mutation_chance_bps,
         mutation_chance_floor_bps,
@@ -1495,8 +1570,6 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.referrals_count = 0;
     system_referral.same_faction_referrals_count = 0;
     system_referral.referred_faction_counts = [0u16; NUM_FACTIONS];
-    system_referral.pending_minebtc_rewards = 0;
-    system_referral.total_minebtc_earned = 0;
     system_referral.pending_sol_rewards = 0;
     system_referral.total_sol_earned = 0;
 
@@ -1534,11 +1607,11 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = UnrefinedRewards::LEN,
-        seeds = [UNREFINED_REWARDS_SEED.as_ref()],
+        space = HodlPool::LEN,
+        seeds = [HODL_POOL_SEED.as_ref()],
         bump
     )]
-    pub unrefined_rewards: Account<'info, UnrefinedRewards>,
+    pub hodl_pool: Account<'info, HodlPool>,
 
     /// CHECK: 0-byte PDA that only stores lamports (System Account)
     #[account(
@@ -1551,7 +1624,6 @@ pub struct Initialize<'info> {
     )]
     pub sol_treasury: UncheckedAccount<'info>,
 
-    /// CHECK: 0-byte PDA that only stores lamports (System Account) for doge minting fees
     /// CHECK: Global autominer custody PDA (System Account) holding user autominer SOL
     #[account(
         init,
@@ -1595,7 +1667,7 @@ pub struct SetRaydiumPoolState<'info> {
         init_if_needed,
         payer = authority,
         space = 0,
-        seeds = [SOL_PRIZE_POT_VAULT_SEED.as_ref()],
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
         bump,
         owner = system_program.key()
     )]

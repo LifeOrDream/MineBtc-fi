@@ -124,9 +124,8 @@
     "globalConfig_address": "5wj8Nfa2H2dtndDbjMo23d2tewoZeEuwWLdewdRUVLhR",
     "mineBtcMining_address": "7U4JPAdWZZ5n52XgNQTcgJFJfmf15Z3xLgmF2wJ8DH6Q",
     "solTreasury_address": "3Ki9yHJefcFkTCrYLwfmWUZjyLDEU45t4XPNYRKJ4AUU",
-    "dogesTreasury_address": "BxWRWQ4mRuHybpRgmgv1uWwTzrAjdP2uAYanVZU8jzwG",
     "autominerCustody_address": "BmQFgyoStDsC1FmouYTSE6Sgca3dhCG9MuFDNcyFkZbA",
-    "unrefinedRewards_address": "8cPAQEwAH5sxZf9AHREyohpYa1vusv6nSVMWfg2fcBYU",
+    "hodlPool_address": "8cPAQEwAH5sxZf9AHREyohpYa1vusv6nSVMWfg2fcBYU",
     "FEE_RECIPIENT_MULTISIG": "5bWTkFiM5SnvofjFbxUAAFYfxVbW18MwEC4Zcc6H3xAb",
     "tx_signature": "4SfGuL39TRUbYun771ifWsmJuG8REpDR8iv6hMuVR4uzFWfG433ZEMtPVJsrAopzEHuQTa48grKcRbo7nSAFdiLR",
     "timestamp": "2025-11-29T14:02:01.812Z"
@@ -202,9 +201,9 @@
       },
       {
         "faction_id": 10,
-        "name": "Ukraine",
-        "faction_state_pda": "4z5bHdAJK58CR27gtMKq8p5DnokvAg1U6RQrf4Pszh1P",
-        "tx_signature": "4eT5Pwhn4as19bVryfsK8v6cxV1iRbFcbzV9zfd4p3Hn51FicKmHcqT3keX77eocMhsSFcpLYYCgNivbkoa9wfEn"
+        "name": "Brazil",
+        "faction_state_pda": "",
+        "tx_signature": ""
       },
       {
         "faction_id": 11,

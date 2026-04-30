@@ -105,6 +105,12 @@ pub fn transfer_to_sol_treasury<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_sol_treasury] from={} to={} amount={} SOL",
+        from.key(),
+        sol_treasury.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -114,7 +120,9 @@ pub fn transfer_to_sol_treasury<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_sol_treasury complete");
+    Ok(())
 }
 
 pub fn transfer_to_autominer_custody<'info>(
@@ -123,6 +131,12 @@ pub fn transfer_to_autominer_custody<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_autominer_custody] from={} to={} amount={} SOL",
+        from.key(),
+        autominer_custody.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -132,7 +146,9 @@ pub fn transfer_to_autominer_custody<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_autominer_custody complete");
+    Ok(())
 }
 
 pub fn transfer_from_autominer_custody<'info>(
@@ -142,6 +158,13 @@ pub fn transfer_from_autominer_custody<'info>(
     amount: u64,
     custody_bump: u8,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_from_autominer_custody] from={} to={} amount={} SOL bump={}",
+        autominer_custody.key(),
+        to.key(),
+        amount as f64 / 1e9,
+        custody_bump
+    );
     let seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
     transfer(
         CpiContext::new_with_signer(
@@ -153,7 +176,9 @@ pub fn transfer_from_autominer_custody<'info>(
             &[seeds],
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_from_autominer_custody complete");
+    Ok(())
 }
 
 // Helper function to transfer SOL to the sol_rewards_vault PDA
@@ -163,6 +188,12 @@ pub fn transfer_to_sol_rewards_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_sol_rewards_vault] from={} to={} amount={} SOL",
+        from.key(),
+        sol_rewards_vault.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -172,7 +203,9 @@ pub fn transfer_to_sol_rewards_vault<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_sol_rewards_vault complete");
+    Ok(())
 }
 
 // Helper function to transfer SOL to the sol_prize_pot_vault PDA
@@ -182,6 +215,12 @@ pub fn transfer_to_sol_prize_pot_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_to_sol_prize_pot_vault] from={} to={} amount={} SOL",
+        from.key(),
+        sol_prize_pot_vault.key(),
+        amount as f64 / 1e9
+    );
     transfer(
         CpiContext::new(
             system_program.to_account_info(),
@@ -191,7 +230,60 @@ pub fn transfer_to_sol_prize_pot_vault<'info>(
             },
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_to_sol_prize_pot_vault complete");
+    Ok(())
+}
+
+/// Like `init_pda_account_if_needed` but writes only the discriminator and
+/// relies on `system_program::create_account` zero-filling the rest of the
+/// account data. Use this when the desired initial state is "all zeros after
+/// the discriminator" — saves the caller from materializing a `T` on the
+/// stack just to serialize zeros.
+///
+/// Specifically used for large account types (e.g. `FactionWarState`) where
+/// passing `&T` would push the calling function over BPF's 4096-byte stack
+/// budget.
+#[inline(never)]
+pub fn init_pda_account_zeroed_if_needed<'info, T>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    signer_seeds: &[&[u8]],
+    space: usize,
+) -> Result<bool>
+where
+    T: Discriminator,
+{
+    require!(account.is_writable, ErrorCode::InvalidAccount);
+
+    if account.owner == &system_program::ID && account.lamports() == 0 {
+        let rent = Rent::get()?.minimum_balance(space);
+        msg!(
+            "   creating zeroed PDA account {} with rent={} bytes={}",
+            account.key(),
+            rent,
+            space
+        );
+        create_account(
+            CpiContext::new_with_signer(
+                system_program.to_account_info(),
+                CreateAccount {
+                    from: payer.to_account_info(),
+                    to: account.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            rent,
+            space as u64,
+            &crate::ID,
+        )?;
+        let mut data = account.try_borrow_mut_data()?;
+        require!(data.len() >= 8, ErrorCode::InvalidAccount);
+        data[..8].copy_from_slice(T::DISCRIMINATOR);
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 pub fn init_pda_account_if_needed<'info, T>(
@@ -275,6 +367,38 @@ where
     T::try_deserialize(&mut data_slice)
 }
 
+/// Boxed wrapper around `load_account_data`. Marked `#[inline(never)]` so the
+/// `T`-sized stack temporary lives only in this helper's frame instead of the
+/// caller's. Suitable for SMALL accounts only — for accounts whose `T` itself
+/// exceeds BPF's 4096-byte stack budget (e.g. `FactionWarState`), the helper's
+/// own frame would still overflow. Use a specialized field-by-field loader for
+/// those.
+#[inline(never)]
+pub fn load_account_data_boxed<'info, T>(account: &AccountInfo<'info>) -> Result<Box<T>>
+where
+    T: AccountDeserialize + Owner,
+{
+    Ok(Box::new(load_account_data::<T>(account)?))
+}
+
+/// Allocate a zero-filled `Box<T>` directly on the heap without ever
+/// materializing the `T` on the stack. Used by the FactionWarState boxed
+/// loader to avoid blowing BPF's stack budget on a 2.6KB struct.
+///
+/// # Safety
+///
+/// Caller must guarantee `T` has no invariants violated by an all-zeros
+/// bit pattern: no enums with non-zero discriminants, no references, no
+/// `NonZero*` types, no custom `Drop`. Suitable for plain numeric
+/// primitives, fixed-size arrays of those, and `Pubkey = [u8; 32]`.
+#[inline(never)]
+pub unsafe fn alloc_zeroed_boxed<T>() -> Box<T> {
+    let b: Box<core::mem::MaybeUninit<T>> = Box::new(core::mem::MaybeUninit::uninit());
+    let raw = Box::into_raw(b);
+    core::ptr::write_bytes(raw as *mut u8, 0u8, core::mem::size_of::<T>());
+    Box::from_raw(raw as *mut T)
+}
+
 pub fn store_account_data<'info, T>(account: &AccountInfo<'info>, value: &T) -> Result<()>
 where
     T: AccountSerialize + Discriminator,
@@ -304,6 +428,13 @@ pub fn transfer_from_sol_rewards_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_from_sol_rewards_vault] from={} to={} amount={} SOL bump={}",
+        sol_rewards_vault.key(),
+        to.key(),
+        amount as f64 / 1e9,
+        vault_bump
+    );
     let seeds = &[STAKER_SOL_REWARD_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -317,7 +448,9 @@ pub fn transfer_from_sol_rewards_vault<'info>(
             signer_seeds,
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_from_sol_rewards_vault complete");
+    Ok(())
 }
 
 // Helper function to transfer SOL FROM sol_prize_pot_vault to a user
@@ -329,7 +462,14 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     amount: u64,
     vault_bump: u8,
 ) -> Result<()> {
-    let seeds = &[SOL_PRIZE_POT_VAULT_SEED.as_ref(), &[vault_bump]];
+    msg!(
+        "💰 [helper.transfer_from_sol_prize_pot_vault] from={} to={} amount={} SOL bump={}",
+        sol_prize_pot_vault.key(),
+        to.key(),
+        amount as f64 / 1e9,
+        vault_bump
+    );
+    let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
     transfer(
@@ -342,7 +482,9 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
             signer_seeds,
         ),
         amount,
-    )
+    )?;
+    msg!("   ✅ transfer_from_sol_prize_pot_vault complete");
+    Ok(())
 }
 
 // Helper function to transfer WSOL to multisig token account
@@ -355,6 +497,10 @@ pub fn transfer_wsol_to_multisig<'info>(
     token_program: &AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
+    msg!(
+        "💰 [helper.transfer_wsol_to_multisig] amount={} SOL",
+        amount as f64 / 1e9
+    );
     // Step 1: Transfer SOL to the from_wsol_account (this wraps it)
     transfer(
         CpiContext::new(
@@ -366,6 +512,7 @@ pub fn transfer_wsol_to_multisig<'info>(
         ),
         amount,
     )?;
+    msg!("   Step 1: SOL wrapped to WSOL");
 
     // Step 2: Sync native account to update WSOL balance
     anchor_spl::token::sync_native(CpiContext::new(
@@ -374,6 +521,7 @@ pub fn transfer_wsol_to_multisig<'info>(
             account: from_wsol_account.to_account_info(),
         },
     ))?;
+    msg!("   Step 2: WSOL balance synced");
 
     // Step 3: Transfer WSOL from from_wsol_account to multisig_wsol_account
     anchor_spl::token::transfer(
@@ -387,7 +535,8 @@ pub fn transfer_wsol_to_multisig<'info>(
         ),
         amount,
     )?;
-
+    msg!("   Step 3: WSOL transferred to multisig");
+    msg!("   ✅ transfer_wsol_to_multisig complete");
     Ok(())
 }
 
@@ -455,6 +604,12 @@ pub fn add_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> R
 
 /// Remove position index from user's minebtc positions
 pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "remove_dogebtc_position");
+    msg!(
+        "🔧 [helper.remove_dogebtc_position] position_index={} current_indices={:?}",
+        position_index,
+        player_ac.dogebtc_position_indices
+    );
     // Find the position index in the vector
     if let Some(pos) = player_ac
         .dogebtc_position_indices
@@ -462,7 +617,13 @@ pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -
         .position(|&x| x == position_index)
     {
         player_ac.dogebtc_position_indices.remove(pos);
+        msg!(
+            "   ✅ removed position_index={} new_indices={:?}",
+            position_index,
+            player_ac.dogebtc_position_indices
+        );
     } else {
+        msg!("   ⚠️ position_index={} not found", position_index);
         return Err(ErrorCode::InvalidParameters.into());
     }
 
@@ -471,16 +632,31 @@ pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -
 
 /// Add position index to user's LP positions
 pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "add_lp_position");
+    msg!(
+        "🔧 [helper.add_lp_position] position_index={} current_indices={:?}",
+        position_index,
+        player_ac.lp_position_indices
+    );
     if position_index >= MAX_ALLOWED_POSITIONS {
+        msg!("   ⚠️ position_index >= MAX_ALLOWED_POSITIONS");
         return Err(ErrorCode::InvalidParameters.into());
     }
 
     // If this position index is not already active
     if !player_ac.lp_position_indices.contains(&position_index) {
         if player_ac.lp_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            msg!("   ⚠️ max positions reached");
             return Err(ErrorCode::InvalidParameters.into());
         }
         player_ac.lp_position_indices.push(position_index);
+        msg!(
+            "   ✅ added position_index={} new_indices={:?}",
+            position_index,
+            player_ac.lp_position_indices
+        );
+    } else {
+        msg!("   position_index={} already active", position_index);
     }
 
     Ok(())
@@ -488,13 +664,25 @@ pub fn add_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result
 
 /// Remove position index from user's LP positions
 pub fn remove_lp_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "remove_lp_position");
+    msg!(
+        "🔧 [helper.remove_lp_position] position_index={} current_indices={:?}",
+        position_index,
+        player_ac.lp_position_indices
+    );
     if let Some(pos) = player_ac
         .lp_position_indices
         .iter()
         .position(|&x| x == position_index)
     {
         player_ac.lp_position_indices.remove(pos);
+        msg!(
+            "   ✅ removed position_index={} new_indices={:?}",
+            position_index,
+            player_ac.lp_position_indices
+        );
     } else {
+        msg!("   ⚠️ position_index={} not found", position_index);
         return Err(ErrorCode::InvalidParameters.into());
     }
 
@@ -506,6 +694,13 @@ pub fn calculate_staking_rewards(
     accumulated_sol_per_point: u128,
     reward_debt: u128,
 ) -> Result<u64> {
+    crate::log_fn!("helper", "calculate_staking_rewards");
+    msg!(
+        "📊 [helper.calculate_staking_rewards] user_weighted_amt={} accumulated={} reward_debt={}",
+        user_weighted_amt,
+        accumulated_sol_per_point,
+        reward_debt
+    );
     let reward_diff = accumulated_sol_per_point
         .checked_sub(reward_debt)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -514,25 +709,37 @@ pub fn calculate_staking_rewards(
         reward_diff,
         INDEX_PRECISION as u128,
     )?;
-    // Cap to u64::MAX to prevent silent truncation of large rewards
-    Ok(new_rewards.min(u64::MAX as u128) as u64)
+    let result = u64::try_from(new_rewards).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    msg!(
+        "   reward_diff={} new_rewards={} result={}",
+        reward_diff,
+        new_rewards,
+        result
+    );
+    Ok(result)
 }
 
 pub fn mul_div(a: u64, b: u64, c: u64) -> Result<u128> {
+    crate::log_fn!("helper", "mul_div");
+    msg!("📊 [helper.mul_div] a={} b={} c={}", a, b, c);
     let result = (a as u128)
         .checked_mul(b as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(c as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   result={}", result);
     Ok(result)
 }
 
 pub fn mul_div_u128(a: u128, b: u128, c: u128) -> Result<u128> {
+    crate::log_fn!("helper", "mul_div_u128");
+    msg!("📊 [helper.mul_div_u128] a={} b={} c={}", a, b, c);
     let result = a
         .checked_mul(b)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(c)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   result={}", result);
     Ok(result)
 }
 
@@ -547,6 +754,17 @@ pub fn init_position(
     current_ts: i64,
     multiplier: u16,
 ) -> Result<()> {
+    crate::log_fn!("helper", "init_position");
+    msg!(
+        "🔧 [helper.init_position] type={} faction={} index={} staked={} weighted={} lockup={}d mult={}",
+        position_type,
+        faction_id,
+        position_index,
+        staked_amount,
+        weighted_amount,
+        lockup_duration,
+        multiplier
+    );
     position.position_index = position_index;
     position.position_type = position_type;
 
@@ -560,13 +778,19 @@ pub fn init_position(
 
     let seconds_to_add = lockup_duration.saturating_mul(DAY_IN_SECONDS);
     position.lockup_end_timestamp = current_ts.saturating_add(seconds_to_add as i64);
+    msg!(
+        "   lockup_end_ts={} (current={} + {}s)",
+        position.lockup_end_timestamp,
+        current_ts,
+        seconds_to_add
+    );
 
     Ok(())
 }
 
 /// Add to total claimable and pending rewards
 pub fn add_to_total_claimable(
-    unrefined_minebtc: &mut UnrefinedRewards,
+    unrefined_minebtc: &mut HodlPool,
     player_data: &mut PlayerData,
     minebtc_rewards: u64,
     user: Pubkey,
@@ -574,12 +798,12 @@ pub fn add_to_total_claimable(
     source: u8,
     reference_id: u64,
 ) -> Result<u64> {
-    // Calculate extra dogeBtc rewards due to unrefining. The global unrefining_index
+    // Calculate extra dogeBtc rewards from the HODL tax. The global hodl_tax_index
     // is monotonically non-decreasing, so checked_sub should never fail — but we
     // validate it to surface any state corruption rather than panicking.
     let index_dif = unrefined_minebtc
-        .unrefining_index
-        .checked_sub(player_data.unrefining_index)
+        .hodl_tax_index
+        .checked_sub(player_data.hodl_tax_index)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let accrued_u128 = mul_div_u128(
         player_data.pending_minebtc_rewards as u128,
@@ -596,7 +820,7 @@ pub fn add_to_total_claimable(
         .total_minebtc_claimable
         .checked_add(total_new)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.unrefining_index = unrefined_minebtc.unrefining_index;
+    player_data.hodl_tax_index = unrefined_minebtc.hodl_tax_index;
     player_data.pending_minebtc_rewards = player_data
         .pending_minebtc_rewards
         .checked_add(total_new)

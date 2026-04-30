@@ -674,6 +674,43 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
         rate_changed = true;
     }
 
+    // --- Update dynamic faction-war mining multiplier ---
+    let faction_war_config = &mut ctx.accounts.faction_war_config;
+    if rate_changed {
+        let old_multiplier = faction_war_config.mining_multiplier_bps as u128;
+        let new_multiplier = if direction > 0 {
+            let increase = old_multiplier
+                .checked_mul(faction_war_config.multiplier_increase_bps as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                / 10_000;
+            old_multiplier
+                .checked_add(increase)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+        } else {
+            let decrease = old_multiplier
+                .checked_mul(faction_war_config.multiplier_decrease_bps as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                / 10_000;
+            old_multiplier.saturating_sub(decrease)
+        };
+        let min_bps = faction_war_config.multiplier_min_bps as u128;
+        let max_bps = faction_war_config.multiplier_max_bps as u128;
+        faction_war_config.mining_multiplier_bps =
+            (new_multiplier.min(max_bps).max(min_bps)) as u16;
+        msg!(
+            "   🎯 FactionWar multiplier updated: {} bps -> {} bps (direction={})",
+            old_multiplier,
+            faction_war_config.mining_multiplier_bps,
+            if direction > 0 { "up" } else { "down" }
+        );
+        emit!(FactionWarMultiplierUpdated {
+            old_multiplier_bps: old_multiplier as u16,
+            new_multiplier_bps: faction_war_config.mining_multiplier_bps,
+            direction: if direction > 0 { 1 } else { -1 },
+            timestamp: current_time,
+        });
+    }
+
     // Set LP operation pending flag and store SOL amount
     mine_btc_mining.lp_operation_pending = true;
     msg!(
@@ -702,6 +739,7 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
         track_price: mine_btc_mining.track_price,
         recent_price: mine_btc_mining.recent_price,
         rate_changed,
+        new_mining_multiplier: faction_war_config.mining_multiplier_bps,
         timestamp: current_time,
     });
 
@@ -1632,6 +1670,9 @@ pub struct UpdateRate<'info> {
         bump = mine_btc_mining.bump,
     )]
     pub mine_btc_mining: Account<'info, MineBtcMining>,
+
+    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump = faction_war_config.bump)]
+    pub faction_war_config: Account<'info, FactionWarConfig>,
 }
 
 /// Account struct for LP addition and burn (Instruction 2b) - Heavier weight

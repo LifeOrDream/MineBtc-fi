@@ -80,6 +80,15 @@ pub struct DistributionRateUpdated {
     pub track_price: u64,
     pub recent_price: u64,
     pub rate_changed: bool,
+    pub new_mining_multiplier: u16,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FactionWarMultiplierUpdated {
+    pub old_multiplier_bps: u16,
+    pub new_multiplier_bps: u16,
+    pub direction: i8,
     pub timestamp: i64,
 }
 
@@ -156,6 +165,7 @@ pub struct GameplayTuningUpdated {
     pub max_evolution_stage_unlocked: u8,
     pub faction_war_base_reward_bps: u16,
     pub faction_war_loyalty_reward_bps: u16,
+    pub faction_war_mvp_reward_bps: u16,
     pub faction_war_doge_reward_bps: u16,
     pub base_mutation_chance_bps: u16,
     pub mutation_chance_floor_bps: u16,
@@ -295,15 +305,17 @@ pub struct LiquidityUnstaked {
 }
 
 #[event]
-pub struct EmergencyWithdrawal {
+pub struct PaperHandBurned {
     pub owner: Pubkey,
     pub player_data: Pubkey,
     pub position_index: u8,
     pub position_key: Pubkey,
+    pub staked_token_type: u8, // 0 = MineBTC, 1 = LP
     pub original_amount: u64,
     pub penalty_amount: u64,
     pub returned_amount: u64,
     pub penalty_tax_pct: u64,
+    pub days_remaining: u64,
     pub timestamp: i64,
 }
 
@@ -324,7 +336,7 @@ pub struct DbtcRewardsClaimed {
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub minebtc_amount: u64,
-    pub refining_fee: u64,
+    pub hodl_tax: u64,
     pub referral_bonus: u64,  // 1% bonus to user if they have referral code
     pub referral_reward: u64, // 3% reward to referrer
     pub referrer: Option<Pubkey>,
@@ -333,7 +345,7 @@ pub struct DbtcRewardsClaimed {
 
 /// Event emitted whenever pending MineBtc claimable balance is increased.
 /// `source_amount` is the new reward from the triggering action, while
-/// `unrefined_bonus_amount` is previously deferred refining-tax yield realized at the same time.
+/// `unrefined_bonus_amount` is previously deferred hodl-tax yield realized at the same time.
 #[event]
 pub struct MinebtcClaimableAccrued {
     pub user: Pubkey,
@@ -348,15 +360,17 @@ pub struct MinebtcClaimableAccrued {
     pub timestamp: i64,
 }
 
-/// Event emitted when a MineBtc refining fee is redistributed through the unrefining index.
+/// Event emitted when a MineBtc HODL tax is redistributed through the HODL tax index.
+/// Event emitted when a user pays the HODL tax ("HODL Tax") and it gets
+/// redistributed to all other unclaimed stakers (the "diamond hands").
 #[event]
-pub struct RefiningFeeRedistributed {
-    pub user: Pubkey,
+pub struct HodlTaxRedistributed {
+    pub paper_hand: Pubkey, // user who paid the tax (unstaked early / claimed rewards)
     pub player_data: Pubkey,
-    pub refining_fee: u64,
+    pub tax_amount: u64, // total HODL tax paid
     pub redistributed_amount: u64,
     pub redistributed_index_increment: u128,
-    pub remaining_total_claimable: u64,
+    pub remaining_total_claimable: u64, // proxy for how many diamond hands benefit
     pub timestamp: i64,
 }
 
@@ -421,6 +435,9 @@ pub struct BetsPlaced {
     pub caller_compensation: u64,
     pub rounds_remaining: Option<u32>,
     pub vault_closed: Option<bool>,
+
+    /// Total SOL deducted from this batch for the cycle SOL split (faction war vault).
+    pub total_cycle_sol_split: u64,
 
     pub timestamp: i64,
 }
@@ -535,8 +552,9 @@ pub struct RoundEnded {
     pub minebtc_winner_pool: u64,
     pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
     pub minebtc_faction_stakers: u64,
-    pub minebtc_motherlode: u64,
-    pub motherlode_hit: bool,
+    pub minebtc_jackpot: u64,
+    pub jackpot_hit: bool,
+    pub jackpot_faction_id: u8,
     pub timestamp: i64,
 }
 
@@ -561,12 +579,34 @@ pub struct LpStakingRewardsDistributed {
 }
 
 #[event]
-pub struct MotherlodeHit {
+pub struct JackpotHit {
     pub round_id: u64,
     pub faction_id: u8,
     pub winning_direction: u8,
-    pub winning_faction_rewards: u64,
+    pub jackpot_amount: u64,
     pub minebtc_rewards_index: u128,
+}
+
+/// Event emitted when the jackpot roll was close to hitting (within top 10 closest rolls).
+/// Used by the frontend to hook users with near-miss notifications.
+#[event]
+pub struct JackpotNearMiss {
+    pub round_id: u64,
+    pub roll: u64,
+    pub threshold: u64,
+    pub pot_size: u64,
+    pub timestamp: i64,
+}
+
+/// Event emitted when the jackpot hits but there are no eligible winners
+/// to receive it. The pot rolls over and keeps accumulating.
+#[event]
+pub struct JackpotRolledOver {
+    pub round_id: u64,
+    pub faction_id: u8,
+    pub pot_size: u64,
+    pub reason: u8, // 0 = no exact winners, 1+ reserved for future
+    pub timestamp: i64,
 }
 
 #[event]
@@ -727,6 +767,18 @@ pub struct StoryEventScoreAccumulated {
     pub user: Pubkey,
 }
 
+/// Event emitted when a faction war MVP is determined at settlement.
+/// The #1 ranked faction's top contributor receives a bonus.
+#[event]
+pub struct FactionWarMvp {
+    pub faction_war_id: u64,
+    pub faction_id: u8,
+    pub user: Pubkey,
+    pub mvp_score: u64,
+    pub bonus_amount: u64,
+    pub timestamp: i64,
+}
+
 /// Event emitted when a user claims faction_war rewards
 #[event]
 pub struct FactionWarRewardsClaimed {
@@ -735,7 +787,9 @@ pub struct FactionWarRewardsClaimed {
     pub reward_amount: u64,
     pub base_reward_amount: u64,
     pub loyalty_reward_amount: u64,
+    pub mvp_bonus_amount: u64,
     pub doge_bonus_amount: u64,
+    pub sol_reward_amount: u64,
     pub doge_mint: Pubkey,
     pub timestamp: i64,
 }
@@ -754,4 +808,14 @@ pub struct FactionWarAutoStarted {
 pub struct FactionWarAutoSettled {
     pub faction_war_id: u64,
     pub mining_pool: u64,
+}
+
+/// Emitted when the authority toggles the global pause flag.
+/// Indexers should propagate `is_paused` to the frontend so the UI can
+/// disable bet/mint actions and show a clear "paused" banner to users.
+#[event]
+pub struct GamePauseToggled {
+    pub is_paused: bool,
+    pub authority: Pubkey,
+    pub timestamp: i64,
 }

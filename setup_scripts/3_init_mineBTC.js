@@ -56,7 +56,6 @@ const ID_MineBTC_PROGRAM = deploymentFile.MINE_BTC_PROGRAM_ID
 const MINING_START_TIMESTAMP =
   config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
-const DBTC_DEPOSIT_AMOUNT = new BN(config.mining.initial_deposit);
 
 // Keep these explicit in setup so fresh deployments don't silently depend on
 // whatever the contract default happened to be at compile time.
@@ -80,8 +79,10 @@ const GAMEPLAY_TUNING_CONFIG = {
     config.gameplay_tuning?.faction_war_base_reward_bps ?? 7000,
   factionWarLoyaltyRewardBps:
     config.gameplay_tuning?.faction_war_loyalty_reward_bps ?? 2000,
+  factionWarMvpRewardBps:
+    config.gameplay_tuning?.faction_war_mvp_reward_bps ?? 500,
   factionWarDogeRewardBps:
-    config.gameplay_tuning?.faction_war_doge_reward_bps ?? 1000,
+    config.gameplay_tuning?.faction_war_doge_reward_bps ?? 500,
   baseMutationChanceBps:
     config.gameplay_tuning?.base_mutation_chance_bps ?? 2000,
   mutationChanceFloorBps:
@@ -112,9 +113,14 @@ const LIVE_FEE_CONFIG = {
   newMinebtcStakersPct: 3,
   newMinebtcWinnersPct: 50,
   newMinebtcSameFactionPct: 21,
-  newMinebtcMotherlodePct: 5,
-  newRefiningFee: 10,
+  newMinebtcJackpotPct: 5,
+  newHodlTaxPct: 10,
   snapshotInterval: 5 * 60,
+  // Referrer's cut of the SOL protocol fee. Hard-capped at 10% by the program.
+  newReferralFeePct: 5,             // cross-country recruits
+  newSameFactionReferralFeePct: 10, // same-country recruits (loyalty bonus)
+  // Cycle SOL split: % of user bet reserved for faction-war jackpot (taken from gross bet, in addition to protocol fee)
+  newCycleSolSplitPct: 5,
 };
 
 // Load MineBTC Program IDL
@@ -244,7 +250,7 @@ async function validateInitializationConfig() {
     LIVE_FEE_CONFIG.newMinebtcStakersPct +
     LIVE_FEE_CONFIG.newMinebtcWinnersPct +
     LIVE_FEE_CONFIG.newMinebtcSameFactionPct * 2 +
-    LIVE_FEE_CONFIG.newMinebtcMotherlodePct;
+    LIVE_FEE_CONFIG.newMinebtcJackpotPct;
   if (minebtcDistTotal !== 100) {
     throw new Error(`MineBTC round dist must equal 100%, got ${minebtcDistTotal}%`);
   }
@@ -252,9 +258,10 @@ async function validateInitializationConfig() {
   const gameplayRewardTotal =
     GAMEPLAY_TUNING_CONFIG.factionWarBaseRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarLoyaltyRewardBps +
+    GAMEPLAY_TUNING_CONFIG.factionWarMvpRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarDogeRewardBps;
   if (gameplayRewardTotal !== 10_000) {
-    throw new Error(`Faction-war reward bps must equal 10000, got ${gameplayRewardTotal}`);
+    throw new Error(`Faction-war reward bps (base+loyalty+mvp+doge) must equal 10000, got ${gameplayRewardTotal}`);
   }
 
   if (config.hashpower.base_multiplier !== 100 || config.hashpower.max_multiplier !== 300) {
@@ -298,7 +305,7 @@ function printFeeEconomicsSummary() {
   );
   console.log(
     COLOR_INFO,
-    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newRefiningFee}% refining fee only when there are remaining unrefined claimants; otherwise 0%.`
+    `MineBTC staking withdrawals: ${LIVE_FEE_CONFIG.newHodlTaxPct}% HODL tax only when there are remaining HODL pool participants; otherwise 0%.`
   );
 }
 
@@ -413,12 +420,11 @@ async function main() {
   try {
     // 1. Initialize MineBTC Program
     // Instruction: initialize(fee_recipient: Pubkey)
-    // Creates 6 PDAs in one tx:
+    // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
     //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
-    //   - UnrefinedRewards [seeds: "unrefined-rewards"]       — unrefined MineBTC reward pool
+    //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending dogeBTC claims pool with HODL tax redistribution
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
-    //   - Doges Treasury   [seeds: "doges-treasury"]          — 0-byte system PDA for doge mint fees
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
     await initializeMinebtcProgram(minebtcProgram);
@@ -428,14 +434,14 @@ async function main() {
     // Stores the authorized Raydium CPMM pool address in GlobalConfig for price discovery.
     // Also init_if_needed two SOL vault PDAs:
     //   - SOL Rewards Vault  [seeds: "staker-sol-reward-vault"] — holds SOL for staker distribution
-    //   - SOL Prize Pot Vault[seeds: "sol-prize-pot"]           — holds SOL for round prize pots
+    //   - SOL Prize Pot Vault[seeds: "jackpot-pot"]           — holds SOL for round prize pots
     // Accounts: globalConfig, solRewardsVault, solPrizePotVault, authority, systemProgram
     await setRaydiumPoolState(minebtcProgram);
 
     // 3. Add Factions (12 factions)
     // Instruction: add_faction(faction_name: String, faction_id: u8)
     // Creates a FactionState PDA per faction [seeds: "faction", faction_name.as_bytes()]
-    // Each stores: bump, faction_id, staking indexes, bet/win totals, motherlode pot
+    // Each stores: bump, faction_id, staking indexes, bet/win totals, jackpot pot (global)
     // Accounts: globalConfig, factionState, authority, systemProgram
     await addFactions(minebtcProgram);
 
@@ -456,8 +462,8 @@ async function main() {
     //   new_minebtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
     //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
-    //   new_minebtc_motherlode_pct: Option<u8>,      — % of mined MineBTC going to motherlode pot
-    //   new_refining_fee: Option<u8>,                — % fee when withdrawing unrefined MineBTC rewards
+    //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
+    //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on dogeBTC withdrawal (paper hands → diamond hands)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
@@ -510,6 +516,13 @@ async function main() {
     // Accounts: dogesConfig, globalConfig, authority, systemProgram
     await initializeDogeConfig(minebtcProgram);
 
+    // 9a. Seed breeding config (breeding stays disabled at launch but params
+    //     come from config.json so flipping breeding on later via governance
+    //     uses the correct curve, not the contract's hardcoded zero defaults).
+    // Instruction: update_breeding_config(breeding_allowed, breed_base_price, breed_curve_a)
+    // Accounts: globalConfig, dogesConfig, authority, systemProgram
+    await seedBreedingConfig(minebtcProgram);
+
     // 9b. Initialize DogeMintConfig
     // Instruction: initialize_doge_mint_config(base_price, curve_a, genesis_mint_limit, max_genesis_mints_per_faction)
     // Creates mint-only PDA [seeds: "doge-mint-config"] for genesis sale curve, ticket tiers, and per-country caps.
@@ -558,7 +571,7 @@ async function main() {
     // Off-chain helper: creates an ATA for LP tokens owned by vaultAuthority PDA
     // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
     await initializeLpTokenAccounts(minebtcProgram);
-
+    // return;
 
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
@@ -669,13 +682,8 @@ async function initializeMinebtcProgram(minebtcProgram) {
     minebtcProgram.programId
   );
 
-  const [dogesTreasuryPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doges-treasury")],
-    minebtcProgram.programId
-  );
-
-  const [unrefinedRewardsPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("unrefined-rewards")],
+  const [hodlPoolPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hodl-pool")],
     minebtcProgram.programId
   );
 
@@ -708,10 +716,9 @@ async function initializeMinebtcProgram(minebtcProgram) {
             .accounts({
                 globalConfig: globalConfigPDA,
         mineBtcMining: mineBtcMiningPDA,
-        unrefinedRewards: unrefinedRewardsPDA,
+        hodlPool: hodlPoolPDA,
                 solTreasury: solTreasuryPDA,
-        dogesTreasury: dogesTreasuryPDA,
-        autominerCustody: autominerCustodyPDA,        
+        autominerCustody: autominerCustodyPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
@@ -728,9 +735,8 @@ async function initializeMinebtcProgram(minebtcProgram) {
             globalConfig_address: globalConfigPDA.toString(),
       mineBtcMining_address: mineBtcMiningPDA.toString(),
             solTreasury_address: solTreasuryPDA.toString(),
-      dogesTreasury_address: dogesTreasuryPDA.toString(),
       autominerCustody_address: autominerCustodyPDA.toString(),
-      unrefinedRewards_address: unrefinedRewardsPDA.toString(),
+      hodlPool_address: hodlPoolPDA.toString(),
             FEE_RECIPIENT_MULTISIG: FEE_RECIPIENT_MULTISIG.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -742,9 +748,8 @@ async function initializeMinebtcProgram(minebtcProgram) {
       deploymentFile.minebtc_program_initialized = {
                 globalConfig_address: globalConfigPDA.toString(),
         mineBtcMining_address: mineBtcMiningPDA.toString(),
-        unrefinedRewards: unrefinedRewardsPDA.toString(),
+        hodlPool: hodlPoolPDA.toString(),
                 solTreasury_address: solTreasuryPDA.toString(),
-        dogesTreasury_address: dogesTreasuryPDA.toString(),
             };
             saveDeploymentData();
         } else {
@@ -1224,16 +1229,33 @@ async function depositMiningTokens(minebtcProgram) {
         anchor_spl.TOKEN_2022_PROGRAM_ID
     );
 
+  // Deposit whatever dogeBTC is left in the deployer wallet after the
+  // pool seed + addInitialLiquidity steps. Hardcoding this amount used
+  // to break whenever the LP-add proportional sizing changed.
+  const depositorAcc = await anchor_spl.getAccount(
+    connection,
+    userTokenAccount,
+    undefined,
+    anchor_spl.TOKEN_2022_PROGRAM_ID
+  );
+  const depositAmount = new BN(depositorAcc.amount.toString());
+
+  if (depositAmount.isZero()) {
+    throw new Error(
+      `Depositor token account ${userTokenAccount.toString()} has 0 dogeBTC — pool/LP setup likely consumed the full mint.`
+    );
+  }
+
   console.log(
     COLOR_INFO,
-    `💰 Depositing ${DBTC_DEPOSIT_AMOUNT.toString()} tokens...`
+    `💰 Depositing ${depositAmount.toString()} tokens (full deployer balance)...`
   );
     console.log(COLOR_INFO, `   From: ${userTokenAccount.toString()}`);
     console.log(COLOR_INFO, `   To: ${vaultPDA.toString()}`);
 
     try {
     const tx = await minebtcProgram.methods
-      .depositMineBtcTokens(DBTC_DEPOSIT_AMOUNT)
+      .depositMineBtcTokens(depositAmount)
             .accounts({
                 depositor: wallet.publicKey,
                 depositorTokenAccount: userTokenAccount,
@@ -1248,7 +1270,7 @@ async function depositMiningTokens(minebtcProgram) {
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.mining_tokens_deposited = {
-            amount: DBTC_DEPOSIT_AMOUNT.toString(),
+            amount: depositAmount.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -1542,7 +1564,7 @@ async function setRaydiumPoolState(minebtcProgram) {
   );
 
   const [solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("sol-prize-pot")],
+    [Buffer.from("jackpot-pot")],
     minebtcProgram.programId
   );
 
@@ -1655,6 +1677,76 @@ async function initializeDogeConfig(minebtcProgram) {
     }
 }
 
+async function seedBreedingConfig(minebtcProgram) {
+  if (deploymentFile.breeding_config_seeded) {
+    console.log(COLOR_INFO, "ℹ️ Breeding config already seeded. Skipping...");
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ SEEDING BREEDING CONFIG ] ==================="
+  );
+
+  const globalConfigPDA = new PublicKey(
+    deploymentFile.minebtc_program_initialized.globalConfig_address
+  );
+  const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-config")],
+    minebtcProgram.programId
+  );
+
+  const breedingAllowed = !!config.doges_config.breeding_allowed;
+  const breedBasePrice = config.doges_config.breed_base_price;
+  const breedCurveA = config.doges_config.breed_curve_a;
+
+  if (breedBasePrice == null || breedCurveA == null) {
+    throw new Error(
+      "config.doges_config.breed_base_price and breed_curve_a must be set"
+    );
+  }
+
+  console.log(COLOR_INFO, `🐣 Breeding allowed: ${breedingAllowed}`);
+  console.log(
+    COLOR_INFO,
+    `   breed_base_price: ${breedBasePrice} lamports (${
+      breedBasePrice / 1e9
+    } SOL)`
+  );
+  console.log(COLOR_INFO, `   breed_curve_a:    ${breedCurveA}`);
+
+  try {
+    const tx = await minebtcProgram.methods
+      .updateBreedingConfig(
+        breedingAllowed,
+        new BN(breedBasePrice),
+        new BN(breedCurveA)
+      )
+      .accounts({
+        globalConfig: globalConfigPDA,
+        dogesConfig: dogesConfigPDA,
+        authority: wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ Breeding config seeded successfully!");
+    console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+    deploymentFile.breeding_config_seeded = {
+      breeding_allowed: breedingAllowed,
+      breed_base_price: breedBasePrice.toString(),
+      breed_curve_a: breedCurveA.toString(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    console.error(COLOR_ERROR, "❌ Failed to seed breeding config:", error);
+    throw error;
+  }
+}
+
 async function initializeDogeMintConfig(minebtcProgram) {
   if (deploymentFile.doge_mint_config_initialized) {
     console.log(COLOR_INFO, "ℹ️ DogeMintConfig already initialized. Skipping...");
@@ -1754,6 +1846,11 @@ async function createDogeCollection(minebtcProgram) {
     // Derive PDAs
     const [globalConfigPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("global-config")],
+    minebtcProgram.programId
+    );
+
+    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("doge-config")],
     minebtcProgram.programId
     );
 
@@ -2576,11 +2673,11 @@ async function updateFees(minebtcProgram, feeConfig) {
     );
     console.log(
       COLOR_INFO,
-      `     Motherlode: ${globalConfig.minebtcDistConfig.minebtcMotherlodePct}%`
+      `     Jackpot: ${globalConfig.minebtcDistConfig.minebtcJackpotPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Refining fee: ${globalConfig.minebtcDistConfig.refiningFee}%`
+      `     HODL tax: ${globalConfig.minebtcDistConfig.hodlTaxPct}%`
     );
     console.log(
       COLOR_INFO,
@@ -2595,14 +2692,18 @@ async function updateFees(minebtcProgram, feeConfig) {
       newMinebtcStakersPct: feeConfig?.newMinebtcStakersPct ?? null,
       newMinebtcWinnersPct: feeConfig?.newMinebtcWinnersPct ?? null,
       newMinebtcSameFactionPct: feeConfig?.newMinebtcSameFactionPct ?? null,
-      newMinebtcMotherlodePct: feeConfig?.newMinebtcMotherlodePct ?? null,
-      newRefiningFee: feeConfig?.newRefiningFee ?? null,
+      newMinebtcJackpotPct: feeConfig?.newMinebtcJackpotPct ?? null,
+      newHodlTaxPct: feeConfig?.newHodlTaxPct ?? null,
       snapshotInterval:
         (feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval) != null
           ? new BN(
               feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval
             )
         : null,
+      newReferralFeePct: feeConfig?.newReferralFeePct ?? null,
+      newSameFactionReferralFeePct:
+        feeConfig?.newSameFactionReferralFeePct ?? null,
+      newCycleSolSplitPct: feeConfig?.newCycleSolSplitPct ?? null,
     };
 
     // Validate the MineBTC distribution invariant before sending the transaction.
@@ -2611,7 +2712,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       feeParams.newMinebtcStakersPct !== null ||
       feeParams.newMinebtcWinnersPct !== null ||
       feeParams.newMinebtcSameFactionPct !== null ||
-      feeParams.newMinebtcMotherlodePct !== null
+      feeParams.newMinebtcJackpotPct !== null
     ) {
       const minebtcStakersPct =
         feeParams.newMinebtcStakersPct ??
@@ -2622,20 +2723,20 @@ async function updateFees(minebtcProgram, feeConfig) {
       const minebtcSameFactionPct =
         feeParams.newMinebtcSameFactionPct ??
         globalConfig.minebtcDistConfig.minebtcSameFactionPct;
-      const minebtcMotherlodePct =
-        feeParams.newMinebtcMotherlodePct ??
-        globalConfig.minebtcDistConfig.minebtcMotherlodePct;
+      const minebtcJackpotPct =
+        feeParams.newMinebtcJackpotPct ??
+        globalConfig.minebtcDistConfig.minebtcJackpotPct;
 
       const losingDirectionCount = 2; // Up / Neutral / Down => 2 losing directions
       const minebtcTotal =
         minebtcStakersPct +
         minebtcWinnersPct +
         minebtcSameFactionPct * losingDirectionCount +
-        minebtcMotherlodePct;
+        minebtcJackpotPct;
 
       if (minebtcTotal !== 100) {
         throw new Error(
-          `Invalid MineBTC distribution config: stakers (${minebtcStakersPct}) + winners (${minebtcWinnersPct}) + ${losingDirectionCount}*sameFaction (${minebtcSameFactionPct}) + motherlode (${minebtcMotherlodePct}) must equal 100, got ${minebtcTotal}.`
+          `Invalid MineBTC distribution config: stakers (${minebtcStakersPct}) + winners (${minebtcWinnersPct}) + ${losingDirectionCount}*sameFaction (${minebtcSameFactionPct}) + jackpot (${minebtcJackpotPct}) must equal 100, got ${minebtcTotal}.`
         );
       }
     }
@@ -2666,15 +2767,15 @@ async function updateFees(minebtcProgram, feeConfig) {
         COLOR_INFO,
         `     DBTC Same-faction: ${feeParams.newMinebtcSameFactionPct}% per losing direction (${feeParams.newMinebtcSameFactionPct * 2}% total)`
       );
-    if (feeParams.newMinebtcMotherlodePct !== null)
+    if (feeParams.newMinebtcJackpotPct !== null)
       console.log(
         COLOR_INFO,
-        `     DBTC Motherlode: ${feeParams.newMinebtcMotherlodePct}%`
+        `     DBTC Jackpot: ${feeParams.newMinebtcJackpotPct}%`
       );
-    if (feeParams.newRefiningFee !== null)
+    if (feeParams.newHodlTaxPct !== null)
       console.log(
         COLOR_INFO,
-        `     Refining fee: ${feeParams.newRefiningFee}%`
+        `     HODL tax: ${feeParams.newHodlTaxPct}%`
       );
     if (feeParams.snapshotInterval !== null)
       console.log(
@@ -2701,9 +2802,12 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcStakersPct,
         feeParams.newMinebtcWinnersPct,
         feeParams.newMinebtcSameFactionPct,
-        feeParams.newMinebtcMotherlodePct,
-        feeParams.newRefiningFee,
-        feeParams.snapshotInterval
+        feeParams.newMinebtcJackpotPct,
+        feeParams.newHodlTaxPct,
+        feeParams.snapshotInterval,
+        feeParams.newReferralFeePct,
+        feeParams.newSameFactionReferralFeePct,
+        feeParams.newCycleSolSplitPct
       )
       .accounts({
         globalConfig: globalConfigPDA,
@@ -2911,6 +3015,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     max_evolution_stage_unlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
     faction_war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
     faction_war_loyalty_reward_bps: gameplayTuningConfig.factionWarLoyaltyRewardBps,
+    faction_war_mvp_reward_bps: gameplayTuningConfig.factionWarMvpRewardBps,
     faction_war_doge_reward_bps: gameplayTuningConfig.factionWarDogeRewardBps,
     base_mutation_chance_bps: gameplayTuningConfig.baseMutationChanceBps,
     mutation_chance_floor_bps: gameplayTuningConfig.mutationChanceFloorBps,
@@ -2933,10 +3038,11 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   const rewardSplit =
     target.faction_war_base_reward_bps +
     target.faction_war_loyalty_reward_bps +
+    target.faction_war_mvp_reward_bps +
     target.faction_war_doge_reward_bps;
   if (rewardSplit !== 10000) {
     throw new Error(
-      `Invalid gameplay reward split: base + loyalty + doge must equal 10000 bps, got ${rewardSplit}.`
+      `Invalid gameplay reward split: base + loyalty + mvp + doge must equal 10000 bps, got ${rewardSplit}.`
     );
   }
 
@@ -2948,7 +3054,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/doge: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarDogeRewardBps}`
+    `     Rewards bps base/loyalty/mvp/doge: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarMvpRewardBps}/${current.factionWarDogeRewardBps}`
   );
   console.log(
     COLOR_INFO,
@@ -2967,7 +3073,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/doge: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_doge_reward_bps}`
+    `     Rewards bps base/loyalty/mvp/doge: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_mvp_reward_bps}/${target.faction_war_doge_reward_bps}`
   );
   console.log(
     COLOR_INFO,
@@ -2991,6 +3097,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     current.maxEvolutionStageUnlocked === target.max_evolution_stage_unlocked &&
     current.factionWarBaseRewardBps === target.faction_war_base_reward_bps &&
     current.factionWarLoyaltyRewardBps === target.faction_war_loyalty_reward_bps &&
+    current.factionWarMvpRewardBps === target.faction_war_mvp_reward_bps &&
     current.factionWarDogeRewardBps === target.faction_war_doge_reward_bps &&
     current.baseMutationChanceBps === target.base_mutation_chance_bps &&
     current.mutationChanceFloorBps === target.mutation_chance_floor_bps &&

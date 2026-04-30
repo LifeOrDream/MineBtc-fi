@@ -443,7 +443,7 @@ mine_btc_per_round (dogeBTC emission)
     ├─ same_faction_pct (20% × 2 directions) → consolation for wrong-direction bettors
     │   on the winning country (pro-rata by wgtd_points per direction)
     ├─ stakers_pct (5%) → all stakers on the winning faction
-    └─ motherlode_pct (5%) → jackpot (1/625 chance of hitting, accumulates)
+    └─ jackpot_pct (5%) → global jackpot (1/625 chance of hitting, accumulates)
 ```
 
 SOL rewards: winning-direction bettors split the SOL prize pot proportional to their points bets.
@@ -512,19 +512,19 @@ SOL staking rewards:
 MineBTC staking rewards:
 
 - accrue into `pending_minebtc_rewards`
-- are globally tracked through `unrefined_rewards.total_minebtc_claimable`
+- are globally tracked through `hodl_pool.total_minebtc_claimable`
 - are withdrawn later through `withdraw_dbtc_rewards`
 
-### Refining redistribution
+### HODL tax redistribution
 
-When a user withdraws pending MineBTC rewards, a refining fee can be taken and
+When a user withdraws pending MineBTC rewards, a HODL tax can be taken and
 redistributed across remaining unclaimed MineBTC balances via the global
-`unrefining_index`.
+`hodl_tax_index`.
 
 This means claim timing matters:
 
-- fast withdrawal = immediate liquidity, but pay refining fee
-- slower withdrawal = can earn part of other users' refining fees
+- fast withdrawal = immediate liquidity, but pay HODL tax
+- slower withdrawal = can earn part of other users' HODL taxs
 
 ## Tax Treasury Distribution (also tied to faction wars)
 

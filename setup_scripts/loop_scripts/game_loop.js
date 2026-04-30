@@ -214,6 +214,7 @@ async function startRound(roundId) {
   const tx = await mineBTCProgram.methods
     .startRound(new BN(roundId))
     .accounts({
+      globalConfig: globalConfigPDA,
       globalGameState: globalGameStatePDA,
       gameSession: deriveGameSessionPDA(roundId),
       factionWarConfig: factionWarConfigPDA,

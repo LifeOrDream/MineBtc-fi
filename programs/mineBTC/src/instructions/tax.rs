@@ -66,6 +66,9 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
+    faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
     faction_war_state.eligible_doge_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
@@ -354,13 +357,12 @@ fn init_or_load_tax_faction_war_state<'info>(
         faction_war_id_bytes.as_ref(),
         faction_war_state_bump_seed.as_ref(),
     ];
-    let created = helper::init_pda_account_if_needed(
+    let created = helper::init_pda_account_zeroed_if_needed::<FactionWarState>(
         payer,
         faction_war_state_info,
         system_program,
         faction_war_state_seeds,
         FactionWarState::LEN,
-        &FactionWarState::blank(),
     )?;
     msg!(
         "🏛️ [init_or_load_tax_faction_war_state] faction_war_id={} account={} created={}",
@@ -368,9 +370,28 @@ fn init_or_load_tax_faction_war_state<'info>(
         faction_war_state_info.key(),
         created
     );
-    Ok(Box::new(helper::load_account_data::<FactionWarState>(
-        faction_war_state_info,
-    )?))
+    load_faction_war_state_boxed(faction_war_state_info)
+}
+
+#[inline(never)]
+fn load_faction_war_state_boxed<'info>(
+    account: &AccountInfo<'info>,
+) -> Result<Box<FactionWarState>> {
+    require!(
+        account.owner == &FactionWarState::owner(),
+        ErrorCode::InvalidAccount
+    );
+    let data = account.try_borrow_data()?;
+    require!(data.len() >= DISCRIMINATOR_SIZE, ErrorCode::InvalidAccount);
+    require!(
+        &data[..DISCRIMINATOR_SIZE] == FactionWarState::DISCRIMINATOR,
+        ErrorCode::InvalidAccount
+    );
+    let mut boxed: Box<FactionWarState> =
+        unsafe { helper::alloc_zeroed_boxed::<FactionWarState>() };
+    let mut cursor: &[u8] = &data[DISCRIMINATOR_SIZE..];
+    FactionWarState::deserialize_into(&mut boxed, &mut cursor)?;
+    Ok(boxed)
 }
 
 #[inline(never)]

@@ -4,7 +4,7 @@
  * Economy.rs Transaction Tester
  *
  * Tests:
- * 1. Send SOL to sol_treasury and doges_treasury PDAs
+ * 1. Send SOL to sol_treasury PDA
  * 2. Execute distribute_sol_fees instruction
  * 3. Execute snapshot_price instruction
  * 4. Verify events and business logic for both
@@ -67,7 +67,6 @@ const mineBTCProgramId = mineBTCProgram.programId;
 const GLOBAL_CONFIG_SEED = "global-config";
 const MINE_BTC_MINING_SEED = "mine-btc-mining";
 const SOL_TREASURY_SEED = "sol-treasury";
-const DOGES_TREASURY_SEED = "doges-treasury";
 const BUYBACKS_SEED = "buybacks";
 const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
 const DOGE_BTC_VAULT_SEED = "minebtc_vault";
@@ -81,9 +80,6 @@ const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
 );
 const [solTreasuryPDA] = PublicKey.findProgramAddressSync(
   [Buffer.from(SOL_TREASURY_SEED)], mineBTCProgramId
-);
-const [dogesTreasuryPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from(DOGES_TREASURY_SEED)], mineBTCProgramId
 );
 const [buybacksAccountPDA] = PublicKey.findProgramAddressSync(
   [Buffer.from(BUYBACKS_SEED)], mineBTCProgramId
@@ -162,28 +158,20 @@ function decodeAnchorEvent(program, eventData) {
 
 async function sendSolToTreasuries() {
   console.log("\n" + "=".repeat(70));
-  console.log("STEP 1: Send SOL to Treasury PDAs");
+  console.log("STEP 1: Send SOL to Treasury PDA");
   console.log("=".repeat(70));
 
   const solAmount = 0.01 * LAMPORTS_PER_SOL; // 0.01 SOL = 10_000_000 lamports
 
-  // Check pre-balances
+  // Check pre-balance
   const preSolTreasuryBal = await connection.getBalance(solTreasuryPDA);
-  const preDogesTreasuryBal = await connection.getBalance(dogesTreasuryPDA);
-  console.log(`\n  Pre-balances:`);
+  console.log(`\n  Pre-balance:`);
   console.log(`    SOL Treasury (${solTreasuryPDA.toBase58()}): ${preSolTreasuryBal / LAMPORTS_PER_SOL} SOL`);
-  console.log(`    Doges Treasury (${dogesTreasuryPDA.toBase58()}): ${preDogesTreasuryBal / LAMPORTS_PER_SOL} SOL`);
 
-  // Send to both treasuries
   const tx = new Transaction().add(
     SystemProgram.transfer({
       fromPubkey: walletKeypair.publicKey,
       toPubkey: solTreasuryPDA,
-      lamports: solAmount,
-    }),
-    SystemProgram.transfer({
-      fromPubkey: walletKeypair.publicKey,
-      toPubkey: dogesTreasuryPDA,
       lamports: solAmount,
     })
   );
@@ -195,14 +183,12 @@ async function sendSolToTreasuries() {
   console.log(`\n  TX Signature: ${signature}`);
   console.log(`  Explorer: https://explorer.solana.com/tx/${signature}?cluster=devnet`);
 
-  // Check post-balances
+  // Check post-balance
   const postSolTreasuryBal = await connection.getBalance(solTreasuryPDA);
-  const postDogesTreasuryBal = await connection.getBalance(dogesTreasuryPDA);
-  console.log(`\n  Post-balances:`);
+  console.log(`\n  Post-balance:`);
   console.log(`    SOL Treasury: ${postSolTreasuryBal / LAMPORTS_PER_SOL} SOL (+${(postSolTreasuryBal - preSolTreasuryBal) / LAMPORTS_PER_SOL} SOL)`);
-  console.log(`    Doges Treasury: ${postDogesTreasuryBal / LAMPORTS_PER_SOL} SOL (+${(postDogesTreasuryBal - preDogesTreasuryBal) / LAMPORTS_PER_SOL} SOL)`);
 
-  return { signature, postSolTreasuryBal, postDogesTreasuryBal };
+  return { signature, postSolTreasuryBal };
 }
 
 // ============================================================
@@ -216,12 +202,10 @@ async function executeDistributeSolFees() {
 
   // Pre-state: fetch account balances
   const preSolTreasuryBal = await connection.getBalance(solTreasuryPDA);
-  const preDogesTreasuryBal = await connection.getBalance(dogesTreasuryPDA);
   const preBuybacksVaultBal = await connection.getBalance(buybacksSolVaultPDA);
 
   console.log(`\n  Pre-balances:`);
   console.log(`    SOL Treasury: ${preSolTreasuryBal / LAMPORTS_PER_SOL} SOL`);
-  console.log(`    Doges Treasury: ${preDogesTreasuryBal / LAMPORTS_PER_SOL} SOL`);
   console.log(`    Buybacks SOL Vault: ${preBuybacksVaultBal / LAMPORTS_PER_SOL} SOL`);
 
   // Fetch global config to get fee percentages
@@ -282,7 +266,6 @@ async function executeDistributeSolFees() {
       treasuryWsolAccount: await getAssociatedTokenAddress(WSOL_MINT, solTreasuryPDA, true, TOKEN_PROGRAM_ID),
       multisigWsolAccount: multisigWsolAta,
       wsolMint: WSOL_MINT,
-      dogesTreasury: dogesTreasuryPDA,
       buybacksSolVault: buybacksSolVaultPDA,
       buybacksAccount: buybacksAccountPDA,
       payer: walletKeypair.publicKey,
@@ -306,12 +289,10 @@ async function executeDistributeSolFees() {
 
   // Post-state
   const postSolTreasuryBal = await connection.getBalance(solTreasuryPDA);
-  const postDogesTreasuryBal = await connection.getBalance(dogesTreasuryPDA);
   const postBuybacksVaultBal = await connection.getBalance(buybacksSolVaultPDA);
 
   console.log(`\n  Post-balances:`);
   console.log(`    SOL Treasury: ${postSolTreasuryBal / LAMPORTS_PER_SOL} SOL (delta: ${(postSolTreasuryBal - preSolTreasuryBal) / LAMPORTS_PER_SOL} SOL)`);
-  console.log(`    Doges Treasury: ${postDogesTreasuryBal / LAMPORTS_PER_SOL} SOL (delta: ${(postDogesTreasuryBal - preDogesTreasuryBal) / LAMPORTS_PER_SOL} SOL)`);
   console.log(`    Buybacks SOL Vault: ${postBuybacksVaultBal / LAMPORTS_PER_SOL} SOL (delta: ${(postBuybacksVaultBal - preBuybacksVaultBal) / LAMPORTS_PER_SOL} SOL)`);
 
   // Fetch buybacks account post-state
@@ -359,16 +340,10 @@ async function executeDistributeSolFees() {
   console.log(`    Expected buybacks (${buybackPct}%): ${expectedBuybacks / LAMPORTS_PER_SOL} SOL`);
   console.log(`    Expected dev earnings: ${expectedDevEarnings / LAMPORTS_PER_SOL} SOL`);
 
-  // Doges treasury contribution: min(1% of available, 10x buyback amount)
-  const dogesAvailable = preDogesTreasuryBal - rentExempt;
-  const dogesTreasuryContrib = Math.min(Math.floor(dogesAvailable / 100), expectedBuybacks * 10);
-  console.log(`    Expected doges treasury contribution: ${dogesTreasuryContrib / LAMPORTS_PER_SOL} SOL`);
-
-  const totalExpectedBuybacksIncrease = expectedBuybacks + dogesTreasuryContrib;
   const actualBuybacksIncrease = postBuybacksVaultBal - preBuybacksVaultBal;
-  console.log(`    Expected total buybacks vault increase: ${totalExpectedBuybacksIncrease / LAMPORTS_PER_SOL} SOL`);
+  console.log(`    Expected buybacks vault increase: ${expectedBuybacks / LAMPORTS_PER_SOL} SOL`);
   console.log(`    Actual buybacks vault increase: ${actualBuybacksIncrease / LAMPORTS_PER_SOL} SOL`);
-  console.log(`    Match: ${Math.abs(totalExpectedBuybacksIncrease - actualBuybacksIncrease) < 1000 ? "YES" : "NO (check logs)"}`);
+  console.log(`    Match: ${Math.abs(expectedBuybacks - actualBuybacksIncrease) < 1000 ? "YES" : "NO (check logs)"}`);
 
   return { signature, txInfo };
 }
@@ -551,7 +526,6 @@ async function main() {
   console.log(`Wallet: ${walletKeypair.publicKey.toBase58()}`);
   console.log(`Program ID: ${mineBTCProgramId.toBase58()}`);
   console.log(`SOL Treasury PDA: ${solTreasuryPDA.toBase58()}`);
-  console.log(`Doges Treasury PDA: ${dogesTreasuryPDA.toBase58()}`);
   console.log(`Buybacks SOL Vault PDA: ${buybacksSolVaultPDA.toBase58()}`);
 
   // Check wallet balance
