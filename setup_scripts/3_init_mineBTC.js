@@ -2729,7 +2729,8 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newHodlTaxPct,
         feeParams.snapshotInterval,
         feeParams.newReferralFeePct,
-        feeParams.newSameFactionReferralFeePct
+        feeParams.newSameFactionReferralFeePct,
+        feeParams.newCycleSolSplitPct
       )
       .accounts({
         globalConfig: globalConfigPDA,
