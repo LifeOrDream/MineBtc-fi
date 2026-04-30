@@ -1645,6 +1645,44 @@ impl FactionWarState {
             treasury_claimed_bitmap: 0,
         }
     }
+
+    /// Deserialize from `buf` directly into `*target` field-by-field.
+    ///
+    /// Avoids the ~2.6KB stack temporary that `<Self as AnchorDeserialize>::deserialize`
+    /// would create. Each individual field deserialization uses at most ~480 bytes
+    /// of stack (the `[Pubkey; NUM_FACTIONS]` field), keeping this function under
+    /// BPF's 4096-byte stack budget.
+    ///
+    /// Field order MUST match the struct definition exactly.
+    #[inline(never)]
+    pub fn deserialize_into(target: &mut Self, buf: &mut &[u8]) -> Result<()> {
+        target.bump = AnchorDeserialize::deserialize(buf)?;
+        target.faction_war_id = AnchorDeserialize::deserialize(buf)?;
+        target.start_timestamp = AnchorDeserialize::deserialize(buf)?;
+        target.stage = AnchorDeserialize::deserialize(buf)?;
+        target.active_faction_count = AnchorDeserialize::deserialize(buf)?;
+        target.total_dogebtc_mined_in_faction_war = AnchorDeserialize::deserialize(buf)?;
+        target.faction_war_mining_pool = AnchorDeserialize::deserialize(buf)?;
+        target.start_ranks = AnchorDeserialize::deserialize(buf)?;
+        target.final_ranks = AnchorDeserialize::deserialize(buf)?;
+        target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
+        target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mvp_user = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mvp_score = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mvp_bonus = AnchorDeserialize::deserialize(buf)?;
+        target.faction_direction_totals = AnchorDeserialize::deserialize(buf)?;
+        target.loyalty_direction_totals = AnchorDeserialize::deserialize(buf)?;
+        target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.loyalty_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.faction_doge_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.faction_round_wins = AnchorDeserialize::deserialize(buf)?;
+        target.faction_sol_totals = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mutation_scores = AnchorDeserialize::deserialize(buf)?;
+        target.eligible_doge_direction_totals = AnchorDeserialize::deserialize(buf)?;
+        target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
+        target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
+        Ok(())
+    }
 }
 
 /// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, faction_war_id_u64_le]`)

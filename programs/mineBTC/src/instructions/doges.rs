@@ -1877,21 +1877,21 @@ pub struct MintDoge<'info> {
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [DOGE_CONFIG_SEED.as_ref()],
         bump = doge_config.bump
     )]
-    pub doge_config: Account<'info, DogeConfig>,
+    pub doge_config: Box<Account<'info, DogeConfig>>,
 
     #[account(
         mut,
         seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
         bump = doge_mint_config.bump
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub doge_mint_config: Box<Account<'info, DogeMintConfig>>,
 
     #[account(
         mut,
@@ -1899,7 +1899,7 @@ pub struct MintDoge<'info> {
         bump = player_data.bump,
         constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
     )]
-    pub player_data: Account<'info, PlayerData>,
+    pub player_data: Box<Account<'info, PlayerData>>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
     /// MUST be owned by global_config.fee_recipient (the multisig address)

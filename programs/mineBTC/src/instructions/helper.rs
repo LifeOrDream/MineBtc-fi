@@ -194,6 +194,57 @@ pub fn transfer_to_sol_prize_pot_vault<'info>(
     )
 }
 
+/// Like `init_pda_account_if_needed` but writes only the discriminator and
+/// relies on `system_program::create_account` zero-filling the rest of the
+/// account data. Use this when the desired initial state is "all zeros after
+/// the discriminator" — saves the caller from materializing a `T` on the
+/// stack just to serialize zeros.
+///
+/// Specifically used for large account types (e.g. `FactionWarState`) where
+/// passing `&T` would push the calling function over BPF's 4096-byte stack
+/// budget.
+#[inline(never)]
+pub fn init_pda_account_zeroed_if_needed<'info, T>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    signer_seeds: &[&[u8]],
+    space: usize,
+) -> Result<bool>
+where
+    T: Discriminator,
+{
+    require!(account.is_writable, ErrorCode::InvalidAccount);
+
+    if account.owner == &system_program::ID && account.lamports() == 0 {
+        let rent = Rent::get()?.minimum_balance(space);
+        msg!(
+            "   creating zeroed PDA account {} with rent={} bytes={}",
+            account.key(),
+            rent,
+            space
+        );
+        create_account(
+            CpiContext::new_with_signer(
+                system_program.to_account_info(),
+                CreateAccount {
+                    from: payer.to_account_info(),
+                    to: account.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            rent,
+            space as u64,
+            &crate::ID,
+        )?;
+        let mut data = account.try_borrow_mut_data()?;
+        require!(data.len() >= 8, ErrorCode::InvalidAccount);
+        data[..8].copy_from_slice(T::DISCRIMINATOR);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub fn init_pda_account_if_needed<'info, T>(
     payer: &AccountInfo<'info>,
     account: &AccountInfo<'info>,
@@ -273,6 +324,37 @@ where
     let data = account.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     T::try_deserialize(&mut data_slice)
+}
+
+/// Boxed wrapper around `load_account_data`. Marked `#[inline(never)]` so the
+/// `T`-sized stack temporary lives only in this helper's frame instead of the
+/// caller's. Suitable for SMALL accounts only — for accounts whose `T` itself
+/// exceeds BPF's 4096-byte stack budget (e.g. `FactionWarState`), the helper's
+/// own frame would still overflow. Use a specialized field-by-field loader for
+/// those.
+#[inline(never)]
+pub fn load_account_data_boxed<'info, T>(account: &AccountInfo<'info>) -> Result<Box<T>>
+where
+    T: AccountDeserialize + Owner,
+{
+    Ok(Box::new(load_account_data::<T>(account)?))
+}
+
+/// Allocate a zero-filled `Box<T>` directly on the heap without ever
+/// materializing the `T` on the stack. Safe for any `T` that is valid
+/// when zero-initialized (all numeric primitives, fixed-size arrays
+/// thereof, and `Pubkey = [u8; 32]`). Used by the FactionWarState boxed
+/// loader to avoid blowing BPF's stack budget on a 2.6KB struct.
+///
+/// SAFETY: caller must guarantee `T` has no invariants violated by an
+/// all-zeros bit pattern (no enums with non-zero discriminants, no
+/// references, no `NonZero*` types, no custom `Drop`).
+#[inline(never)]
+pub unsafe fn alloc_zeroed_boxed<T>() -> Box<T> {
+    let b: Box<core::mem::MaybeUninit<T>> = Box::new(core::mem::MaybeUninit::uninit());
+    let raw = Box::into_raw(b);
+    core::ptr::write_bytes(raw as *mut u8, 0u8, core::mem::size_of::<T>());
+    Box::from_raw(raw as *mut T)
 }
 
 pub fn store_account_data<'info, T>(account: &AccountInfo<'info>, value: &T) -> Result<()>
