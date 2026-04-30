@@ -245,14 +245,30 @@ fn resolve_round_entropy(
     let entry_count = slot_hash_entry_count(&data)?;
     require!(entry_count > 0, ErrorCode::InvalidAccount);
 
-    // SlotHashes is sorted newest -> oldest. Read the newest row first so
-    // late crankers can recover cheaply if the scheduled slot already aged
-    // out, instead of scanning/logging hundreds of entries and exhausting CU.
+    // SlotHashes is sorted newest -> oldest in 40-byte rows.
     let (latest_slot, latest_hash) = read_slot_hash_entry(&data, 0)?;
     if scheduled_entropy_slot > latest_slot {
         return err!(ErrorCode::RoundEntropyNotReady);
     }
 
+    // Age-out short-circuit: if the scheduled slot is older than the OLDEST
+    // entry in the ring buffer (~512 slots = ~3.4 min), it's gone forever.
+    // Detect this in O(1) via the last entry instead of walking the whole
+    // buffer to fall through to the post-loop fallback (which would also
+    // burn CU on every msg!() inside the loop).
+    let (oldest_slot, _) = read_slot_hash_entry(&data, entry_count - 1)?;
+    if scheduled_entropy_slot < oldest_slot {
+        msg!(
+            "⚠️ [game.resolve_round_entropy] scheduled slot {} aged out (oldest={}, latest={}); fallback=true",
+            scheduled_entropy_slot,
+            oldest_slot,
+            latest_slot
+        );
+        return Ok((latest_slot, latest_hash, true));
+    }
+
+    // Scheduled slot is in range. Walk newest -> oldest until we hit it.
+    // No per-iteration msg!() — those have been killing CU on late settles.
     for index in 0..entry_count {
         let (slot, hash) = if index == 0 {
             (latest_slot, latest_hash)
@@ -261,24 +277,27 @@ fn resolve_round_entropy(
         };
 
         if slot == scheduled_entropy_slot {
-            msg!("✅ [game.resolve_round_entropy] exact match found at index={} slot={} fallback=false", index, slot);
+            msg!(
+                "✅ [game.resolve_round_entropy] exact match at index={} slot={}",
+                index,
+                slot
+            );
             return Ok((slot, hash, false));
         }
 
         if slot < scheduled_entropy_slot {
+            // Skipped slot (fork) — scheduled was in range but never landed.
             msg!(
-                "⚠️ [game.resolve_round_entropy] scheduled slot {} missing between latest={} and older slot={}; fallback=true",
-                scheduled_entropy_slot,
-                latest_slot,
-                slot
+                "⚠️ [game.resolve_round_entropy] scheduled slot {} skipped (fork); fallback=true",
+                scheduled_entropy_slot
             );
             return Ok((latest_slot, latest_hash, true));
         }
     }
 
+    // Defensively unreachable given the age-out check above; treat as fallback.
     msg!(
-        "⚠️ [game.resolve_round_entropy] scheduled slot {} aged out of SlotHashes; fallback latest slot={}",
-        scheduled_entropy_slot,
+        "⚠️ [game.resolve_round_entropy] reached end of SlotHashes without match; fallback latest={}",
         latest_slot
     );
     Ok((latest_slot, latest_hash, true))
