@@ -125,11 +125,11 @@ pub fn internal_initialize_tax_config(
     crate::log_fn!("tax", "internal_initialize_tax_config");
     msg!("🔧 [initialize_tax_config] Initializing tax system");
 
-    require!(
-        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) + (burn_pct as u64)
-            <= M_HUNDRED,
-        ErrorCode::InvalidAmount
-    );
+    let configured_pct_total = (nft_floor_sweep_pct as u64)
+        .checked_add(faction_treasury_pct as u64)
+        .and_then(|total| total.checked_add(burn_pct as u64))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    require!(configured_pct_total <= M_HUNDRED, ErrorCode::InvalidAmount);
 
     let tax_config = &mut ctx.accounts.tax_config;
 
@@ -151,7 +151,8 @@ pub fn internal_initialize_tax_config(
     msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
     msg!("   Faction Treasury: {}%", faction_treasury_pct);
     msg!("   Burn: {}%", burn_pct);
-    let vault_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct - burn_pct;
+    let vault_pct = u8::try_from(M_HUNDRED - configured_pct_total)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
     msg!("   Back to Vault: {}%", vault_pct);
     msg!(
         "   Withdraw Authority: {}",
@@ -184,11 +185,11 @@ pub fn internal_update_tax_config(
     crate::log_fn!("tax", "internal_update_tax_config");
     msg!("🔧 [update_tax_config] Updating tax distribution percentages");
 
-    require!(
-        (nft_floor_sweep_pct as u64) + (faction_treasury_pct as u64) + (burn_pct as u64)
-            <= M_HUNDRED,
-        ErrorCode::InvalidAmount
-    );
+    let configured_pct_total = (nft_floor_sweep_pct as u64)
+        .checked_add(faction_treasury_pct as u64)
+        .and_then(|total| total.checked_add(burn_pct as u64))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    require!(configured_pct_total <= M_HUNDRED, ErrorCode::InvalidAmount);
 
     let tax_config = &mut ctx.accounts.tax_config;
     tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
@@ -467,16 +468,30 @@ pub fn internal_crank_distribute_tax<'info>(
         accounts.faction_war_config.current_faction_war_id == faction_war_id,
         ErrorCode::InvalidParameters
     );
-    let nft_floor_sweep_amount =
-        helper::mul_div(withheld_amount, tax_config.nft_floor_sweep_pct as u64, 100)? as u64;
-    let faction_treasury_amount =
-        helper::mul_div(withheld_amount, tax_config.faction_treasury_pct as u64, 100)? as u64;
-    let burn_amount = helper::mul_div(withheld_amount, tax_config.burn_pct as u64, 100)? as u64;
+    let nft_floor_sweep_amount = u64::try_from(helper::mul_div(
+        withheld_amount,
+        tax_config.nft_floor_sweep_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    let faction_treasury_amount = u64::try_from(helper::mul_div(
+        withheld_amount,
+        tax_config.faction_treasury_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    let burn_amount = u64::try_from(helper::mul_div(
+        withheld_amount,
+        tax_config.burn_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
     // Remainder goes back to the minebtc vault
     let vault_return = withheld_amount
-        .saturating_sub(nft_floor_sweep_amount)
-        .saturating_sub(faction_treasury_amount)
-        .saturating_sub(burn_amount);
+        .checked_sub(nft_floor_sweep_amount)
+        .and_then(|remaining| remaining.checked_sub(faction_treasury_amount))
+        .and_then(|remaining| remaining.checked_sub(burn_amount))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("   Splitting {} tokens:", (withheld_amount as f64) / 1e6);
     msg!(
@@ -769,7 +784,9 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         (false, true) => (0, reward_amount),
         (false, false) => (0, 0),
     };
-    let distributed = dbtc_share + lp_share;
+    let distributed = dbtc_share
+        .checked_add(lp_share)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let recycled_amount = if dogebtc_active || lp_active {
         0
     } else {

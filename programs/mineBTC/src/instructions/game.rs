@@ -564,7 +564,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         global_config.minebtc_dist_config.minebtc_winners_pct,
         global_config.minebtc_dist_config.minebtc_same_faction_pct,
         global_config.minebtc_dist_config.minebtc_jackpot_pct,
-    );
+    )?;
 
     let winning_points = game_session.points_bets_by_faction_direction[winning_faction_id as usize]
         [winning_direction as usize];
@@ -992,23 +992,41 @@ fn calculate_minebtc_split(
     minebtc_winners_pct: u8,
     minebtc_same_faction_pct: u8,
     minebtc_jackpot_pct: u8,
-) -> (u64, u64, u64, u64) {
+) -> Result<(u64, u64, u64, u64)> {
     msg!("📊 [game.calculate_minebtc_split] minebtc_rewards={} stakers_pct={} winners_pct={} same_faction_pct={} jackpot_pct={}",
         minebtc_rewards, minebtc_stakers_pct, minebtc_winners_pct, minebtc_same_faction_pct, minebtc_jackpot_pct);
-    let winning_direction_rewards =
-        (minebtc_rewards as u128 * minebtc_winners_pct as u128 / 100) as u64;
-    let same_faction_direction_rewards_each =
-        (minebtc_rewards as u128 * minebtc_same_faction_pct as u128 / 100) as u64;
-    let faction_stakers = (minebtc_rewards as u128 * minebtc_stakers_pct as u128 / 100) as u64;
-    let jackpot_rewards = (minebtc_rewards as u128 * minebtc_jackpot_pct as u128 / 100) as u64;
+    let winning_direction_rewards = u64::try_from(helper::mul_div(
+        minebtc_rewards,
+        minebtc_winners_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    let same_faction_direction_rewards_each = u64::try_from(helper::mul_div(
+        minebtc_rewards,
+        minebtc_same_faction_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    let faction_stakers = u64::try_from(helper::mul_div(
+        minebtc_rewards,
+        minebtc_stakers_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    let jackpot_rewards = u64::try_from(helper::mul_div(
+        minebtc_rewards,
+        minebtc_jackpot_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
     msg!("📊 [game.calculate_minebtc_split] result: winners={} same_faction_each={} stakers={} jackpot={}",
         winning_direction_rewards, same_faction_direction_rewards_each, faction_stakers, jackpot_rewards);
-    (
+    Ok((
         winning_direction_rewards,
         same_faction_direction_rewards_each,
         faction_stakers,
         jackpot_rewards,
-    )
+    ))
 }
 
 fn split_staker_lane_rewards(
@@ -1563,9 +1581,12 @@ pub fn int_end_round_faction_rewards<'info>(
         .sum::<u64>();
     let actually_distributed = game_session
         .minebtc_winner_pool
-        .saturating_add(same_faction_sum)
-        .saturating_add(game_session.faction_stakers)
-        .saturating_add(game_session.jackpot_rewards);
+        .checked_add(same_faction_sum)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_add(game_session.faction_stakers)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_add(game_session.jackpot_rewards)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let round_id_for_event = game_session.round_id;
     msg!("📊 [game.int_end_round_faction_rewards] computation: actually_distributed = winner_pool({}) + same_faction_sum({}) + faction_stakers({}) + jackpot_rewards({}) = {}",
         game_session.minebtc_winner_pool, same_faction_sum, game_session.faction_stakers, game_session.jackpot_rewards, actually_distributed);
