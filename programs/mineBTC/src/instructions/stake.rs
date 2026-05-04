@@ -520,7 +520,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
             user_position,
             current_ts,
             EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64,
-        );
+        )?;
         return_amount = staked_amount - penalty_amount;
         msg!(
             "   Total Staked: {}, Returned: {}, Penalty: {}",
@@ -584,15 +584,31 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     }
 
     // Store values for emergency withdrawal event before closing position
-    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
-    let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+    let total_lockup_seconds = user_position
+        .lockup_end_timestamp
+        .checked_sub(user_position.start_timestamp)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let remaining_seconds = user_position
+        .lockup_end_timestamp
+        .checked_sub(current_ts)
+        .unwrap_or(0);
     let remaining_seconds_pct = if total_lockup_seconds > 0 && remaining_seconds > 0 {
-        ((M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds) as u64
+        u64::try_from(helper::mul_div(
+            M_HUNDRED,
+            u64::try_from(remaining_seconds).map_err(|_| ErrorCode::ArithmeticOverflow)?,
+            u64::try_from(total_lockup_seconds).map_err(|_| ErrorCode::ArithmeticOverflow)?,
+        )?)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0u64
     };
     let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
-        (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
+        u64::try_from(helper::mul_div(
+            EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64,
+            remaining_seconds_pct,
+            M_HUNDRED,
+        )?)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0
     };
@@ -1057,7 +1073,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
             user_position,
             current_ts,
             EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64,
-        );
+        )?;
         return_amount = staked_amount - penalty_amount;
         msg!(
             "   Total Staked: {}, Returned: {}, Penalty: {}",
@@ -1115,20 +1131,36 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     }
 
     // Store values before emitting events and closing account
-    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
+    let total_lockup_seconds = user_position
+        .lockup_end_timestamp
+        .checked_sub(user_position.start_timestamp)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let remaining_seconds = if is_early_withdrawal {
-        user_position.lockup_end_timestamp - current_ts
+        user_position
+            .lockup_end_timestamp
+            .checked_sub(current_ts)
+            .unwrap_or(0)
     } else {
         0
     };
     let remaining_seconds_pct =
         if total_lockup_seconds > 0 && is_early_withdrawal && remaining_seconds > 0 {
-            ((M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds) as u64
+            u64::try_from(helper::mul_div(
+                M_HUNDRED,
+                u64::try_from(remaining_seconds).map_err(|_| ErrorCode::ArithmeticOverflow)?,
+                u64::try_from(total_lockup_seconds).map_err(|_| ErrorCode::ArithmeticOverflow)?,
+            )?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?
         } else {
             0u64
         };
     let calc_penalty_pct = if is_early_withdrawal && penalty_amount > 0 {
-        (EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64 * remaining_seconds_pct) / M_HUNDRED
+        u64::try_from(helper::mul_div(
+            EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64,
+            remaining_seconds_pct,
+            M_HUNDRED,
+        )?)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0
     };
@@ -1344,7 +1376,8 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     // Apply HODL tax only when there are remaining claimants to receive it.
     let hodl_tax_pct = global_config.minebtc_dist_config.hodl_tax_pct as u64;
     let hodl_tax = if remaining_claimable_after_this_user > 0 {
-        (base_pending * hodl_tax_pct) / M_HUNDRED
+        u64::try_from(helper::mul_div(base_pending, hodl_tax_pct, M_HUNDRED)?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0
     };
@@ -1370,7 +1403,12 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
             &player_data.referral_code,
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
-        let bonus = (base_claimable_amount * REFERRAL_BONUS_PCT) / 100;
+        let bonus = u64::try_from(helper::mul_div(
+            base_claimable_amount,
+            REFERRAL_BONUS_PCT,
+            M_HUNDRED,
+        )?)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
         msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
         bonus
     } else {

@@ -88,28 +88,35 @@ pub fn resolve_direction_from_ranks(start_rank: u8, final_rank: u8) -> (Predicti
 /// Apply the dynamic mining multiplier to the raw dogeBTC mined in a cycle.
 /// `multiplier_bps` is in basis points (10_000 = 1.0x).
 #[inline(always)]
-fn apply_mining_multiplier(raw_mined: u64, multiplier_bps: u16) -> u64 {
+fn apply_mining_multiplier(raw_mined: u64, multiplier_bps: u16) -> Result<u64> {
     msg!(
         "🎯 [faction_war.apply_mining_multiplier] raw_mined={} multiplier_bps={}",
         raw_mined,
         multiplier_bps
+    );
+    require!(
+        (MIN_FACTION_WAR_MINING_MULTIPLIER_BPS..=MAX_FACTION_WAR_MINING_MULTIPLIER_BPS)
+            .contains(&multiplier_bps),
+        ErrorCode::InvalidParameters
     );
     if raw_mined == 0 || multiplier_bps == 10_000 {
         msg!(
             "🎯 [faction_war.apply_mining_multiplier] early_return raw_mined={}",
             raw_mined
         );
-        return raw_mined;
+        return Ok(raw_mined);
     }
     let result = (raw_mined as u128)
         .checked_mul(multiplier_bps as u128)
-        .unwrap_or(raw_mined as u128)
-        / 10_000;
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let result_u64 = u64::try_from(result).map_err(|_| ErrorCode::ArithmeticOverflow)?;
     msg!(
         "🎯 [faction_war.apply_mining_multiplier] result={}",
-        result as u64
+        result_u64
     );
-    result as u64
+    Ok(result_u64)
 }
 
 fn compute_rank_weighted_pools(
@@ -227,6 +234,15 @@ fn compute_rank_weighted_pools(
     Ok(pools)
 }
 
+fn pool_share_from_bps(pool: u64, bps: u16) -> Result<u64> {
+    let share = (pool as u128)
+        .checked_mul(bps as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(share).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
 /// Compute how the faction_war mining pool is split across factions.
 ///
 /// The total pool is first split into four lanes:
@@ -261,21 +277,9 @@ pub fn compute_faction_reward_pools(
         return Ok(());
     }
 
-    let base_pool_total = ((pool as u128)
-        .checked_mul(tuning.faction_war_base_reward_bps as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
-    let loyalty_pool_total = ((pool as u128)
-        .checked_mul(tuning.faction_war_loyalty_reward_bps as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
-    let mvp_pool_total = ((pool as u128)
-        .checked_mul(tuning.faction_war_mvp_reward_bps as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
+    let base_pool_total = pool_share_from_bps(pool, tuning.faction_war_base_reward_bps)?;
+    let loyalty_pool_total = pool_share_from_bps(pool, tuning.faction_war_loyalty_reward_bps)?;
+    let mvp_pool_total = pool_share_from_bps(pool, tuning.faction_war_mvp_reward_bps)?;
     let doge_pool_total = pool
         .checked_sub(base_pool_total)
         .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -654,7 +658,7 @@ pub fn finalize_faction_war_settlement(
             faction_war_state.faction_war_mining_pool = apply_mining_multiplier(
                 faction_war_state.total_dogebtc_mined_in_faction_war,
                 faction_war_config.mining_multiplier_bps,
-            );
+            )?;
             msg!("🎯 [faction_war.finalize_faction_war_settlement] mining_pool old={} new={} (multiplier={} bps)", old_pool, faction_war_state.faction_war_mining_pool, faction_war_config.mining_multiplier_bps);
             // No rank change: final_ranks = start_ranks, deltas all zero, every
             // faction resolves to Neutral.
@@ -676,7 +680,7 @@ pub fn finalize_faction_war_settlement(
         faction_war_state.faction_war_mining_pool = apply_mining_multiplier(
             faction_war_state.total_dogebtc_mined_in_faction_war,
             faction_war_config.mining_multiplier_bps,
-        );
+        )?;
         msg!(
             "🎯 [faction_war.finalize_faction_war_settlement] mining_pool old={} new={} (multiplier: {} bps)",
             old_pool,
@@ -737,11 +741,10 @@ pub fn finalize_faction_war_settlement(
 
         // --- MVP Bonus: distribute 5% of mining pool rank-weighted to all faction MVPs ---
         // #1 faction MVP: 40% of MVP pool | #2: 25% | #3: 15% | #4+: equal share of 20%
-        let mvp_pool_total = ((faction_war_state.faction_war_mining_pool as u128)
-            .checked_mul(tuning.faction_war_mvp_reward_bps as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?) as u64;
+        let mvp_pool_total = pool_share_from_bps(
+            faction_war_state.faction_war_mining_pool,
+            tuning.faction_war_mvp_reward_bps,
+        )?;
         msg!(
             "🏆 [faction_war.finalize_faction_war_settlement] mvp_pool_total={}",
             mvp_pool_total
@@ -800,12 +803,13 @@ pub fn finalize_faction_war_settlement(
                         msg!("🏆 [faction_war.finalize_faction_war_settlement] MVP last_bonus={} (remaining==0)", last_bonus);
                         last_bonus
                     } else {
-                        let computed = ((mvp_pool_total as u128)
+                        let computed_u128 = (mvp_pool_total as u128)
                             .checked_mul(weight_bps as u128)
                             .ok_or(ErrorCode::ArithmeticOverflow)?
                             .checked_div(total_weight)
-                            .ok_or(ErrorCode::ArithmeticOverflow)?)
-                            as u64;
+                            .ok_or(ErrorCode::ArithmeticOverflow)?;
+                        let computed = u64::try_from(computed_u128)
+                            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
                         msg!("🏆 [faction_war.finalize_faction_war_settlement] MVP computed_bonus={}", computed);
                         computed
                     };
@@ -1014,13 +1018,6 @@ pub fn claim_faction_war_rewards_internal(
     let hodl_pool = &mut ctx.accounts.hodl_pool;
     let clock = Clock::get()?;
     let owner_key = user_faction_war_bets.owner;
-
-    helper::validate_reward_claim_caller(
-        ctx.accounts.cranker.key(),
-        owner_key,
-        player_data.allow_bots_to_claim,
-    )?;
-    msg!("✅ [faction_war.claim_faction_war_rewards_internal] validate_reward_claim_caller passed");
 
     require!(
         faction_war_state.stage == 1,
@@ -1364,4 +1361,24 @@ pub struct ClaimFactionWarRewards<'info> {
     pub cranker: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mining_multiplier_is_hard_capped_at_three_x() {
+        assert_eq!(
+            apply_mining_multiplier(1_000_000, 30_000).unwrap(),
+            3_000_000
+        );
+        assert!(apply_mining_multiplier(1_000_000, 30_001).is_err());
+    }
+
+    #[test]
+    fn mining_multiplier_rejects_below_point_one_x() {
+        assert_eq!(apply_mining_multiplier(1_000_000, 1_000).unwrap(), 100_000);
+        assert!(apply_mining_multiplier(1_000_000, 999).is_err());
+    }
 }

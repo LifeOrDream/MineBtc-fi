@@ -107,11 +107,19 @@ pub fn int_simulate_mint_cost(
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_config.total_doges_minted + mint_count <= doge_config.max_supply,
+        doge_config
+            .total_doges_minted
+            .checked_add(mint_count)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_mint_config.genesis_mints + mint_count <= doge_mint_config.genesis_mint_limit,
+        doge_mint_config
+            .genesis_mints
+            .checked_add(mint_count)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            <= doge_mint_config.genesis_mint_limit,
         ErrorCode::InvalidParameters
     );
     require!(
@@ -121,9 +129,15 @@ pub fn int_simulate_mint_cost(
     msg!(
         "🧮 [simulate_mint_cost] mint_count={} total_supply_after={} / {} genesis_after={} / {}",
         mint_count,
-        doge_config.total_doges_minted + mint_count,
+        doge_config
+            .total_doges_minted
+            .checked_add(mint_count)
+            .ok_or(ErrorCode::ArithmeticOverflow)?,
         doge_config.max_supply,
-        doge_mint_config.genesis_mints + mint_count,
+        doge_mint_config
+            .genesis_mints
+            .checked_add(mint_count)
+            .ok_or(ErrorCode::ArithmeticOverflow)?,
         doge_mint_config.genesis_mint_limit
     );
 
@@ -142,7 +156,9 @@ pub fn int_simulate_mint_cost(
         total_price = total_price
             .checked_add(actual_price)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        current_minted += 1;
+        current_minted = current_minted
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     // Calculate ticket amounts for each tier: sol_price / ticket_value
@@ -223,11 +239,19 @@ pub fn int_batch_mint_doges<'info>(
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.total_doges_minted + mint_count as u64 <= doge_config.max_supply,
+        doge_config
+            .total_doges_minted
+            .checked_add(mint_count as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            <= doge_config.max_supply,
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_mint_config.genesis_mints + mint_count as u64 <= doge_mint_config.genesis_mint_limit,
+        doge_mint_config
+            .genesis_mints
+            .checked_add(mint_count as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            <= doge_mint_config.genesis_mint_limit,
         ErrorCode::InvalidParameters
     );
     validate_genesis_faction_cap(doge_mint_config, faction_id, mint_count)?;
@@ -248,7 +272,8 @@ pub fn int_batch_mint_doges<'info>(
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
 
-        let cut = total_price * 10 / 100; // 10% referral commission
+        let cut = u64::try_from(helper::mul_div(total_price, 10, 100)?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?; // 10% referral commission
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -278,7 +303,12 @@ pub fn int_batch_mint_doges<'info>(
             "   Referral commission: {} lamports sent to referrer PDA",
             cut
         );
-        (cut, total_price - cut)
+        (
+            cut,
+            total_price
+                .checked_sub(cut)
+                .ok_or(ErrorCode::ArithmeticOverflow)?,
+        )
     } else {
         (0, total_price)
     };
@@ -329,7 +359,10 @@ pub fn int_batch_mint_doges<'info>(
             ErrorCode::InvalidAccount
         );
 
-        let current_mint_number = doge_config.total_doges_minted + 1;
+        let current_mint_number = doge_config
+            .total_doges_minted
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Generate doge data (DNA, name, URI, multiplier)
         let slot = Clock::get()?.slot + i as u64;
@@ -537,9 +570,11 @@ pub fn int_admin_mint_doge(
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
-    msg!("   Doge number: {}", doge_config.total_doges_minted + 1);
-
-    let current_mint_number = doge_config.total_doges_minted + 1;
+    let current_mint_number = doge_config
+        .total_doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    msg!("   Doge number: {}", current_mint_number);
 
     // Generate doge data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
@@ -710,10 +745,16 @@ pub fn int_whitelist_mint_doge(
         user,
         faction_id,
         allowance.remaining_free_mints,
-        doge_config.total_doges_minted + 1
+        doge_config
+            .total_doges_minted
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
     );
 
-    let current_mint_number = doge_config.total_doges_minted + 1;
+    let current_mint_number = doge_config
+        .total_doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let slot = Clock::get()?.slot;
     let (name, uri, dna, multiplier) = generate_doge_data(
         current_mint_number,
@@ -951,14 +992,14 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         player_data.doge_multiplier == old_multiplier as u16,
         ErrorCode::InvalidState
     );
-    let (_, new_effective_multiplier) =
+    let (new_raw_multiplier, new_effective_multiplier) =
         add_doge_multiplier(existing_raw_multiplier, doge_multiplier)?;
     msg!(
         "⚙️ [stake_doge] multiplier_math existing_raw={}x old_effective={}x added={}x new_raw={}x new_effective={}x",
         existing_raw_multiplier as f64 / 1000.0,
         old_multiplier as f64 / 1000.0,
         doge_multiplier as f64 / 1000.0,
-        (existing_raw_multiplier + doge_multiplier as u64) as f64 / 1000.0,
+        new_raw_multiplier as f64 / 1000.0,
         new_effective_multiplier as f64 / 1000.0
     );
 
@@ -968,7 +1009,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     msg!(
         "⚡ Updated doge multiplier: effective=({})x raw_total=({})x",
         player_data.doge_multiplier as f64 / 1000.0,
-        (existing_raw_multiplier + doge_multiplier as u64) as f64 / 1000.0
+        new_raw_multiplier as f64 / 1000.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
@@ -979,17 +1020,25 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     // Formula: new_hashpower = (old_hashpower * new_multiplier) / old_multiplier
     let new_multiplier = player_data.doge_multiplier as u64;
     if old_multiplier > 0 {
-        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower as u128
-            * new_multiplier as u128
-            / old_multiplier as u128) as u64;
-        player_data.lp_hashpower = (existing_lp_hashpower as u128 * new_multiplier as u128
-            / old_multiplier as u128) as u64;
+        player_data.dogebtc_hashpower = scale_hashpower_by_multiplier(
+            existing_dogebtc_hashpower,
+            new_multiplier,
+            old_multiplier,
+        )?;
+        player_data.lp_hashpower =
+            scale_hashpower_by_multiplier(existing_lp_hashpower, new_multiplier, old_multiplier)?;
     } else {
         // If old_multiplier is 0 (shouldn't happen), use new_multiplier directly
-        player_data.dogebtc_hashpower =
-            (existing_dogebtc_hashpower * new_multiplier) / BASE_MULTIPLIER as u64;
-        player_data.lp_hashpower =
-            (existing_lp_hashpower * new_multiplier) / BASE_MULTIPLIER as u64;
+        player_data.dogebtc_hashpower = scale_hashpower_by_multiplier(
+            existing_dogebtc_hashpower,
+            new_multiplier,
+            BASE_MULTIPLIER as u64,
+        )?;
+        player_data.lp_hashpower = scale_hashpower_by_multiplier(
+            existing_lp_hashpower,
+            new_multiplier,
+            BASE_MULTIPLIER as u64,
+        )?;
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
@@ -1204,11 +1253,13 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     let new_multiplier = player_data.doge_multiplier as u64;
 
     if old_multiplier > 0 {
-        player_data.dogebtc_hashpower = (existing_dogebtc_hashpower as u128
-            * new_multiplier as u128
-            / old_multiplier as u128) as u64;
-        player_data.lp_hashpower = (existing_lp_hashpower as u128 * new_multiplier as u128
-            / old_multiplier as u128) as u64;
+        player_data.dogebtc_hashpower = scale_hashpower_by_multiplier(
+            existing_dogebtc_hashpower,
+            new_multiplier,
+            old_multiplier,
+        )?;
+        player_data.lp_hashpower =
+            scale_hashpower_by_multiplier(existing_lp_hashpower, new_multiplier, old_multiplier)?;
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
@@ -1458,7 +1509,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
 
-        let cut = breed_cost * 10 / 100; // 10% referral commission
+        let cut = u64::try_from(helper::mul_div(breed_cost, 10, 100)?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?; // 10% referral commission
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -1488,7 +1540,12 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
             "   Breed referral commission: {} lamports sent to referrer PDA",
             cut
         );
-        (cut, breed_cost - cut)
+        (
+            cut,
+            breed_cost
+                .checked_sub(cut)
+                .ok_or(ErrorCode::ArithmeticOverflow)?,
+        )
     } else {
         (0, breed_cost)
     };
@@ -1516,7 +1573,10 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
 
     // Create offspring NFT
-    let current_mint_number = doge_config.total_doges_minted + 1;
+    let current_mint_number = doge_config
+        .total_doges_minted
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let name = format!("Bitcoin doges #{}", current_mint_number);
     let uri = format!(
         "https://assets.minebtc.fun/doges/{}.json",
@@ -1742,6 +1802,20 @@ fn capped_player_multiplier(raw_multiplier: u64) -> u16 {
             .checked_div(MAX_STAKED_DOGES as u64)
             .unwrap_or(0);
     smoothed_multiplier.min(PASSIVE_DOGE_STAKING_MAX_MULTIPLIER as u64) as u16
+}
+
+fn scale_hashpower_by_multiplier(
+    hashpower: u64,
+    new_multiplier: u64,
+    old_multiplier: u64,
+) -> Result<u64> {
+    require!(old_multiplier > 0, ErrorCode::InvalidParameters);
+    let scaled = (hashpower as u128)
+        .checked_mul(new_multiplier as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(old_multiplier as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(scaled).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
 fn add_doge_multiplier(existing_raw_multiplier: u64, doge_multiplier: u32) -> Result<(u64, u16)> {

@@ -125,16 +125,22 @@ pub const DEFAULT_EMISSION_INCREASE_PCT: u64 = 1; // 1%
 /// Emission rate decrease when price falls below threshold.
 pub const DEFAULT_EMISSION_DECREASE_PCT: u64 = 3; // 3%
 
+/// Faction-war cycle reward multiplier bounds.
+/// Stored as basis points: 1_000 = 0.1x, 10_000 = 1x, 30_000 = 3x.
+/// These are hard protocol caps for `total_dogebtc_mined_in_faction_war * multiplier`.
+pub const MIN_FACTION_WAR_MINING_MULTIPLIER_BPS: u16 = 1_000;
+pub const MAX_FACTION_WAR_MINING_MULTIPLIER_BPS: u16 = 30_000;
+
 /// Default faction-war mining multiplier (1.0x = 10_000 bps).
 pub const DEFAULT_MINING_MULTIPLIER_BPS: u16 = 10_000;
 /// Default multiplier increase when price goes up (+3%).
 pub const DEFAULT_MULTIPLIER_INCREASE_BPS: u16 = 300;
 /// Default multiplier decrease when price goes down (-10%).
 pub const DEFAULT_MULTIPLIER_DECREASE_BPS: u16 = 1000;
-/// Default multiplier hard floor (0.3x).
-pub const DEFAULT_MULTIPLIER_MIN_BPS: u16 = 3000;
-/// Default multiplier hard ceiling (1.5x).
-pub const DEFAULT_MULTIPLIER_MAX_BPS: u16 = 15000;
+/// Default multiplier hard floor (0.1x).
+pub const DEFAULT_MULTIPLIER_MIN_BPS: u16 = MIN_FACTION_WAR_MINING_MULTIPLIER_BPS;
+/// Default multiplier hard ceiling (3.0x).
+pub const DEFAULT_MULTIPLIER_MAX_BPS: u16 = MAX_FACTION_WAR_MINING_MULTIPLIER_BPS;
 
 // ========== DECIMAL SCALING CONSTANTS ========== //
 
@@ -1024,9 +1030,6 @@ pub struct PlayerData {
     /// The user's wallet address
     pub owner: Pubkey,
 
-    /// Whether third-party bots may claim rewards on this player's behalf.
-    pub allow_bots_to_claim: bool,
-
     /// Referral code used by this player
     pub referral_code: Pubkey,
 
@@ -1110,7 +1113,6 @@ impl PlayerData {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
-        1 +     // allow_bots_to_claim
         32 +    // referral_code
         1 +     // faction_id
         1 +     // origin_faction_id
@@ -1508,9 +1510,9 @@ pub struct FactionWarConfig {
     pub multiplier_increase_bps: u16,
     /// Basis-point decrease applied when price goes down (e.g. 1000 = -10%).
     pub multiplier_decrease_bps: u16,
-    /// Hard floor for the multiplier (e.g. 3000 = 0.3x).
+    /// Hard floor for the multiplier (min protocol cap: 1000 = 0.1x).
     pub multiplier_min_bps: u16,
-    /// Hard ceiling for the multiplier (e.g. 15000 = 1.5x).
+    /// Hard ceiling for the multiplier (max protocol cap: 30000 = 3.0x).
     pub multiplier_max_bps: u16,
 }
 

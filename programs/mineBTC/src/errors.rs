@@ -10,8 +10,6 @@ pub enum ErrorCode {
 
     #[msg("User not authorized to perform this action")]
     Unauthorized,
-    #[msg("Permissionless reward claims are disabled for this player")]
-    PermissionlessRewardClaimsDisabled,
     #[msg("No pending authority transfer to accept")]
     NoPendingAuthority,
 

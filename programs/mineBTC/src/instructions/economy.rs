@@ -37,6 +37,10 @@ use raydium_cp_swap;
 use raydium_cp_swap::states::PoolState as RaydiumPoolState;
 use raydium_cp_swap::utils::AccountLoad as RaydiumAccountLoad;
 
+fn u64_mul_div(a: u64, b: u64, c: u64) -> Result<u64> {
+    u64::try_from(helper::mul_div(a, b, c)?).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
 fn gross_up_for_token2022_fee<'info>(
     mint_account_info: &AccountInfo<'info>,
     desired_post_fee_amount: u64,
@@ -106,7 +110,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
 
     // Calculate buybacks amount using configurable percentage
     let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
-    let sol_for_buybacks = available_solana * buyback_percentage / M_HUNDRED;
+    let sol_for_buybacks = u64_mul_div(available_solana, buyback_percentage, M_HUNDRED)?;
 
     // Create signer seeds for sol_treasury
     let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
@@ -127,7 +131,10 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         )?;
 
         // Update buybacks tracking
-        buybacks_ac.total_sol_accumulated += sol_for_buybacks;
+        buybacks_ac.total_sol_accumulated = buybacks_ac
+            .total_sol_accumulated
+            .checked_add(sol_for_buybacks)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         msg!(
             "💰 Transferred {} SOL to buybacks vault ({}%)",
@@ -136,7 +143,9 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         );
     }
 
-    let dev_earnings = available_solana.saturating_sub(sol_for_buybacks);
+    let dev_earnings = available_solana
+        .checked_sub(sol_for_buybacks)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     if dev_earnings > 0 {
         // Transfer SOL from treasury to treasury WSOL account (wraps it)
         anchor_lang::system_program::transfer(
@@ -444,12 +453,12 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         // Prevent overflow by checking limits
         // Calculate: (sol_for_swap * 10^9) / minebtc_received
         // This gives us SOL per MINE_BTC stored with 9-decimal precision
-        (sol_for_swap as u128)
+        let raw_price = (sol_for_swap as u128)
             .checked_mul(1_000_000_000) // Scale by 10^9 for full precision
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(minebtc_received as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .min(u64::MAX as u128) as u64
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        u64::try_from(raw_price).map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0
     };
@@ -528,7 +537,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     }
 
     let current_weighted_avg = if total_weights > 0 {
-        (weighted_sum / total_weights).min(u64::MAX as u128) as u64
+        u64::try_from(weighted_sum / total_weights).map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         current_price
     };
@@ -616,10 +625,18 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     let mut total_weights: u128 = 0;
     for (i, entry) in mine_btc_mining.price_history.iter().enumerate() {
         let weight = (i + 1) as u128;
-        weighted_sum += (entry.price as u128) * weight;
-        total_weights += weight;
+        let price_contribution = (entry.price as u128)
+            .checked_mul(weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        weighted_sum = weighted_sum
+            .checked_add(price_contribution)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        total_weights = total_weights
+            .checked_add(weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
-    let new_avg_price = (weighted_sum / total_weights) as u64;
+    let new_avg_price =
+        u64::try_from(weighted_sum / total_weights).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     // Calculate price change
     let change_from_track = calculate_price_change_pct(mine_btc_mining.track_price, new_avg_price);
@@ -657,7 +674,9 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
                 mine_btc_mining.emission_increase_pct
             );
         } else {
-            let decrease_multiplier = 100u64.saturating_sub(mine_btc_mining.emission_decrease_pct);
+            let decrease_multiplier = 100u64
+                .checked_sub(mine_btc_mining.emission_decrease_pct)
+                .ok_or(ErrorCode::InvalidParameters)?;
             mine_btc_mining.mine_btc_per_round = mine_btc_mining
                 .mine_btc_per_round
                 .checked_mul(decrease_multiplier)
@@ -691,10 +710,19 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
                 .checked_mul(faction_war_config.multiplier_decrease_bps as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 / 10_000;
-            old_multiplier.saturating_sub(decrease)
+            old_multiplier
+                .checked_sub(decrease)
+                .unwrap_or(MIN_FACTION_WAR_MINING_MULTIPLIER_BPS as u128)
         };
-        let min_bps = faction_war_config.multiplier_min_bps as u128;
-        let max_bps = faction_war_config.multiplier_max_bps as u128;
+        let min_bps = (faction_war_config.multiplier_min_bps).clamp(
+            MIN_FACTION_WAR_MINING_MULTIPLIER_BPS,
+            MAX_FACTION_WAR_MINING_MULTIPLIER_BPS,
+        ) as u128;
+        let max_bps = (faction_war_config.multiplier_max_bps).clamp(
+            MIN_FACTION_WAR_MINING_MULTIPLIER_BPS,
+            MAX_FACTION_WAR_MINING_MULTIPLIER_BPS,
+        ) as u128;
+        require!(min_bps <= max_bps, ErrorCode::InvalidParameters);
         faction_war_config.mining_multiplier_bps =
             (new_multiplier.min(max_bps).max(min_bps)) as u16;
         msg!(
@@ -865,12 +893,12 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     let (estimated_lp_amount, adjusted_sol_amount, adjusted_minebtc_amount) = if lp_token_amount > 0
     {
         let required_sol = if lp_supply > 0 && sol_vault_balance > 0 {
-            (lp_token_amount as u128 * sol_vault_balance as u128 / lp_supply as u128) as u64
+            u64_mul_div(lp_token_amount, sol_vault_balance, lp_supply)?
         } else {
             available_sol
         };
         let required_minebtc_post_fee = if lp_supply > 0 && minebtc_vault_balance > 0 {
-            (lp_token_amount as u128 * minebtc_vault_balance as u128 / lp_supply as u128) as u64
+            u64_mul_div(lp_token_amount, minebtc_vault_balance, lp_supply)?
         } else {
             0
         };
@@ -891,10 +919,8 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             mine_btc_mining.lp_operation_pending = false;
             return Ok(());
         }
-        let lp_from_sol =
-            (available_sol as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
-        let required_minebtc_post_fee =
-            (lp_from_sol as u128 * minebtc_vault_balance as u128 / lp_supply as u128) as u64;
+        let lp_from_sol = u64_mul_div(available_sol, lp_supply, sol_vault_balance)?;
+        let required_minebtc_post_fee = u64_mul_div(lp_from_sol, minebtc_vault_balance, lp_supply)?;
         let required_minebtc = gross_up_for_token2022_fee(
             &ctx.accounts.minebtc_mint.to_account_info(),
             required_minebtc_post_fee,
@@ -903,7 +929,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         (lp_from_sol, available_sol, required_minebtc)
     };
 
-    let max_minebtc_with_buffer = adjusted_minebtc_amount + (adjusted_minebtc_amount / 50);
+    let max_minebtc_with_buffer = adjusted_minebtc_amount
+        .checked_add(adjusted_minebtc_amount / 50)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(
         available_minebtc >= max_minebtc_with_buffer,
         ErrorCode::InsufficientTokensInVault
@@ -939,8 +967,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         };
 
     let final_estimated_lp_amount = if lp_supply > 0 && sol_vault_balance > 0 {
-        let lp_from_sol =
-            (final_sol_amount as u128 * lp_supply as u128 / sol_vault_balance as u128) as u64;
+        let lp_from_sol = u64_mul_div(final_sol_amount, lp_supply, sol_vault_balance)?;
         lp_from_sol.saturating_sub(lp_from_sol / 100)
     } else {
         0
@@ -1022,7 +1049,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 LP balance after: {}", lp_balance_after);
     msg!("   💰 LP balance before: {}", lp_balance_before);
-    let lp_tokens_minted = lp_balance_after.saturating_sub(lp_balance_before);
+    let lp_tokens_minted = lp_balance_after
+        .checked_sub(lp_balance_before)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("   💰 LP tokens minted: {}", lp_tokens_minted);
 
     let sol_balance_after = {
@@ -1031,7 +1060,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 SOL balance after: {}", sol_balance_after);
     msg!("   💰 SOL balance before: {}", total_sol_for_lp);
-    let sol_consumed = total_sol_for_lp.saturating_sub(sol_balance_after);
+    let sol_consumed = total_sol_for_lp
+        .checked_sub(sol_balance_after)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("   💰 SOL consumed: {}", sol_consumed);
 
     // ✅ RIGHT: Reloads fresh data from the account info
@@ -1042,7 +1073,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
     msg!("   💰 MINEBTC balance after: {}", available_minebtc_after);
     msg!("   💰 MINEBTC balance before: {}", available_minebtc);
-    let minebtc_consumed = available_minebtc.saturating_sub(available_minebtc_after);
+    let minebtc_consumed = available_minebtc
+        .checked_sub(available_minebtc_after)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("   💰 MINEBTC consumed: {}", minebtc_consumed);
 
     msg!(
@@ -1057,15 +1090,21 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         let lp_token_price = {
             let minebtc_price = mine_btc_mining.recent_price;
             let minebtc_value_in_sol = if minebtc_price > 0 {
-                (minebtc_consumed as u128) * (minebtc_price as u128) / 1_000_000_u128
+                helper::mul_div(minebtc_consumed, minebtc_price, 1_000_000)?
             } else {
                 0
-            } as u64;
-            let total_value_sol = sol_consumed + minebtc_value_in_sol;
-            (total_value_sol as u128) * 1_000_000_000_u128 / (lp_tokens_minted as u128)
+            };
+            let total_value_sol = sol_consumed
+                .checked_add(
+                    u64::try_from(minebtc_value_in_sol)
+                        .map_err(|_| ErrorCode::ArithmeticOverflow)?,
+                )
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            helper::mul_div(total_value_sol, 1_000_000_000, lp_tokens_minted)?
         };
         if lp_token_price > 0 {
-            mine_btc_mining.lp_token_price_in_sol = lp_token_price as u64;
+            mine_btc_mining.lp_token_price_in_sol =
+                u64::try_from(lp_token_price).map_err(|_| ErrorCode::ArithmeticOverflow)?;
         }
         msg!(
             "   💰 LP token price: {} SOL per LP",
@@ -1076,7 +1115,8 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             sol_amount: sol_consumed,
             minebtc_amount: minebtc_consumed,
             lp_tokens_minted,
-            lp_token_price: lp_token_price as u64,
+            lp_token_price: u64::try_from(lp_token_price)
+                .map_err(|_| ErrorCode::ArithmeticOverflow)?,
             timestamp: Clock::get()?.unix_timestamp
         });
 
@@ -1127,7 +1167,10 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     }
 
     // Update state
-    buybacks_account.sol_for_pol = buybacks_account.sol_for_pol.saturating_sub(sol_consumed);
+    buybacks_account.sol_for_pol = buybacks_account
+        .sol_for_pol
+        .checked_sub(sol_consumed)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     mine_btc_mining.lp_operation_pending = false;
 
     msg!("✅ LP addition and burn complete");
@@ -1378,7 +1421,7 @@ fn adjust_sol_for_minebtc_limit(
     );
 
     // Leave room for the 2% buffer on the pre-fee amount.
-    let max_base_minebtc = (max_minebtc_allowed as u128 * 50 / 51) as u64;
+    let max_base_minebtc = u64_mul_div(max_minebtc_allowed, 50, 51)?;
     msg!(
         "   📊 Max base MINEBTC before transfer fee: {} MINEBTC",
         max_base_minebtc as f64 / 1e6
@@ -1399,8 +1442,11 @@ fn adjust_sol_for_minebtc_limit(
     // If pool is empty, use original ratio
     let sol_from_ratio = if lp_supply > 0 && minebtc_vault_balance > 0 && sol_vault_balance > 0 {
         // Use pool ratio based on MINEBTC that reaches pool
-        (minebtc_received_in_pool as u128 * sol_vault_balance as u128
-            / minebtc_vault_balance as u128) as u64
+        u64_mul_div(
+            minebtc_received_in_pool,
+            sol_vault_balance,
+            minebtc_vault_balance,
+        )?
     } else {
         // Pool is empty or invalid, use original ratio
         if original_minebtc_amount > 0 {
@@ -1410,8 +1456,12 @@ fn adjust_sol_for_minebtc_limit(
                 epoch,
             )?
             .post_fee_amount;
-            (minebtc_received_in_pool as u128 * original_sol_amount as u128
-                / original_minebtc_received as u128) as u64
+            require!(original_minebtc_received > 0, ErrorCode::InvalidAmount);
+            u64_mul_div(
+                minebtc_received_in_pool,
+                original_sol_amount,
+                original_minebtc_received,
+            )?
         } else {
             original_sol_amount // Fallback to original if no ratio available
         }
@@ -1419,7 +1469,10 @@ fn adjust_sol_for_minebtc_limit(
 
     // Add slippage tolerance (reduce SOL by 3% to account for price movement and slippage)
     // This ensures we don't exceed slippage limits in Raydium
-    let adjusted_sol_amount = sol_from_ratio.saturating_sub(sol_from_ratio * 3 / 100);
+    let slippage_buffer = u64_mul_div(sol_from_ratio, 3, M_HUNDRED)?;
+    let adjusted_sol_amount = sol_from_ratio
+        .checked_sub(slippage_buffer)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   📊 SOL from ratio (based on MINEBTC after burn): {} SOL",
         sol_from_ratio as f64 / 1e9
@@ -1434,8 +1487,9 @@ fn adjust_sol_for_minebtc_limit(
     // Account for burn tax in the buffer calculation
     // After burn: adjusted_minebtc_amount * 0.99 will reach the pool
     // So max_minebtc_with_buffer should account for this
-    let adjusted_max_minebtc_with_buffer =
-        adjusted_minebtc_amount.saturating_add(adjusted_minebtc_amount / 50);
+    let adjusted_max_minebtc_with_buffer = adjusted_minebtc_amount
+        .checked_add(adjusted_minebtc_amount / 50)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("   ✅ Adjusted amounts:");
     msg!(

@@ -50,18 +50,6 @@ pub fn validate_referrer_rewards_account<'info>(
     Ok(())
 }
 
-pub fn validate_reward_claim_caller(
-    caller: Pubkey,
-    owner: Pubkey,
-    allow_bots_to_claim: bool,
-) -> Result<()> {
-    require!(
-        caller == owner || allow_bots_to_claim,
-        ErrorCode::PermissionlessRewardClaimsDisabled
-    );
-    Ok(())
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Token2022TransferFeeInfo {
     pub transfer_fee_basis_points: u16,
@@ -548,15 +536,33 @@ pub fn calculate_multiplier(
     base_multiplier: u16,
     max_multiplier: u16,
 ) -> Result<u16> {
-    let duration_range = max_lockup.saturating_sub(min_lockup);
-    let multiplier_range = max_multiplier.saturating_sub(base_multiplier);
+    require!(min_lockup <= max_lockup, ErrorCode::InvalidParameters);
+    require!(
+        base_multiplier >= M_HUNDRED as u16
+            && max_multiplier >= base_multiplier
+            && max_multiplier <= 300,
+        ErrorCode::InvalidParameters
+    );
+    require!(
+        lockup_duration >= min_lockup && lockup_duration <= max_lockup,
+        ErrorCode::InvalidParameters
+    );
+
+    let duration_range = max_lockup
+        .checked_sub(min_lockup)
+        .ok_or(ErrorCode::InvalidParameters)?;
+    let multiplier_range = max_multiplier
+        .checked_sub(base_multiplier)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Guard: if min == max lockup, return base multiplier (avoid div by zero)
     if duration_range == 0 {
         return Ok(base_multiplier);
     }
 
-    let duration_above_min = lockup_duration.saturating_sub(min_lockup);
+    let duration_above_min = lockup_duration
+        .checked_sub(min_lockup)
+        .ok_or(ErrorCode::InvalidParameters)?;
 
     let multiplier_increase_u128 = (duration_above_min as u128)
         .checked_mul(multiplier_range as u128)
@@ -566,7 +572,10 @@ pub fn calculate_multiplier(
     let multiplier_increase =
         u16::try_from(multiplier_increase_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
-    Ok(base_multiplier.saturating_add(multiplier_increase))
+    base_multiplier
+        .checked_add(multiplier_increase)
+        .filter(|value| *value <= max_multiplier)
+        .ok_or(ErrorCode::ArithmeticOverflow.into())
 }
 
 /// Add position index to user's minebtc positions
@@ -776,8 +785,14 @@ pub fn init_position(
     position.start_timestamp = current_ts;
     position.multiplier = multiplier;
 
-    let seconds_to_add = lockup_duration.saturating_mul(DAY_IN_SECONDS);
-    position.lockup_end_timestamp = current_ts.saturating_add(seconds_to_add as i64);
+    let seconds_to_add = lockup_duration
+        .checked_mul(DAY_IN_SECONDS)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let seconds_to_add_i64 =
+        i64::try_from(seconds_to_add).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    position.lockup_end_timestamp = current_ts
+        .checked_add(seconds_to_add_i64)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   lockup_end_ts={} (current={} + {}s)",
         position.lockup_end_timestamp,
@@ -852,22 +867,42 @@ pub fn calculate_emergency_tax(
     user_position: &StakedPosition,
     current_ts: i64,
     emergency_tax: u64,
-) -> u64 {
-    let total_lockup_seconds = user_position.lockup_end_timestamp - user_position.start_timestamp;
-    let remaining_seconds = user_position.lockup_end_timestamp - current_ts;
+) -> Result<u64> {
+    let total_lockup_seconds = user_position
+        .lockup_end_timestamp
+        .checked_sub(user_position.start_timestamp)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let remaining_seconds = user_position
+        .lockup_end_timestamp
+        .checked_sub(current_ts)
+        .unwrap_or(0);
 
     // Guard: if lockup already expired, no penalty (remaining <= 0)
     if remaining_seconds <= 0 || total_lockup_seconds <= 0 {
         msg!("   Lockup expired or invalid — no penalty");
-        return 0;
+        return Ok(0);
     }
 
-    let remaining_seconds_pct = (M_HUNDRED as i64 * remaining_seconds) / total_lockup_seconds;
+    let remaining_seconds_pct = (M_HUNDRED as i64)
+        .checked_mul(remaining_seconds)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(total_lockup_seconds)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("   Lockup remaining: {}%", remaining_seconds_pct);
 
     // remaining_seconds_pct is guaranteed positive here, safe to cast
-    let calc_penalty_pct = (emergency_tax * (remaining_seconds_pct as u64)) / M_HUNDRED;
-    (user_position.staked_amount * calc_penalty_pct) / M_HUNDRED
+    let calc_penalty_pct = u64::try_from(mul_div(
+        emergency_tax,
+        remaining_seconds_pct as u64,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(mul_div(
+        user_position.staked_amount,
+        calc_penalty_pct,
+        M_HUNDRED,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
 /// Charge emergency tax for MINEBTC tokens by burning the full penalty amount.
@@ -969,4 +1004,17 @@ pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
     }
     // 1.0x: users get 100% of their mint price as tickets
     total_price / ticket_value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lockup_multiplier_cannot_exceed_three_x() {
+        let multiplier = calculate_multiplier(90, 7, 90, 100, 300).unwrap();
+        assert_eq!(multiplier, 300);
+        assert!(calculate_multiplier(91, 7, 90, 100, 300).is_err());
+        assert!(calculate_multiplier(90, 7, 90, 100, 301).is_err());
+    }
 }

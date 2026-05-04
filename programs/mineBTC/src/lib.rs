@@ -691,15 +691,6 @@ pub mod minebtc {
         user::internal_initialize_player(ctx, faction_id, referral_code)
     }
 
-    /// Opt in or out of letting third-party bots claim rewards on the user's behalf.
-    pub fn set_player_claim_settings(
-        ctx: Context<SetPlayerClaimSettings>,
-        allow_bots_to_claim: bool,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "set_player_claim_settings");
-        user::internal_set_player_claim_settings(ctx, allow_bots_to_claim)
-    }
-
     /// Join a round by placing one or more faction-direction bets.
     pub fn join_bets(
         ctx: Context<JoinBets>,
