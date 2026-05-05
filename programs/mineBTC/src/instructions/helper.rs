@@ -321,8 +321,7 @@ where
 
         let mut data = account.try_borrow_mut_data()?;
         require!(data.len() >= space, ErrorCode::InvalidAccount);
-        data[..8].copy_from_slice(T::DISCRIMINATOR);
-        let mut cursor = &mut data[8..];
+        let mut cursor = &mut data[..];
         initial_data.try_serialize(&mut cursor)?;
         msg!("   ✅ PDA account {} initialized", account.key());
         return Ok(true);
@@ -400,8 +399,7 @@ where
         account.is_writable,
         data.len()
     );
-    data[..DISCRIMINATOR_SIZE].copy_from_slice(T::DISCRIMINATOR);
-    let mut cursor = &mut data[DISCRIMINATOR_SIZE..];
+    let mut cursor = &mut data[..];
     value.try_serialize(&mut cursor)?;
     msg!("   ✅ account {} state persisted", account.key());
     Ok(())

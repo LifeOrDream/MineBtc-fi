@@ -1567,6 +1567,10 @@ async function setRaydiumPoolState(minebtcProgram) {
     [Buffer.from("jackpot-pot")],
     minebtcProgram.programId
   );
+  const [factionWarSolVaultPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("faction-war-sol-vault")],
+    minebtcProgram.programId
+  );
 
   console.log(
     COLOR_INFO,
@@ -1588,6 +1592,7 @@ async function setRaydiumPoolState(minebtcProgram) {
                 globalConfig: globalConfigPDA,
         solRewardsVault: solRewardsVaultPDA,
         solPrizePotVault: solPrizePotVaultPDA,
+        factionWarSolVault: factionWarSolVaultPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
@@ -1596,6 +1601,7 @@ async function setRaydiumPoolState(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ Raydium pool state set successfully!");
     console.log(COLOR_SUCCESS, "✅ SOL rewards vault initialized!");
     console.log(COLOR_SUCCESS, "✅ SOL prize pot vault initialized!");
+    console.log(COLOR_SUCCESS, "✅ Faction-war SOL vault derived!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.raydium_pool_state_set = {
@@ -1605,6 +1611,7 @@ async function setRaydiumPoolState(minebtcProgram) {
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
+    deploymentFile.faction_war_sol_vault_pda = factionWarSolVaultPDA.toString();
         saveDeploymentData();
     } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to set Raydium pool state:", error);

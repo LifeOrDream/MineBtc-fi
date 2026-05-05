@@ -1643,6 +1643,9 @@ impl FactionWarState {
         (NUM_FACTIONS * 1) + // final_ranks
         (NUM_FACTIONS * 1) + // rank_deltas
         (NUM_FACTIONS * 1) + // resolved_directions
+        (NUM_FACTIONS * 32) + // faction_mvp_user
+        (NUM_FACTIONS * 8) + // faction_mvp_score
+        (NUM_FACTIONS * 8) + // faction_mvp_bonus
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_direction_totals
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // loyalty_direction_totals
         (NUM_FACTIONS * 8) + // faction_reward_pools
@@ -1651,9 +1654,6 @@ impl FactionWarState {
         (NUM_FACTIONS * 2) + // faction_round_wins
         (NUM_FACTIONS * 8) + // faction_sol_totals
         (NUM_FACTIONS * 8) + // faction_mutation_scores
-        (NUM_FACTIONS * 32) + // faction_mvp_user
-        (NUM_FACTIONS * 8) + // faction_mvp_score
-        (NUM_FACTIONS * 8) + // faction_mvp_bonus
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_doge_direction_totals
         8 +     // treasury_reward_base_amount
         2 +     // treasury_claimed_bitmap

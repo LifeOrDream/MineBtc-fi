@@ -183,7 +183,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 }
 
 /// Set the Raydium pool state address (admin only)
-/// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
+/// Also initializes SOL vault PDAs if not already initialized.
 ///
 /// Security measure to prevent using malicious pools for swaps.
 /// Only the authorized Raydium pool can be used for price discovery and liquidity operations.
@@ -230,6 +230,23 @@ pub fn set_raydium_pool_state_internal(
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.authority.to_account_info(),
                     to: ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                },
+            ),
+            1,
+        )?;
+    }
+
+    // Initialize faction_war_sol_vault if not already initialized. User bets
+    // transfer tiny cycle splits here, so the PDA must exist rent-exempt before
+    // the first split arrives.
+    let faction_war_sol_vault_lamports = ctx.accounts.faction_war_sol_vault.lamports();
+    if faction_war_sol_vault_lamports == 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.faction_war_sol_vault.to_account_info(),
                 },
             ),
             1,
@@ -1672,6 +1689,17 @@ pub struct SetRaydiumPoolState<'info> {
         owner = system_program.key()
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// CHECK: Faction-war SOL vault (System Account, 0-byte PDA)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
+        seeds = [FACTION_WAR_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub faction_war_sol_vault: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

@@ -1,0 +1,105 @@
+# Deployment and Initialization
+
+Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.js`.
+
+## Main Setup Order
+
+1. `0_deploy_game.js`
+   - Builds/deploys the Anchor `minebtc` program.
+   - Extracts/writes IDL to `target/idl/minebtc.json`.
+   - Writes deployment state under `setup_scripts/deployments/{cluster}.json`.
+
+2. `0_deploy_raydium.js`
+   - Deploys bundled/custom Raydium CP-Swap when not using official Raydium.
+
+3. `1_init_mdoge_token.js`
+   - Creates Token-2022 DogeBTC mint.
+   - Initializes metadata pointer and transfer fee config.
+   - Mints fixed initial supply.
+   - Removes mint authority.
+   - Sets withdraw-withheld authority to the program PDA.
+   - Freezes transfer fee config authority.
+
+4. `2_init_mdoge_SOL_pool.js`
+   - Creates Raydium CP-Swap AMM config.
+   - Initializes DogeBTC-SOL pool.
+   - Adds initial liquidity and optionally burns initial LP.
+
+5. `3_init_mineBTC.js`
+   - Initializes the full MineBTC game/program state in the canonical order below.
+
+## `3_init_mineBTC.js` Canonical Init Order
+
+1. Validate token and Doge collection metadata URIs.
+2. Validate Doge supply and per-faction genesis caps.
+3. Validate round dogeBTC distribution sum.
+4. Validate faction-war reward bps sum.
+5. Initialize MineBTC program:
+   - `GlobalConfig`, `MineBtcMining`, `HodlPool`, `SOL Treasury`, `Autominer Custody`.
+6. Set Raydium pool state and initialize SOL rewards/prize pot vaults.
+7. Add configured factions sequentially.
+8. Initialize system referral and buybacks accounts.
+9. Apply live fee config.
+10. Initialize mining token vault and emission state.
+11. Apply emission controller params.
+12. Deposit mining tokens.
+13. Initialize hashpower config.
+14. Initialize dogeBTC and LP custodian accounts.
+15. Initialize `DogeConfig`.
+16. Seed breeding config.
+17. Initialize `DogeMintConfig`.
+18. Create Doge Metaplex Core collection.
+19. Initialize Doge royalties.
+20. Configure ticket tiers.
+21. Initialize tax config and tax vaults.
+22. Initialize global game state.
+23. Initialize LP token accounts for program custody.
+24. Initialize faction-war config.
+25. Update faction-war active flag.
+26. Update gameplay tuning.
+
+## Important Live Setup Values
+
+From `setup_scripts/config.json` and `3_init_mineBTC.js`:
+
+- Network cluster: devnet in current config.
+- Token decimals: 6.
+- Initial supply: 2,100,000,000 DogeBTC.
+- Transfer tax: 10 bps.
+- Round duration: 60 seconds.
+- Mining emission: `doge_btc_per_round = 1,000,000,000` base units.
+- Genesis Doge mint limit: 36,000.
+- Lifetime Doge max supply: 100,000.
+- Genesis max per configured faction: 3,000 with current 12-faction config.
+- Genesis base price: 1 SOL.
+- Genesis curve A: 2,100,000.
+- Breed base price: 2 SOL.
+- Breed curve A: 200,000.
+- Breeding disabled at launch unless explicitly toggled.
+- Ticket tiers: 0.001 SOL, 0.01 SOL, 0.1 SOL equivalent point values.
+- Hashpower lockup multiplier: 1x to 3x.
+
+## Fee Config Applied By Init Script
+
+`LIVE_FEE_CONFIG` in `3_init_mineBTC.js` currently sets:
+
+- Protocol fee: 15% of SOL bets.
+- Buyback/POL share: 80% of treasury SOL.
+- Stakers share: 10% of protocol fee.
+- dogeBTC stakers: 3% of round emission.
+- Exact winners: 50%.
+- Same-faction non-winning directions: 21% each.
+- Jackpot: 5%.
+- HODL tax: 10%.
+- Snapshot interval: 5 minutes in setup script.
+- Referral cut: 5% of protocol fee cross-country, 10% same-country.
+- Cycle SOL split: 5% of gross bet reserved for faction-war SOL jackpot.
+
+## Keeper and Test Scripts
+
+- `setup_scripts/loop_scripts/game_loop.js` - round keeper loop.
+- `setup_scripts/loop_scripts/price_snapshot_loop.js` - economy/price cycle helper.
+- `setup_scripts/economy_cycle_step.js` - economy cycle step runner.
+- `setup_scripts/end_round_4.mjs` - round ending helper.
+- `setup_scripts/test_economy.js`, `test_tax_harvest.js`, `test_genescience.js`, `sim_egg_mints.js`, `test.js` - focused simulation/test helpers.
+- `setup_scripts/user_activity/` - wallet and user activity helpers.
