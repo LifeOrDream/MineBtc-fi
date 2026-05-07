@@ -4,6 +4,7 @@ pub mod economy;
 pub mod faction_war;
 pub mod game;
 pub mod helper;
+pub mod marketplace_cpi;
 pub mod stake;
 pub mod tax;
 pub mod user;

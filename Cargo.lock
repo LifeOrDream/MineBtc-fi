@@ -611,6 +611,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "degenbtc_market"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "mpl-core",
+ "solana-program",
+]
+
+[[package]]
 name = "derivation-path"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -984,6 +993,7 @@ dependencies = [
  "anchor-lang",
  "anchor-spl",
  "constant_time_eq",
+ "degenbtc_market",
  "mpl-core",
  "mpl-token-metadata",
  "raydium-cp-swap",

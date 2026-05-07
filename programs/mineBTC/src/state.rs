@@ -231,6 +231,12 @@ pub const FACTION_TREASURY_VAULT_SEED: &[u8] = b"faction-treasury-vault";
 pub const NFT_FLOOR_SWEEP_VAULT_SEED: &[u8] = b"nft-floor-sweep-vault";
 pub const NFT_SALE_SOL_VAULT_SEED: &[u8] = b"nft-sale-sol-vault";
 
+// PDAs for NFT recycle inventory + lootbox + market integration
+pub const INVENTORY_POOL_SEED: &[u8] = b"inventory-pool";
+pub const RECYCLED_ENTRY_SEED: &[u8] = b"recycled-entry";
+pub const MARKET_METRICS_SEED: &[u8] = b"market-metrics";
+pub const INVENTORY_SWEEP_VAULT_SEED: &[u8] = b"inventory-sweep-vault";
+
 // ==========  DOGE NFT CONSTANTS ========== //
 pub const MAX_STAKED_DOGES: usize = 3; // Maximum number of doges a user can stake
 pub const MAX_FREE_DOGE_MINTS_PER_USER: u8 = 5;
@@ -238,6 +244,34 @@ pub const MAX_FREE_DOGE_MINTS_PER_USER: u8 = 5;
 pub const MAX_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL max keeper compensation per autominer round
 pub const TICKET_AUTOMINER_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL keeper reserve for each ticket autominer round
 pub const MIN_SOL_BET_PER_POSITION: u64 = 100_000; // 0.0001 SOL minimum per country-direction bet
+
+// ==========  RECYCLE / LOOTBOX / MARKETPLACE TUNABLES ========== //
+/// Maximum number of NFTs in the inventory PDA at any time.
+pub const MAX_INVENTORY: u32 = 200;
+/// Hard cap on concurrent program-owned listings.
+pub const MAX_LISTED: u32 = 25;
+/// Below this, lootbox drops pause to avoid empty-lottery feel.
+pub const MIN_LOOTBOX_POOL: u32 = 10;
+/// XP value at which the quality_score's xp component saturates.
+pub const MAX_XP_FOR_QUALITY: u32 = 100_000;
+
+/// Cooldown between successful lootbox drops to the same wallet.
+pub const LOOTBOX_COOLDOWN_SECONDS: i64 = 259_200; // 3 days
+/// Stop dropping if the recipient already holds this many Doges.
+pub const MAX_DOGES_PER_WALLET_FOR_DROP: u8 = 5;
+/// Base drop chance in basis points before DI / pool / quality adjustments.
+pub const LOOTBOX_BASE_DROP_BPS: u16 = 1500; // 15%
+pub const LOOTBOX_MIN_DROP_BPS: u16 = 500; // 5%
+pub const LOOTBOX_MAX_DROP_BPS: u16 = 8500; // 85%
+
+// Demand Index thresholds (off-chain pushes value in [-100, 100]).
+pub const DI_HOT: i16 = 60;
+pub const DI_FIRM: i16 = 20;
+pub const DI_NEUTRAL: i16 = -20;
+pub const DI_SOFT: i16 = -60;
+
+/// Inventory proceeds split: 50% sweep reserve, 50% protocol pipeline.
+pub const INVENTORY_SWEEP_RESERVE_BPS: u16 = 5000;
 ///
 /// ------------ GLOBAL CONFIG ------------
 /// Global configuration for the program
@@ -1090,6 +1124,32 @@ pub struct PlayerData {
     /// differs from this), the running score is reset to 0 and this is updated.
     /// This avoids needing a separate per-user reset instruction at cycle rollover.
     pub current_faction_war_score_cycle_id: u64,
+
+    /// Pending lootbox roll that was earned by the player on the last
+    /// faction-war claim and not yet resolved by `process_lootbox_drops`.
+    /// `None` means no roll is pending. Cleared by the cranker after
+    /// running the roll (win or miss).
+    pub pending_lootbox_roll: Option<LootboxRollClaim>,
+
+    /// Unix timestamp of the most recent successful lootbox drop. Used to
+    /// enforce `LOOTBOX_COOLDOWN_SECONDS` between drops to the same wallet.
+    pub last_lootbox_drop_at: i64,
+}
+
+/// Snapshot of context at the time a player became eligible for a lootbox roll.
+/// Stored on `PlayerData.pending_lootbox_roll` so the cranker can pick a
+/// candidate Doge for that player. The win/miss roll itself is computed
+/// on-chain in `process_lootbox_drops` using slot-hash entropy + this seed.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LootboxRollClaim {
+    pub faction_war_id: u64,
+    pub faction_id: u8,
+    pub cycle_seed: [u8; 32],
+}
+
+impl LootboxRollClaim {
+    /// Borsh size: 8 (faction_war_id) + 1 (faction_id) + 32 (cycle_seed) = 41 bytes.
+    pub const SIZE: usize = 8 + 1 + 32;
 }
 
 impl PlayerData {
@@ -1134,7 +1194,10 @@ impl PlayerData {
         4 +     // gameplay_doge_xp (u32)
         8 +     // gameplay_unlock_request_faction_war (u64)
         8 +     // current_faction_war_score (u64)
-        8; // current_faction_war_score_cycle_id (u64)
+        8 +     // current_faction_war_score_cycle_id (u64)
+        // Lootbox additions:
+        1 + LootboxRollClaim::SIZE + // pending_lootbox_roll: Option<LootboxRollClaim>
+        8; // last_lootbox_drop_at (i64)
 }
 
 /// Individual MineBtc staking position
@@ -1768,4 +1831,187 @@ impl UserFactionWarBets {
             sol_direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
         }
     }
+}
+
+// ========================================================================================
+// ============================== RECYCLE / LOOTBOX / MARKET ==============================
+// ========================================================================================
+
+/// Status flags for `RecycledEntry`. `Sold` and `Dropped` are terminal and
+/// close the account; only `Pending`, `Listed`, and `Lootbox` ever persist on chain.
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecycledStatus {
+    Pending = 0,
+    Listed = 1,
+    Lootbox = 2,
+}
+
+impl RecycledStatus {
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Pending),
+            1 => Some(Self::Listed),
+            2 => Some(Self::Lootbox),
+            _ => None,
+        }
+    }
+}
+
+/// Origin of an inventory entry. Recycled = sent_to_heaven from a player.
+/// Swept = bought from another player's listing on the open market.
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecycledOrigin {
+    Recycled = 0,
+    Swept = 1,
+}
+
+/// Single global inventory pool PDA. Doubles as the on-chain custody address
+/// (mpl-core asset `owner` field is set to this PDA when an asset is recycled,
+/// listed, or swept). Seeds: `[b"inventory-pool"]`.
+#[account]
+pub struct InventoryPool {
+    pub bump: u8,
+    pub crank_authority: Pubkey,
+    /// Cached pubkey of the marketplace program for CPI validation.
+    pub marketplace_program: Pubkey,
+    /// Cached marketplace config PDA inside the marketplace program.
+    pub marketplace_config: Pubkey,
+
+    /// Live counts (always: pending + lootbox + listed = total_count).
+    pub total_count: u32,
+    pub pending_count: u32,
+    pub lootbox_count: u32,
+    pub listed_count: u32,
+
+    /// Lifetime analytics counters.
+    pub total_recycled: u64,
+    pub total_listed: u64,
+    pub total_sold: u64,
+    pub total_dropped: u64,
+    pub total_swept: u64,
+}
+
+impl InventoryPool {
+    pub const LEN: usize = DISCRIMINATOR_SIZE
+        + 1   // bump
+        + 32  // crank_authority
+        + 32  // marketplace_program
+        + 32  // marketplace_config
+        + 4 * 4   // counts
+        + 5 * 8; // lifetime counters
+}
+
+/// One per Doge currently held by `inventory_pda`. Closes on Sold or Dropped.
+/// Seeds: `[b"recycled-entry", asset]`.
+#[account]
+pub struct RecycledEntry {
+    pub bump: u8,
+    pub asset: Pubkey,
+    pub faction_id: u8,
+    /// 0..=10_000. Snapshot at intake — used for listing-price modeling
+    /// and lootbox priority.
+    pub quality_score: u16,
+    pub recycled_at: i64,
+    /// `RecycledStatus` enum value.
+    pub status: u8,
+    /// Live listing price; 0 if not listed.
+    pub listing_price: u64,
+    /// `RecycledOrigin` enum value.
+    pub origin: u8,
+}
+
+impl RecycledEntry {
+    pub const LEN: usize = DISCRIMINATOR_SIZE
+        + 1   // bump
+        + 32  // asset
+        + 1   // faction_id
+        + 2   // quality_score
+        + 8   // recycled_at
+        + 1   // status
+        + 8   // listing_price
+        + 1; // origin
+}
+
+/// Off-chain crank pushes the demand index + market snapshot here.
+/// Seeds: `[b"market-metrics"]`.
+#[account]
+pub struct MarketMetrics {
+    pub bump: u8,
+    /// Range: [-100, +100]. Higher = stronger demand.
+    pub demand_index: i16,
+    pub last_updated: i64,
+    pub floor_price_lamports: u64,
+    pub avg_sell_price_24h: u64,
+    /// Total active listings on the marketplace (mirrored from indexer).
+    pub listings_count: u32,
+    pub sales_count_24h: u32,
+    /// Crank that may push updates here. Separate from admin so cranks can
+    /// be rotated without an admin handover.
+    pub crank_authority: Pubkey,
+    pub _reserved: [u8; 32],
+}
+
+impl MarketMetrics {
+    pub const LEN: usize = DISCRIMINATOR_SIZE
+        + 1   // bump
+        + 2   // demand_index
+        + 8   // last_updated
+        + 8   // floor_price_lamports
+        + 8   // avg_sell_price_24h
+        + 4   // listings_count
+        + 4   // sales_count_24h
+        + 32  // crank_authority
+        + 32; // reserved
+}
+
+/// Compute a deterministic 0..=10_000 quality score for a Doge being recycled
+/// or swept into inventory. Used by the off-chain disposition cranker for
+/// listing-price modeling and by the lootbox cranker for candidate weighting.
+///
+/// Components:
+/// - multiplier above base, scaled to 6_000
+/// - xp, scaled to 3_000 (saturates at MAX_XP_FOR_QUALITY)
+/// - breed_count, up to 1_000
+pub fn compute_quality_score(multiplier: u32, xp: u32, breed_count: u8) -> u16 {
+    let base = BASE_MULTIPLIER as u64;
+    let mult_above_base = (multiplier as u64).saturating_sub(base);
+    let mult_cap = base.saturating_mul(4); // up to 4x above base ≈ 5x total
+    let mult_component = (mult_above_base.min(mult_cap)).saturating_mul(6_000) / mult_cap.max(1);
+
+    let xp_component = ((xp as u64).min(MAX_XP_FOR_QUALITY as u64)).saturating_mul(3_000)
+        / (MAX_XP_FOR_QUALITY as u64).max(1);
+
+    let breed_component = (breed_count.min(5) as u64) * 200;
+
+    let total = mult_component + xp_component + breed_component;
+    total.min(10_000) as u16
+}
+
+/// Lootbox drop chance in basis points based on demand index, pool size, and
+/// the candidate entry's quality score. Always returns within
+/// [LOOTBOX_MIN_DROP_BPS, LOOTBOX_MAX_DROP_BPS].
+pub fn compute_drop_chance_bps(
+    demand_index: i16,
+    lootbox_pool_size: u32,
+    quality_score: u16,
+) -> u16 {
+    let base = LOOTBOX_BASE_DROP_BPS as i32;
+    let di_adjust: i32 = if demand_index < -60 {
+        1500
+    } else if demand_index < -20 {
+        500
+    } else if demand_index < 20 {
+        0
+    } else if demand_index < 60 {
+        -500
+    } else {
+        -1000
+    };
+    let pool_pressure = ((lootbox_pool_size as i32 - 50).max(0) * 50).min(2000);
+    let quality_factor = ((quality_score as i32 - 5_000) / 5).clamp(-300, 300);
+
+    let raw = base + di_adjust + pool_pressure + quality_factor;
+    raw.clamp(LOOTBOX_MIN_DROP_BPS as i32, LOOTBOX_MAX_DROP_BPS as i32) as u16
 }

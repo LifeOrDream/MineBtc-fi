@@ -227,4 +227,44 @@ pub enum ErrorCode {
 
     #[msg("No free Doge mints remaining for this user")]
     NoFreeDogeMintsRemaining,
+
+    // ============================ Inventory / Lootbox / Market ============================
+    #[msg("Inventory pool is at MAX_INVENTORY capacity")]
+    InventoryFull,
+
+    #[msg("Recycled entry is in an invalid status for this operation")]
+    InvalidRecycledStatus,
+
+    #[msg("Caller is not the configured crank authority")]
+    InvalidCrankAuthority,
+
+    #[msg("Marketplace program account does not match cached pubkey")]
+    InvalidMarketplaceProgram,
+
+    #[msg("Marketplace config account does not match cached pubkey")]
+    InvalidMarketplaceConfig,
+
+    #[msg("Player has no pending lootbox roll")]
+    NoLootboxRoll,
+
+    #[msg("Lootbox candidate Doge does not match the player's faction")]
+    LootboxFactionMismatch,
+
+    #[msg("Lootbox cooldown has not elapsed for this player")]
+    LootboxCooldownActive,
+
+    #[msg("Recipient already holds the maximum number of Doges for drops")]
+    LootboxRecipientCapped,
+
+    #[msg("Lootbox pool size is below MIN_LOOTBOX_POOL")]
+    LootboxPoolTooSmall,
+
+    #[msg("Inventory listing price is below the marketplace minimum")]
+    ListingPriceTooLow,
+
+    #[msg("Inventory PDA does not own this asset")]
+    AssetNotInInventory,
+
+    #[msg("Demand index out of range [-100, 100]")]
+    DemandIndexOutOfRange,
 }

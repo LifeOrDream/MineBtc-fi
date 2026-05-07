@@ -1343,41 +1343,58 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     Ok(())
 }
 
-/// Send an doge to heaven (burn it) to claim accumulated rewards
-pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
-    crate::log_fn!("doges", "int_send_to_heaven");
-    let doge_metadata = &ctx.accounts.doge_metadata;
-    let accumulated_val = doge_metadata.accumulated_val;
+/// Recycle a Doge into the program-owned inventory pool. Replaces the old
+/// `send_to_heaven` burn flow.
+///
+/// Behavior:
+/// 1. Pays the user any `accumulated_val` they had earned (same as before).
+/// 2. Resets multiplier (→ BASE_MULTIPLIER), xp (→ 0), accumulated_val (→ 0).
+///    DNA, breed_count, faction_id, and parent lineage are preserved so
+///    visual identity persists into the next owner.
+/// 3. Transfers the mpl-core asset from the user to `inventory_pda` (= the
+///    `InventoryPool` account, which doubles as the global custody address).
+/// 4. Initializes a `RecycledEntry` for this asset with status Pending so the
+///    off-chain disposition cranker can pick it up.
+/// 5. Bumps inventory pool counters and emits `DogeRecycled`.
+pub fn int_recycle_doge(ctx: Context<RecycleDoge>) -> Result<()> {
+    crate::log_fn!("doges", "int_recycle_doge");
     let current_time = Clock::get()?.unix_timestamp;
 
-    // Verify not incubated (should be default if user holds it, but double check)
+    let asset_key = ctx.accounts.doge_asset.key();
+    let metadata = &ctx.accounts.doge_metadata;
+    let accumulated_val = metadata.accumulated_val;
+    let multiplier_before = metadata.multiplier;
+    let xp_before = metadata.xp;
+    let breed_count = metadata.breed_count;
+    let faction_id = metadata.faction_id;
+
+    // Verify not incubated (locked-for-gameplay Doges have transferred custody
+    // to a different PDA, so this branch is mostly defensive).
     require!(
-        doge_metadata.incubated_player_data == Pubkey::default(),
+        metadata.incubated_player_data == Pubkey::default(),
         ErrorCode::DogeAlreadyAtGuard
     );
 
-    msg!("🔥 Burning Doge NFT to send to heaven...");
-    msg!("   Doge mint: {}", doge_metadata.mint);
+    // Inventory capacity guard — prevent unbounded growth.
+    require!(
+        ctx.accounts.inventory_pool.total_count < MAX_INVENTORY,
+        ErrorCode::InventoryFull
+    );
+
+    msg!("♻️  Recycling Doge into inventory pool...");
+    msg!("   Asset: {}", asset_key);
     msg!("   Accumulated Value: {}", accumulated_val);
-    msg!("   Supply accounting: burn does not reduce lifetime minted counter");
+    msg!(
+        "   Pre-recycle stats: multiplier={} xp={} breed_count={} faction_id={}",
+        multiplier_before,
+        xp_before,
+        breed_count,
+        faction_id
+    );
 
-    // Burn the NFT
-    crate::mpl_core_helpers::burn_mpl_core_asset(
-        &ctx.accounts.doge_asset.to_account_info(),
-        ctx.accounts
-            .doge_collection
-            .as_ref()
-            .map(|c| c.to_account_info())
-            .as_ref(),
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.mpl_core_program.to_account_info(),
-        None,
-    )?;
-
-    // Transfer accumulated tokens if any
+    // Pay accumulated_val to the user (same logic as old send_to_heaven).
     if accumulated_val > 0 {
-        msg!("💸 Transferring {} MINEBTC to user...", accumulated_val);
+        msg!("💸 Transferring {} degenBTC to user...", accumulated_val);
 
         let seeds = &[
             MINE_BTC_VAULT_AUTHORITY_SEED,
@@ -1400,7 +1417,6 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
             MINEBTC_DECIMALS,
         )?;
 
-        // Update mining stats
         let mining_state = &mut ctx.accounts.mine_btc_mining;
         mining_state.total_tokens_distributed = mining_state
             .total_tokens_distributed
@@ -1408,15 +1424,81 @@ pub fn int_send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    // Emit event
-    emit!(DogeSentToHeaven {
-        doge_mint: doge_metadata.mint,
-        user: ctx.accounts.user.key(),
+    // Compute the quality score from the PRE-reset stats, then reset metadata.
+    let quality_score = compute_quality_score(multiplier_before, xp_before, breed_count);
+    {
+        let metadata_mut = &mut ctx.accounts.doge_metadata;
+        metadata_mut.accumulated_val = 0;
+        metadata_mut.multiplier = BASE_MULTIPLIER;
+        metadata_mut.xp = 0;
+        metadata_mut.incubated_player_data = Pubkey::default();
+    }
+
+    // Transfer the mpl-core asset user → inventory_pda. The user is the
+    // current owner and signs as the authority; mineBTC's collection account
+    // is passed because the Doge collection requires it on every transfer.
+    crate::mpl_core_helpers::transfer_mpl_core_asset(
+        &ctx.accounts.doge_asset.to_account_info(),
+        ctx.accounts
+            .doge_collection
+            .as_ref()
+            .map(|c| c.to_account_info())
+            .as_ref(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.inventory_pda.to_account_info(),
+        &ctx.accounts.mpl_core_program.to_account_info(),
+        None,
+    )?;
+
+    // Initialize the RecycledEntry. (Anchor `init` runs on entry — the
+    // account is already created when we get here; we just populate its
+    // fields with the correct status/quality before returning.)
+    {
+        let entry = &mut ctx.accounts.recycled_entry;
+        entry.bump = ctx.bumps.recycled_entry;
+        entry.asset = asset_key;
+        entry.faction_id = faction_id;
+        entry.quality_score = quality_score;
+        entry.recycled_at = current_time;
+        entry.status = RecycledStatus::Pending as u8;
+        entry.listing_price = 0;
+        entry.origin = RecycledOrigin::Recycled as u8;
+    }
+
+    // Bump pool counters.
+    {
+        let pool = &mut ctx.accounts.inventory_pool;
+        pool.total_count = pool
+            .total_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        pool.pending_count = pool
+            .pending_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        pool.total_recycled = pool
+            .total_recycled
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
+            "📊 Inventory pool: total={} pending={} lootbox={} listed={}",
+            pool.total_count,
+            pool.pending_count,
+            pool.lootbox_count,
+            pool.listed_count
+        );
+    }
+
+    emit!(DogeRecycled {
+        asset: asset_key,
+        former_owner: ctx.accounts.user.key(),
         accumulated_val,
+        quality_score,
         timestamp: current_time,
     });
 
-    msg!("✅ [send_to_heaven] Doge sent to heaven successfully");
+    msg!("✅ [recycle_doge] Doge recycled into inventory");
 
     Ok(())
 }
@@ -2382,31 +2464,63 @@ pub struct UnstakeDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SendToHeaven<'info> {
+pub struct RecycleDoge<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    /// Existing Doge metadata account. Mutated in-place (multiplier, xp,
+    /// accumulated_val reset to fresh-start values). NOT closed — the same
+    /// metadata follows the asset to its next owner.
     #[account(
         mut,
-        close = user,
         seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
         bump = doge_metadata.bump,
         constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
     )]
     pub doge_metadata: Account<'info, DogeMetadata>,
 
-    /// Metaplex Core asset (will be burnt)
+    /// CHECK: Metaplex Core asset; ownership and validity enforced by mpl-core
+    /// during the TransferV1 CPI. Currently owned by `user`; becomes owned by
+    /// `inventory_pda` after this instruction.
     #[account(mut)]
-    /// CHECK: Verified via get_mpl_core_owner helper (implicit in burn)
     pub doge_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Doge
-    /// CHECK: Optional collection
+    /// CHECK: Optional Doge collection account. Required by mpl-core whenever
+    /// the asset belongs to a collection (which all Doges do post-genesis).
     pub doge_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
     #[account(address = MPL_CORE_PROGRAM_ID)]
     pub mpl_core_program: UncheckedAccount<'info>,
+
+    /// Global inventory pool — counters bumped here. Same PDA acts as the
+    /// new owner of the recycled mpl-core asset (custody).
+    #[account(
+        mut,
+        seeds = [INVENTORY_POOL_SEED],
+        bump = inventory_pool.bump,
+    )]
+    pub inventory_pool: Box<Account<'info, InventoryPool>>,
+
+    /// CHECK: Inventory custody PDA. The mpl-core asset's `owner` field is
+    /// rewritten to this address by the transfer CPI. It is the *same* PDA
+    /// as `inventory_pool` (we just need a separate AccountInfo binding for
+    /// mpl-core to see). Validated by seeds.
+    #[account(
+        seeds = [INVENTORY_POOL_SEED],
+        bump = inventory_pool.bump,
+    )]
+    pub inventory_pda: UncheckedAccount<'info>,
+
+    /// New per-asset entry created when recycled. Closed when sold or dropped.
+    #[account(
+        init,
+        payer = user,
+        space = RecycledEntry::LEN,
+        seeds = [RECYCLED_ENTRY_SEED, doge_asset.key().as_ref()],
+        bump,
+    )]
+    pub recycled_entry: Box<Account<'info, RecycledEntry>>,
 
     // Mining accounts for token transfer
     #[account(

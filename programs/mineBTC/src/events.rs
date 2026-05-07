@@ -223,16 +223,17 @@ pub struct DogeUnstaked {
     pub timestamp: i64,
 }
 
-/// Event emitted when an doge is sent to heaven (burnt) for rewards
+/// Event emitted when a Doge is recycled (formerly "sent to heaven"). The user
+/// receives any accumulated_val, and the NFT is transferred into the global
+/// inventory PDA for later listing or lootbox distribution. The asset is NOT
+/// burned — its DNA / faction / breed_count persist; multiplier, xp, and
+/// accumulated_val are reset.
 #[event]
-pub struct DogeSentToHeaven {
-    /// Doge mint address that was burnt
-    pub doge_mint: Pubkey,
-    /// User who sent the doge to heaven
-    pub user: Pubkey,
-    /// Accumulated value claimed
+pub struct DogeRecycled {
+    pub asset: Pubkey,
+    pub former_owner: Pubkey,
     pub accumulated_val: u64,
-    /// Timestamp of the action
+    pub quality_score: u16,
     pub timestamp: i64,
 }
 
@@ -822,5 +823,111 @@ pub struct FactionWarAutoSettled {
 pub struct GamePauseToggled {
     pub is_paused: bool,
     pub authority: Pubkey,
+    pub timestamp: i64,
+}
+
+// ========================================================================================
+// ============================ INVENTORY / LOOTBOX / MARKET ==============================
+// ========================================================================================
+
+/// One-time emit when the inventory pool is initialized.
+#[event]
+pub struct InventoryPoolInitialized {
+    pub crank_authority: Pubkey,
+    pub marketplace_program: Pubkey,
+    pub marketplace_config: Pubkey,
+}
+
+/// Inventory PDA listed an NFT on the marketplace.
+#[event]
+pub struct InventoryListed {
+    pub asset: Pubkey,
+    pub price_lamports: u64,
+    pub source_status: u8, // RecycledStatus before listing
+    pub timestamp: i64,
+}
+
+/// Inventory PDA cancelled one of its listings; asset returns to inventory.
+#[event]
+pub struct InventoryCancelled {
+    pub asset: Pubkey,
+    pub timestamp: i64,
+}
+
+/// Inventory PDA updated the listing price of one of its assets.
+#[event]
+pub struct InventoryPriceUpdated {
+    pub asset: Pubkey,
+    pub price_lamports: u64,
+    pub timestamp: i64,
+}
+
+/// Inventory PDA bought a player listing from the open market (sweep buy).
+#[event]
+pub struct InventorySwept {
+    pub asset: Pubkey,
+    pub price_lamports: u64,
+    pub seller: Pubkey,
+    pub timestamp: i64,
+}
+
+/// An entry's status was flipped to Lootbox by the disposition cranker.
+#[event]
+pub struct InventoryLootboxFlagged {
+    pub asset: Pubkey,
+    pub timestamp: i64,
+}
+
+/// A lootbox roll resolved into a successful drop. Asset transferred to winner.
+#[event]
+pub struct LootboxNftWon {
+    pub asset: Pubkey,
+    pub winner: Pubkey,
+    pub faction_id: u8,
+    pub roll_value: u16,
+    pub threshold_bps: u16,
+    pub timestamp: i64,
+}
+
+/// A lootbox roll resolved into a miss. The asset stays in the pool.
+#[event]
+pub struct LootboxRollMissed {
+    pub winner: Pubkey,
+    pub roll_value: u16,
+    pub threshold_bps: u16,
+    pub timestamp: i64,
+}
+
+/// `handle_inventory_proceeds` split accumulated inventory SOL into the sweep
+/// reserve and the protocol fee pipeline.
+#[event]
+pub struct InventoryProceedsRouted {
+    pub to_sweep: u64,
+    pub to_protocol: u64,
+    pub timestamp: i64,
+}
+
+/// Cranker observed an `NftSold` event on the marketplace where seller ==
+/// inventory_pda, and called `inventory_finalize_sale` to clean up the on-chain
+/// state: `RecycledEntry` closed, pool counters decremented. Indexers should
+/// rely on this event (not the marketplace `NftSold`) when reconciling pool
+/// composition, because state mutations only happen here.
+#[event]
+pub struct InventorySaleFinalized {
+    pub asset: Pubkey,
+    pub buyer: Pubkey,
+    pub price_lamports: u64,
+    pub fee_lamports: u64,
+    pub timestamp: i64,
+}
+
+/// Crank pushed a new demand-index snapshot to `MarketMetrics`.
+#[event]
+pub struct MarketMetricsUpdated {
+    pub demand_index: i16,
+    pub floor_price_lamports: u64,
+    pub avg_sell_price_24h: u64,
+    pub listings_count: u32,
+    pub sales_count_24h: u32,
     pub timestamp: i64,
 }

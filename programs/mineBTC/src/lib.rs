@@ -44,6 +44,7 @@ pub use instructions::doges::*;
 pub use instructions::economy::*;
 pub use instructions::faction_war::*;
 pub use instructions::game::*;
+pub use instructions::marketplace_cpi::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
@@ -69,6 +70,7 @@ pub mod minebtc {
     use instructions::economy::{self};
     use instructions::faction_war::{self};
     use instructions::game::{self};
+    use instructions::marketplace_cpi::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
     use instructions::user::{self};
@@ -952,10 +954,12 @@ pub mod minebtc {
         doges::int_breed_doges(ctx)
     }
 
-    /// Send an doge to heaven (burn for rewards)
-    pub fn send_to_heaven(ctx: Context<SendToHeaven>) -> Result<()> {
-        crate::log_fn!("lib", "send_to_heaven");
-        doges::int_send_to_heaven(ctx)
+    /// Recycle a Doge: claim accumulated_val, transfer the NFT into the
+    /// global inventory pool for later listing or lootbox distribution.
+    /// Replaces the old `send_to_heaven` burn flow (no more burns).
+    pub fn recycle_doge(ctx: Context<RecycleDoge>) -> Result<()> {
+        crate::log_fn!("lib", "recycle_doge");
+        doges::int_recycle_doge(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -1007,5 +1011,117 @@ pub mod minebtc {
         set_return_data(&serialized);
 
         Ok(())
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // -------------------- INVENTORY / LOOTBOX / MARKETPLACE INTEGRATION ---------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// Admin one-shot: initialize the inventory pool, market metrics, and
+    /// inventory sweep vault. Caches the standalone marketplace program +
+    /// config pubkeys so future CPIs can validate them.
+    pub fn init_inventory_pool(
+        ctx: Context<InitInventoryPool>,
+        crank_authority: Pubkey,
+        marketplace_program: Pubkey,
+        marketplace_config: Pubkey,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "init_inventory_pool");
+        admin::internal_init_inventory_pool(
+            ctx,
+            crank_authority,
+            marketplace_program,
+            marketplace_config,
+        )
+    }
+
+    /// Crank-only. Pushes the off-chain demand-index snapshot on-chain.
+    pub fn update_market_metrics(
+        ctx: Context<UpdateMarketMetrics>,
+        demand_index: i16,
+        floor_price_lamports: u64,
+        avg_sell_price_24h: u64,
+        listings_count: u32,
+        sales_count_24h: u32,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "update_market_metrics");
+        marketplace_cpi::internal_update_market_metrics(
+            ctx,
+            demand_index,
+            floor_price_lamports,
+            avg_sell_price_24h,
+            listings_count,
+            sales_count_24h,
+        )
+    }
+
+    /// Crank-only. Lists a recycled or lootbox-flagged Doge on the standalone
+    /// marketplace at `price_lamports`. Inventory PDA signs as seller.
+    pub fn inventory_list_nft(ctx: Context<InventoryListNft>, price_lamports: u64) -> Result<()> {
+        crate::log_fn!("lib", "inventory_list_nft");
+        marketplace_cpi::internal_inventory_list_nft(ctx, price_lamports)
+    }
+
+    /// Crank-only. Cancels an inventory listing and returns the asset to inventory.
+    pub fn inventory_cancel_listing(ctx: Context<InventoryCancelListing>) -> Result<()> {
+        crate::log_fn!("lib", "inventory_cancel_listing");
+        marketplace_cpi::internal_inventory_cancel_listing(ctx)
+    }
+
+    /// Crank-only. Updates the price of an existing inventory listing.
+    pub fn inventory_update_price(
+        ctx: Context<InventoryUpdatePrice>,
+        new_price_lamports: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "inventory_update_price");
+        marketplace_cpi::internal_inventory_update_price(ctx, new_price_lamports)
+    }
+
+    /// Crank-only. Flips a Pending entry to Lootbox status (pure on-chain
+    /// state change — no marketplace interaction).
+    pub fn inventory_set_lootbox(ctx: Context<InventorySetLootbox>) -> Result<()> {
+        crate::log_fn!("lib", "inventory_set_lootbox");
+        marketplace_cpi::internal_inventory_set_lootbox(ctx)
+    }
+
+    /// Crank-only. Sweep buy: consumes SOL from the inventory sweep vault to
+    /// purchase a player's listing on the marketplace. The asset lands in
+    /// inventory custody.
+    pub fn inventory_buy_listing(
+        ctx: Context<InventoryBuyListing>,
+        listing_price_lamports: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "inventory_buy_listing");
+        marketplace_cpi::internal_inventory_buy_listing(ctx, listing_price_lamports)
+    }
+
+    /// Crank-only. Drains lamports accumulated on inventory_pda from sale
+    /// proceeds, splitting 50% to the sweep vault and 50% to sol_treasury
+    /// (where `distribute_sol_fees` later picks them up).
+    pub fn handle_inventory_proceeds(ctx: Context<HandleInventoryProceeds>) -> Result<()> {
+        crate::log_fn!("lib", "handle_inventory_proceeds");
+        marketplace_cpi::internal_handle_inventory_proceeds(ctx)
+    }
+
+    /// Crank-only. Called after a marketplace `NftSold` event where seller ==
+    /// inventory_pda. Closes the corresponding RecycledEntry, decrements
+    /// pool counters, and emits `InventorySaleFinalized` for indexers.
+    pub fn inventory_finalize_sale(
+        ctx: Context<InventoryFinalizeSale>,
+        price_lamports: u64,
+        fee_lamports: u64,
+        buyer: Pubkey,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "inventory_finalize_sale");
+        marketplace_cpi::internal_inventory_finalize_sale(ctx, price_lamports, fee_lamports, buyer)
+    }
+
+    /// Crank-only. Resolves a player's pending lootbox roll: picks a
+    /// candidate Doge from the inventory pool, runs the win/miss roll
+    /// on-chain using slot-hash entropy, and on a win transfers the asset
+    /// to the player and resets its DogeMetadata.
+    pub fn process_lootbox_drops(ctx: Context<ProcessLootboxDrops>) -> Result<()> {
+        crate::log_fn!("lib", "process_lootbox_drops");
+        faction_war::process_lootbox_drops_internal(ctx)
     }
 }

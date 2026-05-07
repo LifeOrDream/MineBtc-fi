@@ -48,6 +48,20 @@ const PROGRAMS = {
     libPath: path.join(ROOT_DIR, "programs", "mineBTC", "src", "lib.rs"),
     buildDir: ROOT_DIR,
   },
+  degenbtc_market: {
+    name: "degenbtc_market",
+    dirName: "degenbtc_market",
+    displayName: "DegenBTC Marketplace",
+    keypairPath: path.join(
+      ROOT_DIR,
+      "target",
+      "deploy",
+      "degenbtc_market-keypair.json",
+    ),
+    soPath: path.join(ROOT_DIR, "target", "deploy", "degenbtc_market.so"),
+    libPath: path.join(ROOT_DIR, "programs", "degenbtc_market", "src", "lib.rs"),
+    buildDir: ROOT_DIR,
+  },
 };
 
 // Utility functions
@@ -114,6 +128,7 @@ function isProgramDeployed(programName, deploymentData) {
 
   const programIdKey = {
     minebtc: "MINE_BTC_PROGRAM_ID",
+    degenbtc_market: "DEGENBTC_MARKET_PROGRAM_ID",
   }[programName];
 
   return deploymentData[programIdKey] && deploymentData[programIdKey] !== "";
@@ -578,6 +593,7 @@ function saveDeploymentInfo(programAddresses) {
   }
 
   deploymentData.MINE_BTC_PROGRAM_ID = programAddresses.minebtc;
+  deploymentData.DEGENBTC_MARKET_PROGRAM_ID = programAddresses.degenbtc_market;
   deploymentData.game_programs_deployment = {
     timestamp: new Date().toISOString(),
     cluster: cluster,
@@ -586,6 +602,9 @@ function saveDeploymentInfo(programAddresses) {
   fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
   console.log(`\x1b[32m✅ Saved deployment info\x1b[0m`);
   console.log(`\x1b[32m   🔗 MINE_BTC: ${programAddresses.minebtc}\x1b[0m`);
+  console.log(
+    `\x1b[32m   🔗 DEGENBTC_MARKET: ${programAddresses.degenbtc_market}\x1b[0m`,
+  );
 }
 
 async function printWalletInfo() {
@@ -688,16 +707,23 @@ async function main() {
 
     // Check if game programs are already deployed
     const allDeployed =
-      existingDeployment && isProgramDeployed("minebtc", existingDeployment);
+      existingDeployment &&
+      isProgramDeployed("minebtc", existingDeployment) &&
+      isProgramDeployed("degenbtc_market", existingDeployment);
 
     if (allDeployed) {
       console.log(`\x1b[32m✅ Game programs already deployed!\x1b[0m`);
       console.log(
         `\x1b[36m   🔗 MINE_BTC: ${existingDeployment.MINE_BTC_PROGRAM_ID}\x1b[0m`,
       );
+      console.log(
+        `\x1b[36m   🔗 DEGENBTC_MARKET: ${existingDeployment.DEGENBTC_MARKET_PROGRAM_ID}\x1b[0m`,
+      );
       console.log(`\x1b[36m\n📋 Regenerating IDL files...\x1b[0m`);
 
-      extractIdlFromBinary(PROGRAMS.minebtc);
+      for (const cfg of Object.values(PROGRAMS)) {
+        extractIdlFromBinary(cfg);
+      }
 
       console.log(`\x1b[32m\n✅ IDL files regenerated!\x1b[0m`);
       return;
@@ -719,10 +745,14 @@ async function main() {
     updateAnchorToml(programAddresses);
 
     console.log(`\x1b[36m\n📋 Step 3: Building programs...\x1b[0m`);
-    buildProgram(PROGRAMS.minebtc);
+    for (const cfg of Object.values(PROGRAMS)) {
+      buildProgram(cfg);
+    }
 
     console.log(`\x1b[36m\n📋 Step 4: Deploying programs...\x1b[0m`);
-    deployProgram(PROGRAMS.minebtc, WALLET_KEYPAIR_PATH);
+    for (const cfg of Object.values(PROGRAMS)) {
+      deployProgram(cfg, WALLET_KEYPAIR_PATH);
+    }
 
     console.log(`\x1b[36m\n📋 Step 5: Saving deployment...\x1b[0m`);
     saveDeploymentInfo(programAddresses);

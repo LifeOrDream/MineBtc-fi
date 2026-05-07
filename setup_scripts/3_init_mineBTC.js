@@ -128,6 +128,38 @@ const IDL_MineBTC = JSON.parse(
   )
 );
 
+// Load DegenBTC Marketplace IDL (optional — only required once the marketplace
+// is being initialized; init steps below skip themselves if the IDL is absent
+// so the script still works on early-stage deployments that haven't built it).
+let IDL_DegenBtcMarket = null;
+try {
+  const marketIdlPath = config.deployment.paths.degenbtc_market_idl;
+  if (marketIdlPath) {
+    IDL_DegenBtcMarket = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, marketIdlPath), "utf-8"),
+    );
+  }
+} catch (e) {
+  // Defer the warning to when the marketplace init step actually runs.
+  IDL_DegenBtcMarket = null;
+}
+
+const DEGENBTC_MARKET_PROGRAM_ID = deploymentFile.DEGENBTC_MARKET_PROGRAM_ID
+  ? new PublicKey(deploymentFile.DEGENBTC_MARKET_PROGRAM_ID)
+  : null;
+
+const MARKETPLACE_CONFIG = {
+  feeBps: config.marketplace?.fee_bps ?? 300,
+  minPriceLamports: new BN(config.marketplace?.min_price_lamports ?? 10_000_000),
+  crankAuthorityOverride: config.marketplace?.crank_authority_pubkey_override
+    ? new PublicKey(config.marketplace.crank_authority_pubkey_override)
+    : null,
+};
+
+const MPL_CORE_PROGRAM_ID = new PublicKey(
+  "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+);
+
 // Solana Connection
 const connection = new Connection(RPC_URL, COMMITMENT);
 
@@ -634,6 +666,24 @@ async function main() {
     //   - global cooldown / pacing controls
     // Accounts: globalConfig, authority
     await updateGameplayTuning(minebtcProgram, GAMEPLAY_TUNING_CONFIG);
+
+    // 20. Initialize DegenBTC Marketplace (standalone program — recycled NFT
+    //     listings + P2P trades with 3% fee). Idempotent: skips if config already
+    //     exists on-chain.
+    // Instruction: degenbtc_market::initialize_marketplace(fee_bps, fee_recipient,
+    //     min_price_lamports, mpl_core_program)
+    // PDAs: marketplace_config [seeds: "marketplace-config", collection_mint]
+    await initializeDegenBtcMarketplace(minebtcProgram);
+
+    // 21. Initialize Inventory Pool + Market Metrics + Sweep Vault inside the
+    //     mineBTC program. Caches the marketplace program + config pubkeys so
+    //     CPI helpers can validate them on every call. Crank authority can be
+    //     overridden via config.marketplace.crank_authority_pubkey_override;
+    //     otherwise defaults to the deploy wallet.
+    // Instruction: mineBTC::init_inventory_pool(crank_authority, marketplace_program, marketplace_config)
+    // PDAs: inventory_pool [seeds: "inventory-pool"], market_metrics [seeds: "market-metrics"],
+    //       inventory_sweep_vault [seeds: "inventory-sweep-vault"]
+    await initializeInventoryPool(minebtcProgram);
 
     // Print completion summary
     printCompletionSummary();
@@ -3324,6 +3374,278 @@ async function initializeFactionWarConfig(minebtcProgram) {
   }
 }
 
+// ==================== [ MARKETPLACE + INVENTORY INITIALIZATION ] ====================
+
+async function initializeDegenBtcMarketplace(minebtcProgram) {
+  if (deploymentFile.degenbtc_marketplace_initialized) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ DegenBTC marketplace already initialized. Skipping...",
+    );
+    return;
+  }
+
+  if (!deploymentFile.doge_collection_created?.collection_address) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ Doge collection not yet created — skipping marketplace init. Re-run after collection step.",
+    );
+    return;
+  }
+
+  if (!IDL_DegenBtcMarket) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ DegenBTC marketplace IDL not found at " +
+        `${config.deployment.paths.degenbtc_market_idl}. ` +
+        "Run `anchor build` then re-run this script.",
+    );
+    return;
+  }
+
+  if (!DEGENBTC_MARKET_PROGRAM_ID) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ DegenBTC market program ID not found in deployment file. Run 0_deploy_game.js first.",
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ INITIALIZING DEGENBTC MARKETPLACE ] ===================",
+  );
+
+  const collectionMint = new PublicKey(
+    deploymentFile.doge_collection_created.collection_address,
+  );
+  const feeRecipient = walletKeypair.publicKey; // protocol-fee router target.
+  // Fee proceeds eventually flow into the protocol fee pipeline; we route the
+  // marketplace fee straight to the deploy/admin wallet here, matching the
+  // pattern used by the rest of the program (admin can rotate via
+  // update_marketplace_config later).
+
+  const marketProgram = new Program(
+    IDL_DegenBtcMarket,
+    DEGENBTC_MARKET_PROGRAM_ID,
+    provider,
+  );
+
+  const [marketplaceConfigPda, marketplaceConfigBump] =
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("marketplace-config"), collectionMint.toBuffer()],
+      DEGENBTC_MARKET_PROGRAM_ID,
+    );
+
+  console.log(COLOR_INFO, "🏪 Marketplace config PDA:", marketplaceConfigPda.toBase58());
+  console.log(COLOR_DIM, `   collection_mint: ${collectionMint.toBase58()}`);
+  console.log(COLOR_DIM, `   fee_bps: ${MARKETPLACE_CONFIG.feeBps}`);
+  console.log(
+    COLOR_DIM,
+    `   min_price_lamports: ${MARKETPLACE_CONFIG.minPriceLamports.toString()}`,
+  );
+  console.log(COLOR_DIM, `   fee_recipient: ${feeRecipient.toBase58()}`);
+  console.log(COLOR_DIM, `   admin: ${walletKeypair.publicKey.toBase58()}`);
+
+  try {
+    const tx = await marketProgram.methods
+      .initializeMarketplace(
+        MARKETPLACE_CONFIG.feeBps,
+        feeRecipient,
+        MARKETPLACE_CONFIG.minPriceLamports,
+        MPL_CORE_PROGRAM_ID,
+      )
+      .accounts({
+        payer: walletKeypair.publicKey,
+        admin: walletKeypair.publicKey,
+        marketplaceConfig: marketplaceConfigPda,
+        collectionMint: collectionMint,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ DegenBTC marketplace initialized");
+    console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
+
+    deploymentFile.degenbtc_marketplace_initialized = {
+      marketplace_config_pda: marketplaceConfigPda.toBase58(),
+      marketplace_config_bump: marketplaceConfigBump,
+      collection_mint: collectionMint.toBase58(),
+      fee_bps: MARKETPLACE_CONFIG.feeBps,
+      fee_recipient: feeRecipient.toBase58(),
+      min_price_lamports: MARKETPLACE_CONFIG.minPriceLamports.toString(),
+      admin: walletKeypair.publicKey.toBase58(),
+      mpl_core_program: MPL_CORE_PROGRAM_ID.toBase58(),
+      program_id: DEGENBTC_MARKET_PROGRAM_ID.toBase58(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    if (error.toString().includes("already in use")) {
+      console.log(
+        COLOR_INFO,
+        "ℹ️ Marketplace config already exists on-chain. Recording PDA and continuing...",
+      );
+      deploymentFile.degenbtc_marketplace_initialized = {
+        marketplace_config_pda: marketplaceConfigPda.toBase58(),
+        marketplace_config_bump: marketplaceConfigBump,
+        collection_mint: collectionMint.toBase58(),
+        program_id: DEGENBTC_MARKET_PROGRAM_ID.toBase58(),
+        status: "already_exists",
+        timestamp: new Date().toISOString(),
+      };
+      saveDeploymentData();
+    } else {
+      console.error(
+        COLOR_ERROR,
+        "❌ Failed to initialize marketplace:",
+        error,
+      );
+      if (error.logs) {
+        error.logs.forEach((log) => console.error(COLOR_DIM, log));
+      }
+      throw error;
+    }
+  }
+}
+
+async function initializeInventoryPool(minebtcProgram) {
+  if (deploymentFile.inventory_pool_initialized) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Inventory pool already initialized. Skipping...",
+    );
+    return;
+  }
+
+  if (!deploymentFile.degenbtc_marketplace_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ Marketplace must be initialized before inventory pool — skipping.",
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ INITIALIZING INVENTORY POOL ] ===================",
+  );
+
+  const [inventoryPoolPda, inventoryPoolBump] = PublicKey.findProgramAddressSync(
+    [Buffer.from("inventory-pool")],
+    minebtcProgram.programId,
+  );
+  const [marketMetricsPda, marketMetricsBump] = PublicKey.findProgramAddressSync(
+    [Buffer.from("market-metrics")],
+    minebtcProgram.programId,
+  );
+  const [inventorySweepVaultPda, inventorySweepVaultBump] =
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("inventory-sweep-vault")],
+      minebtcProgram.programId,
+    );
+
+  const marketplaceProgramId = new PublicKey(
+    deploymentFile.degenbtc_marketplace_initialized.program_id,
+  );
+  const marketplaceConfigPda = new PublicKey(
+    deploymentFile.degenbtc_marketplace_initialized.marketplace_config_pda,
+  );
+
+  const crankAuthority =
+    MARKETPLACE_CONFIG.crankAuthorityOverride || walletKeypair.publicKey;
+
+  console.log(COLOR_INFO, "📦 Inventory PDAs:");
+  console.log(COLOR_DIM, `   inventory_pool: ${inventoryPoolPda.toBase58()}`);
+  console.log(COLOR_DIM, `   market_metrics: ${marketMetricsPda.toBase58()}`);
+  console.log(
+    COLOR_DIM,
+    `   inventory_sweep_vault: ${inventorySweepVaultPda.toBase58()}`,
+  );
+  console.log(COLOR_DIM, `   crank_authority: ${crankAuthority.toBase58()}`);
+  console.log(
+    COLOR_DIM,
+    `   marketplace_program: ${marketplaceProgramId.toBase58()}`,
+  );
+  console.log(
+    COLOR_DIM,
+    `   marketplace_config: ${marketplaceConfigPda.toBase58()}`,
+  );
+
+  const [globalConfigPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global-config")],
+    minebtcProgram.programId,
+  );
+
+  try {
+    const tx = await minebtcProgram.methods
+      .initInventoryPool(
+        crankAuthority,
+        marketplaceProgramId,
+        marketplaceConfigPda,
+      )
+      .accounts({
+        authority: walletKeypair.publicKey,
+        globalConfig: globalConfigPda,
+        inventoryPool: inventoryPoolPda,
+        marketMetrics: marketMetricsPda,
+        inventorySweepVault: inventorySweepVaultPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ Inventory pool initialized");
+    console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
+
+    deploymentFile.inventory_pool_initialized = {
+      inventory_pool_pda: inventoryPoolPda.toBase58(),
+      inventory_pool_bump: inventoryPoolBump,
+      market_metrics_pda: marketMetricsPda.toBase58(),
+      market_metrics_bump: marketMetricsBump,
+      inventory_sweep_vault_pda: inventorySweepVaultPda.toBase58(),
+      inventory_sweep_vault_bump: inventorySweepVaultBump,
+      crank_authority: crankAuthority.toBase58(),
+      marketplace_program: marketplaceProgramId.toBase58(),
+      marketplace_config: marketplaceConfigPda.toBase58(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    if (error.toString().includes("already in use")) {
+      console.log(
+        COLOR_INFO,
+        "ℹ️ Inventory pool already exists on-chain. Recording PDAs and continuing...",
+      );
+      deploymentFile.inventory_pool_initialized = {
+        inventory_pool_pda: inventoryPoolPda.toBase58(),
+        inventory_pool_bump: inventoryPoolBump,
+        market_metrics_pda: marketMetricsPda.toBase58(),
+        market_metrics_bump: marketMetricsBump,
+        inventory_sweep_vault_pda: inventorySweepVaultPda.toBase58(),
+        inventory_sweep_vault_bump: inventorySweepVaultBump,
+        crank_authority: crankAuthority.toBase58(),
+        marketplace_program: marketplaceProgramId.toBase58(),
+        marketplace_config: marketplaceConfigPda.toBase58(),
+        status: "already_exists",
+        timestamp: new Date().toISOString(),
+      };
+      saveDeploymentData();
+    } else {
+      console.error(
+        COLOR_ERROR,
+        "❌ Failed to initialize inventory pool:",
+        error,
+      );
+      if (error.logs) {
+        error.logs.forEach((log) => console.error(COLOR_DIM, log));
+      }
+      throw error;
+    }
+  }
+}
+
 function printCompletionSummary() {
   console.log(
     COLOR_STEP,
@@ -3418,6 +3740,18 @@ function printCompletionSummary() {
     }`
   );
   console.log(
+    COLOR_INFO,
+    `  • DegenBTC Marketplace: ${
+      deploymentFile.degenbtc_marketplace_initialized ? "✅" : "❌"
+    }`,
+  );
+  console.log(
+    COLOR_INFO,
+    `  • Inventory Pool: ${
+      deploymentFile.inventory_pool_initialized ? "✅" : "❌"
+    }`,
+  );
+  console.log(
     COLOR_STEP,
     "========================================================================================"
   );
@@ -3452,6 +3786,34 @@ function printCompletionSummary() {
       console.log(
         COLOR_DIM,
         `   Game State: ${deploymentFile.game_state_initialized.global_game_state_pda}`
+      );
+    }
+    if (deploymentFile.degenbtc_marketplace_initialized) {
+      console.log(
+        COLOR_DIM,
+        `   Marketplace Program: ${deploymentFile.degenbtc_marketplace_initialized.program_id}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Marketplace Config:  ${deploymentFile.degenbtc_marketplace_initialized.marketplace_config_pda}`,
+      );
+    }
+    if (deploymentFile.inventory_pool_initialized) {
+      console.log(
+        COLOR_DIM,
+        `   Inventory Pool:       ${deploymentFile.inventory_pool_initialized.inventory_pool_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Market Metrics:       ${deploymentFile.inventory_pool_initialized.market_metrics_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Inventory Sweep Vault: ${deploymentFile.inventory_pool_initialized.inventory_sweep_vault_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Crank Authority:      ${deploymentFile.inventory_pool_initialized.crank_authority}`,
       );
     }
   }

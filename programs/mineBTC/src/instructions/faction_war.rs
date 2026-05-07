@@ -1271,6 +1271,48 @@ pub fn claim_faction_war_rewards_internal(
         player_data.pending_faction_war_claims
     );
 
+    // ---- Lootbox eligibility flag ----
+    // A claim is eligible for a lootbox roll if the player won at least
+    // something on this cycle AND has an active gameplay Doge. We don't
+    // gate on inventory pool depth here — the cranker re-checks it in
+    // `process_lootbox_drops` at roll time. This avoids passing
+    // `inventory_pool` into every claim.
+    if claim_won
+        && user_faction_war_bets.gameplay_doge != Pubkey::default()
+        && player_data.pending_lootbox_roll.is_none()
+    {
+        // Build a deterministic per-cycle seed from settlement-stable fields.
+        // The cranker can recompute this off-chain to verify; on-chain we
+        // re-roll in `process_lootbox_drops` using slot-hash entropy mixed
+        // with this seed and the player's pubkey.
+        let cycle_seed = anchor_lang::solana_program::keccak::hashv(&[
+            b"minebtc-lootbox-cycle-seed",
+            &faction_war_id.to_le_bytes(),
+            &faction_war_state.start_timestamp.to_le_bytes(),
+            &faction_war_state.faction_war_mining_pool.to_le_bytes(),
+            &faction_war_state.final_ranks,
+        ])
+        .to_bytes();
+
+        player_data.pending_lootbox_roll = Some(LootboxRollClaim {
+            faction_war_id,
+            faction_id: player_data.faction_id,
+            cycle_seed,
+        });
+        msg!(
+            "🎁 [claim_faction_war_rewards_internal] Lootbox roll queued for {} (faction={})",
+            owner_key,
+            player_data.faction_id
+        );
+    } else {
+        msg!(
+            "🎁 [claim_faction_war_rewards_internal] No lootbox roll: claim_won={}, gameplay_doge_set={}, roll_already_pending={}",
+            claim_won,
+            user_faction_war_bets.gameplay_doge != Pubkey::default(),
+            player_data.pending_lootbox_roll.is_some()
+        );
+    }
+
     msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] emitting FactionWarRewardsClaimed: faction_war_id={} user={} reward_amount={} base={} loyalty={} mvp={} doge={} sol={} timestamp={}",
         faction_war_id,
         user_faction_war_bets.owner,
@@ -1354,6 +1396,293 @@ pub struct ClaimFactionWarRewards<'info> {
 
     #[account(mut)]
     pub cranker: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// ========================================================================================
+// ============================== LOOTBOX DROP RESOLUTION =================================
+// ========================================================================================
+
+/// Cranker-driven lootbox drop. The cranker picks a candidate Doge from the
+/// inventory pool (faction-matched, status=Lootbox) for a player whose claim
+/// queued a `pending_lootbox_roll`. This handler runs the actual win/miss
+/// roll on-chain so the cranker can't bias outcomes.
+pub fn process_lootbox_drops_internal(ctx: Context<ProcessLootboxDrops>) -> Result<()> {
+    crate::log_fn!("faction_war", "process_lootbox_drops_internal");
+
+    let now = Clock::get()?.unix_timestamp;
+    let asset_key = ctx.accounts.doge_asset.key();
+    let winner_key = ctx.accounts.winner_wallet.key();
+
+    require_keys_eq!(
+        ctx.accounts.crank_authority.key(),
+        ctx.accounts.inventory_pool.crank_authority,
+        ErrorCode::InvalidCrankAuthority
+    );
+
+    require!(
+        ctx.accounts.inventory_pool.lootbox_count >= MIN_LOOTBOX_POOL,
+        ErrorCode::LootboxPoolTooSmall
+    );
+
+    let roll = ctx
+        .accounts
+        .winner_player_data
+        .pending_lootbox_roll
+        .ok_or(ErrorCode::NoLootboxRoll)?;
+
+    let entry = &ctx.accounts.recycled_entry;
+    require!(
+        entry.status == RecycledStatus::Lootbox as u8,
+        ErrorCode::InvalidRecycledStatus
+    );
+    require!(
+        entry.faction_id == roll.faction_id,
+        ErrorCode::LootboxFactionMismatch
+    );
+
+    let last_drop = ctx.accounts.winner_player_data.last_lootbox_drop_at;
+    require!(
+        last_drop == 0 || now.saturating_sub(last_drop) >= LOOTBOX_COOLDOWN_SECONDS,
+        ErrorCode::LootboxCooldownActive
+    );
+
+    let metrics = &ctx.accounts.market_metrics;
+    let threshold_bps = compute_drop_chance_bps(
+        metrics.demand_index,
+        ctx.accounts.inventory_pool.lootbox_count,
+        entry.quality_score,
+    );
+
+    // On-chain entropy: mix the most recent slot hash with cycle seed and
+    // per-roll context so the cranker can't pre-compute outcomes.
+    let slot_hashes = ctx.accounts.slot_hashes.to_account_info();
+    let slot_hashes_data = slot_hashes.try_borrow_data()?;
+    require!(
+        slot_hashes_data.len() >= 8 + 8 + 32,
+        ErrorCode::InvalidAccount
+    );
+    let mut latest_slot_hash = [0u8; 32];
+    latest_slot_hash.copy_from_slice(&slot_hashes_data[16..48]);
+    drop(slot_hashes_data);
+
+    let entropy = anchor_lang::solana_program::keccak::hashv(&[
+        b"minebtc-lootbox-roll",
+        &latest_slot_hash,
+        &winner_key.to_bytes(),
+        &roll.cycle_seed,
+        &asset_key.to_bytes(),
+    ])
+    .to_bytes();
+    let roll_value = u16::from_le_bytes([entropy[0], entropy[1]]) % 10_000;
+
+    msg!(
+        "🎲 [process_lootbox_drops] roll={} threshold={} (DI={} pool_lootbox={} quality={})",
+        roll_value,
+        threshold_bps,
+        metrics.demand_index,
+        ctx.accounts.inventory_pool.lootbox_count,
+        entry.quality_score
+    );
+
+    let winner_won = roll_value < threshold_bps;
+
+    if winner_won {
+        // Recipient cap, approximated from staked_doges + active gameplay
+        // doge. Tighter eligibility filtering happens off-chain in the
+        // cranker which can scan the wallet directly.
+        let approx_holdings = ctx
+            .accounts
+            .winner_player_data
+            .staked_doges
+            .len()
+            .saturating_add(
+                if ctx.accounts.winner_player_data.gameplay_doge != Pubkey::default() {
+                    1
+                } else {
+                    0
+                },
+            );
+        require!(
+            approx_holdings < MAX_DOGES_PER_WALLET_FOR_DROP as usize,
+            ErrorCode::LootboxRecipientCapped
+        );
+
+        // Transfer asset from inventory_pda → winner_wallet, signed by the
+        // inventory PDA seeds.
+        let pool_bump = ctx.accounts.inventory_pool.bump;
+        let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
+        let inventory_signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+        crate::mpl_core_helpers::transfer_mpl_core_asset(
+            &ctx.accounts.doge_asset.to_account_info(),
+            ctx.accounts
+                .doge_collection
+                .as_ref()
+                .map(|c| c.to_account_info())
+                .as_ref(),
+            &ctx.accounts.crank_authority.to_account_info(),
+            &ctx.accounts.inventory_pda.to_account_info(),
+            &ctx.accounts.winner_wallet.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            Some(inventory_signers),
+        )?;
+
+        // Reset DogeMetadata for the new owner.
+        let metadata = &mut ctx.accounts.doge_metadata;
+        metadata.accumulated_val = 0;
+        metadata.multiplier = BASE_MULTIPLIER;
+        metadata.xp = 0;
+        metadata.incubated_player_data = Pubkey::default();
+        // dna, mom, dad, breed_count, faction_id, last_update_ts preserved.
+
+        // Bump pool counters and close the entry by zeroing out so the
+        // caller can reclaim its rent in a follow-up tx (we do NOT use
+        // Anchor `close` here because miss-path leaves the entry alive).
+        let pool = &mut ctx.accounts.inventory_pool;
+        pool.lootbox_count = pool
+            .lootbox_count
+            .checked_sub(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        pool.total_count = pool
+            .total_count
+            .checked_sub(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        pool.total_dropped = pool
+            .total_dropped
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        // Manually close the recycled entry, refunding rent to the winner.
+        let entry_info = ctx.accounts.recycled_entry.to_account_info();
+        let entry_lamports = entry_info.lamports();
+        **ctx
+            .accounts
+            .winner_wallet
+            .to_account_info()
+            .try_borrow_mut_lamports()? = ctx
+            .accounts
+            .winner_wallet
+            .lamports()
+            .checked_add(entry_lamports)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        **entry_info.try_borrow_mut_lamports()? = 0;
+        let mut entry_data = entry_info.try_borrow_mut_data()?;
+        for byte in entry_data.iter_mut() {
+            *byte = 0;
+        }
+        // Re-write the discriminator to a closed-account value so
+        // anchor never deserializes this account again at this address
+        // until reused. Anchor's standard "closed account discriminator"
+        // is `[255; 8]`.
+        entry_data[..8].copy_from_slice(&[255u8; 8]);
+        drop(entry_data);
+
+        // Mark winner cooldown.
+        ctx.accounts.winner_player_data.last_lootbox_drop_at = now;
+
+        emit!(LootboxNftWon {
+            asset: asset_key,
+            winner: winner_key,
+            faction_id: entry.faction_id,
+            roll_value,
+            threshold_bps,
+            timestamp: now,
+        });
+
+        msg!(
+            "🎉 [process_lootbox_drops] WIN: asset {} -> {}",
+            asset_key,
+            winner_key
+        );
+    } else {
+        emit!(LootboxRollMissed {
+            winner: winner_key,
+            roll_value,
+            threshold_bps,
+            timestamp: now,
+        });
+        msg!("❌ [process_lootbox_drops] MISS for {}", winner_key);
+    }
+
+    // Single-use: clear the pending roll regardless of outcome.
+    ctx.accounts.winner_player_data.pending_lootbox_roll = None;
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ProcessLootboxDrops<'info> {
+    #[account(mut)]
+    pub crank_authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [INVENTORY_POOL_SEED],
+        bump = inventory_pool.bump,
+    )]
+    pub inventory_pool: Box<Account<'info, InventoryPool>>,
+
+    /// CHECK: Inventory custody PDA — same address as `inventory_pool`.
+    /// Used only as the mpl-core authority during transfer; validated by
+    /// seeds.
+    #[account(
+        seeds = [INVENTORY_POOL_SEED],
+        bump = inventory_pool.bump,
+    )]
+    pub inventory_pda: UncheckedAccount<'info>,
+
+    #[account(
+        seeds = [MARKET_METRICS_SEED],
+        bump = market_metrics.bump,
+    )]
+    pub market_metrics: Box<Account<'info, MarketMetrics>>,
+
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED, winner_player_data.owner.as_ref()],
+        bump = winner_player_data.bump,
+    )]
+    pub winner_player_data: Box<Account<'info, PlayerData>>,
+
+    /// CHECK: Recipient wallet for the dropped Doge.
+    #[account(
+        mut,
+        constraint = winner_wallet.key() == winner_player_data.owner @ ErrorCode::InvalidOwner,
+    )]
+    pub winner_wallet: UncheckedAccount<'info>,
+
+    /// On a winning roll, this account is closed manually inside the handler
+    /// (rent refunded to winner). On a miss, it stays alive.
+    #[account(
+        mut,
+        seeds = [RECYCLED_ENTRY_SEED, doge_asset.key().as_ref()],
+        bump = recycled_entry.bump,
+    )]
+    pub recycled_entry: Box<Account<'info, RecycledEntry>>,
+
+    /// CHECK: mpl-core asset; current owner is `inventory_pda`.
+    #[account(mut)]
+    pub doge_asset: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [DOGE_METADATA_SEED, doge_asset.key().as_ref()],
+        bump = doge_metadata.bump,
+        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount,
+    )]
+    pub doge_metadata: Account<'info, DogeMetadata>,
+
+    /// CHECK: Doge collection account, required by mpl-core on transfer.
+    pub doge_collection: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Metaplex Core program.
+    #[account(address = mpl_core::ID)]
+    pub mpl_core_program: UncheckedAccount<'info>,
+
+    /// CHECK: SlotHashes sysvar — used for entropy.
+    #[account(address = anchor_lang::solana_program::sysvar::slot_hashes::ID)]
+    pub slot_hashes: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }

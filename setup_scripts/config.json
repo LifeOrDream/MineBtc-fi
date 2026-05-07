@@ -8,6 +8,7 @@
         "paths": {
             "deployer_key": "../devnet-wallet-keypair.json",
             "minebtc_idl": "../target/idl/minebtc.json",
+            "degenbtc_market_idl": "../target/idl/degenbtc_market.json",
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
@@ -46,6 +47,12 @@
         "default_height": 6,
         "grid_max_width": 16,
         "grid_max_height": 12
+    },
+    "marketplace": {
+        "_notes": "fee_bps_default applies to BOTH P2P listings and program (inventory) listings. Admin can change post-init via update_marketplace_config. min_price_lamports protects against fat-finger 0-price listings. crank_authority owns the inventory disposition cranker — separate from program admin so cranks can rotate independently.",
+        "fee_bps": 300,
+        "min_price_lamports": 10000000,
+        "crank_authority_pubkey_override": null
     },
     "mining": {
         "start_timestamp": 0,

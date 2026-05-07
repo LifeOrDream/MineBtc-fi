@@ -2337,3 +2337,106 @@ pub struct SwitchDogeMiningState<'info> {
 
     pub system_program: Program<'info, System>,
 }
+
+// ========================================================================================
+// ============================== INVENTORY POOL BOOTSTRAP ================================
+// ========================================================================================
+
+/// One-time admin ix that creates the global inventory pool, market metrics
+/// PDA, and inventory sweep SOL vault. Caches the standalone marketplace
+/// program's program ID and the marketplace config PDA so the CPI helpers
+/// can validate them on every call.
+pub fn internal_init_inventory_pool(
+    ctx: Context<InitInventoryPool>,
+    crank_authority: Pubkey,
+    marketplace_program: Pubkey,
+    marketplace_config: Pubkey,
+) -> Result<()> {
+    crate::log_fn!("admin", "internal_init_inventory_pool");
+
+    let pool = &mut ctx.accounts.inventory_pool;
+    pool.bump = ctx.bumps.inventory_pool;
+    pool.crank_authority = crank_authority;
+    pool.marketplace_program = marketplace_program;
+    pool.marketplace_config = marketplace_config;
+    pool.total_count = 0;
+    pool.pending_count = 0;
+    pool.lootbox_count = 0;
+    pool.listed_count = 0;
+    pool.total_recycled = 0;
+    pool.total_listed = 0;
+    pool.total_sold = 0;
+    pool.total_dropped = 0;
+    pool.total_swept = 0;
+
+    let metrics = &mut ctx.accounts.market_metrics;
+    metrics.bump = ctx.bumps.market_metrics;
+    metrics.demand_index = 0;
+    metrics.last_updated = Clock::get()?.unix_timestamp;
+    metrics.floor_price_lamports = 0;
+    metrics.avg_sell_price_24h = 0;
+    metrics.listings_count = 0;
+    metrics.sales_count_24h = 0;
+    metrics.crank_authority = crank_authority;
+    metrics._reserved = [0u8; 32];
+
+    // The sweep vault is a system-owned, zero-data PDA. Anchor's `init` with
+    // `space = 0, owner = system_program` does the right thing here.
+
+    msg!("✅ inventory_pool, market_metrics, inventory_sweep_vault initialized");
+    msg!("   crank_authority = {}", crank_authority);
+    msg!("   marketplace_program = {}", marketplace_program);
+    msg!("   marketplace_config = {}", marketplace_config);
+
+    emit!(InventoryPoolInitialized {
+        crank_authority,
+        marketplace_program,
+        marketplace_config,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitInventoryPool<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = InventoryPool::LEN,
+        seeds = [INVENTORY_POOL_SEED],
+        bump,
+    )]
+    pub inventory_pool: Box<Account<'info, InventoryPool>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = MarketMetrics::LEN,
+        seeds = [MARKET_METRICS_SEED],
+        bump,
+    )]
+    pub market_metrics: Box<Account<'info, MarketMetrics>>,
+
+    /// CHECK: System-owned SOL vault PDA, holds sweep reserve. No data.
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [INVENTORY_SWEEP_VAULT_SEED],
+        bump,
+        owner = system_program.key(),
+    )]
+    pub inventory_sweep_vault: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
