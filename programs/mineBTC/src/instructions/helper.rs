@@ -577,13 +577,13 @@ pub fn calculate_multiplier(
 }
 
 /// Add position index to user's minebtc positions
-pub fn add_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+pub fn add_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     msg!(
-        "🔍 [add_dogebtc_position] Adding position index: {}",
+        "🔍 [add_degenbtc_position] Adding position index: {}",
         position_index
     );
     msg!(
-        "🔍 [add_dogebtc_position] MAX_ALLOWED_POSITIONS: {}",
+        "🔍 [add_degenbtc_position] MAX_ALLOWED_POSITIONS: {}",
         MAX_ALLOWED_POSITIONS
     );
 
@@ -592,16 +592,19 @@ pub fn add_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> R
     }
 
     // If this position index is not already active
-    if !player_ac.dogebtc_position_indices.contains(&position_index) {
-        msg!("🔍 [add_dogebtc_position] Position index is not already active");
+    if !player_ac
+        .degenbtc_position_indices
+        .contains(&position_index)
+    {
+        msg!("🔍 [add_degenbtc_position] Position index is not already active");
         // Ensure we're not exceeding the max allowed positions
-        if player_ac.dogebtc_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
-            msg!("🔍 [add_dogebtc_position] Exceeding max allowed positions");
+        if player_ac.degenbtc_position_indices.len() >= MAX_ALLOWED_POSITIONS as usize {
+            msg!("🔍 [add_degenbtc_position] Exceeding max allowed positions");
             return Err(ErrorCode::InvalidParameters.into());
         }
-        player_ac.dogebtc_position_indices.push(position_index);
+        player_ac.degenbtc_position_indices.push(position_index);
         msg!(
-            "🔍 [add_dogebtc_position] Position index added: {}",
+            "🔍 [add_degenbtc_position] Position index added: {}",
             position_index
         );
     }
@@ -610,24 +613,24 @@ pub fn add_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> R
 }
 
 /// Remove position index from user's minebtc positions
-pub fn remove_dogebtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
-    crate::log_fn!("helper", "remove_dogebtc_position");
+pub fn remove_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
+    crate::log_fn!("helper", "remove_degenbtc_position");
     msg!(
-        "🔧 [helper.remove_dogebtc_position] position_index={} current_indices={:?}",
+        "🔧 [helper.remove_degenbtc_position] position_index={} current_indices={:?}",
         position_index,
-        player_ac.dogebtc_position_indices
+        player_ac.degenbtc_position_indices
     );
     // Find the position index in the vector
     if let Some(pos) = player_ac
-        .dogebtc_position_indices
+        .degenbtc_position_indices
         .iter()
         .position(|&x| x == position_index)
     {
-        player_ac.dogebtc_position_indices.remove(pos);
+        player_ac.degenbtc_position_indices.remove(pos);
         msg!(
             "   ✅ removed position_index={} new_indices={:?}",
             position_index,
-            player_ac.dogebtc_position_indices
+            player_ac.degenbtc_position_indices
         );
     } else {
         msg!("   ⚠️ position_index={} not found", position_index);
@@ -811,7 +814,7 @@ pub fn add_to_total_claimable(
     source: u8,
     reference_id: u64,
 ) -> Result<u64> {
-    // Calculate extra dogeBtc rewards from the HODL tax. The global hodl_tax_index
+    // Calculate extra degenBtc rewards from the HODL tax. The global hodl_tax_index
     // is monotonically non-decreasing, so checked_sub should never fail — but we
     // validate it to surface any state corruption rather than panicking.
     let index_dif = unrefined_minebtc

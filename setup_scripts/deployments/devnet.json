@@ -22,7 +22,7 @@
     "max_transfer_fee_amount": 1000000,
     "metadata_included": true,
     "metadata_name": "DogeWifBTC",
-    "metadata_symbol": "DogeBTC",
+    "metadata_symbol": "DegenBTC",
     "metadata_uri": "https://assets.minebtc.fun/btc",
     "metadata_image": "https://assets.minebtc.fun/btc-logo.png",
     "metadata_external_url": "https://minebtc.fun",
@@ -40,7 +40,7 @@
   "initial_supply_minted": {
     "amount": "2100000000000000",
     "actual_minted_amount": "2100000000000000",
-    "amount_readable": "2,100,000,000 DogeBTC",
+    "amount_readable": "2,100,000,000 DegenBTC",
     "token_account_address": "8jBdPtFfQ2ME7iN3xpGjv3f4qZFWh3m3xRV1LrmSYei6",
     "mint_signature": "2T624nUs7MiuyxYGzVK8XN8QA4FpoQ23NkK9wqM9FDn4otyzzhu2iv8V7Vig5oirqViKAY8gmvr5DcqfD1WY2t89",
     "bigint_verification": {
@@ -56,7 +56,7 @@
     "new_mint_authority": null,
     "removal_signature": "4mpAQuX42pKVzYbwRqTQsGZ6ewMGMZwzmvFu7ozHbsp47r18J9fqjYT7mVAtdeM1EP8z1gH6z1aZdkBmccQoW9uL",
     "timestamp": "2026-05-04T22:33:18.796Z",
-    "total_supply_locked": "2,100,000,000 DogeBTC"
+    "total_supply_locked": "2,100,000,000 DegenBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -230,8 +230,6 @@
       "newMinebtcJackpotPct": 5,
       "newHodlTaxPct": 10,
       "snapshotInterval": 300,
-      "newReferralFeePct": 5,
-      "newSameFactionReferralFeePct": 10,
       "newCycleSolSplitPct": 5
     },
     "tx_signature": "4hrZ2TJqCgcLz36H1k8QbpWgMiwyHcG61LcBz2gmKBh3RCokStc67Ymh2StxLQt4oweLUAf6KT4tq3Upb8mQETp3",
@@ -241,7 +239,7 @@
     "vault_address": "GcDaS9c4oBqGJnYYqJ17A9X21QcXknCuQc7gxqEdyA4i",
     "vault_authority": "3DsUGsHUybzN6bpJgH4nid52qB9rUhdNTdVfrujZ1tLG",
     "start_timestamp": 1777934195,
-    "doge_btc_per_round": "1000000000",
+    "degen_btc_per_round": "1000000000",
     "tx_signature": "5ZNNsJTqyuZoBUGaeVz8LmZbKhCAE6FxrSEb6jEK5y1oWeaSud5JXR8vsvpn4gkYqudJ7nduL6hwuEKbAcA2twoT",
     "timestamp": "2026-05-04T22:37:14.165Z"
   },

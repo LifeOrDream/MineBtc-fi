@@ -2,7 +2,7 @@
     "name": "dogewifbtc-scripts",
     "version": "1.0.0",
     "type": "module",
-    "description": "Scripts for deploying and initializing DogeBtc",
+    "description": "Scripts for deploying and initializing DegenBtc",
     "main": "init.js",
     "scripts": {
         "initialize": "node init.js"

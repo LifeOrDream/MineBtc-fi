@@ -6,17 +6,17 @@ This file is the source-of-truth orientation note for anyone editing the `mineBT
 
 MineBTC is a **degen country arena game** on Solana where:
 
-- players pick a country and a direction, bet SOL, and their doge NFTs evolve through gameplay
-- Doge story events during rounds decide which country climbs the leaderboard each cycle
-- the same bet powers both the **round raffle** (instant SOL + dogeBTC rewards) and the **cycle leaderboard** (longer-term dogeBTC rewards based on which countries moved)
+- players pick a country and a direction, bet SOL, and winning claims can evolve their doge NFTs
+- own-country gameplay support decides which country climbs the leaderboard each cycle
+- the same bet powers both the **round raffle** (instant SOL + degenBTC rewards) and the **cycle leaderboard** (longer-term degenBTC rewards based on which countries moved)
 - a deflationary economy runs on a 0.1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
 - an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
 
-**The game in one sentence:** "Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC."
+**The game in one sentence:** "Pick your country, bet SOL, win claims, your doge evolves, your country climbs, you earn degenBTC."
 
 Player country is permanent after signup. Referral rewards are also
-country-aware: referred users always get the same 1% dogeBTC claim bonus, while
-referrers earn a higher dogeBTC reward when they recruit someone into their own
+country-aware: referred users always get the same 1% degenBTC claim bonus, while
+referrers earn a higher degenBTC reward when they recruit someone into their own
 country. This keeps the growth loop simple: "bring people to your flag."
 
 Use these canonical terms:
@@ -24,11 +24,11 @@ Use these canonical terms:
 - `country` or `faction` — one of 12-15 playable nations
 - `direction` — `Down`, `Neutral`, `Up`
 - `round` — fast 60-second betting loop with random winner
-- `faction war` — longer competitive period tied to the economy cycle (LP burn cadence), where story-event scores determine country rankings
-- `operator doge` / `gameplay doge` — the live NFT locked for rounds, earns XP, can mutate
+- `faction war` — longer competitive period tied to the economy cycle (LP burn cadence), where gameplay scores determine country rankings
+- `operator doge` / `gameplay doge` — the live NFT locked for rounds, contributes gameplay score, earns XP from eligible claim rolls, can mutate
 - `staked doges` — passive NFTs that boost staking hashpower
-- `story event` — a Doge event (Evolution / Power / Trait) triggered by betting; the contract may mutate DNA internally, but the backend decides how to render it
-- `story score` — contribution to your country's leaderboard rank from a story event
+- `story event` — a claim-time Doge event (Evolution / Power / Trait); the contract may mutate DNA internally, but the backend decides how to render it
+- `gameplay score` — contribution to your country's leaderboard rank from own-country SOL support with an active gameplay doge
 
 Do **not** describe the system as:
 
@@ -51,32 +51,32 @@ At round end:
 2. it randomly chooses a winning direction on that country
 3. payouts are split into:
 
-- exact `country + direction` winners: main SOL + dogeBTC round rewards
-- same-country wrong-direction bettors: consolation dogeBTC rewards
+- exact `country + direction` winners: main SOL + degenBTC round rewards
+- same-country wrong-direction bettors: consolation degenBTC rewards
 - winning-country stakers: staking reward share
-- global jackpot: extra dogeBTC for exact winners of the selected faction when hit
+- global jackpot: extra degenBTC for exact winners of the selected faction when hit
 
-### Cycle Layer (Story Event Leaderboard)
+### Cycle Layer (Gameplay Score Leaderboard)
 
-Each round bet also accumulates into the active cycle. Doge story events that fire during rounds contribute score to their faction.
+Each round bet also accumulates into the active cycle. Own-country SOL bets from users with an active gameplay doge contribute deterministic gameplay score to their faction.
 
 A cycle is defined by:
 
 - `faction_war_id`
 - `start_ranks` (from previous cycle)
-- `faction_mutation_scores` (internal field; accumulated story-event scores during this cycle)
-- per-country direction totals (own-faction bets only)
+- `faction_gameplay_scores` (internal field; accumulated gameplay scores during this cycle)
+- per-country direction totals, plus separate own-country loyalty totals
 
 **How cycles work:**
 
 1. Cycle auto-starts on first bet after the previous cycle settles
-2. Each Doge story event adds score: `type_weight × bet_size × doge_multiplier`
+2. Each eligible own-country SOL bet adds score: `GAMEPLAY_SUPPORT_SCORE_WEIGHT × bet_size × doge_multiplier`
 3. Cycle settles when the economy cycle's LP burn completes
-4. Factions are ranked by total story scores, with round wins and SOL support as tiebreakers
+4. Factions are ranked by total gameplay scores, with round wins and SOL support as tiebreakers
 5. Rank changes resolve each country's winning direction
-6. Players who bet correct directions earn dogeBTC via the base pool; own-country correct bettors also share the loyalty pool
+6. Players who bet correct directions earn degenBTC via the base pool; own-country correct bettors also share the loyalty pool
 
-**When story events are disabled** (`rpg_progression` off), cycle story scoring pauses.
+**When RPG progression is disabled** (`rpg_progression` off), cycle gameplay scoring and mutation rolls pause.
 
 ### Doge Layer
 
@@ -85,10 +85,12 @@ Two distinct doge roles:
 - `gameplay_doge`: one operator doge locked for live play, carries multiplier, DNA, XP cache
 - `staked_doges`: up to 3 passive boosts for staking hashpower
 
-**Story event system:**
+**Mutation/story event system:**
 
-- Story events trigger during betting (SOL bets only, requires gameplay doge)
-- Max events per round = `active_factions / 3` (global budget creates scarcity)
+- Story events trigger during winning round or faction-war reward claims (SOL stake only, requires gameplay doge)
+- Round claim odds use the winning faction stake; exact wins get stronger odds than same-faction consolation wins
+- Faction-war claim odds are strongest for own-country correct calls, especially when the country moved Up
+- Round-level mutation counters still create scarcity and pacing pressure
 - Per-faction difficulty scaling: each event in a round makes the next one harder for that faction
 - Base chance is configurable, reduced by Doge multiplier (high-mult Doges trigger less often)
 - Types: Evolution (~10%), Power (~30%), Trait (~60%)
@@ -105,7 +107,7 @@ Two distinct doge roles:
 
 ### Economy Layer
 
-- 0.1% transfer tax on all dogeBTC: split between burn, NFT floor sweep vault, faction treasury, mining vault
+- 0.1% transfer tax on all degenBTC: split between burn, NFT floor sweep vault, faction treasury, mining vault
 - Price snapshots every 30 min (8 per cycle) → emission rate adjustment → LP add + burn
 - Cycle settlement is tied to the LP burn — one competitive cycle per economy cycle
 - Daily faction leaderboard distributes treasury rewards by hashpower ranking
@@ -140,8 +142,8 @@ Two distinct doge roles:
 |------|----------------------|
 | `instructions/game.rs` | Round start/end, winner selection, round reward indexes |
 | `instructions/user.rs` | Betting, autominers, round claims, gameplay doges, story events |
-| `instructions/faction_war.rs` | Cycle config, story-event-based settlement, cycle claims |
-| `instructions/stake.rs` | dogeBTC and LP staking |
+| `instructions/faction_war.rs` | Cycle config, gameplay-score settlement, cycle claims |
+| `instructions/stake.rs` | degenBTC and LP staking |
 | `instructions/doges.rs` | Doge minting, breeding, staking, gameplay lock/unlock |
 | `instructions/economy.rs` | Price snapshots, emissions, POL |
 | `instructions/tax.rs` | Transfer-tax accounting and faction treasury distribution |
@@ -165,7 +167,8 @@ Important rules:
 - one transaction can include multiple countries
 - the same bet updates both `GameSession` totals and `FactionWarState` / `UserFactionWarBets`
 - all country-direction bets feed the base faction-war pool; own-faction bets also feed loyalty rewards
-- story events fire during bet processing, subject to global budget and per-faction penalty
+- active gameplay Doges on own-country SOL bets add gameplay score during bet processing
+- story events fire later during winning reward claims, using the recorded bet context
 
 ### Round Settlement
 
@@ -191,8 +194,8 @@ Important rules:
 Important rules:
 
 - settlement is gated by `mining.pol_stats.lp_operations_count >= faction_war_config.faction_war_settle_cycle`
-- if no story events occurred (all scores = 0), no story-score rewards are distributed
-- rankings are computed from the internal `faction_mutation_scores` story-score array, then compared to previous cycle ranks
+- if no bets occurred, no cycle rewards are distributed
+- rankings are computed from the internal `faction_gameplay_scores` array, then compared to previous cycle ranks
 
 ### Autominers
 
@@ -250,7 +253,7 @@ Key product events for indexers and off-chain systems:
 - `JackpotHit`
 - `RoundRewardsClaimed`
 - `StoryEventTriggered`
-- `StoryEventScoreAccumulated`
+- `GameplayScoreAccumulated`
 - `FactionWarAutoStarted`
 - `FactionWarAutoSettled`
 - `FactionWarSettled`
@@ -265,7 +268,7 @@ Key product events for indexers and off-chain systems:
 When changing this repo:
 
 - keep README language aligned with the current contract model
-- describe the product as a **degen country arena game** with story-event-driven competitive cycles
+- describe the product as a **degen country arena game** with gameplay-score-driven competitive cycles
 - do NOT use "prediction market", "geopolitical risk", "intelligence", "data pipeline", or "oracle"
 - prefer simple degen-native language: "bet", "evolve", "climb", "earn"
 

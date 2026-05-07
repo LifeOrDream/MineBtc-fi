@@ -32,15 +32,15 @@ use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
 pub const MAX_REFERRALS_PER_CODE: u16 = 10_000; // High cap so viral country recruitment is not artificially throttled.
-pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in dogeBTC at first claim).
+pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in degenBTC at first claim).
                                        // Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
-                                       // not from dogeBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
+                                       // not from degenBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
                                        // (admin-tunable, capped at `MAX_REFERRAL_FEE_PCT = 10`); lifetime accrual is
                                        // capped at `MAX_REFERRER_SOL_LIFETIME`. Sybil farming is structurally
                                        // unprofitable: the sybil pays 100% of the bet but extracts only a fraction
                                        // of the protocol fee back.
                                        // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-                                       // ---- STAKE DOGEBTC TOKENS :: User gets hashpower and SOL rewards ------
+                                       // ---- STAKE DEGENBTC TOKENS :: User gets hashpower and SOL rewards ------
                                        // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 fn calc_weighted_amount(staked_amount: u64, lockup_multiplier: u16) -> Result<u64> {
@@ -113,22 +113,22 @@ pub fn int_stake_minebtc(
         player_data_key,
         faction_state.key(),
         faction_state.faction_id,
-        player_data.dogebtc_position_indices.len()
+        player_data.degenbtc_position_indices.len()
     );
     msg!(
-        "🧾 [stake_minebtc] player_before dogebtc_staked={} dogebtc_hashpower={} doge_multiplier={} pending_sol={} pending_minebtc={}",
-        player_data.dogebtc_staked as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6,
+        "🧾 [stake_minebtc] player_before degenbtc_staked={} degenbtc_hashpower={} doge_multiplier={} pending_sol={} pending_minebtc={}",
+        player_data.degenbtc_staked as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.doge_multiplier as f64 / 1000.0,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
     msg!(
-        "🧾 [stake_minebtc] faction_before dogebtc_staked={} total_dogebtc_hashpower={} sol_index={} minebtc_index={}",
-        faction_state.dogebtc_staked as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6,
-        faction_state.dogebtc_sol_reward_index,
-        faction_state.dogebtc_dogebtc_reward_index
+        "🧾 [stake_minebtc] faction_before degenbtc_staked={} total_degenbtc_hashpower={} sol_index={} minebtc_index={}",
+        faction_state.degenbtc_staked as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6,
+        faction_state.degenbtc_sol_reward_index,
+        faction_state.degenbtc_degenbtc_reward_index
     );
 
     // Validate inputs
@@ -143,7 +143,7 @@ pub fn int_stake_minebtc(
         ErrorCode::InvalidFactionId
     );
 
-    // Cannot add more dogeBTC to existing position
+    // Cannot add more degenBTC to existing position
     require!(
         user_position.staked_amount == 0,
         ErrorCode::PositionAlreadyExists
@@ -168,23 +168,23 @@ pub fn int_stake_minebtc(
     );
     msg!(
         "📊 Current faction state - Total staked: {}, Total hashpower: {}",
-        faction_state.dogebtc_staked as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        faction_state.degenbtc_staked as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
 
     // Add position index to player data
-    helper::add_dogebtc_position(player_data, position_index)?;
+    helper::add_degenbtc_position(player_data, position_index)?;
     msg!(
         "🔍 [stake_minebtc] Position index added: {}",
         position_index
     );
     msg!(
         "🔍 [stake_minebtc] Player data - Position indices: {:?}",
-        player_data.dogebtc_position_indices
+        player_data.degenbtc_position_indices
     );
     msg!(
         "🔍 [stake_minebtc] Player data - Total positions: {}",
-        player_data.dogebtc_position_indices.len()
+        player_data.degenbtc_position_indices.len()
     );
 
     // Calculate multiplier based on lockup duration
@@ -252,10 +252,10 @@ pub fn int_stake_minebtc(
     let doges_multiplier = player_data.doge_multiplier;
     let weighted_amount_with_doges =
         calc_hashpower_contribution(weighted_amount, doges_multiplier)?;
-    let prev_player_dogebtc_hashpower = player_data.dogebtc_hashpower;
-    let prev_player_dogebtc_staked = player_data.dogebtc_staked;
-    let prev_faction_dogebtc_staked = faction_state.dogebtc_staked;
-    let prev_faction_dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
+    let prev_player_degenbtc_hashpower = player_data.degenbtc_hashpower;
+    let prev_player_degenbtc_staked = player_data.degenbtc_staked;
+    let prev_faction_degenbtc_staked = faction_state.degenbtc_staked;
+    let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     msg!(
         "⚙️ [stake_minebtc] position_math actual_amount={} weighted_amount={} doge_multiplier={}x hashpower_contribution={}",
         actual_amount as f64 / 1e6,
@@ -265,42 +265,42 @@ pub fn int_stake_minebtc(
     );
 
     // Update player data state
-    player_data.dogebtc_hashpower = player_data
-        .dogebtc_hashpower
+    player_data.degenbtc_hashpower = player_data
+        .degenbtc_hashpower
         .checked_add(weighted_amount_with_doges)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.dogebtc_staked = player_data
-        .dogebtc_staked
+    player_data.degenbtc_staked = player_data
+        .degenbtc_staked
         .checked_add(actual_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     // Update faction state with actual_amount (post-tax) and weighted_amount
-    faction_state.dogebtc_staked = faction_state
-        .dogebtc_staked
+    faction_state.degenbtc_staked = faction_state
+        .degenbtc_staked
         .checked_add(actual_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    faction_state.total_dogebtc_hashpower = faction_state
-        .total_dogebtc_hashpower
+    faction_state.total_degenbtc_hashpower = faction_state
+        .total_degenbtc_hashpower
         .checked_add(weighted_amount_with_doges)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
-        faction_state.dogebtc_staked as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        faction_state.degenbtc_staked as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
     msg!(
-        "📈 [stake_minebtc] player_after dogebtc_staked={} -> {} dogebtc_hashpower={} -> {}",
-        prev_player_dogebtc_staked as f64 / 1e6,
-        player_data.dogebtc_staked as f64 / 1e6,
-        prev_player_dogebtc_hashpower as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6
+        "📈 [stake_minebtc] player_after degenbtc_staked={} -> {} degenbtc_hashpower={} -> {}",
+        prev_player_degenbtc_staked as f64 / 1e6,
+        player_data.degenbtc_staked as f64 / 1e6,
+        prev_player_degenbtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6
     );
     msg!(
-        "📈 [stake_minebtc] faction_after dogebtc_staked={} -> {} total_dogebtc_hashpower={} -> {}",
-        prev_faction_dogebtc_staked as f64 / 1e6,
-        faction_state.dogebtc_staked as f64 / 1e6,
-        prev_faction_dogebtc_hashpower as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        "📈 [stake_minebtc] faction_after degenbtc_staked={} -> {} total_degenbtc_hashpower={} -> {}",
+        prev_faction_degenbtc_staked as f64 / 1e6,
+        faction_state.degenbtc_staked as f64 / 1e6,
+        prev_faction_degenbtc_hashpower as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
 
     // -------------- TRANSFER TOKENS -------------- //
@@ -343,7 +343,7 @@ pub fn int_stake_minebtc(
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- UNSTAKE DOGEBTC TOKENS :: User gets MINE_BTC back ------------------------
+// ---- UNSTAKE DEGENBTC TOKENS :: User gets MINE_BTC back ------------------------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Unstake MineBtc tokens from a position
@@ -371,18 +371,18 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         player_data.doge_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [unstake_minebtc] player_before dogebtc_staked={} dogebtc_hashpower={} pending_sol={} pending_minebtc={}",
-        player_data.dogebtc_staked as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6,
+        "🧾 [unstake_minebtc] player_before degenbtc_staked={} degenbtc_hashpower={} pending_sol={} pending_minebtc={}",
+        player_data.degenbtc_staked as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
     msg!(
-        "🧾 [unstake_minebtc] faction_before dogebtc_staked={} total_dogebtc_hashpower={} sol_index={} minebtc_index={}",
-        faction_state.dogebtc_staked as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6,
-        faction_state.dogebtc_sol_reward_index,
-        faction_state.dogebtc_dogebtc_reward_index
+        "🧾 [unstake_minebtc] faction_before degenbtc_staked={} total_degenbtc_hashpower={} sol_index={} minebtc_index={}",
+        faction_state.degenbtc_staked as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6,
+        faction_state.degenbtc_sol_reward_index,
+        faction_state.degenbtc_degenbtc_reward_index
     );
 
     // Validate the position exists and has funds
@@ -401,7 +401,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     );
     require!(
         player_data
-            .dogebtc_position_indices
+            .degenbtc_position_indices
             .contains(&position_index),
         ErrorCode::InvalidParameters
     );
@@ -443,10 +443,10 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         calc_hashpower_contribution(original_weighted, player_data.doge_multiplier)?;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
-    let prev_player_dogebtc_hashpower = player_data.dogebtc_hashpower;
-    let prev_player_dogebtc_staked = player_data.dogebtc_staked;
-    let prev_faction_dogebtc_staked = faction_state.dogebtc_staked;
-    let prev_faction_dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
+    let prev_player_degenbtc_hashpower = player_data.degenbtc_hashpower;
+    let prev_player_degenbtc_staked = player_data.degenbtc_staked;
+    let prev_faction_degenbtc_staked = faction_state.degenbtc_staked;
+    let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     msg!(
         "⚙️ [unstake_minebtc] position_math staked_amount={} weighted_amount={} doge_multiplier={}x hashpower_contribution={} is_early={}",
         staked_amount as f64 / 1e6,
@@ -458,52 +458,52 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
 
     // Update faction state (decrease staked amount and hashpower)
     msg!("📊 Updating faction state");
-    faction_state.dogebtc_staked = faction_state
-        .dogebtc_staked
+    faction_state.degenbtc_staked = faction_state
+        .degenbtc_staked
         .checked_sub(staked_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    faction_state.total_dogebtc_hashpower = faction_state
-        .total_dogebtc_hashpower
+    faction_state.total_degenbtc_hashpower = faction_state
+        .total_degenbtc_hashpower
         .checked_sub(hashpower_contribution)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   New faction totals - Staked: {}, Hashpower: {}",
-        faction_state.dogebtc_staked as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        faction_state.degenbtc_staked as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
 
     // Update player data (decrease hashpower and staked amount)
     msg!("📊 Updating player data");
-    player_data.dogebtc_hashpower = player_data
-        .dogebtc_hashpower
+    player_data.degenbtc_hashpower = player_data
+        .degenbtc_hashpower
         .checked_sub(hashpower_contribution)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.dogebtc_staked = player_data
-        .dogebtc_staked
+    player_data.degenbtc_staked = player_data
+        .degenbtc_staked
         .checked_sub(staked_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   New player totals - Hashpower: {}, Staked: {}",
-        player_data.dogebtc_hashpower as f64 / 1e6,
-        player_data.dogebtc_staked as f64 / 1e6
+        player_data.degenbtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_staked as f64 / 1e6
     );
     msg!(
-        "📈 [unstake_minebtc] player_after dogebtc_staked={} -> {} dogebtc_hashpower={} -> {}",
-        prev_player_dogebtc_staked as f64 / 1e6,
-        player_data.dogebtc_staked as f64 / 1e6,
-        prev_player_dogebtc_hashpower as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6
+        "📈 [unstake_minebtc] player_after degenbtc_staked={} -> {} degenbtc_hashpower={} -> {}",
+        prev_player_degenbtc_staked as f64 / 1e6,
+        player_data.degenbtc_staked as f64 / 1e6,
+        prev_player_degenbtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6
     );
     msg!(
-        "📈 [unstake_minebtc] faction_after dogebtc_staked={} -> {} total_dogebtc_hashpower={} -> {}",
-        prev_faction_dogebtc_staked as f64 / 1e6,
-        faction_state.dogebtc_staked as f64 / 1e6,
-        prev_faction_dogebtc_hashpower as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        "📈 [unstake_minebtc] faction_after degenbtc_staked={} -> {} total_degenbtc_hashpower={} -> {}",
+        prev_faction_degenbtc_staked as f64 / 1e6,
+        faction_state.degenbtc_staked as f64 / 1e6,
+        prev_faction_degenbtc_hashpower as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
 
     // Remove position from user's active positions
-    helper::remove_dogebtc_position(player_data, position_index)?;
+    helper::remove_degenbtc_position(player_data, position_index)?;
 
     // -------------- CHARGE EMERGENCY TAX -------------- //
 
@@ -712,7 +712,7 @@ pub fn int_stake_lp_tokens(
         faction_state.lp_staked as f64 / 1e6,
         faction_state.total_lp_hashpower as f64 / 1e6,
         faction_state.lp_sol_reward_index,
-        faction_state.lp_dogebtc_reward_index
+        faction_state.lp_degenbtc_reward_index
     );
 
     // Validate inputs
@@ -936,7 +936,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         faction_state.lp_staked as f64 / 1e6,
         faction_state.total_lp_hashpower as f64 / 1e6,
         faction_state.lp_sol_reward_index,
-        faction_state.lp_dogebtc_reward_index
+        faction_state.lp_degenbtc_reward_index
     );
 
     // Validate the position exists and has funds
@@ -1238,10 +1238,10 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         faction_id
     );
     msg!(
-        "🧾 [claim_staking_rewards] pending_before sol={} minebtc={} dogebtc_hashpower={} lp_hashpower={}",
+        "🧾 [claim_staking_rewards] pending_before sol={} minebtc={} degenbtc_hashpower={} lp_hashpower={}",
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6
     );
 
@@ -1395,7 +1395,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
 
     // Apply referral bonus to the referee only. Referrer commissions accrue in SOL
     // from referees' protocol fees (see internal_process_bets / NFT mint flows),
-    // not from dogeBTC emission. This keeps the 21M cap unaffected by referrals
+    // not from degenBTC emission. This keeps the 21M cap unaffected by referrals
     // and makes sybil farming structurally unprofitable.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let referral_bonus = if has_referrer {
@@ -1628,21 +1628,21 @@ pub fn int_update_minebtc_staking_rewards(
     let mut accrued_minebtc_rewards = 0;
     msg!(
         "📚 [update_minebtc_rewards] hashpower={} sol_index={} sol_debt={} minebtc_index={} minebtc_debt={} pending_sol_before={} pending_minebtc_before={}",
-        player_data.dogebtc_hashpower as f64 / 1e6,
-        faction_state.dogebtc_sol_reward_index,
-        player_data.dogebtc_sol_reward_debt,
-        faction_state.dogebtc_dogebtc_reward_index,
-        player_data.dogebtc_dogebtc_reward_debt,
+        player_data.degenbtc_hashpower as f64 / 1e6,
+        faction_state.degenbtc_sol_reward_index,
+        player_data.degenbtc_sol_reward_debt,
+        faction_state.degenbtc_degenbtc_reward_index,
+        player_data.degenbtc_degenbtc_reward_debt,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
 
-    if player_data.dogebtc_hashpower > 0 {
+    if player_data.degenbtc_hashpower > 0 {
         // Calculate SOL rewards using helper function (convert u128 indexes to u64 for calculation)
         new_sol_rewards = helper::calculate_staking_rewards(
-            player_data.dogebtc_hashpower,
-            faction_state.dogebtc_sol_reward_index,
-            player_data.dogebtc_sol_reward_debt,
+            player_data.degenbtc_hashpower,
+            faction_state.degenbtc_sol_reward_index,
+            player_data.degenbtc_sol_reward_debt,
         )?;
         player_data.pending_sol_rewards = player_data
             .pending_sol_rewards
@@ -1655,9 +1655,9 @@ pub fn int_update_minebtc_staking_rewards(
         );
 
         new_minebtc_rewards = helper::calculate_staking_rewards(
-            player_data.dogebtc_hashpower,
-            faction_state.dogebtc_dogebtc_reward_index,
-            player_data.dogebtc_dogebtc_reward_debt,
+            player_data.degenbtc_hashpower,
+            faction_state.degenbtc_degenbtc_reward_index,
+            player_data.degenbtc_degenbtc_reward_debt,
         )?;
         accrued_minebtc_rewards = helper::add_to_total_claimable(
             hodl_pool,
@@ -1665,7 +1665,7 @@ pub fn int_update_minebtc_staking_rewards(
             new_minebtc_rewards,
             player_owner,
             player_data_key,
-            CLAIMABLE_MINEBTC_SOURCE_STAKING_DOGEBTC,
+            CLAIMABLE_MINEBTC_SOURCE_STAKING_DEGENBTC,
             0,
         )?;
         msg!(
@@ -1674,16 +1674,16 @@ pub fn int_update_minebtc_staking_rewards(
             new_minebtc_rewards as f64 / 1e6
         );
     } else {
-        msg!("ℹ️ [update_minebtc_rewards] no dogebtc hashpower; only syncing reward debt");
+        msg!("ℹ️ [update_minebtc_rewards] no degenbtc hashpower; only syncing reward debt");
     }
 
     // Update reward debt to current indexes
-    player_data.dogebtc_sol_reward_debt = faction_state.dogebtc_sol_reward_index;
-    player_data.dogebtc_dogebtc_reward_debt = faction_state.dogebtc_dogebtc_reward_index;
+    player_data.degenbtc_sol_reward_debt = faction_state.degenbtc_sol_reward_index;
+    player_data.degenbtc_degenbtc_reward_debt = faction_state.degenbtc_degenbtc_reward_index;
     msg!(
         "📚 [update_minebtc_rewards] debt_after_sync sol_debt={} minebtc_debt={} accrued_unrefined={} total_claimable={}",
-        player_data.dogebtc_sol_reward_debt,
-        player_data.dogebtc_dogebtc_reward_debt,
+        player_data.degenbtc_sol_reward_debt,
+        player_data.degenbtc_degenbtc_reward_debt,
         accrued_minebtc_rewards as f64 / 1e6,
         hodl_pool.total_minebtc_claimable as f64 / 1e6
     );
@@ -1712,8 +1712,8 @@ pub fn int_update_lp_staking_rewards(
         player_data.lp_hashpower as f64 / 1e6,
         faction_state.lp_sol_reward_index,
         player_data.lp_sol_reward_debt,
-        faction_state.lp_dogebtc_reward_index,
-        player_data.lp_dogebtc_reward_debt,
+        faction_state.lp_degenbtc_reward_index,
+        player_data.lp_degenbtc_reward_debt,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
@@ -1737,8 +1737,8 @@ pub fn int_update_lp_staking_rewards(
 
         new_minebtc_rewards = helper::calculate_staking_rewards(
             player_data.lp_hashpower,
-            faction_state.lp_dogebtc_reward_index,
-            player_data.lp_dogebtc_reward_debt,
+            faction_state.lp_degenbtc_reward_index,
+            player_data.lp_degenbtc_reward_debt,
         )?;
         accrued_minebtc_rewards = helper::add_to_total_claimable(
             hodl_pool,
@@ -1761,11 +1761,11 @@ pub fn int_update_lp_staking_rewards(
     // Update reward debt to current indexes (MUST be outside if block to prevent
     // phantom rewards when user unstakes all LP and re-stakes later)
     player_data.lp_sol_reward_debt = faction_state.lp_sol_reward_index;
-    player_data.lp_dogebtc_reward_debt = faction_state.lp_dogebtc_reward_index;
+    player_data.lp_degenbtc_reward_debt = faction_state.lp_degenbtc_reward_index;
     msg!(
         "📚 [update_lp_rewards] debt_after_sync sol_debt={} minebtc_debt={} accrued_unrefined={} total_claimable={}",
         player_data.lp_sol_reward_debt,
-        player_data.lp_dogebtc_reward_debt,
+        player_data.lp_degenbtc_reward_debt,
         accrued_minebtc_rewards as f64 / 1e6,
         hodl_pool.total_minebtc_claimable as f64 / 1e6
     );
@@ -1782,7 +1782,7 @@ pub fn int_update_lp_staking_rewards(
 // ----------------------------------------------------------------------------------------
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- STAKE DOGEBTC ---------
+// --------- STAKE DEGENBTC ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
@@ -1858,7 +1858,7 @@ pub struct StakeMineBtc<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- UNSTAKE DOGEBTC ---------
+// --------- UNSTAKE DEGENBTC ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]

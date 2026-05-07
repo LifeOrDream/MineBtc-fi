@@ -194,7 +194,7 @@ pub struct DogeStaked {
     /// Player's current multiplier after staking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after staking
-    pub dogebtc_hashpower: u64,
+    pub degenbtc_hashpower: u64,
     /// Player's current LP hashpower after staking
     pub lp_hashpower: u64,
     /// Timestamp of the staking action
@@ -216,7 +216,7 @@ pub struct DogeUnstaked {
     /// Player's current multiplier after unstaking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after unstaking
-    pub dogebtc_hashpower: u64,
+    pub degenbtc_hashpower: u64,
     /// Player's current LP hashpower after unstaking
     pub lp_hashpower: u64,
     /// Timestamp of the unstaking action
@@ -387,7 +387,6 @@ pub struct PlayerInitialized {
     pub origin_faction_id: u8,
     pub referral_code: Option<Pubkey>,
     pub referrer_faction_id: Option<u8>,
-    pub same_faction_referral: bool,
     pub timestamp: i64,
 }
 
@@ -398,9 +397,7 @@ pub struct PlayerRecruited {
     pub referrer: Pubkey,
     pub player_origin_faction_id: u8,
     pub referrer_origin_faction_id: u8,
-    pub same_faction: bool,
     pub referrer_total_recruits: u16,
-    pub referrer_same_faction_recruits: u16,
     pub timestamp: i64,
 }
 
@@ -559,13 +556,13 @@ pub struct RoundEnded {
 }
 
 #[event]
-pub struct DogeBtcStakingRewardsDistributed {
+pub struct DegenBtcStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
     pub minebtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
-    pub dogebtc_dogebtc_reward_index: u128,
-    pub dogebtc_sol_reward_index: u128,
+    pub degenbtc_degenbtc_reward_index: u128,
+    pub degenbtc_sol_reward_index: u128,
 }
 
 #[event]
@@ -574,7 +571,7 @@ pub struct LpStakingRewardsDistributed {
     pub faction_id: u8,
     pub minebtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
-    pub lp_dogebtc_reward_index: u128,
+    pub lp_degenbtc_reward_index: u128,
     pub lp_sol_reward_index: u128,
 }
 
@@ -688,7 +685,9 @@ pub struct DogeGameplayUnlockRequested {
 /// can turn it into artwork, reels, character history, or a simple indexed beat.
 #[event]
 pub struct StoryEventTriggered {
-    pub round_id: u64,
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
     pub user: Pubkey,
     pub doge_mint: Pubkey,
     pub story_event_type: u8,
@@ -699,7 +698,9 @@ pub struct StoryEventTriggered {
 /// Event emitted when a doge evolves to a new stage
 #[event]
 pub struct DogeEvolution {
-    pub round_id: u64,
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
     pub doge_mint: Pubkey,
     pub new_stage: u8,
     /// Visual trait mutation that happened during evolution
@@ -715,7 +716,9 @@ pub struct DogeEvolution {
 /// Event emitted when a doge's power trait is mutated
 #[event]
 pub struct DogePowerMutation {
-    pub round_id: u64,
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
     pub doge_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,
@@ -725,7 +728,9 @@ pub struct DogePowerMutation {
 /// Event emitted when a doge's visual trait is mutated
 #[event]
 pub struct DogeVisualMutation {
-    pub round_id: u64,
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
     pub doge_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,
@@ -737,11 +742,11 @@ pub struct DogeVisualMutation {
 // ========================================================================================
 
 /// Event emitted when a faction_war is settled.
-/// Rankings driven by on-chain mutation scores accumulated during the faction_war.
+/// Rankings driven by on-chain gameplay scores accumulated during the faction_war.
 #[event]
 pub struct FactionWarSettled {
     pub faction_war_id: u64,
-    pub total_dogebtc_mined: u64,
+    pub total_degenbtc_mined: u64,
     pub faction_war_mining_pool: u64,
     pub start_ranks: [u8; NUM_FACTIONS],
     pub final_ranks: [u8; NUM_FACTIONS],
@@ -752,16 +757,16 @@ pub struct FactionWarSettled {
     pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
     pub faction_round_wins: [u16; NUM_FACTIONS],
     pub faction_sol_totals: [u64; NUM_FACTIONS],
-    pub faction_mutation_scores: [u64; NUM_FACTIONS],
+    pub faction_gameplay_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
 
-/// Event emitted when a story event contributes score to a faction's faction_war total.
+/// Event emitted when gameplay support contributes score to a faction's faction_war total.
 #[event]
-pub struct StoryEventScoreAccumulated {
+pub struct GameplayScoreAccumulated {
     pub faction_war_id: u64,
     pub faction_id: u8,
-    pub story_event_type: u8,
+    pub score_source: u8,
     pub score_added: u64,
     pub faction_total_score: u64,
     pub user: Pubkey,

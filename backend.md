@@ -66,7 +66,7 @@ The backend is a **hybrid monolith** — single TypeScript codebase that spawns 
 | `autominer-worker` | `autominer_loop.ts` | Executes autominer bets & claims on behalf of users |
 | `rebase-claim-loop` | `rebase_claim_loop.ts` | Permissionless auto-claimer for faction war rewards |
 | `tax-loop` | `tax_loop.ts` | Legacy tax harvest + distribute (may overlap with economy cycle) |
-| `price-fetcher` | `startPriceFetcher.ts` | Fetches SOL/dogeBTC price data |
+| `price-fetcher` | `startPriceFetcher.ts` | Fetches SOL/degenBTC price data |
 | `pool-state-updater` | `startPoolStateUpdater.ts` | Tracks Raydium CP-Swap pool state |
 | `asset-worker` | `startAssetWorker.ts` | Generates NFT assets via FAL.ai + Google GenAI |
 | `admin-server` | `startAdminServer.ts` | Internal dashboard API (health, metrics, queues) |
@@ -237,7 +237,7 @@ MineBtcBackend/
 
 | Handler File | Events Handled |
 |-------------|----------------|
-| `game.ts` | `RoundStarted`, `RoundEnded`, `MotherlodeHit`, `RewardsDistributedForRound`, `DogeBtcStakingRewardsDistributed`, `LpStakingRewardsDistributed` |
+| `game.ts` | `RoundStarted`, `RoundEnded`, `MotherlodeHit`, `RewardsDistributedForRound`, `DegenBtcStakingRewardsDistributed`, `LpStakingRewardsDistributed` |
 | `user.ts` | `PlayerInitialized`, `FactionChanged`, `BetsPlaced`, `RoundRewardsClaimed`, `Autominer*`, `ReferralRewardsClaimed`, `DogeUsedForGameplay`, `DogeWithdrawnFromGameplay`, `MutationTriggered`, `DogeEvolution`, `DogePowerMutation`, `DogeVisualMutation`, `DogeGameplayUnlockRequested` |
 | `stake.ts` | `MineBtcStaked`, `MineBtcUnstaked`, `LiquidityStaked`, `LiquidityUnstaked`, `EmergencyWithdrawal`, `SolRewardsClaimed`, `DbtcRewardsClaimed`, `MinebtcClaimableAccrued`, `RefiningFeeRedistributed` |
 | `doges.ts` | `DogeMinted`, `DogeStaked`, `DogeUnstaked`, `DogeSentToHeaven`, `DogeSynced` |
@@ -351,7 +351,7 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 | `onchainAccounts.resolver.ts` | `onchainAccount(name)` | — | Cached on-chain state |
 | `chat.resolver.ts` | `chatMessages(factionId, limit)` | `sendChatMessage` | In-game chat |
 | `analytics.resolver.ts` | `playerActivity`, `dailyActiveUsers`, `retentionCohort` | — | Backend analytics |
-| `dogeBtcTokenomics.resolver.ts` | `tokenomics` | — | Token supply/burn data |
+| `degenBtcTokenomics.resolver.ts` | `tokenomics` | — | Token supply/burn data |
 | `stakingWallet.resolver.ts` | `stakingWallet(wallet)` | — | Staking wallet summary |
 
 ### 6.2 API Gaps (Relative to Contract Changes)

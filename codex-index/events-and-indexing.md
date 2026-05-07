@@ -8,7 +8,7 @@ The backend should index contract events and also reconcile PDA state where even
 
 - `PlayerInitialized` - user signup, country/faction, referral state.
 - `PlayerRecruited` - referral relationship and same-faction context.
-- `ReferralRewardsClaimed` - claimed SOL/dogeBTC referral rewards.
+- `ReferralRewardsClaimed` - claimed SOL/degenBTC referral rewards.
 - `SolFeesWithdrawn` - SOL fee withdrawal split.
 
 ## Round and Betting Events
@@ -38,7 +38,8 @@ The backend should index contract events and also reconcile PDA state where even
   - `DogeEvolution`
   - `DogePowerMutation`
   - `DogeVisualMutation`
-  - `StoryEventScoreAccumulated`
+- Gameplay scoring:
+  - `GameplayScoreAccumulated`
 
 ## Staking Events
 
@@ -47,18 +48,18 @@ The backend should index contract events and also reconcile PDA state where even
 - `SolRewardsClaimed`, `DbtcRewardsClaimed`.
 - `MinebtcClaimableAccrued`.
 - `HodlTaxRedistributed`, `PaperHandBurned`.
-- `DogeBtcStakingRewardsDistributed`, `LpStakingRewardsDistributed`.
+- `DegenBtcStakingRewardsDistributed`, `LpStakingRewardsDistributed`.
 
 ## Economy Events
 
 - `PriceSnapshotTaken`
-  - snapshot number, SOL swapped, dogeBTC received, current price, weighted average, SOL earmarked for POL, total POL balance, history count, timestamp.
+  - snapshot number, SOL swapped, degenBTC received, current price, weighted average, SOL earmarked for POL, total POL balance, history count, timestamp.
 - `DistributionRateUpdated`
   - old/new emission rate, price change %, current/average/track/recent price, rate changed flag, new faction-war multiplier, timestamp.
 - `FactionWarMultiplierUpdated`
   - multiplier bps movement.
 - `LiquidityAdded`
-  - SOL, dogeBTC, LP minted, LP token price.
+  - SOL, degenBTC, LP minted, LP token price.
 - `LpTokensBurned`
   - LP burned, cumulative LP burned, liquidity amounts, LP token price.
 - `TaxDistributed`, `NftFloorSweepFundsWithdrawn`, `FactionTreasuryRewardsClaimed`.

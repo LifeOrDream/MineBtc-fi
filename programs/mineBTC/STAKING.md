@@ -76,8 +76,8 @@ Where:
 
 This final `hashpower_contribution` is what changes:
 
-- `player_data.dogebtc_hashpower` / `player_data.lp_hashpower`
-- `faction_state.total_dogebtc_hashpower` / `faction_state.total_lp_hashpower`
+- `player_data.degenbtc_hashpower` / `player_data.lp_hashpower`
+- `faction_state.total_degenbtc_hashpower` / `faction_state.total_lp_hashpower`
 
 ---
 
@@ -177,7 +177,7 @@ SOL rewards come from the round staker-fee lane.
 
 They are tracked through faction reward indexes:
 
-- `faction_state.dogebtc_sol_reward_index`
+- `faction_state.degenbtc_sol_reward_index`
 - `faction_state.lp_sol_reward_index`
 
 When a user syncs rewards, new SOL is added to:
@@ -191,8 +191,8 @@ their wallet and `pending_sol_rewards` is reset to zero.
 
 MineBTC rewards come from faction reward indexes too:
 
-- `faction_state.dogebtc_dogebtc_reward_index`
-- `faction_state.lp_dogebtc_reward_index`
+- `faction_state.degenbtc_degenbtc_reward_index`
+- `faction_state.lp_degenbtc_reward_index`
 
 When rewards are synced:
 

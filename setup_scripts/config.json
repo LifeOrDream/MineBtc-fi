@@ -15,8 +15,8 @@
     },
     "token": {
         "name": "DogeWifBTC",
-        "symbol": "DogeBTC",
-        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, trigger operator Doge story events, and climb the story-event leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
+        "symbol": "DegenBTC",
+        "description": "$DegenBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, trigger operator Doge story events, and climb the story-event leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
         "metadata_uri": "https://assets.minebtc.fun/btc",
         "image": "https://assets.minebtc.fun/btc-logo.png",
         "external_url": "https://minebtc.fun",
@@ -49,7 +49,7 @@
     },
     "mining": {
         "start_timestamp": 0,
-        "doge_btc_per_round": 1000000000
+        "degen_btc_per_round": 1000000000
     },
     "doges_config": {
         "_supply_plan": "36K genesis mint cap via bonding curve (3000 per configured country, 12 countries), 100K lifetime Doge cap via breeding/admin/whitelist mints",

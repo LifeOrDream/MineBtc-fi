@@ -15,7 +15,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // ## Tax Mechanics
 //
-// All dogeBTC transfers incur a 0.1% tax, split into:
+// All degenBTC transfers incur a 0.1% tax, split into:
 // - **Burn**: Reducing total supply (default 25%)
 // - **NFT Floor Sweep**: Funded for market-making (default 10%)
 // - **Faction Treasury**: Distributed to stakers via faction_war leaderboard (default 40%)
@@ -24,7 +24,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 // ## Faction Treasury Distribution
 //
 // After each faction_war settles, `claim_faction_treasury_for_faction_war` distributes
-// the treasury vault based on story-event leaderboard rankings:
+// the treasury vault based on gameplay-score leaderboard rankings:
 // - 80% rank-weighted (higher rank = more reward, everyone gets something)
 // - 20% lucky draw (one random underdog faction from rank 5+)
 //
@@ -51,10 +51,10 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.start_timestamp = 0;
     faction_war_state.stage = 0;
     faction_war_state.active_faction_count = 0;
-    faction_war_state.total_dogebtc_mined_in_faction_war = 0;
+    faction_war_state.total_degenbtc_mined_in_faction_war = 0;
     faction_war_state.faction_war_mining_pool = 0;
-    faction_war_state.start_ranks = faction_war_config.prev_faction_war_mutation_ranks;
-    faction_war_state.final_ranks = faction_war_config.prev_faction_war_mutation_ranks;
+    faction_war_state.start_ranks = faction_war_config.prev_faction_war_ranks;
+    faction_war_state.final_ranks = faction_war_config.prev_faction_war_ranks;
     faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
     faction_war_state.resolved_directions =
         [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
@@ -65,7 +65,9 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_sol_direction_totals =
+        [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    faction_war_state.faction_gameplay_scores = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
     faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
@@ -73,6 +75,7 @@ fn seed_empty_faction_war_treasury_bucket(
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
     faction_war_state.treasury_claimed_bitmap = 0;
+    faction_war_state.sol_reward_pool = 0;
 }
 
 fn ensure_active_faction_war_treasury_bucket<'info>(
@@ -618,7 +621,7 @@ pub fn internal_crank_distribute_tax<'info>(
                 .checked_add(faction_treasury_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "   🏴 Attributed {} dogeBTC treasury tax to faction war {} (base now {})",
+                "   🏴 Attributed {} degenBTC treasury tax to faction war {} (base now {})",
                 (faction_treasury_amount as f64) / 1e6,
                 faction_war_state.faction_war_id,
                 (faction_war_state.treasury_reward_base_amount as f64) / 1e6
@@ -629,7 +632,7 @@ pub fn internal_crank_distribute_tax<'info>(
                 .checked_add(faction_treasury_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "   💤 Faction wars inactive; queued {} dogeBTC treasury tax for the next war (queued total {})",
+                "   💤 Faction wars inactive; queued {} degenBTC treasury tax for the next war (queued total {})",
                 (faction_treasury_amount as f64) / 1e6,
                 (tax_config.unassigned_faction_war_treasury_amount as f64) / 1e6
             );
@@ -772,10 +775,10 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         return Ok(());
     }
 
-    // Split 50/50 between dogeBTC stakers and LP stakers
-    let dogebtc_active = fs.total_dogebtc_hashpower > 0;
+    // Split 50/50 between degenBTC stakers and LP stakers
+    let degenbtc_active = fs.total_degenbtc_hashpower > 0;
     let lp_active = fs.total_lp_hashpower > 0;
-    let (dbtc_share, lp_share) = match (dogebtc_active, lp_active) {
+    let (dbtc_share, lp_share) = match (degenbtc_active, lp_active) {
         (true, true) => {
             let half = reward_amount / 2;
             (half, reward_amount - half)
@@ -787,7 +790,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     let distributed = dbtc_share
         .checked_add(lp_share)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let recycled_amount = if dogebtc_active || lp_active {
+    let recycled_amount = if degenbtc_active || lp_active {
         0
     } else {
         reward_amount
@@ -820,7 +823,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
             ctx.accounts.minebtc_mint.decimals,
         )?;
         msg!(
-            "   ✅ Transferred {} dogeBTC from treasury (dbtc_stakers={}, lp_stakers={}, recycled={})",
+            "   ✅ Transferred {} degenBTC from treasury (dbtc_stakers={}, lp_stakers={}, recycled={})",
             total_transfer,
             dbtc_share,
             lp_share,
@@ -828,19 +831,19 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         );
     }
 
-    if dbtc_share > 0 && fs.total_dogebtc_hashpower > 0 {
-        fs.dogebtc_dogebtc_reward_index = fs
-            .dogebtc_dogebtc_reward_index
+    if dbtc_share > 0 && fs.total_degenbtc_hashpower > 0 {
+        fs.degenbtc_degenbtc_reward_index = fs
+            .degenbtc_degenbtc_reward_index
             .checked_add(helper::mul_div(
                 dbtc_share,
                 INDEX_PRECISION,
-                fs.total_dogebtc_hashpower,
+                fs.total_degenbtc_hashpower,
             )?)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if lp_share > 0 && fs.total_lp_hashpower > 0 {
-        fs.lp_dogebtc_reward_index = fs
-            .lp_dogebtc_reward_index
+        fs.lp_degenbtc_reward_index = fs
+            .lp_degenbtc_reward_index
             .checked_add(helper::mul_div(
                 lp_share,
                 INDEX_PRECISION,
@@ -978,7 +981,7 @@ pub struct CrankDistributeTax<'info> {
 }
 
 /// Claim faction treasury rewards for a settled faction_war.
-/// Uses story-event leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
+/// Uses gameplay-score leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
 #[derive(Accounts)]
 #[instruction(faction_war_id: u64)]
 pub struct ClaimFactionTreasuryForFactionWar<'info> {

@@ -943,11 +943,11 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         estimated_lp_amount as f64 / 1e9
     );
 
-    // If max_minebtc_with_buffer exceeds 5% limit, adjust SOL amount to match 1% dogeBTC limit
+    // If max_minebtc_with_buffer exceeds 5% limit, adjust SOL amount to match 1% degenBTC limit
     let (final_sol_amount, _final_minebtc_amount, final_max_minebtc_with_buffer) =
         if max_minebtc_with_buffer >= available_minebtc / 100 {
             // 1% of available_minebtc
-            msg!("   💰 Max MINEBTC with buffer exceeds 1% of available MINEBTC, adjusting SOL amount to match 1% dogeBTC limit");
+            msg!("   💰 Max MINEBTC with buffer exceeds 1% of available MINEBTC, adjusting SOL amount to match 1% degenBTC limit");
             adjust_sol_for_minebtc_limit(
                 available_minebtc,
                 sol_vault_balance,

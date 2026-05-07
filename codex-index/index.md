@@ -11,7 +11,7 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
   - `admin.rs` - global config, factions, fees, Doge config, game state, custodian setup.
   - `game.rs` - round start/end, winner selection, reward distribution.
   - `user.rs` - player signup, bets, autominers, claims, gameplay Doge locking/unlocking, story events.
-  - `stake.rs` - dogeBTC/LP staking, reward claims, HODL tax, referral claims.
+  - `stake.rs` - degenBTC/LP staking, reward claims, HODL tax, referral claims.
   - `doges.rs` - Doge minting, whitelist/admin minting, staking, breeding, send-to-heaven.
   - `economy.rs` - SOL fee distribution, price snapshots, emission rate update, LP add/burn.
   - `faction_war.rs` - mutation-driven cycle scoring, rankings, settlement, cycle claims.
@@ -33,7 +33,7 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
 
 - Anchor program: `minebtc`
 - Declared program ID in `programs/mineBTC/src/lib.rs`: `8SiC7tVuEQ1Py86JzTLDnaaqGxdvquW3GCJXq6TrWNfu`
-- Token: Token-2022 `DogeWifBTC` / `DogeBTC`, 6 decimals, 2.1B fixed supply, transfer tax default 10 bps.
+- Token: Token-2022 `DogeWifBTC` / `DegenBTC`, 6 decimals, 2.1B fixed supply, transfer tax default 10 bps.
 - Default round duration from setup config: 60 seconds.
 - Factions in setup config: USA, China, Russia, India, Japan, South Korea, Iran, UK, North Korea, France, Brazil, Israel. Contract supports up to 15.
 

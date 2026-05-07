@@ -102,12 +102,10 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         protocol_fee_pct: DEFAULT_PROTOCOL_FEE_PCT,
         buyback_pct: DEFAULT_BUYBACK_PCT,
         stakers_pct: DEFAULT_STAKERS_PCT,
-        referral_fee_pct: DEFAULT_REFERRAL_FEE_PCT,
-        same_faction_referral_fee_pct: DEFAULT_SAME_FACTION_REFERRAL_FEE_PCT,
         cycle_sol_split_pct: DEFAULT_CYCLE_SOL_SPLIT_PCT,
     };
 
-    // Initialize dogeBTC round distribution config (defaults defined in state.rs)
+    // Initialize degenBTC round distribution config (defaults defined in state.rs)
     // Invariant: stakers + winners + 2 * same_faction + jackpot = 100
     global_config.minebtc_dist_config = MineBtcDistConfig {
         minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
@@ -305,13 +303,13 @@ pub fn add_faction_internal(
     // Initialize faction state data
     faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
-    faction_state.total_dogebtc_hashpower = 0;
-    faction_state.dogebtc_staked = 0;
-    faction_state.dogebtc_dogebtc_reward_index = 0;
-    faction_state.dogebtc_sol_reward_index = 0;
+    faction_state.total_degenbtc_hashpower = 0;
+    faction_state.degenbtc_staked = 0;
+    faction_state.degenbtc_degenbtc_reward_index = 0;
+    faction_state.degenbtc_sol_reward_index = 0;
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
-    faction_state.lp_dogebtc_reward_index = 0;
+    faction_state.lp_degenbtc_reward_index = 0;
     faction_state.sol_reward_index = 0;
     // Add faction to config
     global_config.supported_factions.push(faction_name.clone());
@@ -438,8 +436,6 @@ pub fn update_fees_internal(
     new_minebtc_jackpot_pct: Option<u8>,
     new_hodl_tax_pct: Option<u8>,
     snapshot_interval: Option<u64>,
-    new_referral_fee_pct: Option<u8>,
-    new_same_faction_referral_fee_pct: Option<u8>,
     new_cycle_sol_split_pct: Option<u8>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_fees_internal");
@@ -449,18 +445,12 @@ pub fn update_fees_internal(
     if new_protocol_fee_pct.is_some()
         || new_buyback_pct.is_some()
         || new_stakers_pct.is_some()
-        || new_referral_fee_pct.is_some()
-        || new_same_faction_referral_fee_pct.is_some()
         || new_cycle_sol_split_pct.is_some()
     {
         let protocol_fee_pct =
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
-        let referral_fee_pct =
-            new_referral_fee_pct.unwrap_or(global_config.sol_fee_config.referral_fee_pct);
-        let same_faction_referral_fee_pct = new_same_faction_referral_fee_pct
-            .unwrap_or(global_config.sol_fee_config.same_faction_referral_fee_pct);
         let cycle_sol_split_pct =
             new_cycle_sol_split_pct.unwrap_or(global_config.sol_fee_config.cycle_sol_split_pct);
 
@@ -477,14 +467,6 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
         require!(
-            referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
-            ErrorCode::InvalidParameters
-        );
-        require!(
-            same_faction_referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
-            ErrorCode::InvalidParameters
-        );
-        require!(
             cycle_sol_split_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
@@ -493,8 +475,6 @@ pub fn update_fees_internal(
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
-            referral_fee_pct,
-            same_faction_referral_fee_pct,
             cycle_sol_split_pct,
         };
     }
@@ -1585,7 +1565,6 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.bump = ctx.bumps.system_referral_rewards;
     system_referral.owner_faction_id = u8::MAX;
     system_referral.referrals_count = 0;
-    system_referral.same_faction_referrals_count = 0;
     system_referral.referred_faction_counts = [0u16; NUM_FACTIONS];
     system_referral.pending_sol_rewards = 0;
     system_referral.total_sol_earned = 0;

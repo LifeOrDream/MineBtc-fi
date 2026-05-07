@@ -13,7 +13,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
    - Deploys bundled/custom Raydium CP-Swap when not using official Raydium.
 
 3. `1_init_mdoge_token.js`
-   - Creates Token-2022 DogeBTC mint.
+   - Creates Token-2022 DegenBTC mint.
    - Initializes metadata pointer and transfer fee config.
    - Mints fixed initial supply.
    - Removes mint authority.
@@ -22,7 +22,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 
 4. `2_init_mdoge_SOL_pool.js`
    - Creates Raydium CP-Swap AMM config.
-   - Initializes DogeBTC-SOL pool.
+   - Initializes DegenBTC-SOL pool.
    - Adds initial liquidity and optionally burns initial LP.
 
 5. `3_init_mineBTC.js`
@@ -32,7 +32,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 
 1. Validate token and Doge collection metadata URIs.
 2. Validate Doge supply and per-faction genesis caps.
-3. Validate round dogeBTC distribution sum.
+3. Validate round degenBTC distribution sum.
 4. Validate faction-war reward bps sum.
 5. Initialize MineBTC program:
    - `GlobalConfig`, `MineBtcMining`, `HodlPool`, `SOL Treasury`, `Autominer Custody`.
@@ -44,7 +44,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 11. Apply emission controller params.
 12. Deposit mining tokens.
 13. Initialize hashpower config.
-14. Initialize dogeBTC and LP custodian accounts.
+14. Initialize degenBTC and LP custodian accounts.
 15. Initialize `DogeConfig`.
 16. Seed breeding config.
 17. Initialize `DogeMintConfig`.
@@ -64,10 +64,10 @@ From `setup_scripts/config.json` and `3_init_mineBTC.js`:
 
 - Network cluster: devnet in current config.
 - Token decimals: 6.
-- Initial supply: 2,100,000,000 DogeBTC.
+- Initial supply: 2,100,000,000 DegenBTC.
 - Transfer tax: 10 bps.
 - Round duration: 60 seconds.
-- Mining emission: `doge_btc_per_round = 1,000,000,000` base units.
+- Mining emission: `degen_btc_per_round = 1,000,000,000` base units.
 - Genesis Doge mint limit: 36,000.
 - Lifetime Doge max supply: 100,000.
 - Genesis max per configured faction: 3,000 with current 12-faction config.
@@ -86,7 +86,7 @@ From `setup_scripts/config.json` and `3_init_mineBTC.js`:
 - Protocol fee: 15% of SOL bets.
 - Buyback/POL share: 80% of treasury SOL.
 - Stakers share: 10% of protocol fee.
-- dogeBTC stakers: 3% of round emission.
+- degenBTC stakers: 3% of round emission.
 - Exact winners: 50%.
 - Same-faction non-winning directions: 21% each.
 - Jackpot: 5%.

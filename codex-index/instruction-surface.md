@@ -10,14 +10,14 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `initialize_system_accounts()` - system referral sentinel, buybacks account, buybacks SOL vault.
 - `update_config(new_authority, new_fee_recipient)` - starts authority transfer and/or updates fee recipient.
 - `cancel_authority_transfer()` and `accept_authority()` - two-step authority transfer.
-- `update_fees(...)` - SOL fee split, dogeBTC round distribution, HODL tax, snapshot interval, referral split, cycle SOL split.
+- `update_fees(...)` - SOL fee split, degenBTC round distribution, HODL tax, snapshot interval, referral split, cycle SOL split.
 - `update_rpg_progression(enabled)`, `set_pause(paused)`, `update_evolution_unlock_stage(max_stage)`, `update_gameplay_tuning(args)` - live gameplay controls.
 - `update_breeding_config(...)`, `update_emission_params(...)`.
 
 ## Token, Mining, Doge, and Custodian Setup
 
 - `initialize_mining(start_timestamp, mine_btc_per_round, pool_state)` - token vault and emission state.
-- `deposit_mine_btc_tokens(amount)` - deposits pre-minted dogeBTC into mining vault.
+- `deposit_mine_btc_tokens(amount)` - deposits pre-minted degenBTC into mining vault.
 - `initialize_hashpower_config(...)`, `initialize_custodian_accounts()`.
 - `initialize_doge_config(max_supply)`, `initialize_doge_mint_config(...)`.
 - `update_doge_config(...)`, `update_doge_mint_config(...)`, `switch_doge_mining()`.
@@ -64,8 +64,8 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 
 - `stake_minebtc(amount, lockup_days, position_index)`, `unstake_minebtc(position_index)`.
 - `stake_lp_tokens(amount, lockup_days, position_index)`, `unstake_lp_tokens(position_index)`.
-- `claim_staking_rewards()` - SOL and unrefined dogeBTC accrual.
-- `withdraw_dbtc_rewards()` - withdraws dogeBTC rewards with HODL tax when applicable.
+- `claim_staking_rewards()` - SOL and unrefined degenBTC accrual.
+- `withdraw_dbtc_rewards()` - withdraws degenBTC rewards with HODL tax when applicable.
 - `claim_referral_rewards()` - SOL referral rewards.
 
 ## Doge Minting and Lifecycle

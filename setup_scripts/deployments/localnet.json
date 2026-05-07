@@ -225,7 +225,7 @@
     "vault_address": "EpYkx47s2mRhuZUzLPKj4NHLWHd8GvSGhiDGSVhijaPw",
     "vault_authority": "YY9eC7FQqGEshVPRBCZugGuspbuqCAkSjwrL1zS2tEN",
     "start_timestamp": 1764424921,
-    "doge_btc_per_round": "1000000",
+    "degen_btc_per_round": "1000000",
     "tx_signature": "HJCCaLZu6RETe8UQH5QeDwZ1GXdoDk1YQd3NA2XjyDVgBikdQSvpp915vY1V6aCPioPvtm2RMQVABxbszJFmXrM",
     "timestamp": "2025-11-29T14:02:08.760Z"
   },

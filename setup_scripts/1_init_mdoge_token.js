@@ -1,9 +1,9 @@
 /**
  * ============================================================================
- * DOGE_BTC TOKEN INITIALIZATION SCRIPT (Production-Grade)
+ * DEGEN_BTC TOKEN INITIALIZATION SCRIPT (Production-Grade)
  * ============================================================================
  *
- * This script initializes the DOGE_BTC Token-2022 with the following features:
+ * This script initializes the DEGEN_BTC Token-2022 with the following features:
  *
  * DEPLOYMENT STEPS:
  * 1. Create mint account with metadata and transfer fee config
@@ -85,7 +85,7 @@ const TOKEN_METADATA = {
 (async () => {
   console.log(
     "\x1b[35m%s\x1b[0m",
-    "🚀 ================================ DogeTech DOGE_BTC Token Deployment ================================"
+    "🚀 ================================ DogeTech DEGEN_BTC Token Deployment ================================"
   );
   console.log("\x1b[36m%s\x1b[0m", "🌐 Network:", CLUSTER);
   console.log("\x1b[36m%s\x1b[0m", "🔗 RPC URL:", RPC_URL);
@@ -440,7 +440,7 @@ async function createMintAccountTx(
   if (deploymentData.dbtc_mint_created) {
     console.log(
       "\x1b[34m%s\x1b[0m",
-      "ℹ️ DOGE_BTC mint account already exists. Skipping..."
+      "ℹ️ DEGEN_BTC mint account already exists. Skipping..."
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -484,8 +484,8 @@ async function createMintAccountTx(
   );
 
   // Generate mint keypair
-  const dogeBtcMint = Keypair.generate();
-  const mintPubkey = dogeBtcMint.publicKey;
+  const degenBtcMint = Keypair.generate();
+  const mintPubkey = degenBtcMint.publicKey;
 
   console.log(
     "\x1b[36m%s\x1b[0m",
@@ -555,7 +555,7 @@ async function createMintAccountTx(
     let signature = await createMintAccountWithMetadata(
       connection,
       deployer,
-      dogeBtcMint,
+      degenBtcMint,
       burnTaxBps,
       maxBurnAmount,
       decimals,
@@ -633,7 +633,7 @@ async function createTokenAccount(
   if (deploymentData.dbtc_token_account_created) {
     console.log(
       "\x1b[34m%s\x1b[0m",
-      "ℹ️ DOGE_BTC token account already exists. Skipping..."
+      "ℹ️ DEGEN_BTC token account already exists. Skipping..."
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -1206,7 +1206,7 @@ function printCompletionSummary(deploymentData) {
   );
   console.log(
     "\x1b[32m%s\x1b[0m",
-    "✅ DOGE_BTC token deployment completed successfully!"
+    "✅ DEGEN_BTC token deployment completed successfully!"
   );
 
   console.log("\x1b[36m%s\x1b[0m", "\n📋 Deployment Summary:");

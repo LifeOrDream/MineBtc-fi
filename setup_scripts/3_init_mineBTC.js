@@ -44,7 +44,7 @@ if (fs.existsSync(deploymentPath)) {
 }
 
 // Get deployed addresses
-const DOGEBTC_TOKEN_MINT = deploymentFile.dbtc_mint_address
+const DEGENBTC_TOKEN_MINT = deploymentFile.dbtc_mint_address
   ? new PublicKey(deploymentFile.dbtc_mint_address)
   : null;
 
@@ -55,7 +55,7 @@ const ID_MineBTC_PROGRAM = deploymentFile.MINE_BTC_PROGRAM_ID
 // Mining configuration
 const MINING_START_TIMESTAMP =
   config.mining.start_timestamp || Math.floor(Date.now() / 1000);
-const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
+const MINING_DEGEN_BTC_PER_SLOT = new BN(config.mining.degen_btc_per_round);
 
 // Keep these explicit in setup so fresh deployments don't silently depend on
 // whatever the contract default happened to be at compile time.
@@ -116,9 +116,6 @@ const LIVE_FEE_CONFIG = {
   newMinebtcJackpotPct: 5,
   newHodlTaxPct: 10,
   snapshotInterval: 5 * 60,
-  // Referrer's cut of the SOL protocol fee. Hard-capped at 10% by the program.
-  newReferralFeePct: 5,             // cross-country recruits
-  newSameFactionReferralFeePct: 10, // same-country recruits (loyalty bonus)
   // Cycle SOL split: % of user bet reserved for faction-war jackpot (taken from gross bet, in addition to protocol fee)
   newCycleSolSplitPct: 5,
 };
@@ -322,9 +319,9 @@ async function getSolanaBalance(pubkey) {
 }
 
 // Epoch / index / oracle scaffolding was removed when the contract moved to
-// mutation-driven faction-war cycles. The faction-war system has no initial scores,
-// no question hash, and no oracle authority — settlement is driven entirely
-// by on-chain mutation scores and the LP-burn cycle count. No helper needed.
+// gameplay-score-driven faction-war cycles. The faction-war system has no initial
+// scores, no question hash, and no oracle authority — settlement is driven entirely
+// by on-chain gameplay scores and the LP-burn cycle count. No helper needed.
 
 // ==================== [ MAIN SCRIPT ] ====================
 
@@ -347,10 +344,10 @@ async function main() {
   printFeeEconomicsSummary();
 
     // Verify prerequisites
-  if (!DOGEBTC_TOKEN_MINT) {
+  if (!DEGENBTC_TOKEN_MINT) {
     console.error(
       COLOR_ERROR,
-      "❌ DOGE_BTC token mint address not found in deployment file."
+      "❌ DEGEN_BTC token mint address not found in deployment file."
     );
     console.log(COLOR_WARNING, "⚠️ Please run 1_init_mdoge_token.js first.");
         return;
@@ -376,8 +373,8 @@ async function main() {
   );
   console.log(
     COLOR_INFO,
-    "🪙 DOGE_BTC Token Mint:",
-    DOGEBTC_TOKEN_MINT.toString()
+    "🪙 DEGEN_BTC Token Mint:",
+    DEGENBTC_TOKEN_MINT.toString()
   );
 
   const minebtcProgram = new Program(IDL_MineBTC, provider);
@@ -423,7 +420,7 @@ async function main() {
     // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
     //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
-    //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending dogeBTC claims pool with HODL tax redistribution
+    //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending degenBTC claims pool with HODL tax redistribution
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
@@ -463,7 +460,7 @@ async function main() {
     //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
-    //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on dogeBTC withdrawal (paper hands → diamond hands)
+    //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on degenBTC withdrawal (paper hands → diamond hands)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
@@ -702,7 +699,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
   );
   console.log(
     COLOR_INFO,
-    `🔑 DogeBtc Mining PDA: ${mineBtcMiningPDA.toString()}`
+    `🔑 DegenBtc Mining PDA: ${mineBtcMiningPDA.toString()}`
   );
     console.log(COLOR_INFO, `🔑 SOL Treasury PDA: ${solTreasuryPDA.toString()}`);
   console.log(
@@ -1151,7 +1148,7 @@ async function initializeMiningSystem(minebtcProgram) {
     console.log(COLOR_INFO, `⏰ Start Timestamp: ${MINING_START_TIMESTAMP}`);
   console.log(
     COLOR_INFO,
-    `💰 DogeBtc Per Slot: ${MINING_DOGE_BTC_PER_SLOT.toString()}`
+    `💰 DegenBtc Per Slot: ${MINING_DEGEN_BTC_PER_SLOT.toString()}`
   );
     console.log(COLOR_INFO, `🔄 Raydium Pool State: ${raydiumPoolState}`);
 
@@ -1159,7 +1156,7 @@ async function initializeMiningSystem(minebtcProgram) {
     const tx = await minebtcProgram.methods
             .initializeMining(
                 new BN(MINING_START_TIMESTAMP),
-                MINING_DOGE_BTC_PER_SLOT,
+                MINING_DEGEN_BTC_PER_SLOT,
                 new PublicKey(raydiumPoolState)
             )
             .accounts({
@@ -1167,7 +1164,7 @@ async function initializeMiningSystem(minebtcProgram) {
         mineBtcMining: mineBtcMiningPDA,
                 vaultAuthority: vaultAuthorityPDA,
                 tokenVault: vaultPDA,
-        tokenMint: DOGEBTC_TOKEN_MINT,
+        tokenMint: DEGENBTC_TOKEN_MINT,
                 tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
@@ -1182,7 +1179,7 @@ async function initializeMiningSystem(minebtcProgram) {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
             start_timestamp: MINING_START_TIMESTAMP,
-            doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
+            degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -1194,7 +1191,7 @@ async function initializeMiningSystem(minebtcProgram) {
                 vault_address: vaultPDA.toString(),
                 vault_authority: vaultAuthorityPDA.toString(),
                 start_timestamp: MINING_START_TIMESTAMP,
-                doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
+                degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             };
             saveDeploymentData();
         } else {
@@ -1223,13 +1220,13 @@ async function depositMiningTokens(minebtcProgram) {
 
     // Get user's token account
     const userTokenAccount = await anchor_spl.getAssociatedTokenAddress(
-    DOGEBTC_TOKEN_MINT,
+    DEGENBTC_TOKEN_MINT,
         wallet.publicKey,
         false,
         anchor_spl.TOKEN_2022_PROGRAM_ID
     );
 
-  // Deposit whatever dogeBTC is left in the deployer wallet after the
+  // Deposit whatever degenBTC is left in the deployer wallet after the
   // pool seed + addInitialLiquidity steps. Hardcoding this amount used
   // to break whenever the LP-add proportional sizing changed.
   const depositorAcc = await anchor_spl.getAccount(
@@ -1242,7 +1239,7 @@ async function depositMiningTokens(minebtcProgram) {
 
   if (depositAmount.isZero()) {
     throw new Error(
-      `Depositor token account ${userTokenAccount.toString()} has 0 dogeBTC — pool/LP setup likely consumed the full mint.`
+      `Depositor token account ${userTokenAccount.toString()} has 0 degenBTC — pool/LP setup likely consumed the full mint.`
     );
   }
 
@@ -1261,7 +1258,7 @@ async function depositMiningTokens(minebtcProgram) {
                 depositorTokenAccount: userTokenAccount,
                 minebtcTokenVault: vaultPDA,
         mineBtcMining: mineBtcMiningPDA,
-        tokenMint: DOGEBTC_TOKEN_MINT,
+        tokenMint: DEGENBTC_TOKEN_MINT,
                 tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
             })
             .rpc();
@@ -1364,13 +1361,13 @@ async function initializeCustodianAccounts(minebtcProgram) {
   );
 
   // Verify prerequisites
-  if (!DOGEBTC_TOKEN_MINT) {
+  if (!DEGENBTC_TOKEN_MINT) {
     console.error(
       COLOR_ERROR,
-      "❌ DOGE_BTC token mint address not found in deployment file."
+      "❌ DEGEN_BTC token mint address not found in deployment file."
     );
     throw new Error(
-      "DOGE_BTC mint address required for custodian initialization"
+      "DEGEN_BTC mint address required for custodian initialization"
     );
   }
 
@@ -1386,7 +1383,7 @@ async function initializeCustodianAccounts(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const minebtcMint = DOGEBTC_TOKEN_MINT;
+  const minebtcMint = DEGENBTC_TOKEN_MINT;
   const lpMint = new PublicKey(deploymentFile.dbtc_sol_pool_created.lpMintPDA);
 
   // Derive DBTC custodian PDAs
@@ -2179,7 +2176,7 @@ async function initializeTaxConfig(minebtcProgram) {
             .accounts({
                 globalConfig: globalConfigPDA,
                 taxConfig: taxConfigPDA,
-                minebtcMint: DOGEBTC_TOKEN_MINT,
+                minebtcMint: DEGENBTC_TOKEN_MINT,
                 withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
                 factionTreasuryVault: factionTreasuryVaultPDA,
                 nftFloorSweepVault: nftFloorSweepVaultPDA,
@@ -2506,7 +2503,7 @@ async function updateConfig(minebtcProgram, options = {}) {
       return;
     }
 
-    // Derive DogeBtcMining PDA (optional account)
+    // Derive DegenBtcMining PDA (optional account)
     const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("mine-btc-mining")],
       minebtcProgram.programId
@@ -2665,7 +2662,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       `     Stakers: ${globalConfig.solFeeConfig.stakersPct}%`
     );
 
-    console.log(COLOR_INFO, "   Current DogeBtc dist config:");
+    console.log(COLOR_INFO, "   Current DegenBtc dist config:");
     console.log(
       COLOR_INFO,
       `     Stakers: ${globalConfig.minebtcDistConfig.minebtcStakersPct}%`
@@ -2707,9 +2704,6 @@ async function updateFees(minebtcProgram, feeConfig) {
               feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval
             )
         : null,
-      newReferralFeePct: feeConfig?.newReferralFeePct ?? null,
-      newSameFactionReferralFeePct:
-        feeConfig?.newSameFactionReferralFeePct ?? null,
       newCycleSolSplitPct: feeConfig?.newCycleSolSplitPct ?? null,
     };
 
@@ -2812,8 +2806,6 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcJackpotPct,
         feeParams.newHodlTaxPct,
         feeParams.snapshotInterval,
-        feeParams.newReferralFeePct,
-        feeParams.newSameFactionReferralFeePct,
         feeParams.newCycleSolSplitPct
       )
       .accounts({
@@ -3473,7 +3465,7 @@ function printCompletionSummary() {
     COLOR_INFO,
     "   2. Users can mint Doge for their factions"
   );
-  console.log(COLOR_INFO, "   3. Users can stake DogeBtc and LP tokens");
+  console.log(COLOR_INFO, "   3. Users can stake DegenBtc and LP tokens");
   console.log(
     COLOR_INFO,
     "   4. Admins can start game rounds with start_round"

@@ -14,14 +14,14 @@
 // through gameplay and can trigger story events during rounds. Those events may
 // mutate DNA on-chain, but the product-level primitive is broader: the backend can
 // turn each story event into character history, artwork, reels, or social content.
-// Deflationary dogeBTC economy with 0.1% transfer tax, POL burns, and faction staking rewards.
+// Deflationary degenBTC economy with 0.1% transfer tax, POL burns, and faction staking rewards.
 //
 // ## Modules
 //
 // - `admin`: Configuration, factions, fee parameters.
 // - `economy`: Price snapshots, emission rate adjustment, POL (LP add + burn).
 // - `user`: Betting, autominers, round claims, gameplay doges, story events.
-// - `stake`: dogeBTC and LP token staking.
+// - `stake`: degenBTC and LP token staking.
 // - `game`: 60-second round loop, slot-hash randomness, winner selection.
 // - `doges`: Doge NFT minting, breeding, staking, evolution.
 // - `faction_war`: Story-event-driven competitive cycles, settlement, and cycle rewards.
@@ -148,8 +148,6 @@ pub mod minebtc {
         new_minebtc_jackpot_pct: Option<u8>,
         new_hodl_tax_pct: Option<u8>,
         snapshot_interval: Option<u64>,
-        new_referral_fee_pct: Option<u8>,
-        new_same_faction_referral_fee_pct: Option<u8>,
         new_cycle_sol_split_pct: Option<u8>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_fees");
@@ -164,8 +162,6 @@ pub mod minebtc {
             new_minebtc_jackpot_pct,
             new_hodl_tax_pct,
             snapshot_interval,
-            new_referral_fee_pct,
-            new_same_faction_referral_fee_pct,
             new_cycle_sol_split_pct,
         )
     }
@@ -604,7 +600,7 @@ pub mod minebtc {
     }
 
     /// Claim faction treasury rewards for a settled faction_war.
-    /// Uses the story-event leaderboard (faction_war final_ranks) -- permissionless.
+    /// Uses the gameplay-score leaderboard (faction_war final_ranks) -- permissionless.
     pub fn claim_faction_treasury_for_faction_war(
         ctx: Context<ClaimFactionTreasuryForFactionWar>,
         faction_war_id: u64,
@@ -633,7 +629,7 @@ pub mod minebtc {
         faction_war::update_faction_war_config_internal(ctx, is_active)
     }
 
-    /// Settle faction_war: finalize story-event-based rankings and compute reward pools.
+    /// Settle faction_war: finalize gameplay-score rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {
         crate::log_fn!("lib", "settle_faction_war");

@@ -7,7 +7,7 @@
 <h1 align="center">MineBTC</h1>
 
 <p align="center">
-  <strong>Degen country arena game on Solana.<br/>Pick your country. Bet SOL. Your doge evolves. Your country climbs. You earn dogeBTC.</strong>
+  <strong>Degen country arena game on Solana.<br/>Pick your country. Bet SOL. Win claims mutate your doge. Your country climbs. You earn degenBTC.</strong>
 </p>
 
 <p align="center">
@@ -21,9 +21,9 @@
 
 MineBTC is a country arena game where every bet does three things at once:
 
-1. **Enters a 60-second round raffle** for instant SOL + dogeBTC rewards
-2. **Scores points for your country** on the competitive leaderboard
-3. **Can trigger your doge NFT to mutate**, permanently upgrading its stats
+1. **Enters a 60-second round raffle** for instant SOL + degenBTC rewards
+2. **Scores gameplay support for your country** on the competitive leaderboard
+3. **Sets up claim-time doge mutation rolls** when that bet later wins rewards
 
 Countries compete for the top of the leaderboard. Players compete for rewards. Doges evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
 
@@ -41,29 +41,29 @@ Every minute, a new round runs:
 
 | Pool | Share | Who Gets It |
 |------|-------|-------------|
-| **Winner pool** | 50% of dogeBTC emission | Exact country+direction match (pro-rata) |
-| **Consolation pool** | 40% of dogeBTC emission | Same country, wrong direction (split per direction) |
-| **Staker pool** | 5% of dogeBTC emission | Everyone staking on the winning country |
-| **Motherlode** | 5% of dogeBTC emission | 1/625 chance jackpot for exact winners |
+| **Winner pool** | 50% of degenBTC emission | Exact country+direction match (pro-rata) |
+| **Consolation pool** | 40% of degenBTC emission | Same country, wrong direction (split per direction) |
+| **Staker pool** | 5% of degenBTC emission | Everyone staking on the winning country |
+| **Motherlode** | 5% of degenBTC emission | 1/625 chance jackpot for exact winners |
 | **SOL prize pot** | Accumulated from net bets | Exact winners split proportionally |
 
 ### Rebase Loop (~4 hours, tied to economy cycle)
 
 The same bets also accumulate into a longer competitive cycle called a **rebase**:
 
-1. Doge mutations that fire during rounds **score points for their country**
-2. At the end of the cycle, countries are ranked by total mutation scores
+1. Own-country SOL bets with an active gameplay doge **score gameplay support for that country**
+2. At the end of the cycle, countries are ranked by total gameplay scores
 3. Rankings are compared to the previous cycle to determine which countries moved Up, Down, or stayed Neutral
-4. Players who correctly bet the direction of their **own country** earn dogeBTC from the rebase mining pool
-5. Only own-country bets count -- you must be loyal to earn
+4. Players who correctly bet final directions earn degenBTC from the rebase mining pool
+5. Own-country correct bettors get the loyalty share and the strongest doge mutation odds
 
-**Mutation score formula:**
+**Gameplay score formula:**
 ```
-score = type_weight × bet_size × doge_multiplier
-        Evolution=100, Power=30, Trait=10
+score = support_weight × own_country_sol_bet × doge_multiplier
+        support_weight=10
 ```
 
-Higher bets + better doges = bigger score contribution to your country.
+Higher own-country bets + better gameplay doges = bigger score contribution to your country.
 
 ---
 
@@ -73,20 +73,21 @@ Doges are functional game pieces with on-chain 256-bit DNA:
 
 ### Two Doge Roles
 
-- **Gameplay doge (operator):** One doge locked for active play. Earns XP from betting. Can mutate (Evolution / Power / Trait). Mutations upgrade stats and score points for the country leaderboard.
+- **Gameplay doge (operator):** One doge locked for active play. Earns XP from betting. Own-country bets add gameplay score, and winning reward claims can mutate it (Evolution / Power / Trait).
 - **Staked doges (passive):** Up to 5 doges boosting staking hashpower. More staked doges = higher staking APR.
 
 ### How Mutations Work
 
-Every SOL bet with a gameplay doge rolls for a mutation:
+Mutation rolls happen when a user claims rewards from a winning round or settled rebase:
 
 ```
 Base chance: 20%
-× bet_strength (your bet / highest bet on your country)
-× multiplier_penalty (1.0x doge = full chance, 10.0x = 10% chance)
-× faction_penalty (each prior mutation this round makes the next harder)
+× stake_strength (eligible winning stake / highest stake on the country)
+× multiplier_penalty (1.0x doge = full chance, 4.2x ~= 24% chance)
+× faction_penalty / pacing / volume controls
+× claim_boost (highest for own-country correct Up moves)
 
-Global cap: max mutations per round = active_factions / 3
+Round exact wins receive stronger odds than same-country consolation wins. Rebase claims are strongest when the user backed their own country correctly, especially when that country moved Up.
 ```
 
 **Mutation types:**
@@ -94,11 +95,11 @@ Global cap: max mutations per round = active_factions / 3
 - **Power** (~30%): Combat trait upgrade, moderate multiplier boost.
 - **Trait** (~60%): Visual trait upgrade, small multiplier boost.
 
-**Multiplier range:** 1.0x → 10.0x. Higher multiplier = more weighted points per bet = bigger reward share. But mutation chance drops as multiplier rises, creating a weeks-long progression curve.
+**Multiplier range:** 1.0x → 4.2x. Higher multiplier = more weighted points per bet = bigger reward share. But mutation chance drops as multiplier rises, creating a weeks-long progression curve.
 
 ### XP System
 
-XP accumulates from SOL bets and boosts the multiplier increase when a mutation fires:
+XP accumulates from eligible claim-time mutation stake and boosts the multiplier increase when a mutation fires:
 
 ```
 XP gain rate = base_rate × (1.0 / current_multiplier)
@@ -112,15 +113,15 @@ When a mutation fires, it **consumes** the XP it used:
 
 ### Accumulated Value
 
-Each round, the gameplay doge earns dogeBTC based on mutation type (1% - 6.9% of round reward). This accumulates on-chain and can only be claimed by **burning the doge** (`send_to_heaven`). Creates a natural floor price based on accumulated earnings.
+Each successful reward claim can add degenBTC to the gameplay doge based on the claim mutation result (1% - 6.9% of round reward, plus cycle Doge bonus where applicable). This accumulates on-chain and can only be claimed by **burning the doge** (`send_to_heaven`). Creates a natural floor price based on accumulated earnings.
 
 ---
 
 ## The Economy
 
-### dogeBTC Token
+### degenBTC Token
 
-dogeBTC is a Token-2022 token with a 0.1% transfer tax. Every transfer automatically splits:
+degenBTC is a Token-2022 token with a 0.1% transfer tax. Every transfer automatically splits:
 
 | Split | Default % | Where It Goes |
 |-------|-----------|---------------|
@@ -135,7 +136,7 @@ The economy runs in automated loops:
 
 ```
 Step 1: snapshot_price (×8, every 30 min)
-        → Swaps 10% of buyback SOL for dogeBTC (price discovery)
+        → Swaps 10% of buyback SOL for degenBTC (price discovery)
         → Earmarks 10% for Protocol Owned Liquidity
 
 Step 2: update_rate (after 8 snapshots)
@@ -144,7 +145,7 @@ Step 2: update_rate (after 8 snapshots)
         → Price down → decrease emission rate (3%)
 
 Step 3: add_lp_and_burn
-        → Deposits earmarked SOL + dogeBTC into Raydium LP
+        → Deposits earmarked SOL + degenBTC into Raydium LP
         → Burns ALL LP tokens (permanent liquidity lock)
         → Triggers rebase settlement
 ```
@@ -172,16 +173,16 @@ After each rebase settles, the accumulated faction treasury is distributed to st
 
 ## Staking
 
-Two staking tracks, both earning SOL + dogeBTC:
+Two staking tracks, both earning SOL + degenBTC:
 
 | Track | What You Stake | What Boosts Rewards |
 |-------|---------------|-------------------|
-| **dogeBTC staking** | Lock dogeBTC for configurable duration | Longer lockup = higher multiplier. Staked doges boost hashpower. |
-| **LP staking** | Lock Raydium LP tokens | Same multiplier mechanics as dogeBTC staking |
+| **degenBTC staking** | Lock degenBTC for configurable duration | Longer lockup = higher multiplier. Staked doges boost hashpower. |
+| **LP staking** | Lock Raydium LP tokens | Same multiplier mechanics as degenBTC staking |
 
 Stakers earn from three sources:
 1. **SOL fees** from every bet (staker share)
-2. **dogeBTC emission** from round staker pools (winning faction only)
+2. **degenBTC emission** from round staker pools (winning faction only)
 3. **Faction treasury** from transfer tax (based on rebase leaderboard rank)
 
 ---
@@ -219,7 +220,7 @@ programs/mineBTC/src/
     ├── game.rs         # 60-second round loop, slot-hash randomness, winner selection
     ├── user.rs         # Betting, autominers, round claims, gameplay doges, mutations
     ├── rebase.rs       # Mutation-driven competitive cycles, settlement, rebase claims
-    ├── stake.rs        # dogeBTC and LP token staking
+    ├── stake.rs        # degenBTC and LP token staking
     ├── doges.rs        # Doge NFT minting, breeding, staking, gameplay lock/unlock
     ├── economy.rs      # Price snapshots, emission rate adjustment, POL (LP add + burn)
     ├── tax.rs          # Transfer-tax harvest, faction treasury distribution

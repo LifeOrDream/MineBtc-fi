@@ -281,7 +281,7 @@ u8 values (max 100 each) summed as u16 (max 400). Safe.
 
 ### ✅ SAFE: epoch.rs:359-363 — u128 with checked arithmetic
 ```
-    (epoch_state.total_dogebtc_mined_in_epoch as u128)
+    (epoch_state.total_degenbtc_mined_in_epoch as u128)
         .checked_mul(epoch_state.risk_factor_snapshot as u128)
         ...
         .unwrap_or(0) as u64;

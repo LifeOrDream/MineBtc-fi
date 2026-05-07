@@ -116,7 +116,7 @@ Having **North Korea** and **Iran** as playable factions is meme gold but **comp
 - Keep the meme energy but lose the OFAC red flags.
 
 ### 🚨 Risk 3: Emission vs. Deflation Math
-Starting emission is **1,000 dogeBTC per round** = **1.44M tokens/day** = **~525M/year** (25% of supply in Year 1).
+Starting emission is **1,000 degenBTC per round** = **1.44M tokens/day** = **~525M/year** (25% of supply in Year 1).
 
 **Built-in defenses:**
 - **Asymmetrical emission controller** (`economy.rs`): Price up >3% → emissions **+1%**. Price down >3% → emissions **-3%**. This is deflationary by design and compounds down over time.
@@ -183,7 +183,7 @@ Post 3-5x daily per language across platforms.
 | **Round Highlights** | 15s TikTok/Reels | "🇮🇳 India just flipped 🇨🇳 China in Round #4,420. 12 SOL jackpot hit!" |
 | **Doge Mutations** | 10s Unboxing | "My gameplay Doge just EVOLVED mid-round. Visual trait: Diamond Fur." |
 | **Faction War Standings** | 30s Esports Update | "Week 2 Standings: Russia #1, USA #3, Shadow Faction... surprisingly #2?" |
-| **Burn Reports** | 15s Data Viz | "Today we burned 2.4M dogeBTC. Supply crunch incoming." |
+| **Burn Reports** | 15s Data Viz | "Today we burned 2.4M degenBTC. Supply crunch incoming." |
 | **Strategy** | 60s YouTube Short | "Why predicting your home faction gives 20% loyalty bonus in Faction Wars." |
 | **Propaganda** | Meme image/video | "USA HOLDERS ARE SLEEPING. 🇷🇺 RUSSIA DOESN'T SLEEP." |
 
@@ -351,7 +351,7 @@ You are correct: `economy.rs` has an asymmetrical feedback loop.
 ### Why This Works Better Than Per-Faction Pots
 - **Bigger pots:** All rounds feed one pot instead of 12 fragmented ones
 - **Fairer odds:** Small factions can win the jackpot even if they never win regular rounds
-- **Viral moments:** "Shadow Faction just hit the GLOBAL JACKPOT for 12,000 dogeBTC" is clip gold
+- **Viral moments:** "Shadow Faction just hit the GLOBAL JACKPOT for 12,000 degenBTC" is clip gold
 
 ### Rollover on Empty Hits — Implemented ✅
 - If jackpot hits but the selected faction has `exact_winning_wgtd_pts == 0`, the pot **rolls over** instead of being distributed to nobody
@@ -453,14 +453,14 @@ A mutation system where the user can't **see** the mutation is like a slot machi
      - `multiplier` (gameplay power)
      - `evolution_stage` (prestige)
      - `accumulated_val` (wealth)
-   - Update it during `process_mutation_sync` in `user.rs`
+  - Update it when reward-claim paths sync Doge metadata after a mutation roll
    - Emit `DogeLeaderboardUpdated` events
    - Frontend shows: "🏆 #1 Strongest Doge: Stage 7, 4.2x Multiplier, 2.4M accumulated value"
    - Creates whale competition and bragging rights.
 
 3. **Accumulated Val as "Doge Wealth"**
    - Rename `accumulated_val` to `doge_wealth` in the frontend
-   - Show it prominently: "Your Doge has earned 12,420 dogeBTC of wealth"
+   - Show it prominently: "Your Doge has earned 12,420 degenBTC of wealth"
    - When burning (`send_to_heaven`), the user claims this wealth. Make it a visible sacrifice mechanic.
 
 ---
@@ -485,7 +485,7 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 1. **HODL Tax Events (Implemented)**
    - Event `HodlTaxRedistributed` is emitted every time a user pays the HODL tax
    - Fields: `paper_hand` (who paid), `tax_amount`, `redistributed_amount`, `remaining_total_claimable` (proxy for how many diamond hands benefit)
-   - Frontend shows a live feed: "🔥 {User} paid 5,000 HODL Tax. You earned 42 dogeBTC for diamond handing."
+   - Frontend shows a live feed: "🔥 {User} paid 5,000 HODL Tax. You earned 42 degenBTC for diamond handing."
 
 2. **Reframe the Narrative (Frontend/Marketing)**
    - Don't call it "HODL tax." Call it **"Paper Hand Tax."**
@@ -526,12 +526,12 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
      - #2 faction MVP: 1.25% of total war pool
      - #3 faction MVP: 0.75% of total war pool
      - #4-12 MVPs: ~0.11% each
-   - `FactionWarMvp` events emitted for all 12 factions: "🏆 {User} was MVP for Israel! Bonus: 420 dogeBTC"
+   - `FactionWarMvp` events emitted for all 12 factions: "🏆 {User} was MVP for Israel! Bonus: 420 degenBTC"
    - MVP bonus is added automatically when user claims faction war rewards
    - Creates **12 hero narratives per war** instead of 1 — more content, more engagement
 
 2. **Real-Time War Score (Frontend-Ready)**
-   - The `StoryEventScoreAccumulated` event already emits per-round mutation scores
+  - The `GameplayScoreAccumulated` event emits live gameplay-score contributions
    - Frontend should aggregate these into a live leaderboard:
      ```
      ⚔️ War #42 Live Standings:
@@ -543,7 +543,7 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
 
 3. **Simplify Frontend Narrative (Frontend-Only)**
    - Don't show 4 separate pools. Show one reward with multipliers:
-     - "Base Reward: 500 dogeBTC"
+     - "Base Reward: 500 degenBTC"
      - "Loyalty Bonus: ×1.5 (you predicted YOUR country)"
      - "MVP Bonus: +2,000 (you were the top contributor for USA!)"
      - "Doge Bonus: +120 (your Doge evolved this war)"
@@ -610,7 +610,7 @@ After review, **win streaks, whale alerts, and player statistics will be handled
    - Renamed `EmergencyWithdrawal` → `PaperHandBurned` for viral narrative
    - Enhanced with `days_remaining` and `staked_token_type` (0 = MineBTC, 1 = LP)
    - Emitted in both `int_unstake_minebtc` and `int_unstake_lp_tokens` when penalty > 0
-   - Frontend: "🔥 {User} paper handed 180 days early. 15,000 dogeBTC BURNED."
+   - Frontend: "🔥 {User} paper handed 180 days early. 15,000 degenBTC BURNED."
    - This makes deflation a spectator sport.
 
 2. **Diamond Hands Detection (No Contract Change Needed)**
@@ -620,7 +620,7 @@ After review, **win streaks, whale alerts, and player statistics will be handled
    - **No new event needed** — avoids account bloat.
 
 3. **Faction Hashpower Wars (Frontend-Ready)**
-   - `FactionState` already tracks `total_dogebtc_hashpower` and `total_lp_hashpower`
+   - `FactionState` already tracks `total_degenbtc_hashpower` and `total_lp_hashpower`
    - Frontend should show a live bar chart: "🇺🇸 USA: 45M hashpower | 🇷🇺 Russia: 38M hashpower"
    - This turns staking into a country-vs-country arms race.
 
@@ -648,7 +648,7 @@ The difference between a game that 1,000 people play and a game that 1,000 peopl
 
 1. **Visible progression** — Users must SEE their Doge evolve. Right now, it's invisible.
 2. **Shared moments** — Mutations, jackpots, and streaks must be public events, not private accounting. Right now, they're hidden.
-3. **Simple stories** — "I won 3x in 60 seconds" or "My Doge evolved to Stage 4" are shareable. "I claimed 3.7 dogeBTC from the HODL tax index after a 5% HODL tax redistribution" is not.
+3. **Simple stories** — "I won 3x in 60 seconds" or "My Doge evolved to Stage 4" are shareable. "I claimed 3.7 degenBTC from the HODL tax index after a 5% HODL tax redistribution" is not.
 
 Fix the P0s and P1s above before launch. The rest can ship in Season 2.
 

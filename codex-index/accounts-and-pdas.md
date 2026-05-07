@@ -6,7 +6,7 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 
 - `GlobalConfig` PDA `[global-config]`
   - Authority, pending authority, fee recipient, SOL treasury PDA, supported factions, fee configs, Raydium pool state, snapshot interval, gameplay tuning, pause flag.
-  - Fee config is whole-percent based for SOL fees and dogeBTC distributions.
+  - Fee config is whole-percent based for SOL fees and degenBTC distributions.
   - Pause blocks new bets, autominers, round starts, Doge mints, and breeding. Settlement, claims, staking, economy cranks remain available.
 
 - `MineBtcMining` PDA `[mine-btc-mining]`
@@ -14,7 +14,7 @@ Canonical source: `programs/mineBTC/src/state.rs`.
   - Price history max: 8 entries, matching the 4-hour conceptual economy cycle at 30-minute default snapshots.
 
 - `HodlPool` PDA `[hodl-pool]`
-  - `hodl_tax_index` and `total_minebtc_claimable`; powers HODL tax redistribution on dogeBTC withdrawals.
+  - `hodl_tax_index` and `total_minebtc_claimable`; powers HODL tax redistribution on degenBTC withdrawals.
 
 - `HashpowerConfig` PDA `[hashpower-config]`
   - Lockup day bounds and lockup multiplier. Setup config expects base 100 and max 300.
@@ -40,8 +40,8 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 
 - `PlayerData` PDA `[player, user_pubkey]`
   - Wallet owner, referral code, current/origin faction, referrer faction, same-faction referral flag.
-  - dogeBTC and LP staking hashpower/staked/reward debt.
-  - Pending SOL, pending dogeBTC, unrefined dogeBTC, pending round and faction-war claims.
+  - degenBTC and LP staking hashpower/staked/reward debt.
+  - Pending SOL, pending degenBTC, unrefined degenBTC, pending round and faction-war claims.
   - Position indexes, staked Doges, passive Doge multiplier, free ticket balances.
   - Gameplay Doge lock state, active multiplier, cached DNA/XP, unlock request cycle, current faction-war score.
 
@@ -74,26 +74,26 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 ## Staking Accounts
 
 - `StakedPosition` PDA
-  - Used for both dogeBTC and LP positions; fields include position type, index, faction, staked amount, weighted amount, timestamps, lockup duration, multiplier.
+  - Used for both degenBTC and LP positions; fields include position type, index, faction, staked amount, weighted amount, timestamps, lockup duration, multiplier.
 
 - Custodians:
-  - dogeBTC custodian `[minebtc-custodian]` and authority `[minebtc-custodian-authority]`.
+  - degenBTC custodian `[minebtc-custodian]` and authority `[minebtc-custodian-authority]`.
   - LP custodian `[lp-custodian]` and authority `[lp-custodian-authority]`.
 
 ## Faction War Accounts
 
 - `FactionWarConfig` PDA `[faction-war-config]`
-  - Current faction-war ID, active flag, settlement LP operation target, previous ranks, cycle telemetry, current dogeBTC mining multiplier.
+  - Current faction-war ID, active flag, settlement LP operation target, previous ranks, cycle telemetry, current degenBTC mining multiplier.
   - Mining multiplier stored in bps; default 10,000 = 1.0x, contract caps 1,000 to 30,000.
 
 - `FactionWarState` PDA `[faction-war, faction_war_id_u64_le]`
   - Stage 0 active, 1 settled/claims open.
   - Start/final ranks, rank deltas, resolved directions, MVP users/scores/bonuses.
-  - Direction totals, loyalty totals, reward pools, round wins, SOL totals, mutation scores, eligible Doge direction totals.
+  - Direction totals, SOL direction totals, loyalty totals, reward pools, round wins, SOL totals, gameplay scores, eligible Doge direction totals.
   - Treasury tax base, treasury claim bitmap, SOL cycle reward pool.
 
 - `UserFactionWarBets` PDA `[user-faction-war, user_pubkey, faction_war_id_u64_le]`
-  - Per-user weighted direction bets for a cycle, gameplay Doge, doge bonus eligibility.
+  - Per-user weighted and SOL direction bets for a cycle, gameplay Doge, doge bonus eligibility.
 
 ## Tax Accounts
 

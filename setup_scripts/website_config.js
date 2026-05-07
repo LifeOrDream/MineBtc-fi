@@ -52,7 +52,7 @@ function generateWebsiteConfig(config, deployment) {
       rpc_url: config.network?.rpc_url || "http://127.0.0.1:8899",
       commitment: config.network?.commitment || "confirmed",
 
-      // ========== DOGE_BTC TOKEN ==========
+      // ========== DEGEN_BTC TOKEN ==========
       // Naming aligns with the consumer (FE hooks/config.ts + BE
       // deployment.json) which both call it `burn tax` even though
       // it's a Token-2022 transfer fee on-chain. The "burn" framing
@@ -74,14 +74,14 @@ function generateWebsiteConfig(config, deployment) {
       raydium_pool_state: deployment.dbtc_sol_pool_created?.poolStatePDA,
       raydium_lp_mint: deployment.dbtc_sol_pool_created?.lpMintPDA,
       raydium_token0_vault: deployment.dbtc_sol_pool_created?.token0VaultPDA, // WSOL
-      raydium_token1_vault: deployment.dbtc_sol_pool_created?.token1VaultPDA, // DOGE_BTC
+      raydium_token1_vault: deployment.dbtc_sol_pool_created?.token1VaultPDA, // DEGEN_BTC
       raydium_authority: deployment.dbtc_sol_pool_created?.authorityPDA,
       raydium_observation_state:
         deployment.dbtc_sol_pool_created?.observationStatePDA,
       raydium_amm_config: deployment.raydium_amm_config_created?.amm_config_pda,
       is_dbtc_token0: deployment.dbtc_sol_pool_created?.isMdogeToken0 || false,
       token0_mint: deployment.dbtc_sol_pool_created?.token0Mint, // WSOL
-      token1_mint: deployment.dbtc_sol_pool_created?.token1Mint, // DOGE_BTC
+      token1_mint: deployment.dbtc_sol_pool_created?.token1Mint, // DEGEN_BTC
 
       // ========== MINE-BTC PROGRAM ACCOUNTS ==========
       globalConfig_pda:
@@ -95,14 +95,14 @@ function generateWebsiteConfig(config, deployment) {
       autominerCustody_pda:
         deployment.minebtc_program_initialized?.autominerCustody_address,
 
-      // ========== DOGE_BTC MINING VAULT ==========
+      // ========== DEGEN_BTC MINING VAULT ==========
       dbtc_token_vault: deployment.mining_vault_initialized?.vault_address,
       minebtc_vault_authority:
         deployment.mining_vault_initialized?.vault_authority,
       mining_start_timestamp:
         deployment.mining_vault_initialized?.start_timestamp,
-      doge_btc_per_round:
-        deployment.mining_vault_initialized?.doge_btc_per_round,
+      degen_btc_per_round:
+        deployment.mining_vault_initialized?.degen_btc_per_round,
 
       // ========== HASHPOWER CONFIG ==========
       hashpowerConfig_pda:
@@ -285,7 +285,7 @@ function main() {
       `  🔗 MineBTC Program: ${websiteConfig[cluster].MINE_BTC_PROGRAM_ID}`
     );
     console.log(
-      `  🪙 DOGE_BTC Token: ${websiteConfig[cluster].dbtc_mintAddress}`
+      `  🪙 DEGEN_BTC Token: ${websiteConfig[cluster].dbtc_mintAddress}`
     );
     console.log(
       `  🏊 Raydium Pool: ${websiteConfig[cluster].raydium_pool_state}`

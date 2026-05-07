@@ -187,7 +187,7 @@ pub enum MutationType {
 pub struct MutationResult {
     /// Mutation type (None if no mutation triggered)
     pub mutation_type: Option<MutationType>,
-    /// XP gained from betting (always > 0 for SOL bets, scaled by multiplier)
+    /// XP gained from the claim's eligible SOL stake, scaled by multiplier.
     pub xp_gained: u32,
     /// Multiplier increase (0 if no mutation)
     pub multiplier_increase: u32,
@@ -197,18 +197,16 @@ pub struct MutationResult {
     pub new_dna: [u8; 32],
 }
 
-/// **Chance Formula**: `base_chance * bet_strength * multiplier_penalty`
-/// - `base_chance` = 30%
-/// - `bet_strength` = min(user_bet / highest_bet, 1.0)
-/// - `multiplier_penalty` = 1000 / (1000 + current_multiplier - 1000) = 1000 / current_multiplier
-///   (Higher multiplier = lower chance, slowing progression for advanced doges)
+/// Calculates a claim-time mutation roll for a gameplay Doge.
 ///
-/// **XP Gain**: Always gained on SOL bets, scaled by bet size relative to 0.1 SOL
-/// - Base XP per 0.1 SOL = 10 XP
+/// **Chance Formula**:
+/// `base * stake_strength * multiplier_penalty * faction_penalty * volume * cooldown * pacing * claim_boost`
 ///
-/// **Multiplier Increase**: Only on Power mutation, +25 (0.025x since BASE_MULTIPLIER=1000)
+/// **XP Gain**: Gained from the eligible SOL stake that produced the winning claim,
+/// scaled down by current multiplier.
 pub fn calculate_mutation_result(
-    round_id: u64,
+    origin: u8,
+    origin_id: u64,
     user_total_bet: u64,
     highest_round_bet_for_faction: u64,
     current_multiplier: u32,
@@ -218,6 +216,7 @@ pub fn calculate_mutation_result(
     faction_mutation_count: u8,
     faction_round_volume: u64,
     tuning: &GameplayTuningConfig,
+    chance_boost_bps: u64,
     cycle_rounds_elapsed: u16,
     cycle_mutations_triggered: u16,
     recent_mutation_pressure_bps: u16,
@@ -388,7 +387,7 @@ pub fn calculate_mutation_result(
         pacing_adjustment
     );
 
-    // G. Final Chance = BASE × bet_strength × mult_factor × faction_penalty × volume × cooldown × pacing
+    // G. Final Chance = BASE × bet_strength × mult_factor × faction_penalty × volume × cooldown × pacing × claim boost
     let final_chance_bps = ((tuning.base_mutation_chance_bps as u128)
         * (bet_strength as u128)
         * (mult_factor as u128)
@@ -396,12 +395,17 @@ pub fn calculate_mutation_result(
         * (volume_factor as u128)
         * (cooldown_factor as u128)
         * (pacing_factor as u128)
-        / 10_000u128.pow(6))
+        * (chance_boost_bps as u128)
+        / 10_000u128.pow(7))
     .clamp(
         tuning.mutation_chance_floor_bps as u128,
         tuning.mutation_chance_cap_bps as u128,
     ) as u64;
-    msg!("   Final chance: {:.2}%", final_chance_bps as f64 / 100.0);
+    msg!(
+        "   Final chance: {:.2}% (claim_boost={} bps)",
+        final_chance_bps as f64 / 100.0,
+        chance_boost_bps
+    );
 
     // --- STEP 2: ROLL THE DICE ---
 
@@ -410,10 +414,13 @@ pub fn calculate_mutation_result(
         .saturating_add(total_points_bets)
         .saturating_add(total_wgtd_points_bets);
     let seed = keccak::hashv(&[
+        &origin.to_le_bytes(),
+        &origin_id.to_le_bytes(),
         &slot.to_le_bytes(),
         &total_sol_bets.to_le_bytes(),
         &total_combined.to_le_bytes(),
         user_key.as_ref(),
+        doge_mint.as_ref(),
         &gameplay_doge_dna,
     ])
     .to_bytes();
@@ -465,13 +472,13 @@ pub fn calculate_mutation_result(
     }
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
-        evolve_stage(round_id, &mut gameplay_doge_dna, &seed, doge_mint);
+        evolve_stage(origin, origin_id, &mut gameplay_doge_dna, &seed, doge_mint);
         (MutationType::Evolution, 50u32)
     } else if (type_roll as u64) < power_threshold {
-        mutate_power_trait(round_id, &mut gameplay_doge_dna, &seed, doge_mint);
+        mutate_power_trait(origin, origin_id, &mut gameplay_doge_dna, &seed, doge_mint);
         (MutationType::Power, 25u32)
     } else {
-        mutate_visual_trait(round_id, &mut gameplay_doge_dna, &seed, doge_mint);
+        mutate_visual_trait(origin, origin_id, &mut gameplay_doge_dna, &seed, doge_mint);
         (MutationType::Trait, 5u32)
     };
     msg!("   Mutation type: {:?}, Base boost: {}", m_type, base_boost);
@@ -520,7 +527,8 @@ pub fn calculate_mutation_result(
 
 /// Evolve to next Generation with guaranteed mutations
 pub fn evolve_stage(
-    round_id: u64,
+    origin: u8,
+    origin_id: u64,
     dna: &mut [u8; 32],
     seed: &[u8],
     doge_mint: &Pubkey,
@@ -541,7 +549,8 @@ pub fn evolve_stage(
     let (p_index, p_current_val, p_new_val) = mutate_power_trait_internal(dna, &power_seed);
 
     emit!(DogeEvolution {
-        round_id,
+        origin,
+        origin_id,
         doge_mint: *doge_mint,
         new_stage,
         visual_trait_index: m_index,
@@ -565,7 +574,8 @@ pub fn evolve_stage(
 
 /// Mutate a random visual trait (+1 to +3, cap at 31) with event emission
 pub fn mutate_visual_trait(
-    round_id: u64,
+    origin: u8,
+    origin_id: u64,
     dna: &mut [u8; 32],
     seed: &[u8],
     doge_mint: &Pubkey,
@@ -574,7 +584,8 @@ pub fn mutate_visual_trait(
     let (trait_index, current_val, new_val) = mutate_visual_trait_internal(dna, seed);
 
     emit!(DogeVisualMutation {
-        round_id,
+        origin,
+        origin_id,
         doge_mint: *doge_mint,
         trait_index,
         old_val: current_val,
@@ -617,7 +628,8 @@ fn mutate_visual_trait_internal(dna: &mut [u8; 32], seed: &[u8]) -> (u8, u8, u8)
 
 /// Mutate a random power trait (+1 to +3, cap at 15) with event emission
 pub fn mutate_power_trait(
-    round_id: u64,
+    origin: u8,
+    origin_id: u64,
     dna: &mut [u8; 32],
     seed: &[u8],
     doge_mint: &Pubkey,
@@ -626,7 +638,8 @@ pub fn mutate_power_trait(
     let (trait_index, current_val, new_val) = mutate_power_trait_internal(dna, seed);
 
     emit!(DogePowerMutation {
-        round_id,
+        origin,
+        origin_id,
         doge_mint: *doge_mint,
         trait_index,
         old_val: current_val,
@@ -965,6 +978,7 @@ pub fn decode_dominant_power_traits(dna: &[u8; 32]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::STORY_EVENT_ORIGIN_ROUND;
     use anchor_lang::prelude::Pubkey;
 
     fn mock_pubkey() -> Pubkey {
@@ -1189,7 +1203,8 @@ mod tests {
 
         let seed = [1u8; 32];
         let doge_mint = mock_pubkey();
-        let (trait_idx, _, _) = mutate_visual_trait(1, &mut dna, &seed, &doge_mint);
+        let (trait_idx, _, _) =
+            mutate_visual_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
 
         let mutated = decode_appearance_traits(&dna);
         println!("Mutated appearance traits: {:?}", mutated);
@@ -1212,7 +1227,8 @@ mod tests {
 
         let seed = [2u8; 32];
         let doge_mint = mock_pubkey();
-        let (_, original_val, mutated_val) = mutate_power_trait(1, &mut dna, &seed, &doge_mint);
+        let (_, original_val, mutated_val) =
+            mutate_power_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
 
         let mutated = decode_power_traits(&dna);
         println!("Mutated power traits: {:?}", mutated);
@@ -1239,7 +1255,7 @@ mod tests {
         let seed = [3u8; 32];
         let doge_mint = mock_pubkey();
         let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
-            evolve_stage(1, &mut dna, &seed, &doge_mint);
+            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
         println!("New stage: {}", new_stage);
         println!(
             "Mutated traits: {:?}",
@@ -1267,7 +1283,8 @@ mod tests {
 
         for expected_stage in 1..=7 {
             let seed = [expected_stage; 32];
-            let (new_stage, _, _, _, _, _, _) = evolve_stage(1, &mut dna, &seed, &doge_mint);
+            let (new_stage, _, _, _, _, _, _) =
+                evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
             assert_eq!(
                 new_stage, expected_stage,
                 "Stage mismatch at {}",
@@ -1278,7 +1295,7 @@ mod tests {
         // Should return current stage when at max (7)
         let seed = [8u8; 32];
         let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
-            evolve_stage(1, &mut dna, &seed, &doge_mint);
+            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
         assert_eq!(new_stage, 7, "Should stay at max stage");
         assert_eq!(m_index, 0, "No mutation at max");
         assert_eq!(m_current_val, 0, "No mutation at max");
@@ -1295,7 +1312,7 @@ mod tests {
 
         let seed = [1u8; 32];
         let doge_mint = mock_pubkey();
-        let _ = evolve_stage(1, &mut dna, &seed, &doge_mint);
+        let _ = evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
 
         assert_eq!(
             get_family_type(&dna),
@@ -1388,6 +1405,7 @@ mod tests {
         let tuning = test_tuning();
 
         let result = calculate_mutation_result(
+            STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000 / 2, // 0.5 SOL bet
             1_000_000_000,
@@ -1398,6 +1416,7 @@ mod tests {
             0, // faction_mutation_count
             100_000_000,
             &tuning,
+            10_000,
             0,
             0,
             0,
@@ -1424,6 +1443,7 @@ mod tests {
 
         for slot in 1..100_000 {
             let result = calculate_mutation_result(
+                STORY_EVENT_ORIGIN_ROUND,
                 1,
                 1_000_000_000,
                 1_000_000_000,
@@ -1434,6 +1454,7 @@ mod tests {
                 0,
                 1_000_000_000,
                 &tuning,
+                10_000,
                 0,
                 0,
                 0,
@@ -1465,6 +1486,7 @@ mod tests {
         (1..=5_000u64)
             .filter(|slot| {
                 calculate_mutation_result(
+                    STORY_EVENT_ORIGIN_ROUND,
                     1,
                     1_000_000_000,
                     1_000_000_000,
@@ -1475,6 +1497,7 @@ mod tests {
                     0,
                     1_000_000_000,
                     tuning,
+                    10_000,
                     cycle_rounds_elapsed,
                     cycle_mutations_triggered,
                     0,
@@ -1521,6 +1544,7 @@ mod tests {
         let tuning = test_tuning();
 
         let unlocked = calculate_mutation_result(
+            STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000,
             1_000_000_000,
@@ -1531,6 +1555,7 @@ mod tests {
             0,
             1_000_000_000,
             &tuning,
+            10_000,
             0,
             0,
             0,
@@ -1544,6 +1569,7 @@ mod tests {
         assert_eq!(unlocked.mutation_type, Some(MutationType::Evolution));
 
         let locked = calculate_mutation_result(
+            STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000,
             1_000_000_000,
@@ -1554,6 +1580,7 @@ mod tests {
             0,
             1_000_000_000,
             &tuning,
+            10_000,
             0,
             0,
             0,
@@ -1578,6 +1605,7 @@ mod tests {
         let tuning = test_tuning();
 
         let unlocked = calculate_mutation_result(
+            STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000,
             1_000_000_000,
@@ -1588,6 +1616,7 @@ mod tests {
             0,
             1_000_000_000,
             &tuning,
+            10_000,
             0,
             0,
             0,
@@ -1601,6 +1630,7 @@ mod tests {
         assert_eq!(unlocked.mutation_type, Some(MutationType::Evolution));
 
         let locked = calculate_mutation_result(
+            STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000,
             1_000_000_000,
@@ -1611,6 +1641,7 @@ mod tests {
             0,
             1_000_000_000,
             &tuning,
+            10_000,
             0,
             0,
             0,
@@ -1745,7 +1776,13 @@ mod tests {
         // Evolve through all stages
         for stage in 1..=7 {
             let seed = [stage as u8; 32];
-            evolve_stage(stage as u64, &mut dna, &seed, &doge_mint);
+            evolve_stage(
+                STORY_EVENT_ORIGIN_ROUND,
+                stage as u64,
+                &mut dna,
+                &seed,
+                &doge_mint,
+            );
             assert_eq!(
                 get_breed(&dna),
                 original_breed,
@@ -1763,7 +1800,13 @@ mod tests {
 
         for i in 0..50 {
             let seed = [i as u8; 32];
-            mutate_visual_trait(i, &mut dna, &seed, &doge_mint);
+            mutate_visual_trait(
+                STORY_EVENT_ORIGIN_ROUND,
+                i as u64,
+                &mut dna,
+                &seed,
+                &doge_mint,
+            );
             assert_eq!(
                 get_breed(&dna),
                 original_breed,
@@ -1781,7 +1824,13 @@ mod tests {
 
         for i in 0..50 {
             let seed = [i as u8; 32];
-            mutate_power_trait(i, &mut dna, &seed, &doge_mint);
+            mutate_power_trait(
+                STORY_EVENT_ORIGIN_ROUND,
+                i as u64,
+                &mut dna,
+                &seed,
+                &doge_mint,
+            );
             assert_eq!(
                 get_breed(&dna),
                 original_breed,

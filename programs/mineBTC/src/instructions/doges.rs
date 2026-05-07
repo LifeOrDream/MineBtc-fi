@@ -264,7 +264,7 @@ pub fn int_batch_mint_doges<'info>(
         total_price
     );
 
-    // --- Referral commission: 10% of total_price sent directly to the canonical referrer's ReferralRewards PDA ---
+    // --- Referral commission: 1% of total_price sent directly to the canonical referrer's ReferralRewards PDA ---
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
         helper::validate_referrer_rewards_account(
@@ -272,8 +272,10 @@ pub fn int_batch_mint_doges<'info>(
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
 
-        let cut = u64::try_from(helper::mul_div(total_price, 10, 100)?)
-            .map_err(|_| ErrorCode::ArithmeticOverflow)?; // 10% referral commission
+        let cut = total_price
+            .checked_mul(REFERRAL_FEE_PCT as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            / 100;
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -904,20 +906,20 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         doge_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [stake_doge] player_before staked_doges={:?} doge_multiplier={}x dogebtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        "🧾 [stake_doge] player_before staked_doges={:?} doge_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
         player_data.staked_doges,
         player_data.doge_multiplier as f64 / 1000.0,
-        player_data.dogebtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
-    let prev_faction_dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
+    let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
     let prev_faction_doges_staked = faction_state.doges_staked;
     msg!(
-        "🧾 [stake_doge] faction_before dogebtc_hashpower={} lp_hashpower={} doges_staked={}",
-        prev_faction_dogebtc_hashpower as f64 / 1e6,
+        "🧾 [stake_doge] faction_before degenbtc_hashpower={} lp_hashpower={} doges_staked={}",
+        prev_faction_degenbtc_hashpower as f64 / 1e6,
         prev_faction_lp_hashpower as f64 / 1e6,
         prev_faction_doges_staked
     );
@@ -1013,15 +1015,15 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
-    let existing_dogebtc_hashpower = player_data.dogebtc_hashpower;
+    let existing_degenbtc_hashpower = player_data.degenbtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
 
     // Recalculate hashpower with new multiplier (multiply first to avoid precision loss)
     // Formula: new_hashpower = (old_hashpower * new_multiplier) / old_multiplier
     let new_multiplier = player_data.doge_multiplier as u64;
     if old_multiplier > 0 {
-        player_data.dogebtc_hashpower = scale_hashpower_by_multiplier(
-            existing_dogebtc_hashpower,
+        player_data.degenbtc_hashpower = scale_hashpower_by_multiplier(
+            existing_degenbtc_hashpower,
             new_multiplier,
             old_multiplier,
         )?;
@@ -1029,8 +1031,8 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             scale_hashpower_by_multiplier(existing_lp_hashpower, new_multiplier, old_multiplier)?;
     } else {
         // If old_multiplier is 0 (shouldn't happen), use new_multiplier directly
-        player_data.dogebtc_hashpower = scale_hashpower_by_multiplier(
-            existing_dogebtc_hashpower,
+        player_data.degenbtc_hashpower = scale_hashpower_by_multiplier(
+            existing_degenbtc_hashpower,
             new_multiplier,
             BASE_MULTIPLIER as u64,
         )?;
@@ -1042,8 +1044,8 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
-        existing_dogebtc_hashpower as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6
+        existing_degenbtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6
     );
     msg!(
         "   LP hashpower: {} -> {}",
@@ -1054,15 +1056,15 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     // Update faction state totals
     update_faction_hashpower(
         faction_state,
-        existing_dogebtc_hashpower,
-        player_data.dogebtc_hashpower,
+        existing_degenbtc_hashpower,
+        player_data.degenbtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
     )?;
     msg!(
         "   Faction minebtc hashpower: {} -> {}",
-        prev_faction_dogebtc_hashpower as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        prev_faction_degenbtc_hashpower as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
     msg!(
         "   Faction LP hashpower: {} -> {}",
@@ -1093,7 +1095,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         doge_mint,
         doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.doge_multiplier,
-        dogebtc_hashpower: player_data.dogebtc_hashpower,
+        degenbtc_hashpower: player_data.degenbtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
     });
@@ -1125,20 +1127,20 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         doge_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [unstake_doge] player_before staked_doges={:?} doge_multiplier={}x dogebtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        "🧾 [unstake_doge] player_before staked_doges={:?} doge_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
         player_data.staked_doges,
         player_data.doge_multiplier as f64 / 1000.0,
-        player_data.dogebtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
-    let prev_faction_dogebtc_hashpower = faction_state.total_dogebtc_hashpower;
+    let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
     let prev_faction_doges_staked = faction_state.doges_staked;
     msg!(
-        "🧾 [unstake_doge] faction_before dogebtc_hashpower={} lp_hashpower={} doges_staked={}",
-        prev_faction_dogebtc_hashpower as f64 / 1e6,
+        "🧾 [unstake_doge] faction_before degenbtc_hashpower={} lp_hashpower={} doges_staked={}",
+        prev_faction_degenbtc_hashpower as f64 / 1e6,
         prev_faction_lp_hashpower as f64 / 1e6,
         prev_faction_doges_staked
     );
@@ -1248,13 +1250,13 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
-    let existing_dogebtc_hashpower = player_data.dogebtc_hashpower;
+    let existing_degenbtc_hashpower = player_data.degenbtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
     let new_multiplier = player_data.doge_multiplier as u64;
 
     if old_multiplier > 0 {
-        player_data.dogebtc_hashpower = scale_hashpower_by_multiplier(
-            existing_dogebtc_hashpower,
+        player_data.degenbtc_hashpower = scale_hashpower_by_multiplier(
+            existing_degenbtc_hashpower,
             new_multiplier,
             old_multiplier,
         )?;
@@ -1263,8 +1265,8 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     }
     msg!(
         "   MineBtc hashpower: {} -> {}",
-        existing_dogebtc_hashpower as f64 / 1e6,
-        player_data.dogebtc_hashpower as f64 / 1e6
+        existing_degenbtc_hashpower as f64 / 1e6,
+        player_data.degenbtc_hashpower as f64 / 1e6
     );
     msg!(
         "   LP hashpower: {} -> {}",
@@ -1275,15 +1277,15 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     // Update faction state totals
     update_faction_hashpower(
         faction_state,
-        existing_dogebtc_hashpower,
-        player_data.dogebtc_hashpower,
+        existing_degenbtc_hashpower,
+        player_data.degenbtc_hashpower,
         existing_lp_hashpower,
         player_data.lp_hashpower,
     )?;
     msg!(
         "   Faction minebtc hashpower: {} -> {}",
-        prev_faction_dogebtc_hashpower as f64 / 1e6,
-        faction_state.total_dogebtc_hashpower as f64 / 1e6
+        prev_faction_degenbtc_hashpower as f64 / 1e6,
+        faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
     msg!(
         "   Faction LP hashpower: {} -> {}",
@@ -1333,7 +1335,7 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         doge_mint,
         doge_metadata_account: doge_metadata.key(),
         player_multiplier: player_data.doge_multiplier,
-        dogebtc_hashpower: player_data.dogebtc_hashpower,
+        degenbtc_hashpower: player_data.degenbtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
     });
@@ -1501,7 +1503,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         doge_config.max_supply
     );
 
-    // --- Referral commission: 10% of breed_cost sent directly to the canonical referrer's ReferralRewards PDA ---
+    // --- Referral commission: 1% of breed_cost sent directly to the canonical referrer's ReferralRewards PDA ---
     let has_referrer = ctx.accounts.player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
         helper::validate_referrer_rewards_account(
@@ -1509,8 +1511,10 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
 
-        let cut = u64::try_from(helper::mul_div(breed_cost, 10, 100)?)
-            .map_err(|_| ErrorCode::ArithmeticOverflow)?; // 10% referral commission
+        let cut = breed_cost
+            .checked_mul(REFERRAL_FEE_PCT as u64)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            / 100;
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -1767,24 +1771,24 @@ fn add_tickets_to_player(
 /// Update faction state hashpower totals
 fn update_faction_hashpower(
     faction_state: &mut FactionState,
-    old_dogebtc_hashpower: u64,
-    new_dogebtc_hashpower: u64,
+    old_degenbtc_hashpower: u64,
+    new_degenbtc_hashpower: u64,
     old_lp_hashpower: u64,
     new_lp_hashpower: u64,
 ) -> Result<()> {
     msg!(
-        "🧮 [update_faction_hashpower] faction_id={} dogebtc_delta={} -> {} lp_delta={} -> {}",
+        "🧮 [update_faction_hashpower] faction_id={} degenbtc_delta={} -> {} lp_delta={} -> {}",
         faction_state.faction_id,
-        old_dogebtc_hashpower as f64 / 1e6,
-        new_dogebtc_hashpower as f64 / 1e6,
+        old_degenbtc_hashpower as f64 / 1e6,
+        new_degenbtc_hashpower as f64 / 1e6,
         old_lp_hashpower as f64 / 1e6,
         new_lp_hashpower as f64 / 1e6
     );
-    faction_state.total_dogebtc_hashpower = faction_state
-        .total_dogebtc_hashpower
-        .checked_sub(old_dogebtc_hashpower)
+    faction_state.total_degenbtc_hashpower = faction_state
+        .total_degenbtc_hashpower
+        .checked_sub(old_degenbtc_hashpower)
         .ok_or(ErrorCode::InvalidState)?
-        .checked_add(new_dogebtc_hashpower)
+        .checked_add(new_degenbtc_hashpower)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     faction_state.total_lp_hashpower = faction_state
         .total_lp_hashpower

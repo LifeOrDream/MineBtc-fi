@@ -26,7 +26,7 @@
     "max_burn_amount": 1000000,
     "metadata_included": true,
     "metadata_name": "DogeWifBTC",
-    "metadata_symbol": "DogeBTC",
+    "metadata_symbol": "DegenBTC",
     "metadata_uri": "https://assets.minebtc.fun/btc",
     "creation_signature": "38NCSRDPCrXJaKSTpnNyxmC7qtrjM8Cx2Ht2868EQ8oW6CGtqbZMwKStsW6nfF83cUMFHcbYq28Cm35PfzUFzNAT",
     "timestamp": "2025-12-16T14:18:36.554Z",
@@ -43,7 +43,7 @@
   "initial_supply_minted": {
     "amount": "2100000000000000",
     "actual_minted_amount": "2100000000000000",
-    "amount_readable": "2,100,000,000 DogeBTC",
+    "amount_readable": "2,100,000,000 DegenBTC",
     "token_account_address": "DAs237zS3UHkf3aVAoGPeHSzkwHF3DVK4yJ43uQYYpHV",
     "mint_signature": "5X4WG55PWXKBbkf9GaZkT7JfE2v5ghttfkUiW8GHkVnGSS8wVKTa3WcLZaNYZBYvrZcqFeiX3YS3j7Y6ZmefM9Uj",
     "bigint_verification": {
@@ -59,7 +59,7 @@
     "new_mint_authority": null,
     "removal_signature": "3DJeoveV6Mm5yasE8zLu2vGZxpjQMnyeZBUGfFQLinoNrs3HuGPrxYjLf4etLzuHCiVyhsBYtvDEtwvXvMGExu7M",
     "timestamp": "2025-12-16T14:18:39.747Z",
-    "total_supply_locked": "2,100,000,000 DogeBTC"
+    "total_supply_locked": "2,100,000,000 DegenBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
     "previous_withdraw_withheld_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
@@ -99,7 +99,7 @@
     "txid": "4AUSKzTuTHkYaFGd8xeXdridWuMbzDvQbYCQXT5nkj1H4uL7t1DiB4K9niKHgJF8BfGoxneGDwwDapBmjNhSFaQf",
     "initialMdogeAmount": "99000000000",
     "initialSolAmount": "1000000000",
-    "initialMdogeReadable": "99,000 DogeBTC",
+    "initialMdogeReadable": "99,000 DegenBTC",
     "initialSolReadable": "1 SOL",
     "openTime": "0",
     "timestamp": "2025-12-16T15:13:15.170Z"
@@ -225,7 +225,7 @@
     "vault_address": "6Cc43qKbxHqtSDZJQMfbQ8BkKpYECEmHwxL4ZoQUbinZ",
     "vault_authority": "7z1Z6XBqz8AHBZoDRTPWrAm23YJomDRsp7CJiZsuxLF4",
     "start_timestamp": 1765898931,
-    "doge_btc_per_round": "1000000000",
+    "degen_btc_per_round": "1000000000",
     "tx_signature": "2ezXD4AiqmkDf8wwreQPw7Q1ockMGewZDYgSFXSs8EZXFiLeC9HSHghJGGZXeVrDPy486boWP2SVHS4Vh8sxWTnq",
     "timestamp": "2025-12-16T15:28:53.723Z"
   },

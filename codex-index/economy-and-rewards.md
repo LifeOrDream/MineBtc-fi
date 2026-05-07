@@ -6,7 +6,7 @@ Canonical sources: `state.rs`, `economy.rs`, `game.rs`, `stake.rs`, `faction_war
 
 Per setup script live config:
 
-- dogeBTC stakers: 3% of round emission.
+- degenBTC stakers: 3% of round emission.
 - Exact winning faction+direction bettors: 50%.
 - Same winning faction but non-winning directions: 21% each.
 - Jackpot: 5%.
@@ -30,7 +30,7 @@ Per setup script:
 
 - Configured by `MineBtcDistConfig.hodl_tax_pct`.
 - Current setup script uses 10%.
-- Charged when withdrawing dogeBTC rewards if there are remaining HODL-pool participants.
+- Charged when withdrawing degenBTC rewards if there are remaining HODL-pool participants.
 - Redistributed through `HodlPool.hodl_tax_index`; it is not a protocol drain.
 
 ## Staking Multipliers
@@ -43,7 +43,7 @@ Per setup script:
 ## Economy Cycle
 
 - `snapshot_price()` appends price observations and earmarks SOL for POL.
-- `update_rate()` adjusts dogeBTC emission rate based on price movement:
+- `update_rate()` adjusts degenBTC emission rate based on price movement:
   - Default threshold: 3%.
   - Default increase when price rises: 1%.
   - Default decrease when price falls: 3%.
@@ -52,10 +52,10 @@ Per setup script:
 
 ## Faction-War Cycle Rewards
 
-- Faction wars are mutation/story-event-driven cycles tied to LP-burn operations.
+- Faction wars are gameplay-score-driven cycles tied to LP-burn operations.
 - `FactionWarConfig.faction_war_settle_cycle` points to the LP operation count that unlocks settlement.
 - Ranking source:
-  - Story-event mutation scores per faction.
+  - Gameplay support scores per faction.
   - Round wins and own-country SOL support are tiebreakers.
 - Direction resolution compares start ranks to final ranks:
   - Improved rank -> Up.

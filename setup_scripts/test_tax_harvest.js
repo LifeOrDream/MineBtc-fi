@@ -4,8 +4,8 @@
  * Tax Harvest Test Script
  *
  * Flow:
- * 1. Buy DogeBTC from Raydium pool (SOL → DogeBTC swap)
- * 2. Transfer DogeBTC between wallets to generate withheld fees (0.1% tax)
+ * 1. Buy DegenBTC from Raydium pool (SOL → DegenBTC swap)
+ * 2. Transfer DegenBTC between wallets to generate withheld fees (0.1% tax)
  * 3. Query Helius to discover accounts with withheld fees
  * 4. Harvest withheld fees to mint
  * 5. Verify mint withheld_amount increased
@@ -87,13 +87,13 @@ function separator(title) {
   console.log(`${"═".repeat(70)}`);
 }
 
-// ── Step 1: Buy DogeBTC from Raydium ─────────────────────────────────────────
+// ── Step 1: Buy DegenBTC from Raydium ─────────────────────────────────────────
 
-async function buyDogeBtc(solAmount = 0.01) {
-  separator("STEP 1: Buy DogeBTC from Raydium pool");
+async function buyDegenBtc(solAmount = 0.01) {
+  separator("STEP 1: Buy DegenBTC from Raydium pool");
 
   const lamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
-  console.log(`  Swapping ${solAmount} SOL → DogeBTC`);
+  console.log(`  Swapping ${solAmount} SOL → DegenBTC`);
 
   // Get or create deployer's DBTC ATA (Token-2022)
   const deployerDbtcAta = getAssociatedTokenAddressSync(dbtcMint, walletKeypair.publicKey, false, TOKEN_2022_PROGRAM_ID);
@@ -131,7 +131,7 @@ async function buyDogeBtc(solAmount = 0.01) {
   );
   await sendAndConfirmTransaction(connection, wrapTx, [walletKeypair], { commitment: "confirmed" });
 
-  // Swap SOL → DogeBTC via Raydium
+  // Swap SOL → DegenBTC via Raydium
   const swapTx = new Transaction();
   swapTx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }));
 
@@ -162,16 +162,16 @@ async function buyDogeBtc(solAmount = 0.01) {
   const acc = await getAccount(connection, deployerDbtcAta, "confirmed", TOKEN_2022_PROGRAM_ID);
   const dbtcAfter = acc.amount;
   const dbtcReceived = dbtcAfter - dbtcBefore;
-  console.log(`  DogeBTC received: ${fmtDbtc(dbtcReceived)} DBTC`);
+  console.log(`  DegenBTC received: ${fmtDbtc(dbtcReceived)} DBTC`);
   console.log(`  Total DBTC balance: ${fmtDbtc(dbtcAfter)} DBTC`);
 
   return { sig, dbtcReceived, dbtcBalance: dbtcAfter };
 }
 
-// ── Step 2: Transfer DogeBTC to generate withheld fees ───────────────────────
+// ── Step 2: Transfer DegenBTC to generate withheld fees ───────────────────────
 
 async function generateWithheldFees(amount) {
-  separator("STEP 2: Transfer DogeBTC to generate withheld fees (0.1% tax)");
+  separator("STEP 2: Transfer DegenBTC to generate withheld fees (0.1% tax)");
 
   // Create a secondary keypair to transfer to
   const recipient = Keypair.generate();
@@ -190,7 +190,7 @@ async function generateWithheldFees(amount) {
   );
   await sendAndConfirmTransaction(connection, createAtaTx, [walletKeypair], { commitment: "confirmed" });
 
-  // Transfer DogeBTC (triggers 0.1% tax withheld on sender side)
+  // Transfer DegenBTC (triggers 0.1% tax withheld on sender side)
   const deployerAta = getAssociatedTokenAddressSync(dbtcMint, walletKeypair.publicKey, false, TOKEN_2022_PROGRAM_ID);
   const transferAmount = amount || BigInt(100_000_000); // 100 DBTC default
 
@@ -466,15 +466,15 @@ async function main() {
   separator("TAX HARVEST TEST");
   console.log(`  Network: ${config.network.cluster}`);
   console.log(`  Wallet: ${walletKeypair.publicKey.toBase58()}`);
-  console.log(`  DogeBTC Mint: ${dbtcMint.toBase58()}`);
+  console.log(`  DegenBTC Mint: ${dbtcMint.toBase58()}`);
   console.log(`  Tax Config: ${taxConfigPda.toBase58()}`);
 
   const walletBalance = await connection.getBalance(walletKeypair.publicKey);
   console.log(`  Wallet balance: ${fmtSol(walletBalance)} SOL`);
 
   try {
-    // Step 1: Buy DogeBTC
-    const buyResult = await buyDogeBtc(0.01);
+    // Step 1: Buy DegenBTC
+    const buyResult = await buyDegenBtc(0.01);
 
     // Step 2: Transfer to generate fees
     if (buyResult.dbtcReceived > BigInt(0)) {

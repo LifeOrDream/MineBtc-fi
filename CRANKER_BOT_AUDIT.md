@@ -43,7 +43,7 @@ pub caller: Signer<'info>,
        ...
    )?;
    ```
-4. dogeBTC is added to `player_data.pending_minebtc_rewards`. Since `player_data` is a PDA of `user_wallet`, the bot **cannot** credit a different user.
+4. degenBTC is added to `player_data.pending_minebtc_rewards`. Since `player_data` is a PDA of `user_wallet`, the bot **cannot** credit a different user.
 
 **What the bot gets:** Only the rent lamports from closing the `user_game_bet` account (~0.002 SOL). This is the intended incentive.
 
@@ -91,7 +91,7 @@ pub player: AccountInfo<'info>,
 **Key security properties:**
 1. `user_faction_war_bets` is a PDA derived from the owner's pubkey.
 2. `player` account has constraint `player.key() == user_faction_war_bets.owner`. Bot cannot redirect SOL to itself.
-3. dogeBTC goes to `player_data.pending_minebtc_rewards`, which is a PDA of the owner.
+3. degenBTC goes to `player_data.pending_minebtc_rewards`, which is a PDA of the owner.
 
 ---
 
@@ -100,7 +100,7 @@ pub player: AccountInfo<'info>,
 | Scenario | Possible? | Why |
 |---|---|---|
 | Bot claims for User A, redirects SOL to Bot's wallet | **NO** | `user_wallet` is part of the PDA seed for `player_data` and `user_game_bet` |
-| Bot claims for User A, credits dogeBTC to Bot's account | **NO** | `player_data` is a PDA of `user_wallet`, not `caller` |
+| Bot claims for User A, credits degenBTC to Bot's account | **NO** | `player_data` is a PDA of `user_wallet`, not `caller` |
 | Bot claims for User A, but passes User B's wallet | **NO** | `user_game_bet` constraint `owner == user_wallet` fails |
 | Bot front-runs user's own claim to steal rent | **NO** | Rent is minimal (~0.002 SOL), and only one claim per round per user |
 | Bot spams claims to drain prize pot | **NO** | Each claim requires a valid `user_game_bet` PDA, and the prize pot is only touched for that user's specific reward |

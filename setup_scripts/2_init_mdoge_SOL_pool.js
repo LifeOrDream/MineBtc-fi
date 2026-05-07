@@ -1,12 +1,12 @@
 /**
  * ============================================================================
- * DOGE_BTC-SOL RAYDIUM POOL INITIALIZATION SCRIPT
+ * DEGEN_BTC-SOL RAYDIUM POOL INITIALIZATION SCRIPT
  * ============================================================================
  * 
  * Deployment Steps:
  * 1. Validates prerequisites (token mint, token account, initial supply)
  * 2. Creates AMM config with fee parameters
- * 3. Initializes DOGE_BTC-SOL pool with correct token order
+ * 3. Initializes DEGEN_BTC-SOL pool with correct token order
  * 4. Optionally burns LP tokens for permanent liquidity lock
  * 
  * Safety Features:
@@ -84,7 +84,7 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
 // ============================================================================
 
 (async () => {
-    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech DOGE_BTC-SOL Pool Creation ================================');
+    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech DEGEN_BTC-SOL Pool Creation ================================');
     console.log('\x1b[36m%s\x1b[0m', '🌐 Network:', CLUSTER);
     console.log('\x1b[36m%s\x1b[0m', '🔗 RPC URL:', RPC_URL);
     console.log('\x1b[36m%s\x1b[0m', '💱 Pool Type: Raydium CP-Swap (Constant Product)');
@@ -362,11 +362,11 @@ function validatePrerequisites(deploymentData) {
     }
     
     if (!deploymentData.dbtc_mint_address) {
-        errors.push('DOGE_BTC token mint address not found');
+        errors.push('DEGEN_BTC token mint address not found');
     }
     
     if (!deploymentData.dbtc_token_account_created?.token_account_address) {
-        errors.push('DOGE_BTC token account not found');
+        errors.push('DEGEN_BTC token account not found');
     }
     
     if (!deploymentData.initial_supply_minted) {
@@ -512,7 +512,7 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
 }
 
 /**
- * Initializes the DOGE_BTC-SOL liquidity pool with Raydium CP-Swap
+ * Initializes the DEGEN_BTC-SOL liquidity pool with Raydium CP-Swap
  * @param {Connection} connection - Solana connection
  * @param {Program} cpProgram - Raydium CP program instance
  * @param {Keypair} deployer - Deployer keypair
@@ -523,28 +523,28 @@ async function createAmmConfig(connection, cpProgram, deployer, deploymentData, 
 async function initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID) {
     // Check if already created
     if (deploymentData.dbtc_sol_pool_created) {
-        console.log(COLOR_INFO, 'ℹ️ DOGE_BTC-SOL pool already exists');
+        console.log(COLOR_INFO, 'ℹ️ DEGEN_BTC-SOL pool already exists');
         console.log(COLOR_INFO, '🔑 Pool State:', deploymentData.dbtc_sol_pool_created.poolStatePDA);
         return;
     }
 
     // ------------- xxxx -----------------
-    // CREATE DOGE_BTC-SOL POOL
+    // CREATE DEGEN_BTC-SOL POOL
     // ------------- xxxx -----------------
 
     const ammConfigPDA = new PublicKey(deploymentData.raydium_amm_config_created.amm_config_pda);
 
-    // Step 2: Create DOGE_BTC-SOL Pool
-    console.log(COLOR_STEP, '\n=================== [ CREATING DOGE_BTC-SOL POOL ] ===================');
+    // Step 2: Create DEGEN_BTC-SOL Pool
+    console.log(COLOR_STEP, '\n=================== [ CREATING DEGEN_BTC-SOL POOL ] ===================');
     
     if (!deploymentData.dbtc_sol_pool_created) {
-        console.log(COLOR_INFO, '🏊 Creating DOGE_BTC-SOL pool...');
+        console.log(COLOR_INFO, '🏊 Creating DEGEN_BTC-SOL pool...');
 
         // Get the token mints
         const minebtcMintKey = new PublicKey(deploymentData.dbtc_mint_address);
         const wsolMintKey = new PublicKey(WSOL_MINT);
         
-        console.log(COLOR_DIM, `🔍 DOGE_BTC Mint: ${minebtcMintKey.toString()}`);
+        console.log(COLOR_DIM, `🔍 DEGEN_BTC Mint: ${minebtcMintKey.toString()}`);
         console.log(COLOR_DIM, `🔍 WSOL Mint: ${wsolMintKey.toString()}`);
         
         // Ensure correct token order (token0 < token1) using byte-wise comparison
@@ -555,8 +555,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const token0Mint = isMdogeToken0 ? minebtcMintKey : wsolMintKey;
         const token1Mint = isMdogeToken0 ? wsolMintKey : minebtcMintKey;
         
-        console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isMdogeToken0 ? '(DOGE_BTC)' : '(WSOL)'}`);
-        console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isMdogeToken0 ? '(DOGE_BTC)' : '(WSOL)'}`);
+        console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isMdogeToken0 ? '(DEGEN_BTC)' : '(WSOL)'}`);
+        console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isMdogeToken0 ? '(DEGEN_BTC)' : '(WSOL)'}`);
         console.log(COLOR_DIM, `🔍 Token order check: ${token0Mint.toString() < token1Mint.toString() ? 'CORRECT' : 'INCORRECT'}`);
 
         // Create and fund WSOL account
@@ -658,26 +658,26 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         // Get or create user token accounts
         console.log(COLOR_DIM, '🔍 Setting up user token accounts...');
         
-        // Get DOGE_BTC account (SPL-2022)
+        // Get DEGEN_BTC account (SPL-2022)
         const creatorMdogeAccount = await getAssociatedTokenAddress(
             minebtcMintKey,
             deployer.publicKey,
             false,
             anchor_spl.TOKEN_2022_PROGRAM_ID
         );
-        console.log(COLOR_DIM, `🔍 Creator DOGE_BTC Account: ${creatorMdogeAccount.toString()}`);
+        console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC Account: ${creatorMdogeAccount.toString()}`);
 
-        // Check DOGE_BTC balance
+        // Check DEGEN_BTC balance
         try {
             const mdogeBalance = await connection.getTokenAccountBalance(creatorMdogeAccount);
-            console.log(COLOR_DIM, `🔍 Creator DOGE_BTC balance: ${mdogeBalance.value.uiAmount} DOGE_BTC`);
+            console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC balance: ${mdogeBalance.value.uiAmount} DEGEN_BTC`);
             
             if (parseFloat(mdogeBalance.value.amount) < initialMdogeAmount.toNumber()) {
-                console.error(COLOR_ERROR, `❌ Insufficient DOGE_BTC balance. Need: ${initialMdogeAmount.toNumber() / Math.pow(10, config.token.decimals)}, Have: ${mdogeBalance.value.uiAmount}`);
-                throw new Error('Insufficient DOGE_BTC balance');
+                console.error(COLOR_ERROR, `❌ Insufficient DEGEN_BTC balance. Need: ${initialMdogeAmount.toNumber() / Math.pow(10, config.token.decimals)}, Have: ${mdogeBalance.value.uiAmount}`);
+                throw new Error('Insufficient DEGEN_BTC balance');
             }
         } catch (error) {
-            console.error(COLOR_ERROR, `❌ Error checking DOGE_BTC balance: ${error.message}`);
+            console.error(COLOR_ERROR, `❌ Error checking DEGEN_BTC balance: ${error.message}`);
             throw error;
         }
 
@@ -725,7 +725,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         }
 
         // Determine token programs based on the actual token types, not order
-        const mdogeTokenProgram = anchor_spl.TOKEN_2022_PROGRAM_ID; // DOGE_BTC is always Token-2022
+        const mdogeTokenProgram = anchor_spl.TOKEN_2022_PROGRAM_ID; // DEGEN_BTC is always Token-2022
         const wsolTokenProgram = TOKEN_PROGRAM_ID; // WSOL is always standard SPL
         
         // Assign programs based on which token is token0/token1
@@ -733,10 +733,10 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const token1Program = isMdogeToken0 ? wsolTokenProgram : mdogeTokenProgram;
         
         console.log(COLOR_DIM, `🔍 Token program assignment:`);
-        console.log(COLOR_DIM, `   DOGE_BTC program: ${mdogeTokenProgram.toString()}`);
+        console.log(COLOR_DIM, `   DEGEN_BTC program: ${mdogeTokenProgram.toString()}`);
         console.log(COLOR_DIM, `   WSOL program: ${wsolTokenProgram.toString()}`);
-        console.log(COLOR_DIM, `   token0Program: ${token0Program.toString()} (${isMdogeToken0 ? 'DOGE_BTC' : 'WSOL'})`);
-        console.log(COLOR_DIM, `   token1Program: ${token1Program.toString()} (${isMdogeToken0 ? 'WSOL' : 'DOGE_BTC'})`);
+        console.log(COLOR_DIM, `   token0Program: ${token0Program.toString()} (${isMdogeToken0 ? 'DEGEN_BTC' : 'WSOL'})`);
+        console.log(COLOR_DIM, `   token1Program: ${token1Program.toString()} (${isMdogeToken0 ? 'WSOL' : 'DEGEN_BTC'})`);
         
         // Verify token ownership
         try {
@@ -803,8 +803,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const openTime = config.raydium.open_time;
         
         console.log(COLOR_DIM, '🔍 Pool initialization parameters:');
-        console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isMdogeToken0 ? 'DOGE_BTC' : 'WSOL'})`);
-        console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isMdogeToken0 ? 'WSOL' : 'DOGE_BTC'})`);
+        console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isMdogeToken0 ? 'DEGEN_BTC' : 'WSOL'})`);
+        console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isMdogeToken0 ? 'WSOL' : 'DEGEN_BTC'})`);
         console.log(COLOR_DIM, `   openTime: ${openTime} (${openTime > 0 ? new Date(openTime * 1000).toLocaleString() : 'Opens immediately'})`);
 
         try {
@@ -825,7 +825,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 }
             );
 
-            console.log(COLOR_SUCCESS, '✅ DOGE_BTC-SOL pool created successfully!');
+            console.log(COLOR_SUCCESS, '✅ DEGEN_BTC-SOL pool created successfully!');
             console.log(COLOR_INFO, `🔗 Transaction: ${poolTxid}`);
             console.log(COLOR_DIM, `🔍 Explorer URL: https://explorer.solana.com/tx/${poolTxid}?cluster=${CLUSTER}`);
 
@@ -889,7 +889,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 throw error;
         }
     } else {
-        console.log(COLOR_INFO, 'ℹ️ DOGE_BTC-SOL pool already exists');
+        console.log(COLOR_INFO, 'ℹ️ DEGEN_BTC-SOL pool already exists');
             }
 }
 
@@ -909,13 +909,13 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         return;
     }
 
-    // Get DOGE_BTC mint
+    // Get DEGEN_BTC mint
     const minebtcMint = new PublicKey(deploymentData.dbtc_mint_address);
 
     // =================== [ ADDING LIQUIDITY TO POOL ] ===================
     if (!deploymentData.dbtc_sol_liquidity_added) {
         console.log(COLOR_STEP, '\n=================== [ ADDING LIQUIDITY TO POOL ] ===================');
-        console.log(COLOR_INFO, '💧 Adding liquidity to DOGE_BTC-SOL pool...');
+        console.log(COLOR_INFO, '💧 Adding liquidity to DEGEN_BTC-SOL pool...');
         
         // Get token accounts (recreate them since they were in pool creation scope)
         const wsolMintKey = new PublicKey(WSOL_MINT);
@@ -996,7 +996,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
 
         console.log(COLOR_DIM, `🔍 Pool ratio (live):`);
         console.log(COLOR_DIM, `   WSOL reserve: ${wsolReserve.toString()} (${wsolReserve.toNumber() / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   DOGE_BTC reserve: ${dbtcReserve.toString()} (${dbtcReserve.toNumber() / 1e6} dBTC)`);
+        console.log(COLOR_DIM, `   DEGEN_BTC reserve: ${dbtcReserve.toString()} (${dbtcReserve.toNumber() / 1e6} dBTC)`);
         console.log(COLOR_DIM, `   LP supply: ${lpSupply.toString()}`);
         console.log(COLOR_DIM, `🔍 Computed deposit (target = 5 WSOL share):`);
         console.log(COLOR_DIM, `   lp_amount: ${lpAmount.toString()}`);
@@ -1011,7 +1011,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
 
         console.log(COLOR_DIM, `🔍 Current balances:`);
         console.log(COLOR_DIM, `   WSOL: ${wsolBalance.amount.toString()} (${Number(wsolBalance.amount) / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   DOGE_BTC: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e6} dBTC)`);
+        console.log(COLOR_DIM, `   DEGEN_BTC: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e6} dBTC)`);
 
         // Top up WSOL if we don't have enough.
         const wsolHave = new BN(wsolBalance.amount.toString());
@@ -1035,7 +1035,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         const dbtcHave = new BN(mdogeBalance.amount.toString());
         if (dbtcHave.lt(maxDbtc)) {
             throw new Error(
-                `Insufficient DOGE_BTC. Need ${maxDbtc.toString()} base units, have ${dbtcHave.toString()}.`
+                `Insufficient DEGEN_BTC. Need ${maxDbtc.toString()} base units, have ${dbtcHave.toString()}.`
             );
         }
         
@@ -1306,7 +1306,7 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
  */
 function printCompletionSummary(deploymentData) {
     console.log('\x1b[35m%s\x1b[0m', '\n🎉 ================================ POOL CONFIGURATION COMPLETE ================================');
-    console.log('\x1b[32m%s\x1b[0m', '✅ DOGE_BTC-SOL pool production configuration completed!');
+    console.log('\x1b[32m%s\x1b[0m', '✅ DEGEN_BTC-SOL pool production configuration completed!');
     
     console.log('\x1b[36m%s\x1b[0m', '\n📋 Pool Summary:');
     console.log('\x1b[36m%s\x1b[0m', `  • Network: ${CLUSTER}`);
@@ -1314,8 +1314,8 @@ function printCompletionSummary(deploymentData) {
     console.log('\x1b[36m%s\x1b[0m', `  • Trade Fee: ${config.raydium.trade_fee_rate / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `  • Initial SOL: ${config.raydium.initial_sol_amount / 1e9} SOL`);
     if (deploymentData.raydium_pool_initialized) {
-        console.log('\x1b[36m%s\x1b[0m', `  • Initial DOGE_BTC: ${deploymentData.raydium_pool_initialized.pool_dbtc_readable}`);
-        console.log('\x1b[36m%s\x1b[0m', `  • DOGE_BTC Percentage: ${deploymentData.raydium_pool_initialized.dbtc_percentage_for_pool}% of total supply`);
+        console.log('\x1b[36m%s\x1b[0m', `  • Initial DEGEN_BTC: ${deploymentData.raydium_pool_initialized.pool_dbtc_readable}`);
+        console.log('\x1b[36m%s\x1b[0m', `  • DEGEN_BTC Percentage: ${deploymentData.raydium_pool_initialized.dbtc_percentage_for_pool}% of total supply`);
     }
     if (config.raydium.burn_lp_tokens) {
         console.log('\x1b[32m%s\x1b[0m', `  • LP Tokens: Will be BURNED (permanent liquidity lock)`);
@@ -1335,14 +1335,14 @@ function printCompletionSummary(deploymentData) {
     if (deploymentData.lp_tokens_burned) {
         console.log('\x1b[32m%s\x1b[0m', '\n🔥 LP Token Burning:');
         console.log('\x1b[32m%s\x1b[0m', `   Status: ${deploymentData.lp_tokens_burned.status}`);
-        console.log('\x1b[32m%s\x1b[0m', `   Locked DOGE_BTC: ${deploymentData.lp_tokens_burned.dbtc_locked_amount}`);
+        console.log('\x1b[32m%s\x1b[0m', `   Locked DEGEN_BTC: ${deploymentData.lp_tokens_burned.dbtc_locked_amount}`);
         console.log('\x1b[32m%s\x1b[0m', `   Locked SOL: ${deploymentData.lp_tokens_burned.sol_locked_amount}`);
         console.log('\x1b[32m%s\x1b[0m', `   🔒 Permanent Lock: ${deploymentData.lp_tokens_burned.permanent_lock ? 'YES' : 'NO'}`);
     }
         
     console.log('\x1b[33m%s\x1b[0m', '\n📋 PRODUCTION READY:');
     console.log('\x1b[33m%s\x1b[0m', '   • Pool configuration calculated and validated');
-    console.log('\x1b[33m%s\x1b[0m', '   • Liquidity amounts: 1% DOGE_BTC supply + 10 SOL');
+    console.log('\x1b[33m%s\x1b[0m', '   • Liquidity amounts: 1% DEGEN_BTC supply + 10 SOL');
     console.log('\x1b[33m%s\x1b[0m', '   • LP tokens configured for burning (permanent lock)');
     console.log('\x1b[33m%s\x1b[0m', '   • Ready for Raydium SDK integration');
     

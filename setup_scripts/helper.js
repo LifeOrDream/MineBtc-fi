@@ -33,16 +33,16 @@ import path from "path";
 
 // ----- [SEEDS] -----
 
-// PDAs which hold GlobalConfig / DogeBtcMining state
+// PDAs which hold GlobalConfig / DegenBtcMining state
 export const GLOBAL_CONFIG_SEED = "global-config";
-export const DOGE_BTC_MINING_SEED = "mine-btc-mining";
+export const DEGEN_BTC_MINING_SEED = "mine-btc-mining";
 
 // PDAs which hold SOL collected by the program
 export const SOL_TREASURY_SEED = "sol-treasury";
 
 // MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
-export const DOGE_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
-export const DOGE_BTC_VAULT_SEED = "minebtc_vault";
+export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
+export const DEGEN_BTC_VAULT_SEED = "minebtc_vault";
 
 // PDAs which hold ModuleConfigStore / GearConfigStore state
 export const MODULE_CONFIG_STORE_SEED = "module-config-store";
@@ -61,8 +61,8 @@ export const dbtc_NFT_VAULT_SEED = "mdoge-nft-vault";
 // PDAs for loot rewards system
 export const LOOT_REWARDS_SEED = "loot-rewards";
 export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
-export const LOOT_DOGE_BTC_VAULT_SEED = "loot-mdoge-vault";
-export const LOOT_DOGE_BTC_VAULT_AUTHORITY_SEED = "loot-minebtc-vault-authority";
+export const LOOT_DEGEN_BTC_VAULT_SEED = "loot-mdoge-vault";
+export const LOOT_DEGEN_BTC_VAULT_AUTHORITY_SEED = "loot-minebtc-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
 export const BUYBACKS_SEED = "buybacks";
 export const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
@@ -135,7 +135,7 @@ export function updateDeploymentStatus(
 export async function createMintAccount(
   connection,
   deployer,
-  dogeBtcMint,
+  degenBtcMint,
   BURN_TAX_BPS,
   burn_tax,
   decimals,
@@ -168,7 +168,7 @@ export async function createMintAccount(
     // Create account instruction
     const createAccountIx = SystemProgram.createAccount({
       fromPubkey: deployer.publicKey,
-      newAccountPubkey: dogeBtcMint.publicKey,
+      newAccountPubkey: degenBtcMint.publicKey,
       space: mintLen,
       lamports,
       programId: TOKEN_2022_PROGRAM_ID,
@@ -176,7 +176,7 @@ export async function createMintAccount(
 
     // Initialize transfer fee config instruction
     const initTransferFeeIx = createInitializeTransferFeeConfigInstruction(
-      dogeBtcMint.publicKey,
+      degenBtcMint.publicKey,
       transferFeeConfigAuthority,
       withdrawWithheldAuthority,
       BURN_TAX_BPS,
@@ -186,7 +186,7 @@ export async function createMintAccount(
 
     // Initialize mint instruction
     const initMintIx = createInitializeMintInstruction(
-      dogeBtcMint.publicKey,
+      degenBtcMint.publicKey,
       decimals,
       mintAuthority,
       freezeAuthority,
@@ -207,7 +207,7 @@ export async function createMintAccount(
         const signature = await sendAndConfirmTransaction(
           connection,
           tx,
-          [deployer, dogeBtcMint],
+          [deployer, degenBtcMint],
           {
             commitment: "confirmed",
             maxRetries: 3,
@@ -245,7 +245,7 @@ export async function createMintAccount(
 export async function createMintAccountWithMetadata(
   connection,
   deployer,
-  dogeBtcMint,
+  degenBtcMint,
   BURN_TAX_BPS,
   burn_tax,
   decimals,
@@ -273,19 +273,19 @@ export async function createMintAccountWithMetadata(
     const tx1 = new Transaction().add(
       SystemProgram.createAccount({
         fromPubkey: deployer.publicKey,
-        newAccountPubkey: dogeBtcMint.publicKey,
+        newAccountPubkey: degenBtcMint.publicKey,
         lamports,
         space: mintLen,
         programId: TOKEN_2022_PROGRAM_ID,
       }),
       createInitializeMetadataPointerInstruction(
-        dogeBtcMint.publicKey,
+        degenBtcMint.publicKey,
         deployer.publicKey,
-        dogeBtcMint.publicKey,
+        degenBtcMint.publicKey,
         TOKEN_2022_PROGRAM_ID
       ),
       createInitializeTransferFeeConfigInstruction(
-        dogeBtcMint.publicKey,
+        degenBtcMint.publicKey,
         transferFeeConfigAuthority,
         withdrawWithheldAuthority,
         BURN_TAX_BPS,
@@ -293,7 +293,7 @@ export async function createMintAccountWithMetadata(
         TOKEN_2022_PROGRAM_ID
       ),
       createInitializeMintInstruction(
-        dogeBtcMint.publicKey,
+        degenBtcMint.publicKey,
         decimals,
         mintAuthority,
         freezeAuthority,
@@ -302,7 +302,7 @@ export async function createMintAccountWithMetadata(
     );
 
     console.log("\x1b[36m%s\x1b[0m", "📤 Sending TX1: Create + Extensions + InitMint...");
-    const sig1 = await sendAndConfirmTransaction(connection, tx1, [deployer, dogeBtcMint], {
+    const sig1 = await sendAndConfirmTransaction(connection, tx1, [deployer, degenBtcMint], {
       commitment: "confirmed",
       preflightCommitment: "confirmed",
       maxRetries: 3,
@@ -312,7 +312,7 @@ export async function createMintAccountWithMetadata(
     // Calculate additional rent needed for metadata TLV
     const metadataPayload = pack({
       updateAuthority: deployer.publicKey,
-      mint: dogeBtcMint.publicKey,
+      mint: degenBtcMint.publicKey,
       name: metadata.name,
       symbol: metadata.symbol,
       uri: metadata.uri,
@@ -331,7 +331,7 @@ export async function createMintAccountWithMetadata(
       ([field, value]) =>
         createUpdateFieldInstruction({
           programId: TOKEN_2022_PROGRAM_ID,
-          metadata: dogeBtcMint.publicKey,
+          metadata: degenBtcMint.publicKey,
           updateAuthority: deployer.publicKey,
           field,
           value,
@@ -341,13 +341,13 @@ export async function createMintAccountWithMetadata(
     const tx2 = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: deployer.publicKey,
-        toPubkey: dogeBtcMint.publicKey,
+        toPubkey: degenBtcMint.publicKey,
         lamports: additionalLamports,
       }),
       createInitializeInstruction({
         programId: TOKEN_2022_PROGRAM_ID,
-        mint: dogeBtcMint.publicKey,
-        metadata: dogeBtcMint.publicKey,
+        mint: degenBtcMint.publicKey,
+        metadata: degenBtcMint.publicKey,
         name: metadata.name,
         symbol: metadata.symbol,
         uri: metadata.uri,
@@ -376,7 +376,7 @@ export async function createMintAccountWithMetadata(
 export async function createMintAccount_T22_TransferFeeOnly(
   connection,
   deployer,
-  dogeBtcMint,
+  degenBtcMint,
   decimals,
   mintAuthority,
   freezeAuthority,
@@ -401,7 +401,7 @@ export async function createMintAccount_T22_TransferFeeOnly(
   // Create the mint account owned by Token-2022
   const createIx = SystemProgram.createAccount({
     fromPubkey: deployer.publicKey,
-    newAccountPubkey: dogeBtcMint.publicKey,
+    newAccountPubkey: degenBtcMint.publicKey,
     space: mintLen,
     lamports,
     programId: TOKEN_2022_PROGRAM_ID,
@@ -409,7 +409,7 @@ export async function createMintAccount_T22_TransferFeeOnly(
 
   // IMPORTANT: initialize the extension BEFORE InitializeMint
   const initTransferFeeIx = createInitializeTransferFeeConfigInstruction(
-    dogeBtcMint.publicKey,
+    degenBtcMint.publicKey,
     transferFeeConfigAuthority,
     withdrawWithheldAuthority,
     burnTaxBps, // basis points
@@ -418,7 +418,7 @@ export async function createMintAccount_T22_TransferFeeOnly(
   );
 
   const initMintIx = createInitializeMintInstruction(
-    dogeBtcMint.publicKey,
+    degenBtcMint.publicKey,
     decimals,
     mintAuthority,
     freezeAuthority, // can be null
@@ -433,7 +433,7 @@ export async function createMintAccount_T22_TransferFeeOnly(
   return await sendAndConfirmTransaction(
     connection,
     tx,
-    [deployer, dogeBtcMint],
+    [deployer, degenBtcMint],
     {
       commitment: "confirmed",
       preflightCommitment: "confirmed",
@@ -615,7 +615,7 @@ export async function initializeMinebtcProgram(
       program.programId
     );
     const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from(DOGE_BTC_MINING_SEED)],
+      [Buffer.from(DEGEN_BTC_MINING_SEED)],
       program.programId
     );
     const [solTreasuryPDA] = PublicKey.findProgramAddressSync(
@@ -629,7 +629,7 @@ export async function initializeMinebtcProgram(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DogeBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
+      `🔑 DegenBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -688,7 +688,7 @@ export async function initializeMinebtcProgram(
       );
 
       const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from(DOGE_BTC_MINING_SEED)],
+        [Buffer.from(DEGEN_BTC_MINING_SEED)],
         program.programId
       );
 
@@ -748,7 +748,7 @@ export async function updateGlobalConfig(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DogeBtc Mining PDA: ${mineBtcMiningPDA}`
+      `🔑 DegenBtc Mining PDA: ${mineBtcMiningPDA}`
     );
 
     if (newAuthority)
@@ -832,35 +832,35 @@ export async function setupMiningVault(
   tokenMint,
   token_program,
   start_timestamp,
-  doge_btc_per_round,
+  degen_btc_per_round,
   raydium_pool_state
 ) {
   try {
     console.log("\x1b[33m%s\x1b[0m", "📡 Initializing mining parameters...");
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGEBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
+      `🔑 DEGENBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGE_BTC Vault: ${vaultPDA.toString()}`
+      `🔑 DEGEN_BTC Vault: ${vaultPDA.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGE_BTC Vault Authority: ${vaultAuthorityPDA.toString()}`
+      `🔑 DEGEN_BTC Vault Authority: ${vaultAuthorityPDA.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGE_BTC Token Mint: ${tokenMint.toString()}`
+      `🔑 DEGEN_BTC Token Mint: ${tokenMint.toString()}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGE_BTC Token Program: ${token_program.toString()}`
+      `🔑 DEGEN_BTC Token Program: ${token_program.toString()}`
     );
     console.log("\x1b[90m%s\x1b[0m", `⏰ Start Timestamp: ${start_timestamp}`);
     console.log(
       "\x1b[90m%s\x1b[0m",
-      `💰 DOGEBTC Per Slot: ${doge_btc_per_round.toString()}`
+      `💰 DEGENBTC Per Slot: ${degen_btc_per_round.toString()}`
     );
     console.log(
       "\x1b[90m%s\x1b[0m",
@@ -875,7 +875,7 @@ export async function setupMiningVault(
     const miningTx = await program.methods
       .initializeMining(
         new BN(start_timestamp), // start_timestamp
-        new BN(doge_btc_per_round), // doge_btc_per_round (tokens per slot)
+        new BN(degen_btc_per_round), // degen_btc_per_round (tokens per slot)
         new PublicKey(raydium_pool_state) // pool_state (Raydium pool state)
       )
       .accounts({
@@ -1345,7 +1345,7 @@ export async function updateSlotsPerHour(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
-      `🔑 DOGEBTC Mining PDA: ${mineBtcMiningPDA}`
+      `🔑 DEGENBTC Mining PDA: ${mineBtcMiningPDA}`
     );
     console.log(
       "\x1b[36m%s\x1b[0m",

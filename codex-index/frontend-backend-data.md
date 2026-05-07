@@ -6,15 +6,15 @@ This file translates contract truth into backend API/socket and frontend state r
 
 Must be loaded once, cached, and reused:
 
-- Program ID, DogeBTC mint, Raydium pool, token decimals, supported factions.
+- Program ID, DegenBTC mint, Raydium pool, token decimals, supported factions.
 - Global config:
-  - pause state, fee config, dogeBTC distribution config, snapshot interval, gameplay tuning.
+  - pause state, fee config, degenBTC distribution config, snapshot interval, gameplay tuning.
 - Global game state:
   - current round ID, active/can begin flags, round duration, last round, jackpot pot.
 - Current/next round summary:
   - start/end timestamps, countdown, stage, current totals by faction-direction.
 - Current faction war:
-  - cycle ID, active/settled stage, settlement target, rankings, mutation scores, resolved directions when settled, cycle reward pools.
+  - cycle ID, active/settled stage, settlement target, rankings, gameplay scores, resolved directions when settled, cycle reward pools.
 - Economy:
   - emission rate, recent/average/track price, price history, SOL for POL, LP operation count, LP token price, mining multiplier.
 
@@ -26,8 +26,8 @@ Load on wallet connection and refresh by wallet-scoped socket/API deltas:
 - Referral state and referral reward account.
 - Current round bet, pending round claims, pending faction-war claims.
 - User faction-war bets and estimated cycle rewards.
-- Wallet balances: SOL, DogeBTC, LP tokens, relevant token accounts.
-- Player rewards: pending SOL, pending dogeBTC, unrefined dogeBTC, HODL tax state.
+- Wallet balances: SOL, DegenBTC, LP tokens, relevant token accounts.
+- Player rewards: pending SOL, pending degenBTC, unrefined degenBTC, HODL tax state.
 - Staking positions, hashpower, multipliers, pending rewards.
 - Doge inventory, Doge metadata, staked Doges, gameplay Doge, free mint allowance.
 - Autominer status: active config, reserve, rounds remaining, last executed round, claim/reload availability.
@@ -40,7 +40,7 @@ Backend should expose cached aggregate endpoints for:
 - Repeat users and retention cohorts.
 - Active users, unique bettors, unique Doge minters, unique autominer users.
 - SOL volume by round/day/cycle.
-- dogeBTC rewards distributed/mined/claimed.
+- degenBTC rewards distributed/mined/claimed.
 - Doge genesis mints by faction and revenue.
 - Referral leaderboard and same-faction referral metrics.
 - Faction leaderboard, country distribution, cycle outcomes.
