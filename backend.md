@@ -66,7 +66,7 @@ The backend is a **hybrid monolith** — single TypeScript codebase that spawns 
 | `autominer-worker` | `autominer_loop.ts` | Executes autominer bets & claims on behalf of users |
 | `rebase-claim-loop` | `rebase_claim_loop.ts` | Permissionless auto-claimer for faction war rewards |
 | `tax-loop` | `tax_loop.ts` | Legacy tax harvest + distribute (may overlap with economy cycle) |
-| `price-fetcher` | `startPriceFetcher.ts` | Fetches SOL/dogeBTC price data |
+| `price-fetcher` | `startPriceFetcher.ts` | Fetches SOL/degenBTC price data |
 | `pool-state-updater` | `startPoolStateUpdater.ts` | Tracks Raydium CP-Swap pool state |
 | `asset-worker` | `startAssetWorker.ts` | Generates NFT assets via FAL.ai + Google GenAI |
 | `admin-server` | `startAdminServer.ts` | Internal dashboard API (health, metrics, queues) |
@@ -113,7 +113,7 @@ MineBtcBackend/
 │   │   │   ├── stakedPositions.resolver.ts
 │   │   │   ├── economyDashboard.resolver.ts
 │   │   │   ├── frontendData.resolver.ts
-│   │   │   ├── btcDoge.resolver.ts
+│   │   │   ├── btcHashBeast.resolver.ts
 │   │   │   ├── assetGeneration.resolver.ts
 │   │   │   └── ... (16 more)
 │   │   └── utils/converters.ts
@@ -125,7 +125,7 @@ MineBtcBackend/
 │   │   ├── Rebase.model.ts
 │   │   ├── UserRebaseReward.model.ts
 │   │   ├── TaxDistribution.model.ts
-│   │   ├── BtcDoge.model.ts
+│   │   ├── BtcHashBeast.model.ts
 │   │   ├── Faction.model.ts
 │   │   ├── AutominerVault.model.ts
 │   │   ├── ChatMessage.model.ts
@@ -158,7 +158,7 @@ MineBtcBackend/
 │   │   │   ├── game.ts
 │   │   │   ├── user.ts
 │   │   │   ├── stake.ts
-│   │   │   ├── doges.ts
+│   │   │   ├── hashbeasts.ts
 │   │   │   ├── economy.ts
 │   │   │   ├── tax.ts
 │   │   │   ├── rebase.ts
@@ -237,14 +237,14 @@ MineBtcBackend/
 
 | Handler File | Events Handled |
 |-------------|----------------|
-| `game.ts` | `RoundStarted`, `RoundEnded`, `MotherlodeHit`, `RewardsDistributedForRound`, `DogeBtcStakingRewardsDistributed`, `LpStakingRewardsDistributed` |
-| `user.ts` | `PlayerInitialized`, `FactionChanged`, `BetsPlaced`, `RoundRewardsClaimed`, `Autominer*`, `ReferralRewardsClaimed`, `DogeUsedForGameplay`, `DogeWithdrawnFromGameplay`, `MutationTriggered`, `DogeEvolution`, `DogePowerMutation`, `DogeVisualMutation`, `DogeGameplayUnlockRequested` |
+| `game.ts` | `RoundStarted`, `RoundEnded`, `MotherlodeHit`, `RewardsDistributedForRound`, `DegenBtcStakingRewardsDistributed`, `LpStakingRewardsDistributed` |
+| `user.ts` | `PlayerInitialized`, `FactionChanged`, `BetsPlaced`, `RoundRewardsClaimed`, `Autominer*`, `ReferralRewardsClaimed`, `HashBeastUsedForGameplay`, `HashBeastWithdrawnFromGameplay`, `MutationTriggered`, `HashBeastEvolution`, `HashBeastPowerMutation`, `HashBeastVisualMutation`, `HashBeastGameplayUnlockRequested` |
 | `stake.ts` | `MineBtcStaked`, `MineBtcUnstaked`, `LiquidityStaked`, `LiquidityUnstaked`, `EmergencyWithdrawal`, `SolRewardsClaimed`, `DbtcRewardsClaimed`, `MinebtcClaimableAccrued`, `RefiningFeeRedistributed` |
-| `doges.ts` | `DogeMinted`, `DogeStaked`, `DogeUnstaked`, `DogeSentToHeaven`, `DogeSynced` |
+| `hashbeasts.ts` | `HashBeastMinted`, `HashBeastBred`, `HashBeastReborn`, `HashBeastRebirthBurned`, `HashBeastStaked`, `HashBeastUnstaked`, `HashBeastSynced` |
 | `rebase.ts` | `FactionWarAutoStarted`, `FactionWarSettled`, `FactionWarAutoSettled`, `FactionWarRewardsClaimed`, `MutationScoreAccumulated` |
 | `tax.ts` | `TaxDistributed`, `NftFloorSweepFundsWithdrawn`, `FactionTreasuryRewardsClaimed` |
 | `economy.ts` | `SolFeesWithdrawn`, `PriceSnapshotTaken`, `LiquidityAdded`, `DistributionRateUpdated`, `LpTokensBurned` |
-| `admin.ts` | `FactionAdded`, `CollectionDelegateAdded`, `CollectionInfoUpdated`, `MiningTokenVaultSet`, `DogeCollectionCreated`, `DogeFreeMintAllowanceUpdated` |
+| `admin.ts` | `FactionAdded`, `CollectionDelegateAdded`, `CollectionInfoUpdated`, `MiningTokenVaultSet`, `HashBeastCollectionCreated`, `HashBeastFreeMintAllowanceUpdated` |
 
 ### 4.5 IDL Events (55 Total — Currently Stale)
 
@@ -290,8 +290,8 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 
 | Table | Hash Key | GSIs | Purpose |
 |-------|----------|------|---------|
-| `mineBTC_doges` | `mint` (S) | `gsi-owner` | NFT metadata, DNA, evolution, mutations, asset generation status |
-| `mineBTC_doge_round_participation` | composite | — | Doge participation per round |
+| `mineBTC_hashbeasts` | `mint` (S) | `gsi-owner` | NFT metadata, DNA, evolution, mutations, asset generation status |
+| `mineBTC_hashbeast_round_participation` | composite | — | HashBeast participation per round |
 
 ### 5.4 Economy & Tax Tables
 
@@ -336,7 +336,7 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 | `stakedPositions.resolver.ts` | `stakedPositions(wallet)`, `stakeBoard` | — | Staking dashboard |
 | `frontendData.resolver.ts` | `frontendOverview`, `stakeFactionBoard`, `roundLedger`, `rebaseFactionWarCycles` | — | Bundled dashboard data |
 | `economyDashboard.resolver.ts` | `currentEconomyState`, `currentTaxState`, `liveFeed`, `taxFlowWindow` | — | Economy metrics |
-| `btcDoge.resolver.ts` | `doge(mint)`, `dogesByOwner`, `doges(limit, cursor, sort)`, `dogeLeaderboard` | — | NFT data |
+| `btcHashBeast.resolver.ts` | `hashbeast(mint)`, `hashbeastsByOwner`, `hashbeasts(limit, cursor, sort)`, `hashbeastLeaderboard` | — | NFT data |
 | `assetGeneration.resolver.ts` | `assetGenerationStatus(mint)`, `assetQueueStats`, `assetQueueOverview` | `retryAssetGeneration(mint)` | NFT pipeline monitoring |
 | `autominerVault.resolver.ts` | `autominerVaults(wallet)`, `autominerVault(wallet, index)` | — | Autominer state |
 | `factions.resolver.ts` | `factions`, `faction(id)` | — | Faction stats |
@@ -351,7 +351,7 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 | `onchainAccounts.resolver.ts` | `onchainAccount(name)` | — | Cached on-chain state |
 | `chat.resolver.ts` | `chatMessages(factionId, limit)` | `sendChatMessage` | In-game chat |
 | `analytics.resolver.ts` | `playerActivity`, `dailyActiveUsers`, `retentionCohort` | — | Backend analytics |
-| `dogeBtcTokenomics.resolver.ts` | `tokenomics` | — | Token supply/burn data |
+| `degenBtcTokenomics.resolver.ts` | `tokenomics` | — | Token supply/burn data |
 | `stakingWallet.resolver.ts` | `stakingWallet(wallet)` | — | Staking wallet summary |
 
 ### 6.2 API Gaps (Relative to Contract Changes)
@@ -450,7 +450,7 @@ End-of-cycle maintenance tail:
 ### 8.1 Flow
 
 ```
-DogeMinted Event → Indexer → DynamoDB (BtcDoge) → Queue Asset Gen Job
+HashBeastMinted Event → Indexer → DynamoDB (BtcHashBeast) → Queue Asset Gen Job
                                                     ↓
                               BullMQ Worker (sequential, concurrency=1)
                                                     ↓
@@ -465,7 +465,7 @@ DogeMinted Event → Indexer → DynamoDB (BtcDoge) → Queue Asset Gen Job
 
 ### 8.2 DNA Decoding
 
-**File:** `src/services/processEvents/doges.ts`
+**File:** `src/services/processEvents/hashbeasts.ts`
 
 | Field | Bits | Values |
 |-------|------|--------|
@@ -492,15 +492,15 @@ DogeMinted Event → Indexer → DynamoDB (BtcDoge) → Queue Asset Gen Job
 ### 8.4 Storage
 
 ```
-s3://<bucket>/doge-assets/<faction_code>/<category_name>/region_<N>/<mint>/
+s3://<bucket>/hashbeast-assets/<faction_code>/<category_name>/region_<N>/<mint>/
   ├── full_body.png
   ├── dp.png
   └── cinematic.png
 
-s3://<bucket>/doges/<mint>.json   ← metadata JSON
+s3://<bucket>/hashbeasts/<mint>.json   ← metadata JSON
 ```
 
-On-chain URI: `https://assets.minebtc.fun/doges/<mint>.json` (stable, never changes)
+On-chain URI: `https://assets.minebtc.fun/hashbeasts/<mint>.json` (stable, never changes)
 
 ### 8.5 Critical NFT Pipeline Issues
 
@@ -549,7 +549,7 @@ From `socketEmitter.pubsub.ts`:
 - `round:started`, `round:ended`, `round:rewardsDistributed`
 - `player:claimablesUpdated`, `player:stakedPositionsUpdated`
 - `faction:story`, `factionWar:state`
-- `doge:minted`, `doge:synced`
+- `hashbeast:minted`, `hashbeast:synced`
 - `feed:event`
 
 **Missing socket events for contract changes:**
@@ -623,7 +623,7 @@ When the contract removes global cap and adds per-user cooldown + guaranteed fir
 | **Global mutation feed** | new model + handler | Create `GlobalMutationFeed` model (privacy-preserving). Fields: `faction_id`, `mutation_type`, `new_stage`, `timestamp`. No wallet. |
 | **GraphQL** | new resolver | `mutationFeed(limit)` — global ticker. |
 | **Socket events** | `src/utils/socketEmitter.pubsub.ts` | `emitGlobalMutationFeed()` — "🧬 Someone in Russia just EVOLVED to Stage 4!" |
-| **BtcDoge model** | `src/model/BtcDoge.model.ts` | Add `last_mutation_at: Number`, `consecutive_mutations: Number` (for streak bonuses, if implemented). |
+| **BtcHashBeast model** | `src/model/BtcHashBeast.model.ts` | Add `last_mutation_at: Number`, `consecutive_mutations: Number` (for streak bonuses, if implemented). |
 
 ### 10.5 Social / Viral Backend Features (P1)
 
@@ -644,7 +644,7 @@ These are backend-only (no contract changes needed) but critical for virality.
 | Fix | File | Description |
 |-----|------|-------------|
 | **Fix faction drift** | `src/prompts/index.ts`, `src/prompts/factions/` | Align with contract: ensure factions 0-11 map to the SAME countries as the contract. Document the definitive list. |
-| **Add on-chain metadata updates** | `src/services/nftMetadata.service.ts` | After `DogeSynced` (mutation/evolution), call MPL Core `updateAsset` to refresh on-chain metadata hash. This forces marketplaces to re-fetch. |
+| **Add on-chain metadata updates** | `src/services/nftMetadata.service.ts` | After `HashBeastSynced` (mutation/evolution), call MPL Core `updateAsset` to refresh on-chain metadata hash. This forces marketplaces to re-fetch. |
 | **Remove hardcoded EC2 path** | `src/services/assetGenerationWorker.service.ts` | Make `BASE_BODIES_DIR` an env var with fallback. |
 | **Increase asset worker concurrency** | `src/queues/assetGenerationQueue.ts` | Increase from 1 to N (configurable, default 3). Monitor FAL.ai rate limits. |
 | **Add IPFS/Arweave mirror** | `src/services/assetGenerationWorker.service.ts` | Upload to S3 AND pin to IPFS (or upload to Arweave/Shadow Drive). Update metadata to point to decentralized URI as primary, S3 as fallback. |

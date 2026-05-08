@@ -69,7 +69,7 @@ const MINE_BTC_MINING_SEED = "mine-btc-mining";
 const SOL_TREASURY_SEED = "sol-treasury";
 const BUYBACKS_SEED = "buybacks";
 const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
-const DOGE_BTC_VAULT_SEED = "minebtc_vault";
+const DEGEN_BTC_VAULT_SEED = "minebtc_vault";
 const VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
 
 const [globalConfigPDA] = PublicKey.findProgramAddressSync(
@@ -400,7 +400,7 @@ async function executeSnapshotPrice() {
   );
 
   const [dbtcTokenAccountPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from(DOGE_BTC_VAULT_SEED), mineBtcMiningPDA.toBuffer()],
+    [Buffer.from(DEGEN_BTC_VAULT_SEED), mineBtcMiningPDA.toBuffer()],
     mineBTCProgramId
   );
 

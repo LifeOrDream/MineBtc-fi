@@ -49,9 +49,9 @@ Use:
 - `country` / `faction`
 - `direction` (`Down`, `Neutral`, `Up`)
 - `round` — 60-second betting loop
-- `rebase` — competitive cycle tied to LP burn, mutation leaderboard
-- `gameplay doge` / `operator doge`
-- `mutation` / `mutation score`
+- `rebase` — competitive cycle tied to LP burn, gameplay-score leaderboard
+- `gameplay hashbeast` / `operator hashbeast`
+- `mutation` / `gameplay score`
 
 Do NOT use:
 
@@ -61,7 +61,7 @@ Do NOT use:
 - "active index", "index state"
 - block-number betting language
 
-The current product story: **Pick your country, bet SOL, your doge evolves, your country climbs, you earn dogeBTC.**
+The current product story: **Pick your country, bet SOL, win claims, your hashbeast evolves, your country climbs, you earn degenBTC.**
 
 ## Pull Request Guidelines
 

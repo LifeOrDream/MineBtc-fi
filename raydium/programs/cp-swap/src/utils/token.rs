@@ -14,7 +14,7 @@ use spl_token_2022::{
 };
 use std::collections::HashSet;
 
-const MINT_WHITELIST: [&'static str; 4] = [
+const MINT_WHITELIST: [&str; 4] = [
     "HVbpJAQGNpkgBaYBZQBR1t7yFdvaYVp2vCQQfKKEN4tM",
     "Crn4x1Y2HUKko7ox2EZMT6N2t2ZyH7eKtwkBGVnhEq1g",
     "FrBfWJ4qE5sCzKm3k3JaAtqZcXUh4LvJygDeketsrsH4",

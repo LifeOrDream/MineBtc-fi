@@ -28,13 +28,10 @@ pub enum ErrorCode {
     #[msg("Referral rewards account required when referral code is provided")]
     ReferralRewardsAccountRequired,
 
-    #[msg("Maximum referrals reached for this referral code (50 max)")]
-    MaxReferralsReached,
-
     #[msg("Invalid parameters provided for operation")]
     InvalidParameters,
 
-    #[msg("Game is paused — new bets, autominer execution, round starts, and doge mints are disabled. Claims and round settlement still work.")]
+    #[msg("Game is paused — new bets, autominer execution, round starts, and hashbeast mints are disabled. Claims and round settlement still work.")]
     GamePaused,
 
     #[msg("Amount overflow")]
@@ -74,14 +71,14 @@ pub enum ErrorCode {
     #[msg("URI too long - maximum 200 characters")]
     UriTooLong,
 
-    #[msg("Doge already at guard")]
-    DogeAlreadyAtGuard,
+    #[msg("HashBeast already at guard")]
+    HashBeastAlreadyAtGuard,
 
-    #[msg("Doge is not incubated in this minebtc")]
-    DogeNotAtGuard,
+    #[msg("HashBeast is not incubated in this minebtc")]
+    HashBeastNotAtGuard,
 
-    #[msg("Doge limit for this tier has been reached")]
-    DogeLimitExceeded,
+    #[msg("HashBeast limit for this tier has been reached")]
+    HashBeastLimitExceeded,
 
     #[msg("NFT is not owned by the user")]
     NftNotOwnedByUser,
@@ -89,7 +86,7 @@ pub enum ErrorCode {
     #[msg("Update dist rate first")]
     UpdateDistRateFirst,
 
-    #[msg("dogeBtc needed for POl cannot be more than 5% of vault balance")]
+    #[msg("degenBtc needed for POl cannot be more than 5% of vault balance")]
     MaxLimitError,
 
     // ========== ROUND GAME ERRORS ========== //
@@ -161,7 +158,7 @@ pub enum ErrorCode {
     #[msg("Breeding is not currently allowed")]
     BreedingNotAllowed,
 
-    #[msg("Maximum breed count reached for this doge")]
+    #[msg("Maximum breed count reached for this hashbeast")]
     MaxBreedCountReached,
 
     #[msg("Breeding cooldown has not ended yet")]
@@ -170,13 +167,31 @@ pub enum ErrorCode {
     #[msg("Maximum evolution stage reached")]
     MaxEvolutionReached,
 
-    #[msg("Doge metadata not found")]
-    DogeMetadataNotFound,
+    #[msg("Maximum rebirth count reached for this hashbeast")]
+    MaxRebirthCountReached,
+
+    #[msg("HashBeast metadata not found")]
+    HashBeastMetadataNotFound,
+
+    #[msg("HashBeasts must be at the same rebirth generation to breed")]
+    RebirthLevelMismatch,
+
+    #[msg("Invalid breeding pair")]
+    InvalidBreedingPair,
+
+    #[msg("Breeding floor anchor is unavailable or too low")]
+    BreedFloorAnchorUnavailable,
+
+    #[msg("dbTC price is unavailable for breeding")]
+    DbtcPriceUnavailable,
+
+    #[msg("Genesis HashBeast mint sale must be sold out before breeding")]
+    GenesisNotSoldOut,
 
     #[msg("Position already exists")]
     PositionAlreadyExists,
 
-    #[msg("Doge DNA mismatch")]
+    #[msg("HashBeast DNA mismatch")]
     ClaimPendingRoundRewards,
 
     #[msg("Minting not allowed")]
@@ -185,16 +200,16 @@ pub enum ErrorCode {
     #[msg("Gameplay locking is only available while RPG progression is enabled")]
     GameplayNotEnabled,
 
-    #[msg("Gameplay unlock has already been requested for this doge")]
+    #[msg("Gameplay unlock has already been requested for this hashbeast")]
     GameplayUnlockAlreadyRequested,
 
     #[msg("Gameplay unlock has not been requested")]
     GameplayUnlockNotRequested,
 
-    #[msg("Gameplay doge can only be unlocked after the next faction_war cycle begins")]
+    #[msg("Gameplay hashbeast can only be unlocked after the next faction_war cycle begins")]
     GameplayUnlockNotReady,
 
-    #[msg("Claim all pending round and faction-war reward accounts before unlocking this gameplay doge")]
+    #[msg("Claim all pending round and faction-war reward accounts before unlocking this gameplay hashbeast")]
     GameplayRewardsPending,
 
     // ========== FACTION_WAR MINING ERRORS ========== //
@@ -222,9 +237,80 @@ pub enum ErrorCode {
     #[msg("Round entropy is not ready yet")]
     RoundEntropyNotReady,
 
-    #[msg("Free Doge mint allowance exceeds the per-user maximum")]
-    MaxFreeDogeMintsExceeded,
+    #[msg("Free HashBeast mint allowance exceeds the per-user maximum")]
+    MaxFreeHashBeastMintsExceeded,
 
-    #[msg("No free Doge mints remaining for this user")]
-    NoFreeDogeMintsRemaining,
+    #[msg("No free HashBeast mints remaining for this user")]
+    NoFreeHashBeastMintsRemaining,
+
+    // ============================ Inventory / Lootbox / Market ============================
+    #[msg("Inventory pool is at MAX_INVENTORY capacity")]
+    InventoryFull,
+
+    #[msg("Reborn entry is in an invalid status for this operation")]
+    InvalidRebornStatus,
+
+    #[msg("Marketplace program account does not match cached pubkey")]
+    InvalidMarketplaceProgram,
+
+    #[msg("Marketplace config account does not match cached pubkey")]
+    InvalidMarketplaceConfig,
+
+    #[msg("Inventory listing price is below the marketplace minimum")]
+    ListingPriceTooLow,
+
+    #[msg("Listing price exceeds the buyer's max price")]
+    ListingPriceExceedsMax,
+
+    #[msg("Inventory PDA does not own this asset")]
+    AssetNotInInventory,
+
+    // -------- Permissionless market making --------
+    #[msg("Floor queue has no entries")]
+    FloorQueueEmpty,
+
+    #[msg("Floor queue is full and the new entry is not cheaper than the worst entry")]
+    FloorQueueFull,
+
+    #[msg("Asset is already registered in the floor queue")]
+    AssetAlreadyInQueue,
+
+    #[msg("Cached floor entry is stale and was popped; nothing to sweep this tx")]
+    NoLiveFloorEntries,
+
+    #[msg("Listing price exceeds the attractive ceiling vs current anchor")]
+    FloorPriceTooHigh,
+
+    #[msg("Sweep would drop the vault below MIN_SWEEP_RESERVE_LAMPORTS")]
+    SweepVaultBelowReserve,
+
+    #[msg("Sweep tx exceeds the per-tx sweep cap")]
+    SweepTxCapExceeded,
+
+    #[msg("Sweep anchor is below the minimum sweep threshold (no recent volume)")]
+    SweepAnchorTooLow,
+
+    #[msg("Floor entry data does not match the live marketplace listing")]
+    StaleFloorEntry,
+
+    #[msg("Program-owned listings cannot be registered in the floor queue")]
+    ProgramListingNotAllowed,
+
+    #[msg("Listing has not yet aged enough for expire_program_listing")]
+    ListingNotYetExpirable,
+
+    #[msg("This ix only operates on program-owned listings")]
+    NotProgramListing,
+
+    #[msg("This ix only operates on user-owned listings")]
+    NotUserListing,
+
+    #[msg("Floor snapshot was already recorded within the cadence window")]
+    SnapshotTooSoon,
+
+    #[msg("Asset is still owned by inventory_pda — sale not actually settled")]
+    AssetStillOwnedByInventory,
+
+    #[msg("Listing is not present in the floor queue")]
+    ListingNotInQueue,
 }

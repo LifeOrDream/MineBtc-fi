@@ -29,7 +29,7 @@ Please include:
 - Program-derived accounts (PDAs) and associated vaults
 - Token-2022 transfer fee logic
 - Staking, country-direction betting, round settlement, active-index score updates, epoch settlement, and reward distribution logic
-- Autominer execution and gameplay-doge custody / synchronization flows
+- Autominer execution and gameplay-hashbeast custody / synchronization flows
 - NFT minting and bonding curve logic
 
 **Out of scope:**

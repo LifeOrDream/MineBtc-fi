@@ -259,7 +259,7 @@ async function fundAndDistribute() {
   const state = await fetchState();
   const expectedBuybacks = Math.floor(available * state.buybackPct / 100);
   console.log(`\n  Verification: available=${available}, expected_buybacks=${expectedBuybacks}, actual_vault_increase=${postBuybacksVault - preBuybacksVault}`);
-  const match = Math.abs((postBuybacksVault - preBuybacksVault) - expectedBuybacks) < expectedBuybacks * 0.5; // doge treasury also contributes
+  const match = Math.abs((postBuybacksVault - preBuybacksVault) - expectedBuybacks) < expectedBuybacks * 0.5; // hashbeast treasury also contributes
   console.log(`  Buybacks routing: ${match ? "CORRECT" : "CHECK LOGS"}`);
 
   return { fundSig, distSig, events };

@@ -1,4 +1,5 @@
 #![allow(unexpected_cfgs, deprecated)]
+#![allow(clippy::all, clippy::nursery, clippy::pedantic)]
 
 pub mod curve;
 pub mod error;

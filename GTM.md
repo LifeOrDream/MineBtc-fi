@@ -1,7 +1,7 @@
 # MineBTC Go-To-Market Strategy & Viral Assessment
 
 > **Date:** April 2026  
-> **Product:** MineBTC (DogeWifBTC) — Solana On-Chain Faction Arena  
+> **Product:** MineBTC (degenBTC) — Solana On-Chain Faction Arena  
 > **Scope:** Viral potential analysis, GTM execution plan, multilingual content strategy, and 90-day launch roadmap.
 
 ---
@@ -23,7 +23,7 @@
 
 **Yes, MineBTC can go viral on Solana — but not as a "game." It will go viral as a degen social experiment with nationalist memes, fast dopamine, and visible money.**
 
-Your instinct to double down on **faction wars + multilingual content is correct**. In fact, it's your *only* scalable organic growth vector. The core mechanic (60s rounds, country predictions, Doge NFTs) is content-native. It was built to be clipped, shared, and argued about.
+Your instinct to double down on **faction wars + multilingual content is correct**. In fact, it's your *only* scalable organic growth vector. The core mechanic (60s rounds, country predictions, HashBeast NFTs) is content-native. It was built to be clipped, shared, and argued about.
 
 But there are **three things that will kill you before virality** if not handled now:
 
@@ -40,7 +40,7 @@ But there are **three things that will kill you before virality** if not handled
 | **Content Loop** | ⭐⭐⭐⭐⭐ | 60s rounds = infinite TikTok/Shorts material. Win/loss/reaction clips write themselves. |
 | **Tribalism** | ⭐⭐⭐⭐⭐ | 12 countries = 12 armies. "USA vs China" in crypto bets is engagement steroids. |
 | **Token Narrative** | ⭐⭐⭐⭐☆ | 0.1% transfer tax + 50% burn + POL LP burns = visible deflation. CT loves "number go down" (supply). |
-| **NFT Hook** | ⭐⭐⭐⭐☆ | Doge mutations + evolution = unboxing content. "My doge evolved live during a bet" is clip gold. |
+| **NFT Hook** | ⭐⭐⭐⭐☆ | HashBeast mutations + evolution = unboxing content. "My hashbeast evolved live during a bet" is clip gold. |
 | **Global Jackpot** | ⭐⭐⭐⭐☆ | 0.16% chance per round = regular "holy shit" viral moments. Now global pot with inverse-weighted faction selection (low-bet factions get higher odds). |
 | **Referral Flywheel** | ⭐⭐⭐⭐☆ | 3-5% referrer + 1% referred + same-faction bonuses. Incentivizes country-specific recruiting. |
 | **Mobile Experience** | ❓ | **Unknown / blocking.** No frontend in repo. If it's not mobile-first, you lose 80% of Solana's audience. |
@@ -66,8 +66,8 @@ The permanent faction choice is *brutal* and *smart*. It creates:
 - Rivalry narratives ("Japan is dominating, where are the Brazilians?")
 - Event-driven spikes (real-world geopolitical news → "bet on your country" narratives)
 
-### C. The Doge NFT is a Character, Not Just a JPEG
-Because the Doge is locked during gameplay, gains XP, and mutates visually in real-time, it becomes a **progression companion**. This is closer to a Tamagotchi or Pokémon than a PFP. Content creators can have "story arcs" with their Doge.
+### C. The HashBeast NFT is a Character, Not Just a JPEG
+Because the HashBeast is locked during gameplay, gains XP, and mutates visually in real-time, it becomes a **progression companion**. This is closer to a Tamagotchi or Pokémon than a PFP. Content creators can have "story arcs" with their HashBeast.
 
 ### D. Token-2022 Burns Are Visible
 The 0.1% transfer tax with 50% burn means **every single transaction reduces supply**. You can build a live "Total Burned" counter on the frontend. Crypto Twitter eats this alive. It gives holders a reason to tweet daily.
@@ -100,7 +100,7 @@ The on-chain terminology has been fully reframed:
 - Do NOT use words like "bet," "gamble," "casino," or "wager" in any app store listing, domain registry, or ad copy
 - Frame it as a **"prediction skill arena,"** **"faction strategy game,"** or **"on-chain social competition"**
 - Add free-to-play tiers (tickets only) so it's not purely pay-to-play
-- Lead with skill elements: Doge multipliers, faction strategy, staking hashpower, and prediction accuracy leaderboards
+- Lead with skill elements: HashBeast multipliers, faction strategy, staking hashpower, and prediction accuracy leaderboards
 - The contract events already support this narrative (`JackpotHit`, `PaperHandBurned`, `DiamondHands` filtering, etc.)
 
 ### 🚨 Risk 2: North Korea and Iran Factions
@@ -116,7 +116,7 @@ Having **North Korea** and **Iran** as playable factions is meme gold but **comp
 - Keep the meme energy but lose the OFAC red flags.
 
 ### 🚨 Risk 3: Emission vs. Deflation Math
-Starting emission is **1,000 dogeBTC per round** = **1.44M tokens/day** = **~525M/year** (25% of supply in Year 1).
+Starting emission is **1,000 degenBTC per round** = **1.44M tokens/day** = **~525M/year** (25% of supply in Year 1).
 
 **Built-in defenses:**
 - **Asymmetrical emission controller** (`economy.rs`): Price up >3% → emissions **+1%**. Price down >3% → emissions **-3%**. This is deflationary by design and compounds down over time.
@@ -146,7 +146,7 @@ Your instinct is **100% correct**. Here is how to execute it without diluting yo
 
 Stop saying "betting game." Start saying:
 
-> **"The World Cup of On-Chain Factions. Pick your country. Command your Doge. Fight for glory and burns."**
+> **"The World Cup of On-Chain Factions. Pick your country. Command your HashBeast. Fight for glory and burns."**
 
 This frames it as:
 - Esports (skill/team-based)
@@ -181,9 +181,9 @@ Post 3-5x daily per language across platforms.
 | Pillar | Format | Example |
 |--------|--------|---------|
 | **Round Highlights** | 15s TikTok/Reels | "🇮🇳 India just flipped 🇨🇳 China in Round #4,420. 12 SOL jackpot hit!" |
-| **Doge Mutations** | 10s Unboxing | "My gameplay Doge just EVOLVED mid-round. Visual trait: Diamond Fur." |
+| **HashBeast Mutations** | 10s Unboxing | "My gameplay HashBeast just EVOLVED mid-round. Visual trait: Diamond Fur." |
 | **Faction War Standings** | 30s Esports Update | "Week 2 Standings: Russia #1, USA #3, Shadow Faction... surprisingly #2?" |
-| **Burn Reports** | 15s Data Viz | "Today we burned 2.4M dogeBTC. Supply crunch incoming." |
+| **Burn Reports** | 15s Data Viz | "Today we burned 2.4M degenBTC. Supply crunch incoming." |
 | **Strategy** | 60s YouTube Short | "Why predicting your home faction gives 20% loyalty bonus in Faction Wars." |
 | **Propaganda** | Meme image/video | "USA HOLDERS ARE SLEEPING. 🇷🇺 RUSSIA DOESN'T SLEEP." |
 
@@ -196,7 +196,7 @@ Manufacture and amplify these specific matchups:
 | Rivalry | Content Angle |
 |---------|--------------|
 | **USA vs China** | Economic superpower showdown. "Who controls the hashpower?" |
-| **Japan vs South Korea** | Tech rivalry. Anime vs K-pop aesthetics for Doge skins. |
+| **Japan vs South Korea** | Tech rivalry. Anime vs K-pop aesthetics for HashBeast skins. |
 | **Israel vs Zagros** | High-intensity, politically charged (monitor closely, fictional names for compliance) |
 | **India vs China** | Border tension analogies. Cricket vs. everything. |
 | **Brazil vs France** | Football World Cup callback. "We settled it on the pitch, now settle it on-chain." |
@@ -205,11 +205,11 @@ Manufacture and amplify these specific matchups:
 
 ---
 
-### Phase 4: Ambassador Program ("Doge Generals")
+### Phase 4: Ambassador Program ("HashBeast Generals")
 
-Instead of paying KOLs, create **12 Doge Generals** (one per faction):
+Instead of paying KOLs, create **12 HashBeast Generals** (one per faction):
 - Regional influencer with 10k-100k followers
-- Gets a unique "General" Doge NFT (admin mint, high multiplier)
+- Gets a unique "General" HashBeast NFT (admin mint, high multiplier)
 - Revenue share from their referral code
 - Must post 3x/week in their language
 - Hosts Telegram/Discord for their country
@@ -224,7 +224,7 @@ Instead of paying KOLs, create **12 Doge Generals** (one per faction):
 | Platform | Purpose | Languages |
 |----------|---------|-----------|
 | **Twitter/X** | Global announcements, English CT, burn stats, jackpot alerts | English primary |
-| **TikTok/Reels/Shorts** | **PRIMARY VIRAL ENGINE.** Round clips, Doge evolutions, faction propaganda, MVP highlights | All Tier 1 + 2 |
+| **TikTok/Reels/Shorts** | **PRIMARY VIRAL ENGINE.** Round clips, HashBeast evolutions, faction propaganda, MVP highlights | All Tier 1 + 2 |
 | **Telegram** | Country-specific groups, round bots, alpha sharing | All (bots handle multi-lang) |
 | **Discord** | English hub, developer updates, NFT trading | English |
 | **YouTube** | Long-form strategy, AMAs, Faction War recaps | Tier 1 only |
@@ -250,14 +250,14 @@ Instead of paying KOLs, create **12 Doge Generals** (one per faction):
 
 ### Days 31-60: Faction War Season 1 (All 12)
 - Open all factions
-- Launch Doge Generals ambassador program
+- Launch HashBeast Generals ambassador program
 - Daily multilingual content begins
 - First Faction War settlement (big event, livestream it, announce all 12 MVPs)
 - POL burn event (make it visible, celebrate it)
 
 ### Days 61-90: Scale & Optimize
 - Add Tier 2 languages
-- A/B test TikTok creative (round clips vs. Doge mutations vs. burn stats)
+- A/B test TikTok creative (round clips vs. HashBeast mutations vs. burn stats)
 - Launch breeding (if ready)
 - First "World Cup" mega-tournament (boosted rewards, 1-week event)
 - Mobile app store submission (if compliant)
@@ -274,7 +274,7 @@ Instead of paying KOLs, create **12 Doge Generals** (one per faction):
 | **TikTok/Shorts Views** | 1M+ / month | Organic reach in Tier 2 countries is cheap but needs volume |
 | **POL Burns** | 1+ per week | Visible burns = daily tweet material. If burns slow, narrative dies. |
 | **Avg Prediction Size** | 0.05+ SOL | At 15% protocol fee, you need volume or size. Low size needs high volume. |
-| **Doge Mint Volume** | 500+ / month | NFT mints = ticket sales = new user acquisition + SOL revenue |
+| **HashBeast Mint Volume** | 500+ / month | NFT mints = ticket sales = new user acquisition + SOL revenue |
 
 **If you hit 2,000 daily predictors:** The token flywheel (tax → burn → price → attention → more predictors) becomes self-sustaining.
 
@@ -292,7 +292,7 @@ The core mechanic is too complex to explain in English CT threads alone. But "My
 
 1. **Fix compliance:** Rename NK/Iran, add geo-blocks, frame as "skill arena"
 2. **Ship mobile UI:** If it's not in Phantom Mobile in 2 taps, you don't have a product
-3. **Launch ambassadors first, ads second:** 12 Doge Generals will outperform $10k in Twitter ads
+3. **Launch ambassadors first, ads second:** 12 HashBeast Generals will outperform $10k in Twitter ads
 4. **Burn the token visibly:** Make POL burns events, not background processes
 5. **TikTok in 6 languages before Twitter threads in 1:** The degen audience you want is on Reels, not reading 19-tweet threads
 
@@ -304,7 +304,7 @@ You have the most mechanically interesting degen product I've seen on Solana thi
 
 # Appendix A: Contract & Gameplay Virality Deep Dive
 
-> After re-reading `economy.rs`, `game.rs`, `user.rs`, `genescience.rs`, `doges.rs`, `stake.rs`, and `faction_war.rs` in full.
+> After re-reading `economy.rs`, `game.rs`, `user.rs`, `genescience.rs`, `hashbeasts.rs`, `stake.rs`, and `faction_war.rs` in full.
 
 ---
 
@@ -351,7 +351,7 @@ You are correct: `economy.rs` has an asymmetrical feedback loop.
 ### Why This Works Better Than Per-Faction Pots
 - **Bigger pots:** All rounds feed one pot instead of 12 fragmented ones
 - **Fairer odds:** Small factions can win the jackpot even if they never win regular rounds
-- **Viral moments:** "Shadow Faction just hit the GLOBAL JACKPOT for 12,000 dogeBTC" is clip gold
+- **Viral moments:** "Shadow Faction just hit the GLOBAL JACKPOT for 12,000 degenBTC" is clip gold
 
 ### Rollover on Empty Hits — Implemented ✅
 - If jackpot hits but the selected faction has `exact_winning_wgtd_pts == 0`, the pot **rolls over** instead of being distributed to nobody
@@ -397,15 +397,15 @@ The mutation system is supposed to create "unboxing" viral moments. But with a g
 
 2. **Guaranteed First Mutation**
    - Add `has_had_first_mutation: bool` to `PlayerData`
-   - If false, the first qualifying bet (SOL bet, gameplay doge active) has a **100% mutation chance**, bypassing all penalties
-   - This hooks new users immediately. They see their Doge change in their very first round.
-   - *Viral effect:* "I just started playing and my Doge already evolved" is the perfect onboarding clip.
+   - If false, the first qualifying bet (SOL bet, gameplay hashbeast active) has a **100% mutation chance**, bypassing all penalties
+   - This hooks new users immediately. They see their HashBeast change in their very first round.
+   - *Viral effect:* "I just started playing and my HashBeast already evolved" is the perfect onboarding clip.
 
 3. **Public Mutation Feed Events**
    - The `StoryEventTriggered` event already exists but includes the user key. Modify or add a new `GlobalMutationFeed` event that emits:
      - `faction_id`, `mutation_type` (Evolution/Power/Trait), `new_stage` (if evolution), `timestamp`
      - **Without** the user wallet (privacy-preserving)
-   - Frontend shows a live ticker: "🧬 Someone in 🇷🇺 Russia just EVOLVED their Doge to Stage 4!"
+   - Frontend shows a live ticker: "🧬 Someone in 🇷🇺 Russia just EVOLVED their HashBeast to Stage 4!"
    - This creates FOMO. Users see mutations happening and want to keep playing.
 
 4. **Mutation Streak Bonuses**
@@ -418,7 +418,7 @@ The mutation system is supposed to create "unboxing" viral moments. But with a g
 
 ---
 
-## 4. Doge NFT Evolution — Invisible Without Dynamic Art
+## 4. HashBeast NFT Evolution — Invisible Without Dynamic Art
 
 ### Current Mechanics
 - DNA is 32 bytes with 21 visual traits and 15 power traits
@@ -428,7 +428,7 @@ The mutation system is supposed to create "unboxing" viral moments. But with a g
 
 ### The Problem
 
-**The metadata URI is static.** When a Doge mints, it gets a URI. When it evolves, the DNA changes on-chain, but the image stays the same. To the user, nothing visible happened.
+**The metadata URI is static.** When a HashBeast mints, it gets a URI. When it evolves, the DNA changes on-chain, but the image stays the same. To the user, nothing visible happened.
 
 A mutation system where the user can't **see** the mutation is like a slot machine with the reels hidden.
 
@@ -436,32 +436,32 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 
 | Change | File | Effort | Impact |
 |--------|------|--------|--------|
-| **Dynamic metadata URI updates** | `doges.rs`, off-chain renderer | High | 🔥🔥🔥 |
-| **Doge Leaderboard account** | `state.rs`, new instruction | Medium | 🔥🔥 |
+| **Dynamic metadata URI updates** | `hashbeasts.rs`, off-chain renderer | High | 🔥🔥🔥 |
+| **HashBeast Leaderboard account** | `state.rs`, new instruction | Medium | 🔥🔥 |
 | **accumulated_val visibility** | `events.rs` | Low | 🔥 |
 
 **Specifics:**
 
 1. **Dynamic Rendering (Critical)**
    - Build an off-chain renderer service that takes `dna + stage + multiplier` and generates a PNG
-   - Host these at predictable URLs: `https://assets.minebtc.fun/doge/{mint}/{stage}-{dna_hash}.png`
-   - When a Doge evolves or mutates, call `update_nft_metadata` (you already have `update_collection_info` and MPL Core delegates) to point to the new URI
-   - *This is non-negotiable for viral NFT content.* Users must screenshot their evolved Doge and post it.
+   - Host these at predictable URLs: `https://assets.minebtc.fun/hashbeast/{mint}/{stage}-{dna_hash}.png`
+   - When a HashBeast evolves or mutates, call `update_nft_metadata` (you already have `update_collection_info` and MPL Core delegates) to point to the new URI
+   - *This is non-negotiable for viral NFT content.* Users must screenshot their evolved HashBeast and post it.
 
-2. **Doge Leaderboard**
-   - Add a new global account `DogeLeaderboard` that tracks top 10 Doges by:
+2. **HashBeast Leaderboard**
+   - Add a new global account `HashBeastLeaderboard` that tracks top 10 HashBeasts by:
      - `multiplier` (gameplay power)
      - `evolution_stage` (prestige)
      - `accumulated_val` (wealth)
-   - Update it during `process_mutation_sync` in `user.rs`
-   - Emit `DogeLeaderboardUpdated` events
-   - Frontend shows: "🏆 #1 Strongest Doge: Stage 7, 4.2x Multiplier, 2.4M accumulated value"
+  - Update it when reward-claim paths sync HashBeast metadata after a mutation roll
+   - Emit `HashBeastLeaderboardUpdated` events
+   - Frontend shows: "🏆 #1 Strongest HashBeast: Stage 7, 4.2x Multiplier, 2.4M accumulated value"
    - Creates whale competition and bragging rights.
 
-3. **Accumulated Val as "Doge Wealth"**
-   - Rename `accumulated_val` to `doge_wealth` in the frontend
-   - Show it prominently: "Your Doge has earned 12,420 dogeBTC of wealth"
-   - When burning (`send_to_heaven`), the user claims this wealth. Make it a visible sacrifice mechanic.
+3. **Accumulated Val as "HashBeast Wealth"**
+   - Rename `accumulated_val` to `hashbeast_wealth` in the frontend
+   - Show it prominently: "Your HashBeast has earned 12,420 degenBTC of wealth"
+   - When rebirthing (`rebirth_hashbeast`), the user claims this wealth. Make it a visible sacrifice or transformation mechanic depending on whether the asset is reborn or burned.
 
 ---
 
@@ -485,7 +485,7 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 1. **HODL Tax Events (Implemented)**
    - Event `HodlTaxRedistributed` is emitted every time a user pays the HODL tax
    - Fields: `paper_hand` (who paid), `tax_amount`, `redistributed_amount`, `remaining_total_claimable` (proxy for how many diamond hands benefit)
-   - Frontend shows a live feed: "🔥 {User} paid 5,000 HODL Tax. You earned 42 dogeBTC for diamond handing."
+   - Frontend shows a live feed: "🔥 {User} paid 5,000 HODL Tax. You earned 42 degenBTC for diamond handing."
 
 2. **Reframe the Narrative (Frontend/Marketing)**
    - Don't call it "HODL tax." Call it **"Paper Hand Tax."**
@@ -498,7 +498,7 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 ## 6. Faction War Rewards — MVP Bonus Implemented ✅
 
 ### Current Mechanics
-- 4-layer split: Base (65%), Loyalty (20%), MVP (5%), Doge (10%)
+- 4-layer split: Base (65%), Loyalty (20%), MVP (5%), HashBeast (10%)
 - Each layer is distributed per-faction by final rank
 - Users must bet on the correct direction of a country's resolved movement
 
@@ -526,12 +526,12 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
      - #2 faction MVP: 1.25% of total war pool
      - #3 faction MVP: 0.75% of total war pool
      - #4-12 MVPs: ~0.11% each
-   - `FactionWarMvp` events emitted for all 12 factions: "🏆 {User} was MVP for Israel! Bonus: 420 dogeBTC"
+   - `FactionWarMvp` events emitted for all 12 factions: "🏆 {User} was MVP for Israel! Bonus: 420 degenBTC"
    - MVP bonus is added automatically when user claims faction war rewards
    - Creates **12 hero narratives per war** instead of 1 — more content, more engagement
 
 2. **Real-Time War Score (Frontend-Ready)**
-   - The `StoryEventScoreAccumulated` event already emits per-round mutation scores
+  - The `GameplayScoreAccumulated` event emits live gameplay-score contributions
    - Frontend should aggregate these into a live leaderboard:
      ```
      ⚔️ War #42 Live Standings:
@@ -543,10 +543,10 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
 
 3. **Simplify Frontend Narrative (Frontend-Only)**
    - Don't show 4 separate pools. Show one reward with multipliers:
-     - "Base Reward: 500 dogeBTC"
+     - "Base Reward: 500 degenBTC"
      - "Loyalty Bonus: ×1.5 (you predicted YOUR country)"
      - "MVP Bonus: +2,000 (you were the top contributor for USA!)"
-     - "Doge Bonus: +120 (your Doge evolved this war)"
+     - "HashBeast Bonus: +120 (your HashBeast evolved this war)"
    - Same contract logic, simpler story.
 
 ---
@@ -610,7 +610,7 @@ After review, **win streaks, whale alerts, and player statistics will be handled
    - Renamed `EmergencyWithdrawal` → `PaperHandBurned` for viral narrative
    - Enhanced with `days_remaining` and `staked_token_type` (0 = MineBTC, 1 = LP)
    - Emitted in both `int_unstake_minebtc` and `int_unstake_lp_tokens` when penalty > 0
-   - Frontend: "🔥 {User} paper handed 180 days early. 15,000 dogeBTC BURNED."
+   - Frontend: "🔥 {User} paper handed 180 days early. 15,000 degenBTC BURNED."
    - This makes deflation a spectator sport.
 
 2. **Diamond Hands Detection (No Contract Change Needed)**
@@ -620,7 +620,7 @@ After review, **win streaks, whale alerts, and player statistics will be handled
    - **No new event needed** — avoids account bloat.
 
 3. **Faction Hashpower Wars (Frontend-Ready)**
-   - `FactionState` already tracks `total_dogebtc_hashpower` and `total_lp_hashpower`
+   - `FactionState` already tracks `total_degenbtc_hashpower` and `total_lp_hashpower`
    - Frontend should show a live bar chart: "🇺🇸 USA: 45M hashpower | 🇷🇺 Russia: 38M hashpower"
    - This turns staking into a country-vs-country arms race.
 
@@ -634,9 +634,9 @@ After review, **win streaks, whale alerts, and player statistics will be handled
 | **P0** | Guarantee first mutation for new users | Low | 🔥🔥🔥 | `user.rs` |
 | **P1** | Public mutation feed events | Low | 🔥🔥 | `user.rs` |
 | **Done** | ~~Faction War MVP bonus~~ | — | 🔥🔥 | `faction_war.rs` |
-| **P2** | Doge Leaderboard account | Medium | 🔥🔥 | `state.rs`, `user.rs` |
+| **P2** | HashBeast Leaderboard account | Medium | 🔥🔥 | `state.rs`, `user.rs` |
 
-**Already implemented / handled:** Global Jackpot rebrand + weighted selection + near-miss + rollover, Paper Hand Burn events, HODL Tax events, win streaks/whale alerts (backend-only), dynamic Doge art (off-chain renderer).
+**Already implemented / handled:** Global Jackpot rebrand + weighted selection + near-miss + rollover, Paper Hand Burn events, HODL Tax events, win streaks/whale alerts (backend-only), dynamic HashBeast art (off-chain renderer).
 
 ---
 
@@ -646,9 +646,9 @@ Your contracts are mechanically sophisticated — probably the most complex dege
 
 The difference between a game that 1,000 people play and a game that 1,000 people *post about* comes down to three things:
 
-1. **Visible progression** — Users must SEE their Doge evolve. Right now, it's invisible.
+1. **Visible progression** — Users must SEE their HashBeast evolve. Right now, it's invisible.
 2. **Shared moments** — Mutations, jackpots, and streaks must be public events, not private accounting. Right now, they're hidden.
-3. **Simple stories** — "I won 3x in 60 seconds" or "My Doge evolved to Stage 4" are shareable. "I claimed 3.7 dogeBTC from the HODL tax index after a 5% HODL tax redistribution" is not.
+3. **Simple stories** — "I won 3x in 60 seconds" or "My HashBeast evolved to Stage 4" are shareable. "I claimed 3.7 degenBTC from the HODL tax index after a 5% HODL tax redistribution" is not.
 
 Fix the P0s and P1s above before launch. The rest can ship in Season 2.
 

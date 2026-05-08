@@ -8,7 +8,7 @@
 // - `update_config`: Updates global parameters like authorities and fees.
 // - `add_faction`: Registers new factions in the game.
 // - `initialize_mining`: Starts the token mining process.
-// - `initialize_doge_config`: Sets up the Doge NFT system.
+// - `initialize_hashbeast_config`: Sets up the HashBeast NFT system.
 // - `initialize_tax_config`: Configures the tax and burn mechanisms.
 // - `initialize_game_state`: Prepares the game state for the first round.
 //
@@ -53,15 +53,13 @@ pub struct GameplayTuningUpdateArgs {
     pub faction_war_base_reward_bps: Option<u16>,
     pub faction_war_loyalty_reward_bps: Option<u16>,
     pub faction_war_mvp_reward_bps: Option<u16>,
-    pub faction_war_doge_reward_bps: Option<u16>,
+    pub faction_war_hashbeast_reward_bps: Option<u16>,
 
     pub base_mutation_chance_bps: Option<u16>,
     pub mutation_chance_floor_bps: Option<u16>,
     pub mutation_chance_cap_bps: Option<u16>,
     pub faction_volume_threshold_lamports: Option<u64>,
     pub extra_volume_threshold_per_mutation_lamports: Option<u64>,
-    pub global_mutation_pressure_decay_bps: Option<u16>,
-    pub global_mutation_pressure_per_mutation_bps: Option<u16>,
     pub target_mutations_per_cycle: Option<u16>,
     pub target_rounds_per_cycle: Option<u16>,
     pub pacing_max_adjustment_bps: Option<u16>,
@@ -102,12 +100,11 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         protocol_fee_pct: DEFAULT_PROTOCOL_FEE_PCT,
         buyback_pct: DEFAULT_BUYBACK_PCT,
         stakers_pct: DEFAULT_STAKERS_PCT,
-        referral_fee_pct: DEFAULT_REFERRAL_FEE_PCT,
-        same_faction_referral_fee_pct: DEFAULT_SAME_FACTION_REFERRAL_FEE_PCT,
         cycle_sol_split_pct: DEFAULT_CYCLE_SOL_SPLIT_PCT,
+        nft_market_making_pct: DEFAULT_NFT_MARKET_MAKING_PCT,
     };
 
-    // Initialize dogeBTC round distribution config (defaults defined in state.rs)
+    // Initialize degenBTC round distribution config (defaults defined in state.rs)
     // Invariant: stakers + winners + 2 * same_faction + jackpot = 100
     global_config.minebtc_dist_config = MineBtcDistConfig {
         minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
@@ -167,7 +164,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.price_history = Vec::new();
     mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
     mine_btc_mining.track_price = 0;
-    mine_btc_mining.sol_for_pol = 0;
 
     // Initialize emission adjustment parameters (defaults defined in state.rs)
     mine_btc_mining.price_change_threshold = DEFAULT_PRICE_CHANGE_THRESHOLD;
@@ -183,7 +179,7 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 }
 
 /// Set the Raydium pool state address (admin only)
-/// Also initializes sol_rewards_vault and sol_prize_pot_vault if not already initialized
+/// Also initializes SOL vault PDAs if not already initialized.
 ///
 /// Security measure to prevent using malicious pools for swaps.
 /// Only the authorized Raydium pool can be used for price discovery and liquidity operations.
@@ -230,6 +226,23 @@ pub fn set_raydium_pool_state_internal(
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.authority.to_account_info(),
                     to: ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                },
+            ),
+            1,
+        )?;
+    }
+
+    // Initialize faction_war_sol_vault if not already initialized. User bets
+    // transfer tiny cycle splits here, so the PDA must exist rent-exempt before
+    // the first split arrives.
+    let faction_war_sol_vault_lamports = ctx.accounts.faction_war_sol_vault.lamports();
+    if faction_war_sol_vault_lamports == 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.faction_war_sol_vault.to_account_info(),
                 },
             ),
             1,
@@ -286,16 +299,14 @@ pub fn add_faction_internal(
     );
 
     // Initialize faction state data
-    faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
-    faction_state.total_dogebtc_hashpower = 0;
-    faction_state.dogebtc_staked = 0;
-    faction_state.dogebtc_dogebtc_reward_index = 0;
-    faction_state.dogebtc_sol_reward_index = 0;
+    faction_state.total_degenbtc_hashpower = 0;
+    faction_state.degenbtc_staked = 0;
+    faction_state.degenbtc_degenbtc_reward_index = 0;
+    faction_state.degenbtc_sol_reward_index = 0;
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
-    faction_state.lp_dogebtc_reward_index = 0;
-    faction_state.sol_reward_index = 0;
+    faction_state.lp_degenbtc_reward_index = 0;
     // Add faction to config
     global_config.supported_factions.push(faction_name.clone());
 
@@ -421,9 +432,8 @@ pub fn update_fees_internal(
     new_minebtc_jackpot_pct: Option<u8>,
     new_hodl_tax_pct: Option<u8>,
     snapshot_interval: Option<u64>,
-    new_referral_fee_pct: Option<u8>,
-    new_same_faction_referral_fee_pct: Option<u8>,
     new_cycle_sol_split_pct: Option<u8>,
+    new_nft_market_making_pct: Option<u8>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_fees_internal");
     let global_config = &mut ctx.accounts.global_config;
@@ -432,20 +442,17 @@ pub fn update_fees_internal(
     if new_protocol_fee_pct.is_some()
         || new_buyback_pct.is_some()
         || new_stakers_pct.is_some()
-        || new_referral_fee_pct.is_some()
-        || new_same_faction_referral_fee_pct.is_some()
         || new_cycle_sol_split_pct.is_some()
+        || new_nft_market_making_pct.is_some()
     {
         let protocol_fee_pct =
             new_protocol_fee_pct.unwrap_or(global_config.sol_fee_config.protocol_fee_pct);
         let buyback_pct = new_buyback_pct.unwrap_or(global_config.sol_fee_config.buyback_pct);
         let stakers_pct = new_stakers_pct.unwrap_or(global_config.sol_fee_config.stakers_pct);
-        let referral_fee_pct =
-            new_referral_fee_pct.unwrap_or(global_config.sol_fee_config.referral_fee_pct);
-        let same_faction_referral_fee_pct = new_same_faction_referral_fee_pct
-            .unwrap_or(global_config.sol_fee_config.same_faction_referral_fee_pct);
         let cycle_sol_split_pct =
             new_cycle_sol_split_pct.unwrap_or(global_config.sol_fee_config.cycle_sol_split_pct);
+        let nft_market_making_pct =
+            new_nft_market_making_pct.unwrap_or(global_config.sol_fee_config.nft_market_making_pct);
 
         require!(
             protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -460,15 +467,16 @@ pub fn update_fees_internal(
             ErrorCode::InvalidParameters
         );
         require!(
-            referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
-            ErrorCode::InvalidParameters
-        );
-        require!(
-            same_faction_referral_fee_pct <= MAX_REFERRAL_FEE_PCT,
-            ErrorCode::InvalidParameters
-        );
-        require!(
             cycle_sol_split_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        require!(
+            nft_market_making_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        // The buyback + nft_market_making slice can't exceed 100% of available SOL.
+        require!(
+            (buyback_pct as u16) + (nft_market_making_pct as u16) <= PERCENTAGE_DENOMINATOR_U16,
             ErrorCode::InvalidParameters
         );
 
@@ -476,9 +484,8 @@ pub fn update_fees_internal(
             protocol_fee_pct,
             buyback_pct,
             stakers_pct,
-            referral_fee_pct,
-            same_faction_referral_fee_pct,
             cycle_sol_split_pct,
+            nft_market_making_pct,
         };
     }
 
@@ -567,7 +574,7 @@ pub fn update_rpg_progression_internal(ctx: Context<UpdateConfigAc>, enabled: bo
 ///
 /// When `paused = true`:
 ///   - Blocks: new bets (manual + autominer), new round starts,
-///     genesis doge mints, doge breeding.
+///     genesis hashbeast mints, hashbeast breeding.
 ///   - Does NOT block: round settlement, all reward claims (game/staking/
 ///     referral/faction-war), staking + unstaking, economy crank functions
 ///     (snapshot_price / update_rate / add_lp_and_burn). Users can always
@@ -595,7 +602,7 @@ pub fn set_pause_internal(ctx: Context<UpdateConfigAc>, paused: bool) -> Result<
     Ok(())
 }
 
-/// Update the highest evolution stage unlocked for gameplay doges.
+/// Update the highest evolution stage unlocked for gameplay hashbeasts.
 ///
 /// `0` disables evolution entirely. `1` allows stage 0 -> 1 evolutions, etc.
 pub fn update_evolution_unlock_stage_internal(
@@ -702,15 +709,15 @@ pub fn update_gameplay_tuning_internal(
     let next_mvp_reward_bps = args
         .faction_war_mvp_reward_bps
         .unwrap_or(tuning.faction_war_mvp_reward_bps);
-    let next_doge_reward_bps = args
-        .faction_war_doge_reward_bps
-        .unwrap_or(tuning.faction_war_doge_reward_bps);
-    // base + loyalty + MVP + doge must close to 100% — these are the four
+    let next_hashbeast_reward_bps = args
+        .faction_war_hashbeast_reward_bps
+        .unwrap_or(tuning.faction_war_hashbeast_reward_bps);
+    // base + loyalty + MVP + hashbeast must close to 100% — these are the four
     // lanes that `compute_faction_reward_pools` splits the cycle pool into.
     let reward_total = next_base_reward_bps as u32
         + next_loyalty_reward_bps as u32
         + next_mvp_reward_bps as u32
-        + next_doge_reward_bps as u32;
+        + next_hashbeast_reward_bps as u32;
     require!(
         reward_total == BASIS_POINTS_DENOMINATOR as u32,
         ErrorCode::InvalidParameters
@@ -732,12 +739,6 @@ pub fn update_gameplay_tuning_internal(
         ErrorCode::InvalidParameters
     );
 
-    let next_decay_bps = args
-        .global_mutation_pressure_decay_bps
-        .unwrap_or(tuning.global_mutation_pressure_decay_bps);
-    let next_pressure_step_bps = args
-        .global_mutation_pressure_per_mutation_bps
-        .unwrap_or(tuning.global_mutation_pressure_per_mutation_bps);
     let next_target_mutations = args
         .target_mutations_per_cycle
         .unwrap_or(tuning.target_mutations_per_cycle);
@@ -748,9 +749,7 @@ pub fn update_gameplay_tuning_internal(
         .pacing_max_adjustment_bps
         .unwrap_or(tuning.pacing_max_adjustment_bps);
     require!(
-        next_decay_bps <= BASIS_POINTS_DENOMINATOR as u16
-            && next_pressure_step_bps <= BASIS_POINTS_DENOMINATOR as u16
-            && next_target_mutations > 0
+        next_target_mutations > 0
             && next_target_rounds > 0
             && next_pacing_max_adjustment_bps <= BASIS_POINTS_DENOMINATOR as u16
             && args
@@ -767,7 +766,7 @@ pub fn update_gameplay_tuning_internal(
     tuning.faction_war_base_reward_bps = next_base_reward_bps;
     tuning.faction_war_loyalty_reward_bps = next_loyalty_reward_bps;
     tuning.faction_war_mvp_reward_bps = next_mvp_reward_bps;
-    tuning.faction_war_doge_reward_bps = next_doge_reward_bps;
+    tuning.faction_war_hashbeast_reward_bps = next_hashbeast_reward_bps;
     tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
     tuning.mutation_chance_floor_bps = next_chance_floor_bps;
     tuning.mutation_chance_cap_bps = next_chance_cap_bps;
@@ -777,8 +776,6 @@ pub fn update_gameplay_tuning_internal(
     tuning.extra_volume_threshold_per_mutation_lamports = args
         .extra_volume_threshold_per_mutation_lamports
         .unwrap_or(tuning.extra_volume_threshold_per_mutation_lamports);
-    tuning.global_mutation_pressure_decay_bps = next_decay_bps;
-    tuning.global_mutation_pressure_per_mutation_bps = next_pressure_step_bps;
     tuning.target_mutations_per_cycle = next_target_mutations;
     tuning.target_rounds_per_cycle = next_target_rounds;
     tuning.pacing_max_adjustment_bps = next_pacing_max_adjustment_bps;
@@ -788,16 +785,13 @@ pub fn update_gameplay_tuning_internal(
     let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
     let faction_war_loyalty_reward_bps = tuning.faction_war_loyalty_reward_bps;
     let faction_war_mvp_reward_bps = tuning.faction_war_mvp_reward_bps;
-    let faction_war_doge_reward_bps = tuning.faction_war_doge_reward_bps;
+    let faction_war_hashbeast_reward_bps = tuning.faction_war_hashbeast_reward_bps;
     let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
     let mutation_chance_floor_bps = tuning.mutation_chance_floor_bps;
     let mutation_chance_cap_bps = tuning.mutation_chance_cap_bps;
     let faction_volume_threshold_lamports = tuning.faction_volume_threshold_lamports;
     let extra_volume_threshold_per_mutation_lamports =
         tuning.extra_volume_threshold_per_mutation_lamports;
-    let global_mutation_pressure_decay_bps = tuning.global_mutation_pressure_decay_bps;
-    let global_mutation_pressure_per_mutation_bps =
-        tuning.global_mutation_pressure_per_mutation_bps;
     let target_mutations_per_cycle = tuning.target_mutations_per_cycle;
     let target_rounds_per_cycle = tuning.target_rounds_per_cycle;
     let pacing_max_adjustment_bps = tuning.pacing_max_adjustment_bps;
@@ -809,14 +803,12 @@ pub fn update_gameplay_tuning_internal(
         faction_war_base_reward_bps,
         faction_war_loyalty_reward_bps,
         faction_war_mvp_reward_bps,
-        faction_war_doge_reward_bps,
+        faction_war_hashbeast_reward_bps,
         base_mutation_chance_bps,
         mutation_chance_floor_bps,
         mutation_chance_cap_bps,
         faction_volume_threshold_lamports,
         extra_volume_threshold_per_mutation_lamports,
-        global_mutation_pressure_decay_bps,
-        global_mutation_pressure_per_mutation_bps,
         target_mutations_per_cycle,
         target_rounds_per_cycle,
         pacing_max_adjustment_bps,
@@ -872,7 +864,6 @@ pub fn initialize_mining_internal(
     mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
     mine_btc_mining.track_price = 0; // Initialize with same default
 
-    mine_btc_mining.sol_for_pol = 0; // Initialize POL tracking
     mine_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
 
     // Emit event
@@ -926,7 +917,7 @@ fn validate_hashpower_config(
         min_lockup_days <= max_lockup_days,
         ErrorCode::InvalidParameters
     );
-    // Lockup may add up to 3x. Passive staked Doges may add another 3x,
+    // Lockup may add up to 3x. Passive staked HashBeasts may add another 3x,
     // giving a hard 9x max staking hashpower setup.
     require!(
         base_multiplier >= M_HUNDRED as u16
@@ -957,7 +948,6 @@ pub fn initialize_hashpower_config_internal(
     hashpower_config.max_lockup_days = max_lockup_days;
     hashpower_config.base_multiplier = base_multiplier;
     hashpower_config.max_multiplier = max_multiplier;
-    hashpower_config.bump = ctx.bumps.hashpower_config;
 
     Ok(())
 }
@@ -982,55 +972,49 @@ pub fn update_hashpower_config_internal(
     hashpower_config.max_lockup_days = max_lockup_days;
     hashpower_config.base_multiplier = base_multiplier;
     hashpower_config.max_multiplier = max_multiplier;
-    hashpower_config.bump = ctx.bumps.hashpower_config;
     Ok(())
 }
 
 // ----------------------------------------------------------------------------------------
-// --------------  DOGE URI MANAGEMENT (ADMIN) ---------------------------------------
+// --------------  HASHBEAST URI MANAGEMENT (ADMIN) ---------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Initialize DogeConfig account (admin only).
+/// Initialize HashBeastConfig account (admin only).
 ///
-/// Stores non-sale Doge state: collection, lifetime supply cap, and breeding config.
-pub fn initialize_doge_config_internal(
-    ctx: Context<InitializeDogeConfig>,
-    max_supply: u64,
-) -> Result<()> {
-    crate::log_fn!("admin", "initialize_doge_config_internal");
-    let doges_config = &mut ctx.accounts.doges_config;
+/// Stores non-sale HashBeast state: collection + breeding config. There is no
+/// lifetime supply cap — the genesis sale is bounded separately via
+/// `HashBeastMintConfig`; post-genesis, breeding has no hard ceiling.
+pub fn initialize_hashbeast_config_internal(ctx: Context<InitializeHashBeastConfig>) -> Result<()> {
+    crate::log_fn!("admin", "initialize_hashbeast_config_internal");
+    let hashbeasts_config = &mut ctx.accounts.hashbeasts_config;
 
-    require!(max_supply > 0, ErrorCode::InvalidParameters);
-
-    doges_config.bump = ctx.bumps.doges_config;
-    doges_config.doge_collection = Pubkey::default();
-    doges_config.max_supply = max_supply;
-    doges_config.total_doges_minted = 0;
-    doges_config.breeding_allowed = false;
-    doges_config.breed_base_price = 0;
-    doges_config.breed_curve_a = 100;
+    hashbeasts_config.bump = ctx.bumps.hashbeasts_config;
+    hashbeasts_config.hashbeast_collection = Pubkey::default();
+    hashbeasts_config.total_hashbeasts_minted = 0;
+    hashbeasts_config.breeding_allowed = false;
+    hashbeasts_config.breed_base_price = 0;
+    hashbeasts_config.breed_curve_a = 100;
 
     msg!(
-        "✅ [initialize_doge_config] max_supply={} total_doges_minted={} breeding_allowed={}",
-        doges_config.max_supply,
-        doges_config.total_doges_minted,
-        doges_config.breeding_allowed
+        "✅ [initialize_hashbeast_config] total_hashbeasts_minted={} breeding_allowed={}",
+        hashbeasts_config.total_hashbeasts_minted,
+        hashbeasts_config.breeding_allowed
     );
 
     Ok(())
 }
 
-/// Initialize DogeMintConfig account (admin only).
+/// Initialize HashBeastMintConfig account (admin only).
 ///
 /// Stores genesis-sale-only state: bonding curve, sale switch, ticket tiers, and per-faction caps.
-pub fn initialize_doge_mint_config_internal(
-    ctx: Context<InitializeDogeMintConfig>,
+pub fn initialize_hashbeast_mint_config_internal(
+    ctx: Context<InitializeHashBeastMintConfig>,
     base_price: u64,
     curve_a: u64,
     genesis_mint_limit: u64,
     max_genesis_mints_per_faction: u16,
 ) -> Result<()> {
-    crate::log_fn!("admin", "initialize_doge_mint_config_internal");
+    crate::log_fn!("admin", "initialize_hashbeast_mint_config_internal");
     require!(base_price > 0, ErrorCode::InvalidParameters);
     require!(curve_a > 0, ErrorCode::InvalidParameters);
     require!(genesis_mint_limit > 0, ErrorCode::InvalidParameters);
@@ -1043,19 +1027,19 @@ pub fn initialize_doge_mint_config_internal(
         ErrorCode::InvalidParameters
     );
 
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
-    doge_mint_config.bump = ctx.bumps.doge_mint_config;
-    doge_mint_config.is_active = false;
-    doge_mint_config.base_price = base_price;
-    doge_mint_config.curve_a = curve_a;
-    doge_mint_config.genesis_mint_limit = genesis_mint_limit;
-    doge_mint_config.genesis_mints = 0;
-    doge_mint_config.max_genesis_mints_per_faction = max_genesis_mints_per_faction;
-    doge_mint_config.genesis_mints_by_faction = [0u16; NUM_FACTIONS];
-    doge_mint_config.ticket_tiers = Vec::new();
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
+    hashbeast_mint_config.bump = ctx.bumps.hashbeast_mint_config;
+    hashbeast_mint_config.is_active = false;
+    hashbeast_mint_config.base_price = base_price;
+    hashbeast_mint_config.curve_a = curve_a;
+    hashbeast_mint_config.genesis_mint_limit = genesis_mint_limit;
+    hashbeast_mint_config.genesis_mints = 0;
+    hashbeast_mint_config.max_genesis_mints_per_faction = max_genesis_mints_per_faction;
+    hashbeast_mint_config.genesis_mints_by_faction = [0u16; NUM_FACTIONS];
+    hashbeast_mint_config.ticket_tiers = Vec::new();
 
     msg!(
-        "✅ [initialize_doge_mint_config] base_price={} curve_a={} genesis_mint_limit={} per_faction_limit={} countries_supported={}",
+        "✅ [initialize_hashbeast_mint_config] base_price={} curve_a={} genesis_mint_limit={} per_faction_limit={} countries_supported={}",
         base_price,
         curve_a,
         genesis_mint_limit,
@@ -1066,39 +1050,39 @@ pub fn initialize_doge_mint_config_internal(
     Ok(())
 }
 
-/// Switch doge mining state (toggle is_active) (admin only)
+/// Switch hashbeast mining state (toggle is_active) (admin only)
 ///
-/// Toggles the `is_active` field in the doge config.
-/// When `is_active` is false, doge mining is paused.
+/// Toggles the `is_active` field in the hashbeast config.
+/// When `is_active` is false, hashbeast mining is paused.
 ///
-/// This allows admins to pause/resume the doge mining without losing state.
-pub fn switch_doge_mining_internal(ctx: Context<SwitchDogeMiningState>) -> Result<()> {
-    crate::log_fn!("admin", "switch_doge_mining_internal");
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
-    doge_mint_config.is_active = !doge_mint_config.is_active;
+/// This allows admins to pause/resume the hashbeast mining without losing state.
+pub fn switch_hashbeast_mining_internal(ctx: Context<SwitchHashBeastMiningState>) -> Result<()> {
+    crate::log_fn!("admin", "switch_hashbeast_mining_internal");
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
+    hashbeast_mint_config.is_active = !hashbeast_mint_config.is_active;
     msg!(
-        "🔁 [switch_doge_mining] is_active={}",
-        doge_mint_config.is_active
+        "🔁 [switch_hashbeast_mining] is_active={}",
+        hashbeast_mint_config.is_active
     );
     Ok(())
 }
 
-/// Create Doge collection with program PDA as authority (admin only)
+/// Create HashBeast collection with program PDA as authority (admin only)
 ///
-/// Creates a new Metaplex Core collection for Doge NFTs.
+/// Creates a new Metaplex Core collection for HashBeast NFTs.
 /// The collection's update authority is set to a program-controlled PDA.
-/// Requires DogeConfig to be initialized first.
+/// Requires HashBeastConfig to be initialized first.
 ///
 /// # Parameters
 /// - `name`: Collection name
 /// - `uri`: Collection metadata URI
-pub fn create_doge_collection_internal(
-    ctx: Context<CreateDogeCollection>,
+pub fn create_hashbeast_collection_internal(
+    ctx: Context<CreateHashBeastCollection>,
     name: String,
     uri: String,
 ) -> Result<()> {
-    crate::log_fn!("admin", "create_doge_collection_internal");
-    let doges_config = &mut ctx.accounts.doges_config;
+    crate::log_fn!("admin", "create_hashbeast_collection_internal");
+    let hashbeasts_config = &mut ctx.accounts.hashbeasts_config;
 
     // Get the collection authority bump for signing
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -1118,9 +1102,9 @@ pub fn create_doge_collection_internal(
         .invoke()?;
 
     // Store the collection address in global config
-    doges_config.doge_collection = ctx.accounts.collection.key();
+    hashbeasts_config.hashbeast_collection = ctx.accounts.collection.key();
 
-    emit!(DogeCollectionCreated {
+    emit!(HashBeastCollectionCreated {
         collection: ctx.accounts.collection.key(),
         update_authority: ctx.accounts.collection_authority.key(),
         name,
@@ -1130,9 +1114,9 @@ pub fn create_doge_collection_internal(
     Ok(())
 }
 
-/// Initialize royalties on the Doge collection (admin only)
+/// Initialize royalties on the HashBeast collection (admin only)
 ///
-/// Sets up royalty configuration for the Doge NFT collection using Metaplex Core.
+/// Sets up royalty configuration for the HashBeast NFT collection using Metaplex Core.
 /// Initializes with an empty ProgramDenyList that can be updated later.
 ///
 /// # Parameters
@@ -1142,12 +1126,12 @@ pub fn create_doge_collection_internal(
 /// # Validation
 /// - At least one creator must be provided
 /// - Sum of creator percentages must equal 100
-pub fn init_doge_royalties_internal(
-    ctx: Context<InitDogeRoyalties>,
+pub fn init_hashbeast_royalties_internal(
+    ctx: Context<InitHashBeastRoyalties>,
     basis_points: u16,
     creators: Vec<CreatorInput>,
 ) -> Result<()> {
-    crate::log_fn!("admin", "init_doge_royalties_internal");
+    crate::log_fn!("admin", "init_hashbeast_royalties_internal");
     let global_config = &ctx.accounts.global_config;
     let authority = &ctx.accounts.authority;
 
@@ -1299,7 +1283,7 @@ pub fn update_collection_info_internal(
 
 /// Add or update ticket tier configs (admin only)
 ///
-/// Configures ticket tier options that users can choose when minting Doge.
+/// Configures ticket tier options that users can choose when minting HashBeast.
 /// Users receive free tickets based on the selected tier when they mint.
 ///
 /// # Parameters
@@ -1310,13 +1294,13 @@ pub fn update_collection_info_internal(
 /// - Tier 0: 0.01 SOL × 1000 tickets
 /// - Tier 1: 0.1 SOL × 10 tickets
 pub fn add_ticket_tier_config_int(
-    ctx: Context<UpdateDogeMintConfig>,
+    ctx: Context<UpdateHashBeastMintConfig>,
     ticket_tier_index: u8,
     ticket_value: u64,
 ) -> Result<()> {
     crate::log_fn!("admin", "add_ticket_tier_config_int");
     let global_config = &ctx.accounts.global_config;
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
     let authority = &ctx.accounts.authority;
 
     // Authority check
@@ -1326,7 +1310,7 @@ pub fn add_ticket_tier_config_int(
     );
 
     require!(
-        ticket_tier_index < DogeMintConfig::MAX_TICKET_TIERS as u8,
+        ticket_tier_index < HashBeastMintConfig::MAX_TICKET_TIERS as u8,
         ErrorCode::InvalidParameters
     );
     require!(ticket_value > 0, ErrorCode::InvalidParameters);
@@ -1334,50 +1318,50 @@ pub fn add_ticket_tier_config_int(
     let tier_index = ticket_tier_index as usize;
 
     // Ensure vector is large enough
-    while doge_mint_config.ticket_tiers.len() <= tier_index {
-        doge_mint_config
+    while hashbeast_mint_config.ticket_tiers.len() <= tier_index {
+        hashbeast_mint_config
             .ticket_tiers
             .push(TicketTier { ticket_value: 0 });
     }
 
     // Update or add ticket tier
-    doge_mint_config.ticket_tiers[tier_index] = TicketTier { ticket_value };
+    hashbeast_mint_config.ticket_tiers[tier_index] = TicketTier { ticket_value };
     msg!(
         "🎟️ [add_ticket_tier_config] tier_index={} ticket_value={} configured_tiers={}",
         ticket_tier_index,
         ticket_value,
-        doge_mint_config.ticket_tiers.len()
+        hashbeast_mint_config.ticket_tiers.len()
     );
 
     Ok(())
 }
 
-/// Set or update a user's free Doge mint allowance (admin only).
-/// The whitelisted user still pays transaction fees and rent, but not the Doge mint fee.
-pub fn set_doge_free_mint_allowance_internal(
-    ctx: Context<SetDogeFreeMintAllowance>,
+/// Set or update a user's free HashBeast mint allowance (admin only).
+/// The whitelisted user still pays transaction fees and rent, but not the HashBeast mint fee.
+pub fn set_hashbeast_free_mint_allowance_internal(
+    ctx: Context<SetHashBeastFreeMintAllowance>,
     user: Pubkey,
     remaining_free_mints: u8,
 ) -> Result<()> {
-    crate::log_fn!("admin", "set_doge_free_mint_allowance_internal");
+    crate::log_fn!("admin", "set_hashbeast_free_mint_allowance_internal");
     require!(
-        remaining_free_mints <= MAX_FREE_DOGE_MINTS_PER_USER,
-        ErrorCode::MaxFreeDogeMintsExceeded
+        remaining_free_mints <= MAX_FREE_HASHBEAST_MINTS_PER_USER,
+        ErrorCode::MaxFreeHashBeastMintsExceeded
     );
 
-    let allowance = &mut ctx.accounts.doge_free_mint_allowance;
+    let allowance = &mut ctx.accounts.hashbeast_free_mint_allowance;
     allowance.user = user;
     allowance.remaining_free_mints = remaining_free_mints;
-    allowance.bump = ctx.bumps.doge_free_mint_allowance;
+    allowance.bump = ctx.bumps.hashbeast_free_mint_allowance;
 
     msg!(
-        "🎟️ [set_doge_free_mint_allowance] authority={} user={} remaining_free_mints={}",
+        "🎟️ [set_hashbeast_free_mint_allowance] authority={} user={} remaining_free_mints={}",
         ctx.accounts.authority.key(),
         user,
         remaining_free_mints
     );
 
-    emit!(DogeFreeMintAllowanceUpdated {
+    emit!(HashBeastFreeMintAllowanceUpdated {
         authority: ctx.accounts.authority.key(),
         user,
         remaining_free_mints,
@@ -1386,107 +1370,78 @@ pub fn set_doge_free_mint_allowance_internal(
     Ok(())
 }
 
-/// Update DogeConfig account (admin only)
-///
-/// Updates the DogeConfig account that stores collection, supply, and breeding state.
-/// All parameters are optional -- only provided values are changed.
-pub fn update_doge_config_internal(
-    ctx: Context<UpdateDogeConfig>,
-    max_supply: Option<u64>,
-) -> Result<()> {
-    crate::log_fn!("admin", "update_doge_config_internal");
-    let doges_config = &mut ctx.accounts.doges_config;
-    if let Some(supply) = max_supply {
-        require!(
-            supply >= doges_config.total_doges_minted,
-            ErrorCode::InvalidParameters
-        );
-        doges_config.max_supply = supply;
-    }
-    msg!(
-        "✅ [update_doge_config] max_supply={} total_doges_minted={} breeding_allowed={} breed_base_price={} breed_curve_a={}",
-        doges_config.max_supply,
-        doges_config.total_doges_minted,
-        doges_config.breeding_allowed,
-        doges_config.breed_base_price,
-        doges_config.breed_curve_a
-    );
-    Ok(())
-}
-
-/// Update DogeMintConfig account (admin only).
-pub fn update_doge_mint_config_internal(
-    ctx: Context<UpdateDogeMintConfig>,
+/// Update HashBeastMintConfig account (admin only).
+pub fn update_hashbeast_mint_config_internal(
+    ctx: Context<UpdateHashBeastMintConfig>,
     base_price: Option<u64>,
     curve_a: Option<u64>,
     genesis_mint_limit: Option<u64>,
     max_genesis_mints_per_faction: Option<u16>,
 ) -> Result<()> {
-    crate::log_fn!("admin", "update_doge_mint_config_internal");
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    crate::log_fn!("admin", "update_hashbeast_mint_config_internal");
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
 
     if let Some(price) = base_price {
         require!(price > 0, ErrorCode::InvalidParameters);
-        doge_mint_config.base_price = price;
+        hashbeast_mint_config.base_price = price;
     }
     if let Some(curve) = curve_a {
         require!(curve > 0, ErrorCode::InvalidParameters);
-        doge_mint_config.curve_a = curve;
+        hashbeast_mint_config.curve_a = curve;
     }
     if let Some(per_faction) = max_genesis_mints_per_faction {
-        let current_max = doge_mint_config
+        let current_max = hashbeast_mint_config
             .genesis_mints_by_faction
             .iter()
             .copied()
             .max()
             .unwrap_or(0);
         require!(per_faction >= current_max, ErrorCode::InvalidParameters);
-        doge_mint_config.max_genesis_mints_per_faction = per_faction;
+        hashbeast_mint_config.max_genesis_mints_per_faction = per_faction;
     }
     if let Some(limit) = genesis_mint_limit {
         require!(
-            limit >= doge_mint_config.genesis_mints,
+            limit >= hashbeast_mint_config.genesis_mints,
             ErrorCode::InvalidParameters
         );
-        doge_mint_config.genesis_mint_limit = limit;
+        hashbeast_mint_config.genesis_mint_limit = limit;
     }
     require!(
-        doge_mint_config.genesis_mint_limit
-            <= doge_mint_config.max_genesis_mints_per_faction as u64 * NUM_FACTIONS as u64,
+        hashbeast_mint_config.genesis_mint_limit
+            <= hashbeast_mint_config.max_genesis_mints_per_faction as u64 * NUM_FACTIONS as u64,
         ErrorCode::InvalidParameters
     );
 
     msg!(
-        "✅ [update_doge_mint_config] base_price={} curve_a={} genesis_mints={} / {} per_faction_limit={} ticket_tiers={}",
-        doge_mint_config.base_price,
-        doge_mint_config.curve_a,
-        doge_mint_config.genesis_mints,
-        doge_mint_config.genesis_mint_limit,
-        doge_mint_config.max_genesis_mints_per_faction,
-        doge_mint_config.ticket_tiers.len()
+        "✅ [update_hashbeast_mint_config] base_price={} curve_a={} genesis_mints={} / {} per_faction_limit={} ticket_tiers={}",
+        hashbeast_mint_config.base_price,
+        hashbeast_mint_config.curve_a,
+        hashbeast_mint_config.genesis_mints,
+        hashbeast_mint_config.genesis_mint_limit,
+        hashbeast_mint_config.max_genesis_mints_per_faction,
+        hashbeast_mint_config.ticket_tiers.len()
     );
     Ok(())
 }
 
 /// Update breeding config (admin only)
 pub fn update_breeding_config_internal(
-    ctx: Context<UpdateDogeConfig>,
+    ctx: Context<UpdateHashBeastConfig>,
     breeding_allowed: bool,
     breed_base_price: u64,
     breed_curve_a: u64,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_breeding_config_internal");
-    let doges_config = &mut ctx.accounts.doges_config;
-    doges_config.breeding_allowed = breeding_allowed;
-    doges_config.breed_base_price = breed_base_price;
-    doges_config.breed_curve_a = breed_curve_a;
+    let hashbeasts_config = &mut ctx.accounts.hashbeasts_config;
+    hashbeasts_config.breeding_allowed = breeding_allowed;
+    hashbeasts_config.breed_base_price = breed_base_price;
+    hashbeasts_config.breed_curve_a = breed_curve_a;
     msg!(
-        "🧬 [update_breeding_config] breeding_allowed={} breed_base_price={} breed_curve_a={} total_doges_minted={} / {}",
+        "🧬 [update_breeding_config] breeding_allowed={} breed_base_price={} breed_curve_a={} total_hashbeasts_minted={}",
         breeding_allowed,
         breed_base_price,
         breed_curve_a,
-        doges_config.total_doges_minted,
-        doges_config.max_supply
+        hashbeasts_config.total_hashbeasts_minted
     );
 
     Ok(())
@@ -1568,14 +1523,13 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.bump = ctx.bumps.system_referral_rewards;
     system_referral.owner_faction_id = u8::MAX;
     system_referral.referrals_count = 0;
-    system_referral.same_faction_referrals_count = 0;
-    system_referral.referred_faction_counts = [0u16; NUM_FACTIONS];
     system_referral.pending_sol_rewards = 0;
     system_referral.total_sol_earned = 0;
 
     // Initialize buybacks account
     let buybacks_ac = &mut ctx.accounts.buybacks_account;
     buybacks_ac.total_sol_accumulated = 0;
+    buybacks_ac.sol_for_pol = 0;
 
     Ok(())
 }
@@ -1672,6 +1626,17 @@ pub struct SetRaydiumPoolState<'info> {
         owner = system_program.key()
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
+    /// CHECK: Faction-war SOL vault (System Account, 0-byte PDA)
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 0,
+        seeds = [FACTION_WAR_SOL_VAULT_SEED.as_ref()],
+        bump,
+        owner = system_program.key()
+    )]
+    pub faction_war_sol_vault: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1889,15 +1854,15 @@ pub struct UpdateHashpowerConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitializeDogeConfig<'info> {
+pub struct InitializeHashBeastConfig<'info> {
     #[account(
         init,
         payer = authority,
-        space = DogeConfig::LEN,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
+        space = HashBeastConfig::LEN,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub doges_config: Account<'info, DogeConfig>,
+    pub hashbeasts_config: Account<'info, HashBeastConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1913,15 +1878,15 @@ pub struct InitializeDogeConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitializeDogeMintConfig<'info> {
+pub struct InitializeHashBeastMintConfig<'info> {
     #[account(
         init,
         payer = authority,
-        space = DogeMintConfig::LEN,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
+        space = HashBeastMintConfig::LEN,
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
         bump
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1937,7 +1902,7 @@ pub struct InitializeDogeMintConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CreateDogeCollection<'info> {
+pub struct CreateHashBeastCollection<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -1951,12 +1916,12 @@ pub struct CreateDogeCollection<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED],
-        bump = doges_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED],
+        bump = hashbeasts_config.bump,
     )]
-    pub doges_config: Account<'info, DogeConfig>,
+    pub hashbeasts_config: Account<'info, HashBeastConfig>,
 
-    /// CHECK: Doge collection account (will be created by MPL Core)
+    /// CHECK: HashBeast collection account (will be created by MPL Core)
     #[account(mut, signer)]
     pub collection: UncheckedAccount<'info>,
 
@@ -1975,7 +1940,7 @@ pub struct CreateDogeCollection<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateDogeConfig<'info> {
+pub struct UpdateHashBeastConfig<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1985,10 +1950,10 @@ pub struct UpdateDogeConfig<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doges_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeasts_config.bump,
     )]
-    pub doges_config: Account<'info, DogeConfig>,
+    pub hashbeasts_config: Account<'info, HashBeastConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1997,7 +1962,7 @@ pub struct UpdateDogeConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateDogeMintConfig<'info> {
+pub struct UpdateHashBeastMintConfig<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -2007,10 +1972,10 @@ pub struct UpdateDogeMintConfig<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump,
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump,
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2020,7 +1985,7 @@ pub struct UpdateDogeMintConfig<'info> {
 
 #[derive(Accounts)]
 #[instruction(user: Pubkey)]
-pub struct SetDogeFreeMintAllowance<'info> {
+pub struct SetHashBeastFreeMintAllowance<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -2031,11 +1996,11 @@ pub struct SetDogeFreeMintAllowance<'info> {
     #[account(
         init_if_needed,
         payer = authority,
-        space = DogeFreeMintAllowance::LEN,
-        seeds = [DOGE_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.as_ref()],
+        space = HashBeastFreeMintAllowance::LEN,
+        seeds = [HASHBEAST_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.as_ref()],
         bump
     )]
-    pub doge_free_mint_allowance: Account<'info, DogeFreeMintAllowance>,
+    pub hashbeast_free_mint_allowance: Account<'info, HashBeastFreeMintAllowance>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -2056,15 +2021,15 @@ pub struct AddCollectionDelegate<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     #[account(
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doges_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeasts_config.bump,
     )]
-    pub doges_config: Account<'info, DogeConfig>,
+    pub hashbeasts_config: Account<'info, HashBeastConfig>,
 
-    /// CHECK: Doge collection (already created via MPL Core)
+    /// CHECK: HashBeast collection (already created via MPL Core)
     #[account(
         mut,
-        address = doges_config.doge_collection @ ErrorCode::InvalidAccount
+        address = hashbeasts_config.hashbeast_collection @ ErrorCode::InvalidAccount
     )]
     pub collection: UncheckedAccount<'info>,
 
@@ -2083,7 +2048,7 @@ pub struct AddCollectionDelegate<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitDogeRoyalties<'info> {
+pub struct InitHashBeastRoyalties<'info> {
     #[account(mut)]
     pub authority: Signer<'info>, // ext authority EOA
 
@@ -2097,15 +2062,15 @@ pub struct InitDogeRoyalties<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doges_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeasts_config.bump,
     )]
-    pub doges_config: Account<'info, DogeConfig>,
+    pub hashbeasts_config: Account<'info, HashBeastConfig>,
 
-    /// CHECK: Doge collection (already created via MPL Core)
+    /// CHECK: HashBeast collection (already created via MPL Core)
     #[account(
         mut,
-        address = doges_config.doge_collection @ ErrorCode::InvalidAccount
+        address = hashbeasts_config.hashbeast_collection @ ErrorCode::InvalidAccount
     )]
     pub collection: UncheckedAccount<'info>,
 
@@ -2311,13 +2276,13 @@ pub struct InitializeCustodianAccounts<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SwitchDogeMiningState<'info> {
+pub struct SwitchHashBeastMiningState<'info> {
     #[account(
         mut,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump,
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump,
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -2327,6 +2292,201 @@ pub struct SwitchDogeMiningState<'info> {
     pub global_config: Account<'info, GlobalConfig>,
 
     pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// ========================================================================================
+// ============================== INVENTORY POOL BOOTSTRAP ================================
+// ========================================================================================
+
+/// One-time admin ix that creates the global inventory pool, the floor queue,
+/// the sale-history ringbuffer, the floor-history ringbuffer, and the
+/// inventory sweep SOL vault. Caches the marketplace program ID + config PDA.
+pub fn internal_init_inventory_pool(
+    ctx: Context<InitInventoryPool>,
+    marketplace_program: Pubkey,
+    marketplace_config: Pubkey,
+) -> Result<()> {
+    crate::log_fn!("admin", "internal_init_inventory_pool");
+    let now = Clock::get()?.unix_timestamp;
+
+    let pool = &mut ctx.accounts.inventory_pool;
+    pool.bump = ctx.bumps.inventory_pool;
+    pool.marketplace_program = marketplace_program;
+    pool.marketplace_config = marketplace_config;
+    pool.total_count = 0;
+
+    // The queue/history accounts contain large fixed arrays. Initialize them
+    // zeroed and patch only scalar fields so Anchor's generated validator does
+    // not materialize the arrays on the BPF stack.
+    let floor_queue_bump = ctx.bumps.floor_queue;
+    let floor_queue_seeds: &[&[u8]] = &[FLOOR_QUEUE_SEED, core::slice::from_ref(&floor_queue_bump)];
+    let created_floor_queue =
+        crate::instructions::helper::init_pda_account_zeroed_if_needed::<FloorQueue>(
+            &ctx.accounts.authority.to_account_info(),
+            &ctx.accounts.floor_queue.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            floor_queue_seeds,
+            FloorQueue::LEN,
+        )?;
+    require!(created_floor_queue, ErrorCode::InvalidAccount);
+    {
+        let floor_queue_info = ctx.accounts.floor_queue.to_account_info();
+        let mut data = floor_queue_info.try_borrow_mut_data()?;
+        data[DISCRIMINATOR_SIZE] = floor_queue_bump;
+    }
+
+    let sale_history_bump = ctx.bumps.sale_history;
+    let sale_history_seeds: &[&[u8]] =
+        &[SALE_HISTORY_SEED, core::slice::from_ref(&sale_history_bump)];
+    let created_sale_history =
+        crate::instructions::helper::init_pda_account_zeroed_if_needed::<SaleHistory>(
+            &ctx.accounts.authority.to_account_info(),
+            &ctx.accounts.sale_history.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            sale_history_seeds,
+            SaleHistory::LEN,
+        )?;
+    require!(created_sale_history, ErrorCode::InvalidAccount);
+
+    let floor_history_bump = ctx.bumps.floor_history;
+    let floor_history_seeds: &[&[u8]] = &[
+        FLOOR_HISTORY_SEED,
+        core::slice::from_ref(&floor_history_bump),
+    ];
+    let created_floor_history =
+        crate::instructions::helper::init_pda_account_zeroed_if_needed::<FloorHistory>(
+            &ctx.accounts.authority.to_account_info(),
+            &ctx.accounts.floor_history.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            floor_history_seeds,
+            FloorHistory::LEN,
+        )?;
+    require!(created_floor_history, ErrorCode::InvalidAccount);
+    {
+        let floor_history_info = ctx.accounts.floor_history.to_account_info();
+        let mut data = floor_history_info.try_borrow_mut_data()?;
+        data[DISCRIMINATOR_SIZE] = floor_history_bump;
+        data[DISCRIMINATOR_SIZE + 2..DISCRIMINATOR_SIZE + 10].copy_from_slice(
+            &now.saturating_sub(FLOOR_SNAPSHOT_INTERVAL_SECS)
+                .to_le_bytes(),
+        );
+    }
+
+    msg!("✅ inventory_pool / floor_queue / sale_history / floor_history initialized");
+    msg!("   marketplace_program = {}", marketplace_program);
+    msg!("   marketplace_config = {}", marketplace_config);
+
+    emit!(InventoryPoolInitialized {
+        marketplace_program,
+        marketplace_config,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitInventoryPool<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = InventoryPool::LEN,
+        seeds = [INVENTORY_POOL_SEED],
+        bump,
+    )]
+    pub inventory_pool: Box<Account<'info, InventoryPool>>,
+
+    #[account(mut, seeds = [FLOOR_QUEUE_SEED], bump)]
+    /// CHECK: Seed-checked and initialized zeroed in the handler to avoid
+    /// materializing the large fixed array in the generated validator.
+    pub floor_queue: UncheckedAccount<'info>,
+
+    #[account(mut, seeds = [SALE_HISTORY_SEED], bump)]
+    /// CHECK: Seed-checked and initialized zeroed in the handler to avoid
+    /// materializing the large fixed array in the generated validator.
+    pub sale_history: UncheckedAccount<'info>,
+
+    #[account(mut, seeds = [FLOOR_HISTORY_SEED], bump)]
+    /// CHECK: Seed-checked and initialized zeroed in the handler.
+    pub floor_history: UncheckedAccount<'info>,
+
+    /// CHECK: System-owned SOL vault PDA, holds sweep reserve. No data.
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        seeds = [INVENTORY_SWEEP_VAULT_SEED],
+        bump,
+        owner = system_program.key(),
+    )]
+    pub inventory_sweep_vault: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// ========================================================================================
+// ============================== LOOTBOX QUEUE BOOTSTRAP =================================
+// ========================================================================================
+
+/// Admin one-shot per faction. Creates the country's `LootboxQueue` PDA so
+/// rebirth/sweep flows can push into it. Must be called once per active
+/// faction at deploy time (the deploy script loops over the faction id list).
+pub fn internal_init_lootbox_queue(ctx: Context<InitLootboxQueue>, faction_id: u8) -> Result<()> {
+    crate::log_fn!("admin", "internal_init_lootbox_queue");
+
+    let queue = &mut ctx.accounts.lootbox_queue;
+    queue.bump = ctx.bumps.lootbox_queue;
+    queue.faction_id = faction_id;
+    queue.slots = [Pubkey::default(); LOOTBOX_QUEUE_SIZE];
+    queue.filled_count = 0;
+
+    msg!(
+        "🎰 LootboxQueue initialized for faction {} at {}",
+        faction_id,
+        queue.key()
+    );
+
+    emit!(LootboxQueueInitialized {
+        faction_id,
+        queue_pda: queue.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(faction_id: u8)]
+pub struct InitLootboxQueue<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = LootboxQueue::LEN,
+        seeds = [LOOTBOX_QUEUE_SEED, &[faction_id]],
+        bump,
+    )]
+    pub lootbox_queue: Box<Account<'info, LootboxQueue>>,
 
     pub system_program: Program<'info, System>,
 }

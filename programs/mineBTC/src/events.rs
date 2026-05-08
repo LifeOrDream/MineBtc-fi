@@ -103,13 +103,13 @@ pub struct LpTokensBurned {
 }
 
 // ========================================================================================
-// ===============================  DOGE NFT EVENTS =================================
+// ===============================  HASHBEAST NFT EVENTS =================================
 // ========================================================================================
 
 #[event]
-pub struct DogeMinted {
-    pub doge_metadata_account: Pubkey,
-    pub doge_asset_signer: Pubkey,
+pub struct HashBeastMinted {
+    pub hashbeast_metadata_account: Pubkey,
+    pub hashbeast_asset_signer: Pubkey,
     pub owner: Pubkey,
     pub player: Pubkey,
     pub mint: Pubkey,
@@ -118,21 +118,43 @@ pub struct DogeMinted {
     pub dna: [u8; 32],
     pub multiplier: u32,
     pub accumulated_val: u64,
-    pub faction_id: u8, // Faction/country the doge belongs to
+    pub faction_id: u8, // Faction/country the hashbeast belongs to
     pub price: u64,
     pub ticket_tier: u64,
     pub ticket_count: u64,
 }
 
 #[event]
-pub struct DogeFreeMintAllowanceUpdated {
+pub struct HashBeastBred {
+    pub breeder: Pubkey,
+    pub mom: Pubkey,
+    pub dad: Pubkey,
+    pub offspring: Pubkey,
+    pub faction_id: u8,
+    pub rebirth_count: u8,
+    pub curve_price_lamports: u64,
+    pub floor_anchor_lamports: u64,
+    pub floor_min_price_lamports: u64,
+    pub total_price_lamports: u64,
+    pub sol_paid_lamports: u64,
+    pub sol_fee_recipient_lamports: u64,
+    pub sol_treasury_lamports: u64,
+    pub dbtc_price_lamports: u64,
+    pub dbtc_paid: u64,
+    pub dbtc_burned: u64,
+    pub dbtc_to_vault: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct HashBeastFreeMintAllowanceUpdated {
     pub authority: Pubkey,
     pub user: Pubkey,
     pub remaining_free_mints: u8,
 }
 
 #[event]
-pub struct DogeCollectionCreated {
+pub struct HashBeastCollectionCreated {
     pub collection: Pubkey,
     pub update_authority: Pubkey,
     pub name: String,
@@ -166,73 +188,72 @@ pub struct GameplayTuningUpdated {
     pub faction_war_base_reward_bps: u16,
     pub faction_war_loyalty_reward_bps: u16,
     pub faction_war_mvp_reward_bps: u16,
-    pub faction_war_doge_reward_bps: u16,
+    pub faction_war_hashbeast_reward_bps: u16,
     pub base_mutation_chance_bps: u16,
     pub mutation_chance_floor_bps: u16,
     pub mutation_chance_cap_bps: u16,
     pub faction_volume_threshold_lamports: u64,
     pub extra_volume_threshold_per_mutation_lamports: u64,
-    pub global_mutation_pressure_decay_bps: u16,
-    pub global_mutation_pressure_per_mutation_bps: u16,
     pub target_mutations_per_cycle: u16,
     pub target_rounds_per_cycle: u16,
     pub pacing_max_adjustment_bps: u16,
 }
 
-/// Event emitted when a Doge is staked
+/// Event emitted when a HashBeast is staked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct DogeStaked {
-    /// User who staked the doge
+pub struct HashBeastStaked {
+    /// User who staked the hashbeast
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
-    /// Doge mint address
-    pub doge_mint: Pubkey,
-    /// Doge metadata account address
-    pub doge_metadata_account: Pubkey,
+    /// HashBeast mint address
+    pub hashbeast_mint: Pubkey,
+    /// HashBeast metadata account address
+    pub hashbeast_metadata_account: Pubkey,
     /// Player's current multiplier after staking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after staking
-    pub dogebtc_hashpower: u64,
+    pub degenbtc_hashpower: u64,
     /// Player's current LP hashpower after staking
     pub lp_hashpower: u64,
     /// Timestamp of the staking action
     pub timestamp: i64,
 }
 
-/// Event emitted when a Doge is unstaked
+/// Event emitted when a HashBeast is unstaked
 /// Tracks multiplier changes and hashpower updates for indexing
 #[event]
-pub struct DogeUnstaked {
-    /// User who unstaked the doge
+pub struct HashBeastUnstaked {
+    /// User who unstaked the hashbeast
     pub owner: Pubkey,
     /// Player data account address
     pub player: Pubkey,
-    /// Doge mint address
-    pub doge_mint: Pubkey,
-    /// Doge metadata account address
-    pub doge_metadata_account: Pubkey,
+    /// HashBeast mint address
+    pub hashbeast_mint: Pubkey,
+    /// HashBeast metadata account address
+    pub hashbeast_metadata_account: Pubkey,
     /// Player's current multiplier after unstaking
     pub player_multiplier: u16,
     /// Player's current MINEBTC hashpower after unstaking
-    pub dogebtc_hashpower: u64,
+    pub degenbtc_hashpower: u64,
     /// Player's current LP hashpower after unstaking
     pub lp_hashpower: u64,
     /// Timestamp of the unstaking action
     pub timestamp: i64,
 }
 
-/// Event emitted when an doge is sent to heaven (burnt) for rewards
+/// Event emitted when a HashBeast is reborn. The user
+/// receives any accumulated_val, then the same asset is reborn into inventory
+/// with fresh DNA and default gameplay state.
 #[event]
-pub struct DogeSentToHeaven {
-    /// Doge mint address that was burnt
-    pub doge_mint: Pubkey,
-    /// User who sent the doge to heaven
-    pub user: Pubkey,
-    /// Accumulated value claimed
+pub struct HashBeastReborn {
+    pub asset: Pubkey,
+    pub former_owner: Pubkey,
     pub accumulated_val: u64,
-    /// Timestamp of the action
+    pub quality_score: u16,
+    pub rebirth_count: u8,
+    pub new_dna: [u8; 32],
     pub timestamp: i64,
 }
 
@@ -248,10 +269,10 @@ pub struct MineBtcStaked {
     pub position_index: u8,
     pub position_key: Pubkey,
     pub staked_amount: u64,   // actual amount staked (after burn tax)
-    pub weighted_amount: u64, // weighted amount (before doge multiplier)
+    pub weighted_amount: u64, // weighted amount (before hashbeast multiplier)
     pub multiplier: u16,      // lockup multiplier (100 = 1x, max 300 = 3x)
     pub lockup_duration: u64,
-    pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
+    pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
     pub new_sol_rewards: u64,
     pub new_minebtc_rewards: u64,
     pub unrefined_minebtc: u64,
@@ -280,10 +301,10 @@ pub struct LiquidityStaked {
     pub position_index: u8,
     pub position_key: Pubkey,
     pub staked_amount: u64,   // actual amount staked
-    pub weighted_amount: u64, // weighted amount (before doge multiplier)
+    pub weighted_amount: u64, // weighted amount (before hashbeast multiplier)
     pub multiplier: u16,      // lockup multiplier (100 = 1x, max 300 = 3x)
     pub lockup_duration: u64,
-    pub hashpower_contribution: u64, // final hashpower (with doge multiplier)
+    pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
     pub new_sol_rewards: u64,
     pub new_minebtc_rewards: u64,
     pub unrefined_minebtc: u64,
@@ -387,7 +408,6 @@ pub struct PlayerInitialized {
     pub origin_faction_id: u8,
     pub referral_code: Option<Pubkey>,
     pub referrer_faction_id: Option<u8>,
-    pub same_faction_referral: bool,
     pub timestamp: i64,
 }
 
@@ -398,9 +418,7 @@ pub struct PlayerRecruited {
     pub referrer: Pubkey,
     pub player_origin_faction_id: u8,
     pub referrer_origin_faction_id: u8,
-    pub same_faction: bool,
-    pub referrer_total_recruits: u16,
-    pub referrer_same_faction_recruits: u16,
+    pub referrer_total_recruits: u64,
     pub timestamp: i64,
 }
 
@@ -410,10 +428,10 @@ pub struct BetsPlaced {
     pub user: Pubkey,
     pub player_data: Pubkey,
 
-    pub gameplay_doge: Pubkey,
-    pub gameplay_doge_dna: [u8; 32],
+    pub gameplay_hashbeast: Pubkey,
+    pub gameplay_hashbeast_dna: [u8; 32],
     pub active_multiplier: u32,
-    pub gameplay_doge_xp: u32,
+    pub gameplay_hashbeast_xp: u32,
 
     pub round_id: u64,
     pub faction_war_id: u64,
@@ -443,9 +461,9 @@ pub struct BetsPlaced {
 }
 
 #[event]
-pub struct DogeSynced {
-    pub doge_mint: Pubkey,
-    pub doge_metadata_account: Pubkey,
+pub struct HashBeastSynced {
+    pub hashbeast_mint: Pubkey,
+    pub hashbeast_metadata_account: Pubkey,
     pub dna: Vec<u8>,
     pub xp: u32,
     pub multiplier: u32,
@@ -473,7 +491,7 @@ pub struct RoundRewardsClaimed {
 pub struct AutominerInitialized {
     pub owner: Pubkey,
     pub player_data: Pubkey,
-    pub gameplay_doge: Pubkey,
+    pub gameplay_hashbeast: Pubkey,
     pub autominer_vault: Pubkey,
     pub sol_per_round: u64,
     pub num_rounds: u32,
@@ -559,13 +577,13 @@ pub struct RoundEnded {
 }
 
 #[event]
-pub struct DogeBtcStakingRewardsDistributed {
+pub struct DegenBtcStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
     pub minebtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
-    pub dogebtc_dogebtc_reward_index: u128,
-    pub dogebtc_sol_reward_index: u128,
+    pub degenbtc_degenbtc_reward_index: u128,
+    pub degenbtc_sol_reward_index: u128,
 }
 
 #[event]
@@ -574,7 +592,7 @@ pub struct LpStakingRewardsDistributed {
     pub faction_id: u8,
     pub minebtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
-    pub lp_dogebtc_reward_index: u128,
+    pub lp_degenbtc_reward_index: u128,
     pub lp_sol_reward_index: u128,
 }
 
@@ -622,19 +640,9 @@ pub struct RewardsDistributedForRound {
 #[event]
 pub struct TaxDistributed {
     pub total_tax_amount: u64,
-    pub nft_floor_sweep_amount: u64,
     pub faction_treasury_amount: u64,
     pub burn_amount: u64,
     pub total_burnt: u64,
-    pub timestamp: i64,
-}
-
-/// Event emitted when NFT floor sweep funds are withdrawn
-#[event]
-pub struct NftFloorSweepFundsWithdrawn {
-    pub whitelisted_address: Pubkey,
-    pub amount: u64,
-    pub nft_floor_sweep_vault: Pubkey,
     pub timestamp: i64,
 }
 
@@ -647,60 +655,64 @@ pub struct FactionTreasuryRewardsClaimed {
     pub reward_amount: u64,
     pub dbtc_share: u64,
     pub lp_share: u64,
-    pub recycled_amount: u64,
+    pub reborn_amount: u64,
     pub timestamp: i64,
 }
 
 // ========================================================================================
-// =============================== GAMEPLAY DOGE EVENTS ====================================
+// =============================== GAMEPLAY HASHBEAST EVENTS ====================================
 // ========================================================================================
 
-/// Event emitted when an doge is used for gameplay
+/// Event emitted when a HashBeast is used for gameplay
 #[event]
-pub struct DogeUsedForGameplay {
+pub struct HashBeastUsedForGameplay {
     pub user: Pubkey,
-    pub doge_mint: Pubkey,
+    pub hashbeast_mint: Pubkey,
     pub timestamp: i64,
 }
 
-/// Event emitted when an doge is withdrawn from gameplay
+/// Event emitted when a HashBeast is withdrawn from gameplay
 #[event]
-pub struct DogeWithdrawnFromGameplay {
+pub struct HashBeastWithdrawnFromGameplay {
     pub user: Pubkey,
-    pub doge_mint: Pubkey,
+    pub hashbeast_mint: Pubkey,
     pub timestamp: i64,
 }
 
 /// Event emitted when a user requests gameplay unlock for the next faction_war cycle.
 #[event]
-pub struct DogeGameplayUnlockRequested {
+pub struct HashBeastGameplayUnlockRequested {
     pub user: Pubkey,
-    pub doge_mint: Pubkey,
+    pub hashbeast_mint: Pubkey,
     pub requested_during_faction_war_id: u64,
     pub unlock_available_after_faction_war_id: u64,
     pub timestamp: i64,
 }
 
-/// Event emitted when gameplay creates a story-worthy Doge event.
+/// Event emitted when gameplay creates a story-worthy HashBeast event.
 ///
 /// The contract may still mutate DNA / XP / multiplier as part of the event,
 /// but off-chain systems should treat this as a flexible story hook. A backend
 /// can turn it into artwork, reels, character history, or a simple indexed beat.
 #[event]
 pub struct StoryEventTriggered {
-    pub round_id: u64,
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
     pub user: Pubkey,
-    pub doge_mint: Pubkey,
+    pub hashbeast_mint: Pubkey,
     pub story_event_type: u8,
     pub xp_gained: u32,
     pub multiplier_after: u32,
 }
 
-/// Event emitted when a doge evolves to a new stage
+/// Event emitted when a hashbeast evolves to a new stage
 #[event]
-pub struct DogeEvolution {
-    pub round_id: u64,
-    pub doge_mint: Pubkey,
+pub struct HashBeastEvolution {
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
+    pub hashbeast_mint: Pubkey,
     pub new_stage: u8,
     /// Visual trait mutation that happened during evolution
     pub visual_trait_index: u8,
@@ -712,21 +724,25 @@ pub struct DogeEvolution {
     pub power_new_val: u8,
 }
 
-/// Event emitted when a doge's power trait is mutated
+/// Event emitted when a hashbeast's power trait is mutated
 #[event]
-pub struct DogePowerMutation {
-    pub round_id: u64,
-    pub doge_mint: Pubkey,
+pub struct HashBeastPowerMutation {
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
+    pub hashbeast_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,
     pub new_val: u8,
 }
 
-/// Event emitted when a doge's visual trait is mutated
+/// Event emitted when a hashbeast's visual trait is mutated
 #[event]
-pub struct DogeVisualMutation {
-    pub round_id: u64,
-    pub doge_mint: Pubkey,
+pub struct HashBeastVisualMutation {
+    /// 0 = round claim, 1 = faction-war claim.
+    pub origin: u8,
+    pub origin_id: u64,
+    pub hashbeast_mint: Pubkey,
     pub trait_index: u8,
     pub old_val: u8,
     pub new_val: u8,
@@ -737,11 +753,11 @@ pub struct DogeVisualMutation {
 // ========================================================================================
 
 /// Event emitted when a faction_war is settled.
-/// Rankings driven by on-chain mutation scores accumulated during the faction_war.
+/// Rankings driven by on-chain gameplay scores accumulated during the faction_war.
 #[event]
 pub struct FactionWarSettled {
     pub faction_war_id: u64,
-    pub total_dogebtc_mined: u64,
+    pub total_degenbtc_mined: u64,
     pub faction_war_mining_pool: u64,
     pub start_ranks: [u8; NUM_FACTIONS],
     pub final_ranks: [u8; NUM_FACTIONS],
@@ -749,19 +765,31 @@ pub struct FactionWarSettled {
     pub resolved_directions: [u8; NUM_FACTIONS],
     pub faction_reward_pools: [u64; NUM_FACTIONS],
     pub loyalty_reward_pools: [u64; NUM_FACTIONS],
-    pub faction_doge_reward_pools: [u64; NUM_FACTIONS],
+    pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
     pub faction_round_wins: [u16; NUM_FACTIONS],
     pub faction_sol_totals: [u64; NUM_FACTIONS],
-    pub faction_mutation_scores: [u64; NUM_FACTIONS],
+    pub faction_gameplay_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
 
-/// Event emitted when a story event contributes score to a faction's faction_war total.
+/// Cycle leaderboard score-add event. Emitted from two sites:
+///
+/// - `score_source = GAMEPLAY_SCORE_SOURCE_ROUND_WIN (0)`: end-of-round
+///   accumulation when a country wins. `score_added` equals the round's
+///   total weighted points bet on that country (any direction). `user` is
+///   `Pubkey::default()` — no specific user owns this contribution.
+///
+/// - `score_source = GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS (1)`: per-claim
+///   bonus when a player's round-claim mutation roll succeeds and the
+///   round's cycle is still active. `score_added` equals
+///   `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`
+///   where `mutation_weight` is 4/2/1 for Evolution/Power/Trait. `user` is
+///   the claimant — also drives MVP candidacy for the winning country.
 #[event]
-pub struct StoryEventScoreAccumulated {
+pub struct GameplayScoreAccumulated {
     pub faction_war_id: u64,
     pub faction_id: u8,
-    pub story_event_type: u8,
+    pub score_source: u8,
     pub score_added: u64,
     pub faction_total_score: u64,
     pub user: Pubkey,
@@ -788,9 +816,9 @@ pub struct FactionWarRewardsClaimed {
     pub base_reward_amount: u64,
     pub loyalty_reward_amount: u64,
     pub mvp_bonus_amount: u64,
-    pub doge_bonus_amount: u64,
+    pub hashbeast_bonus_amount: u64,
     pub sol_reward_amount: u64,
-    pub doge_mint: Pubkey,
+    pub hashbeast_mint: Pubkey,
     pub timestamp: i64,
 }
 
@@ -817,5 +845,210 @@ pub struct FactionWarAutoSettled {
 pub struct GamePauseToggled {
     pub is_paused: bool,
     pub authority: Pubkey,
+    pub timestamp: i64,
+}
+
+// ========================================================================================
+// ============================ INVENTORY / LOOTBOX / MARKET ==============================
+// ========================================================================================
+
+/// One-time emit when the inventory pool is initialized.
+#[event]
+pub struct InventoryPoolInitialized {
+    pub marketplace_program: Pubkey,
+    pub marketplace_config: Pubkey,
+}
+
+/// Inventory PDA bought the cheapest user-listed NFT via `sweep_floor_lowest`.
+/// Disposition is reflected in a follow-up event (LootboxQueuePush,
+/// InventoryAssetRelisted, or InventoryAssetBurned).
+#[event]
+pub struct FloorSweepExecuted {
+    pub asset: Pubkey,
+    pub buy_price: u64,
+    pub seller: Pubkey,
+    pub anchor_price: u64,
+    pub trend_bps: i32,
+    pub stale_skipped: u8,
+    pub keeper: Pubkey,
+    pub timestamp: i64,
+}
+
+/// An inventory asset was relisted at a formula-driven price after either a
+/// fresh sweep or an `expire_program_listing` strike.
+#[event]
+pub struct InventoryAssetRelisted {
+    pub asset: Pubkey,
+    pub original_buy_price: u64,
+    pub new_list_price: u64,
+    pub markup_bps: i32,
+    pub trend_bps: i32,
+    pub expire_count: u8,
+    pub timestamp: i64,
+}
+
+/// An inventory asset was burned because either the trend crashed below
+/// the burn threshold or the entry hit MAX_EXPIRES.
+#[event]
+pub struct InventoryAssetBurned {
+    pub asset: Pubkey,
+    /// 0 = trend crash, 1 = max expires, 2 = rebirth queue full
+    pub reason: u8,
+    pub trend_bps: i32,
+    pub expire_count: u8,
+    pub timestamp: i64,
+}
+
+/// A user (or keeper) registered a marketplace listing into the floor queue.
+#[event]
+pub struct FloorEntryRegistered {
+    pub listing: Pubkey,
+    pub asset: Pubkey,
+    pub seller: Pubkey,
+    pub price: u64,
+    pub queue_index: u8,
+    pub queue_size_after: u8,
+    pub timestamp: i64,
+}
+
+/// A floor queue entry was removed (sale, cancel, price-update reorder, or stale).
+#[event]
+pub struct FloorEntryRemoved {
+    pub listing: Pubkey,
+    pub asset: Pubkey,
+    pub queue_index: u8,
+    pub reason: u8, // 0=sweep, 1=cancel, 2=price-update, 3=stale-popped
+    pub timestamp: i64,
+}
+
+/// A user-to-user marketplace sale qualified as a real-demand snapshot input.
+#[event]
+pub struct UserSaleRecorded {
+    pub asset: Pubkey,
+    pub buyer: Pubkey,
+    pub seller: Pubkey,
+    pub price: u64,
+    pub listing_age_secs: i64,
+    pub timestamp: i64,
+}
+
+/// A daily floor snapshot was committed.
+#[event]
+pub struct FloorSnapshotRecorded {
+    pub anchor_price: u64,
+    pub source: u8, // 0 = sale-median, 1 = queue-median fallback
+    pub samples: u32,
+    pub timestamp: i64,
+}
+
+/// An inventory listing that sat unsold for `EXPIRE_GRACE_SECS` was expired.
+/// Disposition cascade follows in a separate event.
+#[event]
+pub struct ProgramListingExpired {
+    pub asset: Pubkey,
+    pub previous_list_price: u64,
+    pub expire_count_after: u8,
+    pub keeper: Pubkey,
+    pub timestamp: i64,
+}
+
+/// One-time emit when a country's lootbox queue PDA is created at admin setup.
+#[event]
+pub struct LootboxQueueInitialized {
+    pub faction_id: u8,
+    pub queue_pda: Pubkey,
+    pub timestamp: i64,
+}
+
+/// An asset was pushed into a country lootbox queue (from `rebirth_hashbeast`,
+/// `sweep_floor_lowest`, or `expire_program_listing`). `queue_depth_after`
+/// reflects post-push state.
+#[event]
+pub struct LootboxQueuePush {
+    pub faction_id: u8,
+    pub asset: Pubkey,
+    pub queue_depth_after: u8,
+    pub source: u8, // 0 = rebirth, 1 = sweep_buy
+    pub timestamp: i64,
+}
+
+/// A losing player's claim ix triggered a roll that WON. Asset is reserved
+/// for them via `LootboxClaim` PDA until a user or cranker delivers it with
+/// `claim_lootbox_nft`.
+#[event]
+pub struct LootboxRollWon {
+    pub user: Pubkey,
+    pub faction_id: u8,
+    pub asset: Pubkey,
+    pub queue_depth_before: u8,
+    pub roll_value: u16,
+    pub threshold_bps: u16,
+    pub timestamp: i64,
+}
+
+/// A losing player's claim ix triggered a roll that MISSED. Queue unchanged.
+#[event]
+pub struct LootboxRollMissed {
+    pub user: Pubkey,
+    pub faction_id: u8,
+    pub queue_depth: u8,
+    pub roll_value: u16,
+    pub threshold_bps: u16,
+    pub timestamp: i64,
+}
+
+/// Reserved hashbeast was delivered to the recorded user. `cranker` is the signer
+/// that paid the delivery transaction; it may be the user or a bot.
+#[event]
+pub struct LootboxNftClaimed {
+    pub user: Pubkey,
+    pub cranker: Pubkey,
+    pub faction_id: u8,
+    pub asset: Pubkey,
+    pub rebirth_count: u8,
+    pub timestamp: i64,
+}
+
+/// A `rebirth_hashbeast` call burned the asset because the country queue was full,
+/// inventory was full, or the asset had already reached MAX_REBIRTH_COUNT.
+/// User still received their `accumulated_val` payout; the asset is gone.
+#[event]
+pub struct HashBeastRebirthBurned {
+    pub asset: Pubkey,
+    pub former_owner: Pubkey,
+    pub faction_id: u8,
+    pub accumulated_val: u64,
+    pub rebirth_count: u8,
+    /// 0 = queue/inventory full, 1 = max rebirth count reached
+    pub reason: u8,
+    pub timestamp: i64,
+}
+
+/// `handle_inventory_proceeds` split accumulated inventory SOL into the sweep
+/// reserve and the protocol fee pipeline.
+#[event]
+pub struct InventoryProceedsRouted {
+    pub to_sweep: u64,
+    pub to_protocol: u64,
+    pub timestamp: i64,
+}
+
+/// Permissionless `inventory_finalize_sale` cleaned up the RebornEntry
+/// after detecting that an inventory listing's asset is no longer owned by
+/// `inventory_pda` (i.e., it sold to a real buyer).
+#[event]
+pub struct InventorySaleFinalized {
+    pub asset: Pubkey,
+    pub keeper: Pubkey,
+    pub timestamp: i64,
+}
+
+/// `distribute_sol_fees` peeled off `nft_market_making_pct` of available SOL
+/// and routed it directly to `inventory_sweep_vault` to fund permissionless
+/// NFT market-making (sweep buys + keeper bounties). Replaces the old
+/// dbtc-tax → Raydium swap → SOL refill flow.
+#[event]
+pub struct NftMarketMakingFunded {
+    pub sol_amount: u64,
     pub timestamp: i64,
 }

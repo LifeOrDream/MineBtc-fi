@@ -120,7 +120,11 @@ pub fn transfer_mpl_core_asset<'info>(
     Ok(())
 }
 
-/// Burn a Metaplex Core NFT asset via CPI
+/// Burn a Metaplex Core NFT asset via CPI.
+///
+/// Used by the `rebirth_hashbeast` cascade when the country lootbox queue is full —
+/// the user still receives their `accumulated_val` payout, but the asset is
+/// destroyed rather than added to inventory (no listing fallback).
 pub fn burn_mpl_core_asset<'info>(
     asset: &AccountInfo<'info>,
     collection: Option<&AccountInfo<'info>>,

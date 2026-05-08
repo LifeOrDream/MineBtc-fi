@@ -461,7 +461,7 @@ function runTests() {
     // --- Example DNA Analysis ---
     console.log("\n--- Example DNA Analysis ---");
     const exampleDna = generateGenesisDna(42, testPubkey, 999999, 7);
-    printDnaAnalysis(exampleDna, "Example Doge #42 (Faction 7)");
+    printDnaAnalysis(exampleDna, "Example HashBeast #42 (Faction 7)");
     
     return failed === 0;
 }

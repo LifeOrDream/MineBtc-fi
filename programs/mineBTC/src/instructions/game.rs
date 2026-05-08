@@ -173,9 +173,14 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.jackpot_hit = false;
     game_session.jackpot_faction_id = 0;
     game_session.jackpot_pot_size_on_hit = 0;
-    game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
     game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
     game_session.total_mutations_this_round = 0;
+    game_session.winning_faction_volume_at_round = 0;
+    // Snapshot the active cycle ID at round start. Round-claim handlers use
+    // this to detect a late claim (cycle has already settled) and skip the
+    // mutation-bonus score-add for that case.
+    game_session.faction_war_id_when_played =
+        ctx.accounts.faction_war_config.current_faction_war_id;
     msg!("🎲 [game.int_start_round] state mutation: global_state.can_begin_round false -> false");
     global_state.can_begin_round = false;
 
@@ -1031,32 +1036,32 @@ fn calculate_minebtc_split(
 
 fn split_staker_lane_rewards(
     total_rewards: u64,
-    dogebtc_active: bool,
+    degenbtc_active: bool,
     lp_active: bool,
 ) -> (u64, u64) {
     msg!(
-        "📊 [game.split_staker_lane_rewards] total_rewards={} dogebtc_active={} lp_active={}",
+        "📊 [game.split_staker_lane_rewards] total_rewards={} degenbtc_active={} lp_active={}",
         total_rewards,
-        dogebtc_active,
+        degenbtc_active,
         lp_active
     );
-    let result = match (dogebtc_active, lp_active) {
+    let result = match (degenbtc_active, lp_active) {
         (true, true) => {
-            let dogebtc_share = total_rewards / 2;
-            let lp_share = total_rewards - dogebtc_share;
-            msg!("📊 [game.split_staker_lane_rewards] branch (true,true): dogebtc_share={} lp_share={}", dogebtc_share, lp_share);
-            (dogebtc_share, lp_share)
+            let degenbtc_share = total_rewards / 2;
+            let lp_share = total_rewards - degenbtc_share;
+            msg!("📊 [game.split_staker_lane_rewards] branch (true,true): degenbtc_share={} lp_share={}", degenbtc_share, lp_share);
+            (degenbtc_share, lp_share)
         }
         (true, false) => {
-            msg!("📊 [game.split_staker_lane_rewards] branch (true,false): dogebtc_share={} lp_share=0", total_rewards);
+            msg!("📊 [game.split_staker_lane_rewards] branch (true,false): degenbtc_share={} lp_share=0", total_rewards);
             (total_rewards, 0)
         }
         (false, true) => {
-            msg!("📊 [game.split_staker_lane_rewards] branch (false,true): dogebtc_share=0 lp_share={}", total_rewards);
+            msg!("📊 [game.split_staker_lane_rewards] branch (false,true): degenbtc_share=0 lp_share={}", total_rewards);
             (0, total_rewards)
         }
         (false, false) => {
-            msg!("📊 [game.split_staker_lane_rewards] branch (false,false): dogebtc_share=0 lp_share=0");
+            msg!("📊 [game.split_staker_lane_rewards] branch (false,false): degenbtc_share=0 lp_share=0");
             (0, 0)
         }
     };
@@ -1157,7 +1162,7 @@ fn seed_empty_faction_war_from_round<'info>(
     );
     let global_config = &accounts.global_config;
     let active_faction_count = global_config.supported_factions.len() as u8;
-    let start_ranks = accounts.faction_war_config.prev_faction_war_mutation_ranks;
+    let start_ranks = accounts.faction_war_config.prev_faction_war_ranks;
     msg!(
         "📊 [game.seed_empty_faction_war_from_round] active_faction_count={} start_ranks={:?}",
         active_faction_count,
@@ -1187,21 +1192,23 @@ fn seed_empty_faction_war_from_round<'info>(
     faction_war_state.start_timestamp = now_ts;
     faction_war_state.stage = 0;
     faction_war_state.active_faction_count = active_faction_count;
-    faction_war_state.total_dogebtc_mined_in_faction_war = 0;
+    faction_war_state.total_degenbtc_mined_in_faction_war = 0;
     faction_war_state.faction_war_mining_pool = 0;
     faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
     faction_war_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.loyalty_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_sol_direction_totals =
+        [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    faction_war_state.faction_gameplay_scores = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
     faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
-    faction_war_state.eligible_doge_direction_totals =
+    faction_war_state.eligible_hashbeast_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.start_ranks = start_ranks;
     faction_war_state.final_ranks = start_ranks;
@@ -1209,6 +1216,7 @@ fn seed_empty_faction_war_from_round<'info>(
         [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
     faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
     faction_war_state.treasury_claimed_bitmap = 0;
+    faction_war_state.sol_reward_pool = 0;
     msg!("🎲 [game.seed_empty_faction_war_from_round] state mutation: tax_config.unassigned_faction_war_treasury_amount {} -> 0", accounts.tax_config.unassigned_faction_war_treasury_amount);
     accounts.tax_config.unassigned_faction_war_treasury_amount = 0;
 
@@ -1216,10 +1224,8 @@ fn seed_empty_faction_war_from_round<'info>(
     let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("📊 [game.seed_empty_faction_war_from_round] computation: faction_war_settle_cycle = {} + 1 = {}", lp_ops, settle_cycle);
     accounts.faction_war_config.faction_war_settle_cycle = settle_cycle;
-    msg!("🎲 [game.seed_empty_faction_war_from_round] helper call: reset_cycle_telemetry(faction_war_id={})", faction_war_state.faction_war_id);
-    accounts
-        .faction_war_config
-        .reset_cycle_telemetry(faction_war_state.faction_war_id);
+    msg!("🎲 [game.seed_empty_faction_war_from_round] helper call: reset_cycle_round_tracking()");
+    accounts.faction_war_config.reset_cycle_round_tracking();
     msg!(
         "✅ [game.seed_empty_faction_war_from_round] initialized empty faction-war seed state for war {} (active_factions={}, settle after LP cycle #{}, treasury_base={})",
         faction_war_state.faction_war_id,
@@ -1236,9 +1242,10 @@ fn track_faction_war_round_completion<'info>(
     faction_war_state: &mut FactionWarState,
     winning_faction_id: u8,
     actually_distributed: u64,
+    round_score: u64,
 ) -> Result<()> {
-    msg!("🎲 [game.track_faction_war_round_completion] winning_faction_id={} actually_distributed={} faction_war_id={}",
-        winning_faction_id, actually_distributed, faction_war_state.faction_war_id);
+    msg!("🎲 [game.track_faction_war_round_completion] winning_faction_id={} actually_distributed={} round_score={} faction_war_id={}",
+        winning_faction_id, actually_distributed, round_score, faction_war_state.faction_war_id);
 
     let winning_faction_index = winning_faction_id as usize;
     if winning_faction_index < faction_war_state.active_faction_count as usize {
@@ -1249,77 +1256,71 @@ fn track_faction_war_round_completion<'info>(
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!("🎲 [game.track_faction_war_round_completion] state mutation: faction_round_wins[{}] {} -> {}",
             winning_faction_index, old_wins, faction_war_state.faction_round_wins[winning_faction_index]);
+
+        // --- Cycle leaderboard score: ROUND_WIN ---
+        // Driven by the country actually winning the round. Score added equals
+        // total weighted points bet on the winning country (any direction).
+        // Mutation bonuses (round-claim time) accrue to the same field.
+        if round_score > 0 {
+            let old_score = faction_war_state.faction_gameplay_scores[winning_faction_index];
+            faction_war_state.faction_gameplay_scores[winning_faction_index] = old_score
+                .checked_add(round_score)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!(
+                "🎲 [game.track_faction_war_round_completion] state mutation: faction_gameplay_scores[{}] {} -> {} (+{}, source=ROUND_WIN)",
+                winning_faction_index,
+                old_score,
+                faction_war_state.faction_gameplay_scores[winning_faction_index],
+                round_score
+            );
+            emit!(crate::events::GameplayScoreAccumulated {
+                faction_war_id: faction_war_state.faction_war_id,
+                faction_id: winning_faction_id,
+                score_source: GAMEPLAY_SCORE_SOURCE_ROUND_WIN,
+                score_added: round_score,
+                faction_total_score: faction_war_state.faction_gameplay_scores
+                    [winning_faction_index],
+                user: Pubkey::default(),
+            });
+        }
     } else {
         msg!("⚠️ [game.track_faction_war_round_completion] winning_faction_index {} >= active_faction_count {}, skipping win increment", winning_faction_index, faction_war_state.active_faction_count);
     }
 
-    let old_mined = faction_war_state.total_dogebtc_mined_in_faction_war;
-    faction_war_state.total_dogebtc_mined_in_faction_war = faction_war_state
-        .total_dogebtc_mined_in_faction_war
+    let old_mined = faction_war_state.total_degenbtc_mined_in_faction_war;
+    faction_war_state.total_degenbtc_mined_in_faction_war = faction_war_state
+        .total_degenbtc_mined_in_faction_war
         .checked_add(actually_distributed)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("🎲 [game.track_faction_war_round_completion] state mutation: total_dogebtc_mined_in_faction_war {} -> {} (+{})",
-        old_mined, faction_war_state.total_dogebtc_mined_in_faction_war, actually_distributed);
-
-    msg!("🎲 [game.track_faction_war_round_completion] branch: telemetry_faction_war_id({}) == faction_war_id({}) ? {}",
-        accounts.faction_war_config.telemetry_faction_war_id, faction_war_state.faction_war_id,
-        accounts.faction_war_config.telemetry_faction_war_id == faction_war_state.faction_war_id);
-    if accounts.faction_war_config.telemetry_faction_war_id != faction_war_state.faction_war_id {
-        msg!(
-            "🎲 [game.track_faction_war_round_completion] helper call: reset_cycle_telemetry({})",
-            faction_war_state.faction_war_id
-        );
-        accounts
-            .faction_war_config
-            .reset_cycle_telemetry(faction_war_state.faction_war_id);
-    }
+    msg!("🎲 [game.track_faction_war_round_completion] state mutation: total_degenbtc_mined_in_faction_war {} -> {} (+{})",
+        old_mined, faction_war_state.total_degenbtc_mined_in_faction_war, actually_distributed);
 
     msg!("🎲 [game.track_faction_war_round_completion] branch: last_processed_round_id({}) != round_id({}) ? {}",
         accounts.faction_war_config.last_processed_round_id, accounts.game_session.round_id,
         accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id);
     if accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id {
-        let tuning = &accounts.global_config.gameplay_tuning;
-        let old_pressure = accounts.faction_war_config.recent_mutation_pressure_bps;
-        let decayed_pressure = (accounts.faction_war_config.recent_mutation_pressure_bps as u128)
-            .checked_mul(tuning.global_mutation_pressure_decay_bps as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        let added_pressure = (accounts.game_session.total_mutations_this_round as u128)
-            .checked_mul(tuning.global_mutation_pressure_per_mutation_bps as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        let next_pressure = decayed_pressure
-            .checked_add(added_pressure)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .min(BASIS_POINTS_DENOMINATOR as u128);
-        msg!("📊 [game.track_faction_war_round_completion] pressure computation: old_pressure={} decayed={} added={} next={}",
-            old_pressure, decayed_pressure, added_pressure, next_pressure);
-
-        let old_rounds_elapsed = accounts.faction_war_config.cycle_rounds_elapsed;
-        accounts.faction_war_config.cycle_rounds_elapsed = accounts
-            .faction_war_config
-            .cycle_rounds_elapsed
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: cycle_rounds_elapsed {} -> {}", old_rounds_elapsed, accounts.faction_war_config.cycle_rounds_elapsed);
-
-        let old_mutations_triggered = accounts.faction_war_config.cycle_mutations_triggered;
-        accounts.faction_war_config.cycle_mutations_triggered = accounts
-            .faction_war_config
-            .cycle_mutations_triggered
-            .checked_add(accounts.game_session.total_mutations_this_round as u16)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: cycle_mutations_triggered {} -> {} (+{})",
-            old_mutations_triggered, accounts.faction_war_config.cycle_mutations_triggered, accounts.game_session.total_mutations_this_round);
-
         msg!("🎲 [game.track_faction_war_round_completion] state mutation: last_processed_round_id = {}", accounts.game_session.round_id);
         accounts.faction_war_config.last_processed_round_id = accounts.game_session.round_id;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: last_round_mutations = {}", accounts.game_session.total_mutations_this_round);
-        accounts.faction_war_config.last_round_mutations =
-            accounts.game_session.total_mutations_this_round;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: recent_mutation_pressure_bps {} -> {}",
-            old_pressure, next_pressure as u16);
-        accounts.faction_war_config.recent_mutation_pressure_bps = next_pressure as u16;
+
+        // Snapshot the winning country's accumulated volume onto GameSession,
+        // then reset the per-country counter so the next streak starts fresh.
+        // Late round-claims read the snapshot, not the live counter, so the
+        // mutation-roll volume is stable regardless of when claims land.
+        if winning_faction_index
+            < accounts
+                .faction_war_config
+                .faction_volume_since_last_win
+                .len()
+        {
+            let snap =
+                accounts.faction_war_config.faction_volume_since_last_win[winning_faction_index];
+            accounts.game_session.winning_faction_volume_at_round = snap;
+            accounts.faction_war_config.faction_volume_since_last_win[winning_faction_index] = 0;
+            msg!(
+                "🎲 [game.track_faction_war_round_completion] state mutation: faction_volume_since_last_win[{}] {} -> 0 (snapshotted to GameSession.winning_faction_volume_at_round)",
+                winning_faction_index, snap
+            );
+        }
     }
 
     let lp_ops = accounts.mine_btc_mining.pol_stats.lp_operations_count;
@@ -1400,9 +1401,9 @@ pub fn int_end_round_faction_rewards<'info>(
         ErrorCode::InvalidFactionId
     );
 
-    // dogeBTC rewards to be distributed among stakers (50% to dogeBTC stakers, 50% to LP stakers)
+    // degenBTC rewards to be distributed among stakers (50% to degenBTC stakers, 50% to LP stakers)
     let minebtc_staker_rewards = game_session.faction_stakers;
-    // SOL rewards to be distributed among stakers (50% to dogeBTC stakers, 50% to LP stakers)
+    // SOL rewards to be distributed among stakers (50% to degenBTC stakers, 50% to LP stakers)
     let sol_staker_fees = game_session.stakers_fee;
     msg!(
         "📊 [game.int_end_round_faction_rewards] minebtc_staker_rewards={} sol_staker_fees={}",
@@ -1413,12 +1414,12 @@ pub fn int_end_round_faction_rewards<'info>(
     let winning_direction = game_session.winning_direction;
     let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction
         [winning_faction_id as usize][winning_direction as usize];
-    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let degenbtc_active = faction_state.total_degenbtc_hashpower > 0;
     let lp_active = faction_state.total_lp_hashpower > 0;
-    msg!("🎲 [game.int_end_round_faction_rewards] winning_direction={} exact_winning_wgtd_pts={} dogebtc_active={} lp_active={}",
-        winning_direction, exact_winning_wgtd_pts, dogebtc_active, lp_active);
+    msg!("🎲 [game.int_end_round_faction_rewards] winning_direction={} exact_winning_wgtd_pts={} degenbtc_active={} lp_active={}",
+        winning_direction, exact_winning_wgtd_pts, degenbtc_active, lp_active);
 
-    if dogebtc_active || lp_active {
+    if degenbtc_active || lp_active {
         msg!("🎲 [game.int_end_round_faction_rewards] branch: stakers active -> helper call: distribute_rewards_amg_stakers(minebtc={}, sol={}, round_id={})",
             minebtc_staker_rewards, sol_staker_fees, game_session.round_id);
         distribute_rewards_amg_stakers(
@@ -1567,7 +1568,7 @@ pub fn int_end_round_faction_rewards<'info>(
     msg!("✅ [game.int_end_round_faction_rewards] global_state.can_begin_round = true");
 
     // --- FACTION_WAR MINING TRACKING (inline) ---
-    // Only count dogeBTC that was actually distributed this round (not the full emission).
+    // Only count degenBTC that was actually distributed this round (not the full emission).
     // Empty rounds or rounds with no bets on certain directions may distribute less.
     msg!("🔍 [game.int_end_round_faction_rewards] require: faction_war_config.current_faction_war_id == faction_war_id: {} == {}",
         accounts.faction_war_config.current_faction_war_id, faction_war_id);
@@ -1608,15 +1609,25 @@ pub fn int_end_round_faction_rewards<'info>(
             faction_war_state_bump,
         )?;
         // Nothing further to track — this is an empty/seed state. The next
-        // bet will fill mutation scores, direction totals, etc.
+        // bet will fill gameplay scores, direction totals, etc.
     } else if accounts.faction_war_config.is_active && faction_war_state.stage == 0 {
-        msg!("🎲 [game.int_end_round_faction_rewards] faction_war active && stage==0 -> helper call: track_faction_war_round_completion(winning_faction_id={}, actually_distributed={})",
-            winning_faction_id, actually_distributed);
+        // Round-win cycle score: sum of weighted points bet on the winning
+        // country across all directions. Same metric we use for hashbeastBTC reward
+        // distribution — keeps leaderboard math aligned with rewards math.
+        let winner_idx = winning_faction_id as usize;
+        let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
+            .iter()
+            .copied()
+            .try_fold(0u64, |acc, v| acc.checked_add(v))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!("🎲 [game.int_end_round_faction_rewards] faction_war active && stage==0 -> helper call: track_faction_war_round_completion(winning_faction_id={}, actually_distributed={}, round_score={})",
+            winning_faction_id, actually_distributed, round_score);
         track_faction_war_round_completion(
             accounts,
             faction_war_state.as_mut(),
             winning_faction_id,
             actually_distributed,
+            round_score,
         )?;
     } else {
         msg!("⚠️ [game.int_end_round_faction_rewards] faction_war tracking skipped: is_active={} stage={}",
@@ -1638,7 +1649,7 @@ pub fn int_end_round_faction_rewards<'info>(
     Ok(())
 }
 
-/// Internal function, called by int_end_round_faction_rewards to distribute rewards among AMG stakers (50% to dogeBTC stakers, 50% to LP stakers)
+/// Internal function, called by int_end_round_faction_rewards to distribute rewards among AMG stakers (50% to degenBTC stakers, 50% to LP stakers)
 #[inline(never)]
 fn distribute_rewards_amg_stakers(
     minebtc_staker_rewards: u64,
@@ -1648,71 +1659,71 @@ fn distribute_rewards_amg_stakers(
 ) -> Result<()> {
     msg!("💰 [game.distribute_rewards_amg_stakers] minebtc_staker_rewards={} sol_staker_fees={} faction_id={} round_id={}",
         minebtc_staker_rewards, sol_staker_fees, faction_state.faction_id, round_id);
-    let dogebtc_active = faction_state.total_dogebtc_hashpower > 0;
+    let degenbtc_active = faction_state.total_degenbtc_hashpower > 0;
     let lp_active = faction_state.total_lp_hashpower > 0;
-    msg!("💰 [game.distribute_rewards_amg_stakers] dogebtc_active={} total_dogebtc_hashpower={} lp_active={} total_lp_hashpower={}",
-        dogebtc_active, faction_state.total_dogebtc_hashpower, lp_active, faction_state.total_lp_hashpower);
+    msg!("💰 [game.distribute_rewards_amg_stakers] degenbtc_active={} total_degenbtc_hashpower={} lp_active={} total_lp_hashpower={}",
+        degenbtc_active, faction_state.total_degenbtc_hashpower, lp_active, faction_state.total_lp_hashpower);
 
-    msg!("🔍 [game.distribute_rewards_amg_stakers] helper call: split_staker_lane_rewards(minebtc={}, dogebtc_active={}, lp_active={})", minebtc_staker_rewards, dogebtc_active, lp_active);
-    let (dogebtc_minebtc_share, lp_minebtc_share) =
-        split_staker_lane_rewards(minebtc_staker_rewards, dogebtc_active, lp_active);
-    msg!("🔍 [game.distribute_rewards_amg_stakers] helper call: split_staker_lane_rewards(sol={}, dogebtc_active={}, lp_active={})", sol_staker_fees, dogebtc_active, lp_active);
-    let (dogebtc_sol_share, lp_sol_share) =
-        split_staker_lane_rewards(sol_staker_fees, dogebtc_active, lp_active);
-    msg!("📊 [game.distribute_rewards_amg_stakers] splits: dogebtc_minebtc={} lp_minebtc={} dogebtc_sol={} lp_sol={}",
-        dogebtc_minebtc_share, lp_minebtc_share, dogebtc_sol_share, lp_sol_share);
+    msg!("🔍 [game.distribute_rewards_amg_stakers] helper call: split_staker_lane_rewards(minebtc={}, degenbtc_active={}, lp_active={})", minebtc_staker_rewards, degenbtc_active, lp_active);
+    let (degenbtc_minebtc_share, lp_minebtc_share) =
+        split_staker_lane_rewards(minebtc_staker_rewards, degenbtc_active, lp_active);
+    msg!("🔍 [game.distribute_rewards_amg_stakers] helper call: split_staker_lane_rewards(sol={}, degenbtc_active={}, lp_active={})", sol_staker_fees, degenbtc_active, lp_active);
+    let (degenbtc_sol_share, lp_sol_share) =
+        split_staker_lane_rewards(sol_staker_fees, degenbtc_active, lp_active);
+    msg!("📊 [game.distribute_rewards_amg_stakers] splits: degenbtc_minebtc={} lp_minebtc={} degenbtc_sol={} lp_sol={}",
+        degenbtc_minebtc_share, lp_minebtc_share, degenbtc_sol_share, lp_sol_share);
 
-    msg!("💰 [game.distribute_rewards_amg_stakers] branch: dogebtc_active={} && (minebtc>0 || sol>0) ? {} && ({} || {})",
-        dogebtc_active, dogebtc_minebtc_share > 0, dogebtc_sol_share > 0, dogebtc_active && (dogebtc_minebtc_share > 0 || dogebtc_sol_share > 0));
-    if dogebtc_active && (dogebtc_minebtc_share > 0 || dogebtc_sol_share > 0) {
-        msg!("💰 [game.distribute_rewards_amg_stakers] helper call: mul_div(dogebtc_minebtc_share={}, INDEX_PRECISION, total_dogebtc_hashpower={})",
-            dogebtc_minebtc_share, faction_state.total_dogebtc_hashpower);
+    msg!("💰 [game.distribute_rewards_amg_stakers] branch: degenbtc_active={} && (minebtc>0 || sol>0) ? {} && ({} || {})",
+        degenbtc_active, degenbtc_minebtc_share > 0, degenbtc_sol_share > 0, degenbtc_active && (degenbtc_minebtc_share > 0 || degenbtc_sol_share > 0));
+    if degenbtc_active && (degenbtc_minebtc_share > 0 || degenbtc_sol_share > 0) {
+        msg!("💰 [game.distribute_rewards_amg_stakers] helper call: mul_div(degenbtc_minebtc_share={}, INDEX_PRECISION, total_degenbtc_hashpower={})",
+            degenbtc_minebtc_share, faction_state.total_degenbtc_hashpower);
         let minebtc_per_share = helper::mul_div(
-            dogebtc_minebtc_share,
+            degenbtc_minebtc_share,
             INDEX_PRECISION,
-            faction_state.total_dogebtc_hashpower,
+            faction_state.total_degenbtc_hashpower,
         )?;
-        let old_dogebtc_dogebtc_reward_index = faction_state.dogebtc_dogebtc_reward_index;
-        faction_state.dogebtc_dogebtc_reward_index = faction_state
-            .dogebtc_dogebtc_reward_index
+        let old_degenbtc_degenbtc_reward_index = faction_state.degenbtc_degenbtc_reward_index;
+        faction_state.degenbtc_degenbtc_reward_index = faction_state
+            .degenbtc_degenbtc_reward_index
             .checked_add(minebtc_per_share)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "💰 [game.distribute_rewards_amg_stakers] state mutation: dogebtc_dogebtc_reward_index {} -> {} (+minebtc_per_share={})",
-            old_dogebtc_dogebtc_reward_index,
-            faction_state.dogebtc_dogebtc_reward_index,
+            "💰 [game.distribute_rewards_amg_stakers] state mutation: degenbtc_degenbtc_reward_index {} -> {} (+minebtc_per_share={})",
+            old_degenbtc_degenbtc_reward_index,
+            faction_state.degenbtc_degenbtc_reward_index,
             minebtc_per_share
         );
 
-        msg!("💰 [game.distribute_rewards_amg_stakers] helper call: mul_div(dogebtc_sol_share={}, INDEX_PRECISION, total_dogebtc_hashpower={})",
-            dogebtc_sol_share, faction_state.total_dogebtc_hashpower);
+        msg!("💰 [game.distribute_rewards_amg_stakers] helper call: mul_div(degenbtc_sol_share={}, INDEX_PRECISION, total_degenbtc_hashpower={})",
+            degenbtc_sol_share, faction_state.total_degenbtc_hashpower);
         let sol_reward_inc = helper::mul_div(
-            dogebtc_sol_share,
+            degenbtc_sol_share,
             INDEX_PRECISION,
-            faction_state.total_dogebtc_hashpower,
+            faction_state.total_degenbtc_hashpower,
         )?;
-        let old_dogebtc_sol_reward_index = faction_state.dogebtc_sol_reward_index;
-        faction_state.dogebtc_sol_reward_index = faction_state
-            .dogebtc_sol_reward_index
+        let old_degenbtc_sol_reward_index = faction_state.degenbtc_sol_reward_index;
+        faction_state.degenbtc_sol_reward_index = faction_state
+            .degenbtc_sol_reward_index
             .checked_add(sol_reward_inc)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "💰 [game.distribute_rewards_amg_stakers] state mutation: dogebtc_sol_reward_index {} -> {} (+sol_reward_inc={})",
-            old_dogebtc_sol_reward_index,
-            faction_state.dogebtc_sol_reward_index,
+            "💰 [game.distribute_rewards_amg_stakers] state mutation: degenbtc_sol_reward_index {} -> {} (+sol_reward_inc={})",
+            old_degenbtc_sol_reward_index,
+            faction_state.degenbtc_sol_reward_index,
             sol_reward_inc
         );
 
-        msg!("💰 [game.distribute_rewards_amg_stakers] emit DogeBtcStakingRewardsDistributed: round_id={} faction_id={} minebtc={} sol={} dogebtc_dogebtc_reward_index={} dogebtc_sol_reward_index={}",
-            round_id, faction_state.faction_id, dogebtc_minebtc_share, dogebtc_sol_share,
-            faction_state.dogebtc_dogebtc_reward_index, faction_state.dogebtc_sol_reward_index);
-        emit!(DogeBtcStakingRewardsDistributed {
+        msg!("💰 [game.distribute_rewards_amg_stakers] emit DegenBtcStakingRewardsDistributed: round_id={} faction_id={} minebtc={} sol={} degenbtc_degenbtc_reward_index={} degenbtc_sol_reward_index={}",
+            round_id, faction_state.faction_id, degenbtc_minebtc_share, degenbtc_sol_share,
+            faction_state.degenbtc_degenbtc_reward_index, faction_state.degenbtc_sol_reward_index);
+        emit!(DegenBtcStakingRewardsDistributed {
             round_id,
             faction_id: faction_state.faction_id,
-            minebtc_staker_rewards: dogebtc_minebtc_share,
-            sol_staker_rewards: dogebtc_sol_share,
-            dogebtc_dogebtc_reward_index: faction_state.dogebtc_dogebtc_reward_index,
-            dogebtc_sol_reward_index: faction_state.dogebtc_sol_reward_index
+            minebtc_staker_rewards: degenbtc_minebtc_share,
+            sol_staker_rewards: degenbtc_sol_share,
+            degenbtc_degenbtc_reward_index: faction_state.degenbtc_degenbtc_reward_index,
+            degenbtc_sol_reward_index: faction_state.degenbtc_sol_reward_index
         });
     }
 
@@ -1726,15 +1737,15 @@ fn distribute_rewards_amg_stakers(
             INDEX_PRECISION,
             faction_state.total_lp_hashpower,
         )?;
-        let old_lp_dogebtc_reward_index = faction_state.lp_dogebtc_reward_index;
-        faction_state.lp_dogebtc_reward_index = faction_state
-            .lp_dogebtc_reward_index
+        let old_lp_degenbtc_reward_index = faction_state.lp_degenbtc_reward_index;
+        faction_state.lp_degenbtc_reward_index = faction_state
+            .lp_degenbtc_reward_index
             .checked_add(minebtc_per_share)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "💰 [game.distribute_rewards_amg_stakers] state mutation: lp_dogebtc_reward_index {} -> {} (+minebtc_per_share={})",
-            old_lp_dogebtc_reward_index,
-            faction_state.lp_dogebtc_reward_index,
+            "💰 [game.distribute_rewards_amg_stakers] state mutation: lp_degenbtc_reward_index {} -> {} (+minebtc_per_share={})",
+            old_lp_degenbtc_reward_index,
+            faction_state.lp_degenbtc_reward_index,
             minebtc_per_share
         );
 
@@ -1757,15 +1768,15 @@ fn distribute_rewards_amg_stakers(
             sol_reward_inc
         );
 
-        msg!("💰 [game.distribute_rewards_amg_stakers] emit LpStakingRewardsDistributed: round_id={} faction_id={} minebtc={} sol={} lp_dogebtc_reward_index={} lp_sol_reward_index={}",
+        msg!("💰 [game.distribute_rewards_amg_stakers] emit LpStakingRewardsDistributed: round_id={} faction_id={} minebtc={} sol={} lp_degenbtc_reward_index={} lp_sol_reward_index={}",
             round_id, faction_state.faction_id, lp_minebtc_share, lp_sol_share,
-            faction_state.lp_dogebtc_reward_index, faction_state.lp_sol_reward_index);
+            faction_state.lp_degenbtc_reward_index, faction_state.lp_sol_reward_index);
         emit!(LpStakingRewardsDistributed {
             round_id,
             faction_id: faction_state.faction_id,
             minebtc_staker_rewards: lp_minebtc_share,
             sol_staker_rewards: lp_sol_share,
-            lp_dogebtc_reward_index: faction_state.lp_dogebtc_reward_index,
+            lp_degenbtc_reward_index: faction_state.lp_degenbtc_reward_index,
             lp_sol_reward_index: faction_state.lp_sol_reward_index
         });
     }

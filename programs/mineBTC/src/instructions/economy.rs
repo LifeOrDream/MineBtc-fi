@@ -108,9 +108,15 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         rent_exempt_amount as f64 / 1e9
     );
 
-    // Calculate buybacks amount using configurable percentage
+    // Calculate splits using configurable percentages.
     let buyback_percentage = global_config.sol_fee_config.buyback_pct as u64;
+    let nft_mm_percentage = global_config.sol_fee_config.nft_market_making_pct as u64;
+    require!(
+        buyback_percentage + nft_mm_percentage <= M_HUNDRED,
+        ErrorCode::InvalidParameters
+    );
     let sol_for_buybacks = u64_mul_div(available_solana, buyback_percentage, M_HUNDRED)?;
+    let sol_for_nft_mm = u64_mul_div(available_solana, nft_mm_percentage, M_HUNDRED)?;
 
     // Create signer seeds for sol_treasury
     let treasury_seeds = &[SOL_TREASURY_SEED.as_ref(), &[ctx.bumps.sol_treasury]];
@@ -143,8 +149,33 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
         );
     }
 
+    // Transfer NFT market-making amount to inventory_sweep_vault.
+    if sol_for_nft_mm > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.sol_treasury.to_account_info(),
+                    to: ctx.accounts.inventory_sweep_vault.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            sol_for_nft_mm,
+        )?;
+        emit!(NftMarketMakingFunded {
+            sol_amount: sol_for_nft_mm,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        msg!(
+            "🎨 Transferred {} SOL to inventory_sweep_vault for NFT market making ({}%)",
+            sol_for_nft_mm as f64 / 1e9,
+            nft_mm_percentage
+        );
+    }
+
     let dev_earnings = available_solana
         .checked_sub(sol_for_buybacks)
+        .and_then(|r| r.checked_sub(sol_for_nft_mm))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     if dev_earnings > 0 {
         // Transfer SOL from treasury to treasury WSOL account (wraps it)
@@ -447,14 +478,14 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     //
     // Formula: Price = (sol_for_swap / 10^9) / (minebtc_received / 10^6)
     // Simplified: Price = (sol_for_swap * 10^6) / (minebtc_received * 10^9)
-    // To store with 9-decimal precision: multiply by 10^9
-    // Final: Price = (sol_for_swap * 10^6 * 10^9) / (minebtc_received * 10^9) = (sol_for_swap * 10^6) / minebtc_received
+    // Store as lamports per whole MINE_BTC token:
+    // Final: Price = (sol_for_swap * 10^6) / minebtc_received
     let current_price = if minebtc_received > 0 {
         // Prevent overflow by checking limits
-        // Calculate: (sol_for_swap * 10^9) / minebtc_received
-        // This gives us SOL per MINE_BTC stored with 9-decimal precision
+        // Calculate: (sol_for_swap * 10^MINEBTC_DECIMALS) / minebtc_received
+        // This gives lamports per whole MINE_BTC.
         let raw_price = (sol_for_swap as u128)
-            .checked_mul(1_000_000_000) // Scale by 10^9 for full precision
+            .checked_mul(MINEBTC_BASE_UNITS as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
             .checked_div(minebtc_received as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -943,11 +974,11 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         estimated_lp_amount as f64 / 1e9
     );
 
-    // If max_minebtc_with_buffer exceeds 5% limit, adjust SOL amount to match 1% dogeBTC limit
+    // If max_minebtc_with_buffer exceeds 5% limit, adjust SOL amount to match 1% degenBTC limit
     let (final_sol_amount, _final_minebtc_amount, final_max_minebtc_with_buffer) =
         if max_minebtc_with_buffer >= available_minebtc / 100 {
             // 1% of available_minebtc
-            msg!("   💰 Max MINEBTC with buffer exceeds 1% of available MINEBTC, adjusting SOL amount to match 1% dogeBTC limit");
+            msg!("   💰 Max MINEBTC with buffer exceeds 1% of available MINEBTC, adjusting SOL amount to match 1% degenBTC limit");
             adjust_sol_for_minebtc_limit(
                 available_minebtc,
                 sol_vault_balance,
@@ -1132,11 +1163,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             ),
             lp_tokens_minted,
         )?;
-        mine_btc_mining.pol_stats.update_after_lp_operation(
-            lp_tokens_minted,
-            sol_consumed,
-            minebtc_consumed,
-        );
+        mine_btc_mining
+            .pol_stats
+            .update_after_lp_operation(lp_tokens_minted);
 
         emit!(LpTokensBurned {
             lp_tokens_burned: lp_tokens_minted,
@@ -1589,6 +1618,15 @@ pub struct DistributeSolFees<'info> {
         bump
     )]
     pub buybacks_sol_vault: UncheckedAccount<'info>,
+
+    /// CHECK: NFT market-making SOL vault PDA — receives the
+    /// `nft_market_making_pct` slice of distributed SOL fees.
+    #[account(
+        mut,
+        seeds = [INVENTORY_SWEEP_VAULT_SEED.as_ref()],
+        bump,
+    )]
+    pub inventory_sweep_vault: UncheckedAccount<'info>,
 
     /// Buybacks tracking account (required)
     #[account(

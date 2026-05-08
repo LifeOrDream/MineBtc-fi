@@ -52,7 +52,7 @@ function generateWebsiteConfig(config, deployment) {
       rpc_url: config.network?.rpc_url || "http://127.0.0.1:8899",
       commitment: config.network?.commitment || "confirmed",
 
-      // ========== DOGE_BTC TOKEN ==========
+      // ========== DEGEN_BTC TOKEN ==========
       // Naming aligns with the consumer (FE hooks/config.ts + BE
       // deployment.json) which both call it `burn tax` even though
       // it's a Token-2022 transfer fee on-chain. The "burn" framing
@@ -74,14 +74,14 @@ function generateWebsiteConfig(config, deployment) {
       raydium_pool_state: deployment.dbtc_sol_pool_created?.poolStatePDA,
       raydium_lp_mint: deployment.dbtc_sol_pool_created?.lpMintPDA,
       raydium_token0_vault: deployment.dbtc_sol_pool_created?.token0VaultPDA, // WSOL
-      raydium_token1_vault: deployment.dbtc_sol_pool_created?.token1VaultPDA, // DOGE_BTC
+      raydium_token1_vault: deployment.dbtc_sol_pool_created?.token1VaultPDA, // DEGEN_BTC
       raydium_authority: deployment.dbtc_sol_pool_created?.authorityPDA,
       raydium_observation_state:
         deployment.dbtc_sol_pool_created?.observationStatePDA,
       raydium_amm_config: deployment.raydium_amm_config_created?.amm_config_pda,
-      is_dbtc_token0: deployment.dbtc_sol_pool_created?.isMdogeToken0 || false,
+      is_dbtc_token0: deployment.dbtc_sol_pool_created?.isDbtcToken0 || false,
       token0_mint: deployment.dbtc_sol_pool_created?.token0Mint, // WSOL
-      token1_mint: deployment.dbtc_sol_pool_created?.token1Mint, // DOGE_BTC
+      token1_mint: deployment.dbtc_sol_pool_created?.token1Mint, // DEGEN_BTC
 
       // ========== MINE-BTC PROGRAM ACCOUNTS ==========
       globalConfig_pda:
@@ -95,14 +95,14 @@ function generateWebsiteConfig(config, deployment) {
       autominerCustody_pda:
         deployment.minebtc_program_initialized?.autominerCustody_address,
 
-      // ========== DOGE_BTC MINING VAULT ==========
+      // ========== DEGEN_BTC MINING VAULT ==========
       dbtc_token_vault: deployment.mining_vault_initialized?.vault_address,
       minebtc_vault_authority:
         deployment.mining_vault_initialized?.vault_authority,
       mining_start_timestamp:
         deployment.mining_vault_initialized?.start_timestamp,
-      doge_btc_per_round:
-        deployment.mining_vault_initialized?.doge_btc_per_round,
+      degen_btc_per_round:
+        deployment.mining_vault_initialized?.degen_btc_per_round,
 
       // ========== HASHPOWER CONFIG ==========
       hashpowerConfig_pda:
@@ -129,11 +129,11 @@ function generateWebsiteConfig(config, deployment) {
       sol_prize_pot_vault:
         deployment.raydium_pool_state_set?.sol_prize_pot_vault,
 
-      // ==========  DOGE COLLECTION ==========
-     doge_collection:
-        deployment.doge_collection_created?.collection_address,
-     doge_collection_authority:
-        deployment.doge_collection_created?.collection_authority,
+      // ==========  HASHBEAST COLLECTION ==========
+     hashbeast_collection:
+        deployment.hashbeast_collection_created?.collection_address,
+     hashbeast_collection_authority:
+        deployment.hashbeast_collection_created?.collection_authority,
 
       // ========== LP TOKEN MANAGEMENT ==========
       lp_token_account:
@@ -159,17 +159,16 @@ function generateWebsiteConfig(config, deployment) {
         deployment.custodian_accounts_initialized
           ?.liquidity_custodian_authority,
 
-      // ========== DOGE CONFIG ==========
-      doge_config_pda: deployment.doge_config_initialized?.doges_config_pda,
-      doge_max_supply: deployment.doge_config_initialized?.max_supply,
-      doge_mint_config_pda:
-        deployment.doge_mint_config_initialized?.doge_mint_config_pda,
-      doge_base_price: deployment.doge_mint_config_initialized?.base_price,
-      doge_curve_a: deployment.doge_mint_config_initialized?.curve_a,
-      doge_genesis_mint_limit:
-        deployment.doge_mint_config_initialized?.genesis_mint_limit,
-      doge_max_genesis_mints_per_faction:
-        deployment.doge_mint_config_initialized?.max_genesis_mints_per_faction,
+      // ========== HASHBEAST CONFIG ==========
+      hashbeast_config_pda: deployment.hashbeast_config_initialized?.hashbeasts_config_pda,
+      hashbeast_mint_config_pda:
+        deployment.hashbeast_mint_config_initialized?.hashbeast_mint_config_pda,
+      hashbeast_base_price: deployment.hashbeast_mint_config_initialized?.base_price,
+      hashbeast_curve_a: deployment.hashbeast_mint_config_initialized?.curve_a,
+      hashbeast_genesis_mint_limit:
+        deployment.hashbeast_mint_config_initialized?.genesis_mint_limit,
+      hashbeast_max_genesis_mints_per_faction:
+        deployment.hashbeast_mint_config_initialized?.max_genesis_mints_per_faction,
 
       // ========== TAX CONFIG ==========
       tax_config_pda: deployment.tax_config_initialized?.tax_config_pda,
@@ -193,7 +192,7 @@ function generateWebsiteConfig(config, deployment) {
             ticket_value: tier.ticket_value,
           })
         ) ||
-        config.doges_config?.ticket_tiers ||
+        config.hashbeasts_config?.ticket_tiers ||
         [],
 
       // ========== FACTION CONFIGURATION ==========
@@ -285,7 +284,7 @@ function main() {
       `  🔗 MineBTC Program: ${websiteConfig[cluster].MINE_BTC_PROGRAM_ID}`
     );
     console.log(
-      `  🪙 DOGE_BTC Token: ${websiteConfig[cluster].dbtc_mintAddress}`
+      `  🪙 DEGEN_BTC Token: ${websiteConfig[cluster].dbtc_mintAddress}`
     );
     console.log(
       `  🏊 Raydium Pool: ${websiteConfig[cluster].raydium_pool_state}`
@@ -301,8 +300,8 @@ function main() {
       }`
     );
     console.log(
-      `  🥚 Doge Collection: ${
-        websiteConfig[cluster].doge_collection || "Not created"
+      `  🥚 HashBeast Collection: ${
+        websiteConfig[cluster].hashbeast_collection || "Not created"
       }`
     );
     console.log(

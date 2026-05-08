@@ -8,15 +8,16 @@
         "paths": {
             "deployer_key": "../devnet-wallet-keypair.json",
             "minebtc_idl": "../target/idl/minebtc.json",
+            "degenbtc_market_idl": "../target/idl/degenbtc_market.json",
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
         "FEE_RECIPIENT_MULTISIG": "2FJysLPr83hcJ1nBhzBMjyF6HFhQrf6RptdnyAemUFiL"
     },
     "token": {
-        "name": "DogeWifBTC",
-        "symbol": "DogeBTC",
-        "description": "$DogeBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, trigger operator Doge story events, and climb the story-event leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
+        "name": "degenBTC",
+        "symbol": "dBTC",
+        "description": "$dBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, trigger operator-NFT story events, and climb the story-event leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
         "metadata_uri": "https://assets.minebtc.fun/btc",
         "image": "https://assets.minebtc.fun/btc-logo.png",
         "external_url": "https://minebtc.fun",
@@ -47,18 +48,23 @@
         "grid_max_width": 16,
         "grid_max_height": 12
     },
+    "marketplace": {
+        "_notes": "fee_bps_default applies to BOTH P2P listings and program (inventory) listings. Admin can change post-init via update_marketplace_config. min_price_lamports protects against fat-finger 0-price listings. crank_authority owns the inventory disposition cranker — separate from program admin so cranks can rotate independently.",
+        "fee_bps": 300,
+        "min_price_lamports": 10000000,
+        "crank_authority_pubkey_override": null
+    },
     "mining": {
         "start_timestamp": 0,
-        "doge_btc_per_round": 1000000000
+        "degen_btc_per_round": 1000000000
     },
-    "doges_config": {
-        "_supply_plan": "36K genesis mint cap via bonding curve (3000 per configured country, 12 countries), 100K lifetime Doge cap via breeding/admin/whitelist mints",
-        "_pricing_notes": "Genesis curve_a = 2_100_000 targets ~$7M raise at SOL=$82 (range 1.00→3.29 SOL across 36K mints, avg ~2.37 SOL). Breed curve_a = 200_000 keeps breed cost in 2.22→2.43 SOL range across the 64K breeding window (affordable steady state).",
+    "hashbeasts_config": {
+        "_supply_plan": "36K genesis mint cap via bonding curve (3000 per configured country, 12 countries). No lifetime supply cap — breeding is admin-gated and price-curved instead of hard-capped.",
+        "_pricing_notes": "Genesis curve_a = 2_100_000 targets ~$7M raise at SOL=$82 (range 1.00→3.29 SOL across 36K mints, avg ~2.37 SOL). Breeding uses max(curve, 1.5x floor anchor), paid 50% SOL / 50% degenBTC.",
         "base_price": 1000000000,
         "curve_a": 2100000,
         "genesis_mint_limit": 36000,
         "max_genesis_mints_per_faction": 3000,
-        "max_supply": 100000,
         "breeding_allowed": false,
         "breed_base_price": 2000000000,
         "breed_curve_a": 200000,
@@ -126,15 +132,14 @@
             "name": "Israel"
         }
     ],
-    "doges": {
-        "collection_name": "Bitcoin doges",
+    "hashbeasts": {
+        "collection_name": "Bitcoin hashbeasts",
         "collection_uri": "https://assets.minebtc.fun/collection"
     },
     "tax": {
-        "nft_floor_sweep_pct": 25,
+        "_notes": "Splits sum need not be 100; the residual (100 - faction_treasury - burn) flows back to the mining vault. NFT market making is now funded from SOL — see global sol_fee_config.nft_market_making_pct, default 3%.",
         "faction_treasury_pct": 25,
-        "burnt_pct": 50,
-        "nft_floor_sweep_whitelisted_address": "3tfDJza2xS5GWCE8yQ1dvRLrJ9AYDZCzkFz1jcBpiRC3"
+        "burnt_pct": 50
     },
     "game": {
         "round_duration_seconds": 60
@@ -153,7 +158,7 @@
         "faction_war_base_reward_bps": 7000,
         "faction_war_loyalty_reward_bps": 2000,
         "faction_war_mvp_reward_bps": 500,
-        "faction_war_doge_reward_bps": 500,
+        "faction_war_hashbeast_reward_bps": 500,
         "base_mutation_chance_bps": 2000,
         "mutation_chance_floor_bps": 25,
         "mutation_chance_cap_bps": 2500,

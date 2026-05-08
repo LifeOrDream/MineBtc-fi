@@ -15,16 +15,16 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // ## Tax Mechanics
 //
-// All dogeBTC transfers incur a 0.1% tax, split into:
+// All degenBTC transfers incur a 0.1% tax, split into:
 // - **Burn**: Reducing total supply (default 25%)
 // - **NFT Floor Sweep**: Funded for market-making (default 10%)
 // - **Faction Treasury**: Distributed to stakers via faction_war leaderboard (default 40%)
-// - **Back to Vault**: Recycled into mining emission pool (remainder)
+// - **Back to Vault**: Reborn into mining emission pool (remainder)
 //
 // ## Faction Treasury Distribution
 //
 // After each faction_war settles, `claim_faction_treasury_for_faction_war` distributes
-// the treasury vault based on story-event leaderboard rankings:
+// the treasury vault based on gameplay-score leaderboard rankings:
 // - 80% rank-weighted (higher rank = more reward, everyone gets something)
 // - 20% lucky draw (one random underdog faction from rank 5+)
 //
@@ -51,10 +51,10 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.start_timestamp = 0;
     faction_war_state.stage = 0;
     faction_war_state.active_faction_count = 0;
-    faction_war_state.total_dogebtc_mined_in_faction_war = 0;
+    faction_war_state.total_degenbtc_mined_in_faction_war = 0;
     faction_war_state.faction_war_mining_pool = 0;
-    faction_war_state.start_ranks = faction_war_config.prev_faction_war_mutation_ranks;
-    faction_war_state.final_ranks = faction_war_config.prev_faction_war_mutation_ranks;
+    faction_war_state.start_ranks = faction_war_config.prev_faction_war_ranks;
+    faction_war_state.final_ranks = faction_war_config.prev_faction_war_ranks;
     faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
     faction_war_state.resolved_directions =
         [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
@@ -62,17 +62,20 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.loyalty_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_mutation_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_sol_direction_totals =
+        [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+    faction_war_state.faction_gameplay_scores = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
     faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
-    faction_war_state.eligible_doge_direction_totals =
+    faction_war_state.eligible_hashbeast_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
     faction_war_state.treasury_claimed_bitmap = 0;
+    faction_war_state.sol_reward_pool = 0;
 }
 
 fn ensure_active_faction_war_treasury_bucket<'info>(
@@ -113,42 +116,37 @@ fn ensure_active_faction_war_treasury_bucket<'info>(
 // ============================= ADMIN FUNCTIONS ==========================================
 // ========================================================================================
 
-/// Initialize TaxConfig account and create vault token accounts
-/// Callable only by global config authority
+/// Initialize TaxConfig account and create vault token accounts.
+/// Callable only by global config authority.
+///
+/// NFT market making is no longer funded from this tax — it pulls SOL from
+/// the protocol's `distribute_sol_fees` flow instead. So tax splits are now:
+///   `faction_treasury_pct` + `burn_pct` + (residual → mining vault).
 pub fn internal_initialize_tax_config(
     ctx: Context<InitializeTaxConfig>,
-    nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
     burn_pct: u8,
-    nft_floor_sweep_whitelisted_address: Pubkey,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_initialize_tax_config");
     msg!("🔧 [initialize_tax_config] Initializing tax system");
 
-    let configured_pct_total = (nft_floor_sweep_pct as u64)
-        .checked_add(faction_treasury_pct as u64)
-        .and_then(|total| total.checked_add(burn_pct as u64))
+    let configured_pct_total = (faction_treasury_pct as u64)
+        .checked_add(burn_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(configured_pct_total <= M_HUNDRED, ErrorCode::InvalidAmount);
 
     let tax_config = &mut ctx.accounts.tax_config;
 
     tax_config.bump = ctx.bumps.tax_config;
-    tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
     tax_config.faction_treasury_pct = faction_treasury_pct;
     tax_config.burn_pct = burn_pct;
     tax_config.total_burnt = 0;
     tax_config.unassigned_faction_war_treasury_amount = 0;
 
-    // Store PDA addresses
     tax_config.withdraw_withheld_authority = ctx.accounts.withdraw_withheld_authority.key();
     tax_config.faction_treasury_vault = ctx.accounts.faction_treasury_vault.key();
-    tax_config.nft_floor_sweep_vault = ctx.accounts.nft_floor_sweep_vault.key();
-    tax_config.nft_sale_sol_vault = ctx.accounts.nft_sale_sol_vault.key();
-    tax_config.nft_floor_sweep_whitelisted_address = nft_floor_sweep_whitelisted_address;
 
     msg!("   ✅ TaxConfig initialized");
-    msg!("   NFT Floor Sweep: {}%", nft_floor_sweep_pct);
     msg!("   Faction Treasury: {}%", faction_treasury_pct);
     msg!("   Burn: {}%", burn_pct);
     let vault_pct = u8::try_from(M_HUNDRED - configured_pct_total)
@@ -162,14 +160,6 @@ pub fn internal_initialize_tax_config(
         "   Faction Treasury Vault: {}",
         tax_config.faction_treasury_vault
     );
-    msg!(
-        "   NFT Floor Sweep Vault: {}",
-        tax_config.nft_floor_sweep_vault
-    );
-    msg!(
-        "   NFT Floor Sweep Whitelisted Address: {}",
-        nft_floor_sweep_whitelisted_address
-    );
 
     Ok(())
 }
@@ -178,119 +168,29 @@ pub fn internal_initialize_tax_config(
 /// Callable only by global config authority
 pub fn internal_update_tax_config(
     ctx: Context<UpdateTaxConfig>,
-    nft_floor_sweep_pct: u8,
     faction_treasury_pct: u8,
     burn_pct: u8,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_update_tax_config");
     msg!("🔧 [update_tax_config] Updating tax distribution percentages");
 
-    let configured_pct_total = (nft_floor_sweep_pct as u64)
-        .checked_add(faction_treasury_pct as u64)
-        .and_then(|total| total.checked_add(burn_pct as u64))
+    let configured_pct_total = (faction_treasury_pct as u64)
+        .checked_add(burn_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(configured_pct_total <= M_HUNDRED, ErrorCode::InvalidAmount);
 
     let tax_config = &mut ctx.accounts.tax_config;
-    tax_config.nft_floor_sweep_pct = nft_floor_sweep_pct;
     tax_config.faction_treasury_pct = faction_treasury_pct;
     tax_config.burn_pct = burn_pct;
 
     msg!("   ✅ TaxConfig updated");
     msg!(
-        "   NFT Floor Sweep: {}%, Faction Treasury: {}%, Burn: {}%",
-        nft_floor_sweep_pct,
+        "   Faction Treasury: {}%, Burn: {}%",
         faction_treasury_pct,
         burn_pct
     );
-    let vault_pct = M_HUNDRED as u8 - nft_floor_sweep_pct - faction_treasury_pct - burn_pct;
+    let vault_pct = M_HUNDRED as u8 - faction_treasury_pct - burn_pct;
     msg!("   Back to Vault: {}%", vault_pct);
-
-    Ok(())
-}
-
-/// Update NFT floor sweep whitelisted address
-/// Callable only by global config authority
-pub fn internal_update_nft_floor_sweep_whitelist(
-    ctx: Context<UpdateNftFloorSweepWhitelist>,
-    new_whitelisted_address: Pubkey,
-) -> Result<()> {
-    crate::log_fn!("tax", "internal_update_nft_floor_sweep_whitelist");
-    msg!("🔧 [update_nft_floor_sweep_whitelist] Updating whitelisted address");
-
-    let tax_config = &mut ctx.accounts.tax_config;
-    tax_config.nft_floor_sweep_whitelisted_address = new_whitelisted_address;
-
-    msg!(
-        "   ✅ Whitelisted address updated: {}",
-        new_whitelisted_address
-    );
-
-    Ok(())
-}
-
-/// Withdraw MineBtc from NFT floor sweep vault
-/// Callable only by the whitelisted address
-/// The whitelisted address will use this MineBtc to swap for SOL off-chain,
-/// buy NFTs, re-list them at 1.2x, and transfer SOL proceeds to SOL treasury
-pub fn internal_withdraw_nft_floor_sweep_funds(
-    ctx: Context<WithdrawNftFloorSweepFunds>,
-    amount: u64,
-) -> Result<()> {
-    crate::log_fn!("tax", "internal_withdraw_nft_floor_sweep_funds");
-    msg!(
-        "💰 [withdraw_nft_floor_sweep_funds] Withdrawing {} MineBtc",
-        amount
-    );
-
-    let tax_config = &ctx.accounts.tax_config;
-    let whitelisted_address = &ctx.accounts.whitelisted_address;
-
-    // Verify caller is the whitelisted address
-    require!(
-        tax_config.nft_floor_sweep_whitelisted_address == whitelisted_address.key(),
-        ErrorCode::Unauthorized
-    );
-
-    // Verify vault has sufficient balance
-    let vault_balance = ctx.accounts.nft_floor_sweep_vault.amount;
-    require!(vault_balance >= amount, ErrorCode::InsufficientFunds);
-
-    // Transfer MineBtc from vault to whitelisted address's token account
-    let withdraw_authority_bump = ctx.bumps.withdraw_withheld_authority;
-    let withdraw_authority_seeds = &[
-        WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref(),
-        &[withdraw_authority_bump],
-    ];
-    let withdraw_authority_signer = &[&withdraw_authority_seeds[..]];
-
-    token_2022::transfer_checked(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program_2022.to_account_info(),
-            TransferChecked {
-                from: ctx.accounts.nft_floor_sweep_vault.to_account_info(),
-                mint: ctx.accounts.minebtc_mint.to_account_info(),
-                to: ctx.accounts.whitelisted_token_account.to_account_info(),
-                authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
-            },
-            withdraw_authority_signer,
-        ),
-        amount,
-        ctx.accounts.minebtc_mint.decimals,
-    )?;
-
-    msg!(
-        "   ✅ Transferred {} MineBtc to whitelisted address {}",
-        amount,
-        whitelisted_address.key()
-    );
-
-    emit!(NftFloorSweepFundsWithdrawn {
-        whitelisted_address: whitelisted_address.key(),
-        amount,
-        nft_floor_sweep_vault: ctx.accounts.nft_floor_sweep_vault.key(),
-        timestamp: Clock::get()?.unix_timestamp,
-    });
 
     Ok(())
 }
@@ -358,6 +258,17 @@ fn init_or_load_tax_faction_war_state<'info>(
         faction_war_id_bytes.as_ref(),
         faction_war_state_bump_seed.as_ref(),
     ];
+    // Explicit PDA-address check covers the already-initialized branch (the
+    // helper's `create_account` only validates seeds during creation; an
+    // attacker passing a pre-existing fake account would otherwise slip
+    // through).
+    let expected = Pubkey::create_program_address(faction_war_state_seeds, &crate::ID)
+        .map_err(|_| ErrorCode::InvalidAccount)?;
+    require_keys_eq!(
+        faction_war_state_info.key(),
+        expected,
+        ErrorCode::InvalidAccount
+    );
     let created = helper::init_pda_account_zeroed_if_needed::<FactionWarState>(
         payer,
         faction_war_state_info,
@@ -468,12 +379,6 @@ pub fn internal_crank_distribute_tax<'info>(
         accounts.faction_war_config.current_faction_war_id == faction_war_id,
         ErrorCode::InvalidParameters
     );
-    let nft_floor_sweep_amount = u64::try_from(helper::mul_div(
-        withheld_amount,
-        tax_config.nft_floor_sweep_pct as u64,
-        M_HUNDRED,
-    )?)
-    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
     let faction_treasury_amount = u64::try_from(helper::mul_div(
         withheld_amount,
         tax_config.faction_treasury_pct as u64,
@@ -486,19 +391,14 @@ pub fn internal_crank_distribute_tax<'info>(
         M_HUNDRED,
     )?)
     .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-    // Remainder goes back to the minebtc vault
+    // Remainder goes back to the minebtc vault (was previously also reduced by
+    // the NFT floor sweep cut; that cut is gone — vault now absorbs that share).
     let vault_return = withheld_amount
-        .checked_sub(nft_floor_sweep_amount)
-        .and_then(|remaining| remaining.checked_sub(faction_treasury_amount))
+        .checked_sub(faction_treasury_amount)
         .and_then(|remaining| remaining.checked_sub(burn_amount))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("   Splitting {} tokens:", (withheld_amount as f64) / 1e6);
-    msg!(
-        "   - NFT Floor Sweep: {} ({}%)",
-        (nft_floor_sweep_amount as f64) / 1e6,
-        tax_config.nft_floor_sweep_pct
-    );
     msg!(
         "   - Faction Treasury: {} ({}%)",
         (faction_treasury_amount as f64) / 1e6,
@@ -512,28 +412,6 @@ pub fn internal_crank_distribute_tax<'info>(
     msg!("   - Back to Vault: {}", (vault_return as f64) / 1e6);
 
     // 4. Distribute the funds (all signed by the same PDA)
-
-    // Transfer to NFT floor sweep
-    if nft_floor_sweep_amount > 0 {
-        token_2022::transfer_checked(
-            CpiContext::new_with_signer(
-                accounts.token_program_2022.to_account_info(),
-                TransferChecked {
-                    from: accounts.withdraw_authority_token_account.to_account_info(),
-                    mint: accounts.minebtc_mint.to_account_info(),
-                    to: accounts.nft_floor_sweep_vault.to_account_info(),
-                    authority: accounts.withdraw_withheld_authority.to_account_info(),
-                },
-                withdraw_authority_signer,
-            ),
-            nft_floor_sweep_amount,
-            accounts.minebtc_mint.decimals,
-        )?;
-        msg!(
-            "   ✅ Transferred {} tokens to NFT floor sweep vault",
-            (nft_floor_sweep_amount as f64) / 1e6
-        );
-    }
 
     // Transfer to faction treasury
     if faction_treasury_amount > 0 {
@@ -618,7 +496,7 @@ pub fn internal_crank_distribute_tax<'info>(
                 .checked_add(faction_treasury_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "   🏴 Attributed {} dogeBTC treasury tax to faction war {} (base now {})",
+                "   🏴 Attributed {} degenBTC treasury tax to faction war {} (base now {})",
                 (faction_treasury_amount as f64) / 1e6,
                 faction_war_state.faction_war_id,
                 (faction_war_state.treasury_reward_base_amount as f64) / 1e6
@@ -629,7 +507,7 @@ pub fn internal_crank_distribute_tax<'info>(
                 .checked_add(faction_treasury_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "   💤 Faction wars inactive; queued {} dogeBTC treasury tax for the next war (queued total {})",
+                "   💤 Faction wars inactive; queued {} degenBTC treasury tax for the next war (queued total {})",
                 (faction_treasury_amount as f64) / 1e6,
                 (tax_config.unassigned_faction_war_treasury_amount as f64) / 1e6
             );
@@ -640,7 +518,6 @@ pub fn internal_crank_distribute_tax<'info>(
     helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
     emit!(TaxDistributed {
         total_tax_amount: withheld_amount,
-        nft_floor_sweep_amount,
         faction_treasury_amount,
         burn_amount,
         total_burnt,
@@ -772,10 +649,10 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         return Ok(());
     }
 
-    // Split 50/50 between dogeBTC stakers and LP stakers
-    let dogebtc_active = fs.total_dogebtc_hashpower > 0;
+    // Split 50/50 between degenBTC stakers and LP stakers
+    let degenbtc_active = fs.total_degenbtc_hashpower > 0;
     let lp_active = fs.total_lp_hashpower > 0;
-    let (dbtc_share, lp_share) = match (dogebtc_active, lp_active) {
+    let (dbtc_share, lp_share) = match (degenbtc_active, lp_active) {
         (true, true) => {
             let half = reward_amount / 2;
             (half, reward_amount - half)
@@ -787,13 +664,13 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     let distributed = dbtc_share
         .checked_add(lp_share)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let recycled_amount = if dogebtc_active || lp_active {
+    let reborn_amount = if degenbtc_active || lp_active {
         0
     } else {
         reward_amount
     };
     let total_transfer = distributed
-        .checked_add(recycled_amount)
+        .checked_add(reborn_amount)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     if total_transfer > 0 {
@@ -820,27 +697,27 @@ pub fn internal_claim_faction_treasury_for_faction_war(
             ctx.accounts.minebtc_mint.decimals,
         )?;
         msg!(
-            "   ✅ Transferred {} dogeBTC from treasury (dbtc_stakers={}, lp_stakers={}, recycled={})",
+            "   ✅ Transferred {} degenBTC from treasury (dbtc_stakers={}, lp_stakers={}, reborn={})",
             total_transfer,
             dbtc_share,
             lp_share,
-            recycled_amount
+            reborn_amount
         );
     }
 
-    if dbtc_share > 0 && fs.total_dogebtc_hashpower > 0 {
-        fs.dogebtc_dogebtc_reward_index = fs
-            .dogebtc_dogebtc_reward_index
+    if dbtc_share > 0 && fs.total_degenbtc_hashpower > 0 {
+        fs.degenbtc_degenbtc_reward_index = fs
+            .degenbtc_degenbtc_reward_index
             .checked_add(helper::mul_div(
                 dbtc_share,
                 INDEX_PRECISION,
-                fs.total_dogebtc_hashpower,
+                fs.total_degenbtc_hashpower,
             )?)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if lp_share > 0 && fs.total_lp_hashpower > 0 {
-        fs.lp_dogebtc_reward_index = fs
-            .lp_dogebtc_reward_index
+        fs.lp_degenbtc_reward_index = fs
+            .lp_degenbtc_reward_index
             .checked_add(helper::mul_div(
                 lp_share,
                 INDEX_PRECISION,
@@ -858,7 +735,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         reward_amount,
         dbtc_share,
         lp_share,
-        recycled_amount,
+        reborn_amount,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -881,13 +758,6 @@ pub struct InitializeTaxConfig<'info> {
     #[account(init, payer = authority, token::mint = minebtc_mint, token::authority = withdraw_withheld_authority, token::token_program = token_program_2022, seeds = [FACTION_TREASURY_VAULT_SEED.as_ref()], bump)]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
-    #[account(init, payer = authority, token::mint = minebtc_mint, token::authority = withdraw_withheld_authority, token::token_program = token_program_2022, seeds = [NFT_FLOOR_SWEEP_VAULT_SEED.as_ref()], bump)]
-    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
-
-    /// CHECK: NFT sale SOL vault
-    #[account(init, payer = authority, space = 0, seeds = [NFT_SALE_SOL_VAULT_SEED.as_ref()], bump, owner = system_program.key())]
-    pub nft_sale_sol_vault: UncheckedAccount<'info>,
-
     pub minebtc_mint: InterfaceAccount<'info, Mint>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump, constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized)]
@@ -909,31 +779,6 @@ pub struct UpdateTaxConfig<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateNftFloorSweepWhitelist<'info> {
-    #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump, constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized)]
-    pub global_config: Account<'info, GlobalConfig>,
-    #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct WithdrawNftFloorSweepFunds<'info> {
-    #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
-    pub tax_config: Account<'info, TaxConfig>,
-    #[account(mut, constraint = nft_floor_sweep_vault.key() == tax_config.nft_floor_sweep_vault @ ErrorCode::InvalidAccount)]
-    pub nft_floor_sweep_vault: InterfaceAccount<'info, TokenAccount2022>,
-    /// CHECK: withdraw authority PDA
-    #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
-    pub withdraw_withheld_authority: AccountInfo<'info>,
-    #[account(mut)]
-    pub whitelisted_token_account: InterfaceAccount<'info, TokenAccount2022>,
-    pub minebtc_mint: InterfaceAccount<'info, Mint>,
-    pub whitelisted_address: Signer<'info>,
-    pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
-}
-
-#[derive(Accounts)]
 pub struct CrankHarvestFees<'info> {
     #[account(mut)]
     pub minebtc_mint: InterfaceAccount<'info, Mint>,
@@ -950,8 +795,6 @@ pub struct CrankDistributeTax<'info> {
     pub withdraw_withheld_authority: AccountInfo<'info>,
     #[account(mut, constraint = withdraw_authority_token_account.owner == withdraw_withheld_authority.key() @ ErrorCode::Unauthorized)]
     pub withdraw_authority_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
-    #[account(mut, constraint = nft_floor_sweep_vault.key() == tax_config.nft_floor_sweep_vault @ ErrorCode::InvalidAccount)]
-    pub nft_floor_sweep_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
     pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut)]
@@ -978,7 +821,7 @@ pub struct CrankDistributeTax<'info> {
 }
 
 /// Claim faction treasury rewards for a settled faction_war.
-/// Uses story-event leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
+/// Uses gameplay-score leaderboard (faction_war final_ranks) -- no separate leaderboard needed.
 #[derive(Accounts)]
 #[instruction(faction_war_id: u64)]
 pub struct ClaimFactionTreasuryForFactionWar<'info> {

@@ -44,7 +44,7 @@ if (fs.existsSync(deploymentPath)) {
 }
 
 // Get deployed addresses
-const DOGEBTC_TOKEN_MINT = deploymentFile.dbtc_mint_address
+const DEGENBTC_TOKEN_MINT = deploymentFile.dbtc_mint_address
   ? new PublicKey(deploymentFile.dbtc_mint_address)
   : null;
 
@@ -55,7 +55,7 @@ const ID_MineBTC_PROGRAM = deploymentFile.MINE_BTC_PROGRAM_ID
 // Mining configuration
 const MINING_START_TIMESTAMP =
   config.mining.start_timestamp || Math.floor(Date.now() / 1000);
-const MINING_DOGE_BTC_PER_SLOT = new BN(config.mining.doge_btc_per_round);
+const MINING_DEGEN_BTC_PER_SLOT = new BN(config.mining.degen_btc_per_round);
 
 // Keep these explicit in setup so fresh deployments don't silently depend on
 // whatever the contract default happened to be at compile time.
@@ -81,8 +81,8 @@ const GAMEPLAY_TUNING_CONFIG = {
     config.gameplay_tuning?.faction_war_loyalty_reward_bps ?? 2000,
   factionWarMvpRewardBps:
     config.gameplay_tuning?.faction_war_mvp_reward_bps ?? 500,
-  factionWarDogeRewardBps:
-    config.gameplay_tuning?.faction_war_doge_reward_bps ?? 500,
+  factionWarHashBeastRewardBps:
+    config.gameplay_tuning?.faction_war_hashbeast_reward_bps ?? 500,
   baseMutationChanceBps:
     config.gameplay_tuning?.base_mutation_chance_bps ?? 2000,
   mutationChanceFloorBps:
@@ -116,9 +116,6 @@ const LIVE_FEE_CONFIG = {
   newMinebtcJackpotPct: 5,
   newHodlTaxPct: 10,
   snapshotInterval: 5 * 60,
-  // Referrer's cut of the SOL protocol fee. Hard-capped at 10% by the program.
-  newReferralFeePct: 5,             // cross-country recruits
-  newSameFactionReferralFeePct: 10, // same-country recruits (loyalty bonus)
   // Cycle SOL split: % of user bet reserved for faction-war jackpot (taken from gross bet, in addition to protocol fee)
   newCycleSolSplitPct: 5,
 };
@@ -129,6 +126,35 @@ const IDL_MineBTC = JSON.parse(
     path.resolve(__dirname, config.deployment.paths.minebtc_idl),
     "utf-8"
   )
+);
+
+// Load DegenBTC Marketplace IDL (optional — only required once the marketplace
+// is being initialized; init steps below skip themselves if the IDL is absent
+// so the script still works on early-stage deployments that haven't built it).
+let IDL_DegenBtcMarket = null;
+try {
+  const marketIdlPath = config.deployment.paths.degenbtc_market_idl;
+  if (marketIdlPath) {
+    IDL_DegenBtcMarket = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, marketIdlPath), "utf-8"),
+    );
+  }
+} catch (e) {
+  // Defer the warning to when the marketplace init step actually runs.
+  IDL_DegenBtcMarket = null;
+}
+
+const DEGENBTC_MARKET_PROGRAM_ID = deploymentFile.DEGENBTC_MARKET_PROGRAM_ID
+  ? new PublicKey(deploymentFile.DEGENBTC_MARKET_PROGRAM_ID)
+  : null;
+
+const MARKETPLACE_CONFIG = {
+  feeBps: config.marketplace?.fee_bps ?? 300,
+  minPriceLamports: new BN(config.marketplace?.min_price_lamports ?? 10_000_000),
+};
+
+const MPL_CORE_PROGRAM_ID = new PublicKey(
+  "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
 );
 
 // Solana Connection
@@ -224,25 +250,20 @@ async function validateInitializationConfig() {
   const tokenMetadataUri =
     config.token.metadata_uri || config.token.uri || config.token.image;
   new URL(tokenMetadataUri);
-  new URL(config.doges.collection_uri);
+  new URL(config.hashbeasts.collection_uri);
   await fetchJsonMetadata(tokenMetadataUri, "Token", ["name", "symbol", "image"]);
-  await fetchJsonMetadata(config.doges.collection_uri, "Doge collection", [
+  await fetchJsonMetadata(config.hashbeasts.collection_uri, "HashBeast collection", [
     "name",
     "image",
   ]);
 
-  const dogesCfg = config.doges_config;
-  if (dogesCfg.genesis_mint_limit > dogesCfg.max_supply) {
-    throw new Error(
-      `genesis_mint_limit (${dogesCfg.genesis_mint_limit}) cannot exceed max_supply (${dogesCfg.max_supply})`
-    );
-  }
+  const hashbeastsCfg = config.hashbeasts_config;
   const expectedPerFactionCap = Math.floor(
-    dogesCfg.genesis_mint_limit / config.factions.length
+    hashbeastsCfg.genesis_mint_limit / config.factions.length
   );
-  if (dogesCfg.max_genesis_mints_per_faction !== expectedPerFactionCap) {
+  if (hashbeastsCfg.max_genesis_mints_per_faction !== expectedPerFactionCap) {
     throw new Error(
-      `max_genesis_mints_per_faction should be ${expectedPerFactionCap} for ${config.factions.length} factions and ${dogesCfg.genesis_mint_limit} genesis mints`
+      `max_genesis_mints_per_faction should be ${expectedPerFactionCap} for ${config.factions.length} factions and ${hashbeastsCfg.genesis_mint_limit} genesis mints`
     );
   }
 
@@ -259,9 +280,9 @@ async function validateInitializationConfig() {
     GAMEPLAY_TUNING_CONFIG.factionWarBaseRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarLoyaltyRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarMvpRewardBps +
-    GAMEPLAY_TUNING_CONFIG.factionWarDogeRewardBps;
+    GAMEPLAY_TUNING_CONFIG.factionWarHashBeastRewardBps;
   if (gameplayRewardTotal !== 10_000) {
-    throw new Error(`Faction-war reward bps (base+loyalty+mvp+doge) must equal 10000, got ${gameplayRewardTotal}`);
+    throw new Error(`Faction-war reward bps (base+loyalty+mvp+hashbeast) must equal 10000, got ${gameplayRewardTotal}`);
   }
 
   if (config.hashpower.base_multiplier !== 100 || config.hashpower.max_multiplier !== 300) {
@@ -322,16 +343,16 @@ async function getSolanaBalance(pubkey) {
 }
 
 // Epoch / index / oracle scaffolding was removed when the contract moved to
-// mutation-driven faction-war cycles. The faction-war system has no initial scores,
-// no question hash, and no oracle authority — settlement is driven entirely
-// by on-chain mutation scores and the LP-burn cycle count. No helper needed.
+// gameplay-score-driven faction-war cycles. The faction-war system has no initial
+// scores, no question hash, and no oracle authority — settlement is driven entirely
+// by on-chain gameplay scores and the LP-burn cycle count. No helper needed.
 
 // ==================== [ MAIN SCRIPT ] ====================
 
 async function main() {
   console.log(
     COLOR_STEP,
-    "🚀 ================================ DogeTech Faction Surge Initialization ================================"
+    "🚀 ================================ MineBTC Faction Surge Initialization ================================"
   );
   console.log(
     COLOR_INFO,
@@ -347,12 +368,12 @@ async function main() {
   printFeeEconomicsSummary();
 
     // Verify prerequisites
-  if (!DOGEBTC_TOKEN_MINT) {
+  if (!DEGENBTC_TOKEN_MINT) {
     console.error(
       COLOR_ERROR,
-      "❌ DOGE_BTC token mint address not found in deployment file."
+      "❌ DEGEN_BTC token mint address not found in deployment file."
     );
-    console.log(COLOR_WARNING, "⚠️ Please run 1_init_mdoge_token.js first.");
+    console.log(COLOR_WARNING, "⚠️ Please run 1_init_degenbtc_token.js first.");
         return;
     }
 
@@ -376,8 +397,8 @@ async function main() {
   );
   console.log(
     COLOR_INFO,
-    "🪙 DOGE_BTC Token Mint:",
-    DOGEBTC_TOKEN_MINT.toString()
+    "🪙 DEGEN_BTC Token Mint:",
+    DEGENBTC_TOKEN_MINT.toString()
   );
 
   const minebtcProgram = new Program(IDL_MineBTC, provider);
@@ -423,7 +444,7 @@ async function main() {
     // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
     //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
-    //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending dogeBTC claims pool with HODL tax redistribution
+    //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending degenBTC claims pool with HODL tax redistribution
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
     // Params: fee_recipient (Pubkey) — initial fee recipient address
@@ -463,7 +484,7 @@ async function main() {
     //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
     //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
     //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
-    //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on dogeBTC withdrawal (paper hands → diamond hands)
+    //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on degenBTC withdrawal (paper hands → diamond hands)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
@@ -494,7 +515,7 @@ async function main() {
     // 7. Initialize Hashpower Config
     // Instruction: initialize_hashpower_config(min_lockup_days: u64, max_lockup_days: u64, base_multiplier: u16, max_multiplier: u16)
     // Creates HashpowerConfig PDA [seeds: "hashpower-config"] with lockup duration.
-    // Lockup can add up to 3x; passive Doge staking can add up to 3x, so max staking boost is 9x.
+    // Lockup can add up to 3x; passive HashBeast staking can add up to 3x, so max staking boost is 9x.
     // Accounts: globalConfig, hashpowerConfig, authority, systemProgram
     await initializeHashpowerConfig(minebtcProgram);
 
@@ -510,47 +531,47 @@ async function main() {
     //           systemProgram, token2022Program, tokenProgram, rent
     await initializeCustodianAccounts(minebtcProgram);
 
-    // 9. Initialize DogeConfig
-    // Instruction: initialize_doge_config(max_supply: u64)
-    // Creates DogeConfig PDA [seeds: "doge-config"] with collection, lifetime supply, and breeding state.
-    // Accounts: dogesConfig, globalConfig, authority, systemProgram
-    await initializeDogeConfig(minebtcProgram);
+    // 9. Initialize HashBeastConfig
+    // Instruction: initialize_hashbeast_config()  (no params — no lifetime supply cap)
+    // Creates HashBeastConfig PDA [seeds: "hashbeast-config"] with collection + breeding state.
+    // Accounts: hashbeastsConfig, globalConfig, authority, systemProgram
+    await initializeHashBeastConfig(minebtcProgram);
 
     // 9a. Seed breeding config (breeding stays disabled at launch but params
     //     come from config.json so flipping breeding on later via governance
     //     uses the correct curve, not the contract's hardcoded zero defaults).
     // Instruction: update_breeding_config(breeding_allowed, breed_base_price, breed_curve_a)
-    // Accounts: globalConfig, dogesConfig, authority, systemProgram
+    // Accounts: globalConfig, hashbeastsConfig, authority, systemProgram
     await seedBreedingConfig(minebtcProgram);
 
-    // 9b. Initialize DogeMintConfig
-    // Instruction: initialize_doge_mint_config(base_price, curve_a, genesis_mint_limit, max_genesis_mints_per_faction)
-    // Creates mint-only PDA [seeds: "doge-mint-config"] for genesis sale curve, ticket tiers, and per-country caps.
-    // Accounts: dogeMintConfig, globalConfig, authority, systemProgram
-    await initializeDogeMintConfig(minebtcProgram);
+    // 9b. Initialize HashBeastMintConfig
+    // Instruction: initialize_hashbeast_mint_config(base_price, curve_a, genesis_mint_limit, max_genesis_mints_per_faction)
+    // Creates mint-only PDA [seeds: "hashbeast-mint-config"] for genesis sale curve, ticket tiers, and per-country caps.
+    // Accounts: hashbeastMintConfig, globalConfig, authority, systemProgram
+    await initializeHashBeastMintConfig(minebtcProgram);
 
-    // 10. Create Doge Collection (Metaplex Core)
-    // Instruction: create_doge_collection(name: String, uri: String)
+    // 10. Create HashBeast Collection (Metaplex Core)
+    // Instruction: create_hashbeast_collection(name: String, uri: String)
     // Creates a Metaplex Core NFT collection with PDA as update authority
     // CollectionAuthority PDA [seeds: "collection_authority"] becomes the update authority
-    // Accounts: authority, globalConfig, dogesConfig, collection (signer keypair),
+    // Accounts: authority, globalConfig, hashbeastsConfig, collection (signer keypair),
     //           collectionAuthority, mplCoreProgram, systemProgram
-    await createDogeCollection(minebtcProgram);
+    await createHashBeastCollection(minebtcProgram);
 
-    // 11. Initialize Doge Royalties
-    // Instruction: init_doge_royalties(basis_points: u16, creators: Vec<CreatorInput>)
+    // 11. Initialize HashBeast Royalties
+    // Instruction: init_hashbeast_royalties(basis_points: u16, creators: Vec<CreatorInput>)
     // Sets royalty config on the Metaplex Core collection (e.g. 5% split between multisig + treasury)
-    // Accounts: authority, globalConfig, dogesConfig, collection, collectionAuthority, mplCoreProgram, systemProgram
-    await initializeDogeRoyalties(minebtcProgram);
+    // Accounts: authority, globalConfig, hashbeastsConfig, collection, collectionAuthority, mplCoreProgram, systemProgram
+    await initializeHashBeastRoyalties(minebtcProgram);
 
-    // 12. Configure Ticket Tiers (for Doge minting)
+    // 12. Configure Ticket Tiers (for HashBeast minting)
     // Instruction: add_ticket_tier_config(ticket_tier_index: u8, ticket_value: u64)
-    // Adds/updates a ticket tier in DogeMintConfig (max 3 tiers)
-    // Accounts: globalConfig, dogeMintConfig, authority, systemProgram
+    // Adds/updates a ticket tier in HashBeastMintConfig (max 3 tiers)
+    // Accounts: globalConfig, hashbeastMintConfig, authority, systemProgram
     await configureTicketTiers(minebtcProgram);
 
     // 13. Initialize Tax Config (for tax distribution)
-    // Instruction: initialize_tax_config(nft_floor_sweep_pct: u8, faction_treasury_pct: u8, burn_pct: u8, nft_floor_sweep_whitelisted_address: Pubkey)
+    // Instruction: initialize_tax_config(faction_treasury_pct: u8, burn_pct: u8)
     // Creates TaxConfig PDA [seeds: "tax-config"] and associated vaults:
     //   - WithdrawWithheldAuthority [seeds: "withdraw-withheld-authority"] — 0-byte signer PDA
     //   - FactionTreasuryVault      [seeds: "faction-treasury-vault"]      — Token-2022 vault
@@ -590,13 +611,6 @@ async function main() {
     // return;
 
 
-    // // 1.7. Update Doge Config (if needed - can be called anytime after initialization)
-    // // Example usage:
-    // await updateDogeConfig(minebtcProgram, {
-    //     maxSupply: 100000,
-    // });
-    // return;
- 
 
 
 
@@ -631,12 +645,38 @@ async function main() {
     // Sets the live mutation engine + cycle reward split in one payload:
     //   - enable RPG progression
     //   - evolution unlock stage
-    //   - cycle reward split (base / loyalty / doge)
+    //   - cycle reward split (base / loyalty / hashbeast)
     //   - mutation chance bounds
     //   - volume gates
     //   - global cooldown / pacing controls
     // Accounts: globalConfig, authority
     await updateGameplayTuning(minebtcProgram, GAMEPLAY_TUNING_CONFIG);
+
+    // 20. Initialize DegenBTC Marketplace (standalone program — reborn NFT
+    //     listings + P2P trades with 3% fee). Idempotent: skips if config already
+    //     exists on-chain.
+    // Instruction: degenbtc_market::initialize_marketplace(fee_bps, fee_recipient,
+    //     min_price_lamports, mpl_core_program)
+    // PDAs: marketplace_config [seeds: "marketplace-config", collection_mint]
+    await initializeDegenBtcMarketplace(minebtcProgram);
+
+    // 21. Initialize Inventory Pool + Floor Queue + Sale History + Floor
+    //     History + Sweep Vault inside the mineBTC program. Caches the
+    //     marketplace program + config pubkeys so CPI helpers can validate
+    //     them. The system is fully permissionless — no crank authority.
+    // Instruction: mineBTC::init_inventory_pool(marketplace_program, marketplace_config)
+    // PDAs: inventory_pool ["inventory-pool"], floor_queue ["floor-queue"],
+    //       sale_history ["sale-history"], floor_history ["floor-history"],
+    //       inventory_sweep_vault ["inventory-sweep-vault"]
+    await initializeInventoryPool(minebtcProgram);
+
+    // 22. Initialize per-country LootboxQueue PDAs. One PDA per active
+    //     faction. rebirth_hashbeast / sweep_floor_lowest push assets into
+    //     the matching country's queue; losing players roll for slots from
+    //     it during round-claim.
+    // Instruction: mineBTC::init_lootbox_queue(faction_id)
+    // PDAs: lootbox_queue [seeds: "lootbox-queue", faction_id]
+    await initializeLootboxQueues(minebtcProgram);
 
     // Print completion summary
     printCompletionSummary();
@@ -702,7 +742,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
   );
   console.log(
     COLOR_INFO,
-    `🔑 DogeBtc Mining PDA: ${mineBtcMiningPDA.toString()}`
+    `🔑 DegenBtc Mining PDA: ${mineBtcMiningPDA.toString()}`
   );
     console.log(COLOR_INFO, `🔑 SOL Treasury PDA: ${solTreasuryPDA.toString()}`);
   console.log(
@@ -1129,7 +1169,7 @@ async function initializeMiningSystem(minebtcProgram) {
       COLOR_ERROR,
       "❌ Raydium pool state not found in deployment file."
     );
-    console.log(COLOR_WARNING, "⚠️ Please run 2_init_mdoge_SOL_pool.js first.");
+    console.log(COLOR_WARNING, "⚠️ Please run 2_init_degenbtc_SOL_pool.js first.");
         return;
     }
 
@@ -1151,7 +1191,7 @@ async function initializeMiningSystem(minebtcProgram) {
     console.log(COLOR_INFO, `⏰ Start Timestamp: ${MINING_START_TIMESTAMP}`);
   console.log(
     COLOR_INFO,
-    `💰 DogeBtc Per Slot: ${MINING_DOGE_BTC_PER_SLOT.toString()}`
+    `💰 DegenBtc Per Slot: ${MINING_DEGEN_BTC_PER_SLOT.toString()}`
   );
     console.log(COLOR_INFO, `🔄 Raydium Pool State: ${raydiumPoolState}`);
 
@@ -1159,7 +1199,7 @@ async function initializeMiningSystem(minebtcProgram) {
     const tx = await minebtcProgram.methods
             .initializeMining(
                 new BN(MINING_START_TIMESTAMP),
-                MINING_DOGE_BTC_PER_SLOT,
+                MINING_DEGEN_BTC_PER_SLOT,
                 new PublicKey(raydiumPoolState)
             )
             .accounts({
@@ -1167,7 +1207,7 @@ async function initializeMiningSystem(minebtcProgram) {
         mineBtcMining: mineBtcMiningPDA,
                 vaultAuthority: vaultAuthorityPDA,
                 tokenVault: vaultPDA,
-        tokenMint: DOGEBTC_TOKEN_MINT,
+        tokenMint: DEGENBTC_TOKEN_MINT,
                 tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
@@ -1182,7 +1222,7 @@ async function initializeMiningSystem(minebtcProgram) {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
             start_timestamp: MINING_START_TIMESTAMP,
-            doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
+            degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -1194,7 +1234,7 @@ async function initializeMiningSystem(minebtcProgram) {
                 vault_address: vaultPDA.toString(),
                 vault_authority: vaultAuthorityPDA.toString(),
                 start_timestamp: MINING_START_TIMESTAMP,
-                doge_btc_per_round: MINING_DOGE_BTC_PER_SLOT.toString(),
+                degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             };
             saveDeploymentData();
         } else {
@@ -1223,13 +1263,13 @@ async function depositMiningTokens(minebtcProgram) {
 
     // Get user's token account
     const userTokenAccount = await anchor_spl.getAssociatedTokenAddress(
-    DOGEBTC_TOKEN_MINT,
+    DEGENBTC_TOKEN_MINT,
         wallet.publicKey,
         false,
         anchor_spl.TOKEN_2022_PROGRAM_ID
     );
 
-  // Deposit whatever dogeBTC is left in the deployer wallet after the
+  // Deposit whatever degenBTC is left in the deployer wallet after the
   // pool seed + addInitialLiquidity steps. Hardcoding this amount used
   // to break whenever the LP-add proportional sizing changed.
   const depositorAcc = await anchor_spl.getAccount(
@@ -1242,7 +1282,7 @@ async function depositMiningTokens(minebtcProgram) {
 
   if (depositAmount.isZero()) {
     throw new Error(
-      `Depositor token account ${userTokenAccount.toString()} has 0 dogeBTC — pool/LP setup likely consumed the full mint.`
+      `Depositor token account ${userTokenAccount.toString()} has 0 degenBTC — pool/LP setup likely consumed the full mint.`
     );
   }
 
@@ -1261,7 +1301,7 @@ async function depositMiningTokens(minebtcProgram) {
                 depositorTokenAccount: userTokenAccount,
                 minebtcTokenVault: vaultPDA,
         mineBtcMining: mineBtcMiningPDA,
-        tokenMint: DOGEBTC_TOKEN_MINT,
+        tokenMint: DEGENBTC_TOKEN_MINT,
                 tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
             })
             .rpc();
@@ -1364,13 +1404,13 @@ async function initializeCustodianAccounts(minebtcProgram) {
   );
 
   // Verify prerequisites
-  if (!DOGEBTC_TOKEN_MINT) {
+  if (!DEGENBTC_TOKEN_MINT) {
     console.error(
       COLOR_ERROR,
-      "❌ DOGE_BTC token mint address not found in deployment file."
+      "❌ DEGEN_BTC token mint address not found in deployment file."
     );
     throw new Error(
-      "DOGE_BTC mint address required for custodian initialization"
+      "DEGEN_BTC mint address required for custodian initialization"
     );
   }
 
@@ -1379,14 +1419,14 @@ async function initializeCustodianAccounts(minebtcProgram) {
       COLOR_ERROR,
       "❌ LP mint address not found in deployment file."
     );
-    console.log(COLOR_WARNING, "⚠️ Please run 2_init_mdoge_SOL_pool.js first.");
+    console.log(COLOR_WARNING, "⚠️ Please run 2_init_degenbtc_SOL_pool.js first.");
     throw new Error("LP mint address required for custodian initialization");
   }
 
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const minebtcMint = DOGEBTC_TOKEN_MINT;
+  const minebtcMint = DEGENBTC_TOKEN_MINT;
   const lpMint = new PublicKey(deploymentFile.dbtc_sol_pool_created.lpMintPDA);
 
   // Derive DBTC custodian PDAs
@@ -1548,7 +1588,7 @@ async function setRaydiumPoolState(minebtcProgram) {
       COLOR_ERROR,
       "❌ Raydium pool state not found in deployment file."
     );
-    console.log(COLOR_WARNING, "⚠️ Please run 2_init_mdoge_SOL_pool.js first.");
+    console.log(COLOR_WARNING, "⚠️ Please run 2_init_degenbtc_SOL_pool.js first.");
         return;
     }
 
@@ -1565,6 +1605,10 @@ async function setRaydiumPoolState(minebtcProgram) {
 
   const [solPrizePotVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("jackpot-pot")],
+    minebtcProgram.programId
+  );
+  const [factionWarSolVaultPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("faction-war-sol-vault")],
     minebtcProgram.programId
   );
 
@@ -1588,6 +1632,7 @@ async function setRaydiumPoolState(minebtcProgram) {
                 globalConfig: globalConfigPDA,
         solRewardsVault: solRewardsVaultPDA,
         solPrizePotVault: solPrizePotVaultPDA,
+        factionWarSolVault: factionWarSolVaultPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
@@ -1596,6 +1641,7 @@ async function setRaydiumPoolState(minebtcProgram) {
     console.log(COLOR_SUCCESS, "✅ Raydium pool state set successfully!");
     console.log(COLOR_SUCCESS, "✅ SOL rewards vault initialized!");
     console.log(COLOR_SUCCESS, "✅ SOL prize pot vault initialized!");
+    console.log(COLOR_SUCCESS, "✅ Faction-war SOL vault derived!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
         deploymentFile.raydium_pool_state_set = {
@@ -1605,6 +1651,7 @@ async function setRaydiumPoolState(minebtcProgram) {
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
+    deploymentFile.faction_war_sol_vault_pda = factionWarSolVaultPDA.toString();
         saveDeploymentData();
     } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to set Raydium pool state:", error);
@@ -1612,66 +1659,61 @@ async function setRaydiumPoolState(minebtcProgram) {
     }
 }
 
-async function initializeDogeConfig(minebtcProgram) {
-    if (deploymentFile.doge_config_initialized) {
-    console.log(COLOR_INFO, "ℹ️ DogeConfig already initialized. Skipping...");
+async function initializeHashBeastConfig(minebtcProgram) {
+    if (deploymentFile.hashbeast_config_initialized) {
+    console.log(COLOR_INFO, "ℹ️ HashBeastConfig already initialized. Skipping...");
         return;
     }
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ INITIALIZING DOGE CONFIG ] ==================="
+    "\n=================== [ INITIALIZING HASHBEAST CONFIG ] ==================="
   );
 
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
+    const [hashbeastsConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-config")],
     minebtcProgram.programId
     );
 
-    const maxSupply = config.doges_config.max_supply;
-
-    if (!maxSupply) {
-    console.error(COLOR_ERROR, "❌ Doge config values not found in config.json");
-    throw new Error("Doge config values not found");
-    }
-
-    console.log(COLOR_INFO, `🔑 DogeConfig PDA: ${dogesConfigPDA.toString()}`);
-    console.log(COLOR_INFO, `🥚 Lifetime Max Supply: ${maxSupply}`);
+    console.log(COLOR_INFO, `🔑 HashBeastConfig PDA: ${hashbeastsConfigPDA.toString()}`);
+    console.log(
+      COLOR_INFO,
+      `🥚 No lifetime supply cap — only the genesis sale is bounded (HashBeastMintConfig)`
+    );
 
     try {
     const tx = await minebtcProgram.methods
-      .initializeDogeConfig(new BN(maxSupply))
+      .initializeHashBeastConfig()
             .accounts({
-                dogesConfig: dogesConfigPDA,
+                hashbeastsConfig: hashbeastsConfigPDA,
                 globalConfig: globalConfigPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
             .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ DogeConfig initialized successfully!");
+    console.log(COLOR_SUCCESS, "✅ HashBeastConfig initialized successfully!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-        deploymentFile.doge_config_initialized = {
-            doges_config_pda: dogesConfigPDA.toString(),
-            max_supply: maxSupply.toString(),
+        deploymentFile.hashbeast_config_initialized = {
+            hashbeasts_config_pda: hashbeastsConfigPDA.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
         saveDeploymentData();
     } catch (error) {
         if (error.toString().includes("already in use")) {
-      console.log(COLOR_INFO, "ℹ️ DogeConfig already initialized. Skipping...");
-            deploymentFile.doge_config_initialized = {
-                doges_config_pda: dogesConfigPDA.toString(),
+      console.log(COLOR_INFO, "ℹ️ HashBeastConfig already initialized. Skipping...");
+            deploymentFile.hashbeast_config_initialized = {
+                hashbeasts_config_pda: hashbeastsConfigPDA.toString(),
             };
             saveDeploymentData();
         } else {
-      console.error(COLOR_ERROR, "❌ Failed to initialize DogeConfig:", error);
+      console.error(COLOR_ERROR, "❌ Failed to initialize HashBeastConfig:", error);
             throw error;
         }
     }
@@ -1691,18 +1733,18 @@ async function seedBreedingConfig(minebtcProgram) {
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
-  const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
+  const [hashbeastsConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-config")],
     minebtcProgram.programId
   );
 
-  const breedingAllowed = !!config.doges_config.breeding_allowed;
-  const breedBasePrice = config.doges_config.breed_base_price;
-  const breedCurveA = config.doges_config.breed_curve_a;
+  const breedingAllowed = !!config.hashbeasts_config.breeding_allowed;
+  const breedBasePrice = config.hashbeasts_config.breed_base_price;
+  const breedCurveA = config.hashbeasts_config.breed_curve_a;
 
   if (breedBasePrice == null || breedCurveA == null) {
     throw new Error(
-      "config.doges_config.breed_base_price and breed_curve_a must be set"
+      "config.hashbeasts_config.breed_base_price and breed_curve_a must be set"
     );
   }
 
@@ -1724,7 +1766,7 @@ async function seedBreedingConfig(minebtcProgram) {
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        dogesConfig: dogesConfigPDA,
+        hashbeastsConfig: hashbeastsConfigPDA,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -1747,38 +1789,38 @@ async function seedBreedingConfig(minebtcProgram) {
   }
 }
 
-async function initializeDogeMintConfig(minebtcProgram) {
-  if (deploymentFile.doge_mint_config_initialized) {
-    console.log(COLOR_INFO, "ℹ️ DogeMintConfig already initialized. Skipping...");
+async function initializeHashBeastMintConfig(minebtcProgram) {
+  if (deploymentFile.hashbeast_mint_config_initialized) {
+    console.log(COLOR_INFO, "ℹ️ HashBeastMintConfig already initialized. Skipping...");
     return;
   }
 
   console.log(
     COLOR_STEP,
-    "\n================ [ INITIALIZING DOGE MINT CONFIG ] ================"
+    "\n================ [ INITIALIZING HASHBEAST MINT CONFIG ] ================"
   );
 
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-  const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-mint-config")],
+  const [hashbeastMintConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-mint-config")],
     minebtcProgram.programId
   );
 
-  const basePrice = config.doges_config.base_price;
-  const curveA = config.doges_config.curve_a;
-  const genesisMintLimit = config.doges_config.genesis_mint_limit;
+  const basePrice = config.hashbeasts_config.base_price;
+  const curveA = config.hashbeasts_config.curve_a;
+  const genesisMintLimit = config.hashbeasts_config.genesis_mint_limit;
   const maxGenesisMintsPerFaction =
-    config.doges_config.max_genesis_mints_per_faction ?? 1000;
+    config.hashbeasts_config.max_genesis_mints_per_faction ?? 1000;
 
   if (!basePrice || !curveA || !genesisMintLimit || !maxGenesisMintsPerFaction) {
-    console.error(COLOR_ERROR, "❌ Doge mint config values not found in config.json");
-    throw new Error("Doge mint config values not found");
+    console.error(COLOR_ERROR, "❌ HashBeast mint config values not found in config.json");
+    throw new Error("HashBeast mint config values not found");
   }
 
-  console.log(COLOR_INFO, `🔑 DogeMintConfig PDA: ${dogeMintConfigPDA.toString()}`);
+  console.log(COLOR_INFO, `🔑 HashBeastMintConfig PDA: ${hashbeastMintConfigPDA.toString()}`);
   console.log(COLOR_INFO, `💰 Genesis Base Price: ${basePrice / 1e9} SOL`);
   console.log(COLOR_INFO, `📈 Genesis Curve A: ${curveA}`);
   console.log(COLOR_INFO, `🥚 Genesis Mint Limit: ${genesisMintLimit}`);
@@ -1786,25 +1828,25 @@ async function initializeDogeMintConfig(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .initializeDogeMintConfig(
+      .initializeHashBeastMintConfig(
         new BN(basePrice),
         new BN(curveA),
         new BN(genesisMintLimit),
         maxGenesisMintsPerFaction
       )
       .accounts({
-        dogeMintConfig: dogeMintConfigPDA,
+        hashbeastMintConfig: hashbeastMintConfigPDA,
         globalConfig: globalConfigPDA,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ DogeMintConfig initialized successfully!");
+    console.log(COLOR_SUCCESS, "✅ HashBeastMintConfig initialized successfully!");
     console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-    deploymentFile.doge_mint_config_initialized = {
-      doge_mint_config_pda: dogeMintConfigPDA.toString(),
+    deploymentFile.hashbeast_mint_config_initialized = {
+      hashbeast_mint_config_pda: hashbeastMintConfigPDA.toString(),
       base_price: basePrice.toString(),
       curve_a: curveA.toString(),
       genesis_mint_limit: genesisMintLimit.toString(),
@@ -1815,32 +1857,32 @@ async function initializeDogeMintConfig(minebtcProgram) {
     saveDeploymentData();
   } catch (error) {
     if (error.toString().includes("already in use")) {
-      console.log(COLOR_INFO, "ℹ️ DogeMintConfig already initialized. Skipping...");
-      deploymentFile.doge_mint_config_initialized = {
-        doge_mint_config_pda: dogeMintConfigPDA.toString(),
+      console.log(COLOR_INFO, "ℹ️ HashBeastMintConfig already initialized. Skipping...");
+      deploymentFile.hashbeast_mint_config_initialized = {
+        hashbeast_mint_config_pda: hashbeastMintConfigPDA.toString(),
       };
       saveDeploymentData();
     } else {
-      console.error(COLOR_ERROR, "❌ Failed to initialize DogeMintConfig:", error);
+      console.error(COLOR_ERROR, "❌ Failed to initialize HashBeastMintConfig:", error);
       throw error;
     }
   }
 }
 
-async function createDogeCollection(minebtcProgram) {
-    if (deploymentFile.doge_collection_created) {
-    console.log(COLOR_INFO, "ℹ️ Doge collection already created");
+async function createHashBeastCollection(minebtcProgram) {
+    if (deploymentFile.hashbeast_collection_created) {
+    console.log(COLOR_INFO, "ℹ️ HashBeast collection already created");
     console.log(
       COLOR_INFO,
       "🔑 Collection Address:",
-      deploymentFile.doge_collection_created.collection_address
+      deploymentFile.hashbeast_collection_created.collection_address
     );
         return;
     }
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ CREATING  DOGE COLLECTION ] ==================="
+    "\n=================== [ CREATING  HASHBEAST COLLECTION ] ==================="
   );
 
     // Derive PDAs
@@ -1849,13 +1891,13 @@ async function createDogeCollection(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
+    const [hashbeastsConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-config")],
     minebtcProgram.programId
     );
 
-    const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-mint-config")],
+    const [hashbeastMintConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-mint-config")],
     minebtcProgram.programId
     );
 
@@ -1865,8 +1907,8 @@ async function createDogeCollection(minebtcProgram) {
     );
 
   console.log(COLOR_INFO, "🎨 Creating Metaplex Core collection...");
-    console.log(COLOR_DIM, `   Name: ${config.doges.collection_name}`);
-    console.log(COLOR_DIM, `   URI: ${config.doges.collection_uri}`);
+    console.log(COLOR_DIM, `   Name: ${config.hashbeasts.collection_name}`);
+    console.log(COLOR_DIM, `   URI: ${config.hashbeasts.collection_uri}`);
   console.log(
     COLOR_INFO,
     "🔐 Collection Authority PDA:",
@@ -1878,14 +1920,14 @@ async function createDogeCollection(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-            .createDogeCollection(
-                config.doges.collection_name,
-                config.doges.collection_uri
+            .createHashBeastCollection(
+                config.hashbeasts.collection_name,
+                config.hashbeasts.collection_uri
             )
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
-                dogesConfig: dogesConfigPDA,
+                hashbeastsConfig: hashbeastsConfigPDA,
                 collection: collectionKeypair.publicKey,
                 collectionAuthority: collectionAuthorityPDA,
         mplCoreProgram: new PublicKey(
@@ -1900,7 +1942,7 @@ async function createDogeCollection(minebtcProgram) {
 
     console.log(
       COLOR_SUCCESS,
-      "✅ Doge collection created successfully!"
+      "✅ HashBeast collection created successfully!"
     );
     console.log(
       COLOR_INFO,
@@ -1913,10 +1955,10 @@ async function createDogeCollection(minebtcProgram) {
       `🔍 Explorer: https://explorer.solana.com/address/${collectionPubkey.toString()}?cluster=${CLUSTER}`
     );
 
-        deploymentFile.doge_collection_created = {
+        deploymentFile.hashbeast_collection_created = {
             collection_address: collectionPubkey.toString(),
-            collection_name: config.doges.collection_name,
-            collection_uri: config.doges.collection_uri,
+            collection_name: config.hashbeasts.collection_name,
+            collection_uri: config.hashbeasts.collection_uri,
       collection_authority: collectionAuthorityPDA.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1929,29 +1971,29 @@ async function createDogeCollection(minebtcProgram) {
 }
 
 
-async function initializeDogeRoyalties(minebtcProgram) {
-    if (deploymentFile.doge_royalties_initialized) {
+async function initializeHashBeastRoyalties(minebtcProgram) {
+    if (deploymentFile.hashbeast_royalties_initialized) {
     console.log(
       COLOR_INFO,
-      "ℹ️ Doge royalties already initialized. Skipping..."
+      "ℹ️ HashBeast royalties already initialized. Skipping..."
     );
         return;
     }
 
   console.log(
     COLOR_STEP,
-    "\n=================== [ INITIALIZING  DOGE ROYALTIES ] ==================="
+    "\n=================== [ INITIALIZING  HASHBEAST ROYALTIES ] ==================="
   );
 
   const globalConfigPDA = new PublicKey(
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
   const collectionPubkey = new PublicKey(
-    deploymentFile.doge_collection_created.collection_address
+    deploymentFile.hashbeast_collection_created.collection_address
   );
 
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-config")],
+    const [hashbeastsConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-config")],
     minebtcProgram.programId
     );
 
@@ -1961,7 +2003,7 @@ async function initializeDogeRoyalties(minebtcProgram) {
     );
 
     // Configure royalties
-  const basisPoints = config.doges_config.royalties;
+  const basisPoints = config.hashbeasts_config.royalties;
     let creators = [];
 
   // Convert addresses to PublicKey objects
@@ -1975,14 +2017,14 @@ async function initializeDogeRoyalties(minebtcProgram) {
   creators.push({
     address: multisigAddress,
     percentage:
-      config.doges_config.creators.find(
+      config.hashbeasts_config.creators.find(
         (creator) => creator.identifier === "multisig_fee_recipient"
       )?.percentage || 50,
   });
   creators.push({
     address: treasuryAddress,
     percentage:
-      config.doges_config.creators.find(
+      config.hashbeasts_config.creators.find(
         (creator) => creator.identifier === "treasury"
       )?.percentage || 50,
   });
@@ -1998,11 +2040,11 @@ async function initializeDogeRoyalties(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initDogeRoyalties(basisPoints, creators)
+      .initHashBeastRoyalties(basisPoints, creators)
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
-                dogesConfig: dogesConfigPDA,
+                hashbeastsConfig: hashbeastsConfigPDA,
                 collection: collectionPubkey,
                 collectionAuthority: collectionAuthorityPDA,
         mplCoreProgram: new PublicKey(
@@ -2012,10 +2054,10 @@ async function initializeDogeRoyalties(minebtcProgram) {
             })
             .rpc();
 
-    console.log(COLOR_SUCCESS, "✅ Doge royalties initialized!");
+    console.log(COLOR_SUCCESS, "✅ HashBeast royalties initialized!");
         console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-        deploymentFile.doge_royalties_initialized = {
+        deploymentFile.hashbeast_royalties_initialized = {
             basis_points: basisPoints,
             creators: creators,
             tx_signature: tx,
@@ -2046,12 +2088,12 @@ async function configureTicketTiers(minebtcProgram) {
     deploymentFile.minebtc_program_initialized.globalConfig_address
   );
 
-    const [dogeMintConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("doge-mint-config")],
+    const [hashbeastMintConfigPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("hashbeast-mint-config")],
     minebtcProgram.programId
     );
 
-  const ticketTiers = config.doges_config.ticket_tiers || [];
+  const ticketTiers = config.hashbeasts_config.ticket_tiers || [];
 
   console.log(
     COLOR_INFO,
@@ -2073,7 +2115,7 @@ async function configureTicketTiers(minebtcProgram) {
                 )
                 .accounts({
                     globalConfig: globalConfigPDA,
-                    dogeMintConfig: dogeMintConfigPDA,
+                    hashbeastMintConfig: hashbeastMintConfigPDA,
                     authority: wallet.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -2131,52 +2173,32 @@ async function initializeTaxConfig(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    const [nftFloorSweepVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("nft-floor-sweep-vault")],
-    minebtcProgram.programId
-    );
-
-    const [nftSaleSolVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("nft-sale-sol-vault")],
-    minebtcProgram.programId
-    );
-
-    // Get config values
-    const whitelistedAddress = config.tax.nft_floor_sweep_whitelisted_address;
-    const nftFloorSweepPct = config.tax.nft_floor_sweep_pct;
+    // Get config values. Tax now only splits faction_treasury + burn (the
+    // residual flows back to the mining vault). NFT market making is funded
+    // from SOL via `distribute_sol_fees` → `inventory_sweep_vault`.
     const factionTreasuryPct = config.tax.faction_treasury_pct;
     const burnPct = config.tax.burnt_pct;
 
-    // Splits must sum to exactly 100% — validated here so a misconfigured
-    // config.json fails before the transaction is built.
-    if (nftFloorSweepPct + factionTreasuryPct + burnPct !== 100) {
+    if (factionTreasuryPct + burnPct > 100) {
         throw new Error(
-            `Tax splits must sum to 100 (got ${nftFloorSweepPct}+${factionTreasuryPct}+${burnPct}=${nftFloorSweepPct + factionTreasuryPct + burnPct})`
+            `Tax splits must sum to ≤100 (got ${factionTreasuryPct}+${burnPct}=${factionTreasuryPct + burnPct})`
         );
     }
 
     console.log(COLOR_INFO, `💰 Tax Distribution:`);
-    console.log(COLOR_INFO, `   NFT Floor Sweep: ${nftFloorSweepPct}%`);
     console.log(COLOR_INFO, `   Faction Treasury: ${factionTreasuryPct}%`);
     console.log(COLOR_INFO, `   Burn: ${burnPct}%`);
-    console.log(COLOR_INFO, `🔑 Whitelisted Address: ${whitelistedAddress}`);
+    console.log(COLOR_INFO, `   Back to Vault: ${100 - factionTreasuryPct - burnPct}%`);
 
     try {
     const tx = await minebtcProgram.methods
-            .initializeTaxConfig(
-                nftFloorSweepPct,
-                factionTreasuryPct,
-                burnPct,
-                new PublicKey(whitelistedAddress)
-            )
+            .initializeTaxConfig(factionTreasuryPct, burnPct)
             .accounts({
                 globalConfig: globalConfigPDA,
                 taxConfig: taxConfigPDA,
-                minebtcMint: DOGEBTC_TOKEN_MINT,
+                minebtcMint: DEGENBTC_TOKEN_MINT,
                 withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
                 factionTreasuryVault: factionTreasuryVaultPDA,
-                nftFloorSweepVault: nftFloorSweepVaultPDA,
-                nftSaleSolVault: nftSaleSolVaultPDA,
                 authority: wallet.publicKey,
                 tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
@@ -2190,11 +2212,8 @@ async function initializeTaxConfig(minebtcProgram) {
             tax_config_pda: taxConfigPDA.toString(),
             withdraw_withheld_authority: withdrawWithheldAuthorityPDA.toString(),
             faction_treasury_vault: factionTreasuryVaultPDA.toString(),
-            nft_floor_sweep_vault: nftFloorSweepVaultPDA.toString(),
-            nft_sale_sol_vault: nftSaleSolVaultPDA.toString(),
-            nft_floor_sweep_pct: nftFloorSweepPct,
             faction_treasury_pct: factionTreasuryPct,
-            whitelisted_address: whitelistedAddress,
+            burn_pct: burnPct,
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -2499,7 +2518,7 @@ async function updateConfig(minebtcProgram, options = {}) {
       return;
     }
 
-    // Derive DogeBtcMining PDA (optional account)
+    // Derive DegenBtcMining PDA (optional account)
     const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("mine-btc-mining")],
       minebtcProgram.programId
@@ -2658,7 +2677,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       `     Stakers: ${globalConfig.solFeeConfig.stakersPct}%`
     );
 
-    console.log(COLOR_INFO, "   Current DogeBtc dist config:");
+    console.log(COLOR_INFO, "   Current DegenBtc dist config:");
     console.log(
       COLOR_INFO,
       `     Stakers: ${globalConfig.minebtcDistConfig.minebtcStakersPct}%`
@@ -2700,9 +2719,6 @@ async function updateFees(minebtcProgram, feeConfig) {
               feeConfig?.snapshotInterval ?? feeConfig?.snapshot_interval
             )
         : null,
-      newReferralFeePct: feeConfig?.newReferralFeePct ?? null,
-      newSameFactionReferralFeePct:
-        feeConfig?.newSameFactionReferralFeePct ?? null,
       newCycleSolSplitPct: feeConfig?.newCycleSolSplitPct ?? null,
     };
 
@@ -2805,8 +2821,6 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcJackpotPct,
         feeParams.newHodlTaxPct,
         feeParams.snapshotInterval,
-        feeParams.newReferralFeePct,
-        feeParams.newSameFactionReferralFeePct,
         feeParams.newCycleSolSplitPct
       )
       .accounts({
@@ -3016,7 +3030,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     faction_war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
     faction_war_loyalty_reward_bps: gameplayTuningConfig.factionWarLoyaltyRewardBps,
     faction_war_mvp_reward_bps: gameplayTuningConfig.factionWarMvpRewardBps,
-    faction_war_doge_reward_bps: gameplayTuningConfig.factionWarDogeRewardBps,
+    faction_war_hashbeast_reward_bps: gameplayTuningConfig.factionWarHashBeastRewardBps,
     base_mutation_chance_bps: gameplayTuningConfig.baseMutationChanceBps,
     mutation_chance_floor_bps: gameplayTuningConfig.mutationChanceFloorBps,
     mutation_chance_cap_bps: gameplayTuningConfig.mutationChanceCapBps,
@@ -3039,10 +3053,10 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     target.faction_war_base_reward_bps +
     target.faction_war_loyalty_reward_bps +
     target.faction_war_mvp_reward_bps +
-    target.faction_war_doge_reward_bps;
+    target.faction_war_hashbeast_reward_bps;
   if (rewardSplit !== 10000) {
     throw new Error(
-      `Invalid gameplay reward split: base + loyalty + mvp + doge must equal 10000 bps, got ${rewardSplit}.`
+      `Invalid gameplay reward split: base + loyalty + mvp + hashbeast must equal 10000 bps, got ${rewardSplit}.`
     );
   }
 
@@ -3054,7 +3068,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/mvp/doge: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarMvpRewardBps}/${current.factionWarDogeRewardBps}`
+    `     Rewards bps base/loyalty/mvp/hashbeast: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarMvpRewardBps}/${current.factionWarHashBeastRewardBps}`
   );
   console.log(
     COLOR_INFO,
@@ -3073,7 +3087,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/mvp/doge: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_mvp_reward_bps}/${target.faction_war_doge_reward_bps}`
+    `     Rewards bps base/loyalty/mvp/hashbeast: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_mvp_reward_bps}/${target.faction_war_hashbeast_reward_bps}`
   );
   console.log(
     COLOR_INFO,
@@ -3098,7 +3112,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     current.factionWarBaseRewardBps === target.faction_war_base_reward_bps &&
     current.factionWarLoyaltyRewardBps === target.faction_war_loyalty_reward_bps &&
     current.factionWarMvpRewardBps === target.faction_war_mvp_reward_bps &&
-    current.factionWarDogeRewardBps === target.faction_war_doge_reward_bps &&
+    current.factionWarHashBeastRewardBps === target.faction_war_hashbeast_reward_bps &&
     current.baseMutationChanceBps === target.base_mutation_chance_bps &&
     current.mutationChanceFloorBps === target.mutation_chance_floor_bps &&
     current.mutationChanceCapBps === target.mutation_chance_cap_bps &&
@@ -3140,105 +3154,6 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
     timestamp: new Date().toISOString(),
   };
   saveDeploymentData();
-}
-
-async function updateDogeConfig(minebtcProgram, dogeConfig) {
-  console.log(
-    COLOR_STEP,
-    "\n================ [ UPDATING DOGE CONFIG ] ================"
-  );
-
-  // Check if program is initialized
-  if (!deploymentFile.minebtc_program_initialized) {
-    console.log(
-      COLOR_WARNING,
-      "⚠️ MineBTC program not initialized. Skipping doge config update..."
-    );
-    return;
-  }
-
-  // Check if doge config is initialized
-  if (!deploymentFile.doge_config_initialized) {
-    console.log(
-      COLOR_WARNING,
-      "⚠️ Doge config not initialized. Please initialize it first."
-    );
-    return;
-  }
-
-  try {
-    // Load PDAs
-    const globalConfigPDA = new PublicKey(
-      deploymentFile.minebtc_program_initialized.globalConfig_address
-    );
-
-    const [dogesConfigPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("doge-config")],
-      minebtcProgram.programId
-    );
-
-    // Get current config
-    const dogesConfig = await minebtcProgram.account.dogeConfig.fetch(
-      dogesConfigPDA
-    );
-
-    console.log(COLOR_INFO, "   Current Doge Config:");
-    console.log(
-      COLOR_INFO,
-      `     Max Supply: ${dogesConfig.maxSupply.toString()}`
-    );
-
-    // Get values from config or use provided values
-    const maxSupply = dogeConfig?.maxSupply 
-      ? new BN(dogeConfig.maxSupply)
-      : new BN(config.doges_config.max_supply);
-
-    console.log(COLOR_INFO, "\n   Updating Doge Config:");
-    console.log(
-      COLOR_INFO,
-      `     Max Supply: ${maxSupply.toString()}`
-    );
-
-    console.log(
-      COLOR_INFO,
-      `   Global Config PDA: ${globalConfigPDA.toString()}`
-    );
-    console.log(COLOR_INFO, `   Doge Config PDA: ${dogesConfigPDA.toString()}`);
-    console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
-
-    // Build and send transaction
-    const tx = await minebtcProgram.methods
-      .updateDogeConfig(maxSupply)
-      .accounts({
-        globalConfig: globalConfigPDA,
-        dogesConfig: dogesConfigPDA,
-        authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
-
-    console.log(COLOR_SUCCESS, `✅ Doge config updated successfully!`);
-    console.log(COLOR_DIM, `   Transaction: ${tx}`);
-    console.log(
-      COLOR_DIM,
-      `   Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
-    );
-
-    // Update deployment file
-    if (!deploymentFile.doge_config_updated) {
-      deploymentFile.doge_config_updated = {};
-    }
-    deploymentFile.doge_config_updated = {
-      max_supply: maxSupply.toString(),
-      tx_signature: tx,
-      timestamp: new Date().toISOString(),
-    };
-
-    saveDeploymentData();
-  } catch (error) {
-    console.error(COLOR_ERROR, "❌ Failed to update doge config:", error);
-    throw error;
-  }
 }
 
 // Note: `addGameCrankerBot` / `add_cranker_bot` was removed with the switch to
@@ -3325,6 +3240,381 @@ async function initializeFactionWarConfig(minebtcProgram) {
   }
 }
 
+// ==================== [ MARKETPLACE + INVENTORY INITIALIZATION ] ====================
+
+async function initializeDegenBtcMarketplace(minebtcProgram) {
+  if (deploymentFile.degenbtc_marketplace_initialized) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ DegenBTC marketplace already initialized. Skipping...",
+    );
+    return;
+  }
+
+  if (!deploymentFile.hashbeast_collection_created?.collection_address) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ HashBeast collection not yet created — skipping marketplace init. Re-run after collection step.",
+    );
+    return;
+  }
+
+  if (!IDL_DegenBtcMarket) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ DegenBTC marketplace IDL not found at " +
+        `${config.deployment.paths.degenbtc_market_idl}. ` +
+        "Run `anchor build` then re-run this script.",
+    );
+    return;
+  }
+
+  if (!DEGENBTC_MARKET_PROGRAM_ID) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ DegenBTC market program ID not found in deployment file. Run 0_deploy_game.js first.",
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ INITIALIZING DEGENBTC MARKETPLACE ] ===================",
+  );
+
+  const collectionMint = new PublicKey(
+    deploymentFile.hashbeast_collection_created.collection_address,
+  );
+  const feeRecipient = walletKeypair.publicKey; // protocol-fee router target.
+  // Fee proceeds eventually flow into the protocol fee pipeline; we route the
+  // marketplace fee straight to the deploy/admin wallet here, matching the
+  // pattern used by the rest of the program (admin can rotate via
+  // update_marketplace_config later).
+
+  const marketProgram = new Program(
+    IDL_DegenBtcMarket,
+    DEGENBTC_MARKET_PROGRAM_ID,
+    provider,
+  );
+
+  const [marketplaceConfigPda, marketplaceConfigBump] =
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("marketplace-config"), collectionMint.toBuffer()],
+      DEGENBTC_MARKET_PROGRAM_ID,
+    );
+
+  console.log(COLOR_INFO, "🏪 Marketplace config PDA:", marketplaceConfigPda.toBase58());
+  console.log(COLOR_DIM, `   collection_mint: ${collectionMint.toBase58()}`);
+  console.log(COLOR_DIM, `   fee_bps: ${MARKETPLACE_CONFIG.feeBps}`);
+  console.log(
+    COLOR_DIM,
+    `   min_price_lamports: ${MARKETPLACE_CONFIG.minPriceLamports.toString()}`,
+  );
+  console.log(COLOR_DIM, `   fee_recipient: ${feeRecipient.toBase58()}`);
+  console.log(COLOR_DIM, `   admin: ${walletKeypair.publicKey.toBase58()}`);
+
+  try {
+    const tx = await marketProgram.methods
+      .initializeMarketplace(
+        MARKETPLACE_CONFIG.feeBps,
+        feeRecipient,
+        MARKETPLACE_CONFIG.minPriceLamports,
+        MPL_CORE_PROGRAM_ID,
+      )
+      .accounts({
+        payer: walletKeypair.publicKey,
+        admin: walletKeypair.publicKey,
+        marketplaceConfig: marketplaceConfigPda,
+        collectionMint: collectionMint,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ DegenBTC marketplace initialized");
+    console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
+
+    deploymentFile.degenbtc_marketplace_initialized = {
+      marketplace_config_pda: marketplaceConfigPda.toBase58(),
+      marketplace_config_bump: marketplaceConfigBump,
+      collection_mint: collectionMint.toBase58(),
+      fee_bps: MARKETPLACE_CONFIG.feeBps,
+      fee_recipient: feeRecipient.toBase58(),
+      min_price_lamports: MARKETPLACE_CONFIG.minPriceLamports.toString(),
+      admin: walletKeypair.publicKey.toBase58(),
+      mpl_core_program: MPL_CORE_PROGRAM_ID.toBase58(),
+      program_id: DEGENBTC_MARKET_PROGRAM_ID.toBase58(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    if (error.toString().includes("already in use")) {
+      console.log(
+        COLOR_INFO,
+        "ℹ️ Marketplace config already exists on-chain. Recording PDA and continuing...",
+      );
+      deploymentFile.degenbtc_marketplace_initialized = {
+        marketplace_config_pda: marketplaceConfigPda.toBase58(),
+        marketplace_config_bump: marketplaceConfigBump,
+        collection_mint: collectionMint.toBase58(),
+        program_id: DEGENBTC_MARKET_PROGRAM_ID.toBase58(),
+        status: "already_exists",
+        timestamp: new Date().toISOString(),
+      };
+      saveDeploymentData();
+    } else {
+      console.error(
+        COLOR_ERROR,
+        "❌ Failed to initialize marketplace:",
+        error,
+      );
+      if (error.logs) {
+        error.logs.forEach((log) => console.error(COLOR_DIM, log));
+      }
+      throw error;
+    }
+  }
+}
+
+async function initializeInventoryPool(minebtcProgram) {
+  if (deploymentFile.inventory_pool_initialized) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Inventory pool already initialized. Skipping...",
+    );
+    return;
+  }
+
+  if (!deploymentFile.degenbtc_marketplace_initialized) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ Marketplace must be initialized before inventory pool — skipping.",
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ INITIALIZING INVENTORY POOL ] ===================",
+  );
+
+  const [inventoryPoolPda, inventoryPoolBump] = PublicKey.findProgramAddressSync(
+    [Buffer.from("inventory-pool")],
+    minebtcProgram.programId,
+  );
+  const [floorQueuePda, floorQueueBump] = PublicKey.findProgramAddressSync(
+    [Buffer.from("floor-queue")],
+    minebtcProgram.programId,
+  );
+  const [saleHistoryPda, saleHistoryBump] = PublicKey.findProgramAddressSync(
+    [Buffer.from("sale-history")],
+    minebtcProgram.programId,
+  );
+  const [floorHistoryPda, floorHistoryBump] = PublicKey.findProgramAddressSync(
+    [Buffer.from("floor-history")],
+    minebtcProgram.programId,
+  );
+  const [inventorySweepVaultPda, inventorySweepVaultBump] =
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("inventory-sweep-vault")],
+      minebtcProgram.programId,
+    );
+
+  const marketplaceProgramId = new PublicKey(
+    deploymentFile.degenbtc_marketplace_initialized.program_id,
+  );
+  const marketplaceConfigPda = new PublicKey(
+    deploymentFile.degenbtc_marketplace_initialized.marketplace_config_pda,
+  );
+
+  console.log(COLOR_INFO, "📦 Inventory PDAs:");
+  console.log(COLOR_DIM, `   inventory_pool: ${inventoryPoolPda.toBase58()}`);
+  console.log(COLOR_DIM, `   floor_queue: ${floorQueuePda.toBase58()}`);
+  console.log(COLOR_DIM, `   sale_history: ${saleHistoryPda.toBase58()}`);
+  console.log(COLOR_DIM, `   floor_history: ${floorHistoryPda.toBase58()}`);
+  console.log(
+    COLOR_DIM,
+    `   inventory_sweep_vault: ${inventorySweepVaultPda.toBase58()}`,
+  );
+  console.log(
+    COLOR_DIM,
+    `   marketplace_program: ${marketplaceProgramId.toBase58()}`,
+  );
+  console.log(
+    COLOR_DIM,
+    `   marketplace_config: ${marketplaceConfigPda.toBase58()}`,
+  );
+
+  const [globalConfigPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global-config")],
+    minebtcProgram.programId,
+  );
+
+  try {
+    const tx = await minebtcProgram.methods
+      .initInventoryPool(marketplaceProgramId, marketplaceConfigPda)
+      .accounts({
+        authority: walletKeypair.publicKey,
+        globalConfig: globalConfigPda,
+        inventoryPool: inventoryPoolPda,
+        floorQueue: floorQueuePda,
+        saleHistory: saleHistoryPda,
+        floorHistory: floorHistoryPda,
+        inventorySweepVault: inventorySweepVaultPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, "✅ Inventory pool initialized");
+    console.log(COLOR_DIM, `🔗 Transaction: ${tx}`);
+
+    deploymentFile.inventory_pool_initialized = {
+      inventory_pool_pda: inventoryPoolPda.toBase58(),
+      inventory_pool_bump: inventoryPoolBump,
+      floor_queue_pda: floorQueuePda.toBase58(),
+      floor_queue_bump: floorQueueBump,
+      sale_history_pda: saleHistoryPda.toBase58(),
+      sale_history_bump: saleHistoryBump,
+      floor_history_pda: floorHistoryPda.toBase58(),
+      floor_history_bump: floorHistoryBump,
+      inventory_sweep_vault_pda: inventorySweepVaultPda.toBase58(),
+      inventory_sweep_vault_bump: inventorySweepVaultBump,
+      marketplace_program: marketplaceProgramId.toBase58(),
+      marketplace_config: marketplaceConfigPda.toBase58(),
+      tx_signature: tx,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+  } catch (error) {
+    if (error.toString().includes("already in use")) {
+      console.log(
+        COLOR_INFO,
+        "ℹ️ Inventory pool already exists on-chain. Recording PDAs and continuing...",
+      );
+      deploymentFile.inventory_pool_initialized = {
+        inventory_pool_pda: inventoryPoolPda.toBase58(),
+        inventory_pool_bump: inventoryPoolBump,
+        floor_queue_pda: floorQueuePda.toBase58(),
+        floor_queue_bump: floorQueueBump,
+        sale_history_pda: saleHistoryPda.toBase58(),
+        sale_history_bump: saleHistoryBump,
+        floor_history_pda: floorHistoryPda.toBase58(),
+        floor_history_bump: floorHistoryBump,
+        inventory_sweep_vault_pda: inventorySweepVaultPda.toBase58(),
+        inventory_sweep_vault_bump: inventorySweepVaultBump,
+        marketplace_program: marketplaceProgramId.toBase58(),
+        marketplace_config: marketplaceConfigPda.toBase58(),
+        status: "already_exists",
+        timestamp: new Date().toISOString(),
+      };
+      saveDeploymentData();
+    } else {
+      console.error(
+        COLOR_ERROR,
+        "❌ Failed to initialize inventory pool:",
+        error,
+      );
+      if (error.logs) {
+        error.logs.forEach((log) => console.error(COLOR_DIM, log));
+      }
+      throw error;
+    }
+  }
+}
+
+async function initializeLootboxQueues(minebtcProgram) {
+  if (deploymentFile.lootbox_queues_initialized) {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ Lootbox queues already initialized. Skipping...",
+    );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ INITIALIZING LOOTBOX QUEUES ] ===================",
+  );
+
+  const factions = config.factions || [];
+  if (factions.length === 0) {
+    console.log(
+      COLOR_WARNING,
+      "⚠️ No factions configured — skipping lootbox queue init.",
+    );
+    return;
+  }
+
+  const queues = [];
+  for (const faction of factions) {
+    const factionId = faction.id;
+    const [queuePda, queueBump] = PublicKey.findProgramAddressSync(
+      [Buffer.from("lootbox-queue"), Buffer.from([factionId])],
+      minebtcProgram.programId,
+    );
+    const [globalConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("global-config")],
+      minebtcProgram.programId,
+    );
+
+    console.log(
+      COLOR_DIM,
+      `   faction ${factionId} (${faction.name}) → ${queuePda.toBase58()}`,
+    );
+
+    try {
+      const tx = await minebtcProgram.methods
+        .initLootboxQueue(factionId)
+        .accounts({
+          authority: walletKeypair.publicKey,
+          globalConfig: globalConfigPda,
+          lootboxQueue: queuePda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+      queues.push({
+        faction_id: factionId,
+        faction_name: faction.name,
+        queue_pda: queuePda.toBase58(),
+        bump: queueBump,
+        tx_signature: tx,
+      });
+    } catch (error) {
+      if (error.toString().includes("already in use")) {
+        console.log(
+          COLOR_INFO,
+          `   ℹ️ faction ${factionId} queue already exists.`,
+        );
+        queues.push({
+          faction_id: factionId,
+          faction_name: faction.name,
+          queue_pda: queuePda.toBase58(),
+          bump: queueBump,
+          status: "already_exists",
+        });
+      } else {
+        console.error(
+          COLOR_ERROR,
+          `❌ Failed to init lootbox queue for faction ${factionId}:`,
+          error,
+        );
+        throw error;
+      }
+    }
+  }
+
+  console.log(
+    COLOR_SUCCESS,
+    `✅ Initialized ${queues.length} lootbox queues`,
+  );
+
+  deploymentFile.lootbox_queues_initialized = {
+    queues,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
+}
+
 function printCompletionSummary() {
   console.log(
     COLOR_STEP,
@@ -3370,14 +3660,14 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    `  • Doge Collection: ${
-      deploymentFile.doge_collection_created ? "✅" : "❌"
+    `  • HashBeast Collection: ${
+      deploymentFile.hashbeast_collection_created ? "✅" : "❌"
     }`
   );
   console.log(
     COLOR_INFO,
-    `  • Doge Royalties: ${
-      deploymentFile.doge_royalties_initialized ? "✅" : "❌"
+    `  • HashBeast Royalties: ${
+      deploymentFile.hashbeast_royalties_initialized ? "✅" : "❌"
     }`
   );
   console.log(
@@ -3419,6 +3709,18 @@ function printCompletionSummary() {
     }`
   );
   console.log(
+    COLOR_INFO,
+    `  • DegenBTC Marketplace: ${
+      deploymentFile.degenbtc_marketplace_initialized ? "✅" : "❌"
+    }`,
+  );
+  console.log(
+    COLOR_INFO,
+    `  • Inventory Pool: ${
+      deploymentFile.inventory_pool_initialized ? "✅" : "❌"
+    }`,
+  );
+  console.log(
     COLOR_STEP,
     "========================================================================================"
   );
@@ -3443,16 +3745,48 @@ function printCompletionSummary() {
         `   Mining Vault: ${deploymentFile.mining_vault_initialized.vault_address}`
       );
         }
-        if (deploymentFile.doge_collection_created) {
+        if (deploymentFile.hashbeast_collection_created) {
       console.log(
         COLOR_DIM,
-        `   Doge Collection: ${deploymentFile.doge_collection_created.collection_address}`
+        `   HashBeast Collection: ${deploymentFile.hashbeast_collection_created.collection_address}`
       );
         }
         if (deploymentFile.game_state_initialized) {
       console.log(
         COLOR_DIM,
         `   Game State: ${deploymentFile.game_state_initialized.global_game_state_pda}`
+      );
+    }
+    if (deploymentFile.degenbtc_marketplace_initialized) {
+      console.log(
+        COLOR_DIM,
+        `   Marketplace Program: ${deploymentFile.degenbtc_marketplace_initialized.program_id}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Marketplace Config:  ${deploymentFile.degenbtc_marketplace_initialized.marketplace_config_pda}`,
+      );
+    }
+    if (deploymentFile.inventory_pool_initialized) {
+      console.log(
+        COLOR_DIM,
+        `   Inventory Pool:       ${deploymentFile.inventory_pool_initialized.inventory_pool_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Floor Queue:          ${deploymentFile.inventory_pool_initialized.floor_queue_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Sale History:         ${deploymentFile.inventory_pool_initialized.sale_history_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Floor History:        ${deploymentFile.inventory_pool_initialized.floor_history_pda}`,
+      );
+      console.log(
+        COLOR_DIM,
+        `   Inventory Sweep Vault: ${deploymentFile.inventory_pool_initialized.inventory_sweep_vault_pda}`,
       );
     }
   }
@@ -3464,9 +3798,9 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
-    "   2. Users can mint Doge for their factions"
+    "   2. Users can mint HashBeast for their factions"
   );
-  console.log(COLOR_INFO, "   3. Users can stake DogeBtc and LP tokens");
+  console.log(COLOR_INFO, "   3. Users can stake DegenBtc and LP tokens");
   console.log(
     COLOR_INFO,
     "   4. Admins can start game rounds with start_round"

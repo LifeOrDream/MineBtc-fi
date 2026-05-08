@@ -25,9 +25,9 @@ const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 // From tx logs: vault_0_amount:1000000000,vault_1_amount:99000000000
 // vault_0 = 1 SOL (1,000,000,000 lamports)
-// vault_1 = 99,000 DogeBTC (99,000,000,000 with 6 decimals)
+// vault_1 = 99,000 dBTC (99,000,000,000 with 6 decimals)
 const INITIAL_SOL_AMOUNT = "1000000000"; // 1 SOL
-const INITIAL_DBTC_AMOUNT = "99000000000"; // 99,000 DogeBTC
+const INITIAL_DBTC_AMOUNT = "99000000000"; // 99,000 dBTC
 
 async function main() {
   console.log("\x1b[35m%s\x1b[0m", "🔍 Deriving pool PDAs from known values...");
@@ -41,22 +41,22 @@ async function main() {
   const deploymentPath = path.resolve(deploymentDir, "mainnet.json");
   const deploymentData = JSON.parse(fs.readFileSync(deploymentPath, "utf8"));
 
-  // Get DogeBTC mint
+  // Get DegenBTC mint
   const dbtcMint = new PublicKey(deploymentData.dbtc_mint_address);
-  console.log("\x1b[36m%s\x1b[0m", `DogeBTC Mint: ${dbtcMint.toBase58()}`);
+  console.log("\x1b[36m%s\x1b[0m", `DegenBTC Mint: ${dbtcMint.toBase58()}`);
   console.log("\x1b[36m%s\x1b[0m", `WSOL Mint: ${WSOL_MINT.toBase58()}`);
 
   // Determine token order (token0 < token1 by bytes)
   const dbtcMintBytes = dbtcMint.toBytes();
   const wsolMintBytes = WSOL_MINT.toBytes();
-  const isMdogeToken0 = Buffer.compare(dbtcMintBytes, wsolMintBytes) < 0;
+  const isDbtcToken0 = Buffer.compare(dbtcMintBytes, wsolMintBytes) < 0;
 
-  const token0Mint = isMdogeToken0 ? dbtcMint : WSOL_MINT;
-  const token1Mint = isMdogeToken0 ? WSOL_MINT : dbtcMint;
+  const token0Mint = isDbtcToken0 ? dbtcMint : WSOL_MINT;
+  const token1Mint = isDbtcToken0 ? WSOL_MINT : dbtcMint;
 
   console.log("\x1b[36m%s\x1b[0m", `\n🪙 Token Order:`);
-  console.log("\x1b[36m%s\x1b[0m", `   Token0: ${token0Mint.toBase58()} ${isMdogeToken0 ? "(DogeBTC)" : "(WSOL)"}`);
-  console.log("\x1b[36m%s\x1b[0m", `   Token1: ${token1Mint.toBase58()} ${!isMdogeToken0 ? "(DogeBTC)" : "(WSOL)"}`);
+  console.log("\x1b[36m%s\x1b[0m", `   Token0: ${token0Mint.toBase58()} ${isDbtcToken0 ? "(DegenBTC)" : "(WSOL)"}`);
+  console.log("\x1b[36m%s\x1b[0m", `   Token1: ${token1Mint.toBase58()} ${!isDbtcToken0 ? "(DegenBTC)" : "(WSOL)"}`);
 
   // Derive AMM Config PDA (index 0 for 1% fee config on mainnet Raydium)
   const ammConfigIndex = 0; // Standard 1% fee config
@@ -194,11 +194,11 @@ async function main() {
     observationStatePDA: observationStatePDA.toBase58(),
     token0Mint: token0Mint.toBase58(),
     token1Mint: token1Mint.toBase58(),
-    isMdogeToken0: isMdogeToken0,
+    isDbtcToken0: isDbtcToken0,
     txid: TX_SIGNATURE,
-    initialMdogeAmount: INITIAL_DBTC_AMOUNT,
+    initialDbtcAmount: INITIAL_DBTC_AMOUNT,
     initialSolAmount: INITIAL_SOL_AMOUNT,
-    initialMdogeReadable: "99,000 DogeBTC",
+    initialDbtcReadable: "99,000 dBTC",
     initialSolReadable: "1 SOL",
     openTime: "0",
     timestamp: new Date().toISOString(),
@@ -216,11 +216,11 @@ async function main() {
   console.log("\x1b[36m%s\x1b[0m", `AMM Config: ${finalAmmConfigPDA.toBase58()}`);
   console.log("\x1b[36m%s\x1b[0m", `Pool State: ${finalPoolStatePDA.toBase58()}`);
   console.log("\x1b[36m%s\x1b[0m", `LP Mint: ${lpMintPDA.toBase58()}`);
-  console.log("\x1b[36m%s\x1b[0m", `Token0 (${isMdogeToken0 ? "DogeBTC" : "WSOL"}): ${token0Mint.toBase58()}`);
-  console.log("\x1b[36m%s\x1b[0m", `Token1 (${!isMdogeToken0 ? "DogeBTC" : "WSOL"}): ${token1Mint.toBase58()}`);
+  console.log("\x1b[36m%s\x1b[0m", `Token0 (${isDbtcToken0 ? "DegenBTC" : "WSOL"}): ${token0Mint.toBase58()}`);
+  console.log("\x1b[36m%s\x1b[0m", `Token1 (${!isDbtcToken0 ? "DegenBTC" : "WSOL"}): ${token1Mint.toBase58()}`);
   console.log("\x1b[36m%s\x1b[0m", `Token0 Vault: ${token0VaultPDA.toBase58()}`);
   console.log("\x1b[36m%s\x1b[0m", `Token1 Vault: ${token1VaultPDA.toBase58()}`);
-  console.log("\x1b[36m%s\x1b[0m", `Initial Liquidity: 1 SOL + 99,000 DogeBTC`);
+  console.log("\x1b[36m%s\x1b[0m", `Initial Liquidity: 1 SOL + 99,000 dBTC`);
   console.log("\x1b[35m%s\x1b[0m", "====================================================");
 }
 
