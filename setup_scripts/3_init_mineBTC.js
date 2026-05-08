@@ -118,6 +118,9 @@ const LIVE_FEE_CONFIG = {
   snapshotInterval: 5 * 60,
   // Cycle SOL split: % of user bet reserved for faction-war jackpot (taken from gross bet, in addition to protocol fee)
   newCycleSolSplitPct: 5,
+  // NFT market making: % of distribute_sol_fees SOL routed to inventory_sweep_vault
+  // for the on-chain marketplace. Constraint: newBuybackPct + newNftMarketMakingPct <= 100.
+  newNftMarketMakingPct: 3,
 };
 
 // Load MineBTC Program IDL
@@ -572,14 +575,13 @@ async function main() {
 
     // 13. Initialize Tax Config (for tax distribution)
     // Instruction: initialize_tax_config(faction_treasury_pct: u8, burn_pct: u8)
-    // Creates TaxConfig PDA [seeds: "tax-config"] and associated vaults:
+    // Creates TaxConfig PDA [seeds: "tax-config"] and the two surviving vaults:
     //   - WithdrawWithheldAuthority [seeds: "withdraw-withheld-authority"] — 0-byte signer PDA
     //   - FactionTreasuryVault      [seeds: "faction-treasury-vault"]      — Token-2022 vault
-    //   - NftFloorSweepVault        [seeds: "nft-floor-sweep-vault"]       — Token-2022 vault
-    //   - NftSaleSolVault           [seeds: "nft-sale-sol-vault"]          — 0-byte system PDA for SOL
+    // (NFT floor sweep vault + sale SOL vault were removed; NFT market making is
+    // now SOL-funded via SolFeeConfig::nft_market_making_pct.)
     // Accounts: globalConfig, taxConfig, minebtcMint, withdrawWithheldAuthority,
-    //           factionTreasuryVault, nftFloorSweepVault, nftSaleSolVault, authority,
-    //           tokenProgram2022, systemProgram
+    //           factionTreasuryVault, authority, tokenProgram2022, systemProgram
     await initializeTaxConfig(minebtcProgram);
 
     // 14. Initialize Game State (for Faction Surge rounds)
@@ -2720,6 +2722,7 @@ async function updateFees(minebtcProgram, feeConfig) {
             )
         : null,
       newCycleSolSplitPct: feeConfig?.newCycleSolSplitPct ?? null,
+      newNftMarketMakingPct: feeConfig?.newNftMarketMakingPct ?? null,
     };
 
     // Validate the MineBTC distribution invariant before sending the transaction.
@@ -2798,6 +2801,16 @@ async function updateFees(minebtcProgram, feeConfig) {
         COLOR_INFO,
         `     Snapshot interval: ${feeParams.snapshotInterval.toString()} seconds`
       );
+    if (feeParams.newCycleSolSplitPct !== null)
+      console.log(
+        COLOR_INFO,
+        `     Cycle SOL split: ${feeParams.newCycleSolSplitPct}%`
+      );
+    if (feeParams.newNftMarketMakingPct !== null)
+      console.log(
+        COLOR_INFO,
+        `     NFT market making: ${feeParams.newNftMarketMakingPct}% (of distribute_sol_fees → inventory_sweep_vault)`
+      );
 
     console.log(
       COLOR_INFO,
@@ -2821,7 +2834,8 @@ async function updateFees(minebtcProgram, feeConfig) {
         feeParams.newMinebtcJackpotPct,
         feeParams.newHodlTaxPct,
         feeParams.snapshotInterval,
-        feeParams.newCycleSolSplitPct
+        feeParams.newCycleSolSplitPct,
+        feeParams.newNftMarketMakingPct
       )
       .accounts({
         globalConfig: globalConfigPDA,
@@ -3546,8 +3560,11 @@ async function initializeLootboxQueues(minebtcProgram) {
   }
 
   const queues = [];
-  for (const faction of factions) {
-    const factionId = faction.id;
+  for (let i = 0; i < factions.length; i++) {
+    const faction = factions[i];
+    // faction_id matches the index used in addFactions (which is what the
+    // contract uses as the canonical faction id).
+    const factionId = i;
     const [queuePda, queueBump] = PublicKey.findProgramAddressSync(
       [Buffer.from("lootbox-queue"), Buffer.from([factionId])],
       minebtcProgram.programId,
