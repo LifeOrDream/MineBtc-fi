@@ -13,7 +13,7 @@
     "security_metadata_account": "HEqG2K6VkGWtdvGRzCBvsDbBrJipT13dKbQXzHeUGhCk",
     "domains_metadata_account": "J2PX9FL9rTtiqzE9J4CvMijue1boaFGRP3YKiF22dupD",
     "binary_size": 2222272,
-    "changes": "genescience overhaul, staking logic updates, tax distribution changes, economy instruction modifications, update_doge_max_supply admin function"
+    "changes": "genescience overhaul, staking logic updates, tax distribution changes, economy instruction modifications, hashbeast rebirth and mint-config updates"
   },
   "dbtc_mint_created": {
     "mint_address": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
@@ -25,8 +25,8 @@
     "burn_tax_bps": 100,
     "max_burn_amount": 1000000,
     "metadata_included": true,
-    "metadata_name": "DogeWifBTC",
-    "metadata_symbol": "DegenBTC",
+    "metadata_name": "degenBTC",
+    "metadata_symbol": "dBTC",
     "metadata_uri": "https://assets.minebtc.fun/btc",
     "creation_signature": "38NCSRDPCrXJaKSTpnNyxmC7qtrjM8Cx2Ht2868EQ8oW6CGtqbZMwKStsW6nfF83cUMFHcbYq28Cm35PfzUFzNAT",
     "timestamp": "2025-12-16T14:18:36.554Z",
@@ -43,7 +43,7 @@
   "initial_supply_minted": {
     "amount": "2100000000000000",
     "actual_minted_amount": "2100000000000000",
-    "amount_readable": "2,100,000,000 DegenBTC",
+    "amount_readable": "2,100,000,000 dBTC",
     "token_account_address": "DAs237zS3UHkf3aVAoGPeHSzkwHF3DVK4yJ43uQYYpHV",
     "mint_signature": "5X4WG55PWXKBbkf9GaZkT7JfE2v5ghttfkUiW8GHkVnGSS8wVKTa3WcLZaNYZBYvrZcqFeiX3YS3j7Y6ZmefM9Uj",
     "bigint_verification": {
@@ -59,7 +59,7 @@
     "new_mint_authority": null,
     "removal_signature": "3DJeoveV6Mm5yasE8zLu2vGZxpjQMnyeZBUGfFQLinoNrs3HuGPrxYjLf4etLzuHCiVyhsBYtvDEtwvXvMGExu7M",
     "timestamp": "2025-12-16T14:18:39.747Z",
-    "total_supply_locked": "2,100,000,000 DegenBTC"
+    "total_supply_locked": "2,100,000,000 dBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
     "previous_withdraw_withheld_authority": "4viwdzxVoFQws1QzKouqQCrNEbcsxBSG3poWfz3ScvaN",
@@ -95,11 +95,11 @@
     "observationStatePDA": "Ahq5Uqcci8xQkaetqrRPKQgJFEHzwPXQSg8EgFXEDQt7",
     "token0Mint": "So11111111111111111111111111111111111111112",
     "token1Mint": "BwMCF5LSHPvrR8pLVvcsa4k1AMg4VWVnMWUiNEXMtLkE",
-    "isMdogeToken0": false,
+    "isDbtcToken0": false,
     "txid": "4AUSKzTuTHkYaFGd8xeXdridWuMbzDvQbYCQXT5nkj1H4uL7t1DiB4K9niKHgJF8BfGoxneGDwwDapBmjNhSFaQf",
-    "initialMdogeAmount": "99000000000",
+    "initialDbtcAmount": "99000000000",
     "initialSolAmount": "1000000000",
-    "initialMdogeReadable": "99,000 DegenBTC",
+    "initialDbtcReadable": "99,000 dBTC",
     "initialSolReadable": "1 SOL",
     "openTime": "0",
     "timestamp": "2025-12-16T15:13:15.170Z"
@@ -249,17 +249,17 @@
     "tx_signature": "3bFf5Ecaxs9yuh5McuapGiUqFjLXiTBGm7rvtufaebyB3AFgEdToa3emY2faSsgYLPSGCuw3vFfC1UAoatzvBWhV",
     "timestamp": "2025-12-16T15:37:41.486Z"
   },
-  "doge_config_initialized": {
-    "doges_config_pda": "3uHmcWqbHPbsk2dLvLgQoC5ZNLWdP5xYCBZ5Ay9scYmx",
+  "hashbeast_config_initialized": {
+    "hashbeasts_config_pda": "3uHmcWqbHPbsk2dLvLgQoC5ZNLWdP5xYCBZ5Ay9scYmx",
     "base_price": "690000000",
     "curve_a": "4868384",
-    "max_supply": "24690",
+    "has_lifetime_supply_cap": false,
     "tx_signature": "49Cvvoyo11zr43us9RodjGgmDMtQMWP2Vvsyn9XaRSQGWVrifpgEeuaXjaTcYgTcE61DstQnmMVWU3X1feoGmtY8",
     "timestamp": "2025-12-16T15:38:43.418Z"
   },
-  "doge_collection_created": {
+  "hashbeast_collection_created": {
     "collection_address": "6S85vw5zZJHC3KvmVfGmfWMpTY1aSbUCcU6xdz5bhmo5",
-    "collection_name": "Bitcoin doges",
+    "collection_name": "Bitcoin hashbeasts",
     "collection_uri": "https://assets.minebtc.fun/collection",
     "collection_authority": "8j8h3m1WvqeUberNCMPqEY8Auc7eK8kdbEoU8DmrN6oP",
     "tx_signature": "i8kmXoYnN5ac6yrNoFBzcaNhNLP26R4Qj67c44uMpB4DuTkxvH3FmnPUJKrkTxcnJJanpV6tA4LGyyQfs2TNQyE",
@@ -304,7 +304,7 @@
     "multisig_wsol_vault": "CUbi2biNpQhfYyuVu8UwRtZ7TjXdjscAHhuc4kLXEHRQ",
     "timestamp": "2026-02-16T19:08:00.000Z"
   },
-  "doge_royalties_initialized": {
+  "hashbeast_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {

@@ -1,5 +1,5 @@
 pub mod admin;
-pub mod doges;
+pub mod hashbeasts;
 pub mod economy;
 pub mod faction_war;
 pub mod game;

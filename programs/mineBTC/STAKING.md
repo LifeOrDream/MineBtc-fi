@@ -1,11 +1,11 @@
-# Passive Staking and Doge Multipliers
+# Passive Staking and HashBeast Multipliers
 
 This document describes the **passive staking** system in `stake.rs` and the
-**Doge staking multiplier** system in `doges.rs`.
+**HashBeast staking multiplier** system in `hashbeasts.rs`.
 
-It is intentionally separate from gameplay-Doge progression:
+It is intentionally separate from gameplay-HashBeast progression:
 
-- `stake.rs` and `int_stake_doge` are about **passive yield and faction hashpower**
+- `stake.rs` and `int_stake_hashbeast` are about **passive yield and faction hashpower**
 - gameplay locking in `user.rs` is about **round betting, story events, XP, and faction-war logic**
 
 Those two systems use different multipliers and should stay mentally separate.
@@ -30,8 +30,8 @@ Each position is stored in a `StakedPosition` PDA and has:
 - `multiplier`
 - `lockup_end_timestamp`
 
-The player can also stake up to `MAX_STAKED_DOGES` Doges. Today that cap is
-`3` Doges. Those Doges do **not**
+The player can also stake up to `MAX_STAKED_HASHBEASTS` HashBeasts. Today that cap is
+`3` HashBeasts. Those HashBeasts do **not**
 earn staking rewards by themselves. Instead, they multiply the player's passive
 MineBTC/LP hashpower.
 
@@ -42,7 +42,7 @@ MineBTC/LP hashpower.
 Passive staking is applied in two layers:
 
 1. Lockup multiplier
-2. Doge multiplier
+2. HashBeast multiplier
 
 ### Layer 1: lockup weighting
 
@@ -57,22 +57,22 @@ weighted_amount = staked_amount x lockup_multiplier / 100
 - longer lockups produce more `weighted_amount`
 - lock duration also controls unlock timing and emergency-withdrawal penalties
 
-### Layer 2: Doge multiplier
+### Layer 2: HashBeast multiplier
 
-Then the player's passive Doge multiplier is applied:
+Then the player's passive HashBeast multiplier is applied:
 
 ```text
-hashpower_contribution = weighted_amount × doge_multiplier / BASE_MULTIPLIER
+hashpower_contribution = weighted_amount × hashbeast_multiplier / BASE_MULTIPLIER
 ```
 
 Where:
 
 - `BASE_MULTIPLIER = 1000` means `1.0x`
-- `doge_multiplier = 1500` means `1.5x`
-- passive Doge staking smooths raw Doge power across all three Doge slots
-- three 1.0x Doges produce a 2.0x passive boost
-- three strong Doges reach the 3.0x passive cap
-- final passive staking hashpower is capped at `3x lockup x 3x Doges = 9x`
+- `hashbeast_multiplier = 1500` means `1.5x`
+- passive HashBeast staking smooths raw HashBeast power across all three HashBeast slots
+- three 1.0x HashBeasts produce a 2.0x passive boost
+- three strong HashBeasts reach the 3.0x passive cap
+- final passive staking hashpower is capped at `3x lockup x 3x HashBeasts = 9x`
 
 This final `hashpower_contribution` is what changes:
 
@@ -149,7 +149,7 @@ LP staking uses the same structure as MineBTC staking with two differences:
 3. Computes lockup-weighted amount
 4. Syncs pending staking rewards before changing balances
 5. Creates the LP `StakedPosition`
-6. Applies the player's Doge multiplier
+6. Applies the player's HashBeast multiplier
 7. Transfers LP into custody
 
 ### Unstake flow
@@ -218,7 +218,7 @@ When a user withdraws pending MineBTC:
 
 ### Why this exists
 
-This creates a recycling loop:
+This creates a rebirthing loop:
 
 - impatient claimers pay a fee
 - long-tail claimers earn that fee proportionally
@@ -236,38 +236,38 @@ referrals a country-building loop without changing the referred user's payout.
 
 ---
 
-## 7. Doge Staking vs Gameplay Doge
+## 7. HashBeast Staking vs Gameplay HashBeast
 
-There are **two different Doge multipliers** in the system.
+There are **two different HashBeast multipliers** in the system.
 
-### Passive staking Doges
+### Passive staking HashBeasts
 
-Handled in `doges.rs`:
+Handled in `hashbeasts.rs`:
 
-- `int_stake_doge`
-- `int_unstake_doge`
+- `int_stake_hashbeast`
+- `int_unstake_hashbeast`
 
 These affect:
 
-- `player_data.doge_multiplier`
+- `player_data.hashbeast_multiplier`
 - passive MineBTC hashpower
 - passive LP hashpower
 
 Important properties:
 
-- a user can stake **any owned Doge**, regardless of Doge faction
+- a user can stake **any owned HashBeast**, regardless of HashBeast faction
 - the multiplier only boosts the player's **home-faction passive staking**
-- the contract reconstructs the raw multiplier from remaining staked Doge metadata
-- the **effective** passive Doge multiplier is capped by `PASSIVE_DOGE_STAKING_MAX_MULTIPLIER` (`3.0x`)
-- the reconstructed raw multiplier is divided across `MAX_STAKED_DOGES`, so one strong Doge helps but does not make the other two passive slots irrelevant
+- the contract reconstructs the raw multiplier from remaining staked HashBeast metadata
+- the **effective** passive HashBeast multiplier is capped by `PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER` (`3.0x`)
+- the reconstructed raw multiplier is divided across `MAX_STAKED_HASHBEASTS`, so one strong HashBeast helps but does not make the other two passive slots irrelevant
 
-### Gameplay Doge
+### Gameplay HashBeast
 
 Handled in `user.rs`:
 
-- `use_doge_for_gameplay`
-- `request_doge_gameplay_unlock`
-- `withdraw_doge_from_gameplay`
+- `use_hashbeast_for_gameplay`
+- `request_hashbeast_gameplay_unlock`
+- `withdraw_hashbeast_from_gameplay`
 
 This uses:
 
@@ -283,19 +283,19 @@ It is a separate system from passive staking.
 
 ---
 
-## 8. How Passive Doge Multiplier Works Internally
+## 8. How Passive HashBeast Multiplier Works Internally
 
 The program does **not** store a separate uncapped raw multiplier in `PlayerData`.
 
 Instead:
 
-1. the client passes metadata accounts for already-staked Doges in `remaining_accounts`
+1. the client passes metadata accounts for already-staked HashBeasts in `remaining_accounts`
 2. the program reconstructs the raw sum
-3. it smooths that raw sum across all three passive Doge slots
+3. it smooths that raw sum across all three passive HashBeast slots
 4. it derives the capped effective multiplier
 5. it recalculates player hashpower using the old and new effective multipliers
 
-That is why `stake_doge` / `unstake_doge` must include the remaining Doge metadata accounts.
+That is why `stake_hashbeast` / `unstake_hashbeast` must include the remaining HashBeast metadata accounts.
 
 ### Recalculation model
 
@@ -305,7 +305,7 @@ When the passive multiplier changes:
 new_hashpower = old_hashpower × new_effective_multiplier / old_effective_multiplier
 ```
 
-This keeps MineBTC and LP passive hashpower aligned with the updated Doge boost.
+This keeps MineBTC and LP passive hashpower aligned with the updated HashBeast boost.
 
 ---
 
@@ -326,10 +326,10 @@ This keeps MineBTC and LP passive hashpower aligned with the updated Doge boost.
 - `MinebtcClaimableAccrued`
 - `HodlTaxRedistributed`
 
-### Doge passive multiplier lifecycle
+### HashBeast passive multiplier lifecycle
 
-- `DogeStaked`
-- `DogeUnstaked`
+- `HashBeastStaked`
+- `HashBeastUnstaked`
 
 If you want a wallet-level reward breakdown on frontend, the canonical source is:
 
@@ -350,9 +350,9 @@ Useful log prefixes when debugging staking:
 - `[withdraw_dbtc_rewards]`
 - `[update_minebtc_rewards]`
 - `[update_lp_rewards]`
-- `[stake_doge]`
-- `[unstake_doge]`
-- `[load_staked_doge_raw_multiplier]`
+- `[stake_hashbeast]`
+- `[unstake_hashbeast]`
+- `[load_staked_hashbeast_raw_multiplier]`
 
 ---
 
@@ -361,7 +361,7 @@ Useful log prefixes when debugging staking:
 ### Keep
 
 - Home-faction-only passive staking
-- Any-faction passive Doge staking
+- Any-faction passive HashBeast staking
 - Separate passive and gameplay multipliers
 - HODL tax redistribution as a sticky reward loop
 
@@ -387,11 +387,11 @@ Useful log prefixes when debugging staking:
 
 4. Make lockup choice legible
    Users should understand that the order is:
-   `deposit -> lockup multiplier -> passive Doge multiplier -> final hashpower`
+   `deposit -> lockup multiplier -> passive HashBeast multiplier -> final hashpower`
 
 ### Business / balance thoughts
 
-1. Passive Doge staking is strong because it boosts both MineBTC and LP rails.
+1. Passive HashBeast staking is strong because it boosts both MineBTC and LP rails.
    That is good for collectible demand, but frontend should clearly explain the cap.
 
 2. HODL tax yield is interesting but abstract.
@@ -403,8 +403,8 @@ Useful log prefixes when debugging staking:
 
 4. The passive layer feels production-viable if the UI keeps it understandable.
    The bigger risk is not contract math now; it is user confusion between:
-   - staking Doges
-   - gameplay Doge
+   - staking HashBeasts
+   - gameplay HashBeast
    - pending MineBTC
    - withdrawing MineBTC
    - HODL tax redistribution

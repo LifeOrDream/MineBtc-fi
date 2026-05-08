@@ -173,9 +173,14 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.jackpot_hit = false;
     game_session.jackpot_faction_id = 0;
     game_session.jackpot_pot_size_on_hit = 0;
-    game_session.highest_sol_bet_per_faction = [0u64; NUM_FACTIONS];
     game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
     game_session.total_mutations_this_round = 0;
+    game_session.winning_faction_volume_at_round = 0;
+    // Snapshot the active cycle ID at round start. Round-claim handlers use
+    // this to detect a late claim (cycle has already settled) and skip the
+    // mutation-bonus score-add for that case.
+    game_session.faction_war_id_when_played =
+        ctx.accounts.faction_war_config.current_faction_war_id;
     msg!("🎲 [game.int_start_round] state mutation: global_state.can_begin_round false -> false");
     global_state.can_begin_round = false;
 
@@ -1194,7 +1199,7 @@ fn seed_empty_faction_war_from_round<'info>(
     faction_war_state.loyalty_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+    faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
     faction_war_state.faction_sol_direction_totals =
@@ -1203,7 +1208,7 @@ fn seed_empty_faction_war_from_round<'info>(
     faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
     faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
-    faction_war_state.eligible_doge_direction_totals =
+    faction_war_state.eligible_hashbeast_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     faction_war_state.start_ranks = start_ranks;
     faction_war_state.final_ranks = start_ranks;
@@ -1239,9 +1244,10 @@ fn track_faction_war_round_completion<'info>(
     faction_war_state: &mut FactionWarState,
     winning_faction_id: u8,
     actually_distributed: u64,
+    round_score: u64,
 ) -> Result<()> {
-    msg!("🎲 [game.track_faction_war_round_completion] winning_faction_id={} actually_distributed={} faction_war_id={}",
-        winning_faction_id, actually_distributed, faction_war_state.faction_war_id);
+    msg!("🎲 [game.track_faction_war_round_completion] winning_faction_id={} actually_distributed={} round_score={} faction_war_id={}",
+        winning_faction_id, actually_distributed, round_score, faction_war_state.faction_war_id);
 
     let winning_faction_index = winning_faction_id as usize;
     if winning_faction_index < faction_war_state.active_faction_count as usize {
@@ -1252,6 +1258,33 @@ fn track_faction_war_round_completion<'info>(
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!("🎲 [game.track_faction_war_round_completion] state mutation: faction_round_wins[{}] {} -> {}",
             winning_faction_index, old_wins, faction_war_state.faction_round_wins[winning_faction_index]);
+
+        // --- Cycle leaderboard score: ROUND_WIN ---
+        // Driven by the country actually winning the round. Score added equals
+        // total weighted points bet on the winning country (any direction).
+        // Mutation bonuses (round-claim time) accrue to the same field.
+        if round_score > 0 {
+            let old_score = faction_war_state.faction_gameplay_scores[winning_faction_index];
+            faction_war_state.faction_gameplay_scores[winning_faction_index] = old_score
+                .checked_add(round_score)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!(
+                "🎲 [game.track_faction_war_round_completion] state mutation: faction_gameplay_scores[{}] {} -> {} (+{}, source=ROUND_WIN)",
+                winning_faction_index,
+                old_score,
+                faction_war_state.faction_gameplay_scores[winning_faction_index],
+                round_score
+            );
+            emit!(crate::events::GameplayScoreAccumulated {
+                faction_war_id: faction_war_state.faction_war_id,
+                faction_id: winning_faction_id,
+                score_source: GAMEPLAY_SCORE_SOURCE_ROUND_WIN,
+                score_added: round_score,
+                faction_total_score: faction_war_state.faction_gameplay_scores
+                    [winning_faction_index],
+                user: Pubkey::default(),
+            });
+        }
     } else {
         msg!("⚠️ [game.track_faction_war_round_completion] winning_faction_index {} >= active_faction_count {}, skipping win increment", winning_faction_index, faction_war_state.active_faction_count);
     }
@@ -1281,23 +1314,6 @@ fn track_faction_war_round_completion<'info>(
         accounts.faction_war_config.last_processed_round_id, accounts.game_session.round_id,
         accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id);
     if accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id {
-        let tuning = &accounts.global_config.gameplay_tuning;
-        let old_pressure = accounts.faction_war_config.recent_mutation_pressure_bps;
-        let decayed_pressure = (accounts.faction_war_config.recent_mutation_pressure_bps as u128)
-            .checked_mul(tuning.global_mutation_pressure_decay_bps as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        let added_pressure = (accounts.game_session.total_mutations_this_round as u128)
-            .checked_mul(tuning.global_mutation_pressure_per_mutation_bps as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        let next_pressure = decayed_pressure
-            .checked_add(added_pressure)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .min(BASIS_POINTS_DENOMINATOR as u128);
-        msg!("📊 [game.track_faction_war_round_completion] pressure computation: old_pressure={} decayed={} added={} next={}",
-            old_pressure, decayed_pressure, added_pressure, next_pressure);
-
         let old_rounds_elapsed = accounts.faction_war_config.cycle_rounds_elapsed;
         accounts.faction_war_config.cycle_rounds_elapsed = accounts
             .faction_war_config
@@ -1320,9 +1336,26 @@ fn track_faction_war_round_completion<'info>(
         msg!("🎲 [game.track_faction_war_round_completion] state mutation: last_round_mutations = {}", accounts.game_session.total_mutations_this_round);
         accounts.faction_war_config.last_round_mutations =
             accounts.game_session.total_mutations_this_round;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: recent_mutation_pressure_bps {} -> {}",
-            old_pressure, next_pressure as u16);
-        accounts.faction_war_config.recent_mutation_pressure_bps = next_pressure as u16;
+
+        // Snapshot the winning country's accumulated volume onto GameSession,
+        // then reset the per-country counter so the next streak starts fresh.
+        // Late round-claims read the snapshot, not the live counter, so the
+        // mutation-roll volume is stable regardless of when claims land.
+        if winning_faction_index
+            < accounts
+                .faction_war_config
+                .faction_volume_since_last_win
+                .len()
+        {
+            let snap =
+                accounts.faction_war_config.faction_volume_since_last_win[winning_faction_index];
+            accounts.game_session.winning_faction_volume_at_round = snap;
+            accounts.faction_war_config.faction_volume_since_last_win[winning_faction_index] = 0;
+            msg!(
+                "🎲 [game.track_faction_war_round_completion] state mutation: faction_volume_since_last_win[{}] {} -> 0 (snapshotted to GameSession.winning_faction_volume_at_round)",
+                winning_faction_index, snap
+            );
+        }
     }
 
     let lp_ops = accounts.mine_btc_mining.pol_stats.lp_operations_count;
@@ -1613,13 +1646,23 @@ pub fn int_end_round_faction_rewards<'info>(
         // Nothing further to track — this is an empty/seed state. The next
         // bet will fill gameplay scores, direction totals, etc.
     } else if accounts.faction_war_config.is_active && faction_war_state.stage == 0 {
-        msg!("🎲 [game.int_end_round_faction_rewards] faction_war active && stage==0 -> helper call: track_faction_war_round_completion(winning_faction_id={}, actually_distributed={})",
-            winning_faction_id, actually_distributed);
+        // Round-win cycle score: sum of weighted points bet on the winning
+        // country across all directions. Same metric we use for hashbeastBTC reward
+        // distribution — keeps leaderboard math aligned with rewards math.
+        let winner_idx = winning_faction_id as usize;
+        let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
+            .iter()
+            .copied()
+            .try_fold(0u64, |acc, v| acc.checked_add(v))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!("🎲 [game.int_end_round_faction_rewards] faction_war active && stage==0 -> helper call: track_faction_war_round_completion(winning_faction_id={}, actually_distributed={}, round_score={})",
+            winning_faction_id, actually_distributed, round_score);
         track_faction_war_round_completion(
             accounts,
             faction_war_state.as_mut(),
             winning_faction_id,
             actually_distributed,
+            round_score,
         )?;
     } else {
         msg!("⚠️ [game.int_end_round_faction_rewards] faction_war tracking skipped: is_active={} stage={}",

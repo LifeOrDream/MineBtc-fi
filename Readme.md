@@ -7,7 +7,7 @@
 <h1 align="center">MineBTC</h1>
 
 <p align="center">
-  <strong>Degen country arena game on Solana.<br/>Pick your country. Bet SOL. Win claims mutate your doge. Your country climbs. You earn degenBTC.</strong>
+  <strong>Degen country arena game on Solana.<br/>Pick your country. Bet SOL. Win claims mutate your hashbeast. Your country climbs. You earn degenBTC.</strong>
 </p>
 
 <p align="center">
@@ -23,9 +23,9 @@ MineBTC is a country arena game where every bet does three things at once:
 
 1. **Enters a 60-second round raffle** for instant SOL + degenBTC rewards
 2. **Scores gameplay support for your country** on the competitive leaderboard
-3. **Sets up claim-time doge mutation rolls** when that bet later wins rewards
+3. **Sets up claim-time hashbeast mutation rolls** when that bet later wins rewards
 
-Countries compete for the top of the leaderboard. Players compete for rewards. Doges evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
+Countries compete for the top of the leaderboard. Players compete for rewards. HashBeasts evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
 
 ---
 
@@ -51,30 +51,30 @@ Every minute, a new round runs:
 
 The same bets also accumulate into a longer competitive cycle called a **rebase**:
 
-1. Own-country SOL bets with an active gameplay doge **score gameplay support for that country**
+1. Own-country SOL bets with an active gameplay hashbeast **score gameplay support for that country**
 2. At the end of the cycle, countries are ranked by total gameplay scores
 3. Rankings are compared to the previous cycle to determine which countries moved Up, Down, or stayed Neutral
 4. Players who correctly bet final directions earn degenBTC from the rebase mining pool
-5. Own-country correct bettors get the loyalty share and the strongest doge mutation odds
+5. Own-country correct bettors get the loyalty share and the strongest hashbeast mutation odds
 
 **Gameplay score formula:**
 ```
-score = support_weight × own_country_sol_bet × doge_multiplier
+score = support_weight × own_country_sol_bet × hashbeast_multiplier
         support_weight=10
 ```
 
-Higher own-country bets + better gameplay doges = bigger score contribution to your country.
+Higher own-country bets + better gameplay hashbeasts = bigger score contribution to your country.
 
 ---
 
-## Doge NFTs: The Progression Engine
+## HashBeast NFTs: The Progression Engine
 
-Doges are functional game pieces with on-chain 256-bit DNA:
+HashBeasts are functional game pieces with on-chain 256-bit DNA:
 
-### Two Doge Roles
+### Two HashBeast Roles
 
-- **Gameplay doge (operator):** One doge locked for active play. Earns XP from betting. Own-country bets add gameplay score, and winning reward claims can mutate it (Evolution / Power / Trait).
-- **Staked doges (passive):** Up to 5 doges boosting staking hashpower. More staked doges = higher staking APR.
+- **Gameplay hashbeast (operator):** One hashbeast locked for active play. Earns XP from betting. Own-country bets add gameplay score, and winning reward claims can mutate it (Evolution / Power / Trait).
+- **Staked hashbeasts (passive):** Up to 5 hashbeasts boosting staking hashpower. More staked hashbeasts = higher staking APR.
 
 ### How Mutations Work
 
@@ -83,7 +83,7 @@ Mutation rolls happen when a user claims rewards from a winning round or settled
 ```
 Base chance: 20%
 × stake_strength (eligible winning stake / highest stake on the country)
-× multiplier_penalty (1.0x doge = full chance, 4.2x ~= 24% chance)
+× multiplier_penalty (1.0x hashbeast = full chance, 4.2x ~= 24% chance)
 × faction_penalty / pacing / volume controls
 × claim_boost (highest for own-country correct Up moves)
 
@@ -105,7 +105,7 @@ XP accumulates from eligible claim-time mutation stake and boosts the multiplier
 XP gain rate = base_rate × (1.0 / current_multiplier)
 ```
 
-A fresh doge gains XP fast. A maxed doge gains XP slowly. This prevents whales from speed-running progression.
+A fresh hashbeast gains XP fast. A maxed hashbeast gains XP slowly. This prevents whales from speed-running progression.
 
 When a mutation fires, it **consumes** the XP it used:
 - Evolution: consumes ALL XP (full reset)
@@ -113,7 +113,7 @@ When a mutation fires, it **consumes** the XP it used:
 
 ### Accumulated Value
 
-Each successful reward claim can add degenBTC to the gameplay doge based on the claim mutation result (1% - 6.9% of round reward, plus cycle Doge bonus where applicable). This accumulates on-chain and can only be claimed by **burning the doge** (`send_to_heaven`). Creates a natural floor price based on accumulated earnings.
+Each successful reward claim can add degenBTC to the gameplay hashbeast based on the claim mutation result (1% - 6.9% of round reward, plus cycle HashBeast bonus where applicable). This accumulates on-chain and can be claimed through `rebirth_hashbeast`, which either rebirths the asset into lootbox inventory or burns it if the rebirth cap or inventory guardrails are hit.
 
 ---
 
@@ -177,7 +177,7 @@ Two staking tracks, both earning SOL + degenBTC:
 
 | Track | What You Stake | What Boosts Rewards |
 |-------|---------------|-------------------|
-| **degenBTC staking** | Lock degenBTC for configurable duration | Longer lockup = higher multiplier. Staked doges boost hashpower. |
+| **degenBTC staking** | Lock degenBTC for configurable duration | Longer lockup = higher multiplier. Staked hashbeasts boost hashpower. |
 | **LP staking** | Lock Raydium LP tokens | Same multiplier mechanics as degenBTC staking |
 
 Stakers earn from three sources:
@@ -197,7 +197,7 @@ The game generates rich, structured on-chain data with every bet, mutation, and 
 
 This data can later power:
 
-- **AI-generated doge art** — unique visuals for each evolution stage, faction-specific styles
+- **AI-generated hashbeast art** — unique visuals for each evolution stage, faction-specific styles
 - **NFT market-making agent** — autonomous floor sweeps, pricing, inventory rotation using the NFT floor sweep vault
 - **Content generation** — mutation stories, faction propaganda, social clips
 - **Game expansion** — AI-designed mini-games, new round modes, mobile experiences
@@ -214,14 +214,14 @@ programs/mineBTC/src/
 ├── state.rs            # Account layouts and constants
 ├── errors.rs           # Custom error codes
 ├── events.rs           # Indexer-facing events
-├── genescience.rs      # Doge DNA, mutations, evolution, breeding
+├── genescience.rs      # HashBeast DNA, mutations, evolution, breeding
 └── instructions/
     ├── admin.rs        # Global config, factions, fee parameters
     ├── game.rs         # 60-second round loop, slot-hash randomness, winner selection
-    ├── user.rs         # Betting, autominers, round claims, gameplay doges, mutations
+    ├── user.rs         # Betting, autominers, round claims, gameplay hashbeasts, mutations
     ├── rebase.rs       # Mutation-driven competitive cycles, settlement, rebase claims
     ├── stake.rs        # degenBTC and LP token staking
-    ├── doges.rs        # Doge NFT minting, breeding, staking, gameplay lock/unlock
+    ├── hashbeasts.rs        # HashBeast NFT minting, breeding, staking, gameplay lock/unlock
     ├── economy.rs      # Price snapshots, emission rate adjustment, POL (LP add + burn)
     ├── tax.rs          # Transfer-tax harvest, faction treasury distribution
     └── helper.rs       # Shared math and vault transfer helpers

@@ -84,7 +84,7 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
 // ============================================================================
 
 (async () => {
-    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ DogeTech DEGEN_BTC-SOL Pool Creation ================================');
+    console.log('\x1b[35m%s\x1b[0m', '🚀 ================================ MineBTC DEGEN_BTC-SOL Pool Creation ================================');
     console.log('\x1b[36m%s\x1b[0m', '🌐 Network:', CLUSTER);
     console.log('\x1b[36m%s\x1b[0m', '🔗 RPC URL:', RPC_URL);
     console.log('\x1b[36m%s\x1b[0m', '💱 Pool Type: Raydium CP-Swap (Constant Product)');
@@ -550,13 +550,13 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         // Ensure correct token order (token0 < token1) using byte-wise comparison
         const minebtcMintBytes = minebtcMintKey.toBytes();
         const wsolMintBytes = wsolMintKey.toBytes();
-        const isMdogeToken0 = Buffer.compare(minebtcMintBytes, wsolMintBytes) < 0;
+        const isDbtcToken0 = Buffer.compare(minebtcMintBytes, wsolMintBytes) < 0;
         
-        const token0Mint = isMdogeToken0 ? minebtcMintKey : wsolMintKey;
-        const token1Mint = isMdogeToken0 ? wsolMintKey : minebtcMintKey;
+        const token0Mint = isDbtcToken0 ? minebtcMintKey : wsolMintKey;
+        const token1Mint = isDbtcToken0 ? wsolMintKey : minebtcMintKey;
         
-        console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isMdogeToken0 ? '(DEGEN_BTC)' : '(WSOL)'}`);
-        console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isMdogeToken0 ? '(DEGEN_BTC)' : '(WSOL)'}`);
+        console.log(COLOR_INFO, `🪙 Token0: ${token0Mint.toString()} ${isDbtcToken0 ? '(DEGEN_BTC)' : '(WSOL)'}`);
+        console.log(COLOR_INFO, `🪙 Token1: ${token1Mint.toString()} ${!isDbtcToken0 ? '(DEGEN_BTC)' : '(WSOL)'}`);
         console.log(COLOR_DIM, `🔍 Token order check: ${token0Mint.toString() < token1Mint.toString() ? 'CORRECT' : 'INCORRECT'}`);
 
         // Create and fund WSOL account
@@ -576,7 +576,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         console.log(COLOR_DIM, `🔍 Current WSOL balance: ${currentWsolBalance.value.uiAmount || 0} WSOL`);
 
         // Calculate pool amounts from config
-        const initialMdogeAmount = new BN(
+        const initialDbtcAmount = new BN(
             Math.floor(config.token.initial_supply * Math.pow(10, config.token.decimals) * config.raydium.initial_dbtc_percentage / 100)
         );
         const initialSolAmount = new BN(config.raydium.initial_sol_amount);
@@ -659,21 +659,21 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         console.log(COLOR_DIM, '🔍 Setting up user token accounts...');
         
         // Get DEGEN_BTC account (SPL-2022)
-        const creatorMdogeAccount = await getAssociatedTokenAddress(
+        const creatorDbtcAccount = await getAssociatedTokenAddress(
             minebtcMintKey,
             deployer.publicKey,
             false,
             anchor_spl.TOKEN_2022_PROGRAM_ID
         );
-        console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC Account: ${creatorMdogeAccount.toString()}`);
+        console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC Account: ${creatorDbtcAccount.toString()}`);
 
         // Check DEGEN_BTC balance
         try {
-            const mdogeBalance = await connection.getTokenAccountBalance(creatorMdogeAccount);
-            console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC balance: ${mdogeBalance.value.uiAmount} DEGEN_BTC`);
+            const dbtcBalance = await connection.getTokenAccountBalance(creatorDbtcAccount);
+            console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC balance: ${dbtcBalance.value.uiAmount} DEGEN_BTC`);
             
-            if (parseFloat(mdogeBalance.value.amount) < initialMdogeAmount.toNumber()) {
-                console.error(COLOR_ERROR, `❌ Insufficient DEGEN_BTC balance. Need: ${initialMdogeAmount.toNumber() / Math.pow(10, config.token.decimals)}, Have: ${mdogeBalance.value.uiAmount}`);
+            if (parseFloat(dbtcBalance.value.amount) < initialDbtcAmount.toNumber()) {
+                console.error(COLOR_ERROR, `❌ Insufficient DEGEN_BTC balance. Need: ${initialDbtcAmount.toNumber() / Math.pow(10, config.token.decimals)}, Have: ${dbtcBalance.value.uiAmount}`);
                 throw new Error('Insufficient DEGEN_BTC balance');
             }
         } catch (error) {
@@ -725,18 +725,18 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         }
 
         // Determine token programs based on the actual token types, not order
-        const mdogeTokenProgram = anchor_spl.TOKEN_2022_PROGRAM_ID; // DEGEN_BTC is always Token-2022
+        const dbtcTokenProgram = anchor_spl.TOKEN_2022_PROGRAM_ID; // DEGEN_BTC is always Token-2022
         const wsolTokenProgram = TOKEN_PROGRAM_ID; // WSOL is always standard SPL
         
         // Assign programs based on which token is token0/token1
-        const token0Program = isMdogeToken0 ? mdogeTokenProgram : wsolTokenProgram;
-        const token1Program = isMdogeToken0 ? wsolTokenProgram : mdogeTokenProgram;
+        const token0Program = isDbtcToken0 ? dbtcTokenProgram : wsolTokenProgram;
+        const token1Program = isDbtcToken0 ? wsolTokenProgram : dbtcTokenProgram;
         
         console.log(COLOR_DIM, `🔍 Token program assignment:`);
-        console.log(COLOR_DIM, `   DEGEN_BTC program: ${mdogeTokenProgram.toString()}`);
+        console.log(COLOR_DIM, `   DEGEN_BTC program: ${dbtcTokenProgram.toString()}`);
         console.log(COLOR_DIM, `   WSOL program: ${wsolTokenProgram.toString()}`);
-        console.log(COLOR_DIM, `   token0Program: ${token0Program.toString()} (${isMdogeToken0 ? 'DEGEN_BTC' : 'WSOL'})`);
-        console.log(COLOR_DIM, `   token1Program: ${token1Program.toString()} (${isMdogeToken0 ? 'WSOL' : 'DEGEN_BTC'})`);
+        console.log(COLOR_DIM, `   token0Program: ${token0Program.toString()} (${isDbtcToken0 ? 'DEGEN_BTC' : 'WSOL'})`);
+        console.log(COLOR_DIM, `   token1Program: ${token1Program.toString()} (${isDbtcToken0 ? 'WSOL' : 'DEGEN_BTC'})`);
         
         // Verify token ownership
         try {
@@ -750,11 +750,11 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
             
             // Verify creator token accounts
             console.log(COLOR_DIM, `🔍 Creator token account verification:`);
-            const creatorToken0Info = await connection.getAccountInfo(creatorMdogeAccount);
+            const creatorToken0Info = await connection.getAccountInfo(creatorDbtcAccount);
             const creatorToken1Info = await connection.getAccountInfo(creatorWsolAccount.address);
             
-            console.log(COLOR_DIM, `   creatorMdogeAccount exists: ${!!creatorToken0Info}`);
-            console.log(COLOR_DIM, `   creatorMdogeAccount owner: ${creatorToken0Info?.owner.toString()}`);
+            console.log(COLOR_DIM, `   creatorDbtcAccount exists: ${!!creatorToken0Info}`);
+            console.log(COLOR_DIM, `   creatorDbtcAccount owner: ${creatorToken0Info?.owner.toString()}`);
             console.log(COLOR_DIM, `   creatorWsolAccount exists: ${!!creatorToken1Info}`);
             console.log(COLOR_DIM, `   creatorWsolAccount owner: ${creatorToken1Info?.owner.toString()}`);
             
@@ -763,12 +763,12 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         }
 
         // Determine creator token accounts based on token order
-        const creatorToken0 = isMdogeToken0 ? creatorMdogeAccount : creatorWsolAccount.address;
-        const creatorToken1 = isMdogeToken0 ? creatorWsolAccount.address : creatorMdogeAccount;
+        const creatorToken0 = isDbtcToken0 ? creatorDbtcAccount : creatorWsolAccount.address;
+        const creatorToken1 = isDbtcToken0 ? creatorWsolAccount.address : creatorDbtcAccount;
 
         // Determine initial amounts based on token order
-        const initAmount0 = isMdogeToken0 ? initialMdogeAmount : initialSolAmount;
-        const initAmount1 = isMdogeToken0 ? initialSolAmount : initialMdogeAmount;
+        const initAmount0 = isDbtcToken0 ? initialDbtcAmount : initialSolAmount;
+        const initAmount1 = isDbtcToken0 ? initialSolAmount : initialDbtcAmount;
 
         // Prepare pool accounts
         console.log(COLOR_DIM, '🔍 Preparing pool accounts structure...');
@@ -803,8 +803,8 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const openTime = config.raydium.open_time;
         
         console.log(COLOR_DIM, '🔍 Pool initialization parameters:');
-        console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isMdogeToken0 ? 'DEGEN_BTC' : 'WSOL'})`);
-        console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isMdogeToken0 ? 'WSOL' : 'DEGEN_BTC'})`);
+        console.log(COLOR_DIM, `   initAmount0: ${initAmount0.toString()} (${isDbtcToken0 ? 'DEGEN_BTC' : 'WSOL'})`);
+        console.log(COLOR_DIM, `   initAmount1: ${initAmount1.toString()} (${isDbtcToken0 ? 'WSOL' : 'DEGEN_BTC'})`);
         console.log(COLOR_DIM, `   openTime: ${openTime} (${openTime > 0 ? new Date(openTime * 1000).toLocaleString() : 'Opens immediately'})`);
 
         try {
@@ -848,10 +848,10 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 observationStatePDA: observationStatePDA.toString(),
                 token0Mint: token0Mint.toString(),
                 token1Mint: token1Mint.toString(),
-                isMdogeToken0: isMdogeToken0,
+                isDbtcToken0: isDbtcToken0,
                 txid: poolTxid,
                 wrapTxid: wrapTxid,
-                initialMdogeAmount: initialMdogeAmount.toString(),
+                initialDbtcAmount: initialDbtcAmount.toString(),
                 initialSolAmount: initialSolAmount.toString(),
                 openTime: openTime,
                 timestamp: new Date().toISOString()
@@ -926,7 +926,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             deployer.publicKey
         );
         
-        const creatorMdogeAccount = await getAssociatedTokenAddress(
+        const creatorDbtcAccount = await getAssociatedTokenAddress(
             minebtcMint,
             deployer.publicKey,
             false,
@@ -940,7 +940,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         const token0VaultPDA = new PublicKey(poolData.token0VaultPDA);
         const token1VaultPDA = new PublicKey(poolData.token1VaultPDA);
         const authorityPDA = new PublicKey(poolData.authorityPDA);
-        const isMdogeToken0 = poolData.isMdogeToken0;
+        const isDbtcToken0 = poolData.isDbtcToken0;
         
         const creatorLpAccount = await getAssociatedTokenAddress(
             lpMintPDA,
@@ -962,20 +962,20 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             connection,
             token0VaultPDA,
             undefined,
-            isMdogeToken0 ? anchor_spl.TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID
+            isDbtcToken0 ? anchor_spl.TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID
         );
         const token1VaultAcc = await anchor_spl.getAccount(
             connection,
             token1VaultPDA,
             undefined,
-            isMdogeToken0 ? TOKEN_PROGRAM_ID : anchor_spl.TOKEN_2022_PROGRAM_ID
+            isDbtcToken0 ? TOKEN_PROGRAM_ID : anchor_spl.TOKEN_2022_PROGRAM_ID
         );
         const lpMintInfo = await anchor_spl.getMint(connection, lpMintPDA);
         const lpSupply = new BN(lpMintInfo.supply.toString());
         const token0Reserve = new BN(token0VaultAcc.amount.toString());
         const token1Reserve = new BN(token1VaultAcc.amount.toString());
-        const wsolReserve = isMdogeToken0 ? token1Reserve : token0Reserve;
-        const dbtcReserve = isMdogeToken0 ? token0Reserve : token1Reserve;
+        const wsolReserve = isDbtcToken0 ? token1Reserve : token0Reserve;
+        const dbtcReserve = isDbtcToken0 ? token0Reserve : token1Reserve;
 
         if (wsolReserve.isZero() || dbtcReserve.isZero() || lpSupply.isZero()) {
             throw new Error("Pool reserves / LP supply look empty — pool create probably failed.");
@@ -991,8 +991,8 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         const maxWsol = requiredWsol.mul(new BN(1005)).div(new BN(1000));
         const maxDbtc = requiredDbtc.mul(new BN(1015)).div(new BN(1000));
 
-        const liquidityAmount0 = isMdogeToken0 ? maxDbtc : maxWsol;
-        const liquidityAmount1 = isMdogeToken0 ? maxWsol : maxDbtc;
+        const liquidityAmount0 = isDbtcToken0 ? maxDbtc : maxWsol;
+        const liquidityAmount1 = isDbtcToken0 ? maxWsol : maxDbtc;
 
         console.log(COLOR_DIM, `🔍 Pool ratio (live):`);
         console.log(COLOR_DIM, `   WSOL reserve: ${wsolReserve.toString()} (${wsolReserve.toNumber() / 1e9} WSOL)`);
@@ -1007,11 +1007,11 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
 
         // Check current balances
         const wsolBalance = await anchor_spl.getAccount(connection, creatorWsolAccount.address, undefined, TOKEN_PROGRAM_ID);
-        const mdogeBalance = await anchor_spl.getAccount(connection, creatorMdogeAccount, undefined, anchor_spl.TOKEN_2022_PROGRAM_ID);
+        const dbtcBalance = await anchor_spl.getAccount(connection, creatorDbtcAccount, undefined, anchor_spl.TOKEN_2022_PROGRAM_ID);
 
         console.log(COLOR_DIM, `🔍 Current balances:`);
         console.log(COLOR_DIM, `   WSOL: ${wsolBalance.amount.toString()} (${Number(wsolBalance.amount) / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   DEGEN_BTC: ${mdogeBalance.amount.toString()} (${Number(mdogeBalance.amount) / 1e6} dBTC)`);
+        console.log(COLOR_DIM, `   DEGEN_BTC: ${dbtcBalance.amount.toString()} (${Number(dbtcBalance.amount) / 1e6} dBTC)`);
 
         // Top up WSOL if we don't have enough.
         const wsolHave = new BN(wsolBalance.amount.toString());
@@ -1032,7 +1032,7 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             console.log(COLOR_DIM, `🔗 Wrap Transaction: ${wrapSig}`);
         }
 
-        const dbtcHave = new BN(mdogeBalance.amount.toString());
+        const dbtcHave = new BN(dbtcBalance.amount.toString());
         if (dbtcHave.lt(maxDbtc)) {
             throw new Error(
                 `Insufficient DEGEN_BTC. Need ${maxDbtc.toString()} base units, have ${dbtcHave.toString()}.`
@@ -1040,8 +1040,8 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
         }
         
         // Determine token accounts based on token order
-        const token0Account = isMdogeToken0 ? creatorMdogeAccount : creatorWsolAccount.address;
-        const token1Account = isMdogeToken0 ? creatorWsolAccount.address : creatorMdogeAccount;
+        const token0Account = isDbtcToken0 ? creatorDbtcAccount : creatorWsolAccount.address;
+        const token1Account = isDbtcToken0 ? creatorWsolAccount.address : creatorDbtcAccount;
         
         // Prepare liquidity accounts
         const liquidityAccounts = {
@@ -1055,8 +1055,8 @@ async function addInitialLiquidity(connection, cpProgram, deployer, deploymentDa
             token1Vault: token1VaultPDA,
             tokenProgram: TOKEN_PROGRAM_ID,
             tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
-            vault0Mint: isMdogeToken0 ? minebtcMint : wsolMintKey,
-            vault1Mint: isMdogeToken0 ? wsolMintKey : minebtcMint,
+            vault0Mint: isDbtcToken0 ? minebtcMint : wsolMintKey,
+            vault1Mint: isDbtcToken0 ? wsolMintKey : minebtcMint,
             lpMint: lpMintPDA,
         };
         
@@ -1184,7 +1184,7 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
                     pool_state: deploymentData.dbtc_sol_pool_created.poolStatePDA,
                     burn_all_lp_tokens: true,
                     burn_purpose: "Permanent liquidity lock - cannot remove initial liquidity",
-                    dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialMdogeAmount,
+                    dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialDbtcAmount,
                     sol_locked_amount: deploymentData.dbtc_sol_pool_created.initialSolAmount,
                     burned_amount: "0",
                     burn_signature: "N/A - No tokens to burn",
@@ -1208,7 +1208,7 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
                 pool_state: deploymentData.dbtc_sol_pool_created.poolStatePDA,
             burn_all_lp_tokens: true,
             burn_purpose: "Permanent liquidity lock - cannot remove initial liquidity",
-                dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialMdogeAmount,
+                dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialDbtcAmount,
                 sol_locked_amount: deploymentData.dbtc_sol_pool_created.initialSolAmount,
                 burned_amount: "0",
                 burn_signature: "N/A - No tokens to burn",
@@ -1273,7 +1273,7 @@ async function burnLpTokens(connection, deployer, deploymentData, deploymentPath
             burned_amount_readable: `${Number(lpBalance) / 1e9} LP`,
             burn_signature: burnSignature,
             burn_purpose: "Permanent liquidity lock - cannot remove initial liquidity",
-            dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialMdogeAmount,
+            dbtc_locked_amount: deploymentData.dbtc_sol_pool_created.initialDbtcAmount,
             sol_locked_amount: deploymentData.dbtc_sol_pool_created.initialSolAmount,
             status: 'burned_successfully',
             permanent_lock: true,

@@ -19,9 +19,9 @@
     "burn_tax_bps": 100,
     "max_burn_amount": 1000000,
     "metadata_included": true,
-    "metadata_name": "DogeWifBTC",
-    "metadata_symbol": "DBTC",
-    "metadata_uri": "https://d13jtsearj5tgw.cloudfront.net/assets/Doge.jpg",
+    "metadata_name": "degenBTC",
+    "metadata_symbol": "dBTC",
+    "metadata_uri": "https://assets.minebtc.fun/btc",
     "creation_signature": "2HoCo22PxZVQKdRUArvcW8ZhpMd6WxUzGoq9HDLPa7HNimyQQgmc49WyLkexKvsZJtN61nYN9kPKgnvTUc97uYNc",
     "timestamp": "2025-11-29T14:01:47.830Z",
     "mint_authority_status": "removed",
@@ -37,7 +37,7 @@
   "initial_supply_minted": {
     "amount": "21000000000000000",
     "actual_minted_amount": "21000000000000000",
-    "amount_readable": "21,000,000,000 DBTC",
+    "amount_readable": "21,000,000,000 dBTC",
     "token_account_address": "C7qSGZ7hGSPhFHbZjv6UBpBARePTuvuUAU7f4hND5oHf",
     "mint_signature": "5JCtXzEbFp9KZxfvVQKXwv7HfbEkfQBcNnKP3PkvRK9dejHL3DP2KbbAJkW5izc3NwhhsQvdPZmAvyFmoDCLSvRi",
     "bigint_verification": {
@@ -53,7 +53,7 @@
     "new_mint_authority": null,
     "removal_signature": "9mqE6yH8YbM3qWUyYxh5BByPiqE87eWb8nCt8oMmePGwXew2RgPuRxZghzmLhHi5tsvdPzDgbR8TugdFA6W1nRJ",
     "timestamp": "2025-11-29T14:01:49.222Z",
-    "total_supply_locked": "21,000,000,000 DBTC"
+    "total_supply_locked": "21,000,000,000 dBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -97,10 +97,10 @@
     "observationStatePDA": "3Px8EF8DSSn6gndwemAjx6yqXz4bLqCELxob1KePMLzr",
     "token0Mint": "13kY13t83YbfSwDegTmv71bm6xciLamtWa62yoaxVjpy",
     "token1Mint": "So11111111111111111111111111111111111111112",
-    "isMdogeToken0": true,
+    "isDbtcToken0": true,
     "txid": "4KAuTqwTFSCLjmxhjGWEHbnP4gpVxYFcn2vg6BusGeouv33WnsAT8e59qnDasNFjRetZwwCZUz9RdiYskCVaXwNf",
     "wrapTxid": "26KuK5q6MGVrLoqCNXVY71mRtrbNyQ7yYRaYzHdzT6obmAD3XqYqz5DBnjbBPGZQkmQ36yRxZU4D8ZVaPLvQDqch",
-    "initialMdogeAmount": "210000000000000",
+    "initialDbtcAmount": "210000000000000",
     "initialSolAmount": "100000000",
     "openTime": 0,
     "timestamp": "2025-11-29T14:01:57.608Z"
@@ -249,23 +249,23 @@
     "tx_signature": "QDW4fEue7UhKYYkgHUfC3Ryv3FDJSmLfQ42U9RaiUL2bSvcRifEnhaRS84sa1N3PPqtiiHNTExYSsNpGZYwjKy5",
     "timestamp": "2025-11-29T14:02:10.156Z"
   },
-  "doge_config_initialized": {
-    "doges_config_pda": "2ekGzyP837n5ToFxA3oZ7uBzEaG6YbMErYgnm2XizUiD",
+  "hashbeast_config_initialized": {
+    "hashbeasts_config_pda": "2ekGzyP837n5ToFxA3oZ7uBzEaG6YbMErYgnm2XizUiD",
             "base_price": "1000000000",
             "curve_a": "5263158",
-            "max_supply": "15000",
+            "has_lifetime_supply_cap": false,
     "tx_signature": "9ni3WJAscbioA6LyfdgukdhdhCi9ouHpNjUq54pgVtKWQPUF4jx29L44uNrpDkLfJjzKDNfMH8sEDTqzxWqmSrn",
     "timestamp": "2025-11-29T14:02:10.619Z"
   },
-  "doge_collection_created": {
+  "hashbeast_collection_created": {
     "collection_address": "2RHEjMxX2qmsejLWWeLhMAgVj6FGhpvYiH4eHCw72abJ",
-    "collection_name": "Bitcoin doges",
-    "collection_uri": "https://arweave.net/doge-collection-metadata.json",
+    "collection_name": "Bitcoin hashbeasts",
+    "collection_uri": "https://arweave.net/hashbeast-collection-metadata.json",
     "collection_authority": "3THSnNoTyd1YzGK82zRsqQq6fcj1K2qdPoMsd7SfywBE",
     "tx_signature": "3K1jaf2XemVrGyfH5egRtaKcaQLV75Vekrz75AM9yNyUCzkQWGy54CkUKEEkiijYVjWPDWnySFE7pr4847EqQer1",
     "timestamp": "2025-11-29T14:02:11.093Z"
   },
-  "doge_royalties_initialized": {
+  "hashbeast_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {

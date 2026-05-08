@@ -10,7 +10,7 @@
 //
 // Degen country arena game on Solana.
 //
-// Players pick a country, pick a direction, bet SOL. Their Doge Operators build XP
+// Players pick a country, pick a direction, bet SOL. Their HashBeast Operators build XP
 // through gameplay and can trigger story events during rounds. Those events may
 // mutate DNA on-chain, but the product-level primitive is broader: the backend can
 // turn each story event into character history, artwork, reels, or social content.
@@ -20,10 +20,10 @@
 //
 // - `admin`: Configuration, factions, fee parameters.
 // - `economy`: Price snapshots, emission rate adjustment, POL (LP add + burn).
-// - `user`: Betting, autominers, round claims, gameplay doges, story events.
+// - `user`: Betting, autominers, round claims, gameplay hashbeasts, story events.
 // - `stake`: degenBTC and LP token staking.
 // - `game`: 60-second round loop, slot-hash randomness, winner selection.
-// - `doges`: Doge NFT minting, breeding, staking, evolution.
+// - `hashbeasts`: HashBeast NFT minting, breeding, staking, evolution.
 // - `faction_war`: Story-event-driven competitive cycles, settlement, and cycle rewards.
 // - `tax`: Transfer-tax harvest, faction treasury distribution.
 //
@@ -40,7 +40,7 @@ pub mod state;
 
 pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
-pub use instructions::doges::*;
+pub use instructions::hashbeasts::*;
 pub use instructions::economy::*;
 pub use instructions::faction_war::*;
 pub use instructions::game::*;
@@ -49,7 +49,7 @@ pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    AutominerFactionPick, BetType, DogeConfig, DogeMintConfig, FactionsConfig, MineBtcDistConfig,
+    AutominerFactionPick, BetType, HashBeastConfig, HashBeastMintConfig, FactionsConfig, MineBtcDistConfig,
     PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
@@ -66,7 +66,7 @@ macro_rules! log_fn {
 pub mod minebtc {
     use super::*;
     use instructions::admin::{self};
-    use instructions::doges::{self};
+    use instructions::hashbeasts::{self};
     use instructions::economy::{self};
     use instructions::faction_war::{self};
     use instructions::game::{self};
@@ -151,6 +151,7 @@ pub mod minebtc {
         new_hodl_tax_pct: Option<u8>,
         snapshot_interval: Option<u64>,
         new_cycle_sol_split_pct: Option<u8>,
+        new_nft_market_making_pct: Option<u8>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_fees");
         admin::update_fees_internal(
@@ -165,6 +166,7 @@ pub mod minebtc {
             new_hodl_tax_pct,
             snapshot_interval,
             new_cycle_sol_split_pct,
+            new_nft_market_making_pct,
         )
     }
 
@@ -175,7 +177,7 @@ pub mod minebtc {
     }
 
     /// Authority-only kill switch. When paused, the contract blocks new bets
-    /// (manual + autominer), new round starts, and doge mints/breeds. Round
+    /// (manual + autominer), new round starts, and hashbeast mints/breeds. Round
     /// settlement, claims, staking, and economy cranks remain available so
     /// players can always exit and pending rounds always finish.
     pub fn set_pause(ctx: Context<UpdateConfigAc>, paused: bool) -> Result<()> {
@@ -204,7 +206,7 @@ pub mod minebtc {
 
     /// Update breeding configuration (admin only)
     pub fn update_breeding_config(
-        ctx: Context<UpdateDogeConfig>,
+        ctx: Context<UpdateHashBeastConfig>,
         breeding_allowed: bool,
         breed_base_price: u64,
         breed_curve_a: u64,
@@ -310,31 +312,29 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------  DOGE SYSTEM (ADMIN) ------------------------------------------------
+    // ------------  HASHBEAST SYSTEM (ADMIN) ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize DogeConfig account (admin only)
+    /// Initialize HashBeastConfig account (admin only).
     ///
-    /// Creates the DogeConfig account that stores collection, supply, and breeding state.
-    /// This must be called before creating the Doge collection.
-    pub fn initialize_doge_config(
-        ctx: Context<InitializeDogeConfig>,
-        max_supply: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "initialize_doge_config");
-        admin::initialize_doge_config_internal(ctx, max_supply)
+    /// Creates the HashBeastConfig that stores collection + breeding state. There
+    /// is no lifetime supply cap; only the genesis sale (HashBeastMintConfig) is
+    /// bounded.
+    pub fn initialize_hashbeast_config(ctx: Context<InitializeHashBeastConfig>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_hashbeast_config");
+        admin::initialize_hashbeast_config_internal(ctx)
     }
 
-    /// Initialize mint-only Doge config for the genesis sale.
-    pub fn initialize_doge_mint_config(
-        ctx: Context<InitializeDogeMintConfig>,
+    /// Initialize mint-only HashBeast config for the genesis sale.
+    pub fn initialize_hashbeast_mint_config(
+        ctx: Context<InitializeHashBeastMintConfig>,
         base_price: u64,
         curve_a: u64,
         genesis_mint_limit: u64,
         max_genesis_mints_per_faction: u16,
     ) -> Result<()> {
-        crate::log_fn!("lib", "initialize_doge_mint_config");
-        admin::initialize_doge_mint_config_internal(
+        crate::log_fn!("lib", "initialize_hashbeast_mint_config");
+        admin::initialize_hashbeast_mint_config_internal(
             ctx,
             base_price,
             curve_a,
@@ -343,30 +343,16 @@ pub mod minebtc {
         )
     }
 
-    /// Update DogeConfig account (admin only)
-    ///
-    /// Updates the DogeConfig account that stores collection, supply, and breeding state.
-    ///
-    /// # Parameters
-    /// - `max_supply`: Optional lifetime Doge supply cap.
-    pub fn update_doge_config(
-        ctx: Context<UpdateDogeConfig>,
-        max_supply: Option<u64>,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "update_doge_config");
-        admin::update_doge_config_internal(ctx, max_supply)
-    }
-
-    /// Update mint-only Doge config for genesis sale pricing and caps.
-    pub fn update_doge_mint_config(
-        ctx: Context<UpdateDogeMintConfig>,
+    /// Update mint-only HashBeast config for genesis sale pricing and caps.
+    pub fn update_hashbeast_mint_config(
+        ctx: Context<UpdateHashBeastMintConfig>,
         base_price: Option<u64>,
         curve_a: Option<u64>,
         genesis_mint_limit: Option<u64>,
         max_genesis_mints_per_faction: Option<u16>,
     ) -> Result<()> {
-        crate::log_fn!("lib", "update_doge_mint_config");
-        admin::update_doge_mint_config_internal(
+        crate::log_fn!("lib", "update_hashbeast_mint_config");
+        admin::update_hashbeast_mint_config_internal(
             ctx,
             base_price,
             curve_a,
@@ -375,37 +361,37 @@ pub mod minebtc {
         )
     }
 
-    /// Toggle Doge NFT minting on/off (admin only)
+    /// Toggle HashBeast NFT minting on/off (admin only)
     ///
     /// Flips is_active between true and false.
-    pub fn switch_doge_mining(ctx: Context<SwitchDogeMiningState>) -> Result<()> {
-        crate::log_fn!("lib", "switch_doge_mining");
-        admin::switch_doge_mining_internal(ctx)
+    pub fn switch_hashbeast_mining(ctx: Context<SwitchHashBeastMiningState>) -> Result<()> {
+        crate::log_fn!("lib", "switch_hashbeast_mining");
+        admin::switch_hashbeast_mining_internal(ctx)
     }
 
-    /// Create Doge collection with program PDA as authority (admin only)
+    /// Create HashBeast collection with program PDA as authority (admin only)
     ///
-    /// Creates a new Metaplex Core collection for Doge NFTs.
+    /// Creates a new Metaplex Core collection for HashBeast NFTs.
     /// The collection's update authority is set to a program-controlled PDA,
     /// allowing the program to mint NFTs from the collection.
-    /// Requires DogeConfig to be initialized first.
-    pub fn create_doge_collection(
-        ctx: Context<CreateDogeCollection>,
+    /// Requires HashBeastConfig to be initialized first.
+    pub fn create_hashbeast_collection(
+        ctx: Context<CreateHashBeastCollection>,
         name: String,
         uri: String,
     ) -> Result<()> {
-        crate::log_fn!("lib", "create_doge_collection");
-        admin::create_doge_collection_internal(ctx, name, uri)
+        crate::log_fn!("lib", "create_hashbeast_collection");
+        admin::create_hashbeast_collection_internal(ctx, name, uri)
     }
 
-    /// Initialize royalties on the Doge collection (admin only)
-    pub fn init_doge_royalties(
-        ctx: Context<InitDogeRoyalties>,
+    /// Initialize royalties on the HashBeast collection (admin only)
+    pub fn init_hashbeast_royalties(
+        ctx: Context<InitHashBeastRoyalties>,
         basis_points: u16,
         creators: Vec<CreatorInput>,
     ) -> Result<()> {
-        crate::log_fn!("lib", "init_doge_royalties");
-        admin::init_doge_royalties_internal(ctx, basis_points, creators)
+        crate::log_fn!("lib", "init_hashbeast_royalties");
+        admin::init_hashbeast_royalties_internal(ctx, basis_points, creators)
     }
 
     /// Add an UpdateDelegate to the collection (admin only)
@@ -433,7 +419,7 @@ pub mod minebtc {
     /// Add or update ticket tier configs (admin only)
     /// Max 3 ticket tier configs can be set
     pub fn add_ticket_tier_config(
-        ctx: Context<UpdateDogeMintConfig>,
+        ctx: Context<UpdateHashBeastMintConfig>,
         ticket_tier_index: u8,
         ticket_value: u64,
     ) -> Result<()> {
@@ -441,57 +427,41 @@ pub mod minebtc {
         admin::add_ticket_tier_config_int(ctx, ticket_tier_index, ticket_value)
     }
 
-    /// Set or update a user's free Doge mint allowance (admin only).
+    /// Set or update a user's free HashBeast mint allowance (admin only).
     /// The user still pays transaction fees and account rent, but not the mint price.
-    pub fn set_doge_free_mint_allowance(
-        ctx: Context<SetDogeFreeMintAllowance>,
+    pub fn set_hashbeast_free_mint_allowance(
+        ctx: Context<SetHashBeastFreeMintAllowance>,
         user: Pubkey,
         remaining_free_mints: u8,
     ) -> Result<()> {
-        crate::log_fn!("lib", "set_doge_free_mint_allowance");
-        admin::set_doge_free_mint_allowance_internal(ctx, user, remaining_free_mints)
+        crate::log_fn!("lib", "set_hashbeast_free_mint_allowance");
+        admin::set_hashbeast_free_mint_allowance_internal(ctx, user, remaining_free_mints)
     }
 
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize TaxConfig account and create vault token accounts (admin only)
+    /// Initialize TaxConfig account and create vault token accounts (admin only).
+    /// NFT market making is no longer funded from this tax — it pulls SOL from
+    /// `distribute_sol_fees` (see `SolFeeConfig::nft_market_making_pct`).
     pub fn initialize_tax_config(
         ctx: Context<InitializeTaxConfig>,
-        nft_floor_sweep_pct: u8,
         faction_treasury_pct: u8,
         burn_pct: u8,
-        nft_floor_sweep_whitelisted_address: Pubkey,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_tax_config");
-        tax::internal_initialize_tax_config(
-            ctx,
-            nft_floor_sweep_pct,
-            faction_treasury_pct,
-            burn_pct,
-            nft_floor_sweep_whitelisted_address,
-        )
+        tax::internal_initialize_tax_config(ctx, faction_treasury_pct, burn_pct)
     }
 
     /// Update tax distribution percentages (admin only)
     pub fn update_tax_config(
         ctx: Context<UpdateTaxConfig>,
-        nft_floor_sweep_pct: u8,
         faction_treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_tax_config");
-        tax::internal_update_tax_config(ctx, nft_floor_sweep_pct, faction_treasury_pct, burn_pct)
-    }
-
-    /// Update NFT floor sweep whitelisted address (admin only)
-    pub fn update_nft_floor_sweep_whitelist(
-        ctx: Context<UpdateNftFloorSweepWhitelist>,
-        new_whitelisted_address: Pubkey,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "update_nft_floor_sweep_whitelist");
-        tax::internal_update_nft_floor_sweep_whitelist(ctx, new_whitelisted_address)
+        tax::internal_update_tax_config(ctx, faction_treasury_pct, burn_pct)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -565,15 +535,6 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
-
-    /// Withdraw MineBtc from NFT floor sweep vault (whitelisted address only)
-    pub fn withdraw_nft_floor_sweep_funds(
-        ctx: Context<WithdrawNftFloorSweepFunds>,
-        amount: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "withdraw_nft_floor_sweep_funds");
-        tax::internal_withdraw_nft_floor_sweep_funds(ctx, amount)
-    }
 
     /// STEP 1: Harvest fees from user token accounts to the mint
     /// Callable by anyone - keeper bot should call this in batches
@@ -789,25 +750,25 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ USER INSTRUCTIONS :: GAMEPLAY DOGES  ------------
+    // ------------ USER INSTRUCTIONS :: GAMEPLAY HASHBEASTS  ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Use an doge for gameplay - deposits to custody and sets as active gameplay doge
-    pub fn use_doge_for_gameplay(ctx: Context<UseDogeForGameplay>) -> Result<()> {
-        crate::log_fn!("lib", "use_doge_for_gameplay");
-        user::internal_use_doge_for_gameplay(ctx)
+    /// Use a HashBeast for gameplay - deposits to custody and sets as active gameplay HashBeast
+    pub fn use_hashbeast_for_gameplay(ctx: Context<UseHashBeastForGameplay>) -> Result<()> {
+        crate::log_fn!("lib", "use_hashbeast_for_gameplay");
+        user::internal_use_hashbeast_for_gameplay(ctx)
     }
 
-    /// Request gameplay doge unlock. Actual withdrawal is only available in the next faction_war cycle.
-    pub fn request_doge_gameplay_unlock(ctx: Context<RequestDogeGameplayUnlock>) -> Result<()> {
-        crate::log_fn!("lib", "request_doge_gameplay_unlock");
-        user::internal_request_doge_gameplay_unlock(ctx)
+    /// Request gameplay hashbeast unlock. Actual withdrawal is only available in the next faction_war cycle.
+    pub fn request_hashbeast_gameplay_unlock(ctx: Context<RequestHashBeastGameplayUnlock>) -> Result<()> {
+        crate::log_fn!("lib", "request_hashbeast_gameplay_unlock");
+        user::internal_request_hashbeast_gameplay_unlock(ctx)
     }
 
-    /// Withdraw doge from gameplay - returns doge to user
-    pub fn withdraw_doge_from_gameplay(ctx: Context<WithdrawDogeFromGameplay>) -> Result<()> {
-        crate::log_fn!("lib", "withdraw_doge_from_gameplay");
-        user::internal_withdraw_doge_from_gameplay(ctx)
+    /// Withdraw hashbeast from gameplay - returns hashbeast to user
+    pub fn withdraw_hashbeast_from_gameplay(ctx: Context<WithdrawHashBeastFromGameplay>) -> Result<()> {
+        crate::log_fn!("lib", "withdraw_hashbeast_from_gameplay");
+        user::internal_withdraw_hashbeast_from_gameplay(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -867,99 +828,99 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------  DOGE NFT FUNCTIONS -------------------------------------------------
+    // ------------  HASHBEAST NFT FUNCTIONS -------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    ///Simulate mint costs for multiple doges accounting for bonding curve pricing
+    ///Simulate mint costs for multiple hashbeasts accounting for bonding curve pricing
     ///
     /// # Parameters
-    /// - `doge_config`: DogeConfig account
-    /// - `doge_mint_config`: DogeMintConfig account
-    /// - `mint_count`: Number of doges to mint
+    /// - `hashbeast_config`: HashBeastConfig account
+    /// - `hashbeast_mint_config`: HashBeastMintConfig account
+    /// - `mint_count`: Number of hashbeasts to mint
     pub fn simulate_purchase_cost(
         ctx: Context<SimulateMintCost>,
         mint_count: u64,
     ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
         crate::log_fn!("lib", "simulate_purchase_cost");
-        doges::int_simulate_mint_cost(
-            &ctx.accounts.doge_config,
-            &ctx.accounts.doge_mint_config,
+        hashbeasts::int_simulate_mint_cost(
+            &ctx.accounts.hashbeast_config,
+            &ctx.accounts.hashbeast_mint_config,
             mint_count,
         )
     }
 
-    /// Admin function to mint a Doge NFT for free to a specified recipient (admin only)
+    /// Admin function to mint a HashBeast NFT for free to a specified recipient (admin only)
     ///
-    /// Allows the admin to mint a Doge NFT without payment.
+    /// Allows the admin to mint a HashBeast NFT without payment.
     /// The NFT is minted directly to the specified recipient address.
     ///
     /// # Parameters
     /// - `recipient`: Address that will receive the minted NFT
-    /// - `faction_id`: Faction ID the doge belongs to
-    pub fn admin_mint_doge(
-        ctx: Context<AdminMintDoge>,
+    /// - `faction_id`: Faction ID the hashbeast belongs to
+    pub fn admin_mint_hashbeast(
+        ctx: Context<AdminMintHashBeast>,
         recipient: Pubkey,
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        crate::log_fn!("lib", "admin_mint_doge");
-        doges::int_admin_mint_doge(ctx, recipient, faction_id, ticket_tier_index)
+        crate::log_fn!("lib", "admin_mint_hashbeast");
+        hashbeasts::int_admin_mint_hashbeast(ctx, recipient, faction_id, ticket_tier_index)
     }
 
-    /// Mint a single Doge for free using a per-user whitelist allowance.
-    /// The caller pays transaction fees and rent, but no Doge mint price.
-    pub fn whitelist_mint_doge(
-        ctx: Context<WhitelistMintDoge>,
+    /// Mint a single HashBeast for free using a per-user whitelist allowance.
+    /// The caller pays transaction fees and rent, but no HashBeast mint price.
+    pub fn whitelist_mint_hashbeast(
+        ctx: Context<WhitelistMintHashBeast>,
         faction_id: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        crate::log_fn!("lib", "whitelist_mint_doge");
-        doges::int_whitelist_mint_doge(ctx, faction_id, ticket_tier_index)
+        crate::log_fn!("lib", "whitelist_mint_hashbeast");
+        hashbeasts::int_whitelist_mint_hashbeast(ctx, faction_id, ticket_tier_index)
     }
 
-    /// Batch mint multiple Doge (anyone can call, max 10 per transaction)
+    /// Batch mint multiple HashBeast (anyone can call, max 10 per transaction)
     ///
-    /// Mints multiple Doge NFTs in a single transaction.
-    /// Each doge uses bonding curve pricing based on the current supply at mint time.
+    /// Mints multiple HashBeast NFTs in a single transaction.
+    /// Each hashbeast uses bonding curve pricing based on the current supply at mint time.
     ///
     /// # Parameters
-    /// - `faction_id`: Faction ID all doges belong to
-    /// - `mint_count`: Number of doges to mint (1-10)
+    /// - `faction_id`: Faction ID all hashbeasts belong to
+    /// - `mint_count`: Number of hashbeasts to mint (1-10)
     /// - `ticket_tier_index`: Ticket tier index (0-2)
-    pub fn batch_mint_doges<'info>(
-        ctx: Context<'_, '_, '_, 'info, BatchMintDoge<'info>>,
+    pub fn batch_mint_hashbeasts<'info>(
+        ctx: Context<'_, '_, '_, 'info, BatchMintHashBeast<'info>>,
         faction_id: u8,
         mint_count: u8,
         ticket_tier_index: u8,
     ) -> Result<()> {
-        crate::log_fn!("lib", "batch_mint_doges");
-        doges::int_batch_mint_doges(ctx, faction_id, mint_count, ticket_tier_index)
+        crate::log_fn!("lib", "batch_mint_hashbeasts");
+        hashbeasts::int_batch_mint_hashbeasts(ctx, faction_id, mint_count, ticket_tier_index)
     }
 
-    /// Stake a Doge to boost hashpower (if faction matches player's faction)
-    pub fn stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
-        crate::log_fn!("lib", "stake_doge");
-        doges::int_stake_doge(ctx)
+    /// Stake a HashBeast to boost hashpower (if faction matches player's faction)
+    pub fn stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
+        crate::log_fn!("lib", "stake_hashbeast");
+        hashbeasts::int_stake_hashbeast(ctx)
     }
 
-    /// Unstake a Doge (remove hashpower boost)
-    pub fn unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
-        crate::log_fn!("lib", "unstake_doge");
-        doges::int_unstake_doge(ctx)
+    /// Unstake a HashBeast (remove hashpower boost)
+    pub fn unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
+        crate::log_fn!("lib", "unstake_hashbeast");
+        hashbeasts::int_unstake_hashbeast(ctx)
     }
 
-    /// Breed two doges to create offspring
-    pub fn breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
-        crate::log_fn!("lib", "breed_doges");
-        doges::int_breed_doges(ctx)
+    /// Breed two hashbeasts to create offspring
+    pub fn breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
+        crate::log_fn!("lib", "breed_hashbeasts");
+        hashbeasts::int_breed_hashbeasts(ctx)
     }
 
-    /// Recycle a Doge: claim accumulated_val, transfer the NFT into the
-    /// global inventory pool for later listing or lootbox distribution.
-    /// Replaces the old `send_to_heaven` burn flow (no more burns).
-    pub fn recycle_doge(ctx: Context<RecycleDoge>) -> Result<()> {
-        crate::log_fn!("lib", "recycle_doge");
-        doges::int_recycle_doge(ctx)
+    /// Rebirth a HashBeast: claim accumulated_val, transfer the NFT into the
+    /// global inventory pool for lootbox distribution, or burn it when the
+    /// country queue/inventory is full or the rebirth cap is reached.
+    pub fn rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
+        crate::log_fn!("lib", "rebirth_hashbeast");
+        hashbeasts::int_rebirth_hashbeast(ctx)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -971,6 +932,7 @@ pub mod minebtc {
         pub dna: [u8; 32],
         pub family_type: u8,
         pub evolution_stage: u8,
+        pub rebirth_count: u8,
         pub appearance_traits: Vec<u8>,
         pub dominant_appearance_traits: Vec<u8>,
         pub power_traits: Vec<u8>,
@@ -989,6 +951,7 @@ pub mod minebtc {
         crate::log_fn!("lib", "get_gene_breakdown");
         let family_type = genescience::get_family_type(&dna);
         let evolution_stage = genescience::get_evolution_stage(&dna);
+        let rebirth_count = genescience::get_rebirth_count(&dna);
         let appearance_traits = genescience::decode_appearance_traits(&dna);
         let dominant_appearance_traits = genescience::decode_dominant_appearance_traits(&dna);
         let power_traits = genescience::decode_power_traits(&dna);
@@ -998,6 +961,7 @@ pub mod minebtc {
             dna,
             family_type,
             evolution_stage,
+            rebirth_count,
             appearance_traits,
             dominant_appearance_traits,
             power_traits,
@@ -1017,111 +981,104 @@ pub mod minebtc {
     // -------------------- INVENTORY / LOOTBOX / MARKETPLACE INTEGRATION ---------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Admin one-shot: initialize the inventory pool, market metrics, and
-    /// inventory sweep vault. Caches the standalone marketplace program +
-    /// config pubkeys so future CPIs can validate them.
+    /// Admin one-shot: initialize inventory pool, floor queue, sale history,
+    /// floor history, and the inventory sweep vault. Caches the marketplace
+    /// program + config pubkeys for CPI validation on every subsequent ix.
     pub fn init_inventory_pool(
         ctx: Context<InitInventoryPool>,
-        crank_authority: Pubkey,
         marketplace_program: Pubkey,
         marketplace_config: Pubkey,
     ) -> Result<()> {
         crate::log_fn!("lib", "init_inventory_pool");
-        admin::internal_init_inventory_pool(
-            ctx,
-            crank_authority,
-            marketplace_program,
-            marketplace_config,
-        )
+        admin::internal_init_inventory_pool(ctx, marketplace_program, marketplace_config)
     }
 
-    /// Crank-only. Pushes the off-chain demand-index snapshot on-chain.
-    pub fn update_market_metrics(
-        ctx: Context<UpdateMarketMetrics>,
-        demand_index: i16,
-        floor_price_lamports: u64,
-        avg_sell_price_24h: u64,
-        listings_count: u32,
-        sales_count_24h: u32,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "update_market_metrics");
-        marketplace_cpi::internal_update_market_metrics(
-            ctx,
-            demand_index,
-            floor_price_lamports,
-            avg_sell_price_24h,
-            listings_count,
-            sales_count_24h,
-        )
+    /// Admin one-shot per faction. Creates the country's `LootboxQueue` PDA.
+    pub fn init_lootbox_queue(ctx: Context<InitLootboxQueue>, faction_id: u8) -> Result<()> {
+        crate::log_fn!("lib", "init_lootbox_queue");
+        admin::internal_init_lootbox_queue(ctx, faction_id)
     }
 
-    /// Crank-only. Lists a recycled or lootbox-flagged Doge on the standalone
-    /// marketplace at `price_lamports`. Inventory PDA signs as seller.
-    pub fn inventory_list_nft(ctx: Context<InventoryListNft>, price_lamports: u64) -> Result<()> {
-        crate::log_fn!("lib", "inventory_list_nft");
-        marketplace_cpi::internal_inventory_list_nft(ctx, price_lamports)
+    // ----- User-callable marketplace wrappers (keep FloorQueue in sync) -----
+
+    /// User wraps `degenbtc_market::list_nft` and atomically registers the
+    /// listing into the floor queue.
+    pub fn list_user_nft(ctx: Context<ListUserNft>, price_lamports: u64) -> Result<()> {
+        crate::log_fn!("lib", "list_user_nft");
+        marketplace_cpi::internal_list_user_nft(ctx, price_lamports)
     }
 
-    /// Crank-only. Cancels an inventory listing and returns the asset to inventory.
-    pub fn inventory_cancel_listing(ctx: Context<InventoryCancelListing>) -> Result<()> {
-        crate::log_fn!("lib", "inventory_cancel_listing");
-        marketplace_cpi::internal_inventory_cancel_listing(ctx)
+    /// User cancels their own listing; floor queue entry (if any) is removed.
+    pub fn cancel_user_listing(ctx: Context<CancelUserListing>) -> Result<()> {
+        crate::log_fn!("lib", "cancel_user_listing");
+        marketplace_cpi::internal_cancel_user_listing(ctx)
     }
 
-    /// Crank-only. Updates the price of an existing inventory listing.
-    pub fn inventory_update_price(
-        ctx: Context<InventoryUpdatePrice>,
+    /// User updates their listing price; floor queue is re-sorted.
+    pub fn update_user_listing_price(
+        ctx: Context<UpdateUserListingPrice>,
         new_price_lamports: u64,
     ) -> Result<()> {
-        crate::log_fn!("lib", "inventory_update_price");
-        marketplace_cpi::internal_inventory_update_price(ctx, new_price_lamports)
+        crate::log_fn!("lib", "update_user_listing_price");
+        marketplace_cpi::internal_update_user_listing_price(ctx, new_price_lamports)
     }
 
-    /// Crank-only. Flips a Pending entry to Lootbox status (pure on-chain
-    /// state change — no marketplace interaction).
-    pub fn inventory_set_lootbox(ctx: Context<InventorySetLootbox>) -> Result<()> {
-        crate::log_fn!("lib", "inventory_set_lootbox");
-        marketplace_cpi::internal_inventory_set_lootbox(ctx)
+    /// Permissionless wrapper around `degenbtc_market::buy_listing`. Records
+    /// a real-demand sale to `SaleHistory` if it qualifies (user-to-user,
+    /// listing >= 5 minutes old).
+    pub fn buy_user_listing(ctx: Context<BuyUserListing>) -> Result<()> {
+        crate::log_fn!("lib", "buy_user_listing");
+        marketplace_cpi::internal_buy_user_listing(ctx)
     }
 
-    /// Crank-only. Sweep buy: consumes SOL from the inventory sweep vault to
-    /// purchase a player's listing on the marketplace. The asset lands in
-    /// inventory custody.
-    pub fn inventory_buy_listing(
-        ctx: Context<InventoryBuyListing>,
-        listing_price_lamports: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "inventory_buy_listing");
-        marketplace_cpi::internal_inventory_buy_listing(ctx, listing_price_lamports)
+    // ----- Permissionless market making -----
+
+    /// Permissionless. Registers an existing user listing into the floor queue.
+    pub fn register_floor_listing(ctx: Context<RegisterFloorListing>) -> Result<()> {
+        crate::log_fn!("lib", "register_floor_listing");
+        marketplace_cpi::internal_register_floor_listing(ctx)
     }
 
-    /// Crank-only. Drains lamports accumulated on inventory_pda from sale
-    /// proceeds, splitting 50% to the sweep vault and 50% to sol_treasury
-    /// (where `distribute_sol_fees` later picks them up).
+    /// Permissionless. Buys the cheapest user listing in the floor queue and
+    /// disposes (queue / relist / burn) in the same tx. Self-cleans stale
+    /// queue entries.
+    pub fn sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()> {
+        crate::log_fn!("lib", "sweep_floor_lowest");
+        marketplace_cpi::internal_sweep_floor_lowest(ctx)
+    }
+
+    /// Permissionless. Records a daily floor anchor (median of qualifying
+    /// user-to-user sales, or queue median fallback).
+    pub fn record_floor_snapshot(ctx: Context<RecordFloorSnapshot>) -> Result<()> {
+        crate::log_fn!("lib", "record_floor_snapshot");
+        marketplace_cpi::internal_record_floor_snapshot(ctx)
+    }
+
+    /// Permissionless. Cancels a stale program-owned listing (>= 7 days old)
+    /// and re-runs the disposition cascade with progressive expire-discount.
+    pub fn expire_program_listing(ctx: Context<ExpireProgramListing>) -> Result<()> {
+        crate::log_fn!("lib", "expire_program_listing");
+        marketplace_cpi::internal_expire_program_listing(ctx)
+    }
+
+    /// Permissionless. Splits accrued inventory sale proceeds 50/50 between
+    /// sweep vault and sol_treasury.
     pub fn handle_inventory_proceeds(ctx: Context<HandleInventoryProceeds>) -> Result<()> {
         crate::log_fn!("lib", "handle_inventory_proceeds");
         marketplace_cpi::internal_handle_inventory_proceeds(ctx)
     }
 
-    /// Crank-only. Called after a marketplace `NftSold` event where seller ==
-    /// inventory_pda. Closes the corresponding RecycledEntry, decrements
-    /// pool counters, and emits `InventorySaleFinalized` for indexers.
-    pub fn inventory_finalize_sale(
-        ctx: Context<InventoryFinalizeSale>,
-        price_lamports: u64,
-        fee_lamports: u64,
-        buyer: Pubkey,
-    ) -> Result<()> {
+    /// Permissionless. Closes a sold inventory `RebornEntry` once the
+    /// asset's owner is no longer `inventory_pda` (verified on-chain).
+    pub fn inventory_finalize_sale(ctx: Context<InventoryFinalizeSale>) -> Result<()> {
         crate::log_fn!("lib", "inventory_finalize_sale");
-        marketplace_cpi::internal_inventory_finalize_sale(ctx, price_lamports, fee_lamports, buyer)
+        marketplace_cpi::internal_inventory_finalize_sale(ctx)
     }
 
-    /// Crank-only. Resolves a player's pending lootbox roll: picks a
-    /// candidate Doge from the inventory pool, runs the win/miss roll
-    /// on-chain using slot-hash entropy, and on a win transfers the asset
-    /// to the player and resets its DogeMetadata.
-    pub fn process_lootbox_drops(ctx: Context<ProcessLootboxDrops>) -> Result<()> {
-        crate::log_fn!("lib", "process_lootbox_drops");
-        faction_war::process_lootbox_drops_internal(ctx)
+    /// Permissionless. Delivers a reserved loser-roll hashbeast to the recorded
+    /// winner. Signer may be the user or a cranker bot.
+    pub fn claim_lootbox_nft(ctx: Context<ClaimLootboxNft>) -> Result<()> {
+        crate::log_fn!("lib", "claim_lootbox_nft");
+        marketplace_cpi::internal_claim_lootbox_nft(ctx)
     }
 }

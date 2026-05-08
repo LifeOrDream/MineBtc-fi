@@ -59,9 +59,9 @@ Over 8 snapshots: ~80% of available SOL at snapshot 1 gets consumed
 
 **Price formula:**
 ```
-price = (sol_swapped × 10^9) / minebtc_received
+price = (sol_swapped_lamports × 10^6) / minebtc_received_base_units
 ```
-Stored as u64 with 9-decimal precision (SOL per degenBTC).
+Stored as u64 lamports per whole degenBTC. Divide by `1e9` for SOL per degenBTC.
 
 **Weighted average:** weights 1-8 (earliest=1, latest=8).
 Later snapshots count more, reflecting more recent market conditions.
@@ -267,7 +267,7 @@ Each economy cycle (LP burn) can settle the active **Faction War** — the
 competitive cycle where own-country gameplay support determines country rankings and
 distribute degenBTC rewards.
 
-Product note: the contract mutates Doge DNA for Evolution / Power / Trait
+Product note: the contract mutates HashBeast DNA for Evolution / Power / Trait
 events only during successful reward claims. Backends should treat these as
 **story events** that can become art, reels, character-history entries, or
 simple indexed gameplay beats.
@@ -277,7 +277,7 @@ simple indexed gameplay beats.
 ```
 Players bet SOL in 60-second rounds
     │
-    ├─ Own-country gameplay doge bets add support score
+    ├─ Own-country gameplay hashbeast bets add support score
     │   └─ score = support_weight × bet_size × multiplier
     │
     ├─ gameplay scores accumulate on FactionWarState per faction
@@ -294,7 +294,7 @@ finalize_faction_war_settlement():
     3. Split faction_war_mining_pool:
        - base pool: anyone who picked a country's final direction correctly
        - loyalty pool: own-country correct-direction supporters
-       - Doge pool: users whose gameplay Doge backed the resolved home-country outcome
+       - HashBeast pool: users whose gameplay HashBeast backed the resolved home-country outcome
     4. Stage = 1 (claims open)
     5. Persist final_ranks as next faction war's start_ranks
     6. Advance current_faction_war_id
@@ -311,8 +311,8 @@ faction_war_mining_pool (total degenBTC mined in all rounds this cycle)
     ├─ loyalty_reward_bps → loyalty_reward_pools
     │         Own-country correct-direction supporters get pro-rata share
     │
-    └─ doge_reward_bps → faction_doge_reward_pools
-              Eligible gameplay Doges get accumulated_val (claimable via burn)
+    └─ hashbeast_reward_bps → faction_hashbeast_reward_pools
+              Eligible gameplay HashBeasts get accumulated_val (claimable via burn)
 ```
 
 ---
@@ -342,17 +342,17 @@ Every bet generates two numbers:
 - **points** = raw bet size in lamports (1 SOL = 1,000,000,000 points)
 - **weighted points** = points × active_multiplier / BASE_MULTIPLIER
 
-For SOL bets: a 1.0x doge gives wgtd_points = points. Gameplay Doge power is capped at 4.2x.
+For SOL bets: a 1.0x hashbeast gives wgtd_points = points. Gameplay HashBeast power is capped at 4.2x.
 For ticket bets: wgtd_points = points (no multiplier). Tickets are capped at 25% of SOL volume per round.
 
 Weighted points determine:
 - Your share of degenBTC round rewards (winner pool)
 - Your share of degenBTC faction-war rewards (correct direction pool)
-- Gameplay score contribution to your country when backing your own country with an active gameplay doge
+- Gameplay score contribution to your country when backing your own country with an active gameplay hashbeast
 
 ### XP System
 
-XP accumulates on the gameplay doge from eligible claim-time mutation stake:
+XP accumulates on the gameplay hashbeast from eligible claim-time mutation stake:
 
 ```
 xp_gained = eligible_claim_stake / 1_000_000  (1 XP per 0.001 SOL before multiplier scaling)
@@ -364,10 +364,10 @@ Winning claims can still gain XP even if no mutation fires.
 - Evolution: XP contributes 5-10% as multiplier boost (then XP resets to 0)
 - Power/Trait: XP contributes 2-5% as multiplier boost (XP preserved)
 
-**XP is cached** on PlayerData during gameplay and synced back to DogeMetadata on:
+**XP is cached** on PlayerData during gameplay and synced back to HashBeastMetadata on:
 - Round reward claim
 - Faction-war reward claim
-- Gameplay doge withdrawal
+- Gameplay hashbeast withdrawal
 
 ### Story Event System
 
@@ -375,8 +375,8 @@ Winning claims can still gain XP even if no mutation fires.
 1. RPG progression enabled
 2. Successful round or faction-war reward claim
 3. Eligible SOL stake behind the winning claim (not tickets)
-4. Gameplay doge is active
-5. The claim's recorded gameplay doge still matches the player's active doge
+4. Gameplay hashbeast is active
+5. The claim's recorded gameplay hashbeast still matches the player's active hashbeast
 
 **Probability:**
 ```
@@ -406,9 +406,9 @@ score = GAMEPLAY_SUPPORT_SCORE_WEIGHT × own_country_sol_bet × active_multiplie
 GAMEPLAY_SUPPORT_SCORE_WEIGHT=10
 ```
 
-### Doge accumulated_val
+### HashBeast accumulated_val
 
-When claiming round rewards, the gameplay doge earns degenBTC based on the claim mutation result:
+When claiming round rewards, the gameplay hashbeast earns degenBTC based on the claim mutation result:
 
 | Story event | % of round degenBTC reward |
 |----------|--------------------------|
@@ -417,28 +417,64 @@ When claiming round rewards, the gameplay doge earns degenBTC based on the claim
 | Trait | 3.0% |
 | No event | 1.0% |
 
-This accumulates on `doge_metadata.accumulated_val` and can only be claimed
-by burning the doge (`send_to_heaven`).
+This accumulates on `hashbeast_metadata.accumulated_val` and can only be claimed
+by rebirthing the hashbeast with `rebirth_hashbeast`.
 
-### Gameplay Doge Lifecycle
+`rebirth_hashbeast` is the only lootbox intake path that rebirths an NFT. It pays the
+owner's locked degenBTC, increments the NFT's 0-7 rebirth count, writes that
+count into DNA bits at offset 174, rerolls fresh DNA, and resets gameplay state
+to defaults. Market-maker sweep/expiry lootbox entries preserve the NFT's
+existing DNA, multiplier, XP, and breed state.
+
+### HashBeast Breeding
+
+`breed_hashbeasts` requires both parents to:
+
+- run only after the genesis HashBeast sale is sold out
+  (`HashBeastMintConfig.genesis_mints >= genesis_mint_limit`),
+- be owned by the caller and not locked in gameplay,
+- be from the same country/faction,
+- have the same `rebirth_count` / DNA rebirth generation,
+- have breed count below `MAX_BREED_COUNT`,
+- not be the same asset, direct parent/child, or known siblings.
+
+The offspring inherits the parents' rebirth generation, so level-1 reborn
+HashBeasts breed level-1 offspring, level-2 with level-2, and so on.
+
+Breed price is the larger of:
+
+```text
+compute_gene_price(breed_base_price, breed_curve_a, total_hashbeasts_minted)
+floor_history.current_anchor * 1.5
+```
+
+Breeding is blocked if the floor anchor is missing/too low or the dbTC TWAP
+price is unavailable. Payment is 50% SOL and 50% dbTC by SOL value:
+
+```text
+SOL leg: 25% -> fee_recipient, 75% -> sol_treasury
+dbTC leg: 50% burned, 50% -> minebtc_token_vault
+```
+
+### Gameplay HashBeast Lifecycle
 
 ```
-1. use_doge_for_gameplay
+1. use_hashbeast_for_gameplay
    └─ Lock NFT in custody, cache stats to PlayerData
 
 2. Play rounds (bets trigger story events, XP accumulates)
 
-3. request_doge_gameplay_unlock
+3. request_hashbeast_gameplay_unlock
    └─ Sets unlock_request_faction_war = current_faction_war_id
    └─ Must wait until next faction war to withdraw
 
-4. withdraw_doge_from_gameplay
+4. withdraw_hashbeast_from_gameplay
    └─ Requires: next faction war started + no pending claims
-   └─ Syncs DNA/XP/multiplier back to DogeMetadata
+   └─ Syncs DNA/XP/multiplier back to HashBeastMetadata
    └─ Returns NFT to user
 ```
 
-The two-phase unlock prevents mid-cycle Doge swapping to farm story events.
+The two-phase unlock prevents mid-cycle HashBeast swapping to farm story events.
 
 ### Round Reward Distribution
 
@@ -459,7 +495,7 @@ SOL rewards: winning-direction bettors split the SOL prize pot proportional to t
 **User claims:**
 - `user_reward = faction_pool × user_bet / total_bet` (on correct direction)
 - Only own-faction bets count
-- Doge bonus: same formula but using `eligible_doge_direction_totals` as denominator
+- HashBeast bonus: same formula but using `eligible_hashbeast_direction_totals` as denominator
 
 **Referral overlay:** if a player joined through a real referral code, their
 degenBTC claim gets a 1% bonus from the emissions vault. The referrer accrues 3%
@@ -496,17 +532,17 @@ Player share is not based on raw deposit amount directly. It is based on:
 staked_amount
     -> lockup multiplier (max 3x)
     -> weighted_amount
-    -> passive Doge multiplier
+    -> passive HashBeast multiplier
     -> final staking hashpower (max 9x total)
 ```
 
-### Passive Doge staking
+### Passive HashBeast staking
 
-Passive Doge staking is different from gameplay-Doge locking:
+Passive HashBeast staking is different from gameplay-HashBeast locking:
 
-- passive Doges can be from any faction
+- passive HashBeasts can be from any faction
 - they boost only the player's home-faction passive staking positions
-- they modify `player_data.doge_multiplier`
+- they modify `player_data.hashbeast_multiplier`
 - they do **not** directly affect gameplay `active_multiplier`
 
 ### Reward realization
@@ -566,17 +602,17 @@ FactionWarState (one per faction war)
     ├─ faction_direction_totals (base-pool denominator for user claims)
     ├─ faction_sol_direction_totals (claim-time mutation stake context)
     ├─ loyalty_direction_totals (own-country loyalty-pool denominator)
-    ├─ eligible_doge_direction_totals (denominator for doge bonus)
+    ├─ eligible_hashbeast_direction_totals (denominator for hashbeast bonus)
     ├─ faction_reward_pools (base user share)
     ├─ loyalty_reward_pools (own-country loyalty share)
-    └─ faction_doge_reward_pools (Doge claim bonus share)
+    └─ faction_hashbeast_reward_pools (HashBeast claim bonus share)
 
 UserFactionWarBets (one per user per faction war)
     ├─ direction_bets: weighted bets across countries
     ├─ sol_direction_bets: SOL stake by country/direction for claim-time mutation context
     ├─ loyalty_direction_bets: weighted own-country bets
-    ├─ gameplay_doge: which doge became eligible
-    └─ doge_bonus_eligible: did this user's active gameplay doge back its own country?
+    ├─ gameplay_hashbeast: which hashbeast became eligible
+    └─ hashbeast_bonus_eligible: did this user's active gameplay hashbeast back its own country?
 ```
 
 ## Lifecycle

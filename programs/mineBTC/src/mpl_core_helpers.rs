@@ -122,10 +122,9 @@ pub fn transfer_mpl_core_asset<'info>(
 
 /// Burn a Metaplex Core NFT asset via CPI.
 ///
-/// Currently unused — the project transitioned away from burning to the
-/// `recycle_doge` flow (see `instructions/doges.rs`). Helper kept for
-/// completeness and potential future supply-management flows.
-#[allow(dead_code)]
+/// Used by the `rebirth_hashbeast` cascade when the country lootbox queue is full —
+/// the user still receives their `accumulated_val` payout, but the asset is
+/// destroyed rather than added to inventory (no listing fallback).
 pub fn burn_mpl_core_asset<'info>(
     asset: &AccountInfo<'info>,
     collection: Option<&AccountInfo<'info>>,

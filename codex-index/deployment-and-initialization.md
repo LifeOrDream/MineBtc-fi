@@ -12,7 +12,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 2. `0_deploy_raydium.js`
    - Deploys bundled/custom Raydium CP-Swap when not using official Raydium.
 
-3. `1_init_mdoge_token.js`
+3. `1_init_degenbtc_token.js`
    - Creates Token-2022 DegenBTC mint.
    - Initializes metadata pointer and transfer fee config.
    - Mints fixed initial supply.
@@ -20,7 +20,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
    - Sets withdraw-withheld authority to the program PDA.
    - Freezes transfer fee config authority.
 
-4. `2_init_mdoge_SOL_pool.js`
+4. `2_init_degenbtc_SOL_pool.js`
    - Creates Raydium CP-Swap AMM config.
    - Initializes DegenBTC-SOL pool.
    - Adds initial liquidity and optionally burns initial LP.
@@ -30,8 +30,8 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 
 ## `3_init_mineBTC.js` Canonical Init Order
 
-1. Validate token and Doge collection metadata URIs.
-2. Validate Doge supply and per-faction genesis caps.
+1. Validate token and HashBeast collection metadata URIs.
+2. Validate HashBeast supply and per-faction genesis caps.
 3. Validate round degenBTC distribution sum.
 4. Validate faction-war reward bps sum.
 5. Initialize MineBTC program:
@@ -45,11 +45,11 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 12. Deposit mining tokens.
 13. Initialize hashpower config.
 14. Initialize degenBTC and LP custodian accounts.
-15. Initialize `DogeConfig`.
+15. Initialize `HashBeastConfig`.
 16. Seed breeding config.
-17. Initialize `DogeMintConfig`.
-18. Create Doge Metaplex Core collection.
-19. Initialize Doge royalties.
+17. Initialize `HashBeastMintConfig`.
+18. Create HashBeast Metaplex Core collection.
+19. Initialize HashBeast royalties.
 20. Configure ticket tiers.
 21. Initialize tax config and tax vaults.
 22. Initialize global game state.
@@ -64,12 +64,12 @@ From `setup_scripts/config.json` and `3_init_mineBTC.js`:
 
 - Network cluster: devnet in current config.
 - Token decimals: 6.
-- Initial supply: 2,100,000,000 DegenBTC.
+- Initial supply: 2,100,000,000 dBTC.
 - Transfer tax: 10 bps.
 - Round duration: 60 seconds.
 - Mining emission: `degen_btc_per_round = 1,000,000,000` base units.
-- Genesis Doge mint limit: 36,000.
-- Lifetime Doge max supply: 100,000.
+- Genesis HashBeast mint limit: 36,000.
+- Lifetime HashBeast cap: none; only the genesis sale is capped.
 - Genesis max per configured faction: 3,000 with current 12-faction config.
 - Genesis base price: 1 SOL.
 - Genesis curve A: 2,100,000.

@@ -766,8 +766,8 @@ async function main() {
     }
 
     console.log(`\x1b[33m\n🔗 Next Steps:\x1b[0m`);
-    console.log(`\x1b[33m  1. Run 1_init_mdoge_token.js\x1b[0m`);
-    console.log(`\x1b[33m  2. Run 2_init_mdoge_SOL_pool.js\x1b[0m`);
+    console.log(`\x1b[33m  1. Run 1_init_degenbtc_token.js\x1b[0m`);
+    console.log(`\x1b[33m  2. Run 2_init_degenbtc_SOL_pool.js\x1b[0m`);
     console.log(`\x1b[33m  3. Run 3_init_mineBTC.js\x1b[0m`);
   } catch (error) {
     console.error(`\x1b[31m\n💥 DEPLOYMENT FAILED! 💥\x1b[0m`);

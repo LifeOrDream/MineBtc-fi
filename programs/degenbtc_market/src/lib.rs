@@ -8,7 +8,7 @@
 
 //! # degenbtc_market
 //!
-//! Minimal NFT marketplace for the MineBTC mpl-core Doge collection. Standalone
+//! Minimal NFT marketplace for the MineBTC mpl-core HashBeast collection. Standalone
 //! Anchor program — `mineBTC` CPIs into it (see `programs/mineBTC` for the
 //! inventory + lootbox flows that consume this surface).
 //!

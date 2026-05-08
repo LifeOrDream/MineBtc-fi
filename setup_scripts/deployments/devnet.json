@@ -21,8 +21,8 @@
     "transfer_tax_bps": 10,
     "max_transfer_fee_amount": 1000000,
     "metadata_included": true,
-    "metadata_name": "DogeWifBTC",
-    "metadata_symbol": "DegenBTC",
+    "metadata_name": "degenBTC",
+    "metadata_symbol": "dBTC",
     "metadata_uri": "https://assets.minebtc.fun/btc",
     "metadata_image": "https://assets.minebtc.fun/btc-logo.png",
     "metadata_external_url": "https://minebtc.fun",
@@ -40,7 +40,7 @@
   "initial_supply_minted": {
     "amount": "2100000000000000",
     "actual_minted_amount": "2100000000000000",
-    "amount_readable": "2,100,000,000 DegenBTC",
+    "amount_readable": "2,100,000,000 dBTC",
     "token_account_address": "8jBdPtFfQ2ME7iN3xpGjv3f4qZFWh3m3xRV1LrmSYei6",
     "mint_signature": "2T624nUs7MiuyxYGzVK8XN8QA4FpoQ23NkK9wqM9FDn4otyzzhu2iv8V7Vig5oirqViKAY8gmvr5DcqfD1WY2t89",
     "bigint_verification": {
@@ -56,7 +56,7 @@
     "new_mint_authority": null,
     "removal_signature": "4mpAQuX42pKVzYbwRqTQsGZ6ewMGMZwzmvFu7ozHbsp47r18J9fqjYT7mVAtdeM1EP8z1gH6z1aZdkBmccQoW9uL",
     "timestamp": "2026-05-04T22:33:18.796Z",
-    "total_supply_locked": "2,100,000,000 DegenBTC"
+    "total_supply_locked": "2,100,000,000 dBTC"
   },
   "withdraw_withheld_authority_set_to_pda": {
     "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
@@ -85,10 +85,10 @@
     "observationStatePDA": "CiWA4Eer9JV7QZu76iEpM9gz7oTX6ExGqGKLGJyy9eWZ",
     "token0Mint": "So11111111111111111111111111111111111111112",
     "token1Mint": "4YGM7AHcq7cd6xvYXdyDwT6R5CE22uwGt6YexdG8FUZN",
-    "isMdogeToken0": false,
+    "isDbtcToken0": false,
     "txid": "49TfcQ5RZELxxiTh6M2U4MMToto7m8Vxro7KT13TArqfsXMDXgMydyRsfBduPoF4Ei25wBBzdo6umoYxjTQdWehU",
     "wrapTxid": "4B658Wqd9hgHmR1YQKSm59NodaVcCjkKuJffFAro7LgKP1nonDM6LtxUrigpMHiX5Jz7Rm1BoFofHaUHkGAWVXMr",
-    "initialMdogeAmount": "21000000000000",
+    "initialDbtcAmount": "21000000000000",
     "initialSolAmount": "100000000",
     "openTime": 0,
     "timestamp": "2026-05-04T22:33:34.728Z"
@@ -263,9 +263,9 @@
     "tx_signature": "4ZQ951kzPKoeujJjM7dVAnsTAy9nzpdAfhX1rUst6LSzEpYTbyMk9t6Nm3AxjiHRr4dqQv8jGSaJ8JmgAW9VAmgM",
     "timestamp": "2026-05-04T22:37:20.061Z"
   },
-  "doge_config_initialized": {
-    "doges_config_pda": "AAwSKmBqk9mf1V2io1izXxSogJgsdd7MjvgMiwbRL8GN",
-    "max_supply": "100000",
+  "hashbeast_config_initialized": {
+    "hashbeasts_config_pda": "AAwSKmBqk9mf1V2io1izXxSogJgsdd7MjvgMiwbRL8GN",
+    "has_lifetime_supply_cap": false,
     "tx_signature": "4n7wL7KygxgXJhMGW24uxFCtKfBL7i14p9B7QmsCm2ZcD99KibPeoKCZ6uE2QhMW4kZuCHPgf1DtsjdyyTkHAyQm",
     "timestamp": "2026-05-04T22:37:21.795Z"
   },
@@ -276,8 +276,8 @@
     "tx_signature": "4dQje3tXZiiJ1Ubk7CWwwdRCSFUaP3F16DfLuhJKYm43Y95FTz7sgCTueyomjDhnuDoCAGJA3GetDFovC1GEmVoW",
     "timestamp": "2026-05-04T22:37:24.013Z"
   },
-  "doge_mint_config_initialized": {
-    "doge_mint_config_pda": "4MNFm7yd1Y1nxVWBiKcrZy95HgHEd7FRFJbNgTtSfKdL",
+  "hashbeast_mint_config_initialized": {
+    "hashbeast_mint_config_pda": "4MNFm7yd1Y1nxVWBiKcrZy95HgHEd7FRFJbNgTtSfKdL",
     "base_price": "1000000000",
     "curve_a": "2100000",
     "genesis_mint_limit": "36000",
@@ -285,15 +285,15 @@
     "tx_signature": "31dWRX3YW1zQjosGPPM6iZgUXiUYwX9zMQ6gWpeNHR185wykeD4fB2sbG9enJGfBSQ1uTp54zYQQfvAcoCV19Utt",
     "timestamp": "2026-05-04T22:37:25.882Z"
   },
-  "doge_collection_created": {
+  "hashbeast_collection_created": {
     "collection_address": "BQANLuenYnrtikBs25ZFAZkseuWQThktD3kM1THaC7iB",
-    "collection_name": "Bitcoin doges",
+    "collection_name": "Bitcoin hashbeasts",
     "collection_uri": "https://assets.minebtc.fun/collection",
     "collection_authority": "87qsbTF67SkTswBwRLuoMxn96NPHuDrXPivzqKCAKqFn",
     "tx_signature": "66g8qXfuGeYC8Hka18rJcQ16zEQ6H1eqH8t2wTxFj8NzJesBHrHxsWWC64vtbFdUVqBw3eSEowinWoTPV3QZK1wV",
     "timestamp": "2026-05-04T22:37:27.411Z"
   },
-  "doge_royalties_initialized": {
+  "hashbeast_royalties_initialized": {
     "basis_points": 420,
     "creators": [
       {
@@ -365,7 +365,7 @@
       "faction_war_base_reward_bps": 7000,
       "faction_war_loyalty_reward_bps": 2000,
       "faction_war_mvp_reward_bps": 500,
-      "faction_war_doge_reward_bps": 500,
+      "faction_war_hashbeast_reward_bps": 500,
       "base_mutation_chance_bps": 2000,
       "mutation_chance_floor_bps": 25,
       "mutation_chance_cap_bps": 2500,

@@ -40,7 +40,7 @@ export const DEGEN_BTC_MINING_SEED = "mine-btc-mining";
 // PDAs which hold SOL collected by the program
 export const SOL_TREASURY_SEED = "sol-treasury";
 
-// MDOGE Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies MDOGE tokens)
+// DEGEN_BTC Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies DEGEN_BTC tokens)
 export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
 export const DEGEN_BTC_VAULT_SEED = "minebtc_vault";
 
@@ -55,13 +55,13 @@ export const REFERRAL_REWARDS_SEED = "referral-rewards";
 // PDAs which hold GearInstance / ModuleInstance state
 export const MODULE_INSTANCE_SEED = "module-instance";
 
-// pda which holds the mdoge nft vault state
-export const dbtc_NFT_VAULT_SEED = "mdoge-nft-vault";
+// pda which holds the dbtc nft vault state
+export const dbtc_NFT_VAULT_SEED = "dbtc-nft-vault";
 
 // PDAs for loot rewards system
 export const LOOT_REWARDS_SEED = "loot-rewards";
 export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
-export const LOOT_DEGEN_BTC_VAULT_SEED = "loot-mdoge-vault";
+export const LOOT_DEGEN_BTC_VAULT_SEED = "loot-dbtc-vault";
 export const LOOT_DEGEN_BTC_VAULT_AUTHORITY_SEED = "loot-minebtc-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
 export const BUYBACKS_SEED = "buybacks";
@@ -942,7 +942,7 @@ export async function updateModuleConfig(
   moduleConfigMintCost,
   moduleConfigUpgradeCost,
   moduleConfigMaxUpgrades,
-  moduleConfigMaxDoges
+  moduleConfigMaxHashBeasts
 ) {
   try {
     console.log("\x1b[33m%s\x1b[0m", "📡 Updating module config...");
@@ -962,7 +962,7 @@ export async function updateModuleConfig(
         moduleConfigMintCost,
         moduleConfigUpgradeCost,
         moduleConfigMaxUpgrades,
-        moduleConfigMaxDoges
+        moduleConfigMaxHashBeasts
       )
       .accounts({
         globalConfig: globalConfigPDA,

@@ -1,6 +1,6 @@
 # MineBTC Contracts Index
 
-This index maps the contract repository for fast cross-repo work. Treat this repo as the source of truth for game rules, account layout, fee math, rounds, cycles, Doge NFTs, staking, referrals, and backend/frontend data contracts.
+This index maps the contract repository for fast cross-repo work. Treat this repo as the source of truth for game rules, account layout, fee math, rounds, cycles, HashBeast NFTs, staking, referrals, and backend/frontend data contracts.
 
 ## Repository Shape
 
@@ -8,11 +8,11 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
 - `programs/mineBTC/src/state.rs` - canonical account structs, constants, PDA seeds, fee defaults, and protocol limits.
 - `programs/mineBTC/src/events.rs` - event surface the backend should index and stream to the frontend.
 - `programs/mineBTC/src/instructions/` - implementation by domain:
-  - `admin.rs` - global config, factions, fees, Doge config, game state, custodian setup.
+  - `admin.rs` - global config, factions, fees, HashBeast config, game state, custodian setup.
   - `game.rs` - round start/end, winner selection, reward distribution.
-  - `user.rs` - player signup, bets, autominers, claims, gameplay Doge locking/unlocking, story events.
+  - `user.rs` - player signup, bets, autominers, claims, gameplay HashBeast locking/unlocking, story events.
   - `stake.rs` - degenBTC/LP staking, reward claims, HODL tax, referral claims.
-  - `doges.rs` - Doge minting, whitelist/admin minting, staking, breeding, send-to-heaven.
+  - `hashbeasts.rs` - HashBeast minting, whitelist/admin minting, staking, breeding, and rebirth.
   - `economy.rs` - SOL fee distribution, price snapshots, emission rate update, LP add/burn.
   - `faction_war.rs` - mutation-driven cycle scoring, rankings, settlement, cycle claims.
   - `tax.rs` - Token-2022 withheld fee harvesting and distribution.
@@ -33,7 +33,7 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
 
 - Anchor program: `minebtc`
 - Declared program ID in `programs/mineBTC/src/lib.rs`: `8SiC7tVuEQ1Py86JzTLDnaaqGxdvquW3GCJXq6TrWNfu`
-- Token: Token-2022 `DogeWifBTC` / `DegenBTC`, 6 decimals, 2.1B fixed supply, transfer tax default 10 bps.
+- Token: Token-2022 `degenBTC` / `dBTC`, 6 decimals, 2.1B fixed supply, transfer tax default 10 bps.
 - Default round duration from setup config: 60 seconds.
 - Factions in setup config: USA, China, Russia, India, Japan, South Korea, Iran, UK, North Korea, France, Brazil, Israel. Contract supports up to 15.
 

@@ -85,7 +85,7 @@ const TOKEN_METADATA = {
 (async () => {
   console.log(
     "\x1b[35m%s\x1b[0m",
-    "🚀 ================================ DogeTech DEGEN_BTC Token Deployment ================================"
+    "🚀 ================================ MineBTC DEGEN_BTC Token Deployment ================================"
   );
   console.log("\x1b[36m%s\x1b[0m", "🌐 Network:", CLUSTER);
   console.log("\x1b[36m%s\x1b[0m", "🔗 RPC URL:", RPC_URL);
@@ -480,7 +480,7 @@ async function createMintAccountTx(
 
   console.log(
     "\x1b[35m%s\x1b[0m",
-    "\n=================== [ CREATING MDOGE MINT ACCOUNT WITH METADATA ] ==================="
+    "\n=================== [ CREATING DEGEN_BTC MINT ACCOUNT WITH METADATA ] ==================="
   );
 
   // Generate mint keypair

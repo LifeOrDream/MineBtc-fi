@@ -25,19 +25,19 @@ The backend should index contract events and also reconcile PDA state where even
 - `AutominerInitialized`, `AutominerUpdated`, `AutominerStopped`, `AutominerReloaded`.
 - Backend should maintain autominer status, remaining rounds, reserve balance, last execution, and claimability.
 
-## Doge NFT Events
+## HashBeast NFT Events
 
-- `DogeMinted` - mint, owner, metadata account, URI, DNA, multiplier, faction, price, ticket tier/count.
-- `DogeFreeMintAllowanceUpdated`.
-- `DogeCollectionCreated`, `CollectionDelegateAdded`, `CollectionInfoUpdated`.
-- `DogeStaked`, `DogeUnstaked` - passive staking multiplier/hashpower updates.
-- `DogeSentToHeaven`.
-- `DogeUsedForGameplay`, `DogeGameplayUnlockRequested`, `DogeWithdrawnFromGameplay`.
+- `HashBeastMinted` - mint, owner, metadata account, URI, DNA, multiplier, faction, price, ticket tier/count.
+- `HashBeastFreeMintAllowanceUpdated`.
+- `HashBeastCollectionCreated`, `CollectionDelegateAdded`, `CollectionInfoUpdated`.
+- `HashBeastStaked`, `HashBeastUnstaked` - passive staking multiplier/hashpower updates.
+- `HashBeastReborn`, `HashBeastRebirthBurned`.
+- `HashBeastUsedForGameplay`, `HashBeastGameplayUnlockRequested`, `HashBeastWithdrawnFromGameplay`.
 - Story events:
   - `StoryEventTriggered`
-  - `DogeEvolution`
-  - `DogePowerMutation`
-  - `DogeVisualMutation`
+  - `HashBeastEvolution`
+  - `HashBeastPowerMutation`
+  - `HashBeastVisualMutation`
 - Gameplay scoring:
   - `GameplayScoreAccumulated`
 
@@ -87,9 +87,9 @@ Hot-path tables/caches:
 - Per-round session summary and faction-direction bet matrix.
 - Per-user player state, current round bet, claimable rounds, claimable faction-war rewards.
 - Per-faction aggregate state and cycle leaderboard.
-- Doge inventory/metadata, staked Doges, gameplay Doge.
+- HashBeast inventory/metadata, staked HashBeasts, gameplay HashBeast.
 - Staking positions and rewards.
 - Referral leaderboard and user referral rewards.
-- Investor/data-room aggregates: DAU/repeat/new users, round volume, SOL volume, Doge mints, referrals, retention cohorts, faction distribution, autominer usage.
+- Investor/data-room aggregates: DAU/repeat/new users, round volume, SOL volume, HashBeast mints, referrals, retention cohorts, faction distribution, autominer usage.
 
 Socket topics should be derived from these same cached snapshots to avoid duplicate API fetches on the frontend.

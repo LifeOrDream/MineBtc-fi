@@ -6,13 +6,13 @@ This file is the source-of-truth orientation note for anyone editing the `mineBT
 
 MineBTC is a **degen country arena game** on Solana where:
 
-- players pick a country and a direction, bet SOL, and winning claims can evolve their doge NFTs
+- players pick a country and a direction, bet SOL, and winning claims can evolve their hashbeast NFTs
 - own-country gameplay support decides which country climbs the leaderboard each cycle
 - the same bet powers both the **round raffle** (instant SOL + degenBTC rewards) and the **cycle leaderboard** (longer-term degenBTC rewards based on which countries moved)
 - a deflationary economy runs on a 0.1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
 - an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
 
-**The game in one sentence:** "Pick your country, bet SOL, win claims, your doge evolves, your country climbs, you earn degenBTC."
+**The game in one sentence:** "Pick your country, bet SOL, win claims, your hashbeast evolves, your country climbs, you earn degenBTC."
 
 Player country is permanent after signup. Referral rewards are also
 country-aware: referred users always get the same 1% degenBTC claim bonus, while
@@ -25,10 +25,10 @@ Use these canonical terms:
 - `direction` — `Down`, `Neutral`, `Up`
 - `round` — fast 60-second betting loop with random winner
 - `faction war` — longer competitive period tied to the economy cycle (LP burn cadence), where gameplay scores determine country rankings
-- `operator doge` / `gameplay doge` — the live NFT locked for rounds, contributes gameplay score, earns XP from eligible claim rolls, can mutate
-- `staked doges` — passive NFTs that boost staking hashpower
-- `story event` — a claim-time Doge event (Evolution / Power / Trait); the contract may mutate DNA internally, but the backend decides how to render it
-- `gameplay score` — contribution to your country's leaderboard rank from own-country SOL support with an active gameplay doge
+- `operator hashbeast` / `gameplay hashbeast` — the live NFT locked for rounds, contributes gameplay score, earns XP from eligible claim rolls, can mutate
+- `staked hashbeasts` — passive NFTs that boost staking hashpower
+- `story event` — a claim-time HashBeast event (Evolution / Power / Trait); the contract may mutate DNA internally, but the backend decides how to render it
+- `gameplay score` — contribution to your country's leaderboard rank from own-country SOL support with an active gameplay hashbeast
 
 Do **not** describe the system as:
 
@@ -58,7 +58,7 @@ At round end:
 
 ### Cycle Layer (Gameplay Score Leaderboard)
 
-Each round bet also accumulates into the active cycle. Own-country SOL bets from users with an active gameplay doge contribute deterministic gameplay score to their faction.
+Each round bet also accumulates into the active cycle. Own-country SOL bets from users with an active gameplay hashbeast contribute deterministic gameplay score to their faction.
 
 A cycle is defined by:
 
@@ -70,7 +70,7 @@ A cycle is defined by:
 **How cycles work:**
 
 1. Cycle auto-starts on first bet after the previous cycle settles
-2. Each eligible own-country SOL bet adds score: `GAMEPLAY_SUPPORT_SCORE_WEIGHT × bet_size × doge_multiplier`
+2. Each eligible own-country SOL bet adds score: `GAMEPLAY_SUPPORT_SCORE_WEIGHT × bet_size × hashbeast_multiplier`
 3. Cycle settles when the economy cycle's LP burn completes
 4. Factions are ranked by total gameplay scores, with round wins and SOL support as tiebreakers
 5. Rank changes resolve each country's winning direction
@@ -78,32 +78,36 @@ A cycle is defined by:
 
 **When RPG progression is disabled** (`rpg_progression` off), cycle gameplay scoring and mutation rolls pause.
 
-### Doge Layer
+### HashBeast Layer
 
-Two distinct doge roles:
+Two distinct hashbeast roles:
 
-- `gameplay_doge`: one operator doge locked for live play, carries multiplier, DNA, XP cache
-- `staked_doges`: up to 3 passive boosts for staking hashpower
+- `gameplay_hashbeast`: one operator hashbeast locked for live play, carries multiplier, DNA, XP cache
+- `staked_hashbeasts`: up to 3 passive boosts for staking hashpower
 
 **Mutation/story event system:**
 
-- Story events trigger during winning round or faction-war reward claims (SOL stake only, requires gameplay doge)
+- Story events trigger during winning round or faction-war reward claims (SOL stake only, requires gameplay hashbeast)
 - Round claim odds use the winning faction stake; exact wins get stronger odds than same-faction consolation wins
 - Faction-war claim odds are strongest for own-country correct calls, especially when the country moved Up
 - Round-level mutation counters still create scarcity and pacing pressure
 - Per-faction difficulty scaling: each event in a round makes the next one harder for that faction
-- Base chance is configurable, reduced by Doge multiplier (high-mult Doges trigger less often)
+- Base chance is configurable, reduced by HashBeast multiplier (high-mult HashBeasts trigger less often)
 - Types: Evolution (~10%), Power (~30%), Trait (~60%)
 - XP boosts multiplier on story events: Evolution 5-10% of XP, Power/Trait 2-5% of XP
 - active_multiplier capped at `GAMEPLAY_MAX_MULTIPLIER` (4.2x)
-- 2-step gameplay doge unlock prevents mid-cycle withdrawal gaming
+- 2-step gameplay hashbeast unlock prevents mid-cycle withdrawal gaming
 
-**Doge mint supply:**
+**HashBeast mint supply:**
 
-- `DogeConfig` owns non-sale state: collection, lifetime max supply, total minted, and breeding config
-- `DogeMintConfig` owns genesis-sale-only state: bonding curve price, ticket tiers, genesis mint count, and per-country caps
+- `HashBeastConfig` owns non-sale state: collection, total minted count, and breeding config
+- `HashBeastMintConfig` owns genesis-sale-only state: bonding curve price, ticket tiers, genesis mint count, and per-country caps
 - Genesis mints are capped separately from lifetime supply; current deployment config targets 12,000 genesis mints with 1,000 max per country
-- Burns via `send_to_heaven` do not reduce lifetime minted supply; breeding can only mint while `total_doges_minted < max_supply`
+- `rebirth_hashbeast` pays the HashBeast's locked degenBTC to the owner, then either rebirths the NFT into lootbox inventory or burns it if the queue/inventory is full or the NFT already reached `MAX_REBIRTH_COUNT`
+- Rebirth increments `HashBeastMetadata.rebirth_count`, writes the same 0-7 value into DNA bits at offset 174, rerolls fresh DNA, and resets multiplier, XP, breed count, cooldown, accumulated value, gameplay lock, and parent lineage
+- Market-maker sweeps/expiry cascades that push NFTs into lootboxes do not rebirth or reset those NFTs; they preserve existing DNA/stats
+- Burns/rebirths do not reduce `total_hashbeasts_minted`; post-genesis breeding is governed by breed-count limits, same-rebirth-level pairing, and the breeding bonding curve, not a lifetime cap field
+- `breed_hashbeasts` is blocked until the genesis sale is sold out (`genesis_mints >= genesis_mint_limit`); after that it prices every birth at `max(breeding_curve, 1.5x current floor anchor)`, charges 50% SOL + 50% degenBTC by SOL value, sends SOL 25% to `fee_recipient` / 75% to `sol_treasury`, and splits degenBTC 50% burn / 50% back to the mining vault
 
 ### Economy Layer
 
@@ -134,17 +138,17 @@ Two distinct doge roles:
 - `UserFactionWarBets`
 - `AutominerVault`
 - `StakedPosition`
-- `DogeMetadata`
+- `HashBeastMetadata`
 
 ## Main File Ownership
 
 | File | Main Responsibility |
 |------|----------------------|
 | `instructions/game.rs` | Round start/end, winner selection, round reward indexes |
-| `instructions/user.rs` | Betting, autominers, round claims, gameplay doges, story events |
+| `instructions/user.rs` | Betting, autominers, round claims, gameplay hashbeasts, story events |
 | `instructions/faction_war.rs` | Cycle config, gameplay-score settlement, cycle claims |
 | `instructions/stake.rs` | degenBTC and LP staking |
-| `instructions/doges.rs` | Doge minting, breeding, staking, gameplay lock/unlock |
+| `instructions/hashbeasts.rs` | HashBeast minting, breeding, staking, gameplay lock/unlock |
 | `instructions/economy.rs` | Price snapshots, emissions, POL |
 | `instructions/tax.rs` | Transfer-tax accounting and faction treasury distribution |
 | `state.rs` | Account layouts and canonical constants |
@@ -167,7 +171,7 @@ Important rules:
 - one transaction can include multiple countries
 - the same bet updates both `GameSession` totals and `FactionWarState` / `UserFactionWarBets`
 - all country-direction bets feed the base faction-war pool; own-faction bets also feed loyalty rewards
-- active gameplay Doges on own-country SOL bets add gameplay score during bet processing
+- active gameplay HashBeasts on own-country SOL bets add gameplay score during bet processing
 - story events fire later during winning reward claims, using the recorded bet context
 
 ### Round Settlement
@@ -235,8 +239,8 @@ Common ones:
 [b"user-faction-war", user.key().as_ref(), &faction_war_id.to_le_bytes()]
 [b"autominer", user.key().as_ref()]
 [b"autominer-custody"]
-[b"doge-metadata", doge_mint.key().as_ref()]
-[b"doge-custody"]
+[b"hashbeast-metadata", hashbeast_mint.key().as_ref()]
+[b"hashbeast-custody"]
 ```
 
 Important gotcha:
@@ -260,8 +264,8 @@ Key product events for indexers and off-chain systems:
 - `FactionWarRewardsClaimed`
 - `AutominerInitialized`
 - `AutominerReloaded`
-- `DogeUsedForGameplay`
-- `DogeSynced`
+- `HashBeastUsedForGameplay`
+- `HashBeastSynced`
 
 ## Documentation Rules
 

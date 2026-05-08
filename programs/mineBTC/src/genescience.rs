@@ -2,16 +2,17 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 
 use crate::errors::ErrorCode;
-use crate::events::{DogeEvolution, DogePowerMutation, DogeVisualMutation};
+use crate::events::{HashBeastEvolution, HashBeastPowerMutation, HashBeastVisualMutation};
 use crate::state::{
     GameplayTuningConfig, BASE_MULTIPLIER, BASIS_POINTS_DENOMINATOR, FACTION_MUTATION_PENALTY_STEP,
+    MAX_REBIRTH_COUNT,
 };
 
 // ========================================================================================
 // ============================= DNA STRUCTURE & CONSTANTS ================================
 // ========================================================================================
 //
-/// DNA Generation and Manipulation for Cyber-Doge Assets
+/// DNA Generation and Manipulation for Cyber-HashBeast Assets
 ///
 /// DNA STRUCTURE (256 bits / 32 bytes):
 /// 1. Faction/Family (4 bits, offset 0): Maps to Faction ID (0-11)
@@ -20,8 +21,9 @@ use crate::state::{
 ///    - Per group: [Dominant][Recessive][Minor Recessive]
 /// 4. Combat Genes (60 bits, offset 112): 5 groups × 3 traits × 4 bits (0-15)
 ///    - Per group: [Dominant][Recessive][Minor Recessive]
-/// 5. Breed/Body Type (2 bits, offset 172): Dog breed per faction (0-3). IMMUTABLE.
-/// 6. Reserved (82 bits): Future use
+/// 5. Breed/Body Type (2 bits, offset 172): body/species variant per faction (0-3).
+/// 6. Rebirth Count (3 bits, offset 174): rebirth generation (0-7).
+/// 7. Reserved (79 bits): Future use
 ///
 /// IMMUTABLE FIELDS (never change after creation):
 /// - Faction (inherited from parent faction or chosen at genesis)
@@ -31,10 +33,12 @@ const EVOLUTION_STAGE_BITS: u8 = 3;
 const APPEARANCE_TRAIT_BITS: u8 = 5; // 0-31 values
 const POWER_TRAIT_BITS: u8 = 4; // 0-15 values
 const BREED_BITS: u8 = 2; // 0-3 breed values per faction
+const REBIRTH_COUNT_BITS: u8 = 3; // 0-7 rebirth generations
 
 const APPEARANCE_OFFSET: u8 = FACTION_TYPE_BITS + EVOLUTION_STAGE_BITS; // 7
 const COMBAT_OFFSET: u8 = APPEARANCE_OFFSET + (21 * APPEARANCE_TRAIT_BITS); // 7 + 105 = 112
 const BREED_OFFSET: u8 = COMBAT_OFFSET + (15 * POWER_TRAIT_BITS); // 112 + 60 = 172 (in reserved area)
+const REBIRTH_COUNT_OFFSET: u8 = BREED_OFFSET + BREED_BITS; // 174
 
 // const APPEARANCE_GROUPS: usize = 7;
 // const APPEARANCE_TRAITS_PER_GROUP: usize = 3;  // Dominant, Recessive, Minor Recessive
@@ -64,8 +68,12 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
         .checked_mul(items_u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
+    // Cap `high` to a value whose cube fits in u128. cbrt(u128::MAX) ≈ 6.98e12,
+    // so cap at 7e12 to ensure mid * mid * mid never overflows in the loop.
+    // Prevents the function from halting all minting/breeding once
+    // items_minted grows past ~3.7M (where mid^3 would overflow u128).
     let mut low: u128 = 1;
-    let mut high = squared.min(1_000_000_000_000_000_000);
+    let mut high = squared.min(7_000_000_000_000u128);
     let mut result: u128 = 0;
 
     while low <= high {
@@ -98,7 +106,7 @@ pub fn compute_gene_price(base_price: u64, curve_a: u64, items_minted: u64) -> R
 // ============================= DNA GENERATION ===========================================
 // ========================================================================================
 
-/// Generate unique DNA for a Genesis Cyber-Doge
+/// Generate unique DNA for a Genesis Cyber-HashBeast
 /// Genesis constraints:
 /// - All appearance traits: 0-9 (less than 10)
 /// - First 3 power groups (9 traits): 0-4 (less than 5)
@@ -130,6 +138,47 @@ pub fn generate_genesis_dna(
     // Encode Breed (2 bits at BREED_OFFSET, value 0-3 from hash randomness)
     let breed_val = (hash.to_bytes()[31] & 0x03) as u8; // Use last byte for breed randomness
     set_trait_value(&mut dna, BREED_OFFSET, BREED_BITS, 0, breed_val);
+    set_trait_value(&mut dna, REBIRTH_COUNT_OFFSET, REBIRTH_COUNT_BITS, 0, 0);
+
+    Ok(dna)
+}
+
+/// Generate fresh playable DNA for an existing asset entering the rebirth loop.
+/// The country/faction and rebirth generation are explicit; gameplay traits,
+/// evolution stage, and body/species variant are rerolled as a fresh pull.
+pub fn generate_reborn_dna(
+    previous_dna: &[u8; 32],
+    asset: &Pubkey,
+    slot: u64,
+    faction_id: u8,
+    rebirth_count: u8,
+) -> Result<[u8; 32]> {
+    crate::log_fn!("genescience", "generate_reborn_dna");
+    require!(faction_id < 16, ErrorCode::InvalidFactionId);
+    require!(
+        rebirth_count <= MAX_REBIRTH_COUNT,
+        ErrorCode::MaxRebirthCountReached
+    );
+
+    let mut seed_data = Vec::new();
+    seed_data.extend_from_slice(previous_dna);
+    seed_data.extend_from_slice(&asset.to_bytes());
+    seed_data.extend_from_slice(&slot.to_le_bytes());
+    seed_data.push(faction_id);
+    seed_data.push(rebirth_count);
+
+    let hash = keccak::hash(&seed_data);
+    let mut dna = hash.to_bytes();
+
+    // Preserve country/faction, reset evolution to stage 0.
+    dna[0] = (dna[0] & 0xF0) | (faction_id & 0x0F);
+    dna[0] &= 0x8F;
+
+    limit_genesis_trait_ranges(&mut dna);
+
+    let breed_val = (hash.to_bytes()[31] & 0x03) as u8;
+    set_trait_value(&mut dna, BREED_OFFSET, BREED_BITS, 0, breed_val);
+    set_rebirth_count(&mut dna, rebirth_count)?;
 
     Ok(dna)
 }
@@ -197,21 +246,26 @@ pub struct MutationResult {
     pub new_dna: [u8; 32],
 }
 
-/// Calculates a claim-time mutation roll for a gameplay Doge.
+/// Calculates a claim-time mutation roll for a gameplay HashBeast.
 ///
 /// **Chance Formula**:
-/// `base * stake_strength * multiplier_penalty * faction_penalty * volume * cooldown * pacing * claim_boost`
+/// `base * mult_factor * faction_penalty * volume_factor * pacing_factor * claim_boost`
 ///
-/// **XP Gain**: Gained from the eligible SOL stake that produced the winning claim,
+/// Whales no longer get a leg up — the per-bet "stake_strength" scaling was
+/// removed (small and big bettors hit identical odds at the same active
+/// multiplier). The cross-round cooldown factor was also removed; pacing
+/// alone (closed-loop on observed-vs-target mutations per cycle) is enough
+/// to regulate rate.
+///
+/// **XP Gain**: From the eligible SOL stake that produced the winning claim,
 /// scaled down by current multiplier.
 pub fn calculate_mutation_result(
     origin: u8,
     origin_id: u64,
     user_total_bet: u64,
-    highest_round_bet_for_faction: u64,
     current_multiplier: u32,
-    mut gameplay_doge_dna: [u8; 32],
-    gameplay_doge_xp: u32,
+    mut gameplay_hashbeast_dna: [u8; 32],
+    gameplay_hashbeast_xp: u32,
     max_evolution_stage_unlocked: u8,
     faction_mutation_count: u8,
     faction_round_volume: u64,
@@ -219,25 +273,23 @@ pub fn calculate_mutation_result(
     chance_boost_bps: u64,
     cycle_rounds_elapsed: u16,
     cycle_mutations_triggered: u16,
-    recent_mutation_pressure_bps: u16,
     total_sol_bets: u64,
     total_points_bets: u64,
     total_wgtd_points_bets: u64,
     slot: u64,
     user_key: &Pubkey,
-    doge_mint: &Pubkey,
+    hashbeast_mint: &Pubkey,
 ) -> MutationResult {
     crate::log_fn!("genescience", "calculate_mutation_result");
     msg!("🧬 Calculating mutation result...");
     msg!(
-        "   User total bet: {} SOL, Highest round bet for faction: {} SOL",
-        format!("{:.4}", user_total_bet as f64 / 1e9),
-        format!("{:.4}", highest_round_bet_for_faction as f64 / 1e9)
+        "   User total bet: {} SOL",
+        format!("{:.4}", user_total_bet as f64 / 1e9)
     );
     msg!(
-        "   Current multiplier: {:.3}. Gameplay doge XP: {}",
+        "   Current multiplier: {:.3}. Gameplay hashbeast XP: {}",
         current_multiplier as f64 / 1000.0,
-        gameplay_doge_xp
+        gameplay_hashbeast_xp
     );
     msg!(
         "   Total sol bets: {} SOL, Faction round volume: {} SOL, Total points bets: {}, Total wgtd points bets: {}",
@@ -249,14 +301,14 @@ pub fn calculate_mutation_result(
     msg!("   Slot: {}. User key: {}", slot, user_key);
 
     // Derive generation from DNA (bits 4-6 of byte 0)
-    let generation = get_evolution_stage(&gameplay_doge_dna);
+    let generation = get_evolution_stage(&gameplay_hashbeast_dna);
     let evolution_allowed = generation < max_evolution_stage_unlocked;
 
     msg!(
         "🧬 Mutation calc: bet={} SOL, gen={}, xp={}, mult={:.3}, max_evolution_stage_unlocked={}, evolution_allowed={}",
         format!("{:.4}", user_total_bet as f64 / 1e9),
         generation,
-        gameplay_doge_xp,
+        gameplay_hashbeast_xp,
         current_multiplier as f64 / 1000.0,
         max_evolution_stage_unlocked,
         evolution_allowed
@@ -264,7 +316,7 @@ pub fn calculate_mutation_result(
 
     // --- STEP 1: CALCULATE TRIGGER CHANCE ---
 
-    // XP gain scales inversely with multiplier: stronger doges gain XP slower.
+    // XP gain scales inversely with multiplier: stronger hashbeasts gain XP slower.
     // At 1.0x: full rate (1 XP per 0.001 SOL)
     // At 5.0x: 1/5 rate (1 XP per 0.005 SOL)
     // At 4.2x: ~1/4.2 rate (about 1 XP per 0.0042 SOL)
@@ -286,35 +338,22 @@ pub fn calculate_mutation_result(
             xp_gained,
             multiplier_increase: 0,
             xp_consumed: 0,
-            new_dna: gameplay_doge_dna,
+            new_dna: gameplay_hashbeast_dna,
         };
     }
 
-    // A. Bet Strength (0 - 10,000 bps) -  If highest is 0 (first bet), strength is 100%. Otherwise ratio. (100% = 100,00)
-    let effective_highest = if highest_round_bet_for_faction == 0 {
-        user_total_bet
-    } else {
-        highest_round_bet_for_faction
-    };
-    let bet_strength = ((user_total_bet as u128)
-        .saturating_mul(BASIS_POINTS_DENOMINATOR as u128)
-        .checked_div(effective_highest as u128)
-        .unwrap_or(BASIS_POINTS_DENOMINATOR as u128))
-    .min(BASIS_POINTS_DENOMINATOR as u128) as u64;
-    msg!("   Bet strength: {:.2}%", bet_strength as f64 / 100.0);
-
-    // B. Multiplier Penalty (0 - 10,000 bps)
-    // Higher multiplier = lower chance, slowing progression for advanced doges.
+    // A. Multiplier Factor (0 - 10,000 bps).
+    // Higher multiplier = lower chance, slowing progression for advanced hashbeasts.
     let effective_multiplier = current_multiplier.max(BASE_MULTIPLIER);
     let mult_factor =
         (BASE_MULTIPLIER as u64 * BASIS_POINTS_DENOMINATOR) / effective_multiplier as u64;
     msg!("   Multiplier factor: {:.2}%", mult_factor as f64 / 100.0);
 
-    // C. Per-Faction Penalty: each prior mutation this round makes the next harder.
+    // B. Per-Faction Penalty: each prior mutation this round makes the next harder.
     // 10000 / (10000 + count * 5000):  0 prior → 100%, 1 → 67%, 2 → 50%, 3 → 40%
-    // Scaled by 10000 so this lands on the same bps basis as bet_strength and
-    // mult_factor — otherwise the integer division collapses to 1 and the
-    // final_chance_bps multiplication gets divided out to 0.
+    // Scaled by 10000 so this lands on the same bps basis as the other factors —
+    // otherwise the integer division collapses to 1 and the final multiplication
+    // gets divided out to 0.
     let faction_penalty = (10000u64 * 10000u64)
         / (10000u64 + faction_mutation_count as u64 * FACTION_MUTATION_PENALTY_STEP);
     msg!(
@@ -323,7 +362,11 @@ pub fn calculate_mutation_result(
         faction_penalty as f64 / 100.0
     );
 
-    // D. Country-volume factor: more real SOL support unlocks more mutation throughput.
+    // C. Country-volume factor: ADDITIVE — `faction_round_volume` is the
+    // country's accumulated SOL bets since its LAST round win (snapshot taken
+    // at round-end onto GameSession). Long droughts build up potential, so
+    // when a country finally wins the volume_factor is high. Required volume
+    // ramps per prior mutation in the round to dampen multi-mutation rounds.
     let required_volume = tuning
         .faction_volume_threshold_lamports
         .saturating_add(
@@ -344,16 +387,7 @@ pub fn calculate_mutation_result(
         required_volume
     );
 
-    // E. Global cooldown factor: recent mutation-heavy rounds suppress the next few rounds.
-    let cooldown_factor =
-        BASIS_POINTS_DENOMINATOR.saturating_sub(recent_mutation_pressure_bps as u64);
-    msg!(
-        "   Cooldown factor: {:.2}% (recent_pressure={} bps)",
-        cooldown_factor as f64 / 100.0,
-        recent_mutation_pressure_bps
-    );
-
-    // F. Cycle pacing factor: compare observed mutations so far against target-by-now.
+    // D. Cycle pacing factor: compare observed mutations so far against target-by-now.
     let progress_rounds = u64::from(cycle_rounds_elapsed).max(1);
     let target_rounds = u64::from(tuning.target_rounds_per_cycle).max(1);
     let target_mutations = u64::from(tuning.target_mutations_per_cycle).max(1);
@@ -387,16 +421,15 @@ pub fn calculate_mutation_result(
         pacing_adjustment
     );
 
-    // G. Final Chance = BASE × bet_strength × mult_factor × faction_penalty × volume × cooldown × pacing × claim boost
+    // E. Final Chance = BASE × mult_factor × faction_penalty × volume × pacing × claim_boost
+    // (5 bps-scaled multipliers on top of base, so divide by 10000^5).
     let final_chance_bps = ((tuning.base_mutation_chance_bps as u128)
-        * (bet_strength as u128)
         * (mult_factor as u128)
         * (faction_penalty as u128)
         * (volume_factor as u128)
-        * (cooldown_factor as u128)
         * (pacing_factor as u128)
         * (chance_boost_bps as u128)
-        / 10_000u128.pow(7))
+        / 10_000u128.pow(5))
     .clamp(
         tuning.mutation_chance_floor_bps as u128,
         tuning.mutation_chance_cap_bps as u128,
@@ -420,8 +453,8 @@ pub fn calculate_mutation_result(
         &total_sol_bets.to_le_bytes(),
         &total_combined.to_le_bytes(),
         user_key.as_ref(),
-        doge_mint.as_ref(),
-        &gameplay_doge_dna,
+        hashbeast_mint.as_ref(),
+        &gameplay_hashbeast_dna,
     ])
     .to_bytes();
 
@@ -437,7 +470,7 @@ pub fn calculate_mutation_result(
             xp_gained,
             multiplier_increase: 0,
             xp_consumed: 0,
-            new_dna: gameplay_doge_dna,
+            new_dna: gameplay_hashbeast_dna,
         };
     }
     msg!("   Mutation triggered!!!");
@@ -472,13 +505,13 @@ pub fn calculate_mutation_result(
     }
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
-        evolve_stage(origin, origin_id, &mut gameplay_doge_dna, &seed, doge_mint);
+        evolve_stage(origin, origin_id, &mut gameplay_hashbeast_dna, &seed, hashbeast_mint);
         (MutationType::Evolution, 50u32)
     } else if (type_roll as u64) < power_threshold {
-        mutate_power_trait(origin, origin_id, &mut gameplay_doge_dna, &seed, doge_mint);
+        mutate_power_trait(origin, origin_id, &mut gameplay_hashbeast_dna, &seed, hashbeast_mint);
         (MutationType::Power, 25u32)
     } else {
-        mutate_visual_trait(origin, origin_id, &mut gameplay_doge_dna, &seed, doge_mint);
+        mutate_visual_trait(origin, origin_id, &mut gameplay_hashbeast_dna, &seed, hashbeast_mint);
         (MutationType::Trait, 5u32)
     };
     msg!("   Mutation type: {:?}, Base boost: {}", m_type, base_boost);
@@ -493,15 +526,15 @@ pub fn calculate_mutation_result(
         (2u64, 5u64)
     };
     let efficiency_pct = min_pct + ((xp_roll * (max_pct - min_pct)) / 255);
-    let xp_mult_boost = (gameplay_doge_xp as u64 * efficiency_pct) / 100;
+    let xp_mult_boost = (gameplay_hashbeast_xp as u64 * efficiency_pct) / 100;
 
     // XP consumed by the mutation:
     // Evolution consumes ALL XP (full reset).
     // Power/Trait consume what they used (the efficiency% portion).
     let xp_consumed = if m_type == MutationType::Evolution {
-        gameplay_doge_xp // full reset
+        gameplay_hashbeast_xp // full reset
     } else {
-        (gameplay_doge_xp as u64 * efficiency_pct / 100) as u32 // consume what was used
+        (gameplay_hashbeast_xp as u64 * efficiency_pct / 100) as u32 // consume what was used
     };
 
     msg!(
@@ -517,7 +550,7 @@ pub fn calculate_mutation_result(
         xp_gained,
         multiplier_increase: base_boost + xp_mult_boost as u32,
         xp_consumed,
-        new_dna: gameplay_doge_dna,
+        new_dna: gameplay_hashbeast_dna,
     }
 }
 
@@ -531,7 +564,7 @@ pub fn evolve_stage(
     origin_id: u64,
     dna: &mut [u8; 32],
     seed: &[u8],
-    doge_mint: &Pubkey,
+    hashbeast_mint: &Pubkey,
 ) -> (u8, u8, u8, u8, u8, u8, u8) {
     crate::log_fn!("genescience", "evolve_stage");
     let current_stage = (dna[0] >> 4) & 0x07;
@@ -548,10 +581,10 @@ pub fn evolve_stage(
     let power_seed = keccak::hashv(&[seed, b"power"]).to_bytes();
     let (p_index, p_current_val, p_new_val) = mutate_power_trait_internal(dna, &power_seed);
 
-    emit!(DogeEvolution {
+    emit!(HashBeastEvolution {
         origin,
         origin_id,
-        doge_mint: *doge_mint,
+        hashbeast_mint: *hashbeast_mint,
         new_stage,
         visual_trait_index: m_index,
         visual_old_val: m_current_val,
@@ -578,15 +611,15 @@ pub fn mutate_visual_trait(
     origin_id: u64,
     dna: &mut [u8; 32],
     seed: &[u8],
-    doge_mint: &Pubkey,
+    hashbeast_mint: &Pubkey,
 ) -> (u8, u8, u8) {
     crate::log_fn!("genescience", "mutate_visual_trait");
     let (trait_index, current_val, new_val) = mutate_visual_trait_internal(dna, seed);
 
-    emit!(DogeVisualMutation {
+    emit!(HashBeastVisualMutation {
         origin,
         origin_id,
-        doge_mint: *doge_mint,
+        hashbeast_mint: *hashbeast_mint,
         trait_index,
         old_val: current_val,
         new_val,
@@ -632,15 +665,15 @@ pub fn mutate_power_trait(
     origin_id: u64,
     dna: &mut [u8; 32],
     seed: &[u8],
-    doge_mint: &Pubkey,
+    hashbeast_mint: &Pubkey,
 ) -> (u8, u8, u8) {
     crate::log_fn!("genescience", "mutate_power_trait");
     let (trait_index, current_val, new_val) = mutate_power_trait_internal(dna, seed);
 
-    emit!(DogePowerMutation {
+    emit!(HashBeastPowerMutation {
         origin,
         origin_id,
-        doge_mint: *doge_mint,
+        hashbeast_mint: *hashbeast_mint,
         trait_index,
         old_val: current_val,
         new_val,
@@ -707,6 +740,8 @@ pub fn breed_genes(
         0,
         parent_breed,
     );
+    let parent_rebirth_count = get_rebirth_count(parent1_dna).max(get_rebirth_count(parent2_dna));
+    set_rebirth_count(&mut offspring_dna, parent_rebirth_count)?;
 
     Ok(offspring_dna)
 }
@@ -927,6 +962,29 @@ pub fn get_breed(dna: &[u8; 32]) -> u8 {
     get_trait_value(dna, BREED_OFFSET, BREED_BITS, 0)
 }
 
+/// Get rebirth/rebirth generation from DNA (3 bits at REBIRTH_COUNT_OFFSET).
+pub fn get_rebirth_count(dna: &[u8; 32]) -> u8 {
+    crate::log_fn!("genescience", "get_rebirth_count");
+    get_trait_value(dna, REBIRTH_COUNT_OFFSET, REBIRTH_COUNT_BITS, 0)
+}
+
+/// Set rebirth/rebirth generation in DNA (0-7).
+pub fn set_rebirth_count(dna: &mut [u8; 32], rebirth_count: u8) -> Result<()> {
+    crate::log_fn!("genescience", "set_rebirth_count");
+    require!(
+        rebirth_count <= MAX_REBIRTH_COUNT,
+        ErrorCode::MaxRebirthCountReached
+    );
+    set_trait_value(
+        dna,
+        REBIRTH_COUNT_OFFSET,
+        REBIRTH_COUNT_BITS,
+        0,
+        rebirth_count,
+    );
+    Ok(())
+}
+
 /// Get faction/family type from DNA (first 4 bits)
 pub fn get_family_type(dna: &[u8; 32]) -> u8 {
     crate::log_fn!("genescience", "get_family_type");
@@ -991,15 +1049,13 @@ mod tests {
             max_evolution_stage_unlocked: 0,
             faction_war_base_reward_bps: 0,
             faction_war_loyalty_reward_bps: 0,
-            faction_war_doge_reward_bps: 0,
+            faction_war_hashbeast_reward_bps: 0,
             faction_war_mvp_reward_bps: 0,
             base_mutation_chance_bps: 0,
             mutation_chance_floor_bps: 0,
             mutation_chance_cap_bps: 0,
             faction_volume_threshold_lamports: 0,
             extra_volume_threshold_per_mutation_lamports: 0,
-            global_mutation_pressure_decay_bps: 0,
-            global_mutation_pressure_per_mutation_bps: 0,
             target_mutations_per_cycle: 0,
             target_rounds_per_cycle: 0,
             pacing_max_adjustment_bps: 0,
@@ -1029,6 +1085,11 @@ mod tests {
         let stage = get_evolution_stage(&dna);
         println!("Evolution Stage: {}", stage);
         assert_eq!(stage, 0, "Evolution stage should be 0 for genesis");
+        assert_eq!(
+            get_rebirth_count(&dna),
+            0,
+            "Rebirth count should be 0 for genesis"
+        );
 
         // Decode traits
         let app_traits = decode_appearance_traits(&dna);
@@ -1104,6 +1165,37 @@ mod tests {
             dna1, dna2,
             "Different mint numbers should produce different DNA"
         );
+    }
+
+    #[test]
+    fn test_generate_reborn_dna_sets_rebirth_count_and_resets_stage() {
+        let asset = mock_pubkey();
+        let mut previous = generate_genesis_dna(1, &asset, 100, 3).unwrap();
+        set_rebirth_count(&mut previous, 2).unwrap();
+        evolve_stage(
+            STORY_EVENT_ORIGIN_ROUND,
+            1,
+            &mut previous,
+            &[7u8; 32],
+            &asset,
+        );
+
+        let reborn = generate_reborn_dna(&previous, &asset, 200, 3, 3).unwrap();
+
+        assert_eq!(get_family_type(&reborn), 3);
+        assert_eq!(get_evolution_stage(&reborn), 0);
+        assert_eq!(get_rebirth_count(&reborn), 3);
+        assert_ne!(previous, reborn, "Rebirth should reroll playable DNA");
+    }
+
+    #[test]
+    fn test_rebirth_count_caps_at_seven() {
+        let asset = mock_pubkey();
+        let previous = generate_genesis_dna(1, &asset, 100, 3).unwrap();
+
+        let maxed = generate_reborn_dna(&previous, &asset, 200, 3, 7).unwrap();
+        assert_eq!(get_rebirth_count(&maxed), 7);
+        assert!(generate_reborn_dna(&previous, &asset, 200, 3, 8).is_err());
     }
 
     // --- TRAIT DECODING TESTS ---
@@ -1202,9 +1294,9 @@ mod tests {
         println!("Original appearance traits: {:?}", original);
 
         let seed = [1u8; 32];
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let (trait_idx, _, _) =
-            mutate_visual_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
+            mutate_visual_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
 
         let mutated = decode_appearance_traits(&dna);
         println!("Mutated appearance traits: {:?}", mutated);
@@ -1226,9 +1318,9 @@ mod tests {
         println!("Original power traits: {:?}", original);
 
         let seed = [2u8; 32];
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let (_, original_val, mutated_val) =
-            mutate_power_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
+            mutate_power_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
 
         let mutated = decode_power_traits(&dna);
         println!("Mutated power traits: {:?}", mutated);
@@ -1253,9 +1345,9 @@ mod tests {
         println!("Original power traits: {:?}", original);
 
         let seed = [3u8; 32];
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
-            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
+            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
         println!("New stage: {}", new_stage);
         println!(
             "Mutated traits: {:?}",
@@ -1279,12 +1371,12 @@ mod tests {
     #[test]
     fn test_evolve_multiple_stages() {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
 
         for expected_stage in 1..=7 {
             let seed = [expected_stage; 32];
             let (new_stage, _, _, _, _, _, _) =
-                evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
+                evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
             assert_eq!(
                 new_stage, expected_stage,
                 "Stage mismatch at {}",
@@ -1295,7 +1387,7 @@ mod tests {
         // Should return current stage when at max (7)
         let seed = [8u8; 32];
         let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
-            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
+            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
         assert_eq!(new_stage, 7, "Should stay at max stage");
         assert_eq!(m_index, 0, "No mutation at max");
         assert_eq!(m_current_val, 0, "No mutation at max");
@@ -1311,8 +1403,8 @@ mod tests {
         let original_faction = get_family_type(&dna);
 
         let seed = [1u8; 32];
-        let doge_mint = mock_pubkey();
-        let _ = evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &doge_mint);
+        let hashbeast_mint = mock_pubkey();
+        let _ = evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
 
         assert_eq!(
             get_family_type(&dna),
@@ -1344,6 +1436,24 @@ mod tests {
             0,
             "Offspring should be stage 0"
         );
+        assert_eq!(
+            get_rebirth_count(&offspring),
+            0,
+            "Offspring should start with rebirth count 0"
+        );
+    }
+
+    #[test]
+    fn test_breed_genes_preserves_rebirth_generation() {
+        let mut parent1 = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
+        let mut parent2 = generate_genesis_dna(2, &mock_pubkey(), 200, 5).unwrap();
+        set_rebirth_count(&mut parent1, 3).unwrap();
+        set_rebirth_count(&mut parent2, 3).unwrap();
+
+        let offspring =
+            breed_genes(&parent1, &parent2, b"rebirth_breed_test_123456789012345").unwrap();
+
+        assert_eq!(get_rebirth_count(&offspring), 3);
     }
 
     #[test]
@@ -1401,14 +1511,13 @@ mod tests {
             133, 68, 70, 49, 137, 148, 80, 78, 16, 104, 152, 128, 82, 0, 68, 52, 16, 64, 0, 0, 0,
             48, 171, 230, 185, 253, 209, 30, 122, 100, 207, 57,
         ];
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let tuning = test_tuning();
 
         let result = calculate_mutation_result(
             STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000 / 2, // 0.5 SOL bet
-            1_000_000_000,
             1000,
             dna,
             100,
@@ -1419,13 +1528,12 @@ mod tests {
             10_000,
             0,
             0,
-            0,
             100_000_000,
             100_000_000,
             100_000_000,
             12345,
             &mock_pubkey(),
-            &doge_mint,
+            &hashbeast_mint,
         );
 
         // Note: with 0.5 SOL bet against 1 SOL highest, there's a chance of mutation
@@ -1437,7 +1545,7 @@ mod tests {
     }
 
     fn find_evolution_slot(dna: [u8; 32], max_evolution_stage_unlocked: u8) -> u64 {
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let user = mock_pubkey();
         let tuning = test_tuning();
 
@@ -1445,7 +1553,6 @@ mod tests {
             let result = calculate_mutation_result(
                 STORY_EVENT_ORIGIN_ROUND,
                 1,
-                1_000_000_000,
                 1_000_000_000,
                 1000,
                 dna,
@@ -1457,13 +1564,12 @@ mod tests {
                 10_000,
                 0,
                 0,
-                0,
                 1_000_000_000,
                 1_000_000_000,
                 1_000_000_000,
                 slot,
                 &user,
-                &doge_mint,
+                &hashbeast_mint,
             );
 
             if result.mutation_type == Some(MutationType::Evolution) {
@@ -1479,7 +1585,7 @@ mod tests {
         cycle_rounds_elapsed: u16,
         cycle_mutations_triggered: u16,
     ) -> usize {
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let user = mock_pubkey();
         let dna = generate_genesis_dna(7, &mock_pubkey(), 777, 0).unwrap();
 
@@ -1488,7 +1594,6 @@ mod tests {
                 calculate_mutation_result(
                     STORY_EVENT_ORIGIN_ROUND,
                     1,
-                    1_000_000_000,
                     1_000_000_000,
                     1000,
                     dna,
@@ -1500,13 +1605,12 @@ mod tests {
                     10_000,
                     cycle_rounds_elapsed,
                     cycle_mutations_triggered,
-                    0,
                     1_000_000_000,
                     1_000_000_000,
                     1_000_000_000,
                     *slot,
                     &user,
-                    &doge_mint,
+                    &hashbeast_mint,
                 )
                 .mutation_type
                 .is_some()
@@ -1539,7 +1643,7 @@ mod tests {
     fn test_stage_zero_evolution_requires_unlock() {
         let dna = generate_genesis_dna(1, &mock_pubkey(), 100, 0).unwrap();
         let slot = find_evolution_slot(dna, 1);
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let user = mock_pubkey();
         let tuning = test_tuning();
 
@@ -1547,7 +1651,6 @@ mod tests {
             STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000,
-            1_000_000_000,
             1000,
             dna,
             0,
@@ -1558,13 +1661,12 @@ mod tests {
             10_000,
             0,
             0,
-            0,
             1_000_000_000,
             1_000_000_000,
             1_000_000_000,
             slot,
             &user,
-            &doge_mint,
+            &hashbeast_mint,
         );
         assert_eq!(unlocked.mutation_type, Some(MutationType::Evolution));
 
@@ -1572,7 +1674,6 @@ mod tests {
             STORY_EVENT_ORIGIN_ROUND,
             1,
             1_000_000_000,
-            1_000_000_000,
             1000,
             dna,
             0,
@@ -1583,13 +1684,12 @@ mod tests {
             10_000,
             0,
             0,
-            0,
             1_000_000_000,
             1_000_000_000,
             1_000_000_000,
             slot,
             &user,
-            &doge_mint,
+            &hashbeast_mint,
         );
         assert_eq!(locked.mutation_type, Some(MutationType::Power));
     }
@@ -1600,14 +1700,13 @@ mod tests {
         dna[0] = (dna[0] & 0x8F) | (1 << 4);
 
         let slot = find_evolution_slot(dna, 2);
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
         let user = mock_pubkey();
         let tuning = test_tuning();
 
         let unlocked = calculate_mutation_result(
             STORY_EVENT_ORIGIN_ROUND,
             1,
-            1_000_000_000,
             1_000_000_000,
             1000,
             dna,
@@ -1619,20 +1718,18 @@ mod tests {
             10_000,
             0,
             0,
-            0,
             1_000_000_000,
             1_000_000_000,
             1_000_000_000,
             slot,
             &user,
-            &doge_mint,
+            &hashbeast_mint,
         );
         assert_eq!(unlocked.mutation_type, Some(MutationType::Evolution));
 
         let locked = calculate_mutation_result(
             STORY_EVENT_ORIGIN_ROUND,
             1,
-            1_000_000_000,
             1_000_000_000,
             1000,
             dna,
@@ -1644,13 +1741,12 @@ mod tests {
             10_000,
             0,
             0,
-            0,
             1_000_000_000,
             1_000_000_000,
             1_000_000_000,
             slot,
             &user,
-            &doge_mint,
+            &hashbeast_mint,
         );
         assert_eq!(locked.mutation_type, Some(MutationType::Power));
     }
@@ -1743,7 +1839,7 @@ mod tests {
 
     #[test]
     fn test_genesis_breed_in_range() {
-        // Test many genesis doges to ensure breed is always 0-3
+        // Test many genesis hashbeasts to ensure breed is always 0-3
         for i in 0..100 {
             let dna = generate_genesis_dna(i, &mock_pubkey(), i * 7 + 100, (i % 12) as u8).unwrap();
             let breed = get_breed(&dna);
@@ -1753,7 +1849,7 @@ mod tests {
 
     #[test]
     fn test_genesis_breed_has_variety() {
-        // Generate many doges and check we get all 4 breed values
+        // Generate many hashbeasts and check we get all 4 breed values
         let mut seen = [false; 4];
         for i in 0..200 {
             let dna = generate_genesis_dna(i, &mock_pubkey(), i * 13 + 42, 0).unwrap();
@@ -1771,7 +1867,7 @@ mod tests {
     fn test_breed_preserved_through_evolution() {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 5).unwrap();
         let original_breed = get_breed(&dna);
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
 
         // Evolve through all stages
         for stage in 1..=7 {
@@ -1781,7 +1877,7 @@ mod tests {
                 stage as u64,
                 &mut dna,
                 &seed,
-                &doge_mint,
+                &hashbeast_mint,
             );
             assert_eq!(
                 get_breed(&dna),
@@ -1796,7 +1892,7 @@ mod tests {
     fn test_breed_preserved_through_visual_mutation() {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 3).unwrap();
         let original_breed = get_breed(&dna);
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
 
         for i in 0..50 {
             let seed = [i as u8; 32];
@@ -1805,7 +1901,7 @@ mod tests {
                 i as u64,
                 &mut dna,
                 &seed,
-                &doge_mint,
+                &hashbeast_mint,
             );
             assert_eq!(
                 get_breed(&dna),
@@ -1820,7 +1916,7 @@ mod tests {
     fn test_breed_preserved_through_power_mutation() {
         let mut dna = generate_genesis_dna(1, &mock_pubkey(), 100, 7).unwrap();
         let original_breed = get_breed(&dna);
-        let doge_mint = mock_pubkey();
+        let hashbeast_mint = mock_pubkey();
 
         for i in 0..50 {
             let seed = [i as u8; 32];
@@ -1829,7 +1925,7 @@ mod tests {
                 i as u64,
                 &mut dna,
                 &seed,
-                &doge_mint,
+                &hashbeast_mint,
             );
             assert_eq!(
                 get_breed(&dna),

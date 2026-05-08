@@ -7,7 +7,7 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 - `GlobalConfig` PDA `[global-config]`
   - Authority, pending authority, fee recipient, SOL treasury PDA, supported factions, fee configs, Raydium pool state, snapshot interval, gameplay tuning, pause flag.
   - Fee config is whole-percent based for SOL fees and degenBTC distributions.
-  - Pause blocks new bets, autominers, round starts, Doge mints, and breeding. Settlement, claims, staking, economy cranks remain available.
+  - Pause blocks new bets, autominers, round starts, HashBeast mints, and breeding. Settlement, claims, staking, economy cranks remain available.
 
 - `MineBtcMining` PDA `[mine-btc-mining]`
   - Token vault, emission rate per round, total mined/distributed, Raydium pool, price history, recent/track price, POL tracking, LP token price, emission adjustment params, LP operation pending flag.
@@ -34,7 +34,7 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 
 - `UserGameBet` PDA `[user-bet, user_pubkey, round_id_u64_le]`
   - A user can hold multiple faction-direction positions in one round.
-  - Stores faction IDs, directions, SOL bets, point/ticket bets, weighted points, totals, fee, gameplay Doge, mutation type, faction-war accumulation flag.
+  - Stores faction IDs, directions, SOL bets, point/ticket bets, weighted points, totals, fee, gameplay HashBeast, mutation type, faction-war accumulation flag.
 
 ## Player and Referral Accounts
 
@@ -42,8 +42,8 @@ Canonical source: `programs/mineBTC/src/state.rs`.
   - Wallet owner, referral code, current/origin faction, referrer faction, same-faction referral flag.
   - degenBTC and LP staking hashpower/staked/reward debt.
   - Pending SOL, pending degenBTC, unrefined degenBTC, pending round and faction-war claims.
-  - Position indexes, staked Doges, passive Doge multiplier, free ticket balances.
-  - Gameplay Doge lock state, active multiplier, cached DNA/XP, unlock request cycle, current faction-war score.
+  - Position indexes, staked HashBeasts, passive HashBeast multiplier, free ticket balances.
+  - Gameplay HashBeast lock state, active multiplier, cached DNA/XP, unlock request cycle, current faction-war score.
 
 - `ReferralRewards` PDA `[referral-rewards, referrer_pubkey]`
   - Referrer owner, owner faction, referral counts, same-faction counts, per-faction recruit counts, pending SOL rewards, total SOL earned.
@@ -57,18 +57,18 @@ Canonical source: `programs/mineBTC/src/state.rs`.
   - SOL per round, remaining rounds, last bet round, reserve balance, reload flag, optional ticket tier.
   - Funds are held in global autominer custody PDA `[autominer-custody]`.
 
-## Doge NFT Accounts
+## HashBeast NFT Accounts
 
-- `DogeConfig` PDA `[doge-config]`
-  - Metaplex Core collection, max lifetime supply, total lifetime mints, breeding flag and breeding curve.
+- `HashBeastConfig` PDA `[hashbeast-config]`
+  - Metaplex Core collection, total lifetime mints, breeding flag and breeding curve.
 
-- `DogeMintConfig` PDA `[doge-mint-config]`
+- `HashBeastMintConfig` PDA `[hashbeast-mint-config]`
   - Genesis mint activity, base price, curve, genesis cap, mints by faction, ticket tiers.
 
-- `DogeMetadata` PDA `[doge-metadata, doge_mint]`
-  - Core asset mint, parents, breed count/cooldown, created timestamp, faction, multiplier, accumulated value, DNA, incubated player, last update, XP.
+- `HashBeastMetadata` PDA `[hashbeast-metadata, hashbeast_mint]`
+  - Core asset mint, parents, breed count/cooldown, recycle count, created timestamp, faction, multiplier, accumulated value, DNA, incubated player, last update, XP.
 
-- `DogeFreeMintAllowance` PDA `[doge-free-mint-allowance, user_pubkey]`
+- `HashBeastFreeMintAllowance` PDA `[hashbeast-free-mint-allowance, user_pubkey]`
   - Remaining free genesis mints.
 
 ## Staking Accounts
@@ -89,11 +89,11 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 - `FactionWarState` PDA `[faction-war, faction_war_id_u64_le]`
   - Stage 0 active, 1 settled/claims open.
   - Start/final ranks, rank deltas, resolved directions, MVP users/scores/bonuses.
-  - Direction totals, SOL direction totals, loyalty totals, reward pools, round wins, SOL totals, gameplay scores, eligible Doge direction totals.
+  - Direction totals, SOL direction totals, loyalty totals, reward pools, round wins, SOL totals, gameplay scores, eligible HashBeast direction totals.
   - Treasury tax base, treasury claim bitmap, SOL cycle reward pool.
 
 - `UserFactionWarBets` PDA `[user-faction-war, user_pubkey, faction_war_id_u64_le]`
-  - Per-user weighted and SOL direction bets for a cycle, gameplay Doge, doge bonus eligibility.
+  - Per-user weighted and SOL direction bets for a cycle, gameplay HashBeast, hashbeast bonus eligibility.
 
 ## Tax Accounts
 

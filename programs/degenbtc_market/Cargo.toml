@@ -1,7 +1,7 @@
 [package]
 name = "degenbtc_market"
 version = "0.1.0"
-description = "MineBTC degenBTC marketplace — minimal mpl-core NFT marketplace for the Doge collection"
+description = "MineBTC degenBTC marketplace — minimal mpl-core NFT marketplace for the HashBeast collection"
 edition = "2021"
 license = "BUSL-1.1"
 

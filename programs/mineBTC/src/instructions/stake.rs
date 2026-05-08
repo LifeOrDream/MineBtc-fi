@@ -7,7 +7,7 @@ use anchor_spl::token::{self, Token};
 // Passive staking has three layers:
 // - A user opens MineBTC or LP lockup positions in their home faction.
 // - Lockup duration can add up to 3x weighted hashpower.
-// - The player's staked Doges can add another 3x passive hashpower multiplier.
+// - The player's staked HashBeasts can add another 3x passive hashpower multiplier.
 // - The maxed-out staking setup is therefore capped at 9x total.
 //
 // Reward sources:
@@ -52,9 +52,9 @@ fn calc_weighted_amount(staked_amount: u64, lockup_multiplier: u16) -> Result<u6
     u64::try_from(weighted_u128).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
-fn calc_hashpower_contribution(weighted_amount: u64, doge_multiplier: u16) -> Result<u64> {
+fn calc_hashpower_contribution(weighted_amount: u64, hashbeast_multiplier: u16) -> Result<u64> {
     let hashpower_u128 = (weighted_amount as u128)
-        .checked_mul(doge_multiplier as u128)
+        .checked_mul(hashbeast_multiplier as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_div(BASE_MULTIPLIER as u128)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -66,11 +66,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn max_lockup_and_passive_doges_cap_staking_at_9x() {
+    fn max_lockup_and_passive_hashbeasts_cap_staking_at_9x() {
         let deposit = 1_000_000u64;
         let weighted = calc_weighted_amount(deposit, 300).unwrap();
         let hashpower =
-            calc_hashpower_contribution(weighted, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER).unwrap();
+            calc_hashpower_contribution(weighted, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER).unwrap();
 
         assert_eq!(weighted, deposit * 3);
         assert_eq!(hashpower, deposit * 9);
@@ -116,10 +116,10 @@ pub fn int_stake_minebtc(
         player_data.degenbtc_position_indices.len()
     );
     msg!(
-        "🧾 [stake_minebtc] player_before degenbtc_staked={} degenbtc_hashpower={} doge_multiplier={} pending_sol={} pending_minebtc={}",
+        "🧾 [stake_minebtc] player_before degenbtc_staked={} degenbtc_hashpower={} hashbeast_multiplier={} pending_sol={} pending_minebtc={}",
         player_data.degenbtc_staked as f64 / 1e6,
         player_data.degenbtc_hashpower as f64 / 1e6,
-        player_data.doge_multiplier as f64 / 1000.0,
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
@@ -249,25 +249,25 @@ pub fn int_stake_minebtc(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
-    let doges_multiplier = player_data.doge_multiplier;
-    let weighted_amount_with_doges =
-        calc_hashpower_contribution(weighted_amount, doges_multiplier)?;
+    let hashbeasts_multiplier = player_data.hashbeast_multiplier;
+    let weighted_amount_with_hashbeasts =
+        calc_hashpower_contribution(weighted_amount, hashbeasts_multiplier)?;
     let prev_player_degenbtc_hashpower = player_data.degenbtc_hashpower;
     let prev_player_degenbtc_staked = player_data.degenbtc_staked;
     let prev_faction_degenbtc_staked = faction_state.degenbtc_staked;
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     msg!(
-        "⚙️ [stake_minebtc] position_math actual_amount={} weighted_amount={} doge_multiplier={}x hashpower_contribution={}",
+        "⚙️ [stake_minebtc] position_math actual_amount={} weighted_amount={} hashbeast_multiplier={}x hashpower_contribution={}",
         actual_amount as f64 / 1e6,
         weighted_amount as f64 / 1e6,
-        doges_multiplier as f64 / 1000.0,
-        weighted_amount_with_doges as f64 / 1e6
+        hashbeasts_multiplier as f64 / 1000.0,
+        weighted_amount_with_hashbeasts as f64 / 1e6
     );
 
     // Update player data state
     player_data.degenbtc_hashpower = player_data
         .degenbtc_hashpower
-        .checked_add(weighted_amount_with_doges)
+        .checked_add(weighted_amount_with_hashbeasts)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     player_data.degenbtc_staked = player_data
         .degenbtc_staked
@@ -281,7 +281,7 @@ pub fn int_stake_minebtc(
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     faction_state.total_degenbtc_hashpower = faction_state
         .total_degenbtc_hashpower
-        .checked_add(weighted_amount_with_doges)
+        .checked_add(weighted_amount_with_hashbeasts)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
@@ -307,7 +307,7 @@ pub fn int_stake_minebtc(
 
     // Transfer tokens from user to custodian
     msg!(
-        "💱 Transferring {} mDoge tokens from user to custodian",
+        "💱 Transferring {} dBTC tokens from user to custodian",
         actual_amount as f64 / 1e6
     );
     let transfer_ctx = CpiContext::new(
@@ -332,7 +332,7 @@ pub fn int_stake_minebtc(
         weighted_amount,
         multiplier,
         lockup_duration,
-        hashpower_contribution: weighted_amount_with_doges,
+        hashpower_contribution: weighted_amount_with_hashbeasts,
         new_sol_rewards,
         new_minebtc_rewards,
         unrefined_minebtc: accrued_minebtc_rewards,
@@ -363,12 +363,12 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
         position_index
     );
     msg!(
-        "🧭 [unstake_minebtc] owner={} player={} faction_state={} faction_id={} doge_multiplier={}",
+        "🧭 [unstake_minebtc] owner={} player={} faction_state={} faction_id={} hashbeast_multiplier={}",
         ctx.accounts.authority.key(),
         player_data_key,
         faction_state.key(),
         faction_state.faction_id,
-        player_data.doge_multiplier as f64 / 1000.0
+        player_data.hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
         "🧾 [unstake_minebtc] player_before degenbtc_staked={} degenbtc_hashpower={} pending_sol={} pending_minebtc={}",
@@ -440,7 +440,7 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
     let hashpower_contribution =
-        calc_hashpower_contribution(original_weighted, player_data.doge_multiplier)?;
+        calc_hashpower_contribution(original_weighted, player_data.hashbeast_multiplier)?;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
     let prev_player_degenbtc_hashpower = player_data.degenbtc_hashpower;
@@ -448,10 +448,10 @@ pub fn int_unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> 
     let prev_faction_degenbtc_staked = faction_state.degenbtc_staked;
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     msg!(
-        "⚙️ [unstake_minebtc] position_math staked_amount={} weighted_amount={} doge_multiplier={}x hashpower_contribution={} is_early={}",
+        "⚙️ [unstake_minebtc] position_math staked_amount={} weighted_amount={} hashbeast_multiplier={}x hashpower_contribution={} is_early={}",
         staked_amount as f64 / 1e6,
         original_weighted as f64 / 1e6,
-        player_data.doge_multiplier as f64 / 1000.0,
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         hashpower_contribution as f64 / 1e6,
         is_early_withdrawal
     );
@@ -700,10 +700,10 @@ pub fn int_stake_lp_tokens(
         player_data.lp_position_indices.len()
     );
     msg!(
-        "🧾 [stake_lp_tokens] player_before lp_staked={} lp_hashpower={} doge_multiplier={} pending_sol={} pending_minebtc={}",
+        "🧾 [stake_lp_tokens] player_before lp_staked={} lp_hashpower={} hashbeast_multiplier={} pending_sol={} pending_minebtc={}",
         player_data.lp_staked as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
-        player_data.doge_multiplier as f64 / 1000.0,
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
@@ -807,25 +807,25 @@ pub fn int_stake_lp_tokens(
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
 
-    let doges_multiplier = player_data.doge_multiplier;
-    let weighted_amount_with_doges =
-        calc_hashpower_contribution(weighted_amount, doges_multiplier)?;
+    let hashbeasts_multiplier = player_data.hashbeast_multiplier;
+    let weighted_amount_with_hashbeasts =
+        calc_hashpower_contribution(weighted_amount, hashbeasts_multiplier)?;
     let prev_player_lp_hashpower = player_data.lp_hashpower;
     let prev_player_lp_staked = player_data.lp_staked;
     let prev_faction_lp_staked = faction_state.lp_staked;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
     msg!(
-        "⚙️ [stake_lp_tokens] position_math actual_amount={} weighted_amount={} doge_multiplier={}x hashpower_contribution={}",
+        "⚙️ [stake_lp_tokens] position_math actual_amount={} weighted_amount={} hashbeast_multiplier={}x hashpower_contribution={}",
         actual_amount as f64 / 1e6,
         weighted_amount as f64 / 1e6,
-        doges_multiplier as f64 / 1000.0,
-        weighted_amount_with_doges as f64 / 1e6
+        hashbeasts_multiplier as f64 / 1000.0,
+        weighted_amount_with_hashbeasts as f64 / 1e6
     );
 
     // Update player data state
     player_data.lp_hashpower = player_data
         .lp_hashpower
-        .checked_add(weighted_amount_with_doges)
+        .checked_add(weighted_amount_with_hashbeasts)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     player_data.lp_staked = player_data
         .lp_staked
@@ -839,7 +839,7 @@ pub fn int_stake_lp_tokens(
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     faction_state.total_lp_hashpower = faction_state
         .total_lp_hashpower
-        .checked_add(weighted_amount_with_doges)
+        .checked_add(weighted_amount_with_hashbeasts)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "   Updated faction state - Total staked: {}, Total hashpower: {}",
@@ -890,7 +890,7 @@ pub fn int_stake_lp_tokens(
         weighted_amount,
         multiplier,
         lockup_duration,
-        hashpower_contribution: weighted_amount_with_doges,
+        hashpower_contribution: weighted_amount_with_hashbeasts,
         new_sol_rewards,
         new_minebtc_rewards,
         unrefined_minebtc: accrued_minebtc_rewards,
@@ -917,12 +917,12 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         position_index
     );
     msg!(
-        "🧭 [unstake_lp_tokens] owner={} player={} faction_state={} faction_id={} doge_multiplier={}",
+        "🧭 [unstake_lp_tokens] owner={} player={} faction_state={} faction_id={} hashbeast_multiplier={}",
         ctx.accounts.authority.key(),
         player_data_key,
         faction_state.key(),
         faction_state.faction_id,
-        player_data.doge_multiplier as f64 / 1000.0
+        player_data.hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
         "🧾 [unstake_lp_tokens] player_before lp_staked={} lp_hashpower={} pending_sol={} pending_minebtc={}",
@@ -993,7 +993,7 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let staked_amount = user_position.staked_amount;
     let original_weighted = user_position.weighted_amount;
     let hashpower_contribution =
-        calc_hashpower_contribution(original_weighted, player_data.doge_multiplier)?;
+        calc_hashpower_contribution(original_weighted, player_data.hashbeast_multiplier)?;
     let mut return_amount = staked_amount;
     let mut penalty_amount = 0u64;
     let prev_player_lp_hashpower = player_data.lp_hashpower;
@@ -1001,10 +1001,10 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
     let prev_faction_lp_staked = faction_state.lp_staked;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
     msg!(
-        "⚙️ [unstake_lp_tokens] position_math staked_amount={} weighted_amount={} doge_multiplier={}x hashpower_contribution={} is_early={}",
+        "⚙️ [unstake_lp_tokens] position_math staked_amount={} weighted_amount={} hashbeast_multiplier={}x hashpower_contribution={} is_early={}",
         staked_amount as f64 / 1e6,
         original_weighted as f64 / 1e6,
-        player_data.doge_multiplier as f64 / 1000.0,
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         hashpower_contribution as f64 / 1e6,
         is_early_withdrawal
     );

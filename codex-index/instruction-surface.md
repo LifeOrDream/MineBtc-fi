@@ -14,15 +14,15 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `update_rpg_progression(enabled)`, `set_pause(paused)`, `update_evolution_unlock_stage(max_stage)`, `update_gameplay_tuning(args)` - live gameplay controls.
 - `update_breeding_config(...)`, `update_emission_params(...)`.
 
-## Token, Mining, Doge, and Custodian Setup
+## Token, Mining, HashBeast, and Custodian Setup
 
 - `initialize_mining(start_timestamp, mine_btc_per_round, pool_state)` - token vault and emission state.
 - `deposit_mine_btc_tokens(amount)` - deposits pre-minted degenBTC into mining vault.
 - `initialize_hashpower_config(...)`, `initialize_custodian_accounts()`.
-- `initialize_doge_config(max_supply)`, `initialize_doge_mint_config(...)`.
-- `update_doge_config(...)`, `update_doge_mint_config(...)`, `switch_doge_mining()`.
-- `create_doge_collection(name, uri)`, `init_doge_royalties(...)`, `add_collection_delegate(...)`, `update_collection_info(...)`.
-- `add_ticket_tier_config(index, ticket_value)`, `set_doge_free_mint_allowance(user, remaining_free_mints)`.
+- `initialize_hashbeast_config()`, `initialize_hashbeast_mint_config(...)`.
+- `update_hashbeast_config(...)`, `update_hashbeast_mint_config(...)`, `switch_hashbeast_mining()`.
+- `create_hashbeast_collection(name, uri)`, `init_hashbeast_royalties(...)`, `add_collection_delegate(...)`, `update_collection_info(...)`.
+- `add_ticket_tier_config(index, ticket_value)`, `set_hashbeast_free_mint_allowance(user, remaining_free_mints)`.
 
 ## Economy and Tax Cranks
 
@@ -54,11 +54,11 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `init_autominer(...)`, `execute_autominer_bet(...)`, `update_autominer(...)`, `stop_autominer()`.
 - `claim_autominer_rewards(...)` - claims eligible autominer round rewards.
 
-## Gameplay Doges
+## Gameplay HashBeasts
 
-- `use_doge_for_gameplay()` - locks one Doge for active gameplay multiplier and story events.
-- `request_doge_gameplay_unlock()` - marks unlock request for current/next faction-war boundary.
-- `withdraw_doge_from_gameplay()` - withdraws once cycle condition permits and syncs cached Doge state.
+- `use_hashbeast_for_gameplay()` - locks one HashBeast for active gameplay multiplier and story events.
+- `request_hashbeast_gameplay_unlock()` - marks unlock request for current/next faction-war boundary.
+- `withdraw_hashbeast_from_gameplay()` - withdraws once cycle condition permits and syncs cached HashBeast state.
 
 ## Staking and Claims
 
@@ -68,10 +68,11 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `withdraw_dbtc_rewards()` - withdraws degenBTC rewards with HODL tax when applicable.
 - `claim_referral_rewards()` - SOL referral rewards.
 
-## Doge Minting and Lifecycle
+## HashBeast Minting and Lifecycle
 
 - `simulate_purchase_cost(...)` - return-data helper for mint price.
-- `admin_mint_doge(...)`, `whitelist_mint_doge(...)`, `batch_mint_doges(...)`.
-- `stake_doge()`, `unstake_doge()` - passive staking multiplier path.
-- `breed_doges()`, `send_to_heaven()` - breeding and accumulated-value burn/claim path.
+- `admin_mint_hashbeast(...)`, `whitelist_mint_hashbeast(...)`, `batch_mint_hashbeasts(...)`.
+- `stake_hashbeast()`, `unstake_hashbeast()` - passive staking multiplier path.
+- `breed_hashbeasts()` - post-genesis-sellout, same-country/same-recycle-level breeding, priced at max(curve, 1.5x floor) with 50% SOL / 50% dbTC payment.
+- `rebirth_hashbeast()` - accumulated-value claim + rebirth-or-burn path.
 - `get_gene_breakdown(dna)` - return-data helper for genetics display/debugging.

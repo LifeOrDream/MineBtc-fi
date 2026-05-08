@@ -2,21 +2,21 @@ use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Token;
-use anchor_spl::token_2022::{self, Token2022, TransferChecked};
+use anchor_spl::token_2022::{self, Burn, Token2022, TransferChecked};
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
-// # Doge Instructions
+// # HashBeast Instructions
 //
-// Doges serve three distinct roles in MineBTC:
+// HashBeasts serve three distinct roles in MineBTC:
 // - primary-market NFTs minted from the bonding-curve-like pricing path,
 // - passive staking boosters that raise a player's home-faction staking hashpower,
 // - gameplay avatars used in round betting / mutation progression (handled partly in `user.rs`).
 //
 // Important distinction:
-// - `player_data.doge_multiplier` is the passive staking multiplier affected by `stake_doge`.
+// - `player_data.hashbeast_multiplier` is the passive staking multiplier affected by `stake_hashbeast`.
 // - `player_data.active_multiplier` is the gameplay multiplier used for round participation.
 //
-// This file focuses on minting, passive Doge staking, burning-to-claim (`send_to_heaven`),
+// This file focuses on minting, passive HashBeast staking, rebirthing (`rebirth_hashbeast`),
 // and breeding. Gameplay lock / unlock flows live elsewhere.
 //
 
@@ -26,7 +26,7 @@ use crate::instructions::stake;
 use crate::state::*;
 
 // ----------------------------------------------------------------------------------------
-// --------------  DOGE NFT MANAGEMENT -----------------------------------------------
+// --------------  HASHBEAST NFT MANAGEMENT -----------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 fn load_program_account<T: AccountDeserialize>(account: &AccountInfo<'_>) -> Result<T> {
@@ -36,12 +36,59 @@ fn load_program_account<T: AccountDeserialize>(account: &AccountInfo<'_>) -> Res
     T::try_deserialize(&mut data_slice)
 }
 
-fn load_staked_doge_raw_multiplier(
+fn ceil_mul_div_u64(a: u64, b: u64, c: u64) -> Result<u64> {
+    require!(c > 0, ErrorCode::InvalidParameters);
+    let numerator = (a as u128)
+        .checked_mul(b as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let denominator = c as u128;
+    let value = numerator
+        .checked_add(denominator.saturating_sub(1))
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(denominator)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(value).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
+fn metadata_rebirth_count(metadata: &HashBeastMetadata) -> u8 {
+    metadata
+        .rebirth_count
+        .max(crate::genescience::get_rebirth_count(&metadata.dna))
+}
+
+fn assert_player_data_owner(account: &AccountInfo<'_>, expected_owner: &Pubkey) -> Result<()> {
+    require!(account.owner == &crate::ID, ErrorCode::InvalidAccount);
+    let data = account.try_borrow_data()?;
+    require!(
+        data.len() >= DISCRIMINATOR_SIZE + 1 + 32,
+        ErrorCode::InvalidAccount
+    );
+    require!(
+        data[..DISCRIMINATOR_SIZE] == <PlayerData as Discriminator>::DISCRIMINATOR[..],
+        ErrorCode::InvalidAccount
+    );
+
+    let mut owner_bytes = [0u8; 32];
+    owner_bytes.copy_from_slice(&data[DISCRIMINATOR_SIZE + 1..DISCRIMINATOR_SIZE + 1 + 32]);
+    let actual_owner = Pubkey::new_from_array(owner_bytes);
+    require_keys_eq!(actual_owner, *expected_owner, ErrorCode::Unauthorized);
+    Ok(())
+}
+
+fn shares_known_parent(a: &HashBeastMetadata, b: &HashBeastMetadata) -> bool {
+    let parents_a = [a.mom, a.dad];
+    let parents_b = [b.mom, b.dad];
+    parents_a.iter().any(|parent_a| {
+        *parent_a != Pubkey::default() && parents_b.iter().any(|parent_b| parent_a == parent_b)
+    })
+}
+
+fn load_staked_hashbeast_raw_multiplier(
     remaining_accounts: &[AccountInfo<'_>],
     expected_mints: &[Pubkey],
 ) -> Result<u64> {
     msg!(
-        "🧮 [load_staked_doge_raw_multiplier] expected_mints={} remaining_accounts={} expected={:?}",
+        "🧮 [load_staked_hashbeast_raw_multiplier] expected_mints={} remaining_accounts={} expected={:?}",
         expected_mints.len(),
         remaining_accounts.len(),
         expected_mints
@@ -55,24 +102,24 @@ fn load_staked_doge_raw_multiplier(
     let mut raw_multiplier = BASE_MULTIPLIER as u64;
 
     for account in remaining_accounts {
-        let doge_metadata: DogeMetadata = load_program_account(account)?;
-        let mint = doge_metadata.mint;
+        let hashbeast_metadata: HashBeastMetadata = load_program_account(account)?;
+        let mint = hashbeast_metadata.mint;
         let (expected_pda, _) =
-            Pubkey::find_program_address(&[DOGE_METADATA_SEED.as_ref(), mint.as_ref()], &crate::ID);
+            Pubkey::find_program_address(&[HASHBEAST_METADATA_SEED.as_ref(), mint.as_ref()], &crate::ID);
         require!(account.key() == expected_pda, ErrorCode::InvalidAccount);
         require!(expected_mints.contains(&mint), ErrorCode::InvalidParameters);
         require!(!seen_mints.contains(&mint), ErrorCode::InvalidParameters);
         msg!(
-            "   [load_staked_doge_raw_multiplier] metadata={} mint={} multiplier={} faction_id={} expected_pda_match={}",
+            "   [load_staked_hashbeast_raw_multiplier] metadata={} mint={} multiplier={} faction_id={} expected_pda_match={}",
             account.key(),
             mint,
-            doge_metadata.multiplier as f64 / 1000.0,
-            doge_metadata.faction_id,
+            hashbeast_metadata.multiplier as f64 / 1000.0,
+            hashbeast_metadata.faction_id,
             account.key() == expected_pda
         );
 
         raw_multiplier = raw_multiplier
-            .checked_add(doge_metadata.multiplier as u64)
+            .checked_add(hashbeast_metadata.multiplier as u64)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         seen_mints.push(mint);
     }
@@ -85,7 +132,7 @@ fn load_staked_doge_raw_multiplier(
     }
 
     msg!(
-        "✅ [load_staked_doge_raw_multiplier] raw_multiplier={}x loaded_mints={:?}",
+        "✅ [load_staked_hashbeast_raw_multiplier] raw_multiplier={}x loaded_mints={:?}",
         raw_multiplier as f64 / 1000.0,
         seen_mints
     );
@@ -93,62 +140,53 @@ fn load_staked_doge_raw_multiplier(
     Ok(raw_multiplier)
 }
 
-/// Simulate mint costs for multiple doges accounting for bonding curve pricing
+/// Simulate mint costs for multiple hashbeasts accounting for bonding curve pricing
 /// Returns (total_price, individual_prices, ticket_amounts_per_tier)
 /// ticket_amounts_per_tier: Vec of (ticket_value) for each of the 3 ticket tiers
 pub fn int_simulate_mint_cost(
-    doge_config: &DogeConfig,
-    doge_mint_config: &DogeMintConfig,
+    hashbeast_config: &HashBeastConfig,
+    hashbeast_mint_config: &HashBeastMintConfig,
     mint_count: u64,
 ) -> Result<(u64, Vec<u64>, Vec<(u64, u64)>)> {
-    crate::log_fn!("doges", "int_simulate_mint_cost");
+    crate::log_fn!("hashbeasts", "int_simulate_mint_cost");
     require!(
         mint_count > 0 && mint_count <= 10,
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_config
-            .total_doges_minted
-            .checked_add(mint_count)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            <= doge_config.max_supply,
-        ErrorCode::InvalidParameters
-    );
-    require!(
-        doge_mint_config
+        hashbeast_mint_config
             .genesis_mints
             .checked_add(mint_count)
             .ok_or(ErrorCode::ArithmeticOverflow)?
-            <= doge_mint_config.genesis_mint_limit,
+            <= hashbeast_mint_config.genesis_mint_limit,
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_mint_config.ticket_tiers.len() == 3,
+        hashbeast_mint_config.ticket_tiers.len() == 3,
         ErrorCode::InvalidParameters
     ); // Must have exactly 3 ticket tiers
     msg!(
-        "🧮 [simulate_mint_cost] mint_count={} total_supply_after={} / {} genesis_after={} / {}",
+        "🧮 [simulate_mint_cost] mint_count={} total_minted_after={} genesis_after={} / {}",
         mint_count,
-        doge_config
-            .total_doges_minted
+        hashbeast_config
+            .total_hashbeasts_minted
             .checked_add(mint_count)
             .ok_or(ErrorCode::ArithmeticOverflow)?,
-        doge_config.max_supply,
-        doge_mint_config
+        hashbeast_mint_config
             .genesis_mints
             .checked_add(mint_count)
             .ok_or(ErrorCode::ArithmeticOverflow)?,
-        doge_mint_config.genesis_mint_limit
+        hashbeast_mint_config.genesis_mint_limit
     );
 
     let mut prices = Vec::new();
     let mut total_price = 0u64;
-    let mut current_minted = doge_mint_config.genesis_mints;
+    let mut current_minted = hashbeast_mint_config.genesis_mints;
 
     for _ in 0..mint_count {
         let actual_price = crate::genescience::compute_gene_price(
-            doge_mint_config.base_price,
-            doge_mint_config.curve_a,
+            hashbeast_mint_config.base_price,
+            hashbeast_mint_config.curve_a,
             current_minted,
         )?;
 
@@ -164,7 +202,7 @@ pub fn int_simulate_mint_cost(
     // Calculate ticket amounts for each tier: sol_price / ticket_value
     // Users get 100% of their mint price as game tickets
     let mut ticket_amounts = Vec::new();
-    for tier in &doge_mint_config.ticket_tiers {
+    for tier in &hashbeast_mint_config.ticket_tiers {
         // Calculate: total_price / ticket_value (1.0x)
         let ticket_count = helper::calc_tickets_count(total_price, tier.ticket_value);
         ticket_amounts.push((tier.ticket_value, ticket_count));
@@ -174,18 +212,18 @@ pub fn int_simulate_mint_cost(
 }
 
 fn validate_genesis_faction_cap(
-    doge_mint_config: &DogeMintConfig,
+    hashbeast_mint_config: &HashBeastMintConfig,
     faction_id: u8,
     mint_count: u8,
 ) -> Result<()> {
     let faction_index = faction_id as usize;
     require!(faction_index < NUM_FACTIONS, ErrorCode::InvalidFactionId);
-    let current_faction_mints = doge_mint_config.genesis_mints_by_faction[faction_index];
+    let current_faction_mints = hashbeast_mint_config.genesis_mints_by_faction[faction_index];
     let next_faction_mints = current_faction_mints
         .checked_add(mint_count as u16)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(
-        next_faction_mints <= doge_mint_config.max_genesis_mints_per_faction,
+        next_faction_mints <= hashbeast_mint_config.max_genesis_mints_per_faction,
         ErrorCode::InvalidParameters
     );
     msg!(
@@ -193,73 +231,65 @@ fn validate_genesis_faction_cap(
         faction_id,
         mint_count,
         next_faction_mints,
-        doge_mint_config.max_genesis_mints_per_faction
+        hashbeast_mint_config.max_genesis_mints_per_faction
     );
     Ok(())
 }
 
-/// Batch mint multiple Doge (max 10 per transaction)
-/// Uses bonding curve pricing for each doge
+/// Batch mint multiple HashBeast (max 10 per transaction)
+/// Uses bonding curve pricing for each hashbeast
 ///
 /// # Remaining Accounts
-/// For each doge to mint, the client must pass 2 accounts in remaining_accounts:
-/// 1. doge_asset (Signer, Writable) - The new Keypair for the doge
-/// 2. doge_metadata (Writable) - The derived PDA for metadata
+/// For each hashbeast to mint, the client must pass 2 accounts in remaining_accounts:
+/// 1. hashbeast_asset (Signer, Writable) - The new Keypair for the hashbeast
+/// 2. hashbeast_metadata (Writable) - The derived PDA for metadata
 ///
 /// So for mint_count = 5, remaining_accounts will have 10 items: [asset_0, meta_0, asset_1, meta_1, ...]
-pub fn int_batch_mint_doges<'info>(
-    ctx: Context<'_, '_, '_, 'info, BatchMintDoge<'info>>,
+pub fn int_batch_mint_hashbeasts<'info>(
+    ctx: Context<'_, '_, '_, 'info, BatchMintHashBeast<'info>>,
     faction_id: u8,
     mint_count: u8,
     ticket_tier_index: u8,
 ) -> Result<()> {
-    crate::log_fn!("doges", "int_batch_mint_doges");
+    crate::log_fn!("hashbeasts", "int_batch_mint_hashbeasts");
     require!(
         mint_count > 0 && mint_count <= 10,
         ErrorCode::InvalidParameters
     );
 
     // Validate we have enough remaining accounts
-    // We need 2 accounts per doge: Asset(Signer) + Metadata(PDA)
+    // We need 2 accounts per hashbeast: Asset(Signer) + Metadata(PDA)
     require!(
         ctx.remaining_accounts.len() == (mint_count as usize * 2),
         ErrorCode::InvalidParameters
     );
 
     let global_config = &ctx.accounts.global_config;
-    let doge_config = &mut ctx.accounts.doge_config;
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    let hashbeast_config = &mut ctx.accounts.hashbeast_config;
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
     let player_data = &mut ctx.accounts.player_data;
 
     require!(!global_config.is_paused, ErrorCode::GamePaused);
-    require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(hashbeast_mint_config.is_active, ErrorCode::MintingNotAllowed);
 
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config
-            .total_doges_minted
-            .checked_add(mint_count as u64)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            <= doge_config.max_supply,
-        ErrorCode::InvalidParameters
-    );
-    require!(
-        doge_mint_config
+        hashbeast_mint_config
             .genesis_mints
             .checked_add(mint_count as u64)
             .ok_or(ErrorCode::ArithmeticOverflow)?
-            <= doge_mint_config.genesis_mint_limit,
+            <= hashbeast_mint_config.genesis_mint_limit,
         ErrorCode::InvalidParameters
     );
-    validate_genesis_faction_cap(doge_mint_config, faction_id, mint_count)?;
+    validate_genesis_faction_cap(hashbeast_mint_config, faction_id, mint_count)?;
 
     let (total_price, prices, _ticket_amounts) =
-        int_simulate_mint_cost(doge_config, doge_mint_config, mint_count as u64)?;
+        int_simulate_mint_cost(hashbeast_config, hashbeast_mint_config, mint_count as u64)?;
     msg!(
-        "   Batch minting {} genesis doges, total cost: {} lamports",
+        "   Batch minting {} genesis hashbeasts, total cost: {} lamports",
         mint_count,
         total_price
     );
@@ -330,20 +360,20 @@ pub fn int_batch_mint_doges<'info>(
     // Handle ticket tier selection and add free tickets (using pre-calculated ticket_amounts)
     let ticket_count = add_tickets_to_player(
         player_data,
-        doge_mint_config,
+        hashbeast_mint_config,
         ticket_tier_index,
         total_price,
     )?;
 
-    // Mint each doge using remaining_accounts
+    // Mint each hashbeast using remaining_accounts
     for i in 0..mint_count {
         let index = i as usize;
 
         // Get accounts from remaining_accounts
         // [asset_0, meta_0, asset_1, meta_1, ...]
         // Store keys first to avoid lifetime issues
-        let doge_asset_key = ctx.remaining_accounts[index * 2].key();
-        let doge_metadata_key = ctx.remaining_accounts[index * 2 + 1].key();
+        let hashbeast_asset_key = ctx.remaining_accounts[index * 2].key();
+        let hashbeast_metadata_key = ctx.remaining_accounts[index * 2 + 1].key();
 
         // Verify Asset is a Signer
         require!(
@@ -353,27 +383,27 @@ pub fn int_batch_mint_doges<'info>(
 
         // Verify Metadata PDA derivation
         let (expected_metadata, metadata_bump) = Pubkey::find_program_address(
-            &[DOGE_METADATA_SEED.as_ref(), doge_asset_key.as_ref()],
+            &[HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset_key.as_ref()],
             ctx.program_id,
         );
         require!(
-            doge_metadata_key == expected_metadata,
+            hashbeast_metadata_key == expected_metadata,
             ErrorCode::InvalidAccount
         );
 
-        let current_mint_number = doge_config
-            .total_doges_minted
+        let current_mint_number = hashbeast_config
+            .total_hashbeasts_minted
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Generate doge data (DNA, name, URI, multiplier)
+        // Generate hashbeast data (DNA, name, URI, multiplier)
         let slot = Clock::get()?.slot + i as u64;
-        let (name, uri, dna, multiplier) = generate_doge_data(
+        let (name, uri, dna, multiplier) = generate_hashbeast_data(
             current_mint_number,
             &ctx.accounts.user.key(),
             slot,
             faction_id,
-            &doge_asset_key,
+            &hashbeast_asset_key,
         )?;
 
         // Create Metaplex Core Asset
@@ -385,20 +415,20 @@ pub fn int_batch_mint_doges<'info>(
 
         // Get AccountInfo references for this iteration
         // Note: We must access these directly in the function call to avoid lifetime conflicts
-        let doge_asset_info = &ctx.remaining_accounts[index * 2];
-        let doge_metadata_info = &ctx.remaining_accounts[index * 2 + 1];
+        let hashbeast_asset_info = &ctx.remaining_accounts[index * 2];
+        let hashbeast_metadata_info = &ctx.remaining_accounts[index * 2 + 1];
 
         // Prepare collection account info (if exists) - must be done inline to avoid lifetime issues
         let collection_account_info = ctx
             .accounts
-            .doge_collection
+            .hashbeast_collection
             .as_ref()
             .map(|c| c.to_account_info());
 
         // Call create_mpl_core_asset with all accounts accessed directly
         // This avoids storing references that mix lifetimes from remaining_accounts and ctx.accounts
         crate::mpl_core_helpers::create_mpl_core_asset(
-            doge_asset_info,
+            hashbeast_asset_info,
             collection_account_info.as_ref(),
             &ctx.accounts.collection_authority.to_account_info(),
             &ctx.accounts.user.to_account_info(),
@@ -412,13 +442,13 @@ pub fn int_batch_mint_doges<'info>(
 
         // Initialize Metadata PDA manually (since we can't use #[account(init)] with remaining_accounts)
         // Check if account already exists (shouldn't, but safety check)
-        if doge_metadata_info.lamports() == 0 {
-            let space = DogeMetadata::LEN;
+        if hashbeast_metadata_info.lamports() == 0 {
+            let space = HashBeastMetadata::LEN;
             let rent = Rent::get()?.minimum_balance(space);
 
             let metadata_seeds = &[
-                DOGE_METADATA_SEED.as_ref(),
-                doge_asset_key.as_ref(),
+                HASHBEAST_METADATA_SEED.as_ref(),
+                hashbeast_asset_key.as_ref(),
                 &[metadata_bump],
             ];
             let metadata_signer = &[&metadata_seeds[..]];
@@ -429,7 +459,7 @@ pub fn int_batch_mint_doges<'info>(
                     ctx.accounts.system_program.to_account_info(),
                     anchor_lang::system_program::CreateAccount {
                         from: ctx.accounts.user.to_account_info(),
-                        to: doge_metadata_info.to_account_info(),
+                        to: hashbeast_metadata_info.to_account_info(),
                     },
                     metadata_signer, // The PDA must sign its own creation
                 ),
@@ -439,12 +469,24 @@ pub fn int_batch_mint_doges<'info>(
             )?;
         }
 
+        // Sanity check: now that the account exists (either freshly created
+        // by us above, or pre-existing), it must be owned by this program
+        // before we write to it. Prevents an attacker from passing a
+        // system-owned or foreign-owned address whose data we'd otherwise
+        // happily overwrite via the unchecked `try_borrow_mut_data` below.
+        require_keys_eq!(
+            *hashbeast_metadata_info.owner,
+            crate::ID,
+            ErrorCode::InvalidAccount
+        );
+
         // Write data to the metadata account (generation is in DNA bits 4-6)
-        let metadata_data = DogeMetadata {
-            mint: doge_asset_key,
+        let metadata_data = HashBeastMetadata {
+            mint: hashbeast_asset_key,
             mom: Pubkey::default(),
             dad: Pubkey::default(),
             breed_count: 0,
+            rebirth_count: 0,
             cooldown_end: 0,
             accumulated_val: 0,
             dna,
@@ -459,17 +501,17 @@ pub fn int_batch_mint_doges<'info>(
 
         // Serialize into the account with Anchor discriminator
         // CRITICAL: Must write the 8-byte discriminator first, then serialize the struct
-        let mut data = doge_metadata_info.try_borrow_mut_data()?;
+        let mut data = hashbeast_metadata_info.try_borrow_mut_data()?;
 
         // Ensure the account has enough space
         require!(
-            data.len() >= DogeMetadata::LEN,
+            data.len() >= HashBeastMetadata::LEN,
             ErrorCode::InvalidParameters
         );
 
         // Write the 8-byte discriminator (required by Anchor for account deserialization)
-        // Anchor calculates discriminator as first 8 bytes of sha256("account:DogeMetadata")
-        data[..8].copy_from_slice(<DogeMetadata as Discriminator>::DISCRIMINATOR);
+        // Anchor calculates discriminator as first 8 bytes of sha256("account:HashBeastMetadata")
+        data[..8].copy_from_slice(<HashBeastMetadata as Discriminator>::DISCRIMINATOR);
 
         // Serialize struct data to a Vec, then copy to buffer after discriminator
         // This is more reliable than using Write trait directly on mutable slice
@@ -479,12 +521,12 @@ pub fn int_batch_mint_doges<'info>(
         data[8..8 + serialized.len()].copy_from_slice(&serialized);
 
         // Emit event
-        emit!(DogeMinted {
-            doge_metadata_account: doge_metadata_key,
-            doge_asset_signer: doge_asset_key,
+        emit!(HashBeastMinted {
+            hashbeast_metadata_account: hashbeast_metadata_key,
+            hashbeast_asset_signer: hashbeast_asset_key,
             owner: ctx.accounts.user.key(),
             player: ctx.accounts.player_data.key(),
-            mint: doge_asset_key,
+            mint: hashbeast_asset_key,
             name: name.clone(),
             uri: uri.clone(),
             dna,
@@ -496,38 +538,34 @@ pub fn int_batch_mint_doges<'info>(
             ticket_count,
         });
 
-        doge_config.total_doges_minted = doge_config
-            .total_doges_minted
+        hashbeast_config.total_hashbeasts_minted = hashbeast_config
+            .total_hashbeasts_minted
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        doge_mint_config.genesis_mints = doge_mint_config
+        hashbeast_mint_config.genesis_mints = hashbeast_mint_config
             .genesis_mints
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         let faction_index = faction_id as usize;
-        doge_mint_config.genesis_mints_by_faction[faction_index] = doge_mint_config
+        hashbeast_mint_config.genesis_mints_by_faction[faction_index] = hashbeast_mint_config
             .genesis_mints_by_faction[faction_index]
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     msg!(
-        "✅ Batch minted {} Doge for faction {}",
+        "✅ Batch minted {} HashBeast for faction {}",
         mint_count,
         faction_id
     );
-    msg!(
-        "   Total doges minted: {} / {}",
-        doge_config.total_doges_minted,
-        doge_config.max_supply
-    );
+    msg!("   Total hashbeasts minted: {}", hashbeast_config.total_hashbeasts_minted);
     msg!(
         "   Genesis mints: {} / {}, faction {}: {} / {}",
-        doge_mint_config.genesis_mints,
-        doge_mint_config.genesis_mint_limit,
+        hashbeast_mint_config.genesis_mints,
+        hashbeast_mint_config.genesis_mint_limit,
         faction_id,
-        doge_mint_config.genesis_mints_by_faction[faction_id as usize],
-        doge_mint_config.max_genesis_mints_per_faction
+        hashbeast_mint_config.genesis_mints_by_faction[faction_id as usize],
+        hashbeast_mint_config.max_genesis_mints_per_faction
     );
     Ok(())
 }
@@ -536,17 +574,17 @@ pub fn int_batch_mint_doges<'info>(
 // -------------- ADMIN FREE MINT FUNCTION ------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Admin function to mint a Doge NFT for free to a specified recipient
-pub fn int_admin_mint_doge(
-    ctx: Context<AdminMintDoge>,
+/// Admin function to mint a HashBeast NFT for free to a specified recipient
+pub fn int_admin_mint_hashbeast(
+    ctx: Context<AdminMintHashBeast>,
     recipient: Pubkey,
     faction_id: u8,
     ticket_tier_index: u8,
 ) -> Result<()> {
-    crate::log_fn!("doges", "int_admin_mint_doge");
+    crate::log_fn!("hashbeasts", "int_admin_mint_hashbeast");
     let global_config = &ctx.accounts.global_config;
-    let doge_config = &mut ctx.accounts.doge_config;
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    let hashbeast_config = &mut ctx.accounts.hashbeast_config;
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
 
     // Verify recipient matches instruction parameter
     require!(
@@ -558,34 +596,30 @@ pub fn int_admin_mint_doge(
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.total_doges_minted < doge_config.max_supply,
+        hashbeast_mint_config.genesis_mints < hashbeast_mint_config.genesis_mint_limit,
         ErrorCode::InvalidParameters
     );
-    require!(
-        doge_mint_config.genesis_mints < doge_mint_config.genesis_mint_limit,
-        ErrorCode::InvalidParameters
-    );
-    validate_genesis_faction_cap(doge_mint_config, faction_id, 1)?;
+    validate_genesis_faction_cap(hashbeast_mint_config, faction_id, 1)?;
 
     msg!(
-        "🎁 [admin_mint_doge] Admin minting free doge to recipient: {}",
+        "🎁 [admin_mint_hashbeast] Admin minting free hashbeast to recipient: {}",
         recipient
     );
     msg!("   Faction ID: {}", faction_id);
-    let current_mint_number = doge_config
-        .total_doges_minted
+    let current_mint_number = hashbeast_config
+        .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   Doge number: {}", current_mint_number);
+    msg!("   HashBeast number: {}", current_mint_number);
 
-    // Generate doge data (DNA, name, URI, multiplier)
+    // Generate hashbeast data (DNA, name, URI, multiplier)
     let slot = Clock::get()?.slot;
-    let (name, uri, dna, multiplier) = generate_doge_data(
+    let (name, uri, dna, multiplier) = generate_hashbeast_data(
         current_mint_number,
         &recipient,
         slot,
         faction_id,
-        &ctx.accounts.doge_asset.key(),
+        &ctx.accounts.hashbeast_asset.key(),
     )?;
 
     // Get collection authority seeds
@@ -596,15 +630,15 @@ pub fn int_admin_mint_doge(
     ];
 
     // Create NFT via MPL Core CPI (paid by admin, sent to recipient)
-    msg!("🎨 Creating Doge NFT via Metaplex Core CPI");
+    msg!("🎨 Creating HashBeast NFT via Metaplex Core CPI");
     msg!("   Name: {}", name);
     msg!("   URI: {}", uri);
     msg!("   Recipient: {}", recipient);
 
     crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.doge_asset.to_account_info(),
+        &ctx.accounts.hashbeast_asset.to_account_info(),
         ctx.accounts
-            .doge_collection
+            .hashbeast_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
@@ -620,85 +654,82 @@ pub fn int_admin_mint_doge(
 
     // Calculate actual price using bonding curve (same as regular mint)
     // This is used for ticket calculations - admin mint doesn't charge SOL but tickets are calculated based on actual price
-    let cost_per_doge = crate::genescience::compute_gene_price(
-        doge_mint_config.base_price,
-        doge_mint_config.curve_a,
-        doge_mint_config.genesis_mints,
+    let cost_per_hashbeast = crate::genescience::compute_gene_price(
+        hashbeast_mint_config.base_price,
+        hashbeast_mint_config.curve_a,
+        hashbeast_mint_config.genesis_mints,
     )?;
 
     msg!(
-        "   Calculated doge price: {} lamports (for ticket calculation)",
-        cost_per_doge as f64 / 1e9
+        "   Calculated hashbeast price: {} lamports (for ticket calculation)",
+        cost_per_hashbeast as f64 / 1e9
     );
 
-    // Initialize Doge metadata
-    let doge_metadata = &mut ctx.accounts.doge_metadata;
-    doge_metadata.mint = ctx.accounts.doge_asset.key();
-    doge_metadata.mom = Pubkey::default();
-    doge_metadata.dad = Pubkey::default();
-    doge_metadata.breed_count = 0;
-    doge_metadata.cooldown_end = 0;
-    doge_metadata.accumulated_val = 0;
-    doge_metadata.dna = dna;
-    doge_metadata.incubated_player_data = Pubkey::default();
-    doge_metadata.multiplier = multiplier;
-    doge_metadata.faction_id = faction_id;
-    doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    doge_metadata.created_at = Clock::get()?.unix_timestamp;
-    doge_metadata.xp = 0;
-    doge_metadata.bump = ctx.bumps.doge_metadata;
+    // Initialize HashBeast metadata
+    let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
+    hashbeast_metadata.mint = ctx.accounts.hashbeast_asset.key();
+    hashbeast_metadata.mom = Pubkey::default();
+    hashbeast_metadata.dad = Pubkey::default();
+    hashbeast_metadata.breed_count = 0;
+    hashbeast_metadata.rebirth_count = 0;
+    hashbeast_metadata.cooldown_end = 0;
+    hashbeast_metadata.accumulated_val = 0;
+    hashbeast_metadata.dna = dna;
+    hashbeast_metadata.incubated_player_data = Pubkey::default();
+    hashbeast_metadata.multiplier = multiplier;
+    hashbeast_metadata.faction_id = faction_id;
+    hashbeast_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    hashbeast_metadata.created_at = Clock::get()?.unix_timestamp;
+    hashbeast_metadata.xp = 0;
+    hashbeast_metadata.bump = ctx.bumps.hashbeast_metadata;
 
     // Handle ticket tier selection and add free tickets (using actual price)
-    let ticket_count = if !doge_mint_config.ticket_tiers.is_empty() {
+    let ticket_count = if !hashbeast_mint_config.ticket_tiers.is_empty() {
         add_tickets_to_player(
             &mut ctx.accounts.player_data,
-            doge_mint_config,
+            hashbeast_mint_config,
             ticket_tier_index,
-            cost_per_doge,
+            cost_per_hashbeast,
         )?
     } else {
         0
     };
 
-    // Update doge config stats
-    doge_config.total_doges_minted = doge_config
-        .total_doges_minted
+    // Update hashbeast config stats
+    hashbeast_config.total_hashbeasts_minted = hashbeast_config
+        .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    doge_mint_config.genesis_mints = doge_mint_config
+    hashbeast_mint_config.genesis_mints = hashbeast_mint_config
         .genesis_mints
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    doge_mint_config.genesis_mints_by_faction[faction_id as usize] = doge_mint_config
+    hashbeast_mint_config.genesis_mints_by_faction[faction_id as usize] = hashbeast_mint_config
         .genesis_mints_by_faction[faction_id as usize]
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "   Total doges minted: {} / {}",
-        doge_config.total_doges_minted,
-        doge_config.max_supply
-    );
+    msg!("   Total hashbeasts minted: {}", hashbeast_config.total_hashbeasts_minted);
 
-    emit!(DogeMinted {
-        doge_metadata_account: doge_metadata.key(),
-        doge_asset_signer: ctx.accounts.doge_asset.key(),
+    emit!(HashBeastMinted {
+        hashbeast_metadata_account: hashbeast_metadata.key(),
+        hashbeast_asset_signer: ctx.accounts.hashbeast_asset.key(),
         owner: recipient,
         player: ctx.accounts.player_data.key(),
-        mint: doge_metadata.mint,
+        mint: hashbeast_metadata.mint,
         name,
         uri,
         dna,
         accumulated_val: 0,
         multiplier,
         faction_id,
-        price: cost_per_doge,
+        price: cost_per_hashbeast,
         ticket_tier: ticket_tier_index as u64,
         ticket_count,
     });
 
     msg!(
-        "✅ Admin minted Doge #{} for faction {} to recipient {}",
-        doge_config.total_doges_minted,
+        "✅ Admin minted HashBeast #{} for faction {} to recipient {}",
+        hashbeast_config.total_hashbeasts_minted,
         faction_id,
         recipient
     );
@@ -706,64 +737,60 @@ pub fn int_admin_mint_doge(
 }
 
 /// User-callable free mint path backed by a per-user whitelist allowance.
-/// The caller pays transaction fees and account rent, but not the Doge mint price.
-pub fn int_whitelist_mint_doge(
-    ctx: Context<WhitelistMintDoge>,
+/// The caller pays transaction fees and account rent, but not the HashBeast mint price.
+pub fn int_whitelist_mint_hashbeast(
+    ctx: Context<WhitelistMintHashBeast>,
     faction_id: u8,
     ticket_tier_index: u8,
 ) -> Result<()> {
-    crate::log_fn!("doges", "int_whitelist_mint_doge");
+    crate::log_fn!("hashbeasts", "int_whitelist_mint_hashbeast");
     let global_config = &ctx.accounts.global_config;
-    let doge_config = &mut ctx.accounts.doge_config;
-    let doge_mint_config = &mut ctx.accounts.doge_mint_config;
+    let hashbeast_config = &mut ctx.accounts.hashbeast_config;
+    let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
     let player_data = &mut ctx.accounts.player_data;
-    let allowance = &mut ctx.accounts.doge_free_mint_allowance;
+    let allowance = &mut ctx.accounts.hashbeast_free_mint_allowance;
     let user = ctx.accounts.user.key();
 
     require!(!global_config.is_paused, ErrorCode::GamePaused);
-    require!(doge_mint_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(hashbeast_mint_config.is_active, ErrorCode::MintingNotAllowed);
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
     );
     require!(
-        doge_config.total_doges_minted < doge_config.max_supply,
+        hashbeast_mint_config.genesis_mints < hashbeast_mint_config.genesis_mint_limit,
         ErrorCode::InvalidParameters
     );
-    require!(
-        doge_mint_config.genesis_mints < doge_mint_config.genesis_mint_limit,
-        ErrorCode::InvalidParameters
-    );
-    validate_genesis_faction_cap(doge_mint_config, faction_id, 1)?;
+    validate_genesis_faction_cap(hashbeast_mint_config, faction_id, 1)?;
     require!(allowance.user == user, ErrorCode::Unauthorized);
     require!(
         allowance.remaining_free_mints > 0,
-        ErrorCode::NoFreeDogeMintsRemaining
+        ErrorCode::NoFreeHashBeastMintsRemaining
     );
-    require!(ctx.accounts.doge_asset.is_signer, ErrorCode::Unauthorized);
+    require!(ctx.accounts.hashbeast_asset.is_signer, ErrorCode::Unauthorized);
 
     msg!(
-        "🎁 [whitelist_mint_doge] user={} faction_id={} remaining_before={} mint_number={}",
+        "🎁 [whitelist_mint_hashbeast] user={} faction_id={} remaining_before={} mint_number={}",
         user,
         faction_id,
         allowance.remaining_free_mints,
-        doge_config
-            .total_doges_minted
+        hashbeast_config
+            .total_hashbeasts_minted
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?
     );
 
-    let current_mint_number = doge_config
-        .total_doges_minted
+    let current_mint_number = hashbeast_config
+        .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let slot = Clock::get()?.slot;
-    let (name, uri, dna, multiplier) = generate_doge_data(
+    let (name, uri, dna, multiplier) = generate_hashbeast_data(
         current_mint_number,
         &user,
         slot,
         faction_id,
-        &ctx.accounts.doge_asset.key(),
+        &ctx.accounts.hashbeast_asset.key(),
     )?;
 
     let collection_authority_bump = ctx.bumps.collection_authority;
@@ -773,9 +800,9 @@ pub fn int_whitelist_mint_doge(
     ];
 
     crate::mpl_core_helpers::create_mpl_core_asset(
-        &ctx.accounts.doge_asset.to_account_info(),
+        &ctx.accounts.hashbeast_asset.to_account_info(),
         ctx.accounts
-            .doge_collection
+            .hashbeast_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
@@ -790,75 +817,75 @@ pub fn int_whitelist_mint_doge(
     )?;
 
     let notional_price = crate::genescience::compute_gene_price(
-        doge_mint_config.base_price,
-        doge_mint_config.curve_a,
-        doge_mint_config.genesis_mints,
+        hashbeast_mint_config.base_price,
+        hashbeast_mint_config.curve_a,
+        hashbeast_mint_config.genesis_mints,
     )?;
     msg!(
-        "   [whitelist_mint_doge] notional_price={} SOL ticket_tier_index={}",
+        "   [whitelist_mint_hashbeast] notional_price={} SOL ticket_tier_index={}",
         notional_price as f64 / 1e9,
         ticket_tier_index
     );
 
-    let doge_metadata = &mut ctx.accounts.doge_metadata;
-    doge_metadata.mint = ctx.accounts.doge_asset.key();
-    doge_metadata.mom = Pubkey::default();
-    doge_metadata.dad = Pubkey::default();
-    doge_metadata.breed_count = 0;
-    doge_metadata.cooldown_end = 0;
-    doge_metadata.accumulated_val = 0;
-    doge_metadata.dna = dna;
-    doge_metadata.incubated_player_data = Pubkey::default();
-    doge_metadata.multiplier = multiplier;
-    doge_metadata.faction_id = faction_id;
-    doge_metadata.last_update_ts = Clock::get()?.unix_timestamp;
-    doge_metadata.created_at = Clock::get()?.unix_timestamp;
-    doge_metadata.xp = 0;
-    doge_metadata.bump = ctx.bumps.doge_metadata;
+    let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
+    hashbeast_metadata.mint = ctx.accounts.hashbeast_asset.key();
+    hashbeast_metadata.mom = Pubkey::default();
+    hashbeast_metadata.dad = Pubkey::default();
+    hashbeast_metadata.breed_count = 0;
+    hashbeast_metadata.rebirth_count = 0;
+    hashbeast_metadata.cooldown_end = 0;
+    hashbeast_metadata.accumulated_val = 0;
+    hashbeast_metadata.dna = dna;
+    hashbeast_metadata.incubated_player_data = Pubkey::default();
+    hashbeast_metadata.multiplier = multiplier;
+    hashbeast_metadata.faction_id = faction_id;
+    hashbeast_metadata.last_update_ts = Clock::get()?.unix_timestamp;
+    hashbeast_metadata.created_at = Clock::get()?.unix_timestamp;
+    hashbeast_metadata.xp = 0;
+    hashbeast_metadata.bump = ctx.bumps.hashbeast_metadata;
 
-    let ticket_count = if doge_mint_config.ticket_tiers.is_empty() {
+    let ticket_count = if hashbeast_mint_config.ticket_tiers.is_empty() {
         0
     } else {
         add_tickets_to_player(
             player_data,
-            doge_mint_config,
+            hashbeast_mint_config,
             ticket_tier_index,
             notional_price,
         )?
     };
 
-    doge_config.total_doges_minted = doge_config
-        .total_doges_minted
+    hashbeast_config.total_hashbeasts_minted = hashbeast_config
+        .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    doge_mint_config.genesis_mints = doge_mint_config
+    hashbeast_mint_config.genesis_mints = hashbeast_mint_config
         .genesis_mints
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    doge_mint_config.genesis_mints_by_faction[faction_id as usize] = doge_mint_config
+    hashbeast_mint_config.genesis_mints_by_faction[faction_id as usize] = hashbeast_mint_config
         .genesis_mints_by_faction[faction_id as usize]
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     allowance.remaining_free_mints = allowance
         .remaining_free_mints
         .checked_sub(1)
-        .ok_or(ErrorCode::NoFreeDogeMintsRemaining)?;
+        .ok_or(ErrorCode::NoFreeHashBeastMintsRemaining)?;
 
     msg!(
-        "✅ [whitelist_mint_doge] user={} minted={} remaining_after={} total_minted={} / {}",
+        "✅ [whitelist_mint_hashbeast] user={} minted={} remaining_after={} total_minted={}",
         user,
-        ctx.accounts.doge_asset.key(),
+        ctx.accounts.hashbeast_asset.key(),
         allowance.remaining_free_mints,
-        doge_config.total_doges_minted,
-        doge_config.max_supply
+        hashbeast_config.total_hashbeasts_minted
     );
 
-    emit!(DogeMinted {
-        doge_metadata_account: doge_metadata.key(),
-        doge_asset_signer: ctx.accounts.doge_asset.key(),
+    emit!(HashBeastMinted {
+        hashbeast_metadata_account: hashbeast_metadata.key(),
+        hashbeast_asset_signer: ctx.accounts.hashbeast_asset.key(),
         owner: user,
         player: player_data.key(),
-        mint: doge_metadata.mint,
+        mint: hashbeast_metadata.mint,
         name,
         uri,
         dna,
@@ -873,42 +900,42 @@ pub fn int_whitelist_mint_doge(
     Ok(())
 }
 
-/// Stake a Doge to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
-/// The Doge's own faction does not matter for staking boosts.
+/// Stake a HashBeast to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
+/// The HashBeast's own faction does not matter for staking boosts.
 ///
 /// Passive staking uses three-slot smoothing:
-/// - no Doges: 1.0x
-/// - three 1.0x Doges: 2.0x
-/// - three strong Doges: capped at 3.0x
+/// - no HashBeasts: 1.0x
+/// - three 1.0x HashBeasts: 2.0x
+/// - three strong HashBeasts: capped at 3.0x
 ///
-/// This keeps Genesis Doges useful while avoiding the old shape where one maxed
-/// Doge could immediately consume the full passive cap.
-/// The effective multiplier is capped at PASSIVE_DOGE_STAKING_MAX_MULTIPLIER for reward-share math.
-/// Clients must pass metadata accounts for all already-staked doges in `remaining_accounts`
+/// This keeps Genesis HashBeasts useful while avoiding the old shape where one maxed
+/// HashBeast could immediately consume the full passive cap.
+/// The effective multiplier is capped at PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER for reward-share math.
+/// Clients must pass metadata accounts for all already-staked hashbeasts in `remaining_accounts`
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
-pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
-    crate::log_fn!("doges", "int_stake_doge");
-    let doge_metadata = &mut ctx.accounts.doge_metadata;
+pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
+    crate::log_fn!("hashbeasts", "int_stake_hashbeast");
+    let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
     let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
-    let doge_mint = doge_metadata.mint;
-    let doge_multiplier = doge_metadata.multiplier;
+    let hashbeast_mint = hashbeast_metadata.mint;
+    let hashbeast_multiplier = hashbeast_metadata.multiplier;
     msg!(
-        "🧭 [stake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
+        "🧭 [stake_hashbeast] user={} player={} faction_state={} player_faction_id={} hashbeast_mint={} hashbeast_faction_id={} hashbeast_multiplier={}x",
         ctx.accounts.user.key(),
         player_data.key(),
         faction_state.key(),
         player_data.faction_id,
-        doge_mint,
-        doge_metadata.faction_id,
-        doge_multiplier as f64 / 1000.0
+        hashbeast_mint,
+        hashbeast_metadata.faction_id,
+        hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [stake_doge] player_before staked_doges={:?} doge_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
-        player_data.staked_doges,
-        player_data.doge_multiplier as f64 / 1000.0,
+        "🧾 [stake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        player_data.staked_hashbeasts,
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
@@ -916,16 +943,16 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     );
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
-    let prev_faction_doges_staked = faction_state.doges_staked;
+    let prev_faction_hashbeasts_staked = faction_state.hashbeasts_staked;
     msg!(
-        "🧾 [stake_doge] faction_before degenbtc_hashpower={} lp_hashpower={} doges_staked={}",
+        "🧾 [stake_hashbeast] faction_before degenbtc_hashpower={} lp_hashpower={} hashbeasts_staked={}",
         prev_faction_degenbtc_hashpower as f64 / 1e6,
         prev_faction_lp_hashpower as f64 / 1e6,
-        prev_faction_doges_staked
+        prev_faction_hashbeasts_staked
     );
 
     // Verify ownership
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.hashbeast_asset)?;
 
     require!(
         nft_owner == ctx.accounts.user.key(),
@@ -933,30 +960,30 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     );
     // Check if already incubated (using Pubkey::default() instead of None)
     require!(
-        doge_metadata.incubated_player_data == Pubkey::default(),
-        ErrorCode::DogeAlreadyAtGuard
+        hashbeast_metadata.incubated_player_data == Pubkey::default(),
+        ErrorCode::HashBeastAlreadyAtGuard
     );
     require!(
         player_data.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.staked_doges.len() < MAX_STAKED_DOGES,
+        player_data.staked_hashbeasts.len() < MAX_STAKED_HASHBEASTS,
         ErrorCode::InvalidParameters
     );
 
     // Transfer NFT to custody PDA (lock it)
     msg!("🔒 Transferring NFT to custody PDA (locking)");
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.doge_asset.to_account_info(),
+        &ctx.accounts.hashbeast_asset.to_account_info(),
         ctx.accounts
-            .doge_collection
+            .hashbeast_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.hashbeast_custody_pda.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         None,
     )?;
@@ -979,38 +1006,38 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
             faction_state,
         )?;
     msg!(
-        "💹 [stake_doge] pending_after_reward_sync sol={} minebtc={}",
+        "💹 [stake_hashbeast] pending_after_reward_sync sol={} minebtc={}",
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
 
-    // Derive the exact multiplier from currently staked doges so cap-hit flows remain reversible
+    // Derive the exact multiplier from currently staked hashbeasts so cap-hit flows remain reversible
     // without storing extra player state.
-    let existing_staked_doges = player_data.staked_doges.clone();
+    let existing_staked_hashbeasts = player_data.staked_hashbeasts.clone();
     let existing_raw_multiplier =
-        load_staked_doge_raw_multiplier(ctx.remaining_accounts, &existing_staked_doges)?;
+        load_staked_hashbeast_raw_multiplier(ctx.remaining_accounts, &existing_staked_hashbeasts)?;
     let old_multiplier = capped_player_multiplier(existing_raw_multiplier) as u64;
     require!(
-        player_data.doge_multiplier == old_multiplier as u16,
+        player_data.hashbeast_multiplier == old_multiplier as u16,
         ErrorCode::InvalidState
     );
     let (new_raw_multiplier, new_effective_multiplier) =
-        add_doge_multiplier(existing_raw_multiplier, doge_multiplier)?;
+        add_hashbeast_multiplier(existing_raw_multiplier, hashbeast_multiplier)?;
     msg!(
-        "⚙️ [stake_doge] multiplier_math existing_raw={}x old_effective={}x added={}x new_raw={}x new_effective={}x",
+        "⚙️ [stake_hashbeast] multiplier_math existing_raw={}x old_effective={}x added={}x new_raw={}x new_effective={}x",
         existing_raw_multiplier as f64 / 1000.0,
         old_multiplier as f64 / 1000.0,
-        doge_multiplier as f64 / 1000.0,
+        hashbeast_multiplier as f64 / 1000.0,
         new_raw_multiplier as f64 / 1000.0,
         new_effective_multiplier as f64 / 1000.0
     );
 
-    // Add doge to player's staked doges list after validating the previous multiplier state.
-    player_data.staked_doges.push(doge_mint);
-    player_data.doge_multiplier = new_effective_multiplier;
+    // Add hashbeast to player's staked hashbeasts list after validating the previous multiplier state.
+    player_data.staked_hashbeasts.push(hashbeast_mint);
+    player_data.hashbeast_multiplier = new_effective_multiplier;
     msg!(
-        "⚡ Updated doge multiplier: effective=({})x raw_total=({})x",
-        player_data.doge_multiplier as f64 / 1000.0,
+        "⚡ Updated hashbeast multiplier: effective=({})x raw_total=({})x",
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         new_raw_multiplier as f64 / 1000.0
     );
 
@@ -1020,7 +1047,7 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
 
     // Recalculate hashpower with new multiplier (multiply first to avoid precision loss)
     // Formula: new_hashpower = (old_hashpower * new_multiplier) / old_multiplier
-    let new_multiplier = player_data.doge_multiplier as u64;
+    let new_multiplier = player_data.hashbeast_multiplier as u64;
     if old_multiplier > 0 {
         player_data.degenbtc_hashpower = scale_hashpower_by_multiplier(
             existing_degenbtc_hashpower,
@@ -1072,29 +1099,29 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
         faction_state.total_lp_hashpower as f64 / 1e6
     );
 
-    faction_state.doges_staked = faction_state
-        .doges_staked
+    faction_state.hashbeasts_staked = faction_state
+        .hashbeasts_staked
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "   Faction doges staked: {} -> {}",
-        prev_faction_doges_staked,
-        faction_state.doges_staked
+        "   Faction hashbeasts staked: {} -> {}",
+        prev_faction_hashbeasts_staked,
+        faction_state.hashbeasts_staked
     );
 
-    // Update doge metadata
+    // Update hashbeast metadata
     // Set new owner (using Pubkey instead of Option)
-    doge_metadata.incubated_player_data = player_data.owner;
-    doge_metadata.last_update_ts = current_time;
-    msg!("   Doge metadata updated");
+    hashbeast_metadata.incubated_player_data = player_data.owner;
+    hashbeast_metadata.last_update_ts = current_time;
+    msg!("   HashBeast metadata updated");
 
     // Emit event for indexing
-    emit!(DogeStaked {
+    emit!(HashBeastStaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
-        doge_mint,
-        doge_metadata_account: doge_metadata.key(),
-        player_multiplier: player_data.doge_multiplier,
+        hashbeast_mint,
+        hashbeast_metadata_account: hashbeast_metadata.key(),
+        player_multiplier: player_data.hashbeast_multiplier,
         degenbtc_hashpower: player_data.degenbtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
@@ -1103,33 +1130,33 @@ pub fn int_stake_doge(ctx: Context<StakeDoge>) -> Result<()> {
     Ok(())
 }
 
-/// Unstake a Doge (reduces multiplier and recalculates hashpower)
-/// Clients must pass metadata accounts for all doges that remain staked after this unstake
+/// Unstake a HashBeast (reduces multiplier and recalculates hashpower)
+/// Clients must pass metadata accounts for all hashbeasts that remain staked after this unstake
 /// in `remaining_accounts` so the program can derive the exact post-unstake multiplier.
-pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
-    crate::log_fn!("doges", "int_unstake_doge");
-    let doge_metadata = &mut ctx.accounts.doge_metadata;
+pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
+    crate::log_fn!("hashbeasts", "int_unstake_hashbeast");
+    let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
     let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
-    let doge_mint = doge_metadata.mint;
-    let incubated_by_player = doge_metadata.incubated_player_data;
+    let hashbeast_mint = hashbeast_metadata.mint;
+    let incubated_by_player = hashbeast_metadata.incubated_player_data;
     let current_time = Clock::get()?.unix_timestamp;
-    let doge_multiplier = doge_metadata.multiplier;
+    let hashbeast_multiplier = hashbeast_metadata.multiplier;
     msg!(
-        "🧭 [unstake_doge] user={} player={} faction_state={} player_faction_id={} doge_mint={} doge_faction_id={} doge_multiplier={}x",
+        "🧭 [unstake_hashbeast] user={} player={} faction_state={} player_faction_id={} hashbeast_mint={} hashbeast_faction_id={} hashbeast_multiplier={}x",
         ctx.accounts.user.key(),
         player_data.key(),
         faction_state.key(),
         player_data.faction_id,
-        doge_mint,
-        doge_metadata.faction_id,
-        doge_multiplier as f64 / 1000.0
+        hashbeast_mint,
+        hashbeast_metadata.faction_id,
+        hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [unstake_doge] player_before staked_doges={:?} doge_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
-        player_data.staked_doges,
-        player_data.doge_multiplier as f64 / 1000.0,
+        "🧾 [unstake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        player_data.staked_hashbeasts,
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
@@ -1137,31 +1164,31 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     );
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
-    let prev_faction_doges_staked = faction_state.doges_staked;
+    let prev_faction_hashbeasts_staked = faction_state.hashbeasts_staked;
     msg!(
-        "🧾 [unstake_doge] faction_before degenbtc_hashpower={} lp_hashpower={} doges_staked={}",
+        "🧾 [unstake_hashbeast] faction_before degenbtc_hashpower={} lp_hashpower={} hashbeasts_staked={}",
         prev_faction_degenbtc_hashpower as f64 / 1e6,
         prev_faction_lp_hashpower as f64 / 1e6,
-        prev_faction_doges_staked
+        prev_faction_hashbeasts_staked
     );
 
     // Verify NFT is in custody PDA
-    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.doge_asset)?;
+    let nft_owner = crate::mpl_core_helpers::get_mpl_core_owner(&ctx.accounts.hashbeast_asset)?;
     require!(
-        nft_owner == ctx.accounts.doge_custody_pda.key(),
-        ErrorCode::DogeNotAtGuard
+        nft_owner == ctx.accounts.hashbeast_custody_pda.key(),
+        ErrorCode::HashBeastNotAtGuard
     );
     // Verify ownership (using Pubkey::default() check instead of is_some())
     require!(
-        doge_metadata.incubated_player_data != Pubkey::default(),
-        ErrorCode::DogeNotAtGuard
+        hashbeast_metadata.incubated_player_data != Pubkey::default(),
+        ErrorCode::HashBeastNotAtGuard
     );
     require!(
         player_data.faction_id == faction_state.faction_id,
         ErrorCode::InvalidFactionId
     );
     require!(
-        player_data.staked_doges.contains(&doge_mint),
+        player_data.staked_hashbeasts.contains(&hashbeast_mint),
         ErrorCode::InvalidParameters
     );
     require!(
@@ -1187,45 +1214,45 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
             faction_state,
         )?;
     msg!(
-        "💹 [unstake_doge] pending_after_reward_sync sol={} minebtc={}",
+        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} minebtc={}",
         player_data.pending_sol_rewards as f64 / 1e9,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
 
-    // Build the expected post-unstake doge set before mutating state so we can validate
+    // Build the expected post-unstake hashbeast set before mutating state so we can validate
     // `remaining_accounts` against it.
-    let mut remaining_staked_doges = player_data.staked_doges.clone();
-    if let Some(index) = remaining_staked_doges
+    let mut remaining_staked_hashbeasts = player_data.staked_hashbeasts.clone();
+    if let Some(index) = remaining_staked_hashbeasts
         .iter()
-        .position(|&mint| mint == doge_mint)
+        .position(|&mint| mint == hashbeast_mint)
     {
-        remaining_staked_doges.remove(index);
+        remaining_staked_hashbeasts.remove(index);
     } else {
         return Err(ErrorCode::InvalidParameters.into());
     }
 
-    // Derive the exact pre/post unstake multipliers from Doge metadata instead of stored raw state.
+    // Derive the exact pre/post unstake multipliers from HashBeast metadata instead of stored raw state.
     let remaining_raw_multiplier =
-        load_staked_doge_raw_multiplier(ctx.remaining_accounts, &remaining_staked_doges)?;
+        load_staked_hashbeast_raw_multiplier(ctx.remaining_accounts, &remaining_staked_hashbeasts)?;
     let current_raw_multiplier = remaining_raw_multiplier
-        .checked_add(doge_multiplier as u64)
+        .checked_add(hashbeast_multiplier as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let old_multiplier = capped_player_multiplier(current_raw_multiplier) as u64;
     require!(
-        player_data.doge_multiplier == old_multiplier as u16,
+        player_data.hashbeast_multiplier == old_multiplier as u16,
         ErrorCode::InvalidState
     );
 
-    // Remove doge from player's staked doges list
+    // Remove hashbeast from player's staked hashbeasts list
     if let Some(index) = player_data
-        .staked_doges
+        .staked_hashbeasts
         .iter()
-        .position(|&mint| mint == doge_mint)
+        .position(|&mint| mint == hashbeast_mint)
     {
-        player_data.staked_doges.remove(index);
+        player_data.staked_hashbeasts.remove(index);
         msg!(
-            "   Removed doge from staked doges. Remaining: {}",
-            player_data.staked_doges.len()
+            "   Removed hashbeast from staked hashbeasts. Remaining: {}",
+            player_data.staked_hashbeasts.len()
         );
     } else {
         return Err(ErrorCode::InvalidParameters.into());
@@ -1233,26 +1260,26 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
 
     // Derive the new effective multiplier from the exact remaining raw sum.
     let (_, new_effective_multiplier) =
-        remove_doge_multiplier(current_raw_multiplier, doge_multiplier)?;
-    player_data.doge_multiplier = new_effective_multiplier;
+        remove_hashbeast_multiplier(current_raw_multiplier, hashbeast_multiplier)?;
+    player_data.hashbeast_multiplier = new_effective_multiplier;
     msg!(
-        "⚙️ [unstake_doge] multiplier_math current_raw={}x old_effective={}x removed={}x remaining_raw={}x new_effective={}x",
+        "⚙️ [unstake_hashbeast] multiplier_math current_raw={}x old_effective={}x removed={}x remaining_raw={}x new_effective={}x",
         current_raw_multiplier as f64 / 1000.0,
         old_multiplier as f64 / 1000.0,
-        doge_multiplier as f64 / 1000.0,
+        hashbeast_multiplier as f64 / 1000.0,
         remaining_raw_multiplier as f64 / 1000.0,
         new_effective_multiplier as f64 / 1000.0
     );
     msg!(
-        "⚡ Updated doge multiplier: effective=({})x raw_total=({})x",
-        player_data.doge_multiplier as f64 / 1000.0,
+        "⚡ Updated hashbeast multiplier: effective=({})x raw_total=({})x",
+        player_data.hashbeast_multiplier as f64 / 1000.0,
         remaining_raw_multiplier as f64 / 1000.0
     );
 
     // Calculate new hashpower based on new multiplier and UPDATE
     let existing_degenbtc_hashpower = player_data.degenbtc_hashpower;
     let existing_lp_hashpower = player_data.lp_hashpower;
-    let new_multiplier = player_data.doge_multiplier as u64;
+    let new_multiplier = player_data.hashbeast_multiplier as u64;
 
     if old_multiplier > 0 {
         player_data.degenbtc_hashpower = scale_hashpower_by_multiplier(
@@ -1293,48 +1320,48 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
         faction_state.total_lp_hashpower as f64 / 1e6
     );
 
-    faction_state.doges_staked = faction_state
-        .doges_staked
+    faction_state.hashbeasts_staked = faction_state
+        .hashbeasts_staked
         .checked_sub(1)
         .ok_or(ErrorCode::InvalidState)?;
     msg!(
-        "   Faction doges staked: {} -> {}",
-        prev_faction_doges_staked,
-        faction_state.doges_staked
+        "   Faction hashbeasts staked: {} -> {}",
+        prev_faction_hashbeasts_staked,
+        faction_state.hashbeasts_staked
     );
 
-    // Update doge metadata
+    // Update hashbeast metadata
     // Clear owner (Set back to default using Pubkey::default() instead of None)
-    doge_metadata.incubated_player_data = Pubkey::default();
-    doge_metadata.last_update_ts = current_time;
-    msg!("   Doge metadata updated");
+    hashbeast_metadata.incubated_player_data = Pubkey::default();
+    hashbeast_metadata.last_update_ts = current_time;
+    msg!("   HashBeast metadata updated");
 
     // Transfer NFT back to user (unlock it)
     msg!("🔓 Transferring NFT back to user (unlocking)");
-    let custody_seeds = &[DOGE_CUSTODY_SEED, &[ctx.bumps.doge_custody_pda]];
+    let custody_seeds = &[HASHBEAST_CUSTODY_SEED, &[ctx.bumps.hashbeast_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.doge_asset.to_account_info(),
+        &ctx.accounts.hashbeast_asset.to_account_info(),
         ctx.accounts
-            .doge_collection
+            .hashbeast_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
         &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.doge_custody_pda.to_account_info(),
+        &ctx.accounts.hashbeast_custody_pda.to_account_info(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         Some(signer_seeds),
     )?;
 
     // Emit event for indexing
-    emit!(DogeUnstaked {
+    emit!(HashBeastUnstaked {
         owner: ctx.accounts.user.key(),
         player: player_data.key(),
-        doge_mint,
-        doge_metadata_account: doge_metadata.key(),
-        player_multiplier: player_data.doge_multiplier,
+        hashbeast_mint,
+        hashbeast_metadata_account: hashbeast_metadata.key(),
+        player_multiplier: player_data.hashbeast_multiplier,
         degenbtc_hashpower: player_data.degenbtc_hashpower,
         lp_hashpower: player_data.lp_hashpower,
         timestamp: current_time,
@@ -1343,59 +1370,57 @@ pub fn int_unstake_doge(ctx: Context<UnstakeDoge>) -> Result<()> {
     Ok(())
 }
 
-/// Recycle a Doge into the program-owned inventory pool. Replaces the old
-/// `send_to_heaven` burn flow.
+/// Rebirth a HashBeast into the program-owned lootbox inventory, or burn it when
+/// the inventory path cannot accept another rebirth.
 ///
 /// Behavior:
 /// 1. Pays the user any `accumulated_val` they had earned (same as before).
-/// 2. Resets multiplier (→ BASE_MULTIPLIER), xp (→ 0), accumulated_val (→ 0).
-///    DNA, breed_count, faction_id, and parent lineage are preserved so
-///    visual identity persists into the next owner.
-/// 3. Transfers the mpl-core asset from the user to `inventory_pda` (= the
+/// 2. If the NFT has already hit `MAX_REBIRTH_COUNT`, burns it.
+/// 3. Otherwise increments rebirth_count, rerolls fresh DNA, and resets
+///    gameplay state: multiplier, xp, accumulated_val, breed_count, cooldown,
+///    and parent lineage.
+/// 4. Transfers the mpl-core asset from the user to `inventory_pda` (= the
 ///    `InventoryPool` account, which doubles as the global custody address).
-/// 4. Initializes a `RecycledEntry` for this asset with status Pending so the
-///    off-chain disposition cranker can pick it up.
-/// 5. Bumps inventory pool counters and emits `DogeRecycled`.
-pub fn int_recycle_doge(ctx: Context<RecycleDoge>) -> Result<()> {
-    crate::log_fn!("doges", "int_recycle_doge");
-    let current_time = Clock::get()?.unix_timestamp;
+/// 5. If the country's lootbox queue has room, initializes a `RebornEntry`
+///    with status Lootbox and pushes the asset into that queue.
+/// 6. Bumps inventory pool counters and emits `HashBeastReborn`.
+pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
+    crate::log_fn!("hashbeasts", "int_rebirth_hashbeast");
+    let clock = Clock::get()?;
+    let current_time = clock.unix_timestamp;
+    let current_slot = clock.slot;
 
-    let asset_key = ctx.accounts.doge_asset.key();
-    let metadata = &ctx.accounts.doge_metadata;
+    let asset_key = ctx.accounts.hashbeast_asset.key();
+    let metadata = &ctx.accounts.hashbeast_metadata;
     let accumulated_val = metadata.accumulated_val;
     let multiplier_before = metadata.multiplier;
     let xp_before = metadata.xp;
     let breed_count = metadata.breed_count;
     let faction_id = metadata.faction_id;
+    let previous_dna = metadata.dna;
+    let rebirth_count_before = metadata
+        .rebirth_count
+        .max(crate::genescience::get_rebirth_count(&metadata.dna));
+    let user_key = ctx.accounts.user.key();
 
-    // Verify not incubated (locked-for-gameplay Doges have transferred custody
-    // to a different PDA, so this branch is mostly defensive).
     require!(
         metadata.incubated_player_data == Pubkey::default(),
-        ErrorCode::DogeAlreadyAtGuard
+        ErrorCode::HashBeastAlreadyAtGuard
     );
 
-    // Inventory capacity guard — prevent unbounded growth.
-    require!(
-        ctx.accounts.inventory_pool.total_count < MAX_INVENTORY,
-        ErrorCode::InventoryFull
-    );
-
-    msg!("♻️  Recycling Doge into inventory pool...");
-    msg!("   Asset: {}", asset_key);
-    msg!("   Accumulated Value: {}", accumulated_val);
+    msg!("♻️  Rebirthing HashBeast — accumulated_val={}", accumulated_val);
     msg!(
-        "   Pre-recycle stats: multiplier={} xp={} breed_count={} faction_id={}",
+        "   Pre-rebirth stats: multiplier={} xp={} breed_count={} rebirth_count={} faction_id={}",
         multiplier_before,
         xp_before,
         breed_count,
+        rebirth_count_before,
         faction_id
     );
 
-    // Pay accumulated_val to the user (same logic as old send_to_heaven).
+    // 1) Always pay the user their accumulated_val first.
     if accumulated_val > 0 {
-        msg!("💸 Transferring {} degenBTC to user...", accumulated_val);
-
+        msg!("💸 Transferring {} degenBTC to user", accumulated_val);
         let seeds = &[
             MINE_BTC_VAULT_AUTHORITY_SEED,
             &[ctx.accounts.mine_btc_mining.vault_auth_bump],
@@ -1424,114 +1449,206 @@ pub fn int_recycle_doge(ctx: Context<RecycleDoge>) -> Result<()> {
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    // Compute the quality score from the PRE-reset stats, then reset metadata.
-    let quality_score = compute_quality_score(multiplier_before, xp_before, breed_count);
-    {
-        let metadata_mut = &mut ctx.accounts.doge_metadata;
-        metadata_mut.accumulated_val = 0;
-        metadata_mut.multiplier = BASE_MULTIPLIER;
-        metadata_mut.xp = 0;
-        metadata_mut.incubated_player_data = Pubkey::default();
-    }
+    // 2) Decide cascade: country lootbox queue first, else burn.
+    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
+    let inventory_has_capacity = ctx.accounts.inventory_pool.total_count < MAX_INVENTORY;
+    let rebirth_cap_reached = rebirth_count_before >= MAX_REBIRTH_COUNT;
 
-    // Transfer the mpl-core asset user → inventory_pda. The user is the
-    // current owner and signs as the authority; mineBTC's collection account
-    // is passed because the Doge collection requires it on every transfer.
-    crate::mpl_core_helpers::transfer_mpl_core_asset(
-        &ctx.accounts.doge_asset.to_account_info(),
-        ctx.accounts
-            .doge_collection
-            .as_ref()
-            .map(|c| c.to_account_info())
-            .as_ref(),
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.inventory_pda.to_account_info(),
-        &ctx.accounts.mpl_core_program.to_account_info(),
-        None,
-    )?;
-
-    // Initialize the RecycledEntry. (Anchor `init` runs on entry — the
-    // account is already created when we get here; we just populate its
-    // fields with the correct status/quality before returning.)
-    {
-        let entry = &mut ctx.accounts.recycled_entry;
-        entry.bump = ctx.bumps.recycled_entry;
-        entry.asset = asset_key;
-        entry.faction_id = faction_id;
-        entry.quality_score = quality_score;
-        entry.recycled_at = current_time;
-        entry.status = RecycledStatus::Pending as u8;
-        entry.listing_price = 0;
-        entry.origin = RecycledOrigin::Recycled as u8;
-    }
-
-    // Bump pool counters.
-    {
-        let pool = &mut ctx.accounts.inventory_pool;
-        pool.total_count = pool
-            .total_count
+    if queue_has_space && inventory_has_capacity && !rebirth_cap_reached {
+        // -------- Path A: push into country lootbox queue --------
+        let quality_score = compute_quality_score(multiplier_before, xp_before, breed_count);
+        let next_rebirth_count = rebirth_count_before
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        pool.pending_count = pool
-            .pending_count
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        pool.total_recycled = pool
-            .total_recycled
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let new_dna = crate::genescience::generate_reborn_dna(
+            &previous_dna,
+            &asset_key,
+            current_slot,
+            faction_id,
+            next_rebirth_count,
+        )?;
+
+        // Reset HashBeastMetadata fields BEFORE the asset leaves the user. Once
+        // pushed into the queue and won by another player, that player gets
+        // a reborn creature: fresh DNA and default gameplay state, while the
+        // same asset address carries the rebirth generation forward.
+        {
+            let metadata_mut = &mut ctx.accounts.hashbeast_metadata;
+            metadata_mut.reset_for_rebirth(new_dna, next_rebirth_count, current_time);
+        }
+
+        // Transfer asset user → inventory_pda (mpl-core).
+        crate::mpl_core_helpers::transfer_mpl_core_asset(
+            &ctx.accounts.hashbeast_asset.to_account_info(),
+            ctx.accounts
+                .hashbeast_collection
+                .as_ref()
+                .map(|c| c.to_account_info())
+                .as_ref(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.inventory_pda.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            None,
+        )?;
+
+        // Manually init the RebornEntry PDA (Anchor's `#[account(init)]`
+        // can't be conditional). We create only on the queue path.
+        {
+            let entry_info = ctx.accounts.reborn_entry.to_account_info();
+            let asset_key_bytes = asset_key.to_bytes();
+            let bump = ctx.bumps.reborn_entry;
+            let entry_seeds: &[&[u8]] = &[
+                REBORN_ENTRY_SEED,
+                asset_key_bytes.as_ref(),
+                core::slice::from_ref(&bump),
+            ];
+            let blank = RebornEntry {
+                bump,
+                asset: asset_key,
+                faction_id,
+                quality_score,
+                reborn_at: current_time,
+                status: RebornStatus::Lootbox as u8,
+                listing_price: 0,
+                origin: RebornOrigin::Reborn as u8,
+                original_buy_price: 0,
+                expire_count: 0,
+            };
+            crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+                &ctx.accounts.user.to_account_info(),
+                &entry_info,
+                &ctx.accounts.system_program.to_account_info(),
+                entry_seeds,
+                RebornEntry::LEN,
+                &blank,
+            )?;
+        }
+
+        // Push asset into the next slot in the country queue.
+        let depth_after = {
+            let queue = &mut ctx.accounts.lootbox_queue;
+            let idx = queue.filled_count as usize;
+            queue.slots[idx] = asset_key;
+            queue.filled_count = queue
+                .filled_count
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            queue.filled_count
+        };
+
+        // Bump pool counter (only total_count remains; per-status / lifetime
+        // counters were dropped in the permissionless refactor).
+        {
+            let pool = &mut ctx.accounts.inventory_pool;
+            pool.total_count = pool
+                .total_count
+                .checked_add(1)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+
+        emit!(HashBeastReborn {
+            asset: asset_key,
+            former_owner: user_key,
+            accumulated_val,
+            quality_score,
+            rebirth_count: next_rebirth_count,
+            new_dna,
+            timestamp: current_time,
+        });
+        emit!(LootboxQueuePush {
+            faction_id,
+            asset: asset_key,
+            queue_depth_after: depth_after,
+            source: 0, // rebirth
+            timestamp: current_time,
+        });
         msg!(
-            "📊 Inventory pool: total={} pending={} lootbox={} listed={}",
-            pool.total_count,
-            pool.pending_count,
-            pool.lootbox_count,
-            pool.listed_count
+            "✅ [rebirth_hashbeast] queued in faction {} at depth {}",
+            faction_id,
+            depth_after
+        );
+    } else {
+        // -------- Path B: queue/cap full → burn the asset --------
+        // No RebornEntry init, no inventory_pool counter changes.
+        // User already received their accumulated_val. Asset is gone.
+        let burn_reason = if rebirth_cap_reached { 1 } else { 0 };
+        crate::mpl_core_helpers::burn_mpl_core_asset(
+            &ctx.accounts.hashbeast_asset.to_account_info(),
+            ctx.accounts
+                .hashbeast_collection
+                .as_ref()
+                .map(|c| c.to_account_info())
+                .as_ref(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.mpl_core_program.to_account_info(),
+            None,
+        )?;
+
+        emit!(HashBeastRebirthBurned {
+            asset: asset_key,
+            former_owner: user_key,
+            faction_id,
+            accumulated_val,
+            rebirth_count: rebirth_count_before,
+            reason: burn_reason,
+            timestamp: current_time,
+        });
+        msg!(
+            "🔥 [rebirth_hashbeast] asset burned for faction {} reason={} rebirth_count={}",
+            faction_id,
+            burn_reason,
+            rebirth_count_before
         );
     }
-
-    emit!(DogeRecycled {
-        asset: asset_key,
-        former_owner: ctx.accounts.user.key(),
-        accumulated_val,
-        quality_score,
-        timestamp: current_time,
-    });
-
-    msg!("✅ [recycle_doge] Doge recycled into inventory");
 
     Ok(())
 }
 
-/// Breed two doges to create offspring (both parents must not be incubated, same faction)
-pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
-    crate::log_fn!("doges", "int_breed_doges");
+/// Breed two hashbeasts to create offspring (both parents must not be incubated, same faction)
+pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
+    crate::log_fn!("hashbeasts", "int_breed_hashbeasts");
     require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
-    let doge_config = &mut ctx.accounts.doge_config;
+    // Block self-breeding: passing the same asset as mom and dad would
+    // increment breed_count only once (second metadata mutation overwrites
+    // the first on serialize), bypassing the two-parent requirement.
+    require!(
+        ctx.accounts.mom_asset.key() != ctx.accounts.dad_asset.key(),
+        ErrorCode::InvalidParameters
+    );
+    let hashbeast_config = &mut ctx.accounts.hashbeast_config;
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
     let clock = Clock::get()?;
     let current_time = clock.unix_timestamp;
 
-    msg!("🧬 === BREEDING DOGES ===");
+    msg!("🧬 === BREEDING HASHBEASTS ===");
     msg!("   Mom: {} (breed_count: {})", mom.mint, mom.breed_count);
     msg!("   Dad: {} (breed_count: {})", dad.mint, dad.breed_count);
 
     // Validate breeding is allowed
-    require!(doge_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
+    require!(hashbeast_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
+    let hashbeast_mint_config_info = ctx.accounts.hashbeast_mint_config.to_account_info();
+    let hashbeast_mint_config: HashBeastMintConfig = load_program_account(&hashbeast_mint_config_info)?;
+    let floor_history_info = ctx.accounts.floor_history.to_account_info();
+    let floor_history: FloorHistory = load_program_account(&floor_history_info)?;
     require!(
-        doge_config.total_doges_minted < doge_config.max_supply,
-        ErrorCode::InvalidParameters
+        hashbeast_mint_config.genesis_mints >= hashbeast_mint_config.genesis_mint_limit,
+        ErrorCode::GenesisNotSoldOut
     );
-
+    assert_player_data_owner(
+        &ctx.accounts.player_data.to_account_info(),
+        &ctx.accounts.user.key(),
+    )?;
     // Validate parents are not incubated
     require!(
         mom.incubated_player_data == Pubkey::default(),
-        ErrorCode::DogeAlreadyAtGuard
+        ErrorCode::HashBeastAlreadyAtGuard
     );
     require!(
         dad.incubated_player_data == Pubkey::default(),
-        ErrorCode::DogeAlreadyAtGuard
+        ErrorCode::HashBeastAlreadyAtGuard
     );
 
     // Validate same faction
@@ -1540,13 +1657,33 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         ErrorCode::InvalidFactionId
     );
 
+    // Validate pair identity / close lineage.
+    require!(mom.mint != dad.mint, ErrorCode::InvalidBreedingPair);
+    require!(
+        mom.mom != dad.mint && mom.dad != dad.mint && dad.mom != mom.mint && dad.dad != mom.mint,
+        ErrorCode::InvalidBreedingPair
+    );
+    require!(
+        !shares_known_parent(mom.as_ref(), dad.as_ref()),
+        ErrorCode::InvalidBreedingPair
+    );
+
+    // Reborn-generation rule: a level-N reborn HashBeast can only breed with
+    // another HashBeast from the same country and the same rebirth generation.
+    let mom_rebirth_count = metadata_rebirth_count(mom.as_ref());
+    let dad_rebirth_count = metadata_rebirth_count(dad.as_ref());
+    require!(
+        mom_rebirth_count == dad_rebirth_count,
+        ErrorCode::RebirthLevelMismatch
+    );
+
     // Validate breed counts
     require!(
-        mom.breed_count < DogeMetadata::MAX_BREED_COUNT,
+        mom.breed_count < HashBeastMetadata::MAX_BREED_COUNT,
         ErrorCode::MaxBreedCountReached
     );
     require!(
-        dad.breed_count < DogeMetadata::MAX_BREED_COUNT,
+        dad.breed_count < HashBeastMetadata::MAX_BREED_COUNT,
         ErrorCode::MaxBreedCountReached
     );
 
@@ -1572,81 +1709,117 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         ErrorCode::NftNotOwnedByUser
     );
 
-    // Calculate breeding cost
-    let breed_cost = crate::genescience::compute_gene_price(
-        doge_config.breed_base_price,
-        doge_config.breed_curve_a,
-        doge_config.total_doges_minted,
+    // Calculate breeding cost. The total price is always at least 1.5x the
+    // current marketplace floor anchor, so breeding cannot mint below floor.
+    let curve_price = crate::genescience::compute_gene_price(
+        hashbeast_config.breed_base_price,
+        hashbeast_config.breed_curve_a,
+        hashbeast_config.total_hashbeasts_minted,
     )?;
+    let floor_anchor = floor_history.current_anchor();
+    require!(
+        floor_anchor >= SWEEP_MIN_ANCHOR_LAMPORTS,
+        ErrorCode::BreedFloorAnchorUnavailable
+    );
+    let floor_min_price = ceil_mul_div_u64(
+        floor_anchor,
+        BREED_FLOOR_MULTIPLIER_BPS,
+        BASIS_POINTS_DENOMINATOR,
+    )?;
+    let breed_cost = curve_price.max(floor_min_price);
     msg!(
-        "   Breed cost: {} SOL total_supply_before={} / {}",
+        "   Breed cost: {} SOL curve={} floor_anchor={} floor_min={} total_minted_before={}",
         breed_cost as f64 / 1e9,
-        doge_config.total_doges_minted,
-        doge_config.max_supply
+        curve_price,
+        floor_anchor,
+        floor_min_price,
+        hashbeast_config.total_hashbeasts_minted
     );
 
-    // --- Referral commission: 1% of breed_cost sent directly to the canonical referrer's ReferralRewards PDA ---
-    let has_referrer = ctx.accounts.player_data.referral_code != ctx.accounts.system_program.key();
-    let (_referral_cut, remaining) = if has_referrer {
-        helper::validate_referrer_rewards_account(
-            &ctx.accounts.player_data.referral_code,
-            ctx.accounts.referrer_rewards.as_ref(),
-        )?;
+    // Payment split: total breed price is 50% SOL and 50% dbTC by SOL value.
+    // SOL leg: 25% fee_recipient, 75% SOL treasury.
+    // dbTC leg: 50% burned, 50% returned to the mining emission vault.
+    let sol_due = ceil_mul_div_u64(breed_cost, BREED_SOL_SHARE_BPS, BASIS_POINTS_DENOMINATOR)?;
+    let dbtc_value_lamports = breed_cost
+        .checked_sub(sol_due)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let dbtc_price_lamports = ctx.accounts.mine_btc_mining.recent_price;
+    require!(dbtc_price_lamports > 0, ErrorCode::DbtcPriceUnavailable);
+    let dbtc_due = ceil_mul_div_u64(dbtc_value_lamports, MINEBTC_BASE_UNITS, dbtc_price_lamports)?;
+    require!(dbtc_due > 0, ErrorCode::InvalidAmount);
 
-        let cut = breed_cost
-            .checked_mul(REFERRAL_FEE_PCT as u64)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            / 100;
-        let referrer_rewards = ctx
-            .accounts
-            .referrer_rewards
-            .as_mut()
-            .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
+    let sol_fee_recipient = ceil_mul_div_u64(
+        sol_due,
+        BREED_SOL_FEE_RECIPIENT_BPS,
+        BASIS_POINTS_DENOMINATOR,
+    )?;
+    let sol_treasury = sol_due
+        .checked_sub(sol_fee_recipient)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let dbtc_burn = ceil_mul_div_u64(dbtc_due, BREED_DBTC_BURN_BPS, BASIS_POINTS_DENOMINATOR)?;
+    let dbtc_to_vault = dbtc_due
+        .checked_sub(dbtc_burn)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
+    if sol_fee_recipient > 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.user.to_account_info(),
-                    to: referrer_rewards.to_account_info(),
+                    to: ctx.accounts.fee_recipient.to_account_info(),
                 },
             ),
-            cut,
+            sol_fee_recipient,
         )?;
-        referrer_rewards.pending_sol_rewards = referrer_rewards
-            .pending_sol_rewards
-            .checked_add(cut)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        referrer_rewards.total_sol_earned = referrer_rewards
-            .total_sol_earned
-            .checked_add(cut)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!(
-            "   Breed referral commission: {} lamports sent to referrer PDA",
-            cut
-        );
-        (
-            cut,
-            breed_cost
-                .checked_sub(cut)
-                .ok_or(ErrorCode::ArithmeticOverflow)?,
-        )
-    } else {
-        (0, breed_cost)
-    };
+    }
+    if sol_treasury > 0 {
+        helper::transfer_to_sol_treasury(
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.sol_treasury.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            sol_treasury,
+        )?;
+    }
 
-    // All remaining SOL from breed goes to fee_recipient via WSOL
-    let dev_amt = remaining;
-
-    helper::transfer_wsol_to_multisig(
-        &ctx.accounts.user.to_account_info(),
-        &ctx.accounts.multisig_wsol_account.to_account_info(),
-        &ctx.accounts.user_wsol_account.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        &ctx.accounts.token_program.to_account_info(),
-        dev_amt,
-    )?;
+    if dbtc_burn > 0 {
+        token_2022::burn(
+            CpiContext::new(
+                ctx.accounts.token_program_2022.to_account_info(),
+                Burn {
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    from: ctx.accounts.user_token_account.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            dbtc_burn,
+        )?;
+    }
+    if dbtc_to_vault > 0 {
+        token_2022::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program_2022.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.user_token_account.to_account_info(),
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    to: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            dbtc_to_vault,
+            MINEBTC_DECIMALS,
+        )?;
+    }
+    msg!(
+        "   Breed payment: sol_due={} fee_recipient={} treasury={} dbtc_due={} burned={} vault={} dbtc_price={}",
+        sol_due,
+        sol_fee_recipient,
+        sol_treasury,
+        dbtc_due,
+        dbtc_burn,
+        dbtc_to_vault,
+        dbtc_price_lamports
+    );
 
     // Generate offspring DNA
     let seed = [
@@ -1656,16 +1829,17 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         dad.mint.as_ref(),
     ]
     .concat();
-    let offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
+    let mut offspring_dna = crate::genescience::breed_genes(&mom.dna, &dad.dna, &seed)?;
+    crate::genescience::set_rebirth_count(&mut offspring_dna, mom_rebirth_count)?;
 
     // Create offspring NFT
-    let current_mint_number = doge_config
-        .total_doges_minted
+    let current_mint_number = hashbeast_config
+        .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let name = format!("Bitcoin doges #{}", current_mint_number);
+    let name = format!("Bitcoin hashbeasts #{}", current_mint_number);
     let uri = format!(
-        "https://assets.minebtc.fun/doges/{}.json",
+        "https://assets.minebtc.fun/hashbeasts/{}.json",
         ctx.accounts.offspring_asset.key()
     );
 
@@ -1675,7 +1849,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     crate::mpl_core_helpers::create_mpl_core_asset(
         &ctx.accounts.offspring_asset.to_account_info(),
         ctx.accounts
-            .doge_collection
+            .hashbeast_collection
             .as_ref()
             .map(|c| c.to_account_info())
             .as_ref(),
@@ -1695,6 +1869,7 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     offspring.mom = mom.mint;
     offspring.dad = dad.mint;
     offspring.breed_count = 0;
+    offspring.rebirth_count = mom_rebirth_count;
     offspring.cooldown_end = 0;
     offspring.accumulated_val = 0;
     offspring.dna = offspring_dna;
@@ -1707,11 +1882,11 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
     offspring.bump = ctx.bumps.offspring_metadata;
 
     // Update parent cooldowns and breed counts
-    let mom_cooldown = DogeMetadata::COOLDOWNS
+    let mom_cooldown = HashBeastMetadata::COOLDOWNS
         .get(mom.breed_count as usize)
         .copied()
         .unwrap_or(1209600);
-    let dad_cooldown = DogeMetadata::COOLDOWNS
+    let dad_cooldown = HashBeastMetadata::COOLDOWNS
         .get(dad.breed_count as usize)
         .copied()
         .unwrap_or(1209600);
@@ -1731,8 +1906,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         .checked_add(dad_cooldown)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    doge_config.total_doges_minted = doge_config
-        .total_doges_minted
+    hashbeast_config.total_hashbeasts_minted = hashbeast_config
+        .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -1743,9 +1918,8 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         dad.mint
     );
     msg!(
-        "   Total doges minted after breed: {} / {}",
-        doge_config.total_doges_minted,
-        doge_config.max_supply
+        "   Total hashbeasts minted after breed: {}",
+        hashbeast_config.total_hashbeasts_minted
     );
     msg!(
         "   Mom next cooldown: {}s, Dad next cooldown: {}s",
@@ -1753,9 +1927,9 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         dad_cooldown
     );
 
-    emit!(DogeMinted {
-        doge_metadata_account: offspring.key(),
-        doge_asset_signer: ctx.accounts.offspring_asset.key(),
+    emit!(HashBeastMinted {
+        hashbeast_metadata_account: offspring.key(),
+        hashbeast_asset_signer: ctx.accounts.offspring_asset.key(),
         owner: ctx.accounts.user.key(),
         player: ctx.accounts.player_data.key(),
         mint: offspring.mint,
@@ -1769,6 +1943,26 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
         ticket_tier: 0,
         ticket_count: 0,
     });
+    emit!(HashBeastBred {
+        breeder: ctx.accounts.user.key(),
+        mom: mom.mint,
+        dad: dad.mint,
+        offspring: offspring.mint,
+        faction_id: mom.faction_id,
+        rebirth_count: mom_rebirth_count,
+        curve_price_lamports: curve_price,
+        floor_anchor_lamports: floor_anchor,
+        floor_min_price_lamports: floor_min_price,
+        total_price_lamports: breed_cost,
+        sol_paid_lamports: sol_due,
+        sol_fee_recipient_lamports: sol_fee_recipient,
+        sol_treasury_lamports: sol_treasury,
+        dbtc_price_lamports,
+        dbtc_paid: dbtc_due,
+        dbtc_burned: dbtc_burn,
+        dbtc_to_vault,
+        timestamp: current_time,
+    });
 
     Ok(())
 }
@@ -1777,23 +1971,23 @@ pub fn int_breed_doges(ctx: Context<BreedDoge>) -> Result<()> {
 // -------------- HELPER FUNCTIONS ---------------------------------------------------------
 // ----------------------------------------------------------------------------------------
 
-/// Generate doge data (DNA, name, URI, multiplier) for a new doge
-pub fn generate_doge_data(
+/// Generate hashbeast data (DNA, name, URI, multiplier) for a new hashbeast
+pub fn generate_hashbeast_data(
     mint_number: u64,
     user_key: &Pubkey,
     slot_offset: u64,
     faction_id: u8,
     asset_key: &Pubkey,
 ) -> Result<(String, String, [u8; 32], u32)> {
-    crate::log_fn!("doges", "generate_doge_data");
+    crate::log_fn!("hashbeasts", "generate_hashbeast_data");
     let dna = crate::genescience::generate_genesis_dna(
         mint_number,
         user_key,
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("Bitcoin doges #{}", mint_number);
-    let uri = format!("https://assets.minebtc.fun/doges/{}.json", asset_key);
+    let name = format!("Bitcoin hashbeasts #{}", mint_number);
+    let uri = format!("https://assets.minebtc.fun/hashbeasts/{}.json", asset_key);
     let multiplier = BASE_MULTIPLIER;
 
     Ok((name, uri, dna, multiplier))
@@ -1802,20 +1996,20 @@ pub fn generate_doge_data(
 /// Add tickets to player based on price and ticket tier
 fn add_tickets_to_player(
     player_data: &mut PlayerData,
-    doge_mint_config: &DogeMintConfig,
+    hashbeast_mint_config: &HashBeastMintConfig,
     ticket_tier_index: u8,
     price: u64,
 ) -> Result<u64> {
     require!(
-        (ticket_tier_index as usize) < doge_mint_config.ticket_tiers.len(),
+        (ticket_tier_index as usize) < hashbeast_mint_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
     );
     require!(
-        doge_mint_config.ticket_tiers.len() == 3,
+        hashbeast_mint_config.ticket_tiers.len() == 3,
         ErrorCode::InvalidParameters
     );
 
-    let selected_tier = &doge_mint_config.ticket_tiers[ticket_tier_index as usize];
+    let selected_tier = &hashbeast_mint_config.ticket_tiers[ticket_tier_index as usize];
     let ticket_value = selected_tier.ticket_value;
     let ticket_count = helper::calc_tickets_count(price, ticket_value);
 
@@ -1882,12 +2076,12 @@ fn update_faction_hashpower(
 }
 
 fn capped_player_multiplier(raw_multiplier: u64) -> u16 {
-    let raw_doge_sum = raw_multiplier.saturating_sub(BASE_MULTIPLIER as u64);
+    let raw_hashbeast_sum = raw_multiplier.saturating_sub(BASE_MULTIPLIER as u64);
     let smoothed_multiplier = BASE_MULTIPLIER as u64
-        + raw_doge_sum
-            .checked_div(MAX_STAKED_DOGES as u64)
+        + raw_hashbeast_sum
+            .checked_div(MAX_STAKED_HASHBEASTS as u64)
             .unwrap_or(0);
-    smoothed_multiplier.min(PASSIVE_DOGE_STAKING_MAX_MULTIPLIER as u64) as u16
+    smoothed_multiplier.min(PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER as u64) as u16
 }
 
 fn scale_hashpower_by_multiplier(
@@ -1904,9 +2098,9 @@ fn scale_hashpower_by_multiplier(
     u64::try_from(scaled).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
-fn add_doge_multiplier(existing_raw_multiplier: u64, doge_multiplier: u32) -> Result<(u64, u16)> {
+fn add_hashbeast_multiplier(existing_raw_multiplier: u64, hashbeast_multiplier: u32) -> Result<(u64, u16)> {
     let new_raw_multiplier = existing_raw_multiplier
-        .checked_add(doge_multiplier as u64)
+        .checked_add(hashbeast_multiplier as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     Ok((
         new_raw_multiplier,
@@ -1914,12 +2108,12 @@ fn add_doge_multiplier(existing_raw_multiplier: u64, doge_multiplier: u32) -> Re
     ))
 }
 
-fn remove_doge_multiplier(
+fn remove_hashbeast_multiplier(
     existing_raw_multiplier: u64,
-    doge_multiplier: u32,
+    hashbeast_multiplier: u32,
 ) -> Result<(u64, u16)> {
     let reduced_raw_multiplier = existing_raw_multiplier
-        .checked_sub(doge_multiplier as u64)
+        .checked_sub(hashbeast_multiplier as u64)
         .ok_or(ErrorCode::InvalidState)?;
     let new_raw_multiplier = reduced_raw_multiplier.max(BASE_MULTIPLIER as u64);
     Ok((
@@ -1934,54 +2128,54 @@ mod tests {
 
     #[test]
     fn multiplier_cap_is_reversible_with_raw_sum() {
-        let starting_raw = BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_DOGES as u64);
+        let starting_raw = BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_HASHBEASTS as u64);
         let (raw_after_stake, effective_after_stake) =
-            add_doge_multiplier(starting_raw, 1_000).unwrap();
+            add_hashbeast_multiplier(starting_raw, 1_000).unwrap();
         assert_eq!(
             raw_after_stake,
-            BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_DOGES as u64) + 1_000
+            BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_HASHBEASTS as u64) + 1_000
         );
-        assert_eq!(effective_after_stake, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER);
+        assert_eq!(effective_after_stake, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER);
 
         let (raw_after_unstake, effective_after_unstake) =
-            remove_doge_multiplier(raw_after_stake, 1_000).unwrap();
+            remove_hashbeast_multiplier(raw_after_stake, 1_000).unwrap();
         assert_eq!(raw_after_unstake, starting_raw);
         assert_eq!(effective_after_unstake, 2_900);
     }
 
     #[test]
-    fn large_doge_multiplier_does_not_truncate() {
+    fn large_hashbeast_multiplier_does_not_truncate() {
         let (raw_after_stake, effective_after_stake) =
-            add_doge_multiplier(BASE_MULTIPLIER as u64, 70_000).unwrap();
+            add_hashbeast_multiplier(BASE_MULTIPLIER as u64, 70_000).unwrap();
         assert_eq!(raw_after_stake, 71_000);
-        assert_eq!(effective_after_stake, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER);
+        assert_eq!(effective_after_stake, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER);
     }
 
     #[test]
-    fn passive_doge_slots_are_smoothed_across_all_slots() {
+    fn passive_hashbeast_slots_are_smoothed_across_all_slots() {
         let mut raw = BASE_MULTIPLIER as u64;
         let mut effective = capped_player_multiplier(raw);
         assert_eq!(effective, BASE_MULTIPLIER as u16);
 
-        for _ in 0..MAX_STAKED_DOGES {
-            (raw, effective) = add_doge_multiplier(raw, BASE_MULTIPLIER).unwrap();
+        for _ in 0..MAX_STAKED_HASHBEASTS {
+            (raw, effective) = add_hashbeast_multiplier(raw, BASE_MULTIPLIER).unwrap();
         }
 
-        assert_eq!(raw, BASE_MULTIPLIER as u64 * (MAX_STAKED_DOGES as u64 + 1));
+        assert_eq!(raw, BASE_MULTIPLIER as u64 * (MAX_STAKED_HASHBEASTS as u64 + 1));
         assert_eq!(effective, 2_000);
 
         let mut raw = BASE_MULTIPLIER as u64;
         let mut effective = capped_player_multiplier(raw);
-        for _ in 0..MAX_STAKED_DOGES {
-            (raw, effective) = add_doge_multiplier(raw, GAMEPLAY_MAX_MULTIPLIER as u32).unwrap();
+        for _ in 0..MAX_STAKED_HASHBEASTS {
+            (raw, effective) = add_hashbeast_multiplier(raw, GAMEPLAY_MAX_MULTIPLIER as u32).unwrap();
         }
 
-        assert_eq!(effective, PASSIVE_DOGE_STAKING_MAX_MULTIPLIER);
+        assert_eq!(effective, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER);
     }
 
     #[test]
     fn genesis_mint_cap_is_enforced_per_faction() {
-        let mut mint_config = DogeMintConfig {
+        let mut mint_config = HashBeastMintConfig {
             bump: 0,
             is_active: true,
             base_price: 1_000_000_000,
@@ -2010,28 +2204,28 @@ mod tests {
 }
 
 // ----------------------------------------------------------------------------------------
-// --------------  DOGE ACCOUNT CONTEXTS ---------------------------------------------
+// --------------  HASHBEAST ACCOUNT CONTEXTS ---------------------------------------------
 // ----------------------------------------------------------------------------------------
 
 #[derive(Accounts)]
 #[instruction(mint_count: u64)]
 pub struct SimulateMintCost<'info> {
     #[account(
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doge_config.bump
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump
     )]
-    pub doge_config: Account<'info, DogeConfig>,
+    pub hashbeast_config: Account<'info, HashBeastConfig>,
 
     #[account(
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 }
 
 #[derive(Accounts)]
 #[instruction(faction_id: u8)]
-pub struct MintDoge<'info> {
+pub struct MintHashBeast<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -2041,25 +2235,22 @@ pub struct MintDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doge_config.bump
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump
     )]
-    pub doge_config: Box<Account<'info, DogeConfig>>,
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
 
     #[account(
         mut,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump
     )]
-    pub doge_mint_config: Box<Account<'info, DogeMintConfig>>,
+    pub hashbeast_mint_config: Box<Account<'info, HashBeastMintConfig>>,
 
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
-        bump = player_data.bump,
-        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
-    )]
-    pub player_data: Box<Account<'info, PlayerData>>,
+    #[account(mut, seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()], bump)]
+    /// CHECK: Seed-checked and owner field is verified in the handler without
+    /// deserializing the full PlayerData account in the generated validator.
+    pub player_data: UncheckedAccount<'info>,
 
     /// Multisig WSOL token account (destination for WSOL transfers)
     /// MUST be owned by global_config.fee_recipient (the multisig address)
@@ -2085,20 +2276,20 @@ pub struct MintDoge<'info> {
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub doge_asset: UncheckedAccount<'info>,
+    pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Doge
+    /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = user,
-        space = DogeMetadata::LEN,
-        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
+        space = HashBeastMetadata::LEN,
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset.key().as_ref()],
         bump
     )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
+    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -2121,7 +2312,7 @@ pub struct MintDoge<'info> {
 
 #[derive(Accounts)]
 #[instruction(faction_id: u8, mint_count: u8)]
-pub struct BatchMintDoge<'info> {
+pub struct BatchMintHashBeast<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -2130,17 +2321,17 @@ pub struct BatchMintDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doge_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump,
     )]
-    pub doge_config: Account<'info, DogeConfig>,
+    pub hashbeast_config: Account<'info, HashBeastConfig>,
 
     #[account(
         mut,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump,
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump,
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 
     #[account(
         mut,
@@ -2171,9 +2362,9 @@ pub struct BatchMintDoge<'info> {
     /// CHECK: WSOL mint
     pub wsol_mint: UncheckedAccount<'info>,
 
-    /// CHECK: Doge collection (Metaplex Core)
+    /// CHECK: HashBeast collection (Metaplex Core)
     #[account(mut)]
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
     #[account(
@@ -2205,7 +2396,7 @@ pub struct BatchMintDoge<'info> {
 
 #[derive(Accounts)]
 #[instruction(recipient: Pubkey, faction_id: u8)]
-pub struct AdminMintDoge<'info> {
+pub struct AdminMintHashBeast<'info> {
     #[account(mut)]
     pub authority: Signer<'info>, // Admin authority
 
@@ -2219,17 +2410,17 @@ pub struct AdminMintDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doge_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump,
     )]
-    pub doge_config: Account<'info, DogeConfig>,
+    pub hashbeast_config: Account<'info, HashBeastConfig>,
 
     #[account(
         mut,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump,
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump,
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 
     /// CHECK: Recipient account (will receive the NFT)
     #[account(mut)]
@@ -2247,20 +2438,20 @@ pub struct AdminMintDoge<'info> {
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub doge_asset: UncheckedAccount<'info>,
+    pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Doge
+    /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = authority,
-        space = DogeMetadata::LEN,
-        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
+        space = HashBeastMetadata::LEN,
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset.key().as_ref()],
         bump
     )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
+    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -2277,7 +2468,7 @@ pub struct AdminMintDoge<'info> {
 
 #[derive(Accounts)]
 #[instruction(faction_id: u8)]
-pub struct WhitelistMintDoge<'info> {
+pub struct WhitelistMintHashBeast<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump
@@ -2286,17 +2477,17 @@ pub struct WhitelistMintDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_CONFIG_SEED.as_ref()],
-        bump = doge_config.bump,
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump,
     )]
-    pub doge_config: Account<'info, DogeConfig>,
+    pub hashbeast_config: Account<'info, HashBeastConfig>,
 
     #[account(
         mut,
-        seeds = [DOGE_MINT_CONFIG_SEED.as_ref()],
-        bump = doge_mint_config.bump,
+        seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()],
+        bump = hashbeast_mint_config.bump,
     )]
-    pub doge_mint_config: Account<'info, DogeMintConfig>,
+    pub hashbeast_mint_config: Account<'info, HashBeastMintConfig>,
 
     #[account(
         mut,
@@ -2308,29 +2499,29 @@ pub struct WhitelistMintDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.key().as_ref()],
-        bump = doge_free_mint_allowance.bump,
-        constraint = doge_free_mint_allowance.user == user.key() @ ErrorCode::Unauthorized
+        seeds = [HASHBEAST_FREE_MINT_ALLOWANCE_SEED.as_ref(), user.key().as_ref()],
+        bump = hashbeast_free_mint_allowance.bump,
+        constraint = hashbeast_free_mint_allowance.user == user.key() @ ErrorCode::Unauthorized
     )]
-    pub doge_free_mint_allowance: Account<'info, DogeFreeMintAllowance>,
+    pub hashbeast_free_mint_allowance: Account<'info, HashBeastFreeMintAllowance>,
 
     /// Metaplex Core asset (will be created)
     #[account(mut)]
     /// CHECK: Will be created via MPL Core CPI
-    pub doge_asset: UncheckedAccount<'info>,
+    pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Doge
+    /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         init,
         payer = user,
-        space = DogeMetadata::LEN,
-        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
+        space = HashBeastMetadata::LEN,
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset.key().as_ref()],
         bump
     )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
+    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -2350,7 +2541,7 @@ pub struct WhitelistMintDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct StakeDoge<'info> {
+pub struct StakeHashBeast<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -2375,27 +2566,27 @@ pub struct StakeDoge<'info> {
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub doge_asset: UncheckedAccount<'info>,
+    pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Doge
+    /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(),doge_metadata.mint.as_ref()],
-        bump = doge_metadata.bump,
-        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(),hashbeast_metadata.mint.as_ref()],
+        bump = hashbeast_metadata.bump,
+        constraint = hashbeast_metadata.mint == hashbeast_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
+    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
-        seeds = [DOGE_CUSTODY_SEED],
+        seeds = [HASHBEAST_CUSTODY_SEED],
         bump
     )]
     /// CHECK: PDA for NFT custody
-    pub doge_custody_pda: UncheckedAccount<'info>,
+    pub hashbeast_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
@@ -2407,7 +2598,7 @@ pub struct StakeDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UnstakeDoge<'info> {
+pub struct UnstakeHashBeast<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
@@ -2432,27 +2623,27 @@ pub struct UnstakeDoge<'info> {
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
-    pub doge_asset: UncheckedAccount<'info>,
+    pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the Doge
+    /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(),doge_metadata.mint.as_ref()],
-        bump = doge_metadata.bump,
-        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(),hashbeast_metadata.mint.as_ref()],
+        bump = hashbeast_metadata.bump,
+        constraint = hashbeast_metadata.mint == hashbeast_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
+    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     /// PDA that holds custody of locked NFTs
     #[account(
-        seeds = [DOGE_CUSTODY_SEED],
+        seeds = [HASHBEAST_CUSTODY_SEED],
         bump
     )]
     /// CHECK: PDA for NFT custody
-    pub doge_custody_pda: UncheckedAccount<'info>,
+    pub hashbeast_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
@@ -2464,37 +2655,37 @@ pub struct UnstakeDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct RecycleDoge<'info> {
+pub struct RebirthHashBeast<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    /// Existing Doge metadata account. Mutated in-place (multiplier, xp,
+    /// Existing HashBeast metadata account. Mutated in-place (multiplier, xp,
     /// accumulated_val reset to fresh-start values). NOT closed — the same
     /// metadata follows the asset to its next owner.
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(), doge_asset.key().as_ref()],
-        bump = doge_metadata.bump,
-        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset.key().as_ref()],
+        bump = hashbeast_metadata.bump,
+        constraint = hashbeast_metadata.mint == hashbeast_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
+    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     /// CHECK: Metaplex Core asset; ownership and validity enforced by mpl-core
     /// during the TransferV1 CPI. Currently owned by `user`; becomes owned by
     /// `inventory_pda` after this instruction.
     #[account(mut)]
-    pub doge_asset: UncheckedAccount<'info>,
+    pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// CHECK: Optional Doge collection account. Required by mpl-core whenever
-    /// the asset belongs to a collection (which all Doges do post-genesis).
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    /// CHECK: Optional HashBeast collection account. Required by mpl-core whenever
+    /// the asset belongs to a collection (which all HashBeasts do post-genesis).
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
     #[account(address = MPL_CORE_PROGRAM_ID)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     /// Global inventory pool — counters bumped here. Same PDA acts as the
-    /// new owner of the recycled mpl-core asset (custody).
+    /// new owner of the reborn mpl-core asset (custody).
     #[account(
         mut,
         seeds = [INVENTORY_POOL_SEED],
@@ -2512,15 +2703,26 @@ pub struct RecycleDoge<'info> {
     )]
     pub inventory_pda: UncheckedAccount<'info>,
 
-    /// New per-asset entry created when recycled. Closed when sold or dropped.
+    /// New per-asset entry created ONLY when the queue had space (asset was
+    /// pushed in). When the queue was full, asset is burned and this PDA is
+    /// not initialized. Manually init'd inside the handler via
+    /// `helper::init_pda_account_if_needed`.
+    /// CHECK: PDA seeds + bump validated by Anchor; payload init in handler.
     #[account(
-        init,
-        payer = user,
-        space = RecycledEntry::LEN,
-        seeds = [RECYCLED_ENTRY_SEED, doge_asset.key().as_ref()],
+        mut,
+        seeds = [REBORN_ENTRY_SEED, hashbeast_asset.key().as_ref()],
         bump,
     )]
-    pub recycled_entry: Box<Account<'info, RecycledEntry>>,
+    pub reborn_entry: UncheckedAccount<'info>,
+
+    /// Country lootbox queue for the hashbeast's faction. Pushed into if there's
+    /// space; otherwise the asset is burned (no listing fallback).
+    #[account(
+        mut,
+        seeds = [LOOTBOX_QUEUE_SEED, &[hashbeast_metadata.faction_id]],
+        bump = lootbox_queue.bump,
+    )]
+    pub lootbox_queue: Box<Account<'info, LootboxQueue>>,
 
     // Mining accounts for token transfer
     #[account(
@@ -2561,41 +2763,85 @@ pub struct RecycleDoge<'info> {
 }
 
 #[derive(Accounts)]
-pub struct BreedDoge<'info> {
+pub struct BreedHashBeast<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    #[account(mut, seeds = [DOGE_CONFIG_SEED.as_ref()], bump = doge_config.bump)]
-    pub doge_config: Account<'info, DogeConfig>,
+    #[account(mut, seeds = [HASHBEAST_CONFIG_SEED.as_ref()], bump = hashbeast_config.bump)]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
+
+    #[account(seeds = [HASHBEAST_MINT_CONFIG_SEED.as_ref()], bump)]
+    /// CHECK: Seed-checked and deserialized in the handler to keep the generated
+    /// account validator under the BPF stack limit.
+    pub hashbeast_mint_config: UncheckedAccount<'info>,
 
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user.key().as_ref()],
-        bump = player_data.bump,
-        constraint = player_data.owner == user.key() @ ErrorCode::Unauthorized
+        bump
     )]
-    pub player_data: Box<Account<'info, PlayerData>>,
+    /// CHECK: Seed-checked and owner field is verified in the handler without
+    /// deserializing the full PlayerData account in the generated validator.
+    pub player_data: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        constraint = multisig_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidMint,
-        constraint = multisig_wsol_account.owner == global_config.fee_recipient @ ErrorCode::Unauthorized
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump = global_config.treasury_bump,
+        constraint = sol_treasury.key() == global_config.pda_sol_treasury @ ErrorCode::InvalidAccount
     )]
-    pub multisig_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+    /// CHECK: SOL treasury PDA; holds native SOL for the economy/buyback loop.
+    pub sol_treasury: UncheckedAccount<'info>,
+
+    #[account(mut, address = global_config.fee_recipient)]
+    /// CHECK: Native SOL fee recipient configured in GlobalConfig.
+    pub fee_recipient: UncheckedAccount<'info>,
+
+    #[account(seeds = [FLOOR_HISTORY_SEED], bump)]
+    /// CHECK: Seed-checked and deserialized in the handler to keep the generated
+    /// account validator under the BPF stack limit.
+    pub floor_history: UncheckedAccount<'info>,
 
     #[account(
-        init_if_needed,
-        payer = user,
-        associated_token::mint = wsol_mint,
+        mut,
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
+        bump = mine_btc_mining.bump,
+    )]
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+
+    #[account(
+        mut,
+        seeds = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        bump,
+        token::mint = token_mint,
+        token::authority = vault_authority,
+        constraint = minebtc_token_vault.key() == mine_btc_mining.minebtc_token_vault @ ErrorCode::InvalidAccount,
+    )]
+    pub minebtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+
+    #[account(
+        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = mine_btc_mining.vault_auth_bump,
+    )]
+    /// CHECK: Vault authority PDA for the mining token vault.
+    pub vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        associated_token::mint = token_mint,
         associated_token::authority = user,
     )]
-    pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
+    pub user_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
-    /// CHECK: WSOL mint
-    pub wsol_mint: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        address = minebtc_token_vault.mint,
+        constraint = token_mint.decimals == MINEBTC_DECIMALS @ ErrorCode::InvalidMint,
+    )]
+    pub token_mint: Box<InterfaceAccount<'info, Mint2022>>,
 
     /// CHECK: Mom NFT asset - Verified via get_mpl_core_owner
     #[account(mut)]
@@ -2603,11 +2849,11 @@ pub struct BreedDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), mom_asset.key().as_ref()],
         bump = mom_metadata.bump,
         constraint = mom_metadata.mint == mom_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub mom_metadata: Box<Account<'info, DogeMetadata>>,
+    pub mom_metadata: Box<Account<'info, HashBeastMetadata>>,
 
     /// CHECK: Dad NFT asset - Verified via get_mpl_core_owner
     #[account(mut)]
@@ -2615,11 +2861,11 @@ pub struct BreedDoge<'info> {
 
     #[account(
         mut,
-        seeds = [DOGE_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), dad_asset.key().as_ref()],
         bump = dad_metadata.bump,
         constraint = dad_metadata.mint == dad_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub dad_metadata: Box<Account<'info, DogeMetadata>>,
+    pub dad_metadata: Box<Account<'info, HashBeastMetadata>>,
 
     /// CHECK: Offspring NFT asset - Will be created via MPL Core CPI
     #[account(mut)]
@@ -2628,14 +2874,14 @@ pub struct BreedDoge<'info> {
     #[account(
         init,
         payer = user,
-        space = DogeMetadata::LEN,
-        seeds = [DOGE_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
+        space = HashBeastMetadata::LEN,
+        seeds = [HASHBEAST_METADATA_SEED.as_ref(), offspring_asset.key().as_ref()],
         bump
     )]
-    pub offspring_metadata: Box<Account<'info, DogeMetadata>>,
+    pub offspring_metadata: Box<Account<'info, HashBeastMetadata>>,
 
-    /// CHECK: Doge collection
-    pub doge_collection: Option<UncheckedAccount<'info>>,
+    /// CHECK: HashBeast collection
+    pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
     #[account(seeds = [COLLECTION_AUTHORITY_SEED.as_ref()], bump)]
@@ -2644,16 +2890,6 @@ pub struct BreedDoge<'info> {
     /// CHECK: Metaplex Core program
     pub mpl_core_program: UncheckedAccount<'info>,
 
-    /// Optional only when the breeder has no referrer.
-    /// Referred breeders must provide the canonical referrer's ReferralRewards PDA.
-    #[account(
-        mut,
-        seeds = [REFERRAL_REWARDS_SEED, player_data.referral_code.as_ref()],
-        bump = referrer_rewards.bump,
-    )]
-    pub referrer_rewards: Option<Account<'info, ReferralRewards>>,
-
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
 }

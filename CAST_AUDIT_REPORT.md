@@ -293,7 +293,7 @@ Uses checked_mul, checked_div, unwrap_or(0).
 
 ### ✅ SAFE: user.rs:133 — constant cast
 ```
-    player_data.doge_multiplier = BASE_MULTIPLIER as u16;
+    player_data.hashbeast_multiplier = BASE_MULTIPLIER as u16;
 ```
 BASE_MULTIPLIER is a known constant (1000). Fits in u16.
 
@@ -350,8 +350,8 @@ multiplier is u16 (max 65535). `actual_amount * 65535` could overflow u64 for ve
 
 ### ✅ SAFE: stake.rs:187-188,596-597 — Multiplier application
 ```
-    let doges_multiplier = player_data.doge_multiplier as u64;
-    let weighted_amount_with_doges = (weighted_amount * doges_multiplier) / BASE_MULTIPLIER as u64;
+    let hashbeasts_multiplier = player_data.hashbeast_multiplier as u64;
+    let weighted_amount_with_hashbeasts = (weighted_amount * hashbeasts_multiplier) / BASE_MULTIPLIER as u64;
 ```
 Similar to above — could overflow for extreme values.
 
@@ -422,9 +422,9 @@ u8 values summed as u16. Max 1020. Safe.
 ```
 Sum of percentages, max ~100. Safe.
 
-### ✅ SAFE: doges.rs:120,125 — u8-to-u64 widening
+### ✅ SAFE: hashbeasts.rs:120,125 — u8-to-u64 widening
 ```
-    doge_config.doges_minted + mint_count as u64 <= doge_config.max_supply,
+    hashbeast_config.hashbeasts_minted + mint_count as u64 <= hashbeast_config.max_supply,
 ```
 Safe widening.
 
@@ -469,7 +469,7 @@ DAY_IN_SECONDS = 86400. Fits in i64.
 - ✅ instructions/game.rs (~900 lines)
 - ✅ instructions/economy.rs (1692 lines)
 - ✅ instructions/epoch.rs (518 lines)
-- ✅ instructions/doges.rs (1694 lines)
+- ✅ instructions/hashbeasts.rs (1694 lines)
 - ✅ instructions/admin.rs (~950 lines)
 - ✅ instructions/tax.rs (1205 lines)
 - ✅ genescience.rs (1652 lines)

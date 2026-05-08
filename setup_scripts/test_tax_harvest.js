@@ -67,7 +67,7 @@ const withdrawWithheldAuthority = new PublicKey(deployment.tax_config_initialize
 const factionTreasuryVault = new PublicKey(deployment.tax_config_initialized.faction_treasury_vault);
 const nftFloorSweepVault = new PublicKey(deployment.tax_config_initialized.nft_floor_sweep_vault);
 
-// token0 = WSOL, token1 = DBTC (from devnet.json: isMdogeToken0 = false)
+// token0 = WSOL, token1 = DBTC (from devnet.json: isDbtcToken0 = false)
 const solVault = raydiumToken0Vault;
 const dbtcVault = raydiumToken1Vault;
 

@@ -130,21 +130,21 @@ fn user_correct_cycle_sol(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_faction_war_claim_doge_update<'info>(
+fn process_faction_war_claim_hashbeast_update<'info>(
     faction_war_id: u64,
     owner_key: Pubkey,
     faction_war_state: &FactionWarState,
     user_faction_war_bets: &UserFactionWarBets,
     player_data: &mut PlayerData,
     tuning: &GameplayTuningConfig,
-    doge_metadata: Option<&mut Box<Account<'info, DogeMetadata>>>,
-    doge_bonus_amount: u64,
+    hashbeast_metadata: Option<&mut Box<Account<'info, HashBeastMetadata>>>,
+    hashbeast_bonus_amount: u64,
     claim_won: bool,
 ) -> Result<u8> {
     if !claim_won
-        || user_faction_war_bets.gameplay_doge == Pubkey::default()
-        || user_faction_war_bets.gameplay_doge != player_data.gameplay_doge
-        || player_data.gameplay_doge == Pubkey::default()
+        || user_faction_war_bets.gameplay_hashbeast == Pubkey::default()
+        || user_faction_war_bets.gameplay_hashbeast != player_data.gameplay_hashbeast
+        || player_data.gameplay_hashbeast == Pubkey::default()
     {
         return Ok(0);
     }
@@ -189,11 +189,6 @@ fn process_faction_war_claim_doge_update<'info>(
     if tuning.rpg_progression && stake > 0 && chance_boost_bps > 0 {
         let total_sol = total_cycle_sol_volume(faction_war_state, active_factions);
         let total_weighted = total_cycle_weighted_volume(faction_war_state, active_factions);
-        let highest = if home_correct_sol > 0 {
-            faction_war_state.faction_sol_direction_totals[player_faction_id][resolved_direction]
-        } else {
-            total_sol
-        };
         let faction_volume = if home_correct_sol > 0 {
             faction_war_state.faction_sol_totals[player_faction_id]
         } else {
@@ -204,17 +199,15 @@ fn process_faction_war_claim_doge_update<'info>(
             STORY_EVENT_ORIGIN_FACTION_WAR,
             faction_war_id,
             stake,
-            highest.max(stake),
             player_data.active_multiplier,
-            player_data.gameplay_doge_dna,
-            player_data.gameplay_doge_xp,
+            player_data.gameplay_hashbeast_dna,
+            player_data.gameplay_hashbeast_xp,
             tuning.max_evolution_stage_unlocked,
             0,
             faction_volume.max(stake),
             tuning,
             chance_boost_bps,
             tuning.target_rounds_per_cycle,
-            0,
             0,
             total_sol.max(stake),
             total_weighted,
@@ -223,11 +216,11 @@ fn process_faction_war_claim_doge_update<'info>(
                 .start_timestamp
                 .saturating_add(faction_war_id),
             &owner_key,
-            &player_data.gameplay_doge,
+            &player_data.gameplay_hashbeast,
         );
 
-        player_data.gameplay_doge_xp = player_data
-            .gameplay_doge_xp
+        player_data.gameplay_hashbeast_xp = player_data
+            .gameplay_hashbeast_xp
             .checked_add(mutation_result.xp_gained)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -237,17 +230,17 @@ fn process_faction_war_claim_doge_update<'info>(
                 .checked_add(mutation_result.multiplier_increase)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             player_data.active_multiplier = new_mult.min(GAMEPLAY_MAX_MULTIPLIER as u32);
-            player_data.gameplay_doge_xp = player_data
-                .gameplay_doge_xp
+            player_data.gameplay_hashbeast_xp = player_data
+                .gameplay_hashbeast_xp
                 .saturating_sub(mutation_result.xp_consumed);
-            player_data.gameplay_doge_dna = mutation_result.new_dna;
+            player_data.gameplay_hashbeast_dna = mutation_result.new_dna;
 
             mutation_type_u8 = mutation_type_to_u8(mutation_type);
             emit!(StoryEventTriggered {
                 origin: STORY_EVENT_ORIGIN_FACTION_WAR,
                 origin_id: faction_war_id,
                 user: owner_key,
-                doge_mint: player_data.gameplay_doge,
+                hashbeast_mint: player_data.gameplay_hashbeast,
                 story_event_type: mutation_type_u8,
                 xp_gained: mutation_result.xp_gained,
                 multiplier_after: player_data.active_multiplier,
@@ -255,29 +248,29 @@ fn process_faction_war_claim_doge_update<'info>(
         }
     }
 
-    if doge_bonus_amount > 0 || stake > 0 {
+    if hashbeast_bonus_amount > 0 || stake > 0 {
         require!(
-            doge_metadata.is_some()
-                && doge_metadata.as_ref().unwrap().mint == user_faction_war_bets.gameplay_doge,
-            ErrorCode::DogeMetadataNotFound
+            hashbeast_metadata.is_some()
+                && hashbeast_metadata.as_ref().unwrap().mint == user_faction_war_bets.gameplay_hashbeast,
+            ErrorCode::HashBeastMetadataNotFound
         );
-        let doge_metadata = doge_metadata.unwrap();
-        if doge_bonus_amount > 0 {
-            doge_metadata.accumulated_val = doge_metadata
+        let hashbeast_metadata = hashbeast_metadata.unwrap();
+        if hashbeast_bonus_amount > 0 {
+            hashbeast_metadata.accumulated_val = hashbeast_metadata
                 .accumulated_val
-                .checked_add(doge_bonus_amount)
+                .checked_add(hashbeast_bonus_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
-        doge_metadata.dna = player_data.gameplay_doge_dna;
-        doge_metadata.xp = player_data.gameplay_doge_xp;
-        doge_metadata.multiplier = player_data.active_multiplier;
-        emit!(DogeSynced {
-            doge_mint: doge_metadata.mint,
-            doge_metadata_account: doge_metadata.key(),
-            dna: doge_metadata.dna.to_vec(),
-            xp: doge_metadata.xp,
-            multiplier: doge_metadata.multiplier,
-            accumulated_val: doge_metadata.accumulated_val,
+        hashbeast_metadata.dna = player_data.gameplay_hashbeast_dna;
+        hashbeast_metadata.xp = player_data.gameplay_hashbeast_xp;
+        hashbeast_metadata.multiplier = player_data.active_multiplier;
+        emit!(HashBeastSynced {
+            hashbeast_mint: hashbeast_metadata.mint,
+            hashbeast_metadata_account: hashbeast_metadata.key(),
+            dna: hashbeast_metadata.dna.to_vec(),
+            xp: hashbeast_metadata.xp,
+            multiplier: hashbeast_metadata.multiplier,
+            accumulated_val: hashbeast_metadata.accumulated_val,
             accum_pct: 1000,
         });
     }
@@ -369,7 +362,7 @@ fn pool_share_from_bps(pool: u64, bps: u16) -> Result<u64> {
 /// - base rewards: anyone correct on a country's resolved direction
 /// - loyalty rewards: only users backing their own country correctly
 /// - mvp rewards: top contributor per faction (distributed at settlement by rank)
-/// - Doge rewards: gameplay Doges backing the resolved home-country outcome
+/// - HashBeast rewards: gameplay HashBeasts backing the resolved home-country outcome
 ///
 /// Each lane is then distributed across factions by final rank, normalized only
 /// across factions that have eligible claimants for that lane.
@@ -384,7 +377,7 @@ pub fn compute_faction_reward_pools(
     if pool == 0 {
         faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
         return Ok(());
     }
@@ -392,7 +385,7 @@ pub fn compute_faction_reward_pools(
     let base_pool_total = pool_share_from_bps(pool, tuning.faction_war_base_reward_bps)?;
     let loyalty_pool_total = pool_share_from_bps(pool, tuning.faction_war_loyalty_reward_bps)?;
     let mvp_pool_total = pool_share_from_bps(pool, tuning.faction_war_mvp_reward_bps)?;
-    let doge_pool_total = pool
+    let hashbeast_pool_total = pool
         .checked_sub(base_pool_total)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_sub(loyalty_pool_total)
@@ -401,17 +394,17 @@ pub fn compute_faction_reward_pools(
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let mut eligible_base = [false; NUM_FACTIONS];
     let mut eligible_loyalty = [false; NUM_FACTIONS];
-    let mut eligible_doge = [false; NUM_FACTIONS];
+    let mut eligible_hashbeast = [false; NUM_FACTIONS];
 
     for f in 0..active_factions {
         let winning_dir = faction_war_state.resolved_directions[f] as usize;
         eligible_base[f] = faction_war_state.faction_direction_totals[f][winning_dir] > 0;
         eligible_loyalty[f] = faction_war_state.loyalty_direction_totals[f][winning_dir] > 0;
-        eligible_doge[f] = faction_war_state.eligible_doge_direction_totals[f][winning_dir] > 0;
+        eligible_hashbeast[f] = faction_war_state.eligible_hashbeast_direction_totals[f][winning_dir] > 0;
     }
 
     let any_loyalty_eligible = eligible_loyalty.iter().take(active_factions).any(|&e| e);
-    let any_doge_eligible = eligible_doge.iter().take(active_factions).any(|&e| e);
+    let any_hashbeast_eligible = eligible_hashbeast.iter().take(active_factions).any(|&e| e);
 
     // Orphan-cascade: if a sub-pool has zero globally-eligible factions, fold
     // it into the base pool instead of stranding the degenBTC in the mining
@@ -424,9 +417,9 @@ pub fn compute_faction_reward_pools(
             .checked_add(loyalty_pool_total)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
-    if !any_doge_eligible && doge_pool_total > 0 {
+    if !any_hashbeast_eligible && hashbeast_pool_total > 0 {
         effective_base_pool = effective_base_pool
-            .checked_add(doge_pool_total)
+            .checked_add(hashbeast_pool_total)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
@@ -448,16 +441,16 @@ pub fn compute_faction_reward_pools(
     } else {
         faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
     }
-    if any_doge_eligible {
+    if any_hashbeast_eligible {
         compute_rank_weighted_pools_into(
-            doge_pool_total,
+            hashbeast_pool_total,
             &faction_war_state.final_ranks,
-            &eligible_doge,
+            &eligible_hashbeast,
             active_factions,
-            &mut faction_war_state.faction_doge_reward_pools,
+            &mut faction_war_state.faction_hashbeast_reward_pools,
         )?;
     } else {
-        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
     }
     Ok(())
 }
@@ -646,7 +639,7 @@ pub fn finalize_faction_war_settlement(
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] faction_war_mining_pool reset=0");
         faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] reward pools zeroed");
         let old_id = faction_war_config.current_faction_war_id;
         faction_war_config.current_faction_war_id = faction_war_config
@@ -718,7 +711,7 @@ pub fn finalize_faction_war_settlement(
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] faction_war_mining_pool reset=0");
         faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_doge_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] reward pools zeroed");
         faction_war_state.stage = 1;
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] stage mutated: -> 1");
@@ -917,7 +910,7 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
         resolved_directions: faction_war_state.resolved_directions,
         faction_reward_pools: faction_war_state.faction_reward_pools,
         loyalty_reward_pools: faction_war_state.loyalty_reward_pools,
-        faction_doge_reward_pools: faction_war_state.faction_doge_reward_pools,
+        faction_hashbeast_reward_pools: faction_war_state.faction_hashbeast_reward_pools,
         faction_round_wins: faction_war_state.faction_round_wins,
         faction_sol_totals: faction_war_state.faction_sol_totals,
         faction_gameplay_scores: faction_war_state.faction_gameplay_scores,
@@ -1021,8 +1014,8 @@ pub fn claim_faction_war_rewards_internal(
     let player_faction_id = player_data.faction_id as usize;
     let mut base_reward_amount = 0u64;
     let mut loyalty_reward_amount = 0u64;
-    let mut doge_bonus_amount = 0u64;
-    let mut doge_mint = Pubkey::default();
+    let mut hashbeast_bonus_amount = 0u64;
+    let mut hashbeast_mint = Pubkey::default();
     msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] active_factions={} player_faction_id={}", active_factions, player_faction_id);
 
     if active_factions == 0 {
@@ -1066,7 +1059,7 @@ pub fn claim_faction_war_rewards_internal(
             }
 
             if faction_id == player_faction_id {
-                msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] loyalty/doge branch faction_id==player_faction_id={}", player_faction_id);
+                msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] loyalty/hashbeast branch faction_id==player_faction_id={}", player_faction_id);
                 let loyalty_total =
                     faction_war_state.loyalty_direction_totals[faction_id][resolved_direction];
                 let loyalty_pool = faction_war_state.loyalty_reward_pools[faction_id];
@@ -1091,31 +1084,31 @@ pub fn claim_faction_war_rewards_internal(
                 }
 
                 msg!(
-                    "⚔️ [faction_war.claim_faction_war_rewards_internal] doge_bonus_eligible={}",
-                    user_faction_war_bets.doge_bonus_eligible
+                    "⚔️ [faction_war.claim_faction_war_rewards_internal] hashbeast_bonus_eligible={}",
+                    user_faction_war_bets.hashbeast_bonus_eligible
                 );
-                if user_faction_war_bets.doge_bonus_eligible {
-                    let doge_pool = faction_war_state.faction_doge_reward_pools[faction_id];
-                    let eligible_total = faction_war_state.eligible_doge_direction_totals
+                if user_faction_war_bets.hashbeast_bonus_eligible {
+                    let hashbeast_pool = faction_war_state.faction_hashbeast_reward_pools[faction_id];
+                    let eligible_total = faction_war_state.eligible_hashbeast_direction_totals
                         [faction_id][resolved_direction];
-                    msg!("📊 [faction_war.claim_faction_war_rewards_internal] doge calc doge_pool={} eligible_total={}", doge_pool, eligible_total);
-                    if doge_pool > 0 && eligible_total > 0 {
-                        let bonus_u128 = (doge_pool as u128)
+                    msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} eligible_total={}", hashbeast_pool, eligible_total);
+                    if hashbeast_pool > 0 && eligible_total > 0 {
+                        let bonus_u128 = (hashbeast_pool as u128)
                             .checked_mul(user_bet as u128)
                             .ok_or(ErrorCode::ArithmeticOverflow)?
                             .checked_div(eligible_total as u128)
                             .ok_or(ErrorCode::ArithmeticOverflow)?;
-                        doge_bonus_amount =
+                        hashbeast_bonus_amount =
                             u64::try_from(bonus_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-                        msg!("📊 [faction_war.claim_faction_war_rewards_internal] doge_bonus_amount={}", doge_bonus_amount);
+                        msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast_bonus_amount={}", hashbeast_bonus_amount);
 
-                        if doge_bonus_amount > 0 {
-                            doge_mint = user_faction_war_bets.gameplay_doge;
-                            msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] doge_mint set={}", doge_mint);
+                        if hashbeast_bonus_amount > 0 {
+                            hashbeast_mint = user_faction_war_bets.gameplay_hashbeast;
+                            msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] hashbeast_mint set={}", hashbeast_mint);
                         }
                     } else {
                         msg!(
-                            "📊 [faction_war.claim_faction_war_rewards_internal] doge calc skipped"
+                            "📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc skipped"
                         );
                     }
                 }
@@ -1214,33 +1207,33 @@ pub fn claim_faction_war_rewards_internal(
         msg!("💰 [faction_war.claim_faction_war_rewards_internal] SOL transfer complete");
     }
 
-    let claim_won = total_reward > 0 || sol_reward > 0 || doge_bonus_amount > 0;
-    let claim_mutation_type = process_faction_war_claim_doge_update(
+    let claim_won = total_reward > 0 || sol_reward > 0 || hashbeast_bonus_amount > 0;
+    let claim_mutation_type = process_faction_war_claim_hashbeast_update(
         faction_war_id,
         owner_key,
         faction_war_state,
         user_faction_war_bets,
         player_data,
         &ctx.accounts.global_config.gameplay_tuning,
-        ctx.accounts.doge_metadata.as_mut(),
-        doge_bonus_amount,
+        ctx.accounts.hashbeast_metadata.as_mut(),
+        hashbeast_bonus_amount,
         claim_won,
     )?;
     if claim_mutation_type > 0
-        || (claim_won && user_faction_war_bets.gameplay_doge != Pubkey::default())
+        || (claim_won && user_faction_war_bets.gameplay_hashbeast != Pubkey::default())
     {
-        doge_mint = user_faction_war_bets.gameplay_doge;
+        hashbeast_mint = user_faction_war_bets.gameplay_hashbeast;
     }
 
     msg!(
-        "⚔️ [faction_war.claim_faction_war_rewards_internal] Player faction {}: base_reward={}, loyalty_reward={}, mvp_bonus={}, total_reward={}, doge_bonus={}, doge_eligible={}, sol_reward={}",
+        "⚔️ [faction_war.claim_faction_war_rewards_internal] Player faction {}: base_reward={}, loyalty_reward={}, mvp_bonus={}, total_reward={}, hashbeast_bonus={}, hashbeast_eligible={}, sol_reward={}",
         player_faction_id,
         base_reward_amount,
         loyalty_reward_amount,
         mvp_bonus_amount,
         total_reward,
-        doge_bonus_amount,
-        user_faction_war_bets.doge_bonus_eligible,
+        hashbeast_bonus_amount,
+        user_faction_war_bets.hashbeast_bonus_eligible,
         sol_reward
     );
 
@@ -1271,56 +1264,17 @@ pub fn claim_faction_war_rewards_internal(
         player_data.pending_faction_war_claims
     );
 
-    // ---- Lootbox eligibility flag ----
-    // A claim is eligible for a lootbox roll if the player won at least
-    // something on this cycle AND has an active gameplay Doge. We don't
-    // gate on inventory pool depth here — the cranker re-checks it in
-    // `process_lootbox_drops` at roll time. This avoids passing
-    // `inventory_pool` into every claim.
-    if claim_won
-        && user_faction_war_bets.gameplay_doge != Pubkey::default()
-        && player_data.pending_lootbox_roll.is_none()
-    {
-        // Build a deterministic per-cycle seed from settlement-stable fields.
-        // The cranker can recompute this off-chain to verify; on-chain we
-        // re-roll in `process_lootbox_drops` using slot-hash entropy mixed
-        // with this seed and the player's pubkey.
-        let cycle_seed = anchor_lang::solana_program::keccak::hashv(&[
-            b"minebtc-lootbox-cycle-seed",
-            &faction_war_id.to_le_bytes(),
-            &faction_war_state.start_timestamp.to_le_bytes(),
-            &faction_war_state.faction_war_mining_pool.to_le_bytes(),
-            &faction_war_state.final_ranks,
-        ])
-        .to_bytes();
+    // Note: lootbox rolls fire on round-claim for losing players, not on
+    // cycle-claim. See `claim_round_rewards` in `user.rs`.
 
-        player_data.pending_lootbox_roll = Some(LootboxRollClaim {
-            faction_war_id,
-            faction_id: player_data.faction_id,
-            cycle_seed,
-        });
-        msg!(
-            "🎁 [claim_faction_war_rewards_internal] Lootbox roll queued for {} (faction={})",
-            owner_key,
-            player_data.faction_id
-        );
-    } else {
-        msg!(
-            "🎁 [claim_faction_war_rewards_internal] No lootbox roll: claim_won={}, gameplay_doge_set={}, roll_already_pending={}",
-            claim_won,
-            user_faction_war_bets.gameplay_doge != Pubkey::default(),
-            player_data.pending_lootbox_roll.is_some()
-        );
-    }
-
-    msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] emitting FactionWarRewardsClaimed: faction_war_id={} user={} reward_amount={} base={} loyalty={} mvp={} doge={} sol={} timestamp={}",
+    msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] emitting FactionWarRewardsClaimed: faction_war_id={} user={} reward_amount={} base={} loyalty={} mvp={} hashbeast={} sol={} timestamp={}",
         faction_war_id,
         user_faction_war_bets.owner,
         total_reward,
         base_reward_amount,
         loyalty_reward_amount,
         mvp_bonus_amount,
-        doge_bonus_amount,
+        hashbeast_bonus_amount,
         sol_reward,
         clock.unix_timestamp
     );
@@ -1331,9 +1285,9 @@ pub fn claim_faction_war_rewards_internal(
         base_reward_amount,
         loyalty_reward_amount,
         mvp_bonus_amount,
-        doge_bonus_amount,
+        hashbeast_bonus_amount,
         sol_reward_amount: sol_reward,
-        doge_mint,
+        hashbeast_mint,
         timestamp: clock.unix_timestamp,
     });
 
@@ -1377,7 +1331,7 @@ pub struct ClaimFactionWarRewards<'info> {
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(mut)]
-    pub doge_metadata: Option<Box<Account<'info, DogeMetadata>>>,
+    pub hashbeast_metadata: Option<Box<Account<'info, HashBeastMetadata>>>,
 
     /// CHECK: Faction-war SOL vault (cycle jackpot reserve)
     #[account(
@@ -1396,293 +1350,6 @@ pub struct ClaimFactionWarRewards<'info> {
 
     #[account(mut)]
     pub cranker: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-// ========================================================================================
-// ============================== LOOTBOX DROP RESOLUTION =================================
-// ========================================================================================
-
-/// Cranker-driven lootbox drop. The cranker picks a candidate Doge from the
-/// inventory pool (faction-matched, status=Lootbox) for a player whose claim
-/// queued a `pending_lootbox_roll`. This handler runs the actual win/miss
-/// roll on-chain so the cranker can't bias outcomes.
-pub fn process_lootbox_drops_internal(ctx: Context<ProcessLootboxDrops>) -> Result<()> {
-    crate::log_fn!("faction_war", "process_lootbox_drops_internal");
-
-    let now = Clock::get()?.unix_timestamp;
-    let asset_key = ctx.accounts.doge_asset.key();
-    let winner_key = ctx.accounts.winner_wallet.key();
-
-    require_keys_eq!(
-        ctx.accounts.crank_authority.key(),
-        ctx.accounts.inventory_pool.crank_authority,
-        ErrorCode::InvalidCrankAuthority
-    );
-
-    require!(
-        ctx.accounts.inventory_pool.lootbox_count >= MIN_LOOTBOX_POOL,
-        ErrorCode::LootboxPoolTooSmall
-    );
-
-    let roll = ctx
-        .accounts
-        .winner_player_data
-        .pending_lootbox_roll
-        .ok_or(ErrorCode::NoLootboxRoll)?;
-
-    let entry = &ctx.accounts.recycled_entry;
-    require!(
-        entry.status == RecycledStatus::Lootbox as u8,
-        ErrorCode::InvalidRecycledStatus
-    );
-    require!(
-        entry.faction_id == roll.faction_id,
-        ErrorCode::LootboxFactionMismatch
-    );
-
-    let last_drop = ctx.accounts.winner_player_data.last_lootbox_drop_at;
-    require!(
-        last_drop == 0 || now.saturating_sub(last_drop) >= LOOTBOX_COOLDOWN_SECONDS,
-        ErrorCode::LootboxCooldownActive
-    );
-
-    let metrics = &ctx.accounts.market_metrics;
-    let threshold_bps = compute_drop_chance_bps(
-        metrics.demand_index,
-        ctx.accounts.inventory_pool.lootbox_count,
-        entry.quality_score,
-    );
-
-    // On-chain entropy: mix the most recent slot hash with cycle seed and
-    // per-roll context so the cranker can't pre-compute outcomes.
-    let slot_hashes = ctx.accounts.slot_hashes.to_account_info();
-    let slot_hashes_data = slot_hashes.try_borrow_data()?;
-    require!(
-        slot_hashes_data.len() >= 8 + 8 + 32,
-        ErrorCode::InvalidAccount
-    );
-    let mut latest_slot_hash = [0u8; 32];
-    latest_slot_hash.copy_from_slice(&slot_hashes_data[16..48]);
-    drop(slot_hashes_data);
-
-    let entropy = anchor_lang::solana_program::keccak::hashv(&[
-        b"minebtc-lootbox-roll",
-        &latest_slot_hash,
-        &winner_key.to_bytes(),
-        &roll.cycle_seed,
-        &asset_key.to_bytes(),
-    ])
-    .to_bytes();
-    let roll_value = u16::from_le_bytes([entropy[0], entropy[1]]) % 10_000;
-
-    msg!(
-        "🎲 [process_lootbox_drops] roll={} threshold={} (DI={} pool_lootbox={} quality={})",
-        roll_value,
-        threshold_bps,
-        metrics.demand_index,
-        ctx.accounts.inventory_pool.lootbox_count,
-        entry.quality_score
-    );
-
-    let winner_won = roll_value < threshold_bps;
-
-    if winner_won {
-        // Recipient cap, approximated from staked_doges + active gameplay
-        // doge. Tighter eligibility filtering happens off-chain in the
-        // cranker which can scan the wallet directly.
-        let approx_holdings = ctx
-            .accounts
-            .winner_player_data
-            .staked_doges
-            .len()
-            .saturating_add(
-                if ctx.accounts.winner_player_data.gameplay_doge != Pubkey::default() {
-                    1
-                } else {
-                    0
-                },
-            );
-        require!(
-            approx_holdings < MAX_DOGES_PER_WALLET_FOR_DROP as usize,
-            ErrorCode::LootboxRecipientCapped
-        );
-
-        // Transfer asset from inventory_pda → winner_wallet, signed by the
-        // inventory PDA seeds.
-        let pool_bump = ctx.accounts.inventory_pool.bump;
-        let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-        let inventory_signers: &[&[&[u8]]] = &[inventory_seeds_inner];
-        crate::mpl_core_helpers::transfer_mpl_core_asset(
-            &ctx.accounts.doge_asset.to_account_info(),
-            ctx.accounts
-                .doge_collection
-                .as_ref()
-                .map(|c| c.to_account_info())
-                .as_ref(),
-            &ctx.accounts.crank_authority.to_account_info(),
-            &ctx.accounts.inventory_pda.to_account_info(),
-            &ctx.accounts.winner_wallet.to_account_info(),
-            &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(inventory_signers),
-        )?;
-
-        // Reset DogeMetadata for the new owner.
-        let metadata = &mut ctx.accounts.doge_metadata;
-        metadata.accumulated_val = 0;
-        metadata.multiplier = BASE_MULTIPLIER;
-        metadata.xp = 0;
-        metadata.incubated_player_data = Pubkey::default();
-        // dna, mom, dad, breed_count, faction_id, last_update_ts preserved.
-
-        // Bump pool counters and close the entry by zeroing out so the
-        // caller can reclaim its rent in a follow-up tx (we do NOT use
-        // Anchor `close` here because miss-path leaves the entry alive).
-        let pool = &mut ctx.accounts.inventory_pool;
-        pool.lootbox_count = pool
-            .lootbox_count
-            .checked_sub(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        pool.total_count = pool
-            .total_count
-            .checked_sub(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        pool.total_dropped = pool
-            .total_dropped
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-        // Manually close the recycled entry, refunding rent to the winner.
-        let entry_info = ctx.accounts.recycled_entry.to_account_info();
-        let entry_lamports = entry_info.lamports();
-        **ctx
-            .accounts
-            .winner_wallet
-            .to_account_info()
-            .try_borrow_mut_lamports()? = ctx
-            .accounts
-            .winner_wallet
-            .lamports()
-            .checked_add(entry_lamports)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        **entry_info.try_borrow_mut_lamports()? = 0;
-        let mut entry_data = entry_info.try_borrow_mut_data()?;
-        for byte in entry_data.iter_mut() {
-            *byte = 0;
-        }
-        // Re-write the discriminator to a closed-account value so
-        // anchor never deserializes this account again at this address
-        // until reused. Anchor's standard "closed account discriminator"
-        // is `[255; 8]`.
-        entry_data[..8].copy_from_slice(&[255u8; 8]);
-        drop(entry_data);
-
-        // Mark winner cooldown.
-        ctx.accounts.winner_player_data.last_lootbox_drop_at = now;
-
-        emit!(LootboxNftWon {
-            asset: asset_key,
-            winner: winner_key,
-            faction_id: entry.faction_id,
-            roll_value,
-            threshold_bps,
-            timestamp: now,
-        });
-
-        msg!(
-            "🎉 [process_lootbox_drops] WIN: asset {} -> {}",
-            asset_key,
-            winner_key
-        );
-    } else {
-        emit!(LootboxRollMissed {
-            winner: winner_key,
-            roll_value,
-            threshold_bps,
-            timestamp: now,
-        });
-        msg!("❌ [process_lootbox_drops] MISS for {}", winner_key);
-    }
-
-    // Single-use: clear the pending roll regardless of outcome.
-    ctx.accounts.winner_player_data.pending_lootbox_roll = None;
-
-    Ok(())
-}
-
-#[derive(Accounts)]
-pub struct ProcessLootboxDrops<'info> {
-    #[account(mut)]
-    pub crank_authority: Signer<'info>,
-
-    #[account(
-        mut,
-        seeds = [INVENTORY_POOL_SEED],
-        bump = inventory_pool.bump,
-    )]
-    pub inventory_pool: Box<Account<'info, InventoryPool>>,
-
-    /// CHECK: Inventory custody PDA — same address as `inventory_pool`.
-    /// Used only as the mpl-core authority during transfer; validated by
-    /// seeds.
-    #[account(
-        seeds = [INVENTORY_POOL_SEED],
-        bump = inventory_pool.bump,
-    )]
-    pub inventory_pda: UncheckedAccount<'info>,
-
-    #[account(
-        seeds = [MARKET_METRICS_SEED],
-        bump = market_metrics.bump,
-    )]
-    pub market_metrics: Box<Account<'info, MarketMetrics>>,
-
-    #[account(
-        mut,
-        seeds = [PLAYER_DATA_SEED, winner_player_data.owner.as_ref()],
-        bump = winner_player_data.bump,
-    )]
-    pub winner_player_data: Box<Account<'info, PlayerData>>,
-
-    /// CHECK: Recipient wallet for the dropped Doge.
-    #[account(
-        mut,
-        constraint = winner_wallet.key() == winner_player_data.owner @ ErrorCode::InvalidOwner,
-    )]
-    pub winner_wallet: UncheckedAccount<'info>,
-
-    /// On a winning roll, this account is closed manually inside the handler
-    /// (rent refunded to winner). On a miss, it stays alive.
-    #[account(
-        mut,
-        seeds = [RECYCLED_ENTRY_SEED, doge_asset.key().as_ref()],
-        bump = recycled_entry.bump,
-    )]
-    pub recycled_entry: Box<Account<'info, RecycledEntry>>,
-
-    /// CHECK: mpl-core asset; current owner is `inventory_pda`.
-    #[account(mut)]
-    pub doge_asset: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [DOGE_METADATA_SEED, doge_asset.key().as_ref()],
-        bump = doge_metadata.bump,
-        constraint = doge_metadata.mint == doge_asset.key() @ ErrorCode::InvalidAccount,
-    )]
-    pub doge_metadata: Account<'info, DogeMetadata>,
-
-    /// CHECK: Doge collection account, required by mpl-core on transfer.
-    pub doge_collection: Option<UncheckedAccount<'info>>,
-
-    /// CHECK: Metaplex Core program.
-    #[account(address = mpl_core::ID)]
-    pub mpl_core_program: UncheckedAccount<'info>,
-
-    /// CHECK: SlotHashes sysvar — used for entropy.
-    #[account(address = anchor_lang::solana_program::sysvar::slot_hashes::ID)]
-    pub slot_hashes: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }

@@ -36,9 +36,9 @@ Per setup script:
 ## Staking Multipliers
 
 - Lockup staking multiplier uses `HashpowerConfig`, setup expects base 100 and max 300, meaning 1x to 3x.
-- Passive Doge staking multiplier is capped by `PASSIVE_DOGE_STAKING_MAX_MULTIPLIER = 3000` (3.0x on Doge scale).
-- Combined passive staking boost can therefore reach 9x when max lockup and max Doge multiplier align.
-- Gameplay Doge multiplier cap is `GAMEPLAY_MAX_MULTIPLIER = 4200` (4.2x).
+- Passive HashBeast staking multiplier is capped by `PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER = 3000` (3.0x on HashBeast scale).
+- Combined passive staking boost can therefore reach 9x when max lockup and max HashBeast multiplier align.
+- Gameplay HashBeast multiplier cap is `GAMEPLAY_MAX_MULTIPLIER = 4200` (4.2x).
 
 ## Economy Cycle
 
@@ -65,20 +65,20 @@ Per setup script:
   - Base reward: 7000 bps.
   - Loyalty reward: 2000 bps.
   - MVP reward: 500 bps.
-  - Doge reward: 500 bps.
+  - HashBeast reward: 500 bps.
 - Contract defaults differ slightly in `state.rs` (`6500/2000/500/1000`), but setup explicitly applies the live values above.
 
-## Doge Genesis and Lifecycle Economics
+## HashBeast Genesis and Lifecycle Economics
 
 - Genesis mint cap: 36,000.
-- Lifetime Doge cap: 100,000.
+- Lifetime HashBeast cap: 100,000.
 - Per-faction genesis cap: 3,000 with 12 configured factions.
 - Genesis base price: 1 SOL.
 - Genesis curve A: 2,100,000.
 - Breeding disabled at launch by config, but seeded:
   - Breed base price: 2 SOL.
   - Breed curve A: 200,000.
-- Doge tickets are point-value free tickets usable for betting:
+- HashBeast tickets are point-value free tickets usable for betting:
   - 0.001 SOL equivalent.
   - 0.01 SOL equivalent.
   - 0.1 SOL equivalent.
