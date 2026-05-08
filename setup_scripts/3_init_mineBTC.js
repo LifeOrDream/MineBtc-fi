@@ -3433,6 +3433,13 @@ async function initializeInventoryPool(minebtcProgram) {
       [Buffer.from("inventory-sweep-vault")],
       minebtcProgram.programId,
     );
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n=================== [ INITIALIZING INVENTORY POOL ] ===================",
+  );
 
   const marketplaceProgramId = new PublicKey(
     deploymentFile.degenbtc_marketplace_initialized.program_id,
