@@ -1689,7 +1689,7 @@ async function initializeHashBeastConfig(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initializeHashBeastConfig()
+      .initializeHashbeastConfig()
             .accounts({
                 hashbeastsConfig: hashbeastsConfigPDA,
                 globalConfig: globalConfigPDA,
@@ -1830,7 +1830,7 @@ async function initializeHashBeastMintConfig(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .initializeHashBeastMintConfig(
+      .initializeHashbeastMintConfig(
         new BN(basePrice),
         new BN(curveA),
         new BN(genesisMintLimit),
@@ -1922,7 +1922,7 @@ async function createHashBeastCollection(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-            .createHashBeastCollection(
+            .createHashbeastCollection(
                 config.hashbeasts.collection_name,
                 config.hashbeasts.collection_uri
             )
@@ -2042,7 +2042,7 @@ async function initializeHashBeastRoyalties(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initHashBeastRoyalties(basisPoints, creators)
+      .initHashbeastRoyalties(basisPoints, creators)
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
@@ -3305,11 +3305,7 @@ async function initializeDegenBtcMarketplace(minebtcProgram) {
   // pattern used by the rest of the program (admin can rotate via
   // update_marketplace_config later).
 
-  const marketProgram = new Program(
-    IDL_DegenBtcMarket,
-    DEGENBTC_MARKET_PROGRAM_ID,
-    provider,
-  );
+  const marketProgram = new Program(IDL_DegenBtcMarket, provider);
 
   const [marketplaceConfigPda, marketplaceConfigBump] =
     PublicKey.findProgramAddressSync(
@@ -3433,13 +3429,6 @@ async function initializeInventoryPool(minebtcProgram) {
       [Buffer.from("inventory-sweep-vault")],
       minebtcProgram.programId,
     );
-    return;
-  }
-
-  console.log(
-    COLOR_STEP,
-    "\n=================== [ INITIALIZING INVENTORY POOL ] ===================",
-  );
 
   const marketplaceProgramId = new PublicKey(
     deploymentFile.degenbtc_marketplace_initialized.program_id,
