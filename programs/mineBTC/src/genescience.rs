@@ -505,13 +505,31 @@ pub fn calculate_mutation_result(
     }
 
     let (m_type, base_boost) = if (type_roll as u64) < evo_threshold {
-        evolve_stage(origin, origin_id, &mut gameplay_hashbeast_dna, &seed, hashbeast_mint);
+        evolve_stage(
+            origin,
+            origin_id,
+            &mut gameplay_hashbeast_dna,
+            &seed,
+            hashbeast_mint,
+        );
         (MutationType::Evolution, 50u32)
     } else if (type_roll as u64) < power_threshold {
-        mutate_power_trait(origin, origin_id, &mut gameplay_hashbeast_dna, &seed, hashbeast_mint);
+        mutate_power_trait(
+            origin,
+            origin_id,
+            &mut gameplay_hashbeast_dna,
+            &seed,
+            hashbeast_mint,
+        );
         (MutationType::Power, 25u32)
     } else {
-        mutate_visual_trait(origin, origin_id, &mut gameplay_hashbeast_dna, &seed, hashbeast_mint);
+        mutate_visual_trait(
+            origin,
+            origin_id,
+            &mut gameplay_hashbeast_dna,
+            &seed,
+            hashbeast_mint,
+        );
         (MutationType::Trait, 5u32)
     };
     msg!("   Mutation type: {:?}, Base boost: {}", m_type, base_boost);
@@ -1295,8 +1313,13 @@ mod tests {
 
         let seed = [1u8; 32];
         let hashbeast_mint = mock_pubkey();
-        let (trait_idx, _, _) =
-            mutate_visual_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
+        let (trait_idx, _, _) = mutate_visual_trait(
+            STORY_EVENT_ORIGIN_ROUND,
+            1,
+            &mut dna,
+            &seed,
+            &hashbeast_mint,
+        );
 
         let mutated = decode_appearance_traits(&dna);
         println!("Mutated appearance traits: {:?}", mutated);
@@ -1319,8 +1342,13 @@ mod tests {
 
         let seed = [2u8; 32];
         let hashbeast_mint = mock_pubkey();
-        let (_, original_val, mutated_val) =
-            mutate_power_trait(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
+        let (_, original_val, mutated_val) = mutate_power_trait(
+            STORY_EVENT_ORIGIN_ROUND,
+            1,
+            &mut dna,
+            &seed,
+            &hashbeast_mint,
+        );
 
         let mutated = decode_power_traits(&dna);
         println!("Mutated power traits: {:?}", mutated);
@@ -1347,7 +1375,13 @@ mod tests {
         let seed = [3u8; 32];
         let hashbeast_mint = mock_pubkey();
         let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
-            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
+            evolve_stage(
+                STORY_EVENT_ORIGIN_ROUND,
+                1,
+                &mut dna,
+                &seed,
+                &hashbeast_mint,
+            );
         println!("New stage: {}", new_stage);
         println!(
             "Mutated traits: {:?}",
@@ -1375,8 +1409,13 @@ mod tests {
 
         for expected_stage in 1..=7 {
             let seed = [expected_stage; 32];
-            let (new_stage, _, _, _, _, _, _) =
-                evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
+            let (new_stage, _, _, _, _, _, _) = evolve_stage(
+                STORY_EVENT_ORIGIN_ROUND,
+                1,
+                &mut dna,
+                &seed,
+                &hashbeast_mint,
+            );
             assert_eq!(
                 new_stage, expected_stage,
                 "Stage mismatch at {}",
@@ -1387,7 +1426,13 @@ mod tests {
         // Should return current stage when at max (7)
         let seed = [8u8; 32];
         let (new_stage, m_index, m_current_val, m_new_val, p_index, p_current_val, p_new_val) =
-            evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
+            evolve_stage(
+                STORY_EVENT_ORIGIN_ROUND,
+                1,
+                &mut dna,
+                &seed,
+                &hashbeast_mint,
+            );
         assert_eq!(new_stage, 7, "Should stay at max stage");
         assert_eq!(m_index, 0, "No mutation at max");
         assert_eq!(m_current_val, 0, "No mutation at max");
@@ -1404,7 +1449,13 @@ mod tests {
 
         let seed = [1u8; 32];
         let hashbeast_mint = mock_pubkey();
-        let _ = evolve_stage(STORY_EVENT_ORIGIN_ROUND, 1, &mut dna, &seed, &hashbeast_mint);
+        let _ = evolve_stage(
+            STORY_EVENT_ORIGIN_ROUND,
+            1,
+            &mut dna,
+            &seed,
+            &hashbeast_mint,
+        );
 
         assert_eq!(
             get_family_type(&dna),

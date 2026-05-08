@@ -70,13 +70,14 @@ pub struct BuyListing<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<BuyListing>) -> Result<()> {
+pub fn handler(ctx: Context<BuyListing>, max_price_lamports: u64) -> Result<()> {
     log_fn!("market", "buy_listing");
 
     let config = &ctx.accounts.marketplace_config;
     require!(config.enabled, MarketError::MarketplaceDisabled);
 
     let price = ctx.accounts.listing.price_lamports;
+    require!(price <= max_price_lamports, MarketError::PriceTooHigh);
     let fee = (price as u128)
         .checked_mul(config.fee_bps as u128)
         .ok_or(MarketError::MathOverflow)?

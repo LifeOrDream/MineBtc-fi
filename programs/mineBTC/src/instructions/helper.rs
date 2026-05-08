@@ -1,6 +1,7 @@
 use crate::errors::ErrorCode;
 use crate::state::*;
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use anchor_lang::system_program;
 use anchor_lang::system_program::{create_account, transfer, CreateAccount, Transfer};
 use anchor_spl::token::{self as token_standard, Burn as StandardBurn};
@@ -245,27 +246,32 @@ where
 {
     require!(account.is_writable, ErrorCode::InvalidAccount);
 
-    if account.owner == &system_program::ID && account.lamports() == 0 {
+    if account.owner == &system_program::ID {
+        require!(account.data_len() == 0, ErrorCode::InvalidAccount);
         let rent = Rent::get()?.minimum_balance(space);
-        msg!(
-            "   creating zeroed PDA account {} with rent={} bytes={}",
-            account.key(),
-            rent,
-            space
-        );
-        create_account(
-            CpiContext::new_with_signer(
-                system_program.to_account_info(),
-                CreateAccount {
-                    from: payer.to_account_info(),
-                    to: account.to_account_info(),
-                },
-                &[signer_seeds],
-            ),
-            rent,
-            space as u64,
-            &crate::ID,
-        )?;
+        if account.lamports() == 0 {
+            msg!(
+                "   creating zeroed PDA account {} with rent={} bytes={}",
+                account.key(),
+                rent,
+                space
+            );
+            create_account(
+                CpiContext::new_with_signer(
+                    system_program.to_account_info(),
+                    CreateAccount {
+                        from: payer.to_account_info(),
+                        to: account.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                rent,
+                space as u64,
+                &crate::ID,
+            )?;
+        } else {
+            claim_prefunded_system_pda(payer, account, system_program, signer_seeds, space, rent)?;
+        }
         let mut data = account.try_borrow_mut_data()?;
         require!(data.len() >= 8, ErrorCode::InvalidAccount);
         data[..8].copy_from_slice(T::DISCRIMINATOR);
@@ -297,27 +303,32 @@ where
         space
     );
 
-    if account.owner == &system_program::ID && account.lamports() == 0 {
+    if account.owner == &system_program::ID {
+        require!(account.data_len() == 0, ErrorCode::InvalidAccount);
         let rent = Rent::get()?.minimum_balance(space);
-        msg!(
-            "   creating PDA account {} with rent={} bytes={}",
-            account.key(),
-            rent,
-            space
-        );
-        create_account(
-            CpiContext::new_with_signer(
-                system_program.to_account_info(),
-                CreateAccount {
-                    from: payer.to_account_info(),
-                    to: account.to_account_info(),
-                },
-                &[signer_seeds],
-            ),
-            rent,
-            space as u64,
-            &crate::ID,
-        )?;
+        if account.lamports() == 0 {
+            msg!(
+                "   creating PDA account {} with rent={} bytes={}",
+                account.key(),
+                rent,
+                space
+            );
+            create_account(
+                CpiContext::new_with_signer(
+                    system_program.to_account_info(),
+                    CreateAccount {
+                        from: payer.to_account_info(),
+                        to: account.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                rent,
+                space as u64,
+                &crate::ID,
+            )?;
+        } else {
+            claim_prefunded_system_pda(payer, account, system_program, signer_seeds, space, rent)?;
+        }
 
         let mut data = account.try_borrow_mut_data()?;
         require!(data.len() >= space, ErrorCode::InvalidAccount);
@@ -336,6 +347,63 @@ where
     );
 
     Ok(false)
+}
+
+fn claim_prefunded_system_pda<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    signer_seeds: &[&[u8]],
+    space: usize,
+    rent: u64,
+) -> Result<()> {
+    require!(
+        account.owner == &system_program::ID,
+        ErrorCode::InvalidAccount
+    );
+    require!(account.data_len() == 0, ErrorCode::InvalidAccount);
+
+    let current_lamports = account.lamports();
+    if current_lamports < rent {
+        let top_up = rent
+            .checked_sub(current_lamports)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
+            "   topping up prefunded PDA {} by {} lamports before allocation",
+            account.key(),
+            top_up
+        );
+        transfer(
+            CpiContext::new(
+                system_program.to_account_info(),
+                Transfer {
+                    from: payer.to_account_info(),
+                    to: account.to_account_info(),
+                },
+            ),
+            top_up,
+        )?;
+    }
+
+    msg!(
+        "   claiming prefunded PDA {} with existing_lamports={} bytes={}",
+        account.key(),
+        current_lamports,
+        space
+    );
+    let signer_groups: &[&[&[u8]]] = &[signer_seeds];
+    invoke_signed(
+        &system_instruction::allocate(account.key, space as u64),
+        &[account.to_account_info()],
+        signer_groups,
+    )?;
+    invoke_signed(
+        &system_instruction::assign(account.key, &crate::ID),
+        &[account.to_account_info()],
+        signer_groups,
+    )?;
+
+    Ok(())
 }
 
 pub fn load_account_data<'info, T>(account: &AccountInfo<'info>) -> Result<T>

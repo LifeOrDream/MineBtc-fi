@@ -40,17 +40,17 @@ pub mod state;
 
 pub use instructions::admin::CreatorInput;
 pub use instructions::admin::*;
-pub use instructions::hashbeasts::*;
 pub use instructions::economy::*;
 pub use instructions::faction_war::*;
 pub use instructions::game::*;
+pub use instructions::hashbeasts::*;
 pub use instructions::marketplace_cpi::*;
 pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    AutominerFactionPick, BetType, HashBeastConfig, HashBeastMintConfig, FactionsConfig, MineBtcDistConfig,
-    PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
+    AutominerFactionPick, BetType, FactionsConfig, HashBeastConfig, HashBeastMintConfig,
+    MineBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
 declare_id!("DPfSfuStn4cU1p4G7PTcqDiWdufGg9kpJPrsnatG6SLG");
@@ -66,10 +66,10 @@ macro_rules! log_fn {
 pub mod minebtc {
     use super::*;
     use instructions::admin::{self};
-    use instructions::hashbeasts::{self};
     use instructions::economy::{self};
     use instructions::faction_war::{self};
     use instructions::game::{self};
+    use instructions::hashbeasts::{self};
     use instructions::marketplace_cpi::{self};
     use instructions::stake::{self};
     use instructions::tax::{self};
@@ -760,13 +760,17 @@ pub mod minebtc {
     }
 
     /// Request gameplay hashbeast unlock. Actual withdrawal is only available in the next faction_war cycle.
-    pub fn request_hashbeast_gameplay_unlock(ctx: Context<RequestHashBeastGameplayUnlock>) -> Result<()> {
+    pub fn request_hashbeast_gameplay_unlock(
+        ctx: Context<RequestHashBeastGameplayUnlock>,
+    ) -> Result<()> {
         crate::log_fn!("lib", "request_hashbeast_gameplay_unlock");
         user::internal_request_hashbeast_gameplay_unlock(ctx)
     }
 
     /// Withdraw hashbeast from gameplay - returns hashbeast to user
-    pub fn withdraw_hashbeast_from_gameplay(ctx: Context<WithdrawHashBeastFromGameplay>) -> Result<()> {
+    pub fn withdraw_hashbeast_from_gameplay(
+        ctx: Context<WithdrawHashBeastFromGameplay>,
+    ) -> Result<()> {
         crate::log_fn!("lib", "withdraw_hashbeast_from_gameplay");
         user::internal_withdraw_hashbeast_from_gameplay(ctx)
     }
@@ -1026,9 +1030,9 @@ pub mod minebtc {
     /// Permissionless wrapper around `degenbtc_market::buy_listing`. Records
     /// a real-demand sale to `SaleHistory` if it qualifies (user-to-user,
     /// listing >= 5 minutes old).
-    pub fn buy_user_listing(ctx: Context<BuyUserListing>) -> Result<()> {
+    pub fn buy_user_listing(ctx: Context<BuyUserListing>, max_price_lamports: u64) -> Result<()> {
         crate::log_fn!("lib", "buy_user_listing");
-        marketplace_cpi::internal_buy_user_listing(ctx)
+        marketplace_cpi::internal_buy_user_listing(ctx, max_price_lamports)
     }
 
     // ----- Permissionless market making -----

@@ -103,7 +103,7 @@ pub mod degenbtc_market {
     }
 
     /// Buyer pays SOL (fee + proceeds), asset hops escrow → buyer, listing closes.
-    pub fn buy_listing(ctx: Context<BuyListing>) -> Result<()> {
-        instructions::buy_listing::handler(ctx)
+    pub fn buy_listing(ctx: Context<BuyListing>, max_price_lamports: u64) -> Result<()> {
+        instructions::buy_listing::handler(ctx, max_price_lamports)
     }
 }

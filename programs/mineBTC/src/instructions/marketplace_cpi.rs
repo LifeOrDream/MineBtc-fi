@@ -887,7 +887,10 @@ pub struct UpdateUserListingPrice<'info> {
 /// least `SALE_QUALIFY_MIN_LISTING_AGE_SECS`, records the sale into
 /// `SaleHistory` so it can feed the floor snapshot anchor. Also pops the
 /// listing from `FloorQueue` if present.
-pub fn internal_buy_user_listing(ctx: Context<BuyUserListing>) -> Result<()> {
+pub fn internal_buy_user_listing(
+    ctx: Context<BuyUserListing>,
+    max_price_lamports: u64,
+) -> Result<()> {
     crate::log_fn!("marketplace_cpi", "internal_buy_user_listing");
 
     require_keys_eq!(
@@ -928,6 +931,10 @@ pub fn internal_buy_user_listing(ctx: Context<BuyUserListing>) -> Result<()> {
         ctx.accounts.hashbeast_asset.key(),
         ErrorCode::InvalidAccount
     );
+    require!(
+        listing_price <= max_price_lamports,
+        ErrorCode::ListingPriceExceedsMax
+    );
 
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
@@ -944,7 +951,7 @@ pub fn internal_buy_user_listing(ctx: Context<BuyUserListing>) -> Result<()> {
             system_program: ctx.accounts.system_program.to_account_info(),
         },
     );
-    degenbtc_market::cpi::buy_listing(cpi_ctx)?;
+    degenbtc_market::cpi::buy_listing(cpi_ctx, max_price_lamports)?;
 
     let now = Clock::get()?.unix_timestamp;
     let asset_key = listing_asset;
@@ -1415,7 +1422,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             },
             signers,
         );
-        degenbtc_market::cpi::buy_listing(cpi_ctx)?;
+        degenbtc_market::cpi::buy_listing(cpi_ctx, chosen_entry.price)?;
     }
 
     // Pop the swept entry from the queue.
@@ -2251,7 +2258,7 @@ pub fn internal_claim_lootbox_nft(ctx: Context<ClaimLootboxNft>) -> Result<()> {
             .as_ref(),
         &ctx.accounts.user.to_account_info(),
         &ctx.accounts.inventory_pda.to_account_info(),
-        &ctx.accounts.cranker.to_account_info(),
+        &ctx.accounts.user.to_account_info(),
         &ctx.accounts.mpl_core_program.to_account_info(),
         Some(inventory_signers),
     )?;
@@ -2350,6 +2357,7 @@ pub struct ClaimLootboxNft<'info> {
     pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
     /// CHECK: HashBeast collection (required by mpl-core on transfer).
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program.

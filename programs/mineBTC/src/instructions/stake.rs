@@ -31,7 +31,6 @@ use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
-pub const MAX_REFERRALS_PER_CODE: u16 = 10_000; // High cap so viral country recruitment is not artificially throttled.
 pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in degenBTC at first claim).
                                        // Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
                                        // not from degenBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
@@ -70,7 +69,8 @@ mod tests {
         let deposit = 1_000_000u64;
         let weighted = calc_weighted_amount(deposit, 300).unwrap();
         let hashpower =
-            calc_hashpower_contribution(weighted, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER).unwrap();
+            calc_hashpower_contribution(weighted, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER)
+                .unwrap();
 
         assert_eq!(weighted, deposit * 3);
         assert_eq!(hashpower, deposit * 9);

@@ -1529,7 +1529,6 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     system_referral.bump = ctx.bumps.system_referral_rewards;
     system_referral.owner_faction_id = u8::MAX;
     system_referral.referrals_count = 0;
-    system_referral.referred_faction_counts = [0u16; NUM_FACTIONS];
     system_referral.pending_sol_rewards = 0;
     system_referral.total_sol_earned = 0;
 

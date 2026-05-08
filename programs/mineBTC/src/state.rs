@@ -1294,10 +1294,9 @@ pub struct ReferralRewards {
     pub bump: u8,
     /// Permanent faction of the referral-code owner.
     pub owner_faction_id: u8,
-    /// Number of users who have used this user's referral code
-    pub referrals_count: u16,
-    /// Number of users recruited by referred faction.
-    pub referred_faction_counts: [u16; NUM_FACTIONS],
+    /// Number of users who have used this user's referral code.
+    /// This is analytics/accounting only; registration is not capped by count.
+    pub referrals_count: u64,
 
     /// Pending SOL rewards from referees' protocol fees (bets + NFT mints).
     /// Stored as extra lamports on this PDA; claimed via claim_referral_rewards.
@@ -1313,8 +1312,7 @@ impl ReferralRewards {
         32 +    // owner
         1 +     // bump
         1 +     // owner_faction_id
-        2 +     // referrals_count
-        (NUM_FACTIONS * 2) + // referred_faction_counts
+        8 +     // referrals_count
         8 +     // pending_sol_rewards
         8; // total_sol_earned
 }

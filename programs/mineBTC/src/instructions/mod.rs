@@ -1,8 +1,8 @@
 pub mod admin;
-pub mod hashbeasts;
 pub mod economy;
 pub mod faction_war;
 pub mod game;
+pub mod hashbeasts;
 pub mod helper;
 pub mod marketplace_cpi;
 pub mod stake;

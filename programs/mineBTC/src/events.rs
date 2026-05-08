@@ -418,7 +418,7 @@ pub struct PlayerRecruited {
     pub referrer: Pubkey,
     pub player_origin_faction_id: u8,
     pub referrer_origin_faction_id: u8,
-    pub referrer_total_recruits: u16,
+    pub referrer_total_recruits: u64,
     pub timestamp: i64,
 }
 

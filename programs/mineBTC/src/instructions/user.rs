@@ -21,7 +21,6 @@ use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::genescience::{calculate_mutation_result, MutationType};
 use crate::instructions::helper;
-use crate::instructions::stake;
 use crate::state::*;
 
 fn load_program_account<T: AccountDeserialize>(account: &AccountInfo<'_>) -> Result<T> {
@@ -100,10 +99,6 @@ pub fn internal_initialize_player(
             .referrer_rewards
             .as_mut()
             .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
-        require!(
-            referrer_rewards.referrals_count < stake::MAX_REFERRALS_PER_CODE,
-            ErrorCode::MaxReferralsReached
-        );
         referrer_rewards.referrals_count = referrer_rewards
             .referrals_count
             .checked_add(1)
@@ -113,16 +108,10 @@ pub fn internal_initialize_player(
             (referrer_faction_id as usize) < global_config.supported_factions.len(),
             ErrorCode::InvalidFactionId
         );
-        referrer_rewards.referred_faction_counts[faction_id as usize] = referrer_rewards
-            .referred_faction_counts[faction_id as usize]
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "     Referrer's referral count: {}/{} referrer_faction={} referred_faction_count={}",
+            "     Referrer's referral count: {} referrer_faction={}",
             referrer_rewards.referrals_count,
-            stake::MAX_REFERRALS_PER_CODE,
-            referrer_faction_id,
-            referrer_rewards.referred_faction_counts[faction_id as usize]
+            referrer_faction_id
         );
 
         // Set player's referral code
@@ -198,7 +187,6 @@ pub fn internal_initialize_player(
     new_player_rewards.bump = ctx.bumps.new_player_rewards;
     new_player_rewards.owner_faction_id = faction_id;
     new_player_rewards.referrals_count = 0;
-    new_player_rewards.referred_faction_counts = [0u16; NUM_FACTIONS];
     new_player_rewards.pending_sol_rewards = 0;
     new_player_rewards.total_sol_earned = 0;
     msg!("     Referral rewards account initialized");
@@ -2248,7 +2236,8 @@ fn sync_claim_hashbeast_state<'info>(
     }
 
     require!(
-        hashbeast_metadata.is_some() && hashbeast_metadata.as_ref().unwrap().mint == expected_hashbeast,
+        hashbeast_metadata.is_some()
+            && hashbeast_metadata.as_ref().unwrap().mint == expected_hashbeast,
         ErrorCode::HashBeastMetadataNotFound
     );
     let hashbeast_metadata = hashbeast_metadata.unwrap();
@@ -2848,11 +2837,11 @@ fn internal_process_bets<'info>(
                         ErrorCode::InvalidAccount
                     );
                 }
-                faction_war_state.eligible_hashbeast_direction_totals[faction_index][direction_index] =
-                    faction_war_state.eligible_hashbeast_direction_totals[faction_index]
-                        [direction_index]
-                        .checked_add(wgtd_points_per_bet)
-                        .ok_or(ErrorCode::ArithmeticOverflow)?;
+                faction_war_state.eligible_hashbeast_direction_totals[faction_index]
+                    [direction_index] = faction_war_state.eligible_hashbeast_direction_totals
+                    [faction_index][direction_index]
+                    .checked_add(wgtd_points_per_bet)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 // Note: cycle leaderboard score is no longer added at bet time.
                 // Country score now accrues only when (a) the country wins a
                 // round (via track_faction_war_round_completion), and (b) when
@@ -3754,7 +3743,9 @@ pub fn internal_use_hashbeast_for_gameplay(ctx: Context<UseHashBeastForGameplay>
     // Update player data - cache hashbeast fields for mutation calculations
     // Note: generation is stored in DNA bits 4-6, not separately
     player_data.gameplay_hashbeast = hashbeast_mint;
-    player_data.active_multiplier = hashbeast_metadata.multiplier.min(GAMEPLAY_MAX_MULTIPLIER as u32);
+    player_data.active_multiplier = hashbeast_metadata
+        .multiplier
+        .min(GAMEPLAY_MAX_MULTIPLIER as u32);
     player_data.gameplay_hashbeast_dna = hashbeast_metadata.dna;
     player_data.gameplay_hashbeast_xp = hashbeast_metadata.xp;
     player_data.gameplay_unlock_request_faction_war = 0;
@@ -3777,7 +3768,10 @@ pub fn internal_use_hashbeast_for_gameplay(ctx: Context<UseHashBeastForGameplay>
         gen,
         hashbeast_metadata.xp
     );
-    msg!("   Faction hashbeasts playing: {}", faction_state.hashbeasts_playing);
+    msg!(
+        "   Faction hashbeasts playing: {}",
+        faction_state.hashbeasts_playing
+    );
 
     emit!(HashBeastUsedForGameplay {
         user: ctx.accounts.user.key(),
@@ -3829,7 +3823,9 @@ pub fn internal_request_hashbeast_gameplay_unlock(
 }
 
 /// Withdraw hashbeast from gameplay - returns hashbeast to user and clears gameplay hashbeast
-pub fn internal_withdraw_hashbeast_from_gameplay(ctx: Context<WithdrawHashBeastFromGameplay>) -> Result<()> {
+pub fn internal_withdraw_hashbeast_from_gameplay(
+    ctx: Context<WithdrawHashBeastFromGameplay>,
+) -> Result<()> {
     crate::log_fn!("user", "internal_withdraw_hashbeast_from_gameplay");
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
@@ -3933,7 +3929,10 @@ pub fn internal_withdraw_hashbeast_from_gameplay(ctx: Context<WithdrawHashBeastF
     hashbeast_metadata.last_update_ts = current_time;
 
     msg!("✅ HashBeast {} withdrawn from gameplay", hashbeast_mint);
-    msg!("   Faction hashbeasts playing: {}", faction_state.hashbeasts_playing);
+    msg!(
+        "   Faction hashbeasts playing: {}",
+        faction_state.hashbeasts_playing
+    );
 
     emit!(HashBeastWithdrawnFromGameplay {
         user: ctx.accounts.user.key(),
@@ -3963,6 +3962,7 @@ pub struct UseHashBeastForGameplay<'info> {
     pub hashbeast_asset: UncheckedAccount<'info>,
 
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -4028,6 +4028,7 @@ pub struct WithdrawHashBeastFromGameplay<'info> {
     pub hashbeast_asset: UncheckedAccount<'info>,
 
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(

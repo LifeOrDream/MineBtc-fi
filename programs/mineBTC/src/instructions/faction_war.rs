@@ -248,10 +248,12 @@ fn process_faction_war_claim_hashbeast_update<'info>(
         }
     }
 
-    if hashbeast_bonus_amount > 0 || stake > 0 {
+    let should_sync_hashbeast = hashbeast_bonus_amount > 0 || (tuning.rpg_progression && stake > 0);
+    if should_sync_hashbeast {
         require!(
             hashbeast_metadata.is_some()
-                && hashbeast_metadata.as_ref().unwrap().mint == user_faction_war_bets.gameplay_hashbeast,
+                && hashbeast_metadata.as_ref().unwrap().mint
+                    == user_faction_war_bets.gameplay_hashbeast,
             ErrorCode::HashBeastMetadataNotFound
         );
         let hashbeast_metadata = hashbeast_metadata.unwrap();
@@ -400,7 +402,8 @@ pub fn compute_faction_reward_pools(
         let winning_dir = faction_war_state.resolved_directions[f] as usize;
         eligible_base[f] = faction_war_state.faction_direction_totals[f][winning_dir] > 0;
         eligible_loyalty[f] = faction_war_state.loyalty_direction_totals[f][winning_dir] > 0;
-        eligible_hashbeast[f] = faction_war_state.eligible_hashbeast_direction_totals[f][winning_dir] > 0;
+        eligible_hashbeast[f] =
+            faction_war_state.eligible_hashbeast_direction_totals[f][winning_dir] > 0;
     }
 
     let any_loyalty_eligible = eligible_loyalty.iter().take(active_factions).any(|&e| e);
@@ -685,11 +688,10 @@ pub fn finalize_faction_war_settlement(
         tuning.rpg_progression
     );
 
-    if !has_bets || !tuning.rpg_progression {
+    if !has_bets {
         msg!(
-            "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{} non-operational (has_bets={}, rpg_progression={}) — rolling treasury forward and settling empty",
+            "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{} has no bets (rpg_progression={}) — rolling treasury forward and settling empty",
             faction_war_state.faction_war_id,
-            has_bets,
             tuning.rpg_progression
         );
         if faction_war_state.treasury_reward_base_amount > 0 {
@@ -952,8 +954,7 @@ pub struct SettleFactionWar<'info> {
     )]
     pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
-    /// Needed to read `rpg_progression` for the no-mutation branch of
-    /// `finalize_faction_war_settlement`.
+    /// Needed to read reward/evolution tuning for `finalize_faction_war_settlement`.
     #[account(
         seeds = [GLOBAL_CONFIG_SEED],
         bump,
@@ -1088,7 +1089,8 @@ pub fn claim_faction_war_rewards_internal(
                     user_faction_war_bets.hashbeast_bonus_eligible
                 );
                 if user_faction_war_bets.hashbeast_bonus_eligible {
-                    let hashbeast_pool = faction_war_state.faction_hashbeast_reward_pools[faction_id];
+                    let hashbeast_pool =
+                        faction_war_state.faction_hashbeast_reward_pools[faction_id];
                     let eligible_total = faction_war_state.eligible_hashbeast_direction_totals
                         [faction_id][resolved_direction];
                     msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} eligible_total={}", hashbeast_pool, eligible_total);

@@ -6,6 +6,8 @@ pub enum MarketError {
     MarketplaceDisabled,
     #[msg("Price below minimum")]
     PriceTooLow,
+    #[msg("Listing price exceeds buyer max price")]
+    PriceTooHigh,
     #[msg("Fee exceeds max 10%")]
     FeeTooHigh,
     #[msg("Asset not in registered collection")]

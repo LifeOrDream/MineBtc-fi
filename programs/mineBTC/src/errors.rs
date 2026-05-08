@@ -28,9 +28,6 @@ pub enum ErrorCode {
     #[msg("Referral rewards account required when referral code is provided")]
     ReferralRewardsAccountRequired,
 
-    #[msg("Maximum referrals reached for this referral code (50 max)")]
-    MaxReferralsReached,
-
     #[msg("Invalid parameters provided for operation")]
     InvalidParameters,
 
@@ -261,6 +258,9 @@ pub enum ErrorCode {
 
     #[msg("Inventory listing price is below the marketplace minimum")]
     ListingPriceTooLow,
+
+    #[msg("Listing price exceeds the buyer's max price")]
+    ListingPriceExceedsMax,
 
     #[msg("Inventory PDA does not own this asset")]
     AssetNotInInventory,

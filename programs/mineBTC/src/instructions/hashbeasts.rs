@@ -104,8 +104,10 @@ fn load_staked_hashbeast_raw_multiplier(
     for account in remaining_accounts {
         let hashbeast_metadata: HashBeastMetadata = load_program_account(account)?;
         let mint = hashbeast_metadata.mint;
-        let (expected_pda, _) =
-            Pubkey::find_program_address(&[HASHBEAST_METADATA_SEED.as_ref(), mint.as_ref()], &crate::ID);
+        let (expected_pda, _) = Pubkey::find_program_address(
+            &[HASHBEAST_METADATA_SEED.as_ref(), mint.as_ref()],
+            &crate::ID,
+        );
         require!(account.key() == expected_pda, ErrorCode::InvalidAccount);
         require!(expected_mints.contains(&mint), ErrorCode::InvalidParameters);
         require!(!seen_mints.contains(&mint), ErrorCode::InvalidParameters);
@@ -270,7 +272,10 @@ pub fn int_batch_mint_hashbeasts<'info>(
     let player_data = &mut ctx.accounts.player_data;
 
     require!(!global_config.is_paused, ErrorCode::GamePaused);
-    require!(hashbeast_mint_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(
+        hashbeast_mint_config.is_active,
+        ErrorCode::MintingNotAllowed
+    );
 
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
@@ -383,7 +388,10 @@ pub fn int_batch_mint_hashbeasts<'info>(
 
         // Verify Metadata PDA derivation
         let (expected_metadata, metadata_bump) = Pubkey::find_program_address(
-            &[HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset_key.as_ref()],
+            &[
+                HASHBEAST_METADATA_SEED.as_ref(),
+                hashbeast_asset_key.as_ref(),
+            ],
             ctx.program_id,
         );
         require!(
@@ -558,7 +566,10 @@ pub fn int_batch_mint_hashbeasts<'info>(
         mint_count,
         faction_id
     );
-    msg!("   Total hashbeasts minted: {}", hashbeast_config.total_hashbeasts_minted);
+    msg!(
+        "   Total hashbeasts minted: {}",
+        hashbeast_config.total_hashbeasts_minted
+    );
     msg!(
         "   Genesis mints: {} / {}, faction {}: {} / {}",
         hashbeast_mint_config.genesis_mints,
@@ -708,7 +719,10 @@ pub fn int_admin_mint_hashbeast(
         .genesis_mints_by_faction[faction_id as usize]
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   Total hashbeasts minted: {}", hashbeast_config.total_hashbeasts_minted);
+    msg!(
+        "   Total hashbeasts minted: {}",
+        hashbeast_config.total_hashbeasts_minted
+    );
 
     emit!(HashBeastMinted {
         hashbeast_metadata_account: hashbeast_metadata.key(),
@@ -752,7 +766,10 @@ pub fn int_whitelist_mint_hashbeast(
     let user = ctx.accounts.user.key();
 
     require!(!global_config.is_paused, ErrorCode::GamePaused);
-    require!(hashbeast_mint_config.is_active, ErrorCode::MintingNotAllowed);
+    require!(
+        hashbeast_mint_config.is_active,
+        ErrorCode::MintingNotAllowed
+    );
     require!(
         (faction_id as usize) < global_config.supported_factions.len(),
         ErrorCode::InvalidFactionId
@@ -767,7 +784,10 @@ pub fn int_whitelist_mint_hashbeast(
         allowance.remaining_free_mints > 0,
         ErrorCode::NoFreeHashBeastMintsRemaining
     );
-    require!(ctx.accounts.hashbeast_asset.is_signer, ErrorCode::Unauthorized);
+    require!(
+        ctx.accounts.hashbeast_asset.is_signer,
+        ErrorCode::Unauthorized
+    );
 
     msg!(
         "🎁 [whitelist_mint_hashbeast] user={} faction_id={} remaining_before={} mint_number={}",
@@ -1408,7 +1428,10 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
         ErrorCode::HashBeastAlreadyAtGuard
     );
 
-    msg!("♻️  Rebirthing HashBeast — accumulated_val={}", accumulated_val);
+    msg!(
+        "♻️  Rebirthing HashBeast — accumulated_val={}",
+        accumulated_val
+    );
     msg!(
         "   Pre-rebirth stats: multiplier={} xp={} breed_count={} rebirth_count={} faction_id={}",
         multiplier_before,
@@ -1628,9 +1651,13 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
     msg!("   Dad: {} (breed_count: {})", dad.mint, dad.breed_count);
 
     // Validate breeding is allowed
-    require!(hashbeast_config.breeding_allowed, ErrorCode::BreedingNotAllowed);
+    require!(
+        hashbeast_config.breeding_allowed,
+        ErrorCode::BreedingNotAllowed
+    );
     let hashbeast_mint_config_info = ctx.accounts.hashbeast_mint_config.to_account_info();
-    let hashbeast_mint_config: HashBeastMintConfig = load_program_account(&hashbeast_mint_config_info)?;
+    let hashbeast_mint_config: HashBeastMintConfig =
+        load_program_account(&hashbeast_mint_config_info)?;
     let floor_history_info = ctx.accounts.floor_history.to_account_info();
     let floor_history: FloorHistory = load_program_account(&floor_history_info)?;
     require!(
@@ -2098,7 +2125,10 @@ fn scale_hashpower_by_multiplier(
     u64::try_from(scaled).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
-fn add_hashbeast_multiplier(existing_raw_multiplier: u64, hashbeast_multiplier: u32) -> Result<(u64, u16)> {
+fn add_hashbeast_multiplier(
+    existing_raw_multiplier: u64,
+    hashbeast_multiplier: u32,
+) -> Result<(u64, u16)> {
     let new_raw_multiplier = existing_raw_multiplier
         .checked_add(hashbeast_multiplier as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -2135,7 +2165,10 @@ mod tests {
             raw_after_stake,
             BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_HASHBEASTS as u64) + 1_000
         );
-        assert_eq!(effective_after_stake, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER);
+        assert_eq!(
+            effective_after_stake,
+            PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER
+        );
 
         let (raw_after_unstake, effective_after_unstake) =
             remove_hashbeast_multiplier(raw_after_stake, 1_000).unwrap();
@@ -2148,7 +2181,10 @@ mod tests {
         let (raw_after_stake, effective_after_stake) =
             add_hashbeast_multiplier(BASE_MULTIPLIER as u64, 70_000).unwrap();
         assert_eq!(raw_after_stake, 71_000);
-        assert_eq!(effective_after_stake, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER);
+        assert_eq!(
+            effective_after_stake,
+            PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER
+        );
     }
 
     #[test]
@@ -2161,13 +2197,17 @@ mod tests {
             (raw, effective) = add_hashbeast_multiplier(raw, BASE_MULTIPLIER).unwrap();
         }
 
-        assert_eq!(raw, BASE_MULTIPLIER as u64 * (MAX_STAKED_HASHBEASTS as u64 + 1));
+        assert_eq!(
+            raw,
+            BASE_MULTIPLIER as u64 * (MAX_STAKED_HASHBEASTS as u64 + 1)
+        );
         assert_eq!(effective, 2_000);
 
         let mut raw = BASE_MULTIPLIER as u64;
         let mut effective = capped_player_multiplier(raw);
         for _ in 0..MAX_STAKED_HASHBEASTS {
-            (raw, effective) = add_hashbeast_multiplier(raw, GAMEPLAY_MAX_MULTIPLIER as u32).unwrap();
+            (raw, effective) =
+                add_hashbeast_multiplier(raw, GAMEPLAY_MAX_MULTIPLIER as u32).unwrap();
         }
 
         assert_eq!(effective, PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER);
@@ -2280,6 +2320,7 @@ pub struct MintHashBeast<'info> {
 
     /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2289,7 +2330,7 @@ pub struct MintHashBeast<'info> {
         seeds = [HASHBEAST_METADATA_SEED.as_ref(), hashbeast_asset.key().as_ref()],
         bump
     )]
-    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
+    pub hashbeast_metadata: Box<Account<'info, HashBeastMetadata>>,
 
     #[account(
         seeds = [COLLECTION_AUTHORITY_SEED],
@@ -2442,6 +2483,7 @@ pub struct AdminMintHashBeast<'info> {
 
     /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2512,6 +2554,7 @@ pub struct WhitelistMintHashBeast<'info> {
 
     /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2570,6 +2613,7 @@ pub struct StakeHashBeast<'info> {
 
     /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2627,6 +2671,7 @@ pub struct UnstakeHashBeast<'info> {
 
     /// Optional collection account for the HashBeast
     /// CHECK: Optional collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2668,7 +2713,7 @@ pub struct RebirthHashBeast<'info> {
         bump = hashbeast_metadata.bump,
         constraint = hashbeast_metadata.mint == hashbeast_asset.key() @ ErrorCode::InvalidAccount
     )]
-    pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
+    pub hashbeast_metadata: Box<Account<'info, HashBeastMetadata>>,
 
     /// CHECK: Metaplex Core asset; ownership and validity enforced by mpl-core
     /// during the TransferV1 CPI. Currently owned by `user`; becomes owned by
@@ -2678,6 +2723,7 @@ pub struct RebirthHashBeast<'info> {
 
     /// CHECK: Optional HashBeast collection account. Required by mpl-core whenever
     /// the asset belongs to a collection (which all HashBeasts do post-genesis).
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
@@ -2730,7 +2776,7 @@ pub struct RebirthHashBeast<'info> {
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump = mine_btc_mining.bump,
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
 
     #[account(
         mut,
@@ -2881,6 +2927,7 @@ pub struct BreedHashBeast<'info> {
     pub offspring_metadata: Box<Account<'info, HashBeastMetadata>>,
 
     /// CHECK: HashBeast collection
+    #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
