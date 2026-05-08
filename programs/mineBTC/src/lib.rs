@@ -53,7 +53,7 @@ pub use state::{
     MineBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("DPfSfuStn4cU1p4G7PTcqDiWdufGg9kpJPrsnatG6SLG");
+declare_id!("2A8KqTLmwFGz4RPTum7Z2ijp1tYS6acrPazAydarUsAU");
 
 #[macro_export]
 macro_rules! log_fn {

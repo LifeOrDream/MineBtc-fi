@@ -35,7 +35,7 @@ use instructions::*;
 // TODO(deploy): replace this placeholder before mainnet/devnet build.
 // Run `solana-keygen new -o target/deploy/degenbtc_market-keypair.json` and
 // paste the resulting pubkey here.
-declare_id!("MarKEt1111111111111111111111111111111111111");
+declare_id!("9XqveM9LX9ufWpcdMhdZqfZCoWGt9ZEUi5Ueqtj49jD1");
 
 #[macro_export]
 macro_rules! log_fn {
