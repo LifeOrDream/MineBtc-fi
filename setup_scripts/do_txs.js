@@ -1,0 +1,762 @@
+#!/usr/bin/env node
+
+/**
+ * do_txs.js — manual cranker / operations script
+ *
+ * Replaces the scattered set of test_*, economy_cycle_step, game_loop, and
+ * price_snapshot scripts. Each cranker is a top-level async function. Edit
+ * `main()` at the bottom: uncomment the steps you want to run, save, run.
+ *
+ *   node do_txs.js
+ *
+ * Functions defined here:
+ *   ── status / inspection ──
+ *     printState()
+ *     printGameState()
+ *
+ *   ── economy cranker ──
+ *     sendSolToTreasury(solAmount)
+ *     distributeSolFees()
+ *     snapshotPrice()
+ *     updateRate()
+ *     addLpAndBurn()
+ *     crankHarvestFees()        // pulls withheld fees from holder ATAs into mint
+ *     crankDistributeTax()      // splits mint-withheld into faction/burn/recycle
+ *
+ *   ── game cranker ──
+ *     startRound(roundId)
+ *     endRound()                // reveals entropy + picks winner
+ *     endRoundFactionRewards()  // pays stakers, advances faction-war mining
+ *     settleFactionWar()        // permissionless after LP-burn count tick
+ *
+ *   ── NFT marketplace cranker ──
+ *     recordFloorSnapshot()
+ */
+
+import {
+  Connection, PublicKey, Keypair, SystemProgram, Transaction,
+  SYSVAR_SLOT_HASHES_PUBKEY, sendAndConfirmTransaction,
+  LAMPORTS_PER_SOL, ComputeBudgetProgram,
+} from "@solana/web3.js";
+import {
+  TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddress, getAccount,
+  createAssociatedTokenAccountInstruction,
+} from "@solana/spl-token";
+import anchorPkg from "@coral-xyz/anchor";
+const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ════════════════════════════════════════════════════════════════════
+//  SETUP
+// ════════════════════════════════════════════════════════════════════
+
+const config = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "config.json"), "utf8"),
+);
+const cluster = config.network.cluster;
+const deployment = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "deployments", `${cluster}.json`),
+    "utf8",
+  ),
+);
+const minebtcIdl = JSON.parse(
+  fs.readFileSync(
+    path.resolve(__dirname, config.deployment.paths.minebtc_idl),
+    "utf8",
+  ),
+);
+const raydiumIdl = JSON.parse(
+  fs.readFileSync(
+    path.resolve(__dirname, config.deployment.paths.raydium_idl),
+    "utf8",
+  ),
+);
+const walletKeypair = Keypair.fromSecretKey(
+  new Uint8Array(
+    JSON.parse(
+      fs.readFileSync(
+        path.resolve(__dirname, config.deployment.paths.deployer_key),
+        "utf8",
+      ),
+    ),
+  ),
+);
+
+const connection = new Connection(config.network.rpc_url, config.network.commitment);
+const wallet = new Wallet(walletKeypair);
+const provider = new AnchorProvider(connection, wallet, {
+  commitment: config.network.commitment,
+});
+const program = new Program(minebtcIdl, provider);
+const raydiumProgram = new Program(raydiumIdl, provider);
+const pid = program.programId;
+
+// Helius for the harvest-discovery step (Token-2022 withheld scan).
+const HELIUS_RPC =
+  cluster === "devnet"
+    ? "https://devnet.helius-rpc.com"
+    : "https://mainnet.helius-rpc.com";
+const HELIUS_API_KEY =
+  process.env.HELIUS_API_KEY || "00613837-c378-4a74-bc99-9dd891e24f89";
+
+// ════════════════════════════════════════════════════════════════════
+//  ADDRESSES & PDAS
+// ════════════════════════════════════════════════════════════════════
+
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+const dbtcMint = new PublicKey(deployment.dbtc_mint_address);
+const FEE_RECIPIENT = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
+
+// MineBTC PDAs
+const [globalConfigPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("global-config")], pid);
+const [globalGameStatePda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("global-game-state")], pid);
+const [mineBtcMiningPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("mine-btc-mining")], pid);
+const [solTreasuryPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("sol-treasury")], pid);
+const [buybacksAccountPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("buybacks")], pid);
+const [buybacksSolVaultPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("buybacks-sol-vault")], pid);
+const [vaultAuthorityPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("minebtc-vault-authority")], pid);
+const [factionWarConfigPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("faction-war-config")], pid);
+const [solRewardsVaultPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("staker-sol-reward-vault")], pid);
+const [taxConfigPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("tax-config")], pid);
+const [withdrawWithheldAuthorityPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("withdraw-withheld-authority")], pid);
+const [inventoryPoolPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("inventory-pool")], pid);
+const [floorQueuePda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("floor-queue")], pid);
+const [saleHistoryPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("sale-history")], pid);
+const [floorHistoryPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("floor-history")], pid);
+const [inventorySweepVaultPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("inventory-sweep-vault")], pid);
+// `minebtc_vault` is the dBTC token vault owned by the mining authority.
+const [dbtcTokenVaultPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("minebtc_vault"), mineBtcMiningPda.toBuffer()], pid);
+
+// Tax-config side accounts (initialized at deploy time)
+const factionTreasuryVault = new PublicKey(
+  deployment.tax_config_initialized.faction_treasury_vault,
+);
+
+// Raydium pool addresses — dBTC/SOL CP-swap pool
+const raydiumProgramId = new PublicKey(deployment.RAYDIUM_CP_PROGRAM_ID);
+const raydiumPoolState = new PublicKey(deployment.dbtc_sol_pool_created.poolStatePDA);
+const raydiumAmmConfig = new PublicKey(deployment.raydium_amm_config_created.amm_config_pda);
+const raydiumAuthority = new PublicKey(deployment.dbtc_sol_pool_created.authorityPDA);
+const raydiumObservationState = new PublicKey(deployment.dbtc_sol_pool_created.observationStatePDA);
+const raydiumLpMint = new PublicKey(deployment.dbtc_sol_pool_created.lpMintPDA);
+const solVaultPda = new PublicKey(deployment.dbtc_sol_pool_created.token0VaultPDA);  // token0 = WSOL
+const dbtcVaultPda = new PublicKey(deployment.dbtc_sol_pool_created.token1VaultPDA); // token1 = dBTC
+
+// ════════════════════════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════════════════════════
+
+function u64Buffer(n) {
+  const b = Buffer.alloc(8);
+  b.writeBigUInt64LE(BigInt(n), 0);
+  return b;
+}
+const lam = (n) => (Number(n) / LAMPORTS_PER_SOL).toFixed(6);
+const dbtc = (n) => (Number(n) / 1e6).toFixed(2);
+const banner = (s) => {
+  const line = "═".repeat(72);
+  console.log(`\n${line}\n  ${s}\n${line}`);
+};
+const step = (s) => console.log(`\n──▶ ${s}`);
+const ok = (s) => console.log(`✅ ${s}`);
+const warn = (s) => console.log(`⚠️  ${s}`);
+const explorer = (sig) =>
+  `https://explorer.solana.com/tx/${sig}?cluster=${cluster}`;
+
+function deriveGameSessionPda(roundId) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("game-session"), u64Buffer(roundId)], pid)[0];
+}
+function deriveFactionWarStatePda(factionWarId) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("faction-war"), u64Buffer(factionWarId)], pid)[0];
+}
+function deriveFactionStatePda(factionId) {
+  const name = config.factions[factionId]?.name;
+  if (!name) throw new Error(`Unknown faction id ${factionId}`);
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("faction"), Buffer.from(name)], pid)[0];
+}
+
+function logEvents(txInfo) {
+  if (!txInfo?.meta?.logMessages) return [];
+  const events = [];
+  for (const log of txInfo.meta.logMessages) {
+    if (!log.startsWith("Program data: ")) continue;
+    try {
+      const decoded = program.coder.events.decode(
+        log.replace("Program data: ", ""),
+      );
+      if (decoded) {
+        events.push(decoded);
+        console.log(`   ▸ event ${decoded.name}`);
+        for (const [k, v] of Object.entries(decoded.data)) {
+          const s = v?.toString?.() ?? v;
+          console.log(`       ${k}: ${s}`);
+        }
+      }
+    } catch { /* not an event */ }
+  }
+  return events;
+}
+
+async function ensureAta(owner, mint, tokenProgram = TOKEN_PROGRAM_ID, allowOffCurve = false) {
+  const ata = await getAssociatedTokenAddress(mint, owner, allowOffCurve, tokenProgram);
+  try {
+    await getAccount(connection, ata, "confirmed", tokenProgram);
+  } catch {
+    const tx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        walletKeypair.publicKey, ata, owner, mint, tokenProgram,
+      ),
+    );
+    await sendAndConfirmTransaction(connection, tx, [walletKeypair],
+      { commitment: "confirmed" });
+    console.log(`   created ATA ${ata.toBase58()} for ${owner.toBase58()}`);
+  }
+  return ata;
+}
+
+async function send(tx, computeUnits = 400_000) {
+  tx.instructions.unshift(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
+  );
+  return sendAndConfirmTransaction(connection, tx, [walletKeypair],
+    { commitment: "confirmed" });
+}
+
+async function fetchFactionWarId() {
+  const cfg = await program.account.factionWarConfig.fetch(factionWarConfigPda);
+  return cfg.currentFactionWarId.toNumber();
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  STATUS / INSPECTION
+// ════════════════════════════════════════════════════════════════════
+
+async function printState() {
+  banner("ECONOMY STATE");
+  const mining = await program.account.mineBtcMining.fetch(mineBtcMiningPda);
+  const buybacks = await program.account.buybacksAccount.fetch(buybacksAccountPda);
+  const gc = await program.account.globalConfig.fetch(globalConfigPda);
+  const fw = await program.account.factionWarConfig.fetch(factionWarConfigPda);
+  const treasuryBal = await connection.getBalance(solTreasuryPda);
+  const buybacksBal = await connection.getBalance(buybacksSolVaultPda);
+  const sweepBal = await connection.getBalance(inventorySweepVaultPda);
+  const walletBal = await connection.getBalance(walletKeypair.publicKey);
+
+  console.log(`  cluster                : ${cluster}`);
+  console.log(`  wallet                 : ${walletKeypair.publicKey.toBase58()}`);
+  console.log(`  wallet bal             : ${lam(walletBal)} SOL`);
+  console.log(`  --- mining ---`);
+  console.log(`  price history          : ${(mining.priceHistory||[]).length}/8`);
+  console.log(`  lp_operation_pending   : ${mining.lpOperationPending}`);
+  console.log(`  recent_price           : ${mining.recentPrice.toString()}`);
+  console.log(`  track_price            : ${mining.trackPrice.toString()}`);
+  console.log(`  mine_btc_per_round     : ${mining.mineBtcPerRound.toString()}`);
+  console.log(`  last_rate_update       : ${mining.lastRateUpdate.toString()} (${new Date(Number(mining.lastRateUpdate) * 1000).toISOString()})`);
+  console.log(`  --- treasuries ---`);
+  console.log(`  sol_treasury           : ${lam(treasuryBal)} SOL`);
+  console.log(`  buybacks_sol_vault     : ${lam(buybacksBal)} SOL`);
+  console.log(`  inventory_sweep_vault  : ${lam(sweepBal)} SOL`);
+  console.log(`  buybacks.solForPol     : ${buybacks.solForPol.toString()} lamports`);
+  console.log(`  --- sol_fee_config ---`);
+  console.log(`  protocol_fee/buyback/stakers/cycle/nftMM = ${gc.solFeeConfig.protocolFeePct}/${gc.solFeeConfig.buybackPct}/${gc.solFeeConfig.stakersPct}/${gc.solFeeConfig.cycleSolSplitPct}/${gc.solFeeConfig.nftMarketMakingPct}%`);
+  console.log(`  --- faction war ---`);
+  console.log(`  current_faction_war_id : ${fw.currentFactionWarId.toString()}`);
+}
+
+async function printGameState() {
+  banner("GAME STATE");
+  const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
+  const cur = gs.currentRoundId?.toNumber() ?? 0;
+  console.log(`  is_active              : ${gs.isActive}`);
+  console.log(`  can_begin_round        : ${gs.canBeginRound}`);
+  console.log(`  current_round_id       : ${cur}`);
+  console.log(`  last_round_id          : ${gs.lastRoundId?.toNumber() ?? 0}`);
+  console.log(`  round_duration_seconds : ${gs.roundDurationSeconds?.toNumber() ?? 0}`);
+  console.log(`  winning_faction_id     : ${gs.winningFactionId ?? "—"}`);
+
+  if (cur > 0) {
+    try {
+      const session = await program.account.gameSession.fetch(deriveGameSessionPda(cur));
+      const endTs = Number(session.roundEndTimestamp);
+      const now = Math.floor(Date.now() / 1000);
+      console.log(`  round_end_timestamp    : ${endTs} (${new Date(endTs * 1000).toISOString()})`);
+      console.log(`  time_remaining         : ${Math.max(0, endTs - now)}s`);
+      console.log(`  stage                  : ${session.stage}`);
+    } catch (e) {
+      warn(`couldn't fetch current game session: ${e.message}`);
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  ECONOMY CRANKER
+// ════════════════════════════════════════════════════════════════════
+
+async function sendSolToTreasury(solAmount = 0.1) {
+  banner(`SEND ${solAmount} SOL → sol_treasury`);
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: walletKeypair.publicKey,
+      toPubkey: solTreasuryPda,
+      lamports: Math.floor(solAmount * LAMPORTS_PER_SOL),
+    }),
+  );
+  const sig = await sendAndConfirmTransaction(connection, tx, [walletKeypair],
+    { commitment: "confirmed" });
+  ok(`funded: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+  return sig;
+}
+
+async function distributeSolFees() {
+  banner("DISTRIBUTE SOL FEES");
+  const treasuryWsolAta = await getAssociatedTokenAddress(
+    WSOL_MINT, solTreasuryPda, true, TOKEN_PROGRAM_ID);
+  const multisigWsolAta = await ensureAta(FEE_RECIPIENT, WSOL_MINT);
+
+  const preTreasury = await connection.getBalance(solTreasuryPda);
+  const preBuybacks = await connection.getBalance(buybacksSolVaultPda);
+  const preSweep    = await connection.getBalance(inventorySweepVaultPda);
+
+  const tx = await program.methods.distributeSolFees().accounts({
+    globalConfig: globalConfigPda,
+    solTreasury: solTreasuryPda,
+    treasuryWsolAccount: treasuryWsolAta,
+    multisigWsolAccount: multisigWsolAta,
+    wsolMint: WSOL_MINT,
+    buybacksSolVault: buybacksSolVaultPda,
+    inventorySweepVault: inventorySweepVaultPda,
+    buybacksAccount: buybacksAccountPda,
+    payer: walletKeypair.publicKey,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 400_000);
+  ok(`distribute_sol_fees: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const postTreasury = await connection.getBalance(solTreasuryPda);
+  const postBuybacks = await connection.getBalance(buybacksSolVaultPda);
+  const postSweep    = await connection.getBalance(inventorySweepVaultPda);
+  console.log(`   sol_treasury  : ${lam(preTreasury)} → ${lam(postTreasury)}`);
+  console.log(`   buybacks_vault: ${lam(preBuybacks)} → ${lam(postBuybacks)}  (+${lam(postBuybacks - preBuybacks)})`);
+  console.log(`   sweep_vault   : ${lam(preSweep)} → ${lam(postSweep)}  (+${lam(postSweep - preSweep)})`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+async function snapshotPrice() {
+  banner("SNAPSHOT PRICE");
+  const solTokenAccount = await getAssociatedTokenAddress(
+    WSOL_MINT, vaultAuthorityPda, true, TOKEN_PROGRAM_ID);
+
+  const tx = await program.methods.snapshotPrice().accounts({
+    mineBtcMining: mineBtcMiningPda,
+    globalConfig: globalConfigPda,
+    raydiumProgram: raydiumProgramId,
+    poolState: raydiumPoolState,
+    ammConfig: raydiumAmmConfig,
+    authorityPda: vaultAuthorityPda,
+    raydiumAuthority,
+    minebtcVault: dbtcVaultPda,
+    solVault: solVaultPda,
+    minebtcTokenAccount: dbtcTokenVaultPda,
+    solTokenAccount,
+    minebtcMint: dbtcMint,
+    solMint: WSOL_MINT,
+    observationState: raydiumObservationState,
+    tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    buybacksSolVault: buybacksSolVaultPda,
+    buybacksAccount: buybacksAccountPda,
+    systemProgram: SystemProgram.programId,
+    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    authority: walletKeypair.publicKey,
+  }).transaction();
+
+  const sig = await send(tx, 500_000);
+  ok(`snapshot_price: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+async function updateRate() {
+  banner("UPDATE RATE");
+  const tx = await program.methods.updateRate().accounts({
+    mineBtcMining: mineBtcMiningPda,
+    factionWarConfig: factionWarConfigPda,
+  }).transaction();
+
+  const sig = await send(tx, 200_000);
+  ok(`update_rate: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+async function addLpAndBurn() {
+  banner("ADD LP + BURN");
+  const solTokenAccount = await getAssociatedTokenAddress(
+    WSOL_MINT, vaultAuthorityPda, true, TOKEN_PROGRAM_ID);
+  const lpTokenAccount = await getAssociatedTokenAddress(
+    raydiumLpMint, vaultAuthorityPda, true, TOKEN_PROGRAM_ID);
+
+  const tx = await program.methods.addLpAndBurn(new BN(0)).accounts({
+    mineBtcMining: mineBtcMiningPda,
+    globalConfig: globalConfigPda,
+    authority: walletKeypair.publicKey,
+    raydiumProgram: raydiumProgramId,
+    poolState: raydiumPoolState,
+    authorityPda: vaultAuthorityPda,
+    raydiumAuthority,
+    minebtcVault: dbtcVaultPda,
+    solVault: solVaultPda,
+    minebtcTokenAccount: dbtcTokenVaultPda,
+    solTokenAccount,
+    minebtcMint: dbtcMint,
+    solMint: WSOL_MINT,
+    lpTokenAccount,
+    lpMint: raydiumLpMint,
+    tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    buybacksSolVault: buybacksSolVaultPda,
+    buybacksAccount: buybacksAccountPda,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 600_000);
+  ok(`add_lp_and_burn: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+// crank_harvest_fees — discover holder ATAs with withheld fees via Helius DAS,
+// then call program.crank_harvest_fees() with them as remaining_accounts.
+// Batches at 18 ATAs/tx so we stay under the lock-set limit.
+async function crankHarvestFees() {
+  banner("CRANK HARVEST FEES");
+
+  step("scanning Token-2022 accounts for withheld fees…");
+  const accountsWithFees = [];
+  let cursor;
+  let scanned = 0;
+  let totalWithheld = 0n;
+
+  do {
+    const params = { mint: dbtcMint.toBase58(), limit: 1000 };
+    if (cursor) params.cursor = cursor;
+    const res = await fetch(`${HELIUS_RPC}/?api-key=${HELIUS_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "harvest", method: "getTokenAccounts", params }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      warn(`helius error: ${JSON.stringify(data.error)}`);
+      break;
+    }
+    const list = data.result?.token_accounts || [];
+    scanned += list.length;
+    for (const a of list) {
+      const w = a.token_extensions?.transfer_fee_amount?.withheld_amount;
+      if (w && BigInt(w) > 0n) {
+        accountsWithFees.push({ address: a.address, withheld: BigInt(w) });
+        totalWithheld += BigInt(w);
+      }
+    }
+    cursor = data.result?.cursor;
+  } while (cursor);
+
+  console.log(`   scanned ${scanned} ATAs · ${accountsWithFees.length} have fees · total ${dbtc(totalWithheld)} dBTC`);
+  if (accountsWithFees.length === 0) {
+    warn("nothing to harvest");
+    return null;
+  }
+
+  step("submitting harvest batches (18 ATAs/tx)…");
+  const BATCH = 18;
+  let ok_n = 0;
+  let fail_n = 0;
+  for (let i = 0; i < accountsWithFees.length; i += BATCH) {
+    const chunk = accountsWithFees.slice(i, i + BATCH);
+    const remaining = chunk.map((a) => ({
+      pubkey: new PublicKey(a.address),
+      isSigner: false,
+      isWritable: true,
+    }));
+    try {
+      const tx = await program.methods.crankHarvestFees().accounts({
+        minebtcMint: dbtcMint,
+        tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+      }).remainingAccounts(remaining).transaction();
+      const sig = await send(tx, 200_000);
+      ok_n++;
+      console.log(`   batch ${ok_n}: ${chunk.length} ATAs · ${sig}`);
+    } catch (e) {
+      fail_n++;
+      warn(`batch ${i / BATCH + 1} failed: ${e.message}`);
+    }
+  }
+  console.log(`   ${ok_n} batches ok · ${fail_n} failed`);
+}
+
+async function crankDistributeTax() {
+  banner("CRANK DISTRIBUTE TAX");
+  const factionWarId = await fetchFactionWarId();
+  console.log(`   current faction_war_id: ${factionWarId}`);
+
+  // Withdraw-authority ATA must exist before withdraw_withheld_tokens_from_mint.
+  const withdrawAuthAta = await ensureAta(
+    withdrawWithheldAuthorityPda, dbtcMint, TOKEN_2022_PROGRAM_ID, true,
+  );
+
+  const factionWarStatePda = deriveFactionWarStatePda(factionWarId);
+
+  const tx = await program.methods.crankDistributeTax(new BN(factionWarId)).accounts({
+    minebtcMint: dbtcMint,
+    withdrawWithheldAuthority: withdrawWithheldAuthorityPda,
+    withdrawAuthorityTokenAccount: withdrawAuthAta,
+    factionTreasuryVault,
+    minebtcTokenVault: dbtcTokenVaultPda,
+    taxConfig: taxConfigPda,
+    factionWarConfig: factionWarConfigPda,
+    factionWarState: factionWarStatePda,
+    caller: walletKeypair.publicKey,
+    tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 400_000);
+  ok(`crank_distribute_tax: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  GAME CRANKER
+// ════════════════════════════════════════════════════════════════════
+
+async function startRound(roundId) {
+  if (!roundId) {
+    const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
+    roundId = (gs.currentRoundId?.toNumber() ?? 0) + 1;
+  }
+  banner(`START ROUND ${roundId}`);
+
+  const tx = await program.methods.startRound(new BN(roundId)).accounts({
+    globalConfig: globalConfigPda,
+    globalGameState: globalGameStatePda,
+    gameSession: deriveGameSessionPda(roundId),
+    factionWarConfig: factionWarConfigPda,
+    authority: walletKeypair.publicKey,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 500_000);
+  ok(`round ${roundId} started: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+  return { roundId, sig };
+}
+
+async function endRound() {
+  const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
+  const roundId = gs.currentRoundId?.toNumber() ?? 0;
+  if (roundId <= 0) throw new Error("no active round to end");
+  banner(`END ROUND ${roundId}`);
+
+  const tx = await program.methods.endRound().accounts({
+    gameSession: deriveGameSessionPda(roundId),
+    mineBtcMining: mineBtcMiningPda,
+    globalGameState: globalGameStatePda,
+    globalConfig: globalConfigPda,
+    slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
+    authority: walletKeypair.publicKey,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 1_000_000);
+  ok(`round ${roundId} ended: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const session = await program.account.gameSession.fetch(deriveGameSessionPda(roundId));
+  console.log(`   winning_faction_id: ${session.winningFactionId}`);
+  console.log(`   winning_direction : ${session.winningDirection}`);
+  return { roundId, sig, session };
+}
+
+async function endRoundFactionRewards() {
+  const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
+  const roundId = gs.currentRoundId?.toNumber() ?? 0;
+  if (roundId <= 0) throw new Error("no active round");
+  banner(`END ROUND FACTION REWARDS · round ${roundId}`);
+
+  const session = await program.account.gameSession.fetch(deriveGameSessionPda(roundId));
+  if (session.winningFactionId == null) {
+    throw new Error("end_round must run first — no winner picked yet");
+  }
+  const factionWarId = await fetchFactionWarId();
+  const factionStatePda = deriveFactionStatePda(session.winningFactionId);
+
+  const tx = await program.methods.endRoundFactionRewards(new BN(factionWarId)).accounts({
+    globalGameState: globalGameStatePda,
+    globalConfig: globalConfigPda,
+    gameSession: deriveGameSessionPda(roundId),
+    mineBtcMining: mineBtcMiningPda,
+    taxConfig: taxConfigPda,
+    factionState: factionStatePda,
+    solRewardsVault: solRewardsVaultPda,
+    factionWarConfig: factionWarConfigPda,
+    factionWarState: deriveFactionWarStatePda(factionWarId),
+    authority: walletKeypair.publicKey,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 1_000_000);
+  ok(`faction rewards: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return { roundId, sig };
+}
+
+async function settleFactionWar() {
+  banner("SETTLE FACTION WAR");
+  const factionWarId = await fetchFactionWarId();
+  const factionWarStatePda = deriveFactionWarStatePda(factionWarId);
+
+  const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
+  const roundId = gs.currentRoundId?.toNumber() ?? 0;
+
+  const tx = await program.methods.settleFactionWar().accounts({
+    factionWarConfig: factionWarConfigPda,
+    factionWarState: factionWarStatePda,
+    taxConfig: taxConfigPda,
+    mineBtcMining: mineBtcMiningPda,
+    globalConfig: globalConfigPda,
+    globalGameState: globalGameStatePda,
+    gameSession: deriveGameSessionPda(roundId),
+    cranker: walletKeypair.publicKey,
+  }).transaction();
+
+  const sig = await send(tx, 800_000);
+  ok(`settle_faction_war: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  NFT MARKETPLACE CRANKER
+// ════════════════════════════════════════════════════════════════════
+
+async function recordFloorSnapshot() {
+  banner("RECORD FLOOR SNAPSHOT");
+  const tx = await program.methods.recordFloorSnapshot().accounts({
+    caller: walletKeypair.publicKey,
+    inventoryPool: inventoryPoolPda,
+    floorQueue: floorQueuePda,
+    saleHistory: saleHistoryPda,
+    floorHistory: floorHistoryPda,
+    inventorySweepVault: inventorySweepVaultPda,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 300_000);
+  ok(`record_floor_snapshot: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return sig;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  MAIN — uncomment the steps you want to run
+// ════════════════════════════════════════════════════════════════════
+
+async function main() {
+  // ── status / inspection ──
+  await printState();
+  await printGameState();
+
+  // ── economy cranker ──
+  // await sendSolToTreasury(0.05);
+  // await distributeSolFees();
+  // await snapshotPrice();          // 8x with ~5min gaps to fill price_history
+  // await updateRate();             // run after 8th snapshot
+  // await addLpAndBurn();           // run after update_rate (lp_operation_pending=true)
+  // await crankHarvestFees();       // pull withheld fees from holder ATAs → mint
+  // await crankDistributeTax();     // split mint-withheld 25% faction / 50% burn / 25% recycle
+
+  // ── game cranker ──
+  // await startRound();             // auto-picks current+1; pass an id to override
+  // await endRound();                // reveals entropy + picks winner
+  // await endRoundFactionRewards();  // pays stakers, advances faction-war mining
+  // await settleFactionWar();        // permissionless, gated by LP-burn count
+
+  // ── nft marketplace cranker ──
+  // await recordFloorSnapshot();     // daily floor anchor snapshot for breeding/sweep
+}
+
+main().catch((err) => {
+  console.error("\n❌ FATAL:", err.message);
+  if (err.logs) {
+    console.error("   logs:");
+    for (const l of err.logs) console.error(`     ${l}`);
+  }
+  console.error(err.stack);
+  process.exit(1);
+});

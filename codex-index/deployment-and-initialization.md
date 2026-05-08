@@ -101,9 +101,6 @@ From `setup_scripts/config.json` and `3_init_mineBTC.js`:
 
 ## Keeper and Test Scripts
 
-- `setup_scripts/loop_scripts/game_loop.js` - round keeper loop.
-- `setup_scripts/loop_scripts/price_snapshot_loop.js` - economy/price cycle helper.
-- `setup_scripts/economy_cycle_step.js` - economy cycle step runner.
-- `setup_scripts/end_round_4.mjs` - round ending helper.
-- `setup_scripts/test_economy.js`, `test_tax_harvest.js`, `test_genescience.js`, `sim_egg_mints.js`, `test.js` - focused simulation/test helpers.
-- `setup_scripts/user_activity/` - wallet and user activity helpers.
+- `setup_scripts/do_txs.js` - manual cranker / operations script. Single file with every game / economy / NFT-marketplace cranker (`startRound`, `endRound`, `endRoundFactionRewards`, `settleFactionWar`, `distributeSolFees`, `snapshotPrice`, `updateRate`, `addLpAndBurn`, `crankHarvestFees`, `crankDistributeTax`, `recordFloorSnapshot`, plus `printState` / `printGameState`). Comment/uncomment calls in `main()` to run what you want.
+- `setup_scripts/test_genescience.js`, `sim_egg_mints.js` - pure-JS simulation helpers (DNA decoder, mint curve simulation).
+- `setup_scripts/user_activity/` - wallet and user-action helpers (bets, etc).
