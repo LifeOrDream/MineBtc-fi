@@ -22,14 +22,17 @@ Each cycle can settle the faction-war leaderboard (gameplay scores).
 
 **Flow:**
 1. Read SOL treasury balance (accumulated from bet fees)
-2. Split by `buyback_pct` (default 80%):
-   - 80% → buybacks_sol_vault (for price snapshots + POL)
-   - 20% → fee_recipient via WSOL (dev earnings)
+2. Split available SOL using `SolFeeConfig`:
+   - `buyback_pct` (default 80%) → `buybacks_sol_vault` (for price snapshots + POL)
+   - `nft_market_making_pct` (default 3%) → `inventory_sweep_vault` (NFT marketplace sweep + keeper bounties)
+   - residual (default ~17%) → `fee_recipient` via WSOL (dev earnings)
 3. Buybacks vault balance grows over time as bets happen
+4. Inventory sweep vault keeps the on-chain NFT market maker funded — every cycle adds bid-side liquidity
 
 **Edge cases:**
 - If treasury balance ≤ rent-exempt minimum → returns Ok, no-op
 - If buyback amount = 0 → skips transfer, no error
+- `buyback_pct + nft_market_making_pct` is validated ≤ 100% on update_fees
 
 ---
 
@@ -206,10 +209,10 @@ Since both are permissionless, any keeper can unstick the cycle.
 SOL from bets
     │
     ▼ (distribute_sol_fees)
-┌───────────────┐     ┌──────────────────┐
-│ buybacks_vault │     │  fee_recipient   │
-│ (80% of fees)  │     │  (20% dev share) │
-└───────┬───────┘     └──────────────────┘
+┌───────────────┐  ┌───────────────────────┐  ┌──────────────────┐
+│ buybacks_vault│  │ inventory_sweep_vault │  │  fee_recipient   │
+│ (80% of fees) │  │ (3% — NFT MM)         │  │ (~17% dev share) │
+└───────┬───────┘  └───────────────────────┘  └──────────────────┘
         │
         ▼ (snapshot_price ×8)
 ┌───────────────┐     ┌──────────────────┐

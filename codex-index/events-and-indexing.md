@@ -62,7 +62,25 @@ The backend should index contract events and also reconcile PDA state where even
   - SOL, degenBTC, LP minted, LP token price.
 - `LpTokensBurned`
   - LP burned, cumulative LP burned, liquidity amounts, LP token price.
-- `TaxDistributed`, `NftFloorSweepFundsWithdrawn`, `FactionTreasuryRewardsClaimed`.
+- `TaxDistributed` (now reports faction_treasury_amount + burn_amount only — no NFT floor sweep field).
+- `FactionTreasuryRewardsClaimed`.
+- `NftMarketMakingFunded` — `distribute_sol_fees` peeled off `nft_market_making_pct` into `inventory_sweep_vault`.
+- `SolFeesWithdrawn` — top-line SOL distribute event.
+
+## NFT Marketplace Events (`marketplace_cpi.rs`)
+
+- `InventoryPoolInitialized` — one-time init telemetry.
+- `FloorEntryRegistered` / `FloorEntryRemoved` — floor queue lifecycle (insertions, sweeps, cancels, price updates, stale pops).
+- `FloorSweepExecuted` — `sweep_floor_lowest` succeeded; reports buy_price, seller, anchor, trend, stale_skipped, keeper.
+- `InventoryAssetRelisted` — sweep or expire relisted at formula markup; reports original_buy_price, new_list_price, markup_bps, trend_bps, expire_count.
+- `InventoryAssetBurned` — burn reason (0=trend crash, 1=max_expires, 2=recycle queue full).
+- `UserSaleRecorded` — qualifying user-to-user sale entered `SaleHistory`.
+- `FloorSnapshotRecorded` — daily snapshot wrote anchor (source: 0=sale-median, 1=queue-median fallback) + sample count.
+- `ProgramListingExpired` — 7-day TTL fired on a stuck program listing.
+- `LootboxQueuePush` — recycle / sweep / expire-cascade pushed an asset into a country lootbox queue.
+- `LootboxNftClaimed` — reserved drop delivered to the recorded winner.
+- `InventoryProceedsRouted` — 50/50 split of accrued inventory_pda lamports between sweep_vault and sol_treasury.
+- `InventorySaleFinalized` — `RebornEntry` cleanup after on-chain owner check confirmed sale.
 
 ## Faction War Events
 

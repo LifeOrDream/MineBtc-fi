@@ -10,7 +10,7 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `initialize_system_accounts()` - system referral sentinel, buybacks account, buybacks SOL vault.
 - `update_config(new_authority, new_fee_recipient)` - starts authority transfer and/or updates fee recipient.
 - `cancel_authority_transfer()` and `accept_authority()` - two-step authority transfer.
-- `update_fees(...)` - SOL fee split, degenBTC round distribution, HODL tax, snapshot interval, referral split, cycle SOL split.
+- `update_fees(...)` - SOL fee split, degenBTC round distribution, HODL tax, snapshot interval, referral split, cycle SOL split, NFT market-making pct.
 - `update_rpg_progression(enabled)`, `set_pause(paused)`, `update_evolution_unlock_stage(max_stage)`, `update_gameplay_tuning(args)` - live gameplay controls.
 - `update_breeding_config(...)`, `update_emission_params(...)`.
 
@@ -26,12 +26,24 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 
 ## Economy and Tax Cranks
 
-- `distribute_sol_fees()` - moves accumulated SOL fee balances into buybacks/staker/dev buckets.
+- `distribute_sol_fees()` - moves accumulated SOL fee balances into buybacks (`buyback_pct`), `inventory_sweep_vault` (`nft_market_making_pct`, default 3%), and dev (residual via WSOL).
 - `snapshot_price()` - swaps/observes pool to append price snapshot and earmark POL SOL.
 - `update_rate()` - adjusts emission rate and faction-war multiplier based on price movement.
 - `add_lp_and_burn(lp_token_amount)` - adds liquidity and burns LP, completing a POL operation/cycle step.
-- `initialize_tax_config(...)`, `update_tax_config(...)`, `update_nft_floor_sweep_whitelist(...)`.
-- `crank_harvest_fees(...)`, `crank_distribute_tax(...)`, `claim_faction_treasury_for_faction_war(...)`, `withdraw_nft_floor_sweep_funds(...)`.
+- `initialize_tax_config(faction_treasury_pct, burn_pct)`, `update_tax_config(faction_treasury_pct, burn_pct)` — NFT floor sweep is no longer in the tax split.
+- `crank_harvest_fees(...)`, `crank_distribute_tax(...)`, `claim_faction_treasury_for_faction_war(...)`.
+
+## NFT Marketplace (Permissionless Market Maker)
+
+- `list_user_nft(price)`, `cancel_user_listing()`, `update_user_listing_price(new_price)` — user-signed wrappers that keep the on-chain `FloorQueue` in sync with `degenbtc_market` listings.
+- `buy_user_listing()` — permissionless wrapper around `degenbtc_market::buy_listing`; records qualifying user-to-user sales into `SaleHistory` (5-min minimum listing age).
+- `register_floor_listing()` — anyone can push an existing user listing into the sorted floor queue (top 20 cheapest, program listings excluded).
+- `sweep_floor_lowest()` — anyone can buy queue.entries[0]; the contract auto-disposes the asset (push to country lootbox queue if space, else relist at formula markup, else burn if 7-day floor crashed below threshold) and pays a keeper bounty out of `inventory_sweep_vault`.
+- `record_floor_snapshot()` — daily snapshot ix; computes anchor as median of qualifying user-to-user sales, falling back to floor-queue median if low volume.
+- `expire_program_listing()` — 7-day TTL re-disposition of stuck program-owned listings; progressive markup discount per strike, force-burn after `MAX_EXPIRES`.
+- `handle_inventory_proceeds()` — permissionless 50/50 split of accrued inventory_pda lamports between `inventory_sweep_vault` and `sol_treasury`.
+- `inventory_finalize_sale()` — permissionless cleanup; verifies asset's owner is no longer `inventory_pda` via on-chain mpl-core read, closes the `RebornEntry`.
+- `claim_lootbox_nft()` — delivers a reserved loser-roll HashBeast to its recorded winner.
 
 ## Faction-War Cycle
 
@@ -73,6 +85,6 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `simulate_purchase_cost(...)` - return-data helper for mint price.
 - `admin_mint_hashbeast(...)`, `whitelist_mint_hashbeast(...)`, `batch_mint_hashbeasts(...)`.
 - `stake_hashbeast()`, `unstake_hashbeast()` - passive staking multiplier path.
-- `breed_hashbeasts()` - post-genesis-sellout, same-country/same-recycle-level breeding, priced at max(curve, 1.5x floor) with 50% SOL / 50% dbTC payment.
-- `rebirth_hashbeast()` - accumulated-value claim + rebirth-or-burn path.
+- `breed_hashbeasts()` - post-genesis-sellout, same-country / same-rebirth-level breeding, priced at `max(curve_price, 1.5× current_floor_anchor)`; payment is 50% SOL (25% to fee_recipient, 75% to sol_treasury) and 50% dbTC (50% burned, 50% to mining vault). Cooldown table per parent: 0/24h/72h/120h/336h, max 5 breeds per parent.
+- `rebirth_hashbeast()` - claims accumulated_val; max 7 rebirths per asset (encoded in DNA bits at offset 174). Asset goes to its country's lootbox queue if space, else burned. Resets multiplier, XP, breed_count, cooldown, accumulated_val.
 - `get_gene_breakdown(dna)` - return-data helper for genetics display/debugging.

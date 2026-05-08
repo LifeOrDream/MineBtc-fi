@@ -66,7 +66,7 @@ Canonical source: `programs/mineBTC/src/state.rs`.
   - Genesis mint activity, base price, curve, genesis cap, mints by faction, ticket tiers.
 
 - `HashBeastMetadata` PDA `[hashbeast-metadata, hashbeast_mint]`
-  - Core asset mint, parents, breed count/cooldown, recycle count, created timestamp, faction, multiplier, accumulated value, DNA, incubated player, last update, XP.
+  - Core asset mint, parents, breed count/cooldown, rebirth_count (0–7, also encoded in DNA bits at offset 174), created timestamp, faction, multiplier, accumulated value, DNA, incubated player, last update, XP.
 
 - `HashBeastFreeMintAllowance` PDA `[hashbeast-free-mint-allowance, user_pubkey]`
   - Remaining free genesis mints.
@@ -98,11 +98,36 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 ## Tax Accounts
 
 - `TaxConfig` PDA `[tax-config]`
-  - NFT floor sweep %, faction treasury %, burn %, total burned, unassigned faction-war treasury, vaults, whitelist.
+  - faction_treasury_pct, burn_pct, total_burnt, unassigned faction-war treasury, withdraw_withheld_authority pubkey, faction_treasury_vault pubkey.
+  - Tax split is `faction_treasury_pct + burn_pct + (residual → mining vault)`. NFT floor sweep slice has been removed — NFT market making is funded from SOL via `distribute_sol_fees::nft_market_making_pct` (default 3%) routing into `inventory_sweep_vault`.
   - Rank-weighted treasury split: 80%; lucky draw: 20%.
 
 - Tax vaults:
   - `[withdraw-withheld-authority]`
   - `[faction-treasury-vault]`
-  - `[nft-floor-sweep-vault]`
-  - `[nft-sale-sol-vault]`
+
+## NFT Marketplace + Inventory Accounts
+
+- `InventoryPool` PDA `[inventory-pool]`
+  - Bump, cached `marketplace_program` + `marketplace_config` for CPI validation, `total_count` (cap-checked against `MAX_INVENTORY = 200`). Doubles as the on-chain custody address (mpl-core asset `owner`) for program-held HashBeasts.
+
+- `RebornEntry` PDA `[reborn-entry, asset]`
+  - One per HashBeast currently held by `inventory_pda`. Tracks status (Lootbox=0, Listed=1), origin (Reborn=0, Swept=1), `original_buy_price` (anchor for relist markup math), `expire_count` (strike count, max `MAX_EXPIRES`), faction_id, quality_score, listing_price.
+
+- `LootboxQueue` PDA `[lootbox-queue, faction_id]`
+  - Per-country lootbox queue; 5-slot packed array of asset pubkeys; recycle / sweep flows push, loser-roll claims pop.
+
+- `LootboxClaim` PDA `[lootbox-claim, user]`
+  - Per-user reservation when a losing claim's roll wins; `claim_lootbox_nft` consumes it.
+
+- `FloorQueue` PDA `[floor-queue]`
+  - Singleton 20-entry sorted-ascending queue of cheapest user-listed HashBeasts. Program-owned listings explicitly excluded.
+
+- `SaleHistory` PDA `[sale-history]`
+  - Singleton 32-slot ringbuffer of qualifying user-to-user sales (buyer ≠ inventory_pda, seller ≠ inventory_pda, listed ≥ 5 minutes before sale).
+
+- `FloorHistory` PDA `[floor-history]`
+  - Singleton 7-day rolling buffer of daily floor anchors. `compute_trend_bps()` returns the 7-day delta in bps clamped to [-10000, +10000].
+
+- `[inventory-sweep-vault]`
+  - System-owned SOL vault. Funded by `distribute_sol_fees::nft_market_making_pct` (default 3%) and 50% of `handle_inventory_proceeds`. Source of capital for `sweep_floor_lowest` and keeper bounties.

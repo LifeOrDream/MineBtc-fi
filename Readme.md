@@ -74,7 +74,7 @@ HashBeasts are functional game pieces with on-chain 256-bit DNA:
 ### Two HashBeast Roles
 
 - **Gameplay hashbeast (operator):** One hashbeast locked for active play. Earns XP from betting. Own-country bets add gameplay score, and winning reward claims can mutate it (Evolution / Power / Trait).
-- **Staked hashbeasts (passive):** Up to 5 hashbeasts boosting staking hashpower. More staked hashbeasts = higher staking APR.
+- **Staked hashbeasts (passive):** Up to 3 hashbeasts boosting staking hashpower. More staked hashbeasts = higher staking APR.
 
 ### How Mutations Work
 
@@ -127,8 +127,9 @@ degenBTC is a Token-2022 token with a 0.1% transfer tax. Every transfer automati
 |-------|-----------|---------------|
 | **Burn** | 50% | Permanently removed from supply |
 | **Faction Treasury** | 25% | Distributed to stakers via faction-war settlement |
-| **NFT Floor Sweep** | 25% | Funds NFT market-making operations |
-| **Back to Vault** | 0% | Recycled into mining emission pool when config leaves remainder |
+| **Back to Mining Vault** | 25% | Recycled into the emission pool — no tax-driven sell pressure on the token |
+
+NFT market making is funded separately from SOL fees (3% of every `distribute_sol_fees` flow → `inventory_sweep_vault`), not from this tax.
 
 ### Economy Cycle (~4 hours)
 
@@ -158,8 +159,13 @@ The asymmetric rate adjustment (1% up / 3% down) creates structural deflationary
 Player bets 1 SOL
 ├─ 15% fee taken
 │   ├─ 20% of fee → staker SOL reward vault
-│   └─ 80% of fee → SOL treasury → buybacks (80%) + dev (20%)
+│   └─ 80% of fee → SOL treasury
 └─ 85% net → SOL prize pot (for round winners)
+
+distribute_sol_fees() splits the SOL treasury:
+   ├─ 80% → buybacks vault (price snapshots + POL)
+   ├─ 3%  → inventory_sweep_vault (NFT market-making fuel)
+   └─ ~17% → dev earnings (multisig)
 ```
 
 ### Faction Treasury (Tax Rewards to Stakers)
@@ -198,9 +204,10 @@ The game generates rich, structured on-chain data with every bet, mutation, and 
 This data can later power:
 
 - **AI-generated hashbeast art** — unique visuals for each evolution stage, faction-specific styles
-- **NFT market-making agent** — autonomous floor sweeps, pricing, inventory rotation using the NFT floor sweep vault
 - **Content generation** — mutation stories, faction propaganda, social clips
 - **Game expansion** — AI-designed mini-games, new round modes, mobile experiences
+
+The on-chain NFT marketplace is **already permissionless and self-funded** — anyone can call `sweep_floor_lowest`; the contract auto-disposes (queue / relist / burn) and pays a keeper bounty. AI is not a dependency.
 
 The game is self-contained today. AI integration adds value around the game without being a dependency for core gameplay.
 
@@ -216,15 +223,16 @@ programs/mineBTC/src/
 ├── events.rs           # Indexer-facing events
 ├── genescience.rs      # HashBeast DNA, mutations, evolution, breeding
 └── instructions/
-    ├── admin.rs        # Global config, factions, fee parameters
-    ├── game.rs         # 60-second round loop, slot-hash randomness, winner selection
-    ├── user.rs         # Betting, autominers, round claims, gameplay hashbeasts, mutations
-    ├── rebase.rs       # Mutation-driven competitive cycles, settlement, rebase claims
-    ├── stake.rs        # degenBTC and LP token staking
-    ├── hashbeasts.rs        # HashBeast NFT minting, breeding, staking, gameplay lock/unlock
-    ├── economy.rs      # Price snapshots, emission rate adjustment, POL (LP add + burn)
-    ├── tax.rs          # Transfer-tax harvest, faction treasury distribution
-    └── helper.rs       # Shared math and vault transfer helpers
+    ├── admin.rs           # Global config, factions, fee parameters
+    ├── game.rs            # 60-second round loop, slot-hash randomness, winner selection
+    ├── user.rs            # Betting, autominers, round claims, gameplay hashbeasts, mutations
+    ├── faction_war.rs     # Mutation-driven competitive cycles, settlement, cycle claims
+    ├── stake.rs           # degenBTC and LP token staking
+    ├── hashbeasts.rs      # HashBeast NFT minting, breeding, staking, gameplay lock/unlock, rebirth
+    ├── economy.rs         # Price snapshots, emission rate adjustment, POL (LP add + burn)
+    ├── marketplace_cpi.rs # Permissionless on-chain NFT market maker, floor queue, sweep + auto-dispose
+    ├── tax.rs             # Transfer-tax harvest, faction treasury distribution
+    └── helper.rs          # Shared math and vault transfer helpers
 ```
 
 **Documentation:**

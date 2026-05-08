@@ -13,9 +13,10 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
   - `user.rs` - player signup, bets, autominers, claims, gameplay HashBeast locking/unlocking, story events.
   - `stake.rs` - degenBTC/LP staking, reward claims, HODL tax, referral claims.
   - `hashbeasts.rs` - HashBeast minting, whitelist/admin minting, staking, breeding, and rebirth.
-  - `economy.rs` - SOL fee distribution, price snapshots, emission rate update, LP add/burn.
+  - `economy.rs` - SOL fee distribution (buybacks + NFT MM + dev), price snapshots, emission rate update, LP add/burn.
+  - `marketplace_cpi.rs` - permissionless on-chain NFT market maker: floor queue, sale history, floor history, sweep + auto-dispose, expire program listing, register/list/cancel/buy wrappers.
   - `faction_war.rs` - mutation-driven cycle scoring, rankings, settlement, cycle claims.
-  - `tax.rs` - Token-2022 withheld fee harvesting and distribution.
+  - `tax.rs` - Token-2022 withheld fee harvesting and distribution (faction_treasury_pct + burn_pct + residual to mining vault; no NFT floor sweep slice).
   - `helper.rs` - PDA helpers, transfers, reward math, staking math.
 - `raydium/programs/cp-swap/` - bundled/custom Raydium CP-Swap program used for local/devnet pool flows.
 - `setup_scripts/` - deployment, token init, pool init, game init, local testing, and keeper loops.
@@ -32,7 +33,8 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
 ## Current Program Identity
 
 - Anchor program: `minebtc`
-- Declared program ID in `programs/mineBTC/src/lib.rs`: `8SiC7tVuEQ1Py86JzTLDnaaqGxdvquW3GCJXq6TrWNfu`
+- Declared program ID in `programs/mineBTC/src/lib.rs`: `DPfSfuStn4cU1p4G7PTcqDiWdufGg9kpJPrsnatG6SLG`
+- Companion Anchor program: `degenbtc_market` (standalone NFT marketplace; mineBTC CPIs into it for floor sweep / auto-dispose)
 - Token: Token-2022 `degenBTC` / `dBTC`, 6 decimals, 2.1B fixed supply, transfer tax default 10 bps.
 - Default round duration from setup config: 60 seconds.
 - Factions in setup config: USA, China, Russia, India, Japan, South Korea, Iran, UK, North Korea, France, Brazil, Israel. Contract supports up to 15.

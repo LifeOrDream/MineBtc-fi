@@ -9,7 +9,7 @@ MineBTC is a **degen country arena game** on Solana where:
 - players pick a country and a direction, bet SOL, and winning claims can evolve their hashbeast NFTs
 - own-country gameplay support decides which country climbs the leaderboard each cycle
 - the same bet powers both the **round raffle** (instant SOL + degenBTC rewards) and the **cycle leaderboard** (longer-term degenBTC rewards based on which countries moved)
-- a deflationary economy runs on a 0.1% transfer tax: burn + NFT floor sweep + faction treasury + mining vault
+- a deflationary economy runs on a 0.1% transfer tax: burn + faction treasury + mining vault recycle (no NFT floor sweep slice — NFT market making is funded from SOL via `distribute_sol_fees::nft_market_making_pct`, default 3%)
 - an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
 
 **The game in one sentence:** "Pick your country, bet SOL, win claims, your hashbeast evolves, your country climbs, you earn degenBTC."
@@ -102,7 +102,7 @@ Two distinct hashbeast roles:
 
 - `HashBeastConfig` owns non-sale state: collection, total minted count, and breeding config
 - `HashBeastMintConfig` owns genesis-sale-only state: bonding curve price, ticket tiers, genesis mint count, and per-country caps
-- Genesis mints are capped separately from lifetime supply; current deployment config targets 12,000 genesis mints with 1,000 max per country
+- Genesis mints are capped at the configured genesis_mint_limit (currently 36,000, 3,000 max per country across 12 countries); there is no lifetime supply cap — post-genesis breeding is governed by an admin flag plus a bonding-curve price (max(curve, 1.5× current floor anchor)) that scales with `total_hashbeasts_minted`
 - `rebirth_hashbeast` pays the HashBeast's locked degenBTC to the owner, then either rebirths the NFT into lootbox inventory or burns it if the queue/inventory is full or the NFT already reached `MAX_REBIRTH_COUNT`
 - Rebirth increments `HashBeastMetadata.rebirth_count`, writes the same 0-7 value into DNA bits at offset 174, rerolls fresh DNA, and resets multiplier, XP, breed count, cooldown, accumulated value, gameplay lock, and parent lineage
 - Market-maker sweeps/expiry cascades that push NFTs into lootboxes do not rebirth or reset those NFTs; they preserve existing DNA/stats
@@ -111,7 +111,8 @@ Two distinct hashbeast roles:
 
 ### Economy Layer
 
-- 0.1% transfer tax on all degenBTC: split between burn, NFT floor sweep vault, faction treasury, mining vault
+- 0.1% transfer tax on all degenBTC: split between burn (50%), faction treasury (25%), and mining-vault recycle (residual 25%); no NFT floor sweep slice
+- NFT market making is SOL-funded — `distribute_sol_fees` peels off `nft_market_making_pct` (default 3%) into `inventory_sweep_vault`. Permissionless on-chain market maker handles floor sweeps, auto-disposition (queue/relist/burn), and keeper rewards
 - Price snapshots every 30 min (8 per cycle) → emission rate adjustment → LP add + burn
 - Cycle settlement is tied to the LP burn — one competitive cycle per economy cycle
 - Daily faction leaderboard distributes treasury rewards by hashpower ranking
@@ -148,8 +149,9 @@ Two distinct hashbeast roles:
 | `instructions/user.rs` | Betting, autominers, round claims, gameplay hashbeasts, story events |
 | `instructions/faction_war.rs` | Cycle config, gameplay-score settlement, cycle claims |
 | `instructions/stake.rs` | degenBTC and LP staking |
-| `instructions/hashbeasts.rs` | HashBeast minting, breeding, staking, gameplay lock/unlock |
-| `instructions/economy.rs` | Price snapshots, emissions, POL |
+| `instructions/hashbeasts.rs` | HashBeast minting, breeding, staking, gameplay lock/unlock, rebirth |
+| `instructions/economy.rs` | Price snapshots, emissions, POL, SOL fee distribution |
+| `instructions/marketplace_cpi.rs` | Permissionless on-chain NFT market maker (floor queue, sweep + auto-dispose, expire), CPIs to `degenbtc_market` |
 | `instructions/tax.rs` | Transfer-tax accounting and faction treasury distribution |
 | `state.rs` | Account layouts and canonical constants |
 | `events.rs` | Indexer-facing event contracts |

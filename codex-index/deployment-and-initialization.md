@@ -31,7 +31,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 ## `3_init_mineBTC.js` Canonical Init Order
 
 1. Validate token and HashBeast collection metadata URIs.
-2. Validate HashBeast supply and per-faction genesis caps.
+2. Validate HashBeast genesis cap and per-faction genesis caps.
 3. Validate round degenBTC distribution sum.
 4. Validate faction-war reward bps sum.
 5. Initialize MineBTC program:
@@ -39,24 +39,27 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 6. Set Raydium pool state and initialize SOL rewards/prize pot vaults.
 7. Add configured factions sequentially.
 8. Initialize system referral and buybacks accounts.
-9. Apply live fee config.
+9. Apply live fee config (includes `nft_market_making_pct`, default 3%).
 10. Initialize mining token vault and emission state.
 11. Apply emission controller params.
 12. Deposit mining tokens.
 13. Initialize hashpower config.
 14. Initialize degenBTC and LP custodian accounts.
-15. Initialize `HashBeastConfig`.
+15. Initialize `HashBeastConfig` (no `max_supply` argument — there is no lifetime cap).
 16. Seed breeding config.
 17. Initialize `HashBeastMintConfig`.
 18. Create HashBeast Metaplex Core collection.
 19. Initialize HashBeast royalties.
 20. Configure ticket tiers.
-21. Initialize tax config and tax vaults.
-22. Initialize global game state.
-23. Initialize LP token accounts for program custody.
-24. Initialize faction-war config.
-25. Update faction-war active flag.
-26. Update gameplay tuning.
+21. Initialize standalone `degenbtc_market` (NFT marketplace program).
+22. Initialize Inventory Pool + Floor Queue + Sale History + Floor History + Inventory Sweep Vault inside mineBTC.
+23. Initialize per-faction LootboxQueue PDAs (one per active faction).
+24. Initialize tax config (`faction_treasury_pct`, `burn_pct` only — no NFT floor sweep arg).
+25. Initialize global game state.
+26. Initialize LP token accounts for program custody.
+27. Initialize faction-war config.
+28. Update faction-war active flag.
+29. Update gameplay tuning.
 
 ## Important Live Setup Values
 
@@ -85,6 +88,7 @@ From `setup_scripts/config.json` and `3_init_mineBTC.js`:
 
 - Protocol fee: 15% of SOL bets.
 - Buyback/POL share: 80% of treasury SOL.
+- NFT market making share: 3% of treasury SOL → `inventory_sweep_vault`.
 - Stakers share: 10% of protocol fee.
 - degenBTC stakers: 3% of round emission.
 - Exact winners: 50%.
