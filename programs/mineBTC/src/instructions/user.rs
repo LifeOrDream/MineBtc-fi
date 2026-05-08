@@ -2089,7 +2089,6 @@ pub fn maybe_run_loser_lootbox_roll(
     lootbox_claim.user = user_key;
     lootbox_claim.asset = won_asset;
     lootbox_claim.faction_id = player_data.faction_id;
-    lootbox_claim.reserved_at = now;
 
     emit!(LootboxRollWon {
         user: user_key,
@@ -2375,7 +2374,7 @@ fn internal_process_bets<'info>(
         faction_war_config.faction_war_settle_cycle = lp_operations_count
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        faction_war_config.reset_cycle_telemetry(faction_war_state.faction_war_id);
+        faction_war_config.reset_cycle_round_tracking();
 
         emit!(crate::events::FactionWarAutoStarted {
             faction_war_id: faction_war_state.faction_war_id,
@@ -2710,7 +2709,6 @@ fn internal_process_bets<'info>(
         user_game_bet.total_fee = 0;
         user_game_bet.bump = user_game_bet_bump;
         user_game_bet.mutation_type = 0;
-        user_game_bet.faction_war_accumulated = false;
 
         player_data.pending_round_claims = player_data
             .pending_round_claims
@@ -2889,8 +2887,6 @@ fn internal_process_bets<'info>(
         .total_fee
         .checked_add(total_fee_added)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    user_game_bet.faction_war_accumulated = true;
-
     game_session.total_sol_bets = game_session
         .total_sol_bets
         .checked_add(total_net_added)

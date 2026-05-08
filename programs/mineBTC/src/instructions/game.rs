@@ -1224,10 +1224,8 @@ fn seed_empty_faction_war_from_round<'info>(
     let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("📊 [game.seed_empty_faction_war_from_round] computation: faction_war_settle_cycle = {} + 1 = {}", lp_ops, settle_cycle);
     accounts.faction_war_config.faction_war_settle_cycle = settle_cycle;
-    msg!("🎲 [game.seed_empty_faction_war_from_round] helper call: reset_cycle_telemetry(faction_war_id={})", faction_war_state.faction_war_id);
-    accounts
-        .faction_war_config
-        .reset_cycle_telemetry(faction_war_state.faction_war_id);
+    msg!("🎲 [game.seed_empty_faction_war_from_round] helper call: reset_cycle_round_tracking()");
+    accounts.faction_war_config.reset_cycle_round_tracking();
     msg!(
         "✅ [game.seed_empty_faction_war_from_round] initialized empty faction-war seed state for war {} (active_factions={}, settle after LP cycle #{}, treasury_base={})",
         faction_war_state.faction_war_id,
@@ -1297,45 +1295,12 @@ fn track_faction_war_round_completion<'info>(
     msg!("🎲 [game.track_faction_war_round_completion] state mutation: total_degenbtc_mined_in_faction_war {} -> {} (+{})",
         old_mined, faction_war_state.total_degenbtc_mined_in_faction_war, actually_distributed);
 
-    msg!("🎲 [game.track_faction_war_round_completion] branch: telemetry_faction_war_id({}) == faction_war_id({}) ? {}",
-        accounts.faction_war_config.telemetry_faction_war_id, faction_war_state.faction_war_id,
-        accounts.faction_war_config.telemetry_faction_war_id == faction_war_state.faction_war_id);
-    if accounts.faction_war_config.telemetry_faction_war_id != faction_war_state.faction_war_id {
-        msg!(
-            "🎲 [game.track_faction_war_round_completion] helper call: reset_cycle_telemetry({})",
-            faction_war_state.faction_war_id
-        );
-        accounts
-            .faction_war_config
-            .reset_cycle_telemetry(faction_war_state.faction_war_id);
-    }
-
     msg!("🎲 [game.track_faction_war_round_completion] branch: last_processed_round_id({}) != round_id({}) ? {}",
         accounts.faction_war_config.last_processed_round_id, accounts.game_session.round_id,
         accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id);
     if accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id {
-        let old_rounds_elapsed = accounts.faction_war_config.cycle_rounds_elapsed;
-        accounts.faction_war_config.cycle_rounds_elapsed = accounts
-            .faction_war_config
-            .cycle_rounds_elapsed
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: cycle_rounds_elapsed {} -> {}", old_rounds_elapsed, accounts.faction_war_config.cycle_rounds_elapsed);
-
-        let old_mutations_triggered = accounts.faction_war_config.cycle_mutations_triggered;
-        accounts.faction_war_config.cycle_mutations_triggered = accounts
-            .faction_war_config
-            .cycle_mutations_triggered
-            .checked_add(accounts.game_session.total_mutations_this_round as u16)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: cycle_mutations_triggered {} -> {} (+{})",
-            old_mutations_triggered, accounts.faction_war_config.cycle_mutations_triggered, accounts.game_session.total_mutations_this_round);
-
         msg!("🎲 [game.track_faction_war_round_completion] state mutation: last_processed_round_id = {}", accounts.game_session.round_id);
         accounts.faction_war_config.last_processed_round_id = accounts.game_session.round_id;
-        msg!("🎲 [game.track_faction_war_round_completion] state mutation: last_round_mutations = {}", accounts.game_session.total_mutations_this_round);
-        accounts.faction_war_config.last_round_mutations =
-            accounts.game_session.total_mutations_this_round;
 
         // Snapshot the winning country's accumulated volume onto GameSession,
         // then reset the per-country counter so the next streak starts fresh.

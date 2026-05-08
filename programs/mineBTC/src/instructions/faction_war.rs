@@ -495,9 +495,10 @@ pub fn initialize_faction_war_config_internal(
         "🏆 [faction_war.initialize_faction_war_config_internal] prev_faction_war_ranks={:?}",
         initial_ranks
     );
-    let current_faction_war_id = faction_war_config.current_faction_war_id;
-    faction_war_config.reset_cycle_telemetry(current_faction_war_id);
-    msg!("⚔️ [faction_war.initialize_faction_war_config_internal] reset_cycle_telemetry called for faction_war_id={}", current_faction_war_id);
+    faction_war_config.reset_cycle_round_tracking();
+    msg!(
+        "⚔️ [faction_war.initialize_faction_war_config_internal] reset_cycle_round_tracking called"
+    );
 
     // Initialize dynamic mining multiplier defaults
     faction_war_config.mining_multiplier_bps = DEFAULT_MINING_MULTIPLIER_BPS;

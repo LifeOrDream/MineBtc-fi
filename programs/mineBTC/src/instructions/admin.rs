@@ -164,7 +164,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
     mine_btc_mining.price_history = Vec::new();
     mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
     mine_btc_mining.track_price = 0;
-    mine_btc_mining.sol_for_pol = 0;
 
     // Initialize emission adjustment parameters (defaults defined in state.rs)
     mine_btc_mining.price_change_threshold = DEFAULT_PRICE_CHANGE_THRESHOLD;
@@ -300,7 +299,6 @@ pub fn add_faction_internal(
     );
 
     // Initialize faction state data
-    faction_state.bump = ctx.bumps.faction_state;
     faction_state.faction_id = faction_id;
     faction_state.total_degenbtc_hashpower = 0;
     faction_state.degenbtc_staked = 0;
@@ -309,7 +307,6 @@ pub fn add_faction_internal(
     faction_state.total_lp_hashpower = 0;
     faction_state.lp_sol_reward_index = 0;
     faction_state.lp_degenbtc_reward_index = 0;
-    faction_state.sol_reward_index = 0;
     // Add faction to config
     global_config.supported_factions.push(faction_name.clone());
 
@@ -867,7 +864,6 @@ pub fn initialize_mining_internal(
     mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
     mine_btc_mining.track_price = 0; // Initialize with same default
 
-    mine_btc_mining.sol_for_pol = 0; // Initialize POL tracking
     mine_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
 
     // Emit event
@@ -952,7 +948,6 @@ pub fn initialize_hashpower_config_internal(
     hashpower_config.max_lockup_days = max_lockup_days;
     hashpower_config.base_multiplier = base_multiplier;
     hashpower_config.max_multiplier = max_multiplier;
-    hashpower_config.bump = ctx.bumps.hashpower_config;
 
     Ok(())
 }
@@ -977,7 +972,6 @@ pub fn update_hashpower_config_internal(
     hashpower_config.max_lockup_days = max_lockup_days;
     hashpower_config.base_multiplier = base_multiplier;
     hashpower_config.max_multiplier = max_multiplier;
-    hashpower_config.bump = ctx.bumps.hashpower_config;
     Ok(())
 }
 
@@ -1535,6 +1529,7 @@ pub fn initialize_system_accounts_internal(ctx: Context<InitializeSystemAccounts
     // Initialize buybacks account
     let buybacks_ac = &mut ctx.accounts.buybacks_account;
     buybacks_ac.total_sol_accumulated = 0;
+    buybacks_ac.sol_for_pol = 0;
 
     Ok(())
 }
@@ -2354,11 +2349,6 @@ pub fn internal_init_inventory_pool(
             SaleHistory::LEN,
         )?;
     require!(created_sale_history, ErrorCode::InvalidAccount);
-    {
-        let sale_history_info = ctx.accounts.sale_history.to_account_info();
-        let mut data = sale_history_info.try_borrow_mut_data()?;
-        data[DISCRIMINATOR_SIZE] = sale_history_bump;
-    }
 
     let floor_history_bump = ctx.bumps.floor_history;
     let floor_history_seeds: &[&[u8]] = &[

@@ -172,9 +172,8 @@ fn remove_floor_entry_at(queue: &mut FloorQueue, idx: u8) {
 const FLOOR_QUEUE_COUNT_OFFSET: usize = DISCRIMINATOR_SIZE + 1;
 const FLOOR_QUEUE_ENTRIES_OFFSET: usize = DISCRIMINATOR_SIZE + 2;
 
-const SALE_HISTORY_HEAD_OFFSET: usize = DISCRIMINATOR_SIZE + 1;
-const SALE_HISTORY_TOTAL_OFFSET: usize = DISCRIMINATOR_SIZE + 2;
-const SALE_HISTORY_ENTRIES_OFFSET: usize = DISCRIMINATOR_SIZE + 10;
+const SALE_HISTORY_HEAD_OFFSET: usize = DISCRIMINATOR_SIZE;
+const SALE_HISTORY_ENTRIES_OFFSET: usize = DISCRIMINATOR_SIZE + 1;
 
 const FLOOR_HISTORY_HEAD_OFFSET: usize = DISCRIMINATOR_SIZE + 1;
 const FLOOR_HISTORY_LAST_SNAPSHOT_OFFSET: usize = DISCRIMINATOR_SIZE + 2;
@@ -371,12 +370,6 @@ fn raw_record_sale(sales_info: &AccountInfo<'_>, entry: SaleEntry) -> Result<()>
         &mut data,
         SALE_HISTORY_HEAD_OFFSET,
         ((head + 1) % SALE_HISTORY_SIZE) as u8,
-    )?;
-    let total = read_u64_at(&data, SALE_HISTORY_TOTAL_OFFSET)?;
-    write_u64_at(
-        &mut data,
-        SALE_HISTORY_TOTAL_OFFSET,
-        total.saturating_add(1),
     )?;
     Ok(())
 }

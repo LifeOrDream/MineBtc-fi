@@ -61,7 +61,6 @@ pub const GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS: u8 = 1;
 ///
 /// ------------ CONSTANTS ------------
 pub const DAY_IN_SECONDS: u64 = 86400;
-pub const DEFAULT_TRANSFER_TAX_BPS: u16 = 10; // 0.1% token transfer tax
 
 pub const MAX_ALLOWED_POSITIONS: u8 = 7;
 pub const EMERGENCY_WITHDRAWAL_PENALTY_PCT: u8 = 15;
@@ -222,8 +221,6 @@ pub const GAME_SESSION_SEED: &[u8] = b"game-session"; // Seed: [b"game-session",
 pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_pubkey, round_id_u64]
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
 pub const AUTOMINER_CUSTODY_SEED: &[u8] = b"autominer-custody";
-/// SOL arena reward vault — entries fund the compute budget for content generation.
-pub const COMPUTE_BUDGET_VAULT_SEED: &[u8] = b"compute-budget";
 pub const JACKPOT_POT_VAULT_SEED: &[u8] = b"jackpot-pot";
 
 pub const STAKER_SOL_REWARD_VAULT_SEED: &[u8] = b"staker-sol-reward-vault";
@@ -563,28 +560,16 @@ impl PriceEntry {
 pub struct ProtocolOwnedLiquidity {
     /// Total LP tokens burned (accumulated)
     pub total_lp_burnt: u64,
-    /// Total SOL added to liquidity pool (accumulated)
-    pub total_sol_added: u64,
-    /// Total MINE_BTC added to liquidity pool (accumulated)
-    pub total_minebtc_added: u64,
     /// Number of LP addition operations performed
     pub lp_operations_count: u32,
 }
 
 impl ProtocolOwnedLiquidity {
-    pub const LEN: usize = 8 + 8 + 8 + 4; // 28 bytes
+    pub const LEN: usize = 8 + 4; // total_lp_burnt + lp_operations_count
 
     /// Update POL stats after a successful LP addition and burn
-    pub fn update_after_lp_operation(
-        &mut self,
-        lp_tokens_burnt: u64,
-        sol_added: u64,
-        minebtc_added: u64,
-    ) {
-        // Update cumulative totals
+    pub fn update_after_lp_operation(&mut self, lp_tokens_burnt: u64) {
         self.total_lp_burnt = self.total_lp_burnt.saturating_add(lp_tokens_burnt);
-        self.total_sol_added = self.total_sol_added.saturating_add(sol_added);
-        self.total_minebtc_added = self.total_minebtc_added.saturating_add(minebtc_added);
         self.lp_operations_count = self.lp_operations_count.saturating_add(1);
     }
 }
@@ -620,8 +605,6 @@ pub struct MineBtcMining {
     pub recent_price: u64,
     /// Track price (price when last rate change actually happened)
     pub track_price: u64,
-    /// SOL amount reserved for Protocol Owned Liquidity (tracked but stored in pda_sol_treasury)
-    pub sol_for_pol: u64,
     /// Protocol Owned Liquidity tracking
     pub pol_stats: ProtocolOwnedLiquidity,
     /// LP token price in SOL (9-decimal precision, updated during oracle updates)
@@ -642,7 +625,7 @@ pub struct MineBtcMining {
 
 impl MineBtcMining {
     // discriminator + minebtc_token_vault + mining_start_timestamp + mine_btc_per_round + total_tokens_mined + bump + vault_auth_bump +
-    // raydium_pool_state + last_rate_update + price_history (vec) + recent_price + track_price + sol_for_pol + pol_stats + lp_token_price_in_sol
+    // raydium_pool_state + last_rate_update + price_history (vec) + recent_price + track_price + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
         + 32                    // minebtc_token_vault
@@ -657,7 +640,6 @@ impl MineBtcMining {
         + (4 + Self::MAX_PRICE_HISTORY_ENTRIES * PriceEntry::LEN) // price_history Vec<PriceEntry>
         + 8                     // recent_price
         + 8                     // track_price
-        + 8                     // sol_for_pol
         + ProtocolOwnedLiquidity::LEN // pol_stats
         + 8                     // lp_token_price_in_sol
         + 8                     // price_change_threshold
@@ -671,19 +653,12 @@ impl MineBtcMining {
 pub struct BuybacksAccount {
     /// Total SOL accumulated for buybacks (in lamports)
     pub total_sol_accumulated: u64,
-    /// Total SOL used for buybacks (in lamports)
-    pub total_sol_used: u64,
     /// SOL earnmarked for Protocol Owned Liquidity (in lamports)
     pub sol_for_pol: u64,
-    /// Bump for PDA derivation
-    pub bump: u8,
-    /// Bump for SOL vault PDA derivation
-    pub sol_vault_bump: u8,
 }
 
 impl BuybacksAccount {
-    // discriminator + total_sol_accumulated + total_sol_used + sol_for_pol + bump + sol_vault_bump
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8 + 8 + 1 + 1;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 8 + 8;
 }
 
 /// ------------ HASHPOWER CONFIG ------------
@@ -699,9 +674,6 @@ pub struct HashpowerConfig {
     pub base_multiplier: u16,
     /// Maximum lockup multiplier. Capped at 300 = 3x so total staking boost maxes at 9x with HashBeasts.
     pub max_multiplier: u16,
-
-    /// Bump for PDA derivation
-    pub bump: u8,
 }
 
 // For HashpowerConfig
@@ -710,8 +682,7 @@ impl HashpowerConfig {
         8 +     // min_lockup_days
         8 +     // max_lockup_days
         2 +     // base_multiplier (u16)
-        2 +     // max_multiplier (u16)
-        1; // bump
+        2; // max_multiplier (u16)
 }
 
 // ModuleInstance and ModuleRuntimeState removed - no longer needed
@@ -725,7 +696,7 @@ pub struct TicketTier {
 }
 
 impl TicketTier {
-    pub const LEN: usize = 8 + 2; // ticket_value
+    pub const LEN: usize = 8; // ticket_value
 }
 
 /// Global HashBeast configuration used outside the primary mint sale.
@@ -933,7 +904,6 @@ impl HodlPool {
 /// Used for calculating staker rewards based on faction performance.
 #[account]
 pub struct FactionState {
-    pub bump: u8,
     /// The faction ID (matching index in supported_factions)
     pub faction_id: u8,
 
@@ -951,18 +921,10 @@ pub struct FactionState {
     pub hashbeasts_staked: u64,
     /// Total hashbeasts currently being used in gameplay
     pub hashbeasts_playing: u64,
-
-    /// Cumulative SOL-per-share this faction has earned for stakers
-    /// Used for calculating staker rewards
-    pub sol_reward_index: u128,
-
-    /// Reserved for future faction-scoped reward tracking.
-    pub _reserved: u64,
 }
 
 impl FactionState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
-        1 +     // bump
         1 +     // faction_id
         8 +     // total_degenbtc_hashpower (u64)
         8 +     // degenbtc_staked (u64)
@@ -973,9 +935,7 @@ impl FactionState {
         16 +    // lp_sol_reward_index (u128)
         16 +    // lp_degenbtc_reward_index (u128)
         8 +     // hashbeasts_staked (u64)
-        8 +     // hashbeasts_playing (u64)
-        16 +    // sol_reward_index (u128)
-        8; // _reserved (u64)
+        8; // hashbeasts_playing (u64)
 }
 
 // ========================================================================================
@@ -1496,8 +1456,6 @@ pub struct UserGameBet {
     // --- Claim-time mutation result ---
     /// 0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait
     pub mutation_type: u8,
-    /// Whether this bet has been accumulated into faction_war bets
-    pub faction_war_accumulated: bool,
 }
 
 impl UserGameBet {
@@ -1519,8 +1477,7 @@ impl UserGameBet {
         8 +     // total_fee
         32 +     // gameplay_hashbeast
         1 +     // bump
-        1 +     // mutation_type
-        1; // faction_war_accumulated
+        1; // mutation_type
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1615,12 +1572,8 @@ pub struct FactionWarConfig {
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
     pub prev_faction_war_ranks: [u8; NUM_FACTIONS],
 
-    /// Telemetry for the currently active faction war's mutation controller.
-    pub telemetry_faction_war_id: u64,
-    pub cycle_rounds_elapsed: u16,
-    pub cycle_mutations_triggered: u16,
+    /// Last round whose round-completion side effects were applied to this cycle.
     pub last_processed_round_id: u64,
-    pub last_round_mutations: u8,
 
     /// Per-country additive SOL volume accumulated since each country's last
     /// round win. Resets to 0 for the winner inside
@@ -1650,11 +1603,7 @@ impl FactionWarConfig {
         1 +     // is_active
         4 +     // faction_war_settle_cycle
         (NUM_FACTIONS * 1) + // prev_faction_war_ranks
-        8 +     // telemetry_faction_war_id
-        2 +     // cycle_rounds_elapsed
-        2 +     // cycle_mutations_triggered
         8 +     // last_processed_round_id
-        1 +     // last_round_mutations
         (NUM_FACTIONS * 8) + // faction_volume_since_last_win
         2 +     // mining_multiplier_bps
         2 +     // multiplier_increase_bps
@@ -1664,12 +1613,8 @@ impl FactionWarConfig {
 }
 
 impl FactionWarConfig {
-    pub fn reset_cycle_telemetry(&mut self, faction_war_id: u64) {
-        self.telemetry_faction_war_id = faction_war_id;
-        self.cycle_rounds_elapsed = 0;
-        self.cycle_mutations_triggered = 0;
+    pub fn reset_cycle_round_tracking(&mut self) {
         self.last_processed_round_id = 0;
-        self.last_round_mutations = 0;
         // Note: faction_volume_since_last_win is intentionally NOT reset here
         // — it tracks across cycles; only resets per-country on round win.
     }
@@ -2064,16 +2009,13 @@ impl SaleEntry {
 /// Seeds: `[b"sale-history"]`.
 #[account]
 pub struct SaleHistory {
-    pub bump: u8,
     /// Index of the next slot to write (head moves forward, wraps around).
     pub head: u8,
-    /// Total entries written ever (for "is buffer full?" checks).
-    pub total_recorded: u64,
     pub entries: [SaleEntry; SALE_HISTORY_SIZE],
 }
 
 impl SaleHistory {
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + 1 + 8 + (SaleEntry::SIZE * SALE_HISTORY_SIZE);
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + (SaleEntry::SIZE * SALE_HISTORY_SIZE);
 }
 
 /// One entry in the 7-day rolling floor snapshot ringbuffer.
@@ -2233,10 +2175,8 @@ pub struct LootboxClaim {
     pub user: Pubkey,
     pub asset: Pubkey,
     pub faction_id: u8,
-    pub reserved_at: i64,
 }
 
 impl LootboxClaim {
-    /// 8 (disc) + 1 + 32 + 32 + 1 + 8 = 82 bytes.
-    pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + 32 + 32 + 1 + 8;
+    pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + 32 + 32 + 1;
 }

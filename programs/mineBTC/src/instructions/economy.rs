@@ -1163,11 +1163,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             ),
             lp_tokens_minted,
         )?;
-        mine_btc_mining.pol_stats.update_after_lp_operation(
-            lp_tokens_minted,
-            sol_consumed,
-            minebtc_consumed,
-        );
+        mine_btc_mining
+            .pol_stats
+            .update_after_lp_operation(lp_tokens_minted);
 
         emit!(LpTokensBurned {
             lp_tokens_burned: lp_tokens_minted,
