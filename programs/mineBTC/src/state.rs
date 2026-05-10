@@ -112,6 +112,10 @@ pub const DEFAULT_BUYBACK_PCT: u8 = 80;
 pub const DEFAULT_STAKERS_PCT: u8 = 20;
 /// Fixed referral fee: 1% of gross bet / mint / breed price goes to referrer.
 pub const REFERRAL_FEE_PCT: u8 = 1;
+/// Referral fee basis points for cross-faction recruits (different country from referrer)
+pub const REFERRAL_FEE_BPS_CROSS_FACTION: u16 = 50;  // 0.5%
+/// Referral fee basis points for same-faction recruits (same country as referrer)
+pub const REFERRAL_FEE_BPS_SAME_FACTION: u16 = 100; // 1.0%
 /// Default cycle SOL split: 5% of user bet reserved for faction-war jackpot.
 pub const DEFAULT_CYCLE_SOL_SPLIT_PCT: u8 = 5;
 /// Default share of `distribute_sol_fees` SOL routed to `inventory_sweep_vault`

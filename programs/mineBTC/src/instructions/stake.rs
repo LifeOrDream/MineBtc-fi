@@ -31,7 +31,7 @@ use anchor_spl::token_2022::Token2022;
 use anchor_spl::token_interface;
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 
-pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% bonus to referred user (paid in degenBTC at first claim).
+pub const REFERRAL_BONUS_PCT: u64 = 1; // 1% flat bonus to referred user (paid in degenBTC at withdraw).
                                        // Referrer commissions accrue in SOL from referees' protocol fees on bets/mints,
                                        // not from degenBTC emission. Percentages live on `GlobalConfig.sol_fee_config`
                                        // (admin-tunable, capped at `MAX_REFERRAL_FEE_PCT = 10`); lifetime accrual is

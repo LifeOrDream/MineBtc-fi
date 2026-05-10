@@ -291,5 +291,5 @@ cargo test -p minebtc --lib
 If you touch tracked setup scripts, also syntax-check them:
 
 ```bash
-node --check setup_scripts/loop_scripts/game_loop.js
+node --check setup_scripts/do_txs.js
 ```

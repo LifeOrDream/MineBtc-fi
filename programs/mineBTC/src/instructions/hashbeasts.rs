@@ -299,7 +299,9 @@ pub fn int_batch_mint_hashbeasts<'info>(
         total_price
     );
 
-    // --- Referral commission: 1% of total_price sent directly to the canonical referrer's ReferralRewards PDA ---
+    // --- Referral commission: tiered based on faction alignment ---
+    // Same-country recruits: 1.0% of mint price. Cross-country: 0.5%.
+    // Sent directly to the canonical referrer's ReferralRewards PDA.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
         helper::validate_referrer_rewards_account(
@@ -307,10 +309,19 @@ pub fn int_batch_mint_hashbeasts<'info>(
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
 
-        let cut = total_price
-            .checked_mul(REFERRAL_FEE_PCT as u64)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            / 100;
+        let same_faction = player_data.referrer_faction_id != u8::MAX
+            && player_data.faction_id == player_data.referrer_faction_id;
+        let bps = if same_faction {
+            crate::state::REFERRAL_FEE_BPS_SAME_FACTION
+        } else {
+            crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
+        };
+        let cut = u64::try_from(helper::mul_div(
+            total_price,
+            bps as u64,
+            10_000,
+        )?)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -337,7 +348,9 @@ pub fn int_batch_mint_hashbeasts<'info>(
             .checked_add(cut)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   Referral commission: {} lamports sent to referrer PDA",
+            "   Referral commission ({} bps, same_faction={}): {} lamports sent to referrer PDA",
+            bps,
+            same_faction,
             cut
         );
         (

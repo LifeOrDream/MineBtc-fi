@@ -2524,12 +2524,30 @@ fn internal_process_bets<'info>(
                 global_config.sol_fee_config.protocol_fee_pct as u64,
             )?;
 
-            // Referral fee: 1% of gross bet amount (deducted from protocol fee)
+            // Referral fee: tiered based on faction alignment.
+            // Same-country recruits: 1.0% of gross bet. Cross-country: 0.5%.
+            // Deducted from protocol fee before staker/treasury split.
             let referral_cut_per_bet = if has_referrer {
-                amount_after_cycle_split
-                    .checked_mul(REFERRAL_FEE_PCT as u64)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    / M_HUNDRED
+                let same_faction = player_data.referrer_faction_id != u8::MAX
+                    && player_data.faction_id == player_data.referrer_faction_id;
+                let bps = if same_faction {
+                    crate::state::REFERRAL_FEE_BPS_SAME_FACTION
+                } else {
+                    crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
+                };
+                let cut = u64::try_from(helper::mul_div(
+                    amount_after_cycle_split,
+                    bps as u64,
+                    10_000,
+                )?)
+                .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+                msg!(
+                    "   Referral fee (+{} bps, same_faction={}): {} SOL",
+                    bps,
+                    same_faction,
+                    cut as f64 / 1e9
+                );
+                cut
             } else {
                 0
             };
