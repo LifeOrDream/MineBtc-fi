@@ -107,7 +107,7 @@ pub const FACTION_WAR_RANK_WEIGHT_BPS: [u16; NUM_FACTIONS] = [
 /// SOL fee taken from each bet as a whole percent of the bet amount.
 pub const DEFAULT_PROTOCOL_FEE_PCT: u8 = 15;
 /// Percent of accumulated protocol SOL used for buybacks / POL during economy cycle.
-pub const DEFAULT_BUYBACK_PCT: u8 = 80;
+pub const DEFAULT_BUYBACK_PCT: u8 = 70;
 /// Percent of per-bet SOL fee routed to the staker reward vault.
 pub const DEFAULT_STAKERS_PCT: u8 = 20;
 /// Fixed referral fee: 1% of gross bet / mint / breed price goes to referrer.

@@ -108,7 +108,7 @@ const GAMEPLAY_TUNING_CONFIG = {
 
 const LIVE_FEE_CONFIG = {
   newProtocolFeePct: 15,
-  newBuybackPct: 80,
+  newBuybackPct: 70,
   newStakersPct: 10,
   newMinebtcStakersPct: 3,
   newMinebtcWinnersPct: 50,

@@ -2512,18 +2512,24 @@ fn internal_process_bets<'info>(
                 msg!("🎮 [user.internal_process_bets] cycle_split=0 (inactive or pct=0)");
                 0
             };
-            let amount_after_cycle_split = amount_per_bet
+            // Protocol fee and referral are computed from the GROSS bet (principal),
+            // not from the amount remaining after the cycle SOL split.
+            let (net_after_fee, fee) = handle_fee(
+                amount_per_bet,
+                global_config.sol_fee_config.protocol_fee_pct as u64,
+            )?;
+
+            // Net to pot = gross - protocol fee - cycle split
+            let net = net_after_fee
                 .checked_sub(cycle_sol_split_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "🎮 [user.internal_process_bets] amount_after_cycle_split={} SOL",
-                amount_after_cycle_split as f64 / 1e9
+                "🎮 [user.internal_process_bets] gross={} SOL fee={} SOL cycle_split={} SOL pot_net={} SOL",
+                amount_per_bet as f64 / 1e9,
+                fee as f64 / 1e9,
+                cycle_sol_split_per_bet as f64 / 1e9,
+                net as f64 / 1e9
             );
-
-            let (net, fee) = handle_fee(
-                amount_after_cycle_split,
-                global_config.sol_fee_config.protocol_fee_pct as u64,
-            )?;
 
             // Referral fee: tiered based on faction alignment.
             // Same-country recruits: 1.0% of gross bet. Cross-country: 0.5%.
@@ -2537,7 +2543,7 @@ fn internal_process_bets<'info>(
                     crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
                 };
                 let cut = u64::try_from(helper::mul_div(
-                    amount_after_cycle_split,
+                    amount_per_bet,
                     bps as u64,
                     10_000,
                 )?)
