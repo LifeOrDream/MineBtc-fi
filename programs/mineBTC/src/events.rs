@@ -340,17 +340,18 @@ pub struct PaperHandBurned {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user claims SOL rewards from staking
+/// Event emitted when a user claims passive staking rewards.
 #[event]
 pub struct SolRewardsClaimed {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub sol_amount: u64,
+    pub minebtc_amount: u64,
     pub timestamp: i64,
 }
 
-/// Event emitted when a user claims MineBtc token rewards from staking
+/// Event emitted when a user withdraws gameplay-earned MineBtc token rewards.
 #[event]
 pub struct DbtcRewardsClaimed {
     pub user: Pubkey,
@@ -383,7 +384,7 @@ pub struct MinebtcClaimableAccrued {
 
 /// Event emitted when a MineBtc HODL tax is redistributed through the HODL tax index.
 /// Event emitted when a user pays the HODL tax ("HODL Tax") and it gets
-/// redistributed to all other unclaimed stakers (the "diamond hands").
+/// redistributed to other users with unclaimed gameplay rewards.
 #[event]
 pub struct HodlTaxRedistributed {
     pub paper_hand: Pubkey, // user who paid the tax (unstaked early / claimed rewards)
@@ -391,7 +392,7 @@ pub struct HodlTaxRedistributed {
     pub tax_amount: u64, // total HODL tax paid
     pub redistributed_amount: u64,
     pub redistributed_index_increment: u128,
-    pub remaining_total_claimable: u64, // proxy for how many diamond hands benefit
+    pub remaining_total_claimable: u64, // remaining HODL-eligible gameplay rewards
     pub timestamp: i64,
 }
 

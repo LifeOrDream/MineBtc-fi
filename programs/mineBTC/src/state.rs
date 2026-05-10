@@ -73,8 +73,8 @@ pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
 pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
 pub const CLAIMABLE_MINEBTC_SOURCE_FACTION_WAR: u8 = 1;
-pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DEGENBTC: u8 = 2;
-pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
+// Source values 2 and 3 were retired when passive staking dBTC moved out of
+// the HODL-tax claimable flow.
 pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
 
 // ========== GAMEPLAY TUNING DEFAULTS ========== //
@@ -113,7 +113,7 @@ pub const DEFAULT_STAKERS_PCT: u8 = 20;
 /// Fixed referral fee: 1% of gross bet / mint / breed price goes to referrer.
 pub const REFERRAL_FEE_PCT: u8 = 1;
 /// Referral fee basis points for cross-faction recruits (different country from referrer)
-pub const REFERRAL_FEE_BPS_CROSS_FACTION: u16 = 50;  // 0.5%
+pub const REFERRAL_FEE_BPS_CROSS_FACTION: u16 = 50; // 0.5%
 /// Referral fee basis points for same-faction recruits (same country as referrer)
 pub const REFERRAL_FEE_BPS_SAME_FACTION: u16 = 100; // 1.0%
 /// Default cycle SOL split: 5% of user bet reserved for faction-war jackpot.
@@ -1124,7 +1124,10 @@ pub struct PlayerData {
 
     pub pending_sol_rewards: u64,
     pub hodl_tax_index: u128,
+    /// Gameplay-earned degenBTC rewards pending HODL-tax withdrawal.
     pub pending_minebtc_rewards: u64,
+    /// Passive staking degenBTC rewards pending direct claim with SOL staking rewards.
+    pub pending_staking_minebtc_rewards: u64,
     pub unrefined_minebtc_rewards: u64,
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
@@ -1198,6 +1201,7 @@ impl PlayerData {
         8 +     // pending_sol_rewards (u64)
         16 +    // hodl_tax_index (u128)
         8 +     // pending_minebtc_rewards (u64)
+        8 +     // pending_staking_minebtc_rewards (u64)
         8 +     // unrefined_minebtc_rewards (u64)
         2 +     // pending_round_claims (u16)
         2 +     // pending_faction_war_claims (u16)

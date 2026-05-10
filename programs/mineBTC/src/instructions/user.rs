@@ -152,6 +152,7 @@ pub fn internal_initialize_player(
     // Initialize pending rewards
     player_data.pending_sol_rewards = 0;
     player_data.pending_minebtc_rewards = 0;
+    player_data.pending_staking_minebtc_rewards = 0;
     player_data.pending_round_claims = 0;
     player_data.pending_faction_war_claims = 0;
     msg!("     Pending rewards initialized");

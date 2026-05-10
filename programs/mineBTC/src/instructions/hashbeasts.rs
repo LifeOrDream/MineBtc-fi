@@ -316,12 +316,8 @@ pub fn int_batch_mint_hashbeasts<'info>(
         } else {
             crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
         };
-        let cut = u64::try_from(helper::mul_div(
-            total_price,
-            bps as u64,
-            10_000,
-        )?)
-        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+        let cut = u64::try_from(helper::mul_div(total_price, bps as u64, 10_000)?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -949,7 +945,6 @@ pub fn int_whitelist_mint_hashbeast(
 pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_stake_hashbeast");
     let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
-    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
@@ -1022,25 +1017,14 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
     )?;
 
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_minebtc_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_lp_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
+    let (_new_sol_rewards, _new_minebtc_rewards) =
+        stake::int_update_minebtc_staking_rewards(player_data, faction_state)?;
+    let (_new_sol_rewards, _new_minebtc_rewards) =
+        stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(
-        "💹 [stake_hashbeast] pending_after_reward_sync sol={} minebtc={}",
+        "💹 [stake_hashbeast] pending_after_reward_sync sol={} staking_minebtc={} gameplay_minebtc={}",
         player_data.pending_sol_rewards as f64 / 1e9,
+        player_data.pending_staking_minebtc_rewards as f64 / 1e6,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
 
@@ -1169,7 +1153,6 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
 pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_unstake_hashbeast");
     let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
-    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let hashbeast_mint = hashbeast_metadata.mint;
@@ -1230,25 +1213,14 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     );
 
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_minebtc_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_lp_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
+    let (_new_sol_rewards, _new_minebtc_rewards) =
+        stake::int_update_minebtc_staking_rewards(player_data, faction_state)?;
+    let (_new_sol_rewards, _new_minebtc_rewards) =
+        stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(
-        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} minebtc={}",
+        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} staking_minebtc={} gameplay_minebtc={}",
         player_data.pending_sol_rewards as f64 / 1e9,
+        player_data.pending_staking_minebtc_rewards as f64 / 1e6,
         player_data.pending_minebtc_rewards as f64 / 1e6
     );
 
@@ -2609,13 +2581,6 @@ pub struct StakeHashBeast<'info> {
     #[account(mut)]
     pub faction_state: Account<'info, FactionState>,
 
-    #[account(
-        mut,
-        seeds = [HODL_POOL_SEED.as_ref()],
-        bump
-    )]
-    pub hodl_pool: Account<'info, HodlPool>,
-
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
 
@@ -2666,13 +2631,6 @@ pub struct UnstakeHashBeast<'info> {
 
     #[account(mut)]
     pub faction_state: Account<'info, FactionState>,
-
-    #[account(
-        mut,
-        seeds = [HODL_POOL_SEED.as_ref()],
-        bump
-    )]
-    pub hodl_pool: Account<'info, HodlPool>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,

@@ -872,7 +872,7 @@ pub fn init_position(
     Ok(())
 }
 
-/// Add to total claimable and pending rewards
+/// Add gameplay rewards to total claimable and pending rewards.
 pub fn add_to_total_claimable(
     unrefined_minebtc: &mut HodlPool,
     player_data: &mut PlayerData,
