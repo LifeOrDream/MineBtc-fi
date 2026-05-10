@@ -53,8 +53,6 @@ const ID_MineBTC_PROGRAM = deploymentFile.MINE_BTC_PROGRAM_ID
   : null;
 
 // Mining configuration
-const MINING_START_TIMESTAMP =
-  config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_DEGEN_BTC_PER_SLOT = new BN(config.mining.degen_btc_per_round);
 
 // Keep these explicit in setup so fresh deployments don't silently depend on
@@ -493,12 +491,14 @@ async function main() {
     // Accounts: globalConfig, mineBtcMining, authority, systemProgram
     await updateFees(minebtcProgram, LIVE_FEE_CONFIG);
 
+    console.log("\n✅ First 5 init functions completed. Continuing with remaining init functions...");
+
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
-    // Instruction: initialize_mining(start_timestamp: u64, mine_btc_per_round: u64, pool_state: Pubkey)
+    // Instruction: initialize_mining(mine_btc_per_round: u64, pool_state: Pubkey)
     // Sets up the mining emission vault:
     //   - VaultAuthority [seeds: "minebtc-vault-authority"] — signer-only PDA
     //   - TokenVault     [seeds: "minebtc_vault", mine_btc_mining.key()] — Token-2022 vault for MineBTC
-    // Stores start_timestamp, emission rate, and Raydium pool state in MineBtcMining
+    // Stores emission rate and Raydium pool state in MineBtcMining
     // Accounts: globalConfig, mineBtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
     await initializeMiningSystem(minebtcProgram);
 
@@ -1190,7 +1190,6 @@ async function initializeMiningSystem(minebtcProgram) {
     COLOR_INFO,
     `🔑 Vault Authority PDA: ${vaultAuthorityPDA.toString()}`
   );
-    console.log(COLOR_INFO, `⏰ Start Timestamp: ${MINING_START_TIMESTAMP}`);
   console.log(
     COLOR_INFO,
     `💰 DegenBtc Per Slot: ${MINING_DEGEN_BTC_PER_SLOT.toString()}`
@@ -1200,7 +1199,6 @@ async function initializeMiningSystem(minebtcProgram) {
     try {
     const tx = await minebtcProgram.methods
             .initializeMining(
-                new BN(MINING_START_TIMESTAMP),
                 MINING_DEGEN_BTC_PER_SLOT,
                 new PublicKey(raydiumPoolState)
             )
@@ -1223,7 +1221,6 @@ async function initializeMiningSystem(minebtcProgram) {
         deploymentFile.mining_vault_initialized = {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
-            start_timestamp: MINING_START_TIMESTAMP,
             degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1235,10 +1232,9 @@ async function initializeMiningSystem(minebtcProgram) {
             deploymentFile.mining_vault_initialized = {
                 vault_address: vaultPDA.toString(),
                 vault_authority: vaultAuthorityPDA.toString(),
-                start_timestamp: MINING_START_TIMESTAMP,
                 degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             };
-            saveDeploymentData();
+            saveDeploymentData()
         } else {
             throw error;
         }

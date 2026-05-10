@@ -146,7 +146,6 @@ function generateWebsiteConfig(config, deployment) {
       mining_vault: {
         vault: deployment.mining_vault_initialized?.vault_address,
         authority: deployment.mining_vault_initialized?.vault_authority,
-        start_timestamp: deployment.mining_vault_initialized?.start_timestamp,
         per_round_emission:
           deployment.mining_vault_initialized?.degen_btc_per_round,
         funded_amount: deployment.mining_tokens_deposited?.amount || null,

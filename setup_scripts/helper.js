@@ -831,7 +831,6 @@ export async function setupMiningVault(
   vaultAuthorityPDA,
   tokenMint,
   token_program,
-  start_timestamp,
   degen_btc_per_round,
   raydium_pool_state
 ) {
@@ -857,7 +856,6 @@ export async function setupMiningVault(
       "\x1b[36m%s\x1b[0m",
       `🔑 DEGEN_BTC Token Program: ${token_program.toString()}`
     );
-    console.log("\x1b[90m%s\x1b[0m", `⏰ Start Timestamp: ${start_timestamp}`);
     console.log(
       "\x1b[90m%s\x1b[0m",
       `💰 DEGENBTC Per Slot: ${degen_btc_per_round.toString()}`
@@ -874,7 +872,6 @@ export async function setupMiningVault(
 
     const miningTx = await program.methods
       .initializeMining(
-        new BN(start_timestamp), // start_timestamp
         new BN(degen_btc_per_round), // degen_btc_per_round (tokens per slot)
         new PublicKey(raydium_pool_state) // pool_state (Raydium pool state)
       )

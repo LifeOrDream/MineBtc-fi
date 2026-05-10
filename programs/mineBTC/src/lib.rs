@@ -53,7 +53,7 @@ pub use state::{
     MineBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("Ec9Ghs211ZfogyN6Z2t6pfRxBwKnzfFH75yAmWFiZpmc");
+declare_id!("3uERKkvfgkTzJ7wFZC7ymWZygEbbeXuWVAiP2zu1Y1ye");
 
 #[macro_export]
 macro_rules! log_fn {
@@ -241,16 +241,15 @@ pub mod minebtc {
     // ------------ mine_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize mining by setting the token vault and starting timestamp
-    /// Can only be called once when mining_start_timestamp is 0
+    /// Initialize mining by setting the token vault and emission rate.
+    /// Can only be called once. Mining start time is recorded from the on-chain clock.
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
-        start_timestamp: u64,
         mine_btc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_mining");
-        admin::initialize_mining_internal(ctx, start_timestamp, mine_btc_per_round, pool_state)
+        admin::initialize_mining_internal(ctx, mine_btc_per_round, pool_state)
     }
 
     /// Deposit MineBtc tokens to the mining vault (anyone can call)

@@ -286,10 +286,13 @@ pub const BREED_DBTC_BURN_BPS: u64 = 5_000;
 /// queue first; if full, reborn assets are burned. Sweep buys also fill
 /// the queue first; if full, the swept asset gets relisted at a markup
 /// (or burned in deep bear). No "Pending" stranded path.
-pub const LOOTBOX_QUEUE_SIZE: usize = 5;
+pub const LOOTBOX_QUEUE_SIZE: usize = 10;
 
 /// Per-claim drop chance keyed by current `LootboxQueue.filled_count`.
-pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] = [0, 100, 440, 990, 1760, 2750];
+/// Formula: ~110 * depth^2, capped at 11000 bps (110%).
+pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] = [
+    0, 100, 440, 990, 1760, 2750, 3960, 5390, 7040, 8910, 11000,
+];
 
 /// Inventory proceeds split: 50% sweep reserve, 50% protocol pipeline.
 pub const INVENTORY_SWEEP_RESERVE_BPS: u16 = 5000;
@@ -583,8 +586,6 @@ impl ProtocolOwnedLiquidity {
 pub struct MineBtcMining {
     /// Token vault that holds all pre-minted tokens
     pub minebtc_token_vault: Pubkey,
-    /// Timestamp of the mining start
-    pub mining_start_timestamp: u64,
     /// MineBtc mined per slot (original base rate)
     pub mine_btc_per_round: u64,
 
@@ -633,7 +634,6 @@ impl MineBtcMining {
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
         + 32                    // minebtc_token_vault
-        + 8                     // mining_start_timestamp
         + 8                     // mine_btc_per_round
         + 8                     // total_tokens_mined
         + 8                     // total_tokens_distributed

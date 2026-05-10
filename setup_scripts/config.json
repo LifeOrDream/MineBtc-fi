@@ -55,7 +55,6 @@
         "crank_authority_pubkey_override": null
     },
     "mining": {
-        "start_timestamp": 0,
         "degen_btc_per_round": 1000000000
     },
     "hashbeasts_config": {

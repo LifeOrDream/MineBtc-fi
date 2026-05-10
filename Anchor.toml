@@ -11,8 +11,8 @@ degenbtc_market = "MarKEt1111111111111111111111111111111111111"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]
-minebtc = "Ec9Ghs211ZfogyN6Z2t6pfRxBwKnzfFH75yAmWFiZpmc"
-degenbtc_market = "7b8Np2YoHBMMKPzBmf1LFF5BVuKKdYhcjLn4brzXDvgv"
+minebtc = "3uERKkvfgkTzJ7wFZC7ymWZygEbbeXuWVAiP2zu1Y1ye"
+degenbtc_market = "4w3Bp7sTCbqsP5nThsEm6W3dRCbgwFaxvZYTrnmz5MyJ"
 mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
 raydium_cp_swap = "Ch46ypKBHYhyBRvi4c3KVkxS7C7giwcCk6bdaHGHmtNh"
 

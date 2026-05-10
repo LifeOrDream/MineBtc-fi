@@ -30,8 +30,6 @@ pub struct MiningTokenVaultSet {
     pub token_vault: Pubkey,
     /// The token vault authority address
     pub token_vault_authority: Pubkey,
-    /// Timestamp of when mining started
-    pub mining_start_timestamp: u64,
 }
 
 #[event]

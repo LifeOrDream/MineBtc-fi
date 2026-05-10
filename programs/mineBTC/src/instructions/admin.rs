@@ -151,7 +151,6 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     // Initialize MineBtcMining
     mine_btc_mining.minebtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
-    mine_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
     mine_btc_mining.mine_btc_per_round = 0;
 
     mine_btc_mining.total_tokens_mined = 0;
@@ -823,27 +822,26 @@ pub fn update_gameplay_tuning_internal(
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
 
-/// Initialize mining by setting the token vault and starting timestamp (admin only)
+/// Initialize mining by setting the token vault and emission rate (admin only)
 ///
 /// Sets up the MineBtc mining system with the token vault and initial mining parameters.
 /// Can only be called once when `mining_start_timestamp == 0`.
+/// Mining start time is recorded from the on-chain clock automatically.
 ///
 /// # Parameters
-/// - `start_timestamp`: Unix timestamp when mining should start
 /// - `mine_btc_per_round`: Base MineBtc emission rate per slot
 /// - `pool_state`: Raydium pool state address for price discovery
 pub fn initialize_mining_internal(
     ctx: Context<InitializeMining>,
-    start_timestamp: u64,
     mine_btc_per_round: u64,
     pool_state: Pubkey,
 ) -> Result<()> {
     crate::log_fn!("admin", "initialize_mining_internal");
     let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
 
-    // Check mining hasn't been initialized yet
+    // Check mining hasn't been initialized yet (vault not set)
     require!(
-        mine_btc_mining.mining_start_timestamp == 0,
+        mine_btc_mining.minebtc_token_vault == Pubkey::default(),
         ErrorCode::MiningAlreadyInitialized
     );
     require!(mine_btc_per_round > 0, ErrorCode::InvalidParameters);
@@ -853,7 +851,6 @@ pub fn initialize_mining_internal(
     mine_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
 
     // Initialize mining parameters
-    mine_btc_mining.mining_start_timestamp = start_timestamp;
     mine_btc_mining.mine_btc_per_round = mine_btc_per_round;
 
     // Initialize dynamic distribution fields
@@ -871,7 +868,6 @@ pub fn initialize_mining_internal(
         authority: ctx.accounts.authority.key(),
         token_vault: ctx.accounts.token_vault.key(),
         token_vault_authority: ctx.accounts.vault_authority.key(),
-        mining_start_timestamp: start_timestamp,
     });
 
     Ok(())
