@@ -2458,72 +2458,74 @@ fn internal_process_bets<'info>(
 
     // Calculate amounts per bet (uniform across batch)
     // wgtd_points: points * multiplier / BASE_MULTIPLIER for SOL bets, else points (tickets)
-    let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) =
-        if let Some(ticket_type_index) = use_ticket {
-            // Ticket Logic - no multiplier applied
-            require!(
-                (ticket_type_index as usize) < player_data.free_tickets.len(),
-                ErrorCode::InvalidParameters
-            );
-            let ticket_value = player_data.free_tickets[ticket_type_index as usize];
-            require!(amount_per_bet == ticket_value, ErrorCode::InvalidAmount);
+    let (net_per_bet, fee_per_bet, points_per_bet, wgtd_points_per_bet) = if let Some(
+        ticket_type_index,
+    ) = use_ticket
+    {
+        // Ticket Logic - no multiplier applied
+        require!(
+            (ticket_type_index as usize) < player_data.free_tickets.len(),
+            ErrorCode::InvalidParameters
+        );
+        let ticket_value = player_data.free_tickets[ticket_type_index as usize];
+        require!(amount_per_bet == ticket_value, ErrorCode::InvalidAmount);
 
-            require!(
-                player_data.free_tickets_remaining[ticket_type_index as usize] >= num_bets,
-                ErrorCode::InsufficientFunds
-            );
+        require!(
+            player_data.free_tickets_remaining[ticket_type_index as usize] >= num_bets,
+            ErrorCode::InsufficientFunds
+        );
 
-            // Validate total points limit
-            let total_points = amount_per_bet
-                .checked_mul(num_bets)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            validate_points_percentage_limit(
-                game_session.total_points_bets,
-                game_session.total_sol_bets,
-                total_points,
-            )?;
+        // Validate total points limit
+        let total_points = amount_per_bet
+            .checked_mul(num_bets)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        validate_points_percentage_limit(
+            game_session.total_points_bets,
+            game_session.total_sol_bets,
+            total_points,
+        )?;
 
-            // Deduct tickets
-            player_data.free_tickets_remaining[ticket_type_index as usize] -= num_bets;
+        // Deduct tickets
+        player_data.free_tickets_remaining[ticket_type_index as usize] -= num_bets;
+        msg!(
+            "     Deducted {} tickets of tier {}",
+            num_bets,
+            ticket_type_index
+        );
+
+        (0, 0, amount_per_bet, amount_per_bet) // wgtd_points = points for tickets
+    } else {
+        // SOL Logic - apply multiplier for wgtd_points
+        require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
+
+        cycle_sol_split_per_bet = if faction_war_config.is_active && cycle_sol_split_pct > 0 {
+            let split = amount_per_bet
+                .checked_mul(cycle_sol_split_pct)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                / M_HUNDRED;
             msg!(
-                "     Deducted {} tickets of tier {}",
-                num_bets,
-                ticket_type_index
+                "🎮 [user.internal_process_bets] cycle_split_per_bet={} SOL ({} pct of {} SOL)",
+                split as f64 / 1e9,
+                cycle_sol_split_pct,
+                amount_per_bet as f64 / 1e9
             );
-
-            (0, 0, amount_per_bet, amount_per_bet) // wgtd_points = points for tickets
+            split
         } else {
-            // SOL Logic - apply multiplier for wgtd_points
-            require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
+            msg!("🎮 [user.internal_process_bets] cycle_split=0 (inactive or pct=0)");
+            0
+        };
+        // Protocol fee and referral are computed from the GROSS bet (principal),
+        // not from the amount remaining after the cycle SOL split.
+        let (net_after_fee, fee) = handle_fee(
+            amount_per_bet,
+            global_config.sol_fee_config.protocol_fee_pct as u64,
+        )?;
 
-            cycle_sol_split_per_bet = if faction_war_config.is_active && cycle_sol_split_pct > 0 {
-                let split = amount_per_bet
-                    .checked_mul(cycle_sol_split_pct)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    / M_HUNDRED;
-                msg!(
-                    "🎮 [user.internal_process_bets] cycle_split_per_bet={} SOL ({} pct of {} SOL)",
-                    split as f64 / 1e9,
-                    cycle_sol_split_pct,
-                    amount_per_bet as f64 / 1e9
-                );
-                split
-            } else {
-                msg!("🎮 [user.internal_process_bets] cycle_split=0 (inactive or pct=0)");
-                0
-            };
-            // Protocol fee and referral are computed from the GROSS bet (principal),
-            // not from the amount remaining after the cycle SOL split.
-            let (net_after_fee, fee) = handle_fee(
-                amount_per_bet,
-                global_config.sol_fee_config.protocol_fee_pct as u64,
-            )?;
-
-            // Net to pot = gross - protocol fee - cycle split
-            let net = net_after_fee
-                .checked_sub(cycle_sol_split_per_bet)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!(
+        // Net to pot = gross - protocol fee - cycle split
+        let net = net_after_fee
+            .checked_sub(cycle_sol_split_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        msg!(
                 "🎮 [user.internal_process_bets] gross={} SOL fee={} SOL cycle_split={} SOL pot_net={} SOL",
                 amount_per_bet as f64 / 1e9,
                 fee as f64 / 1e9,
@@ -2531,67 +2533,63 @@ fn internal_process_bets<'info>(
                 net as f64 / 1e9
             );
 
-            // Referral fee: tiered based on faction alignment.
-            // Same-country recruits: 1.0% of gross bet. Cross-country: 0.5%.
-            // Deducted from protocol fee before staker/treasury split.
-            let referral_cut_per_bet = if has_referrer {
-                let same_faction = player_data.referrer_faction_id != u8::MAX
-                    && player_data.faction_id == player_data.referrer_faction_id;
-                let bps = if same_faction {
-                    crate::state::REFERRAL_FEE_BPS_SAME_FACTION
-                } else {
-                    crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
-                };
-                let cut = u64::try_from(helper::mul_div(
-                    amount_per_bet,
-                    bps as u64,
-                    10_000,
-                )?)
-                .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-                msg!(
-                    "   Referral fee (+{} bps, same_faction={}): {} SOL",
-                    bps,
-                    same_faction,
-                    cut as f64 / 1e9
-                );
-                cut
+        // Referral fee: tiered based on faction alignment.
+        // Same-country recruits: 1.0% of gross bet. Cross-country: 0.5%.
+        // Deducted from protocol fee before staker/treasury split.
+        let referral_cut_per_bet = if has_referrer {
+            let same_faction = player_data.referrer_faction_id != u8::MAX
+                && player_data.faction_id == player_data.referrer_faction_id;
+            let bps = if same_faction {
+                crate::state::REFERRAL_FEE_BPS_SAME_FACTION
             } else {
-                0
+                crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
             };
-            let effective_fee = fee
-                .checked_sub(referral_cut_per_bet)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            // Split remaining fee between stakers and treasury
-            let stakers_fee = u64::try_from(helper::mul_div(
-                effective_fee,
-                global_config.sol_fee_config.stakers_pct as u64,
-                M_HUNDRED,
-            )?)
-            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            let protocol_fee = effective_fee
-                .checked_sub(stakers_fee)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            // Accumulate totals for transfer
-            total_stakers_fee = stakers_fee
-                .checked_mul(num_bets)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            total_protocol_fee = protocol_fee
-                .checked_mul(num_bets)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            total_net_to_pot = net
-                .checked_mul(num_bets)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            total_referral_cut = referral_cut_per_bet
-                .checked_mul(num_bets)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
-            let wgtd = u64::try_from(helper::mul_div(net, active_mult, BASE_MULTIPLIER as u64)?)
+            let cut = u64::try_from(helper::mul_div(amount_per_bet, bps as u64, 10_000)?)
                 .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            (net, fee, net, wgtd)
+            msg!(
+                "   Referral fee (+{} bps, same_faction={}): {} SOL",
+                bps,
+                same_faction,
+                cut as f64 / 1e9
+            );
+            cut
+        } else {
+            0
         };
+        let effective_fee = fee
+            .checked_sub(referral_cut_per_bet)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        // Split remaining fee between stakers and treasury
+        let stakers_fee = u64::try_from(helper::mul_div(
+            effective_fee,
+            global_config.sol_fee_config.stakers_pct as u64,
+            M_HUNDRED,
+        )?)
+        .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+        let protocol_fee = effective_fee
+            .checked_sub(stakers_fee)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        // Accumulate totals for transfer
+        total_stakers_fee = stakers_fee
+            .checked_mul(num_bets)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        total_protocol_fee = protocol_fee
+            .checked_mul(num_bets)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        total_net_to_pot = net
+            .checked_mul(num_bets)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        total_referral_cut = referral_cut_per_bet
+            .checked_mul(num_bets)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        // wgtd_points = points * multiplier / BASE_MULTIPLIER for SOL bets
+        let wgtd = u64::try_from(helper::mul_div(net, active_mult, BASE_MULTIPLIER as u64)?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+        (net, fee, net, wgtd)
+    };
 
     // Perform Bulk Transfers
     let do_transfer = |to: &AccountInfo<'info>, amount: u64| -> Result<()> {

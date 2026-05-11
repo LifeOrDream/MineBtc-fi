@@ -1259,7 +1259,7 @@ pub struct RecordFloorSnapshot<'info> {
 ///   - lootbox queue has space → push (RebornEntry::Lootbox)
 ///   - trend below burn threshold → burn (no RebornEntry)
 ///   - else → relist at formula price (RebornEntry::Listed)
-/// Pays a keeper bounty out of `inventory_sweep_vault`.
+///     Pays a keeper bounty out of `inventory_sweep_vault`.
 pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()> {
     crate::log_fn!("marketplace_cpi", "internal_sweep_floor_lowest");
 

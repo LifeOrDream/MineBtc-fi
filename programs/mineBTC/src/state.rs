@@ -290,9 +290,8 @@ pub const LOOTBOX_QUEUE_SIZE: usize = 10;
 
 /// Per-claim drop chance keyed by current `LootboxQueue.filled_count`.
 /// Formula: ~110 * depth^2, capped at 11000 bps (110%).
-pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] = [
-    0, 100, 440, 990, 1760, 2750, 3960, 5390, 7040, 8910, 11000,
-];
+pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] =
+    [0, 100, 440, 990, 1760, 2750, 3960, 5390, 7040, 8910, 11000];
 
 /// Inventory proceeds split: 50% sweep reserve, 50% protocol pipeline.
 pub const INVENTORY_SWEEP_RESERVE_BPS: u16 = 5000;
