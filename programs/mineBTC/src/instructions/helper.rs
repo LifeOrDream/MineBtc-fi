@@ -523,6 +523,30 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
         amount as f64 / 1e9,
         vault_bump
     );
+
+    // Cap the payout at `vault_balance - rent_floor` so the vault PDA stays
+    // rent-exempt after transfer. Without this, the runtime aborts the entire
+    // tx with an opaque "insufficient funds for rent" error AFTER all program
+    // logic has already run — wasting compute and emitting events for a tx
+    // that ultimately fails. By capping at the helper, callers downstream of
+    // reward-index math (which can overestimate vault availability by the
+    // ~rent_floor that was used to seed the PDA at init) still succeed.
+    // Hard-revert only if even the rent floor isn't covered — that would
+    // imply the vault was never properly initialized.
+    let rent_floor = Rent::get()?.minimum_balance(sol_prize_pot_vault.data_len());
+    let vault_balance = sol_prize_pot_vault.lamports();
+    require!(vault_balance >= rent_floor, ErrorCode::InsufficientFunds);
+    let max_payable = vault_balance - rent_floor;
+    let actual_amount = if amount > max_payable {
+        msg!(
+            "   ⚠️ Capping payout: requested={} max_payable={} (rent_floor={}, vault_balance={})",
+            amount, max_payable, rent_floor, vault_balance
+        );
+        max_payable
+    } else {
+        amount
+    };
+
     let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -535,7 +559,7 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
             },
             signer_seeds,
         ),
-        amount,
+        actual_amount,
     )?;
     msg!("   ✅ transfer_from_sol_prize_pot_vault complete");
     Ok(())
