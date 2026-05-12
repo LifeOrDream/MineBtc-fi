@@ -107,6 +107,8 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.jackpot_hit = false;
     game_session.jackpot_faction_id = 0;
     game_session.jackpot_pot_size_on_hit = 0;
+    game_session.jackpot_rewards_index = 0;
+    game_session.jackpot_distributed = false;
     game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
     game_session.total_mutations_this_round = 0;
     game_session.winning_faction_volume_at_round = 0;
@@ -1253,83 +1255,6 @@ pub fn int_end_round_faction_rewards<'info>(
         }
     }
 
-    // If jackpot was hit this round and the designated jackpot faction matches
-    // the faction being processed, pay out the entire global jackpot pot to
-    // this faction's winners.
-    let jackpot_hit = game_session.jackpot_hit;
-    let winning_faction_id = game_session.winning_faction_id;
-    let jackpot_faction_id = game_session.jackpot_faction_id;
-
-    let pre_jackpot_pot = global_state
-        .jackpot_pot
-        .saturating_sub(game_session.jackpot_rewards);
-    msg!(
-        "🎰 [game.int_end_round_faction_rewards] global_jackpot: {} -> {} (+{} from this round)",
-        pre_jackpot_pot,
-        global_state.jackpot_pot,
-        game_session.jackpot_rewards
-    );
-
-    msg!("🎰 [game.int_end_round_faction_rewards] branch: jackpot_hit={} jackpot_pot={} jackpot_faction_id({}) == faction_state.faction_id({}) ? {}",
-        jackpot_hit, global_state.jackpot_pot, jackpot_faction_id, faction_state.faction_id, jackpot_faction_id == faction_state.faction_id);
-    if jackpot_hit && global_state.jackpot_pot > 0 && jackpot_faction_id == faction_state.faction_id
-    {
-        if exact_winning_wgtd_pts > 0 {
-            // Eligible winners exist — pay out the entire global jackpot pot
-            let jackpot_bonus = global_state.jackpot_pot;
-            msg!("🎰 [game.int_end_round_faction_rewards] branch: exact_winning_wgtd_pts={} > 0 -> paying jackpot_bonus={}", exact_winning_wgtd_pts, jackpot_bonus);
-            global_state.jackpot_pot = 0;
-            let old_winner_pool = game_session.minebtc_winner_pool;
-            game_session.minebtc_winner_pool = game_session
-                .minebtc_winner_pool
-                .checked_add(jackpot_bonus)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            game_session.jackpot_pot_size_on_hit = jackpot_bonus;
-            msg!("🎰 [game.int_end_round_faction_rewards] state mutation: minebtc_winner_pool {} -> {} (+jackpot_bonus={})",
-                old_winner_pool, game_session.minebtc_winner_pool, jackpot_bonus);
-            msg!("🎰 [game.int_end_round_faction_rewards] state mutation: jackpot_pot_size_on_hit = {}", jackpot_bonus);
-
-            let jackpot_index =
-                helper::mul_div(jackpot_bonus, INDEX_PRECISION, exact_winning_wgtd_pts)?;
-            let old_minebtc_rewards_index = game_session.minebtc_rewards_index;
-            game_session.minebtc_rewards_index = game_session
-                .minebtc_rewards_index
-                .checked_add(jackpot_index)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("🎰 [game.int_end_round_faction_rewards] state mutation: minebtc_rewards_index {} -> {} (+jackpot_index={})",
-                old_minebtc_rewards_index, game_session.minebtc_rewards_index, jackpot_index);
-
-            msg!("🎰 [game.int_end_round_faction_rewards] emit JackpotHit: round_id={} faction_id={} winning_direction={} jackpot_amount={} minebtc_rewards_index={}",
-                game_session.round_id, jackpot_faction_id, winning_direction, jackpot_bonus, game_session.minebtc_rewards_index);
-            emit!(crate::events::JackpotHit {
-                round_id: game_session.round_id,
-                faction_id: jackpot_faction_id,
-                winning_direction,
-                jackpot_amount: jackpot_bonus,
-                minebtc_rewards_index: game_session.minebtc_rewards_index,
-            });
-        } else {
-            // No eligible exact winners — pot rolls over to next hit
-            msg!(
-                "🎰 [game.int_end_round_faction_rewards] Jackpot hit for faction {} but no exact winners — pot rolls over: {}",
-                jackpot_faction_id,
-                global_state.jackpot_pot
-            );
-            msg!("🎰 [game.int_end_round_faction_rewards] emit JackpotRolledOver: round_id={} faction_id={} pot_size={} reason=0",
-                game_session.round_id, jackpot_faction_id, global_state.jackpot_pot);
-            emit!(crate::events::JackpotRolledOver {
-                round_id: game_session.round_id,
-                faction_id: jackpot_faction_id,
-                pot_size: global_state.jackpot_pot,
-                reason: 0, // 0 = no exact winners
-                timestamp: Clock::get()?.unix_timestamp,
-            });
-        }
-    } else {
-        msg!("🎰 [game.int_end_round_faction_rewards] branch: jackpot not paid (hit={} pot={} faction_match={})",
-            jackpot_hit, global_state.jackpot_pot, jackpot_faction_id == faction_state.faction_id);
-    }
-
     // Update global state with previous round results
     msg!(
         "🎲 [game.int_end_round_faction_rewards] state mutation: global_state.last_round_id = {}",
@@ -1603,6 +1528,133 @@ pub struct StartRound<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  JACKPOT DISTRIBUTION
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+#[inline(never)]
+pub fn int_distribute_jackpot_rewards<'info>(
+    accounts: &mut DistributeJackpotRewards<'info>,
+) -> Result<()> {
+    crate::log_fn!("game", "int_distribute_jackpot_rewards");
+    let game_session = &mut accounts.game_session;
+    let global_state = &mut accounts.global_game_state;
+    let global_config = &accounts.global_config;
+
+    // Idempotency: already processed this round
+    if game_session.jackpot_distributed {
+        msg!("🎰 [game.int_distribute_jackpot_rewards] early return: jackpot already distributed for round {}", game_session.round_id);
+        return Ok(());
+    }
+
+    // No jackpot hit this round — nothing to do
+    if !game_session.jackpot_hit {
+        msg!("🎰 [game.int_distribute_jackpot_rewards] early return: no jackpot hit this round");
+        return Ok(());
+    }
+
+    // Already paid out (pot was drained by a previous call)
+    if global_state.jackpot_pot == 0 {
+        msg!("🎰 [game.int_distribute_jackpot_rewards] early return: jackpot pot already empty");
+        game_session.jackpot_distributed = true;
+        return Ok(());
+    }
+
+    let jackpot_faction_id = game_session.jackpot_faction_id as usize;
+    require!(
+        jackpot_faction_id < global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+
+    let winning_direction = game_session.winning_direction;
+
+    // Sum ALL weighted points on the jackpot faction across ALL directions.
+    // Jackpot rewards go to anyone who bet on the jackpot faction, regardless of direction.
+    let total_jackpot_wgtd_pts: u64 = game_session
+        .wgtd_points_bets_by_faction_direction[jackpot_faction_id]
+        .iter()
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    msg!(
+        "🎰 [game.int_distribute_jackpot_rewards] jackpot_faction_id={} total_jackpot_wgtd_pts={} pot={}",
+        jackpot_faction_id, total_jackpot_wgtd_pts, global_state.jackpot_pot
+    );
+
+    let jackpot_bonus = global_state.jackpot_pot;
+
+    if total_jackpot_wgtd_pts > 0 {
+        // Eligible bettors exist — pay out the entire accumulated pot
+        global_state.jackpot_pot = 0;
+        game_session.jackpot_pot_size_on_hit = jackpot_bonus;
+
+        let jackpot_index = helper::mul_div(jackpot_bonus, INDEX_PRECISION, total_jackpot_wgtd_pts)?;
+        game_session.jackpot_rewards_index = jackpot_index as u128;
+        game_session.jackpot_distributed = true;
+
+        msg!(
+            "🎰 [game.int_distribute_jackpot_rewards] state mutation: jackpot_paid={} index={} (all directions on faction {})",
+            jackpot_bonus, jackpot_index, jackpot_faction_id
+        );
+
+        emit!(crate::events::JackpotHit {
+            round_id: game_session.round_id,
+            faction_id: jackpot_faction_id as u8,
+            winning_direction,
+            jackpot_amount: jackpot_bonus,
+            minebtc_rewards_index: game_session.jackpot_rewards_index,
+        });
+    } else {
+        // No bettors on the jackpot faction — pot rolls over to next hit
+        game_session.jackpot_pot_size_on_hit = 0;
+        game_session.jackpot_rewards_index = 0;
+        game_session.jackpot_distributed = true;
+
+        msg!(
+            "🎰 [game.int_distribute_jackpot_rewards] Jackpot hit for faction {} but no bettors — pot rolls over: {}",
+            jackpot_faction_id, jackpot_bonus
+        );
+
+        emit!(crate::events::JackpotRolledOver {
+            round_id: game_session.round_id,
+            faction_id: jackpot_faction_id as u8,
+            pot_size: jackpot_bonus,
+            reason: 0, // 0 = no bettors on jackpot faction
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+    }
+
+    msg!("✅ [game.int_distribute_jackpot_rewards] done");
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct DistributeJackpotRewards<'info> {
+    #[account(
+        mut,
+        seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
+        bump = global_game_state.bump
+    )]
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
+
+    #[account(
+        mut,
+        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        bump = game_session.bump
+    )]
+    pub game_session: Box<Account<'info, GameSession>>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]

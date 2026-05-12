@@ -1634,7 +1634,32 @@ fn calculate_round_rewards(
                     minebtc_reward as f64 / 1e6
                 );
             }
-        } else {
+        }
+
+        // Jackpot rewards — ANY bet on the jackpot faction gets a share,
+        // regardless of direction (no direction check).
+        if game_session.jackpot_hit
+            && game_session.jackpot_rewards_index > 0
+            && faction_id == game_session.jackpot_faction_id
+            && wgtd_points_bet_on_faction > 0
+        {
+            msg!("       ✓ Jackpot faction — calculating jackpot reward...");
+            let jackpot_reward = u64::try_from(helper::mul_div_u128(
+                wgtd_points_bet_on_faction as u128,
+                game_session.jackpot_rewards_index,
+                INDEX_PRECISION as u128,
+            )?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+            total_minebtc_reward = total_minebtc_reward
+                .checked_add(jackpot_reward)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!(
+                "         Jackpot MineBtc reward: {} DegenBTC",
+                jackpot_reward as f64 / 1e6
+            );
+        }
+
+        if !is_winning_faction && faction_id != game_session.jackpot_faction_id {
             msg!("       ✗ Not the winning faction - no round rewards");
         }
     }

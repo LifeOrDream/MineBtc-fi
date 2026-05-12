@@ -668,6 +668,35 @@ async function endRoundFactionRewards() {
   return { roundId, sig };
 }
 
+async function distributeJackpotRewards() {
+  const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
+  const roundId = gs.currentRoundId?.toNumber() ?? 0;
+  if (roundId <= 0) throw new Error("no active round");
+  banner(`DISTRIBUTE JACKPOT · round ${roundId}`);
+
+  const session = await program.account.gameSession.fetch(deriveGameSessionPda(roundId));
+  if (!session.jackpotHit) {
+    console.log("ℹ️  No jackpot hit this round — skipping");
+    return { roundId, skipped: true };
+  }
+
+  const tx = await program.methods.distributeJackpotRewards().accounts({
+    globalGameState: globalGameStatePda,
+    gameSession: deriveGameSessionPda(roundId),
+    globalConfig: globalConfigPda,
+    authority: walletKeypair.publicKey,
+  }).transaction();
+
+  const sig = await send(tx, 400_000);
+  ok(`distribute_jackpot_rewards: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+
+  const txInfo = await connection.getTransaction(sig,
+    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  logEvents(txInfo);
+  return { roundId, sig };
+}
+
 async function settleFactionWar() {
   banner("SETTLE FACTION WAR");
   const factionWarId = await fetchFactionWarId();
@@ -746,6 +775,7 @@ async function main() {
   // await startRound();             // auto-picks current+1; pass an id to override
 
   // await endRound();                // reveals entropy + picks winner
+  // await distributeJackpotRewards(); // only if jackpot_hit == true; pays ALL bettors on jackpot faction
   // await endRoundFactionRewards();  // pays stakers, advances faction-war mining
 
   // await settleFactionWar();        // permissionless, gated by LP-burn count
