@@ -605,6 +605,7 @@ fn emit_round_ended(
         used_entropy_fallback,
         total_sol_bets: game_session.total_sol_bets,
         total_points_bets: game_session.total_points_bets,
+        total_wgtd_points_bets: game_session.total_wgtd_points_bets,
         user_bets_count: game_session.user_faction_indexes,
         faction_sol_bets: game_session.sol_bets_by_faction,
         dbtc_winner_pool: game_session.dbtc_winner_pool,
@@ -613,6 +614,14 @@ fn emit_round_ended(
         dbtc_jackpot,
         jackpot_hit,
         jackpot_faction_id,
+        // PDA-only fields surfaced via the event so off-chain indexers don't
+        // need a separate getAccountInfo call. All populated by end_round.
+        stakers_fee: game_session.stakers_fee,
+        sol_rewards_index: game_session.sol_rewards_index,
+        dbtc_rewards_index: game_session.dbtc_rewards_index,
+        mutations_per_faction: game_session.mutations_per_faction,
+        total_mutations_this_round: game_session.total_mutations_this_round,
+        faction_war_id_when_played: game_session.faction_war_id_when_played,
         timestamp,
     });
 }
@@ -1047,6 +1056,8 @@ pub fn int_end_round_faction_rewards<'info>(
         .checked_add(game_session.jackpot_rewards)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let round_id_for_event = game_session.round_id;
+    let winning_faction_for_event = winning_faction_id;
+    let winning_direction_for_event = game_session.winning_direction;
 
     if faction_war_state.faction_war_id == 0 || faction_war_state.active_faction_count == 0 {
         seed_empty_faction_war_from_round(
@@ -1076,8 +1087,22 @@ pub fn int_end_round_faction_rewards<'info>(
         );
     }
 
+    // By this point track_faction_war_round_completion has run (when applicable)
+    // and snapshotted the winning faction's drought volume onto the GameSession.
+    // Surface it on the event so the indexer can populate `latest_result`
+    // without a separate PDA read.
+    //
+    // Read via `accounts.game_session` rather than the local `game_session`
+    // binding: the latter's mutable borrow is still alive in scope, and the
+    // borrow checker would otherwise reject the `track_*` reborrow above.
+    // Reading through `accounts.*` here lets NLL drop the earlier borrow.
+    let volume_snapshot = accounts.game_session.winning_faction_volume_at_round;
     emit!(RewardsDistributedForRound {
         round_id: round_id_for_event,
+        winning_faction_id: winning_faction_for_event,
+        winning_direction: winning_direction_for_event,
+        winning_faction_volume_at_round: volume_snapshot,
+        timestamp: Clock::get()?.unix_timestamp,
     });
 
     helper::store_account_data(&faction_war_state_info, faction_war_state.as_ref())?;
@@ -1274,8 +1299,8 @@ pub fn int_distribute_jackpot_rewards<'info>(
             round_id: game_session.round_id,
             faction_id: jackpot_faction_id as u8,
             winning_direction,
-            jackpot_amount: jackpot_bonus,
-            dbtc_rewards_index: game_session.jackpot_rewards_index,
+            jackpot_pot_size_on_hit: jackpot_bonus,
+            jackpot_rewards_index: game_session.jackpot_rewards_index,
         });
     } else {
         game_session.jackpot_pot_size_on_hit = 0;

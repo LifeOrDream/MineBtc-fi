@@ -551,7 +551,13 @@ pub struct RoundStarted {
     pub timestamp: i64,
 }
 
-/// Event emitted when a round ends (after winner selection and reward calculations)
+/// Event emitted when a round ends (after winner selection and reward calculations).
+///
+/// Carries everything the off-chain indexer needs to render `latest_result`
+/// WITHOUT having to fetch the `GameSession` PDA. All these fields are already
+/// populated on the PDA by the time `emit_round_ended` is called (game.rs:559).
+/// `winning_faction_volume_at_round` is the one exception — it lands later in
+/// `track_faction_war_round_completion` and ships on `RewardsDistributedForRound`.
 #[event]
 pub struct RoundEnded {
     pub round_id: u64,
@@ -562,6 +568,7 @@ pub struct RoundEnded {
     pub used_entropy_fallback: bool,
     pub total_sol_bets: u64,
     pub total_points_bets: u64,
+    pub total_wgtd_points_bets: u64,
 
     pub user_bets_count: [u64; NUM_FACTIONS],
     pub faction_sol_bets: [u64; NUM_FACTIONS],
@@ -572,6 +579,23 @@ pub struct RoundEnded {
     pub dbtc_jackpot: u64,
     pub jackpot_hit: bool,
     pub jackpot_faction_id: u8,
+
+    /// Σ stakers_fee_per_bet accumulated by internal_process_bets (user.rs:2544).
+    /// Indexer reverses this to derive effective_fee = stakers_fee × 100 / stakers_pct,
+    /// then splits the residual into buybacks / nft_mm / dev_fee per economy.rs.
+    pub stakers_fee: u64,
+    /// Reward indexes finalized inside end_round. SOL paid by raw points,
+    /// dBTC paid by weighted points (hashbeast multiplier applies to dBTC only).
+    pub sol_rewards_index: u128,
+    pub dbtc_rewards_index: u128,
+    /// Mutation tally for this round (state.rs:1037-1040).
+    pub mutations_per_faction: [u8; NUM_FACTIONS],
+    pub total_mutations_this_round: u8,
+    /// Cycle ID snapshot at round-start, frozen onto the GameSession so late
+    /// claims hit the right FactionWarState PDA even after the cycle settles
+    /// (state.rs:1042-1046).
+    pub faction_war_id_when_played: u64,
+
     pub timestamp: i64,
 }
 
@@ -595,13 +619,21 @@ pub struct LpStakingRewardsDistributed {
     pub lp_sol_reward_index: u128,
 }
 
+/// Event emitted by `distribute_jackpot_rewards` when the jackpot pot was
+/// successfully paid out to bettors on `faction_id`. Note that `faction_id`
+/// here is the JACKPOT faction (selected by inverse-volume weighting), NOT
+/// the round winner — see game.rs:777-783.
 #[event]
 pub struct JackpotHit {
     pub round_id: u64,
     pub faction_id: u8,
     pub winning_direction: u8,
-    pub jackpot_amount: u64,
-    pub dbtc_rewards_index: u128,
+    /// Size of the global jackpot pot at the moment of the hit, snapshotted
+    /// onto GameSession.jackpot_pot_size_on_hit before the pot was drained.
+    pub jackpot_pot_size_on_hit: u64,
+    /// dBTC reward index for any-direction bettors on the jackpot faction
+    /// (state.rs:1029). Claim payout = wgtd_points × jackpot_rewards_index / INDEX_PRECISION.
+    pub jackpot_rewards_index: u128,
 }
 
 /// Event emitted when the jackpot roll was close to hitting (within top 10 closest rolls).
@@ -626,9 +658,19 @@ pub struct JackpotRolledOver {
     pub timestamp: i64,
 }
 
+/// Event emitted by `end_round_faction_rewards` after `track_faction_war_round_completion`
+/// runs. Carries the drought-volume snapshot that fed into the mutation roll for
+/// this round's claimers (state.rs:1048-1053, used at user.rs:1689).
 #[event]
 pub struct RewardsDistributedForRound {
     pub round_id: u64,
+    pub winning_faction_id: u8,
+    pub winning_direction: u8,
+    /// Frozen value of the winning faction's `faction_volume_since_last_win` at
+    /// round-end, BEFORE the counter was reset to 0. Late claims hours later
+    /// will still see this same number when computing volume_factor.
+    pub winning_faction_volume_at_round: u64,
+    pub timestamp: i64,
 }
 
 // ========================================================================================
