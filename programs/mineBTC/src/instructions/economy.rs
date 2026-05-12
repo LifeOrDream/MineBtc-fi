@@ -7,7 +7,7 @@ use anchor_spl::token;
 // - `distribute_sol_fees_internal` moves accumulated SOL from the treasury into buybacks
 //   and the protocol/dev lane.
 // - `snapshot_price_internal` records the on-chain market price and earnmarks some SOL for POL.
-// - `update_rate_internal` converts the snapshot window into a new `mine_btc_per_round` emission rate.
+// - `update_rate_internal` converts the snapshot window into a new `dbtc_per_round` emission rate.
 // - `add_lp_and_burn` (below in this file) consumes the earnmarked SOL together with MineBTC from the
 //   emissions vault to deepen POL and burn LP.
 //
@@ -239,23 +239,23 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     crate::log_fn!("economy", "snapshot_price_internal");
     msg!("🌟 === STARTING PRICE SNAPSHOT ===");
 
-    let mine_btc_mining: &mut Account<'_, MineBtcMining> = &mut ctx.accounts.mine_btc_mining;
+    let dbtc_mining: &mut Account<'_, DegenBtcMining> = &mut ctx.accounts.dbtc_mining;
     let current_time = Clock::get()?.unix_timestamp;
 
     // Check if LP operation is pending
     require!(
-        !mine_btc_mining.lp_operation_pending,
+        !dbtc_mining.lp_operation_pending,
         ErrorCode::InvalidAccount
     );
 
     msg!("   📅 Current timestamp: {}", current_time);
     msg!(
         "   ⏰ Last update timestamp: {}",
-        mine_btc_mining.last_rate_update
+        dbtc_mining.last_rate_update
     );
 
     require!(
-        mine_btc_mining.price_history.len() < 8,
+        dbtc_mining.price_history.len() < 8,
         ErrorCode::UpdateDistRateFirst
     );
 
@@ -272,25 +272,25 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     // Check if at least snapshot_interval has passed since last snapshot
     msg!("\n   ⏱️ Checking time constraints...");
     let snapshot_interval = ctx.accounts.global_config.snapshot_interval as i64;
-    if current_time < mine_btc_mining.last_rate_update + snapshot_interval {
+    if current_time < dbtc_mining.last_rate_update + snapshot_interval {
         msg!(
             "   ⏰ Update too early - must wait at least {} seconds between updates",
             snapshot_interval
         );
         msg!(
             "      Next update allowed: {}",
-            mine_btc_mining.last_rate_update + snapshot_interval
+            dbtc_mining.last_rate_update + snapshot_interval
         );
         msg!(
             "      Time remaining: {} seconds",
-            (mine_btc_mining.last_rate_update + snapshot_interval - current_time)
+            (dbtc_mining.last_rate_update + snapshot_interval - current_time)
         );
         return Ok(());
     }
 
     msg!(
         "   ✅ Time constraint satisfied ({}s since last update, required: {}s)",
-        current_time - mine_btc_mining.last_rate_update,
+        current_time - dbtc_mining.last_rate_update,
         snapshot_interval
     );
 
@@ -352,7 +352,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
 
     msg!(
         "   📊 Price snapshot {}/8: Planning SOL → MINE_BTC swap",
-        mine_btc_mining.price_history.len() + 1
+        dbtc_mining.price_history.len() + 1
     );
     msg!(
         "   💵 SOL for swap: {} lamports ({} SOL) [10% of available]",
@@ -429,25 +429,25 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
 
     // Perform swap via Raydium CPI to get current exchange rate (SOL → MINE_BTC)
     msg!("\n💱 === PERFORMING RAYDIUM SWAP ===");
-    let minebtc_received = if sol_for_swap > 0 {
+    let dbtc_received = if sol_for_swap > 0 {
         msg!("   🚀 Calling Raydium swap CPI...");
-        let received = perform_sol_to_minebtc_swap(
+        let received = perform_sol_to_dbtc_swap(
             &ctx.accounts.raydium_program,
             &ctx.accounts.pool_state,
             &ctx.accounts.amm_config,
             &ctx.accounts.authority_pda,
             &ctx.accounts.raydium_authority,
-            &ctx.accounts.minebtc_vault,
+            &ctx.accounts.dbtc_vault,
             &ctx.accounts.sol_vault,
-            &ctx.accounts.minebtc_token_account.to_account_info(),
+            &ctx.accounts.dbtc_token_account.to_account_info(),
             &ctx.accounts.sol_token_account.to_account_info(),
-            &ctx.accounts.minebtc_mint,
+            &ctx.accounts.degenbtc_mint,
             &ctx.accounts.sol_mint,
             &ctx.accounts.observation_state,
             &ctx.accounts.token_program_2022,
             &ctx.accounts.token_program,
             sol_for_swap,
-            mine_btc_mining.vault_auth_bump,
+            dbtc_mining.vault_auth_bump,
         )?;
         msg!(
             "   ✅ Swap completed: Received {} MINE_BTC ({} MINE_BTC)",
@@ -470,24 +470,24 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     );
     msg!(
         "      MINE_BTC received: {} units ({} MINE_BTC)",
-        minebtc_received,
-        minebtc_received as f64 / 1e6
+        dbtc_received,
+        dbtc_received as f64 / 1e6
     );
 
-    // sol_for_swap is in WSOL base units (9 decimals), minebtc_received is in MINE_BTC base units (6 decimals)
+    // sol_for_swap is in WSOL base units (9 decimals), dbtc_received is in MINE_BTC base units (6 decimals)
     //
-    // Formula: Price = (sol_for_swap / 10^9) / (minebtc_received / 10^6)
-    // Simplified: Price = (sol_for_swap * 10^6) / (minebtc_received * 10^9)
+    // Formula: Price = (sol_for_swap / 10^9) / (dbtc_received / 10^6)
+    // Simplified: Price = (sol_for_swap * 10^6) / (dbtc_received * 10^9)
     // Store as lamports per whole MINE_BTC token:
-    // Final: Price = (sol_for_swap * 10^6) / minebtc_received
-    let current_price = if minebtc_received > 0 {
+    // Final: Price = (sol_for_swap * 10^6) / dbtc_received
+    let current_price = if dbtc_received > 0 {
         // Prevent overflow by checking limits
-        // Calculate: (sol_for_swap * 10^MINEBTC_DECIMALS) / minebtc_received
+        // Calculate: (sol_for_swap * 10^DBTC_DECIMALS) / dbtc_received
         // This gives lamports per whole MINE_BTC.
         let raw_price = (sol_for_swap as u128)
-            .checked_mul(MINEBTC_BASE_UNITS as u128)
+            .checked_mul(DBTC_BASE_UNITS as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(minebtc_received as u128)
+            .checked_div(dbtc_received as u128)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         u64::try_from(raw_price).map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
@@ -509,10 +509,10 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     };
 
     // Add price entry to history
-    mine_btc_mining.price_history.push(price_entry);
+    dbtc_mining.price_history.push(price_entry);
     msg!(
         "   📈 Added price entry to history. Total entries: {}/8",
-        mine_btc_mining.price_history.len()
+        dbtc_mining.price_history.len()
     );
 
     // Earnmark SOL for POL in buybacks account
@@ -543,7 +543,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     let mut weighted_sum: u128 = 0;
     let mut total_weights: u128 = 0;
 
-    for (i, entry) in mine_btc_mining.price_history.iter().enumerate() {
+    for (i, entry) in dbtc_mining.price_history.iter().enumerate() {
         let weight = (i + 1) as u128; // Weight from 1 to 8
 
         let price_contribution = (entry.price as u128)
@@ -582,17 +582,17 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     );
 
     // Update recent price with current weighted average
-    mine_btc_mining.recent_price = current_weighted_avg;
+    dbtc_mining.recent_price = current_weighted_avg;
 
     // Update timestamp for next snapshot
-    mine_btc_mining.last_rate_update = current_time;
+    dbtc_mining.last_rate_update = current_time;
 
     msg!("\n✅ === PRICE SNAPSHOT COMPLETE ===");
     msg!(
         "   📊 Snapshot {}/8 recorded",
-        mine_btc_mining.price_history.len()
+        dbtc_mining.price_history.len()
     );
-    msg!("   💰 MINE_BTC received from swap: {}", minebtc_received);
+    msg!("   💰 MINE_BTC received from swap: {}", dbtc_received);
     msg!(
         "   💎 SOL earnmarked for POL: {} SOL",
         buybacks_account.sol_for_pol as f64 / 1e9
@@ -601,14 +601,14 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
 
     // Emit price snapshot event for off-chain indexing
     emit!(PriceSnapshotTaken {
-        snapshot_number: mine_btc_mining.price_history.len() as u8,
+        snapshot_number: dbtc_mining.price_history.len() as u8,
         sol_swapped: sol_for_swap,
-        minebtc_received,
+        dbtc_received,
         current_price,
         weighted_avg_price: current_weighted_avg,
         sol_earnmarked_for_pol: sol_for_pol_earnmark,
         total_pol_balance: buybacks_account.sol_for_pol,
-        price_history_count: mine_btc_mining.price_history.len() as u8,
+        price_history_count: dbtc_mining.price_history.len() as u8,
         timestamp: current_time,
     });
 
@@ -621,26 +621,26 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     crate::log_fn!("economy", "update_rate_internal");
     msg!("🌟 === STARTING RATE UPDATE ===");
 
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    let dbtc_mining = &mut ctx.accounts.dbtc_mining;
     let current_time = Clock::get()?.unix_timestamp;
 
     msg!("   📅 Current timestamp: {}", current_time);
     msg!(
         "   ⚙️  Current distribution rate: {} MINE_BTC per round",
-        mine_btc_mining.mine_btc_per_round
+        dbtc_mining.dbtc_per_round
     );
 
     // Check if 4 hours have passed AND we have 8 price entries
-    let time_since_last = mine_btc_mining
+    let time_since_last = dbtc_mining
         .price_history
         .first()
         .map(|e| current_time - e.timestamp)
         .unwrap_or(0);
 
-    if mine_btc_mining.price_history.len() < 8 {
+    if dbtc_mining.price_history.len() < 8 {
         msg!(
             "   ❌ Conditions NOT met: {} snapshots, {}s elapsed",
-            mine_btc_mining.price_history.len(),
+            dbtc_mining.price_history.len(),
             time_since_last
         );
         return Ok(());
@@ -648,13 +648,13 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
 
     msg!(
         "   ✅ 4-hour cycle complete with {} snapshots",
-        mine_btc_mining.price_history.len()
+        dbtc_mining.price_history.len()
     );
 
     // Calculate weighted average price
     let mut weighted_sum: u128 = 0;
     let mut total_weights: u128 = 0;
-    for (i, entry) in mine_btc_mining.price_history.iter().enumerate() {
+    for (i, entry) in dbtc_mining.price_history.iter().enumerate() {
         let weight = (i + 1) as u128;
         let price_contribution = (entry.price as u128)
             .checked_mul(weight)
@@ -670,8 +670,8 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
         u64::try_from(weighted_sum / total_weights).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     // Calculate price change
-    let change_from_track = calculate_price_change_pct(mine_btc_mining.track_price, new_avg_price);
-    let recent_comparison_price = mine_btc_mining
+    let change_from_track = calculate_price_change_pct(dbtc_mining.track_price, new_avg_price);
+    let recent_comparison_price = dbtc_mining
         .price_history
         .first()
         .map(|e| e.price)
@@ -684,17 +684,17 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     };
 
     // Update rate if threshold exceeded
-    let old_rate = mine_btc_mining.mine_btc_per_round;
+    let old_rate = dbtc_mining.dbtc_per_round;
     let mut rate_changed = false;
-    let price_change_threshold = mine_btc_mining.price_change_threshold as i64;
+    let price_change_threshold = dbtc_mining.price_change_threshold as i64;
 
     if price_change_pct.abs() >= price_change_threshold {
         if direction > 0 {
             let increase_multiplier = 100u64
-                .checked_add(mine_btc_mining.emission_increase_pct)
+                .checked_add(dbtc_mining.emission_increase_pct)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            mine_btc_mining.mine_btc_per_round = mine_btc_mining
-                .mine_btc_per_round
+            dbtc_mining.dbtc_per_round = dbtc_mining
+                .dbtc_per_round
                 .checked_mul(increase_multiplier)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(100)
@@ -702,14 +702,14 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
             msg!(
                 "   📈 Price increased {}%! Rate increased by {}%",
                 price_change_pct,
-                mine_btc_mining.emission_increase_pct
+                dbtc_mining.emission_increase_pct
             );
         } else {
             let decrease_multiplier = 100u64
-                .checked_sub(mine_btc_mining.emission_decrease_pct)
+                .checked_sub(dbtc_mining.emission_decrease_pct)
                 .ok_or(ErrorCode::InvalidParameters)?;
-            mine_btc_mining.mine_btc_per_round = mine_btc_mining
-                .mine_btc_per_round
+            dbtc_mining.dbtc_per_round = dbtc_mining
+                .dbtc_per_round
                 .checked_mul(decrease_multiplier)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 .checked_div(100)
@@ -717,10 +717,10 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
             msg!(
                 "   📉 Price decreased {}%! Rate decreased by {}%",
                 price_change_pct,
-                mine_btc_mining.emission_decrease_pct
+                dbtc_mining.emission_decrease_pct
             );
         }
-        mine_btc_mining.track_price = new_avg_price;
+        dbtc_mining.track_price = new_avg_price;
         rate_changed = true;
     }
 
@@ -771,32 +771,32 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     }
 
     // Set LP operation pending flag and store SOL amount
-    mine_btc_mining.lp_operation_pending = true;
+    dbtc_mining.lp_operation_pending = true;
     msg!(
         "   🎯 LP operation pending: {}",
-        mine_btc_mining.lp_operation_pending
+        dbtc_mining.lp_operation_pending
     );
 
     // Clear price history and update state
-    mine_btc_mining.price_history.clear();
-    mine_btc_mining.recent_price = new_avg_price;
-    mine_btc_mining.last_rate_update = current_time;
+    dbtc_mining.price_history.clear();
+    dbtc_mining.recent_price = new_avg_price;
+    dbtc_mining.last_rate_update = current_time;
 
     msg!(
         "✅ Rate update complete: {} -> {} ({})",
         old_rate,
-        mine_btc_mining.mine_btc_per_round,
+        dbtc_mining.dbtc_per_round,
         if rate_changed { "CHANGED" } else { "unchanged" }
     );
 
     emit!(DistributionRateUpdated {
         old_rate,
-        new_rate: mine_btc_mining.mine_btc_per_round,
+        new_rate: dbtc_mining.dbtc_per_round,
         price_change_pct: price_change_pct as i32,
         current_price: new_avg_price,
         avg_price_4h: new_avg_price,
-        track_price: mine_btc_mining.track_price,
-        recent_price: mine_btc_mining.recent_price,
+        track_price: dbtc_mining.track_price,
+        recent_price: dbtc_mining.recent_price,
         rate_changed,
         new_mining_multiplier: faction_war_config.mining_multiplier_bps,
         timestamp: current_time,
@@ -812,7 +812,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     msg!("🌟 === STARTING LP ADDITION AND BURN ===");
     let clock = Clock::get()?;
 
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    let dbtc_mining = &mut ctx.accounts.dbtc_mining;
     let buybacks_account = &mut ctx.accounts.buybacks_account;
 
     // SECURITY: Validate pool state
@@ -827,7 +827,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
 
     // Check if LP operation is pending
     require!(
-        mine_btc_mining.lp_operation_pending,
+        dbtc_mining.lp_operation_pending,
         ErrorCode::InvalidAccount
     );
 
@@ -848,7 +848,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     );
 
     if total_sol_for_lp == 0 {
-        mine_btc_mining.lp_operation_pending = false;
+        dbtc_mining.lp_operation_pending = false;
         msg!("   ⚠️ No SOL for LP, clearing flag");
         return Ok(());
     }
@@ -881,10 +881,10 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     ))?;
 
     // Read pool state
-    let available_minebtc = ctx.accounts.minebtc_token_account.amount;
+    let available_dbtc = ctx.accounts.dbtc_token_account.amount;
     let authority_seeds = &[
-        MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-        &[mine_btc_mining.vault_auth_bump],
+        DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
+        &[dbtc_mining.vault_auth_bump],
     ];
     let signer_seeds = &[&authority_seeds[..]];
 
@@ -898,8 +898,8 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
 
-    let minebtc_vault_balance = {
-        let data = ctx.accounts.minebtc_vault.try_borrow_data()?;
+    let dbtc_vault_balance = {
+        let data = ctx.accounts.dbtc_vault.try_borrow_data()?;
         anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
 
@@ -911,9 +911,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
 
     msg!(
-        "   📊 Pool state: SOL={} SOL, MINEBTC={} MINEBTC, LP supply={} LP",
+        "   📊 Pool state: SOL={} SOL, degenBTC={} degenBTC, LP supply={} LP",
         sol_vault_balance as f64 / 1e9,
-        minebtc_vault_balance as f64 / 1e6,
+        dbtc_vault_balance as f64 / 1e6,
         lp_supply as f64 / 1e9
     );
 
@@ -921,79 +921,79 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     let sol_buffer = total_sol_for_lp / 50;
     let available_sol = total_sol_for_lp - sol_buffer;
 
-    let (estimated_lp_amount, adjusted_sol_amount, adjusted_minebtc_amount) = if lp_token_amount > 0
+    let (estimated_lp_amount, adjusted_sol_amount, adjusted_dbtc_amount) = if lp_token_amount > 0
     {
         let required_sol = if lp_supply > 0 && sol_vault_balance > 0 {
             u64_mul_div(lp_token_amount, sol_vault_balance, lp_supply)?
         } else {
             available_sol
         };
-        let required_minebtc_post_fee = if lp_supply > 0 && minebtc_vault_balance > 0 {
-            u64_mul_div(lp_token_amount, minebtc_vault_balance, lp_supply)?
+        let required_dbtc_post_fee = if lp_supply > 0 && dbtc_vault_balance > 0 {
+            u64_mul_div(lp_token_amount, dbtc_vault_balance, lp_supply)?
         } else {
             0
         };
-        let required_minebtc = gross_up_for_token2022_fee(
-            &ctx.accounts.minebtc_mint.to_account_info(),
-            required_minebtc_post_fee,
+        let required_dbtc = gross_up_for_token2022_fee(
+            &ctx.accounts.degenbtc_mint.to_account_info(),
+            required_dbtc_post_fee,
             clock.epoch,
         )?;
         (
             lp_token_amount,
             required_sol.min(available_sol),
-            required_minebtc,
+            required_dbtc,
         )
     } else {
         // Guard against division by zero if pool state is empty
         if sol_vault_balance == 0 || lp_supply == 0 {
             msg!("   ⚠️ Pool vault balance is zero, skipping LP operation");
-            mine_btc_mining.lp_operation_pending = false;
+            dbtc_mining.lp_operation_pending = false;
             return Ok(());
         }
         let lp_from_sol = u64_mul_div(available_sol, lp_supply, sol_vault_balance)?;
-        let required_minebtc_post_fee = u64_mul_div(lp_from_sol, minebtc_vault_balance, lp_supply)?;
-        let required_minebtc = gross_up_for_token2022_fee(
-            &ctx.accounts.minebtc_mint.to_account_info(),
-            required_minebtc_post_fee,
+        let required_dbtc_post_fee = u64_mul_div(lp_from_sol, dbtc_vault_balance, lp_supply)?;
+        let required_dbtc = gross_up_for_token2022_fee(
+            &ctx.accounts.degenbtc_mint.to_account_info(),
+            required_dbtc_post_fee,
             clock.epoch,
         )?;
-        (lp_from_sol, available_sol, required_minebtc)
+        (lp_from_sol, available_sol, required_dbtc)
     };
 
-    let max_minebtc_with_buffer = adjusted_minebtc_amount
-        .checked_add(adjusted_minebtc_amount / 50)
+    let max_dbtc_with_buffer = adjusted_dbtc_amount
+        .checked_add(adjusted_dbtc_amount / 50)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(
-        available_minebtc >= max_minebtc_with_buffer,
+        available_dbtc >= max_dbtc_with_buffer,
         ErrorCode::InsufficientTokensInVault
     );
     msg!(
-        "   💰 Deposit amounts: SOL={} SOL, MINEBTC={} MINEBTC (max with buffer) for {} LP",
+        "   💰 Deposit amounts: SOL={} SOL, degenBTC={} degenBTC (max with buffer) for {} LP",
         adjusted_sol_amount as f64 / 1e9,
-        max_minebtc_with_buffer as f64 / 1e6,
+        max_dbtc_with_buffer as f64 / 1e6,
         estimated_lp_amount as f64 / 1e9
     );
 
-    // If max_minebtc_with_buffer exceeds 5% limit, adjust SOL amount to match 1% degenBTC limit
-    let (final_sol_amount, _final_minebtc_amount, final_max_minebtc_with_buffer) =
-        if max_minebtc_with_buffer >= available_minebtc / 100 {
-            // 1% of available_minebtc
-            msg!("   💰 Max MINEBTC with buffer exceeds 1% of available MINEBTC, adjusting SOL amount to match 1% degenBTC limit");
-            adjust_sol_for_minebtc_limit(
-                available_minebtc,
+    // If max_dbtc_with_buffer exceeds 5% limit, adjust SOL amount to match 1% degenBTC limit
+    let (final_sol_amount, _final_dbtc_amount, final_max_dbtc_with_buffer) =
+        if max_dbtc_with_buffer >= available_dbtc / 100 {
+            // 1% of available_dbtc
+            msg!("   💰 Max degenBTC with buffer exceeds 1% of available degenBTC, adjusting SOL amount to match 1% degenBTC limit");
+            adjust_sol_for_dbtc_limit(
+                available_dbtc,
                 sol_vault_balance,
-                minebtc_vault_balance,
+                dbtc_vault_balance,
                 lp_supply,
                 adjusted_sol_amount,
-                adjusted_minebtc_amount,
-                &ctx.accounts.minebtc_mint.to_account_info(),
+                adjusted_dbtc_amount,
+                &ctx.accounts.degenbtc_mint.to_account_info(),
                 clock.epoch,
             )?
         } else {
             (
                 adjusted_sol_amount,
-                adjusted_minebtc_amount,
-                max_minebtc_with_buffer,
+                adjusted_dbtc_amount,
+                max_dbtc_with_buffer,
             )
         };
 
@@ -1005,14 +1005,14 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     };
 
     msg!(
-        "   💰 Final estimated LP amount: {} LP for {} SOL and {} MINEBTC",
+        "   💰 Final estimated LP amount: {} LP for {} SOL and {} degenBTC",
         final_estimated_lp_amount as f64 / 1e9,
         final_sol_amount as f64 / 1e9,
-        final_max_minebtc_with_buffer as f64 / 1e6
+        final_max_dbtc_with_buffer as f64 / 1e6
     );
 
     // Dynamic sorting
-    let mine_btc_key = ctx.accounts.minebtc_mint.key();
+    let mine_btc_key = ctx.accounts.degenbtc_mint.key();
     let sol_key = ctx.accounts.sol_mint.key();
     let (
         token_0_vault,
@@ -1025,25 +1025,25 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         amount_1_max,
     ) = if mine_btc_key < sol_key {
         (
-            ctx.accounts.minebtc_vault.to_account_info(),
+            ctx.accounts.dbtc_vault.to_account_info(),
             ctx.accounts.sol_vault.to_account_info(),
-            ctx.accounts.minebtc_token_account.to_account_info(),
+            ctx.accounts.dbtc_token_account.to_account_info(),
             ctx.accounts.sol_token_account.to_account_info(),
-            ctx.accounts.minebtc_mint.to_account_info(),
+            ctx.accounts.degenbtc_mint.to_account_info(),
             ctx.accounts.sol_mint.to_account_info(),
-            final_max_minebtc_with_buffer,
+            final_max_dbtc_with_buffer,
             final_sol_amount,
         )
     } else {
         (
             ctx.accounts.sol_vault.to_account_info(),
-            ctx.accounts.minebtc_vault.to_account_info(),
+            ctx.accounts.dbtc_vault.to_account_info(),
             ctx.accounts.sol_token_account.to_account_info(),
-            ctx.accounts.minebtc_token_account.to_account_info(),
+            ctx.accounts.dbtc_token_account.to_account_info(),
             ctx.accounts.sol_mint.to_account_info(),
-            ctx.accounts.minebtc_mint.to_account_info(),
+            ctx.accounts.degenbtc_mint.to_account_info(),
             final_sol_amount,
-            final_max_minebtc_with_buffer,
+            final_max_dbtc_with_buffer,
         )
     };
 
@@ -1097,44 +1097,44 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     msg!("   💰 SOL consumed: {}", sol_consumed);
 
     // ✅ RIGHT: Reloads fresh data from the account info
-    let available_minebtc_after = {
-        let account_info = ctx.accounts.minebtc_token_account.to_account_info();
+    let available_dbtc_after = {
+        let account_info = ctx.accounts.dbtc_token_account.to_account_info();
         let data = account_info.try_borrow_data()?;
         anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
-    msg!("   💰 MINEBTC balance after: {}", available_minebtc_after);
-    msg!("   💰 MINEBTC balance before: {}", available_minebtc);
-    let minebtc_consumed = available_minebtc
-        .checked_sub(available_minebtc_after)
+    msg!("   💰 degenBTC balance after: {}", available_dbtc_after);
+    msg!("   💰 degenBTC balance before: {}", available_dbtc);
+    let dbtc_consumed = available_dbtc
+        .checked_sub(available_dbtc_after)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!("   💰 MINEBTC consumed: {}", minebtc_consumed);
+    msg!("   💰 degenBTC consumed: {}", dbtc_consumed);
 
     msg!(
-        "   ✅ LP minted: {}, SOL consumed: {}, MINEBTC consumed: {}",
+        "   ✅ LP minted: {}, SOL consumed: {}, degenBTC consumed: {}",
         lp_tokens_minted,
         sol_consumed,
-        minebtc_consumed
+        dbtc_consumed
     );
 
     // Burn LP tokens
     if lp_tokens_minted > 0 {
         let lp_token_price = {
-            let minebtc_price = mine_btc_mining.recent_price;
-            let minebtc_value_in_sol = if minebtc_price > 0 {
-                helper::mul_div(minebtc_consumed, minebtc_price, 1_000_000)?
+            let dbtc_price = dbtc_mining.recent_price;
+            let dbtc_value_in_sol = if dbtc_price > 0 {
+                helper::mul_div(dbtc_consumed, dbtc_price, 1_000_000)?
             } else {
                 0
             };
             let total_value_sol = sol_consumed
                 .checked_add(
-                    u64::try_from(minebtc_value_in_sol)
+                    u64::try_from(dbtc_value_in_sol)
                         .map_err(|_| ErrorCode::ArithmeticOverflow)?,
                 )
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             helper::mul_div(total_value_sol, 1_000_000_000, lp_tokens_minted)?
         };
         if lp_token_price > 0 {
-            mine_btc_mining.lp_token_price_in_sol =
+            dbtc_mining.lp_token_price_in_sol =
                 u64::try_from(lp_token_price).map_err(|_| ErrorCode::ArithmeticOverflow)?;
         }
         msg!(
@@ -1144,7 +1144,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
 
         emit!(LiquidityAdded {
             sol_amount: sol_consumed,
-            minebtc_amount: minebtc_consumed,
+            dbtc_amount: dbtc_consumed,
             lp_tokens_minted,
             lp_token_price: u64::try_from(lp_token_price)
                 .map_err(|_| ErrorCode::ArithmeticOverflow)?,
@@ -1163,16 +1163,16 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             ),
             lp_tokens_minted,
         )?;
-        mine_btc_mining
+        dbtc_mining
             .pol_stats
             .update_after_lp_operation(lp_tokens_minted);
 
         emit!(LpTokensBurned {
             lp_tokens_burned: lp_tokens_minted,
-            total_lp_burnt: mine_btc_mining.pol_stats.total_lp_burnt,
-            minebtc_amount_added: minebtc_consumed,
+            total_lp_burnt: dbtc_mining.pol_stats.total_lp_burnt,
+            dbtc_amount_added: dbtc_consumed,
             sol_amount_added: sol_consumed,
-            lp_token_price: mine_btc_mining.lp_token_price_in_sol,
+            lp_token_price: dbtc_mining.lp_token_price_in_sol,
             timestamp: Clock::get()?.unix_timestamp,
         });
     }
@@ -1200,24 +1200,24 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         .sol_for_pol
         .checked_sub(sol_consumed)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    mine_btc_mining.lp_operation_pending = false;
+    dbtc_mining.lp_operation_pending = false;
 
     msg!("✅ LP addition and burn complete");
     Ok(())
 }
 
 // /// Helper function to perform MINE_BTC to SOL swap via Raydium CPI
-// fn perform_minebtc_to_sol_swap<'info>(
+// fn perform_dbtc_to_sol_swap<'info>(
 //     raydium_program: &AccountInfo<'info>,
 //     pool_state: &AccountInfo<'info>,
 //     amm_config: &AccountInfo<'info>,
 //     authority_pda: &AccountInfo<'info>,
 //     raydium_authority: &AccountInfo<'info>,
-//     minebtc_vault: &AccountInfo<'info>,
+//     dbtc_vault: &AccountInfo<'info>,
 //     sol_vault: &AccountInfo<'info>,
-//     minebtc_token_account: &AccountInfo<'info>,
+//     dbtc_token_account: &AccountInfo<'info>,
 //     sol_token_account: &AccountInfo<'info>,
-//     minebtc_mint: &AccountInfo<'info>,
+//     degenbtc_mint: &AccountInfo<'info>,
 //     sol_mint: &AccountInfo<'info>,
 //     observation_state: &AccountInfo<'info>,
 //     token_program_2022: &AccountInfo<'info>,
@@ -1238,7 +1238,7 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
 
 //     // Create signer seeds for vault authority
 //     let authority_seeds = &[
-//         MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(),
+//         DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
 //         &[vault_auth_bump],
 //     ];
 //     let signer_seeds = &[&authority_seeds[..]];
@@ -1249,13 +1249,13 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
 //         authority: raydium_authority.to_account_info(), // Raydium's pool authority PDA
 //         amm_config: amm_config.to_account_info(),
 //         pool_state: pool_state.to_account_info(),
-//         input_token_account: minebtc_token_account.to_account_info(),  // Our token account (authority = our PDA)
+//         input_token_account: dbtc_token_account.to_account_info(),  // Our token account (authority = our PDA)
 //         output_token_account: sol_token_account.to_account_info(),   // Our token account (authority = our PDA)
-//         input_vault: minebtc_vault.to_account_info(),     // Raydium's MINE_BTC vault
+//         input_vault: dbtc_vault.to_account_info(),     // Raydium's MINE_BTC vault
 //         output_vault: sol_vault.to_account_info(),      // Raydium's SOL vault
 //         input_token_program: token_program_2022.to_account_info(),   // Token-2022 for MINE_BTC
 //         output_token_program: token_program.to_account_info(),       // Standard token for SOL
-//         input_token_mint: minebtc_mint.to_account_info(),
+//         input_token_mint: degenbtc_mint.to_account_info(),
 //         output_token_mint: sol_mint.to_account_info(),
 //         observation_state: observation_state.to_account_info(),
 //     };
@@ -1286,17 +1286,17 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
 // }
 
 /// Helper function to perform SOL to MINE_BTC swap via Raydium CPI
-fn perform_sol_to_minebtc_swap<'info>(
+fn perform_sol_to_dbtc_swap<'info>(
     raydium_program: &AccountInfo<'info>,
     pool_state: &AccountInfo<'info>,
     amm_config: &AccountInfo<'info>,
     authority_pda: &AccountInfo<'info>,
     raydium_authority: &AccountInfo<'info>,
-    minebtc_vault: &AccountInfo<'info>,
+    dbtc_vault: &AccountInfo<'info>,
     sol_vault: &AccountInfo<'info>,
-    minebtc_token_account: &AccountInfo<'info>,
+    dbtc_token_account: &AccountInfo<'info>,
     sol_token_account: &AccountInfo<'info>,
-    minebtc_mint: &AccountInfo<'info>,
+    degenbtc_mint: &AccountInfo<'info>,
     sol_mint: &AccountInfo<'info>,
     observation_state: &AccountInfo<'info>,
     token_program_2022: &AccountInfo<'info>,
@@ -1320,24 +1320,24 @@ fn perform_sol_to_minebtc_swap<'info>(
 
     // Get MINE_BTC token balance before swap by deserializing account data
     msg!("   📊 Reading MINE_BTC token account balance...");
-    let minebtc_balance_before = {
+    let dbtc_balance_before = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
-        let minebtc_account_data = minebtc_token_account.try_borrow_data()?;
-        let minebtc_token_data =
-            TokenAccountInterface::try_deserialize(&mut &minebtc_account_data[..])?;
+        let dbtc_account_data = dbtc_token_account.try_borrow_data()?;
+        let dbtc_token_data =
+            TokenAccountInterface::try_deserialize(&mut &dbtc_account_data[..])?;
         msg!("   ✅ Successfully deserialized MINE_BTC token account");
-        minebtc_token_data.amount
+        dbtc_token_data.amount
     }; // Borrow is dropped here
 
     msg!(
         "   💰 MINE_BTC balance BEFORE swap: {} ({} MINE_BTC)",
-        minebtc_balance_before,
-        minebtc_balance_before as f64 / 1e6
+        dbtc_balance_before,
+        dbtc_balance_before as f64 / 1e6
     );
 
     // Create signer seeds for vault authority
     msg!("   🔑 Creating signer seeds for vault authority PDA...");
-    let authority_seeds = &[MINE_BTC_VAULT_AUTHORITY_SEED.as_ref(), &[vault_auth_bump]];
+    let authority_seeds = &[DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(), &[vault_auth_bump]];
     let signer_seeds = &[&authority_seeds[..]];
     msg!("   ✅ Signer seeds created with bump: {}", vault_auth_bump);
 
@@ -1349,13 +1349,13 @@ fn perform_sol_to_minebtc_swap<'info>(
         amm_config: amm_config.to_account_info(),
         pool_state: pool_state.to_account_info(),
         input_token_account: sol_token_account.to_account_info(), // Our SOL token account (authority = our PDA)
-        output_token_account: minebtc_token_account.to_account_info(), // Our MINE_BTC token account (authority = our PDA)
+        output_token_account: dbtc_token_account.to_account_info(), // Our MINE_BTC token account (authority = our PDA)
         input_vault: sol_vault.to_account_info(),                      // Raydium's SOL vault
-        output_vault: minebtc_vault.to_account_info(),                 // Raydium's MINE_BTC vault
+        output_vault: dbtc_vault.to_account_info(),                 // Raydium's MINE_BTC vault
         input_token_program: token_program.to_account_info(), // Standard token program for SOL
         output_token_program: token_program_2022.to_account_info(), // Token-2022 program for MINE_BTC
         input_token_mint: sol_mint.to_account_info(),
-        output_token_mint: minebtc_mint.to_account_info(),
+        output_token_mint: degenbtc_mint.to_account_info(),
         observation_state: observation_state.to_account_info(),
     };
     msg!("   ✅ CPI accounts configured");
@@ -1385,18 +1385,18 @@ fn perform_sol_to_minebtc_swap<'info>(
 
     // Calculate actual MINE_BTC received by checking token account balance again
     msg!("   📊 Reading MINE_BTC token account balance after swap...");
-    let minebtc_received = {
+    let dbtc_received = {
         use anchor_spl::token_interface::TokenAccount as TokenAccountInterface;
-        let minebtc_account_data_after = minebtc_token_account.try_borrow_data()?;
-        let minebtc_token_data_after =
-            TokenAccountInterface::try_deserialize(&mut &minebtc_account_data_after[..])?;
-        let minebtc_balance_after = minebtc_token_data_after.amount;
+        let dbtc_account_data_after = dbtc_token_account.try_borrow_data()?;
+        let dbtc_token_data_after =
+            TokenAccountInterface::try_deserialize(&mut &dbtc_account_data_after[..])?;
+        let dbtc_balance_after = dbtc_token_data_after.amount;
         msg!(
             "   💰 MINE_BTC balance AFTER swap: {} ({} MINE_BTC)",
-            minebtc_balance_after,
-            minebtc_balance_after as f64 / 1e6
+            dbtc_balance_after,
+            dbtc_balance_after as f64 / 1e6
         );
-        let received = minebtc_balance_after.saturating_sub(minebtc_balance_before);
+        let received = dbtc_balance_after.saturating_sub(dbtc_balance_before);
         msg!(
             "   📈 MINE_BTC received: {} ({} MINE_BTC)",
             received,
@@ -1409,14 +1409,14 @@ fn perform_sol_to_minebtc_swap<'info>(
     msg!(
         "   Swapped: {} SOL → {} MINE_BTC",
         sol_amount_in as f64 / 1e9,
-        minebtc_received as f64 / 1e6
+        dbtc_received as f64 / 1e6
     );
     msg!(
         "   Exchange rate: {} MINE_BTC per SOL",
-        (minebtc_received as f64 / 1e6) / (sol_amount_in as f64 / 1e9)
+        (dbtc_received as f64 / 1e6) / (sol_amount_in as f64 / 1e9)
     );
 
-    Ok(minebtc_received)
+    Ok(dbtc_received)
 }
 
 // DELETED: perform_lp_addition_and_burn function - now inlined in update_rate_and_add_lp_internal
@@ -1427,69 +1427,69 @@ fn perform_sol_to_minebtc_swap<'info>(
 // ------------ DYNAMIC DISTRIBUTION FUNCTIONS :: ORACLE & RATE UPDATES -----------------
 // ----------------------------------------------------------------------------------------
 
-/// Adjust SOL amount to respect 5% MINEBTC vault limit
-/// When max_minebtc_with_buffer exceeds 5% of available_minebtc, calculates the SOL amount
-/// needed to match exactly 5% of available MINEBTC, maintaining pool ratio
-/// Accounts for 1% MINEBTC burn tax and adds slippage tolerance
-/// Returns (adjusted_sol_amount, adjusted_minebtc_amount, adjusted_max_minebtc_with_buffer)
-fn adjust_sol_for_minebtc_limit(
-    available_minebtc: u64,
+/// Adjust SOL amount to respect 5% degenBTC vault limit
+/// When max_dbtc_with_buffer exceeds 5% of available_dbtc, calculates the SOL amount
+/// needed to match exactly 5% of available degenBTC, maintaining pool ratio
+/// Accounts for 1% degenBTC burn tax and adds slippage tolerance
+/// Returns (adjusted_sol_amount, adjusted_dbtc_amount, adjusted_max_dbtc_with_buffer)
+fn adjust_sol_for_dbtc_limit(
+    available_dbtc: u64,
     sol_vault_balance: u64,
-    minebtc_vault_balance: u64,
+    dbtc_vault_balance: u64,
     lp_supply: u64,
     original_sol_amount: u64,
-    original_minebtc_amount: u64,
-    minebtc_mint: &AccountInfo<'_>,
+    original_dbtc_amount: u64,
+    degenbtc_mint: &AccountInfo<'_>,
     epoch: u64,
 ) -> Result<(u64, u64, u64)> {
-    // Calculate maximum MINEBTC we can use (1% of available_minebtc)
-    let max_minebtc_allowed = available_minebtc / 100; // 1% of available_minebtc
+    // Calculate maximum degenBTC we can use (1% of available_dbtc)
+    let max_dbtc_allowed = available_dbtc / 100; // 1% of available_dbtc
     msg!(
-        "   📊 Max MINEBTC allowed (1% of available_minebtc): {} MINEBTC",
-        max_minebtc_allowed as f64 / 1e6
+        "   📊 Max degenBTC allowed (1% of available_dbtc): {} degenBTC",
+        max_dbtc_allowed as f64 / 1e6
     );
 
     // Leave room for the 2% buffer on the pre-fee amount.
-    let max_base_minebtc = u64_mul_div(max_minebtc_allowed, 50, 51)?;
+    let max_base_dbtc = u64_mul_div(max_dbtc_allowed, 50, 51)?;
     msg!(
-        "   📊 Max base MINEBTC before transfer fee: {} MINEBTC",
-        max_base_minebtc as f64 / 1e6
+        "   📊 Max base degenBTC before transfer fee: {} degenBTC",
+        max_base_dbtc as f64 / 1e6
     );
 
-    // Calculate MINEBTC that will actually reach the pool using the live Token-2022 fee config.
-    let minebtc_received_in_pool =
-        helper::get_token2022_transfer_fee_info(minebtc_mint, max_base_minebtc, epoch)?
+    // Calculate degenBTC that will actually reach the pool using the live Token-2022 fee config.
+    let dbtc_received_in_pool =
+        helper::get_token2022_transfer_fee_info(degenbtc_mint, max_base_dbtc, epoch)?
             .post_fee_amount;
     msg!(
-        "   📊 MINEBTC that will reach pool (after transfer fee): {} MINEBTC",
-        minebtc_received_in_pool as f64 / 1e6
+        "   📊 degenBTC that will reach pool (after transfer fee): {} degenBTC",
+        dbtc_received_in_pool as f64 / 1e6
     );
 
     // Calculate corresponding SOL amount based on pool ratio
-    // Use the MINEBTC that actually reaches the pool (after burn) for ratio calculation
-    // If pool exists: sol_amount = (minebtc_received_in_pool * sol_vault_balance) / minebtc_vault_balance
+    // Use the degenBTC that actually reaches the pool (after burn) for ratio calculation
+    // If pool exists: sol_amount = (dbtc_received_in_pool * sol_vault_balance) / dbtc_vault_balance
     // If pool is empty, use original ratio
-    let sol_from_ratio = if lp_supply > 0 && minebtc_vault_balance > 0 && sol_vault_balance > 0 {
-        // Use pool ratio based on MINEBTC that reaches pool
+    let sol_from_ratio = if lp_supply > 0 && dbtc_vault_balance > 0 && sol_vault_balance > 0 {
+        // Use pool ratio based on degenBTC that reaches pool
         u64_mul_div(
-            minebtc_received_in_pool,
+            dbtc_received_in_pool,
             sol_vault_balance,
-            minebtc_vault_balance,
+            dbtc_vault_balance,
         )?
     } else {
         // Pool is empty or invalid, use original ratio
-        if original_minebtc_amount > 0 {
-            let original_minebtc_received = helper::get_token2022_transfer_fee_info(
-                minebtc_mint,
-                original_minebtc_amount,
+        if original_dbtc_amount > 0 {
+            let original_dbtc_received = helper::get_token2022_transfer_fee_info(
+                degenbtc_mint,
+                original_dbtc_amount,
                 epoch,
             )?
             .post_fee_amount;
-            require!(original_minebtc_received > 0, ErrorCode::InvalidAmount);
+            require!(original_dbtc_received > 0, ErrorCode::InvalidAmount);
             u64_mul_div(
-                minebtc_received_in_pool,
+                dbtc_received_in_pool,
                 original_sol_amount,
-                original_minebtc_received,
+                original_dbtc_received,
             )?
         } else {
             original_sol_amount // Fallback to original if no ratio available
@@ -1503,7 +1503,7 @@ fn adjust_sol_for_minebtc_limit(
         .checked_sub(slippage_buffer)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "   📊 SOL from ratio (based on MINEBTC after burn): {} SOL",
+        "   📊 SOL from ratio (based on degenBTC after burn): {} SOL",
         sol_from_ratio as f64 / 1e9
     );
     msg!(
@@ -1512,12 +1512,12 @@ fn adjust_sol_for_minebtc_limit(
     );
 
     // Recalculate buffer with adjusted amounts
-    let adjusted_minebtc_amount = max_base_minebtc;
+    let adjusted_dbtc_amount = max_base_dbtc;
     // Account for burn tax in the buffer calculation
-    // After burn: adjusted_minebtc_amount * 0.99 will reach the pool
-    // So max_minebtc_with_buffer should account for this
-    let adjusted_max_minebtc_with_buffer = adjusted_minebtc_amount
-        .checked_add(adjusted_minebtc_amount / 50)
+    // After burn: adjusted_dbtc_amount * 0.99 will reach the pool
+    // So max_dbtc_with_buffer should account for this
+    let adjusted_max_dbtc_with_buffer = adjusted_dbtc_amount
+        .checked_add(adjusted_dbtc_amount / 50)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("   ✅ Adjusted amounts:");
@@ -1527,20 +1527,20 @@ fn adjust_sol_for_minebtc_limit(
         original_sol_amount as f64 / 1e9
     );
     msg!(
-        "      MINEBTC: {} MINEBTC (was {} MINEBTC)",
-        adjusted_minebtc_amount as f64 / 1e6,
-        original_minebtc_amount as f64 / 1e6
+        "      degenBTC: {} degenBTC (was {} degenBTC)",
+        adjusted_dbtc_amount as f64 / 1e6,
+        original_dbtc_amount as f64 / 1e6
     );
     msg!(
-        "      Max MINEBTC with buffer: {} MINEBTC (limit: {} MINEBTC)",
-        adjusted_max_minebtc_with_buffer as f64 / 1e6,
-        max_minebtc_allowed as f64 / 1e6
+        "      Max degenBTC with buffer: {} degenBTC (limit: {} degenBTC)",
+        adjusted_max_dbtc_with_buffer as f64 / 1e6,
+        max_dbtc_allowed as f64 / 1e6
     );
 
     Ok((
         adjusted_sol_amount,
-        adjusted_minebtc_amount,
-        adjusted_max_minebtc_with_buffer,
+        adjusted_dbtc_amount,
+        adjusted_max_dbtc_with_buffer,
     ))
 }
 
@@ -1652,9 +1652,9 @@ pub struct SnapshotPrice<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1674,7 +1674,7 @@ pub struct SnapshotPrice<'info> {
 
     /// CHECK: Vault authority PDA (our program's authority for token accounts)
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump,
     )]
     pub authority_pda: UncheckedAccount<'info>,
@@ -1684,7 +1684,7 @@ pub struct SnapshotPrice<'info> {
 
     /// CHECK: MINE_BTC vault in Raydium pool
     #[account(mut)]
-    pub minebtc_vault: UncheckedAccount<'info>,
+    pub dbtc_vault: UncheckedAccount<'info>,
 
     /// CHECK: SOL vault in Raydium pool
     #[account(mut)]
@@ -1693,12 +1693,12 @@ pub struct SnapshotPrice<'info> {
     /// MINE_BTC token vault (main vault - same as used in initialize_mining)
     #[account(
         mut,
-        seeds = [MINE_BTC_VAULT_SEED.as_ref(), mine_btc_mining.key().as_ref()],
+        seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],
         bump,
-        constraint = minebtc_token_account.mint == minebtc_mint.key() @ ErrorCode::InvalidMint,
-        constraint = minebtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
+        constraint = dbtc_token_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = dbtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
     )]
-    pub minebtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
     // === The WSOL ATA, created automatically if missing
     #[account(
@@ -1714,7 +1714,7 @@ pub struct SnapshotPrice<'info> {
 
     /// CHECK: MINE_BTC mint
     #[account(mut)]
-    pub minebtc_mint: UncheckedAccount<'info>,
+    pub degenbtc_mint: UncheckedAccount<'info>,
 
     /// CHECK: SOL mint (WSOL)
     #[account(mut)]
@@ -1759,9 +1759,9 @@ pub struct UpdateRate<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump = faction_war_config.bump)]
     pub faction_war_config: Account<'info, FactionWarConfig>,
@@ -1770,8 +1770,8 @@ pub struct UpdateRate<'info> {
 /// Account struct for LP addition and burn (Instruction 2b) - Heavier weight
 #[derive(Accounts)]
 pub struct AddLpAndBurn<'info> {
-    #[account(mut, seeds = [MINE_BTC_MINING_SEED.as_ref()], bump = mine_btc_mining.bump)]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    #[account(mut, seeds = [MINE_BTC_MINING_SEED.as_ref()], bump = dbtc_mining.bump)]
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
@@ -1787,7 +1787,7 @@ pub struct AddLpAndBurn<'info> {
     pub pool_state: UncheckedAccount<'info>,
 
     /// CHECK: Vault authority PDA
-    #[account(seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()], bump)]
+    #[account(seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()], bump)]
     pub authority_pda: UncheckedAccount<'info>,
 
     /// CHECK: Raydium's pool authority PDA
@@ -1795,7 +1795,7 @@ pub struct AddLpAndBurn<'info> {
 
     /// CHECK: MINE_BTC vault in Raydium pool
     #[account(mut)]
-    pub minebtc_vault: UncheckedAccount<'info>,
+    pub dbtc_vault: UncheckedAccount<'info>,
 
     /// CHECK: SOL vault in Raydium pool
     #[account(mut)]
@@ -1804,12 +1804,12 @@ pub struct AddLpAndBurn<'info> {
     /// MINE_BTC token vault
     #[account(
         mut,
-        seeds = [MINE_BTC_VAULT_SEED.as_ref(), mine_btc_mining.key().as_ref()],
+        seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],
         bump,
-        constraint = minebtc_token_account.mint == minebtc_mint.key() @ ErrorCode::InvalidMint,
-        constraint = minebtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
+        constraint = dbtc_token_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = dbtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
     )]
-    pub minebtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
     /// CHECK: SOL token account for LP addition
     #[account(mut)]
@@ -1817,7 +1817,7 @@ pub struct AddLpAndBurn<'info> {
 
     /// CHECK: MINE_BTC mint
     #[account(mut)]
-    pub minebtc_mint: UncheckedAccount<'info>,
+    pub degenbtc_mint: UncheckedAccount<'info>,
 
     /// CHECK: SOL mint (WSOL)
     #[account(mut)]

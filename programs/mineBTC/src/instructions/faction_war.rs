@@ -861,7 +861,7 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
     let faction_war_config = &mut *ctx.accounts.faction_war_config;
     let faction_war_state = &mut *ctx.accounts.faction_war_state;
     let tax_config = &mut *ctx.accounts.tax_config;
-    let mining = &*ctx.accounts.mine_btc_mining;
+    let mining = &*ctx.accounts.dbtc_mining;
     let tuning = &ctx.accounts.global_config.gameplay_tuning;
 
     msg!(
@@ -953,7 +953,7 @@ pub struct SettleFactionWar<'info> {
         seeds = [MINE_BTC_MINING_SEED],
         bump,
     )]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     /// Needed to read reward/evolution tuning for `finalize_faction_war_settlement`.
     #[account(
@@ -1248,7 +1248,7 @@ pub fn claim_faction_war_rewards_internal(
             total_reward,
             owner_key,
             player_data_key,
-            CLAIMABLE_MINEBTC_SOURCE_FACTION_WAR,
+            CLAIMABLE_DBTC_SOURCE_FACTION_WAR,
             faction_war_id,
         )?;
         msg!("✅ [faction_war.claim_faction_war_rewards_internal] add_to_total_claimable done");

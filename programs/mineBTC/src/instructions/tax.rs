@@ -203,7 +203,7 @@ pub fn internal_update_tax_config(
 ///
 /// A keeper bot discovers token accounts with withheld fees off-chain (via Helius
 /// DAS API or getProgramAccounts) and passes them as `remaining_accounts`.
-/// This CPI aggregates their fees into `minebtc_mint.withheld_amount`.
+/// This CPI aggregates their fees into `degenbtc_mint.withheld_amount`.
 ///
 /// Callable by anyone. Designed to be called in batches (~20 accounts per tx).
 pub fn internal_crank_harvest_fees<'info>(
@@ -218,14 +218,14 @@ pub fn internal_crank_harvest_fees<'info>(
     msg!(
         "🌱 Harvesting withheld fees from {} accounts → mint {}",
         sources.len(),
-        ctx.accounts.minebtc_mint.key()
+        ctx.accounts.degenbtc_mint.key()
     );
 
     harvest_withheld_tokens_to_mint(
         CpiContext::new(
             ctx.accounts.token_program_2022.to_account_info(),
             HarvestWithheldTokensToMint {
-                mint: ctx.accounts.minebtc_mint.to_account_info(),
+                mint: ctx.accounts.degenbtc_mint.to_account_info(),
                 token_program_id: ctx.accounts.token_program_2022.to_account_info(),
             },
         ),
@@ -326,12 +326,12 @@ pub fn internal_crank_distribute_tax<'info>(
 
     // 1. Get the total amount of tax sitting on the mint account
     // We must reload to get the most up-to-date data after harvesting
-    accounts.minebtc_mint.reload()?;
+    accounts.degenbtc_mint.reload()?;
 
     // Read withheld_amount from TransferFeeConfig extension.
     // Scoped block so the borrow is dropped before CPI calls below.
     let withheld_amount = {
-        let mint_account_info = accounts.minebtc_mint.to_account_info();
+        let mint_account_info = accounts.degenbtc_mint.to_account_info();
         let mint_data = mint_account_info.try_borrow_data()?;
         let mint =
             StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(
@@ -367,7 +367,7 @@ pub fn internal_crank_distribute_tax<'info>(
         WithdrawWithheldTokensFromMint {
             destination: accounts.withdraw_authority_token_account.to_account_info(),
             authority: accounts.withdraw_withheld_authority.to_account_info(),
-            mint: accounts.minebtc_mint.to_account_info(),
+            mint: accounts.degenbtc_mint.to_account_info(),
             token_program_id: accounts.token_program_2022.to_account_info(),
         },
         withdraw_authority_signer,
@@ -420,14 +420,14 @@ pub fn internal_crank_distribute_tax<'info>(
                 accounts.token_program_2022.to_account_info(),
                 TransferChecked {
                     from: accounts.withdraw_authority_token_account.to_account_info(),
-                    mint: accounts.minebtc_mint.to_account_info(),
+                    mint: accounts.degenbtc_mint.to_account_info(),
                     to: accounts.faction_treasury_vault.to_account_info(),
                     authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
             ),
             faction_treasury_amount,
-            accounts.minebtc_mint.decimals,
+            accounts.degenbtc_mint.decimals,
         )?;
         msg!(
             "   ✅ Transferred {} tokens to Faction treasury vault",
@@ -441,7 +441,7 @@ pub fn internal_crank_distribute_tax<'info>(
             CpiContext::new_with_signer(
                 accounts.token_program_2022.to_account_info(),
                 Burn {
-                    mint: accounts.minebtc_mint.to_account_info(),
+                    mint: accounts.degenbtc_mint.to_account_info(),
                     from: accounts.withdraw_authority_token_account.to_account_info(),
                     authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
@@ -468,14 +468,14 @@ pub fn internal_crank_distribute_tax<'info>(
                 accounts.token_program_2022.to_account_info(),
                 TransferChecked {
                     from: accounts.withdraw_authority_token_account.to_account_info(),
-                    mint: accounts.minebtc_mint.to_account_info(),
-                    to: accounts.minebtc_token_vault.to_account_info(),
+                    mint: accounts.degenbtc_mint.to_account_info(),
+                    to: accounts.dbtc_token_vault.to_account_info(),
                     authority: accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 withdraw_authority_signer,
             ),
             vault_return,
-            accounts.minebtc_mint.decimals,
+            accounts.degenbtc_mint.decimals,
         )?;
         msg!(
             "   ✅ Returned {} tokens to minebtc vault",
@@ -687,14 +687,14 @@ pub fn internal_claim_faction_treasury_for_faction_war(
                 ctx.accounts.token_program_2022.to_account_info(),
                 token_2022::TransferChecked {
                     from: ctx.accounts.faction_treasury_vault.to_account_info(),
-                    mint: ctx.accounts.minebtc_mint.to_account_info(),
-                    to: ctx.accounts.minebtc_emission_vault.to_account_info(),
+                    mint: ctx.accounts.degenbtc_mint.to_account_info(),
+                    to: ctx.accounts.dbtc_emission_vault.to_account_info(),
                     authority: ctx.accounts.withdraw_withheld_authority.to_account_info(),
                 },
                 seeds,
             ),
             total_transfer,
-            ctx.accounts.minebtc_mint.decimals,
+            ctx.accounts.degenbtc_mint.decimals,
         )?;
         msg!(
             "   ✅ Transferred {} degenBTC from treasury (dbtc_stakers={}, lp_stakers={}, reborn={})",
@@ -755,10 +755,10 @@ pub struct InitializeTaxConfig<'info> {
     #[account(init_if_needed, payer = authority, space = 0, seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
 
-    #[account(init, payer = authority, token::mint = minebtc_mint, token::authority = withdraw_withheld_authority, token::token_program = token_program_2022, seeds = [FACTION_TREASURY_VAULT_SEED.as_ref()], bump)]
+    #[account(init, payer = authority, token::mint = degenbtc_mint, token::authority = withdraw_withheld_authority, token::token_program = token_program_2022, seeds = [FACTION_TREASURY_VAULT_SEED.as_ref()], bump)]
     pub faction_treasury_vault: InterfaceAccount<'info, TokenAccount2022>,
 
-    pub minebtc_mint: InterfaceAccount<'info, Mint>,
+    pub degenbtc_mint: InterfaceAccount<'info, Mint>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump, constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized)]
     pub global_config: Account<'info, GlobalConfig>,
@@ -781,7 +781,7 @@ pub struct UpdateTaxConfig<'info> {
 #[derive(Accounts)]
 pub struct CrankHarvestFees<'info> {
     #[account(mut)]
-    pub minebtc_mint: InterfaceAccount<'info, Mint>,
+    pub degenbtc_mint: InterfaceAccount<'info, Mint>,
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }
 
@@ -789,7 +789,7 @@ pub struct CrankHarvestFees<'info> {
 #[instruction(faction_war_id: u64)]
 pub struct CrankDistributeTax<'info> {
     #[account(mut)]
-    pub minebtc_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub degenbtc_mint: Box<InterfaceAccount<'info, Mint>>,
     /// CHECK: Withdraw withheld authority PDA
     #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
@@ -798,7 +798,7 @@ pub struct CrankDistributeTax<'info> {
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
     pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut)]
-    pub minebtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    pub dbtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Box<Account<'info, TaxConfig>>,
     #[account(
@@ -838,10 +838,10 @@ pub struct ClaimFactionTreasuryForFactionWar<'info> {
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
     pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     #[account(mut)]
-    pub minebtc_emission_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    pub dbtc_emission_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
     /// CHECK: PDA signer for treasury vault transfers
     #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
-    pub minebtc_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub degenbtc_mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }

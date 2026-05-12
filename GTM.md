@@ -609,7 +609,7 @@ After review, **win streaks, whale alerts, and player statistics will be handled
 1. **Paper Hand Burn Events (Implemented)**
    - Renamed `EmergencyWithdrawal` → `PaperHandBurned` for viral narrative
    - Enhanced with `days_remaining` and `staked_token_type` (0 = MineBTC, 1 = LP)
-   - Emitted in both `int_unstake_minebtc` and `int_unstake_lp_tokens` when penalty > 0
+   - Emitted in both `int_unstake_degenbtc` and `int_unstake_lp_tokens` when penalty > 0
    - Frontend: "🔥 {User} paper handed 180 days early. 15,000 degenBTC BURNED."
    - This makes deflation a spectator sport.
 

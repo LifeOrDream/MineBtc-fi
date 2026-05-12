@@ -929,7 +929,7 @@ pub fn int_whitelist_mint_hashbeast(
     Ok(())
 }
 
-/// Stake a HashBeast to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
+/// Stake a HashBeast to boost hashpower (multiplier applies to the player's home-faction degenBTC and LP stakes).
 /// The HashBeast's own faction does not matter for staking boosts.
 ///
 /// Passive staking uses three-slot smoothing:
@@ -967,7 +967,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
@@ -1017,15 +1017,15 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
     )?;
 
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_minebtc_rewards) =
-        stake::int_update_minebtc_staking_rewards(player_data, faction_state)?;
-    let (_new_sol_rewards, _new_minebtc_rewards) =
+    let (_new_sol_rewards, _new_dbtc_rewards) =
+        stake::int_update_degenBTC_staking_rewards(player_data, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards) =
         stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(
-        "💹 [stake_hashbeast] pending_after_reward_sync sol={} staking_minebtc={} gameplay_minebtc={}",
+        "💹 [stake_hashbeast] pending_after_reward_sync sol={} staking_degenBTC={} gameplay_degenBTC={}",
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_staking_minebtc_rewards as f64 / 1e6,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_staking_dbtc_rewards as f64 / 1e6,
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
 
     // Derive the exact multiplier from currently staked hashbeasts so cap-hit flows remain reversible
@@ -1087,7 +1087,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         )?;
     }
     msg!(
-        "   MineBtc hashpower: {} -> {}",
+        "   degenBTC hashpower: {} -> {}",
         existing_degenbtc_hashpower as f64 / 1e6,
         player_data.degenbtc_hashpower as f64 / 1e6
     );
@@ -1106,7 +1106,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         player_data.lp_hashpower,
     )?;
     msg!(
-        "   Faction minebtc hashpower: {} -> {}",
+        "   Faction degenBTC hashpower: {} -> {}",
         prev_faction_degenbtc_hashpower as f64 / 1e6,
         faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
@@ -1170,13 +1170,13 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
         hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [unstake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        "🧾 [unstake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_degenBTC={}",
         player_data.staked_hashbeasts,
         player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
@@ -1213,15 +1213,15 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     );
 
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_minebtc_rewards) =
-        stake::int_update_minebtc_staking_rewards(player_data, faction_state)?;
-    let (_new_sol_rewards, _new_minebtc_rewards) =
+    let (_new_sol_rewards, _new_dbtc_rewards) =
+        stake::int_update_dbtc_staking_rewards(player_data, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards) =
         stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(
-        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} staking_minebtc={} gameplay_minebtc={}",
+        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} staking_degenBTC={} gameplay_degenBTC={}",
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_staking_minebtc_rewards as f64 / 1e6,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_staking_dbtc_rewards as f64 / 1e6,
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
 
     // Build the expected post-unstake hashbeast set before mutating state so we can validate
@@ -1296,7 +1296,7 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
             scale_hashpower_by_multiplier(existing_lp_hashpower, new_multiplier, old_multiplier)?;
     }
     msg!(
-        "   MineBtc hashpower: {} -> {}",
+        "   degenBTC hashpower: {} -> {}",
         existing_degenbtc_hashpower as f64 / 1e6,
         player_data.degenbtc_hashpower as f64 / 1e6
     );
@@ -1315,7 +1315,7 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
         player_data.lp_hashpower,
     )?;
     msg!(
-        "   Faction minebtc hashpower: {} -> {}",
+        "   Faction degenBTC hashpower: {} -> {}",
         prev_faction_degenbtc_hashpower as f64 / 1e6,
         faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
@@ -1430,8 +1430,8 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
     if accumulated_val > 0 {
         msg!("💸 Transferring {} degenBTC to user", accumulated_val);
         let seeds = &[
-            MINE_BTC_VAULT_AUTHORITY_SEED,
-            &[ctx.accounts.mine_btc_mining.vault_auth_bump],
+            DEGEN_BTC_VAULT_AUTHORITY_SEED,
+            &[ctx.accounts.dbtc_mining.vault_auth_bump],
         ];
         let signer_seeds = &[&seeds[..]];
 
@@ -1439,7 +1439,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
-                    from: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    from: ctx.accounts.dbtc_token_vault.to_account_info(),
                     mint: ctx.accounts.token_mint.to_account_info(),
                     to: ctx.accounts.user_token_account.to_account_info(),
                     authority: ctx.accounts.vault_authority.to_account_info(),
@@ -1447,10 +1447,10 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
                 signer_seeds,
             ),
             accumulated_val,
-            MINEBTC_DECIMALS,
+            DBTC_DECIMALS,
         )?;
 
-        let mining_state = &mut ctx.accounts.mine_btc_mining;
+        let mining_state = &mut ctx.accounts.dbtc_mining;
         mining_state.total_tokens_distributed = mining_state
             .total_tokens_distributed
             .checked_add(accumulated_val)
@@ -1755,9 +1755,9 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
     let dbtc_value_lamports = breed_cost
         .checked_sub(sol_due)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let dbtc_price_lamports = ctx.accounts.mine_btc_mining.recent_price;
+    let dbtc_price_lamports = ctx.accounts.dbtc_mining.recent_price;
     require!(dbtc_price_lamports > 0, ErrorCode::DbtcPriceUnavailable);
-    let dbtc_due = ceil_mul_div_u64(dbtc_value_lamports, MINEBTC_BASE_UNITS, dbtc_price_lamports)?;
+    let dbtc_due = ceil_mul_div_u64(dbtc_value_lamports, DBTC_BASE_UNITS, dbtc_price_lamports)?;
     require!(dbtc_due > 0, ErrorCode::InvalidAmount);
 
     let sol_fee_recipient = ceil_mul_div_u64(
@@ -1814,12 +1814,12 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
                 TransferChecked {
                     from: ctx.accounts.user_token_account.to_account_info(),
                     mint: ctx.accounts.token_mint.to_account_info(),
-                    to: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    to: ctx.accounts.dbtc_token_vault.to_account_info(),
                     authority: ctx.accounts.user.to_account_info(),
                 },
             ),
             dbtc_to_vault,
-            MINEBTC_DECIMALS,
+            DBTC_DECIMALS,
         )?;
     }
     msg!(
@@ -2745,21 +2745,21 @@ pub struct RebirthHashBeast<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     #[account(
         mut,
-        seeds = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        seeds = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         bump,
         token::mint = token_mint,
         token::authority = vault_authority,
     )]
-    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: Vault authority PDA
@@ -2772,7 +2772,7 @@ pub struct RebirthHashBeast<'info> {
     )]
     pub user_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
-    #[account(address = minebtc_token_vault.mint)]
+    #[account(address = dbtc_token_vault.mint)]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
 
     pub token_program: Program<'info, Token2022>,
@@ -2825,23 +2825,23 @@ pub struct BreedHashBeast<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     #[account(
         mut,
-        seeds = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        seeds = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         bump,
         token::mint = token_mint,
         token::authority = vault_authority,
-        constraint = minebtc_token_vault.key() == mine_btc_mining.minebtc_token_vault @ ErrorCode::InvalidAccount,
+        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
     )]
-    pub minebtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    pub dbtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump = mine_btc_mining.vault_auth_bump,
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = dbtc_mining.vault_auth_bump,
     )]
     /// CHECK: Vault authority PDA for the mining token vault.
     pub vault_authority: UncheckedAccount<'info>,
@@ -2855,8 +2855,8 @@ pub struct BreedHashBeast<'info> {
 
     #[account(
         mut,
-        address = minebtc_token_vault.mint,
-        constraint = token_mint.decimals == MINEBTC_DECIMALS @ ErrorCode::InvalidMint,
+        address = dbtc_token_vault.mint,
+        constraint = token_mint.decimals == DBTC_DECIMALS @ ErrorCode::InvalidMint,
     )]
     pub token_mint: Box<InterfaceAccount<'info, Mint2022>>,
 

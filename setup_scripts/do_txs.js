@@ -147,9 +147,9 @@ const [floorHistoryPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("floor-history")], pid);
 const [inventorySweepVaultPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("inventory-sweep-vault")], pid);
-// `minebtc_vault` is the dBTC token vault owned by the mining authority.
+// `dbtc_vault` is the dBTC token vault owned by the mining authority.
 const [dbtcTokenVaultPda] = PublicKey.findProgramAddressSync(
-  [Buffer.from("minebtc_vault"), mineBtcMiningPda.toBuffer()], pid);
+  [Buffer.from("dbtc_vault"), mineBtcMiningPda.toBuffer()], pid);
 
 // Tax-config side accounts (initialized at deploy time)
 const factionTreasuryVault = new PublicKey(
@@ -277,7 +277,7 @@ async function printState() {
   console.log(`  lp_operation_pending   : ${mining.lpOperationPending}`);
   console.log(`  recent_price           : ${mining.recentPrice.toString()}`);
   console.log(`  track_price            : ${mining.trackPrice.toString()}`);
-  console.log(`  mine_btc_per_round     : ${mining.mineBtcPerRound.toString()}`);
+  console.log(`  dbtc_per_round     : ${mining.mineBtcPerRound.toString()}`);
   console.log(`  last_rate_update       : ${mining.lastRateUpdate.toString()} (${new Date(Number(mining.lastRateUpdate) * 1000).toISOString()})`);
   console.log(`  --- treasuries ---`);
   console.log(`  sol_treasury           : ${lam(treasuryBal)} SOL`);

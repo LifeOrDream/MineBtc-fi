@@ -444,7 +444,7 @@ async function main() {
     // Instruction: initialize(fee_recipient: Pubkey)
     // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
-    //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
+    //   - DegenBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
     //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending degenBTC claims pool with HODL tax redistribution
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
@@ -481,10 +481,10 @@ async function main() {
     //   new_protocol_fee_pct: Option<u8>,            — % of SOL bets taken as protocol fee
     //   new_buyback_pct: Option<u8>,                 — % of treasury SOL used for buybacks + POL
     //   new_stakers_pct: Option<u8>,                 — % of protocol fee redirected to staker rewards vault
-    //   new_minebtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
-    //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
-    //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
-    //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
+    //   new_dbtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
+    //   new_dbtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
+    //   new_dbtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
+    //   new_dbtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
     //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on degenBTC withdrawal (paper hands → diamond hands)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
@@ -494,23 +494,23 @@ async function main() {
     console.log("\n✅ First 5 init functions completed. Continuing with remaining init functions...");
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
-    // Instruction: initialize_mining(mine_btc_per_round: u64, pool_state: Pubkey)
+    // Instruction: initialize_mining(dbtc_per_round: u64, pool_state: Pubkey)
     // Sets up the mining emission vault:
     //   - VaultAuthority [seeds: "minebtc-vault-authority"] — signer-only PDA
-    //   - TokenVault     [seeds: "minebtc_vault", mine_btc_mining.key()] — Token-2022 vault for MineBTC
-    // Stores emission rate and Raydium pool state in MineBtcMining
+    //   - TokenVault     [seeds: "dbtc_vault", dbtc_mining.key()] — Token-2022 vault for MineBTC
+    // Stores emission rate and Raydium pool state in DegenBtcMining
     // Accounts: globalConfig, mineBtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
     await initializeMiningSystem(minebtcProgram);
 
     // 5.1. Update emission controller params
     // Instruction: update_emission_params(price_change_threshold, emission_increase_pct, emission_decrease_pct)
-    // Stores explicit live-cycle rate adjustment settings on MineBtcMining so
+    // Stores explicit live-cycle rate adjustment settings on DegenBtcMining so
     // fresh deployments don't silently rely on compile-time defaults.
     // Accounts: mineBtcMining, globalConfig, authority, systemProgram
     await updateEmissionParams(minebtcProgram, EMISSION_CONFIG);
 
     // 6. Deposit Mining Tokens
-    // Instruction: deposit_mine_btc_tokens(amount: u64)
+    // Instruction: deposit_dbtc_tokens(amount: u64)
     // Transfers MineBTC from depositor's Token-2022 ATA to the mining vault
     // Accounts: depositor, depositorTokenAccount, minebtcTokenVault, mineBtcMining, tokenMint, tokenProgram(T22)
     await depositMiningTokens(minebtcProgram);
@@ -1181,7 +1181,7 @@ async function initializeMiningSystem(minebtcProgram) {
     }
 
     const [vaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc_vault"), mineBtcMiningPDA.toBuffer()],
+    [Buffer.from("dbtc_vault"), mineBtcMiningPDA.toBuffer()],
     minebtcProgram.programId
     );
 

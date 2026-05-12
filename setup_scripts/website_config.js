@@ -133,7 +133,7 @@ function generateWebsiteConfig(config, deployment) {
       // ───────── CORE MINEBTC PROGRAM PDAS ─────────
       minebtc: {
         global_config: deployment.minebtc_program_initialized?.globalConfig_address,
-        mine_btc_mining: deployment.minebtc_program_initialized?.mineBtcMining_address,
+        dbtc_mining: deployment.minebtc_program_initialized?.mineBtcMining_address,
         sol_treasury: deployment.minebtc_program_initialized?.solTreasury_address,
         hodl_pool: deployment.minebtc_program_initialized?.hodlPool_address,
         autominer_custody:

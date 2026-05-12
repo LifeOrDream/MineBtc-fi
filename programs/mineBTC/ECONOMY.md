@@ -62,7 +62,7 @@ Over 8 snapshots: ~80% of available SOL at snapshot 1 gets consumed
 
 **Price formula:**
 ```
-price = (sol_swapped_lamports × 10^6) / minebtc_received_base_units
+price = (sol_swapped_lamports × 10^6) / dbtc_received_base_units
 ```
 Stored as u64 lamports per whole degenBTC. Divide by `1e9` for SOL per degenBTC.
 
@@ -90,8 +90,8 @@ Later snapshots count more, reflecting more recent market conditions.
 2. Compares against `track_price` (price at last rate change) AND first snapshot price
 3. Uses whichever comparison shows the larger absolute change
 4. If change ≥ `price_change_threshold` (default 3%):
-   - Price up → increase `mine_btc_per_round` by `emission_increase_pct` (default 1%)
-   - Price down → decrease `mine_btc_per_round` by `emission_decrease_pct` (default 3%)
+   - Price up → increase `dbtc_per_round` by `emission_increase_pct` (default 1%)
+   - Price down → decrease `dbtc_per_round` by `emission_decrease_pct` (default 3%)
 5. Sets `lp_operation_pending = true` (blocks new snapshots)
 6. Clears `price_history` (ready for next cycle)
 
@@ -131,7 +131,7 @@ price rises increase them. This creates deflationary pressure during downturns.
 **LP amount calculation:**
 ```
 lp_from_sol = (available_sol × lp_supply) / sol_vault_balance
-required_minebtc = (lp_from_sol × minebtc_vault_balance) / lp_supply
+required_dbtc = (lp_from_sol × dbtc_vault_balance) / lp_supply
 ```
 Plus 2% buffer for slippage, plus Token-2022 transfer fee gross-up.
 
@@ -456,7 +456,7 @@ price is unavailable. Payment is 50% SOL and 50% dbTC by SOL value:
 
 ```text
 SOL leg: 25% -> fee_recipient, 75% -> sol_treasury
-dbTC leg: 50% burned, 50% -> minebtc_token_vault
+dbTC leg: 50% burned, 50% -> dbtc_token_vault
 ```
 
 ### Gameplay HashBeast Lifecycle
@@ -484,7 +484,7 @@ The two-phase unlock prevents mid-cycle HashBeast swapping to farm story events.
 When a round ends, rewards flow to three groups:
 
 ```
-mine_btc_per_round (degenBTC emission)
+dbtc_per_round (degenBTC emission)
     ├─ winners_pct (50%) → exact country+direction winners (pro-rata by wgtd_points)
     ├─ same_faction_pct (20% × 2 directions) → consolation for wrong-direction bettors
     │   on the winning country (pro-rata by wgtd_points per direction)
@@ -510,7 +510,7 @@ overlay rewards do not reduce the round/cycle reward pools.
 Passive staking is a separate accounting layer that sits downstream from rounds.
 
 ```text
-economy loop sets mine_btc_per_round
+economy loop sets dbtc_per_round
     ↓
 round settlement decides who gets the current round's MineBTC/SOL splits
     ↓
@@ -557,8 +557,8 @@ SOL staking rewards:
 
 MineBTC staking rewards:
 
-- accrue into `pending_minebtc_rewards`
-- are globally tracked through `hodl_pool.total_minebtc_claimable`
+- accrue into `pending_dbtc_rewards`
+- are globally tracked through `hodl_pool.total_dbtc_claimable`
 - are withdrawn later through `withdraw_dbtc_rewards`
 
 ### HODL tax redistribution

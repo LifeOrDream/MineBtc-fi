@@ -16,8 +16,8 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 
 ## Token, Mining, HashBeast, and Custodian Setup
 
-- `initialize_mining(start_timestamp, mine_btc_per_round, pool_state)` - token vault and emission state.
-- `deposit_mine_btc_tokens(amount)` - deposits pre-minted degenBTC into mining vault.
+- `initialize_mining(start_timestamp, dbtc_per_round, pool_state)` - token vault and emission state.
+- `deposit_dbtc_tokens(amount)` - deposits pre-minted degenBTC into mining vault.
 - `initialize_hashpower_config(...)`, `initialize_custodian_accounts()`.
 - `initialize_hashbeast_config()`, `initialize_hashbeast_mint_config(...)`.
 - `update_hashbeast_config(...)`, `update_hashbeast_mint_config(...)`, `switch_hashbeast_mining()`.
@@ -74,7 +74,7 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 
 ## Staking and Claims
 
-- `stake_minebtc(amount, lockup_days, position_index)`, `unstake_minebtc(position_index)`.
+- `stake_degenbtc(amount, lockup_days, position_index)`, `unstake_degenbtc(position_index)`.
 - `stake_lp_tokens(amount, lockup_days, position_index)`, `unstake_lp_tokens(position_index)`.
 - `claim_staking_rewards()` - SOL and unrefined degenBTC accrual.
 - `withdraw_dbtc_rewards()` - withdraws degenBTC rewards with HODL tax when applicable.

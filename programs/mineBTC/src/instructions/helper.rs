@@ -901,9 +901,9 @@ pub fn init_position(
 
 /// Add gameplay rewards to total claimable and pending rewards.
 pub fn add_to_total_claimable(
-    unrefined_minebtc: &mut HodlPool,
+    unrefined_dbtc: &mut HodlPool,
     player_data: &mut PlayerData,
-    minebtc_rewards: u64,
+    dbtc_rewards: u64,
     user: Pubkey,
     player_data_key: Pubkey,
     source: u8,
@@ -912,32 +912,32 @@ pub fn add_to_total_claimable(
     // Calculate extra degenBtc rewards from the HODL tax. The global hodl_tax_index
     // is monotonically non-decreasing, so checked_sub should never fail — but we
     // validate it to surface any state corruption rather than panicking.
-    let index_dif = unrefined_minebtc
+    let index_dif = unrefined_dbtc
         .hodl_tax_index
         .checked_sub(player_data.hodl_tax_index)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let accrued_u128 = mul_div_u128(
-        player_data.pending_minebtc_rewards as u128,
+        player_data.pending_dbtc_rewards as u128,
         index_dif,
         INDEX_PRECISION as u128,
     )?;
     let accrued_rewards = u64::try_from(accrued_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
     msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
 
-    let total_new = minebtc_rewards
+    let total_new = dbtc_rewards
         .checked_add(accrued_rewards)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
-        .total_minebtc_claimable
+    unrefined_dbtc.total_dbtc_claimable = unrefined_dbtc
+        .total_dbtc_claimable
         .checked_add(total_new)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.hodl_tax_index = unrefined_minebtc.hodl_tax_index;
-    player_data.pending_minebtc_rewards = player_data
-        .pending_minebtc_rewards
+    player_data.hodl_tax_index = unrefined_dbtc.hodl_tax_index;
+    player_data.pending_dbtc_rewards = player_data
+        .pending_dbtc_rewards
         .checked_add(total_new)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.unrefined_minebtc_rewards = player_data
-        .unrefined_minebtc_rewards
+    player_data.unrefined_dbtc_rewards = player_data
+        .unrefined_dbtc_rewards
         .checked_add(accrued_rewards)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -947,11 +947,11 @@ pub fn add_to_total_claimable(
             player_data: player_data_key,
             source,
             reference_id,
-            source_amount: minebtc_rewards,
+            source_amount: dbtc_rewards,
             unrefined_bonus_amount: accrued_rewards,
             total_added: total_new,
-            pending_minebtc_after: player_data.pending_minebtc_rewards,
-            total_claimable_after: unrefined_minebtc.total_minebtc_claimable,
+            pending_dbtc_after: player_data.pending_dbtc_rewards,
+            total_claimable_after: unrefined_dbtc.total_dbtc_claimable,
             timestamp: Clock::get()?.unix_timestamp,
         });
     }
@@ -1004,9 +1004,9 @@ pub fn calculate_emergency_tax(
 /// Charge emergency tax for MINEBTC tokens by burning the full penalty amount.
 /// This function handles the penalty for early withdrawal from MINEBTC staking positions.
 pub fn charge_emergency_tax<'info>(
-    minebtc_custodian: &AccountInfo<'info>,
-    minebtc_custodian_authority: &AccountInfo<'info>,
-    minebtc_mint: &AccountInfo<'info>,
+    dbtc_custodian: &AccountInfo<'info>,
+    dbtc_custodian_authority: &AccountInfo<'info>,
+    degenbtc_mint: &AccountInfo<'info>,
     token_program: &AccountInfo<'info>,
     custodian_authority_bump: u8,
     penalty_amount: u64,
@@ -1021,9 +1021,9 @@ pub fn charge_emergency_tax<'info>(
             penalty_amount as f64 / 1e6
         );
 
-        // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
+        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
-            MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            DEGENBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
             &[custodian_authority_bump],
         ];
         let custodian_signer = &[&custodian_authority_seeds[..]];
@@ -1033,9 +1033,9 @@ pub fn charge_emergency_tax<'info>(
             CpiContext::new_with_signer(
                 token_program.to_account_info(),
                 Burn {
-                    mint: minebtc_mint.to_account_info(),
-                    from: minebtc_custodian.to_account_info(),
-                    authority: minebtc_custodian_authority.to_account_info(),
+                    mint: degenbtc_mint.to_account_info(),
+                    from: dbtc_custodian.to_account_info(),
+                    authority: dbtc_custodian_authority.to_account_info(),
                 },
                 custodian_signer,
             ),

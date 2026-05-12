@@ -35,7 +35,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 3. Validate round degenBTC distribution sum.
 4. Validate faction-war reward bps sum.
 5. Initialize MineBTC program:
-   - `GlobalConfig`, `MineBtcMining`, `HodlPool`, `SOL Treasury`, `Autominer Custody`.
+   - `GlobalConfig`, `DegenBtcMining`, `HodlPool`, `SOL Treasury`, `Autominer Custody`.
 6. Set Raydium pool state and initialize SOL rewards/prize pot vaults.
 7. Add configured factions sequentially.
 8. Initialize system referral and buybacks accounts.

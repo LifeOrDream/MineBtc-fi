@@ -85,7 +85,7 @@ This final `hashpower_contribution` is what changes:
 
 ### Stake flow
 
-`int_stake_minebtc`:
+`int_stake_degenbtc`:
 
 1. Validates the player is staking into their home faction
 2. Reads the live Token-2022 transfer fee from the MineBTC mint
@@ -111,7 +111,7 @@ actually delivered.
 
 ### Unstake flow
 
-`int_unstake_minebtc`:
+`int_unstake_degenbtc`:
 
 1. Syncs pending rewards before mutating balances
 2. Removes that position's hashpower from player + faction totals
@@ -196,8 +196,8 @@ MineBTC rewards come from faction reward indexes too:
 
 When rewards are synced:
 
-1. newly accrued MineBTC is added to `pending_minebtc_rewards`
-2. global claimable MineBTC is added to `hodl_pool.total_minebtc_claimable`
+1. newly accrued MineBTC is added to `pending_dbtc_rewards`
+2. global claimable MineBTC is added to `hodl_pool.total_dbtc_claimable`
 3. an attribution event is emitted
 
 MineBTC is **not transferred** during staking reward sync.
@@ -226,7 +226,7 @@ This creates a rebirthing loop:
 ### Important accounting rule
 
 Only the user's own pending MineBTC is deducted from
-`hodl_pool.total_minebtc_claimable`.
+`hodl_pool.total_dbtc_claimable`.
 
 Referral bonus and referral reward are paid from the emissions vault directly and
 must **not** be subtracted from total claimable, otherwise the HODL tax index drifts.
@@ -342,13 +342,13 @@ If you want a wallet-level reward breakdown on frontend, the canonical source is
 
 Useful log prefixes when debugging staking:
 
-- `[stake_minebtc]`
-- `[unstake_minebtc]`
+- `[stake_degenbtc]`
+- `[unstake_degenbtc]`
 - `[stake_lp_tokens]`
 - `[unstake_lp_tokens]`
 - `[claim_staking_rewards]`
 - `[withdraw_dbtc_rewards]`
-- `[update_minebtc_rewards]`
+- `[update_dbtc_rewards]`
 - `[update_lp_rewards]`
 - `[stake_hashbeast]`
 - `[unstake_hashbeast]`

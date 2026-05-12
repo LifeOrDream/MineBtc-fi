@@ -151,8 +151,8 @@ pub fn internal_initialize_player(
 
     // Initialize pending rewards
     player_data.pending_sol_rewards = 0;
-    player_data.pending_minebtc_rewards = 0;
-    player_data.pending_staking_minebtc_rewards = 0;
+    player_data.pending_dbtc_rewards = 0;
+    player_data.pending_staking_dbtc_rewards = 0;
     player_data.pending_round_claims = 0;
     player_data.pending_faction_war_claims = 0;
     msg!("     Pending rewards initialized");
@@ -354,7 +354,7 @@ pub fn internal_join_bets<'info>(
         ErrorCode::InvalidParameters
     );
 
-    let lp_ops = accounts.mine_btc_mining.pol_stats.lp_operations_count;
+    let lp_ops = accounts.dbtc_mining.pol_stats.lp_operations_count;
     require!(
         accounts.faction_war_config.current_faction_war_id == faction_war_id,
         ErrorCode::InvalidParameters
@@ -1020,7 +1020,7 @@ pub fn internal_execute_autominer_bet<'info>(
         rounds_remaining: new_rounds_remaining,
     };
 
-    let lp_ops = accounts.mine_btc_mining.pol_stats.lp_operations_count;
+    let lp_ops = accounts.dbtc_mining.pol_stats.lp_operations_count;
 
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
@@ -1182,8 +1182,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
 
     // Calculate rewards using helper function
-    let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards(user_bet, game_session)?;
-    let claim_won = total_sol_reward > 0 || total_minebtc_reward > 0;
+    let (total_sol_reward, total_dbtc_reward) = calculate_round_rewards(user_bet, game_session)?;
+    let claim_won = total_sol_reward > 0 || total_dbtc_reward > 0;
 
     let mutation_type = if claim_won && user_bet.mutation_type == 0 {
         if let Some(roll) =
@@ -1216,7 +1216,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         player_data,
         &mut ctx.accounts.hodl_pool,
         total_sol_reward,
-        total_minebtc_reward,
+        total_dbtc_reward,
         round_id,
     )?;
 
@@ -1237,8 +1237,8 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // === ACCUMULATED VALUE & CLAIM-TIME MUTATION SYNC ===
     let accum_pct = mutation_accum_pct(mutation_type);
-    let accum_add = if total_minebtc_reward > 0 {
-        u64::try_from(helper::mul_div(total_minebtc_reward, accum_pct, 1000)?)
+    let accum_add = if total_dbtc_reward > 0 {
+        u64::try_from(helper::mul_div(total_dbtc_reward, accum_pct, 1000)?)
             .map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0
@@ -1290,7 +1290,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         player_data: ctx.accounts.player_data.key(),
         round_id: user_bet.round_id,
         sol_reward: total_sol_reward,
-        minebtc_reward: total_minebtc_reward,
+        dbtc_reward: total_dbtc_reward,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -1325,8 +1325,8 @@ pub fn internal_claim_autominer_rewards(
     require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
 
     // Calculate rewards using helper function
-    let (total_sol_reward, total_minebtc_reward) = calculate_round_rewards(user_bet, game_session)?;
-    let claim_won = total_sol_reward > 0 || total_minebtc_reward > 0;
+    let (total_sol_reward, total_dbtc_reward) = calculate_round_rewards(user_bet, game_session)?;
+    let claim_won = total_sol_reward > 0 || total_dbtc_reward > 0;
 
     let mutation_type = if claim_won && user_bet.mutation_type == 0 {
         if let Some(roll) =
@@ -1359,14 +1359,14 @@ pub fn internal_claim_autominer_rewards(
         player_data,
         &mut ctx.accounts.hodl_pool,
         total_sol_reward,
-        total_minebtc_reward,
+        total_dbtc_reward,
         round_id,
     )?;
 
     // === ACCUMULATED VALUE & CLAIM-TIME MUTATION SYNC ===
     let accum_pct = mutation_accum_pct(mutation_type);
-    let accum_add = if total_minebtc_reward > 0 {
-        u64::try_from(helper::mul_div(total_minebtc_reward, accum_pct, 1000)?)
+    let accum_add = if total_dbtc_reward > 0 {
+        u64::try_from(helper::mul_div(total_dbtc_reward, accum_pct, 1000)?)
             .map_err(|_| ErrorCode::ArithmeticOverflow)?
     } else {
         0
@@ -1543,7 +1543,7 @@ pub fn internal_claim_autominer_rewards(
         player_data: ctx.accounts.player_data.key(),
         round_id: user_bet.round_id,
         sol_reward: total_sol_reward,
-        minebtc_reward: total_minebtc_reward,
+        dbtc_reward: total_dbtc_reward,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -1551,13 +1551,13 @@ pub fn internal_claim_autominer_rewards(
 }
 
 /// Calculate SOL and MineBTC rewards for a user bet.
-/// Returns (total_sol_reward, total_minebtc_reward)
+/// Returns (total_sol_reward, total_dbtc_reward)
 fn calculate_round_rewards(
     user_bet: &UserGameBet,
     game_session: &GameSession,
 ) -> Result<(u64, u64)> {
     let mut total_sol_reward = 0u64;
-    let mut total_minebtc_reward = 0u64;
+    let mut total_dbtc_reward = 0u64;
 
     for (idx, &faction_id) in user_bet.faction_ids.iter().enumerate() {
         let direction = user_bet.directions.get(idx).copied().unwrap_or(0);
@@ -1593,26 +1593,26 @@ fn calculate_round_rewards(
             }
 
             // Exact-direction MineBTC rewards.
-            if game_session.minebtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0 {
-                let minebtc_reward = u64::try_from(helper::mul_div_u128(
+            if game_session.dbtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0 {
+                let dbtc_reward = u64::try_from(helper::mul_div_u128(
                     wgtd_points_bet_on_faction as u128,
-                    game_session.minebtc_rewards_index,
+                    game_session.dbtc_rewards_index,
                     INDEX_PRECISION as u128,
                 )?)
                 .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-                total_minebtc_reward = total_minebtc_reward
-                    .checked_add(minebtc_reward)
+                total_dbtc_reward = total_dbtc_reward
+                    .checked_add(dbtc_reward)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "         MineBtc reward: {} DegenBTC",
-                    minebtc_reward as f64 / 1e6
+                    dbtc_reward as f64 / 1e6
                 );
             }
         } else if is_winning_faction {
             msg!("       ✓ Same faction, different direction - consolation MineBTC rewards...");
 
             let same_faction_pool =
-                game_session.minebtc_same_faction_direction_pools[direction as usize];
+                game_session.dbtc_same_faction_direction_pools[direction as usize];
             let same_faction_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
                 [faction_id as usize][direction as usize];
 
@@ -1620,18 +1620,18 @@ fn calculate_round_rewards(
                 && same_faction_wgtd_points > 0
                 && wgtd_points_bet_on_faction > 0
             {
-                let minebtc_reward = u64::try_from(helper::mul_div(
+                let dbtc_reward = u64::try_from(helper::mul_div(
                     wgtd_points_bet_on_faction,
                     same_faction_pool,
                     same_faction_wgtd_points,
                 )?)
                 .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-                total_minebtc_reward = total_minebtc_reward
-                    .checked_add(minebtc_reward)
+                total_dbtc_reward = total_dbtc_reward
+                    .checked_add(dbtc_reward)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "         Same-faction MineBtc reward: {} DegenBTC",
-                    minebtc_reward as f64 / 1e6
+                    dbtc_reward as f64 / 1e6
                 );
             }
         }
@@ -1650,7 +1650,7 @@ fn calculate_round_rewards(
                 INDEX_PRECISION as u128,
             )?)
             .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            total_minebtc_reward = total_minebtc_reward
+            total_dbtc_reward = total_dbtc_reward
                 .checked_add(jackpot_reward)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
@@ -1664,7 +1664,7 @@ fn calculate_round_rewards(
         }
     }
 
-    Ok((total_sol_reward, total_minebtc_reward))
+    Ok((total_sol_reward, total_dbtc_reward))
 }
 
 fn build_round_claim_mutation_roll(
@@ -1750,22 +1750,22 @@ fn update_player_rewards(
     player_data: &mut PlayerData,
     hodl_pool: &mut HodlPool,
     _total_sol_reward: u64,
-    total_minebtc_reward: u64,
+    total_dbtc_reward: u64,
     round_id: u64,
 ) -> Result<()> {
     helper::add_to_total_claimable(
         hodl_pool,
         player_data,
-        total_minebtc_reward,
+        total_dbtc_reward,
         owner,
         player_data_key,
-        CLAIMABLE_MINEBTC_SOURCE_ROUND,
+        CLAIMABLE_DBTC_SOURCE_ROUND,
         round_id,
     )?;
     msg!(
         "     Pending MineBtc rewards: {} (+{})",
-        player_data.pending_minebtc_rewards as f64 / 1e6,
-        total_minebtc_reward as f64 / 1e6
+        player_data.pending_dbtc_rewards as f64 / 1e6,
+        total_dbtc_reward as f64 / 1e6
     );
 
     Ok(())
@@ -3227,8 +3227,8 @@ pub struct JoinBets<'info> {
     pub faction_war_state: UncheckedAccount<'info>,
 
     /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
-    #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    #[account(seeds = [MINE_BTC_MINING_SEED], bump = dbtc_mining.bump)]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists raw PDA state after betting.
@@ -3636,8 +3636,8 @@ pub struct ExecuteAutominerBet<'info> {
     pub faction_war_state: UncheckedAccount<'info>,
 
     /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
-    #[account(seeds = [MINE_BTC_MINING_SEED], bump = mine_btc_mining.bump)]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    #[account(seeds = [MINE_BTC_MINING_SEED], bump = dbtc_mining.bump)]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists raw PDA state after autominer execution.

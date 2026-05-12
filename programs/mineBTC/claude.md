@@ -123,7 +123,7 @@ Two distinct hashbeast roles:
 
 - `GlobalConfig`
 - `GlobalGameSate`
-- `MineBtcMining`
+- `DegenBtcMining`
 - `FactionWarConfig`
 - `FactionWarState`
 - `HodlPool`

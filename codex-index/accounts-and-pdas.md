@@ -9,12 +9,12 @@ Canonical source: `programs/mineBTC/src/state.rs`.
   - Fee config is whole-percent based for SOL fees and degenBTC distributions.
   - Pause blocks new bets, autominers, round starts, HashBeast mints, and breeding. Settlement, claims, staking, economy cranks remain available.
 
-- `MineBtcMining` PDA `[mine-btc-mining]`
+- `DegenBtcMining` PDA `[mine-btc-mining]`
   - Token vault, emission rate per round, total mined/distributed, Raydium pool, price history, recent/track price, POL tracking, LP token price, emission adjustment params, LP operation pending flag.
   - Price history max: 8 entries, matching the 4-hour conceptual economy cycle at 30-minute default snapshots.
 
 - `HodlPool` PDA `[hodl-pool]`
-  - `hodl_tax_index` and `total_minebtc_claimable`; powers HODL tax redistribution on degenBTC withdrawals.
+  - `hodl_tax_index` and `total_dbtc_claimable`; powers HODL tax redistribution on degenBTC withdrawals.
 
 - `HashpowerConfig` PDA `[hashpower-config]`
   - Lockup day bounds and lockup multiplier. Setup config expects base 100 and max 300.

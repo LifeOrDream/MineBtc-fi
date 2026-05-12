@@ -50,7 +50,7 @@ pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
     AutominerFactionPick, BetType, FactionsConfig, HashBeastConfig, HashBeastMintConfig,
-    MineBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
+    DegenBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
 declare_id!("3uERKkvfgkTzJ7wFZC7ymWZygEbbeXuWVAiP2zu1Y1ye");
@@ -144,10 +144,10 @@ pub mod minebtc {
         new_protocol_fee_pct: Option<u8>,
         new_buyback_pct: Option<u8>,
         new_stakers_pct: Option<u8>,
-        new_minebtc_stakers_pct: Option<u8>,
-        new_minebtc_winners_pct: Option<u8>,
-        new_minebtc_same_faction_pct: Option<u8>,
-        new_minebtc_jackpot_pct: Option<u8>,
+        new_dbtc_stakers_pct: Option<u8>,
+        new_dbtc_winners_pct: Option<u8>,
+        new_dbtc_same_faction_pct: Option<u8>,
+        new_dbtc_jackpot_pct: Option<u8>,
         new_hodl_tax_pct: Option<u8>,
         snapshot_interval: Option<u64>,
         new_cycle_sol_split_pct: Option<u8>,
@@ -159,10 +159,10 @@ pub mod minebtc {
             new_protocol_fee_pct,
             new_buyback_pct,
             new_stakers_pct,
-            new_minebtc_stakers_pct,
-            new_minebtc_winners_pct,
-            new_minebtc_same_faction_pct,
-            new_minebtc_jackpot_pct,
+            new_dbtc_stakers_pct,
+            new_dbtc_winners_pct,
+            new_dbtc_same_faction_pct,
+            new_dbtc_jackpot_pct,
             new_hodl_tax_pct,
             snapshot_interval,
             new_cycle_sol_split_pct,
@@ -238,27 +238,27 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ mine_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ degenBTC_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
     /// Initialize mining by setting the token vault and emission rate.
     /// Can only be called once. Mining start time is recorded from the on-chain clock.
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
-        mine_btc_per_round: u64,
+        dbtc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_mining");
-        admin::initialize_mining_internal(ctx, mine_btc_per_round, pool_state)
+        admin::initialize_mining_internal(ctx, dbtc_per_round, pool_state)
     }
 
     /// Deposit MineBtc tokens to the mining vault (anyone can call)
     ///
     /// Allows anyone to deposit MineBtc tokens into the mining vault.
     /// These tokens will be distributed as rewards to stakers over time.
-    pub fn deposit_mine_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-        crate::log_fn!("lib", "deposit_mine_btc_tokens");
-        admin::deposit_mine_btc_tokens_internal(ctx, amount)
+    pub fn deposit_dbtc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        crate::log_fn!("lib", "deposit_dbtc_tokens");
+        admin::deposit_dbtc_tokens_internal(ctx, amount)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -789,20 +789,20 @@ pub mod minebtc {
     // ----------------------------------------------------------------------------------------
 
     /// Stake MineBtc tokens to earn SOL and minebtc rewards
-    pub fn stake_minebtc(
+    pub fn stake_degenbtc(
         ctx: Context<StakeMineBtc>,
         amount: u64,
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        crate::log_fn!("lib", "stake_minebtc");
-        stake::int_stake_minebtc(ctx, amount, lockup_duration, position_index)
+        crate::log_fn!("lib", "stake_degenbtc");
+        stake::int_stake_degenbtc(ctx, amount, lockup_duration, position_index)
     }
 
     /// Unstake MineBtc tokens from a position
-    pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
-        crate::log_fn!("lib", "unstake_minebtc");
-        stake::int_unstake_minebtc(ctx, position_index)
+    pub fn unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
+        crate::log_fn!("lib", "unstake_degenbtc");
+        stake::int_unstake_degenbtc(ctx, position_index)
     }
 
     /// Stake LP tokens to earn SOL and minebtc rewards

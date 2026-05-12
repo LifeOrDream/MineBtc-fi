@@ -42,7 +42,7 @@ export const SOL_TREASURY_SEED = "sol-treasury";
 
 // DEGEN_BTC Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies DEGEN_BTC tokens)
 export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
-export const DEGEN_BTC_VAULT_SEED = "minebtc_vault";
+export const DEGEN_BTC_VAULT_SEED = "dbtc_vault";
 
 // PDAs which hold ModuleConfigStore / GearConfigStore state
 export const MODULE_CONFIG_STORE_SEED = "module-config-store";

@@ -10,7 +10,7 @@ use crate::state::{PredictionDirection, NUM_FACTIONS};
 pub struct ReferralRewardsClaimed {
     pub referrer: Pubkey,
     pub referral_rewards_account: Pubkey,
-    pub minebtc_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub timestamp: i64,
 }
@@ -49,7 +49,7 @@ pub struct FactionAdded {
 pub struct PriceSnapshotTaken {
     pub snapshot_number: u8,         // 1-8 (which snapshot in the cycle)
     pub sol_swapped: u64,            // SOL amount swapped (lamports)
-    pub minebtc_received: u64,       // MINE_BTC received from swap (6 decimals)
+    pub dbtc_received: u64,       // MINE_BTC received from swap (6 decimals)
     pub current_price: u64,          // Calculated price (9 decimals: SOL per MINE_BTC)
     pub weighted_avg_price: u64,     // Weighted average price so far (9 decimals)
     pub sol_earnmarked_for_pol: u64, // SOL earnmarked for POL this snapshot (lamports)
@@ -62,7 +62,7 @@ pub struct PriceSnapshotTaken {
 #[event]
 pub struct LiquidityAdded {
     pub sol_amount: u64,       // SOL added to pool (lamports)
-    pub minebtc_amount: u64,   // MINE_BTC added to pool (6 decimals)
+    pub dbtc_amount: u64,   // MINE_BTC added to pool (6 decimals)
     pub lp_tokens_minted: u64, // LP tokens minted (6 decimals)
     pub lp_token_price: u64,   // LP token price in SOL (9 decimals)
     pub timestamp: i64,        // Unix timestamp
@@ -94,7 +94,7 @@ pub struct FactionWarMultiplierUpdated {
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
     pub total_lp_burnt: u64,
-    pub minebtc_amount_added: u64,
+    pub dbtc_amount_added: u64,
     pub sol_amount_added: u64,
     pub lp_token_price: u64, // LP token price in SOL (9 decimals)
     pub timestamp: i64,
@@ -272,8 +272,8 @@ pub struct MineBtcStaked {
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub timestamp: i64,
 }
 
@@ -284,8 +284,8 @@ pub struct MineBtcUnstaked {
     pub position_index: u8,
     pub position_key: Pubkey,
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub original_amount: u64,
     pub returned_amount: u64,
     pub timestamp: i64,
@@ -304,8 +304,8 @@ pub struct LiquidityStaked {
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub timestamp: i64,
 }
 
@@ -316,8 +316,8 @@ pub struct LiquidityUnstaked {
     pub position_index: u8,
     pub position_key: Pubkey,
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub original_amount: u64,
     pub returned_amount: u64,
     pub timestamp: i64,
@@ -345,7 +345,7 @@ pub struct SolRewardsClaimed {
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub sol_amount: u64,
-    pub minebtc_amount: u64,
+    pub dbtc_amount: u64,
     pub timestamp: i64,
 }
 
@@ -355,7 +355,7 @@ pub struct DbtcRewardsClaimed {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub faction_id: u8,
-    pub minebtc_amount: u64,
+    pub dbtc_amount: u64,
     pub hodl_tax: u64,
     pub referral_bonus: u64,  // 1% bonus to user if they have referral code
     pub referral_reward: u64, // 3% reward to referrer
@@ -375,7 +375,7 @@ pub struct MinebtcClaimableAccrued {
     pub source_amount: u64,
     pub unrefined_bonus_amount: u64,
     pub total_added: u64,
-    pub pending_minebtc_after: u64,
+    pub pending_dbtc_after: u64,
     pub total_claimable_after: u64,
     pub timestamp: i64,
 }
@@ -477,7 +477,7 @@ pub struct RoundRewardsClaimed {
     pub player_data: Pubkey,
     pub round_id: u64,
     pub sol_reward: u64,
-    pub minebtc_reward: u64,
+    pub dbtc_reward: u64,
     pub timestamp: i64,
 }
 
@@ -566,10 +566,10 @@ pub struct RoundEnded {
     pub user_bets_count: [u64; NUM_FACTIONS],
     pub faction_sol_bets: [u64; NUM_FACTIONS],
 
-    pub minebtc_winner_pool: u64,
-    pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
-    pub minebtc_faction_stakers: u64,
-    pub minebtc_jackpot: u64,
+    pub dbtc_winner_pool: u64,
+    pub dbtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
+    pub dbtc_stakers: u64,
+    pub dbtc_jackpot: u64,
     pub jackpot_hit: bool,
     pub jackpot_faction_id: u8,
     pub timestamp: i64,
@@ -579,7 +579,7 @@ pub struct RoundEnded {
 pub struct DegenBtcStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
-    pub minebtc_staker_rewards: u64,
+    pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub degenbtc_degenbtc_reward_index: u128,
     pub degenbtc_sol_reward_index: u128,
@@ -589,7 +589,7 @@ pub struct DegenBtcStakingRewardsDistributed {
 pub struct LpStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
-    pub minebtc_staker_rewards: u64,
+    pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub lp_degenbtc_reward_index: u128,
     pub lp_sol_reward_index: u128,
@@ -601,7 +601,7 @@ pub struct JackpotHit {
     pub faction_id: u8,
     pub winning_direction: u8,
     pub jackpot_amount: u64,
-    pub minebtc_rewards_index: u128,
+    pub dbtc_rewards_index: u128,
 }
 
 /// Event emitted when the jackpot roll was close to hitting (within top 10 closest rolls).

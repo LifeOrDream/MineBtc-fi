@@ -9,7 +9,7 @@
 // - `FactionState`: Stores statistics and reward pools for each faction.
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
-// - `MineBtcMining`: Manages the mining emission and distribution logic.
+// - `DegenBtcMining`: Manages the mining emission and distribution logic.
 // - `HashBeastConfig`: Collection, total minted count, and breeding state for HashBeasts.
 // - `HashBeastMintConfig`: Mint-only genesis sale curve, ticket tiers, and per-faction caps.
 // - `TaxConfig`: Configuration for the tax and burn system.
@@ -17,8 +17,8 @@
 
 use anchor_lang::prelude::*;
 
-pub const MINEBTC_DECIMALS: u8 = 6;
-pub const MINEBTC_BASE_UNITS: u64 = 1_000_000;
+pub const DBTC_DECIMALS: u8 = 6;
+pub const DBTC_BASE_UNITS: u64 = 1_000_000;
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
 pub const GAMEPLAY_MAX_MULTIPLIER: u16 = 4200; // Maximum gameplay HashBeast multiplier (4.2x)
@@ -71,11 +71,11 @@ pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
 pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
 pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
-pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
-pub const CLAIMABLE_MINEBTC_SOURCE_FACTION_WAR: u8 = 1;
+pub const CLAIMABLE_DBTC_SOURCE_ROUND: u8 = 0;
+pub const CLAIMABLE_DBTC_SOURCE_FACTION_WAR: u8 = 1;
 // Source values 2 and 3 were retired when passive staking dBTC moved out of
 // the HODL-tax claimable flow.
-pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
+pub const CLAIMABLE_DBTC_SOURCE_REFINING_SYNC: u8 = 4;
 
 // ========== GAMEPLAY TUNING DEFAULTS ========== //
 
@@ -123,13 +123,13 @@ pub const DEFAULT_CYCLE_SOL_SPLIT_PCT: u8 = 5;
 pub const DEFAULT_NFT_MARKET_MAKING_PCT: u8 = 3;
 
 /// degenBTC share of round emission sent to faction stakers.
-pub const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
+pub const DEFAULT_DBTC_STAKERS_PCT: u8 = 5;
 /// degenBTC share of round emission sent to exact country+direction winners.
-pub const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
+pub const DEFAULT_DBTC_WINNERS_PCT: u8 = 50;
 /// degenBTC share of round emission sent to each non-winning direction on the winning faction.
-pub const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
+pub const DEFAULT_DBTC_SAME_FACTION_PCT: u8 = 20;
 /// degenBTC share of round emission added to the global jackpot.
-pub const DEFAULT_MINEBTC_JACKPOT_PCT: u8 = 5;
+pub const DEFAULT_DBTC_JACKPOT_PCT: u8 = 5;
 /// Percent fee taken when claiming staking rewards (redistributed to other stakers).
 pub const DEFAULT_HODL_TAX_PCT: u8 = 5;
 
@@ -183,7 +183,7 @@ pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 8;
 
 // ----- [SEEDS] -----
 
-// PDAs which hold GlobalConfig / MineBtcMining state
+// PDAs which hold GlobalConfig / DegenBtcMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 pub const HASHPOWER_CONFIG_SEED: &[u8] = b"hashpower-config";
 pub const MINE_BTC_MINING_SEED: &[u8] = b"mine-btc-mining";
@@ -193,8 +193,8 @@ pub const HODL_POOL_SEED: &[u8] = b"hodl-pool";
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
 
 // DEGEN_BTC Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies DEGEN_BTC tokens)
-pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
-pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
+pub const DEGEN_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"degenBTC-vault-authority";
+pub const DEGEN_BTC_VAULT_SEED: &[u8] = b"dbtc_vault";
 
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
@@ -216,8 +216,8 @@ pub const PLAYER_DATA_SEED: &[u8] = b"player";
 pub const STAKED_POSITION_SEED: &[u8] = b"staked-position";
 pub const LP_STAKED_POSITION_SEED: &[u8] = b"lp-staked-position";
 
-pub const MINEBTC_CUSTODIAN_SEED: &[u8] = b"minebtc-custodian";
-pub const MINEBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"minebtc-custodian-authority";
+pub const DEGENBTC_CUSTODIAN_SEED: &[u8] = b"degenBTC-custodian";
+pub const DEGENBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"degenBTC-custodian-authority";
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";
 pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
 
@@ -379,8 +379,8 @@ pub struct GlobalConfig {
     /// SOL fee distribution configuration
     pub sol_fee_config: SolFeeConfig,
 
-    /// MineBtc distribution configuration
-    pub minebtc_dist_config: MineBtcDistConfig,
+    /// degenBTC distribution configuration
+    pub dbtc_dist_config: DegenBtcDistConfig,
 
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
@@ -428,25 +428,25 @@ impl SolFeeConfig {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct MineBtcDistConfig {
-    /// Whole-percent share of MineBtc emission that goes to stakers. `100` = 100%.
-    pub minebtc_stakers_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to winning faction bettors. `100` = 100%.
-    pub minebtc_winners_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to each non-winning
+pub struct DegenBtcDistConfig {
+    /// Whole-percent share of degenBTC emission that goes to stakers. `100` = 100%.
+    pub dbtc_stakers_pct: u8,
+    /// Whole-percent share of degenBTC emission that goes to winning faction bettors. `100` = 100%.
+    pub dbtc_winners_pct: u8,
+    /// Whole-percent share of degenBTC emission that goes to each non-winning
     /// direction on the winning faction. With 3 total directions, up to two
     /// losing directions may each receive this share if they have bettors.
-    pub minebtc_same_faction_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to the global jackpot. `100` = 100%.
-    pub minebtc_jackpot_pct: u8,
+    pub dbtc_same_faction_pct: u8,
+    /// Whole-percent share of degenBTC emission that goes to the global jackpot. `100` = 100%.
+    pub dbtc_jackpot_pct: u8,
     /// Whole-percent HODL tax charged on degenBTC reward withdrawal.
     /// `100` = 100%. Paid by paper hands; redistributed to remaining diamond
     /// hands via `HodlPool::hodl_tax_index` (closed loop — no vault drain).
     pub hodl_tax_pct: u8,
 }
 
-impl MineBtcDistConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_jackpot_pct + hodl_tax_pct
+impl DegenBtcDistConfig {
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_jackpot_pct + hodl_tax_pct
 }
 
 impl GlobalConfig {
@@ -457,7 +457,7 @@ impl GlobalConfig {
         32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config
-        MineBtcDistConfig::LEN + // minebtc_dist_config
+        DegenBtcDistConfig::LEN + // dbtc_dist_config
         32 +                    // raydium_pool_state
         8 +                     // snapshot_interval
         GameplayTuningConfig::LEN + // gameplay_tuning
@@ -582,11 +582,11 @@ impl ProtocolOwnedLiquidity {
 
 /// HashBeast-BTC Mining status and parameters
 #[account]
-pub struct MineBtcMining {
+pub struct DegenBtcMining {
     /// Token vault that holds all pre-minted tokens
-    pub minebtc_token_vault: Pubkey,
-    /// MineBtc mined per slot (original base rate)
-    pub mine_btc_per_round: u64,
+    pub dbtc_token_vault: Pubkey,
+    /// degenBTC mined per slot (original base rate)
+    pub dbtc_per_round: u64,
 
     /// Total tokens mined so far
     pub total_tokens_mined: u64,
@@ -627,13 +627,13 @@ pub struct MineBtcMining {
     pub lp_operation_pending: bool,
 }
 
-impl MineBtcMining {
-    // discriminator + minebtc_token_vault + mining_start_timestamp + mine_btc_per_round + total_tokens_mined + bump + vault_auth_bump +
+impl DegenBtcMining {
+    // discriminator + dbtc_token_vault + mining_start_timestamp + dbtc_per_round + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + price_history (vec) + recent_price + track_price + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
-        + 32                    // minebtc_token_vault
-        + 8                     // mine_btc_per_round
+        + 32                    // dbtc_token_vault
+        + 8                     // dbtc_per_round
         + 8                     // total_tokens_mined
         + 8                     // total_tokens_distributed
         + 1                     // bump
@@ -819,7 +819,7 @@ pub struct TaxConfig {
     /// Percentage of withheld tax that gets burned (remainder goes back to vault)
     pub burn_pct: u8,
 
-    /// Total amount of MineBtc burnt so far (cumulative)
+    /// Total amount of degenBTC burnt so far (cumulative)
     pub total_burnt: u64,
     /// Treasury tax accrued while no active faction war state existed yet.
     /// This amount gets attached to the next faction war when that state is initialized.
@@ -892,13 +892,13 @@ impl GlobalGameSate {
 #[account]
 pub struct HodlPool {
     pub hodl_tax_index: u128,
-    pub total_minebtc_claimable: u64,
+    pub total_dbtc_claimable: u64,
 }
 
 impl HodlPool {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         16 +    // hodl_tax_index (u128)
-        8; // total_minebtc_claimable (u64)
+        8; // total_dbtc_claimable (u64)
 }
 
 /// Faction State PDA (Seed: `[b"faction", faction_name.as_bytes()]`)
@@ -1002,21 +1002,21 @@ pub struct GameSession {
     /// The winning direction for the winning faction (0=Down, 1=Neutral, 2=Up).
     pub winning_direction: u8,
 
-    // --- MineBtc reward pools for this round ---
-    /// MineBtc allocated for exact winning faction+direction bettors in this round.
-    pub minebtc_winner_pool: u64,
-    /// MineBtc allocated per losing direction on the winning faction.
+    // --- degenBTC reward pools for this round ---
+    /// degenBTC allocated for exact winning faction+direction bettors in this round.
+    pub dbtc_winner_pool: u64,
+    /// degenBTC allocated per losing direction on the winning faction.
     /// The winning direction index remains zero in this array.
-    pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
-    /// MineBtc allocated for stakers in this round
+    pub dbtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
+    /// degenBTC allocated for stakers in this round
     pub faction_stakers: u64,
-    /// MineBtc allocated for the global jackpot in this round.
+    /// degenBTC allocated for the global jackpot in this round.
     pub jackpot_rewards: u64,
 
     /// SOL rewards index for this round's exact winning faction+direction.
     pub sol_rewards_index: u128,
-    /// MineBtc rewards index for this round's exact winning faction+direction.
-    pub minebtc_rewards_index: u128,
+    /// degenBTC rewards index for this round's exact winning faction+direction.
+    pub dbtc_rewards_index: u128,
     // --- Jackpot data for this round ---
     /// Whether the global jackpot was hit in this round.
     pub jackpot_hit: bool,
@@ -1024,7 +1024,7 @@ pub struct GameSession {
     pub jackpot_faction_id: u8,
     /// Global jackpot pot size when hit (if applicable).
     pub jackpot_pot_size_on_hit: u64,
-    /// MineBtc rewards index for jackpot winners (all directions on jackpot faction).
+    /// degenBTC rewards index for jackpot winners (all directions on jackpot faction).
     /// Set by `distribute_jackpot_rewards`; read by `claim_round_rewards`.
     pub jackpot_rewards_index: u128,
     /// Whether jackpot was already distributed for this round.
@@ -1075,12 +1075,12 @@ impl GameSession {
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // wgtd_points_bets_by_faction_direction
         1 +     // winning_faction_id (u8)
         1 +     // winning_direction (u8)
-        8 +     // minebtc_winner_pool
-        (PredictionDirection::COUNT * 8) + // minebtc_same_faction_direction_pools
+        8 +     // dbtc_winner_pool
+        (PredictionDirection::COUNT * 8) + // dbtc_same_faction_direction_pools
         8 +     // faction_stakers
         8 +     // jackpot_rewards
         16 +    // sol_rewards_index
-        16 +    // minebtc_rewards_index
+        16 +    // dbtc_rewards_index
         1 +     // jackpot_hit
         1 +     // jackpot_faction_id
         8 +     // jackpot_pot_size_on_hit
@@ -1132,10 +1132,10 @@ pub struct PlayerData {
     pub pending_sol_rewards: u64,
     pub hodl_tax_index: u128,
     /// Gameplay-earned degenBTC rewards pending HODL-tax withdrawal.
-    pub pending_minebtc_rewards: u64,
+    pub pending_dbtc_rewards: u64,
     /// Passive staking degenBTC rewards pending direct claim with SOL staking rewards.
-    pub pending_staking_minebtc_rewards: u64,
-    pub unrefined_minebtc_rewards: u64,
+    pub pending_staking_dbtc_rewards: u64,
+    pub unrefined_dbtc_rewards: u64,
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
     /// Number of unclaimed per-faction-war reward accounts still outstanding.
@@ -1207,9 +1207,9 @@ impl PlayerData {
         16 +    // lp_degenbtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         16 +    // hodl_tax_index (u128)
-        8 +     // pending_minebtc_rewards (u64)
-        8 +     // pending_staking_minebtc_rewards (u64)
-        8 +     // unrefined_minebtc_rewards (u64)
+        8 +     // pending_dbtc_rewards (u64)
+        8 +     // pending_staking_dbtc_rewards (u64)
+        8 +     // unrefined_dbtc_rewards (u64)
         2 +     // pending_round_claims (u16)
         2 +     // pending_faction_war_claims (u16)
         4 + (Self::MAX_POSITIONS * 1) + // degenbtc_position_indices Vec<u8>
@@ -1227,10 +1227,10 @@ impl PlayerData {
         8; // current_faction_war_score_cycle_id (u64)
 }
 
-/// Individual MineBtc staking position
+/// Individual degenBTC staking position
 #[account]
 pub struct StakedPosition {
-    pub position_type: u8, // 0 = minebtc, 1 = lp
+    pub position_type: u8, // 0 = degenBTC, 1 = lp
 
     pub position_index: u8,
     pub faction_id: u8,

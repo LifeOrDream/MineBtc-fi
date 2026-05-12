@@ -35,7 +35,7 @@ Per setup script:
 
 ## HODL Tax
 
-- Configured by `MineBtcDistConfig.hodl_tax_pct`.
+- Configured by `DegenBtcDistConfig.hodl_tax_pct`.
 - Current setup script uses 10%.
 - Charged when withdrawing degenBTC rewards if there are remaining HODL-pool participants.
 - Redistributed through `HodlPool.hodl_tax_index`; it is not a protocol drain.
@@ -55,7 +55,7 @@ Per setup script:
   - Default increase when price rises: 1%.
   - Default decrease when price falls: 3%.
 - `add_lp_and_burn()` performs POL liquidity add and burns LP.
-- `MineBtcMining.pol_stats.lp_operations_count` is the economy-cycle counter used by faction-war settlement.
+- `DegenBtcMining.pol_stats.lp_operations_count` is the economy-cycle counter used by faction-war settlement.
 
 ## Faction-War Cycle Rewards
 
