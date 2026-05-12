@@ -1537,6 +1537,7 @@ pub struct StartRound<'info> {
 #[inline(never)]
 pub fn int_distribute_jackpot_rewards<'info>(
     accounts: &mut DistributeJackpotRewards<'info>,
+    _round_id: u64,
 ) -> Result<()> {
     crate::log_fn!("game", "int_distribute_jackpot_rewards");
     let game_session = &mut accounts.game_session;
@@ -1632,6 +1633,7 @@ pub fn int_distribute_jackpot_rewards<'info>(
 }
 
 #[derive(Accounts)]
+#[instruction(round_id: u64)]
 pub struct DistributeJackpotRewards<'info> {
     #[account(
         mut,
@@ -1642,7 +1644,7 @@ pub struct DistributeJackpotRewards<'info> {
 
     #[account(
         mut,
-        seeds = [GAME_SESSION_SEED.as_ref(), &global_game_state.current_round_id.to_le_bytes()],
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump = game_session.bump
     )]
     pub game_session: Box<Account<'info, GameSession>>,

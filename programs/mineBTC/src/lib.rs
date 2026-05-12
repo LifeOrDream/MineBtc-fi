@@ -640,9 +640,10 @@ pub mod minebtc {
     /// Idempotent: safe to call multiple times; no-op if already distributed.
     pub fn distribute_jackpot_rewards(
         ctx: Context<DistributeJackpotRewards>,
+        round_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "distribute_jackpot_rewards");
-        game::int_distribute_jackpot_rewards(ctx.accounts)
+        game::int_distribute_jackpot_rewards(ctx.accounts, round_id)
     }
 
     // ----------------------------------------------------------------------------------------

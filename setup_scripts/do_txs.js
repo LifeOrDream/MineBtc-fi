@@ -680,7 +680,7 @@ async function distributeJackpotRewards() {
     return { roundId, skipped: true };
   }
 
-  const tx = await program.methods.distributeJackpotRewards().accounts({
+  const tx = await program.methods.distributeJackpotRewards(new BN(roundId)).accounts({
     globalGameState: globalGameStatePda,
     gameSession: deriveGameSessionPda(roundId),
     globalConfig: globalConfigPda,
