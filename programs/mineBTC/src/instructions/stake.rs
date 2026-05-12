@@ -5,18 +5,18 @@ use anchor_spl::token::{self, Token};
 // # Staking Instructions
 //
 // Passive staking has three layers:
-// - A user opens MineBTC or LP lockup positions in their home faction.
+// - A user opens degenBTC or LP lockup positions in their home faction.
 // - Lockup duration can add up to 3x weighted hashpower.
 // - The player's staked HashBeasts can add another 3x passive hashpower multiplier.
 // - The maxed-out staking setup is therefore capped at 9x total.
 //
 // Reward sources:
 // - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
-// - **MineBTC staking rewards** come from round mining distribution indexes and are
+// - **degenBTC staking rewards** come from round mining distribution indexes and are
 //   claimed directly with SOL staking rewards, outside the HODL-tax path.
-// - **HODL tax redistribution** happens when a player withdraws gameplay-earned MineBTC
+// - **HODL tax redistribution** happens when a player withdraws gameplay-earned degenBTC
 //   rewards: a configurable fee is taken from the eligible gameplay portion and re-indexed
-//   across the remaining unclaimed gameplay rewards. Passive staking MineBTC is excluded.
+//   across the remaining unclaimed gameplay rewards. Passive staking degenBTC is excluded.
 //
 // This file is intentionally verbose in its logs because the staking flows are one of the
 // highest-value accounting surfaces in the program.
@@ -77,10 +77,10 @@ mod tests {
     }
 }
 
-/// Stake MineBtc tokens
-/// Users stake MineBtc tokens to their home faction and earn SOL and minebtc rewards
+/// Stake degenBTC tokens
+/// Users stake degenBTC tokens to their home faction and earn SOL and degenBTC rewards
 /// SOL rewards are distributed per round via join_round function
-/// minebtc rewards are distributed per round via end_round function
+/// degenBTC rewards are distributed per round via end_round function
 pub fn int_stake_degenbtc(
     ctx: Context<StakeMineBtc>,
     amount: u64,
@@ -89,7 +89,7 @@ pub fn int_stake_degenbtc(
 ) -> Result<()> {
     crate::log_fn!("stake", "int_stake_degenbtc");
     msg!(
-        "🔒 [stake_degenbtc] Starting MineBtc staking - Amount: {}, Lockup: {} days, Position: {}",
+        "🔒 [stake_degenbtc] Starting degenBTC staking - Amount: {}, Lockup: {} days, Position: {}",
         amount,
         lockup_duration,
         position_index
@@ -315,7 +315,7 @@ pub fn int_stake_degenbtc(
         },
     );
     token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.degenbtc_mint.decimals)?;
-    msg!("✅ [stake_degenbtc] MineBtc staking successful");
+    msg!("✅ [stake_degenbtc] degenBTC staking successful");
 
     emit!(MineBtcStaked {
         owner: ctx.accounts.authority.key(),
@@ -341,7 +341,7 @@ pub fn int_stake_degenbtc(
 // ---- UNSTAKE DEGENBTC TOKENS :: User gets MINE_BTC back ------------------------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Unstake MineBtc tokens from a position
+/// Unstake degenBTC tokens from a position
 pub fn int_unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
     crate::log_fn!("stake", "int_unstake_degenbtc");
     // Store values before mutable borrow (for event emission)
@@ -631,7 +631,7 @@ pub fn int_unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) ->
             player_data: player_data_key,
             position_key,
             position_index,
-            staked_token_type: 0, // MineBTC
+            staked_token_type: 0, // degenBTC
             original_amount: staked_amount,
             penalty_amount,
             returned_amount: return_amount,
@@ -647,13 +647,13 @@ pub fn int_unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) ->
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- STAKE LIQUIDITY LP TOKENS :: User gets SOL and minebtc rewards ------
+// ---- STAKE LIQUIDITY LP TOKENS :: User gets SOL and degenBTC rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
 /// Stake LP tokens
-/// Users stake LP tokens to their home faction and earn SOL and minebtc rewards
+/// Users stake LP tokens to their home faction and earn SOL and degenBTC rewards
 /// SOL rewards are distributed per round via join_round function
-/// minebtc rewards are distributed per round via end_round function
+/// degenBTC rewards are distributed per round via end_round function
 pub fn int_stake_lp_tokens(
     ctx: Context<StakeLpTokens>,
     amount: u64,
@@ -1190,11 +1190,11 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
 // ---- CLAIM STAKING REWARDS :: Updates indexes and transfers passive staking rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim staking rewards - updates all staking indexes and transfers SOL + staking MineBTC
-/// directly to owner. Staking MineBTC never enters the gameplay HODL-tax pool.
+/// Claim staking rewards - updates all staking indexes and transfers SOL + staking degenBTC
+/// directly to owner. Staking degenBTC never enters the gameplay HODL-tax pool.
 pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
     crate::log_fn!("stake", "int_claim_staking_rewards");
-    msg!("💰 [claim_staking_rewards] Claiming SOL and staking MineBTC rewards");
+    msg!("💰 [claim_staking_rewards] Claiming SOL and staking degenBTC rewards");
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
@@ -1222,7 +1222,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         player_data.lp_hashpower as f64 / 1e6
     );
 
-    // Process MineBtc and LP staking rewards before paying out.
+    // Process degenBTC and LP staking rewards before paying out.
     let (_st_dbtc_new_sol_rewards, _st_dbtc_new_dbtc_rewards) =
         int_update_dbtc_staking_rewards(player_data, faction_state)?;
     let (_st_lp_new_sol_rewards, _st_lp_new_dbtc_rewards) =
@@ -1245,7 +1245,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         total_pending_sol_rewards as f64 / 1e9
     );
     msg!(
-        "   Total claimable staking MineBtc rewards: {} minebtc",
+        "   Total claimable staking degenBTC rewards: {} degenbtc",
         total_pending_dbtc_rewards as f64 / 1e6
     );
 
@@ -1268,7 +1268,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
 
     if total_pending_dbtc_rewards > 0 {
         msg!(
-            "   Transferring {} staking MineBtc from vault to user",
+            "   Transferring {} staking degenBTC from vault to user",
             total_pending_dbtc_rewards as f64 / 1e6
         );
         let vault_authority_seeds = &[
@@ -1303,7 +1303,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
             ctx.accounts.dbtc_mining.total_tokens_distributed as f64 / 1e6,
             total_pending_dbtc_rewards as f64 / 1e6
         );
-        msg!("     ✓ Staking MineBtc rewards transferred to user");
+        msg!("     ✓ Staking degenBTC rewards transferred to user");
     }
 
     // Reset pending rewards
@@ -1320,7 +1320,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
     });
 
     msg!(
-        "✅ [claim_staking_rewards] Claimed {} SOL and {} staking MineBtc",
+        "✅ [claim_staking_rewards] Claimed {} SOL and {} staking degenBTC",
         player_sol as f64 / 1e9,
         total_pending_dbtc_rewards as f64 / 1e6,
     );
@@ -1328,15 +1328,15 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
 }
 
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
-// ---- WITHDRAW DBTC REWARDS :: User withdraws accumulated MineBTC with fees ------
+// ---- WITHDRAW DBTC REWARDS :: User withdraws accumulated degenBTC with fees ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Withdraw accumulated MineBtc token rewards
+/// Withdraw accumulated degenBTC token rewards
 /// Implements HODL tax on gameplay-earned rewards only.
 /// NOTE: Call claim_staking_rewards first to update staking indexes and accumulate rewards
 pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
     crate::log_fn!("stake", "int_withdraw_dbtc_rewards");
-    msg!("💰 [withdraw_dbtc_rewards] Withdrawing MineBtc with HODL tax");
+    msg!("💰 [withdraw_dbtc_rewards] Withdrawing degenBTC with HODL tax");
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
@@ -1382,7 +1382,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         .checked_sub(base_pending)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    // pending_dbtc_rewards is gameplay-only. Passive staking MineBTC is paid by
+    // pending_dbtc_rewards is gameplay-only. Passive staking degenBTC is paid by
     // claim_staking_rewards and never enters this HODL-tax pool.
     let hodl_tax_pct = global_config.dbtc_dist_config.hodl_tax_pct as u64;
     let hodl_tax = if remaining_claimable_after_this_user > 0 {
@@ -1419,7 +1419,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
             M_HUNDRED,
         )?)
         .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-        msg!("   Referral bonus (+1%): {} minebtc", bonus as f64 / 1e6);
+        msg!("   Referral bonus (+1%): {} degenBTC", bonus as f64 / 1e6);
         bonus
     } else {
         0
@@ -1431,18 +1431,18 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         .checked_add(referral_bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "Claimable by user: {} minebtc",
+        "Claimable by user: {} degenBTC",
         claimable_by_user as f64 / 1e6
     );
 
-    // Transfer claimable MineBtc to user
+    // Transfer claimable degenBTC to user
     if claimable_by_user > 0 {
         msg!(
-            "💱 Transferring {} MineBtc tokens to user",
+            "💱 Transferring {} degenBTC tokens to user",
             claimable_by_user as f64 / 1e6
         );
 
-        // Get PDA signer seeds for the minebtc vault authority
+        // Get PDA signer seeds for the degenBTC vault authority
         let vault_authority_seeds = &[
             DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
             &[ctx.bumps.dbtc_vault_authority],
@@ -1466,7 +1466,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         )?;
     }
 
-    // Update total claimable minebtc amount
+    // Update total claimable degenBTC amount
     // Only deduct the user's base pending rewards (what was actually tracked in total_dbtc_claimable).
     // Referral bonus + reward are paid from the emissions vault directly and were never
     // added to total_dbtc_claimable, so subtracting them would cause accounting drift
@@ -1478,7 +1478,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
     player_data.pending_dbtc_rewards = 0;
     player_data.unrefined_dbtc_rewards = 0;
     msg!(
-        "   Deducted {} minebtc from total claimable (referral bonus: {}, referrer reward: {} paid from emissions vault)",
+        "   Deducted {} degenBTC from total claimable (referral bonus: {}, referrer reward: {} paid from emissions vault)",
         base_pending as f64 / 1e6,
         referral_bonus as f64 / 1e6,
         referral_reward as f64 / 1e6
@@ -1562,7 +1562,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
 // ---- CLAIM REFERRAL REWARDS :: Referrers claim their earned rewards ------
 // --------- --------- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --------- ---------
 
-/// Claim referral rewards (SOL and MineBtc)
+/// Claim referral rewards (SOL)
 pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
     crate::log_fn!("stake", "int_claim_referral_rewards");
     msg!("💰 [claim_referral_rewards] Claiming referral rewards");
@@ -1670,7 +1670,7 @@ pub fn int_update_dbtc_staking_rewards(
             .checked_add(new_dbtc_rewards)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   Updated pending staking MineBtc rewards: {} (+{})",
+            "   Updated pending staking degenBTC rewards: {} (+{})",
             player_data.pending_staking_dbtc_rewards as f64 / 1e6,
             new_dbtc_rewards as f64 / 1e6
         );
@@ -1737,7 +1737,7 @@ pub fn int_update_lp_staking_rewards(
             .checked_add(new_dbtc_rewards)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   Updated pending staking MineBtc rewards: {} (+{})",
+            "   Updated pending staking degenBTC rewards: {} (+{})",
             player_data.pending_staking_dbtc_rewards as f64 / 1e6,
             new_dbtc_rewards as f64 / 1e6
         );
@@ -1809,7 +1809,7 @@ pub struct StakeMineBtc<'info> {
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
         constraint = user_dbtc_account.amount >= amount @ ErrorCode::InsufficientFunds,
     )]
-    /// User's MineBtc token account
+    /// User's degenBTC token account
     pub user_dbtc_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
@@ -1878,7 +1878,7 @@ pub struct UnstakeMineBtc<'info> {
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
         constraint = user_dbtc_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidParameters,
     )]
-    /// User's MineBtc token account to receive the unstaked tokens
+    /// User's degenBTC token account to receive the unstaked tokens
     pub user_dbtc_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
@@ -2046,7 +2046,7 @@ pub struct UnstakeLpTokens<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- CLAIM STAKING REWARDS (SOL + staking MineBTC transfer) ---------
+// --------- CLAIM STAKING REWARDS (SOL + staking degenBTC transfer) ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
@@ -2080,7 +2080,7 @@ pub struct ClaimStakingRewards<'info> {
         constraint = user_dbtc_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidParameters,
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
     )]
-    /// User's MineBtc token account to receive staking rewards
+    /// User's degenBTC token account to receive staking rewards
     pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
@@ -2116,7 +2116,7 @@ pub struct ClaimStakingRewards<'info> {
 }
 
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// --------- WITHDRAW DBTC REWARDS (MineBTC transfer with fees) ---------
+// --------- WITHDRAW DBTC REWARDS (degenBTC transfer with fees) ---------
 // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 #[derive(Accounts)]
@@ -2158,17 +2158,17 @@ pub struct WithdrawDbtcRewards<'info> {
         constraint = user_dbtc_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidParameters,
         constraint = user_dbtc_account.owner == authority.key() @ ErrorCode::InvalidOwner,
     )]
-    /// User's MineBtc token account to receive rewards
+    /// User's degenBTC token account to receive rewards
     pub user_dbtc_account: InterfaceAccount<'info, TokenAccount2022>,
 
-    /// CHECK: MineBtc mining state (needed for vault PDA derivation)
+    /// CHECK: degenBTC mining state (needed for vault PDA derivation)
     #[account(
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
     pub dbtc_mining: Account<'info, DegenBtcMining>,
 
-    /// CHECK: MineBtc token vault (main vault where tokens are deposited)
+    /// CHECK: degenBTC token vault (main vault where tokens are deposited)
     #[account(
         mut,
         seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],

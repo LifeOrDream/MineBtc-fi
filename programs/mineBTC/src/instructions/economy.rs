@@ -8,7 +8,7 @@ use anchor_spl::token;
 //   and the protocol/dev lane.
 // - `snapshot_price_internal` records the on-chain market price and earnmarks some SOL for POL.
 // - `update_rate_internal` converts the snapshot window into a new `dbtc_per_round` emission rate.
-// - `add_lp_and_burn` (below in this file) consumes the earnmarked SOL together with MineBTC from the
+// - `add_lp_and_burn` (below in this file) consumes the earnmarked SOL together with degenBTC from the
 //   emissions vault to deepen POL and burn LP.
 //
 // Stakers do **not** get paid directly from this file. Instead:

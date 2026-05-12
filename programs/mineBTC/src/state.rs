@@ -1,6 +1,6 @@
 // # State Definitions
 //
-// This module defines all the account structures and constants used in the MineBTC program.
+// This module defines all the account structures and constants used in the degenBTC program.
 //
 // ## Key Accounts
 //
@@ -1302,7 +1302,7 @@ pub const MAX_REFERRER_SOL_LIFETIME: u64 = 100_000 * 1_000_000_000;
 // ===============================  HASHBEAST NFT METADATA ===============================
 // ========================================================================================
 
-/// HashBeast NFT metadata (stored in minebtc program for simplicity)
+/// HashBeast NFT metadata (stored in degenBTC program for simplicity)
 #[account]
 pub struct HashBeastMetadata {
     /// The NFT mint address (Metaplex Core asset)
@@ -1319,7 +1319,7 @@ pub struct HashBeastMetadata {
     pub cooldown_end: i64,
     /// Creation timestamp
     pub created_at: i64,
-    /// Faction ID (country) that the hashbeast belongs to (matches minebtc faction)
+    /// Faction ID (country) that the hashbeast belongs to (matches degenBTC faction)
     pub faction_id: u8,
     /// Multiplier for this hashbeast (1000 = 1x, same scale as BASE_MULTIPLIER)
     pub multiplier: u32,

@@ -329,7 +329,7 @@ pub struct PaperHandBurned {
     pub player_data: Pubkey,
     pub position_index: u8,
     pub position_key: Pubkey,
-    pub staked_token_type: u8, // 0 = MineBTC, 1 = LP
+    pub staked_token_type: u8, // 0 = degenBTC, 1 = LP
     pub original_amount: u64,
     pub penalty_amount: u64,
     pub returned_amount: u64,
@@ -349,7 +349,7 @@ pub struct SolRewardsClaimed {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user withdraws gameplay-earned MineBtc token rewards.
+/// Event emitted when a user withdraws gameplay-earned degenBTC token rewards.
 #[event]
 pub struct DbtcRewardsClaimed {
     pub user: Pubkey,
@@ -363,7 +363,7 @@ pub struct DbtcRewardsClaimed {
     pub timestamp: i64,
 }
 
-/// Event emitted whenever pending MineBtc claimable balance is increased.
+/// Event emitted whenever pending degenBTC claimable balance is increased.
 /// `source_amount` is the new reward from the triggering action, while
 /// `unrefined_bonus_amount` is previously deferred hodl-tax yield realized at the same time.
 #[event]
@@ -380,7 +380,7 @@ pub struct MinebtcClaimableAccrued {
     pub timestamp: i64,
 }
 
-/// Event emitted when a MineBtc HODL tax is redistributed through the HODL tax index.
+/// Event emitted when a degenBTC HODL tax is redistributed through the HODL tax index.
 /// Event emitted when a user pays the HODL tax ("HODL Tax") and it gets
 /// redistributed to other users with unclaimed gameplay rewards.
 #[event]

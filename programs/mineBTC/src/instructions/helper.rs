@@ -669,7 +669,7 @@ pub fn calculate_multiplier(
         .ok_or(ErrorCode::ArithmeticOverflow.into())
 }
 
-/// Add position index to user's minebtc positions
+/// Add position index to user's degenBTC positions
 pub fn add_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     msg!(
         "🔍 [add_degenbtc_position] Adding position index: {}",
@@ -705,7 +705,7 @@ pub fn add_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> 
     Ok(())
 }
 
-/// Remove position index from user's minebtc positions
+/// Remove position index from user's degenBTC positions
 pub fn remove_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     crate::log_fn!("helper", "remove_degenbtc_position");
     msg!(
@@ -922,7 +922,7 @@ pub fn add_to_total_claimable(
         INDEX_PRECISION as u128,
     )?;
     let accrued_rewards = u64::try_from(accrued_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-    msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
+    msg!("     Accrued degenBTC rewards: {}", accrued_rewards);
 
     let total_new = dbtc_rewards
         .checked_add(accrued_rewards)

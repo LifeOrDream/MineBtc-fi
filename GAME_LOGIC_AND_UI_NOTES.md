@@ -363,7 +363,7 @@ This means every rebirth and every mutation produces **unique generative art** t
 
 **Asset: Referral Beacon (0-state hero)**
 ```
-A glowing signal tower made of Bitcoin blocks and golden SOL coins, with a ninja eye-mask motif on top. The tower pulses with cyan signal waves. Scattered around the base are small HashBeast silhouettes looking up at the beacon. Dark void background with warm amber/cyan glow. Style: pixel art meets crypto degen aesthetic. Bitcoin branded but with playful doge/HashBeast energy.
+A glowing signal tower made of Bitcoin blocks and golden SOL coins, with a ninja eye-mask motif on top. The tower pulses with cyan signal waves. Scattered around the base are small HashBeast silhouettes looking up at the beacon. Dark void background with warm amber/cyan glow. Style: pixel art meets crypto degen aesthetic. Bitcoin branded but with playful HashBeast energy.
 ```
 
 **Asset: Recruit Coin Rain (active state background)**

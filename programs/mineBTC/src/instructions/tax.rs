@@ -391,7 +391,7 @@ pub fn internal_crank_distribute_tax<'info>(
         M_HUNDRED,
     )?)
     .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-    // Remainder goes back to the minebtc vault (was previously also reduced by
+    // Remainder goes back to the degenBTC vault (was previously also reduced by
     // the NFT floor sweep cut; that cut is gone — vault now absorbs that share).
     let vault_return = withheld_amount
         .checked_sub(faction_treasury_amount)
@@ -461,7 +461,7 @@ pub fn internal_crank_distribute_tax<'info>(
         );
     }
 
-    // Transfer remainder back to minebtc vault
+    // Transfer remainder back to degenBTC vault
     if vault_return > 0 {
         token_2022::transfer_checked(
             CpiContext::new_with_signer(
@@ -478,7 +478,7 @@ pub fn internal_crank_distribute_tax<'info>(
             accounts.degenbtc_mint.decimals,
         )?;
         msg!(
-            "   ✅ Returned {} tokens to minebtc vault",
+            "   ✅ Returned {} tokens to degenBTC vault",
             (vault_return as f64) / 1e6
         );
     }

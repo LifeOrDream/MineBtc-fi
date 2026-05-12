@@ -496,7 +496,7 @@ async function main() {
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
     // Instruction: initialize_mining(dbtc_per_round: u64, pool_state: Pubkey)
     // Sets up the mining emission vault:
-    //   - VaultAuthority [seeds: "minebtc-vault-authority"] — signer-only PDA
+    //   - VaultAuthority [seeds: "degenBTC-vault-authority"] — signer-only PDA
     //   - TokenVault     [seeds: "dbtc_vault", dbtc_mining.key()] — Token-2022 vault for MineBTC
     // Stores emission rate and Raydium pool state in DegenBtcMining
     // Accounts: globalConfig, mineBtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
@@ -525,8 +525,8 @@ async function main() {
     // 8. Initialize Custodian Accounts (DBTC and Liquidity custodians)
     // Instruction: initialize_custodian_accounts() — no args
     // Creates 4 PDAs:
-    //   - minebtcCustodian           [seeds: "minebtc-custodian"]           — Token-2022 account for staked MineBTC
-    //   - minebtcCustodianAuthority  [seeds: "minebtc-custodian-authority"] — signer PDA for MineBTC custodian
+    //   - minebtcCustodian           [seeds: "degenBTC-custodian"]           — Token-2022 account for staked dBTC
+    //   - minebtcCustodianAuthority  [seeds: "degenBTC-custodian-authority"] — signer PDA for dBTC custodian
     //   - liquidityCustodian         [seeds: "lp-custodian"]                — SPL Token account for staked LP tokens
     //   - liquidityCustodianAuthority[seeds: "lp-custodian-authority"]      — signer PDA for LP custodian
     // Accounts: globalConfig, minebtcMint, minebtcCustodian, minebtcCustodianAuthority,
@@ -1186,7 +1186,7 @@ async function initializeMiningSystem(minebtcProgram) {
     );
 
     const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc-vault-authority")],
+    [Buffer.from("degenBTC-vault-authority")],
     minebtcProgram.programId
     );
 
@@ -1434,12 +1434,12 @@ async function initializeCustodianAccounts(minebtcProgram) {
 
   // Derive DBTC custodian PDAs
   const [minebtcCustodianPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc-custodian")],
+    [Buffer.from("degenBTC-custodian")],
     minebtcProgram.programId
   );
 
   const [minebtcCustodianAuthorityPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc-custodian-authority")],
+    [Buffer.from("degenBTC-custodian-authority")],
     minebtcProgram.programId
   );
 

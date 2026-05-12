@@ -74,7 +74,7 @@ pub enum ErrorCode {
     #[msg("HashBeast already at guard")]
     HashBeastAlreadyAtGuard,
 
-    #[msg("HashBeast is not incubated in this minebtc")]
+    #[msg("HashBeast is not incubated in this degenBTC program")]
     HashBeastNotAtGuard,
 
     #[msg("HashBeast limit for this tier has been reached")]

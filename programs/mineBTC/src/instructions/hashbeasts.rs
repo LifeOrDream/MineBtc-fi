@@ -7,7 +7,7 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 // # HashBeast Instructions
 //
-// HashBeasts serve three distinct roles in MineBTC:
+// HashBeasts serve three distinct roles in DegenBTC:
 // - primary-market NFTs minted from the bonding-curve-like pricing path,
 // - passive staking boosters that raise a player's home-faction staking hashpower,
 // - gameplay avatars used in round betting / mutation progression (handled partly in `user.rs`).
@@ -961,7 +961,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [stake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        "🧾 [stake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_dbtc={}",
         player_data.staked_hashbeasts,
         player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.degenbtc_hashpower as f64 / 1e6,
@@ -1018,7 +1018,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
 
     // Process pending rewards before updating position
     let (_new_sol_rewards, _new_dbtc_rewards) =
-        stake::int_update_degenBTC_staking_rewards(player_data, faction_state)?;
+        stake::int_update_dbtc_staking_rewards(player_data, faction_state)?;
     let (_new_sol_rewards, _new_dbtc_rewards) =
         stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(

@@ -41,7 +41,7 @@ export const DEGEN_BTC_MINING_SEED = "mine-btc-mining";
 export const SOL_TREASURY_SEED = "sol-treasury";
 
 // DEGEN_BTC Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies DEGEN_BTC tokens)
-export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
+export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "degenBTC-vault-authority";
 export const DEGEN_BTC_VAULT_SEED = "dbtc_vault";
 
 // PDAs which hold ModuleConfigStore / GearConfigStore state
@@ -62,7 +62,7 @@ export const dbtc_NFT_VAULT_SEED = "dbtc-nft-vault";
 export const LOOT_REWARDS_SEED = "loot-rewards";
 export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
 export const LOOT_DEGEN_BTC_VAULT_SEED = "loot-dbtc-vault";
-export const LOOT_DEGEN_BTC_VAULT_AUTHORITY_SEED = "loot-minebtc-vault-authority";
+export const LOOT_DEGEN_BTC_VAULT_AUTHORITY_SEED = "loot-degenBTC-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
 export const BUYBACKS_SEED = "buybacks";
 export const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";

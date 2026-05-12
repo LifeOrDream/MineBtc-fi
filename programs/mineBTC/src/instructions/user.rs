@@ -42,7 +42,7 @@ fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
 // =============================== PLAYER INSTRUCTIONS ============================
 // ========================================================================================
 
-/// Initialize a player account for the MineBTC country arena
+/// Initialize a player account for the DegenBTC country arena
 pub fn internal_initialize_player(
     ctx: Context<InitializePlayer>,
     faction_id: u8,
@@ -135,12 +135,12 @@ pub fn internal_initialize_player(
 
     player_data.active_multiplier = BASE_MULTIPLIER;
 
-    // Initialize MineBtc staking fields
+    // Initialize degenBTC staking fields
     player_data.degenbtc_hashpower = 0;
     player_data.degenbtc_staked = 0;
     player_data.degenbtc_degenbtc_reward_debt = 0;
     player_data.degenbtc_sol_reward_debt = 0;
-    msg!("     MineBtc staking fields initialized");
+    msg!("     degenBTC staking fields initialized");
 
     // Initialize LP staking fields
     player_data.lp_hashpower = 0;
@@ -1550,7 +1550,7 @@ pub fn internal_claim_autominer_rewards(
     Ok(())
 }
 
-/// Calculate SOL and MineBTC rewards for a user bet.
+/// Calculate SOL and degenBTC rewards for a user bet.
 /// Returns (total_sol_reward, total_dbtc_reward)
 fn calculate_round_rewards(
     user_bet: &UserGameBet,
@@ -1592,7 +1592,7 @@ fn calculate_round_rewards(
                 msg!("         SOL reward: {} SOL", sol_reward as f64 / 1e9);
             }
 
-            // Exact-direction MineBTC rewards.
+            // Exact-direction degenBTC rewards.
             if game_session.dbtc_rewards_index > 0 && wgtd_points_bet_on_faction > 0 {
                 let dbtc_reward = u64::try_from(helper::mul_div_u128(
                     wgtd_points_bet_on_faction as u128,
@@ -1604,12 +1604,12 @@ fn calculate_round_rewards(
                     .checked_add(dbtc_reward)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
-                    "         MineBtc reward: {} DegenBTC",
+                    "         degenBTC reward: {} DegenBTC",
                     dbtc_reward as f64 / 1e6
                 );
             }
         } else if is_winning_faction {
-            msg!("       ✓ Same faction, different direction - consolation MineBTC rewards...");
+            msg!("       ✓ Same faction, different direction - consolation degenBTC rewards...");
 
             let same_faction_pool =
                 game_session.dbtc_same_faction_direction_pools[direction as usize];
@@ -1630,7 +1630,7 @@ fn calculate_round_rewards(
                     .checked_add(dbtc_reward)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
-                    "         Same-faction MineBtc reward: {} DegenBTC",
+                    "         Same-faction degenBTC reward: {} DegenBTC",
                     dbtc_reward as f64 / 1e6
                 );
             }
@@ -1654,7 +1654,7 @@ fn calculate_round_rewards(
                 .checked_add(jackpot_reward)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "         Jackpot MineBtc reward: {} DegenBTC",
+                "         Jackpot degenBTC reward: {} DegenBTC",
                 jackpot_reward as f64 / 1e6
             );
         }
@@ -1743,7 +1743,7 @@ fn record_round_claim_mutation(
     Ok(())
 }
 
-/// Update player rewards stats and add MineBTC to pending rewards
+/// Update player rewards stats and add degenBTC to pending rewards
 fn update_player_rewards(
     owner: Pubkey,
     player_data_key: Pubkey,
@@ -1763,7 +1763,7 @@ fn update_player_rewards(
         round_id,
     )?;
     msg!(
-        "     Pending MineBtc rewards: {} (+{})",
+        "     Pending degenBTC rewards: {} (+{})",
         player_data.pending_dbtc_rewards as f64 / 1e6,
         total_dbtc_reward as f64 / 1e6
     );

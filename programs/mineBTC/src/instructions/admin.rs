@@ -1,6 +1,6 @@
 // # Admin Instructions
 //
-// This module contains administrative functions for configuring and managing the MineBTC program.
+// This module contains administrative functions for configuring and managing the degenBTC program.
 //
 // ## Key Functions
 //

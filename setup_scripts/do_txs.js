@@ -128,7 +128,7 @@ const [buybacksAccountPda] = PublicKey.findProgramAddressSync(
 const [buybacksSolVaultPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("buybacks-sol-vault")], pid);
 const [vaultAuthorityPda] = PublicKey.findProgramAddressSync(
-  [Buffer.from("minebtc-vault-authority")], pid);
+  [Buffer.from("degenBTC-vault-authority")], pid);
 const [factionWarConfigPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("faction-war-config")], pid);
 const [solRewardsVaultPda] = PublicKey.findProgramAddressSync(

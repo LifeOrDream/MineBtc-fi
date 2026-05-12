@@ -14,13 +14,13 @@
 // 4. If the scheduled slot-hash aged out before anyone finalized the cycle, settlement falls back
 //    to the latest available slot-hash.
 // 5. Exact faction+direction predictors receive the main cycle rewards, while other directions on the
-//    winning faction can still share a consolation MineBTC pool.
+//    winning faction can still share a consolation degenBTC pool.
 //
 // ## Key Functions
 //
 // - `start_round`: Initializes a new arena cycle.
 // - `end_round`: Finalizes the cycle using slot-hash entropy and calculates initial rewards.
-// - `end_round_faction_rewards`: Distributes MineBTC rewards to stakers and faction pools.
+// - `end_round_faction_rewards`: Distributes degenBTC rewards to stakers and faction pools.
 //
 // The slot-hash system avoids reveal-timing manipulation while keeping finalization permissionless.
 //
@@ -798,7 +798,7 @@ fn seed_empty_faction_war_from_round<'info>(
     let active_faction_count = global_config.supported_factions.len() as u8;
     let start_ranks = accounts.faction_war_config.prev_faction_war_ranks;
 
-    let old_treasury_base = faction_war_state.treasury_reward_base_amount;
+    let _old_treasury_base = faction_war_state.treasury_reward_base_amount;
     let unassigned = accounts.tax_config.unassigned_faction_war_treasury_amount;
     let seeded_treasury_base = faction_war_state
         .treasury_reward_base_amount

@@ -6,7 +6,7 @@
     clippy::useless_asref
 )]
 
-// # MineBTC Program
+// # DegenBTC Program
 //
 // Degen country arena game on Solana.
 //
@@ -252,9 +252,9 @@ pub mod minebtc {
         admin::initialize_mining_internal(ctx, dbtc_per_round, pool_state)
     }
 
-    /// Deposit MineBtc tokens to the mining vault (anyone can call)
+    /// Deposit degenBTC tokens to the mining vault (anyone can call)
     ///
-    /// Allows anyone to deposit MineBtc tokens into the mining vault.
+    /// Allows anyone to deposit degenBTC tokens into the mining vault.
     /// These tokens will be distributed as rewards to stakers over time.
     pub fn deposit_dbtc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
         crate::log_fn!("lib", "deposit_dbtc_tokens");
@@ -650,7 +650,7 @@ pub mod minebtc {
     // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize a player account for the MineBTC country arena
+    /// Initialize a player account for the DegenBTC country arena
     pub fn initialize_player(
         ctx: Context<InitializePlayer>,
         faction_id: u8,
@@ -788,7 +788,7 @@ pub mod minebtc {
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MINEBTC / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Stake MineBtc tokens to earn SOL and minebtc rewards
+    /// Stake degenBTC tokens to earn SOL and degenBTC rewards
     pub fn stake_degenbtc(
         ctx: Context<StakeMineBtc>,
         amount: u64,
@@ -799,13 +799,13 @@ pub mod minebtc {
         stake::int_stake_degenbtc(ctx, amount, lockup_duration, position_index)
     }
 
-    /// Unstake MineBtc tokens from a position
+    /// Unstake degenBTC tokens from a position
     pub fn unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
         crate::log_fn!("lib", "unstake_degenbtc");
         stake::int_unstake_degenbtc(ctx, position_index)
     }
 
-    /// Stake LP tokens to earn SOL and minebtc rewards
+    /// Stake LP tokens to earn SOL and degenBTC rewards
     pub fn stake_lp_tokens(
         ctx: Context<StakeLpTokens>,
         amount: u64,
@@ -822,19 +822,19 @@ pub mod minebtc {
         stake::int_unstake_lp_tokens(ctx, position_index)
     }
 
-    /// Claim staking rewards: transfers SOL directly, accumulates MineBTC to pending
+    /// Claim staking rewards: transfers SOL directly, accumulates degenBTC to pending
     pub fn claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
         crate::log_fn!("lib", "claim_staking_rewards");
         stake::int_claim_staking_rewards(ctx)
     }
 
-    /// Withdraw accumulated MineBTC rewards (with HODL tax redistribution)
+    /// Withdraw accumulated degenBTC rewards (with HODL tax redistribution)
     pub fn withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
         crate::log_fn!("lib", "withdraw_dbtc_rewards");
         stake::int_withdraw_dbtc_rewards(ctx)
     }
 
-    /// Claim referral rewards (SOL and MineBtc earned from referrals)
+    /// Claim referral rewards (SOL earned from referrals)
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
         crate::log_fn!("lib", "claim_referral_rewards");
         stake::int_claim_referral_rewards(ctx)
