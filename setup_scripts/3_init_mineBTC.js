@@ -553,6 +553,11 @@ async function main() {
     // Accounts: hashbeastMintConfig, globalConfig, authority, systemProgram
     await initializeHashBeastMintConfig(minebtcProgram);
 
+    // 9c. Enable HashBeast minting (default is inactive after init)
+    // Instruction: switch_hashbeast_mining() — toggles is_active to true
+    // Accounts: hashbeastMintConfig, globalConfig, authority
+    await enableHashBeastMining(minebtcProgram);
+
     // 10. Create HashBeast Collection (Metaplex Core)
     // Instruction: create_hashbeast_collection(name: String, uri: String)
     // Creates a Metaplex Core NFT collection with PDA as update authority
@@ -1862,6 +1867,51 @@ async function initializeHashBeastMintConfig(minebtcProgram) {
       saveDeploymentData();
     } else {
       console.error(COLOR_ERROR, "❌ Failed to initialize HashBeastMintConfig:", error);
+      throw error;
+    }
+  }
+}
+
+async function enableHashBeastMining(minebtcProgram) {
+  if (deploymentFile.hashbeast_mining_enabled) {
+    console.log(COLOR_INFO, "ℹ️ HashBeast mining already enabled");
+    return;
+  }
+
+  console.log(COLOR_PENDING, "🔄 Enabling HashBeast mining...");
+  try {
+    const provider = minebtcProgram.provider;
+    const authority = provider.wallet.publicKey;
+
+    const [globalConfigPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("global-config")],
+      MINE_BTC_PROGRAM_ID
+    );
+    const [hashbeastMintConfigPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("hashbeast-mint-config")],
+      MINE_BTC_PROGRAM_ID
+    );
+
+    const tx = await minebtcProgram.methods
+      .switchHashbeastMining()
+      .accounts({
+        hashbeastMintConfig: hashbeastMintConfigPDA,
+        globalConfig: globalConfigPDA,
+        authority: authority,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, `✅ HashBeast mining enabled! Tx: ${tx}`);
+    deploymentFile.hashbeast_mining_enabled = true;
+    saveDeploymentData();
+    return tx;
+  } catch (error) {
+    if (error.toString().includes("already active")) {
+      console.log(COLOR_INFO, "ℹ️ HashBeast mining already active");
+      deploymentFile.hashbeast_mining_enabled = true;
+      saveDeploymentData();
+    } else {
+      console.error(COLOR_ERROR, "❌ Failed to enable HashBeast mining:", error);
       throw error;
     }
   }
@@ -3671,6 +3721,12 @@ function printCompletionSummary() {
     COLOR_INFO,
     `  • HashBeast Collection: ${
       deploymentFile.hashbeast_collection_created ? "✅" : "❌"
+    }`
+  );
+  console.log(
+    COLOR_INFO,
+    `  • HashBeast Mining: ${
+      deploymentFile.hashbeast_mining_enabled ? "✅" : "❌"
     }`
   );
   console.log(

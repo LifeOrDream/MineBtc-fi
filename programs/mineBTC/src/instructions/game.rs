@@ -42,112 +42,46 @@ use crate::state::*;
 pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     crate::log_fn!("game", "int_start_round");
     msg!("🎲 [game.int_start_round] round_id={}", round_id);
-
-    msg!(
-        "🔍 [game.int_start_round] require: global_config.is_paused={}",
-        ctx.accounts.global_config.is_paused
-    );
     require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
-    msg!("✅ [game.int_start_round] global_config not paused");
 
     let global_state = &mut ctx.accounts.global_game_state;
     let game_session = &mut ctx.accounts.game_session;
     let clock = Clock::get()?;
-    msg!(
-        "📊 [game.int_start_round] clock.slot={} clock.unix_timestamp={}",
-        clock.slot,
-        clock.unix_timestamp
-    );
 
     let round_duration_seconds = u64::try_from(global_state.round_duration_seconds)
         .map_err(|_| ErrorCode::InvalidParameters)?;
-    msg!(
-        "📊 [game.int_start_round] round_duration_seconds={}",
-        round_duration_seconds
-    );
-    msg!("🔍 [game.int_start_round] require: round_duration_seconds > 0");
-    require!(round_duration_seconds > 0, ErrorCode::InvalidParameters);
 
-    msg!("🔍 [game.int_start_round] require: global_state.is_active={} global_state.can_begin_round={}", global_state.is_active, global_state.can_begin_round);
+    require!(round_duration_seconds > 0, ErrorCode::InvalidParameters);
     require!(global_state.is_active, ErrorCode::InvalidParameters);
     require!(global_state.can_begin_round, ErrorCode::CannotBeginRound);
 
     let expected_round_id = global_state.current_round_id + 1;
-    msg!(
-        "📊 [game.int_start_round] expected_round_id={} (current_round_id + 1)",
-        expected_round_id
-    );
-    msg!(
-        "🔍 [game.int_start_round] require: round_id == expected_round_id: {} == {}",
-        round_id,
-        expected_round_id
-    );
     require!(round_id == expected_round_id, ErrorCode::InvalidRound);
 
-    msg!(
-        "🎲 [game.int_start_round] state mutation: global_state.current_round_id {} -> {}",
-        global_state.current_round_id,
-        round_id
-    );
     global_state.current_round_id = round_id;
 
     let session_bump = ctx.bumps.game_session;
-    msg!(
-        "🔍 [game.int_start_round] PDA bump assignment: game_session.bump = {}",
-        session_bump
-    );
     game_session.bump = session_bump;
-    msg!(
-        "🎲 [game.int_start_round] state mutation: game_session.round_id = {}",
-        round_id
-    );
     game_session.round_id = round_id;
-    msg!(
-        "🎲 [game.int_start_round] state mutation: game_session.round_start_slot = {}",
-        clock.slot
-    );
     game_session.round_start_slot = clock.slot;
-    msg!(
-        "🎲 [game.int_start_round] state mutation: game_session.round_start_timestamp = {}",
-        clock.unix_timestamp
-    );
     game_session.round_start_timestamp = clock.unix_timestamp;
 
     let round_end_timestamp = clock
         .unix_timestamp
         .checked_add(global_state.round_duration_seconds)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "📊 [game.int_start_round] computation: round_end_timestamp = {} + {} = {}",
-        clock.unix_timestamp,
-        global_state.round_duration_seconds,
-        round_end_timestamp
-    );
     game_session.round_end_timestamp = round_end_timestamp;
 
     let entropy_delay_slots = round_duration_seconds
         .checked_mul(ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "📊 [game.int_start_round] computation: entropy_delay_slots = {} * {} = {}",
-        round_duration_seconds,
-        ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE,
-        entropy_delay_slots
-    );
     let scheduled_entropy_slot = clock
         .slot
         .checked_add(entropy_delay_slots)
         .and_then(|slot| slot.checked_add(ROUND_PRIMARY_ENTROPY_DELAY_SLOTS))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "📊 [game.int_start_round] computation: scheduled_entropy_slot = {} + {} + {} = {}",
-        clock.slot,
-        entropy_delay_slots,
-        ROUND_PRIMARY_ENTROPY_DELAY_SLOTS,
-        scheduled_entropy_slot
-    );
+
     game_session.scheduled_entropy_slot = scheduled_entropy_slot;
-    msg!("🎲 [game.int_start_round] state mutation: zeroing game_session fields");
     game_session.entropy_slot_used = 0;
     game_session.entropy_hash = [0u8; 32];
     game_session.used_entropy_fallback = false;
@@ -181,22 +115,10 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     // mutation-bonus score-add for that case.
     game_session.faction_war_id_when_played =
         ctx.accounts.faction_war_config.current_faction_war_id;
+
     msg!("🎲 [game.int_start_round] state mutation: global_state.can_begin_round false -> false");
     global_state.can_begin_round = false;
 
-    msg!(
-        "✅ [game.int_start_round] round complete: round_id={} start_slot={} start_ts={} end_ts={} entropy_slot={} faction_war_id={} can_begin_next={}",
-        round_id,
-        game_session.round_start_slot,
-        game_session.round_start_timestamp,
-        game_session.round_end_timestamp,
-        game_session.scheduled_entropy_slot,
-        ctx.accounts.faction_war_config.current_faction_war_id,
-        global_state.can_begin_round
-    );
-
-    msg!("🎲 [game.int_start_round] emit RoundStarted: round_id={} game_session={} faction_war_id={}",
-        round_id, game_session.key(), ctx.accounts.faction_war_config.current_faction_war_id);
     emit!(RoundStarted {
         round_id,
         game_session: game_session.key(),
@@ -317,68 +239,32 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
     let active_faction_count = global_config.supported_factions.len();
-    msg!(
-        "🎲 [game.int_end_round] active_faction_count={} clock.slot={} clock.unix_timestamp={}",
-        active_faction_count,
-        clock.slot,
-        clock.unix_timestamp
-    );
 
-    msg!(
-        "🔍 [game.int_end_round] require: active_faction_count in 1..NUM_FACTIONS: {} in 1..{}",
-        active_faction_count,
-        NUM_FACTIONS
-    );
     require!(
         active_faction_count > 0 && active_faction_count <= NUM_FACTIONS,
         ErrorCode::InvalidFactionId
     );
 
-    msg!(
-        "🎲 [game.int_end_round] branch: game_session.stage={}",
-        game_session.stage
-    );
     if game_session.stage == 1 || game_session.stage == 2 {
         msg!("⚠️ [game.int_end_round] early return: stage already {} (round already ended or ending)", game_session.stage);
         return Ok(());
     }
 
-    msg!(
-        "🔍 [game.int_end_round] require: clock.unix_timestamp >= round_end_timestamp: {} >= {}",
-        clock.unix_timestamp,
-        game_session.round_end_timestamp
-    );
     require!(
         clock.unix_timestamp >= game_session.round_end_timestamp,
         ErrorCode::RoundNotEnded
     );
-    msg!(
-        "🔍 [game.int_end_round] require: game_session.stage == 0: stage={}",
-        game_session.stage
-    );
     require!(game_session.stage == 0, ErrorCode::InvalidStage);
 
-    msg!(
-        "🔍 [game.int_end_round] require: clock.slot > scheduled_entropy_slot: {} > {}",
-        clock.slot,
-        game_session.scheduled_entropy_slot
-    );
     require!(
         clock.slot > game_session.scheduled_entropy_slot,
         ErrorCode::RoundEntropyNotReady
     );
 
-    msg!("🔍 [game.int_end_round] helper call: resolve_round_entropy(slot_hashes={}, scheduled_entropy_slot={})",
-        ctx.accounts.slot_hashes.key(), game_session.scheduled_entropy_slot);
     let (entropy_slot_used, entropy_hash, used_entropy_fallback) = resolve_round_entropy(
         &ctx.accounts.slot_hashes.to_account_info(),
         game_session.scheduled_entropy_slot,
     )?;
-    msg!(
-        "🎲 [game.int_end_round] state mutation: entropy_slot_used={} used_entropy_fallback={}",
-        entropy_slot_used,
-        used_entropy_fallback
-    );
     game_session.entropy_slot_used = entropy_slot_used;
     game_session.entropy_hash = entropy_hash;
     game_session.used_entropy_fallback = used_entropy_fallback;
@@ -390,7 +276,6 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         game_session.used_entropy_fallback
     );
 
-    msg!("🔍 [game.int_end_round] computation: keccak::hashv(entropy_hash, round_id, total_sol_bets, total_wgtd_points_bets)");
     let final_hash_bytes = keccak::hashv(&[
         &game_session.entropy_hash,
         &game_session.round_id.to_le_bytes(),
@@ -398,11 +283,6 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         &game_session.total_wgtd_points_bets.to_le_bytes(),
     ])
     .to_bytes();
-    msg!("🔍 [game.int_end_round] final_hash_bytes first 16 bytes: {:02x}{:02x}{:02x}{:02x} {:02x}{:02x}{:02x}{:02x} {:02x}{:02x}{:02x}{:02x} {:02x}{:02x}{:02x}{:02x}",
-        final_hash_bytes[0], final_hash_bytes[1], final_hash_bytes[2], final_hash_bytes[3],
-        final_hash_bytes[4], final_hash_bytes[5], final_hash_bytes[6], final_hash_bytes[7],
-        final_hash_bytes[8], final_hash_bytes[9], final_hash_bytes[10], final_hash_bytes[11],
-        final_hash_bytes[12], final_hash_bytes[13], final_hash_bytes[14], final_hash_bytes[15]);
 
     let total_users: u64 = game_session.user_faction_indexes[..active_faction_count]
         .iter()
@@ -415,10 +295,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         game_session.total_wgtd_points_bets,
         active_faction_count
     );
-    msg!(
-        "🎲 [game.int_end_round] branch: total_users == 0 ? {}",
-        total_users == 0
-    );
+
     let winning_faction_id = if total_users == 0 {
         (u64::from_le_bytes([
             final_hash_bytes[0],
@@ -441,7 +318,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             0,
             0,
         ]);
-        msg!("🔍 [game.int_end_round] helper call: find_valid_winning_faction(seed={}, active_faction_count={})", faction_random_seed, active_faction_count);
+
         find_valid_winning_faction(
             faction_random_seed,
             &game_session.user_faction_indexes,
@@ -464,15 +341,9 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         0,
         0,
     ]) % PredictionDirection::COUNT as u64) as u8;
-    msg!(
-        "🎲 [game.int_end_round] branch: total_users == 0 for direction selection ? {}",
-        total_users == 0
-    );
+
+    
     let winning_direction = if total_users == 0 {
-        msg!(
-            "⚠️ [game.int_end_round] no users, using initial_direction={}",
-            initial_direction
-        );
         initial_direction
     } else {
         let direction_seed = u64::from_le_bytes([
@@ -485,7 +356,6 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             0,
             0,
         ]);
-        msg!("🔍 [game.int_end_round] helper call: find_valid_winning_direction(seed={}, faction_points={:?})", direction_seed, game_session.points_bets_by_faction_direction[winning_faction_id as usize]);
         find_valid_winning_direction(
             direction_seed,
             &game_session.points_bets_by_faction_direction[winning_faction_id as usize],
@@ -505,30 +375,11 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
 
     if total_users == 0 {
         msg!("⚠️ [game.int_end_round] branch: total_users == 0 -> short-circuit round end");
-        msg!(
-            "🎲 [game.int_end_round] state mutation: global_state.last_round_id = {} -> {}",
-            global_state.last_round_id,
-            game_session.round_id
-        );
         global_state.last_round_id = game_session.round_id;
-        msg!(
-            "🎲 [game.int_end_round] state mutation: global_state.winning_faction_id = {} -> {}",
-            global_state.winning_faction_id,
-            winning_faction_id
-        );
         global_state.winning_faction_id = winning_faction_id;
-        msg!(
-            "🎲 [game.int_end_round] state mutation: global_state.can_begin_round = {} -> true",
-            global_state.can_begin_round
-        );
         global_state.can_begin_round = true;
-        msg!(
-            "🎲 [game.int_end_round] state mutation: game_session.stage = {} -> 2",
-            game_session.stage
-        );
         game_session.stage = 2;
 
-        msg!("🎲 [game.int_end_round] helper call: emit_round_ended(round_id={}, winning_faction_id={}, winning_direction={}, jackpot_hit=false)", game_session.round_id, winning_faction_id, winning_direction);
         emit_round_ended(
             game_session,
             game_session.key(),
@@ -543,21 +394,10 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             clock.unix_timestamp,
         );
 
-        msg!("✅ [game.int_end_round] early return: empty round finalized");
         return Ok(());
     }
 
     let minebtc_rewards = ctx.accounts.mine_btc_mining.mine_btc_per_round;
-    msg!(
-        "📊 [game.int_end_round] minebtc_rewards from mining config = {}",
-        minebtc_rewards
-    );
-    msg!("🔍 [game.int_end_round] helper call: calculate_minebtc_split(rewards={}, stakers_pct={}, winners_pct={}, same_faction_pct={}, jackpot_pct={})",
-        minebtc_rewards,
-        global_config.minebtc_dist_config.minebtc_stakers_pct,
-        global_config.minebtc_dist_config.minebtc_winners_pct,
-        global_config.minebtc_dist_config.minebtc_same_faction_pct,
-        global_config.minebtc_dist_config.minebtc_jackpot_pct);
     let (
         winning_direction_rewards,
         same_faction_direction_rewards_each,
@@ -575,18 +415,10 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         [winning_direction as usize];
     let winning_wgtd_points = game_session.wgtd_points_bets_by_faction_direction
         [winning_faction_id as usize][winning_direction as usize];
-    msg!(
-        "📊 [game.int_end_round] winning_points={} winning_wgtd_points={}",
-        winning_points,
-        winning_wgtd_points
-    );
+
     let mut same_faction_direction_pools = [0u64; PredictionDirection::COUNT];
     let mut same_faction_total = 0u64;
 
-    msg!(
-        "🎲 [game.int_end_round] loop: building same_faction_direction_pools over {} directions",
-        PredictionDirection::COUNT
-    );
     for (direction_idx, same_faction_pool) in same_faction_direction_pools
         .iter_mut()
         .enumerate()
@@ -652,39 +484,16 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         winning_direction_rewards
     };
 
-    msg!(
-        "🎲 [game.int_end_round] state mutation: minebtc_winner_pool = {}",
-        winning_direction_rewards
-    );
     game_session.minebtc_winner_pool = winning_direction_rewards;
-    msg!(
-        "🎲 [game.int_end_round] state mutation: minebtc_same_faction_direction_pools = {:?}",
-        same_faction_direction_pools
-    );
     game_session.minebtc_same_faction_direction_pools = same_faction_direction_pools;
-    msg!(
-        "🎲 [game.int_end_round] state mutation: faction_stakers = {}",
-        faction_stakers
-    );
     game_session.faction_stakers = faction_stakers;
-    msg!(
-        "🎰 [game.int_end_round] state mutation: jackpot_rewards = {}",
-        jackpot_rewards
-    );
     game_session.jackpot_rewards = jackpot_rewards;
 
     // Accumulate this round's jackpot allocation into the global jackpot pot.
-    let old_jackpot_pot = global_state.jackpot_pot;
     global_state.jackpot_pot = global_state
         .jackpot_pot
         .checked_add(jackpot_rewards)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "🎰 [game.int_end_round] state mutation: global_state.jackpot_pot {} -> {} (+{})",
-        old_jackpot_pot,
-        global_state.jackpot_pot,
-        jackpot_rewards
-    );
 
     let total_distributed_this_round = game_session
         .minebtc_winner_pool
@@ -694,19 +503,12 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("📊 [game.int_end_round] computation: total_distributed_this_round = winner_pool({}) + same_faction_total({}) + faction_stakers({}) + jackpot_rewards({}) = {}",
         game_session.minebtc_winner_pool, same_faction_total, faction_stakers, jackpot_rewards, total_distributed_this_round);
-    let old_total_tokens_mined = ctx.accounts.mine_btc_mining.total_tokens_mined;
     ctx.accounts.mine_btc_mining.total_tokens_mined = ctx
         .accounts
         .mine_btc_mining
         .total_tokens_mined
         .checked_add(total_distributed_this_round)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    msg!(
-        "🎲 [game.int_end_round] state mutation: mine_btc_mining.total_tokens_mined {} -> {} (+{})",
-        old_total_tokens_mined,
-        ctx.accounts.mine_btc_mining.total_tokens_mined,
-        total_distributed_this_round
-    );
 
     if winning_points > 0 {
         let sol_reward_delta =
@@ -1369,33 +1171,15 @@ pub fn int_end_round_faction_rewards<'info>(
         faction_war_id,
         faction_war_state_bump,
     )?;
-    msg!(
-        "📦 [end_round_faction_rewards] round_id={} faction_war_id={} game_stage={} faction_war_state_id={} faction_war_stage={}",
-        game_session.round_id,
-        faction_war_id,
-        game_session.stage,
-        faction_war_state.faction_war_id,
-        faction_war_state.stage
-    );
 
-    msg!(
-        "🎲 [game.int_end_round_faction_rewards] branch: game_session.stage == 0 || 2 ? stage={}",
-        game_session.stage
-    );
     if game_session.stage == 0 || game_session.stage == 2 {
         msg!("⚠️ [game.int_end_round_faction_rewards] early return: round not ended yet or already distributed faction rewards (stage={})", game_session.stage);
         return Ok(());
     }
-    // Validate round has ended
-    msg!(
-        "🔍 [game.int_end_round_faction_rewards] require: game_session.stage == 1: stage={}",
-        game_session.stage
-    );
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
 
     // Get winning faction from the round result
     let winning_faction_id = game_session.winning_faction_id;
-    msg!("🔍 [game.int_end_round_faction_rewards] require: faction_state.faction_id == winning_faction_id: {} == {}", faction_state.faction_id, winning_faction_id);
     require!(
         faction_state.faction_id == winning_faction_id,
         ErrorCode::InvalidFactionId
@@ -1405,11 +1189,6 @@ pub fn int_end_round_faction_rewards<'info>(
     let minebtc_staker_rewards = game_session.faction_stakers;
     // SOL rewards to be distributed among stakers (50% to degenBTC stakers, 50% to LP stakers)
     let sol_staker_fees = game_session.stakers_fee;
-    msg!(
-        "📊 [game.int_end_round_faction_rewards] minebtc_staker_rewards={} sol_staker_fees={}",
-        minebtc_staker_rewards,
-        sol_staker_fees
-    );
 
     let winning_direction = game_session.winning_direction;
     let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction

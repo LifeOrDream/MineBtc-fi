@@ -652,17 +652,16 @@ pub fn internal_init_autominer(
     Ok(())
 }
 
-/// Update autominer configuration (sol_per_round, num_rounds, can_reload)
+/// Update autominer run controls (add rounds, can_reload)
 /// Can only be called by vault owner
-/// Handles SOL transfers automatically (deposit more if needed, refund excess)
+/// Handles the extra SOL reserve for newly added rounds.
 pub fn internal_update_autominer(
     ctx: Context<UpdateAutominer>,
-    sol_per_round: Option<u64>,
     rounds_added_: Option<u32>,
     can_reload: Option<bool>,
 ) -> Result<()> {
     crate::log_fn!("user", "internal_update_autominer");
-    msg!("🔄 [update_autominer] Updating autominer configuration");
+    msg!("🔄 [update_autominer] Updating autominer run controls");
     msg!("   Owner: {}", ctx.accounts.autominer_vault.owner);
 
     let autominer_vault = &mut ctx.accounts.autominer_vault;
@@ -681,9 +680,16 @@ pub fn internal_update_autominer(
     let old_sol_balance = autominer_vault.sol_balance;
 
     // Apply updates
-    let new_sol_per_round = sol_per_round.unwrap_or(old_sol_per_round);
+    let new_sol_per_round = old_sol_per_round;
     let new_can_reload = can_reload.unwrap_or(old_can_reload);
     let rounds_added = rounds_added_.unwrap_or(0);
+    require!(
+        rounds_added > 0 || can_reload.is_some(),
+        ErrorCode::InvalidParameters
+    );
+    let new_rounds_remaining = rounds_remaining
+        .checked_add(rounds_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     msg!("   Current configuration:");
     msg!("     SOL per round: {} lamports", old_sol_per_round);
@@ -693,10 +699,12 @@ pub fn internal_update_autominer(
 
     msg!("   New configuration:");
     msg!("     SOL per round: {} lamports", new_sol_per_round);
-    msg!("     Rounds remaining: {}", rounds_remaining + rounds_added);
+    msg!("     Rounds remaining: {}", new_rounds_remaining);
     msg!("     Can reload: {}", new_can_reload);
 
-    // Validate new values based on autominer mode.
+    // Validate the existing per-round reserve based on autominer mode. Updating
+    // no longer allows stake-size changes; users can only add more funded
+    // rounds or toggle reload behavior.
     if autominer_vault.use_ticket.is_none() {
         require!(new_sol_per_round > 0, ErrorCode::InvalidAmount);
         let bets_per_round = count_autominer_bets_per_round(&autominer_vault.factions_config)?;
@@ -714,102 +722,49 @@ pub fn internal_update_autominer(
         msg!(
             "     ✓ Adding {} more rounds (total: {} rounds)",
             rounds_added,
-            rounds_remaining + rounds_added
+            new_rounds_remaining
         );
     } else {
         msg!("     ✓ Rounds unchanged ({} rounds)", rounds_remaining);
     }
 
-    // SOL accounting covers both modes. In ticket mode, the per-round reserve is fixed.
-    let sol_diff = {
-        let old_reserve_per_round = if autominer_vault.use_ticket.is_some() {
-            get_ticket_caller_compensation()
-        } else {
-            old_sol_per_round
-        };
-        let new_reserve_per_round = if autominer_vault.use_ticket.is_some() {
-            get_ticket_caller_compensation()
-        } else {
-            new_sol_per_round
-        };
-        // Calculate SOL needed for remaining rounds with old config
-        let current_sol_needed = (rounds_remaining as u64)
-            .checked_mul(old_reserve_per_round)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!(
-            "     Current SOL needed for {} remaining rounds: {} lamports",
-            rounds_remaining,
-            current_sol_needed
-        );
-
-        // Calculate new SOL needed for new rounds with new config
-        let total_rounds = rounds_remaining
-            .checked_add(rounds_added)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        let new_sol_needed = (total_rounds as u64)
-            .checked_mul(new_reserve_per_round)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        msg!(
-            "     New SOL needed for {} rounds: {} lamports",
-            rounds_remaining + rounds_added,
-            new_sol_needed
-        );
-
-        // Calculate SOL difference: new_sol_needed - current_sol_balance
-        let diff = (new_sol_needed as i128) - (old_sol_balance as i128);
-        msg!("     SOL difference: {} lamports", diff);
-
-        // Handle SOL transfers
-        if diff > 0 {
-            let deposit_amount = u64::try_from(diff).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            msg!(
-                "   Depositing {} SOL to autominer custody...",
-                deposit_amount as f64 / 1e9
-            );
-            helper::transfer_to_autominer_custody(
-                &ctx.accounts.user_wallet.to_account_info(),
-                &ctx.accounts.autominer_custody.to_account_info(),
-                &ctx.accounts.system_program.to_account_info(),
-                deposit_amount,
-            )?;
-            msg!("     ✓ Deposited {} SOL", deposit_amount as f64 / 1e9);
-        } else if diff < 0 {
-            let refund_amount = u64::try_from(-diff).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            msg!(
-                "   Refunding {} SOL from autominer custody...",
-                refund_amount as f64 / 1e9
-            );
-            helper::transfer_from_autominer_custody(
-                &ctx.accounts.autominer_custody.to_account_info(),
-                &ctx.accounts.user_wallet.to_account_info(),
-                &ctx.accounts.system_program.to_account_info(),
-                refund_amount,
-                ctx.bumps.autominer_custody,
-            )?;
-            msg!("     ✓ Refunded {} SOL", refund_amount as f64 / 1e9);
-        } else {
-            msg!("   No SOL transfer needed");
-        }
-        diff
+    // SOL accounting covers both modes. In ticket mode, the per-round reserve is
+    // only the keeper compensation. Updates are deposit-only, so a reload toggle
+    // can never withdraw from custody.
+    let reserve_per_round = if autominer_vault.use_ticket.is_some() {
+        get_ticket_caller_compensation()
+    } else {
+        old_sol_per_round
     };
+    let deposit_amount = (rounds_added as u64)
+        .checked_mul(reserve_per_round)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    if deposit_amount > 0 {
+        msg!(
+            "   Depositing {} SOL to autominer custody...",
+            deposit_amount as f64 / 1e9
+        );
+        helper::transfer_to_autominer_custody(
+            &ctx.accounts.user_wallet.to_account_info(),
+            &ctx.accounts.autominer_custody.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            deposit_amount,
+        )?;
+        msg!("     ✓ Deposited {} SOL", deposit_amount as f64 / 1e9);
+    } else {
+        msg!("   No SOL transfer needed");
+    }
 
     // Update vault state
     autominer_vault.sol_per_round = new_sol_per_round;
-    autominer_vault.rounds_remaining = autominer_vault
-        .rounds_remaining
-        .checked_add(rounds_added)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    autominer_vault.rounds_remaining = new_rounds_remaining;
     autominer_vault.can_reload = new_can_reload;
-    autominer_vault.sol_balance = if sol_diff >= 0 {
-        old_sol_balance
-            .checked_add(u64::try_from(sol_diff).map_err(|_| ErrorCode::ArithmeticOverflow)?)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-    } else {
-        old_sol_balance
-            .checked_sub(u64::try_from(-sol_diff).map_err(|_| ErrorCode::ArithmeticOverflow)?)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-    };
-    let sol_diff_for_event = i64::try_from(sol_diff).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    autominer_vault.sol_balance = old_sol_balance
+        .checked_add(deposit_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let sol_diff_for_event =
+        i64::try_from(deposit_amount).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     msg!("✅ [update_autominer] Autominer updated successfully");
 
@@ -818,7 +773,7 @@ pub fn internal_update_autominer(
         player_data: ctx.accounts.player_data.key(),
         autominer_vault: autominer_vault.key(),
         sol_per_round: new_sol_per_round,
-        rounds_remaining: rounds_remaining + rounds_added,
+        rounds_remaining: new_rounds_remaining,
         can_reload: new_can_reload,
         sol_diff: sol_diff_for_event,
     });

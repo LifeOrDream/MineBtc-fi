@@ -100,6 +100,7 @@ pub fn int_stake_minebtc(
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
+    let user_position_bump = ctx.bumps.user_position;
 
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
@@ -238,6 +239,7 @@ pub fn int_stake_minebtc(
         lockup_duration,
         current_ts,
         multiplier,
+        user_position_bump,
     )?;
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
@@ -670,6 +672,7 @@ pub fn int_stake_lp_tokens(
 
     // Store values before mutable borrow (for event emission)
     let player_data_key = ctx.accounts.player_data.key();
+    let user_position_bump = ctx.bumps.user_position;
 
     let faction_state = &mut ctx.accounts.faction_state;
     let player_data = &mut ctx.accounts.player_data;
@@ -782,6 +785,7 @@ pub fn int_stake_lp_tokens(
         lockup_duration,
         current_ts,
         multiplier,
+        user_position_bump,
     )?;
 
     // -------------- UPDATE PLAYER AND FACTION DATA -------------- //
@@ -1858,7 +1862,7 @@ pub struct UnstakeMineBtc<'info> {
             authority.key().as_ref(),
             &[position_index]
         ],
-        bump = user_position.bump,
+        bump,
         constraint = user_position.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId,
         constraint = user_position.position_type == 0 @ ErrorCode::InvalidParameters
     )]
@@ -1998,7 +2002,7 @@ pub struct UnstakeLpTokens<'info> {
             authority.key().as_ref(),
             &[position_index]
         ],
-        bump = user_position.bump,
+        bump,
         constraint = user_position.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId,
         constraint = user_position.position_type == 1 @ ErrorCode::InvalidParameters
     )]

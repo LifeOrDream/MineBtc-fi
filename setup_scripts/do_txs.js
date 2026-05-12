@@ -729,12 +729,13 @@ async function recordFloorSnapshot() {
 
 async function main() {
   // ── status / inspection ──
-  await printState();
-  await printGameState();
+  // await printState();
+  // await printGameState();
 
   // ── economy cranker ──
   // await sendSolToTreasury(0.05);
-  // await distributeSolFees();
+
+  await distributeSolFees();
   // await snapshotPrice();          // 8x with ~5min gaps to fill price_history
   // await updateRate();             // run after 8th snapshot
   // await addLpAndBurn();           // run after update_rate (lp_operation_pending=true)
@@ -743,8 +744,10 @@ async function main() {
 
   // ── game cranker ──
   // await startRound();             // auto-picks current+1; pass an id to override
+
   // await endRound();                // reveals entropy + picks winner
   // await endRoundFactionRewards();  // pays stakers, advances faction-war mining
+
   // await settleFactionWar();        // permissionless, gated by LP-burn count
 
   // ── nft marketplace cranker ──

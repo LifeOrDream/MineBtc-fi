@@ -537,15 +537,16 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     let vault_balance = sol_prize_pot_vault.lamports();
     require!(vault_balance >= rent_floor, ErrorCode::InsufficientFunds);
     let max_payable = vault_balance - rent_floor;
-    let actual_amount = if amount > max_payable {
-        msg!(
+    let actual_amount =
+        if amount > max_payable {
+            msg!(
             "   ⚠️ Capping payout: requested={} max_payable={} (rent_floor={}, vault_balance={})",
             amount, max_payable, rent_floor, vault_balance
         );
-        max_payable
-    } else {
-        amount
-    };
+            max_payable
+        } else {
+            amount
+        };
 
     let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
@@ -855,6 +856,7 @@ pub fn init_position(
     lockup_duration: u64,
     current_ts: i64,
     multiplier: u16,
+    bump: u8,
 ) -> Result<()> {
     crate::log_fn!("helper", "init_position");
     msg!(
@@ -877,6 +879,7 @@ pub fn init_position(
     position.lockup_duration = lockup_duration;
     position.start_timestamp = current_ts;
     position.multiplier = multiplier;
+    position.bump = bump;
 
     let seconds_to_add = lockup_duration
         .checked_mul(DAY_IN_SECONDS)
