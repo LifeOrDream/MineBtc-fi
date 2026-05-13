@@ -601,7 +601,7 @@ FactionWarState (one per faction war)
     ├─ faction_war_id, start_timestamp, stage
     ├─ total_degenbtc_mined_in_faction_war → faction_war_mining_pool
     ├─ start_ranks ↔ final_ranks → rank_deltas → resolved_directions
-    ├─ faction_gameplay_scores (internal gameplay-score array that drives rankings)
+    ├─ gameplay_scores (internal gameplay-score array that drives rankings)
     ├─ faction_direction_totals (base-pool denominator for user claims)
     ├─ faction_sol_direction_totals (claim-time mutation stake context)
     ├─ loyalty_direction_totals (own-country loyalty-pool denominator)

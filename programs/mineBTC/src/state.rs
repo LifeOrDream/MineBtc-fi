@@ -869,8 +869,6 @@ pub struct GlobalGameSate {
     // --- Data from the *previous* round (for claiming) ---
     /// The last completed round ID
     pub last_round_id: u64,
-    /// The winning faction ID from the last completed round
-    pub winning_faction_id: u8,
 
     /// Global jackpot pot that accumulates across all rounds and factions.
     /// When the jackpot hits, this pot is distributed to exact winners of the selected faction.
@@ -885,7 +883,6 @@ impl GlobalGameSate {
         8 +     // current_round_id
         8 +     // round_duration_seconds
         8 +     // last_round_id
-        1 +     // winning_faction_id
         8; // jackpot_pot
 }
 
@@ -1692,7 +1689,7 @@ pub struct FactionWarState {
 
     /// Number of raffle rounds won by each faction during this faction war.
     /// Used as a tiebreak after story score.
-    pub faction_round_wins: [u16; NUM_FACTIONS],
+    pub round_wins: [u16; NUM_FACTIONS],
     /// Total own-country SOL support committed during this faction war.
     /// Used as a second tiebreak after round wins.
     pub faction_sol_totals: [u64; NUM_FACTIONS],
@@ -1702,7 +1699,7 @@ pub struct FactionWarState {
     /// Accumulated gameplay scores per faction during this faction_war.
     /// Drives ranking at settlement, with round wins and own-country SOL support as tiebreaks.
     /// DNA mutation rolls happen at claim time and do not retroactively alter settled rankings.
-    pub faction_gameplay_scores: [u64; NUM_FACTIONS],
+    pub gameplay_scores: [u64; NUM_FACTIONS],
     /// Total weighted own-country bets per faction/direction from users with an active gameplay HashBeast.
     pub eligible_hashbeast_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
 
@@ -1741,10 +1738,10 @@ impl FactionWarState {
         (NUM_FACTIONS * 8) + // faction_reward_pools
         (NUM_FACTIONS * 8) + // loyalty_reward_pools
         (NUM_FACTIONS * 8) + // faction_hashbeast_reward_pools
-        (NUM_FACTIONS * 2) + // faction_round_wins
+        (NUM_FACTIONS * 2) + // round_wins
         (NUM_FACTIONS * 8) + // faction_sol_totals
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_sol_direction_totals
-        (NUM_FACTIONS * 8) + // faction_gameplay_scores
+        (NUM_FACTIONS * 8) + // gameplay_scores
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_hashbeast_direction_totals
         8 +     // treasury_reward_base_amount
         2 +     // treasury_claimed_bitmap
@@ -1768,10 +1765,10 @@ impl FactionWarState {
             faction_reward_pools: [0u64; NUM_FACTIONS],
             loyalty_reward_pools: [0u64; NUM_FACTIONS],
             faction_hashbeast_reward_pools: [0u64; NUM_FACTIONS],
-            faction_round_wins: [0u16; NUM_FACTIONS],
+            round_wins: [0u16; NUM_FACTIONS],
             faction_sol_totals: [0u64; NUM_FACTIONS],
             faction_sol_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            faction_gameplay_scores: [0u64; NUM_FACTIONS],
+            gameplay_scores: [0u64; NUM_FACTIONS],
             faction_mvp_user: [Pubkey::default(); NUM_FACTIONS],
             faction_mvp_score: [0u64; NUM_FACTIONS],
             faction_mvp_bonus: [0u64; NUM_FACTIONS],
@@ -1811,10 +1808,10 @@ impl FactionWarState {
         target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.loyalty_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.faction_hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.faction_round_wins = AnchorDeserialize::deserialize(buf)?;
+        target.round_wins = AnchorDeserialize::deserialize(buf)?;
         target.faction_sol_totals = AnchorDeserialize::deserialize(buf)?;
         target.faction_sol_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.faction_gameplay_scores = AnchorDeserialize::deserialize(buf)?;
+        target.gameplay_scores = AnchorDeserialize::deserialize(buf)?;
         target.eligible_hashbeast_direction_totals = AnchorDeserialize::deserialize(buf)?;
         target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
         target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;

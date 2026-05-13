@@ -627,7 +627,6 @@ pub struct LpStakingRewardsDistributed {
 pub struct JackpotHit {
     pub round_id: u64,
     pub faction_id: u8,
-    pub winning_direction: u8,
     /// Size of the global jackpot pot at the moment of the hit, snapshotted
     /// onto GameSession.jackpot_pot_size_on_hit before the pot was drained.
     pub jackpot_pot_size_on_hit: u64,
@@ -807,9 +806,9 @@ pub struct FactionWarSettled {
     pub faction_reward_pools: [u64; NUM_FACTIONS],
     pub loyalty_reward_pools: [u64; NUM_FACTIONS],
     pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
-    pub faction_round_wins: [u16; NUM_FACTIONS],
+    pub round_wins: [u16; NUM_FACTIONS],
     pub faction_sol_totals: [u64; NUM_FACTIONS],
-    pub faction_gameplay_scores: [u64; NUM_FACTIONS],
+    pub gameplay_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
 

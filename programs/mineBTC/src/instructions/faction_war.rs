@@ -6,13 +6,6 @@ use crate::genescience::{calculate_mutation_result, MutationType};
 use crate::instructions::helper;
 use crate::state::*;
 
-fn validate_active_faction_count(active_factions: usize) -> Result<()> {
-    require!(
-        active_factions > 0 && active_factions <= NUM_FACTIONS,
-        ErrorCode::InvalidFactionId
-    );
-    Ok(())
-}
 
 pub fn compute_rankings_into(
     scores: &[i64; NUM_FACTIONS],
@@ -21,7 +14,7 @@ pub fn compute_rankings_into(
     active_factions: usize,
     ranks: &mut [u8; NUM_FACTIONS],
 ) -> Result<()> {
-    validate_active_faction_count(active_factions)?;
+    
 
     let mut ordered = [0u8; NUM_FACTIONS];
     for (idx, slot) in ordered.iter_mut().enumerate() {
@@ -150,7 +143,7 @@ fn process_faction_war_claim_hashbeast_update<'info>(
     }
 
     let active_factions = faction_war_state.active_faction_count as usize;
-    validate_active_faction_count(active_factions)?;
+    
     let player_faction_id = player_data.faction_id as usize;
     if player_faction_id >= active_factions {
         return Ok(0);
@@ -373,7 +366,7 @@ pub fn compute_faction_reward_pools(
     tuning: &GameplayTuningConfig,
 ) -> Result<()> {
     let active_factions = faction_war_state.active_faction_count as usize;
-    validate_active_faction_count(active_factions)?;
+    
 
     let pool = faction_war_state.faction_war_mining_pool;
     if pool == 0 {
@@ -612,11 +605,9 @@ pub fn finalize_faction_war_settlement(
         active_factions
     );
 
-    // Empty faction_war (no bets ever placed, e.g. seeded by init_if_needed in
-    // SettleRound and never populated by a subsequent join_bets):
+    // Empty faction_war (no bets ever placed, e.g. never populated by join_bets):
     // settle with no rewards and advance current_faction_war_id so the cycle can
-    // keep moving. Without this, validate_active_faction_count reverts and
-    // every subsequent LP burn can't advance past this faction_war.
+    // keep moving. Without this, empty wars would block all subsequent LP burns.
     if active_factions == 0 {
         msg!(
             "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{} has 0 active factions — settling empty and advancing",
@@ -659,7 +650,7 @@ pub fn finalize_faction_war_settlement(
         return Ok(());
     }
 
-    validate_active_faction_count(active_factions)?;
+    
 
     msg!(
         "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{}, {} factions, {} degenBTC mined",
@@ -669,7 +660,7 @@ pub fn finalize_faction_war_settlement(
     );
 
     let total_gameplay_score: u64 = faction_war_state
-        .faction_gameplay_scores
+        .gameplay_scores
         .iter()
         .take(active_factions)
         .sum();
@@ -732,12 +723,12 @@ pub fn finalize_faction_war_settlement(
             .enumerate()
             .take(active_factions)
         {
-            *score = faction_war_state.faction_gameplay_scores[i] as i64;
+            *score = faction_war_state.gameplay_scores[i] as i64;
         }
         let mut final_ranks = faction_war_state.final_ranks;
         compute_rankings_into(
             &gameplay_scores_i64,
-            &faction_war_state.faction_round_wins,
+            &faction_war_state.round_wins,
             &faction_war_state.faction_sol_totals,
             active_factions,
             &mut final_ranks,
@@ -914,9 +905,9 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
         faction_reward_pools: faction_war_state.faction_reward_pools,
         loyalty_reward_pools: faction_war_state.loyalty_reward_pools,
         faction_hashbeast_reward_pools: faction_war_state.faction_hashbeast_reward_pools,
-        faction_round_wins: faction_war_state.faction_round_wins,
+        round_wins: faction_war_state.round_wins,
         faction_sol_totals: faction_war_state.faction_sol_totals,
-        faction_gameplay_scores: faction_war_state.faction_gameplay_scores,
+        gameplay_scores: faction_war_state.gameplay_scores,
         timestamp: clock.unix_timestamp,
     });
 
@@ -1026,8 +1017,8 @@ pub fn claim_faction_war_rewards_internal(
             faction_war_id
         );
     } else {
-        validate_active_faction_count(active_factions)?;
-        msg!("✅ [faction_war.claim_faction_war_rewards_internal] validate_active_faction_count passed");
+        
+        msg!("✅ [faction_war.claim_faction_war_rewards_internal] validation skipped");
 
         for faction_id in 0..active_factions {
             let resolved_direction = faction_war_state.resolved_directions[faction_id] as usize;

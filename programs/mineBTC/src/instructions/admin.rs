@@ -1471,7 +1471,6 @@ pub fn initialize_game_state_internal(
 
     // Initialize previous round data
     global_game_state.last_round_id = 0;
-    global_game_state.winning_faction_id = 0;
 
     Ok(())
 }

@@ -64,7 +64,7 @@ A cycle is defined by:
 
 - `faction_war_id`
 - `start_ranks` (from previous cycle)
-- `faction_gameplay_scores` (internal field; accumulated gameplay scores during this cycle)
+- `gameplay_scores` (internal field; accumulated gameplay scores during this cycle)
 - per-country direction totals, plus separate own-country loyalty totals
 
 **How cycles work:**
@@ -201,7 +201,7 @@ Important rules:
 
 - settlement is gated by `mining.pol_stats.lp_operations_count >= faction_war_config.faction_war_settle_cycle`
 - if no bets occurred, no cycle rewards are distributed
-- rankings are computed from the internal `faction_gameplay_scores` array, then compared to previous cycle ranks
+- rankings are computed from the internal `gameplay_scores` array, then compared to previous cycle ranks
 
 ### Autominers
 

@@ -644,17 +644,6 @@ pub mod minebtc {
         faction_war::initialize_faction_war_internal(ctx, faction_war_id)
     }
 
-    /// Distribute the global jackpot to bettors on the jackpot faction.
-    /// Permissionless — can be called after `end_round` when `jackpot_hit` is true.
-    /// Idempotent: safe to call multiple times; no-op if already distributed.
-    pub fn distribute_jackpot_rewards(
-        ctx: Context<DistributeJackpotRewards>,
-        round_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "distribute_jackpot_rewards");
-        game::int_distribute_jackpot_rewards(ctx.accounts, round_id)
-    }
-
     // ----------------------------------------------------------------------------------------
     // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
     // ----------------------------------------------------------------------------------------

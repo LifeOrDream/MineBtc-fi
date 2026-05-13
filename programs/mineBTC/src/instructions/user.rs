@@ -1830,7 +1830,7 @@ fn mutation_bonus_weight(mutation_type: u8) -> u64 {
 ///
 /// Bonus formula: `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`.
 /// Bonus accrues to:
-/// - `faction_war_state.faction_gameplay_scores[winner]` — the winning country's cycle score
+/// - `faction_war_state.gameplay_scores[winner]` — the winning country's cycle score
 /// - `player_data.current_faction_war_score` — for MVP tracking (with cycle-rollover reset)
 /// - `faction_war_state.faction_mvp_*[winner]` — if this player just took the lead
 ///
@@ -1911,8 +1911,8 @@ fn apply_mutation_bonus_score<'info>(
         return Ok(());
     }
 
-    faction_war_state.faction_gameplay_scores[winner_idx] = faction_war_state
-        .faction_gameplay_scores[winner_idx]
+    faction_war_state.gameplay_scores[winner_idx] = faction_war_state
+        .gameplay_scores[winner_idx]
         .checked_add(bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -1929,7 +1929,7 @@ fn apply_mutation_bonus_score<'info>(
         faction_war_state.faction_mvp_score[winner_idx] = player_data.current_faction_war_score;
     }
 
-    let total_after = faction_war_state.faction_gameplay_scores[winner_idx];
+    let total_after = faction_war_state.gameplay_scores[winner_idx];
     helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
 
     emit!(crate::events::GameplayScoreAccumulated {
@@ -2336,11 +2336,11 @@ fn internal_process_bets<'info>(
         faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
+        faction_war_state.round_wins = [0u16; NUM_FACTIONS];
         faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
         faction_war_state.faction_sol_direction_totals =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        faction_war_state.faction_gameplay_scores = [0u64; NUM_FACTIONS];
+        faction_war_state.gameplay_scores = [0u64; NUM_FACTIONS];
         faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
         faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
         faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];

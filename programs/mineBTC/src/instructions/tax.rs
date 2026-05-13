@@ -63,11 +63,11 @@ fn seed_empty_faction_war_treasury_bucket(
     faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
     faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
+    faction_war_state.round_wins = [0u16; NUM_FACTIONS];
     faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
     faction_war_state.faction_sol_direction_totals =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-    faction_war_state.faction_gameplay_scores = [0u64; NUM_FACTIONS];
+    faction_war_state.gameplay_scores = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
     faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
     faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
