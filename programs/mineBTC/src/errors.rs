@@ -231,6 +231,9 @@ pub enum ErrorCode {
     #[msg("Round is pending faction-reward finalization; settle cannot run between end_round and settle_round")]
     RoundFinalizationPending,
 
+    #[msg("Cycle has reached its final round; war must be settled before a new round can start")]
+    CycleAwaitingSettlement,
+
     #[msg("Ticket-backed bets exceed the session cap")]
     TicketBetCapExceeded,
 

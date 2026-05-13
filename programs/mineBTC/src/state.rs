@@ -1591,6 +1591,23 @@ pub struct FactionWarConfig {
     /// Last round whose round-completion side effects were applied to this cycle.
     pub last_processed_round_id: u64,
 
+    /// Round id snapshotted by the LP-burn instruction when
+    /// `lp_operations_count` first reaches `settle_at_lp_op_count`. Marks the
+    /// final round of the current cycle — any round after this one belongs to
+    /// the next war. `0` while the cycle is still open.
+    ///
+    /// Lifecycle:
+    /// - LP burn captures `global_game_state.current_round_id` here once the
+    ///   threshold crosses.
+    /// - `start_round` is blocked once this is non-zero (war must be settled
+    ///   before a new round can begin).
+    /// - `settle_faction_war` requires this to be non-zero AND
+    ///   `last_processed_round_id == cycle_end_round_id` (boundary round
+    ///   already folded into faction_war_state).
+    /// - Reset to `0` inside `finalize_faction_war_settlement` so the next war
+    ///   starts fresh.
+    pub cycle_end_round_id: u64,
+
     /// Per-country additive SOL volume accumulated since each country's last
     /// round win. Resets to 0 for the winner inside
     /// `track_faction_war_round_completion` AFTER snapshotting onto
@@ -1620,6 +1637,7 @@ impl FactionWarConfig {
         4 +     // settle_at_lp_op_count
         (NUM_FACTIONS * 1) + // prev_ranks
         8 +     // last_processed_round_id
+        8 +     // cycle_end_round_id
         (NUM_FACTIONS * 8) + // sol_volume_since_last_win
         2 +     // mining_multiplier_bps
         2 +     // multiplier_increase_bps

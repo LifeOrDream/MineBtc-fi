@@ -55,6 +55,14 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     require!(global_state.is_active, ErrorCode::InvalidParameters);
     require!(global_state.can_begin_round, ErrorCode::CannotBeginRound);
 
+    // Once the LP burn has snapshotted the cycle's final round, no new rounds
+    // start under the current war — settle_faction_war must run first so the
+    // next war's PDA can be initialized.
+    require!(
+        ctx.accounts.faction_war_config.cycle_end_round_id == 0,
+        ErrorCode::CycleAwaitingSettlement
+    );
+
     let expected_round_id = global_state.current_round_id + 1;
     require!(round_id == expected_round_id, ErrorCode::InvalidRound);
 

@@ -631,8 +631,9 @@ pub fn finalize_faction_war_settlement(
             .current_war_id
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        faction_war_config.cycle_end_round_id = 0;
         msg!(
-            "⚔️ [faction_war.finalize_faction_war_settlement] current_war_id: {} -> {}",
+            "⚔️ [faction_war.finalize_faction_war_settlement] current_war_id: {} -> {}, cycle_end_round_id reset",
             old_id,
             faction_war_config.current_war_id
         );
@@ -819,8 +820,10 @@ pub fn finalize_faction_war_settlement(
         .current_war_id
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    // Clear the cycle boundary so start_round + the next war can resume.
+    faction_war_config.cycle_end_round_id = 0;
     msg!(
-        "⚔️ [faction_war.finalize_faction_war_settlement] current_war_id: {} -> {}",
+        "⚔️ [faction_war.finalize_faction_war_settlement] current_war_id: {} -> {}, cycle_end_round_id reset",
         old_id,
         faction_war_config.current_war_id
     );
@@ -857,22 +860,23 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
         ErrorCode::FactionWarNotEnded
     );
 
-    // Block external settlement unless the current round is either
-    //   (a) fully settled (stage=2, fold-in to faction_war_state done in settle_round), or
-    //   (b) brand-new with no bets yet (stage=0 and zero wgtd points).
-    // Bets during an active round now live on `game_session` aggregates and
-    // are folded into `faction_war_state` only when settle_round runs; if we
-    // settled the war earlier, those pending bets would be silently dropped
-    // and settlement would compute on stale totals. This also closes the
-    // original stage=1 race (settle_round vs settle_faction_war fighting
-    // over current_war_id).
+    // Cycle-boundary invariant:
+    //   1. LP burn must have snapshotted the final round of this cycle
+    //      (`cycle_end_round_id != 0`).
+    //   2. That final round must already be fully settled and folded into
+    //      `faction_war_state` (`last_processed_round_id == cycle_end_round_id`).
+    // start_round is blocked while `cycle_end_round_id != 0`, so no new bets
+    // can sneak in between the boundary round's fold and this settlement.
     require!(
-        ctx.accounts.game_session.stage == 2
-            || (ctx.accounts.game_session.stage == 0
-                && ctx.accounts.game_session.total_wgtd_points_bets == 0),
+        faction_war_config.cycle_end_round_id != 0
+            && faction_war_config.last_processed_round_id
+                == faction_war_config.cycle_end_round_id,
         ErrorCode::RoundFinalizationPending
     );
-    msg!("✅ [faction_war.settle_faction_war_internal] game_session fold-in invariant check passed");
+    msg!(
+        "✅ [faction_war.settle_faction_war_internal] cycle-boundary check passed (cycle_end_round_id={})",
+        faction_war_config.cycle_end_round_id
+    );
 
     let faction_war_settlement = &mut *ctx.accounts.faction_war_settlement;
     finalize_faction_war_settlement(faction_war_config, faction_war_state, faction_war_settlement, tax_config, tuning)?;
@@ -1317,22 +1321,6 @@ pub struct SettleFactionWar<'info> {
         bump,
     )]
     pub global_config: Box<Account<'info, GlobalConfig>>,
-
-    /// Needed to derive the current round's game_session PDA so the
-    /// stage=1 guard below can see it.
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED],
-        bump,
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
-
-    /// Game session for the current round. Used to block this crank while
-    /// stage=1 (the end_round → settle_round window).
-    #[account(
-        seeds = [GAME_SESSION_SEED, &global_game_state.current_round_id.to_le_bytes()],
-        bump,
-    )]
-    pub game_session: Box<Account<'info, GameSession>>,
 
     /// Anyone can settle — no authority check needed.
     pub cranker: Signer<'info>,

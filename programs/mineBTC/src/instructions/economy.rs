@@ -1167,6 +1167,26 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             .pol_stats
             .update_after_lp_operation(lp_tokens_minted);
 
+        // If this LP op pushed us past the cycle's settle threshold, snapshot
+        // the current round_id. That round becomes the last round of this
+        // cycle: no new rounds can begin (start_round will block on this),
+        // and settle_faction_war runs once that round's data has folded into
+        // FactionWarState. Captured only once per cycle.
+        let faction_war_config = &mut ctx.accounts.faction_war_config;
+        if faction_war_config.cycle_end_round_id == 0
+            && dbtc_mining.pol_stats.lp_operations_count
+                >= faction_war_config.settle_at_lp_op_count
+        {
+            let cycle_end_round_id = ctx.accounts.global_game_state.current_round_id;
+            faction_war_config.cycle_end_round_id = cycle_end_round_id;
+            msg!(
+                "🪖 [add_lp_and_burn] cycle settle threshold crossed (lp_ops={} >= {}); cycle_end_round_id={}",
+                dbtc_mining.pol_stats.lp_operations_count,
+                faction_war_config.settle_at_lp_op_count,
+                cycle_end_round_id
+            );
+        }
+
         emit!(LpTokensBurned {
             lp_tokens_burned: lp_tokens_minted,
             total_lp_burnt: dbtc_mining.pol_stats.total_lp_burnt,
@@ -1775,6 +1795,15 @@ pub struct AddLpAndBurn<'info> {
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
+
+    /// Read-only: provides `current_round_id` so we can snapshot the cycle's
+    /// final round when the LP op crosses the war's settle threshold.
+    #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
+    pub global_game_state: Account<'info, GlobalGameSate>,
+
+    /// Mut: this ix writes `cycle_end_round_id` once the lp threshold crosses.
+    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED.as_ref()], bump = faction_war_config.bump)]
+    pub faction_war_config: Account<'info, FactionWarConfig>,
 
     /// Authority (optional - only required when lp_token_amount > 0)
     pub authority: Option<Signer<'info>>,
