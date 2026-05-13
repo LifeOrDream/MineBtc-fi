@@ -20,7 +20,7 @@
 //
 // - `start_round`: Initializes a new arena cycle.
 // - `end_round`: Finalizes the cycle using slot-hash entropy and calculates initial rewards.
-// - `end_round_faction_rewards`: Distributes degenBTC rewards to stakers and faction pools.
+// - `settle_round`: Distributes degenBTC rewards to stakers and faction pools.
 //
 // The slot-hash system avoids reveal-timing manipulation while keeping finalization permissionless.
 //
@@ -536,6 +536,8 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
                 break;
             }
         }
+    } else {
+        game_session.jackpot_faction_id = u8::MAX; // sentinel: no jackpot this round
     }
 
     if !game_session.jackpot_hit && jackpot_random <= 10 {
@@ -746,125 +748,14 @@ fn split_staker_lane_rewards(
     result
 }
 
-/// Finalize the faction-level reward distribution for the round.
-/// This function:
-/// 1. Uses the already-finalized winning faction/direction from `end_round`
-/// 2. Distributes the winning faction's staker and global jackpot rewards
-/// 3. Advances faction_war accounting when the current faction_war window has ended
 #[inline(never)]
-fn init_or_load_round_faction_war_state<'info>(
-    payer: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    faction_war_state_info: &AccountInfo<'info>,
-    faction_war_id: u64,
-    faction_war_state_bump: u8,
-) -> Result<Box<FactionWarState>> {
-    let faction_war_id_bytes = faction_war_id.to_le_bytes();
-    let faction_war_state_bump_seed = [faction_war_state_bump];
-    let faction_war_state_seeds: &[&[u8]] = &[
-        FACTION_WAR_STATE_SEED,
-        faction_war_id_bytes.as_ref(),
-        faction_war_state_bump_seed.as_ref(),
-    ];
-    let _created = helper::init_pda_account_zeroed_if_needed::<FactionWarState>(
-        payer,
-        faction_war_state_info,
-        system_program,
-        faction_war_state_seeds,
-        FactionWarState::LEN,
-    )?;
-    load_faction_war_state_boxed(faction_war_state_info)
-}
-
-#[inline(never)]
-fn load_faction_war_state_boxed<'info>(
-    account: &AccountInfo<'info>,
-) -> Result<Box<FactionWarState>> {
-    require!(
-        account.owner == &FactionWarState::owner(),
-        ErrorCode::InvalidAccount
-    );
-    let data = account.try_borrow_data()?;
-    require!(data.len() >= DISCRIMINATOR_SIZE, ErrorCode::InvalidAccount);
-    require!(
-        &data[..DISCRIMINATOR_SIZE] == FactionWarState::DISCRIMINATOR,
-        ErrorCode::InvalidAccount
-    );
-    let mut boxed: Box<FactionWarState> =
-        unsafe { helper::alloc_zeroed_boxed::<FactionWarState>() };
-    let mut cursor: &[u8] = &data[DISCRIMINATOR_SIZE..];
-    FactionWarState::deserialize_into(&mut boxed, &mut cursor)?;
-    Ok(boxed)
-}
-
-#[inline(never)]
-fn seed_empty_faction_war_from_round<'info>(
-    accounts: &mut EndRoundFactionRewards<'info>,
+fn track_faction_war_round_completion(
+    faction_war_config: &mut FactionWarConfig,
     faction_war_state: &mut FactionWarState,
-    faction_war_state_bump: u8,
-) -> Result<()> {
-    let global_config = &accounts.global_config;
-    let active_faction_count = global_config.supported_factions.len() as u8;
-    let start_ranks = accounts.faction_war_config.prev_faction_war_ranks;
-
-    let _old_treasury_base = faction_war_state.treasury_reward_base_amount;
-    let unassigned = accounts.tax_config.unassigned_faction_war_treasury_amount;
-    let seeded_treasury_base = faction_war_state
-        .treasury_reward_base_amount
-        .checked_add(unassigned)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-    faction_war_state.bump = faction_war_state_bump;
-    faction_war_state.faction_war_id = accounts.faction_war_config.current_faction_war_id;
-    let now_ts = Clock::get()?.unix_timestamp.max(0) as u64;
-    faction_war_state.start_timestamp = now_ts;
-    faction_war_state.stage = 0;
-    faction_war_state.active_faction_count = active_faction_count;
-    faction_war_state.total_degenbtc_mined_in_faction_war = 0;
-    faction_war_state.faction_war_mining_pool = 0;
-    faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
-    faction_war_state.faction_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-    faction_war_state.loyalty_direction_totals = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-    faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_round_wins = [0u16; NUM_FACTIONS];
-    faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_sol_direction_totals =
-        [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-    faction_war_state.faction_gameplay_scores = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
-    faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
-    faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
-    faction_war_state.eligible_hashbeast_direction_totals =
-        [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-    faction_war_state.start_ranks = start_ranks;
-    faction_war_state.final_ranks = start_ranks;
-    faction_war_state.resolved_directions =
-        [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
-    faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
-    faction_war_state.treasury_claimed_bitmap = 0;
-    faction_war_state.sol_reward_pool = 0;
-    accounts.tax_config.unassigned_faction_war_treasury_amount = 0;
-
-    let lp_ops = accounts.dbtc_mining.pol_stats.lp_operations_count;
-    let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
-    accounts.faction_war_config.faction_war_settle_cycle = settle_cycle;
-    accounts.faction_war_config.reset_cycle_round_tracking();
-    msg!(
-        "🪖 seeded war={} factions={} settle_after_lp={} treasury_base={}",
-        faction_war_state.faction_war_id,
-        active_faction_count,
-        accounts.faction_war_config.faction_war_settle_cycle,
-        faction_war_state.treasury_reward_base_amount,
-    );
-    Ok(())
-}
-
-#[inline(never)]
-fn track_faction_war_round_completion<'info>(
-    accounts: &mut EndRoundFactionRewards<'info>,
-    faction_war_state: &mut FactionWarState,
+    game_session: &mut GameSession,
+    tax_config: &mut TaxConfig,
+    dbtc_mining: &DegenBtcMining,
+    gameplay_tuning: &GameplayTuningConfig,
     winning_faction_id: u8,
     actually_distributed: u64,
     round_score: u64,
@@ -906,31 +797,26 @@ fn track_faction_war_round_completion<'info>(
         .checked_add(actually_distributed)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    if accounts.faction_war_config.last_processed_round_id != accounts.game_session.round_id {
-        accounts.faction_war_config.last_processed_round_id = accounts.game_session.round_id;
+    if faction_war_config.last_processed_round_id != game_session.round_id {
+        faction_war_config.last_processed_round_id = game_session.round_id;
 
-        if winning_faction_index
-            < accounts
-                .faction_war_config
-                .faction_volume_since_last_win
-                .len()
-        {
+        if winning_faction_index < faction_war_config.faction_volume_since_last_win.len() {
             let snap =
-                accounts.faction_war_config.faction_volume_since_last_win[winning_faction_index];
-            accounts.game_session.winning_faction_volume_at_round = snap;
-            accounts.faction_war_config.faction_volume_since_last_win[winning_faction_index] = 0;
+                faction_war_config.faction_volume_since_last_win[winning_faction_index];
+            game_session.winning_faction_volume_at_round = snap;
+            faction_war_config.faction_volume_since_last_win[winning_faction_index] = 0;
         }
     }
 
-    let lp_ops = accounts.dbtc_mining.pol_stats.lp_operations_count;
-    let should_settle = lp_ops >= accounts.faction_war_config.faction_war_settle_cycle
-        && accounts.faction_war_config.faction_war_settle_cycle > 0;
+    let lp_ops = dbtc_mining.pol_stats.lp_operations_count;
+    let should_settle = lp_ops >= faction_war_config.faction_war_settle_cycle
+        && faction_war_config.faction_war_settle_cycle > 0;
     if should_settle {
         crate::instructions::faction_war::finalize_faction_war_settlement(
-            &mut accounts.faction_war_config,
+            faction_war_config,
             faction_war_state,
-            &mut accounts.tax_config,
-            &accounts.global_config.gameplay_tuning,
+            tax_config,
+            gameplay_tuning,
         )?;
 
         msg!(
@@ -948,28 +834,19 @@ fn track_faction_war_round_completion<'info>(
 }
 
 #[inline(never)]
-pub fn int_end_round_faction_rewards<'info>(
-    accounts: &mut EndRoundFactionRewards<'info>,
+pub fn int_settle_round<'info>(
+    accounts: &mut SettleRound<'info>,
     faction_war_id: u64,
-    faction_war_state_bump: u8,
 ) -> Result<()> {
-    crate::log_fn!("game", "int_end_round_faction_rewards");
-    msg!("🏁 [end_round_faction_rewards] Ending current round");
+    crate::log_fn!("game", "int_settle_round");
+    msg!("🏁 [settle_round] Ending current round");
 
     let game_session = &mut accounts.game_session;
     let faction_state = &mut accounts.faction_state;
     let global_state = &mut accounts.global_game_state;
-    let faction_war_state_info = accounts.faction_war_state.to_account_info();
-    let mut faction_war_state = init_or_load_round_faction_war_state(
-        accounts.authority.as_ref(),
-        accounts.system_program.as_ref(),
-        &faction_war_state_info,
-        faction_war_id,
-        faction_war_state_bump,
-    )?;
 
     if game_session.stage == 0 || game_session.stage == 2 {
-        msg!("⚠️ [end_round_faction_rewards] early return stage={}", game_session.stage);
+        msg!("⚠️ [settle_round] early return stage={}", game_session.stage);
         return Ok(());
     }
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
@@ -1000,7 +877,7 @@ pub fn int_end_round_faction_rewards<'info>(
         )?;
     } else {
         msg!(
-            "⚠️ [end_round_faction_rewards] no stakers on faction {} — redirecting {} degenBTC + {} sol to winners",
+            "⚠️ [settle_round] no stakers on faction {} — redirecting {} degenBTC + {} sol to winners",
             faction_state.faction_id,
             dbtc_staker_rewards,
             sol_staker_fees
@@ -1034,7 +911,7 @@ pub fn int_end_round_faction_rewards<'info>(
     global_state.winning_faction_id = winning_faction_id;
     game_session.stage = 2;
     global_state.can_begin_round = true;
-    msg!("✅ [end_round_faction_rewards] round={} stage=2 can_begin=true", game_session.round_id);
+    msg!("✅ [settle_round] round={} stage=2 can_begin=true", game_session.round_id);
 
     // --- FACTION_WAR MINING TRACKING (inline) ---
     // Only count degenBTC that was actually distributed this round (not the full emission).
@@ -1047,25 +924,12 @@ pub fn int_end_round_faction_rewards<'info>(
         .dbtc_same_faction_direction_pools
         .iter()
         .sum::<u64>();
-    let actually_distributed = game_session
-        .dbtc_winner_pool
-        .checked_add(same_faction_sum)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_add(game_session.faction_stakers)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_add(game_session.jackpot_rewards)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let actually_distributed = game_session.dbtc_winner_pool + same_faction_sum + game_session.faction_stakers + game_session.jackpot_rewards;
     let round_id_for_event = game_session.round_id;
     let winning_faction_for_event = winning_faction_id;
     let winning_direction_for_event = game_session.winning_direction;
 
-    if faction_war_state.faction_war_id == 0 || faction_war_state.active_faction_count == 0 {
-        seed_empty_faction_war_from_round(
-            accounts,
-            faction_war_state.as_mut(),
-            faction_war_state_bump,
-        )?;
-    } else if accounts.faction_war_config.is_active && faction_war_state.stage == 0 {
+    if accounts.faction_war_config.is_active && accounts.faction_war_state.stage == 0 {
         let winner_idx = winning_faction_id as usize;
         let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
             .iter()
@@ -1073,17 +937,21 @@ pub fn int_end_round_faction_rewards<'info>(
             .try_fold(0u64, |acc, v| acc.checked_add(v))
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         track_faction_war_round_completion(
-            accounts,
-            faction_war_state.as_mut(),
+            &mut accounts.faction_war_config,
+            accounts.faction_war_state.as_mut(),
+            &mut accounts.game_session,
+            &mut accounts.tax_config,
+            &accounts.dbtc_mining,
+            &accounts.global_config.gameplay_tuning,
             winning_faction_id,
             actually_distributed,
             round_score,
         )?;
     } else {
         msg!(
-            "⚠️ [end_round_faction_rewards] faction_war tracking skipped: active={} stage={}",
+            "⚠️ [settle_round] faction_war tracking skipped: active={} stage={}",
             accounts.faction_war_config.is_active,
-            faction_war_state.stage
+            accounts.faction_war_state.stage
         );
     }
 
@@ -1105,11 +973,10 @@ pub fn int_end_round_faction_rewards<'info>(
         timestamp: Clock::get()?.unix_timestamp,
     });
 
-    helper::store_account_data(&faction_war_state_info, faction_war_state.as_ref())?;
     Ok(())
 }
 
-/// Internal function, called by int_end_round_faction_rewards to distribute rewards among AMG stakers (50% to degenBTC stakers, 50% to LP stakers)
+/// Internal function, called by int_settle_round to distribute rewards among AMG stakers (50% to degenBTC stakers, 50% to LP stakers)
 #[inline(never)]
 fn distribute_rewards_amg_stakers(
     dbtc_staker_rewards: u64,
@@ -1393,7 +1260,7 @@ pub struct EndRound<'info> {
 
 #[derive(Accounts)]
 #[instruction(faction_war_id: u64)]
-pub struct EndRoundFactionRewards<'info> {
+pub struct SettleRound<'info> {
     #[account(
         mut,
         seeds = [GLOBAL_GAME_STATE_SEED.as_ref()],
@@ -1453,14 +1320,12 @@ pub struct EndRoundFactionRewards<'info> {
     )]
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
 
-    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
-    /// Must remain `mut` because helper::store_account_data persists the seeded/updated faction-war state.
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
-        bump,
+        bump = faction_war_state.bump,
     )]
-    pub faction_war_state: UncheckedAccount<'info>,
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

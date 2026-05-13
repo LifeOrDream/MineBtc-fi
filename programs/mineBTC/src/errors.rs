@@ -228,7 +228,7 @@ pub enum ErrorCode {
     #[msg("FactionWar rewards have already been claimed")]
     FactionWarRewardsAlreadyClaimed,
 
-    #[msg("Round is pending faction-reward finalization; settle cannot run between end_round and end_round_faction_rewards")]
+    #[msg("Round is pending faction-reward finalization; settle cannot run between end_round and settle_round")]
     RoundFinalizationPending,
 
     #[msg("Ticket-backed bets exceed the session cap")]

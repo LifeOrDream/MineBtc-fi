@@ -625,14 +625,23 @@ pub mod minebtc {
     }
 
     /// Finalize the round's faction-level staking/jackpot distribution and track faction-war mining.
-    pub fn end_round_faction_rewards(
-        ctx: Context<EndRoundFactionRewards>,
+    pub fn settle_round(
+        ctx: Context<SettleRound>,
         faction_war_id: u64,
     ) -> Result<()> {
-        crate::log_fn!("lib", "end_round_faction_rewards");
-        let bumps = ctx.bumps;
-        let accounts = ctx.accounts;
-        game::int_end_round_faction_rewards(accounts, faction_war_id, bumps.faction_war_state)
+        crate::log_fn!("lib", "settle_round");
+        game::int_settle_round(ctx.accounts, faction_war_id)
+    }
+
+    /// Initialize a new faction war state PDA.
+    /// Must be called once per war cycle before the first round's settle_round.
+    /// Permissionless — anyone can initialize the war state for the current war ID.
+    pub fn initialize_faction_war(
+        ctx: Context<InitializeFactionWar>,
+        faction_war_id: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "initialize_faction_war");
+        faction_war::initialize_faction_war_internal(ctx, faction_war_id)
     }
 
     /// Distribute the global jackpot to bettors on the jackpot faction.

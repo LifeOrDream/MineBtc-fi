@@ -98,7 +98,7 @@ pub const DEFAULT_TARGET_MUTATIONS_PER_CYCLE: u16 = 12;
 pub const DEFAULT_TARGET_ROUNDS_PER_CYCLE: u16 = 240;
 pub const DEFAULT_PACING_MAX_ADJUSTMENT_BPS: u16 = 4000; // +/-40%
 pub const FACTION_WAR_RANK_WEIGHT_BPS: [u16; NUM_FACTIONS] = [
-    1500, 1200, 1000, 900, 800, 700, 700, 600, 600, 500, 500, 400, 300, 200, 100,
+    1500, 1200, 1000, 900, 800, 700, 700, 600, 600, 500, 400, 300,
 ];
 
 // ========== DEFAULT CONFIG VALUES ========== //
@@ -169,8 +169,8 @@ pub const DISCRIMINATOR_SIZE: usize = 8;
 
 pub const JACKPOT_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
-pub const MAX_FACTIONS: usize = 15; // Up to 15 factions for the raffle
-pub const NUM_FACTIONS: usize = 15; // Same as MAX_FACTIONS, used for array sizes
+pub const MAX_FACTIONS: usize = 12; // Up to 12 factions for the raffle
+pub const NUM_FACTIONS: usize = 12; // Same as MAX_FACTIONS, used for array sizes
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 
 /// Conservative upper-bound slot estimate used to schedule round entropy at round start.
@@ -373,7 +373,7 @@ pub struct GlobalConfig {
     pub pda_sol_treasury: Pubkey,
 
     /// List of supported factions (e.g., "USA", "China", "Russia")
-    /// Maximum 15 factions, each with max 16 characters
+    /// Maximum 12 factions, each with max 16 characters
     pub supported_factions: Vec<String>,
 
     /// SOL fee distribution configuration

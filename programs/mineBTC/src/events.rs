@@ -658,7 +658,7 @@ pub struct JackpotRolledOver {
     pub timestamp: i64,
 }
 
-/// Event emitted by `end_round_faction_rewards` after `track_faction_war_round_completion`
+/// Event emitted by `settle_round` after `track_faction_war_round_completion`
 /// runs. Carries the drought-volume snapshot that fed into the mutation roll for
 /// this round's claimers (state.rs:1048-1053, used at user.rs:1689).
 #[event]
@@ -872,7 +872,7 @@ pub struct FactionWarAutoStarted {
     pub settle_cycle: u32,
 }
 
-/// Event emitted when a faction_war is auto-settled inline (during end_round_faction_rewards)
+/// Event emitted when a faction_war is auto-settled inline (during settle_round)
 #[event]
 pub struct FactionWarAutoSettled {
     pub faction_war_id: u64,
