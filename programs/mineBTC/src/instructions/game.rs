@@ -756,7 +756,7 @@ fn split_staker_lane_rewards(
 }
 
 #[inline(never)]
-fn track_faction_war_round_completion(
+fn track_war_round_completion(
     war_config: &mut FactionWarConfig,
     war_state: &mut FactionWarState,
     game_session: &mut GameSession,
@@ -765,7 +765,7 @@ fn track_faction_war_round_completion(
     round_score: u64,
 ) -> Result<()> {
     msg!(
-        "🪖 track_faction_war_round_completion: winner={} distributed={} score={} war={}",
+        "🪖 track_war_round_completion: winner={} distributed={} score={} war={}",
         winning_faction_id,
         actually_distributed,
         round_score,
@@ -1005,7 +1005,7 @@ pub fn int_settle_round<'info>(
             .copied()
             .try_fold(0u64, |acc, v| acc.checked_add(v))
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        track_faction_war_round_completion(
+        track_war_round_completion(
             &mut accounts.war_config,
             accounts.war_state.as_mut(),
             &mut accounts.game_session,
@@ -1020,7 +1020,7 @@ pub fn int_settle_round<'info>(
         );
     }
 
-    // By this point track_faction_war_round_completion has run (when applicable)
+    // By this point track_war_round_completion has run (when applicable)
     // and snapshotted the winning faction's drought volume onto the GameSession.
     // Surface it on the event so the indexer can populate `latest_result`
     // without a separate PDA read.

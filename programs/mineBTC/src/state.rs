@@ -55,7 +55,7 @@ pub const STORY_EVENT_ORIGIN_FACTION_WAR: u8 = 1;
 /// - `MUTATION_BONUS`: per-user kick added when their round-claim mutation
 ///   roll succeeds. Computed as
 ///   `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`.
-///   Also accrues to the user's `current_faction_war_score` for MVP tracking.
+///   Also accrues to the user's `current_war_score` for MVP tracking.
 pub const GAMEPLAY_SCORE_SOURCE_ROUND_WIN: u8 = 0;
 pub const GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS: u8 = 1;
 ///
@@ -477,9 +477,9 @@ pub struct GameplayTuningConfig {
     pub max_evolution_stage_unlocked: u8,
 
     /// Faction-war mining pool split in basis points. Must sum to 10_000.
-    pub faction_war_base_reward_bps: u16,
-    pub faction_war_mvp_reward_bps: u16,
-    pub faction_war_hashbeast_reward_bps: u16,
+    pub war_base_reward_bps: u16,
+    pub war_mvp_reward_bps: u16,
+    pub war_hashbeast_reward_bps: u16,
 
     /// Baseline mutation chance before runtime factors.
     pub base_mutation_chance_bps: u16,
@@ -504,9 +504,9 @@ pub struct GameplayTuningConfig {
 impl GameplayTuningConfig {
     pub const LEN: usize = 1 + // rpg_progression
         1 + // max_evolution_stage_unlocked
-        2 + // faction_war_base_reward_bps
-        2 + // faction_war_mvp_reward_bps
-        2 + // faction_war_hashbeast_reward_bps
+        2 + // war_base_reward_bps
+        2 + // war_mvp_reward_bps
+        2 + // war_hashbeast_reward_bps
         2 + // base_mutation_chance_bps
         2 + // mutation_chance_floor_bps
         2 + // mutation_chance_cap_bps
@@ -519,17 +519,17 @@ impl GameplayTuningConfig {
     pub fn is_uninitialized(&self) -> bool {
         !self.rpg_progression
             && self.max_evolution_stage_unlocked == 0
-            && self.faction_war_base_reward_bps == 0
-            && self.faction_war_mvp_reward_bps == 0
-            && self.faction_war_hashbeast_reward_bps == 0
+            && self.war_base_reward_bps == 0
+            && self.war_mvp_reward_bps == 0
+            && self.war_hashbeast_reward_bps == 0
     }
 
     pub fn apply_defaults(&mut self) {
         self.rpg_progression = false;
         self.max_evolution_stage_unlocked = 0;
-        self.faction_war_base_reward_bps = DEFAULT_FACTION_WAR_BASE_REWARD_BPS;
-        self.faction_war_mvp_reward_bps = DEFAULT_FACTION_WAR_MVP_REWARD_BPS;
-        self.faction_war_hashbeast_reward_bps = DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS;
+        self.war_base_reward_bps = DEFAULT_FACTION_WAR_BASE_REWARD_BPS;
+        self.war_mvp_reward_bps = DEFAULT_FACTION_WAR_MVP_REWARD_BPS;
+        self.war_hashbeast_reward_bps = DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS;
         self.base_mutation_chance_bps = DEFAULT_BASE_MUTATION_CHANCE_BPS;
         self.mutation_chance_floor_bps = DEFAULT_MUTATION_CHANCE_FLOOR_BPS;
         self.mutation_chance_cap_bps = DEFAULT_MUTATION_CHANCE_CAP_BPS;
@@ -819,7 +819,7 @@ pub struct TaxConfig {
     pub total_burnt: u64,
     /// Treasury tax accrued while no active faction war state existed yet.
     /// This amount gets attached to the next faction war when that state is initialized.
-    pub unassigned_faction_war_treasury_amount: u64,
+    pub unassigned_war_treasury_amount: u64,
 
     /// PDA addresses for tax system
     pub withdraw_withheld_authority: Pubkey,
@@ -832,7 +832,7 @@ impl TaxConfig {
         1 +     // treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
-        8 +     // unassigned_faction_war_treasury_amount
+        8 +     // unassigned_war_treasury_amount
         32 +    // withdraw_withheld_authority
         32; // faction_treasury_vault
 
@@ -1039,7 +1039,7 @@ pub struct GameSession {
     pub war_id_when_played: u64,
 
     /// Snapshot of the winning country's `sol_volume_since_last_win`
-    /// captured at round-end (in `track_faction_war_round_completion`),
+    /// captured at round-end (in `track_war_round_completion`),
     /// BEFORE the config counter is reset to 0. Frozen value the round-claim
     /// mutation roll feeds into the volume_factor — late claims see the same
     /// number even though the config-side counter has long been reset.
@@ -1132,7 +1132,7 @@ pub struct PlayerData {
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
     /// Number of unclaimed per-faction-war reward accounts still outstanding.
-    pub pending_faction_war_claims: u16,
+    pub pending_war_claims: u16,
 
     pub degenbtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
@@ -1165,13 +1165,13 @@ pub struct PlayerData {
     pub gameplay_unlock_request_faction_war: u64,
     /// Cumulative gameplay score for the current faction war cycle.
     /// Lazy-reset to 0 the first time it's touched in a new cycle (see
-    /// `current_faction_war_score_cycle_id` below). Used for MVP tracking.
-    pub current_faction_war_score: u64,
-    /// `war_id` that `current_faction_war_score` belongs to.
+    /// `current_war_score_cycle_id` below). Used for MVP tracking.
+    pub current_war_score: u64,
+    /// `war_id` that `current_war_score` belongs to.
     /// On the first bet of a new cycle (when `war_state.war_id`
     /// differs from this), the running score is reset to 0 and this is updated.
     /// This avoids needing a separate per-user reset instruction at cycle rollover.
-    pub current_faction_war_score_cycle_id: u64,
+    pub current_war_score_cycle_id: u64,
 }
 
 impl PlayerData {
@@ -1204,7 +1204,7 @@ impl PlayerData {
         8 +     // pending_staking_dbtc_rewards (u64)
         8 +     // unrefined_dbtc_rewards (u64)
         2 +     // pending_round_claims (u16)
-        2 +     // pending_faction_war_claims (u16)
+        2 +     // pending_war_claims (u16)
         4 + (Self::MAX_POSITIONS * 1) + // degenbtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_HASHBEASTS * 32) + // staked_hashbeasts Vec<Pubkey>
@@ -1216,8 +1216,8 @@ impl PlayerData {
         32 +    // gameplay_hashbeast_dna [u8; 32]
         4 +     // gameplay_hashbeast_xp (u32)
         8 +     // gameplay_unlock_request_faction_war (u64)
-        8 +     // current_faction_war_score (u64)
-        8; // current_faction_war_score_cycle_id (u64)
+        8 +     // current_war_score (u64)
+        8; // current_war_score_cycle_id (u64)
 }
 
 /// Individual degenBTC staking position
@@ -1567,7 +1567,7 @@ pub struct FactionWarConfig {
     /// Current faction-war ID (incrementing counter, starts at 1)
     pub current_war_id: u64,
 
-    /// Cached PDA bump for `faction_war_sol_vault`. Stored here so the hot
+    /// Cached PDA bump for `war_sol_vault`. Stored here so the hot
     /// JoinBets path can derive the vault address with `create_program_address`
     /// instead of paying `find_program_address` every bet.
     pub rewards_sol_vault_bump: u8,
@@ -1604,7 +1604,7 @@ pub struct FactionWarConfig {
 
     /// Per-country additive SOL volume accumulated since each country's last
     /// round win. Resets to 0 for the winner inside
-    /// `track_faction_war_round_completion` AFTER snapshotting onto
+    /// `track_war_round_completion` AFTER snapshotting onto
     /// `GameSession.winning_faction_volume_at_round`. Persists across cycle
     /// boundaries — a country in a long drought builds up potential.
     pub sol_volume_since_last_win: [u64; NUM_FACTIONS],
@@ -1706,7 +1706,7 @@ pub struct FactionWarState {
 
     /// Exact amount of faction treasury tax attributed to this faction war.
     /// Accumulated during tax distribution while the war is active, or
-    /// seeded from TaxConfig.unassigned_faction_war_treasury_amount when the
+    /// seeded from TaxConfig.unassigned_war_treasury_amount when the
     /// war state is first initialized.
     pub treasury_reward_base_amount: u64,
 }
@@ -1783,7 +1783,7 @@ impl FactionWarState {
 
 /// Faction War settlement PDA (Seed: `[b"faction-war-settlement", war_id_u64_le]`)
 /// Holds all settlement-only data computed when a faction war ends.
-/// Loaded by settle_war and claim_faction_war_rewards — NOT by join_bets or settle_round.
+/// Loaded by settle_war and claim_war_rewards — NOT by join_bets or settle_round.
 #[account]
 pub struct FactionWarSettlement {
     pub bump: u8,

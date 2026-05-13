@@ -50,9 +50,9 @@ pub struct GameplayTuningUpdateArgs {
     pub enable_rpg_progression: Option<bool>,
     pub max_evolution_stage_unlocked: Option<u8>,
 
-    pub faction_war_base_reward_bps: Option<u16>,
-    pub faction_war_mvp_reward_bps: Option<u16>,
-    pub faction_war_hashbeast_reward_bps: Option<u16>,
+    pub war_base_reward_bps: Option<u16>,
+    pub war_mvp_reward_bps: Option<u16>,
+    pub war_hashbeast_reward_bps: Option<u16>,
 
     pub base_mutation_chance_bps: Option<u16>,
     pub mutation_chance_floor_bps: Option<u16>,
@@ -230,17 +230,17 @@ pub fn set_raydium_pool_state_internal(
         )?;
     }
 
-    // Initialize faction_war_sol_vault if not already initialized. User bets
+    // Initialize war_sol_vault if not already initialized. User bets
     // transfer tiny cycle splits here, so the PDA must exist rent-exempt before
     // the first split arrives.
-    let faction_war_sol_vault_lamports = ctx.accounts.faction_war_sol_vault.lamports();
-    if faction_war_sol_vault_lamports == 0 {
+    let war_sol_vault_lamports = ctx.accounts.war_sol_vault.lamports();
+    if war_sol_vault_lamports == 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.authority.to_account_info(),
-                    to: ctx.accounts.faction_war_sol_vault.to_account_info(),
+                    to: ctx.accounts.war_sol_vault.to_account_info(),
                 },
             ),
             1,
@@ -699,14 +699,14 @@ pub fn update_gameplay_tuning_internal(
     let tuning = &mut global_config.gameplay_tuning;
 
     let next_base_reward_bps = args
-        .faction_war_base_reward_bps
-        .unwrap_or(tuning.faction_war_base_reward_bps);
+        .war_base_reward_bps
+        .unwrap_or(tuning.war_base_reward_bps);
     let next_mvp_reward_bps = args
-        .faction_war_mvp_reward_bps
-        .unwrap_or(tuning.faction_war_mvp_reward_bps);
+        .war_mvp_reward_bps
+        .unwrap_or(tuning.war_mvp_reward_bps);
     let next_hashbeast_reward_bps = args
-        .faction_war_hashbeast_reward_bps
-        .unwrap_or(tuning.faction_war_hashbeast_reward_bps);
+        .war_hashbeast_reward_bps
+        .unwrap_or(tuning.war_hashbeast_reward_bps);
     // base + MVP + hashbeast must close to 100% — these are the three
     // lanes that `compute_base_reward_pools` splits the cycle pool into.
     let reward_total = next_base_reward_bps as u32
@@ -757,9 +757,9 @@ pub fn update_gameplay_tuning_internal(
         ErrorCode::InvalidParameters
     );
 
-    tuning.faction_war_base_reward_bps = next_base_reward_bps;
-    tuning.faction_war_mvp_reward_bps = next_mvp_reward_bps;
-    tuning.faction_war_hashbeast_reward_bps = next_hashbeast_reward_bps;
+    tuning.war_base_reward_bps = next_base_reward_bps;
+    tuning.war_mvp_reward_bps = next_mvp_reward_bps;
+    tuning.war_hashbeast_reward_bps = next_hashbeast_reward_bps;
     tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
     tuning.mutation_chance_floor_bps = next_chance_floor_bps;
     tuning.mutation_chance_cap_bps = next_chance_cap_bps;
@@ -775,9 +775,9 @@ pub fn update_gameplay_tuning_internal(
 
     let rpg_progression = tuning.rpg_progression;
     let max_evolution_stage_unlocked = tuning.max_evolution_stage_unlocked;
-    let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
-    let faction_war_mvp_reward_bps = tuning.faction_war_mvp_reward_bps;
-    let faction_war_hashbeast_reward_bps = tuning.faction_war_hashbeast_reward_bps;
+    let war_base_reward_bps = tuning.war_base_reward_bps;
+    let war_mvp_reward_bps = tuning.war_mvp_reward_bps;
+    let war_hashbeast_reward_bps = tuning.war_hashbeast_reward_bps;
     let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
     let mutation_chance_floor_bps = tuning.mutation_chance_floor_bps;
     let mutation_chance_cap_bps = tuning.mutation_chance_cap_bps;
@@ -792,9 +792,9 @@ pub fn update_gameplay_tuning_internal(
         authority: ctx.accounts.authority.key(),
         rpg_progression,
         max_evolution_stage_unlocked,
-        faction_war_base_reward_bps,
-        faction_war_mvp_reward_bps,
-        faction_war_hashbeast_reward_bps,
+        war_base_reward_bps,
+        war_mvp_reward_bps,
+        war_hashbeast_reward_bps,
         base_mutation_chance_bps,
         mutation_chance_floor_bps,
         mutation_chance_cap_bps,
@@ -1623,7 +1623,7 @@ pub struct SetRaydiumPoolState<'info> {
         bump,
         owner = system_program.key()
     )]
-    pub faction_war_sol_vault: UncheckedAccount<'info>,
+    pub war_sol_vault: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

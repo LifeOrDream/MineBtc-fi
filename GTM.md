@@ -520,7 +520,7 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
 
 1. **Faction War MVP (Implemented)**
    - `FactionWarState` tracks running MVP per faction: `mvp_user` + `mvp_score`
-   - `PlayerData` tracks `current_faction_war_score` (reset each war)
+   - `PlayerData` tracks `current_war_score` (reset each war)
    - At settlement, **EVERY faction's MVP gets a bonus** (rank-weighted from 5% of mining pool):
      - #1 faction MVP: 2% of total war pool
      - #2 faction MVP: 1.25% of total war pool

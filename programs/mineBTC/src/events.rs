@@ -183,9 +183,9 @@ pub struct GameplayTuningUpdated {
     pub authority: Pubkey,
     pub rpg_progression: bool,
     pub max_evolution_stage_unlocked: u8,
-    pub faction_war_base_reward_bps: u16,
-    pub faction_war_mvp_reward_bps: u16,
-    pub faction_war_hashbeast_reward_bps: u16,
+    pub war_base_reward_bps: u16,
+    pub war_mvp_reward_bps: u16,
+    pub war_hashbeast_reward_bps: u16,
     pub base_mutation_chance_bps: u16,
     pub mutation_chance_floor_bps: u16,
     pub mutation_chance_cap_bps: u16,
@@ -556,7 +556,7 @@ pub struct RoundStarted {
 /// WITHOUT having to fetch the `GameSession` PDA. All these fields are already
 /// populated on the PDA by the time `emit_round_ended` is called (game.rs:559).
 /// `winning_faction_volume_at_round` is the one exception — it lands later in
-/// `track_faction_war_round_completion` and ships on `RewardsDistributedForRound`.
+/// `track_war_round_completion` and ships on `RewardsDistributedForRound`.
 #[event]
 pub struct RoundEnded {
     pub round_id: u64,
@@ -656,7 +656,7 @@ pub struct JackpotRolledOver {
     pub timestamp: i64,
 }
 
-/// Event emitted by `settle_round` after `track_faction_war_round_completion`
+/// Event emitted by `settle_round` after `track_war_round_completion`
 /// runs. Carries the drought-volume snapshot that fed into the mutation roll for
 /// this round's claimers (state.rs:1048-1053, used at user.rs:1689).
 #[event]

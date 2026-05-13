@@ -71,7 +71,7 @@ pub fn internal_initialize_tax_config(
     tax_config.treasury_pct = treasury_pct;
     tax_config.burn_pct = burn_pct;
     tax_config.total_burnt = 0;
-    tax_config.unassigned_faction_war_treasury_amount = 0;
+    tax_config.unassigned_war_treasury_amount = 0;
 
     tax_config.withdraw_withheld_authority = ctx.accounts.withdraw_withheld_authority.key();
     tax_config.faction_treasury_vault = ctx.accounts.faction_treasury_vault.key();
@@ -384,25 +384,25 @@ pub fn internal_crank_distribute_tax<'info>(
                 );
                 helper::store_account_data(war_state_info, war_state.as_ref())?;
             } else {
-                tax_config.unassigned_faction_war_treasury_amount = tax_config
-                    .unassigned_faction_war_treasury_amount
+                tax_config.unassigned_war_treasury_amount = tax_config
+                    .unassigned_war_treasury_amount
                     .checked_add(faction_treasury_amount)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "   💤 Faction war state not ready; queued {} degenBTC treasury tax for the next war (queued total {})",
                     (faction_treasury_amount as f64) / 1e6,
-                    (tax_config.unassigned_faction_war_treasury_amount as f64) / 1e6
+                    (tax_config.unassigned_war_treasury_amount as f64) / 1e6
                 );
             }
         } else {
-            tax_config.unassigned_faction_war_treasury_amount = tax_config
-                .unassigned_faction_war_treasury_amount
+            tax_config.unassigned_war_treasury_amount = tax_config
+                .unassigned_war_treasury_amount
                 .checked_add(faction_treasury_amount)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
                 "   💤 Faction wars inactive; queued {} degenBTC treasury tax for the next war (queued total {})",
                 (faction_treasury_amount as f64) / 1e6,
-                (tax_config.unassigned_faction_war_treasury_amount as f64) / 1e6
+                (tax_config.unassigned_war_treasury_amount as f64) / 1e6
             );
         }
     }

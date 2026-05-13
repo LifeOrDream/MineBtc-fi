@@ -35,7 +35,7 @@ fn load_global_config(account: &AccountInfo<'_>) -> Result<GlobalConfig> {
 }
 
 fn player_has_pending_reward_claims(player_data: &PlayerData) -> bool {
-    player_data.pending_round_claims > 0 || player_data.pending_faction_war_claims > 0
+    player_data.pending_round_claims > 0 || player_data.pending_war_claims > 0
 }
 
 // ========================================================================================
@@ -154,7 +154,7 @@ pub fn internal_initialize_player(
     player_data.pending_dbtc_rewards = 0;
     player_data.pending_staking_dbtc_rewards = 0;
     player_data.pending_round_claims = 0;
-    player_data.pending_faction_war_claims = 0;
+    player_data.pending_war_claims = 0;
     msg!("     Pending rewards initialized");
 
     // Initialize position tracking vectors
@@ -177,8 +177,8 @@ pub fn internal_initialize_player(
     player_data.gameplay_hashbeast_dna = [0u8; 32];
     player_data.gameplay_hashbeast_xp = 0;
     player_data.gameplay_unlock_request_faction_war = 0;
-    player_data.current_faction_war_score = 0;
-    player_data.current_faction_war_score_cycle_id = 0;
+    player_data.current_war_score = 0;
+    player_data.current_war_score_cycle_id = 0;
     msg!("     Gameplay hashbeast state initialized");
 
     // Initialize new player's referral rewards account
@@ -286,39 +286,39 @@ fn load_war_state_boxed<'info>(
 }
 
 #[inline(never)]
-fn init_or_load_user_faction_war_bets_account<'info>(
+fn init_or_load_user_war_bets_account<'info>(
     payer: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
-    user_faction_war_bets_info: &AccountInfo<'info>,
+    user_war_bets_info: &AccountInfo<'info>,
     war_id: u64,
     owner: Pubkey,
-    user_faction_war_bets_bump: u8,
+    user_war_bets_bump: u8,
 ) -> Result<Box<UserFactionWarBets>> {
     let war_id_bytes = war_id.to_le_bytes();
-    let user_faction_war_bets_bump_seed = [user_faction_war_bets_bump];
-    let user_faction_war_bets_seeds: &[&[u8]] = &[
+    let user_war_bets_bump_seed = [user_war_bets_bump];
+    let user_war_bets_seeds: &[&[u8]] = &[
         USER_FACTION_WAR_BETS_SEED,
         owner.as_ref(),
         war_id_bytes.as_ref(),
-        user_faction_war_bets_bump_seed.as_ref(),
+        user_war_bets_bump_seed.as_ref(),
     ];
     let created = helper::init_pda_account_if_needed(
         payer,
-        user_faction_war_bets_info,
+        user_war_bets_info,
         system_program,
-        user_faction_war_bets_seeds,
+        user_war_bets_seeds,
         UserFactionWarBets::LEN,
         &UserFactionWarBets::blank(),
     )?;
     msg!(
-        "🧾 [init_or_load_user_faction_war_bets_account] war_id={} owner={} account={} created={}",
+        "🧾 [init_or_load_user_war_bets_account] war_id={} owner={} account={} created={}",
         war_id,
         owner,
-        user_faction_war_bets_info.key(),
+        user_war_bets_info.key(),
         created
     );
     Ok(Box::new(helper::load_account_data::<UserFactionWarBets>(
-        user_faction_war_bets_info,
+        user_war_bets_info,
     )?))
 }
 
@@ -332,7 +332,7 @@ pub fn internal_join_bets<'info>(
     use_ticket: Option<u8>,
     user_game_bet_bump: u8,
     war_state_bump: u8,
-    user_faction_war_bets_bump: u8,
+    user_war_bets_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("user", "internal_join_bets");
     msg!(
@@ -361,7 +361,7 @@ pub fn internal_join_bets<'info>(
     let authority_info = accounts.authority.as_ref();
     let system_program_info = accounts.system_program.as_ref();
     let war_state_info = accounts.war_state.as_ref();
-    let user_faction_war_bets_info = accounts.user_faction_war_bets.as_ref();
+    let user_war_bets_info = accounts.user_war_bets.as_ref();
     let mut war_state = init_or_load_war_state_account(
         authority_info,
         system_program_info,
@@ -369,20 +369,20 @@ pub fn internal_join_bets<'info>(
         war_id,
         war_state_bump,
     )?;
-    let mut user_faction_war_bets = init_or_load_user_faction_war_bets_account(
+    let mut user_war_bets = init_or_load_user_war_bets_account(
         authority_info,
         system_program_info,
-        user_faction_war_bets_info,
+        user_war_bets_info,
         war_id,
         accounts.authority.key(),
-        user_faction_war_bets_bump,
+        user_war_bets_bump,
     )?;
     msg!(
         "🪖 [join_bets] loaded war_state_id={} stage={} user_fw_owner={} pending_claims={}",
         war_state.war_id,
         war_state.stage,
-        user_faction_war_bets.owner,
-        accounts.player_data.pending_faction_war_claims
+        user_war_bets.owner,
+        accounts.player_data.pending_war_claims
     );
 
     // Call internal_process_bets for all bets at once
@@ -396,7 +396,7 @@ pub fn internal_join_bets<'info>(
         &accounts.sol_treasury.to_account_info(),
         &accounts.sol_rewards_vault.to_account_info(),
         &accounts.sol_prize_pot_vault.to_account_info(),
-        &accounts.faction_war_sol_vault.to_account_info(),
+        &accounts.war_sol_vault.to_account_info(),
         &accounts.system_program.to_account_info(),
         user_game_bet_bump,
         accounts.authority.key(),
@@ -407,17 +407,17 @@ pub fn internal_join_bets<'info>(
         None, // No autominer info
         &accounts.war_config,
         war_state.as_mut(),
-        user_faction_war_bets.as_mut(),
-        user_faction_war_bets_bump,
+        user_war_bets.as_mut(),
+        user_war_bets_bump,
         accounts.referrer_rewards.as_mut(),
     )?;
     helper::store_account_data(war_state_info, war_state.as_ref())?;
-    helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
+    helper::store_account_data(user_war_bets_info, user_war_bets.as_ref())?;
     msg!(
         "🧾 [join_bets] persisted war_state_id={} mining_pool={} player_pending_claims={}",
         war_state.war_id,
         war_state.dbtc_mined_this_war,
-        accounts.player_data.pending_faction_war_claims
+        accounts.player_data.pending_war_claims
     );
 
     msg!(
@@ -790,7 +790,7 @@ pub fn internal_execute_autominer_bet<'info>(
     war_id: u64,
     user_game_bet_bump: u8,
     war_state_bump: u8,
-    user_faction_war_bets_bump: u8,
+    user_war_bets_bump: u8,
     custody_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("user", "internal_execute_autominer_bet");
@@ -819,7 +819,7 @@ pub fn internal_execute_autominer_bet<'info>(
     let caller_info = accounts.caller.as_ref();
     let system_program_info = accounts.system_program.as_ref();
     let war_state_info = accounts.war_state.as_ref();
-    let user_faction_war_bets_info = accounts.user_faction_war_bets.as_ref();
+    let user_war_bets_info = accounts.user_war_bets.as_ref();
     let mut war_state = init_or_load_war_state_account(
         caller_info,
         system_program_info,
@@ -827,19 +827,19 @@ pub fn internal_execute_autominer_bet<'info>(
         war_id,
         war_state_bump,
     )?;
-    let mut user_faction_war_bets = init_or_load_user_faction_war_bets_account(
+    let mut user_war_bets = init_or_load_user_war_bets_account(
         caller_info,
         system_program_info,
-        user_faction_war_bets_info,
+        user_war_bets_info,
         war_id,
         accounts.autominer_vault.owner,
-        user_faction_war_bets_bump,
+        user_war_bets_bump,
     )?;
     msg!(
         "🤖 [execute_autominer_bet] loaded war_state_id={} stage={} user_fw_owner={} rounds_remaining={}",
         war_state.war_id,
         war_state.stage,
-        user_faction_war_bets.owner,
+        user_war_bets.owner,
         accounts.autominer_vault.rounds_remaining
     );
 
@@ -1028,7 +1028,7 @@ pub fn internal_execute_autominer_bet<'info>(
         &accounts.sol_treasury.to_account_info(),
         &accounts.sol_rewards_vault.to_account_info(),
         &accounts.sol_prize_pot_vault.to_account_info(),
-        &accounts.faction_war_sol_vault.to_account_info(),
+        &accounts.war_sol_vault.to_account_info(),
         &accounts.system_program.to_account_info(),
         user_game_bet_bump,
         owner_key,
@@ -1039,12 +1039,12 @@ pub fn internal_execute_autominer_bet<'info>(
         Some(autominer_info),
         &accounts.war_config,
         war_state.as_mut(),
-        user_faction_war_bets.as_mut(),
-        user_faction_war_bets_bump,
+        user_war_bets.as_mut(),
+        user_war_bets_bump,
         accounts.referrer_rewards.as_mut(),
     )?;
     helper::store_account_data(war_state_info, war_state.as_ref())?;
-    helper::store_account_data(user_faction_war_bets_info, user_faction_war_bets.as_ref())?;
+    helper::store_account_data(user_war_bets_info, user_war_bets.as_ref())?;
     msg!(
         "🤖 [execute_autominer_bet] persisted war_state_id={} mining_pool={} vault_rounds_left={}",
         war_state.war_id,
@@ -1250,7 +1250,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         user_bet,
         game_session,
         &ctx.accounts.war_state.to_account_info(),
-        &ctx.accounts.user_faction_war_bets.to_account_info(),
+        &ctx.accounts.user_war_bets.to_account_info(),
         player_data,
         owner_key,
     )?;
@@ -1378,7 +1378,7 @@ pub fn internal_claim_autominer_rewards(
         user_bet,
         game_session,
         &ctx.accounts.war_state.to_account_info(),
-        &ctx.accounts.user_faction_war_bets.to_account_info(),
+        &ctx.accounts.user_war_bets.to_account_info(),
         player_data,
         owner_key,
     )?;
@@ -1818,7 +1818,7 @@ fn mutation_bonus_weight(mutation_type: u8) -> u64 {
 /// Bonus formula: `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`.
 /// Bonus accrues to:
 /// - `war_state.gameplay_scores[winner]` — the winning country's cycle score
-/// - `player_data.current_faction_war_score` — for MVP tracking (with cycle-rollover reset)
+/// - `player_data.current_war_score` — for MVP tracking (with cycle-rollover reset)
 /// - `war_state.faction_mvp_*[winner]` — if this player just took the lead
 ///
 /// Gating:
@@ -1836,7 +1836,7 @@ fn apply_mutation_bonus_score<'info>(
     user_bet: &UserGameBet,
     game_session: &GameSession,
     war_state_info: &AccountInfo<'info>,
-    user_faction_war_bets_info: &AccountInfo<'info>,
+    user_war_bets_info: &AccountInfo<'info>,
     player_data: &mut PlayerData,
     owner_key: Pubkey,
 ) -> Result<()> {
@@ -1868,7 +1868,7 @@ fn apply_mutation_bonus_score<'info>(
         &crate::ID,
     );
     require_keys_eq!(
-        user_faction_war_bets_info.key(),
+        user_war_bets_info.key(),
         expected_user_pda,
         ErrorCode::InvalidAccount
     );
@@ -1923,17 +1923,17 @@ fn apply_mutation_bonus_score<'info>(
         .checked_add(bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    if player_data.current_faction_war_score_cycle_id != cycle_id {
-        player_data.current_faction_war_score = 0;
-        player_data.current_faction_war_score_cycle_id = cycle_id;
+    if player_data.current_war_score_cycle_id != cycle_id {
+        player_data.current_war_score = 0;
+        player_data.current_war_score_cycle_id = cycle_id;
     }
-    player_data.current_faction_war_score = player_data
-        .current_faction_war_score
+    player_data.current_war_score = player_data
+        .current_war_score
         .checked_add(bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    if player_data.current_faction_war_score > war_state.mvp_score[winner_idx] {
+    if player_data.current_war_score > war_state.mvp_score[winner_idx] {
         war_state.mvp_user[winner_idx] = owner_key;
-        war_state.mvp_score[winner_idx] = player_data.current_faction_war_score;
+        war_state.mvp_score[winner_idx] = player_data.current_war_score;
     }
 
     let total_after = war_state.gameplay_scores[winner_idx];
@@ -1942,14 +1942,14 @@ fn apply_mutation_bonus_score<'info>(
     // Per-user mutation pot (numerator for HB-bonus claim share). Survives the
     // claim-vs-next-cycle race since it lives on the cycle's UserFactionWarBets
     // PDA (closed only at faction-war claim) rather than rolling player_data.
-    let mut ufwb = helper::load_account_data::<UserFactionWarBets>(user_faction_war_bets_info)?;
+    let mut ufwb = helper::load_account_data::<UserFactionWarBets>(user_war_bets_info)?;
     require!(ufwb.owner == owner_key, ErrorCode::InvalidAccount);
     require!(ufwb.war_id == cycle_id, ErrorCode::InvalidAccount);
     ufwb.mutation_score = ufwb
         .mutation_score
         .checked_add(bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    helper::store_account_data(user_faction_war_bets_info, &ufwb)?;
+    helper::store_account_data(user_war_bets_info, &ufwb)?;
 
     emit!(crate::events::GameplayScoreAccumulated {
         war_id: cycle_id,
@@ -2285,7 +2285,7 @@ fn internal_process_bets<'info>(
     sol_treasury: &AccountInfo<'info>,
     sol_rewards_vault: &AccountInfo<'info>,
     sol_prize_pot_vault: &AccountInfo<'info>,
-    faction_war_sol_vault: &AccountInfo<'info>,
+    war_sol_vault: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     user_game_bet_bump: u8,
     owner_key: Pubkey,
@@ -2296,8 +2296,8 @@ fn internal_process_bets<'info>(
     autominer_info: Option<AutominerBetInfo>,
     war_config: &Account<'info, FactionWarConfig>,
     war_state: &mut FactionWarState,
-    user_faction_war_bets: &mut UserFactionWarBets,
-    user_faction_war_bets_bump: u8,
+    user_war_bets: &mut UserFactionWarBets,
+    user_war_bets_bump: u8,
     referrer_rewards: Option<&mut Account<'info, ReferralRewards>>,
 ) -> Result<()> {
     let clock = Clock::get()?;
@@ -2330,31 +2330,31 @@ fn internal_process_bets<'info>(
     );
     require!(war_state.stage == 0, ErrorCode::FactionWarNotActive);
 
-    if user_faction_war_bets.owner == Pubkey::default() {
-        user_faction_war_bets.bump = user_faction_war_bets_bump;
-        user_faction_war_bets.owner = owner_key;
-        user_faction_war_bets.war_id = war_state.war_id;
-        user_faction_war_bets.gameplay_hashbeast = Pubkey::default();
-        user_faction_war_bets.mutation_score = 0;
-        user_faction_war_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        user_faction_war_bets.sol_direction_bets =
+    if user_war_bets.owner == Pubkey::default() {
+        user_war_bets.bump = user_war_bets_bump;
+        user_war_bets.owner = owner_key;
+        user_war_bets.war_id = war_state.war_id;
+        user_war_bets.gameplay_hashbeast = Pubkey::default();
+        user_war_bets.mutation_score = 0;
+        user_war_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        user_war_bets.sol_direction_bets =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        player_data.pending_faction_war_claims = player_data
-            .pending_faction_war_claims
+        player_data.pending_war_claims = player_data
+            .pending_war_claims
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     } else {
         require!(
-            user_faction_war_bets.owner == owner_key,
+            user_war_bets.owner == owner_key,
             ErrorCode::Unauthorized
         );
         require!(
-            user_faction_war_bets.war_id == war_state.war_id,
+            user_war_bets.war_id == war_state.war_id,
             ErrorCode::InvalidState
         );
     }
 
-    let active_faction_war_faction_count = war_state.faction_count as usize;
+    let active_faction_count = war_state.faction_count as usize;
 
     // Arrays to return for events
     let mut evt_faction_ids = Vec::new();
@@ -2579,7 +2579,7 @@ fn internal_process_bets<'info>(
         )
         .map_err(|_| ErrorCode::InvalidAccount)?;
         require_keys_eq!(
-            faction_war_sol_vault.key(),
+            war_sol_vault.key(),
             expected_vault,
             ErrorCode::InvalidAccount
         );
@@ -2587,7 +2587,7 @@ fn internal_process_bets<'info>(
             "   Transferring cycle SOL split ({} SOL) to faction-war vault",
             total_cycle_sol_split as f64 / 1e9
         );
-        do_transfer(faction_war_sol_vault, total_cycle_sol_split)?;
+        do_transfer(war_sol_vault, total_cycle_sol_split)?;
         let old_pool = war_state.sol_reward_pool;
         war_state.sol_reward_pool = war_state
             .sol_reward_pool
@@ -2684,7 +2684,7 @@ fn internal_process_bets<'info>(
     for bet_type in bet_types {
         let (faction_id, direction) = prediction_bet_parts(&bet_type)?;
         require!(
-            (faction_id as usize) < active_faction_war_faction_count,
+            (faction_id as usize) < active_faction_count,
             ErrorCode::InvalidFactionId
         );
         let faction_index = faction_id as usize;
@@ -2749,12 +2749,12 @@ fn internal_process_bets<'info>(
         // Per-user, per-war prediction record — drives base + hashbeast claim
         // pools at war end. Still updated per-bet (per-user state, no cheap
         // fold-in target).
-        user_faction_war_bets.direction_bets[faction_index][direction_index] =
-            user_faction_war_bets.direction_bets[faction_index][direction_index]
+        user_war_bets.direction_bets[faction_index][direction_index] =
+            user_war_bets.direction_bets[faction_index][direction_index]
                 .checked_add(wgtd_points_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-        user_faction_war_bets.sol_direction_bets[faction_index][direction_index] =
-            user_faction_war_bets.sol_direction_bets[faction_index][direction_index]
+        user_war_bets.sol_direction_bets[faction_index][direction_index] =
+            user_war_bets.sol_direction_bets[faction_index][direction_index]
                 .checked_add(net_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -2767,11 +2767,11 @@ fn internal_process_bets<'info>(
         if faction_id == player_data.faction_id
             && player_data.gameplay_hashbeast != Pubkey::default()
         {
-            if user_faction_war_bets.gameplay_hashbeast == Pubkey::default() {
-                user_faction_war_bets.gameplay_hashbeast = player_data.gameplay_hashbeast;
+            if user_war_bets.gameplay_hashbeast == Pubkey::default() {
+                user_war_bets.gameplay_hashbeast = player_data.gameplay_hashbeast;
             } else {
                 require_keys_eq!(
-                    user_faction_war_bets.gameplay_hashbeast,
+                    user_war_bets.gameplay_hashbeast,
                     player_data.gameplay_hashbeast,
                     ErrorCode::InvalidAccount
                 );
@@ -3131,7 +3131,7 @@ pub struct JoinBets<'info> {
     /// CHECK: Faction-war SOL vault (cycle jackpot reserve). No seeds/bump here
     /// to keep `JoinBets` stack small; validated manually in handler.
     #[account(mut)]
-    pub faction_war_sol_vault: UncheckedAccount<'info>,
+    pub war_sol_vault: UncheckedAccount<'info>,
 
     /// Faction-war config. Read-only on the bet hot path: handler reads only
     /// `current_war_id` (validation) and `rewards_sol_vault_bump`
@@ -3156,7 +3156,7 @@ pub struct JoinBets<'info> {
         seeds = [USER_FACTION_WAR_BETS_SEED, authority.key().as_ref(), &war_id.to_le_bytes()],
         bump,
     )]
-    pub user_faction_war_bets: UncheckedAccount<'info>,
+    pub user_war_bets: UncheckedAccount<'info>,
 
     /// Referrer's commission account. Required when the betting player has a referrer
     /// (`player_data.referral_code != system_program`); the SDK derives the PDA via
@@ -3238,7 +3238,7 @@ pub struct ClaimRoundRewards<'info> {
     /// against `game_session.war_id_when_played` + user_wallet. Mutated only
     /// when a mutation-bonus roll lands (increments `mutation_score`).
     #[account(mut)]
-    pub user_faction_war_bets: UncheckedAccount<'info>,
+    pub user_war_bets: UncheckedAccount<'info>,
 
     /// Country lootbox queue for the player's home faction. Read on every
     /// claim; mutated when a losing player's roll wins a slot.
@@ -3340,7 +3340,7 @@ pub struct ClaimAutominerRewards<'info> {
     /// against `game_session.war_id_when_played` + autominer owner. Mutated
     /// only when a mutation-bonus roll lands (increments `mutation_score`).
     #[account(mut)]
-    pub user_faction_war_bets: UncheckedAccount<'info>,
+    pub user_war_bets: UncheckedAccount<'info>,
 
     /// Country lootbox queue for the autominer owner's home faction.
     #[account(
@@ -3544,7 +3544,7 @@ pub struct ExecuteAutominerBet<'info> {
     /// CHECK: Faction-war SOL vault (cycle jackpot reserve). No seeds/bump here
     /// to keep `ExecuteAutominerBet` stack small; validated manually in handler.
     #[account(mut)]
-    pub faction_war_sol_vault: UncheckedAccount<'info>,
+    pub war_sol_vault: UncheckedAccount<'info>,
 
     /// Faction-war config. Read-only on the bet hot path: handler reads only
     /// `current_war_id` (validation) and `rewards_sol_vault_bump`
@@ -3569,7 +3569,7 @@ pub struct ExecuteAutominerBet<'info> {
         seeds = [USER_FACTION_WAR_BETS_SEED, autominer_vault.owner.as_ref(), &war_id.to_le_bytes()],
         bump,
     )]
-    pub user_faction_war_bets: UncheckedAccount<'info>,
+    pub user_war_bets: UncheckedAccount<'info>,
 
     /// Referrer's commission account. Required when the autominer's owner has a referrer.
     /// SDK derives `[REFERRAL_REWARDS_SEED, player_data.referral_code]`.

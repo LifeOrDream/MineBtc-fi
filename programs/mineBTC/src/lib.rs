@@ -589,13 +589,13 @@ pub mod minebtc {
         faction_war::settle_war_internal(ctx)
     }
 
-    /// User claims their faction-war rewards (closes user_faction_war_bets account).
-    pub fn claim_faction_war_rewards(
+    /// User claims their faction-war rewards (closes user_war_bets account).
+    pub fn claim_war_rewards(
         ctx: Context<ClaimFactionWarRewards>,
         war_id: u64,
     ) -> Result<()> {
-        crate::log_fn!("lib", "claim_faction_war_rewards");
-        faction_war::claim_faction_war_rewards_internal(ctx, war_id)
+        crate::log_fn!("lib", "claim_war_rewards");
+        faction_war::claim_war_rewards_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -632,7 +632,7 @@ pub mod minebtc {
         war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_faction_war");
-        faction_war::initialize_faction_war_internal(ctx, war_id)
+        faction_war::initialize_war_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -670,7 +670,7 @@ pub mod minebtc {
             use_ticket,
             bumps.user_game_bet,
             bumps.war_state,
-            bumps.user_faction_war_bets,
+            bumps.user_war_bets,
         )
     }
 
@@ -710,7 +710,7 @@ pub mod minebtc {
             war_id,
             bumps.user_game_bet,
             bumps.war_state,
-            bumps.user_faction_war_bets,
+            bumps.user_war_bets,
             bumps.autominer_custody,
         )
     }

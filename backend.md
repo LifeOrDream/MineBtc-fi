@@ -318,7 +318,7 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 
 1. **`mineBTC_rounds` has NO GSI for `war_id`** — `aggregateRebaseVolumeFromRounds()` falls back to full table scan. Won't scale.
 2. **Live bet data lives only in Redis** — `BetsPlaced` updates Redis but NOT DynamoDB until `RoundEnded`. Redis loss = unrecoverable bet history.
-3. **`PlayerData` has no `current_faction_war_score` field** — needed for MVP tracking.
+3. **`PlayerData` has no `current_war_score` field** — needed for MVP tracking.
 4. **`Rebase` model has no MVP fields** — `mvp_user`, `mvp_score`, `mvp_bonus` missing.
 5. **No `jackpot_*` fields in `Round` or `Faction`** — still using `motherlode_*` naming everywhere.
 
@@ -607,7 +607,7 @@ The contract renamed `motherlode` → `jackpot` globally. The backend must follo
 | **Event router** | `src/services/processEvents/index.ts` | Add case `factionWarMvp`. |
 | **Rebase handler** | `src/services/processEvents/rebase.ts` | Add `processFactionWarMvpEvent()`. At `FactionWarSettled`, the backend should already compute per-user rewards. Need to ALSO reserve 5% for MVPs and set `mvp_bonus` per faction. |
 | **Rebase model** | `src/model/Rebase.model.ts` | Add fields: `mvp_user: [String]`, `mvp_score: [String]`, `mvp_bonus: [String]`. |
-| **PlayerData model** | `src/model/PlayerData.model.ts` | Add `current_faction_war_score: String` (or Number). Reset each war. |
+| **PlayerData model** | `src/model/PlayerData.model.ts` | Add `current_war_score: String` (or Number). Reset each war. |
 | **GraphQL** | `src/graphql/resolvers/rebase.resolver.ts` | Add MVP fields to `RebaseResponseType`. Add `mvpLeaderboard(factionWarId?)` query. |
 | **Socket events** | `src/utils/socketEmitter.pubsub.ts` | Add `emitFactionWarMvp()` — broadcasts per faction. |
 | **User rebase rewards** | `src/model/UserRebaseReward.model.ts` | Add `mvp_bonus_amount` field. Update claim logic to include MVP bonus in total. |
@@ -676,7 +676,7 @@ These are backend-only (no contract changes needed) but critical for virality.
 | 6 | Rename `RefiningFeeRedistributed` → `HodlTaxRedistributed` handler | Low | `processEvents/index.ts`, `stake.ts` | ✅ Blocks tax visibility |
 | 7 | Add `FactionWarMvp` event handler | Low | `processEvents/index.ts`, `rebase.ts` | ✅ Blocks MVP bonuses |
 | 8 | Add MVP fields to `Rebase` model | Low | `Rebase.model.ts` | ✅ Blocks MVP tracking |
-| 9 | Add `current_faction_war_score` to `PlayerData` | Low | `PlayerData.model.ts` | ✅ Blocks MVP eligibility |
+| 9 | Add `current_war_score` to `PlayerData` | Low | `PlayerData.model.ts` | ✅ Blocks MVP eligibility |
 | 10 | Add new socket events (jackpot, MVP, burn, tax) | Low | `socketEmitter.pubsub.ts` | Frontend needs these |
 | 11 | Fix faction drift in NFT pipeline | Medium | `src/prompts/index.ts`, `src/prompts/factions/*` | Wrong art = broken game |
 

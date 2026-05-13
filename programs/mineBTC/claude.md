@@ -195,7 +195,7 @@ Important rules:
 `instructions/faction_war.rs`
 
 - `settle_war_internal` — permissionless, anyone can crank once LP burn completes
-- `claim_faction_war_rewards_internal` — user claims their share
+- `claim_war_rewards_internal` — user claims their share
 
 Important rules:
 

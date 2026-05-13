@@ -44,7 +44,7 @@ Every **gross** bet goes through this flow **inside `join_bets` / `execute_autom
 
 ```
 gross_bet_sol
-    ├─► 5%  → faction_war_sol_vault   (cycle jackpot reserve)
+    ├─► 5%  → war_sol_vault   (cycle jackpot reserve)
     ├─► 15% → protocol_fee
     │         ├─► referral_cut (if referrer exists)
     │         │     same-faction recruit  → 1.0% of gross
@@ -155,8 +155,8 @@ if jackpot_hit && jackpot_rewards_index > 0 && faction_id == jackpot_faction_id 
 |`RewardsDistributedForRound`| `end_round_faction_rewards` | Stage 2 reached | Confirms `latest_result` finality |
 |`DegenBtcStakingRewardsDistributed`| `distribute_rewards_amg_stakers` | Staker indexes updated | `latest_result.sol_staking_yield` (indirect) |
 |`LpStakingRewardsDistributed`| `distribute_rewards_amg_stakers` | LP indexes updated | Same |
-|`GameplayScoreAccumulated`| `track_faction_war_round_completion` / claim mutation | Faction score changes | `ongoing_session_mutations` |
-|`FactionWarAutoSettled`| `track_faction_war_round_completion` | Cycle ended | `macro.faction_war` state |
+|`GameplayScoreAccumulated`| `track_war_round_completion` / claim mutation | Faction score changes | `ongoing_session_mutations` |
+|`FactionWarAutoSettled`| `track_war_round_completion` | Cycle ended | `macro.faction_war` state |
 
 ### State accounts the backend MUST poll / subscribe to
 

@@ -1065,9 +1065,9 @@ mod tests {
         let mut tuning = GameplayTuningConfig {
             rpg_progression: false,
             max_evolution_stage_unlocked: 0,
-            faction_war_base_reward_bps: 0,
-            faction_war_hashbeast_reward_bps: 0,
-            faction_war_mvp_reward_bps: 0,
+            war_base_reward_bps: 0,
+            war_hashbeast_reward_bps: 0,
+            war_mvp_reward_bps: 0,
             base_mutation_chance_bps: 0,
             mutation_chance_floor_bps: 0,
             mutation_chance_cap_bps: 0,

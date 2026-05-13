@@ -50,7 +50,7 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `initialize_war_config()` - starts config at current faction-war ID 1.
 - `update_war_config(is_active)`.
 - `settle_war()` - closes active cycle once linked LP operation target is reached.
-- `claim_faction_war_rewards()` - user cycle reward claim.
+- `claim_war_rewards()` - user cycle reward claim.
 
 ## Rounds and Bets
 

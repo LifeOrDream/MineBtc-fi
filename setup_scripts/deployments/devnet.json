@@ -142,7 +142,7 @@
     "tx_signature": "4xSXjW75AtKEp1vUMJHv254GKCWtu5cAjcd9xYnszCddSWkXziuBTq96cN9D6xoiNH3s1D1PJ7dKtDvmjxhuThQh",
     "timestamp": "2026-05-10T19:37:32.780Z"
   },
-  "faction_war_sol_vault_pda": "ALKXgvSzWq3NRGb4816BoBiAEkDP2qJhVZQcwnkHx6ku",
+  "war_sol_vault_pda": "ALKXgvSzWq3NRGb4816BoBiAEkDP2qJhVZQcwnkHx6ku",
   "factions_added": {
     "factions": [
       {
@@ -366,10 +366,10 @@
     "gameplay_tuning": {
       "enable_rpg_progression": true,
       "max_evolution_stage_unlocked": 0,
-      "faction_war_base_reward_bps": 7000,
+      "war_base_reward_bps": 7000,
       "faction_war_loyalty_reward_bps": 2000,
-      "faction_war_mvp_reward_bps": 500,
-      "faction_war_hashbeast_reward_bps": 500,
+      "war_mvp_reward_bps": 500,
+      "war_hashbeast_reward_bps": 500,
       "base_mutation_chance_bps": 2000,
       "mutation_chance_floor_bps": 25,
       "mutation_chance_cap_bps": 2500,

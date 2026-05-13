@@ -74,13 +74,13 @@ const GAMEPLAY_TUNING_CONFIG = {
   maxEvolutionStageUnlocked:
     config.gameplay_tuning?.max_evolution_stage_unlocked ?? 0,
   factionWarBaseRewardBps:
-    config.gameplay_tuning?.faction_war_base_reward_bps ?? 7000,
+    config.gameplay_tuning?.war_base_reward_bps ?? 7000,
   factionWarLoyaltyRewardBps:
     config.gameplay_tuning?.faction_war_loyalty_reward_bps ?? 2000,
   factionWarMvpRewardBps:
-    config.gameplay_tuning?.faction_war_mvp_reward_bps ?? 500,
+    config.gameplay_tuning?.war_mvp_reward_bps ?? 500,
   factionWarHashBeastRewardBps:
-    config.gameplay_tuning?.faction_war_hashbeast_reward_bps ?? 500,
+    config.gameplay_tuning?.war_hashbeast_reward_bps ?? 500,
   baseMutationChanceBps:
     config.gameplay_tuning?.base_mutation_chance_bps ?? 2000,
   mutationChanceFloorBps:
@@ -1654,7 +1654,7 @@ async function setRaydiumPoolState(minebtcProgram) {
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
-    deploymentFile.faction_war_sol_vault_pda = factionWarSolVaultPDA.toString();
+    deploymentFile.war_sol_vault_pda = factionWarSolVaultPDA.toString();
         saveDeploymentData();
     } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to set Raydium pool state:", error);
@@ -3087,10 +3087,10 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   const target = {
     enable_rpg_progression: gameplayTuningConfig.enableRpgProgression,
     max_evolution_stage_unlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
-    faction_war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
+    war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
     faction_war_loyalty_reward_bps: gameplayTuningConfig.factionWarLoyaltyRewardBps,
-    faction_war_mvp_reward_bps: gameplayTuningConfig.factionWarMvpRewardBps,
-    faction_war_hashbeast_reward_bps: gameplayTuningConfig.factionWarHashBeastRewardBps,
+    war_mvp_reward_bps: gameplayTuningConfig.factionWarMvpRewardBps,
+    war_hashbeast_reward_bps: gameplayTuningConfig.factionWarHashBeastRewardBps,
     base_mutation_chance_bps: gameplayTuningConfig.baseMutationChanceBps,
     mutation_chance_floor_bps: gameplayTuningConfig.mutationChanceFloorBps,
     mutation_chance_cap_bps: gameplayTuningConfig.mutationChanceCapBps,
@@ -3110,10 +3110,10 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   };
 
   const rewardSplit =
-    target.faction_war_base_reward_bps +
+    target.war_base_reward_bps +
     target.faction_war_loyalty_reward_bps +
-    target.faction_war_mvp_reward_bps +
-    target.faction_war_hashbeast_reward_bps;
+    target.war_mvp_reward_bps +
+    target.war_hashbeast_reward_bps;
   if (rewardSplit !== 10000) {
     throw new Error(
       `Invalid gameplay reward split: base + loyalty + mvp + hashbeast must equal 10000 bps, got ${rewardSplit}.`
@@ -3147,7 +3147,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/mvp/hashbeast: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_mvp_reward_bps}/${target.faction_war_hashbeast_reward_bps}`
+    `     Rewards bps base/loyalty/mvp/hashbeast: ${target.war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.war_mvp_reward_bps}/${target.war_hashbeast_reward_bps}`
   );
   console.log(
     COLOR_INFO,
@@ -3169,10 +3169,10 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   const alreadyMatches =
     current.rpgProgression === target.enable_rpg_progression &&
     current.maxEvolutionStageUnlocked === target.max_evolution_stage_unlocked &&
-    current.factionWarBaseRewardBps === target.faction_war_base_reward_bps &&
+    current.factionWarBaseRewardBps === target.war_base_reward_bps &&
     current.factionWarLoyaltyRewardBps === target.faction_war_loyalty_reward_bps &&
-    current.factionWarMvpRewardBps === target.faction_war_mvp_reward_bps &&
-    current.factionWarHashBeastRewardBps === target.faction_war_hashbeast_reward_bps &&
+    current.factionWarMvpRewardBps === target.war_mvp_reward_bps &&
+    current.factionWarHashBeastRewardBps === target.war_hashbeast_reward_bps &&
     current.baseMutationChanceBps === target.base_mutation_chance_bps &&
     current.mutationChanceFloorBps === target.mutation_chance_floor_bps &&
     current.mutationChanceCapBps === target.mutation_chance_cap_bps &&
