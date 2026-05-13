@@ -490,6 +490,154 @@ fn mvp_rank_weight_bps(rank: usize, active_factions: usize) -> u64 {
     }
 }
 
+/// Allocate the MVP dBTC pool across MVP-eligible factions by absolute MVP
+/// rank weight. Non-eligible factions' rank-slot shares stay unallocated
+/// (dBTC remains in the mining vault). Last eligible MVP absorbs integer
+/// division rounding so the total allocated equals the "target" exactly
+/// (sub-bps drift never falls through to the mining vault).
+///
+/// Writes per-faction bonuses into `bonuses_out`. Returns the residual
+/// (allocated to non-MVP rank slots) plus a list of MVP faction ids in
+/// allocation order — caller uses the list to emit per-MVP events.
+fn distribute_mvp_pool(
+    mvp_pool_total: u64,
+    mvp_user: &[Pubkey; NUM_FACTIONS],
+    final_ranks: &[u8; NUM_FACTIONS],
+    active_factions: usize,
+    bonuses_out: &mut [u64; NUM_FACTIONS],
+) -> Result<u64> {
+    *bonuses_out = [0u64; NUM_FACTIONS];
+    if mvp_pool_total == 0 || active_factions == 0 {
+        return Ok(mvp_pool_total);
+    }
+
+    let mut total_mvp_weight: u128 = 0;
+    let mut eligible_mvp_weight: u128 = 0;
+    let mut eligible_count: usize = 0;
+    for fid in 0..active_factions {
+        let w = mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions) as u128;
+        total_mvp_weight = total_mvp_weight
+            .checked_add(w)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        if mvp_user[fid] != Pubkey::default() {
+            eligible_mvp_weight = eligible_mvp_weight
+                .checked_add(w)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            eligible_count += 1;
+        }
+    }
+
+    if total_mvp_weight == 0 || eligible_mvp_weight == 0 {
+        // No MVPs anywhere → full pool is residual (dBTC stays in vault).
+        return Ok(mvp_pool_total);
+    }
+
+    // Target = pool × eligible_weight / total_weight. Last MVP absorbs
+    // rounding so we never under-allocate vs. that target.
+    let target_dbtc_allocated = u64::try_from(
+        (mvp_pool_total as u128)
+            .checked_mul(eligible_mvp_weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(total_mvp_weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?,
+    )
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+    let mut allocated = 0u64;
+    let mut remaining = eligible_count;
+    for fid in 0..active_factions {
+        if mvp_user[fid] == Pubkey::default() {
+            continue;
+        }
+        remaining -= 1;
+        let weight_bps = mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions);
+        let bonus = if remaining == 0 {
+            target_dbtc_allocated.saturating_sub(allocated)
+        } else {
+            let computed = (mvp_pool_total as u128)
+                .checked_mul(weight_bps as u128)
+                .ok_or(ErrorCode::ArithmeticOverflow)?
+                .checked_div(total_mvp_weight)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            u64::try_from(computed).map_err(|_| ErrorCode::ArithmeticOverflow)?
+        };
+        bonuses_out[fid] = bonus;
+        allocated = allocated
+            .checked_add(bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+
+    Ok(mvp_pool_total.saturating_sub(allocated))
+}
+
+/// Compute the SOL MVP eligible share + residual. The "eligible share" is
+/// the fraction of `sol_mvp_total` that mirrors the eligible-MVP fraction of
+/// the rank-weight pie; the rest is residual (drained to sol_treasury at
+/// settle). Per-user SOL MVP payout at claim time then scales this eligible
+/// share by the user's dBTC MVP share.
+///
+/// Returns `(sol_eligible_share, sol_residual)` where their sum == `sol_mvp_total`.
+fn split_sol_mvp_residual(
+    sol_mvp_total: u64,
+    mvp_user: &[Pubkey; NUM_FACTIONS],
+    final_ranks: &[u8; NUM_FACTIONS],
+    active_factions: usize,
+) -> Result<(u64, u64)> {
+    if sol_mvp_total == 0 || active_factions == 0 {
+        return Ok((0, sol_mvp_total));
+    }
+
+    let mut total_mvp_weight: u128 = 0;
+    let mut eligible_mvp_weight: u128 = 0;
+    for fid in 0..active_factions {
+        let w = mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions) as u128;
+        total_mvp_weight = total_mvp_weight
+            .checked_add(w)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        if mvp_user[fid] != Pubkey::default() {
+            eligible_mvp_weight = eligible_mvp_weight
+                .checked_add(w)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+    }
+    if total_mvp_weight == 0 {
+        return Ok((0, sol_mvp_total));
+    }
+
+    let sol_eligible_share = u64::try_from(
+        (sol_mvp_total as u128)
+            .checked_mul(eligible_mvp_weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(total_mvp_weight)
+            .ok_or(ErrorCode::ArithmeticOverflow)?,
+    )
+    .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+
+    Ok((sol_eligible_share, sol_mvp_total.saturating_sub(sol_eligible_share)))
+}
+
+/// Per-user SOL share for a lane. The claim path uses this to scale the
+/// lane's SOL pool by the user's dBTC share of the same lane:
+///   `user_sol = sol_lane_pool × user_dbtc_lane / total_dbtc_lane`
+/// Returns 0 if any input is 0 (so an empty dBTC denominator never panics —
+/// stranded SOL handling lives in compute_base_reward_pools instead).
+#[inline]
+fn scale_user_sol_lane(
+    sol_lane_pool: u64,
+    user_dbtc_lane: u64,
+    total_dbtc_lane: u64,
+) -> Result<u64> {
+    if sol_lane_pool == 0 || user_dbtc_lane == 0 || total_dbtc_lane == 0 {
+        return Ok(0);
+    }
+    let s = (sol_lane_pool as u128)
+        .checked_mul(user_dbtc_lane as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(total_dbtc_lane as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    u64::try_from(s).map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
 /// Compute how the faction_war mining pool is split across factions.
 ///
 /// The total pool is first split into three lanes:
@@ -517,14 +665,19 @@ pub fn compute_base_reward_pools(
 
     let pool = war_state.dbtc_mined_this_war;
     let sol_pool = war_state.sol_reward_pool;
-    if pool == 0 && sol_pool == 0 {
+    if pool == 0 {
+        // No dBTC pool → no scaling denominator exists for SOL at claim time
+        // (`user_sol_<lane> = sol_<lane>_pool * user_dbtc_<lane> / total_dbtc_<lane>`).
+        // Drain the entire SOL pool to sol_treasury instead of leaving it
+        // stranded in the war SOL vault. Eligible-everything case still funnels
+        // through `undistributed_sol`.
         war_settlement.base_reward_pools = [0u64; NUM_FACTIONS];
         war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         war_settlement.mvp_bonus = [0u64; NUM_FACTIONS];
         war_settlement.sol_base_pool = 0;
         war_settlement.sol_hb_pool = 0;
         war_settlement.sol_mvp_pool = 0;
-        return Ok(0);
+        return Ok(sol_pool);
     }
 
     // dBTC lane totals.
@@ -755,7 +908,10 @@ pub fn finalize_war_settlement(
         // Nothing claimable for this cycle → drain the full SOL pool to
         // sol_treasury via settle_war_internal.
         war_settlement.undistributed_sol = war_state.sol_reward_pool;
-        war_config.current_war_id = war_config.current_war_id + 1;
+        war_config.current_war_id = war_config
+        .current_war_id
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
         // cycle_end_round_id stays — cleared by init_war for the next cycle so
         // that start_round remains blocked until next war's PDA is created.
         msg!("✅ [faction_war.finalize_war_settlement] empty settlement done");
@@ -846,97 +1002,49 @@ pub fn finalize_war_settlement(
 
         // --- MVP Bonus: absolute rank-weight distribution ---
         // Curve: 30/20/14/10/8/6/5/4/share-3% (ALGS-style top-heavy with a
-        // meaningful tail). Denominator is the sum of mvp_rank_weight_bps
-        // across ALL active factions — not just eligible MVPs. Non-eligible
-        // factions' slices stay unallocated (dBTC in mining vault, SOL drains
-        // to sol_treasury).
-        let mvp_pool_total = pool_share_from_bps(
-            war_state.dbtc_mined_this_war,
-            tuning.war_mvp_reward_bps,
+        // meaningful tail). See `mvp_rank_weight_bps`. The denominator is
+        // the sum across ALL active factions — not just MVP-eligibles —
+        // so non-eligible rank slots stay unallocated (dBTC in mining vault,
+        // SOL drains to sol_treasury).
+        let mvp_pool_total =
+            pool_share_from_bps(war_state.dbtc_mined_this_war, tuning.war_mvp_reward_bps)?;
+
+        // dBTC MVP allocation (per-faction bonuses written into settlement).
+        let _mvp_dbtc_residual = distribute_mvp_pool(
+            mvp_pool_total,
+            &war_state.mvp_user,
+            &final_ranks,
+            active_factions,
+            &mut war_settlement.mvp_bonus,
         )?;
-        let sol_mvp_total = war_settlement.sol_mvp_pool; // full SOL slice set by compute_base_reward_pools
 
-        let mut total_mvp_weight: u128 = 0;
+        // SOL MVP — eligible share stays on settlement; residual drains.
+        // `sol_mvp_pool` was set by `compute_base_reward_pools` to the full
+        // pre-eligibility-shrink slice; replace it with the eligible amount
+        // here so claim-time scaling stays self-consistent.
+        let sol_mvp_total = war_settlement.sol_mvp_pool;
+        let (sol_mvp_eligible, mvp_sol_residual) = split_sol_mvp_residual(
+            sol_mvp_total,
+            &war_state.mvp_user,
+            &final_ranks,
+            active_factions,
+        )?;
+        war_settlement.sol_mvp_pool = sol_mvp_eligible;
+
+        // Emit per-MVP events for the indexer (kept here, not in the helper,
+        // since `emit!` needs program context).
+        let clock_ts = Clock::get()?.unix_timestamp;
         for fid in 0..active_factions {
-            total_mvp_weight = total_mvp_weight
-                .checked_add(mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions) as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-        }
-        let mut eligible_mvp_weight: u128 = 0;
-        for fid in 0..active_factions {
-            if war_state.mvp_user[fid] != Pubkey::default() {
-                eligible_mvp_weight = eligible_mvp_weight
-                    .checked_add(
-                        mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions) as u128,
-                    )
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-            }
-        }
-
-        let mvp_sol_residual = if sol_mvp_total > 0 && total_mvp_weight > 0 {
-            let sol_eligible_share = u64::try_from(
-                (sol_mvp_total as u128)
-                    .checked_mul(eligible_mvp_weight)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(total_mvp_weight)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?,
-            )
-            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            war_settlement.sol_mvp_pool = sol_eligible_share;
-            sol_mvp_total.saturating_sub(sol_eligible_share)
-        } else {
-            war_settlement.sol_mvp_pool = 0;
-            sol_mvp_total
-        };
-
-        if mvp_pool_total > 0 && total_mvp_weight > 0 && eligible_mvp_weight > 0 {
-            // Allocate dBTC MVP bonuses to eligibles using absolute weight.
-            // Last eligible absorbs rounding so total allocated == intended
-            // eligible share (saves any sub-bps drift from going to treasury).
-            let target_dbtc_allocated = u64::try_from(
-                (mvp_pool_total as u128)
-                    .checked_mul(eligible_mvp_weight)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(total_mvp_weight)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?,
-            )
-            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-
-            let eligible_count: usize = (0..active_factions)
-                .filter(|&fid| war_state.mvp_user[fid] != Pubkey::default())
-                .count();
-            let mut allocated = 0u64;
-            let mut remaining = eligible_count;
-            for fid in 0..active_factions {
-                if war_state.mvp_user[fid] == Pubkey::default() {
-                    continue;
-                }
-                remaining -= 1;
-                let weight_bps =
-                    mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions);
-                let bonus = if remaining == 0 {
-                    target_dbtc_allocated.saturating_sub(allocated)
-                } else {
-                    let computed_u128 = (mvp_pool_total as u128)
-                        .checked_mul(weight_bps as u128)
-                        .ok_or(ErrorCode::ArithmeticOverflow)?
-                        .checked_div(total_mvp_weight)
-                        .ok_or(ErrorCode::ArithmeticOverflow)?;
-                    u64::try_from(computed_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?
-                };
-
-                war_settlement.mvp_bonus[fid] = bonus;
-                allocated = allocated
-                    .checked_add(bonus)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-
+            if war_state.mvp_user[fid] != Pubkey::default()
+                && war_settlement.mvp_bonus[fid] > 0
+            {
                 emit!(crate::events::FactionWarMvp {
                     war_id: war_state.war_id,
                     faction_id: fid as u8,
                     user: war_state.mvp_user[fid],
                     mvp_score: war_state.mvp_score[fid],
-                    bonus_amount: bonus,
-                    timestamp: Clock::get()?.unix_timestamp,
+                    bonus_amount: war_settlement.mvp_bonus[fid],
+                    timestamp: clock_ts,
                 });
             }
         }
@@ -951,7 +1059,10 @@ pub fn finalize_war_settlement(
         war_config.prev_ranks = final_ranks;
     }
 
-    war_config.current_war_id = war_config.current_war_id + 1;
+    war_config.current_war_id = war_config
+        .current_war_id
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     // NOTE: `cycle_end_round_id` is intentionally NOT cleared here. It stays
     // non-zero through this gap so `start_round` remains blocked until the
     // next war's PDA is initialized by `initialize_war_internal`. Otherwise a
@@ -1220,21 +1331,6 @@ pub fn claim_war_rewards_internal(
     // Distributing SOL by the same proportions preserves identical relative
     // payouts to dBTC across the cohort while only paying out where dBTC was
     // also paid (skips orphan/zero lanes naturally).
-    let scale_sol_lane = |sol_lane_pool: u64,
-                          user_dbtc_lane: u64,
-                          total_dbtc_lane: u64|
-     -> Result<u64> {
-        if sol_lane_pool == 0 || user_dbtc_lane == 0 || total_dbtc_lane == 0 {
-            return Ok(0);
-        }
-        let s = (sol_lane_pool as u128)
-            .checked_mul(user_dbtc_lane as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(total_dbtc_lane as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        u64::try_from(s).map_err(|_| error!(ErrorCode::ArithmeticOverflow))
-    };
-
     let total_dbtc_base: u64 = war_settlement
         .base_reward_pools
         .iter()
@@ -1257,15 +1353,21 @@ pub fn claim_war_rewards_internal(
         .try_fold(0u64, |acc, v| acc.checked_add(v))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    let sol_base_share =
-        scale_sol_lane(war_settlement.sol_base_pool, base_reward_amount, total_dbtc_base)?;
-    let sol_hb_share = scale_sol_lane(
+    let sol_base_share = scale_user_sol_lane(
+        war_settlement.sol_base_pool,
+        base_reward_amount,
+        total_dbtc_base,
+    )?;
+    let sol_hb_share = scale_user_sol_lane(
         war_settlement.sol_hb_pool,
         hashbeast_bonus_amount,
         total_dbtc_hb,
     )?;
-    let sol_mvp_share =
-        scale_sol_lane(war_settlement.sol_mvp_pool, mvp_bonus_amount, total_dbtc_mvp)?;
+    let sol_mvp_share = scale_user_sol_lane(
+        war_settlement.sol_mvp_pool,
+        mvp_bonus_amount,
+        total_dbtc_mvp,
+    )?;
 
     let sol_reward: u64 = sol_base_share
         .checked_add(sol_hb_share)
@@ -1927,24 +2029,432 @@ mod tests {
         let mut war_state = FactionWarState::blank();
         war_state.faction_count = 3;
         let mut settlement = FactionWarSettlement::blank();
-        let tuning = GameplayTuningConfig {
-            rpg_progression: false,
-            max_evolution_stage_unlocked: 0,
-            war_base_reward_bps: 5000,
-            war_mvp_reward_bps: 2000,
-            war_hashbeast_reward_bps: 3000,
-            base_mutation_chance_bps: 0,
-            mutation_chance_floor_bps: 0,
-            mutation_chance_cap_bps: 0,
-            faction_volume_threshold_lamports: 0,
-            extra_volume_threshold_per_mutation_lamports: 0,
-            target_mutations_per_cycle: 0,
-            target_rounds_per_cycle: 0,
-            pacing_max_adjustment_bps: 0,
-        };
+        let tuning = default_test_tuning();
         let residual = compute_base_reward_pools(&war_state, &mut settlement, &tuning).unwrap();
         assert_eq!(residual, 0);
         assert!(settlement.base_reward_pools.iter().all(|&p| p == 0));
         assert!(settlement.hashbeast_reward_pools.iter().all(|&p| p == 0));
+        assert_eq!(settlement.sol_base_pool, 0);
+        assert_eq!(settlement.sol_hb_pool, 0);
+        assert_eq!(settlement.sol_mvp_pool, 0);
+    }
+
+    /// Regression: when dBTC pool is 0 but SOL pool > 0, the claim path's
+    /// `scale_sol_lane` divides by `total_dbtc_<lane>` (= 0) and the guard
+    /// returns 0 for every user. Without the early-drain, SOL would sit
+    /// stranded on `sol_*_pool` settlement fields with no one able to claim.
+    /// Expected: full SOL pool flows back as residual → drained to treasury
+    /// by settle_war_internal.
+    #[test]
+    fn base_reward_pools_zero_dbtc_nonzero_sol_drains_all_sol() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_count = 3;
+        war_state.dbtc_mined_this_war = 0;
+        war_state.sol_reward_pool = 500_000;
+        war_state.faction_direction_totals[0][2] = 100; // would be base-eligible
+        war_state.faction_mutation_score[0] = 50; // would be HB-eligible
+
+        let mut settlement = FactionWarSettlement::blank();
+        settlement.final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        settlement.resolved_directions[0] = PredictionDirection::Up.as_index() as u8;
+
+        let tuning = default_test_tuning();
+        let residual = compute_base_reward_pools(&war_state, &mut settlement, &tuning).unwrap();
+
+        assert_eq!(residual, 500_000, "full SOL pool must flow to residual");
+        assert_eq!(settlement.sol_base_pool, 0);
+        assert_eq!(settlement.sol_hb_pool, 0);
+        assert_eq!(settlement.sol_mvp_pool, 0);
+        assert!(settlement.base_reward_pools.iter().all(|&p| p == 0));
+        assert!(settlement.hashbeast_reward_pools.iter().all(|&p| p == 0));
+    }
+
+    /// Per-faction non-eligibility produces a SOL residual.
+    /// Setup: 3 active factions, only faction 0 has correct-direction bets
+    /// (base-eligible). Factions 1 and 2's rank-weighted base shares should
+    /// stay unallocated → end up in residual.
+    #[test]
+    fn base_reward_pools_partial_eligibility_residual() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_count = 3;
+        war_state.dbtc_mined_this_war = 1_000_000;
+        war_state.sol_reward_pool = 1_000_000;
+        war_state.faction_direction_totals[0][2] = 100; // only faction 0 is base-eligible
+        war_state.faction_mutation_score[0] = 50;
+        war_state.faction_mutation_score[1] = 50;
+        war_state.faction_mutation_score[2] = 50;
+
+        let mut settlement = FactionWarSettlement::blank();
+        settlement.final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        settlement.resolved_directions[0] = PredictionDirection::Up.as_index() as u8;
+
+        let tuning = default_test_tuning();
+        let residual = compute_base_reward_pools(&war_state, &mut settlement, &tuning).unwrap();
+
+        // Faction 0 should have a non-zero base pool (it's the only eligible).
+        assert!(settlement.base_reward_pools[0] > 0);
+        assert_eq!(settlement.base_reward_pools[1], 0);
+        assert_eq!(settlement.base_reward_pools[2], 0);
+        // SOL base also goes only to faction 0; the rest is residual.
+        let sol_total_distributed =
+            settlement.sol_base_pool + settlement.sol_hb_pool + settlement.sol_mvp_pool;
+        assert_eq!(sol_total_distributed + residual, 1_000_000);
+        // Some residual must exist because not all factions are base-eligible.
+        assert!(residual > 0);
+    }
+
+    /// `distribute_rank_weighted_absolute` must conserve lamports:
+    /// `sum(pools_out) + residual == pool_total` for any input.
+    #[test]
+    fn distribute_conserves_lamports_under_rounding() {
+        let mut pools = [0u64; NUM_FACTIONS];
+        let final_ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let mut eligible = [false; NUM_FACTIONS];
+        eligible[0] = true;
+        eligible[3] = true;
+        eligible[7] = true;
+        eligible[11] = true;
+        // Pick a value that doesn't divide cleanly by the weight sum.
+        let pool: u64 = 123_457;
+        let residual =
+            distribute_rank_weighted_absolute(pool, &final_ranks, &eligible, 12, &mut pools)
+                .unwrap();
+        let allocated: u64 = pools.iter().sum();
+        assert_eq!(allocated + residual, pool, "lamports must be conserved");
+        // Only eligibles got non-zero.
+        for (fid, p) in pools.iter().enumerate() {
+            if eligible[fid] {
+                assert!(*p > 0, "eligible faction {} got 0", fid);
+            } else {
+                assert_eq!(*p, 0, "non-eligible faction {} got non-zero", fid);
+            }
+        }
+    }
+
+    /// When NO factions are eligible (e.g. nobody had a winning direction OR
+    /// any mutations), the entire pool is returned as residual.
+    #[test]
+    fn distribute_zero_eligibles_residual_is_full_pool() {
+        let mut pools = [0u64; NUM_FACTIONS];
+        let final_ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let eligible = [false; NUM_FACTIONS];
+        let residual =
+            distribute_rank_weighted_absolute(50_000, &final_ranks, &eligible, 12, &mut pools)
+                .unwrap();
+        assert_eq!(residual, 50_000);
+        assert!(pools.iter().all(|&p| p == 0));
+    }
+
+    /// MVP rank-weight curve sums to 10_000 bps across 12 factions.
+    /// This is what makes the absolute distribution math line up.
+    #[test]
+    fn mvp_weights_sum_to_10000_at_full_field() {
+        let total: u64 = (0..12).map(|r| mvp_rank_weight_bps(r, 12)).sum();
+        assert_eq!(total, 10_000, "MVP weights should sum to 100% at 12 factions");
+    }
+
+    /// MVP rank-weight curve at smaller fields uses explicit weights for the
+    /// top 8 ranks. When `active_factions < 8`, ranks 8+ are not reachable, so
+    /// only the explicit slice matters — verify a few sums.
+    #[test]
+    fn mvp_weights_partial_field_uses_explicit_weights() {
+        // 4 factions: top 4 explicit = 3000+2000+1400+1000 = 7400
+        let total: u64 = (0..4).map(|r| mvp_rank_weight_bps(r, 4)).sum();
+        assert_eq!(total, 7400);
+        // 8 factions: top 8 explicit = 9700
+        let total: u64 = (0..8).map(|r| mvp_rank_weight_bps(r, 8)).sum();
+        assert_eq!(total, 9700);
+    }
+
+    /// `FACTION_WAR_RANK_WEIGHT_BPS` curve sums consistently — used as the
+    /// denominator for base + HB rank-weighted distribution.
+    #[test]
+    fn faction_war_rank_weights_consistent() {
+        let total: u64 = FACTION_WAR_RANK_WEIGHT_BPS
+            .iter()
+            .map(|&w| w as u64)
+            .sum();
+        // Just verify it's a sensible positive number; the constant is the
+        // source of truth — this guards against accidental zeroing.
+        assert!(total > 0, "rank weights should sum > 0");
+        // Monotonic decreasing (or non-increasing): rank 0 ≥ rank 1 ≥ ... ≥ rank 11.
+        for window in FACTION_WAR_RANK_WEIGHT_BPS.windows(2) {
+            assert!(
+                window[0] >= window[1],
+                "weights must be monotonic non-increasing: {} < {}",
+                window[0],
+                window[1]
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // distribute_mvp_pool — dBTC MVP lane
+    // ------------------------------------------------------------------------
+
+    fn user(seed: u8) -> Pubkey {
+        Pubkey::new_from_array([seed; 32])
+    }
+
+    fn no_mvps() -> [Pubkey; NUM_FACTIONS] {
+        [Pubkey::default(); NUM_FACTIONS]
+    }
+
+    /// 4 factions, all have MVPs at ranks 0..3. Expected slice ratios:
+    ///   rank 0 = 3000, rank 1 = 2000, rank 2 = 1400, rank 3 = 1000 bps
+    ///   total weight = 7400; eligible_weight = 7400 → target = full pool
+    /// Lamports must sum to exactly the pool (last eligible absorbs rounding).
+    #[test]
+    fn mvp_distribute_all_eligible_top_4() {
+        let pool: u64 = 740_000;
+        let mut mvp_user = no_mvps();
+        for fid in 0..4 {
+            mvp_user[fid] = user(fid as u8 + 1);
+        }
+        // Final ranks: faction id == rank for simplicity
+        let final_ranks = [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut bonuses = [0u64; NUM_FACTIONS];
+        let residual =
+            distribute_mvp_pool(pool, &mvp_user, &final_ranks, 4, &mut bonuses).unwrap();
+        // No residual since all 4 ranks are eligible (target == pool when
+        // eligible_weight == total_weight).
+        assert_eq!(residual, 0);
+        let sum: u64 = bonuses.iter().sum();
+        assert_eq!(sum, pool);
+        // Ratios should follow rank weights (with some rounding tolerance):
+        //   #1 ≈ 30%, #2 ≈ 20%, #3 ≈ 14%, #4 ≈ 10% of pool
+        // Pool = 740_000 → #1 ≈ 300_000, #2 ≈ 200_000, #3 ≈ 140_000, #4 ≈ 100_000
+        assert!(bonuses[0] >= 299_000 && bonuses[0] <= 301_000);
+        assert!(bonuses[1] >= 199_000 && bonuses[1] <= 201_000);
+        assert!(bonuses[2] >= 139_000 && bonuses[2] <= 141_000);
+        // bonuses[3] absorbs rounding, so check vs the target it's been given:
+        // exact value depends on iteration order — just verify it's the
+        // remainder of pool - others.
+        assert_eq!(bonuses[3], pool - (bonuses[0] + bonuses[1] + bonuses[2]));
+        assert!(bonuses[0] > bonuses[1]);
+        assert!(bonuses[1] > bonuses[2]);
+    }
+
+    /// No MVPs anywhere → full pool flows back as residual, bonuses all zero.
+    #[test]
+    fn mvp_distribute_no_eligibles_returns_full_residual() {
+        let mut bonuses = [0u64; NUM_FACTIONS];
+        let final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let residual =
+            distribute_mvp_pool(500_000, &no_mvps(), &final_ranks, 3, &mut bonuses).unwrap();
+        assert_eq!(residual, 500_000);
+        assert!(bonuses.iter().all(|&b| b == 0));
+    }
+
+    /// Only some factions have MVPs (ranks 0 and 5 of 12). Eligible weight =
+    /// 3000 + 600 = 3600 bps. Total weight = 10_000 (full curve). Target =
+    /// pool × 3600 / 10_000 = 36% of pool. The rest stays as residual.
+    #[test]
+    fn mvp_distribute_partial_eligibles_residual() {
+        let mut mvp_user = no_mvps();
+        mvp_user[0] = user(1);
+        mvp_user[5] = user(2);
+        let final_ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let mut bonuses = [0u64; NUM_FACTIONS];
+        let pool: u64 = 1_000_000;
+        let residual =
+            distribute_mvp_pool(pool, &mvp_user, &final_ranks, 12, &mut bonuses).unwrap();
+        // Lamports conserved.
+        assert_eq!(bonuses.iter().sum::<u64>() + residual, pool);
+        // Eligibles got non-zero, others zero.
+        assert!(bonuses[0] > 0);
+        assert!(bonuses[5] > 0);
+        for fid in [1usize, 2, 3, 4, 6, 7, 8, 9, 10, 11] {
+            assert_eq!(bonuses[fid], 0);
+        }
+        // Target eligible share = pool × 3600 / 10000 = 360_000.
+        // Residual ≈ 640_000 (with up to ±1 rounding).
+        let allocated: u64 = bonuses.iter().sum();
+        assert!(allocated >= 359_999 && allocated <= 360_001);
+        assert!(residual >= 639_999 && residual <= 640_001);
+        // rank 0 > rank 5 (#1 weight > #5 weight)
+        assert!(bonuses[0] > bonuses[5]);
+    }
+
+    /// Zero pool → zero everything, residual zero.
+    #[test]
+    fn mvp_distribute_zero_pool() {
+        let mut mvp_user = no_mvps();
+        mvp_user[0] = user(1);
+        let final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut bonuses = [0u64; NUM_FACTIONS];
+        let residual = distribute_mvp_pool(0, &mvp_user, &final_ranks, 3, &mut bonuses).unwrap();
+        assert_eq!(residual, 0);
+        assert!(bonuses.iter().all(|&b| b == 0));
+    }
+
+    /// Rank 0's MVP gets the biggest slice (regression: #1 must dominate).
+    #[test]
+    fn mvp_distribute_rank_zero_gets_most() {
+        let mut mvp_user = no_mvps();
+        for fid in 0..3 {
+            mvp_user[fid] = user(fid as u8 + 1);
+        }
+        let final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut bonuses = [0u64; NUM_FACTIONS];
+        distribute_mvp_pool(1_000_000, &mvp_user, &final_ranks, 3, &mut bonuses).unwrap();
+        assert!(bonuses[0] > bonuses[1]);
+        assert!(bonuses[1] > bonuses[2]);
+    }
+
+    /// Faction id ≠ rank: if rank 0 belongs to faction 7, faction 7's bonus
+    /// should be the biggest.
+    #[test]
+    fn mvp_distribute_uses_final_rank_not_faction_id() {
+        let mut mvp_user = no_mvps();
+        mvp_user[7] = user(1); // rank 0
+        mvp_user[3] = user(2); // rank 1
+        let mut final_ranks = [0u8; NUM_FACTIONS];
+        final_ranks[7] = 0;
+        final_ranks[3] = 1;
+        // others at rank 2..
+        for fid in 0..NUM_FACTIONS {
+            if fid != 7 && fid != 3 {
+                final_ranks[fid] = (fid as u8 + 2).min(11);
+            }
+        }
+        let mut bonuses = [0u64; NUM_FACTIONS];
+        distribute_mvp_pool(1_000_000, &mvp_user, &final_ranks, 12, &mut bonuses).unwrap();
+        assert!(bonuses[7] > bonuses[3], "rank-0 faction should outpay rank-1");
+    }
+
+    // ------------------------------------------------------------------------
+    // split_sol_mvp_residual — SOL MVP lane
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn split_sol_mvp_all_eligible_no_residual() {
+        let mut mvp_user = no_mvps();
+        for fid in 0..4 {
+            mvp_user[fid] = user(fid as u8 + 1);
+        }
+        let final_ranks = [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0];
+        let (eligible, residual) =
+            split_sol_mvp_residual(740_000, &mvp_user, &final_ranks, 4).unwrap();
+        // All MVPs eligible → eligible_weight == total_weight → eligible_share == pool.
+        assert_eq!(eligible, 740_000);
+        assert_eq!(residual, 0);
+    }
+
+    #[test]
+    fn split_sol_mvp_no_eligibles_drains_all() {
+        let final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let (eligible, residual) =
+            split_sol_mvp_residual(500_000, &no_mvps(), &final_ranks, 3).unwrap();
+        assert_eq!(eligible, 0);
+        assert_eq!(residual, 500_000);
+    }
+
+    #[test]
+    fn split_sol_mvp_partial_eligibles_conserves() {
+        let mut mvp_user = no_mvps();
+        mvp_user[0] = user(1);
+        mvp_user[5] = user(2);
+        let final_ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let (eligible, residual) =
+            split_sol_mvp_residual(1_000_000, &mvp_user, &final_ranks, 12).unwrap();
+        // Lamports conserved.
+        assert_eq!(eligible + residual, 1_000_000);
+        // Eligible weight = 3000 + 600 = 3600 of 10_000 total → ~36%.
+        assert!(eligible >= 359_999 && eligible <= 360_001);
+    }
+
+    #[test]
+    fn split_sol_mvp_zero_pool() {
+        let mut mvp_user = no_mvps();
+        mvp_user[0] = user(1);
+        let final_ranks = [0u8; NUM_FACTIONS];
+        let (eligible, residual) =
+            split_sol_mvp_residual(0, &mvp_user, &final_ranks, 12).unwrap();
+        assert_eq!(eligible, 0);
+        assert_eq!(residual, 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // scale_user_sol_lane — per-user SOL scaling at claim time
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn scale_user_sol_basic_proportional() {
+        // sol_lane_pool = 100, user_dbtc = 250, total_dbtc = 1000
+        // user_sol = 100 × 250 / 1000 = 25
+        assert_eq!(scale_user_sol_lane(100, 250, 1000).unwrap(), 25);
+    }
+
+    #[test]
+    fn scale_user_sol_user_gets_full_share() {
+        // User has 100% of the dBTC lane → 100% of the SOL lane.
+        assert_eq!(scale_user_sol_lane(500, 1000, 1000).unwrap(), 500);
+    }
+
+    #[test]
+    fn scale_user_sol_zero_inputs_return_zero() {
+        // Each zero short-circuits to 0; prevents div-by-zero.
+        assert_eq!(scale_user_sol_lane(0, 100, 1000).unwrap(), 0);
+        assert_eq!(scale_user_sol_lane(100, 0, 1000).unwrap(), 0);
+        assert_eq!(scale_user_sol_lane(100, 100, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn scale_user_sol_truncates_down() {
+        // 100 × 1 / 3 = 33.33 → 33 (integer division truncates)
+        assert_eq!(scale_user_sol_lane(100, 1, 3).unwrap(), 33);
+    }
+
+    #[test]
+    fn scale_user_sol_large_values_use_u128() {
+        // u64::MAX × u64::MAX would overflow u64 but fits in u128 intermediate.
+        // Use a realistic large value to verify no overflow.
+        let big_pool = 1_000_000_000_000u64; // 1000 SOL
+        let user_share = 1_000_000_000u64; // 1 SOL of dBTC
+        let total_share = 1_000_000_000_000u64; // 1000 SOL of dBTC
+        // 1000 SOL × 1/1000 = 1 SOL = 1e9 lamports
+        assert_eq!(
+            scale_user_sol_lane(big_pool, user_share, total_share).unwrap(),
+            1_000_000_000
+        );
+    }
+
+    /// Three users splitting a SOL pool by their dBTC shares should sum
+    /// (modulo rounding) to ≤ the pool — never over.
+    #[test]
+    fn scale_user_sol_sum_of_shares_never_exceeds_pool() {
+        let sol_pool: u64 = 1_000_000;
+        let total_dbtc: u64 = 100_000;
+        let user_a_dbtc: u64 = 33_333;
+        let user_b_dbtc: u64 = 33_333;
+        let user_c_dbtc: u64 = 33_334; // sums to 100_000
+
+        let sol_a = scale_user_sol_lane(sol_pool, user_a_dbtc, total_dbtc).unwrap();
+        let sol_b = scale_user_sol_lane(sol_pool, user_b_dbtc, total_dbtc).unwrap();
+        let sol_c = scale_user_sol_lane(sol_pool, user_c_dbtc, total_dbtc).unwrap();
+        let sum = sol_a + sol_b + sol_c;
+        assert!(sum <= sol_pool, "summed shares ({}) must not exceed pool ({})", sum, sol_pool);
+        // Drift should be tiny (sub-lamport per user).
+        assert!(sol_pool - sum <= 3);
+    }
+
+    /// Shared tuning fixture for tests that don't care about specific values.
+    fn default_test_tuning() -> GameplayTuningConfig {
+        GameplayTuningConfig {
+            rpg_progression: true,
+            max_evolution_stage_unlocked: 3,
+            war_base_reward_bps: 5000,
+            war_mvp_reward_bps: 2000,
+            war_hashbeast_reward_bps: 3000,
+            base_mutation_chance_bps: 100,
+            mutation_chance_floor_bps: 50,
+            mutation_chance_cap_bps: 5000,
+            faction_volume_threshold_lamports: 1_000_000,
+            extra_volume_threshold_per_mutation_lamports: 100_000,
+            target_mutations_per_cycle: 10,
+            target_rounds_per_cycle: 20,
+            pacing_max_adjustment_bps: 2000,
+        }
     }
 }

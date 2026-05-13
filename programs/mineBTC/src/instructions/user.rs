@@ -1837,6 +1837,24 @@ fn apply_mutation_bonus_score<'info>(
         return Ok(());
     }
 
+    // Home-faction gate: the HB bonus lane pays out per-home, scaling
+    // `user.mutation_score / faction_mutation_score[home]`. If we let
+    // mutations from foreign-faction wins increment those counters, the
+    // numerator and denominator can come from different countries' winning
+    // rounds — `user.mutation_score` could exceed `faction_mutation_score[home]`
+    // and the ratio would exceed 1, draining more than the home's pool.
+    // The mutation event itself (DNA/XP/multiplier change) still fires for
+    // foreign wins — only the score accounting (gameplay_scores, MVP,
+    // faction_mutation_score, user.mutation_score) is home-restricted.
+    if winner_idx != player_data.faction_id as usize {
+        msg!(
+            "🎁 [apply_mutation_bonus_score] winner_faction {} != player home {} — score accounting skipped",
+            winner_idx,
+            player_data.faction_id
+        );
+        return Ok(());
+    }
+
     let user_wgtd = total_wgtd_points_for_faction(user_bet, winner);
     if user_wgtd == 0 {
         return Ok(());

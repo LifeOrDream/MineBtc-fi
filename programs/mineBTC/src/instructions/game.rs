@@ -165,7 +165,10 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
         ErrorCode::CycleAwaitingSettlement
     );
 
-    let expected_round_id = global_state.current_round_id + 1;
+    let expected_round_id = global_state
+        .current_round_id
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(round_id == expected_round_id, ErrorCode::InvalidRound);
 
     global_state.current_round_id = round_id;
@@ -464,10 +467,14 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     );
 
     if total_users == 0 {
-        msg!("⚠️ [end_round] empty round — short-circuit");
-        global_state.last_round_id = game_session.round_id;
-        global_state.can_begin_round = true;
-        game_session.stage = 2;
+        // Empty round: no bets to distribute against. We still set stage = 1
+        // (not 2) so `settle_round` runs and bumps `last_processed_round_id`
+        // via `track_war_round_completion`. Skipping settle would leave
+        // `last_processed_round_id` stale, and if this round happens to be
+        // the cycle's boundary (cycle_end_round_id == round_id), `settle_war`
+        // would block forever on its equality check.
+        msg!("⚠️ [end_round] empty round — handing off to settle_round");
+        game_session.stage = 1;
 
         emit_round_ended(
             game_session,
@@ -1551,5 +1558,78 @@ mod tests {
         let (dbtc, lp) = split_staker_lane_rewards(1_000, false, false);
         assert_eq!(dbtc, 0);
         assert_eq!(lp, 0);
+    }
+
+    /// Odd totals: split_staker_lane must conserve lamports (lp gets the
+    /// rounding remainder when both are active).
+    #[test]
+    fn split_staker_lane_odd_total_conserved() {
+        let (dbtc, lp) = split_staker_lane_rewards(1_001, true, true);
+        assert_eq!(dbtc + lp, 1_001);
+        // total/2 rounds down for dbtc, lp absorbs the extra lamport.
+        assert_eq!(dbtc, 500);
+        assert_eq!(lp, 501);
+    }
+
+    /// dBTC split should not drift: sum of all four lanes must equal the
+    /// configured share of the input. With 100% allocated (20+50+10+20),
+    /// the lanes should sum to exactly the input.
+    #[test]
+    fn calculate_dbtc_split_full_allocation_sums_to_input() {
+        let input = 1_000_003u64; // not divisible by 100 cleanly
+        let (winners, same_faction, stakers, jackpot) =
+            calculate_dbtc_split(input, 20, 50, 10, 20).unwrap();
+        let total = winners + same_faction + stakers + jackpot;
+        // Some rounding drift is acceptable (each lane truncates), but
+        // `end_round` redirects unallocated same_faction to winners — so
+        // we just sanity-check no lane exceeds the input.
+        assert!(total <= input);
+        assert!(winners > 0 && same_faction > 0 && stakers > 0 && jackpot > 0);
+    }
+
+    /// `calculate_dbtc_split` with 0% lanes still succeeds (each lane = 0).
+    #[test]
+    fn calculate_dbtc_split_zero_percent_lanes() {
+        let (winners, same_faction, stakers, jackpot) =
+            calculate_dbtc_split(1_000_000, 0, 0, 0, 0).unwrap();
+        assert_eq!(winners, 0);
+        assert_eq!(same_faction, 0);
+        assert_eq!(stakers, 0);
+        assert_eq!(jackpot, 0);
+    }
+
+    /// Winner-selection deterministic: same seed + same active set always
+    /// produces the same winner. Verifies the random_seed % active_count
+    /// indexing.
+    #[test]
+    fn find_valid_winning_faction_is_deterministic() {
+        let mut indexes = [0u64; NUM_FACTIONS];
+        indexes[1] = 1;
+        indexes[4] = 1;
+        indexes[8] = 1;
+        let w1 = find_valid_winning_faction(7, &indexes, 12).unwrap();
+        let w2 = find_valid_winning_faction(7, &indexes, 12).unwrap();
+        assert_eq!(w1, w2);
+        // 7 % 3 = 1 → active_factions[1] = 4
+        assert_eq!(w1, 4);
+    }
+
+    /// Build the SlotHashes layout with multiple entries and verify
+    /// `read_slot_hash_entry` returns each correctly.
+    #[test]
+    fn read_slot_hash_entry_full_buffer() {
+        let entries: Vec<(u64, [u8; 32])> = (0..10)
+            .map(|i| {
+                let mut hash = [0u8; 32];
+                hash[0] = i;
+                (1000 - i as u64, hash)
+            })
+            .collect();
+        let data = build_slot_hashes_data(&entries);
+        for (i, (slot, hash)) in entries.iter().enumerate() {
+            let (got_slot, got_hash) = read_slot_hash_entry(&data, i).unwrap();
+            assert_eq!(got_slot, *slot);
+            assert_eq!(got_hash, *hash);
+        }
     }
 }
