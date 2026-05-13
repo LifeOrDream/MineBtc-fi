@@ -60,7 +60,7 @@ Per setup script:
 ## Faction-War Cycle Rewards
 
 - Faction wars are gameplay-score-driven cycles tied to LP-burn operations.
-- `FactionWarConfig.faction_war_settle_cycle` points to the LP operation count that unlocks settlement.
+- `FactionWarConfig.settle_at_lp_op_count` points to the LP operation count that unlocks settlement.
 - Ranking source:
   - Gameplay support scores per faction.
   - Round wins and own-country SOL support are tiebreakers.

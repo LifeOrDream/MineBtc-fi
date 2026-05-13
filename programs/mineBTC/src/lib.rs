@@ -548,14 +548,14 @@ pub mod minebtc {
     /// Callable by anyone - program-controlled withdraw authority
     pub fn crank_distribute_tax(
         ctx: Context<CrankDistributeTax>,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "crank_distribute_tax");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
         tax::internal_crank_distribute_tax(
             accounts,
-            faction_war_id,
+            war_id,
             bumps.faction_war_state,
             bumps.withdraw_withheld_authority,
         )
@@ -565,10 +565,10 @@ pub mod minebtc {
     /// Uses the gameplay-score leaderboard (faction_war final_ranks) -- permissionless.
     pub fn claim_faction_treasury_for_faction_war(
         ctx: Context<ClaimFactionTreasuryForFactionWar>,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "claim_faction_treasury_for_faction_war");
-        tax::internal_claim_faction_treasury_for_faction_war(ctx, faction_war_id)
+        tax::internal_claim_faction_treasury_for_faction_war(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -592,10 +592,10 @@ pub mod minebtc {
     /// User claims their faction-war rewards (closes user_faction_war_bets account).
     pub fn claim_faction_war_rewards(
         ctx: Context<ClaimFactionWarRewards>,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "claim_faction_war_rewards");
-        faction_war::claim_faction_war_rewards_internal(ctx, faction_war_id)
+        faction_war::claim_faction_war_rewards_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -618,10 +618,10 @@ pub mod minebtc {
     /// Finalize the round's faction-level staking/jackpot distribution and track faction-war mining.
     pub fn settle_round(
         ctx: Context<SettleRound>,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "settle_round");
-        game::int_settle_round(ctx.accounts, faction_war_id)
+        game::int_settle_round(ctx.accounts, war_id)
     }
 
     /// Initialize a new faction war state PDA.
@@ -629,10 +629,10 @@ pub mod minebtc {
     /// Permissionless — anyone can initialize the war state for the current war ID.
     pub fn initialize_faction_war(
         ctx: Context<InitializeFactionWar>,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_faction_war");
-        faction_war::initialize_faction_war_internal(ctx, faction_war_id)
+        faction_war::initialize_faction_war_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -653,7 +653,7 @@ pub mod minebtc {
     pub fn join_bets(
         ctx: Context<JoinBets>,
         round_id: u64,
-        faction_war_id: u64,
+        war_id: u64,
         bet_types: Vec<BetType>,
         amount_per_bet: u64,
         use_ticket: Option<u8>,
@@ -664,7 +664,7 @@ pub mod minebtc {
         user::internal_join_bets(
             accounts,
             round_id,
-            faction_war_id,
+            war_id,
             bet_types,
             amount_per_bet,
             use_ticket,
@@ -699,7 +699,7 @@ pub mod minebtc {
     pub fn execute_autominer_bet(
         ctx: Context<ExecuteAutominerBet>,
         current_round_id: u64,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "execute_autominer_bet");
         let bumps = ctx.bumps;
@@ -707,7 +707,7 @@ pub mod minebtc {
         user::internal_execute_autominer_bet(
             accounts,
             current_round_id,
-            faction_war_id,
+            war_id,
             bumps.user_game_bet,
             bumps.faction_war_state,
             bumps.user_faction_war_bets,

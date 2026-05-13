@@ -285,7 +285,7 @@ Players bet SOL in 60-second rounds
     │
     ├─ gameplay scores accumulate on FactionWarState per faction
     │
-    └─ total_degenbtc_mined_in_faction_war grows with each round
+    └─ total_dbtc_mined_in_rounds grows with each round
 ```
 
 When the economy cycle completes (LP burn → `lp_operations_count` increments):
@@ -294,19 +294,19 @@ When the economy cycle completes (LP burn → `lp_operations_count` increments):
 finalize_faction_war_settlement():
     1. Rank factions by gameplay score, then round wins, then own-faction SOL support
     2. Compare with start_ranks → compute rank deltas → resolve directions
-    3. Split faction_war_mining_pool:
+    3. Split dbtc_mined_this_war:
        - base pool: anyone who picked a country's final direction correctly
        - loyalty pool: own-country correct-direction supporters
        - HashBeast pool: users whose gameplay HashBeast backed the resolved home-country outcome
     4. Stage = 1 (claims open)
     5. Persist final_ranks as next faction war's start_ranks
-    6. Advance current_faction_war_id
+    6. Advance current_war_id
 ```
 
 ## Reward Pools
 
 ```
-faction_war_mining_pool (total degenBTC mined in all rounds this cycle)
+dbtc_mined_this_war (total degenBTC mined in all rounds this cycle)
     │
     ├─ base_reward_bps → faction_reward_pools
     │         Users who bet any country's final direction correctly get pro-rata share
@@ -468,7 +468,7 @@ dbTC leg: 50% burned, 50% -> dbtc_token_vault
 2. Play rounds (bets trigger story events, XP accumulates)
 
 3. request_hashbeast_gameplay_unlock
-   └─ Sets unlock_request_faction_war = current_faction_war_id
+   └─ Sets unlock_request_faction_war = current_war_id
    └─ Must wait until next faction war to withdraw
 
 4. withdraw_hashbeast_from_gameplay
@@ -583,7 +583,7 @@ treasury_balance
     │   Higher rank = more reward, but every faction gets something
     │
     └─ 20% lucky draw: one random faction from rank 5+ wins the whole pot
-        Equal probability per eligible faction, deterministic from faction_war_id
+        Equal probability per eligible faction, deterministic from war_id
 ```
 
 Rewards go to faction stakers (split 50/50 between degenBTC and LP stakers).
@@ -592,14 +592,14 @@ Rewards go to faction stakers (split 50/50 between degenBTC and LP stakers).
 
 ```
 FactionWarConfig (singleton)
-    ├─ current_faction_war_id: incrementing counter
+    ├─ current_war_id: incrementing counter
     ├─ is_active: admin toggle
-    ├─ faction_war_settle_cycle: LP ops count that triggers settlement
-    └─ prev_faction_war_ranks: carried forward to next faction war
+    ├─ settle_at_lp_op_count: LP ops count that triggers settlement
+    └─ prev_ranks: carried forward to next faction war
 
 FactionWarState (one per faction war)
-    ├─ faction_war_id, start_timestamp, stage
-    ├─ total_degenbtc_mined_in_faction_war → faction_war_mining_pool
+    ├─ war_id, start_timestamp, stage
+    ├─ total_dbtc_mined_in_rounds → dbtc_mined_this_war
     ├─ start_ranks ↔ final_ranks → rank_deltas → resolved_directions
     ├─ gameplay_scores (internal gameplay-score array that drives rankings)
     ├─ faction_direction_totals (base-pool denominator for user claims)

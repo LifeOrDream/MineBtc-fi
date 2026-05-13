@@ -634,7 +634,7 @@ async function main() {
     // 17. Initialize Faction War Config (mutation-driven competitive cycles)
     // Instruction: initialize_faction_war_config() — no args
     // Creates FactionWarConfig PDA [seeds: "faction-war-config"] with
-    // current_faction_war_id=1, is_active=true, faction_war_settle_cycle=0
+    // current_war_id=1, is_active=true, settle_at_lp_op_count=0
     // (auto-set on first bet), and identity
     // start ranks [0..NUM_FACTIONS). Faction-war cycles auto-start on first bet and
     // auto-settle when the economy-cycle LP burn completes.
@@ -3273,7 +3273,7 @@ async function initializeFactionWarConfig(minebtcProgram) {
 
     deploymentFile.faction_war_config_initialized = {
       faction_war_config_pda: factionWarConfigPda.toBase58(),
-      starting_faction_war_id: 1,
+      starting_war_id: 1,
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };

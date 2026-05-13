@@ -144,7 +144,7 @@ pub const DEFAULT_EMISSION_DECREASE_PCT: u64 = 3; // 3%
 
 /// Faction-war cycle reward multiplier bounds.
 /// Stored as basis points: 1_000 = 0.1x, 10_000 = 1x, 30_000 = 3x.
-/// These are hard protocol caps for `total_degenbtc_mined_in_faction_war * multiplier`.
+/// These are hard protocol caps for `total_dbtc_mined_in_rounds * multiplier`.
 pub const MIN_FACTION_WAR_MINING_MULTIPLIER_BPS: u16 = 1_000;
 pub const MAX_FACTION_WAR_MINING_MULTIPLIER_BPS: u16 = 30_000;
 
@@ -232,9 +232,9 @@ pub const HASHBEAST_MINT_CONFIG_SEED: &[u8] = b"hashbeast-mint-config";
 
 // PDAs for Faction War system
 pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
-pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", faction_war_id_u64]
-pub const FACTION_WAR_SETTLEMENT_SEED: &[u8] = b"faction-war-settlement"; // Seed: [b"faction-war-settlement", faction_war_id_u64]
-pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, faction_war_id_u64]
+pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", war_id_u64]
+pub const FACTION_WAR_SETTLEMENT_SEED: &[u8] = b"faction-war-settlement"; // Seed: [b"faction-war-settlement", war_id_u64]
+pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, war_id_u64]
 pub const FACTION_WAR_SOL_VAULT_SEED: &[u8] = b"faction-war-sol-vault";
 
 // PDAs for Tax system
@@ -989,6 +989,11 @@ pub struct GameSession {
     pub points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
     /// Weighted points bet placed on each faction-direction pair.
     pub wgtd_points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+    /// Weighted points by home-faction bettors with an active gameplay hashbeast,
+    /// per faction (any direction). Folded into
+    /// `faction_war_state.eligible_hashbeast_totals` at settle_round. HB bonus
+    /// rewards home-backing regardless of direction, so direction is not stored.
+    pub eligible_hb_wgtd_by_faction: [u64; NUM_FACTIONS],
 
     /// The winning faction ID for this round.
     pub winning_faction_id: u8,
@@ -1032,13 +1037,13 @@ pub struct GameSession {
     /// Capped at active_factions / 3 to create scarcity.
     pub total_mutations_this_round: u8,
 
-    /// Snapshot of `faction_war_config.current_faction_war_id` at round start.
+    /// Snapshot of `faction_war_config.current_war_id` at round start.
     /// Used by the round-claim handler to detect late claims (cycle has settled
     /// after the round ended) so mutation-bonus score is dropped instead of
     /// being applied to a different cycle.
-    pub faction_war_id_when_played: u64,
+    pub war_id_when_played: u64,
 
-    /// Snapshot of the winning country's `faction_volume_since_last_win`
+    /// Snapshot of the winning country's `sol_volume_since_last_win`
     /// captured at round-end (in `track_faction_war_round_completion`),
     /// BEFORE the config counter is reset to 0. Frozen value the round-claim
     /// mutation roll feeds into the volume_factor — late claims see the same
@@ -1066,6 +1071,7 @@ impl GameSession {
         (NUM_FACTIONS * 8) + // sol_bets_by_faction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // points_bets_by_faction_direction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // wgtd_points_bets_by_faction_direction
+        (NUM_FACTIONS * 8) + // eligible_hb_wgtd_by_faction
         1 +     // winning_faction_id (u8)
         1 +     // winning_direction (u8)
         8 +     // dbtc_winner_pool
@@ -1081,7 +1087,7 @@ impl GameSession {
         1 +     // jackpot_distributed
         (NUM_FACTIONS * 1) + // mutations_per_faction
         1 + // total_mutations_this_round
-        8 + // faction_war_id_when_played
+        8 + // war_id_when_played
         8; // winning_faction_volume_at_round
 }
 
@@ -1167,8 +1173,8 @@ pub struct PlayerData {
     /// Lazy-reset to 0 the first time it's touched in a new cycle (see
     /// `current_faction_war_score_cycle_id` below). Used for MVP tracking.
     pub current_faction_war_score: u64,
-    /// `faction_war_id` that `current_faction_war_score` belongs to.
-    /// On the first bet of a new cycle (when `faction_war_state.faction_war_id`
+    /// `war_id` that `current_faction_war_score` belongs to.
+    /// On the first bet of a new cycle (when `faction_war_state.war_id`
     /// differs from this), the running score is reset to 0 and this is updated.
     /// This avoids needing a separate per-user reset instruction at cycle rollover.
     pub current_faction_war_score_cycle_id: u64,
@@ -1433,7 +1439,7 @@ pub struct UserGameBet {
     /// The round ID this bet belongs to
     pub round_id: u64,
     /// Faction-war cycle active when this round bet was placed.
-    pub faction_war_id: u64,
+    pub war_id: u64,
 
     /// List of faction IDs user bet on.
     /// Index position corresponds to the same index in directions/sol_bets/points_bets.
@@ -1473,7 +1479,7 @@ impl UserGameBet {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        8 +     // faction_war_id
+        8 +     // war_id
         4 + (Self::MAX_POSITIONS_PER_BET * 1) + // faction_ids Vec<u8>
         4 + (Self::MAX_POSITIONS_PER_BET * 1) + // directions Vec<u8>
         4 + (Self::MAX_POSITIONS_PER_BET * 8) + // sol_bets Vec<u64>
@@ -1559,23 +1565,28 @@ impl AutominerVault {
 
 /// Faction War configuration PDA (Seed: `[b"faction-war-config"]`)
 /// Faction wars are tied to the economy cycle: one faction war per LP-burn cycle.
-/// Settlement becomes possible once lp_operations_count reaches faction_war_settle_cycle.
+/// Settlement becomes possible once lp_operations_count reaches settle_at_lp_op_count.
 #[account]
 pub struct FactionWarConfig {
     pub bump: u8,
 
     /// Current faction-war ID (incrementing counter, starts at 1)
-    pub current_faction_war_id: u64,
+    pub current_war_id: u64,
+
+    /// Cached PDA bump for `faction_war_sol_vault`. Stored here so the hot
+    /// JoinBets path can derive the vault address with `create_program_address`
+    /// instead of paying `find_program_address` every bet.
+    pub rewards_sol_vault_bump: u8,
 
     /// The LP operations count that triggers settlement of the current faction_war.
     /// Set to `pol_stats.lp_operations_count + 1` when the faction_war starts,
     /// meaning the faction_war settles after the next full economy cycle completes.
-    pub faction_war_settle_cycle: u32,
+    pub settle_at_lp_op_count: u32,
 
     /// Rankings from the previous faction war's gameplay scores.
     /// Used as start_ranks when the next faction war auto-starts.
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
-    pub prev_faction_war_ranks: [u8; NUM_FACTIONS],
+    pub prev_ranks: [u8; NUM_FACTIONS],
 
     /// Last round whose round-completion side effects were applied to this cycle.
     pub last_processed_round_id: u64,
@@ -1585,11 +1596,11 @@ pub struct FactionWarConfig {
     /// `track_faction_war_round_completion` AFTER snapshotting onto
     /// `GameSession.winning_faction_volume_at_round`. Persists across cycle
     /// boundaries — a country in a long drought builds up potential.
-    pub faction_volume_since_last_win: [u64; NUM_FACTIONS],
+    pub sol_volume_since_last_win: [u64; NUM_FACTIONS],
 
     // ----- DYNAMIC MINING MULTIPLIER (degenBTC cycle rewards) -----
     /// Current multiplier for faction-war degenBTC rewards, in basis points.
-    /// 10_000 = 1.0x. Applied to `total_degenbtc_mined_in_faction_war` at settlement.
+    /// 10_000 = 1.0x. Applied to `total_dbtc_mined_in_rounds` at settlement.
     pub mining_multiplier_bps: u16,
     /// Basis-point increase applied when price goes up (e.g. 300 = +3%).
     pub multiplier_increase_bps: u16,
@@ -1604,11 +1615,12 @@ pub struct FactionWarConfig {
 impl FactionWarConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // current_faction_war_id
-        4 +     // faction_war_settle_cycle
-        (NUM_FACTIONS * 1) + // prev_faction_war_ranks
+        8 +     // current_war_id
+        1 +     // rewards_sol_vault_bump
+        4 +     // settle_at_lp_op_count
+        (NUM_FACTIONS * 1) + // prev_ranks
         8 +     // last_processed_round_id
-        (NUM_FACTIONS * 8) + // faction_volume_since_last_win
+        (NUM_FACTIONS * 8) + // sol_volume_since_last_win
         2 +     // mining_multiplier_bps
         2 +     // multiplier_increase_bps
         2 +     // multiplier_decrease_bps
@@ -1619,12 +1631,12 @@ impl FactionWarConfig {
 impl FactionWarConfig {
     pub fn reset_cycle_round_tracking(&mut self) {
         self.last_processed_round_id = 0;
-        // Note: faction_volume_since_last_win is intentionally NOT reset here
+        // Note: sol_volume_since_last_win is intentionally NOT reset here
         // — it tracks across cycles; only resets per-country on round win.
     }
 }
 
-/// Faction War state PDA (Seed: `[b"faction-war", faction_war_id_u64_le]`)
+/// Faction War state PDA (Seed: `[b"faction-war", war_id_u64_le]`)
 /// Tracks active gameplay data during a faction war cycle.
 /// Kept small because it is loaded on every bet and every settle_round.
 #[account]
@@ -1632,19 +1644,19 @@ pub struct FactionWarState {
     pub bump: u8,
 
     /// FactionWar ID
-    pub faction_war_id: u64,
+    pub war_id: u64,
     /// Timestamp when this faction_war was started
     pub start_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
     /// Snapshot of how many factions were active when this faction_war started
-    pub active_faction_count: u8,
+    pub faction_count: u8,
 
     /// Total degenBTC mined via raffle rounds during this faction_war.
-    pub total_degenbtc_mined_in_faction_war: u64,
+    pub total_dbtc_mined_in_rounds: u64,
     /// Faction-war mining pool distributed to faction-war predictors.
-    pub faction_war_mining_pool: u64,
+    pub dbtc_mined_this_war: u64,
 
     /// Total weighted bets per faction and direction during this faction_war
     /// from all users. This powers the base "be right anywhere" cycle rewards.
@@ -1653,23 +1665,25 @@ pub struct FactionWarState {
     /// Number of raffle rounds won by each faction during this faction war.
     /// Used as a tiebreak after story score.
     pub round_wins: [u16; NUM_FACTIONS],
-    /// Total own-country SOL support committed during this faction war.
-    /// Used as a second tiebreak after round wins.
-    pub faction_sol_totals: [u64; NUM_FACTIONS],
-    /// Total real SOL bets per faction/direction. Used for claim-time cycle mutation probability.
-    pub faction_sol_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+
+    /// Total real SOL volume across all factions/directions for this war.
+    /// Folded once per round from `game_session.total_sol_bets`. Used as the
+    /// `total_sol` denominator in the claim-time mutation chance roll.
+    pub total_cycle_sol: u64,
 
     /// Accumulated gameplay scores per faction during this faction_war.
-    /// Drives ranking at settlement, with round wins and own-country SOL support as tiebreaks.
+    /// Drives ranking at settlement (round wins is the tiebreak, then faction_id).
     pub gameplay_scores: [u64; NUM_FACTIONS],
 
     /// Running MVP candidate per faction (user with highest cumulative gameplay score).
-    pub faction_mvp_user: [Pubkey; NUM_FACTIONS],
+    pub mvp_user: [Pubkey; NUM_FACTIONS],
     /// Running MVP score per faction.
-    pub faction_mvp_score: [u64; NUM_FACTIONS],
+    pub mvp_score: [u64; NUM_FACTIONS],
 
-    /// Total weighted own-country bets per faction/direction from users with an active gameplay HashBeast.
-    pub eligible_hashbeast_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+    /// Total weighted own-country bets per faction (any direction) from users
+    /// with an active gameplay HashBeast. Denominator for HB bonus claim share;
+    /// HB bonus rewards home-backing regardless of direction.
+    pub eligible_hashbeast_totals: [u64; NUM_FACTIONS],
 
     /// Accumulated SOL (from `cycle_sol_split`) reserved for this faction-war
     /// cycle's SOL jackpot. Distributed to claimants at settlement.
@@ -1685,40 +1699,38 @@ pub struct FactionWarState {
 impl FactionWarState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // faction_war_id
+        8 +     // war_id
         8 +     // start_timestamp
         1 +     // stage
-        1 +     // active_faction_count
-        8 +     // total_degenbtc_mined_in_faction_war
-        8 +     // faction_war_mining_pool
+        1 +     // faction_count
+        8 +     // total_dbtc_mined_in_rounds
+        8 +     // dbtc_mined_this_war
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_direction_totals
         (NUM_FACTIONS * 2) + // round_wins
-        (NUM_FACTIONS * 8) + // faction_sol_totals
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_sol_direction_totals
+        8 +     // total_cycle_sol
         (NUM_FACTIONS * 8) + // gameplay_scores
-        (NUM_FACTIONS * 32) + // faction_mvp_user
-        (NUM_FACTIONS * 8) + // faction_mvp_score
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_hashbeast_direction_totals
+        (NUM_FACTIONS * 32) + // mvp_user
+        (NUM_FACTIONS * 8) + // mvp_score
+        (NUM_FACTIONS * 8) + // eligible_hashbeast_totals
         8 +     // sol_reward_pool
         8; // treasury_reward_base_amount
 
     pub fn blank() -> Self {
         Self {
             bump: 0,
-            faction_war_id: 0,
+            war_id: 0,
             start_timestamp: 0,
             stage: 0,
-            active_faction_count: 0,
-            total_degenbtc_mined_in_faction_war: 0,
-            faction_war_mining_pool: 0,
+            faction_count: 0,
+            total_dbtc_mined_in_rounds: 0,
+            dbtc_mined_this_war: 0,
             faction_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
             round_wins: [0u16; NUM_FACTIONS],
-            faction_sol_totals: [0u64; NUM_FACTIONS],
-            faction_sol_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+            total_cycle_sol: 0,
             gameplay_scores: [0u64; NUM_FACTIONS],
-            faction_mvp_user: [Pubkey::default(); NUM_FACTIONS],
-            faction_mvp_score: [0u64; NUM_FACTIONS],
-            eligible_hashbeast_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+            mvp_user: [Pubkey::default(); NUM_FACTIONS],
+            mvp_score: [0u64; NUM_FACTIONS],
+            eligible_hashbeast_totals: [0u64; NUM_FACTIONS],
             sol_reward_pool: 0,
             treasury_reward_base_amount: 0,
         }
@@ -1735,27 +1747,26 @@ impl FactionWarState {
     #[inline(never)]
     pub fn deserialize_into(target: &mut Self, buf: &mut &[u8]) -> Result<()> {
         target.bump = AnchorDeserialize::deserialize(buf)?;
-        target.faction_war_id = AnchorDeserialize::deserialize(buf)?;
+        target.war_id = AnchorDeserialize::deserialize(buf)?;
         target.start_timestamp = AnchorDeserialize::deserialize(buf)?;
         target.stage = AnchorDeserialize::deserialize(buf)?;
-        target.active_faction_count = AnchorDeserialize::deserialize(buf)?;
-        target.total_degenbtc_mined_in_faction_war = AnchorDeserialize::deserialize(buf)?;
-        target.faction_war_mining_pool = AnchorDeserialize::deserialize(buf)?;
+        target.faction_count = AnchorDeserialize::deserialize(buf)?;
+        target.total_dbtc_mined_in_rounds = AnchorDeserialize::deserialize(buf)?;
+        target.dbtc_mined_this_war = AnchorDeserialize::deserialize(buf)?;
         target.faction_direction_totals = AnchorDeserialize::deserialize(buf)?;
         target.round_wins = AnchorDeserialize::deserialize(buf)?;
-        target.faction_sol_totals = AnchorDeserialize::deserialize(buf)?;
-        target.faction_sol_direction_totals = AnchorDeserialize::deserialize(buf)?;
+        target.total_cycle_sol = AnchorDeserialize::deserialize(buf)?;
         target.gameplay_scores = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_user = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_score = AnchorDeserialize::deserialize(buf)?;
-        target.eligible_hashbeast_direction_totals = AnchorDeserialize::deserialize(buf)?;
+        target.mvp_user = AnchorDeserialize::deserialize(buf)?;
+        target.mvp_score = AnchorDeserialize::deserialize(buf)?;
+        target.eligible_hashbeast_totals = AnchorDeserialize::deserialize(buf)?;
         target.sol_reward_pool = AnchorDeserialize::deserialize(buf)?;
         target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }
 }
 
-/// Faction War settlement PDA (Seed: `[b"faction-war-settlement", faction_war_id_u64_le]`)
+/// Faction War settlement PDA (Seed: `[b"faction-war-settlement", war_id_u64_le]`)
 /// Holds all settlement-only data computed when a faction war ends.
 /// Loaded by settle_faction_war and claim_faction_war_rewards — NOT by join_bets or settle_round.
 #[account]
@@ -1763,7 +1774,7 @@ pub struct FactionWarSettlement {
     pub bump: u8,
 
     /// FactionWar ID (must match the corresponding FactionWarState)
-    pub faction_war_id: u64,
+    pub war_id: u64,
 
     /// Final ranks derived from the gameplay-score array at settlement.
     pub final_ranks: [u8; NUM_FACTIONS],
@@ -1789,7 +1800,7 @@ pub struct FactionWarSettlement {
 impl FactionWarSettlement {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // faction_war_id
+        8 +     // war_id
         (NUM_FACTIONS * 1) + // final_ranks
         (NUM_FACTIONS * 1) + // rank_deltas
         (NUM_FACTIONS * 1) + // resolved_directions
@@ -1801,7 +1812,7 @@ impl FactionWarSettlement {
     pub fn blank() -> Self {
         Self {
             bump: 0,
-            faction_war_id: 0,
+            war_id: 0,
             final_ranks: [0u8; NUM_FACTIONS],
             rank_deltas: [0i8; NUM_FACTIONS],
             resolved_directions: [0u8; NUM_FACTIONS],
@@ -1816,7 +1827,7 @@ impl FactionWarSettlement {
     #[inline(never)]
     pub fn deserialize_into(target: &mut Self, buf: &mut &[u8]) -> Result<()> {
         target.bump = AnchorDeserialize::deserialize(buf)?;
-        target.faction_war_id = AnchorDeserialize::deserialize(buf)?;
+        target.war_id = AnchorDeserialize::deserialize(buf)?;
         target.final_ranks = AnchorDeserialize::deserialize(buf)?;
         target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
         target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
@@ -1828,7 +1839,7 @@ impl FactionWarSettlement {
     }
 }
 
-/// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, faction_war_id_u64_le]`)
+/// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, war_id_u64_le]`)
 /// Tracks how much weighted stake a user bet on each faction's direction during a
 /// specific faction_war. These weights power the global base cycle rewards.
 #[account]
@@ -1838,7 +1849,7 @@ pub struct UserFactionWarBets {
     /// The user who placed these bets
     pub owner: Pubkey,
     /// The faction-war ID this tracks
-    pub faction_war_id: u64,
+    pub war_id: u64,
     /// Gameplay hashbeast that became eligible for the faction_war hashbeast-reward pool.
     pub gameplay_hashbeast: Pubkey,
     /// Whether this user had an active gameplay hashbeast backing their home country during the faction_war.
@@ -1854,7 +1865,7 @@ impl UserFactionWarBets {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
-        8 +     // faction_war_id
+        8 +     // war_id
         32 +    // gameplay_hashbeast
         1 +     // hashbeast_bonus_eligible
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // direction_bets
@@ -1864,7 +1875,7 @@ impl UserFactionWarBets {
         Self {
             bump: 0,
             owner: Pubkey::default(),
-            faction_war_id: 0,
+            war_id: 0,
             gameplay_hashbeast: Pubkey::default(),
             hashbeast_bonus_eligible: false,
             direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],

@@ -22,7 +22,7 @@ distribute_jackpot_rewards(round_id=N)
                                (idempotent via jackpot_distributed flag)
        │
        ▼
-end_round_faction_rewards(faction_war_id=X)
+end_round_faction_rewards(war_id=X)
                               → stage 1→2, staker rewards distributed (or redirected to winners),
                                faction-war tracking updated, can_begin_round = true
        │
@@ -165,7 +165,7 @@ if jackpot_hit && jackpot_rewards_index > 0 && faction_id == jackpot_faction_id 
 |`GlobalGameState`| `b"global-game-state"` | `current_round_id`, `can_begin_round`, `jackpot_pot`, `last_round_id`, `winning_faction_id` |
 |`GameSession`| `b"game-session" + round_id_le` | All round-specific fields (bets, winner, indexes, stage, mutations) |
 |`DegenBtcMining`| `b"mine-btc-mining"` | `dbtc_per_round`, `total_tokens_mined`, `pol_stats.lp_operations_count` |
-|`FactionWarConfig`| `b"faction-war-config"` | `current_faction_war_id`, `is_active`, `faction_war_settle_cycle` |
+|`FactionWarConfig`| `b"faction-war-config"` | `current_war_id`, `is_active`, `settle_at_lp_op_count` |
 
 ---
 
@@ -218,7 +218,7 @@ if jackpot_hit && jackpot_rewards_index > 0 && faction_id == jackpot_faction_id 
       [700000000, 0, 1680000000],
       ...
     ],
-    "faction_war_id_when_played": 17
+    "war_id_when_played": 17
   },
 
   "ongoing_session_mutations": {
@@ -327,7 +327,7 @@ elif stage == 2 && can_begin_round:
 |`stakers_fee`| `u64` | `GameSession.stakers_fee` | Accumulated SOL staker fees |
 |`sol_bets_by_faction_direction`| `[u64][3]` | `GameSession.sol_bets_by_faction` × direction | Per-faction, per-direction SOL volume |
 |`wgtd_points_bets_by_faction_direction`| `[u64][3]` | `GameSession.wgtd_points_bets_by_faction_direction` | Per-faction, per-direction weighted points |
-|`faction_war_id_when_played`| `u64` | `GameSession.faction_war_id_when_played` | Cycle ID at round start (for late-claim detection) |
+|`war_id_when_played`| `u64` | `GameSession.war_id_when_played` | Cycle ID at round start (for late-claim detection) |
 
 #### `ongoing_session_mutations`
 | Field | Type | Source | Description |

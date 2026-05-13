@@ -274,8 +274,8 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 | `mineBTC_rounds` | `round_id` (N) | — | `gsi-pk-round_id`, `gsi-status-round_id` | Round state & outcomes |
 | `mineBTC_player_data` | `owner` (S) | — | — | User profile, staking aggregates, claimables |
 | `mineBTC_player_round_bets` | `owner` (S) | `round_id` (N) | — | Per-user per-round betting history |
-| `mineBTC_rebases` | `faction_war_id` (N) | — | `gsi-pk-faction_war_id`, `gsi-status-faction_war_id` | Faction war cycles |
-| `mineBTC_user_rebase_rewards` | `owner` (S) | `faction_war_id` (N) | `gsi-faction_war_id-owner`, `gsi-status-faction_war_id` | Per-user rebase reward eligibility |
+| `mineBTC_rebases` | `war_id` (N) | — | `gsi-pk-war_id`, `gsi-status-war_id` | Faction war cycles |
+| `mineBTC_user_rebase_rewards` | `owner` (S) | `war_id` (N) | `gsi-war_id-owner`, `gsi-status-war_id` | Per-user rebase reward eligibility |
 | `mineBTC_factions` | `faction_id` (N) | — | — | Faction staking stats, APR windows |
 
 ### 5.2 Staking Tables
@@ -316,10 +316,10 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 
 ### 5.6 Schema Issues
 
-1. **`mineBTC_rounds` has NO GSI for `faction_war_id`** — `aggregateRebaseVolumeFromRounds()` falls back to full table scan. Won't scale.
+1. **`mineBTC_rounds` has NO GSI for `war_id`** — `aggregateRebaseVolumeFromRounds()` falls back to full table scan. Won't scale.
 2. **Live bet data lives only in Redis** — `BetsPlaced` updates Redis but NOT DynamoDB until `RoundEnded`. Redis loss = unrecoverable bet history.
 3. **`PlayerData` has no `current_faction_war_score` field** — needed for MVP tracking.
-4. **`Rebase` model has no MVP fields** — `faction_mvp_user`, `faction_mvp_score`, `faction_mvp_bonus` missing.
+4. **`Rebase` model has no MVP fields** — `mvp_user`, `mvp_score`, `faction_mvp_bonus` missing.
 5. **No `jackpot_*` fields in `Round` or `Faction`** — still using `motherlode_*` naming everywhere.
 
 ---
@@ -606,7 +606,7 @@ The contract renamed `motherlode` → `jackpot` globally. The backend must follo
 | **Update IDL** | `idl/minebtc.json` | Add `FactionWarMvp` event. |
 | **Event router** | `src/services/processEvents/index.ts` | Add case `factionWarMvp`. |
 | **Rebase handler** | `src/services/processEvents/rebase.ts` | Add `processFactionWarMvpEvent()`. At `FactionWarSettled`, the backend should already compute per-user rewards. Need to ALSO reserve 5% for MVPs and set `faction_mvp_bonus` per faction. |
-| **Rebase model** | `src/model/Rebase.model.ts` | Add fields: `faction_mvp_user: [String]`, `faction_mvp_score: [String]`, `faction_mvp_bonus: [String]`. |
+| **Rebase model** | `src/model/Rebase.model.ts` | Add fields: `mvp_user: [String]`, `mvp_score: [String]`, `faction_mvp_bonus: [String]`. |
 | **PlayerData model** | `src/model/PlayerData.model.ts` | Add `current_faction_war_score: String` (or Number). Reset each war. |
 | **GraphQL** | `src/graphql/resolvers/rebase.resolver.ts` | Add MVP fields to `RebaseResponseType`. Add `mvpLeaderboard(factionWarId?)` query. |
 | **Socket events** | `src/utils/socketEmitter.pubsub.ts` | Add `emitFactionWarMvp()` — broadcasts per faction. |
@@ -653,7 +653,7 @@ These are backend-only (no contract changes needed) but critical for virality.
 
 | Fix | Description |
 |-----|-------------|
-| **Add `faction_war_id` GSI to `mineBTC_rounds`** | Prevents full table scan in `aggregateRebaseVolumeFromRounds()` |
+| **Add `war_id` GSI to `mineBTC_rounds`** | Prevents full table scan in `aggregateRebaseVolumeFromRounds()` |
 | **Persist live bets to DynamoDB** | `BetsPlaced` should write to `mineBTC_player_round_bets` immediately, not just Redis. Or use Redis persistence (AOF). |
 | **Add idempotency checks** | Many events lack dedup beyond natural PK overwrite. Add `tx_signature` to idempotency key for delta-math events. |
 | **Speed up fallback indexer** | 1-hour polling is too slow. Reduce to 5 minutes, or make it event-driven (Helius webhook with retries). |
@@ -690,7 +690,7 @@ These are backend-only (no contract changes needed) but critical for virality.
 | 15 | Implement win streak tracking | Medium | 🔥🔥 |
 | 16 | Implement whale alerts | Low | 🔥🔥 |
 | 17 | Implement fade-the-crowd indicator | Low | 🔥🔥 |
-| 18 | Add `faction_war_id` GSI to rounds table | Low | Performance |
+| 18 | Add `war_id` GSI to rounds table | Low | Performance |
 | 19 | Add on-chain MPL Core metadata updates | Medium | 🔥🔥🔥 |
 | 20 | Add Diamond Hands detection query | Low | 🔥🔥 |
 | 21 | Add global mutation feed (privacy-preserving) | Medium | 🔥🔥 |
@@ -770,7 +770,7 @@ When updating the backend, use this mapping:
 
 // FactionWarMvp
 {
-  faction_war_id: u64,
+  war_id: u64,
   faction_id: u8,
   user: Pubkey,
   mvp_score: u64,

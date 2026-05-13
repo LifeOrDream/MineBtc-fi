@@ -287,7 +287,7 @@ async function printState() {
   console.log(`  --- sol_fee_config ---`);
   console.log(`  protocol_fee/buyback/stakers/cycle/nftMM = ${gc.solFeeConfig.protocolFeePct}/${gc.solFeeConfig.buybackPct}/${gc.solFeeConfig.stakersPct}/${gc.solFeeConfig.cycleSolSplitPct}/${gc.solFeeConfig.nftMarketMakingPct}%`);
   console.log(`  --- faction war ---`);
-  console.log(`  current_faction_war_id : ${fw.currentFactionWarId.toString()}`);
+  console.log(`  current_war_id : ${fw.currentFactionWarId.toString()}`);
 }
 
 async function printGameState() {
@@ -546,7 +546,7 @@ async function crankHarvestFees() {
 async function crankDistributeTax() {
   banner("CRANK DISTRIBUTE TAX");
   const factionWarId = await fetchFactionWarId();
-  console.log(`   current faction_war_id: ${factionWarId}`);
+  console.log(`   current war_id: ${factionWarId}`);
 
   // Withdraw-authority ATA must exist before withdraw_withheld_tokens_from_mint.
   const withdrawAuthAta = await ensureAta(

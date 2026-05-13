@@ -432,7 +432,7 @@ pub struct BetsPlaced {
     pub gameplay_hashbeast_xp: u32,
 
     pub round_id: u64,
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub num_bets: u8,
     pub faction_ids: Vec<u8>,
     pub directions: Vec<u8>,
@@ -542,7 +542,7 @@ pub struct AutominerReloaded {
 pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub round_start_slot: u64,
     pub round_start_timestamp: i64,
     pub round_end_timestamp: i64,
@@ -593,7 +593,7 @@ pub struct RoundEnded {
     /// Cycle ID snapshot at round-start, frozen onto the GameSession so late
     /// claims hit the right FactionWarState PDA even after the cycle settles
     /// (state.rs:1042-1046).
-    pub faction_war_id_when_played: u64,
+    pub war_id_when_played: u64,
 
     pub timestamp: i64,
 }
@@ -664,7 +664,7 @@ pub struct RewardsDistributedForRound {
     pub round_id: u64,
     pub winning_faction_id: u8,
     pub winning_direction: u8,
-    /// Frozen value of the winning faction's `faction_volume_since_last_win` at
+    /// Frozen value of the winning faction's `sol_volume_since_last_win` at
     /// round-end, BEFORE the counter was reset to 0. Late claims hours later
     /// will still see this same number when computing volume_factor.
     pub winning_faction_volume_at_round: u64,
@@ -688,7 +688,7 @@ pub struct TaxDistributed {
 /// Event emitted when a faction claims treasury rewards for a settled faction_war.
 #[event]
 pub struct FactionTreasuryRewardsClaimed {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub faction_id: u8,
     pub rank: u8,
     pub reward_amount: u64,
@@ -723,8 +723,8 @@ pub struct HashBeastWithdrawnFromGameplay {
 pub struct HashBeastGameplayUnlockRequested {
     pub user: Pubkey,
     pub hashbeast_mint: Pubkey,
-    pub requested_during_faction_war_id: u64,
-    pub unlock_available_after_faction_war_id: u64,
+    pub requested_during_war_id: u64,
+    pub unlock_available_after_war_id: u64,
     pub timestamp: i64,
 }
 
@@ -795,16 +795,15 @@ pub struct HashBeastVisualMutation {
 /// Rankings driven by on-chain gameplay scores accumulated during the faction_war.
 #[event]
 pub struct FactionWarSettled {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub total_degenbtc_mined: u64,
-    pub faction_war_mining_pool: u64,
+    pub dbtc_mined_this_war: u64,
     pub final_ranks: [u8; NUM_FACTIONS],
     pub rank_deltas: [i8; NUM_FACTIONS],
     pub resolved_directions: [u8; NUM_FACTIONS],
     pub faction_reward_pools: [u64; NUM_FACTIONS],
     pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
     pub round_wins: [u16; NUM_FACTIONS],
-    pub faction_sol_totals: [u64; NUM_FACTIONS],
     pub gameplay_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
 }
@@ -824,7 +823,7 @@ pub struct FactionWarSettled {
 ///   the claimant — also drives MVP candidacy for the winning country.
 #[event]
 pub struct GameplayScoreAccumulated {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub faction_id: u8,
     pub score_source: u8,
     pub score_added: u64,
@@ -836,7 +835,7 @@ pub struct GameplayScoreAccumulated {
 /// The #1 ranked faction's top contributor receives a bonus.
 #[event]
 pub struct FactionWarMvp {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub faction_id: u8,
     pub user: Pubkey,
     pub mvp_score: u64,
@@ -847,7 +846,7 @@ pub struct FactionWarMvp {
 /// Event emitted when a user claims faction_war rewards
 #[event]
 pub struct FactionWarRewardsClaimed {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub user: Pubkey,
     pub reward_amount: u64,
     pub base_reward_amount: u64,

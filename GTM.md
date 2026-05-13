@@ -365,7 +365,7 @@ You are correct: `economy.rs` has an asymmetrical feedback loop.
 ### Current Mechanics (from `genescience.rs` + `user.rs`)
 - Base mutation chance: 20%
 - Modified by: bet strength, multiplier penalty, faction penalty, volume factor, cooldown factor, pacing factor
-- **Global round budget:** `active_faction_count / 3` = **max 4 mutations per round globally**
+- **Global round budget:** `faction_count / 3` = **max 4 mutations per round globally**
 - Types: Evolution (~10% of mutations), Power (~30%), Visual (~60%)
 - Each mutation changes exactly 1 trait (+1 to +3)
 
@@ -519,7 +519,7 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
 **Specifics:**
 
 1. **Faction War MVP (Implemented)**
-   - `FactionWarState` tracks running MVP per faction: `faction_mvp_user` + `faction_mvp_score`
+   - `FactionWarState` tracks running MVP per faction: `mvp_user` + `mvp_score`
    - `PlayerData` tracks `current_faction_war_score` (reset each war)
    - At settlement, **EVERY faction's MVP gets a bonus** (rank-weighted from 5% of mining pool):
      - #1 faction MVP: 2% of total war pool

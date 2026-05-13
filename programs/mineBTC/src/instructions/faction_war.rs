@@ -15,7 +15,7 @@
 //!                                    ▼  (repeats every cycle)
 //!   ┌─────────────────────────────────────────────────────────────────────────┐
 //!   │  PHASE 1  —  START WAR  (cranker)                                      │
-//!   │  call: initialize_faction_war(faction_war_id)                          │
+//!   │  call: initialize_faction_war(war_id)                          │
 //!   │  creates: FactionWarState + FactionWarSettlement PDAs                  │
 //!   │  seeds treasury base from unassigned tax, sets settle_cycle            │
 //!   └─────────────────────────────────────────────────────────────────────────┘
@@ -26,7 +26,7 @@
 //!   │  start_round → end_round → settle_round  (loop)                        │
 //!   │  settle_round calls track_faction_war_round_completion()               │
 //!   │    · accumulates gameplay_scores, round_wins, mined amounts            │
-//!   │    · when lp_operations_count >= faction_war_settle_cycle → auto-settle│
+//!   │    · when lp_operations_count >= settle_at_lp_op_count → auto-settle│
 //!   └─────────────────────────────────────────────────────────────────────────┘
 //!                                    │
 //!                                    ▼
@@ -37,7 +37,7 @@
 //!   │    · computes final_ranks from gameplay_scores + round_wins            │
 //!   │    · computes rank_deltas, resolved_directions                         │
 //!   │    · applies mining_multiplier_bps, splits pool into lanes             │
-//!   │    · advances current_faction_war_id                                   │
+//!   │    · advances current_war_id                                   │
 //!   └─────────────────────────────────────────────────────────────────────────┘
 //!                                    │
 //!                                    ▼
@@ -78,7 +78,6 @@ use crate::state::*;
 pub fn compute_rankings_into(
     scores: &[i64; NUM_FACTIONS],
     round_wins: &[u16; NUM_FACTIONS],
-    sol_totals: &[u64; NUM_FACTIONS],
     active_factions: usize,
     ranks: &mut [u8; NUM_FACTIONS],
 ) -> Result<()> {
@@ -87,11 +86,11 @@ pub fn compute_rankings_into(
         *slot = idx as u8;
     }
 
+    // Tiebreaker chain: gameplay score → round wins → faction_id (ascending).
     ordered[..active_factions].sort_by(|a, b| {
         scores[*b as usize]
             .cmp(&scores[*a as usize])
             .then_with(|| round_wins[*b as usize].cmp(&round_wins[*a as usize]))
-            .then_with(|| sol_totals[*b as usize].cmp(&sol_totals[*a as usize]))
             .then_with(|| a.cmp(b))
     });
     *ranks = [0u8; NUM_FACTIONS];
@@ -149,18 +148,6 @@ fn checked_bps_mul(lhs_bps: u64, rhs_bps: u64) -> u64 {
         .saturating_div(BASIS_POINTS_DENOMINATOR)
 }
 
-fn total_cycle_sol_volume(faction_war_state: &FactionWarState, active_factions: usize) -> u64 {
-    let mut total = 0u64;
-    for faction_id in 0..active_factions {
-        for direction in 0..PredictionDirection::COUNT {
-            total = total.saturating_add(
-                faction_war_state.faction_sol_direction_totals[faction_id][direction],
-            );
-        }
-    }
-    total
-}
-
 fn total_cycle_weighted_volume(faction_war_state: &FactionWarState, active_factions: usize) -> u64 {
     let mut total = 0u64;
     for faction_id in 0..active_factions {
@@ -190,7 +177,7 @@ fn user_correct_cycle_sol(
 
 #[allow(clippy::too_many_arguments)]
 fn process_faction_war_claim_hashbeast_update<'info>(
-    faction_war_id: u64,
+    war_id: u64,
     owner_key: Pubkey,
     faction_war_state: &FactionWarState,
     faction_war_settlement: &FactionWarSettlement,
@@ -209,7 +196,7 @@ fn process_faction_war_claim_hashbeast_update<'info>(
         return Ok(0);
     }
 
-    let active_factions = faction_war_state.active_faction_count as usize;
+    let active_factions = faction_war_state.faction_count as usize;
 
     let player_faction_id = player_data.faction_id as usize;
     if player_faction_id >= active_factions {
@@ -247,17 +234,15 @@ fn process_faction_war_claim_hashbeast_update<'info>(
 
     let mut mutation_type_u8 = 0u8;
     if tuning.rpg_progression && stake > 0 && chance_boost_bps > 0 {
-        let total_sol = total_cycle_sol_volume(faction_war_state, active_factions);
+        let total_sol = faction_war_state.total_cycle_sol;
         let total_weighted = total_cycle_weighted_volume(faction_war_state, active_factions);
-        let faction_volume = if home_correct_sol > 0 {
-            faction_war_state.faction_sol_totals[player_faction_id]
-        } else {
-            total_sol
-        };
+        // We no longer track per-faction loyalty SOL; both branches collapse to
+        // total cycle SOL as the volume_factor denominator.
+        let faction_volume = total_sol;
 
         let mutation_result = calculate_mutation_result(
             STORY_EVENT_ORIGIN_FACTION_WAR,
-            faction_war_id,
+            war_id,
             stake,
             player_data.active_multiplier,
             player_data.gameplay_hashbeast_dna,
@@ -274,7 +259,7 @@ fn process_faction_war_claim_hashbeast_update<'info>(
             total_weighted,
             faction_war_state
                 .start_timestamp
-                .saturating_add(faction_war_id),
+                .saturating_add(war_id),
             &owner_key,
             &player_data.gameplay_hashbeast,
         );
@@ -298,7 +283,7 @@ fn process_faction_war_claim_hashbeast_update<'info>(
             mutation_type_u8 = mutation_type_to_u8(mutation_type);
             emit!(StoryEventTriggered {
                 origin: STORY_EVENT_ORIGIN_FACTION_WAR,
-                origin_id: faction_war_id,
+                origin_id: war_id,
                 user: owner_key,
                 hashbeast_mint: player_data.gameplay_hashbeast,
                 story_event_type: mutation_type_u8,
@@ -432,9 +417,9 @@ pub fn compute_faction_reward_pools(
     faction_war_settlement: &mut FactionWarSettlement,
     tuning: &GameplayTuningConfig,
 ) -> Result<()> {
-    let active_factions = faction_war_state.active_faction_count as usize;
+    let active_factions = faction_war_state.faction_count as usize;
 
-    let pool = faction_war_state.faction_war_mining_pool;
+    let pool = faction_war_state.dbtc_mined_this_war;
     if pool == 0 {
         faction_war_settlement.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
@@ -455,8 +440,8 @@ pub fn compute_faction_reward_pools(
     for f in 0..active_factions {
         let winning_dir = faction_war_settlement.resolved_directions[f] as usize;
         eligible_base[f] = faction_war_state.faction_direction_totals[f][winning_dir] > 0;
-        eligible_hashbeast[f] =
-            faction_war_state.eligible_hashbeast_direction_totals[f][winning_dir] > 0;
+        // HB lane is direction-agnostic: any home-faction HB-backer qualifies.
+        eligible_hashbeast[f] = faction_war_state.eligible_hashbeast_totals[f] > 0;
     }
 
     let any_hashbeast_eligible = eligible_hashbeast.iter().take(active_factions).any(|&e| e);
@@ -510,10 +495,19 @@ pub fn initialize_faction_war_config_internal(
         faction_war_config.bump,
         ctx.bumps.faction_war_config
     );
-    faction_war_config.current_faction_war_id = 1;
-    msg!("⚔️ [faction_war.initialize_faction_war_config_internal] current_faction_war_id set=1");
-    faction_war_config.faction_war_settle_cycle = 0;
-    msg!("⚔️ [faction_war.initialize_faction_war_config_internal] faction_war_settle_cycle set=0");
+    faction_war_config.current_war_id = 1;
+    msg!("⚔️ [faction_war.initialize_faction_war_config_internal] current_war_id set=1");
+
+    let (_vault_pda, vault_bump) =
+        Pubkey::find_program_address(&[FACTION_WAR_SOL_VAULT_SEED], &crate::id());
+    faction_war_config.rewards_sol_vault_bump = vault_bump;
+    msg!(
+        "🔑 [faction_war.initialize_faction_war_config_internal] cached rewards_sol_vault_bump={}",
+        vault_bump
+    );
+
+    faction_war_config.settle_at_lp_op_count = 0;
+    msg!("⚔️ [faction_war.initialize_faction_war_config_internal] settle_at_lp_op_count set=0");
 
     let mut initial_ranks = [0u8; NUM_FACTIONS];
     for (i, rank) in initial_ranks.iter_mut().enumerate().take(NUM_FACTIONS) {
@@ -524,9 +518,9 @@ pub fn initialize_faction_war_config_internal(
             i
         );
     }
-    faction_war_config.prev_faction_war_ranks = initial_ranks;
+    faction_war_config.prev_ranks = initial_ranks;
     msg!(
-        "🏆 [faction_war.initialize_faction_war_config_internal] prev_faction_war_ranks={:?}",
+        "🏆 [faction_war.initialize_faction_war_config_internal] prev_ranks={:?}",
         initial_ranks
     );
     faction_war_config.reset_cycle_round_tracking();
@@ -561,7 +555,7 @@ pub fn initialize_faction_war_config_internal(
         DEFAULT_MULTIPLIER_MAX_BPS
     );
 
-    msg!("✅ [faction_war.initialize_faction_war_config_internal] FactionWarConfig initialized. Starting faction_war_id: 1");
+    msg!("✅ [faction_war.initialize_faction_war_config_internal] FactionWarConfig initialized. Starting war_id: 1");
     Ok(())
 }
 
@@ -574,10 +568,10 @@ pub fn initialize_faction_war_config_internal(
 /// Permissionless — anyone can initialize the war state for the current war ID.
 pub fn initialize_faction_war_internal(
     ctx: Context<InitializeFactionWar>,
-    faction_war_id: u64,
+    war_id: u64,
 ) -> Result<()> {
     crate::log_fn!("faction_war", "initialize_faction_war_internal");
-    msg!("🪖 [initialize_faction_war] war={}", faction_war_id);
+    msg!("🪖 [initialize_faction_war] war={}", war_id);
 
     let faction_war_config = &mut ctx.accounts.faction_war_config;
     let faction_war_state = &mut ctx.accounts.faction_war_state;
@@ -585,25 +579,25 @@ pub fn initialize_faction_war_internal(
     let global_config = &ctx.accounts.global_config;
 
     require!(
-        faction_war_config.current_faction_war_id == faction_war_id,
+        faction_war_config.current_war_id == war_id,
         ErrorCode::InvalidParameters
     );
 
-    let active_faction_count = global_config.supported_factions.len() as u8;
-    let start_ranks = faction_war_config.prev_faction_war_ranks;
+    let faction_count = global_config.supported_factions.len() as u8;
+    let start_ranks = faction_war_config.prev_ranks;
     let unassigned = tax_config.unassigned_faction_war_treasury_amount;
 
     // Anchor init zeroes the account; only set non-zero fields
     faction_war_state.bump = ctx.bumps.faction_war_state;
-    faction_war_state.faction_war_id = faction_war_id;
+    faction_war_state.war_id = war_id;
     faction_war_state.start_timestamp = Clock::get()?.unix_timestamp.max(0) as u64;
     faction_war_state.stage = 0;
-    faction_war_state.active_faction_count = active_faction_count;
+    faction_war_state.faction_count = faction_count;
     faction_war_state.treasury_reward_base_amount = unassigned;
 
     let faction_war_settlement = &mut ctx.accounts.faction_war_settlement;
     faction_war_settlement.bump = ctx.bumps.faction_war_settlement;
-    faction_war_settlement.faction_war_id = faction_war_id;
+    faction_war_settlement.war_id = war_id;
     faction_war_settlement.final_ranks = start_ranks;
     faction_war_settlement.resolved_directions =
         [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
@@ -612,13 +606,13 @@ pub fn initialize_faction_war_internal(
 
     let lp_ops = ctx.accounts.dbtc_mining.pol_stats.lp_operations_count;
     let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
-    faction_war_config.faction_war_settle_cycle = settle_cycle;
+    faction_war_config.settle_at_lp_op_count = settle_cycle;
     faction_war_config.reset_cycle_round_tracking();
 
     msg!(
         "🪖 [initialize_faction_war] seeded war={} factions={} settle_after_lp={} treasury_base={}",
-        faction_war_id,
-        active_faction_count,
+        war_id,
+        faction_count,
         settle_cycle,
         unassigned,
     );
@@ -632,7 +626,7 @@ pub fn initialize_faction_war_internal(
 /// Internal settlement logic.  Called by `settle_faction_war_internal`.
 ///
 /// Computes final rankings, reward pools, MVP bonuses, and advances
-/// `current_faction_war_id` so the next cycle can begin.
+/// `current_war_id` so the next cycle can begin.
 pub fn finalize_faction_war_settlement(
     faction_war_config: &mut FactionWarConfig,
     faction_war_state: &mut FactionWarState,
@@ -640,20 +634,20 @@ pub fn finalize_faction_war_settlement(
     tax_config: &mut TaxConfig,
     tuning: &GameplayTuningConfig,
 ) -> Result<()> {
-    let active_factions = faction_war_state.active_faction_count as usize;
+    let active_factions = faction_war_state.faction_count as usize;
     msg!(
-        "⚔️ [faction_war.finalize_faction_war_settlement] faction_war_id={} active_factions={}",
-        faction_war_state.faction_war_id,
+        "⚔️ [faction_war.finalize_faction_war_settlement] war_id={} active_factions={}",
+        faction_war_state.war_id,
         active_factions
     );
 
     // Empty faction_war (no bets ever placed, e.g. never populated by join_bets):
-    // settle with no rewards and advance current_faction_war_id so the cycle can
+    // settle with no rewards and advance current_war_id so the cycle can
     // keep moving. Without this, empty wars would block all subsequent LP burns.
     if active_factions == 0 {
         msg!(
             "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{} has 0 active factions — settling empty and advancing",
-            faction_war_state.faction_war_id
+            faction_war_state.war_id
         );
         if faction_war_state.treasury_reward_base_amount > 0 {
             let old = tax_config.unassigned_faction_war_treasury_amount;
@@ -672,20 +666,20 @@ pub fn finalize_faction_war_settlement(
         }
         faction_war_state.stage = 1;
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] stage mutated: -> 1");
-        faction_war_state.faction_war_mining_pool = 0;
-        msg!("⚔️ [faction_war.finalize_faction_war_settlement] faction_war_mining_pool reset=0");
+        faction_war_state.dbtc_mined_this_war = 0;
+        msg!("⚔️ [faction_war.finalize_faction_war_settlement] dbtc_mined_this_war reset=0");
         faction_war_settlement.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] reward pools zeroed");
-        let old_id = faction_war_config.current_faction_war_id;
-        faction_war_config.current_faction_war_id = faction_war_config
-            .current_faction_war_id
+        let old_id = faction_war_config.current_war_id;
+        faction_war_config.current_war_id = faction_war_config
+            .current_war_id
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "⚔️ [faction_war.finalize_faction_war_settlement] current_faction_war_id: {} -> {}",
+            "⚔️ [faction_war.finalize_faction_war_settlement] current_war_id: {} -> {}",
             old_id,
-            faction_war_config.current_faction_war_id
+            faction_war_config.current_war_id
         );
         msg!("✅ [faction_war.finalize_faction_war_settlement] empty settlement done");
         return Ok(());
@@ -693,9 +687,9 @@ pub fn finalize_faction_war_settlement(
 
     msg!(
         "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{}, {} factions, {} degenBTC mined",
-        faction_war_state.faction_war_id,
+        faction_war_state.war_id,
         active_factions,
-        faction_war_state.total_degenbtc_mined_in_faction_war
+        faction_war_state.total_dbtc_mined_in_rounds
     );
 
     let total_gameplay_score: u64 = faction_war_state
@@ -722,7 +716,7 @@ pub fn finalize_faction_war_settlement(
     if !has_bets {
         msg!(
             "⚔️ [faction_war.finalize_faction_war_settlement] FactionWar #{} has no bets (rpg_progression={}) — rolling treasury forward and settling empty",
-            faction_war_state.faction_war_id,
+            faction_war_state.war_id,
             tuning.rpg_progression
         );
         if faction_war_state.treasury_reward_base_amount > 0 {
@@ -740,17 +734,17 @@ pub fn finalize_faction_war_settlement(
             faction_war_state.treasury_reward_base_amount = 0;
             msg!("⚔️ [faction_war.finalize_faction_war_settlement] treasury_reward_base_amount reset=0");
         }
-        faction_war_state.faction_war_mining_pool = 0;
-        msg!("⚔️ [faction_war.finalize_faction_war_settlement] faction_war_mining_pool reset=0");
+        faction_war_state.dbtc_mined_this_war = 0;
+        msg!("⚔️ [faction_war.finalize_faction_war_settlement] dbtc_mined_this_war reset=0");
         faction_war_settlement.faction_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] reward pools zeroed");
         faction_war_state.stage = 1;
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] stage mutated: -> 1");
     } else {
-        let old_pool = faction_war_state.faction_war_mining_pool;
-        faction_war_state.faction_war_mining_pool = apply_mining_multiplier(
-            faction_war_state.total_degenbtc_mined_in_faction_war,
+        let old_pool = faction_war_state.dbtc_mined_this_war;
+        faction_war_state.dbtc_mined_this_war = apply_mining_multiplier(
+            faction_war_state.total_dbtc_mined_in_rounds,
             faction_war_config.mining_multiplier_bps,
         )?;
         let _ = old_pool;
@@ -767,7 +761,6 @@ pub fn finalize_faction_war_settlement(
         compute_rankings_into(
             &gameplay_scores_i64,
             &faction_war_state.round_wins,
-            &faction_war_state.faction_sol_totals,
             active_factions,
             &mut final_ranks,
         )?;
@@ -775,7 +768,7 @@ pub fn finalize_faction_war_settlement(
 
         for (faction_id, _) in final_ranks.iter().enumerate().take(active_factions) {
             let (direction, rank_delta) = resolve_direction_from_ranks(
-                faction_war_config.prev_faction_war_ranks[faction_id],
+                faction_war_config.prev_ranks[faction_id],
                 final_ranks[faction_id],
             );
             faction_war_settlement.rank_deltas[faction_id] = rank_delta;
@@ -787,7 +780,7 @@ pub fn finalize_faction_war_settlement(
         // --- MVP Bonus: distribute 5% of mining pool rank-weighted to all faction MVPs ---
         // #1 faction MVP: 40% of MVP pool | #2: 25% | #3: 15% | #4+: equal share of 20%
         let mvp_pool_total = pool_share_from_bps(
-            faction_war_state.faction_war_mining_pool,
+            faction_war_state.dbtc_mined_this_war,
             tuning.faction_war_mvp_reward_bps,
         )?;
 
@@ -795,7 +788,7 @@ pub fn finalize_faction_war_settlement(
             let mut total_weight: u128 = 0;
             let mut eligible_count = 0usize;
             for fid in 0..active_factions {
-                if faction_war_state.faction_mvp_user[fid] != Pubkey::default() {
+                if faction_war_state.mvp_user[fid] != Pubkey::default() {
                     let rank = final_ranks[fid] as usize;
                     let weight_bps = match rank {
                         0 => 4000u64, // #1
@@ -816,7 +809,7 @@ pub fn finalize_faction_war_settlement(
                 let mut distributed = 0u64;
                 let mut remaining = eligible_count;
                 for fid in 0..active_factions {
-                    if faction_war_state.faction_mvp_user[fid] == Pubkey::default() {
+                    if faction_war_state.mvp_user[fid] == Pubkey::default() {
                         continue;
                     }
                     remaining -= 1;
@@ -851,10 +844,10 @@ pub fn finalize_faction_war_settlement(
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
                     emit!(crate::events::FactionWarMvp {
-                        faction_war_id: faction_war_state.faction_war_id,
+                        war_id: faction_war_state.war_id,
                         faction_id: fid as u8,
-                        user: faction_war_state.faction_mvp_user[fid],
-                        mvp_score: faction_war_state.faction_mvp_score[fid],
+                        user: faction_war_state.mvp_user[fid],
+                        mvp_score: faction_war_state.mvp_score[fid],
                         bonus_amount: bonus,
                         timestamp: Clock::get()?.unix_timestamp,
                     });
@@ -863,23 +856,23 @@ pub fn finalize_faction_war_settlement(
         }
         faction_war_state.stage = 1;
 
-        faction_war_config.prev_faction_war_ranks = final_ranks;
+        faction_war_config.prev_ranks = final_ranks;
     }
 
-    let old_id = faction_war_config.current_faction_war_id;
-    faction_war_config.current_faction_war_id = faction_war_config
-        .current_faction_war_id
+    let old_id = faction_war_config.current_war_id;
+    faction_war_config.current_war_id = faction_war_config
+        .current_war_id
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "⚔️ [faction_war.finalize_faction_war_settlement] current_faction_war_id: {} -> {}",
+        "⚔️ [faction_war.finalize_faction_war_settlement] current_war_id: {} -> {}",
         old_id,
-        faction_war_config.current_faction_war_id
+        faction_war_config.current_war_id
     );
 
     msg!(
-        "✅ [faction_war.finalize_faction_war_settlement] FactionWar settled. Next faction_war_id: {}",
-        faction_war_config.current_faction_war_id
+        "✅ [faction_war.finalize_faction_war_settlement] FactionWar settled. Next war_id: {}",
+        faction_war_config.current_war_id
     );
     Ok(())
 }
@@ -897,55 +890,58 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
 
     msg!(
         "⚔️ [faction_war.settle_faction_war_internal] FactionWar #{}, stage={}, lp_ops={}, settle_cycle={}",
-        faction_war_state.faction_war_id,
+        faction_war_state.war_id,
         faction_war_state.stage,
         mining.pol_stats.lp_operations_count,
-        faction_war_config.faction_war_settle_cycle
+        faction_war_config.settle_at_lp_op_count
     );
 
     require!(faction_war_state.stage == 0, ErrorCode::FactionWarNotActive);
     msg!("✅ [faction_war.settle_faction_war_internal] stage==0 check passed");
     require!(
-        mining.pol_stats.lp_operations_count >= faction_war_config.faction_war_settle_cycle,
+        mining.pol_stats.lp_operations_count >= faction_war_config.settle_at_lp_op_count,
         ErrorCode::FactionWarNotEnded
     );
     msg!("✅ [faction_war.settle_faction_war_internal] lp_operations_count >= settle_cycle check passed");
 
-    // Block external settlement while a round is mid-finalization (stage=1,
-    // between end_round and settle_round). Otherwise this crank
-    // can advance current_faction_war_id under settle_round'
-    // feet, which is the exact brick the #35 init_if_needed patch mitigates
-    // after-the-fact. Blocking the race at the source keeps
-    // settle_round's auto-settle (the clean path, runs after
-    // this round's mining has been tracked) as the only way the id advances
-    // while a round is in play.
+    // Block external settlement unless the current round is either
+    //   (a) fully settled (stage=2, fold-in to faction_war_state done in
+    //       settle_round), or
+    //   (b) brand-new with no bets yet (stage=0 and zero wgtd points).
+    // Bets during an active round now live on `game_session` aggregates and
+    // are folded into `faction_war_state` only when settle_round runs; if we
+    // settled the war earlier, those pending bets would be silently dropped
+    // and settlement would compute on stale totals. This also closes the
+    // original stage=1 race (settle_round vs settle_faction_war fighting
+    // over current_war_id).
     require!(
-        ctx.accounts.game_session.stage != 1,
+        ctx.accounts.game_session.stage == 2
+            || (ctx.accounts.game_session.stage == 0
+                && ctx.accounts.game_session.total_wgtd_points_bets == 0),
         ErrorCode::RoundFinalizationPending
     );
-    msg!("✅ [faction_war.settle_faction_war_internal] game_session.stage != 1 check passed");
+    msg!("✅ [faction_war.settle_faction_war_internal] game_session fold-in invariant check passed");
 
     let faction_war_settlement = &mut *ctx.accounts.faction_war_settlement;
     finalize_faction_war_settlement(faction_war_config, faction_war_state, faction_war_settlement, tax_config, tuning)?;
 
     let clock = Clock::get()?;
-    msg!("⚔️ [faction_war.settle_faction_war_internal] emitting FactionWarSettled: faction_war_id={} total_degenbtc_mined={} mining_pool={} timestamp={}",
-        faction_war_state.faction_war_id,
-        faction_war_state.total_degenbtc_mined_in_faction_war,
-        faction_war_state.faction_war_mining_pool,
+    msg!("⚔️ [faction_war.settle_faction_war_internal] emitting FactionWarSettled: war_id={} total_degenbtc_mined={} mining_pool={} timestamp={}",
+        faction_war_state.war_id,
+        faction_war_state.total_dbtc_mined_in_rounds,
+        faction_war_state.dbtc_mined_this_war,
         clock.unix_timestamp
     );
     emit!(FactionWarSettled {
-        faction_war_id: faction_war_state.faction_war_id,
-        total_degenbtc_mined: faction_war_state.total_degenbtc_mined_in_faction_war,
-        faction_war_mining_pool: faction_war_state.faction_war_mining_pool,
+        war_id: faction_war_state.war_id,
+        total_degenbtc_mined: faction_war_state.total_dbtc_mined_in_rounds,
+        dbtc_mined_this_war: faction_war_state.dbtc_mined_this_war,
         final_ranks: faction_war_settlement.final_ranks,
         rank_deltas: faction_war_settlement.rank_deltas,
         resolved_directions: faction_war_settlement.resolved_directions,
         faction_reward_pools: faction_war_settlement.faction_reward_pools,
         faction_hashbeast_reward_pools: faction_war_settlement.faction_hashbeast_reward_pools,
         round_wins: faction_war_state.round_wins,
-        faction_sol_totals: faction_war_state.faction_sol_totals,
         gameplay_scores: faction_war_state.gameplay_scores,
         timestamp: clock.unix_timestamp,
     });
@@ -960,12 +956,12 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
 
 pub fn claim_faction_war_rewards_internal(
     ctx: Context<ClaimFactionWarRewards>,
-    faction_war_id: u64,
+    war_id: u64,
 ) -> Result<()> {
     crate::log_fn!("faction_war", "claim_faction_war_rewards_internal");
     msg!(
         "⚔️ [faction_war.claim_faction_war_rewards_internal] FactionWar #{}, user={}",
-        faction_war_id,
+        war_id,
         ctx.accounts.user_faction_war_bets.owner
     );
     let faction_war_state = &ctx.accounts.faction_war_state;
@@ -985,7 +981,7 @@ pub fn claim_faction_war_rewards_internal(
     require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
     msg!("✅ [faction_war.claim_faction_war_rewards_internal] owner check passed");
 
-    let active_factions = faction_war_state.active_faction_count as usize;
+    let active_factions = faction_war_state.faction_count as usize;
     let player_faction_id = player_data.faction_id as usize;
     let mut base_reward_amount = 0u64;
     let mut hashbeast_bonus_amount = 0u64;
@@ -995,12 +991,13 @@ pub fn claim_faction_war_rewards_internal(
     if active_factions == 0 {
         msg!(
             "⚔️ [faction_war.claim_faction_war_rewards_internal] FactionWar {} settled with 0 active factions. Closing claim with 0 reward.",
-            faction_war_id
+            war_id
         );
     } else {
 
         msg!("✅ [faction_war.claim_faction_war_rewards_internal] validation skipped");
 
+        // --- Base reward: per-faction, requires correct direction. ---
         for faction_id in 0..active_factions {
             let resolved_direction = faction_war_settlement.resolved_directions[faction_id] as usize;
             let user_bet = user_faction_war_bets.direction_bets[faction_id][resolved_direction];
@@ -1031,38 +1028,40 @@ pub fn claim_faction_war_rewards_internal(
             } else {
                 msg!("📊 [faction_war.claim_faction_war_rewards_internal] base calc skipped total_bet={} faction_pool={}", total_bet, faction_pool);
             }
+        }
 
-            if faction_id == player_faction_id {
-                msg!(
-                    "⚔️ [faction_war.claim_faction_war_rewards_internal] hashbeast branch faction_id==player_faction_id={}",
-                    player_faction_id
-                );
-                if user_faction_war_bets.hashbeast_bonus_eligible {
-                    let hashbeast_pool =
-                        faction_war_settlement.faction_hashbeast_reward_pools[faction_id];
-                    let eligible_total = faction_war_state.eligible_hashbeast_direction_totals
-                        [faction_id][resolved_direction];
-                    msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} eligible_total={}", hashbeast_pool, eligible_total);
-                    if hashbeast_pool > 0 && eligible_total > 0 {
-                        let bonus_u128 = (hashbeast_pool as u128)
-                            .checked_mul(user_bet as u128)
-                            .ok_or(ErrorCode::ArithmeticOverflow)?
-                            .checked_div(eligible_total as u128)
-                            .ok_or(ErrorCode::ArithmeticOverflow)?;
-                        hashbeast_bonus_amount =
-                            u64::try_from(bonus_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-                        msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast_bonus_amount={}", hashbeast_bonus_amount);
-
-                        if hashbeast_bonus_amount > 0 {
-                            hashbeast_mint = user_faction_war_bets.gameplay_hashbeast;
-                            msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] hashbeast_mint set={}", hashbeast_mint);
-                        }
-                    } else {
-                        msg!(
-                            "📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc skipped"
-                        );
-                    }
+        // --- HB bonus: home-faction loyalty lane. Direction-agnostic.
+        // Numerator = user's total wgtd points on their home faction (sum
+        // across all directions). Denominator = total HB-eligible wgtd on
+        // that faction. Any HB owner who backed home shares this pool.
+        if user_faction_war_bets.hashbeast_bonus_eligible
+            && player_faction_id < active_factions
+        {
+            let hashbeast_pool =
+                faction_war_settlement.faction_hashbeast_reward_pools[player_faction_id];
+            let eligible_total = faction_war_state.eligible_hashbeast_totals[player_faction_id];
+            let user_home_wgtd: u64 = user_faction_war_bets.direction_bets[player_faction_id]
+                .iter()
+                .copied()
+                .try_fold(0u64, |acc, v| acc.checked_add(v))
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} eligible_total={} user_home_wgtd={}",
+                hashbeast_pool, eligible_total, user_home_wgtd);
+            if hashbeast_pool > 0 && eligible_total > 0 && user_home_wgtd > 0 {
+                let bonus_u128 = (hashbeast_pool as u128)
+                    .checked_mul(user_home_wgtd as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?
+                    .checked_div(eligible_total as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
+                hashbeast_bonus_amount =
+                    u64::try_from(bonus_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+                msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast_bonus_amount={}", hashbeast_bonus_amount);
+                if hashbeast_bonus_amount > 0 {
+                    hashbeast_mint = user_faction_war_bets.gameplay_hashbeast;
+                    msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] hashbeast_mint set={}", hashbeast_mint);
                 }
+            } else {
+                msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc skipped");
             }
         }
     }
@@ -1076,7 +1075,7 @@ pub fn claim_faction_war_rewards_internal(
     // --- MVP Bonus: if this user is any faction's MVP, add their pre-computed bonus ---
     let mut mvp_bonus_amount = 0u64;
     for fid in 0..active_factions {
-        if faction_war_state.faction_mvp_user[fid] == owner_key {
+        if faction_war_state.mvp_user[fid] == owner_key {
             mvp_bonus_amount = faction_war_settlement.faction_mvp_bonus[fid];
             msg!("🏆 [faction_war.claim_faction_war_rewards_internal] MVP match fid={} mvp_bonus_amount={}", fid, mvp_bonus_amount);
             if mvp_bonus_amount > 0 {
@@ -1158,7 +1157,7 @@ pub fn claim_faction_war_rewards_internal(
 
     let claim_won = total_reward > 0 || sol_reward > 0 || hashbeast_bonus_amount > 0;
     let claim_mutation_type = process_faction_war_claim_hashbeast_update(
-        faction_war_id,
+        war_id,
         owner_key,
         faction_war_state,
         faction_war_settlement,
@@ -1195,7 +1194,7 @@ pub fn claim_faction_war_rewards_internal(
             owner_key,
             player_data_key,
             CLAIMABLE_DBTC_SOURCE_FACTION_WAR,
-            faction_war_id,
+            war_id,
         )?;
         msg!("✅ [faction_war.claim_faction_war_rewards_internal] add_to_total_claimable done");
     } else {
@@ -1216,8 +1215,8 @@ pub fn claim_faction_war_rewards_internal(
     // Note: lootbox rolls fire on round-claim for losing players, not on
     // cycle-claim. See `claim_round_rewards` in `user.rs`.
 
-    msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] emitting FactionWarRewardsClaimed: faction_war_id={} user={} reward_amount={} base={} mvp={} hashbeast={} sol={} timestamp={}",
-        faction_war_id,
+    msg!("⚔️ [faction_war.claim_faction_war_rewards_internal] emitting FactionWarRewardsClaimed: war_id={} user={} reward_amount={} base={} mvp={} hashbeast={} sol={} timestamp={}",
+        war_id,
         user_faction_war_bets.owner,
         total_reward,
         base_reward_amount,
@@ -1227,7 +1226,7 @@ pub fn claim_faction_war_rewards_internal(
         clock.unix_timestamp
     );
     emit!(FactionWarRewardsClaimed {
-        faction_war_id,
+        war_id,
         user: user_faction_war_bets.owner,
         reward_amount: total_reward,
         base_reward_amount,
@@ -1270,7 +1269,7 @@ pub struct InitializeFactionWarConfig<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(faction_war_id: u64)]
+#[instruction(war_id: u64)]
 pub struct InitializeFactionWar<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1289,7 +1288,7 @@ pub struct InitializeFactionWar<'info> {
         init,
         payer = authority,
         space = FactionWarState::LEN,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
         bump,
     )]
     pub faction_war_state: Box<Account<'info, FactionWarState>>,
@@ -1298,7 +1297,7 @@ pub struct InitializeFactionWar<'info> {
         init,
         payer = authority,
         space = FactionWarSettlement::LEN,
-        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &war_id.to_le_bytes()],
         bump,
     )]
     pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
@@ -1335,14 +1334,14 @@ pub struct SettleFactionWar<'info> {
 
     #[account(
         mut,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_state.war_id.to_le_bytes()],
         bump,
     )]
     pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
     #[account(
         mut,
-        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_state.war_id.to_le_bytes()],
         bump,
     )]
     pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
@@ -1388,16 +1387,16 @@ pub struct SettleFactionWar<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(faction_war_id: u64)]
+#[instruction(war_id: u64)]
 pub struct ClaimFactionWarRewards<'info> {
     #[account(
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
         bump,
     )]
     pub faction_war_state: Box<Account<'info, FactionWarState>>,
 
     #[account(
-        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &war_id.to_le_bytes()],
         bump,
     )]
     pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
@@ -1405,7 +1404,7 @@ pub struct ClaimFactionWarRewards<'info> {
     #[account(
         mut,
         close = cranker,
-        seeds = [USER_FACTION_WAR_BETS_SEED, user_faction_war_bets.owner.as_ref(), &faction_war_id.to_le_bytes()],
+        seeds = [USER_FACTION_WAR_BETS_SEED, user_faction_war_bets.owner.as_ref(), &war_id.to_le_bytes()],
         bump,
     )]
     pub user_faction_war_bets: Box<Account<'info, UserFactionWarBets>>,

@@ -62,7 +62,7 @@ Each round bet also accumulates into the active cycle. Own-country SOL bets from
 
 A cycle is defined by:
 
-- `faction_war_id`
+- `war_id`
 - `start_ranks` (from previous cycle)
 - `gameplay_scores` (internal field; accumulated gameplay scores during this cycle)
 - per-country direction totals, plus separate own-country loyalty totals
@@ -199,7 +199,7 @@ Important rules:
 
 Important rules:
 
-- settlement is gated by `mining.pol_stats.lp_operations_count >= faction_war_config.faction_war_settle_cycle`
+- settlement is gated by `mining.pol_stats.lp_operations_count >= faction_war_config.settle_at_lp_op_count`
 - if no bets occurred, no cycle rewards are distributed
 - rankings are computed from the internal `gameplay_scores` array, then compared to previous cycle ranks
 
@@ -237,8 +237,8 @@ Common ones:
 [b"player", user.key().as_ref()]
 [b"game-session", &round_id.to_le_bytes()]
 [b"user-bet", user.key().as_ref(), &round_id.to_le_bytes()]
-[b"faction-war", &faction_war_id.to_le_bytes()]
-[b"user-faction-war", user.key().as_ref(), &faction_war_id.to_le_bytes()]
+[b"faction-war", &war_id.to_le_bytes()]
+[b"user-faction-war", user.key().as_ref(), &war_id.to_le_bytes()]
 [b"autominer", user.key().as_ref()]
 [b"autominer-custody"]
 [b"hashbeast-metadata", hashbeast_mint.key().as_ref()]
