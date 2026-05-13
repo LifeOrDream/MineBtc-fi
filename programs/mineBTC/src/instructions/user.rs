@@ -231,11 +231,12 @@ pub fn internal_initialize_player(
 /// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
 /// - amount_per_bet: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
 /// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
-// `init_or_load_war_state_account` was removed when war_state was taken off
-// the bet hot path. The cycle's FactionWarState PDA is now created only by
-// `initialize_war_internal` (cranker) — cranker must run that ix before any
-// bets can land in the cycle. `load_war_state_boxed` below is still used by
-// `apply_mutation_bonus_score` to inspect the cycle state during round claims.
+// The cycle's FactionWarState PDA is created exclusively by
+// `initialize_war_internal` (cranker). The cranker must run that ix before
+// any rounds (and therefore any bets) can land in the cycle — start_round
+// stays blocked until init_war clears `war_config.cycle_end_round_id`.
+// `load_war_state_boxed` below is used by `apply_mutation_bonus_score`
+// during round claims to inspect the cycle state.
 
 /// Load a `FactionWarState` directly into a heap allocation, deserializing
 /// field-by-field to avoid stack-materializing the ~2.6KB struct.
@@ -2264,12 +2265,11 @@ fn internal_process_bets<'info>(
         round_id
     );
 
-    // war_state is no longer loaded on the bet hot path. The `war_id` arg is
+    // Cross-check the war_id arg against the round's snapshot. The arg is
     // authenticated by the user_war_bets PDA seed (Anchor's seeds constraint
-    // on the JoinBets / ExecuteAutominerBet account) and cross-checked against
-    // game_session.war_id_when_played — set in start_round, which itself
-    // refuses to start a new round while war_config.cycle_end_round_id != 0.
-    // So if we got here with a valid game_session, the war is current + active.
+    // on the JoinBets / ExecuteAutominerBet account); `game_session.war_id_when_played`
+    // was set at start_round under the cycle_end_round_id guard, so a valid
+    // game_session here implies the war is current and active.
     require!(
         war_id == game_session.war_id_when_played,
         ErrorCode::InvalidState
@@ -2513,9 +2513,8 @@ fn internal_process_bets<'info>(
         );
         do_transfer(war_sol_vault, total_cycle_sol_split)?;
         // Track this round's SOL contribution on game_session. Folded into
-        // war_state.sol_reward_pool once at settle_round (same pattern as the
-        // other GameSession→FactionWarState aggregates). Keeps war_state off
-        // the JoinBets hot path.
+        // war_state.sol_reward_pool at settle_round, same fold pattern as the
+        // other GameSession → FactionWarState aggregates.
         game_session.cycle_sol_pool = game_session
             .cycle_sol_pool
             .checked_add(total_cycle_sol_split)

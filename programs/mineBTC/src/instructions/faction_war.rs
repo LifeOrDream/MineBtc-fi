@@ -1,67 +1,156 @@
-//! Faction War lifecycle and reward distribution.
+//! Faction War (cycle) lifecycle, rankings, and reward distribution.
 //!
-//! # Faction War Cycle
+//! A faction war is a multi-round "cycle" that determines country rankings
+//! and pays out the big batched rewards (base dBTC, hashbeast bonus, MVP
+//! bonus, plus their SOL mirrors). Individual rounds (see `game.rs`) feed
+//! aggregates into the active cycle; once the LP-burn threshold is crossed
+//! and the cycle's final round settles, the war is finalized and rewards
+//! become claimable.
 //!
-//! Each war cycle follows a strict lifecycle.  Off-chain crankers and the game
-//! round pipeline coordinate to move the cycle forward.
+//! # Cycle lifecycle
 //!
 //! ```text
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 0  —  INIT CONFIG  (once, admin)                                │
-//!   │  call: initialize_war_config                                   │
-//!   │  creates: FactionWarConfig PDA                                         │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼  (repeats every cycle)
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 1  —  START WAR  (cranker)                                      │
-//!   │  call: initialize_faction_war(war_id)                          │
-//!   │  creates: FactionWarState + FactionWarSettlement PDAs                  │
-//!   │  seeds treasury base from unassigned tax, sets settle_cycle            │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 2  —  ACTIVE  (many rounds, permissionless gameplay)            │
-//!   │  start_round → end_round → settle_round  (loop)                        │
-//!   │  settle_round calls track_war_round_completion()               │
-//!   │    · accumulates gameplay_scores, round_wins, mined amounts            │
-//!   │    · when lp_operations_count >= settle_at_lp_op_count → auto-settle│
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 3  —  SETTLE  (cranker, once per cycle)                         │
-//!   │  call: settle_war                                              │
-//!   │  internally calls finalize_war_settlement()                    │
-//!   │    · computes final_ranks from gameplay_scores + round_wins            │
-//!   │    · computes rank_deltas, resolved_directions                         │
-//!   │    · applies mining_multiplier_bps, splits pool into lanes             │
-//!   │    · advances current_war_id                                   │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 4  —  CLAIMS  (users + factions, permissionless)                │
-//!   │  users:  claim_war_rewards  (reads FactionWarSettlement)       │
-//!   │  factions: claim_faction_treasury_for_faction_war (reads final_ranks)  │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!                           back to PHASE 1
+//!   ┌────────────────────────────────────────────────────────────────────┐
+//!   │ PHASE 0 — INIT CONFIG  (once, admin)                              │
+//!   │   ix: initialize_war_config                                       │
+//!   │   creates the singleton FactionWarConfig PDA                      │
+//!   └────────────────────────────────────────────────────────────────────┘
+//!                                  │
+//!                                  ▼  (repeats every cycle)
+//!   ┌────────────────────────────────────────────────────────────────────┐
+//!   │ PHASE 1 — START WAR  (cranker)                                    │
+//!   │   ix: initialize_faction_war(war_id)                              │
+//!   │   creates FactionWarState + FactionWarSettlement PDAs for war_id  │
+//!   │   sets settle_at_lp_op_count = lp_ops + 1                         │
+//!   │   clears cycle_end_round_id ← unblocks start_round                │
+//!   │   pulls unassigned-treasury SOL/dBTC forward as the war's seed    │
+//!   └────────────────────────────────────────────────────────────────────┘
+//!                                  │
+//!                                  ▼
+//!   ┌────────────────────────────────────────────────────────────────────┐
+//!   │ PHASE 2 — ACTIVE  (many rounds, permissionless)                   │
+//!   │   start_round → end_round → settle_round  (the 60s loop)          │
+//!   │   settle_round calls track_war_round_completion() which folds     │
+//!   │   game_session aggregates into FactionWarState (see game.rs)      │
+//!   └────────────────────────────────────────────────────────────────────┘
+//!                                  │
+//!                                  ▼  (LP burn threshold crossed)
+//!   ┌────────────────────────────────────────────────────────────────────┐
+//!   │ PHASE 2b — CYCLE END SNAPSHOT                                     │
+//!   │   add_lp_and_burn (in economy.rs) captures the current round_id   │
+//!   │   into war_config.cycle_end_round_id when lp_ops crosses          │
+//!   │   settle_at_lp_op_count. Once non-zero, start_round is blocked    │
+//!   │   for the rest of this war.                                       │
+//!   └────────────────────────────────────────────────────────────────────┘
+//!                                  │
+//!                                  ▼  (boundary round settles)
+//!   ┌────────────────────────────────────────────────────────────────────┐
+//!   │ PHASE 3 — SETTLE WAR  (cranker, permissionless)                   │
+//!   │   ix: settle_war                                                  │
+//!   │   require: last_processed_round_id == cycle_end_round_id          │
+//!   │     (i.e. boundary round's aggregates are folded into war_state)  │
+//!   │   ↓ finalize_war_settlement                                       │
+//!   │     · compute final_ranks (gameplay_score, round_wins, faction_id)│
+//!   │     · resolve direction (Up/Neutral/Down) per faction vs prev_ranks│
+//!   │     · apply mining_multiplier → dbtc_mined_this_war               │
+//!   │     · split dBTC + SOL into base / HB / MVP lanes by absolute      │
+//!   │       rank weight; non-eligibles' slices stay unallocated         │
+//!   │     · advance current_war_id; war_state.stage 0 → 1               │
+//!   │   ↓ settle_war_internal then drains the SOL residual               │
+//!   │     (war_settlement.undistributed_sol) to sol_treasury             │
+//!   └────────────────────────────────────────────────────────────────────┘
+//!                                  │
+//!                                  ▼
+//!   ┌────────────────────────────────────────────────────────────────────┐
+//!   │ PHASE 4 — CLAIMS  (users + factions, permissionless)              │
+//!   │   users: claim_faction_war_rewards (reads FactionWarSettlement)   │
+//!   │   factions: claim_faction_treasury_for_faction_war (reads ranks)  │
+//!   └────────────────────────────────────────────────────────────────────┘
+//!                                  │
+//!                                  ▼ (next cycle init unblocks rounds)
+//!                          back to PHASE 1
 //! ```
+//!
+//! # Ranking
+//!
+//! Final ranks are decided by `compute_rankings_into` with a 3-key sort:
+//!   1. **gameplay_score** (descending) — accumulates from (a) round wins
+//!      (winning country's wgtd_points on the winning direction) and (b)
+//!      successful round-claim mutation rolls by users with a gameplay HB.
+//!   2. **round_wins** (descending) — tiebreaker.
+//!   3. **faction_id** (ascending) — final, deterministic tiebreaker.
+//!
+//! `resolve_direction_from_ranks` maps the delta against `prev_ranks` to
+//! Up / Neutral / Down per faction.
+//!
+//! # Reward lanes (both dBTC and SOL — same shape, same bps)
+//!
+//! At settlement, the dBTC pool (= `total_dbtc_mined_in_rounds × mining_multiplier_bps`)
+//! and the cycle's accumulated SOL pool are each split into 3 lanes:
+//!
+//! | Lane | Tuning bps | Eligibility | Per-user share formula |
+//! |---|---|---|---|
+//! | **base** | `war_base_reward_bps` (e.g. ~70%) | faction had bets on its resolved direction | `pool[fi] × user_wgtd[fi][resolved] / total_wgtd[fi][resolved]` summed across factions the user bet correctly on |
+//! | **HB**   | leftover (~25%) | faction had any mutation_score this cycle (someone landed a mutation) | `pool[home] × user.mutation_score / faction_mutation_score[home]` — pure gameplay activity |
+//! | **MVP**  | `war_mvp_reward_bps` (~5%) | faction has an MVP (highest-mutation-score user) | flat per-faction bonus, rank-weighted (`mvp_rank_weight_bps`: 30/20/14/10/8/6/5/4/share-3%) — only the named MVP user can claim |
+//!
+//! Per-faction allocation uses **absolute rank weights** (`FACTION_WAR_RANK_WEIGHT_BPS`
+//! for base/HB, `mvp_rank_weight_bps` for MVP). Each rank's slot gets its
+//! rank-weighted share of the lane; if the faction at that rank doesn't
+//! qualify for the lane, that slot's share stays **unallocated** — no
+//! cascade to other lanes, no over-allocation to eligibles. Unallocated
+//! dBTC stays in the mining vault. Unallocated SOL is summed into
+//! `war_settlement.undistributed_sol` and drained to `sol_treasury` at the
+//! end of `settle_war_internal`.
+//!
+//! Per-user SOL across the 3 lanes is scaled by their dBTC share of the
+//! same lane: `user_sol_<lane> = sol_<lane>_pool × user_dbtc_<lane> /
+//! total_dbtc_<lane>_pool`. Same proportions as dBTC, lossless modulo
+//! per-user rounding.
+//!
+//! # Mutation roll (during round-claim, not war-claim)
+//!
+//! When a user claims a round with `claim_won == true` and they had a
+//! gameplay hashbeast active, `apply_mutation_bonus_score` (in user.rs)
+//! rolls for a mutation. On success:
+//!   - country's `gameplay_scores[winner]` += bonus
+//!   - country's `faction_mutation_score[winner]` += bonus
+//!   - user's `user_war_bets.mutation_score` += bonus
+//!   - if user surpasses current MVP score for their country, they become
+//!     the new `mvp_user[winner]`
+//!
+//! Late rolls (cycle already settled, `war_state.stage != 0`) are silently
+//! skipped — the bonus is dropped and nothing on the war state moves.
+//!
+//! # Edge cases handled
+//!
+//! - **Empty cycle (zero bets)**: treasury seed is rolled forward into
+//!   `tax_config.unassigned_war_treasury_amount` for the next cycle's seed.
+//!   The full cycle SOL pool is marked undistributed and drained to
+//!   `sol_treasury`. War advances normally.
+//! - **No mutators in a faction**: that faction's HB and MVP slices stay
+//!   unallocated (dBTC in mining vault, SOL → treasury).
+//! - **No mutators in any faction this cycle**: HB and MVP lanes globally
+//!   unallocated. Base lane unaffected.
+//! - **Late mutation roll after settle**: dropped silently (consistent with
+//!   late-claim semantics).
+//! - **Cycle boundary stuck-state**: `cycle_end_round_id` stays non-zero
+//!   across the `finalize_war_settlement → initialize_war_internal` window,
+//!   blocking `start_round` until the next war's PDA is created. This
+//!   prevents rounds from being orphaned with a `war_id_when_played` whose
+//!   FactionWarState doesn't exist yet.
 //!
 //! # File layout
 //!
-//! 1. **Helpers** – pure/computation functions (rankings, reward pools, etc.)
-//! 2. **Lifecycle functions** – ordered by call sequence
-//!    · `initialize_war_config_internal`  (admin, once)
-//!    · `initialize_war_internal`         (cranker, per cycle start)
-//!    · `finalize_war_settlement`         (internal, called by settle)
-//!    · `settle_war_internal`             (cranker, per cycle end)
-//!    · `claim_war_rewards_internal`      (user claim)
-//! 3. **Account structs** – all `#[derive(Accounts)]` grouped at the end,
-//!    in the same order as their handler functions above.
+//! 1. **Helpers** — pure/computation functions (rankings, reward pools, etc.)
+//! 2. **Lifecycle functions** — ordered by call sequence
+//!      · `initialize_war_config_internal`     (admin, once)
+//!      · `initialize_war_internal`            (cranker, per cycle start)
+//!      · `finalize_war_settlement`            (internal, called by settle)
+//!      · `settle_war_internal`                (cranker, per cycle end)
+//!      · `claim_war_rewards_internal`         (user claim)
+//! 3. **Account structs** — all `#[derive(Accounts)]` grouped at the end,
+//!    same order as the handlers above.
 
 use anchor_lang::prelude::*;
 
@@ -236,8 +325,8 @@ fn process_war_claim_hashbeast_update<'info>(
     if tuning.rpg_progression && stake > 0 && chance_boost_bps > 0 {
         let total_sol = war_state.total_cycle_sol;
         let total_weighted = total_cycle_weighted_volume(war_state, active_factions);
-        // We no longer track per-faction loyalty SOL; both branches collapse to
-        // total cycle SOL as the volume_factor denominator.
+        // volume_factor uses the cycle's total SOL as the denominator,
+        // regardless of which country the user backed correctly.
         let faction_volume = total_sol;
 
         let mutation_result = calculate_mutation_result(
@@ -599,6 +688,9 @@ pub fn initialize_war_internal(
     let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
     war_config.settle_at_lp_op_count = settle_cycle;
     war_config.reset_cycle_round_tracking();
+    // Clear the previous cycle's boundary marker. start_round was blocked
+    // until this point; once we return, the next cycle's rounds can begin.
+    war_config.cycle_end_round_id = 0;
 
     emit!(FactionWarStarted {
         war_id,
@@ -664,7 +756,8 @@ pub fn finalize_war_settlement(
         // sol_treasury via settle_war_internal.
         war_settlement.undistributed_sol = war_state.sol_reward_pool;
         war_config.current_war_id = war_config.current_war_id + 1;
-        war_config.cycle_end_round_id = 0;
+        // cycle_end_round_id stays — cleared by init_war for the next cycle so
+        // that start_round remains blocked until next war's PDA is created.
         msg!("✅ [faction_war.finalize_war_settlement] empty settlement done");
         return Ok(());
     }
@@ -859,12 +952,17 @@ pub fn finalize_war_settlement(
     }
 
     war_config.current_war_id = war_config.current_war_id + 1;
-    // Clear the cycle boundary so start_round + the next war can resume.
-    war_config.cycle_end_round_id = 0;
+    // NOTE: `cycle_end_round_id` is intentionally NOT cleared here. It stays
+    // non-zero through this gap so `start_round` remains blocked until the
+    // next war's PDA is initialized by `initialize_war_internal`. Otherwise a
+    // round could start with `game_session.war_id_when_played = new_war_id`
+    // before the corresponding war_state PDA exists, and `settle_round` would
+    // fail on PDA seed validation — leaving the round stuck in stage 1.
 
     msg!(
-        "✅ [faction_war.finalize_war_settlement] FactionWar settled. Next war_id: {}",
-        war_config.current_war_id
+        "✅ [faction_war.finalize_war_settlement] FactionWar settled. Next war_id: {} (cycle_end_round_id stays {} until init_war clears it)",
+        war_config.current_war_id,
+        war_config.cycle_end_round_id
     );
     Ok(())
 }
@@ -1514,6 +1612,84 @@ pub struct ClaimFactionWarRewards<'info> {
 mod tests {
     use super::*;
 
+    // ------------------------------------------------------------------------
+    // compute_rankings_into
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn rankings_basic_order() {
+        let mut ranks = [0u8; NUM_FACTIONS];
+        let scores = [100i64, 200, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let round_wins = [1u16, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
+        // Sorted by score desc: 200 (idx 1), 100 (idx 0), 50 (idx 2)
+        assert_eq!(ranks[0], 1);
+        assert_eq!(ranks[1], 0);
+        assert_eq!(ranks[2], 2);
+    }
+
+    #[test]
+    fn rankings_tiebreak_by_round_wins() {
+        let mut ranks = [0u8; NUM_FACTIONS];
+        let scores = [100i64, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let round_wins = [1u16, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
+        assert_eq!(ranks[0], 2);
+        assert_eq!(ranks[1], 0);
+        assert_eq!(ranks[2], 1);
+    }
+
+    #[test]
+    fn rankings_tiebreak_by_faction_id() {
+        let mut ranks = [0u8; NUM_FACTIONS];
+        let scores = [100i64; NUM_FACTIONS];
+        let round_wins = [1u16; NUM_FACTIONS];
+        compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
+        assert_eq!(ranks[0], 0);
+        assert_eq!(ranks[1], 1);
+        assert_eq!(ranks[2], 2);
+    }
+
+    #[test]
+    fn rankings_negative_scores() {
+        let mut ranks = [0u8; NUM_FACTIONS];
+        let scores = [-50i64, 100, -100, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let round_wins = [0u16; NUM_FACTIONS];
+        compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
+        assert_eq!(ranks[0], 1);
+        assert_eq!(ranks[1], 0);
+        assert_eq!(ranks[2], 2);
+    }
+
+    // ------------------------------------------------------------------------
+    // resolve_direction_from_ranks
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn direction_up() {
+        let (dir, delta) = resolve_direction_from_ranks(2, 0);
+        assert_eq!(dir, PredictionDirection::Up);
+        assert_eq!(delta, 2);
+    }
+
+    #[test]
+    fn direction_down() {
+        let (dir, delta) = resolve_direction_from_ranks(0, 2);
+        assert_eq!(dir, PredictionDirection::Down);
+        assert_eq!(delta, -2);
+    }
+
+    #[test]
+    fn direction_neutral() {
+        let (dir, delta) = resolve_direction_from_ranks(1, 1);
+        assert_eq!(dir, PredictionDirection::Neutral);
+        assert_eq!(delta, 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // apply_mining_multiplier
+    // ------------------------------------------------------------------------
+
     #[test]
     fn mining_multiplier_is_hard_capped_at_three_x() {
         assert_eq!(
@@ -1527,5 +1703,248 @@ mod tests {
     fn mining_multiplier_rejects_below_point_one_x() {
         assert_eq!(apply_mining_multiplier(1_000_000, 1_000).unwrap(), 100_000);
         assert!(apply_mining_multiplier(1_000_000, 999).is_err());
+    }
+
+    #[test]
+    fn mining_multiplier_exact() {
+        assert_eq!(apply_mining_multiplier(1_000_000, 10_000).unwrap(), 1_000_000);
+        assert_eq!(apply_mining_multiplier(1_000_000, 5_000).unwrap(), 500_000);
+    }
+
+    #[test]
+    fn mining_multiplier_zero_input() {
+        assert_eq!(apply_mining_multiplier(0, 15_000).unwrap(), 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // mutation_type_to_u8
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn mutation_type_mapping() {
+        assert_eq!(mutation_type_to_u8(MutationType::Evolution), 1);
+        assert_eq!(mutation_type_to_u8(MutationType::Power), 2);
+        assert_eq!(mutation_type_to_u8(MutationType::Trait), 3);
+    }
+
+    // ------------------------------------------------------------------------
+    // checked_bps_mul
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn bps_mul_basic() {
+        assert_eq!(checked_bps_mul(10_000, 5_000), 5_000);
+        assert_eq!(checked_bps_mul(10_000, 10_000), 10_000);
+        assert_eq!(checked_bps_mul(0, 10_000), 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // pool_share_from_bps
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn pool_share_basic() {
+        assert_eq!(pool_share_from_bps(1_000_000, 5_000).unwrap(), 500_000);
+        assert_eq!(pool_share_from_bps(1_000_000, 10_000).unwrap(), 1_000_000);
+        assert_eq!(pool_share_from_bps(0, 5_000).unwrap(), 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // distribute_rank_weighted_absolute
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn distribute_all_eligible() {
+        let mut pools = [0u64; NUM_FACTIONS];
+        let final_ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let eligible = [true; NUM_FACTIONS];
+        let residual =
+            distribute_rank_weighted_absolute(10_000, &final_ranks, &eligible, 12, &mut pools)
+                .unwrap();
+        assert_eq!(residual + pools.iter().sum::<u64>(), 10_000);
+        assert!(pools[0] > pools[1]); // rank 0 > rank 1
+        assert!(pools[1] > pools[11]); // rank 1 > rank 11
+    }
+
+    #[test]
+    fn distribute_some_ineligible() {
+        let mut pools = [0u64; NUM_FACTIONS];
+        let final_ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let mut eligible = [false; NUM_FACTIONS];
+        eligible[0] = true;
+        eligible[1] = true;
+        let residual =
+            distribute_rank_weighted_absolute(10_000, &final_ranks, &eligible, 12, &mut pools)
+                .unwrap();
+        assert!(residual > 0);
+        assert_eq!(pools[0] + pools[1] + residual, 10_000);
+        assert!(pools.iter().skip(2).all(|&p| p == 0));
+    }
+
+    #[test]
+    fn distribute_zero_pool() {
+        let mut pools = [0u64; NUM_FACTIONS];
+        let eligible = [true; NUM_FACTIONS];
+        let residual =
+            distribute_rank_weighted_absolute(0, &[0u8; NUM_FACTIONS], &eligible, 12, &mut pools)
+                .unwrap();
+        assert_eq!(residual, 0);
+        assert!(pools.iter().all(|&p| p == 0));
+    }
+
+    // ------------------------------------------------------------------------
+    // mvp_rank_weight_bps
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn mvp_weights_top_ranks() {
+        assert_eq!(mvp_rank_weight_bps(0, 12), 3000);
+        assert_eq!(mvp_rank_weight_bps(1, 12), 2000);
+        assert_eq!(mvp_rank_weight_bps(2, 12), 1400);
+        assert_eq!(mvp_rank_weight_bps(3, 12), 1000);
+        assert_eq!(mvp_rank_weight_bps(4, 12), 800);
+        assert_eq!(mvp_rank_weight_bps(5, 12), 600);
+        assert_eq!(mvp_rank_weight_bps(6, 12), 500);
+        assert_eq!(mvp_rank_weight_bps(7, 12), 400);
+    }
+
+    #[test]
+    fn mvp_weights_tail_split() {
+        let tail_count = 12usize.saturating_sub(8).max(1) as u64;
+        assert_eq!(mvp_rank_weight_bps(8, 12), 300 / tail_count);
+        assert_eq!(mvp_rank_weight_bps(11, 12), 300 / tail_count);
+    }
+
+    #[test]
+    fn mvp_weights_small_faction_count() {
+        assert_eq!(mvp_rank_weight_bps(0, 4), 3000);
+        assert_eq!(mvp_rank_weight_bps(3, 4), 1000); // rank 3 is explicit, not tail
+    }
+
+    // ------------------------------------------------------------------------
+    // total_cycle_weighted_volume
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn cycle_volume_sums_all_directions() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_direction_totals[0][0] = 100;
+        war_state.faction_direction_totals[0][1] = 200;
+        war_state.faction_direction_totals[0][2] = 300;
+        war_state.faction_direction_totals[1][0] = 400;
+        assert_eq!(total_cycle_weighted_volume(&war_state, 2), 1000);
+    }
+
+    #[test]
+    fn cycle_volume_saturation() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_direction_totals[0][0] = u64::MAX;
+        war_state.faction_direction_totals[0][1] = 1;
+        let vol = total_cycle_weighted_volume(&war_state, 1);
+        assert_eq!(vol, u64::MAX);
+    }
+
+    // ------------------------------------------------------------------------
+    // user_correct_cycle_sol
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn user_correct_sol_only_resolved_directions() {
+        let mut user_bets = UserFactionWarBets::blank();
+        user_bets.sol_direction_bets[0][0] = 100; // Down
+        user_bets.sol_direction_bets[0][1] = 200; // Neutral
+        user_bets.sol_direction_bets[0][2] = 300; // Up
+        user_bets.sol_direction_bets[1][0] = 400; // Down
+
+        let mut settlement = FactionWarSettlement::blank();
+        settlement.resolved_directions[0] = PredictionDirection::Up.as_index() as u8; // 2
+        settlement.resolved_directions[1] = PredictionDirection::Down.as_index() as u8; // 0
+
+        assert_eq!(user_correct_cycle_sol(&user_bets, &settlement, 2), 700); // 300 + 400
+    }
+
+    #[test]
+    fn user_correct_sol_ignores_invalid_direction() {
+        let mut user_bets = UserFactionWarBets::blank();
+        user_bets.sol_direction_bets[0][2] = 300;
+
+        let mut settlement = FactionWarSettlement::blank();
+        settlement.resolved_directions[0] = 255; // invalid
+
+        assert_eq!(user_correct_cycle_sol(&user_bets, &settlement, 1), 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // compute_base_reward_pools
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn base_reward_pools_sums_correctly() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_count = 3;
+        war_state.dbtc_mined_this_war = 1_000_000;
+        war_state.sol_reward_pool = 100_000;
+        war_state.faction_direction_totals[0][2] = 100; // eligible base
+        war_state.faction_direction_totals[1][1] = 200; // eligible base
+        war_state.faction_mutation_score[0] = 50; // eligible HB
+
+        let mut settlement = FactionWarSettlement::blank();
+        settlement.final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        settlement.resolved_directions[0] = PredictionDirection::Up.as_index() as u8;
+        settlement.resolved_directions[1] = PredictionDirection::Neutral.as_index() as u8;
+
+        let tuning = GameplayTuningConfig {
+            rpg_progression: true,
+            max_evolution_stage_unlocked: 3,
+            war_base_reward_bps: 5000,
+            war_mvp_reward_bps: 2000,
+            war_hashbeast_reward_bps: 3000,
+            base_mutation_chance_bps: 100,
+            mutation_chance_floor_bps: 50,
+            mutation_chance_cap_bps: 5000,
+            faction_volume_threshold_lamports: 1_000_000,
+            extra_volume_threshold_per_mutation_lamports: 100_000,
+            target_mutations_per_cycle: 10,
+            target_rounds_per_cycle: 20,
+            pacing_max_adjustment_bps: 2000,
+        };
+
+        let residual = compute_base_reward_pools(&war_state, &mut settlement, &tuning).unwrap();
+
+        let base_total: u64 = settlement.base_reward_pools.iter().sum();
+        let hb_total: u64 = settlement.hashbeast_reward_pools.iter().sum();
+
+        assert!(base_total <= 500_000);
+        assert!(hb_total <= 300_000);
+        assert_eq!(
+            settlement.sol_base_pool + settlement.sol_hb_pool + settlement.sol_mvp_pool + residual,
+            100_000
+        );
+    }
+
+    #[test]
+    fn base_reward_pools_zero_pool_returns_zero() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_count = 3;
+        let mut settlement = FactionWarSettlement::blank();
+        let tuning = GameplayTuningConfig {
+            rpg_progression: false,
+            max_evolution_stage_unlocked: 0,
+            war_base_reward_bps: 5000,
+            war_mvp_reward_bps: 2000,
+            war_hashbeast_reward_bps: 3000,
+            base_mutation_chance_bps: 0,
+            mutation_chance_floor_bps: 0,
+            mutation_chance_cap_bps: 0,
+            faction_volume_threshold_lamports: 0,
+            extra_volume_threshold_per_mutation_lamports: 0,
+            target_mutations_per_cycle: 0,
+            target_rounds_per_cycle: 0,
+            pacing_max_adjustment_bps: 0,
+        };
+        let residual = compute_base_reward_pools(&war_state, &mut settlement, &tuning).unwrap();
+        assert_eq!(residual, 0);
+        assert!(settlement.base_reward_pools.iter().all(|&p| p == 0));
+        assert!(settlement.hashbeast_reward_pools.iter().all(|&p| p == 0));
     }
 }

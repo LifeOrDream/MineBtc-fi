@@ -2141,6 +2141,30 @@ fn remove_hashbeast_multiplier(
 mod tests {
     use super::*;
 
+    fn blank_hashbeast_metadata() -> HashBeastMetadata {
+        HashBeastMetadata {
+            mint: Pubkey::default(),
+            mom: Pubkey::default(),
+            dad: Pubkey::default(),
+            breed_count: 0,
+            rebirth_count: 0,
+            cooldown_end: 0,
+            created_at: 0,
+            faction_id: 0,
+            multiplier: BASE_MULTIPLIER,
+            accumulated_val: 0,
+            dna: [0u8; 32],
+            incubated_player_data: Pubkey::default(),
+            last_update_ts: 0,
+            xp: 0,
+            bump: 0,
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Existing tests
+    // ------------------------------------------------------------------------
+
     #[test]
     fn multiplier_cap_is_reversible_with_raw_sum() {
         let starting_raw = BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_HASHBEASTS as u64);
@@ -2225,6 +2249,88 @@ mod tests {
 
         assert!(validate_genesis_faction_cap(&mint_config, 3, 1).is_ok());
         assert!(validate_genesis_faction_cap(&mint_config, 3, 2).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // ceil_mul_div_u64
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn ceil_mul_div_exact_division() {
+        assert_eq!(ceil_mul_div_u64(10, 1, 2).unwrap(), 5);
+    }
+
+    #[test]
+    fn ceil_mul_div_needs_ceiling() {
+        assert_eq!(ceil_mul_div_u64(10, 1, 3).unwrap(), 4); // 10/3 = 3.33 → 4
+    }
+
+    #[test]
+    fn ceil_mul_div_zero_numerator() {
+        assert_eq!(ceil_mul_div_u64(0, 100, 3).unwrap(), 0);
+    }
+
+    #[test]
+    fn ceil_mul_div_division_by_zero_errors() {
+        assert!(ceil_mul_div_u64(10, 1, 0).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // shares_known_parent
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn shares_known_parent_when_shared() {
+        let mut a = blank_hashbeast_metadata();
+        let mut b = blank_hashbeast_metadata();
+        a.mom = Pubkey::new_from_array([1u8; 32]);
+        b.dad = Pubkey::new_from_array([1u8; 32]);
+        assert!(shares_known_parent(&a, &b));
+    }
+
+    #[test]
+    fn shares_known_parent_when_no_shared() {
+        let a = blank_hashbeast_metadata();
+        let b = blank_hashbeast_metadata();
+        assert!(!shares_known_parent(&a, &b));
+    }
+
+    #[test]
+    fn shares_known_parent_ignores_default() {
+        let mut a = blank_hashbeast_metadata();
+        let mut b = blank_hashbeast_metadata();
+        a.mom = Pubkey::new_from_array([1u8; 32]);
+        b.mom = Pubkey::default();
+        b.dad = Pubkey::default();
+        assert!(!shares_known_parent(&a, &b));
+    }
+
+    // ------------------------------------------------------------------------
+    // metadata_rebirth_count
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn metadata_rebirth_count_prefers_field_when_higher() {
+        let mut meta = blank_hashbeast_metadata();
+        meta.rebirth_count = 5;
+        crate::genescience::set_rebirth_count(&mut meta.dna, 3).unwrap();
+        assert_eq!(metadata_rebirth_count(&meta), 5);
+    }
+
+    #[test]
+    fn metadata_rebirth_count_uses_dna_when_higher() {
+        let mut meta = blank_hashbeast_metadata();
+        meta.rebirth_count = 2;
+        crate::genescience::set_rebirth_count(&mut meta.dna, 4).unwrap();
+        assert_eq!(metadata_rebirth_count(&meta), 4);
+    }
+
+    #[test]
+    fn metadata_rebirth_count_equal_values() {
+        let mut meta = blank_hashbeast_metadata();
+        meta.rebirth_count = 3;
+        crate::genescience::set_rebirth_count(&mut meta.dna, 3).unwrap();
+        assert_eq!(metadata_rebirth_count(&meta), 3);
     }
 }
 

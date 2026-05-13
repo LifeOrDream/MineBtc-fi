@@ -1173,21 +1173,30 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         // and settle_war runs once that round's data has folded into
         // FactionWarState. Captured only once per cycle.
         let war_config = &mut ctx.accounts.war_config;
+        let current_round_id = ctx.accounts.global_game_state.current_round_id;
+        // Capture the cycle's final round_id when the LP-burn threshold is
+        // crossed. Once non-zero, this blocks new rounds (start_round) and
+        // gates settle_war (which requires the boundary round to be folded).
+        // Guard: only capture when at least one round has been started. If
+        // the threshold somehow crosses before any round (e.g. lp ops fire
+        // very early), we wait — leaving cycle_end_round_id at 0 lets rounds
+        // continue starting, and the next LP burn after a round has played
+        // captures correctly.
         if war_config.cycle_end_round_id == 0
+            && current_round_id > 0
             && dbtc_mining.pol_stats.lp_operations_count
                 >= war_config.settle_at_lp_op_count
         {
-            let cycle_end_round_id = ctx.accounts.global_game_state.current_round_id;
-            war_config.cycle_end_round_id = cycle_end_round_id;
+            war_config.cycle_end_round_id = current_round_id;
             msg!(
                 "🪖 [add_lp_and_burn] cycle settle threshold crossed (lp_ops={} >= {}); cycle_end_round_id={}",
                 dbtc_mining.pol_stats.lp_operations_count,
                 war_config.settle_at_lp_op_count,
-                cycle_end_round_id
+                current_round_id
             );
             emit!(CycleEndRoundSnapshotted {
                 war_id: war_config.current_war_id,
-                cycle_end_round_id,
+                cycle_end_round_id: current_round_id,
                 lp_operations_count: dbtc_mining.pol_stats.lp_operations_count,
                 timestamp: Clock::get()?.unix_timestamp,
             });

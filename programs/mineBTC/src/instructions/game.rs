@@ -1,29 +1,131 @@
-// # Arena Cycle Instructions
-//
-// Core arena loop: 60-second cycles with slot-hash randomness, winner selection, and reward distribution.
-// SOL contributions from faction-direction predictions fuel the compute budget for on-chain content
-// generation and the self-improving game economy.
-//
-// ## Arena Mechanics
-//
-// The arena operates in cycles where:
-// 1. A cranker starts a new arena cycle.
-// 2. Players submit faction-direction predictions that also count toward the active faction_war.
-// 3. Once the cycle duration passes, anyone can finalize the cycle from its pre-scheduled
-//    slot-hash entropy source.
-// 4. If the scheduled slot-hash aged out before anyone finalized the cycle, settlement falls back
-//    to the latest available slot-hash.
-// 5. Exact faction+direction predictors receive the main cycle rewards, while other directions on the
-//    winning faction can still share a consolation degenBTC pool.
-//
-// ## Key Functions
-//
-// - `start_round`: Initializes a new arena cycle.
-// - `end_round`: Finalizes the cycle using slot-hash entropy and calculates initial rewards.
-// - `settle_round`: Distributes degenBTC rewards to stakers and faction pools.
-//
-// The slot-hash system avoids reveal-timing manipulation while keeping finalization permissionless.
-//
+//! Round (arena) lifecycle and reward distribution.
+//!
+//! # Round flow
+//!
+//! Each round is short (default 60s) and runs inside a longer faction-war
+//! "cycle" (see `faction_war.rs`). Rounds are the unit where SOL bets are
+//! placed, a winning faction/direction is rolled from slot-hash entropy, and
+//! degenBTC + SOL get paid to per-round winners.
+//!
+//! ```text
+//!   start_round  ─▶  bets flow in  ─▶  round timer expires
+//!   (cranker)        (JoinBets /          (anyone calls end_round once
+//!                     ExecuteAutominer)    the scheduled entropy slot lands)
+//!                                                │
+//!                                                ▼
+//!                                         end_round
+//!                                         · resolves entropy hash
+//!                                         · picks winning (faction, direction)
+//!                                         · sizes per-lane dBTC pools
+//!                                         · rolls jackpot dice
+//!                                         · stage 0 → 1
+//!                                                │
+//!                                                ▼
+//!                                         settle_round (anyone)
+//!                                         · pays staker reward indexes
+//!                                         · finalizes jackpot distribution
+//!                                         · folds round aggregates into
+//!                                           FactionWarState (the cycle)
+//!                                         · stage 1 → 2, can_begin_round = true
+//! ```
+//!
+//! Stages on `GameSession`:
+//! - `0`: round open, accepting bets
+//! - `1`: round ended, entropy locked in, awaiting settle
+//! - `2`: settled, terminal — `claim_round_rewards` reads this state
+//!
+//! Bets must hit stage `0`, claims must hit stage `2`.
+//!
+//! # How a round's winners are decided
+//!
+//! `end_round` derives a keccak hash from:
+//!   `entropy_hash ⨁ round_id ⨁ total_sol_bets ⨁ total_wgtd_points_bets`
+//!
+//! From that hash:
+//! 1. **Winning faction** — sampled uniformly from factions that have at
+//!    least one bettor (`find_valid_winning_faction`). With no bettors at
+//!    all, sampled from any of the supported factions.
+//! 2. **Winning direction** (Down/Neutral/Up) — sampled uniformly from
+//!    directions with at least one points bet on the winning faction.
+//! 3. **Jackpot roll** — independent 1-in-`JACKPOT_CHANCE` chance. If it
+//!    fires, the receiving faction is sampled by an inverse-weight: under-bet
+//!    factions are likelier targets (`weight_bps = 5000 + (10000 - bet_share_bps)`).
+//!
+//! Entropy source: the scheduled slot hash from the `SlotHashes` sysvar.
+//! If that slot has aged out of the ring buffer (~3.4 min), `end_round` falls
+//! back to the latest available slot — round still settles deterministically
+//! and `used_entropy_fallback` is surfaced on the event.
+//!
+//! # Per-round reward lanes (dBTC)
+//!
+//! `end_round` slices `dbtc_per_round` (configured emission per round) into 4 lanes:
+//!
+//! | Lane | Tuning bps | Paid to |
+//! |---|---|---|
+//! | `dbtc_winner_pool` | `dbtc_winners_pct` | bettors on exact (winning_faction, winning_direction), pro-rata by wgtd_points |
+//! | `dbtc_same_faction_direction_pools` (per losing direction) | `dbtc_same_faction_pct` each | bettors on the *winning faction* but losing directions, pro-rata |
+//! | `faction_stakers` | `dbtc_stakers_pct` | stakers of the winning faction (50/50 between dBTC stakers + LP stakers) |
+//! | `jackpot_rewards` | `dbtc_jackpot_pct` | accumulates into a global `jackpot_pot`; paid out on the next jackpot hit |
+//!
+//! Orphan handling: if a losing direction has zero bettors, its slice of
+//! `same_faction` is redirected back to the winner pool. If the winning
+//! faction has zero stakers, the staker slice is also redirected to winners.
+//!
+//! # SOL per-round flow
+//!
+//! Stakers fees (SOL) collected during `JoinBets` accumulate on
+//! `game_session.stakers_fee`. `settle_round` pays this out alongside dBTC
+//! to the winning faction's stakers via the same reward-index mechanism.
+//!
+//! `cycle_sol_split` SOL (a per-bet slice of every bet) flows directly to
+//! `faction_war_sol_vault` at bet time. Per-round amount is tracked on
+//! `game_session.cycle_sol_pool` and folded into the war's `sol_reward_pool`
+//! at settle (see "cycle handoff" below).
+//!
+//! # Cycle handoff (how rounds feed the faction-war cycle)
+//!
+//! Each `settle_round` calls `track_war_round_completion`, which folds
+//! per-round aggregates into the active `FactionWarState`:
+//!
+//! - `wgtd_points_bets_by_faction_direction` → `faction_direction_totals`
+//!   (denominator for base reward claims at cycle settle)
+//! - `sol_bets_by_faction` → `war_config.sol_volume_since_last_win`
+//!   (per-country drought tracker for mutation chance)
+//! - `total_sol_bets` → `total_cycle_sol` (mutation roll denominator)
+//! - `cycle_sol_pool` → `sol_reward_pool` (cycle SOL pot for war claims)
+//! - Winning country's `gameplay_scores` += `round_score` (winning country's
+//!   wgtd_points on the winning direction) → drives cycle leaderboard rank
+//! - `round_wins[winner]++` (rank tiebreaker)
+//!
+//! Idempotency: track only fires when `last_processed_round_id != round_id`,
+//! so multiple settle_round calls on the same round can't double-fold.
+//!
+//! # Cycle boundary
+//!
+//! `start_round` is gated by `war_config.cycle_end_round_id == 0`. The
+//! cycle's LP burn (in `economy.rs::add_lp_and_burn`) snapshots the current
+//! round as `cycle_end_round_id` when it crosses the settle threshold. From
+//! that point, no new rounds can start under the current war.
+//!
+//! `initialize_war_internal` clears `cycle_end_round_id` for the next war —
+//! NOT `settle_war`. This means a round cannot start with a
+//! `war_id_when_played` whose `FactionWarState` PDA hasn't been initialized
+//! yet, which would otherwise leave settle_round failing PDA seed validation
+//! and stranding the round in stage 1.
+//!
+//! # Edge cases handled
+//!
+//! - **Round with zero bettors**: end_round short-circuits — picks a random
+//!   faction/direction for event purposes, marks stage 2 immediately, no
+//!   pools distributed.
+//! - **Scheduled entropy slot aged out**: `resolve_round_entropy` falls back
+//!   to the latest slot. Round still settles.
+//! - **Jackpot hits with zero bettors on the rolled faction**: pot rolls
+//!   over to the next jackpot hit, distributed=true so it doesn't re-trigger.
+//! - **Winning faction has no stakers**: staker slice redirected to winner
+//!   pool via reward-index.
+//! - **Late settle_round (war already settled)**: hard error rather than a
+//!   silent skip — protects against silent SOL loss to the war pool.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
@@ -804,9 +906,10 @@ fn track_war_round_completion(
         war_config.last_processed_round_id = game_session.round_id;
 
         // Fold this round's GameSession aggregates into the war-level totals.
-        // These were previously written per-bet on the hot JoinBets path;
-        // doing it once per round here is the same arithmetic at a fraction
-        // of the per-bet compute cost.
+        // GameSession holds per-round counters that JoinBets bumps per-bet;
+        // this loop runs once per round and pushes the totals into the
+        // active war's FactionWarState (which is read at war settlement and
+        // claims).
         let active_factions = war_state.faction_count as usize;
         for fi in 0..active_factions {
             for di in 0..PredictionDirection::COUNT {
@@ -838,8 +941,8 @@ fn track_war_round_completion(
 
         // Fold this round's cycle-SOL contributions (sum of cycle_sol_split
         // amounts already transferred to the war SOL vault during bets) into
-        // the war's running sol_reward_pool. Lets us track the cycle SOL pool
-        // without loading war_state on the JoinBets hot path.
+        // the war's running sol_reward_pool. The pool is consumed at war
+        // settle to size the SOL base/HB/MVP lanes.
         if game_session.cycle_sol_pool > 0 {
             war_state.sol_reward_pool = war_state
                 .sol_reward_pool
@@ -1004,33 +1107,45 @@ pub fn int_settle_round<'info>(
     let same_faction_sum: u64 = game_session
         .dbtc_same_faction_direction_pools
         .iter()
-        .sum::<u64>();
-    let actually_distributed = game_session.dbtc_winner_pool + same_faction_sum + game_session.faction_stakers + game_session.jackpot_rewards;
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let actually_distributed = game_session
+        .dbtc_winner_pool
+        .checked_add(same_faction_sum)
+        .and_then(|s| s.checked_add(game_session.faction_stakers))
+        .and_then(|s| s.checked_add(game_session.jackpot_rewards))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     let round_id_for_event = game_session.round_id;
     let winning_faction_for_event = winning_faction_id;
     let winning_direction_for_event = game_session.winning_direction;
 
-    if accounts.war_state.stage == 0 {
-        let winner_idx = winning_faction_id as usize;
-        let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
-            .iter()
-            .copied()
-            .try_fold(0u64, |acc, v| acc.checked_add(v))
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        track_war_round_completion(
-            &mut accounts.war_config,
-            accounts.war_state.as_mut(),
-            &mut accounts.game_session,
-            winning_faction_id,
-            actually_distributed,
-            round_score,
-        )?;
-    } else {
-        msg!(
-            "⚠️ [settle_round] faction_war tracking skipped: stage={}",
-            accounts.war_state.stage
-        );
-    }
+    // Invariant: a round whose `war_id_when_played` matches the current war
+    // must always be folded into that war's FactionWarState. The only way
+    // war_state.stage could be != 0 here is a programming error elsewhere
+    // (e.g. settle_war running before this round's settle_round, which is
+    // prevented by the cycle_end_round_id / last_processed_round_id checks
+    // in settle_war_internal). Fail loud — silently skipping the fold would
+    // strand the round's SOL contribution in the war vault and miscount its
+    // weighted points for the war's pools.
+    require!(
+        accounts.war_state.stage == 0,
+        ErrorCode::FactionWarNotActive
+    );
+    let winner_idx = winning_faction_id as usize;
+    let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
+        .iter()
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    track_war_round_completion(
+        &mut accounts.war_config,
+        accounts.war_state.as_mut(),
+        &mut accounts.game_session,
+        winning_faction_id,
+        actually_distributed,
+        round_score,
+    )?;
 
     // By this point track_war_round_completion has run (when applicable)
     // and snapshotted the winning faction's drought volume onto the GameSession.
@@ -1276,3 +1391,165 @@ pub struct SettleRound<'info> {
     pub system_program: Program<'info, System>,
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_slot_hashes_data(entries: &[(u64, [u8; 32])]) -> Vec<u8> {
+        let mut data = Vec::with_capacity(8 + entries.len() * 40);
+        data.extend_from_slice(&(entries.len() as u64).to_le_bytes());
+        for (slot, hash) in entries {
+            data.extend_from_slice(&slot.to_le_bytes());
+            data.extend_from_slice(hash);
+        }
+        data
+    }
+
+    // ------------------------------------------------------------------------
+    // slot_hash_entry_count / read_slot_hash_entry
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn slot_hash_entry_count_reads_first_8_bytes() {
+        let data = build_slot_hashes_data(&[(100, [1u8; 32]), (99, [2u8; 32])]);
+        assert_eq!(slot_hash_entry_count(&data).unwrap(), 2);
+    }
+
+    #[test]
+    fn read_slot_hash_entry_roundtrips() {
+        let entries = [(100, [1u8; 32]), (99, [2u8; 32])];
+        let data = build_slot_hashes_data(&entries);
+        let (slot, hash) = read_slot_hash_entry(&data, 0).unwrap();
+        assert_eq!(slot, 100);
+        assert_eq!(hash, [1u8; 32]);
+        let (slot, hash) = read_slot_hash_entry(&data, 1).unwrap();
+        assert_eq!(slot, 99);
+        assert_eq!(hash, [2u8; 32]);
+    }
+
+    #[test]
+    fn read_slot_hash_entry_out_of_bounds_errors() {
+        let data = build_slot_hashes_data(&[(100, [1u8; 32])]);
+        assert!(read_slot_hash_entry(&data, 1).is_err());
+    }
+
+    #[test]
+    fn slot_hash_entry_count_too_short_errors() {
+        assert!(slot_hash_entry_count(&[1u8, 2u8, 3u8]).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // find_valid_winning_faction
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn find_valid_winning_faction_selects_active() {
+        let mut indexes = [0u64; NUM_FACTIONS];
+        indexes[2] = 5;
+        indexes[5] = 10;
+        let winner = find_valid_winning_faction(0, &indexes, 8).unwrap();
+        assert_eq!(winner, 2);
+    }
+
+    #[test]
+    fn find_valid_winning_faction_wraps_seed() {
+        let mut indexes = [0u64; NUM_FACTIONS];
+        indexes[1] = 1;
+        indexes[3] = 1;
+        let winner = find_valid_winning_faction(3, &indexes, 8).unwrap();
+        // 3 % 2 = 1 → active_factions[1] = 3
+        assert_eq!(winner, 3);
+    }
+
+    #[test]
+    fn find_valid_winning_faction_no_active_errors() {
+        let indexes = [0u64; NUM_FACTIONS];
+        assert!(find_valid_winning_faction(0, &indexes, 8).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // find_valid_winning_direction
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn find_valid_winning_direction_selects_active() {
+        let mut points = [0u64; PredictionDirection::COUNT];
+        points[1] = 100;
+        let winner = find_valid_winning_direction(0, &points).unwrap();
+        assert_eq!(winner, 1);
+    }
+
+    #[test]
+    fn find_valid_winning_direction_wraps_seed() {
+        let mut points = [0u64; PredictionDirection::COUNT];
+        points[0] = 1;
+        points[2] = 1;
+        let winner = find_valid_winning_direction(3, &points).unwrap();
+        // 3 % 2 = 1 → active_directions[1] = 2
+        assert_eq!(winner, 2);
+    }
+
+    #[test]
+    fn find_valid_winning_direction_no_active_errors() {
+        let points = [0u64; PredictionDirection::COUNT];
+        assert!(find_valid_winning_direction(0, &points).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // calculate_dbtc_split
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn calculate_dbtc_split_basic() {
+        let (winners, same_faction, stakers, jackpot) =
+            calculate_dbtc_split(1_000_000, 20, 50, 10, 20).unwrap();
+        assert_eq!(winners, 500_000);
+        assert_eq!(same_faction, 100_000);
+        assert_eq!(stakers, 200_000);
+        assert_eq!(jackpot, 200_000);
+    }
+
+    #[test]
+    fn calculate_dbtc_split_zero_rewards() {
+        let (winners, same_faction, stakers, jackpot) =
+            calculate_dbtc_split(0, 20, 50, 10, 20).unwrap();
+        assert_eq!(winners, 0);
+        assert_eq!(same_faction, 0);
+        assert_eq!(stakers, 0);
+        assert_eq!(jackpot, 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // split_staker_lane_rewards
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn split_staker_lane_both_active() {
+        let (dbtc, lp) = split_staker_lane_rewards(1_000, true, true);
+        assert_eq!(dbtc, 500);
+        assert_eq!(lp, 500);
+    }
+
+    #[test]
+    fn split_staker_lane_only_dbtc() {
+        let (dbtc, lp) = split_staker_lane_rewards(1_000, true, false);
+        assert_eq!(dbtc, 1_000);
+        assert_eq!(lp, 0);
+    }
+
+    #[test]
+    fn split_staker_lane_only_lp() {
+        let (dbtc, lp) = split_staker_lane_rewards(1_000, false, true);
+        assert_eq!(dbtc, 0);
+        assert_eq!(lp, 1_000);
+    }
+
+    #[test]
+    fn split_staker_lane_neither_active() {
+        let (dbtc, lp) = split_staker_lane_rewards(1_000, false, false);
+        assert_eq!(dbtc, 0);
+        assert_eq!(lp, 0);
+    }
+}
