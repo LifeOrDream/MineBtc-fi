@@ -2540,31 +2540,22 @@ fn apply_mutation_bonus_score<'info>(
         return Ok(());
     }
 
+    // `war_state` and `user_war_bets` addresses are pinned to
+    // `game_session.war_id_when_played` (+ `owner_key` for the latter) by
+    // seed constraints on the `ClaimRoundRewards` / `ClaimAutominerRewards`
+    // Accounts structs. By the time we reach here the PDA identity is
+    // already proven, so no `find_program_address` is needed.
+    //
+    // What's left to validate is account-data integrity:
+    //   - `load_war_state_boxed` checks program ownership + discriminator.
+    //   - `helper::load_account_data` does the same for `UserFactionWarBets`
+    //     below.
+    //   - `ufwb.owner` / `ufwb.war_id` field checks at the load site catch
+    //     the residual "is the stored data internally consistent" question
+    //     (defensive — would only ever fail under deliberate state
+    //     corruption since init_war / init_or_load_user_war_bets_account
+    //     are the only writers).
     let cycle_id = game_session.war_id_when_played;
-    let cycle_id_bytes = cycle_id.to_le_bytes();
-    let (expected_war_state_pda, _) = Pubkey::find_program_address(
-        &[FACTION_WAR_STATE_SEED, cycle_id_bytes.as_ref()],
-        &crate::ID,
-    );
-    require_keys_eq!(
-        war_state_info.key(),
-        expected_war_state_pda,
-        ErrorCode::InvalidAccount
-    );
-    let (expected_user_pda, _) = Pubkey::find_program_address(
-        &[
-            USER_FACTION_WAR_BETS_SEED,
-            owner_key.as_ref(),
-            cycle_id_bytes.as_ref(),
-        ],
-        &crate::ID,
-    );
-    require_keys_eq!(
-        user_war_bets_info.key(),
-        expected_user_pda,
-        ErrorCode::InvalidAccount
-    );
-
     let mut war_state = load_war_state_boxed(war_state_info)?;
 
     // Late-claim gate: cycle has settled → drop bonus.
@@ -2576,10 +2567,6 @@ fn apply_mutation_bonus_score<'info>(
         );
         return Ok(());
     }
-    require!(
-        war_state.war_id == cycle_id,
-        ErrorCode::InvalidAccount
-    );
 
     let winner = game_session.winning_faction_id;
     let winner_idx = winner as usize;
@@ -3743,17 +3730,35 @@ pub struct ClaimRoundRewards<'info> {
     #[account(mut)]
     pub hashbeast_metadata: Option<Box<Account<'info, HashBeastMetadata>>>,
 
-    /// CHECK: Cycle state for the round being claimed. Seeds are validated
-    /// inside the handler against `game_session.war_id_when_played`,
-    /// not in the macro (the cycle id is a runtime field on game_session, not
-    /// an instruction arg). Mutated only when the mutation-bonus block fires.
-    #[account(mut)]
+    /// CHECK: Cycle state for the round being claimed. Stays as
+    /// `UncheckedAccount` because the typed `FactionWarState` is too large to
+    /// parse onto BPF's stack — we hand-deserialize it into a `Box` later via
+    /// `load_war_state_boxed` (which also validates program ownership +
+    /// discriminator). The PDA address is pinned here via seeds — Anchor
+    /// supports referencing fields on other deserialized accounts in the same
+    /// struct (`game_session.war_id_when_played`), so we don't need a runtime
+    /// `find_program_address` in the handler.
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &game_session.war_id_when_played.to_le_bytes()],
+        bump,
+    )]
     pub war_state: UncheckedAccount<'info>,
 
-    /// CHECK: Per-user, per-cycle bets PDA. Seeds validated in the handler
-    /// against `game_session.war_id_when_played` + user_wallet. Mutated only
-    /// when a mutation-bonus roll lands (increments `mutation_score`).
-    #[account(mut)]
+    /// CHECK: Per-user, per-cycle bets PDA. Address pinned via seeds keyed by
+    /// the claiming user + the cycle id stored on `game_session`. Stays
+    /// `UncheckedAccount` (handler hand-deserializes via
+    /// `helper::load_account_data`) for the same stack-budget reasons as
+    /// `war_state`.
+    #[account(
+        mut,
+        seeds = [
+            USER_FACTION_WAR_BETS_SEED,
+            user_wallet.key().as_ref(),
+            &game_session.war_id_when_played.to_le_bytes(),
+        ],
+        bump,
+    )]
     pub user_war_bets: UncheckedAccount<'info>,
 
     /// Country lootbox queue for the player's home faction. Read on every
@@ -3847,16 +3852,28 @@ pub struct ClaimAutominerRewards<'info> {
     #[account(mut)]
     pub hashbeast_metadata: Option<Box<Account<'info, HashBeastMetadata>>>,
 
-    /// CHECK: Cycle state for the round being claimed. Seeds validated in
-    /// handler against `game_session.war_id_when_played`. Mutated
-    /// only when mutation-bonus block fires.
-    #[account(mut)]
+    /// CHECK: Cycle state for the round being claimed. Same setup as
+    /// `ClaimRoundRewards::war_state` — seeds keyed by
+    /// `game_session.war_id_when_played`, hand-deserialized in the handler
+    /// to avoid the large-struct stack hit.
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &game_session.war_id_when_played.to_le_bytes()],
+        bump,
+    )]
     pub war_state: UncheckedAccount<'info>,
 
-    /// CHECK: Per-user, per-cycle bets PDA. Seeds validated in the handler
-    /// against `game_session.war_id_when_played` + autominer owner. Mutated
-    /// only when a mutation-bonus roll lands (increments `mutation_score`).
-    #[account(mut)]
+    /// CHECK: Per-user, per-cycle bets PDA for the autominer's owner. Seeds
+    /// pinned to `autominer_vault.owner` + the cycle id on `game_session`.
+    #[account(
+        mut,
+        seeds = [
+            USER_FACTION_WAR_BETS_SEED,
+            autominer_vault.owner.as_ref(),
+            &game_session.war_id_when_played.to_le_bytes(),
+        ],
+        bump,
+    )]
     pub user_war_bets: UncheckedAccount<'info>,
 
     /// Country lootbox queue for the autominer owner's home faction.
