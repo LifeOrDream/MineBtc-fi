@@ -717,7 +717,7 @@ async function settleFactionWar() {
   }).transaction();
 
   const sig = await send(tx, 800_000);
-  ok(`settle_faction_war: ${sig}`);
+  ok(`settle_war: ${sig}`);
   console.log(`   ${explorer(sig)}`);
 
   const txInfo = await connection.getTransaction(sig,

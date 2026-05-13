@@ -162,9 +162,9 @@ function generateWebsiteConfig(config, deployment) {
 
       // ───────── FACTION WAR ─────────
       faction_war: {
-        config: deployment.faction_war_config_initialized?.faction_war_config_pda,
+        config: deployment.war_config_initialized?.war_config_pda,
         starting_id:
-          deployment.faction_war_config_initialized?.starting_war_id || 1,
+          deployment.war_config_initialized?.starting_war_id || 1,
         // Lazy-created on first SOL bet; PDA derived from [b"faction-war-sol-vault"].
         sol_vault: deployment.faction_war_sol_vault_pda || null,
         // Per-faction SOL reward pots used by the faction-war SOL bet/settlement

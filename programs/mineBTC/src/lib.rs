@@ -556,7 +556,7 @@ pub mod minebtc {
         tax::internal_crank_distribute_tax(
             accounts,
             war_id,
-            bumps.faction_war_state,
+            bumps.war_state,
             bumps.withdraw_withheld_authority,
         )
     }
@@ -577,16 +577,16 @@ pub mod minebtc {
 
     /// Initialize faction_war configuration (admin only).
     /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
-    pub fn initialize_faction_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
-        crate::log_fn!("lib", "initialize_faction_war_config");
-        faction_war::initialize_faction_war_config_internal(ctx)
+    pub fn initialize_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_war_config");
+        faction_war::initialize_war_config_internal(ctx)
     }
 
     /// Settle faction_war: finalize gameplay-score rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
-    pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {
-        crate::log_fn!("lib", "settle_faction_war");
-        faction_war::settle_faction_war_internal(ctx)
+    pub fn settle_war(ctx: Context<SettleFactionWar>) -> Result<()> {
+        crate::log_fn!("lib", "settle_war");
+        faction_war::settle_war_internal(ctx)
     }
 
     /// User claims their faction-war rewards (closes user_faction_war_bets account).
@@ -669,7 +669,7 @@ pub mod minebtc {
             amount_per_bet,
             use_ticket,
             bumps.user_game_bet,
-            bumps.faction_war_state,
+            bumps.war_state,
             bumps.user_faction_war_bets,
         )
     }
@@ -709,7 +709,7 @@ pub mod minebtc {
             current_round_id,
             war_id,
             bumps.user_game_bet,
-            bumps.faction_war_state,
+            bumps.war_state,
             bumps.user_faction_war_bets,
             bumps.autominer_custody,
         )

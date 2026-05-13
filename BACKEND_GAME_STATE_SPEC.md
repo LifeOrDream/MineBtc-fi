@@ -417,7 +417,7 @@ If the frontend wants to show the jackpot pot in fiat/SOL terms, convert `Global
 | Winning faction has no stakers | Staker rewards redirected to exact winners via index bump |
 | Scheduled entropy slot ages out | `used_entropy_fallback = true`, latest slot hash used instead |
 | Round finalized but jackpot not distributed | Backend should still show `jackpot_hit=true` and `jackpot_distributed=false`. `distribute_jackpot_rewards(round_id)` can be called retroactively now. |
-| Faction war settled mid-round | `faction_war_state` may be empty/seed. Backend shows `is_active=false` until next bet initializes new cycle. |
+| Faction war settled mid-round | `war_state` may be empty/seed. Backend shows `is_active=false` until next bet initializes new cycle. |
 
 ---
 

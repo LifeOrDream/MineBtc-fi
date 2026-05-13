@@ -725,12 +725,12 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     }
 
     // --- Update dynamic faction-war mining multiplier ---
-    let faction_war_config = &mut ctx.accounts.faction_war_config;
+    let war_config = &mut ctx.accounts.war_config;
     if rate_changed {
-        let old_multiplier = faction_war_config.mining_multiplier_bps as u128;
+        let old_multiplier = war_config.mining_multiplier_bps as u128;
         let new_multiplier = if direction > 0 {
             let increase = old_multiplier
-                .checked_mul(faction_war_config.multiplier_increase_bps as u128)
+                .checked_mul(war_config.multiplier_increase_bps as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 / 10_000;
             old_multiplier
@@ -738,33 +738,33 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
                 .ok_or(ErrorCode::ArithmeticOverflow)?
         } else {
             let decrease = old_multiplier
-                .checked_mul(faction_war_config.multiplier_decrease_bps as u128)
+                .checked_mul(war_config.multiplier_decrease_bps as u128)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
                 / 10_000;
             old_multiplier
                 .checked_sub(decrease)
                 .unwrap_or(MIN_FACTION_WAR_MINING_MULTIPLIER_BPS as u128)
         };
-        let min_bps = (faction_war_config.multiplier_min_bps).clamp(
+        let min_bps = (war_config.multiplier_min_bps).clamp(
             MIN_FACTION_WAR_MINING_MULTIPLIER_BPS,
             MAX_FACTION_WAR_MINING_MULTIPLIER_BPS,
         ) as u128;
-        let max_bps = (faction_war_config.multiplier_max_bps).clamp(
+        let max_bps = (war_config.multiplier_max_bps).clamp(
             MIN_FACTION_WAR_MINING_MULTIPLIER_BPS,
             MAX_FACTION_WAR_MINING_MULTIPLIER_BPS,
         ) as u128;
         require!(min_bps <= max_bps, ErrorCode::InvalidParameters);
-        faction_war_config.mining_multiplier_bps =
+        war_config.mining_multiplier_bps =
             (new_multiplier.min(max_bps).max(min_bps)) as u16;
         msg!(
             "   🎯 FactionWar multiplier updated: {} bps -> {} bps (direction={})",
             old_multiplier,
-            faction_war_config.mining_multiplier_bps,
+            war_config.mining_multiplier_bps,
             if direction > 0 { "up" } else { "down" }
         );
         emit!(FactionWarMultiplierUpdated {
             old_multiplier_bps: old_multiplier as u16,
-            new_multiplier_bps: faction_war_config.mining_multiplier_bps,
+            new_multiplier_bps: war_config.mining_multiplier_bps,
             direction: if direction > 0 { 1 } else { -1 },
             timestamp: current_time,
         });
@@ -798,7 +798,7 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
         track_price: dbtc_mining.track_price,
         recent_price: dbtc_mining.recent_price,
         rate_changed,
-        new_mining_multiplier: faction_war_config.mining_multiplier_bps,
+        new_mining_multiplier: war_config.mining_multiplier_bps,
         timestamp: current_time,
     });
 
@@ -1170,19 +1170,19 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         // If this LP op pushed us past the cycle's settle threshold, snapshot
         // the current round_id. That round becomes the last round of this
         // cycle: no new rounds can begin (start_round will block on this),
-        // and settle_faction_war runs once that round's data has folded into
+        // and settle_war runs once that round's data has folded into
         // FactionWarState. Captured only once per cycle.
-        let faction_war_config = &mut ctx.accounts.faction_war_config;
-        if faction_war_config.cycle_end_round_id == 0
+        let war_config = &mut ctx.accounts.war_config;
+        if war_config.cycle_end_round_id == 0
             && dbtc_mining.pol_stats.lp_operations_count
-                >= faction_war_config.settle_at_lp_op_count
+                >= war_config.settle_at_lp_op_count
         {
             let cycle_end_round_id = ctx.accounts.global_game_state.current_round_id;
-            faction_war_config.cycle_end_round_id = cycle_end_round_id;
+            war_config.cycle_end_round_id = cycle_end_round_id;
             msg!(
                 "🪖 [add_lp_and_burn] cycle settle threshold crossed (lp_ops={} >= {}); cycle_end_round_id={}",
                 dbtc_mining.pol_stats.lp_operations_count,
-                faction_war_config.settle_at_lp_op_count,
+                war_config.settle_at_lp_op_count,
                 cycle_end_round_id
             );
         }
@@ -1783,8 +1783,8 @@ pub struct UpdateRate<'info> {
     )]
     pub dbtc_mining: Account<'info, DegenBtcMining>,
 
-    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump = faction_war_config.bump)]
-    pub faction_war_config: Account<'info, FactionWarConfig>,
+    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump = war_config.bump)]
+    pub war_config: Account<'info, FactionWarConfig>,
 }
 
 /// Account struct for LP addition and burn (Instruction 2b) - Heavier weight
@@ -1802,8 +1802,8 @@ pub struct AddLpAndBurn<'info> {
     pub global_game_state: Account<'info, GlobalGameSate>,
 
     /// Mut: this ix writes `cycle_end_round_id` once the lp threshold crosses.
-    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED.as_ref()], bump = faction_war_config.bump)]
-    pub faction_war_config: Account<'info, FactionWarConfig>,
+    #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED.as_ref()], bump = war_config.bump)]
+    pub war_config: Account<'info, FactionWarConfig>,
 
     /// Authority (optional - only required when lp_token_amount > 0)
     pub authority: Option<Signer<'info>>,

@@ -627,12 +627,12 @@ async function main() {
     // return;
 
     // NOTE: Cranker bot whitelist was removed when keepers became fully
-    // permissionless. start_round / end_round / settle_faction_war / claim crank
+    // permissionless. start_round / end_round / settle_war / claim crank
     // instructions are callable by any wallet — the protocol only pays the
     // (capped) keeper compensation to the caller that lands the tx first.
 
     // 17. Initialize Faction War Config (mutation-driven competitive cycles)
-    // Instruction: initialize_faction_war_config() — no args
+    // Instruction: initialize_war_config() — no args
     // Creates FactionWarConfig PDA [seeds: "faction-war-config"] with
     // current_war_id=1, is_active=true, settle_at_lp_op_count=0
     // (auto-set on first bet), and identity
@@ -642,7 +642,7 @@ async function main() {
     await initializeFactionWarConfig(minebtcProgram);
 
     // 18. Update Faction War Config
-    // Instruction: update_faction_war_config(is_active)
+    // Instruction: update_war_config(is_active)
     // Keeps the faction-war engine explicitly enabled / disabled per deployment config.
     // Accounts: factionWarConfig, globalConfig, authority
     await updateFactionWarConfig(minebtcProgram, FACTION_WAR_CONFIG);
@@ -3054,7 +3054,7 @@ async function updateFactionWarConfig(minebtcProgram, factionWarConfig) {
   console.log(COLOR_SUCCESS, "✅ Faction war config updated successfully!");
   console.log(COLOR_DIM, `   Transaction: ${tx}`);
 
-  deploymentFile.faction_war_config_updated = {
+  deploymentFile.war_config_updated = {
     is_active: targetIsActive,
     tx_signature: tx,
     timestamp: new Date().toISOString(),
@@ -3220,7 +3220,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
 // permissionless keepers. No on-chain whitelist step is required anymore.
 
 async function initializeFactionWarConfig(minebtcProgram) {
-  if (deploymentFile.faction_war_config_initialized) {
+  if (deploymentFile.war_config_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Faction war config already initialized. Skipping..."
@@ -3271,8 +3271,8 @@ async function initializeFactionWarConfig(minebtcProgram) {
       `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
     );
 
-    deploymentFile.faction_war_config_initialized = {
-      faction_war_config_pda: factionWarConfigPda.toBase58(),
+    deploymentFile.war_config_initialized = {
+      war_config_pda: factionWarConfigPda.toBase58(),
       starting_war_id: 1,
       tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -3284,7 +3284,7 @@ async function initializeFactionWarConfig(minebtcProgram) {
         COLOR_INFO,
         "ℹ️ Faction war config already exists on-chain. Skipping..."
       );
-      deploymentFile.faction_war_config_initialized = {
+      deploymentFile.war_config_initialized = {
         status: "already_exists",
         timestamp: new Date().toISOString(),
       };
@@ -3758,7 +3758,7 @@ function printCompletionSummary() {
   console.log(
     COLOR_INFO,
     `  • Faction War Config: ${
-      deploymentFile.faction_war_config_initialized ? "✅" : "❌"
+      deploymentFile.war_config_initialized ? "✅" : "❌"
     }`
   );
   console.log(

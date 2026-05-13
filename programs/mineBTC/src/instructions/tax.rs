@@ -176,7 +176,7 @@ pub fn internal_crank_harvest_fees<'info>(
 
 
 #[inline(never)]
-fn load_faction_war_state_boxed<'info>(
+fn load_war_state_boxed<'info>(
     account: &AccountInfo<'info>,
 ) -> Result<Box<FactionWarState>> {
     require!(
@@ -200,12 +200,12 @@ fn load_faction_war_state_boxed<'info>(
 pub fn internal_crank_distribute_tax<'info>(
     accounts: &mut CrankDistributeTax<'info>,
     war_id: u64,
-    _faction_war_state_bump: u8,
+    _war_state_bump: u8,
     withdraw_authority_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_crank_distribute_tax");
     msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
-    let faction_war_state_info = accounts.faction_war_state.as_ref();
+    let war_state_info = accounts.war_state.as_ref();
 
     // 1. Get the total amount of tax sitting on the mint account
     // We must reload to get the most up-to-date data after harvesting
@@ -259,7 +259,7 @@ pub fn internal_crank_distribute_tax<'info>(
     // 3. Calculate distribution amounts based on TaxConfig percentages
     let tax_config = &mut accounts.tax_config;
     require!(
-        accounts.faction_war_config.current_war_id == war_id,
+        accounts.war_config.current_war_id == war_id,
         ErrorCode::InvalidParameters
     );
     let faction_treasury_amount = u64::try_from(helper::mul_div(
@@ -367,22 +367,22 @@ pub fn internal_crank_distribute_tax<'info>(
     }
 
     if faction_treasury_amount > 0 {
-        if faction_war_state_info.lamports() > 0 && !faction_war_state_info.data_is_empty() {
-            let mut faction_war_state = load_faction_war_state_boxed(faction_war_state_info)?;
-            if faction_war_state.war_id == accounts.faction_war_config.current_war_id
-                && faction_war_state.stage == 0
+        if war_state_info.lamports() > 0 && !war_state_info.data_is_empty() {
+            let mut war_state = load_war_state_boxed(war_state_info)?;
+            if war_state.war_id == accounts.war_config.current_war_id
+                && war_state.stage == 0
             {
-                faction_war_state.treasury_reward_base_amount = faction_war_state
+                war_state.treasury_reward_base_amount = war_state
                     .treasury_reward_base_amount
                     .checked_add(faction_treasury_amount)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "   🏴 Attributed {} degenBTC treasury tax to faction war {} (base now {})",
                     (faction_treasury_amount as f64) / 1e6,
-                    faction_war_state.war_id,
-                    (faction_war_state.treasury_reward_base_amount as f64) / 1e6
+                    war_state.war_id,
+                    (war_state.treasury_reward_base_amount as f64) / 1e6
                 );
-                helper::store_account_data(faction_war_state_info, faction_war_state.as_ref())?;
+                helper::store_account_data(war_state_info, war_state.as_ref())?;
             } else {
                 tax_config.unassigned_faction_war_treasury_amount = tax_config
                     .unassigned_faction_war_treasury_amount
@@ -438,8 +438,8 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     war_id: u64,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_claim_faction_treasury_for_faction_war");
-    let faction_war_state = &ctx.accounts.faction_war_state;
-    let faction_war_settlement = &mut ctx.accounts.faction_war_settlement;
+    let war_state = &ctx.accounts.war_state;
+    let war_settlement = &mut ctx.accounts.war_settlement;
     let fs = &mut ctx.accounts.faction_state;
     let fid = fs.faction_id;
 
@@ -451,32 +451,32 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     );
 
     require!(
-        faction_war_state.stage == 1,
+        war_state.stage == 1,
         ErrorCode::FactionWarNotSettled
     );
     require!(
-        faction_war_state.war_id == war_id,
+        war_state.war_id == war_id,
         ErrorCode::InvalidState
     );
 
     // Prevent double-claim for this faction
     let faction_bit = 1u16 << fid;
     require!(
-        faction_war_settlement.treasury_claimed_bitmap & faction_bit == 0,
+        war_settlement.treasury_claimed_bitmap & faction_bit == 0,
         ErrorCode::FactionWarRewardsAlreadyClaimed
     );
 
     let treasury_balance = ctx.accounts.faction_treasury_vault.amount;
-    let treasury_base_amount = faction_war_state.treasury_reward_base_amount;
+    let treasury_base_amount = war_state.treasury_reward_base_amount;
 
-    let active_factions = faction_war_state.faction_count as usize;
+    let active_factions = war_state.faction_count as usize;
     require!(
         (fid as usize) < active_factions,
         ErrorCode::InvalidFactionId
     );
 
     // Determine this faction's rank from faction_war final_ranks
-    let rank = faction_war_settlement.final_ranks[fid as usize] as usize;
+    let rank = war_settlement.final_ranks[fid as usize] as usize;
 
     // --- 80% rank-weighted: rank_points = active_factions - rank ---
     // #1 gets the most points, #last gets 1 point. Everyone gets something.
@@ -538,7 +538,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
 
     if reward_amount == 0 {
         msg!("   ⚠️ No reward for faction {} (rank {})", fid, rank);
-        faction_war_settlement.treasury_claimed_bitmap |= faction_bit;
+        war_settlement.treasury_claimed_bitmap |= faction_bit;
         return Ok(());
     }
 
@@ -619,7 +619,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    faction_war_settlement.treasury_claimed_bitmap |= faction_bit;
+    war_settlement.treasury_claimed_bitmap |= faction_bit;
 
     emit!(FactionTreasuryRewardsClaimed {
         war_id,
@@ -696,9 +696,9 @@ pub struct CrankDistributeTax<'info> {
     pub tax_config: Box<Account<'info, TaxConfig>>,
     #[account(
         seeds = [FACTION_WAR_CONFIG_SEED],
-        bump = faction_war_config.bump
+        bump = war_config.bump
     )]
-    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
+    pub war_config: Box<Account<'info, FactionWarConfig>>,
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
@@ -706,7 +706,7 @@ pub struct CrankDistributeTax<'info> {
     )]
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists treasury attribution state.
-    pub faction_war_state: UncheckedAccount<'info>,
+    pub war_state: UncheckedAccount<'info>,
     #[account(mut)]
     pub caller: Signer<'info>,
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
@@ -722,15 +722,15 @@ pub struct ClaimFactionTreasuryForFactionWar<'info> {
     pub tax_config: Box<Account<'info, TaxConfig>>,
     #[account(
         seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
-        bump = faction_war_state.bump
+        bump = war_state.bump
     )]
-    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+    pub war_state: Box<Account<'info, FactionWarState>>,
     #[account(
         mut,
         seeds = [FACTION_WAR_SETTLEMENT_SEED, &war_id.to_le_bytes()],
-        bump = faction_war_settlement.bump
+        bump = war_settlement.bump
     )]
-    pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
+    pub war_settlement: Box<Account<'info, FactionWarSettlement>>,
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
     #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]

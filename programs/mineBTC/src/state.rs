@@ -991,7 +991,7 @@ pub struct GameSession {
     pub wgtd_points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
     /// Weighted points by home-faction bettors with an active gameplay hashbeast,
     /// per faction (any direction). Folded into
-    /// `faction_war_state.eligible_hashbeast_totals` at settle_round. HB bonus
+    /// `war_state.eligible_hashbeast_totals` at settle_round. HB bonus
     /// rewards home-backing regardless of direction, so direction is not stored.
     pub eligible_hb_wgtd_by_faction: [u64; NUM_FACTIONS],
 
@@ -1037,7 +1037,7 @@ pub struct GameSession {
     /// Capped at active_factions / 3 to create scarcity.
     pub total_mutations_this_round: u8,
 
-    /// Snapshot of `faction_war_config.current_war_id` at round start.
+    /// Snapshot of `war_config.current_war_id` at round start.
     /// Used by the round-claim handler to detect late claims (cycle has settled
     /// after the round ended) so mutation-bonus score is dropped instead of
     /// being applied to a different cycle.
@@ -1174,7 +1174,7 @@ pub struct PlayerData {
     /// `current_faction_war_score_cycle_id` below). Used for MVP tracking.
     pub current_faction_war_score: u64,
     /// `war_id` that `current_faction_war_score` belongs to.
-    /// On the first bet of a new cycle (when `faction_war_state.war_id`
+    /// On the first bet of a new cycle (when `war_state.war_id`
     /// differs from this), the running score is reset to 0 and this is updated.
     /// This avoids needing a separate per-user reset instruction at cycle rollover.
     pub current_faction_war_score_cycle_id: u64,
@@ -1601,10 +1601,10 @@ pub struct FactionWarConfig {
     ///   threshold crosses.
     /// - `start_round` is blocked once this is non-zero (war must be settled
     ///   before a new round can begin).
-    /// - `settle_faction_war` requires this to be non-zero AND
+    /// - `settle_war` requires this to be non-zero AND
     ///   `last_processed_round_id == cycle_end_round_id` (boundary round
-    ///   already folded into faction_war_state).
-    /// - Reset to `0` inside `finalize_faction_war_settlement` so the next war
+    ///   already folded into war_state).
+    /// - Reset to `0` inside `finalize_war_settlement` so the next war
     ///   starts fresh.
     pub cycle_end_round_id: u64,
 
@@ -1786,7 +1786,7 @@ impl FactionWarState {
 
 /// Faction War settlement PDA (Seed: `[b"faction-war-settlement", war_id_u64_le]`)
 /// Holds all settlement-only data computed when a faction war ends.
-/// Loaded by settle_faction_war and claim_faction_war_rewards — NOT by join_bets or settle_round.
+/// Loaded by settle_war and claim_faction_war_rewards — NOT by join_bets or settle_round.
 #[account]
 pub struct FactionWarSettlement {
     pub bump: u8,

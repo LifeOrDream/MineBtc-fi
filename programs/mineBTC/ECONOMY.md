@@ -291,7 +291,7 @@ Players bet SOL in 60-second rounds
 When the economy cycle completes (LP burn → `lp_operations_count` increments):
 
 ```
-finalize_faction_war_settlement():
+finalize_war_settlement():
     1. Rank factions by gameplay score, then round wins, then own-faction SOL support
     2. Compare with start_ranks → compute rank deltas → resolve directions
     3. Split dbtc_mined_this_war:
@@ -623,7 +623,7 @@ UserFactionWarBets (one per user per faction war)
 ```
   ┌─────────────────────────────┐
   │  IDLE (no active faction war) │
-  │  faction_war_state id = 0     │
+  │  war_state id = 0     │
   └──────────┬──────────────────┘
              │ First bet in new cycle (auto-start)
              ▼

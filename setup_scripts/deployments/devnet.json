@@ -356,8 +356,8 @@
     "lp_mint": "EG7gKcPHcwCK1xHGnvPjYgMyRDi6Pbf8ZwvoWg2aCeiu",
     "timestamp": "2026-05-10T19:38:29.052Z"
   },
-  "faction_war_config_initialized": {
-    "faction_war_config_pda": "iLjS8NRXYmgx8KRdSv18Yd12pYomYLGkvHEXeD5hDPe",
+  "war_config_initialized": {
+    "war_config_pda": "iLjS8NRXYmgx8KRdSv18Yd12pYomYLGkvHEXeD5hDPe",
     "starting_war_id": 1,
     "tx_signature": "3ivHqd5WEDhijLueYqAFj1n4awZo8v4WTA7vw8SjpHiecNRyz2SwRw3fpDYgEofmhUq4yeDpeggNcfEn14hiEGW3",
     "timestamp": "2026-05-10T19:38:30.698Z"

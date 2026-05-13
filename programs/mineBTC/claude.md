@@ -194,12 +194,12 @@ Important rules:
 
 `instructions/faction_war.rs`
 
-- `settle_faction_war_internal` — permissionless, anyone can crank once LP burn completes
+- `settle_war_internal` — permissionless, anyone can crank once LP burn completes
 - `claim_faction_war_rewards_internal` — user claims their share
 
 Important rules:
 
-- settlement is gated by `mining.pol_stats.lp_operations_count >= faction_war_config.settle_at_lp_op_count`
+- settlement is gated by `mining.pol_stats.lp_operations_count >= war_config.settle_at_lp_op_count`
 - if no bets occurred, no cycle rewards are distributed
 - rankings are computed from the internal `gameplay_scores` array, then compared to previous cycle ranks
 
