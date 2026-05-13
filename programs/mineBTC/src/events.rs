@@ -49,7 +49,7 @@ pub struct FactionAdded {
 pub struct PriceSnapshotTaken {
     pub snapshot_number: u8,         // 1-8 (which snapshot in the cycle)
     pub sol_swapped: u64,            // SOL amount swapped (lamports)
-    pub dbtc_received: u64,       // MINE_BTC received from swap (6 decimals)
+    pub dbtc_received: u64,          // MINE_BTC received from swap (6 decimals)
     pub current_price: u64,          // Calculated price (9 decimals: SOL per MINE_BTC)
     pub weighted_avg_price: u64,     // Weighted average price so far (9 decimals)
     pub sol_earnmarked_for_pol: u64, // SOL earnmarked for POL this snapshot (lamports)
@@ -62,7 +62,7 @@ pub struct PriceSnapshotTaken {
 #[event]
 pub struct LiquidityAdded {
     pub sol_amount: u64,       // SOL added to pool (lamports)
-    pub dbtc_amount: u64,   // MINE_BTC added to pool (6 decimals)
+    pub dbtc_amount: u64,      // MINE_BTC added to pool (6 decimals)
     pub lp_tokens_minted: u64, // LP tokens minted (6 decimals)
     pub lp_token_price: u64,   // LP token price in SOL (9 decimals)
     pub timestamp: i64,        // Unix timestamp

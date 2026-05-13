@@ -1213,7 +1213,10 @@ mod tests {
 
     #[test]
     fn mul_div_large_numbers() {
-        assert_eq!(mul_div(u64::MAX, u64::MAX, u64::MAX).unwrap(), u64::MAX as u128);
+        assert_eq!(
+            mul_div(u64::MAX, u64::MAX, u64::MAX).unwrap(),
+            u64::MAX as u128
+        );
     }
 
     #[test]
@@ -1329,16 +1332,7 @@ mod tests {
     fn init_position_sets_fields() {
         let mut pos = blank_staked_position();
         init_position(
-            &mut pos,
-            0,
-            2,
-            5,
-            1_000_000,
-            2_000_000,
-            30,
-            1_000_000,
-            250,
-            42,
+            &mut pos, 0, 2, 5, 1_000_000, 2_000_000, 30, 1_000_000, 250, 42,
         )
         .unwrap();
 
@@ -1349,7 +1343,10 @@ mod tests {
         assert_eq!(pos.weighted_amount, 2_000_000);
         assert_eq!(pos.lockup_duration, 30);
         assert_eq!(pos.start_timestamp, 1_000_000);
-        assert_eq!(pos.lockup_end_timestamp, 1_000_000 + (30 * DAY_IN_SECONDS as i64));
+        assert_eq!(
+            pos.lockup_end_timestamp,
+            1_000_000 + (30 * DAY_IN_SECONDS as i64)
+        );
         assert_eq!(pos.multiplier, 250);
         assert_eq!(pos.bump, 42);
     }

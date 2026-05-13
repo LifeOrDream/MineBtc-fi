@@ -49,8 +49,8 @@ pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    AutominerFactionPick, BetType, FactionsConfig, HashBeastConfig, HashBeastMintConfig,
-    DegenBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
+    AutominerFactionPick, BetType, DegenBtcDistConfig, FactionsConfig, HashBeastConfig,
+    HashBeastMintConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
 declare_id!("3uERKkvfgkTzJ7wFZC7ymWZygEbbeXuWVAiP2zu1Y1ye");
@@ -546,10 +546,7 @@ pub mod minebtc {
 
     /// STEP 2: Withdraw total tax from mint and distribute it
     /// Callable by anyone - program-controlled withdraw authority
-    pub fn crank_distribute_tax(
-        ctx: Context<CrankDistributeTax>,
-        war_id: u64,
-    ) -> Result<()> {
+    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "crank_distribute_tax");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
@@ -590,10 +587,7 @@ pub mod minebtc {
     }
 
     /// User claims their faction-war rewards (closes user_war_bets account).
-    pub fn claim_war_rewards(
-        ctx: Context<ClaimFactionWarRewards>,
-        war_id: u64,
-    ) -> Result<()> {
+    pub fn claim_war_rewards(ctx: Context<ClaimFactionWarRewards>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "claim_war_rewards");
         faction_war::claim_war_rewards_internal(ctx, war_id)
     }
@@ -616,10 +610,7 @@ pub mod minebtc {
     }
 
     /// Finalize the round's faction-level staking/jackpot distribution and track faction-war mining.
-    pub fn settle_round(
-        ctx: Context<SettleRound>,
-        war_id: u64,
-    ) -> Result<()> {
+    pub fn settle_round(ctx: Context<SettleRound>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "settle_round");
         game::int_settle_round(ctx.accounts, war_id)
     }
@@ -627,10 +618,7 @@ pub mod minebtc {
     /// Initialize a new faction war state PDA.
     /// Must be called once per war cycle before the first round's settle_round.
     /// Permissionless — anyone can initialize the war state for the current war ID.
-    pub fn initialize_faction_war(
-        ctx: Context<InitializeFactionWar>,
-        war_id: u64,
-    ) -> Result<()> {
+    pub fn initialize_faction_war(ctx: Context<InitializeFactionWar>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "initialize_faction_war");
         faction_war::initialize_war_internal(ctx, war_id)
     }

@@ -266,6 +266,15 @@ pub fn int_batch_mint_hashbeasts<'info>(
         ErrorCode::InvalidParameters
     );
 
+    // Mint paths MUST receive the canonical collection. The Accounts struct
+    // address-pins the field when present; this guard ensures it's actually
+    // present (so MPL Core attaches the new asset to the collection instead
+    // of minting it standalone).
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+
     let global_config = &ctx.accounts.global_config;
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
     let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
@@ -606,6 +615,12 @@ pub fn int_admin_mint_hashbeast(
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
     let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
 
+    // See `int_batch_mint_hashbeasts` for rationale.
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+
     // Verify recipient matches instruction parameter
     require!(
         ctx.accounts.recipient.key() == recipient,
@@ -774,6 +789,12 @@ pub fn int_whitelist_mint_hashbeast(
     let allowance = &mut ctx.accounts.hashbeast_free_mint_allowance;
     let user = ctx.accounts.user.key();
 
+    // See `int_batch_mint_hashbeasts` for rationale.
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+
     require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(
         hashbeast_mint_config.is_active,
@@ -937,8 +958,8 @@ pub fn int_whitelist_mint_hashbeast(
 /// - three 1.0x HashBeasts: 2.0x
 /// - three strong HashBeasts: capped at 3.0x
 ///
-/// This keeps Genesis HashBeasts useful while avoiding the old shape where one maxed
-/// HashBeast could immediately consume the full passive cap.
+/// Smoothing ensures Genesis HashBeasts remain useful: three weak beasts can
+/// match one strong beast, and no single beast monopolizes the passive cap.
 /// The effective multiplier is capped at PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER for reward-share math.
 /// Clients must pass metadata accounts for all already-staked hashbeasts in `remaining_accounts`
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
@@ -1379,7 +1400,7 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
 /// the inventory path cannot accept another rebirth.
 ///
 /// Behavior:
-/// 1. Pays the user any `accumulated_val` they had earned (same as before).
+/// 1. Pays the user any `accumulated_val` they had earned.
 /// 2. If the NFT has already hit `MAX_REBIRTH_COUNT`, burns it.
 /// 3. Otherwise increments rebirth_count, rerolls fresh DNA, and resets
 ///    gameplay state: multiplier, xp, accumulated_val, breed_count, cooldown,
@@ -1618,6 +1639,14 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
 pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_breed_hashbeasts");
     require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
+
+    // Breed mints a new asset; the canonical collection account must be
+    // supplied so MPL Core attaches it to the collection (Accounts struct
+    // address-pins it when present).
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
     // Block self-breeding: passing the same asset as mom and dad would
     // increment breed_count only once (second metadata mutation overwrites
     // the first on serialize), bypassing the two-parent requirement.
@@ -1728,6 +1757,18 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         hashbeast_config.breed_curve_a,
         hashbeast_config.total_hashbeasts_minted,
     )?;
+    // Reject stale floor data. The anchor returned by `current_anchor()` is
+    // whatever was at `head` last — without checking `last_snapshot_at` we'd
+    // happily price against an anchor from months ago if the floor pipeline
+    // stalled. Hard-revert past the grace window so breeding can't undercut
+    // the "always above floor" invariant.
+    let floor_age = current_time
+        .checked_sub(floor_history.last_snapshot_at)
+        .ok_or(ErrorCode::BreedFloorAnchorUnavailable)?;
+    require!(
+        floor_history.last_snapshot_at > 0 && floor_age <= BREED_FLOOR_MAX_AGE_SECS,
+        ErrorCode::BreedFloorAnchorUnavailable
+    );
     let floor_anchor = floor_history.current_anchor();
     require!(
         floor_anchor >= SWEEP_MIN_ANCHOR_LAMPORTS,
@@ -1849,7 +1890,7 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let name = format!("Bitcoin hashbeasts #{}", current_mint_number);
+    let name = format!("hashbeast #{}", current_mint_number);
     let uri = format!(
         "https://assets.minebtc.fun/hashbeasts/{}.json",
         ctx.accounts.offspring_asset.key()
@@ -1998,7 +2039,7 @@ pub fn generate_hashbeast_data(
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("Bitcoin hashbeasts #{}", mint_number);
+    let name = format!("hashbeast #{}", mint_number);
     let uri = format!("https://assets.minebtc.fun/hashbeasts/{}.json", asset_key);
     let multiplier = BASE_MULTIPLIER;
 
@@ -2038,7 +2079,12 @@ fn add_tickets_to_player(
         .iter()
         .position(|&v| v == ticket_value)
     {
-        player_data.free_tickets_remaining[index] += ticket_count;
+        // Checked add — this counter is value accounting (each ticket can be
+        // redeemed for a free bet of `ticket_value` lamports of points), so a
+        // wrap would silently print free game value.
+        player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
+            .checked_add(ticket_count)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     } else {
         require!(
             player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES,
@@ -2409,9 +2455,18 @@ pub struct MintHashBeast<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2431,6 +2486,7 @@ pub struct MintHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -2506,6 +2562,7 @@ pub struct BatchMintHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -2572,9 +2629,18 @@ pub struct AdminMintHashBeast<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2643,9 +2709,18 @@ pub struct WhitelistMintHashBeast<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2690,14 +2765,28 @@ pub struct StakeHashBeast<'info> {
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
 
+    /// Read-only — anchors the `hashbeast_collection` address constraint to
+    /// the canonical collection set by admin.
+    #[account(seeds = [HASHBEAST_CONFIG_SEED.as_ref()], bump = hashbeast_config.bump)]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
+
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2741,14 +2830,28 @@ pub struct UnstakeHashBeast<'info> {
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
 
+    /// Read-only — anchors the `hashbeast_collection` address constraint to
+    /// the canonical collection set by admin.
+    #[account(seeds = [HASHBEAST_CONFIG_SEED.as_ref()], bump = hashbeast_config.bump)]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
+
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(

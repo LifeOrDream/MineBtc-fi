@@ -502,14 +502,14 @@ pub fn update_fees_internal(
         || new_dbtc_same_faction_pct.is_some()
         || new_dbtc_jackpot_pct.is_some()
     {
-        let dbtc_stakers_pct = new_dbtc_stakers_pct
-            .unwrap_or(global_config.dbtc_dist_config.dbtc_stakers_pct);
-        let dbtc_winners_pct = new_dbtc_winners_pct
-            .unwrap_or(global_config.dbtc_dist_config.dbtc_winners_pct);
+        let dbtc_stakers_pct =
+            new_dbtc_stakers_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_stakers_pct);
+        let dbtc_winners_pct =
+            new_dbtc_winners_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_winners_pct);
         let dbtc_same_faction_pct = new_dbtc_same_faction_pct
             .unwrap_or(global_config.dbtc_dist_config.dbtc_same_faction_pct);
-        let dbtc_jackpot_pct = new_dbtc_jackpot_pct
-            .unwrap_or(global_config.dbtc_dist_config.dbtc_jackpot_pct);
+        let dbtc_jackpot_pct =
+            new_dbtc_jackpot_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_jackpot_pct);
 
         require!(
             dbtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
@@ -710,17 +710,14 @@ pub fn update_gameplay_tuning_internal(
     let next_base_reward_bps = args
         .war_base_reward_bps
         .unwrap_or(tuning.war_base_reward_bps);
-    let next_mvp_reward_bps = args
-        .war_mvp_reward_bps
-        .unwrap_or(tuning.war_mvp_reward_bps);
+    let next_mvp_reward_bps = args.war_mvp_reward_bps.unwrap_or(tuning.war_mvp_reward_bps);
     let next_hashbeast_reward_bps = args
         .war_hashbeast_reward_bps
         .unwrap_or(tuning.war_hashbeast_reward_bps);
     // base + MVP + hashbeast must close to 100% — these are the three
     // lanes that `compute_base_reward_pools` splits the cycle pool into.
-    let reward_total = next_base_reward_bps as u32
-        + next_mvp_reward_bps as u32
-        + next_hashbeast_reward_bps as u32;
+    let reward_total =
+        next_base_reward_bps as u32 + next_mvp_reward_bps as u32 + next_hashbeast_reward_bps as u32;
     require!(
         reward_total == BASIS_POINTS_DENOMINATOR as u32,
         ErrorCode::InvalidParameters

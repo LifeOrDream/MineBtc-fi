@@ -311,6 +311,12 @@ pub enum ErrorCode {
     #[msg("Floor snapshot was already recorded within the cadence window")]
     SnapshotTooSoon,
 
+    #[msg("Oracle snapshot swap output is below the minimum acceptable amount")]
+    SnapshotSwapOutputTooLow,
+
+    #[msg("Oracle snapshot price deviates too far from the recent weighted price")]
+    SnapshotPriceDeviationTooHigh,
+
     #[msg("Asset is still owned by inventory_pda — sale not actually settled")]
     AssetStillOwnedByInventory,
 

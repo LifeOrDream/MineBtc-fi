@@ -281,6 +281,13 @@ pub const MAX_XP_FOR_QUALITY: u32 = 100_000;
 /// Breeding price floor: total breed cost must be at least 1.5x the current
 /// marketplace floor anchor.
 pub const BREED_FLOOR_MULTIPLIER_BPS: u64 = 15_000;
+/// Maximum age (in seconds) of the most recent floor snapshot at which the
+/// breed-floor guard is still trusted. Snapshots are pushed every
+/// `FLOOR_SNAPSHOT_INTERVAL_SECS` (24h), so allowing 48h gives a one-period
+/// grace window. If the floor pipeline stalls beyond this, breeding is
+/// blocked rather than letting it price against a stale anchor and undercut
+/// the "always above floor" invariant.
+pub const BREED_FLOOR_MAX_AGE_SECS: i64 = 48 * 60 * 60;
 /// Breed payment split: half SOL, half dbTC by SOL value.
 pub const BREED_SOL_SHARE_BPS: u64 = 5_000;
 /// SOL breeding fees split: 25% of the SOL leg to fee_recipient, 75% to the

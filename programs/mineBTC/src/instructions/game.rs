@@ -234,8 +234,7 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     // Snapshot the active cycle ID at round start. Round-claim handlers use
     // this to detect a late claim (cycle has already settled) and skip the
     // mutation-bonus score-add for that case.
-    game_session.war_id_when_played =
-        ctx.accounts.war_config.current_war_id;
+    game_session.war_id_when_played = ctx.accounts.war_config.current_war_id;
 
     global_state.can_begin_round = false;
 
@@ -433,6 +432,10 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         )?
     };
 
+    require!(
+        (winning_faction_id as usize) < faction_count,
+        ErrorCode::InvalidFactionId
+    );
     game_session.winning_faction_id = winning_faction_id;
     let initial_direction = (u64::from_le_bytes([
         final_hash_bytes[4],
@@ -445,7 +448,6 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         0,
     ]) % PredictionDirection::COUNT as u64) as u8;
 
-    
     let winning_direction = if total_users == 0 {
         initial_direction
     } else {
@@ -464,6 +466,10 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             &game_session.points_bets_by_faction_direction[winning_faction_id as usize],
         )?
     };
+    require!(
+        (winning_direction as usize) < PredictionDirection::COUNT,
+        ErrorCode::InvalidState
+    );
     game_session.winning_direction = winning_direction;
     msg!(
         "🏆 [end_round] winner: faction={} direction={} users={}",
@@ -761,10 +767,7 @@ fn find_valid_winning_faction(
     let mut active_factions = [0u8; NUM_FACTIONS];
     let mut active_count = 0usize;
 
-    for (faction_id, faction_points) in user_faction_indexes
-        .iter()
-        .enumerate()
-        .take(faction_count)
+    for (faction_id, faction_points) in user_faction_indexes.iter().enumerate().take(faction_count)
     {
         if *faction_points > 0 {
             active_factions[active_count] = faction_id as u8;
@@ -776,7 +779,11 @@ fn find_valid_winning_faction(
 
     let winner_index = (random_seed % active_count as u64) as usize;
     let winning_faction = active_factions[winner_index];
-    msg!("🏆 winning_faction={} ({} active)", winning_faction, active_count);
+    msg!(
+        "🏆 winning_faction={} ({} active)",
+        winning_faction,
+        active_count
+    );
     Ok(winning_faction)
 }
 
@@ -802,7 +809,11 @@ fn find_valid_winning_direction(
 
     let winner_index = (random_seed % active_count as u64) as usize;
     let winning_direction = active_directions[winner_index];
-    msg!("🏆 winning_direction={} ({} active)", winning_direction, active_count);
+    msg!(
+        "🏆 winning_direction={} ({} active)",
+        winning_direction,
+        active_count
+    );
     Ok(winning_direction)
 }
 
@@ -890,6 +901,12 @@ fn track_war_round_completion(
     );
 
     let winning_faction_index = winning_faction_id as usize;
+    let active_factions = war_state.faction_count as usize;
+    require!(active_factions <= NUM_FACTIONS, ErrorCode::InvalidState);
+    require!(
+        winning_faction_index < active_factions,
+        ErrorCode::InvalidFactionId
+    );
     // "Real activity" = any economic bet (SOL or ticket-backed points)
     // landed in this round. Previously this was gated on
     // `actually_distributed > 0` (dBTC paid to winners), but that's the
@@ -899,18 +916,16 @@ fn track_war_round_completion(
     // / drought-reset on bets instead means "round happened" → bookkeeping
     // fires, "empty boundary round with a hash-picked random winner" → it
     // doesn't.
-    let has_real_activity =
-        game_session.total_sol_bets > 0 || game_session.total_points_bets > 0;
+    let has_real_activity = game_session.total_sol_bets > 0 || game_session.total_points_bets > 0;
     if has_real_activity {
-        war_state.round_wins[winning_faction_index] = war_state
-            .round_wins[winning_faction_index]
+        war_state.round_wins[winning_faction_index] = war_state.round_wins[winning_faction_index]
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     if round_score > 0 {
-        war_state.gameplay_scores[winning_faction_index] = war_state
-            .gameplay_scores[winning_faction_index]
+        war_state.gameplay_scores[winning_faction_index] = war_state.gameplay_scores
+            [winning_faction_index]
             .checked_add(round_score)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         emit!(crate::events::GameplayScoreAccumulated {
@@ -918,8 +933,7 @@ fn track_war_round_completion(
             faction_id: winning_faction_id,
             score_source: GAMEPLAY_SCORE_SOURCE_ROUND_WIN,
             score_added: round_score,
-            faction_total_score: war_state.gameplay_scores
-                [winning_faction_index],
+            faction_total_score: war_state.gameplay_scores[winning_faction_index],
             user: Pubkey::default(),
         });
     }
@@ -937,21 +951,19 @@ fn track_war_round_completion(
         // this loop runs once per round and pushes the totals into the
         // active war's FactionWarState (which is read at war settlement and
         // claims).
-        let active_factions = war_state.faction_count as usize;
         for fi in 0..active_factions {
             for di in 0..PredictionDirection::COUNT {
                 let wgtd = game_session.wgtd_points_bets_by_faction_direction[fi][di];
                 if wgtd > 0 {
-                    war_state.faction_direction_totals[fi][di] = war_state
-                        .faction_direction_totals[fi][di]
+                    war_state.faction_direction_totals[fi][di] = war_state.faction_direction_totals
+                        [fi][di]
                         .checked_add(wgtd)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
                 }
             }
             let round_volume = game_session.sol_bets_by_faction[fi];
             if round_volume > 0 {
-                war_config.sol_volume_since_last_win[fi] = war_config
-                    .sol_volume_since_last_win[fi]
+                war_config.sol_volume_since_last_win[fi] = war_config.sol_volume_since_last_win[fi]
                     .checked_add(round_volume)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
             }
@@ -1011,10 +1023,7 @@ fn track_war_round_completion(
 }
 
 #[inline(never)]
-pub fn int_settle_round<'info>(
-    accounts: &mut SettleRound<'info>,
-    war_id: u64,
-) -> Result<()> {
+pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -> Result<()> {
     crate::log_fn!("game", "int_settle_round");
     msg!("🏁 [settle_round] Ending current round");
 
@@ -1023,13 +1032,21 @@ pub fn int_settle_round<'info>(
     let global_state = &mut accounts.global_game_state;
 
     if game_session.stage == 0 || game_session.stage == 2 {
-        msg!("⚠️ [settle_round] early return stage={}", game_session.stage);
+        msg!(
+            "⚠️ [settle_round] early return stage={}",
+            game_session.stage
+        );
         return Ok(());
     }
     require!(game_session.stage == 1, ErrorCode::InvalidStage);
 
     // Get winning faction from the round result
     let winning_faction_id = game_session.winning_faction_id;
+    let winning_faction_index = winning_faction_id as usize;
+    require!(
+        winning_faction_index < NUM_FACTIONS,
+        ErrorCode::InvalidFactionId
+    );
     require!(
         faction_state.faction_id == winning_faction_id,
         ErrorCode::InvalidFactionId
@@ -1041,8 +1058,13 @@ pub fn int_settle_round<'info>(
     let sol_staker_fees = game_session.stakers_fee;
 
     let winning_direction = game_session.winning_direction;
+    let winning_direction_index = winning_direction as usize;
+    require!(
+        winning_direction_index < PredictionDirection::COUNT,
+        ErrorCode::InvalidState
+    );
     let exact_winning_wgtd_pts = game_session.wgtd_points_bets_by_faction_direction
-        [winning_faction_id as usize][winning_direction as usize];
+        [winning_faction_index][winning_direction_index];
     let degenbtc_active = faction_state.total_degenbtc_hashpower > 0;
     let lp_active = faction_state.total_lp_hashpower > 0;
     if degenbtc_active || lp_active {
@@ -1060,8 +1082,8 @@ pub fn int_settle_round<'info>(
             sol_staker_fees
         );
 
-        let winning_points = game_session.points_bets_by_faction_direction
-            [winning_faction_id as usize][winning_direction as usize];
+        let winning_points = game_session.points_bets_by_faction_direction[winning_faction_index]
+            [winning_direction_index];
         if sol_staker_fees > 0 && winning_points > 0 {
             let sol_reward_delta =
                 helper::mul_div(sol_staker_fees, INDEX_PRECISION, winning_points)?;
@@ -1072,11 +1094,8 @@ pub fn int_settle_round<'info>(
         }
 
         if dbtc_staker_rewards > 0 && exact_winning_wgtd_pts > 0 {
-            let dbtc_reward_delta = helper::mul_div(
-                dbtc_staker_rewards,
-                INDEX_PRECISION,
-                exact_winning_wgtd_pts,
-            )?;
+            let dbtc_reward_delta =
+                helper::mul_div(dbtc_staker_rewards, INDEX_PRECISION, exact_winning_wgtd_pts)?;
             game_session.dbtc_rewards_index = game_session
                 .dbtc_rewards_index
                 .checked_add(dbtc_reward_delta)
@@ -1090,8 +1109,12 @@ pub fn int_settle_round<'info>(
             game_session.jackpot_distributed = true;
         } else {
             let jackpot_faction_id = game_session.jackpot_faction_id as usize;
-            let total_jackpot_wgtd_pts: u64 = game_session
-                .wgtd_points_bets_by_faction_direction[jackpot_faction_id]
+            require!(
+                jackpot_faction_id < NUM_FACTIONS,
+                ErrorCode::InvalidFactionId
+            );
+            let total_jackpot_wgtd_pts: u64 = game_session.wgtd_points_bets_by_faction_direction
+                [jackpot_faction_id]
                 .iter()
                 .copied()
                 .try_fold(0u64, |acc, v| acc.checked_add(v))
@@ -1103,7 +1126,8 @@ pub fn int_settle_round<'info>(
                 global_state.jackpot_pot = 0;
                 game_session.jackpot_pot_size_on_hit = jackpot_bonus;
 
-                let jackpot_index = helper::mul_div(jackpot_bonus, INDEX_PRECISION, total_jackpot_wgtd_pts)?;
+                let jackpot_index =
+                    helper::mul_div(jackpot_bonus, INDEX_PRECISION, total_jackpot_wgtd_pts)?;
                 game_session.jackpot_rewards_index = jackpot_index as u128;
                 game_session.jackpot_distributed = true;
 
@@ -1177,8 +1201,8 @@ pub fn int_settle_round<'info>(
         accounts.war_state.stage == 0,
         ErrorCode::FactionWarNotActive
     );
-    let winner_idx = winning_faction_id as usize;
-    let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
+    let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction
+        [winning_faction_index]
         .iter()
         .copied()
         .try_fold(0u64, |acc, v| acc.checked_add(v))
@@ -1313,10 +1337,6 @@ fn distribute_rewards_amg_stakers(
 
     Ok(())
 }
-
-
-
-
 
 // ========================================================================================
 // =============================== ACCOUNT CONTEXTS ======================================
@@ -1468,8 +1488,6 @@ pub struct SettleRound<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
-
 
 #[cfg(test)]
 mod tests {

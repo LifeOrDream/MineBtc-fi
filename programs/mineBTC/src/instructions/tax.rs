@@ -17,9 +17,11 @@ use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
 //
 // All degenBTC transfers incur a 0.1% tax, split into:
 // - **Burn**: Reducing total supply (default 25%)
-// - **NFT Floor Sweep**: Funded for market-making (default 10%)
 // - **Faction Treasury**: Distributed to stakers via faction_war leaderboard (default 40%)
 // - **Back to Vault**: Reborn into mining emission pool (remainder)
+//
+// NFT floor-sweep market making is funded from the protocol's `distribute_sol_fees`
+// flow, not from this tax split.
 //
 // ## Faction Treasury Distribution
 //
@@ -40,8 +42,6 @@ use crate::events::*;
 use crate::instructions::helper;
 use crate::state::*;
 
-
-
 // ========================================================================================
 // ============================= ADMIN FUNCTIONS ==========================================
 // ========================================================================================
@@ -49,9 +49,8 @@ use crate::state::*;
 /// Initialize TaxConfig account and create vault token accounts.
 /// Callable only by global config authority.
 ///
-/// NFT market making is no longer funded from this tax — it pulls SOL from
-/// the protocol's `distribute_sol_fees` flow instead. So tax splits are now:
-///   `treasury_pct` + `burn_pct` + (residual → mining vault).
+/// Tax splits: `treasury_pct` + `burn_pct` + (residual → mining vault).
+/// NFT floor-sweep funding comes from `distribute_sol_fees`, not from this tax.
 pub fn internal_initialize_tax_config(
     ctx: Context<InitializeTaxConfig>,
     treasury_pct: u8,
@@ -174,11 +173,8 @@ pub fn internal_crank_harvest_fees<'info>(
 ///
 /// Callable by anyone - program-controlled withdraw authority
 
-
 #[inline(never)]
-fn load_war_state_boxed<'info>(
-    account: &AccountInfo<'info>,
-) -> Result<Box<FactionWarState>> {
+fn load_war_state_boxed<'info>(account: &AccountInfo<'info>) -> Result<Box<FactionWarState>> {
     require!(
         account.owner == &FactionWarState::owner(),
         ErrorCode::InvalidAccount
@@ -274,8 +270,7 @@ pub fn internal_crank_distribute_tax<'info>(
         M_HUNDRED,
     )?)
     .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-    // Remainder goes back to the degenBTC vault (was previously also reduced by
-    // the NFT floor sweep cut; that cut is gone — vault now absorbs that share).
+    // Remainder goes back to the degenBTC vault.
     let vault_return = withheld_amount
         .checked_sub(faction_treasury_amount)
         .and_then(|remaining| remaining.checked_sub(burn_amount))
@@ -369,9 +364,7 @@ pub fn internal_crank_distribute_tax<'info>(
     if faction_treasury_amount > 0 {
         if war_state_info.lamports() > 0 && !war_state_info.data_is_empty() {
             let mut war_state = load_war_state_boxed(war_state_info)?;
-            if war_state.war_id == accounts.war_config.current_war_id
-                && war_state.stage == 0
-            {
+            if war_state.war_id == accounts.war_config.current_war_id && war_state.stage == 0 {
                 war_state.treasury_reward_base_amount = war_state
                     .treasury_reward_base_amount
                     .checked_add(faction_treasury_amount)
@@ -450,14 +443,8 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         ctx.accounts.faction_treasury_vault.amount
     );
 
-    require!(
-        war_state.stage == 1,
-        ErrorCode::FactionWarNotSettled
-    );
-    require!(
-        war_state.war_id == war_id,
-        ErrorCode::InvalidState
-    );
+    require!(war_state.stage == 1, ErrorCode::FactionWarNotSettled);
+    require!(war_state.war_id == war_id, ErrorCode::InvalidState);
 
     // Prevent double-claim for this faction
     let faction_bit = 1u16 << fid;
