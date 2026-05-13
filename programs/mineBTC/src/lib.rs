@@ -446,21 +446,21 @@ pub mod minebtc {
     /// `distribute_sol_fees` (see `SolFeeConfig::nft_market_making_pct`).
     pub fn initialize_tax_config(
         ctx: Context<InitializeTaxConfig>,
-        faction_treasury_pct: u8,
+        treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_tax_config");
-        tax::internal_initialize_tax_config(ctx, faction_treasury_pct, burn_pct)
+        tax::internal_initialize_tax_config(ctx, treasury_pct, burn_pct)
     }
 
     /// Update tax distribution percentages (admin only)
     pub fn update_tax_config(
         ctx: Context<UpdateTaxConfig>,
-        faction_treasury_pct: u8,
+        treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_tax_config");
-        tax::internal_update_tax_config(ctx, faction_treasury_pct, burn_pct)
+        tax::internal_update_tax_config(ctx, treasury_pct, burn_pct)
     }
 
     // ----------------------------------------------------------------------------------------

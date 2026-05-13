@@ -137,7 +137,7 @@
     },
     "tax": {
         "_notes": "Splits sum need not be 100; the residual (100 - faction_treasury - burn) flows back to the mining vault. NFT market making is now funded from SOL — see global sol_fee_config.nft_market_making_pct, default 3%.",
-        "faction_treasury_pct": 25,
+        "treasury_pct": 25,
         "burnt_pct": 50
     },
     "game": {

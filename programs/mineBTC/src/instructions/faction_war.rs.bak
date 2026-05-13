@@ -362,7 +362,7 @@ fn pool_share_from_bps(pool: u64, bps: u16) -> Result<u64> {
 ///
 /// Each lane is then distributed across factions by final rank, normalized only
 /// across factions that have eligible claimants for that lane.
-pub fn compute_faction_reward_pools(
+pub fn compute_base_reward_pools(
     faction_war_state: &FactionWarState,
     faction_war_settlement: &mut FactionWarSettlement,
     tuning: &GameplayTuningConfig,
@@ -371,10 +371,10 @@ pub fn compute_faction_reward_pools(
 
     let pool = faction_war_state.dbtc_mined_this_war;
     if pool == 0 {
-        faction_war_settlement.faction_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.base_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_settlement.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_settlement.faction_mvp_bonus = [0u64; NUM_FACTIONS];
+        faction_war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.mvp_bonus = [0u64; NUM_FACTIONS];
         return Ok(());
     }
 
@@ -425,7 +425,7 @@ pub fn compute_faction_reward_pools(
         &faction_war_settlement.final_ranks,
         &eligible_base,
         active_factions,
-        &mut faction_war_settlement.faction_reward_pools,
+        &mut faction_war_settlement.base_reward_pools,
     )?;
     if any_loyalty_eligible {
         compute_rank_weighted_pools_into(
@@ -444,10 +444,10 @@ pub fn compute_faction_reward_pools(
             &faction_war_settlement.final_ranks,
             &eligible_hashbeast,
             active_factions,
-            &mut faction_war_settlement.faction_hashbeast_reward_pools,
+            &mut faction_war_settlement.hashbeast_reward_pools,
         )?;
     } else {
-        faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
     }
     Ok(())
 }
@@ -634,9 +634,9 @@ pub fn finalize_faction_war_settlement(
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] stage mutated: -> 1");
         faction_war_state.dbtc_mined_this_war = 0;
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] dbtc_mined_this_war reset=0");
-        faction_war_settlement.faction_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.base_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_settlement.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] reward pools zeroed");
         let old_id = faction_war_config.current_war_id;
         faction_war_config.current_war_id = faction_war_config
@@ -703,9 +703,9 @@ pub fn finalize_faction_war_settlement(
         }
         faction_war_state.dbtc_mined_this_war = 0;
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] dbtc_mined_this_war reset=0");
-        faction_war_settlement.faction_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.base_reward_pools = [0u64; NUM_FACTIONS];
         faction_war_settlement.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_settlement.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
+        faction_war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] reward pools zeroed");
         faction_war_state.stage = 1;
         msg!("⚔️ [faction_war.finalize_faction_war_settlement] stage mutated: -> 1");
@@ -744,7 +744,7 @@ pub fn finalize_faction_war_settlement(
             faction_war_settlement.resolved_directions[faction_id] = direction.as_index() as u8;
         }
 
-        compute_faction_reward_pools(faction_war_state, faction_war_settlement, tuning)?;
+        compute_base_reward_pools(faction_war_state, faction_war_settlement, tuning)?;
 
         // --- MVP Bonus: distribute 5% of mining pool rank-weighted to all faction MVPs ---
         // #1 faction MVP: 40% of MVP pool | #2: 25% | #3: 15% | #4+: equal share of 20%
@@ -807,7 +807,7 @@ pub fn finalize_faction_war_settlement(
                         u64::try_from(computed_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?
                     };
 
-                    faction_war_settlement.faction_mvp_bonus[fid] = bonus;
+                    faction_war_settlement.mvp_bonus[fid] = bonus;
                     distributed = distributed
                         .checked_add(bonus)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
@@ -902,9 +902,9 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
         final_ranks: faction_war_settlement.final_ranks,
         rank_deltas: faction_war_settlement.rank_deltas,
         resolved_directions: faction_war_settlement.resolved_directions,
-        faction_reward_pools: faction_war_settlement.faction_reward_pools,
+        base_reward_pools: faction_war_settlement.base_reward_pools,
         loyalty_reward_pools: faction_war_settlement.loyalty_reward_pools,
-        faction_hashbeast_reward_pools: faction_war_settlement.faction_hashbeast_reward_pools,
+        hashbeast_reward_pools: faction_war_settlement.hashbeast_reward_pools,
         round_wins: faction_war_state.round_wins,
         faction_sol_totals: faction_war_state.faction_sol_totals,
         gameplay_scores: faction_war_state.gameplay_scores,
@@ -1039,7 +1039,7 @@ pub fn claim_faction_war_rewards_internal(
 
             let total_bet =
                 faction_war_state.faction_direction_totals[faction_id][resolved_direction];
-            let faction_pool = faction_war_settlement.faction_reward_pools[faction_id];
+            let faction_pool = faction_war_settlement.base_reward_pools[faction_id];
             msg!("📊 [faction_war.claim_faction_war_rewards_internal] base calc faction_id={} total_bet={} faction_pool={}", faction_id, total_bet, faction_pool);
 
             if total_bet > 0 && faction_pool > 0 {
@@ -1090,7 +1090,7 @@ pub fn claim_faction_war_rewards_internal(
                 );
                 if user_faction_war_bets.hashbeast_bonus_eligible {
                     let hashbeast_pool =
-                        faction_war_settlement.faction_hashbeast_reward_pools[faction_id];
+                        faction_war_settlement.hashbeast_reward_pools[faction_id];
                     let eligible_total = faction_war_state.eligible_hashbeast_direction_totals
                         [faction_id][resolved_direction];
                     msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} eligible_total={}", hashbeast_pool, eligible_total);
@@ -1130,7 +1130,7 @@ pub fn claim_faction_war_rewards_internal(
     let mut mvp_bonus_amount = 0u64;
     for fid in 0..active_factions {
         if faction_war_state.mvp_user[fid] == owner_key {
-            mvp_bonus_amount = faction_war_settlement.faction_mvp_bonus[fid];
+            mvp_bonus_amount = faction_war_settlement.mvp_bonus[fid];
             msg!("🏆 [faction_war.claim_faction_war_rewards_internal] MVP match fid={} mvp_bonus_amount={}", fid, mvp_bonus_amount);
             if mvp_bonus_amount > 0 {
                 let old_total = total_reward;
@@ -1160,7 +1160,7 @@ pub fn claim_faction_war_rewards_internal(
     );
     if sol_pool > 0 && base_reward_amount > 0 {
         let total_base_pool = faction_war_settlement
-            .faction_reward_pools
+            .base_reward_pools
             .iter()
             .take(active_factions)
             .sum::<u64>();

@@ -54,7 +54,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 21. Initialize standalone `degenbtc_market` (NFT marketplace program).
 22. Initialize Inventory Pool + Floor Queue + Sale History + Floor History + Inventory Sweep Vault inside mineBTC.
 23. Initialize per-faction LootboxQueue PDAs (one per active faction).
-24. Initialize tax config (`faction_treasury_pct`, `burn_pct` only — no NFT floor sweep arg).
+24. Initialize tax config (`treasury_pct`, `burn_pct` only — no NFT floor sweep arg).
 25. Initialize global game state.
 26. Initialize LP token accounts for program custody.
 27. Initialize faction-war config.

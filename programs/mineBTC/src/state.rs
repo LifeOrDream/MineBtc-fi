@@ -811,7 +811,7 @@ pub struct TaxConfig {
     pub bump: u8,
 
     /// Percentage of withheld tax that goes to faction treasury
-    pub faction_treasury_pct: u8,
+    pub treasury_pct: u8,
     /// Percentage of withheld tax that gets burned (remainder goes back to vault)
     pub burn_pct: u8,
 
@@ -829,7 +829,7 @@ pub struct TaxConfig {
 impl TaxConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        1 +     // faction_treasury_pct
+        1 +     // treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
         8 +     // unassigned_faction_war_treasury_amount
@@ -1784,13 +1784,13 @@ pub struct FactionWarSettlement {
     pub resolved_directions: [u8; NUM_FACTIONS],
 
     /// Bonus amount reserved for each faction's MVP at settlement.
-    pub faction_mvp_bonus: [u64; NUM_FACTIONS],
+    pub mvp_bonus: [u64; NUM_FACTIONS],
 
     /// Pre-computed base reward pool per faction (rank-weighted across factions,
     /// then shared by anyone who picked that country's resolved direction correctly).
-    pub faction_reward_pools: [u64; NUM_FACTIONS],
+    pub base_reward_pools: [u64; NUM_FACTIONS],
     /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
-    pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
+    pub hashbeast_reward_pools: [u64; NUM_FACTIONS],
 
     /// Bitmap of factions that have already claimed treasury rewards for this
     /// faction war. Bit N = 1 means faction N has claimed.
@@ -1804,9 +1804,9 @@ impl FactionWarSettlement {
         (NUM_FACTIONS * 1) + // final_ranks
         (NUM_FACTIONS * 1) + // rank_deltas
         (NUM_FACTIONS * 1) + // resolved_directions
-        (NUM_FACTIONS * 8) + // faction_mvp_bonus
-        (NUM_FACTIONS * 8) + // faction_reward_pools
-        (NUM_FACTIONS * 8) + // faction_hashbeast_reward_pools
+        (NUM_FACTIONS * 8) + // mvp_bonus
+        (NUM_FACTIONS * 8) + // base_reward_pools
+        (NUM_FACTIONS * 8) + // hashbeast_reward_pools
         2; // treasury_claimed_bitmap
 
     pub fn blank() -> Self {
@@ -1816,9 +1816,9 @@ impl FactionWarSettlement {
             final_ranks: [0u8; NUM_FACTIONS],
             rank_deltas: [0i8; NUM_FACTIONS],
             resolved_directions: [0u8; NUM_FACTIONS],
-            faction_mvp_bonus: [0u64; NUM_FACTIONS],
-            faction_reward_pools: [0u64; NUM_FACTIONS],
-            faction_hashbeast_reward_pools: [0u64; NUM_FACTIONS],
+            mvp_bonus: [0u64; NUM_FACTIONS],
+            base_reward_pools: [0u64; NUM_FACTIONS],
+            hashbeast_reward_pools: [0u64; NUM_FACTIONS],
             treasury_claimed_bitmap: 0,
         }
     }
@@ -1831,9 +1831,9 @@ impl FactionWarSettlement {
         target.final_ranks = AnchorDeserialize::deserialize(buf)?;
         target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
         target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_bonus = AnchorDeserialize::deserialize(buf)?;
-        target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.faction_hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.mvp_bonus = AnchorDeserialize::deserialize(buf)?;
+        target.base_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }

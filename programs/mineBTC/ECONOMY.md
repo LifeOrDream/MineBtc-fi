@@ -308,13 +308,13 @@ finalize_faction_war_settlement():
 ```
 dbtc_mined_this_war (total degenBTC mined in all rounds this cycle)
     │
-    ├─ base_reward_bps → faction_reward_pools
+    ├─ base_reward_bps → base_reward_pools
     │         Users who bet any country's final direction correctly get pro-rata share
     │
     ├─ loyalty_reward_bps → loyalty_reward_pools
     │         Own-country correct-direction supporters get pro-rata share
     │
-    └─ hashbeast_reward_bps → faction_hashbeast_reward_pools
+    └─ hashbeast_reward_bps → hashbeast_reward_pools
               Eligible gameplay HashBeasts get accumulated_val (claimable via burn)
 ```
 
@@ -606,9 +606,9 @@ FactionWarState (one per faction war)
     ├─ faction_sol_direction_totals (claim-time mutation stake context)
     ├─ loyalty_direction_totals (own-country loyalty-pool denominator)
     ├─ eligible_hashbeast_direction_totals (denominator for hashbeast bonus)
-    ├─ faction_reward_pools (base user share)
+    ├─ base_reward_pools (base user share)
     ├─ loyalty_reward_pools (own-country loyalty share)
-    └─ faction_hashbeast_reward_pools (HashBeast claim bonus share)
+    └─ hashbeast_reward_pools (HashBeast claim bonus share)
 
 UserFactionWarBets (one per user per faction war)
     ├─ direction_bets: weighted bets across countries

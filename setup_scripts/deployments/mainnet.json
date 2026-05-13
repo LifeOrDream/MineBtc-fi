@@ -326,7 +326,7 @@
     "nft_floor_sweep_vault": "DRvR4WpLj85Lfvwk3im7Ucrz1s9FPLPUtrTihUiqaPve",
     "nft_sale_sol_vault": "AhQLtQaExz9rd3CZysjFeE47CkSmTUhbacwS6vURTDqv",
     "nft_floor_sweep_pct": 25,
-    "faction_treasury_pct": 25,
+    "treasury_pct": 25,
     "whitelisted_address": "3tfDJza2xS5GWCE8yQ1dvRLrJ9AYDZCzkFz1jcBpiRC3",
     "tx_signature": "5GrTBxhhMu56oNSVV6WPgAHwLZYwUf11b6CZiTaAEPA3rjXYRD6ZspNpMPuVUzMfo2xZg1h4eNRqTh8xc92GEZBo",
     "timestamp": "2025-12-16T19:04:58.112Z"

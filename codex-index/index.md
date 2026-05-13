@@ -16,7 +16,7 @@ This index maps the contract repository for fast cross-repo work. Treat this rep
   - `economy.rs` - SOL fee distribution (buybacks + NFT MM + dev), price snapshots, emission rate update, LP add/burn.
   - `marketplace_cpi.rs` - permissionless on-chain NFT market maker: floor queue, sale history, floor history, sweep + auto-dispose, expire program listing, register/list/cancel/buy wrappers.
   - `faction_war.rs` - mutation-driven cycle scoring, rankings, settlement, cycle claims.
-  - `tax.rs` - Token-2022 withheld fee harvesting and distribution (faction_treasury_pct + burn_pct + residual to mining vault; no NFT floor sweep slice).
+  - `tax.rs` - Token-2022 withheld fee harvesting and distribution (treasury_pct + burn_pct + residual to mining vault; no NFT floor sweep slice).
   - `helper.rs` - PDA helpers, transfers, reward math, staking math.
 - `raydium/programs/cp-swap/` - bundled/custom Raydium CP-Swap program used for local/devnet pool flows.
 - `setup_scripts/` - deployment, token init, pool init, game init, local testing, and keeper loops.

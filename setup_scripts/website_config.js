@@ -246,8 +246,8 @@ function generateWebsiteConfig(config, deployment) {
           deployment.tax_config_initialized?.withdraw_withheld_authority,
         faction_treasury_vault:
           deployment.tax_config_initialized?.faction_treasury_vault,
-        faction_treasury_pct:
-          deployment.tax_config_initialized?.faction_treasury_pct,
+        treasury_pct:
+          deployment.tax_config_initialized?.treasury_pct,
         burn_pct: deployment.tax_config_initialized?.burn_pct,
       },
       sol_fee_config: deployment.fees_updated?.fee_config || null,

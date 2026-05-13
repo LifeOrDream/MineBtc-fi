@@ -339,7 +339,7 @@
     "tax_config_pda": "BzcX9xPqf2752Du3PgMG3F99vbZfC71dgakurp2cDutx",
     "withdraw_withheld_authority": "F7nW7zQmFcdT2uHmCdx6YGb12Xsk2pP1peMUGWLTDS8b",
     "faction_treasury_vault": "C6Tfj56uWePN9Y4u4aW9MuErGcofsJ68oyqcnyHnPLUw",
-    "faction_treasury_pct": 25,
+    "treasury_pct": 25,
     "burn_pct": 50,
     "tx_signature": "2EcPp17Dh6i8DSfhpkZ3BUKnWDuJRg2rkzFZCxNUFxPahkNmqyoPo7xiuefBMnUA7A99ymRquCF2G8vcRWVqUW9t",
     "timestamp": "2026-05-10T19:38:25.091Z"

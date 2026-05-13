@@ -708,7 +708,7 @@ pub fn update_gameplay_tuning_internal(
         .faction_war_hashbeast_reward_bps
         .unwrap_or(tuning.faction_war_hashbeast_reward_bps);
     // base + MVP + hashbeast must close to 100% — these are the three
-    // lanes that `compute_faction_reward_pools` splits the cycle pool into.
+    // lanes that `compute_base_reward_pools` splits the cycle pool into.
     let reward_total = next_base_reward_bps as u32
         + next_mvp_reward_bps as u32
         + next_hashbeast_reward_bps as u32;

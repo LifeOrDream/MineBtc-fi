@@ -579,7 +579,7 @@ async function main() {
     await configureTicketTiers(minebtcProgram);
 
     // 13. Initialize Tax Config (for tax distribution)
-    // Instruction: initialize_tax_config(faction_treasury_pct: u8, burn_pct: u8)
+    // Instruction: initialize_tax_config(treasury_pct: u8, burn_pct: u8)
     // Creates TaxConfig PDA [seeds: "tax-config"] and the two surviving vaults:
     //   - WithdrawWithheldAuthority [seeds: "withdraw-withheld-authority"] — 0-byte signer PDA
     //   - FactionTreasuryVault      [seeds: "faction-treasury-vault"]      — Token-2022 vault
@@ -2224,7 +2224,7 @@ async function initializeTaxConfig(minebtcProgram) {
     // Get config values. Tax now only splits faction_treasury + burn (the
     // residual flows back to the mining vault). NFT market making is funded
     // from SOL via `distribute_sol_fees` → `inventory_sweep_vault`.
-    const factionTreasuryPct = config.tax.faction_treasury_pct;
+    const factionTreasuryPct = config.tax.treasury_pct;
     const burnPct = config.tax.burnt_pct;
 
     if (factionTreasuryPct + burnPct > 100) {
@@ -2260,7 +2260,7 @@ async function initializeTaxConfig(minebtcProgram) {
             tax_config_pda: taxConfigPDA.toString(),
             withdraw_withheld_authority: withdrawWithheldAuthorityPDA.toString(),
             faction_treasury_vault: factionTreasuryVaultPDA.toString(),
-            faction_treasury_pct: factionTreasuryPct,
+            treasury_pct: factionTreasuryPct,
             burn_pct: burnPct,
             tx_signature: tx,
       timestamp: new Date().toISOString(),

@@ -98,8 +98,8 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 ## Tax Accounts
 
 - `TaxConfig` PDA `[tax-config]`
-  - faction_treasury_pct, burn_pct, total_burnt, unassigned faction-war treasury, withdraw_withheld_authority pubkey, faction_treasury_vault pubkey.
-  - Tax split is `faction_treasury_pct + burn_pct + (residual → mining vault)`. NFT floor sweep slice has been removed — NFT market making is funded from SOL via `distribute_sol_fees::nft_market_making_pct` (default 3%) routing into `inventory_sweep_vault`.
+  - treasury_pct, burn_pct, total_burnt, unassigned faction-war treasury, withdraw_withheld_authority pubkey, faction_treasury_vault pubkey.
+  - Tax split is `treasury_pct + burn_pct + (residual → mining vault)`. NFT floor sweep slice has been removed — NFT market making is funded from SOL via `distribute_sol_fees::nft_market_making_pct` (default 3%) routing into `inventory_sweep_vault`.
   - Rank-weighted treasury split: 80%; lucky draw: 20%.
 
 - Tax vaults:

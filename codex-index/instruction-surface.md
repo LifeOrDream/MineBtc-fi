@@ -30,7 +30,7 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 - `snapshot_price()` - swaps/observes pool to append price snapshot and earmark POL SOL.
 - `update_rate()` - adjusts emission rate and faction-war multiplier based on price movement.
 - `add_lp_and_burn(lp_token_amount)` - adds liquidity and burns LP, completing a POL operation/cycle step.
-- `initialize_tax_config(faction_treasury_pct, burn_pct)`, `update_tax_config(faction_treasury_pct, burn_pct)` — NFT floor sweep is no longer in the tax split.
+- `initialize_tax_config(treasury_pct, burn_pct)`, `update_tax_config(treasury_pct, burn_pct)` — NFT floor sweep is no longer in the tax split.
 - `crank_harvest_fees(...)`, `crank_distribute_tax(...)`, `claim_faction_treasury_for_faction_war(...)`.
 
 ## NFT Marketplace (Permissionless Market Maker)

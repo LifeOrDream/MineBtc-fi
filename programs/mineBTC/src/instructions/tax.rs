@@ -51,16 +51,16 @@ use crate::state::*;
 ///
 /// NFT market making is no longer funded from this tax — it pulls SOL from
 /// the protocol's `distribute_sol_fees` flow instead. So tax splits are now:
-///   `faction_treasury_pct` + `burn_pct` + (residual → mining vault).
+///   `treasury_pct` + `burn_pct` + (residual → mining vault).
 pub fn internal_initialize_tax_config(
     ctx: Context<InitializeTaxConfig>,
-    faction_treasury_pct: u8,
+    treasury_pct: u8,
     burn_pct: u8,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_initialize_tax_config");
     msg!("🔧 [initialize_tax_config] Initializing tax system");
 
-    let configured_pct_total = (faction_treasury_pct as u64)
+    let configured_pct_total = (treasury_pct as u64)
         .checked_add(burn_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(configured_pct_total <= M_HUNDRED, ErrorCode::InvalidAmount);
@@ -68,7 +68,7 @@ pub fn internal_initialize_tax_config(
     let tax_config = &mut ctx.accounts.tax_config;
 
     tax_config.bump = ctx.bumps.tax_config;
-    tax_config.faction_treasury_pct = faction_treasury_pct;
+    tax_config.treasury_pct = treasury_pct;
     tax_config.burn_pct = burn_pct;
     tax_config.total_burnt = 0;
     tax_config.unassigned_faction_war_treasury_amount = 0;
@@ -77,7 +77,7 @@ pub fn internal_initialize_tax_config(
     tax_config.faction_treasury_vault = ctx.accounts.faction_treasury_vault.key();
 
     msg!("   ✅ TaxConfig initialized");
-    msg!("   Faction Treasury: {}%", faction_treasury_pct);
+    msg!("   Faction Treasury: {}%", treasury_pct);
     msg!("   Burn: {}%", burn_pct);
     let vault_pct = u8::try_from(M_HUNDRED - configured_pct_total)
         .map_err(|_| ErrorCode::ArithmeticOverflow)?;
@@ -98,28 +98,28 @@ pub fn internal_initialize_tax_config(
 /// Callable only by global config authority
 pub fn internal_update_tax_config(
     ctx: Context<UpdateTaxConfig>,
-    faction_treasury_pct: u8,
+    treasury_pct: u8,
     burn_pct: u8,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_update_tax_config");
     msg!("🔧 [update_tax_config] Updating tax distribution percentages");
 
-    let configured_pct_total = (faction_treasury_pct as u64)
+    let configured_pct_total = (treasury_pct as u64)
         .checked_add(burn_pct as u64)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(configured_pct_total <= M_HUNDRED, ErrorCode::InvalidAmount);
 
     let tax_config = &mut ctx.accounts.tax_config;
-    tax_config.faction_treasury_pct = faction_treasury_pct;
+    tax_config.treasury_pct = treasury_pct;
     tax_config.burn_pct = burn_pct;
 
     msg!("   ✅ TaxConfig updated");
     msg!(
         "   Faction Treasury: {}%, Burn: {}%",
-        faction_treasury_pct,
+        treasury_pct,
         burn_pct
     );
-    let vault_pct = M_HUNDRED as u8 - faction_treasury_pct - burn_pct;
+    let vault_pct = M_HUNDRED as u8 - treasury_pct - burn_pct;
     msg!("   Back to Vault: {}%", vault_pct);
 
     Ok(())
@@ -264,7 +264,7 @@ pub fn internal_crank_distribute_tax<'info>(
     );
     let faction_treasury_amount = u64::try_from(helper::mul_div(
         withheld_amount,
-        tax_config.faction_treasury_pct as u64,
+        tax_config.treasury_pct as u64,
         M_HUNDRED,
     )?)
     .map_err(|_| ErrorCode::ArithmeticOverflow)?;
@@ -285,7 +285,7 @@ pub fn internal_crank_distribute_tax<'info>(
     msg!(
         "   - Faction Treasury: {} ({}%)",
         (faction_treasury_amount as f64) / 1e6,
-        tax_config.faction_treasury_pct
+        tax_config.treasury_pct
     );
     msg!(
         "   - Burn: {} ({}%)",

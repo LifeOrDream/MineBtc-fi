@@ -319,7 +319,7 @@ All tables use `ON_DEMAND` throughput. Table names are prefixed `mineBTC_` and s
 1. **`mineBTC_rounds` has NO GSI for `war_id`** — `aggregateRebaseVolumeFromRounds()` falls back to full table scan. Won't scale.
 2. **Live bet data lives only in Redis** — `BetsPlaced` updates Redis but NOT DynamoDB until `RoundEnded`. Redis loss = unrecoverable bet history.
 3. **`PlayerData` has no `current_faction_war_score` field** — needed for MVP tracking.
-4. **`Rebase` model has no MVP fields** — `mvp_user`, `mvp_score`, `faction_mvp_bonus` missing.
+4. **`Rebase` model has no MVP fields** — `mvp_user`, `mvp_score`, `mvp_bonus` missing.
 5. **No `jackpot_*` fields in `Round` or `Faction`** — still using `motherlode_*` naming everywhere.
 
 ---
@@ -605,8 +605,8 @@ The contract renamed `motherlode` → `jackpot` globally. The backend must follo
 |--------|-------|-------------|
 | **Update IDL** | `idl/minebtc.json` | Add `FactionWarMvp` event. |
 | **Event router** | `src/services/processEvents/index.ts` | Add case `factionWarMvp`. |
-| **Rebase handler** | `src/services/processEvents/rebase.ts` | Add `processFactionWarMvpEvent()`. At `FactionWarSettled`, the backend should already compute per-user rewards. Need to ALSO reserve 5% for MVPs and set `faction_mvp_bonus` per faction. |
-| **Rebase model** | `src/model/Rebase.model.ts` | Add fields: `mvp_user: [String]`, `mvp_score: [String]`, `faction_mvp_bonus: [String]`. |
+| **Rebase handler** | `src/services/processEvents/rebase.ts` | Add `processFactionWarMvpEvent()`. At `FactionWarSettled`, the backend should already compute per-user rewards. Need to ALSO reserve 5% for MVPs and set `mvp_bonus` per faction. |
+| **Rebase model** | `src/model/Rebase.model.ts` | Add fields: `mvp_user: [String]`, `mvp_score: [String]`, `mvp_bonus: [String]`. |
 | **PlayerData model** | `src/model/PlayerData.model.ts` | Add `current_faction_war_score: String` (or Number). Reset each war. |
 | **GraphQL** | `src/graphql/resolvers/rebase.resolver.ts` | Add MVP fields to `RebaseResponseType`. Add `mvpLeaderboard(factionWarId?)` query. |
 | **Socket events** | `src/utils/socketEmitter.pubsub.ts` | Add `emitFactionWarMvp()` — broadcasts per faction. |
