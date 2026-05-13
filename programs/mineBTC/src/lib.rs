@@ -669,7 +669,6 @@ pub mod minebtc {
             amount_per_bet,
             use_ticket,
             bumps.user_game_bet,
-            bumps.war_state,
             bumps.user_war_bets,
         )
     }
@@ -709,7 +708,6 @@ pub mod minebtc {
             current_round_id,
             war_id,
             bumps.user_game_bet,
-            bumps.war_state,
             bumps.user_war_bets,
             bumps.autominer_custody,
         )

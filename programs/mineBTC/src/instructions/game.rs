@@ -98,6 +98,7 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.total_points_bets = 0;
     game_session.total_wgtd_points_bets = 0;
     game_session.stakers_fee = 0;
+    game_session.cycle_sol_pool = 0;
     game_session.user_faction_indexes = [0u64; NUM_FACTIONS];
     game_session.sol_bets_by_faction = [0u64; NUM_FACTIONS];
     game_session.points_bets_by_faction_direction =
@@ -832,6 +833,17 @@ fn track_war_round_completion(
             war_state.total_cycle_sol = war_state
                 .total_cycle_sol
                 .checked_add(game_session.total_sol_bets)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+
+        // Fold this round's cycle-SOL contributions (sum of cycle_sol_split
+        // amounts already transferred to the war SOL vault during bets) into
+        // the war's running sol_reward_pool. Lets us track the cycle SOL pool
+        // without loading war_state on the JoinBets hot path.
+        if game_session.cycle_sol_pool > 0 {
+            war_state.sol_reward_pool = war_state
+                .sol_reward_pool
+                .checked_add(game_session.cycle_sol_pool)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 

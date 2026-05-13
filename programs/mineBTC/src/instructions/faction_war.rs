@@ -912,6 +912,9 @@ pub fn settle_war_internal(ctx: Context<SettleFactionWar>) -> Result<()> {
         war_config.cycle_end_round_id
     );
 
+    // war_state.sol_reward_pool is maintained per-round via the
+    // game_session.cycle_sol_pool → war_state.sol_reward_pool fold in
+    // track_war_round_completion, so settlement just reads it directly.
     let war_settlement = &mut *ctx.accounts.war_settlement;
     finalize_war_settlement(war_config, war_state, war_settlement, tax_config, tuning)?;
 

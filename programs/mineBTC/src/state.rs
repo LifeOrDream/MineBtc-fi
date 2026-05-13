@@ -980,6 +980,12 @@ pub struct GameSession {
     pub total_wgtd_points_bets: u64,
     /// Total stakers fee paid in this round
     pub stakers_fee: u64,
+    /// SOL added to the war's cycle-SOL pot this round (sum of
+    /// `cycle_sol_split_per_bet × num_bets` across every bet in this round).
+    /// Folded into `war_state.sol_reward_pool` at settle_round via
+    /// `track_war_round_completion`. Lets us track the cycle SOL pool without
+    /// loading war_state on the bet hot path.
+    pub cycle_sol_pool: u64,
 
     /// Number of users who bet on each faction.
     pub user_faction_indexes: [u64; NUM_FACTIONS],
@@ -1067,6 +1073,7 @@ impl GameSession {
         8 +     // total_points_bets
         8 +     // total_wgtd_points_bets
         8 +     // stakers_fee
+        8 +     // cycle_sol_pool
         (NUM_FACTIONS * 8) + // user_faction_indexes
         (NUM_FACTIONS * 8) + // sol_bets_by_faction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // points_bets_by_faction_direction
