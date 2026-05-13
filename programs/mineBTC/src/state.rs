@@ -1044,6 +1044,11 @@ pub struct GameSession {
     /// mutation roll feeds into the volume_factor — late claims see the same
     /// number even though the config-side counter has long been reset.
     pub winning_faction_volume_at_round: u64,
+
+    /// Accumulated cycle SOL split from bets placed during this round.
+    /// Folded into `FactionWarState.sol_reward_pool` once per round at
+    /// `settle_round` rather than touched per-bet — keeps JoinBets fast.
+    pub sol_reward_pool_accumulated: u64,
 }
 
 impl GameSession {
@@ -1082,7 +1087,8 @@ impl GameSession {
         (NUM_FACTIONS * 1) + // mutations_per_faction
         1 + // total_mutations_this_round
         8 + // war_id_when_played
-        8; // winning_faction_volume_at_round
+        8 + // winning_faction_volume_at_round
+        8; // sol_reward_pool_accumulated
 }
 
 // ========================================================================================
@@ -1807,14 +1813,27 @@ pub struct FactionWarSettlement {
     /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
     pub hashbeast_reward_pools: [u64; NUM_FACTIONS],
 
-    /// SOL lane allocations (mirror of the dBTC lanes — same bps, same orphan
-    /// cascade). Per-user SOL payout is computed at claim time by scaling each
-    /// lane's pool by the user's dBTC share of that lane:
+    /// SOL lane allocations (mirror of the dBTC lanes — same bps). Per-user
+    /// SOL payout at claim time scales each lane's pool by the user's dBTC
+    /// share of that lane:
     ///   user_sol_<lane> = sol_<lane>_pool * user_dbtc_<lane> / total_dbtc_<lane>
-    /// Total cycle SOL = sol_base_pool + sol_hb_pool + sol_mvp_pool ≤ FactionWarState.sol_reward_pool.
+    ///
+    /// Distribution is **absolute rank-weighted**: each active faction's slice
+    /// of every lane is determined by its rank weight relative to the sum of
+    /// rank weights across all active factions. Non-eligible factions' slices
+    /// are NOT redistributed to other factions; they stay unallocated.
+    ///
+    /// `sol_base_pool + sol_hb_pool + sol_mvp_pool + undistributed_sol ==
+    /// FactionWarState.sol_reward_pool` at settle time.
     pub sol_base_pool: u64,
     pub sol_hb_pool: u64,
     pub sol_mvp_pool: u64,
+
+    /// SOL that no eligible claimant can claim (no faction met the lane's
+    /// eligibility rule, or the rank-weight slot belonged to a faction with
+    /// no eligibles). Transferred to `sol_treasury` at settle so it doesn't
+    /// rot in the faction-war SOL vault.
+    pub undistributed_sol: u64,
 
     /// Bitmap of factions that have already claimed treasury rewards for this
     /// faction war. Bit N = 1 means faction N has claimed.
@@ -1834,6 +1853,7 @@ impl FactionWarSettlement {
         8 +     // sol_base_pool
         8 +     // sol_hb_pool
         8 +     // sol_mvp_pool
+        8 +     // undistributed_sol
         2; // treasury_claimed_bitmap
 
     pub fn blank() -> Self {
@@ -1849,6 +1869,7 @@ impl FactionWarSettlement {
             sol_base_pool: 0,
             sol_hb_pool: 0,
             sol_mvp_pool: 0,
+            undistributed_sol: 0,
             treasury_claimed_bitmap: 0,
         }
     }
@@ -1867,6 +1888,7 @@ impl FactionWarSettlement {
         target.sol_base_pool = AnchorDeserialize::deserialize(buf)?;
         target.sol_hb_pool = AnchorDeserialize::deserialize(buf)?;
         target.sol_mvp_pool = AnchorDeserialize::deserialize(buf)?;
+        target.undistributed_sol = AnchorDeserialize::deserialize(buf)?;
         target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }

@@ -1185,6 +1185,12 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
                 war_config.settle_at_lp_op_count,
                 cycle_end_round_id
             );
+            emit!(CycleEndRoundSnapshotted {
+                war_id: war_config.current_war_id,
+                cycle_end_round_id,
+                lp_operations_count: dbtc_mining.pol_stats.lp_operations_count,
+                timestamp: Clock::get()?.unix_timestamp,
+            });
         }
 
         emit!(LpTokensBurned {

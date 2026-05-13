@@ -803,8 +803,50 @@ pub struct FactionWarSettled {
     pub resolved_directions: [u8; NUM_FACTIONS],
     pub base_reward_pools: [u64; NUM_FACTIONS],
     pub hashbeast_reward_pools: [u64; NUM_FACTIONS],
+    /// SOL lane allocations (sum across eligibles). Per-user SOL share at
+    /// claim time scales each by `user_dbtc_lane / total_dbtc_lane`.
+    pub sol_base_pool: u64,
+    pub sol_hb_pool: u64,
+    pub sol_mvp_pool: u64,
+    /// SOL drained to sol_treasury because no eligible claimant existed for
+    /// that rank/lane slot (e.g. faction had no winners on resolved direction,
+    /// no mutations, or no MVP).
+    pub undistributed_sol: u64,
+    /// Per-faction MVP dBTC bonus (zero where mvp_user[fid] == default).
+    pub mvp_bonus: [u64; NUM_FACTIONS],
+    /// Per-faction MVP user (default pubkey = no MVP this cycle).
+    pub mvp_user: [Pubkey; NUM_FACTIONS],
     pub round_wins: [u16; NUM_FACTIONS],
     pub gameplay_scores: [u64; NUM_FACTIONS],
+    pub timestamp: i64,
+}
+
+/// Emitted by `initialize_war_internal` when a new cycle's FactionWarState
+/// PDA is created. Lets indexers detect cycle starts without scanning ix data.
+#[event]
+pub struct FactionWarStarted {
+    pub war_id: u64,
+    pub faction_count: u8,
+    pub start_timestamp: u64,
+    pub prev_ranks: [u8; NUM_FACTIONS],
+    /// LP-operations count threshold; once `pol_stats.lp_operations_count`
+    /// reaches this, the LP-burn ix snapshots the cycle's final round.
+    pub settle_at_lp_op_count: u32,
+    /// Treasury-tax SOL seeded at war start (rolled forward from
+    /// `tax_config.unassigned_war_treasury_amount`).
+    pub treasury_reward_base_amount: u64,
+}
+
+/// Emitted by `add_lp_and_burn` when an LP operation pushes
+/// `lp_operations_count` past `settle_at_lp_op_count` and the current cycle's
+/// final round_id is snapshotted onto `FactionWarConfig.cycle_end_round_id`.
+/// Lets indexers know the active cycle is now in its final round — no new
+/// rounds will start until settle_war runs.
+#[event]
+pub struct CycleEndRoundSnapshotted {
+    pub war_id: u64,
+    pub cycle_end_round_id: u64,
+    pub lp_operations_count: u32,
     pub timestamp: i64,
 }
 
@@ -843,7 +885,9 @@ pub struct FactionWarMvp {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user claims faction_war rewards
+/// Event emitted when a user claims faction_war rewards. dBTC amounts are
+/// per-lane (base + mvp + hb = reward_amount). SOL is broken out the same way
+/// so the indexer can attribute earnings to predict/perform/mvp activity.
 #[event]
 pub struct FactionWarRewardsClaimed {
     pub war_id: u64,
@@ -853,6 +897,9 @@ pub struct FactionWarRewardsClaimed {
     pub mvp_bonus_amount: u64,
     pub hashbeast_bonus_amount: u64,
     pub sol_reward_amount: u64,
+    pub sol_base_amount: u64,
+    pub sol_hb_amount: u64,
+    pub sol_mvp_amount: u64,
     pub hashbeast_mint: Pubkey,
     pub timestamp: i64,
 }

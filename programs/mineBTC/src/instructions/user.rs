@@ -354,10 +354,6 @@ pub fn internal_join_bets<'info>(
         ErrorCode::InvalidParameters
     );
 
-    require!(
-        accounts.war_config.current_war_id == war_id,
-        ErrorCode::InvalidParameters
-    );
     let authority_info = accounts.authority.as_ref();
     let system_program_info = accounts.system_program.as_ref();
     let war_state_info = accounts.war_state.as_ref();
@@ -388,6 +384,7 @@ pub fn internal_join_bets<'info>(
     // Call internal_process_bets for all bets at once
     internal_process_bets(
         round_id,
+        war_id,
         &global_config,
         &mut accounts.player_data,
         &mut accounts.game_session,
@@ -405,7 +402,6 @@ pub fn internal_join_bets<'info>(
         use_ticket,
         None, // User wallet signs the transaction
         None, // No autominer info
-        &accounts.war_config,
         war_state.as_mut(),
         user_war_bets.as_mut(),
         user_war_bets_bump,
@@ -812,10 +808,6 @@ pub fn internal_execute_autominer_bet<'info>(
         load_program_account(&accounts.global_game_state.to_account_info())?;
     let global_config = load_global_config(&accounts.global_config.to_account_info())?;
     let clock = Clock::get()?;
-    require!(
-        accounts.war_config.current_war_id == war_id,
-        ErrorCode::InvalidParameters
-    );
     let caller_info = accounts.caller.as_ref();
     let system_program_info = accounts.system_program.as_ref();
     let war_state_info = accounts.war_state.as_ref();
@@ -1020,6 +1012,7 @@ pub fn internal_execute_autominer_bet<'info>(
     // Process all bets at once
     internal_process_bets(
         current_round_id,
+        war_id,
         &global_config,
         &mut accounts.player_data,
         &mut accounts.game_session,
@@ -1037,7 +1030,6 @@ pub fn internal_execute_autominer_bet<'info>(
         effective_use_ticket,  // None for SOL, Some(tier) for tickets
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
-        &accounts.war_config,
         war_state.as_mut(),
         user_war_bets.as_mut(),
         user_war_bets_bump,
@@ -2277,6 +2269,7 @@ fn sync_claim_hashbeast_state<'info>(
 #[inline(never)]
 fn internal_process_bets<'info>(
     round_id: u64,
+    war_id: u64,
     global_config: &GlobalConfig,
     player_data: &mut Account<'info, PlayerData>,
     game_session: &mut Account<'info, GameSession>,
@@ -2294,7 +2287,6 @@ fn internal_process_bets<'info>(
     use_ticket: Option<u8>,
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
-    war_config: &Account<'info, FactionWarConfig>,
     war_state: &mut FactionWarState,
     user_war_bets: &mut UserFactionWarBets,
     user_war_bets_bump: u8,
@@ -2324,10 +2316,7 @@ fn internal_process_bets<'info>(
         round_id
     );
 
-    require!(
-        war_state.war_id == war_config.current_war_id,
-        ErrorCode::InvalidState
-    );
+    require!(war_state.war_id == war_id, ErrorCode::InvalidState);
     require!(war_state.stage == 0, ErrorCode::FactionWarNotActive);
 
     if user_war_bets.owner == Pubkey::default() {
@@ -2564,25 +2553,6 @@ fn internal_process_bets<'info>(
         0
     };
     if total_cycle_sol_split > 0 {
-        // SECURITY: the JoinBets / ExecuteAutominerBet Accounts structs intentionally
-        // omit the seeds constraint on this account to keep the parser stack under
-        // 4KB. We validate the address manually here so an attacker can't redirect
-        // the cycle SOL split to a wallet they control. Bump is cached on
-        // FactionWarConfig so we use create_program_address (~50 CU) instead of
-        // find_program_address (~1.5k CU) on the hot path.
-        let expected_vault = Pubkey::create_program_address(
-            &[
-                FACTION_WAR_SOL_VAULT_SEED,
-                &[war_config.rewards_sol_vault_bump],
-            ],
-            &crate::id(),
-        )
-        .map_err(|_| ErrorCode::InvalidAccount)?;
-        require_keys_eq!(
-            war_sol_vault.key(),
-            expected_vault,
-            ErrorCode::InvalidAccount
-        );
         msg!(
             "   Transferring cycle SOL split ({} SOL) to faction-war vault",
             total_cycle_sol_split as f64 / 1e9
@@ -3128,26 +3098,13 @@ pub struct JoinBets<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// CHECK: Faction-war SOL vault (cycle jackpot reserve). No seeds/bump here
-    /// to keep `JoinBets` stack small; validated manually in handler.
-    #[account(mut)]
-    pub war_sol_vault: UncheckedAccount<'info>,
-
-    /// Faction-war config. Read-only on the bet hot path: handler reads only
-    /// `current_war_id` (validation) and `rewards_sol_vault_bump`
-    /// (vault PDA derivation). No fields are written from here.
-    #[account(seeds = [FACTION_WAR_CONFIG_SEED], bump)]
-    pub war_config: Box<Account<'info, FactionWarConfig>>,
-
-    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
-    /// Must remain `mut` because the cycle-SOL-split flow writes to
-    /// `sol_reward_pool` (and helper::store_account_data persists it).
+    /// CHECK: Faction-war SOL vault (cycle jackpot reserve).
     #[account(
         mut,
-        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_SOL_VAULT_SEED.as_ref()],
         bump,
     )]
-    pub war_state: UncheckedAccount<'info>,
+    pub war_sol_vault: UncheckedAccount<'info>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists raw PDA state after betting.
@@ -3541,26 +3498,13 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
-    /// CHECK: Faction-war SOL vault (cycle jackpot reserve). No seeds/bump here
-    /// to keep `ExecuteAutominerBet` stack small; validated manually in handler.
-    #[account(mut)]
-    pub war_sol_vault: UncheckedAccount<'info>,
-
-    /// Faction-war config. Read-only on the bet hot path: handler reads only
-    /// `current_war_id` (validation) and `rewards_sol_vault_bump`
-    /// (vault PDA derivation). No fields are written from here.
-    #[account(seeds = [FACTION_WAR_CONFIG_SEED], bump)]
-    pub war_config: Box<Account<'info, FactionWarConfig>>,
-
-    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
-    /// Must remain `mut` because the cycle-SOL-split flow writes to
-    /// `sol_reward_pool` (and helper::store_account_data persists it).
+    /// CHECK: Faction-war SOL vault (cycle jackpot reserve).
     #[account(
         mut,
-        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
+        seeds = [FACTION_WAR_SOL_VAULT_SEED.as_ref()],
         bump,
     )]
-    pub war_state: UncheckedAccount<'info>,
+    pub war_sol_vault: UncheckedAccount<'info>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists raw PDA state after autominer execution.
