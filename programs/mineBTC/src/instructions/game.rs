@@ -873,6 +873,7 @@ fn track_war_round_completion(
     winning_faction_id: u8,
     actually_distributed: u64,
     round_score: u64,
+    lp_operations_count: u32,
 ) -> Result<()> {
     msg!(
         "🪖 track_war_round_completion: winner={} distributed={} score={} war={}",
@@ -883,10 +884,16 @@ fn track_war_round_completion(
     );
 
     let winning_faction_index = winning_faction_id as usize;
-    war_state.round_wins[winning_faction_index] = war_state
-        .round_wins[winning_faction_index]
-        .checked_add(1)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    // Only count this as a faction "round win" if there was real betting
+    // activity. Empty rounds still flow through here (so the boundary round
+    // can fold cleanly), but their random hash-picked "winner" shouldn't
+    // shift cycle rank tiebreakers since no economic activity backed it.
+    if actually_distributed > 0 {
+        war_state.round_wins[winning_faction_index] = war_state
+            .round_wins[winning_faction_index]
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
 
     if round_score > 0 {
         war_state.gameplay_scores[winning_faction_index] = war_state
@@ -962,6 +969,22 @@ fn track_war_round_completion(
         let snap = war_config.sol_volume_since_last_win[winning_faction_index];
         game_session.winning_faction_volume_at_round = snap;
         war_config.sol_volume_since_last_win[winning_faction_index] = 0;
+
+        // Lazy boundary capture: if the LP-burn threshold has already crossed
+        // but no LP burn happened during a real round to capture cycle_end_round_id
+        // (e.g., lp_ops crossed before round 1), claim this round as the boundary.
+        // Otherwise settle_war would wait indefinitely for another LP op.
+        if war_config.cycle_end_round_id == 0
+            && lp_operations_count >= war_config.settle_at_lp_op_count
+        {
+            war_config.cycle_end_round_id = game_session.round_id;
+            msg!(
+                "🪖 [track_war_round_completion] lazy cycle-end capture: lp_ops={} >= settle_at_lp_op_count={}, cycle_end_round_id={}",
+                lp_operations_count,
+                war_config.settle_at_lp_op_count,
+                game_session.round_id
+            );
+        }
     }
 
     Ok(())
@@ -1145,6 +1168,7 @@ pub fn int_settle_round<'info>(
         .copied()
         .try_fold(0u64, |acc, v| acc.checked_add(v))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let lp_ops_count = accounts.dbtc_mining.pol_stats.lp_operations_count;
     track_war_round_completion(
         &mut accounts.war_config,
         accounts.war_state.as_mut(),
@@ -1152,6 +1176,7 @@ pub fn int_settle_round<'info>(
         winning_faction_id,
         actually_distributed,
         round_score,
+        lp_ops_count,
     )?;
 
     // By this point track_war_round_completion has run (when applicable)
@@ -1302,6 +1327,19 @@ pub struct StartRound<'info> {
     )]
     pub war_config: Box<Account<'info, FactionWarConfig>>,
 
+    /// Active cycle's FactionWarState. Seeds are checked against the
+    /// current war_id; account must exist (it's created by
+    /// `initialize_war_internal`) and be in stage 0 (active).
+    /// Enforces that `init_war` ran before any rounds can start — otherwise
+    /// `settle_round` would later fail PDA seed validation against a
+    /// non-existent war_state, stranding the round in stage 1.
+    #[account(
+        seeds = [FACTION_WAR_STATE_SEED, &war_config.current_war_id.to_le_bytes()],
+        bump = war_state.bump,
+        constraint = war_state.stage == 0 @ ErrorCode::FactionWarNotActive,
+    )]
+    pub war_state: Box<Account<'info, FactionWarState>>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -1391,6 +1429,13 @@ pub struct SettleRound<'info> {
         bump = war_state.bump,
     )]
     pub war_state: Box<Account<'info, FactionWarState>>,
+
+    /// Read-only. Lets settle_round check if the LP-burn threshold has
+    /// already been crossed and lazily capture `cycle_end_round_id` for
+    /// the rare edge case where lp_ops crossed before the cycle's first
+    /// round started.
+    #[account(seeds = [MINE_BTC_MINING_SEED.as_ref()], bump = dbtc_mining.bump)]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

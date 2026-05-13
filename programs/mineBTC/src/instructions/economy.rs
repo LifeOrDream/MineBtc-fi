@@ -37,6 +37,13 @@ use raydium_cp_swap;
 use raydium_cp_swap::states::PoolState as RaydiumPoolState;
 use raydium_cp_swap::utils::AccountLoad as RaydiumAccountLoad;
 
+/// Canonical wrapped-SOL mint pubkey. Used as an `address = …` constraint
+/// anywhere this file accepts a WSOL mint as an `UncheckedAccount`, so a
+/// caller can't substitute an attacker-controlled mint that happens to slot
+/// into the same ATA-derivation / CPI shape.
+pub const WSOL_MINT_PUBKEY: Pubkey =
+    anchor_lang::solana_program::pubkey!("So11111111111111111111111111111111111111112");
+
 fn u64_mul_div(a: u64, b: u64, c: u64) -> Result<u64> {
     u64::try_from(helper::mul_div(a, b, c)?).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
@@ -1643,7 +1650,12 @@ pub struct DistributeSolFees<'info> {
     )]
     pub multisig_wsol_account: Account<'info, TokenAccount>,
 
-    /// CHECK: WSOL mint
+    /// CHECK: WSOL mint. Address-constrained to the canonical WSOL pubkey so a
+    /// caller can't pass a fake mint, drive `treasury_wsol_account` ATA-init at
+    /// a different mint and silently divert dev-earnings into an attacker ATA.
+    /// (sync_native already would catch this on the SPL side, but constraining
+    /// here fails earlier with a clearer error and removes the foot-gun.)
+    #[account(address = WSOL_MINT_PUBKEY @ ErrorCode::InvalidMint)]
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: Buybacks SOL vault PDA (System Account)
@@ -1697,7 +1709,11 @@ pub struct SnapshotPrice<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// CHECK: Raydium CP-Swap program
+    /// CHECK: Raydium CP-Swap program. Address-constrained to
+    /// `raydium_cp_swap::ID` so a malicious program can't receive our CPI
+    /// (which signs with the `authority_pda` PDA) and drain program-owned
+    /// token accounts.
+    #[account(address = raydium_cp_swap::ID @ ErrorCode::InvalidAccount)]
     pub raydium_program: UncheckedAccount<'info>,
 
     /// CHECK: Raydium pool state
@@ -1751,8 +1767,11 @@ pub struct SnapshotPrice<'info> {
     #[account(mut)]
     pub degenbtc_mint: UncheckedAccount<'info>,
 
-    /// CHECK: SOL mint (WSOL)
-    #[account(mut)]
+    /// CHECK: SOL mint (WSOL). Address-constrained to the canonical WSOL pubkey
+    /// — defense-in-depth: Raydium's pool already validates mints against its
+    /// vaults, but pinning the address here removes the chance of confusion if
+    /// the gating `raydium_pool_state` ever changes.
+    #[account(mut, address = WSOL_MINT_PUBKEY @ ErrorCode::InvalidMint)]
     pub sol_mint: UncheckedAccount<'info>,
 
     /// CHECK: Raydium observation state
@@ -1823,7 +1842,11 @@ pub struct AddLpAndBurn<'info> {
     /// Authority (optional - only required when lp_token_amount > 0)
     pub authority: Option<Signer<'info>>,
 
-    /// CHECK: Raydium CP-Swap program
+    /// CHECK: Raydium CP-Swap program. Address-constrained to
+    /// `raydium_cp_swap::ID` so a malicious program can't receive our CPI
+    /// (which signs with the `authority_pda` PDA) and drain program-owned
+    /// token accounts via authority_pda's signer privilege.
+    #[account(address = raydium_cp_swap::ID @ ErrorCode::InvalidAccount)]
     pub raydium_program: UncheckedAccount<'info>,
 
     /// CHECK: Raydium pool state
@@ -1863,8 +1886,9 @@ pub struct AddLpAndBurn<'info> {
     #[account(mut)]
     pub degenbtc_mint: UncheckedAccount<'info>,
 
-    /// CHECK: SOL mint (WSOL)
-    #[account(mut)]
+    /// CHECK: SOL mint (WSOL). Address-constrained to the canonical WSOL pubkey
+    /// — same rationale as `SnapshotPrice::sol_mint`.
+    #[account(mut, address = WSOL_MINT_PUBKEY @ ErrorCode::InvalidMint)]
     pub sol_mint: UncheckedAccount<'info>,
 
     /// CHECK: LP token account
