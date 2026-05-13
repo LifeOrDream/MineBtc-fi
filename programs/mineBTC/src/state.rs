@@ -1778,8 +1778,6 @@ pub struct FactionWarSettlement {
     /// Pre-computed base reward pool per faction (rank-weighted across factions,
     /// then shared by anyone who picked that country's resolved direction correctly).
     pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// Pre-computed loyalty reward pool per faction shared only by home-country supporters.
-    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
     /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
     pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
 
@@ -1797,7 +1795,6 @@ impl FactionWarSettlement {
         (NUM_FACTIONS * 1) + // resolved_directions
         (NUM_FACTIONS * 8) + // faction_mvp_bonus
         (NUM_FACTIONS * 8) + // faction_reward_pools
-        (NUM_FACTIONS * 8) + // loyalty_reward_pools
         (NUM_FACTIONS * 8) + // faction_hashbeast_reward_pools
         2; // treasury_claimed_bitmap
 
@@ -1810,7 +1807,6 @@ impl FactionWarSettlement {
             resolved_directions: [0u8; NUM_FACTIONS],
             faction_mvp_bonus: [0u64; NUM_FACTIONS],
             faction_reward_pools: [0u64; NUM_FACTIONS],
-            loyalty_reward_pools: [0u64; NUM_FACTIONS],
             faction_hashbeast_reward_pools: [0u64; NUM_FACTIONS],
             treasury_claimed_bitmap: 0,
         }
@@ -1826,7 +1822,6 @@ impl FactionWarSettlement {
         target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
         target.faction_mvp_bonus = AnchorDeserialize::deserialize(buf)?;
         target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.loyalty_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.faction_hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
         Ok(())

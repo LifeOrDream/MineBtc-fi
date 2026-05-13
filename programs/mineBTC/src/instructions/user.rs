@@ -1661,7 +1661,7 @@ fn calculate_round_rewards(
 fn build_round_claim_mutation_roll(
     user_bet: &UserGameBet,
     game_session: &GameSession,
-    player_faction_id: u8,
+    _player_faction_id: u8,
 ) -> Option<ClaimMutationRoll> {
     let winning_faction = game_session.winning_faction_id;
     let winning_faction_index = winning_faction as usize;
@@ -1689,13 +1689,7 @@ fn build_round_claim_mutation_roll(
         return None;
     }
 
-    let mut chance_boost_bps = if exact_sol > 0 { 12_000u64 } else { 5_000u64 };
-    if winning_faction == player_faction_id {
-        let loyalty_boost = if exact_sol > 0 { 15_000u64 } else { 11_000u64 };
-        chance_boost_bps = chance_boost_bps
-            .saturating_mul(loyalty_boost)
-            .saturating_div(BASIS_POINTS_DENOMINATOR);
-    }
+    let chance_boost_bps = if exact_sol > 0 { 12_000u64 } else { 5_000u64 };
 
     Some(ClaimMutationRoll {
         faction_id: winning_faction_index,
@@ -2741,12 +2735,8 @@ fn internal_process_bets<'info>(
             .checked_add(net_per_bet)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Loyalty and HashBeast bonus layers only care about backing your own country.
+        // HashBeast bonus layer only cares about backing your own country.
         if faction_id == player_data.faction_id {
-            faction_war_state.loyalty_direction_totals[faction_index][direction_index] =
-                faction_war_state.loyalty_direction_totals[faction_index][direction_index]
-                    .checked_add(wgtd_points_per_bet)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
             faction_war_state.faction_sol_totals[faction_index] = faction_war_state
                 .faction_sol_totals[faction_index]
                 .checked_add(net_per_bet)

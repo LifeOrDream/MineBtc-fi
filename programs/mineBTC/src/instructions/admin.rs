@@ -51,7 +51,6 @@ pub struct GameplayTuningUpdateArgs {
     pub max_evolution_stage_unlocked: Option<u8>,
 
     pub faction_war_base_reward_bps: Option<u16>,
-    pub faction_war_loyalty_reward_bps: Option<u16>,
     pub faction_war_mvp_reward_bps: Option<u16>,
     pub faction_war_hashbeast_reward_bps: Option<u16>,
 
@@ -702,19 +701,15 @@ pub fn update_gameplay_tuning_internal(
     let next_base_reward_bps = args
         .faction_war_base_reward_bps
         .unwrap_or(tuning.faction_war_base_reward_bps);
-    let next_loyalty_reward_bps = args
-        .faction_war_loyalty_reward_bps
-        .unwrap_or(tuning.faction_war_loyalty_reward_bps);
     let next_mvp_reward_bps = args
         .faction_war_mvp_reward_bps
         .unwrap_or(tuning.faction_war_mvp_reward_bps);
     let next_hashbeast_reward_bps = args
         .faction_war_hashbeast_reward_bps
         .unwrap_or(tuning.faction_war_hashbeast_reward_bps);
-    // base + loyalty + MVP + hashbeast must close to 100% — these are the four
+    // base + MVP + hashbeast must close to 100% — these are the three
     // lanes that `compute_faction_reward_pools` splits the cycle pool into.
     let reward_total = next_base_reward_bps as u32
-        + next_loyalty_reward_bps as u32
         + next_mvp_reward_bps as u32
         + next_hashbeast_reward_bps as u32;
     require!(
@@ -763,7 +758,6 @@ pub fn update_gameplay_tuning_internal(
     );
 
     tuning.faction_war_base_reward_bps = next_base_reward_bps;
-    tuning.faction_war_loyalty_reward_bps = next_loyalty_reward_bps;
     tuning.faction_war_mvp_reward_bps = next_mvp_reward_bps;
     tuning.faction_war_hashbeast_reward_bps = next_hashbeast_reward_bps;
     tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
@@ -782,7 +776,6 @@ pub fn update_gameplay_tuning_internal(
     let rpg_progression = tuning.rpg_progression;
     let max_evolution_stage_unlocked = tuning.max_evolution_stage_unlocked;
     let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
-    let faction_war_loyalty_reward_bps = tuning.faction_war_loyalty_reward_bps;
     let faction_war_mvp_reward_bps = tuning.faction_war_mvp_reward_bps;
     let faction_war_hashbeast_reward_bps = tuning.faction_war_hashbeast_reward_bps;
     let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
@@ -800,7 +793,6 @@ pub fn update_gameplay_tuning_internal(
         rpg_progression,
         max_evolution_stage_unlocked,
         faction_war_base_reward_bps,
-        faction_war_loyalty_reward_bps,
         faction_war_mvp_reward_bps,
         faction_war_hashbeast_reward_bps,
         base_mutation_chance_bps,
