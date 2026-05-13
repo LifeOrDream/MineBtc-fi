@@ -1755,23 +1755,61 @@ fn mutation_bonus_weight(mutation_type: u8) -> u64 {
     }
 }
 
-/// Apply the round-claim mutation bonus to the cycle leaderboard.
+/// Leaderboard score-add for a successful mutation roll.
+///
+/// - **Home win** (winner == player's home faction): full `bonus`.
+/// - **Foreign win** (player backed a country other than their own): **50%**
+///   of `bonus` — the "mercenary penalty". Foreign mutations still move the
+///   country leaderboard, but only at half the rate of a citizen's contribution.
+///
+/// The NFT-level mutation effects (DNA / XP / multiplier) are applied upstream
+/// regardless of home / foreign. This function only scales the cycle's
+/// `gameplay_scores` impact. HB-bonus / MVP / `user.mutation_score` accounting
+/// is gated separately on `is_home_win` inside `apply_mutation_bonus_score`.
+#[inline]
+fn leaderboard_score_for_mutation(bonus: u64, is_home_win: bool) -> u64 {
+    if is_home_win {
+        bonus
+    } else {
+        bonus / 2
+    }
+}
+
+/// Apply the round-claim mutation bonus to the cycle's score accounting.
 ///
 /// Bonus formula: `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`.
-/// Bonus accrues to:
-/// - `war_state.gameplay_scores[winner]` — the winning country's cycle score
-/// - `player_data.current_war_score` — for MVP tracking (with cycle-rollover reset)
-/// - `war_state.faction_mvp_*[winner]` — if this player just took the lead
 ///
-/// Gating:
-/// - `mutation_type` must be 1/2/3 (Evolution/Power/Trait)
-/// - The passed `war_state_info` must match the round's cycle id (seeds check)
-/// - `war_state.stage == 0` (cycle still active — late claims after settlement skip silently)
-/// - `winner < faction_count`
-/// - User had non-zero weighted points bet on the winning country
+/// # Home vs foreign win
 ///
-/// Bonus is silently skipped (Ok(())) if any gate fails. Gates that indicate
-/// a *wrong* account (seed mismatch) return an error instead.
+/// - **Home win** (winner == player's home faction): full bonus credits
+///     - `war_state.gameplay_scores[winner]` += bonus (country leaderboard)
+///     - `war_state.faction_mutation_score[winner]` += bonus (HB-bonus pool denominator)
+///     - `player_data.current_war_score` += bonus (MVP candidacy tracker)
+///     - `war_state.mvp_user[winner]` updates if this user surpasses current MVP
+///     - `user_war_bets.mutation_score` += bonus (HB-bonus pool numerator)
+///
+/// - **Foreign win** (player backed a country other than their own — "mercenary"):
+///     - `war_state.gameplay_scores[winner]` += bonus / 2 (50% penalty)
+///     - All other counters skipped. No HB-bonus credit, no MVP candidacy,
+///       no `user.mutation_score` growth. The mercenary's contribution
+///       moves the foreign country up the leaderboard but doesn't entitle
+///       them to a share of that country's loyalty pools.
+///
+/// The hashbeast itself (DNA / XP / multiplier) is updated upstream in
+/// `sync_claim_hashbeast_state` regardless of home / foreign — that's the
+/// player's personal NFT progression and runs independently of this function.
+///
+/// # Gating
+///
+/// - `mutation_type` must be 1/2/3 (Evolution / Power / Trait)
+/// - `war_state_info` PDA matches the round's `war_id_when_played` (seed check)
+/// - `user_war_bets_info` PDA matches owner + war_id (seed check)
+/// - `war_state.stage == 0` (cycle still active — late claims after settle drop silently)
+/// - `winner_idx < faction_count`
+/// - User had non-zero weighted points on the winning faction
+///
+/// Silent skip (Ok) on most gate failures (cycle settled, no winning bet,
+/// zero bonus). Returns Err only on seed mismatches.
 #[inline(never)]
 fn apply_mutation_bonus_score<'info>(
     mutation_type: u8,
@@ -1837,24 +1875,6 @@ fn apply_mutation_bonus_score<'info>(
         return Ok(());
     }
 
-    // Home-faction gate: the HB bonus lane pays out per-home, scaling
-    // `user.mutation_score / faction_mutation_score[home]`. If we let
-    // mutations from foreign-faction wins increment those counters, the
-    // numerator and denominator can come from different countries' winning
-    // rounds — `user.mutation_score` could exceed `faction_mutation_score[home]`
-    // and the ratio would exceed 1, draining more than the home's pool.
-    // The mutation event itself (DNA/XP/multiplier change) still fires for
-    // foreign wins — only the score accounting (gameplay_scores, MVP,
-    // faction_mutation_score, user.mutation_score) is home-restricted.
-    if winner_idx != player_data.faction_id as usize {
-        msg!(
-            "🎁 [apply_mutation_bonus_score] winner_faction {} != player home {} — score accounting skipped",
-            winner_idx,
-            player_data.faction_id
-        );
-        return Ok(());
-    }
-
     let user_wgtd = total_wgtd_points_for_faction(user_bet, winner);
     if user_wgtd == 0 {
         return Ok(());
@@ -1872,59 +1892,95 @@ fn apply_mutation_bonus_score<'info>(
         return Ok(());
     }
 
+    // Home vs foreign split:
+    // - Home win (winner == player's home faction): full credit on every
+    //   counter — country leaderboard, MVP candidacy, HB-bonus pool, and the
+    //   user's HB-bonus numerator.
+    // - Foreign win ("mercenary" mutation by a player backing a country other
+    //   than their own): the country leaderboard still moves but with a 50%
+    //   penalty; the user gets NO HB-bonus / MVP / mutation_score credit. The
+    //   NFT-level mutation (DNA / XP / multiplier) already fired upstream in
+    //   `sync_claim_hashbeast_state` regardless — this function only governs
+    //   the cycle score accounting.
+    let is_home_win = winner_idx == player_data.faction_id as usize;
+    let leaderboard_score_add = leaderboard_score_for_mutation(bonus, is_home_win);
+    if leaderboard_score_add == 0 {
+        // Foreign + bonus=1 → halved to 0; nothing observable changes here.
+        return Ok(());
+    }
+
+    // Country leaderboard always moves (full for home, halved for foreign).
     war_state.gameplay_scores[winner_idx] = war_state
         .gameplay_scores[winner_idx]
-        .checked_add(bonus)
+        .checked_add(leaderboard_score_add)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    // Country-level mutation pot (denominator for HB-bonus claim share).
-    war_state.faction_mutation_score[winner_idx] = war_state
-        .faction_mutation_score[winner_idx]
-        .checked_add(bonus)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    if is_home_win {
+        // Country-level mutation pot — denominator for HB-bonus claim share.
+        // Only counts home contributions so the ratio
+        // `user.mutation_score / faction_mutation_score[home]` stays ≤ 1.
+        war_state.faction_mutation_score[winner_idx] = war_state
+            .faction_mutation_score[winner_idx]
+            .checked_add(bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    if player_data.current_war_score_cycle_id != cycle_id {
-        player_data.current_war_score = 0;
-        player_data.current_war_score_cycle_id = cycle_id;
-    }
-    player_data.current_war_score = player_data
-        .current_war_score
-        .checked_add(bonus)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    if player_data.current_war_score > war_state.mvp_score[winner_idx] {
-        war_state.mvp_user[winner_idx] = owner_key;
-        war_state.mvp_score[winner_idx] = player_data.current_war_score;
+        if player_data.current_war_score_cycle_id != cycle_id {
+            player_data.current_war_score = 0;
+            player_data.current_war_score_cycle_id = cycle_id;
+        }
+        player_data.current_war_score = player_data
+            .current_war_score
+            .checked_add(bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        if player_data.current_war_score > war_state.mvp_score[winner_idx] {
+            war_state.mvp_user[winner_idx] = owner_key;
+            war_state.mvp_score[winner_idx] = player_data.current_war_score;
+        }
     }
 
     let total_after = war_state.gameplay_scores[winner_idx];
     helper::store_account_data(war_state_info, war_state.as_ref())?;
 
-    // Per-user mutation pot (numerator for HB-bonus claim share). Survives the
-    // claim-vs-next-cycle race since it lives on the cycle's UserFactionWarBets
-    // PDA (closed only at faction-war claim) rather than rolling player_data.
-    let mut ufwb = helper::load_account_data::<UserFactionWarBets>(user_war_bets_info)?;
-    require!(ufwb.owner == owner_key, ErrorCode::InvalidAccount);
-    require!(ufwb.war_id == cycle_id, ErrorCode::InvalidAccount);
-    ufwb.mutation_score = ufwb
-        .mutation_score
-        .checked_add(bonus)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    helper::store_account_data(user_war_bets_info, &ufwb)?;
+    if is_home_win {
+        // Per-user mutation pot — numerator for HB-bonus claim share.
+        // Lives on the per-cycle UserFactionWarBets PDA (closed at war claim)
+        // so it survives the claim-vs-next-cycle race that `player_data` can't.
+        let mut ufwb = helper::load_account_data::<UserFactionWarBets>(user_war_bets_info)?;
+        require!(ufwb.owner == owner_key, ErrorCode::InvalidAccount);
+        require!(ufwb.war_id == cycle_id, ErrorCode::InvalidAccount);
+        ufwb.mutation_score = ufwb
+            .mutation_score
+            .checked_add(bonus)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        helper::store_account_data(user_war_bets_info, &ufwb)?;
+    } else {
+        msg!(
+            "🎁 [apply_mutation_bonus_score] foreign win (winner={} home={}): +{} to leaderboard only, no HB/MVP credit",
+            winner_idx,
+            player_data.faction_id,
+            leaderboard_score_add
+        );
+    }
 
     emit!(crate::events::GameplayScoreAccumulated {
         war_id: cycle_id,
         faction_id: winner,
         score_source: GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS,
-        score_added: bonus,
+        // Reflect what actually moved on the leaderboard (halved for foreign
+        // mercenary mutations). Indexers attribute country leaderboard moves
+        // to this value.
+        score_added: leaderboard_score_add,
         faction_total_score: total_after,
         user: owner_key,
     });
 
     msg!(
-        "🎁 [apply_mutation_bonus_score] cycle={} winner={} bonus={} (mut_type={}, user_wgtd={}, mult={})",
+        "🎁 [apply_mutation_bonus_score] cycle={} winner={} home_win={} bonus={} leaderboard_added={} (mut_type={}, user_wgtd={}, mult={})",
         cycle_id,
         winner,
+        is_home_win,
         bonus,
+        leaderboard_score_add,
         mutation_type,
         user_wgtd,
         player_data.active_multiplier
@@ -3880,4 +3936,52 @@ pub struct WithdrawHashBeastFromGameplay<'info> {
     pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ------------------------------------------------------------------------
+    // leaderboard_score_for_mutation — home vs foreign-mercenary scoring
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn leaderboard_score_home_win_full_credit() {
+        assert_eq!(leaderboard_score_for_mutation(100, true), 100);
+        assert_eq!(leaderboard_score_for_mutation(1_000_000, true), 1_000_000);
+        assert_eq!(leaderboard_score_for_mutation(0, true), 0);
+    }
+
+    #[test]
+    fn leaderboard_score_foreign_win_half_credit() {
+        assert_eq!(leaderboard_score_for_mutation(100, false), 50);
+        assert_eq!(leaderboard_score_for_mutation(1_000_000, false), 500_000);
+        assert_eq!(leaderboard_score_for_mutation(0, false), 0);
+    }
+
+    #[test]
+    fn leaderboard_score_foreign_truncates_down() {
+        // Integer division rounds toward zero, so odd values lose 1 lamport.
+        assert_eq!(leaderboard_score_for_mutation(1, false), 0);
+        assert_eq!(leaderboard_score_for_mutation(3, false), 1);
+        assert_eq!(leaderboard_score_for_mutation(99, false), 49);
+    }
+
+    #[test]
+    fn leaderboard_score_home_never_loses_to_foreign_at_same_bonus() {
+        // Property: home credit ≥ foreign credit at every bonus value.
+        // Reinforces the design intent (home loyalty rewarded more).
+        for bonus in [0u64, 1, 2, 10, 100, 1_000_000, u64::MAX / 2] {
+            let home = leaderboard_score_for_mutation(bonus, true);
+            let foreign = leaderboard_score_for_mutation(bonus, false);
+            assert!(
+                home >= foreign,
+                "home {} < foreign {} at bonus {}",
+                home,
+                foreign,
+                bonus
+            );
+        }
+    }
 }

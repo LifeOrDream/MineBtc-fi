@@ -859,10 +859,13 @@ pub struct CycleEndRoundSnapshotted {
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS (1)`: per-claim
 ///   bonus when a player's round-claim mutation roll succeeds and the
-///   round's cycle is still active. `score_added` equals
+///   round's cycle is still active. Full bonus is
 ///   `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`
-///   where `mutation_weight` is 4/2/1 for Evolution/Power/Trait. `user` is
-///   the claimant — also drives MVP candidacy for the winning country.
+///   where `mutation_weight` is 4/2/1 for Evolution/Power/Trait.
+///   `score_added` reflects the **leaderboard delta actually applied**:
+///   the full bonus if the user backed their own home faction, or **half**
+///   the bonus if the user was playing mercenary on a foreign winner.
+///   Only home-win mutations also affect MVP candidacy and HB-bonus pools.
 #[event]
 pub struct GameplayScoreAccumulated {
     pub war_id: u64,

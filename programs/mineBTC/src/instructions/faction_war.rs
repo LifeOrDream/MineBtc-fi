@@ -111,13 +111,27 @@
 //! # Mutation roll (during round-claim, not war-claim)
 //!
 //! When a user claims a round with `claim_won == true` and they had a
-//! gameplay hashbeast active, `apply_mutation_bonus_score` (in user.rs)
-//! rolls for a mutation. On success:
+//! gameplay hashbeast active, the round-claim path rolls for a mutation.
+//! NFT-level effects (DNA / XP / multiplier evolution) apply regardless of
+//! which country won. The cycle score accounting is split based on whether
+//! the winning faction is the user's home country:
+//!
+//! **Home win** (winner == player's home faction) — full reward:
 //!   - country's `gameplay_scores[winner]` += bonus
 //!   - country's `faction_mutation_score[winner]` += bonus
 //!   - user's `user_war_bets.mutation_score` += bonus
-//!   - if user surpasses current MVP score for their country, they become
-//!     the new `mvp_user[winner]`
+//!   - user surpassing current MVP becomes new `mvp_user[winner]`
+//!
+//! **Foreign win** ("mercenary mutation") — partial reward:
+//!   - country's `gameplay_scores[winner]` += bonus / 2 (50% mercenary penalty)
+//!   - HB-bonus pool, MVP candidacy, and user's `mutation_score` all stay
+//!     unchanged. Mercenaries push the foreign country up the leaderboard
+//!     but don't earn a share of that country's loyalty pools.
+//!
+//! This split keeps the HB-bonus math safe (`user.mutation_score ≤
+//! faction_mutation_score[home]` always) while still giving foreign-faction
+//! bettors visible leaderboard impact — important for the "every action
+//! matters" feedback loop Solana degens expect.
 //!
 //! Late rolls (cycle already settled, `war_state.stage != 0`) are silently
 //! skipped — the bonus is dropped and nothing on the war state moves.
