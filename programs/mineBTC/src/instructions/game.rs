@@ -956,7 +956,7 @@ pub fn int_settle_round<'info>(
     let winning_faction_for_event = winning_faction_id;
     let winning_direction_for_event = game_session.winning_direction;
 
-    if accounts.faction_war_config.is_active && accounts.faction_war_state.stage == 0 {
+    if accounts.faction_war_state.stage == 0 {
         let winner_idx = winning_faction_id as usize;
         let round_score: u64 = game_session.wgtd_points_bets_by_faction_direction[winner_idx]
             .iter()
@@ -973,8 +973,7 @@ pub fn int_settle_round<'info>(
         )?;
     } else {
         msg!(
-            "⚠️ [settle_round] faction_war tracking skipped: active={} stage={}",
-            accounts.faction_war_config.is_active,
+            "⚠️ [settle_round] faction_war tracking skipped: stage={}",
             accounts.faction_war_state.stage
         );
     }

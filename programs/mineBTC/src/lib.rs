@@ -582,15 +582,6 @@ pub mod minebtc {
         faction_war::initialize_faction_war_config_internal(ctx)
     }
 
-    /// Update faction_war configuration (admin only)
-    pub fn update_faction_war_config(
-        ctx: Context<UpdateFactionWarConfig>,
-        is_active: Option<bool>,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "update_faction_war_config");
-        faction_war::update_faction_war_config_internal(ctx, is_active)
-    }
-
     /// Settle faction_war: finalize gameplay-score rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
     pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {

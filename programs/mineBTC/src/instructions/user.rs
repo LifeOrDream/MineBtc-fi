@@ -354,7 +354,6 @@ pub fn internal_join_bets<'info>(
         ErrorCode::InvalidParameters
     );
 
-    let lp_ops = accounts.dbtc_mining.pol_stats.lp_operations_count;
     require!(
         accounts.faction_war_config.current_faction_war_id == faction_war_id,
         ErrorCode::InvalidParameters
@@ -390,7 +389,6 @@ pub fn internal_join_bets<'info>(
     internal_process_bets(
         round_id,
         &global_config,
-        &mut accounts.tax_config,
         &mut accounts.player_data,
         &mut accounts.game_session,
         &mut accounts.user_game_bet,
@@ -409,8 +407,6 @@ pub fn internal_join_bets<'info>(
         None, // No autominer info
         &mut accounts.faction_war_config,
         faction_war_state.as_mut(),
-        faction_war_state_bump,
-        lp_ops,
         user_faction_war_bets.as_mut(),
         user_faction_war_bets_bump,
         accounts.referrer_rewards.as_mut(),
@@ -1020,14 +1016,11 @@ pub fn internal_execute_autominer_bet<'info>(
         rounds_remaining: new_rounds_remaining,
     };
 
-    let lp_ops = accounts.dbtc_mining.pol_stats.lp_operations_count;
-
     // Call internal_process_bets with autominer vault as payer (PDA signs via seeds)
     // Process all bets at once
     internal_process_bets(
         current_round_id,
         &global_config,
-        &mut accounts.tax_config,
         &mut accounts.player_data,
         &mut accounts.game_session,
         &mut accounts.user_game_bet,
@@ -1046,8 +1039,6 @@ pub fn internal_execute_autominer_bet<'info>(
         Some(autominer_info),
         &mut accounts.faction_war_config,
         faction_war_state.as_mut(),
-        faction_war_state_bump,
-        lp_ops,
         user_faction_war_bets.as_mut(),
         user_faction_war_bets_bump,
         accounts.referrer_rewards.as_mut(),
@@ -2259,7 +2250,6 @@ fn sync_claim_hashbeast_state<'info>(
 fn internal_process_bets<'info>(
     round_id: u64,
     global_config: &GlobalConfig,
-    tax_config: &mut Account<'info, TaxConfig>,
     player_data: &mut Account<'info, PlayerData>,
     game_session: &mut Account<'info, GameSession>,
     user_game_bet: &mut Account<'info, UserGameBet>,
@@ -2278,8 +2268,6 @@ fn internal_process_bets<'info>(
     autominer_info: Option<AutominerBetInfo>,
     faction_war_config: &mut Account<'info, FactionWarConfig>,
     faction_war_state: &mut FactionWarState,
-    faction_war_state_bump: u8,
-    lp_operations_count: u32,
     user_faction_war_bets: &mut UserFactionWarBets,
     user_faction_war_bets_bump: u8,
     referrer_rewards: Option<&mut Account<'info, ReferralRewards>>,
@@ -2301,7 +2289,6 @@ fn internal_process_bets<'info>(
         validate_min_sol_bet_per_position(amount_per_bet)?;
     }
     require!(!bet_types.is_empty(), ErrorCode::InvalidParameters);
-    require!(faction_war_config.is_active, ErrorCode::FactionWarNotActive);
 
     msg!(
         "   Processing batch of {} bets for round {}",
@@ -2309,72 +2296,11 @@ fn internal_process_bets<'info>(
         round_id
     );
 
-    if faction_war_state.faction_war_id == 0 || faction_war_state.active_faction_count == 0 {
-        let active_faction_count = global_config.supported_factions.len();
-        let start_ranks = faction_war_config.prev_faction_war_ranks;
-        let seeded_treasury_base = faction_war_state
-            .treasury_reward_base_amount
-            .checked_add(tax_config.unassigned_faction_war_treasury_amount)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-        faction_war_state.bump = faction_war_state_bump;
-        faction_war_state.faction_war_id = faction_war_config.current_faction_war_id;
-        faction_war_state.start_timestamp = clock.unix_timestamp.max(0) as u64;
-        faction_war_state.stage = 0;
-        faction_war_state.active_faction_count = active_faction_count as u8;
-        faction_war_state.total_degenbtc_mined_in_faction_war = 0;
-        faction_war_state.faction_war_mining_pool = 0;
-        faction_war_state.start_ranks = start_ranks;
-        faction_war_state.final_ranks = start_ranks;
-        faction_war_state.rank_deltas = [0i8; NUM_FACTIONS];
-        faction_war_state.resolved_directions =
-            [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
-        faction_war_state.faction_direction_totals =
-            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        faction_war_state.loyalty_direction_totals =
-            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        faction_war_state.faction_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.loyalty_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_hashbeast_reward_pools = [0u64; NUM_FACTIONS];
-        faction_war_state.round_wins = [0u16; NUM_FACTIONS];
-        faction_war_state.faction_sol_totals = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_sol_direction_totals =
-            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        faction_war_state.gameplay_scores = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_mvp_user = [Pubkey::default(); NUM_FACTIONS];
-        faction_war_state.faction_mvp_score = [0u64; NUM_FACTIONS];
-        faction_war_state.faction_mvp_bonus = [0u64; NUM_FACTIONS];
-        faction_war_state.eligible_hashbeast_direction_totals =
-            [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-        faction_war_state.treasury_reward_base_amount = seeded_treasury_base;
-        faction_war_state.treasury_claimed_bitmap = 0;
-        faction_war_state.sol_reward_pool = 0;
-        tax_config.unassigned_faction_war_treasury_amount = 0;
-
-        // Faction war settles after the next LP burn completes.
-        faction_war_config.faction_war_settle_cycle = lp_operations_count
-            .checked_add(1)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        faction_war_config.reset_cycle_round_tracking();
-
-        emit!(crate::events::FactionWarAutoStarted {
-            faction_war_id: faction_war_state.faction_war_id,
-            start_timestamp: faction_war_state.start_timestamp,
-            settle_cycle: faction_war_config.faction_war_settle_cycle,
-        });
-        msg!(
-            "   🌍 Auto-initialized faction war {} (settle after LP cycle #{}, treasury_base={})",
-            faction_war_state.faction_war_id,
-            faction_war_config.faction_war_settle_cycle,
-            faction_war_state.treasury_reward_base_amount,
-        );
-    } else {
-        require!(
-            faction_war_state.faction_war_id == faction_war_config.current_faction_war_id,
-            ErrorCode::InvalidState
-        );
-        require!(faction_war_state.stage == 0, ErrorCode::FactionWarNotActive);
-    }
+    require!(
+        faction_war_state.faction_war_id == faction_war_config.current_faction_war_id,
+        ErrorCode::InvalidState
+    );
+    require!(faction_war_state.stage == 0, ErrorCode::FactionWarNotActive);
 
     if user_faction_war_bets.owner == Pubkey::default() {
         user_faction_war_bets.bump = user_faction_war_bets_bump;
@@ -2430,9 +2356,8 @@ fn internal_process_bets<'info>(
     let cycle_sol_split_pct = global_config.sol_fee_config.cycle_sol_split_pct as u64;
     let mut cycle_sol_split_per_bet: u64 = 0;
     msg!(
-        "🎮 [user.internal_process_bets] cycle_sol_split_pct={} faction_war_active={} faction_war_id={}",
+        "🎮 [user.internal_process_bets] cycle_sol_split_pct={} faction_war_id={}",
         cycle_sol_split_pct,
-        faction_war_config.is_active,
         faction_war_state.faction_war_id
     );
 
@@ -2478,7 +2403,7 @@ fn internal_process_bets<'info>(
         // SOL Logic - apply multiplier for wgtd_points
         require!(amount_per_bet > 0, ErrorCode::InvalidAmount);
 
-        cycle_sol_split_per_bet = if faction_war_config.is_active && cycle_sol_split_pct > 0 {
+        cycle_sol_split_per_bet = if cycle_sol_split_pct > 0 {
             let split = amount_per_bet
                 .checked_mul(cycle_sol_split_pct)
                 .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -2491,7 +2416,7 @@ fn internal_process_bets<'info>(
             );
             split
         } else {
-            msg!("🎮 [user.internal_process_bets] cycle_split=0 (inactive or pct=0)");
+            msg!("🎮 [user.internal_process_bets] cycle_split=0 (pct=0)");
             0
         };
         // Protocol fee and referral are computed from the GROSS bet (principal),
@@ -2602,8 +2527,8 @@ fn internal_process_bets<'info>(
         }
     };
 
-    // Transfer cycle SOL split to faction-war vault (only when cycles are active)
-    let total_cycle_sol_split = if faction_war_config.is_active && cycle_sol_split_per_bet > 0 {
+    // Transfer cycle SOL split to faction-war vault
+    let total_cycle_sol_split = if cycle_sol_split_per_bet > 0 {
         cycle_sol_split_per_bet
             .checked_mul(num_bets)
             .ok_or(ErrorCode::ArithmeticOverflow)?
@@ -3206,13 +3131,6 @@ pub struct JoinBets<'info> {
     #[account(mut)]
     pub faction_war_sol_vault: UncheckedAccount<'info>,
 
-    #[account(
-        mut,
-        seeds = [TAX_CONFIG_SEED],
-        bump = tax_config.bump
-    )]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
     /// Faction-war config (mut: settle cycle written on auto-start)
     #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump)]
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
@@ -3225,10 +3143,6 @@ pub struct JoinBets<'info> {
         bump,
     )]
     pub faction_war_state: UncheckedAccount<'info>,
-
-    /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
-    #[account(seeds = [MINE_BTC_MINING_SEED], bump = dbtc_mining.bump)]
-    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists raw PDA state after betting.
@@ -3615,13 +3529,6 @@ pub struct ExecuteAutominerBet<'info> {
     #[account(mut)]
     pub faction_war_sol_vault: UncheckedAccount<'info>,
 
-    #[account(
-        mut,
-        seeds = [TAX_CONFIG_SEED],
-        bump = tax_config.bump
-    )]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
     /// Faction-war config (mut: settle cycle written on auto-start)
     #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED], bump)]
     pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
@@ -3634,10 +3541,6 @@ pub struct ExecuteAutominerBet<'info> {
         bump,
     )]
     pub faction_war_state: UncheckedAccount<'info>,
-
-    /// Economy state (read for lp_operations_count to tie faction_war cycle to economy cycle)
-    #[account(seeds = [MINE_BTC_MINING_SEED], bump = dbtc_mining.bump)]
-    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists raw PDA state after autominer execution.
@@ -3684,10 +3587,6 @@ pub fn internal_use_hashbeast_for_gameplay(ctx: Context<UseHashBeastForGameplay>
     require!(
         ctx.accounts.global_config.gameplay_tuning.rpg_progression,
         ErrorCode::GameplayNotEnabled
-    );
-    require!(
-        ctx.accounts.faction_war_config.is_active,
-        ErrorCode::FactionWarNotActive
     );
 
     // Verify ownership
@@ -3866,9 +3765,8 @@ pub fn internal_withdraw_hashbeast_from_gameplay(
         ErrorCode::GameplayUnlockNotRequested
     );
     require!(
-        !ctx.accounts.faction_war_config.is_active
-            || ctx.accounts.faction_war_config.current_faction_war_id
-                > player_data.gameplay_unlock_request_faction_war,
+        ctx.accounts.faction_war_config.current_faction_war_id
+            > player_data.gameplay_unlock_request_faction_war,
         ErrorCode::GameplayUnlockNotReady
     );
     require!(

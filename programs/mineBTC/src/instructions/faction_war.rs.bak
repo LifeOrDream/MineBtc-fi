@@ -1,68 +1,3 @@
-//! Faction War lifecycle and reward distribution.
-//!
-//! # Faction War Cycle
-//!
-//! Each war cycle follows a strict lifecycle.  Off-chain crankers and the game
-//! round pipeline coordinate to move the cycle forward.
-//!
-//! ```text
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 0  —  INIT CONFIG  (once, admin)                                │
-//!   │  call: initialize_faction_war_config                                   │
-//!   │  creates: FactionWarConfig PDA                                         │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼  (repeats every cycle)
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 1  —  START WAR  (cranker)                                      │
-//!   │  call: initialize_faction_war(faction_war_id)                          │
-//!   │  creates: FactionWarState + FactionWarSettlement PDAs                  │
-//!   │  seeds treasury base from unassigned tax, sets settle_cycle            │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 2  —  ACTIVE  (many rounds, permissionless gameplay)            │
-//!   │  start_round → end_round → settle_round  (loop)                        │
-//!   │  settle_round calls track_faction_war_round_completion()               │
-//!   │    · accumulates gameplay_scores, round_wins, mined amounts            │
-//!   │    · when lp_operations_count >= faction_war_settle_cycle → auto-settle│
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 3  —  SETTLE  (cranker, once per cycle)                         │
-//!   │  call: settle_faction_war                                              │
-//!   │  internally calls finalize_faction_war_settlement()                    │
-//!   │    · computes final_ranks from gameplay_scores + round_wins            │
-//!   │    · computes rank_deltas, resolved_directions                         │
-//!   │    · applies mining_multiplier_bps, splits pool into lanes             │
-//!   │    · advances current_faction_war_id                                   │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!   ┌─────────────────────────────────────────────────────────────────────────┐
-//!   │  PHASE 4  —  CLAIMS  (users + factions, permissionless)                │
-//!   │  users:  claim_faction_war_rewards  (reads FactionWarSettlement)       │
-//!   │  factions: claim_faction_treasury_for_faction_war (reads final_ranks)  │
-//!   └─────────────────────────────────────────────────────────────────────────┘
-//!                                    │
-//!                                    ▼
-//!                           back to PHASE 1
-//! ```
-//!
-//! # File layout
-//!
-//! 1. **Helpers** – pure/computation functions (rankings, reward pools, etc.)
-//! 2. **Lifecycle functions** – ordered by call sequence
-//!    · `initialize_faction_war_config_internal`  (admin, once)
-//!    · `initialize_faction_war_internal`         (cranker, per cycle start)
-//!    · `finalize_faction_war_settlement`         (internal, called by settle)
-//!    · `settle_faction_war_internal`             (cranker, per cycle end)
-//!    · `claim_faction_war_rewards_internal`      (user claim)
-//! 3. **Account structs** – all `#[derive(Accounts)]` grouped at the end,
-//!    in the same order as their handler functions above.
-
 use anchor_lang::prelude::*;
 
 use crate::errors::ErrorCode;
@@ -71,9 +6,6 @@ use crate::genescience::{calculate_mutation_result, MutationType};
 use crate::instructions::helper;
 use crate::state::*;
 
-// ========================================================================================
-// ============================= HELPERS ==================================================
-// ========================================================================================
 
 pub fn compute_rankings_into(
     scores: &[i64; NUM_FACTIONS],
@@ -82,6 +14,8 @@ pub fn compute_rankings_into(
     active_factions: usize,
     ranks: &mut [u8; NUM_FACTIONS],
 ) -> Result<()> {
+    
+
     let mut ordered = [0u8; NUM_FACTIONS];
     for (idx, slot) in ordered.iter_mut().enumerate() {
         *slot = idx as u8;
@@ -519,7 +453,7 @@ pub fn compute_faction_reward_pools(
 }
 
 // ========================================================================================
-// ============================= LIFECYCLE — ADMIN CONFIG ===================================
+// ============================= FACTION_WAR CONFIG ==============================================
 // ========================================================================================
 
 pub fn initialize_faction_war_config_internal(
@@ -536,6 +470,8 @@ pub fn initialize_faction_war_config_internal(
     );
     faction_war_config.current_faction_war_id = 1;
     msg!("⚔️ [faction_war.initialize_faction_war_config_internal] current_faction_war_id set=1");
+    faction_war_config.is_active = true;
+    msg!("⚔️ [faction_war.initialize_faction_war_config_internal] is_active set=true");
     faction_war_config.faction_war_settle_cycle = 0;
     msg!("⚔️ [faction_war.initialize_faction_war_config_internal] faction_war_settle_cycle set=0");
 
@@ -589,74 +525,74 @@ pub fn initialize_faction_war_config_internal(
     Ok(())
 }
 
-// ========================================================================================
-// ============================= LIFECYCLE — INITIALIZE WAR ================================
-// ========================================================================================
+#[derive(Accounts)]
+pub struct InitializeFactionWarConfig<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = FactionWarConfig::LEN,
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump,
+    )]
+    pub faction_war_config: Account<'info, FactionWarConfig>,
 
-/// Initialize a new FactionWarState PDA for the current war.
-/// Must be called once per war cycle before the first round's settle_round.
-/// Permissionless — anyone can initialize the war state for the current war ID.
-pub fn initialize_faction_war_internal(
-    ctx: Context<InitializeFactionWar>,
-    faction_war_id: u64,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn update_faction_war_config_internal(
+    ctx: Context<UpdateFactionWarConfig>,
+    is_active: Option<bool>,
 ) -> Result<()> {
-    crate::log_fn!("faction_war", "initialize_faction_war_internal");
-    msg!("🪖 [initialize_faction_war] war={}", faction_war_id);
-
+    crate::log_fn!("faction_war", "update_faction_war_config_internal");
     let faction_war_config = &mut ctx.accounts.faction_war_config;
-    let faction_war_state = &mut ctx.accounts.faction_war_state;
-    let tax_config = &mut ctx.accounts.tax_config;
-    let global_config = &ctx.accounts.global_config;
 
-    require!(
-        faction_war_config.current_faction_war_id == faction_war_id,
-        ErrorCode::InvalidParameters
-    );
+    if let Some(active) = is_active {
+        msg!(
+            "⚔️ [faction_war.update_faction_war_config_internal] updating is_active: {} -> {}",
+            faction_war_config.is_active,
+            active
+        );
+        faction_war_config.is_active = active;
+    } else {
+        msg!("⚔️ [faction_war.update_faction_war_config_internal] is_active=None, no change");
+    }
 
-    let active_faction_count = global_config.supported_factions.len() as u8;
-    let start_ranks = faction_war_config.prev_faction_war_ranks;
-    let unassigned = tax_config.unassigned_faction_war_treasury_amount;
-
-    // Anchor init zeroes the account; only set non-zero fields
-    faction_war_state.bump = ctx.bumps.faction_war_state;
-    faction_war_state.faction_war_id = faction_war_id;
-    faction_war_state.start_timestamp = Clock::get()?.unix_timestamp.max(0) as u64;
-    faction_war_state.stage = 0;
-    faction_war_state.active_faction_count = active_faction_count;
-    faction_war_state.treasury_reward_base_amount = unassigned;
-
-    let faction_war_settlement = &mut ctx.accounts.faction_war_settlement;
-    faction_war_settlement.bump = ctx.bumps.faction_war_settlement;
-    faction_war_settlement.faction_war_id = faction_war_id;
-    faction_war_settlement.final_ranks = start_ranks;
-    faction_war_settlement.resolved_directions =
-        [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
-
-    tax_config.unassigned_faction_war_treasury_amount = 0;
-
-    let lp_ops = ctx.accounts.dbtc_mining.pol_stats.lp_operations_count;
-    let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
-    faction_war_config.faction_war_settle_cycle = settle_cycle;
-    faction_war_config.reset_cycle_round_tracking();
-
-    msg!(
-        "🪖 [initialize_faction_war] seeded war={} factions={} settle_after_lp={} treasury_base={}",
-        faction_war_id,
-        active_faction_count,
-        settle_cycle,
-        unassigned,
-    );
+    msg!("✅ [faction_war.update_faction_war_config_internal] done");
     Ok(())
 }
 
+#[derive(Accounts)]
+pub struct UpdateFactionWarConfig<'info> {
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = faction_war_config.bump,
+    )]
+    pub faction_war_config: Account<'info, FactionWarConfig>,
+
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump,
+        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+
+    pub authority: Signer<'info>,
+}
+
 // ========================================================================================
-// ============================= LIFECYCLE — SETTLEMENT =====================================
+// ============================= FACTION_WAR SETTLEMENT ==========================================
 // ========================================================================================
 
-/// Internal settlement logic.  Called by `settle_faction_war_internal`.
-///
-/// Computes final rankings, reward pools, MVP bonuses, and advances
-/// `current_faction_war_id` so the next cycle can begin.
 pub fn finalize_faction_war_settlement(
     faction_war_config: &mut FactionWarConfig,
     faction_war_state: &mut FactionWarState,
@@ -910,8 +846,6 @@ pub fn finalize_faction_war_settlement(
     Ok(())
 }
 
-/// Fully permissionless — all ranking inputs are already on-chain.
-/// Anyone can crank settlement once the economy cycle's LP burn has completed.
 pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()> {
     crate::log_fn!("faction_war", "settle_faction_war_internal");
     msg!("⚔️ [faction_war.settle_faction_war_internal] Manual settlement crank");
@@ -981,8 +915,73 @@ pub fn settle_faction_war_internal(ctx: Context<SettleFactionWar>) -> Result<()>
     Ok(())
 }
 
+/// Fully permissionless -- all ranking inputs are already on-chain.
+/// Anyone can crank settlement once the economy cycle's LP burn has completed.
+#[derive(Accounts)]
+pub struct SettleFactionWar<'info> {
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump,
+    )]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
+        bump,
+    )]
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
+        bump,
+    )]
+    pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
+
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED],
+        bump,
+    )]
+    pub tax_config: Box<Account<'info, TaxConfig>>,
+
+    #[account(
+        seeds = [MINE_BTC_MINING_SEED],
+        bump,
+    )]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
+
+    /// Needed to read reward/evolution tuning for `finalize_faction_war_settlement`.
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    /// Needed to derive the current round's game_session PDA so the
+    /// stage=1 guard below can see it.
+    #[account(
+        seeds = [GLOBAL_GAME_STATE_SEED],
+        bump,
+    )]
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
+
+    /// Game session for the current round. Used to block this crank while
+    /// stage=1 (the end_round → settle_round window).
+    #[account(
+        seeds = [GAME_SESSION_SEED, &global_game_state.current_round_id.to_le_bytes()],
+        bump,
+    )]
+    pub game_session: Box<Account<'info, GameSession>>,
+
+    /// Anyone can settle -- no authority check needed.
+    pub cranker: Signer<'info>,
+}
+
 // ========================================================================================
-// ============================= LIFECYCLE — CLAIMS =========================================
+// ============================= FACTION_WAR CLAIM ===============================================
 // ========================================================================================
 
 pub fn claim_faction_war_rewards_internal(
@@ -1299,151 +1298,6 @@ pub fn claim_faction_war_rewards_internal(
     Ok(())
 }
 
-// ========================================================================================
-// ============================= ACCOUNTS =================================================
-// ========================================================================================
-
-#[derive(Accounts)]
-pub struct InitializeFactionWarConfig<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = FactionWarConfig::LEN,
-        seeds = [FACTION_WAR_CONFIG_SEED],
-        bump,
-    )]
-    pub faction_war_config: Account<'info, FactionWarConfig>,
-
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump,
-        constraint = global_config.ext_authority == authority.key() @ ErrorCode::Unauthorized,
-    )]
-    pub global_config: Account<'info, GlobalConfig>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(faction_war_id: u64)]
-pub struct InitializeFactionWar<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
-    #[account(
-        mut,
-        seeds = [FACTION_WAR_CONFIG_SEED],
-        bump = faction_war_config.bump,
-    )]
-    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = FactionWarState::LEN,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
-        bump,
-    )]
-    pub faction_war_state: Box<Account<'info, FactionWarState>>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = FactionWarSettlement::LEN,
-        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_id.to_le_bytes()],
-        bump,
-    )]
-    pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
-
-    #[account(
-        mut,
-        seeds = [TAX_CONFIG_SEED],
-        bump = tax_config.bump
-    )]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
-    #[account(
-        seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = dbtc_mining.bump
-    )]
-    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-/// Fully permissionless — all ranking inputs are already on-chain.
-/// Anyone can settle once the economy cycle's LP burn has completed.
-#[derive(Accounts)]
-pub struct SettleFactionWar<'info> {
-    #[account(
-        mut,
-        seeds = [FACTION_WAR_CONFIG_SEED],
-        bump,
-    )]
-    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
-
-    #[account(
-        mut,
-        seeds = [FACTION_WAR_STATE_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
-        bump,
-    )]
-    pub faction_war_state: Box<Account<'info, FactionWarState>>,
-
-    #[account(
-        mut,
-        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_state.faction_war_id.to_le_bytes()],
-        bump,
-    )]
-    pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
-
-    #[account(
-        mut,
-        seeds = [TAX_CONFIG_SEED],
-        bump,
-    )]
-    pub tax_config: Box<Account<'info, TaxConfig>>,
-
-    #[account(
-        seeds = [MINE_BTC_MINING_SEED],
-        bump,
-    )]
-    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
-
-    /// Needed to read reward/evolution tuning for `finalize_faction_war_settlement`.
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump,
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
-    /// Needed to derive the current round's game_session PDA so the
-    /// stage=1 guard below can see it.
-    #[account(
-        seeds = [GLOBAL_GAME_STATE_SEED],
-        bump,
-    )]
-    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
-
-    /// Game session for the current round. Used to block this crank while
-    /// stage=1 (the end_round → settle_round window).
-    #[account(
-        seeds = [GAME_SESSION_SEED, &global_game_state.current_round_id.to_le_bytes()],
-        bump,
-    )]
-    pub game_session: Box<Account<'info, GameSession>>,
-
-    /// Anyone can settle — no authority check needed.
-    pub cranker: Signer<'info>,
-}
-
 #[derive(Accounts)]
 #[instruction(faction_war_id: u64)]
 pub struct ClaimFactionWarRewards<'info> {
@@ -1505,6 +1359,120 @@ pub struct ClaimFactionWarRewards<'info> {
 
     #[account(mut)]
     pub cranker: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// ========================================================================================
+// ============================= INITIALIZE FACTION WAR ===================================
+// ========================================================================================
+
+/// Initialize a new FactionWarState PDA for the current war.
+/// Must be called once per war cycle before the first round's settle_round.
+/// Permissionless — anyone can initialize the war state for the current war ID.
+pub fn initialize_faction_war_internal(
+    ctx: Context<InitializeFactionWar>,
+    faction_war_id: u64,
+) -> Result<()> {
+    crate::log_fn!("faction_war", "initialize_faction_war_internal");
+    msg!("🪖 [initialize_faction_war] war={}", faction_war_id);
+
+    let faction_war_config = &mut ctx.accounts.faction_war_config;
+    let faction_war_state = &mut ctx.accounts.faction_war_state;
+    let tax_config = &mut ctx.accounts.tax_config;
+    let global_config = &ctx.accounts.global_config;
+
+    require!(faction_war_config.is_active, ErrorCode::FactionWarNotActive);
+    require!(
+        faction_war_config.current_faction_war_id == faction_war_id,
+        ErrorCode::InvalidParameters
+    );
+
+    let active_faction_count = global_config.supported_factions.len() as u8;
+    let start_ranks = faction_war_config.prev_faction_war_ranks;
+    let unassigned = tax_config.unassigned_faction_war_treasury_amount;
+
+    // Anchor init zeroes the account; only set non-zero fields
+    faction_war_state.bump = ctx.bumps.faction_war_state;
+    faction_war_state.faction_war_id = faction_war_id;
+    faction_war_state.start_timestamp = Clock::get()?.unix_timestamp.max(0) as u64;
+    faction_war_state.stage = 0;
+    faction_war_state.active_faction_count = active_faction_count;
+    faction_war_state.treasury_reward_base_amount = unassigned;
+
+    let faction_war_settlement = &mut ctx.accounts.faction_war_settlement;
+    faction_war_settlement.bump = ctx.bumps.faction_war_settlement;
+    faction_war_settlement.faction_war_id = faction_war_id;
+    faction_war_settlement.final_ranks = start_ranks;
+    faction_war_settlement.resolved_directions =
+        [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
+
+    tax_config.unassigned_faction_war_treasury_amount = 0;
+
+    let lp_ops = ctx.accounts.dbtc_mining.pol_stats.lp_operations_count;
+    let settle_cycle = lp_ops.checked_add(1).ok_or(ErrorCode::ArithmeticOverflow)?;
+    faction_war_config.faction_war_settle_cycle = settle_cycle;
+    faction_war_config.reset_cycle_round_tracking();
+
+    msg!(
+        "🪖 [initialize_faction_war] seeded war={} factions={} settle_after_lp={} treasury_base={}",
+        faction_war_id,
+        active_faction_count,
+        settle_cycle,
+        unassigned,
+    );
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(faction_war_id: u64)]
+pub struct InitializeFactionWar<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = faction_war_config.bump,
+    )]
+    pub faction_war_config: Box<Account<'info, FactionWarConfig>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = FactionWarState::LEN,
+        seeds = [FACTION_WAR_STATE_SEED, &faction_war_id.to_le_bytes()],
+        bump,
+    )]
+    pub faction_war_state: Box<Account<'info, FactionWarState>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = FactionWarSettlement::LEN,
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &faction_war_id.to_le_bytes()],
+        bump,
+    )]
+    pub faction_war_settlement: Box<Account<'info, FactionWarSettlement>>,
+
+    #[account(
+        mut,
+        seeds = [TAX_CONFIG_SEED],
+        bump = tax_config.bump
+    )]
+    pub tax_config: Box<Account<'info, TaxConfig>>,
+
+    #[account(
+        seeds = [MINE_BTC_MINING_SEED.as_ref()],
+        bump = dbtc_mining.bump
+    )]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }

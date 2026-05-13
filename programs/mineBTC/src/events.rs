@@ -799,7 +799,6 @@ pub struct FactionWarSettled {
     pub faction_war_id: u64,
     pub total_degenbtc_mined: u64,
     pub faction_war_mining_pool: u64,
-    pub start_ranks: [u8; NUM_FACTIONS],
     pub final_ranks: [u8; NUM_FACTIONS],
     pub rank_deltas: [i8; NUM_FACTIONS],
     pub resolved_directions: [u8; NUM_FACTIONS],
@@ -860,22 +859,6 @@ pub struct FactionWarRewardsClaimed {
     pub sol_reward_amount: u64,
     pub hashbeast_mint: Pubkey,
     pub timestamp: i64,
-}
-
-/// Event emitted when a faction_war is auto-started inline (during join_round)
-#[event]
-pub struct FactionWarAutoStarted {
-    pub faction_war_id: u64,
-    pub start_timestamp: u64,
-    /// LP operations count that will trigger settlement of this faction_war.
-    pub settle_cycle: u32,
-}
-
-/// Event emitted when a faction_war is auto-settled inline (during settle_round)
-#[event]
-pub struct FactionWarAutoSettled {
-    pub faction_war_id: u64,
-    pub mining_pool: u64,
 }
 
 /// Emitted when the authority toggles the global pause flag.

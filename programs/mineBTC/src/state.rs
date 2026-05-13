@@ -81,12 +81,11 @@ pub const CLAIMABLE_DBTC_SOURCE_REFINING_SYNC: u8 = 4;
 
 /// Faction-war mining pool split:
 /// - base rewards: anyone who predicted a country's final direction correctly
-/// - loyalty bonus: only users backing their own country correctly
+/// - mvp rewards: top contributor per faction
 /// - hashbeast bonus: gameplay HashBeasts backing the resolved home-country outcome
-pub const DEFAULT_FACTION_WAR_BASE_REWARD_BPS: u16 = 6500;
-pub const DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS: u16 = 2000;
+pub const DEFAULT_FACTION_WAR_BASE_REWARD_BPS: u16 = 7500;
 pub const DEFAULT_FACTION_WAR_MVP_REWARD_BPS: u16 = 500;
-pub const DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS: u16 = 1000;
+pub const DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS: u16 = 2000;
 
 /// Story-event pacing defaults stored in `GameplayTuningConfig`.
 pub const DEFAULT_BASE_MUTATION_CHANCE_BPS: u16 = MAX_BASE_CHANCE as u16; // 20%
@@ -234,6 +233,7 @@ pub const HASHBEAST_MINT_CONFIG_SEED: &[u8] = b"hashbeast-mint-config";
 // PDAs for Faction War system
 pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
 pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", faction_war_id_u64]
+pub const FACTION_WAR_SETTLEMENT_SEED: &[u8] = b"faction-war-settlement"; // Seed: [b"faction-war-settlement", faction_war_id_u64]
 pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, faction_war_id_u64]
 pub const FACTION_WAR_SOL_VAULT_SEED: &[u8] = b"faction-war-sol-vault";
 
@@ -478,7 +478,6 @@ pub struct GameplayTuningConfig {
 
     /// Faction-war mining pool split in basis points. Must sum to 10_000.
     pub faction_war_base_reward_bps: u16,
-    pub faction_war_loyalty_reward_bps: u16,
     pub faction_war_mvp_reward_bps: u16,
     pub faction_war_hashbeast_reward_bps: u16,
 
@@ -506,7 +505,6 @@ impl GameplayTuningConfig {
     pub const LEN: usize = 1 + // rpg_progression
         1 + // max_evolution_stage_unlocked
         2 + // faction_war_base_reward_bps
-        2 + // faction_war_loyalty_reward_bps
         2 + // faction_war_mvp_reward_bps
         2 + // faction_war_hashbeast_reward_bps
         2 + // base_mutation_chance_bps
@@ -522,7 +520,6 @@ impl GameplayTuningConfig {
         !self.rpg_progression
             && self.max_evolution_stage_unlocked == 0
             && self.faction_war_base_reward_bps == 0
-            && self.faction_war_loyalty_reward_bps == 0
             && self.faction_war_mvp_reward_bps == 0
             && self.faction_war_hashbeast_reward_bps == 0
     }
@@ -531,7 +528,6 @@ impl GameplayTuningConfig {
         self.rpg_progression = false;
         self.max_evolution_stage_unlocked = 0;
         self.faction_war_base_reward_bps = DEFAULT_FACTION_WAR_BASE_REWARD_BPS;
-        self.faction_war_loyalty_reward_bps = DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS;
         self.faction_war_mvp_reward_bps = DEFAULT_FACTION_WAR_MVP_REWARD_BPS;
         self.faction_war_hashbeast_reward_bps = DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS;
         self.base_mutation_chance_bps = DEFAULT_BASE_MUTATION_CHANCE_BPS;
@@ -1571,9 +1567,6 @@ pub struct FactionWarConfig {
     /// Current faction-war ID (incrementing counter, starts at 1)
     pub current_faction_war_id: u64,
 
-    /// Whether faction-war scoring is active
-    pub is_active: bool,
-
     /// The LP operations count that triggers settlement of the current faction_war.
     /// Set to `pol_stats.lp_operations_count + 1` when the faction_war starts,
     /// meaning the faction_war settles after the next full economy cycle completes.
@@ -1612,7 +1605,6 @@ impl FactionWarConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         8 +     // current_faction_war_id
-        1 +     // is_active
         4 +     // faction_war_settle_cycle
         (NUM_FACTIONS * 1) + // prev_faction_war_ranks
         8 +     // last_processed_round_id
@@ -1633,16 +1625,15 @@ impl FactionWarConfig {
 }
 
 /// Faction War state PDA (Seed: `[b"faction-war", faction_war_id_u64_le]`)
-/// Tracks a single gameplay-score-driven faction_war cycle: start/final ranks derived from
-/// home-country support scores, directional bet totals, and settlement outputs.
-/// FactionWar duration is tied to the economy cycle (one LP-burn cycle).
+/// Tracks active gameplay data during a faction war cycle.
+/// Kept small because it is loaded on every bet and every settle_round.
 #[account]
 pub struct FactionWarState {
     pub bump: u8,
 
     /// FactionWar ID
     pub faction_war_id: u64,
-    /// Timestamp when this faction_war was auto-started
+    /// Timestamp when this faction_war was started
     pub start_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
@@ -1655,37 +1646,9 @@ pub struct FactionWarState {
     /// Faction-war mining pool distributed to faction-war predictors.
     pub faction_war_mining_pool: u64,
 
-    /// Rank snapshot from previous faction_war (baseline for direction resolution).
-    pub start_ranks: [u8; NUM_FACTIONS],
-    /// Final ranks derived from the gameplay-score array at settlement.
-    pub final_ranks: [u8; NUM_FACTIONS],
-
-    /// Rank deltas at settlement (positive = rank improved, negative = rank worsened).
-    pub rank_deltas: [i8; NUM_FACTIONS],
-    /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
-    pub resolved_directions: [u8; NUM_FACTIONS],
-
-    /// Running MVP candidate per faction (user with highest cumulative gameplay score).
-    pub faction_mvp_user: [Pubkey; NUM_FACTIONS],
-    /// Running MVP score per faction.
-    pub faction_mvp_score: [u64; NUM_FACTIONS],
-    /// Bonus amount reserved for each faction's MVP at settlement.
-    pub faction_mvp_bonus: [u64; NUM_FACTIONS],
-
     /// Total weighted bets per faction and direction during this faction_war
     /// from all users. This powers the base "be right anywhere" cycle rewards.
     pub faction_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-    /// Total weighted bets per faction and direction from users backing their
-    /// own country. This powers the loyalty bonus layer on top of the global base rewards.
-    pub loyalty_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-
-    /// Pre-computed base reward pool per faction (rank-weighted across factions,
-    /// then shared by anyone who picked that country's resolved direction correctly).
-    pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// Pre-computed loyalty reward pool per faction shared only by home-country supporters.
-    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
-    /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
-    pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
 
     /// Number of raffle rounds won by each faction during this faction war.
     /// Used as a tiebreak after story score.
@@ -1698,23 +1661,25 @@ pub struct FactionWarState {
 
     /// Accumulated gameplay scores per faction during this faction_war.
     /// Drives ranking at settlement, with round wins and own-country SOL support as tiebreaks.
-    /// DNA mutation rolls happen at claim time and do not retroactively alter settled rankings.
     pub gameplay_scores: [u64; NUM_FACTIONS],
+
+    /// Running MVP candidate per faction (user with highest cumulative gameplay score).
+    pub faction_mvp_user: [Pubkey; NUM_FACTIONS],
+    /// Running MVP score per faction.
+    pub faction_mvp_score: [u64; NUM_FACTIONS],
+
     /// Total weighted own-country bets per faction/direction from users with an active gameplay HashBeast.
     pub eligible_hashbeast_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-
-    /// Exact amount of faction treasury tax attributed to this faction war.
-    /// This is accumulated during tax distribution while the war is active, or
-    /// seeded from TaxConfig.unassigned_faction_war_treasury_amount when the
-    /// war state is first initialized.
-    pub treasury_reward_base_amount: u64,
-    /// Bitmap of factions that have already claimed treasury rewards for this
-    /// faction war. Bit N = 1 means faction N has claimed.
-    pub treasury_claimed_bitmap: u16,
 
     /// Accumulated SOL (from `cycle_sol_split`) reserved for this faction-war
     /// cycle's SOL jackpot. Distributed to claimants at settlement.
     pub sol_reward_pool: u64,
+
+    /// Exact amount of faction treasury tax attributed to this faction war.
+    /// Accumulated during tax distribution while the war is active, or
+    /// seeded from TaxConfig.unassigned_faction_war_treasury_amount when the
+    /// war state is first initialized.
+    pub treasury_reward_base_amount: u64,
 }
 
 impl FactionWarState {
@@ -1726,26 +1691,16 @@ impl FactionWarState {
         1 +     // active_faction_count
         8 +     // total_degenbtc_mined_in_faction_war
         8 +     // faction_war_mining_pool
-        (NUM_FACTIONS * 1) + // start_ranks
-        (NUM_FACTIONS * 1) + // final_ranks
-        (NUM_FACTIONS * 1) + // rank_deltas
-        (NUM_FACTIONS * 1) + // resolved_directions
-        (NUM_FACTIONS * 32) + // faction_mvp_user
-        (NUM_FACTIONS * 8) + // faction_mvp_score
-        (NUM_FACTIONS * 8) + // faction_mvp_bonus
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_direction_totals
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // loyalty_direction_totals
-        (NUM_FACTIONS * 8) + // faction_reward_pools
-        (NUM_FACTIONS * 8) + // loyalty_reward_pools
-        (NUM_FACTIONS * 8) + // faction_hashbeast_reward_pools
         (NUM_FACTIONS * 2) + // round_wins
         (NUM_FACTIONS * 8) + // faction_sol_totals
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_sol_direction_totals
         (NUM_FACTIONS * 8) + // gameplay_scores
+        (NUM_FACTIONS * 32) + // faction_mvp_user
+        (NUM_FACTIONS * 8) + // faction_mvp_score
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_hashbeast_direction_totals
-        8 +     // treasury_reward_base_amount
-        2 +     // treasury_claimed_bitmap
-        8; // sol_reward_pool
+        8 +     // sol_reward_pool
+        8; // treasury_reward_base_amount
 
     pub fn blank() -> Self {
         Self {
@@ -1756,32 +1711,22 @@ impl FactionWarState {
             active_faction_count: 0,
             total_degenbtc_mined_in_faction_war: 0,
             faction_war_mining_pool: 0,
-            start_ranks: [0u8; NUM_FACTIONS],
-            final_ranks: [0u8; NUM_FACTIONS],
-            rank_deltas: [0i8; NUM_FACTIONS],
-            resolved_directions: [0u8; NUM_FACTIONS],
             faction_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            loyalty_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            faction_reward_pools: [0u64; NUM_FACTIONS],
-            loyalty_reward_pools: [0u64; NUM_FACTIONS],
-            faction_hashbeast_reward_pools: [0u64; NUM_FACTIONS],
             round_wins: [0u16; NUM_FACTIONS],
             faction_sol_totals: [0u64; NUM_FACTIONS],
             faction_sol_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
             gameplay_scores: [0u64; NUM_FACTIONS],
             faction_mvp_user: [Pubkey::default(); NUM_FACTIONS],
             faction_mvp_score: [0u64; NUM_FACTIONS],
-            faction_mvp_bonus: [0u64; NUM_FACTIONS],
             eligible_hashbeast_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            treasury_reward_base_amount: 0,
-            treasury_claimed_bitmap: 0,
             sol_reward_pool: 0,
+            treasury_reward_base_amount: 0,
         }
     }
 
     /// Deserialize from `buf` directly into `*target` field-by-field.
     ///
-    /// Avoids the ~2.6KB stack temporary that `<Self as AnchorDeserialize>::deserialize`
+    /// Avoids a large stack temporary that `<Self as AnchorDeserialize>::deserialize`
     /// would create. Each individual field deserialization uses at most ~480 bytes
     /// of stack (the `[Pubkey; NUM_FACTIONS]` field), keeping this function under
     /// BPF's 4096-byte stack budget.
@@ -1796,26 +1741,94 @@ impl FactionWarState {
         target.active_faction_count = AnchorDeserialize::deserialize(buf)?;
         target.total_degenbtc_mined_in_faction_war = AnchorDeserialize::deserialize(buf)?;
         target.faction_war_mining_pool = AnchorDeserialize::deserialize(buf)?;
-        target.start_ranks = AnchorDeserialize::deserialize(buf)?;
-        target.final_ranks = AnchorDeserialize::deserialize(buf)?;
-        target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
-        target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_user = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_score = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_bonus = AnchorDeserialize::deserialize(buf)?;
         target.faction_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.loyalty_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.loyalty_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.faction_hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.round_wins = AnchorDeserialize::deserialize(buf)?;
         target.faction_sol_totals = AnchorDeserialize::deserialize(buf)?;
         target.faction_sol_direction_totals = AnchorDeserialize::deserialize(buf)?;
         target.gameplay_scores = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mvp_user = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mvp_score = AnchorDeserialize::deserialize(buf)?;
         target.eligible_hashbeast_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
-        target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
         target.sol_reward_pool = AnchorDeserialize::deserialize(buf)?;
+        target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
+        Ok(())
+    }
+}
+
+/// Faction War settlement PDA (Seed: `[b"faction-war-settlement", faction_war_id_u64_le]`)
+/// Holds all settlement-only data computed when a faction war ends.
+/// Loaded by settle_faction_war and claim_faction_war_rewards — NOT by join_bets or settle_round.
+#[account]
+pub struct FactionWarSettlement {
+    pub bump: u8,
+
+    /// FactionWar ID (must match the corresponding FactionWarState)
+    pub faction_war_id: u64,
+
+    /// Final ranks derived from the gameplay-score array at settlement.
+    pub final_ranks: [u8; NUM_FACTIONS],
+    /// Rank deltas at settlement (positive = rank improved, negative = rank worsened).
+    pub rank_deltas: [i8; NUM_FACTIONS],
+    /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
+    pub resolved_directions: [u8; NUM_FACTIONS],
+
+    /// Bonus amount reserved for each faction's MVP at settlement.
+    pub faction_mvp_bonus: [u64; NUM_FACTIONS],
+
+    /// Pre-computed base reward pool per faction (rank-weighted across factions,
+    /// then shared by anyone who picked that country's resolved direction correctly).
+    pub faction_reward_pools: [u64; NUM_FACTIONS],
+    /// Pre-computed loyalty reward pool per faction shared only by home-country supporters.
+    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
+    /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
+    pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
+
+    /// Bitmap of factions that have already claimed treasury rewards for this
+    /// faction war. Bit N = 1 means faction N has claimed.
+    pub treasury_claimed_bitmap: u16,
+}
+
+impl FactionWarSettlement {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // faction_war_id
+        (NUM_FACTIONS * 1) + // final_ranks
+        (NUM_FACTIONS * 1) + // rank_deltas
+        (NUM_FACTIONS * 1) + // resolved_directions
+        (NUM_FACTIONS * 8) + // faction_mvp_bonus
+        (NUM_FACTIONS * 8) + // faction_reward_pools
+        (NUM_FACTIONS * 8) + // loyalty_reward_pools
+        (NUM_FACTIONS * 8) + // faction_hashbeast_reward_pools
+        2; // treasury_claimed_bitmap
+
+    pub fn blank() -> Self {
+        Self {
+            bump: 0,
+            faction_war_id: 0,
+            final_ranks: [0u8; NUM_FACTIONS],
+            rank_deltas: [0i8; NUM_FACTIONS],
+            resolved_directions: [0u8; NUM_FACTIONS],
+            faction_mvp_bonus: [0u64; NUM_FACTIONS],
+            faction_reward_pools: [0u64; NUM_FACTIONS],
+            loyalty_reward_pools: [0u64; NUM_FACTIONS],
+            faction_hashbeast_reward_pools: [0u64; NUM_FACTIONS],
+            treasury_claimed_bitmap: 0,
+        }
+    }
+
+    /// Field-order deserializer to stay under BPF stack limit.
+    #[inline(never)]
+    pub fn deserialize_into(target: &mut Self, buf: &mut &[u8]) -> Result<()> {
+        target.bump = AnchorDeserialize::deserialize(buf)?;
+        target.faction_war_id = AnchorDeserialize::deserialize(buf)?;
+        target.final_ranks = AnchorDeserialize::deserialize(buf)?;
+        target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
+        target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mvp_bonus = AnchorDeserialize::deserialize(buf)?;
+        target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.loyalty_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.faction_hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }
 }
